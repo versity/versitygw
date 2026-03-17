@@ -27,7 +27,6 @@ source ./tests/drivers/head_object/head_object_s3api.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
-source ./tests/util/util_file.sh
 source ./tests/util/util_multipart.sh
 source ./tests/util/util_multipart_abort.sh
 source ./tests/util/util_multipart_before_completion.sh
@@ -36,18 +35,14 @@ export RUN_USERS=true
 
 # abort-multipart-upload
 @test "test_abort_multipart_upload" {
-  local bucket_file="bucket-file"
-  # shellcheck disable=SC2154
-  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  read -r bucket_name file_name <<< "$output"
+
+  run run_then_abort_multipart_upload "$bucket_name" "$file_name" "$TEST_FILE_FOLDER"/"$file_name" 4
   assert_success
 
-  run setup_bucket "$BUCKET_ONE_NAME"
-  assert_success
-
-  run run_then_abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4
-  assert_success
-
-  run object_exists "s3api" "$BUCKET_ONE_NAME" "$bucket_file"
+  run object_exists "s3api" "$bucket_name" "$file_name"
   assert_failure 1
 }
 
@@ -69,7 +64,9 @@ export RUN_USERS=true
 
 # create-multipart-upload
 @test "test_create_multipart_upload_properties" {
-  local bucket_file="bucket-file"
+  run get_file_name
+  assert_success
+  local bucket_file="$output"
 
   local expected_content_type="application/zip"
   local expected_meta_key="testkey"

@@ -47,7 +47,6 @@ source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 source ./tests/drivers/file.sh
-source ./tests/util/util_file.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_object.sh
 source ./tests/test_s3api_root_inner.sh

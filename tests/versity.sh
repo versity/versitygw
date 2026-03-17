@@ -14,8 +14,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util/util_file.sh
-
 start_versity_process() {
   if ! check_param_count "start_versity_process" "versity app index" 1 $#; then
     exit 1

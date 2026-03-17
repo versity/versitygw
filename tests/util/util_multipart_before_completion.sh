@@ -233,15 +233,15 @@ multipart_upload_before_completion() {
 # params:  bucket, key, file to split and upload, number of file parts to upload
 # return:  0 for success, 1 for failure
 multipart_upload_before_completion_with_user() {
-  if [ $# -ne 6 ]; then
-    log 2 "multipart upload pre-completion command missing bucket, key, file, part count, username, password"
+  if ! check_param_count_v2 "bucket, key, file, part count, username, password" 6 $#; then
     return 1
   fi
 
-  if ! split_file "$3" "$4"; then
-    log 2 "error splitting file"
+  if ! segments=$(split_file "$3" "$4" 2>&1); then
+    log 2 "error splitting file: $segments"
     return 1
   fi
+  read -r -a segment_array <<< "$segments"
 
   if ! create_multipart_upload_s3api_with_user "$1" "$2" "$5" "$6"; then
     log 2 "error creating multpart upload"
@@ -251,7 +251,7 @@ multipart_upload_before_completion_with_user() {
   parts="["
   for ((i = 1; i <= $4; i++)); do
     # shellcheck disable=SC2154
-    if ! upload_part_with_user "$1" "$2" "$upload_id" "$3" "$i" "$5" "$6"; then
+    if ! upload_part_with_user "$1" "$2" "$upload_id" "${segment_array[$((i-1))]}" "$i" "$5" "$6"; then
       log 2 "error uploading part $i"
       return 1
     fi
@@ -271,10 +271,11 @@ multipart_upload_before_completion_with_params() {
     return 1
   fi
 
-  if ! result=$(split_file "$3" "$4" 2>&1); then
+  if ! segments=$(split_file "$3" "$4" 2>&1); then
     log 2 "error splitting file: $result"
     return 1
   fi
+  read -r -a segment_array <<< "$segments"
 
   if ! create_multipart_upload_s3api_params "$1" "$2" "$5" "$6" "$7" "$8" "$9" "${10}"; then
     log 2 "error creating multpart upload"
@@ -283,7 +284,7 @@ multipart_upload_before_completion_with_params() {
 
   parts="["
   for ((i = 1; i <= $4; i++)); do
-    if ! upload_part "$1" "$2" "$upload_id" "$3" "$i"; then
+    if ! upload_part "$1" "$2" "$upload_id" "${segment_array[$((i-1))]}" "$i"; then
       log 2 "error uploading part $i"
       return 1
     fi
@@ -303,10 +304,11 @@ multipart_upload_before_completion_custom() {
     return 1
   fi
 
-  if ! result=$(split_file "$3" "$4" 2>&1); then
+  if ! segments=$(split_file "$3" "$4" 2>&1); then
     log 2 "error splitting file"
     return 1
   fi
+  read -r -a segment_array <<< "$segments"
 
   # shellcheck disable=SC2086 disable=SC2048
   if ! create_multipart_upload_custom "$1" "$2" ${*:5}; then
@@ -317,7 +319,7 @@ multipart_upload_before_completion_custom() {
 
   parts="["
   for ((i = 1; i <= $4; i++)); do
-    if ! upload_part "$1" "$2" "$upload_id" "$3" "$i"; then
+    if ! upload_part "$1" "$2" "$upload_id" "${segment_array[$i]}" "$i"; then
       log 2 "error uploading part $i"
       return 1
     fi
