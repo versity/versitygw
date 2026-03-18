@@ -1615,24 +1615,8 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	return p.CompleteMultipartUploadWithCopy(ctx, input, nil)
 }
 
-func blockCopy(to io.Writer, from io.Reader) error {
-	buf := make([]byte, 1024*1024*4) // 4 MiB buffer
-	for {
-		n, err := from.Read(buf)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return fmt.Errorf("read part data: %w", err)
-		}
-		if n == 0 {
-			break
-		}
-
-		_, err = to.Write(buf[:n])
-		if err != nil {
-			return fmt.Errorf("write part data: %w", err)
-		}
-	}
-
-	return nil
+type onlyRead struct {
+	io.Reader
 }
 
 func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.CompleteMultipartUploadInput, customMove func(from *os.File, to *os.File) error) (s3response.CompleteMultipartUploadResult, string, error) {
@@ -1845,14 +1829,14 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 				fw := f.File()
 				fw.Seek(0, io.SeekEnd)
 				if p.forceNoCopyFileRange {
-					err = blockCopy(fw, pf)
+					_, err = io.Copy(fw, &onlyRead{pf})
 				} else {
 					_, err = io.Copy(fw, pf)
 				}
 			}
 		} else {
 			if p.forceNoCopyFileRange {
-				err = blockCopy(f.File(), pf)
+				_, err = io.Copy(f.File(), &onlyRead{pf})
 			} else {
 				_, err = io.Copy(f.File(), pf)
 			}
