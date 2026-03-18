@@ -232,10 +232,7 @@ export RUN_USERS=true
 }
 
 @test "REST - ListBuckets - error Content-Type is application/xml" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1852"
-  fi
-  run send_rest_go_command_check_header_key_and_value "400" "Content-Type" "application/xml" "-method" "GETS"
+  run send_rest_go_command_check_header_key_and_value "400" "Content-Type" "application/xml" "-method" "GET" "-omitDate"
   assert_success
 }
 

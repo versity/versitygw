@@ -169,3 +169,38 @@ get_file_name_with_prefix() {
   fi
   echo "$1-${uuid}"
 }
+
+create_test_files_and_folders() {
+  if ! check_param_count_gt "any test files, including directories" 1 $#; then
+    return 1
+  fi
+
+  local file=""
+  local dir=""
+  local err=""
+  for file in "$@"; do
+    if ! create_folder_if_needed_and_file "$file"; then
+      log 2 "error creating folder if needed and file"
+      return 1
+    fi
+  done
+  return 0
+}
+
+create_folder_if_needed_and_file() {
+  if ! check_param_count_v2 "file path" 1 $#; then
+    return 1
+  fi
+  dir=$(dirname "$1")
+  if [ "$dir" != "." ] && [ ! -d "$TEST_FILE_FOLDER/$dir" ]; then
+    if ! err=$(mkdir -p "$TEST_FILE_FOLDER/$dir" 2>&1); then
+      log 2 "error creating folder '$dir': $err"
+      return 1
+    fi
+  fi
+  if ! create_test_file "$file"; then
+    log 2 "error creating test file '$file'"
+    return 1
+  fi
+  return 0
+}

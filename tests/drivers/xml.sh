@@ -242,19 +242,18 @@ check_if_element_exists() {
     return 1
   fi
 
-  log 5 "data: $(cat "$1")"
-  log 5 "xpath: $xpath"
-  if ! get_xml_data "$1" "$1.xml"; then
-    log 2 "error getting XML data"
+  if ! data_file=$(check_validity_and_or_parse_xml_data "$1" 2>&1); then
+    log 2 "error checking XML data: $data_file"
     return 1
   fi
-  if ! result=$(xmllint --xpath "boolean(${xpath}[text()='$2'])" "$1.xml" 2>&1); then
+  if ! result=$(xmllint --xpath "boolean(${xpath}[text()='$2'])" "$data_file" 2>&1); then
     log 2 "error getting result: $result"
     return 1
   fi
   if [ "$result" == "true" ]; then
     return 0
   fi
+  log 5 "element '$2' not found"
   return 1
 }
 
@@ -391,5 +390,49 @@ get_element_with_matching_inner_value() {
     return 1
   fi
   echo "$result"
+  return 0
+}
+
+check_validity_and_or_parse_xml_data() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  if xmllint --noout "$1" 2>/dev/null; then
+    echo "$1"
+    return 0
+  fi
+  if ! filtered_xml_file=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $filtered_xml_file"
+    return 1
+  fi
+  if ! get_xml_data "$1" "$TEST_FILE_FOLDER/$filtered_xml_file"; then
+    log 2 "error getting XML data"
+    return 1
+  fi
+  log 5 "filtered data: $(cat "$TEST_FILE_FOLDER/$filtered_xml_file")"
+  echo "$TEST_FILE_FOLDER/$filtered_xml_file"
+  return 0
+}
+
+check_element_count() {
+  if ! check_param_count_gt "data file, expected count, XML tree" 2 $#; then
+    return 1
+  fi
+  if ! xpath=$(build_xpath_string_for_element "${@:3}" 2>&1); then
+    log 2 "error building xpath string: $xpath"
+    return 1
+  fi
+  if ! data_file=$(check_validity_and_or_parse_xml_data "$1" 2>&1); then
+    log 2 "error getting XML data: $data_file"
+    return 1
+  fi
+  if ! count=$(xmllint --xpath "count($xpath)" "$data_file" 2>&1); then
+    log 2 "error getting element '$xpath' count: $count"
+    return 1
+  fi
+  if [ "$count" != "$2" ]; then
+    log 2 "expected count of '$2', was '$count'"
+    return 1
+  fi
   return 0
 }

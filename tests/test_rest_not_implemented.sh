@@ -27,9 +27,6 @@ source ./tests/setup.sh
 }
 
 @test "REST - GetBucketAnalyticsConfiguration - with template" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1821"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name=$output
@@ -50,9 +47,6 @@ source ./tests/setup.sh
 }
 
 @test "REST - NotImplemented - correct Content-Type header" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1821"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name=$output
