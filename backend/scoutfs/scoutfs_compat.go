@@ -114,8 +114,8 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 
 const (
 	stageComplete      = "ongoing-request=\"false\", expiry-date=\"Fri, 2 Dec 2050 00:00:00 GMT\""
-	stageInProgress    = "true"
-	stageNotInProgress = "false"
+	stageInProgress    = "ongoing-request=\"true\""
+	stageNotInProgress = "ongoing-request=\"false\""
 )
 
 const (
