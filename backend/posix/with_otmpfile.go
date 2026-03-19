@@ -231,9 +231,6 @@ func (tmp *tmpfile) link() error {
 
 func (tmp *tmpfile) fallbackLink() error {
 	tempname := tmp.f.Name()
-	// cleanup in case anything goes wrong, if rename succeeds then
-	// this will no longer exist
-	defer os.Remove(tempname)
 
 	// reset default file mode because CreateTemp uses 0600
 	tmp.f.Chmod(fs.FileMode(defaultFilePerm))
