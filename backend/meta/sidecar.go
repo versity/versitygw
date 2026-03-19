@@ -75,11 +75,22 @@ func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, va
 	}
 
 	attr := filepath.Join(metadir, attribute)
-	err = os.WriteFile(attr, value, 0666)
+	tempfile, err := os.CreateTemp(metadir, attribute)
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file: %v", err)
+	}
+	defer os.Remove(tempfile.Name())
+	defer tempfile.Close()
+
+	_, err = tempfile.Write(value)
 	if err != nil {
 		return fmt.Errorf("failed to write attribute: %v", err)
 	}
 
+	err = os.Rename(tempfile.Name(), attr)
+	if err != nil {
+		return fmt.Errorf("failed to rename temporary file: %v", err)
+	}
 	return nil
 }
 
