@@ -11,17 +11,17 @@ import (
 	"slices"
 )
 
-// WalkDirFunc is the type of the function called by [WalkDir] to visit
+// WalkDirFunc is the type of the function called by [walkDirRoot] to visit
 // each file or directory.
 //
-// The path argument contains the argument to [WalkDir] as a prefix.
+// The path argument contains the argument to [walkDirRoot] as a prefix.
 // That is, if WalkDir is called with root argument "dir" and finds a file
 // named "a" in that directory, the walk function will be called with
 // argument "dir/a".
 //
 // The d argument is the [DirEntry] for the named path.
 //
-// The error result returned by the function controls how [WalkDir]
+// The error result returned by the function controls how [walkDirRoot]
 // continues. If the function returns the special value [SkipDir], WalkDir
 // skips the current directory (path if d.IsDir() is true, otherwise
 // path's parent directory). If the function returns the special value
@@ -30,11 +30,11 @@ import (
 // returns that error.
 //
 // The err argument reports an error related to path, signaling that
-// [WalkDir] will not walk into that directory. The function can decide how
+// [walkDirRoot] will not walk into that directory. The function can decide how
 // to handle that error; as described earlier, returning the error will
 // cause WalkDir to stop walking the entire tree.
 //
-// [WalkDir] calls the function with a non-nil err argument in two cases.
+// [walkDirRoot] calls the function with a non-nil err argument in two cases.
 //
 // First, if the initial [Stat] on the root directory fails, WalkDir
 // calls the function with path set to root, d set to nil, and err set to
@@ -108,19 +108,19 @@ func walkDir(fsys fs.FS, name string, d fs.DirEntry, walkDirFn WalkDirFunc) erro
 	return nil
 }
 
-// WalkDir walks the file tree rooted at root, calling fn for each file or
+// walkDirRoot walks the file tree rooted at root, calling fn for each file or
 // directory in the tree, including root.
 //
 // All errors that arise visiting files and directories are filtered by fn:
 // see the [fs.WalkDirFunc] documentation for details.
 //
 // The files are walked in lexical order, which makes the output deterministic
-// but requires WalkDir to read an entire directory into memory before proceeding
+// but requires walkDirRoot to read an entire directory into memory before proceeding
 // to walk that directory.
 //
-// WalkDir does not follow symbolic links found in directories,
+// walkDirRoot does not follow symbolic links found in directories,
 // but if root itself is a symbolic link, its target will be walked.
-func WalkDir(fsys fs.FS, root string, fn WalkDirFunc) error {
+func walkDirRoot(fsys fs.FS, root string, fn WalkDirFunc) error {
 	info, err := fs.Stat(fsys, root)
 	if err != nil {
 		err = fn(root, nil, err)

@@ -86,11 +86,27 @@ func getMD5(text string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// getObjSkipDirs mimics the POSIX backend's FileToObj behavior for implicitly
+// created directories: it returns ErrSkipObj so that directories which exist
+// only as filesystem artefacts of slash-separated paths are not surfaced as
+// S3 objects. This is necessary when testing non-"/" delimiters where
+// fstest.MapFS creates intermediate directories from the "/" path separators
+// embedded in object keys.
+func getObjSkipDirs(path string, d fs.DirEntry) (s3response.Object, error) {
+	if d.IsDir() {
+		return s3response.Object{}, backend.ErrSkipObj
+	}
+	return getObj(path, d)
+}
+
 func TestWalk(t *testing.T) {
 	tests := []walkTest{
 		{
 			// test case from
 			// https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-prefixes.html
+			// All directories in this fsys are implicit filesystem artefacts (no S3
+			// object was explicitly PUT at any directory path), so getObjSkipDirs is
+			// used to mirror the real POSIX backend behaviour.
 			fsys: fstest.MapFS{
 				"sample.jpg":                       {},
 				"photos/2006/January/sample.jpg":   {},
@@ -98,7 +114,7 @@ func TestWalk(t *testing.T) {
 				"photos/2006/February/sample3.jpg": {},
 				"photos/2006/February/sample4.jpg": {},
 			},
-			getobj: getObj,
+			getobj: getObjSkipDirs,
 			cases: []testcase{
 				{
 					name:      "aws example",
@@ -153,12 +169,18 @@ func TestWalk(t *testing.T) {
 		},
 		{
 			// non-standard delimiter
+			// fstest.MapFS implicitly creates filesystem directories for each
+			// "/"-separated path component (e.g. "photo|s", "200|6", ...) even
+			// though these are not S3 objects.  On a real POSIX filesystem the
+			// backend's FileToObj returns ErrSkipObj for such implicit
+			// directories (they have no stored etag), so we use getObjSkipDirs
+			// here to reproduce that behaviour.
 			fsys: fstest.MapFS{
 				"photo|s/200|6/Januar|y/sampl|e1.jpg": {},
 				"photo|s/200|6/Januar|y/sampl|e2.jpg": {},
 				"photo|s/200|6/Januar|y/sampl|e3.jpg": {},
 			},
-			getobj: getObj,
+			getobj: getObjSkipDirs,
 			cases: []testcase{
 				{
 					name:      "different delimiter 1",
@@ -235,6 +257,175 @@ func TestWalk(t *testing.T) {
 				},
 			},
 		},
+		{
+			// test case prefix is a top level directory object that
+			// should be returned with the listing results
+			fsys: fstest.MapFS{
+				"a/file.txt": {},
+			},
+			getobj: getObj,
+			cases: []testcase{
+				{
+					name:    "prefix is a directory object",
+					maxObjs: 1000,
+					prefix:  "a/",
+					expected: backend.WalkResults{
+						Objects: []s3response.Object{
+							{
+								Key: backend.GetPtrFromString("a/"),
+							},
+							{
+								Key: backend.GetPtrFromString("a/file.txt"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			fsys: fstest.MapFS{
+				"f3": {},
+				"f4": {},
+				"f5": {},
+				"f6": {},
+			},
+			getobj: getObj,
+			cases: []testcase{
+				{
+					name:      "custom delimiter with marker filtering",
+					maxObjs:   1000,
+					delimiter: "5",
+					marker:    "f3",
+					expected: backend.WalkResults{
+						Objects: []s3response.Object{
+							{
+								Key: backend.GetPtrFromString("f4"),
+							},
+							{
+								Key: backend.GetPtrFromString("f6"),
+							},
+						},
+						CommonPrefixes: []types.CommonPrefix{
+							{
+								Prefix: backend.GetPtrFromString("f5"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			// nested-path variant of delimiter+marker behavior.
+			fsys: fstest.MapFS{
+				"top/alpha/f3":   {},
+				"top/bravo/f4":   {},
+				"top/charlie/f5": {},
+				"top/zulu/f6":    {},
+			},
+			getobj: getObjSkipDirs,
+			cases: []testcase{
+				{
+					name:      "delimiter and marker across nested directories",
+					maxObjs:   1000,
+					prefix:    "top/",
+					delimiter: "5",
+					marker:    "top/alpha/f3",
+					expected: backend.WalkResults{
+						Objects: []s3response.Object{
+							{
+								Key: backend.GetPtrFromString("top/bravo/f4"),
+							},
+							{
+								Key: backend.GetPtrFromString("top/zulu/f6"),
+							},
+						},
+						CommonPrefixes: []types.CommonPrefix{
+							{
+								Prefix: backend.GetPtrFromString("top/charlie/f5"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			// When the fast-path jumps into a prefix directory
+			// (e.g. prefix="a/"), the prefix-directory object "a/" must itself be
+			// offered to getObj even when the directory contains subdirectories.
+			// AWS S3 behavior: if "a/" was explicitly PUT as a zero-byte object it
+			// appears in ListObjects results regardless of what children it has.
+			fsys: fstest.MapFS{
+				"a/b/file.txt": {},
+				"a/file1.txt":  {},
+			},
+			getobj: getObj,
+			cases: []testcase{
+				{
+					name:    "prefix dir with subdirs is offered to getObj",
+					prefix:  "a/",
+					maxObjs: 1000,
+					expected: backend.WalkResults{
+						Objects: []s3response.Object{
+							{Key: backend.GetPtrFromString("a/")},
+							{Key: backend.GetPtrFromString("a/b/")},
+							{Key: backend.GetPtrFromString("a/b/file.txt")},
+							{Key: backend.GetPtrFromString("a/file1.txt")},
+						},
+					},
+				},
+			},
+		},
+		{
+			// When the fast-path jumps into a prefix directory,
+			// "a/" must still be offered to getObj when a marker is present but
+			// the marker sorts before "a/" — so "a/" is a valid result on this page.
+			// AWS S3 behavior: ListObjects(prefix="a/", marker="a") must return
+			// "a/" as the first key because "a" < "a/".
+			fsys: fstest.MapFS{
+				"a/file.txt": {},
+			},
+			getobj: getObj,
+			cases: []testcase{
+				{
+					// marker "a" < "a/" → "a/" belongs on this page
+					name:    "prefix dir included when marker is before dir key",
+					prefix:  "a/",
+					marker:  "a",
+					maxObjs: 1000,
+					expected: backend.WalkResults{
+						Objects: []s3response.Object{
+							{Key: backend.GetPtrFromString("a/")},
+							{Key: backend.GetPtrFromString("a/file.txt")},
+						},
+					},
+				},
+				{
+					// marker "a/" == "a/" → "a/" itself must be excluded
+					// (pagination: previous page ended at "a/", results start after it)
+					name:    "prefix dir excluded when marker equals dir key",
+					prefix:  "a/",
+					marker:  "a/",
+					maxObjs: 1000,
+					expected: backend.WalkResults{
+						Objects: []s3response.Object{
+							{Key: backend.GetPtrFromString("a/file.txt")},
+						},
+					},
+				},
+				{
+					// marker "a/b" > "a/" → "a/" belongs on a previous page, must be excluded
+					name:    "prefix dir excluded when marker is after dir key",
+					prefix:  "a/",
+					marker:  "a/b",
+					maxObjs: 1000,
+					expected: backend.WalkResults{
+						Objects: []s3response.Object{
+							{Key: backend.GetPtrFromString("a/file.txt")},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -276,11 +467,11 @@ func compareCommonPrefix(a, b []types.CommonPrefix) bool {
 	}
 
 	for _, cp := range a {
-		if containsCommonPrefix(cp, b) {
-			return true
+		if !containsCommonPrefix(cp, b) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func containsCommonPrefix(c types.CommonPrefix, list []types.CommonPrefix) bool {
@@ -313,11 +504,11 @@ func compareObjects(a, b []s3response.Object) bool {
 	}
 
 	for _, cp := range a {
-		if containsObject(cp, b) {
-			return true
+		if !containsObject(cp, b) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func containsObject(c s3response.Object, list []s3response.Object) bool {
@@ -365,8 +556,14 @@ func (s *slowFS) ReadDir(name string) ([]fs.DirEntry, error) {
 }
 
 func TestWalkStop(t *testing.T) {
+	// Path must not start with "/" (invalid for fstest.MapFS) and must be deep
+	// enough that reading every level takes longer than walkTimeOut.
+	// readDirPause (100 ms) × 14 levels = 1.4 s  >  walkTimeOut (500 ms).
+	// An empty delimiter is used so that the walk recurses into every directory
+	// level rather than stopping at the first common-prefix boundary (which is
+	// what a "/" delimiter would do, completing in a single ReadDir call).
 	s := &slowFS{MapFS: fstest.MapFS{
-		"/a/b/c/d/e/f/g/h/i/g/k/l/m/n": &fstest.MapFile{},
+		"a/b/c/d/e/f/g/h/i/j/k/l/m/n": &fstest.MapFile{},
 	}}
 
 	ctx, cancel := context.WithTimeout(context.Background(), walkTimeOut)
@@ -375,7 +572,7 @@ func TestWalkStop(t *testing.T) {
 	var err error
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		_, err = backend.Walk(ctx, s, "", "/", "", 1000,
+		_, err = backend.Walk(ctx, s, "", "", "", 1000,
 			func(path string, d fs.DirEntry) (s3response.Object, error) {
 				return s3response.Object{}, nil
 			}, []string{})
@@ -392,6 +589,53 @@ func TestWalkStop(t *testing.T) {
 	}
 }
 
+func TestWalkDirectoryErrorPropagates(t *testing.T) {
+	fSys := fstest.MapFS{
+		"dir/file.txt": {},
+	}
+
+	_, err := backend.Walk(context.Background(), fSys, "", "", "", 1000,
+		func(path string, d fs.DirEntry) (s3response.Object, error) {
+			if d.IsDir() {
+				return s3response.Object{}, fmt.Errorf("boom")
+			}
+			return getObj(path, d)
+		}, []string{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "directory to object \"dir/\": boom") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWalkDirectoryErrSkipObjContinues(t *testing.T) {
+	fSys := fstest.MapFS{
+		"a/file1.txt": {},
+		"b.txt":       {},
+	}
+
+	res, err := backend.Walk(context.Background(), fSys, "", "", "", 1000,
+		func(path string, d fs.DirEntry) (s3response.Object, error) {
+			if d.IsDir() {
+				return s3response.Object{}, backend.ErrSkipObj
+			}
+			return getObj(path, d)
+		}, []string{})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+
+	expected := backend.WalkResults{
+		Objects: []s3response.Object{
+			{Key: backend.GetPtrFromString("a/file1.txt")},
+			{Key: backend.GetPtrFromString("b.txt")},
+		},
+	}
+
+	compareResultsOrdered("dir errskipobj continues", res, expected, t)
+}
+
 // TestOrderWalk tests the lexicographic ordering of the object names
 // for the case where readdir sort order of a directory is different
 // than the lexicographic ordering of the full paths. The below has
@@ -400,8 +644,46 @@ func TestWalkStop(t *testing.T) {
 // but if you consider the character that comes after a is "/", then
 // the "." should come before "/" in the lexicographic ordering:
 // a.b/, a/
+//
+// getObjSkipDirs is used to mirror the real POSIX backend's behaviour:
+// all directories here are implicit filesystem artefacts (no S3 object
+// was explicitly PUT at any of these paths), so FileToObj returns
+// ErrSkipObj for them. The ordering is still exercised through the leaf
+// files: a.b/* sorts before a/*.
 func TestOrderWalk(t *testing.T) {
 	tests := []walkTest{
+		{
+			fsys: fstest.MapFS{
+				"dir1/a/file1":   {},
+				"dir1/a/file2":   {},
+				"dir1/a/file3":   {},
+				"dir1/a.b/file1": {},
+				"dir1/a.b/file2": {},
+				"dir1/b":         {},
+				"dir1/b./a":      {},
+				"dir1/b..":       {},
+			},
+			getobj: getObjSkipDirs,
+			cases: []testcase{
+				{
+					name:    "order test",
+					maxObjs: 1000,
+					prefix:  "dir1/",
+					expected: backend.WalkResults{
+						Objects: []s3response.Object{
+							{Key: backend.GetPtrFromString("dir1/a.b/file1")},
+							{Key: backend.GetPtrFromString("dir1/a.b/file2")},
+							{Key: backend.GetPtrFromString("dir1/a/file1")},
+							{Key: backend.GetPtrFromString("dir1/a/file2")},
+							{Key: backend.GetPtrFromString("dir1/a/file3")},
+							{Key: backend.GetPtrFromString("dir1/b")},
+							{Key: backend.GetPtrFromString("dir1/b..")},
+							{Key: backend.GetPtrFromString("dir1/b./a")},
+						},
+					},
+				},
+			},
+		},
 		{
 			fsys: fstest.MapFS{
 				"dir1/a/file1":   {},
@@ -439,6 +721,12 @@ func TestOrderWalk(t *testing.T) {
 			},
 		},
 		{
+			// The same fstest.MapFS implicit-directory problem as the
+			// non-standard delimiter tests in TestWalk: "|" is the S3
+			// delimiter but "/" is the filesystem separator, so fstest
+			// creates implicit real directories (dir|1, dir|1/a, …) that
+			// should not appear as S3 objects.  Use getObjSkipDirs to
+			// mirror the POSIX backend's behaviour.
 			fsys: fstest.MapFS{
 				"dir|1/a/file1":   {},
 				"dir|1/a/file2":   {},
@@ -446,7 +734,7 @@ func TestOrderWalk(t *testing.T) {
 				"dir|1/a.b/file1": {},
 				"dir|1/a.b/file2": {},
 			},
-			getobj: getObj,
+			getobj: getObjSkipDirs,
 			cases: []testcase{
 				{
 					name:      "order test delim",
@@ -543,13 +831,15 @@ type markertestcase struct {
 func TestMarker(t *testing.T) {
 	tests := []markerTest{
 		{
+			// dir is an implicit filesystem directory; use getObjSkipDirs to
+			// match the real POSIX backend (no etag stored → ErrSkipObj).
 			fsys: fstest.MapFS{
 				"dir/sample2.jpg": {},
 				"dir/sample3.jpg": {},
 				"dir/sample4.jpg": {},
 				"dir/sample5.jpg": {},
 			},
-			getobj: getObj,
+			getobj: getObjSkipDirs,
 			cases: []markertestcase{
 				{
 					name:      "multi page marker",
@@ -583,13 +873,15 @@ func TestMarker(t *testing.T) {
 			},
 		},
 		{
+			// dir1 is an implicit filesystem directory; use getObjSkipDirs to
+			// match the real POSIX backend (no etag stored → ErrSkipObj).
 			fsys: fstest.MapFS{
 				"dir1/subdir/file.txt": {},
 				"dir1/subdir.ext":      {},
 				"dir1/subdir1.ext":     {},
 				"dir1/subdir2.ext":     {},
 			},
-			getobj: getObj,
+			getobj: getObjSkipDirs,
 			cases: []markertestcase{
 				{
 					name:      "integration test case 1",
