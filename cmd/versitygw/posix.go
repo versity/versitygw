@@ -139,15 +139,15 @@ func runPosix(ctx *cli.Context) error {
 	}
 
 	opts := posix.PosixOpts{
-		ChownUID:            chownuid,
-		ChownGID:            chowngid,
-		BucketLinks:         bucketlinks,
-		VersioningDir:       versioningDir,
-		NewDirPerm:          fs.FileMode(dirPerms),
-		ForceNoTmpFile:      forceNoTmpFile,
+		ChownUID:             chownuid,
+		ChownGID:             chowngid,
+		BucketLinks:          bucketlinks,
+		VersioningDir:        versioningDir,
+		NewDirPerm:           fs.FileMode(dirPerms),
+		ForceNoTmpFile:       forceNoTmpFile,
 		ForceNoCopyFileRange: forceNoCopyFileRange,
-		ValidateBucketNames: disableStrictBucketNames,
-		Concurrency:         actionsConcurrency,
+		ValidateBucketNames:  disableStrictBucketNames,
+		Concurrency:          actionsConcurrency,
 	}
 
 	var ms meta.MetadataStorer
