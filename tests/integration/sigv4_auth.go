@@ -215,7 +215,7 @@ func Authentication_credentials_invalid_terminal(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.InvalidTerminal("aws_request"))
+		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.IncorrectTerminal("aws_request"))
 	})
 }
 

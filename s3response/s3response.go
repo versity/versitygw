@@ -266,8 +266,18 @@ type Tagging struct {
 	TagSet  TagSet   `xml:"TagSet"`
 }
 
-type TaggingInput struct {
-	TagSet TagSet `xml:"TagSet"`
+// UnmarshalXML accepts Tagging documents both with and without the S3 XML
+// namespace, while xml.Marshal continues to emit the namespace via XMLName.
+func (t *Tagging) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type plain struct {
+		TagSet TagSet `xml:"TagSet"`
+	}
+	var p plain
+	if err := d.DecodeElement(&p, &start); err != nil {
+		return err
+	}
+	t.TagSet = p.TagSet
+	return nil
 }
 
 type DeleteObjects struct {
@@ -732,4 +742,12 @@ type LocationConstraint struct {
 type CreateBucketConfiguration struct {
 	LocationConstraint *string
 	TagSet             []types.Tag `xml:"Tags>Tag"`
+}
+
+type PostResponse struct {
+	XMLName  xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ PostResponse"`
+	Location string
+	Bucket   string
+	Key      string
+	ETag     string
 }

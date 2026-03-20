@@ -21,6 +21,7 @@ import (
 	"errors"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -815,6 +816,142 @@ func TestIsValidChecksum(t *testing.T) {
 	}
 }
 
+func TestExtractMetadataFromFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		fields  map[string]string
+		want    map[string]string
+		wantErr error
+	}{
+		{
+			name: "extracts metadata only",
+			fields: map[string]string{
+				"x-amz-meta-owner": "alice",
+				"x-amz-meta-env":   "prod",
+				"key":              "uploads/report.pdf",
+			},
+			want: map[string]string{
+				"owner": "alice",
+				"env":   "prod",
+			},
+		},
+		{
+			name: "returns empty map when no metadata fields exist",
+			fields: map[string]string{
+				"key":  "uploads/report.pdf",
+				"acl":  "private",
+				"file": "ignored",
+			},
+			want: map[string]string{},
+		},
+		{
+			name: "allows empty metadata value",
+			fields: map[string]string{
+				"x-amz-meta-owner": "",
+			},
+			want: map[string]string{
+				"owner": "",
+			},
+		},
+		{
+			name: "metadata too large",
+			fields: map[string]string{
+				"x-amz-meta-big": strings.Repeat("a", maxMetadataSize-len("big")+1),
+			},
+			wantErr: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ExtractMetadataFromFields(tt.fields)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("expected error %v, got %v", tt.wantErr, err)
+			}
+			if err != nil {
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("unexpected metadata: got %v want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseCalculatedChecksumFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		fields  map[string]string
+		want    ChecksumValues
+		wantErr error
+	}{
+		{
+			name: "empty fields",
+			fields: map[string]string{
+				"key": "uploads/file.txt",
+			},
+			want: ChecksumValues{},
+		},
+		{
+			name: "single valid checksum field",
+			fields: map[string]string{
+				"x-amz-checksum-crc32": "ww2FVQ==",
+			},
+			want: ChecksumValues{
+				types.ChecksumAlgorithmCrc32: "ww2FVQ==",
+			},
+		},
+		{
+			name: "ignores algorithm and type helper fields",
+			fields: map[string]string{
+				"x-amz-checksum-algorithm": "CRC32",
+				"x-amz-checksum-type":      "FULL_OBJECT",
+				"x-amz-checksum-crc32":     "ww2FVQ==",
+			},
+			want: ChecksumValues{
+				types.ChecksumAlgorithmCrc32: "ww2FVQ==",
+			},
+		},
+		{
+			name: "invalid checksum field name",
+			fields: map[string]string{
+				"x-amz-checksum-madeup": "abc",
+			},
+			wantErr: s3err.GetAPIError(s3err.ErrInvalidChecksumHeader),
+		},
+		{
+			name: "multiple checksum fields",
+			fields: map[string]string{
+				"x-amz-checksum-crc32":  "ww2FVQ==",
+				"x-amz-checksum-sha256": "d1SPCd/kZ2rAzbbLUC0n/bEaOSx70FNbXbIqoIxKuPY=",
+			},
+			wantErr: s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders),
+		},
+		{
+			name: "invalid checksum value",
+			fields: map[string]string{
+				"x-amz-checksum-crc32": "invalid_base64_string",
+			},
+			wantErr: s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-crc32"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseCalculatedChecksumFields(tt.fields)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("expected error %v, got %v", tt.wantErr, err)
+			}
+			if err != nil {
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("unexpected checksums: got %v want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsChecksumTypeValid(t *testing.T) {
 	type args struct {
 		t types.ChecksumType
@@ -985,8 +1122,8 @@ func TestParseTagging(t *testing.T) {
 		}
 		return string(b)
 	}
-	getTagSet := func(lgth int) s3response.TaggingInput {
-		res := s3response.TaggingInput{
+	getTagSet := func(lgth int) s3response.Tagging {
+		res := s3response.Tagging{
 			TagSet: s3response.TagSet{
 				Tags: []s3response.Tag{},
 			},
@@ -1002,7 +1139,7 @@ func TestParseTagging(t *testing.T) {
 		return res
 	}
 	type args struct {
-		data        s3response.TaggingInput
+		data        s3response.Tagging
 		overrideXML []byte
 		limit       TagLimit
 	}
@@ -1015,7 +1152,7 @@ func TestParseTagging(t *testing.T) {
 		{
 			name: "valid tags within limit",
 			args: args{
-				data: s3response.TaggingInput{
+				data: s3response.Tagging{
 					TagSet: s3response.TagSet{
 						Tags: []s3response.Tag{
 							{Key: "key1", Value: "value1"},
@@ -1038,6 +1175,24 @@ func TestParseTagging(t *testing.T) {
 			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
 		},
 		{
+			name: "valid tags without namespace",
+			args: args{
+				overrideXML: []byte(`<?xml version="1.0"?><Tagging><TagSet><Tag><Key>key1</Key><Value>value1</Value></Tag><Tag><Key>key2</Key><Value>value2</Value></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    map[string]string{"key1": "value1", "key2": "value2"},
+			wantErr: nil,
+		},
+		{
+			name: "valid tags with namespace",
+			args: args{
+				overrideXML: []byte(`<?xml version="1.0"?><Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><TagSet><Tag><Key>key1</Key><Value>value1</Value></Tag><Tag><Key>key2</Key><Value>value2</Value></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    map[string]string{"key1": "value1", "key2": "value2"},
+			wantErr: nil,
+		},
+		{
 			name: "exceeds bucket tag limit",
 			args: args{
 				data:  getTagSet(51),
@@ -1058,7 +1213,7 @@ func TestParseTagging(t *testing.T) {
 		{
 			name: "invalid 0 length tag key",
 			args: args{
-				data: s3response.TaggingInput{
+				data: s3response.Tagging{
 					TagSet: s3response.TagSet{
 						Tags: []s3response.Tag{{Key: "", Value: "value1"}},
 					},
@@ -1071,7 +1226,7 @@ func TestParseTagging(t *testing.T) {
 		{
 			name: "invalid long tag key",
 			args: args{
-				data: s3response.TaggingInput{
+				data: s3response.Tagging{
 					TagSet: s3response.TagSet{
 						Tags: []s3response.Tag{{Key: genRandStr(130), Value: "value1"}},
 					},
@@ -1084,7 +1239,7 @@ func TestParseTagging(t *testing.T) {
 		{
 			name: "invalid long tag value",
 			args: args{
-				data: s3response.TaggingInput{
+				data: s3response.Tagging{
 					TagSet: s3response.TagSet{
 						Tags: []s3response.Tag{{Key: "key", Value: genRandStr(257)}},
 					},
@@ -1097,7 +1252,7 @@ func TestParseTagging(t *testing.T) {
 		{
 			name: "duplicate tag key",
 			args: args{
-				data: s3response.TaggingInput{
+				data: s3response.Tagging{
 					TagSet: s3response.TagSet{
 						Tags: []s3response.Tag{
 							{Key: "key", Value: "value1"},
@@ -1131,6 +1286,71 @@ func TestParseTagging(t *testing.T) {
 			}
 			if err == nil && !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("expected result %v, got %v", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestConvertTaggingXMLToQueryString(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    s3response.Tagging
+		rawXML  []byte
+		want    string
+		wantErr error
+	}{
+		{
+			name: "success",
+			data: s3response.Tagging{
+				TagSet: s3response.TagSet{
+					Tags: []s3response.Tag{
+						{Key: "project", Value: "versity gw"},
+						{Key: "team", Value: "storage"},
+					},
+				},
+			},
+			want: "project=versity+gw&team=storage",
+		},
+		{
+			name:    "parse error",
+			rawXML:  []byte("not xml"),
+			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var data []byte
+			if tt.rawXML != nil {
+				data = tt.rawXML
+			} else {
+				var err error
+				data, err = xml.Marshal(tt.data)
+				if err != nil {
+					t.Fatalf("error marshalling input: %v", err)
+				}
+			}
+
+			got, err := ConvertTaggingXMLToQueryString(data)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("expected error %v, got %v", tt.wantErr, err)
+			}
+			if err != nil {
+				return
+			}
+
+			if got != tt.want {
+				t.Fatalf("unexpected tagging string: got %q want %q", got, tt.want)
+			}
+
+			values, err := url.ParseQuery(got)
+			if err != nil {
+				t.Fatalf("parse query: %v", err)
+			}
+			for _, tag := range tt.data.TagSet.Tags {
+				if values.Get(tag.Key) != tag.Value {
+					t.Fatalf("unexpected query value for %q: got %q want %q", tag.Key, values.Get(tag.Key), tag.Value)
+				}
 			}
 		})
 	}

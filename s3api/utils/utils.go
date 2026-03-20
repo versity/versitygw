@@ -103,6 +103,28 @@ func GetUserMetaData(headers *fasthttp.RequestHeader) (map[string]string, error)
 	return metadata, nil
 }
 
+func ExtractMetadataFromFields(fields map[string]string) (map[string]string, error) {
+	metadata := make(map[string]string)
+	var metadataSize int
+
+	for key, value := range fields {
+		if !strings.HasPrefix(key, "x-amz-meta-") {
+			continue
+		}
+
+		trimmedKey := key[11:]
+		metadataSize += len(trimmedKey) + len(value)
+		if metadataSize > maxMetadataSize {
+			debuglogger.Logf("total meta headers size exceeded the maximum allowed: (size): %v, (max): %v", metadataSize, maxMetadataSize)
+			return nil, s3err.GetAPIError(s3err.ErrMetadataTooLarge)
+		}
+
+		metadata[trimmedKey] = value
+	}
+
+	return metadata, nil
+}
+
 func createHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength int64, streamBody bool) (*http.Request, error) {
 	req := ctx.Request()
 	var body io.Reader
@@ -554,6 +576,53 @@ func ParseCalculatedChecksumHeaders(ctx *fiber.Ctx) (ChecksumValues, error) {
 	return checksums, nil
 }
 
+// ParseCalculatedChecksumFields parses and validates object POST checksum fields
+func ParseCalculatedChecksumFields(fields map[string]string) (ChecksumValues, error) {
+	checksums := ChecksumValues{}
+
+	var hdrErr error
+	// Parse and validate checksum headers
+	for key, value := range fields {
+		// only check the headers with 'X-Amz-Checksum-' prefix
+		if !strings.HasPrefix(key, "x-amz-checksum-") {
+			continue
+		}
+		//  "x-amz-checksum-type" and "x-amz-checksum-algorithm" aren't considered
+		// as invalid values, even if the s3 action doesn't expect these headers
+		switch key {
+		case "x-amz-checksum-type", "x-amz-checksum-algorithm":
+			continue
+		}
+
+		algo := types.ChecksumAlgorithm(strings.ToUpper(strings.TrimPrefix(key, "x-amz-checksum-")))
+		err := IsChecksumAlgorithmValid(algo)
+		if err != nil {
+			debuglogger.Logf("invalid checksum field: %s\n", key)
+			hdrErr = s3err.GetAPIError(s3err.ErrInvalidChecksumHeader)
+			break
+		}
+
+		checksums[algo] = value
+	}
+
+	if hdrErr != nil {
+		return checksums, hdrErr
+	}
+
+	if len(checksums) > 1 {
+		debuglogger.Logf("multiple checksum headers provided: %v\n", checksums.Headers())
+		return checksums, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)
+	}
+
+	for al, val := range checksums {
+		if !IsValidChecksum(val, al) {
+			return checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(al))))
+		}
+	}
+
+	return checksums, nil
+}
+
 // ParseCompleteMpChecksumHeaders parses and validates
 // the 'CompleteMultipartUpload' x-amz-checksum-x headers
 // by supporting both 'checksum' and 'checksum-<part_length>' formats
@@ -805,7 +874,7 @@ var tagRule = regexp.MustCompile(`^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$`)
 
 // Parses and validates tagging
 func ParseTagging(data []byte, limit TagLimit) (map[string]string, error) {
-	var tagging s3response.TaggingInput
+	var tagging s3response.Tagging
 	err := xml.Unmarshal(data, &tagging)
 	if err != nil {
 		debuglogger.Logf("invalid taggging: %s", data)
@@ -862,6 +931,22 @@ func ParseTagging(data []byte, limit TagLimit) (map[string]string, error) {
 	}
 
 	return tagSet, nil
+}
+
+// ConvertTaggingXMLToQueryString parses object tagging XML and converts it into the
+// x-amz-tagging query-string form expected by PutObject requests.
+func ConvertTaggingXMLToQueryString(data []byte) (string, error) {
+	tags, err := ParseTagging(data, TagLimitObject)
+	if err != nil {
+		return "", err
+	}
+
+	values := url.Values{}
+	for key, value := range tags {
+		values.Set(key, value)
+	}
+
+	return values.Encode(), nil
 }
 
 // Returns the provided string pointer

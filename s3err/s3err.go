@@ -186,6 +186,8 @@ const (
 	ErrInvalidChunkSize
 	ErrSlowDown
 	ErrMetadataTooLarge
+	ErrOnlyAws4HmacSha256
+	ErrInvalidDateHeader
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -439,7 +441,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrEntityTooSmall: {
 		Code:           "EntityTooSmall",
-		Description:    "Your proposed upload is smaller than the minimum allowed object size.",
+		Description:    "Your proposed upload is smaller than the minimum allowed size",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrEntityTooLarge: {
@@ -841,6 +843,16 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		// TODO: should have 'Size' and 'MaxSizeAllowed' properties
 		Code:           "MetadataTooLarge",
 		Description:    "Your metadata headers exceed the maximum allowed metadata size",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrOnlyAws4HmacSha256: {
+		Code:           "InvalidArgument",
+		Description:    "Only AWS4-HMAC-SHA256 is supported",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidDateHeader: {
+		Code:           "InvalidArgument",
+		Description:    "X-Amz-Date must be formated via ISO8601 Long format",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 
