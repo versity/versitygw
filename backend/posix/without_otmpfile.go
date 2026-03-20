@@ -75,9 +75,6 @@ var (
 
 func (tmp *tmpfile) link() error {
 	tempname := tmp.f.Name()
-	// cleanup in case anything goes wrong, if rename succeeds then
-	// this will no longer exist
-	defer os.Remove(tempname)
 
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
 
@@ -104,6 +101,7 @@ func (tmp *tmpfile) Write(b []byte) (int, error) {
 
 func (tmp *tmpfile) cleanup() {
 	tmp.f.Close()
+	os.Remove(tmp.f.Name())
 }
 
 func (tmp *tmpfile) File() *os.File {
