@@ -25,14 +25,15 @@ import (
 )
 
 var (
-	chownuid, chowngid bool
-	bucketlinks        bool
-	versioningDir      string
-	dirPerms           uint
-	sidecar            string
-	nometa             bool
-	forceNoTmpFile     bool
-	actionsConcurrency int
+	chownuid, chowngid   bool
+	bucketlinks          bool
+	versioningDir        string
+	dirPerms             uint
+	sidecar              string
+	nometa               bool
+	forceNoTmpFile       bool
+	forceNoCopyFileRange bool
+	actionsConcurrency   int
 )
 
 func posixCommand() *cli.Command {
@@ -108,6 +109,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_DISABLE_OTMP"},
 				Destination: &forceNoTmpFile,
 			},
+			&cli.BoolFlag{
+				Name:        "disable-copy-file-range",
+				Usage:       "explicitly copy multipart upload parts instead of using copy_file_range (which may hang with some NFS servers)",
+				EnvVars:     []string{"VGW_DISABLE_COPY_FILE_RANGE"},
+				Destination: &forceNoCopyFileRange,
+			},
 		},
 	}
 }
@@ -132,14 +139,15 @@ func runPosix(ctx *cli.Context) error {
 	}
 
 	opts := posix.PosixOpts{
-		ChownUID:            chownuid,
-		ChownGID:            chowngid,
-		BucketLinks:         bucketlinks,
-		VersioningDir:       versioningDir,
-		NewDirPerm:          fs.FileMode(dirPerms),
-		ForceNoTmpFile:      forceNoTmpFile,
-		ValidateBucketNames: disableStrictBucketNames,
-		Concurrency:         actionsConcurrency,
+		ChownUID:             chownuid,
+		ChownGID:             chowngid,
+		BucketLinks:          bucketlinks,
+		VersioningDir:        versioningDir,
+		NewDirPerm:           fs.FileMode(dirPerms),
+		ForceNoTmpFile:       forceNoTmpFile,
+		ForceNoCopyFileRange: forceNoCopyFileRange,
+		ValidateBucketNames:  disableStrictBucketNames,
+		Concurrency:          actionsConcurrency,
 	}
 
 	var ms meta.MetadataStorer

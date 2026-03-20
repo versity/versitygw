@@ -81,6 +81,12 @@ type Posix struct {
 	// there are different filesystems mounted below the bucket level.
 	forceNoTmpFile bool
 
+	// forceNoCopyFileRange is a flag to disable the use of io.Copy to
+	// reassemble multipart upload parts, which uses copy_file_range on
+	// linux. This is needed for cases where a filesystem that does not
+	// support copy_file_range is mounted over NFSv4.2.
+	forceNoCopyFileRange bool
+
 	// enable posix level bucket name validations, not needed if the
 	// frontend handlers are already validating bucket names
 	validateBucketName bool
@@ -150,6 +156,8 @@ type PosixOpts struct {
 	// ForceNoTmpFile disables the use of O_TMPFILE even if the filesystem
 	// supports it
 	ForceNoTmpFile bool
+	// ForceNoCopyFileRange disables the use of io.Copy for multipart uploads parts
+	ForceNoCopyFileRange bool
 	// ValidateBucketNames enables minimal bucket name validation to prevent
 	// incorrect access to the filesystem. This is only needed if the
 	// frontend is not already validating bucket names.
@@ -212,19 +220,20 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 	}
 
 	return &Posix{
-		meta:               meta,
-		rootfd:             f,
-		rootdir:            rootdir,
-		euid:               os.Geteuid(),
-		egid:               os.Getegid(),
-		chownuid:           opts.ChownUID,
-		chowngid:           opts.ChownGID,
-		bucketlinks:        opts.BucketLinks,
-		versioningDir:      versioningdirAbs,
-		newDirPerm:         opts.NewDirPerm,
-		forceNoTmpFile:     opts.ForceNoTmpFile,
-		validateBucketName: opts.ValidateBucketNames,
-		actionLimiter:      semaphore.NewWeighted(int64(concurrencyOrDefault(opts.Concurrency))),
+		meta:                 meta,
+		rootfd:               f,
+		rootdir:              rootdir,
+		euid:                 os.Geteuid(),
+		egid:                 os.Getegid(),
+		chownuid:             opts.ChownUID,
+		chowngid:             opts.ChownGID,
+		bucketlinks:          opts.BucketLinks,
+		versioningDir:        versioningdirAbs,
+		newDirPerm:           opts.NewDirPerm,
+		forceNoTmpFile:       opts.ForceNoTmpFile,
+		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
+		validateBucketName:   opts.ValidateBucketNames,
+		actionLimiter:        semaphore.NewWeighted(int64(concurrencyOrDefault(opts.Concurrency))),
 	}, nil
 }
 
@@ -1610,6 +1619,10 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	return p.CompleteMultipartUploadWithCopy(ctx, input, nil)
 }
 
+type onlyRead struct {
+	io.Reader
+}
+
 func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.CompleteMultipartUploadInput, customMove func(from *os.File, to *os.File) error) (s3response.CompleteMultipartUploadResult, string, error) {
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
@@ -1819,10 +1832,18 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 					bucket, object, err)
 				fw := f.File()
 				fw.Seek(0, io.SeekEnd)
-				_, err = io.Copy(fw, pf)
+				if p.forceNoCopyFileRange {
+					_, err = io.Copy(fw, &onlyRead{pf})
+				} else {
+					_, err = io.Copy(fw, pf)
+				}
 			}
 		} else {
-			_, err = io.Copy(f.File(), pf)
+			if p.forceNoCopyFileRange {
+				_, err = io.Copy(f.File(), &onlyRead{pf})
+			} else {
+				_, err = io.Copy(f.File(), pf)
+			}
 		}
 		pf.Close()
 		if err != nil {
