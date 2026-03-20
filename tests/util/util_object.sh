@@ -192,10 +192,10 @@ copy_file() {
 
 list_and_check_directory_obj() {
   log 6 "list_and_check_directory_obj"
-  if ! check_param_count "list_and_check_directory_obj" "client, file name" 2 $#; then
+  if ! check_param_count "list_and_check_directory_obj" "client, bucket, file name" 3 $#; then
     return 1
   fi
-  if ! list_objects_with_prefix "$1" "$BUCKET_ONE_NAME" "$2/"; then
+  if ! list_objects_with_prefix "$1" "$2" "$3/"; then
     log 2 "error listing objects with prefix"
     return 1
   fi
@@ -205,15 +205,15 @@ list_and_check_directory_obj() {
       log 2 "error getting key: $key"
       return 1
     fi
-    if [ "$key" != "$2/" ]; then
-      log 2 "key mismatch ($key, $2)"
+    if [ "$key" != "$3/" ]; then
+      log 2 "key mismatch ($key, $3)"
       return 1
     fi
   elif [ "$1" == "s3" ]; then
     log 5 "$objects"
     filename=$(echo "$objects" | grep -v "InsecureRequestWarning" | awk '{print $4}')
-    if [ "$filename" != "$2" ]; then
-      log 2 "filename mismatch ($filename, $2)"
+    if [ "$filename" != "$3" ]; then
+      log 2 "filename mismatch ($filename, $3)"
       return 1
     fi
   fi

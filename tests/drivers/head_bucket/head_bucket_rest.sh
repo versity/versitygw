@@ -18,16 +18,23 @@ bucket_exists() {
   if ! check_param_count "bucket_exists" "bucket name" 1 $#; then
     return 2
   fi
-  local exists=0
-  head_bucket "rest" "$1" || exists=$?
-  log 5 "bucket exists response code: $exists"
-  # shellcheck disable=SC2181
-  if [ $exists -eq 2 ]; then
-    log 2 "unexpected error checking if bucket exists"
-    return 2
+  local response_code=0
+  exists=$(head_bucket_rest "$1" "check_bucket_existence_callback" 2>&1) || response_code=$?
+  echo "$exists"
+  return "$response_code"
+}
+
+check_bucket_existence_callback() {
+  if ! check_param_count_v2 "response code, response data" 2 $#; then
+    return 1
   fi
-  if [ $exists -eq 0 ]; then
+  if [ "$1" -eq 200 ]; then
+    echo "true"
     return 0
+  elif [ "$1" -eq 404 ]; then
+    echo "false"
+    return 1
   fi
-  return 1
+  echo "error checking if bucket exists (data: $2)"
+  return 2
 }

@@ -130,6 +130,22 @@ setup_policy_with_single_statement() {
   log 5 "policy data: $(cat "$1")"
 }
 
+setup_policy_with_single_statement_v2() {
+  if ! check_param_count_v2 "version, effect, principal, action, resource" 5 $#; then
+    return 1
+  fi
+  if ! policy_file=$(get_file_name 2>&1); then
+    log 2 "error getting policy file name"
+    return 1
+  fi
+  if ! setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "$1" "$2" "$3" "$4" "$5"; then
+    log 2 "error setting up policy"
+    return 1
+  fi
+  echo "$policy_file"
+  return 0
+}
+
 # params:  file, version, two sets:  effect, principal, action, resource
 # return 0 on success, 1 on error
 setup_policy_with_double_statement() {
@@ -174,7 +190,7 @@ get_and_check_policy() {
   if ! check_param_count "get_and_check_policy" "client, bucket, expected effect, principal, action, resource" 6 $#; then
     return 1
   fi
-  if ! get_bucket_policy "$1" "$BUCKET_ONE_NAME"; then
+  if ! get_bucket_policy "$1" "$2"; then
     log 2 "error getting bucket policy after setting"
     return 1
   fi

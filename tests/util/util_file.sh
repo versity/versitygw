@@ -219,6 +219,19 @@ create_large_file() {
   return 0
 }
 
+create_large_file_v2() {
+  if ! file_name=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $file_name"
+    return 1
+  fi
+  if ! create_large_file_with_size "$file_name" 160; then
+    log 2 "error creating 160MB file with name '$file_name'"
+    return 1
+  fi
+  echo "$file_name"
+  return 0
+}
+
 create_large_file_with_size() {
   if ! check_param_count_v2 "file name, size in MB" 2 $#; then
     return 1

@@ -33,9 +33,25 @@ setup_bucket_and_file_v2() {
     return 1
   fi
   if ! setup_bucket_and_file_base "$1" "setup_bucket_and_files_v2" "$2"; then
-    log 2 "error setting up bucket and files"
+    log 2 "error setting up bucket and file"
     return 1
   fi
+  return 0
+}
+
+setup_bucket_and_file_v3() {
+  if ! check_param_count_v2 "bucket env var" 1 $#; then
+    return 1
+  fi
+  if ! bucket_name=$(setup_bucket_v3 "$1" 2>&1); then
+    log 2 "error setting up bucket and file: $bucket_name"
+    return 1
+  fi
+  if ! test_file=$(create_test_file_v2 2>&1); then
+    log 2 "error creating test file: $test_file"
+    return 1
+  fi
+  echo "$bucket_name $test_file"
   return 0
 }
 
@@ -69,6 +85,27 @@ setup_bucket_and_files_v2() {
     log 2 "error setting up bucket and files"
     return 1
   fi
+  return 0
+}
+
+setup_bucket_and_files_v3() {
+  if ! check_param_count_v2 "bucket env var, file count" 2 $#; then
+    return 1
+  fi
+  local bucket_and_files=()
+  if ! bucket_name=$(setup_bucket_v3 "$1" 2>&1); then
+    log 2 "error setting up bucket"
+    return 1
+  fi
+  bucket_and_files=("$bucket_name")
+  for ((i=0;i<$2;i++)); do
+    if ! file_name=$(create_test_file_v2 2>&1); then
+      log 2 "error creating test file: $file_name"
+      return 1
+    fi
+    bucket_and_files+=("$file_name")
+  done
+  echo "${bucket_and_files[*]}"
   return 0
 }
 
@@ -121,6 +158,22 @@ setup_bucket_and_large_file_v2() {
     log 2 "error setting up bucket and large file"
     return 1
   fi
+  return 0
+}
+
+setup_bucket_and_large_file_v3() {
+  if ! check_param_count_v2 "bucket env var" 1 $#; then
+    return 1
+  fi
+  if ! bucket_name=$(setup_bucket_v3 "$1" 2>&1); then
+    log 2 "error setting up bucket: $bucket_name"
+    return 1
+  fi
+  if ! file_name=$(create_large_file_v2 "$file_name" 2>&1); then
+    log 2 "error creating large file: $file_name"
+    return 1
+  fi
+  echo "$bucket_name $file_name"
   return 0
 }
 
@@ -202,5 +255,36 @@ create_folder_if_needed_and_file() {
     log 2 "error creating test file '$file'"
     return 1
   fi
+  return 0
+}
+
+# optional parameter - file size
+# shellcheck disable=SC2120
+create_test_file_v2() {
+  if ! file_name=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $file_name"
+    return 1
+  fi
+  if ! error=$(create_test_file "$file_name" "$1" 2>&1); then
+    log 2 "error creating test file: $error"
+    return 1
+  fi
+  echo "$file_name"
+  return 0
+}
+
+get_file_names() {
+  if ! check_param_count_v2 "file name count" 1 $#; then
+    return 1
+  fi
+  file_names=()
+  for ((i=0;i<$1;i++)); do
+    if ! file_name=$(get_file_name 2>&1); then
+      log 2 "error getting file name: $file_name"
+      return 1
+    fi
+    file_names+=("$file_name")
+  done
+  echo "${file_names[*]}"
   return 0
 }

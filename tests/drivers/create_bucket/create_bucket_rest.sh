@@ -158,6 +158,31 @@ setup_bucket_v2() {
   return 0
 }
 
+setup_bucket_v3() {
+  if ! check_param_count_v2 "bucket env var" 1 $#; then
+    return 1
+  fi
+  if ! error=$(bucket_cleanup_if_bucket_exists_v2 "$1" 2>&1); then
+    log 2 "error cleaning up bucket(s), if it/they exist(s): $error"
+    return 1
+  fi
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    echo "$1"
+    return 0
+  else
+    if ! bucket_name=$(get_bucket_name "$1" 2>&1); then
+      log 2 "error getting bucket name: $bucket_name"
+      return 1
+    fi
+    if ! error=$(create_bucket_rest_expect_success "$bucket_name" "" 2>&1); then
+      log 2 "error creating bucket named '$bucket_name': $error"
+      return 1
+    fi
+  fi
+  echo "$bucket_name"
+  return 0
+}
+
 # params:  client, bucket name(s)
 # return 0 for success, 1 for failure
 setup_buckets() {
@@ -186,6 +211,22 @@ setup_buckets_v2() {
   return 0
 }
 
+setup_buckets_v3() {
+  if ! check_param_count_gt "minimum of 1 bucket env var" 1 $#; then
+    return 1
+  fi
+  local buckets=()
+  for name in "$@"; do
+    if ! bucket=$(setup_bucket_v3 "$name" 2>&1); then
+      log 2 "error setting up bucket '$name': $bucket"
+      return 1
+    fi
+    buckets+=("$bucket")
+  done
+  echo "${buckets[*]}"
+  return 0
+}
+
 get_bucket_name() {
   if ! check_param_count_v2 "bucket" 1 $#; then
     return 1
@@ -194,7 +235,14 @@ get_bucket_name() {
     echo "$1"
     return 0
   fi
-  echo "$1-$(date +%Y%m%d%H%M%S)"
+  if ! uuid=$(uuidgen 2>&1); then
+    log 2 "error getting UUID: $uuid"
+    return 1
+  fi
+  local bucket_name
+  bucket_name="$1-${uuid,,}"
+  echo "${bucket_name:0:63}"
+  return 0
 }
 
 setup_bucket_object_lock_enabled_v2() {

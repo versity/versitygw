@@ -14,6 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/file.sh
 source ./tests/report.sh
 
 # params: client, bucket name
@@ -24,7 +25,7 @@ source ./tests/report.sh
 head_bucket() {
   log 6 "head_bucket '$1' '$2'"
   if ! check_param_count "head_bucket" "client, bucket name" 2 $#; then
-    return 1
+    return 2
   fi
   local exit_code=0
   if [[ $1 == 's3api' ]] || [[ $1 == 's3' ]]; then
@@ -34,7 +35,7 @@ head_bucket() {
   elif [[ $1 == 'mc' ]]; then
     bucket_info=$(send_command mc --insecure stat "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
   elif [[ $1 == 'rest' ]]; then
-    bucket_info=$(head_bucket_rest "$2") || exit_code=$?
+    bucket_info=$(head_bucket_rest "$2" 2>&1) || exit_code=$?
     log 5 "head bucket rest exit code: $exit_code"
     return $exit_code
   else
@@ -42,12 +43,13 @@ head_bucket() {
   fi
   if [ $exit_code -ne 0 ]; then
     if [[ "$bucket_info" == *"404"* ]] || [[ "$bucket_info" == *"does not exist"* ]]; then
-      return 1
+      exit_code=1
+    else
+      exit_code=2
     fi
-    log 2 "error getting bucket info: $bucket_info"
-    return 2
+    echo "error getting bucket info: $bucket_info" >&2
+    return $exit_code
   fi
-  bucket_info="$(echo -n "$bucket_info" | grep -v "InsecureRequestWarning")"
   echo "$bucket_info"
   return 0
 }
@@ -57,20 +59,30 @@ head_bucket_rest() {
   if ! check_param_count_gt "bucket, callback, params (optional)" 1 $#; then
     return 2
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/head_bucket.sh 2>&1); then
+  if ! result_file=$(get_file_name 2>&1); then
+    log 2 "error getting result file: $result_file"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/$result_file" ./tests/rest_scripts/head_bucket.sh 2>&1); then
     log 2 "error getting head bucket: $result"
     return 2
   fi
+  local callback_code=0
+  if [ "$2" != "" ]; then
+    callback_result="$($2 "$result" "$TEST_FILE_FOLDER/$result_file" 2>&1)" || callback_code=$?
+    echo "$callback_result"
+    return "$callback_code"
+  fi
+  response_data="$(cat "$TEST_FILE_FOLDER/$result_file")"
   if [ "$result" == "200" ]; then
-    bucket_info="$(cat "$TEST_FILE_FOLDER/result.txt")"
-    echo "$bucket_info"
-    log 5 "bucket info: $bucket_info"
+    echo "$response_data"
     return 0
-  elif [ "$result" == "404" ]; then
-    log 5 "bucket '$1' not found"
+  fi
+  if [ "$result" == "404" ]; then
+    echo "$response_data"
     return 1
   fi
-  log 2 "unexpected response code '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+  echo "unexpected response code '$result' ($(cat "$TEST_FILE_FOLDER/$result_file"))" >&2
   return 2
 }
 
