@@ -106,6 +106,7 @@ const (
 	MetaTmpDir          = ".sgwtmp"
 	MetaTmpMultipartDir = MetaTmpDir + "/multipart"
 	onameAttr           = "objname"
+	inProgressSuffix    = ".inprogress"
 	tagHdr              = "X-Amz-Tagging"
 	oldMetaHdr          = "X-Amz-Meta"
 	metadataHdr         = "metadata"
@@ -1670,6 +1671,25 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", err
 	}
 
+	// Atomically rename the upload directory to <uploadID>.inprogress so that
+	// concurrent CompleteMultipartUpload calls for the same upload ID see it as
+	// absent and return ErrNoSuchUpload rather than racing through the rest of
+	// the function.  If this call does not succeed we rename it back (see the
+	// deferred cleanup below).
+	objdirFull := filepath.Join(bucket, MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
+	uploadIDDir := filepath.Join(objdirFull, uploadID)
+	activeUploadName := uploadID + inProgressSuffix
+	uploadIDInProgress := filepath.Join(objdirFull, activeUploadName)
+	if err := os.Rename(uploadIDDir, uploadIDInProgress); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		}
+		return res, "", fmt.Errorf("mark upload in-progress: %w", err)
+	}
+	// Best-effort rename back on failure so a future retry can still complete.
+	// On success, os.RemoveAll below removes uploadIDInProgress so this is a no-op.
+	defer os.Rename(uploadIDInProgress, uploadIDDir)
+
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, meta.ErrNoSuchKey) {
 		err = backend.EvaluateObjectPutPreconditions(string(b), input.IfMatch, input.IfNoneMatch, err == nil)
@@ -1680,7 +1700,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 
 	objdir := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
-	checksums, err := p.retrieveChecksums(nil, bucket, filepath.Join(objdir, uploadID))
+	checksums, err := p.retrieveChecksums(nil, bucket, filepath.Join(objdir, activeUploadName))
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return res, "", fmt.Errorf("get mp checksums: %w", err)
 	}
@@ -1723,7 +1743,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 
 		partNumber = *part.PartNumber
 
-		partObjPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *part.PartNumber))
+		partObjPath := filepath.Join(objdir, activeUploadName, fmt.Sprintf("%v", *part.PartNumber))
 		fullPartPath := filepath.Join(bucket, partObjPath)
 		fi, err := os.Lstat(fullPartPath)
 		if err != nil {
@@ -1784,7 +1804,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	var composableCsum string
 	var abortOnErrSet bool
 	for i, part := range parts {
-		partObjPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *part.PartNumber))
+		partObjPath := filepath.Join(objdir, activeUploadName, fmt.Sprintf("%v", *part.PartNumber))
 		fullPartPath := filepath.Join(bucket, partObjPath)
 		pf, err := os.Open(fullPartPath)
 		if err != nil {
@@ -1853,7 +1873,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 				if !abortOnErrSet {
 					defer func() {
 						// cleanup tmp dirs
-						os.RemoveAll(filepath.Join(bucket, objdir, uploadID))
+						os.RemoveAll(filepath.Join(bucket, objdir, activeUploadName))
 						// use Remove for objdir in case there are still other
 						// uploads for same object name outstanding, this will
 						// fail if there are any
@@ -1878,7 +1898,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		}
 	}
 
-	upiddir := filepath.Join(objdir, uploadID)
+	upiddir := filepath.Join(objdir, activeUploadName)
 
 	objMeta := p.loadObjectMetaProperties(nil, bucket, upiddir, nil)
 	err = p.storeObjectMetaProperties(f.File(), bucket, object, objMeta)
@@ -2031,7 +2051,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	}
 
 	// cleanup tmp dirs
-	os.RemoveAll(filepath.Join(bucket, objdir, uploadID))
+	os.RemoveAll(filepath.Join(bucket, objdir, activeUploadName))
 	// use Remove for objdir in case there are still other uploads
 	// for same object name outstanding, this will fail if there are any
 	os.Remove(filepath.Join(bucket, objdir))
@@ -2465,6 +2485,10 @@ func (p *Posix) ListMultipartUploads(ctx context.Context, mpu *s3.ListMultipartU
 
 		for _, upid := range upids {
 			if !upid.IsDir() {
+				continue
+			}
+			// skip directories that are currently being completed
+			if strings.HasSuffix(upid.Name(), inProgressSuffix) {
 				continue
 			}
 
