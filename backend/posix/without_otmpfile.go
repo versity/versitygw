@@ -61,6 +61,8 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	if doChown {
 		err := f.Chown(uid, gid)
 		if err != nil {
+			f.Close()
+			os.Remove(f.Name())
 			return nil, fmt.Errorf("set temp file ownership: %w", err)
 		}
 	}
