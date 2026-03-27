@@ -282,18 +282,18 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 	}
 
 	return s.Posix.CompleteMultipartUploadWithCopy(ctx, input,
-		func(from *os.File, to *os.File) error {
+		func(from *os.File, to *os.File) (bool, error) {
 			// May fail if the files are not 4K aligned; check for alignment
 			ffi, err := from.Stat()
 			if err != nil {
-				return fmt.Errorf("complete-mpu stat from: %w", err)
+				return true, fmt.Errorf("complete-mpu stat from: %w", err)
 			}
 			tfi, err := to.Stat()
 			if err != nil {
-				return fmt.Errorf("complete-mpu stat to: %w", err)
+				return true, fmt.Errorf("complete-mpu stat to: %w", err)
 			}
 			if ffi.Size()%4096 != 0 || tfi.Size()%4096 != 0 {
-				return os.ErrInvalid
+				return true, os.ErrInvalid
 			}
 
 			err = s.setProjectID(to, acct.ProjectID)
@@ -304,10 +304,13 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 
 			err = scoutfs.MoveData(from, to)
 			if err != nil {
-				return fmt.Errorf("complete-mpu movedata: %w", err)
+				return true, fmt.Errorf("complete-mpu movedata: %w", err)
 			}
 
-			return nil
+			// once scoutfs.MoveData is successful, we are no longer
+			// idempotent since we have moved the extents from the
+			// source file
+			return false, nil
 		})
 }
 

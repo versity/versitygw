@@ -1623,13 +1623,20 @@ type onlyRead struct {
 	io.Reader
 }
 
-func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.CompleteMultipartUploadInput, customMove func(from *os.File, to *os.File) error) (s3response.CompleteMultipartUploadResult, string, error) {
+// CustomCopyFunc implements copying/moving data from one file descriptor
+// to another. The bool return signifies if function is idempotent. If true
+// the system will allow clients to retry CompleteMultipartUpload. If
+// false, then once a copy function is called successfully the upload will
+// be completely aborted on any subsequent failure.
+type CustomCopyFunc func(from *os.File, to *os.File) (bool, error)
+
+func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.CompleteMultipartUploadInput, customCopy CustomCopyFunc) (s3response.CompleteMultipartUploadResult, string, error) {
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
 	}
 
-	var res s3response.CompleteMultipartUploadResult
+	res := s3response.CompleteMultipartUploadResult{}
 
 	if input.Key == nil {
 		return res, "", s3err.GetAPIError(s3err.ErrNoSuchKey)
@@ -1775,6 +1782,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	defer f.cleanup()
 
 	var composableCsum string
+	var abortOnErrSet bool
 	for i, part := range parts {
 		partObjPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *part.PartNumber))
 		fullPartPath := filepath.Join(bucket, partObjPath)
@@ -1824,8 +1832,8 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			}
 		}
 
-		if customMove != nil {
-			err = customMove(pf, f.File())
+		if customCopy != nil {
+			idemp, err := customCopy(pf, f.File())
 			if err != nil {
 				// Fail back to standard copy
 				debuglogger.Logf("custom data block move failed (%q/%q): %v, failing back to io.Copy()",
@@ -1837,6 +1845,22 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 				} else {
 					_, err = io.Copy(fw, pf)
 				}
+			}
+			if !idemp && err == nil {
+				// a successful non-idempotent call means we can no longer
+				// retry this upload. any failure needs to abort the complete
+				// upload.
+				if !abortOnErrSet {
+					defer func() {
+						// cleanup tmp dirs
+						os.RemoveAll(filepath.Join(bucket, objdir, uploadID))
+						// use Remove for objdir in case there are still other
+						// uploads for same object name outstanding, this will
+						// fail if there are any
+						os.Remove(filepath.Join(bucket, objdir))
+					}()
+				}
+				abortOnErrSet = true
 			}
 		} else {
 			if p.forceNoCopyFileRange {
@@ -2009,7 +2033,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	// cleanup tmp dirs
 	os.RemoveAll(filepath.Join(bucket, objdir, uploadID))
 	// use Remove for objdir in case there are still other uploads
-	// for same object name outstanding, this will fail if there are
+	// for same object name outstanding, this will fail if there are any
 	os.Remove(filepath.Join(bucket, objdir))
 
 	return s3response.CompleteMultipartUploadResult{
