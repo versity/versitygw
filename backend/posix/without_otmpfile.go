@@ -88,7 +88,22 @@ func (tmp *tmpfile) link() error {
 		return fmt.Errorf("close tmpfile: %w", err)
 	}
 
-	return backend.MoveFile(tempname, objPath, defaultFilePerm)
+	err = backend.MoveFile(tempname, objPath, defaultFilePerm)
+	if errors.Is(err, syscall.ENOENT) {
+		// The parent directory may have been concurrently removed; recreate and retry.
+		for {
+			mkErr := os.MkdirAll(filepath.Dir(objPath), 0o755)
+			if mkErr != nil {
+				return fmt.Errorf("recreate parent dir: %w", mkErr)
+			}
+			err = backend.MoveFile(tempname, objPath, defaultFilePerm)
+			if errors.Is(err, syscall.ENOENT) {
+				continue
+			}
+			break
+		}
+	}
+	return err
 }
 
 func (tmp *tmpfile) Write(b []byte) (int, error) {

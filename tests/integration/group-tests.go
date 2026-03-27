@@ -867,6 +867,7 @@ func TestPosix(ts *TestState) {
 	ts.Run(CopyObject_overwrite_same_dir_object)
 	ts.Run(CopyObject_overwrite_same_file_object)
 	ts.Run(DeleteObject_directory_not_empty)
+	ts.Run(PutObject_race_with_delete)
 	// posix specific versioning tests
 	if !ts.conf.versioningEnabled {
 		TestVersioningDisabled(ts)
@@ -1744,6 +1745,7 @@ func GetIntTests() IntTests {
 		"PutObject_overwrite_file_obj_with_nested_obj":                             PutObject_overwrite_file_obj_with_nested_obj,
 		"PutObject_dir_obj_with_data":                                              PutObject_dir_obj_with_data,
 		"PutObject_with_slashes":                                                   PutObject_with_slashes,
+		"PutObject_race_with_delete":                                               PutObject_race_with_delete,
 		"CreateMultipartUpload_dir_obj":                                            CreateMultipartUpload_dir_obj,
 		"IAM_user_access_denied":                                                   IAM_user_access_denied,
 		"IAM_userplus_access_denied":                                               IAM_userplus_access_denied,

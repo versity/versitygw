@@ -159,6 +159,34 @@ func (tmp *tmpfile) falloc() error {
 	return nil
 }
 
+const maxLinkRetries = 3
+
+// linkatOTmpfile links the O_TMPFILE identified by procdir/fdName into dir/basename.
+// Handles EEXIST by linking to a temporary name and atomically renaming it into place.
+// Raw errors are returned unwrapped so callers can inspect errno values (e.g. ENOENT).
+func linkatOTmpfile(procdirFd, dirFd int, fdName, basename string) error {
+	err := unix.Linkat(procdirFd, fdName, dirFd, basename, unix.AT_SYMLINK_FOLLOW)
+	if !errors.Is(err, syscall.EEXIST) {
+		return err
+	}
+	// Linkat cannot overwrite an existing file; link to a temp name then rename atomically.
+	for retries := 1; ; retries++ {
+		tmpName := fmt.Sprintf(".%s.sgwtmp.%d", basename, time.Now().UnixNano())
+		err := unix.Linkat(procdirFd, fdName, dirFd, tmpName, unix.AT_SYMLINK_FOLLOW)
+		if errors.Is(err, syscall.EEXIST) && retries < maxLinkRetries {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("cannot find free temporary file: %w", err)
+		}
+		err = unix.Renameat(dirFd, tmpName, dirFd, basename)
+		if err != nil {
+			return fmt.Errorf("overwriting renameat failed: %w", err)
+		}
+		return nil
+	}
+}
+
 func (tmp *tmpfile) link() error {
 	// make sure this is cleaned up in all error cases
 	defer tmp.f.Close()
@@ -195,31 +223,24 @@ func (tmp *tmpfile) link() error {
 	}
 	defer dirf.Close()
 
-	err = unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
-		int(dirf.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
-	if errors.Is(err, syscall.EEXIST) {
-		// Linkat cannot overwrite files; we will allocate a temporary file, Linkat to it and then Renameat it
-		// to avoid potential race condition
-		retries := 1
-		for {
-			tmpName := fmt.Sprintf(".%s.sgwtmp.%d", filepath.Base(objPath), time.Now().UnixNano())
-			err := unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
-				int(dirf.Fd()), tmpName, unix.AT_SYMLINK_FOLLOW)
-			if errors.Is(err, syscall.EEXIST) && retries < 3 {
-				retries += 1
-				continue
-			}
-			if err != nil {
-				return fmt.Errorf("cannot find free temporary file: %w", err)
-			}
-
-			err = unix.Renameat(int(dirf.Fd()), tmpName, int(dirf.Fd()), filepath.Base(objPath))
-			if err != nil {
-				return fmt.Errorf("overwriting renameat failed: %w", err)
-			}
-			break
+	err = linkatOTmpfile(int(procdir.Fd()), int(dirf.Fd()),
+		filepath.Base(tmp.f.Name()), filepath.Base(objPath))
+	if errors.Is(err, syscall.ENOENT) {
+		// The parent directory was concurrently removed (e.g. by a racing
+		// DeleteObject+removeParents). Recreate it and retry once.
+		dirf.Close()
+		if mkErr := backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.needsChown, tmp.newDirPerm); mkErr != nil {
+			return fmt.Errorf("recreate parent dir: %w", mkErr)
 		}
-	} else if err != nil {
+		dirf, err = os.Open(dir)
+		if err != nil {
+			return fmt.Errorf("open parent dir: %w", err)
+		}
+		defer dirf.Close()
+		err = linkatOTmpfile(int(procdir.Fd()), int(dirf.Fd()),
+			filepath.Base(tmp.f.Name()), filepath.Base(objPath))
+	}
+	if err != nil {
 		return fmt.Errorf("link tmpfile (fd %q as %q): %w",
 			filepath.Base(tmp.f.Name()), objPath, err)
 	}
@@ -245,6 +266,21 @@ func (tmp *tmpfile) fallbackLink() error {
 
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
 	err = os.Rename(tempname, objPath)
+	if errors.Is(err, syscall.ENOENT) {
+		// The parent directory was concurrently removed; recreate and retry.
+		dir := filepath.Dir(objPath)
+		for {
+			mkErr := backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.needsChown, tmp.newDirPerm)
+			if mkErr != nil {
+				return fmt.Errorf("recreate parent dir: %w", mkErr)
+			}
+			err = os.Rename(tempname, objPath)
+			if errors.Is(err, syscall.ENOENT) {
+				continue
+			}
+			break
+		}
+	}
 	if err != nil {
 		// rename only works for files within the same filesystem
 		// if this fails fallback to copy
