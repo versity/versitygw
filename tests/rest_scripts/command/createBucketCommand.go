@@ -13,16 +13,16 @@ type CreateBucketCommandXML struct {
 }
 
 type CreateBucketCommand struct {
-	*S3Command
+	*S3RequestBuilder
 	Config *CreateBucketCommandXML
 }
 
-func NewCreateBucketCommand(s3Command *S3Command, locationConstraint string, constraintSet bool) (*CreateBucketCommand, error) {
-	if s3Command.BucketName == "" {
+func NewCreateBucketCommand(s3Command *S3RequestBuilder, locationConstraint string, constraintSet bool) (*CreateBucketCommand, error) {
+	if s3Command.Config.BucketName == "" {
 		return nil, errors.New("CreateBucket must have bucket name")
 	}
-	s3Command.Method = "PUT"
-	s3Command.Query = ""
+	s3Command.Config.Method = "PUT"
+	s3Command.Config.Query = ""
 	var config *CreateBucketCommandXML = nil
 	if constraintSet {
 		config = &CreateBucketCommandXML{
@@ -31,15 +31,15 @@ func NewCreateBucketCommand(s3Command *S3Command, locationConstraint string, con
 		}
 	}
 	command := &CreateBucketCommand{
-		S3Command: s3Command,
-		Config:    config,
+		S3RequestBuilder: s3Command,
+		Config:           config,
 	}
 	if constraintSet {
 		xmlData, err := xml.Marshal(command.Config)
 		if err != nil {
 			return nil, fmt.Errorf("error marshalling XML: %w", err)
 		}
-		command.Payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + string(xmlData)
+		s3Command.Config.Payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + string(xmlData)
 	}
 	return command, nil
 }

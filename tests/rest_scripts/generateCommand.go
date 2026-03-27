@@ -75,6 +75,8 @@ type restParams map[string]string
 
 var paramSeparator *string
 
+var writeXMLPayloadToFile *string
+
 func (r *restParams) String() string {
 	return fmt.Sprintf("%v", *r)
 }
@@ -110,43 +112,46 @@ func main() {
 		log.Fatalf("Error validating config: %v", err)
 	}
 
-	baseCommand := &command.S3Command{
-		Method:                *method,
-		Url:                   *url,
-		BucketName:            *bucketName,
-		ObjectKey:             *objectKey,
-		Query:                 *query,
-		AwsRegion:             *awsRegion,
-		AwsAccessKeyId:        *awsAccessKeyId,
-		AwsSecretAccessKey:    *awsSecretAccessKey,
-		ServiceName:           *serviceName,
-		SignedParams:          signedParamsMap,
-		UnsignedParams:        unsignedParamsMap,
-		PayloadFile:           *payloadFile,
-		IncorrectSignature:    *incorrectSignature,
-		AuthorizationScheme:   *authorizationScheme,
-		IncorrectCredential:   *incorrectCredential,
-		IncorrectYearMonthDay: *incorrectYearMonthDay,
-		InvalidYearMonthDay:   *invalidYearMonthDay,
-		Payload:               *payload,
-		ContentMD5:            *contentMD5,
-		IncorrectContentMD5:   *incorrectContentMD5,
-		CustomContentMD5:      *customContentMD5,
-		MissingHostParam:      *missingHostParam,
-		FilePath:              *filePath,
-		CustomHostParam:       *customHostParam,
-		CustomHostParamSet:    customHostParamSet,
-		PayloadType:           *payloadType,
-		ChunkSize:             *chunkSize,
-		ChecksumType:          *checksumType,
-		OmitPayloadTrailer:    *omitPayloadTrailer,
-		OmitPayloadTrailerKey: *omitPayloadTrailerKey,
-		OmitContentLength:     *omitContentLength,
-		OmitSHA256Hash:        *omitSHA256Hash,
-		CustomSHA256Hash:      *customSHA256Hash,
-		Client:                *client,
-		OmitDate:              *omitDate,
-		CustomDate:            *customDate,
+	baseCommand := &command.S3RequestBuilder{
+		Config: &command.S3RequestConfigData{
+			Method:                *method,
+			Url:                   *url,
+			BucketName:            *bucketName,
+			ObjectKey:             *objectKey,
+			Query:                 *query,
+			AwsRegion:             *awsRegion,
+			AwsAccessKeyId:        *awsAccessKeyId,
+			AwsSecretAccessKey:    *awsSecretAccessKey,
+			ServiceName:           *serviceName,
+			SignedParams:          signedParamsMap,
+			UnsignedParams:        unsignedParamsMap,
+			PayloadFile:           *payloadFile,
+			IncorrectSignature:    *incorrectSignature,
+			AuthorizationScheme:   *authorizationScheme,
+			IncorrectCredential:   *incorrectCredential,
+			IncorrectYearMonthDay: *incorrectYearMonthDay,
+			InvalidYearMonthDay:   *invalidYearMonthDay,
+			Payload:               *payload,
+			ContentMD5:            *contentMD5,
+			IncorrectContentMD5:   *incorrectContentMD5,
+			CustomContentMD5:      *customContentMD5,
+			MissingHostParam:      *missingHostParam,
+			FilePath:              *filePath,
+			CustomHostParam:       *customHostParam,
+			CustomHostParamSet:    customHostParamSet,
+			PayloadType:           *payloadType,
+			ChunkSize:             *chunkSize,
+			ChecksumType:          *checksumType,
+			OmitPayloadTrailer:    *omitPayloadTrailer,
+			OmitPayloadTrailerKey: *omitPayloadTrailerKey,
+			OmitContentLength:     *omitContentLength,
+			OmitSHA256Hash:        *omitSHA256Hash,
+			CustomSHA256Hash:      *customSHA256Hash,
+			Client:                *client,
+			OmitDate:              *omitDate,
+			CustomDate:            *customDate,
+			WriteXMLPayloadToFile: *writeXMLPayloadToFile,
+		},
 	}
 
 	s3Command, err := getS3CommandType(baseCommand)
@@ -158,7 +163,7 @@ func main() {
 	}
 }
 
-func getS3CommandType(baseCommand *command.S3Command) (command.S3CommandConverter, error) {
+func getS3CommandType(baseCommand *command.S3RequestBuilder) (command.S3CommandConverter, error) {
 	var s3Command command.S3CommandConverter
 	var err error
 	switch *commandType {
@@ -261,6 +266,7 @@ func checkFlags() error {
 	flag.Var(&tagValues, "tagValue", "Tag value (can add multiple)")
 	locationConstraint = flag.String("locationConstraint", "", "Location constraint for bucket creation")
 	flag.Var(&corsRules, "corsRule", "CORS rule for PutBucketCORS command (can add multiple)")
+	writeXMLPayloadToFile = flag.String("writeXMLPayloadToFile", "", "for curl commands, file to write XML payloads to")
 	// Parse the flags
 	flag.Parse()
 

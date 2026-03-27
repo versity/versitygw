@@ -61,7 +61,11 @@ send_rest_command() {
     fi
     log 5 "output file: $output_file"
   else
-    output_file="$TEST_FILE_FOLDER/output.txt"
+    if ! file_name=$(get_file_name 2>&1); then
+      log 2 "error getting file name: $file_name"
+      return 1
+    fi
+    output_file="$TEST_FILE_FOLDER/$file_name"
   fi
   local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$output_file")
   if [ "$1" != "" ]; then
@@ -175,17 +179,22 @@ send_rest_command_expect_success_callback() {
 }
 
 rest_go_command_perform_send() {
-  if ! curl_command=$(go run ./tests/rest_scripts/generateCommand.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -awsRegion "$AWS_REGION" -url "$AWS_ENDPOINT_URL" "$@" 2>&1); then
+  if ! xml_file=$(get_file_name 2>&1); then
+    log 2 "error getting XML file name: $xml_file"
+    return 1
+  fi
+  if ! curl_command=$(go run ./tests/rest_scripts/generateCommand.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -awsRegion "$AWS_REGION" -url "$AWS_ENDPOINT_URL" "-writeXMLPayloadToFile" "$xml_file" "$@" 2>&1); then
     log 2 "error: $curl_command"
     return 1
   fi
-  local full_command="send_command $curl_command"
-  log 5 "full command: $full_command"
-  if ! result=$(eval "${full_command[*]}" 2>&1); then
+  curl_command=$(echo -n "$curl_command" | tr -d '\n')
+  mapfile -t curl_command_array < <(
+    printf '%s' "$curl_command" | python3 -c 'import shlex, sys; [print(arg) for arg in shlex.split(sys.stdin.read())]'
+  )
+  if ! result=$(send_command "${curl_command_array[@]}" 2>&1); then
     log 2 "error sending command: $result"
     return 1
   fi
-  log 5 "result: $result"
   echo "$result"
 }
 
@@ -372,14 +381,18 @@ check_for_header_key_and_value() {
 }
 
 check_argument_name_and_value() {
-  if ! check_param_count_v2 "data file" 1 $#; then
+  if ! check_param_count_v2 "data file, argument name, argument value" 3 $#; then
     return 1
   fi
-  if ! check_error_parameter "$1" "ArgumentName" "$argument_name"; then
+  if ! xml_data=$(print_xml_data_to_file "$1" 2>&1); then
+    log 2 "error getting XML data: $xml_data"
+    return 1
+  fi
+  if ! check_error_parameter "$xml_data" "ArgumentName" "$2"; then
     log 2 "error checking 'ArgumentName' parameter"
     return 1
   fi
-  if ! check_error_parameter "$1" "ArgumentValue" "$argument_value"; then
+  if ! check_error_parameter "$xml_data" "ArgumentValue" "$3"; then
     log 2 "error checking 'ArgumentValue' parameter"
     return 1
   fi
@@ -390,9 +403,7 @@ send_rest_go_command_expect_error_with_arg_name_value() {
   if ! check_param_count_gt "response code, error code, message, arg name, arg value, params" 5 $#; then
     return 1
   fi
-  argument_name=$4
-  argument_value=$5
-  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "check_argument_name_and_value" "${@:6}"; then
+  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "check_argument_name_and_value" "${@:6}" "--" "$4" "$5"; then
     log 2 "error checking error response values"
     return 1
   fi

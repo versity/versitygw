@@ -32,9 +32,9 @@ type CORSConfiguration struct {
 	CORSRules    []*CORSRule
 }
 
-func NewPutBucketCORSCommand(command *S3Command, ruleStrings []string) (*S3Command, error) {
-	command.Method = "PUT"
-	command.Query = "cors"
+func NewPutBucketCORSCommand(command *S3RequestBuilder, ruleStrings []string) (*S3RequestBuilder, error) {
+	command.Config.Method = "PUT"
+	command.Config.Query = "cors"
 	corsConfiguration := &CORSConfiguration{
 		XMLNamespace: "https://s3.amazonaws.com/doc/2006-03-01/",
 	}
@@ -50,7 +50,7 @@ func NewPutBucketCORSCommand(command *S3Command, ruleStrings []string) (*S3Comma
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling XML: %w", err)
 	}
-	command.Payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + string(xmlData)
+	command.Config.Payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + string(xmlData)
 	return command, nil
 }
 

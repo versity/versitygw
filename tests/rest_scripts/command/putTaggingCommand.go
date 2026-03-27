@@ -7,17 +7,17 @@ import (
 )
 
 type PutTaggingCommand struct {
-	*S3Command
+	*S3RequestBuilder
 	TagCount *int
 	Tags     *Tagging
 }
 
 func (p *PutTaggingCommand) createTaggingPayload(fields *TaggingFields) error {
-	p.Method = "PUT"
-	if p.Query != "" {
-		p.Query = "tagging=&" + p.Query
+	p.Config.Method = "PUT"
+	if p.Config.Query != "" {
+		p.Config.Query = "tagging=&" + p.Config.Query
 	} else {
-		p.Query = "tagging="
+		p.Config.Query = "tagging="
 	}
 	if len(fields.TagKeys) != len(fields.TagValues) {
 		return errors.New("must be same number of tag keys and tag values")
@@ -40,6 +40,6 @@ func (p *PutTaggingCommand) createTaggingPayload(fields *TaggingFields) error {
 	if err != nil {
 		return fmt.Errorf("error marshalling XML: %w", err)
 	}
-	p.Payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + string(xmlData)
+	p.Config.Payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + string(xmlData)
 	return nil
 }
