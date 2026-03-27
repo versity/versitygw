@@ -92,6 +92,10 @@ func (invalidPolicyDocument) InvalidJSON() APIError {
 	return invalidPolicyDocumentErr("Invalid Policy: Invalid JSON.")
 }
 
+func (invalidPolicyDocument) UnexpectedField(field string) APIError {
+	return invalidPolicyDocumentErr("Invalid Policy: Unexpected: %q", field)
+}
+
 func (invalidPolicyDocument) MissingExpiration() APIError {
 	return invalidPolicyDocumentErr("Invalid Policy: Policy missing expiration.")
 }

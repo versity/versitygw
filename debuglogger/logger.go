@@ -266,10 +266,21 @@ func wrapText(text string, width int) []string {
 // TODO: remove this and use utils.IsBidDataAction after refactoring
 // and creating 'internal' package
 func isLargeDataAction(ctx *fiber.Ctx) bool {
-	if ctx.Method() == http.MethodPut && len(strings.Split(ctx.Path(), "/")) >= 3 {
+	pathParts := strings.Split(ctx.Path(), "/")
+
+	// PutObject and UploadPart
+	if ctx.Method() == http.MethodPut && len(pathParts) >= 3 {
 		if !ctx.Request().URI().QueryArgs().Has("tagging") && ctx.Get("X-Amz-Copy-Source") == "" && !ctx.Request().URI().QueryArgs().Has("acl") {
 			return true
 		}
 	}
+
+	isBucketAction := (len(pathParts) == 3 && pathParts[2] == "") || (len(pathParts) == 2 && pathParts[1] != "")
+
+	// POST object action
+	if isBucketAction && ctx.Method() == http.MethodPost {
+		return true
+	}
+
 	return false
 }

@@ -28,6 +28,11 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
+const (
+	policyFieldExpiration = "expiration"
+	policyFieldConditions = "conditions"
+)
+
 // POSTPolicy is the parsed browser-based upload policy document.
 type POSTPolicy struct {
 	expiration time.Time
@@ -49,12 +54,7 @@ type postPolicyCondition interface {
 	validate() error
 	match(PostPolicyEvalInput) error
 	coveredField() string
-}
-
-// rawPolicy mirrors the JSON structure of an incoming POST policy document.
-type rawPolicy struct {
-	Expiration string            `json:"expiration"`
-	Conditions []json.RawMessage `json:"conditions"`
+	isBucketCondition() bool
 }
 
 // ParsePOSTPolicyBase64 decodes and validates a base64-encoded POST policy.
@@ -64,29 +64,51 @@ func ParsePOSTPolicyBase64(encoded string) (*POSTPolicy, error) {
 		return nil, err
 	}
 
-	var rp rawPolicy
+	var rp map[string]json.RawMessage
 	err = json.Unmarshal(raw, &rp)
 	if err != nil {
 		debuglogger.Logf("invalid POST policy JSON: %v", err)
 		return nil, s3err.InvalidPolicyDocument.InvalidJSON()
 	}
 
-	if strings.TrimSpace(rp.Expiration) == "" {
+	if _, ok := rp[policyFieldExpiration]; !ok {
 		debuglogger.Logf("POST policy is missing expiration")
 		return nil, s3err.InvalidPolicyDocument.MissingExpiration()
 	}
-	if len(rp.Conditions) == 0 {
+
+	if _, ok := rp[policyFieldConditions]; !ok {
 		debuglogger.Logf("POST policy is missing conditions")
 		return nil, s3err.InvalidPolicyDocument.MissingConditions()
 	}
 
-	exp, err := parseExpiration(rp.Expiration)
+	var conditions []json.RawMessage
+	var expiration string
+
+	for key, value := range rp {
+		switch key {
+		case policyFieldConditions:
+			if err := json.Unmarshal(value, &conditions); err != nil {
+				debuglogger.Logf("POST policy invalid conditions: %s", value)
+				return nil, s3err.InvalidPolicyDocument.InvalidConditions()
+			}
+		case policyFieldExpiration:
+			if err := json.Unmarshal(value, &expiration); err != nil {
+				debuglogger.Logf("POST policy invalid expiration: %s", value)
+				return nil, s3err.InvalidPolicyDocument.InvalidJSON()
+			}
+		default:
+			debuglogger.Logf("POST policy document unexpected field: %s", key)
+			return nil, s3err.InvalidPolicyDocument.UnexpectedField(key)
+		}
+	}
+
+	exp, err := parseExpiration(expiration)
 	if err != nil {
 		return nil, err
 	}
 
-	conds := make([]postPolicyCondition, 0, len(rp.Conditions))
-	for _, rawCond := range rp.Conditions {
+	conds := make([]postPolicyCondition, 0, len(conditions))
+	for _, rawCond := range conditions {
 		parsed, err := parseCondition(rawCond)
 		if err != nil {
 			return nil, err
@@ -139,10 +161,22 @@ func (p *POSTPolicy) Evaluate(in PostPolicyEvalInput) error {
 		}
 	}
 
+	var metBucketCondition bool
 	for _, cond := range p.conditions {
 		if err := cond.match(in); err != nil {
 			return err
 		}
+
+		if !metBucketCondition && cond.isBucketCondition() {
+			metBucketCondition = true
+		}
+	}
+
+	if !metBucketCondition {
+		// the bucket condition is mandatory for all policies
+		// it can be provided either with 'eq' or 'starts-with' operators
+		debuglogger.Logf("POST policy is missing the mandatory 'bucket' condition")
+		return s3err.InvalidPolicyDocument.ExtraInputField("bucket")
 	}
 
 	return nil
@@ -154,6 +188,11 @@ type exactCondition struct {
 	field        string
 	value        string
 	rawCondition []byte
+}
+
+// isBucketCondition checks if the condition field is 'bucket'
+func (c exactCondition) isBucketCondition() bool {
+	return c.field == "bucket"
 }
 
 // condition returns the policy expression used in condition failure messages.
@@ -202,6 +241,11 @@ type startsWithCondition struct {
 	rawCondition []byte
 }
 
+// isBucketCondition checks if the condition field is 'bucket'
+func (c startsWithCondition) isBucketCondition() bool {
+	return c.field == "bucket"
+}
+
 // condition returns the original policy expression for failure reporting.
 func (c startsWithCondition) condition() string {
 	return string(c.rawCondition)
@@ -239,6 +283,11 @@ func (c startsWithCondition) coveredField() string { return c.field }
 type contentLengthRangeCondition struct {
 	min int64
 	max int64
+}
+
+// isBucketCondition checks if the condition field is 'bucket'
+func (c contentLengthRangeCondition) isBucketCondition() bool {
+	return false
 }
 
 // validate accepts any parsed range and leaves size enforcement to match.
@@ -436,11 +485,11 @@ func parseCondition(raw json.RawMessage) (postPolicyCondition, error) {
 			return nil, s3err.InvalidPolicyDocument.IncorrectConditionArgumentsNumber(op)
 		}
 
-		min, err := parseJSONInt64(arr[1], raw)
+		min, err := parseJSONInt64(arr[1])
 		if err != nil {
 			return nil, err
 		}
-		max, err := parseJSONInt64(arr[2], raw)
+		max, err := parseJSONInt64(arr[2])
 		if err != nil {
 			return nil, err
 		}
@@ -454,7 +503,7 @@ func parseCondition(raw json.RawMessage) (postPolicyCondition, error) {
 
 // parseJSONInt64 parses an integer condition operand from either a JSON number
 // or a quoted decimal string.
-func parseJSONInt64(raw json.RawMessage, rawCondition json.RawMessage) (int64, error) {
+func parseJSONInt64(raw json.RawMessage) (int64, error) {
 	// try parsing as JSON number
 	var num json.Number
 	dec := json.NewDecoder(bytes.NewReader(raw))
@@ -475,7 +524,7 @@ func parseJSONInt64(raw json.RawMessage, rawCondition json.RawMessage) (int64, e
 		v, err := strconv.ParseInt(s, 10, 64)
 		if err != nil {
 			debuglogger.Logf("invalid POST policy quoted integer: %s", s)
-			return 0, s3err.InvalidPolicyDocument.ConditionFailed(string(rawCondition))
+			return 0, s3err.InvalidPolicyDocument.InvalidJSON()
 		}
 		return v, nil
 	}
@@ -487,8 +536,11 @@ func parseJSONInt64(raw json.RawMessage, rawCondition json.RawMessage) (int64, e
 // rawScalarToString converts a JSON scalar that is valid in policy conditions
 // into its string representation.
 func rawScalarToString(raw json.RawMessage) (string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+
 	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
+	if err := decoder.Decode(&v); err != nil {
 		return "", err
 	}
 

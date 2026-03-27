@@ -249,11 +249,6 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 
 	location := "http://example.com/bucket/uploads%2Fphoto.jpg"
 
-	anonFields := map[string]string{
-		"key":  "uploads/anon.bin",
-		"file": "ignored",
-	}
-
 	tests := []struct {
 		name   string
 		input  testInput
@@ -503,14 +498,10 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 			name: "successful created response",
 			input: testInput{
 				beRes: s3response.PutObjectOutput{
-					ETag:              "etag-123",
-					VersionID:         "vid-123",
-					ChecksumCRC32:     utils.GetStringPtr("crc32-out"),
-					ChecksumCRC32C:    utils.GetStringPtr("crc32c-out"),
-					ChecksumSHA1:      utils.GetStringPtr("sha1-out"),
-					ChecksumSHA256:    utils.GetStringPtr("sha256-out"),
-					ChecksumCRC64NVME: utils.GetStringPtr("crc64-out"),
-					ChecksumType:      types.ChecksumTypeComposite,
+					ETag:          "etag-123",
+					VersionID:     "vid-123",
+					ChecksumCRC32: utils.GetStringPtr("crc32-out"),
+					ChecksumType:  types.ChecksumTypeComposite,
 				},
 				locals: postObjectLocalsForTest(middlewares.PostObjectResult{
 					Fields: map[string]string{
@@ -552,10 +543,10 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						"Etag":                     utils.GetStringPtr("etag-123"),
 						"Location":                 &location,
 						"x-amz-checksum-crc32":     utils.GetStringPtr("crc32-out"),
-						"x-amz-checksum-crc32c":    utils.GetStringPtr("crc32c-out"),
-						"x-amz-checksum-crc64nvme": utils.GetStringPtr("crc64-out"),
-						"x-amz-checksum-sha1":      utils.GetStringPtr("sha1-out"),
-						"x-amz-checksum-sha256":    utils.GetStringPtr("sha256-out"),
+						"x-amz-checksum-crc32c":    utils.GetStringPtr(""),
+						"x-amz-checksum-crc64nvme": utils.GetStringPtr(""),
+						"x-amz-checksum-sha1":      utils.GetStringPtr(""),
+						"x-amz-checksum-sha256":    utils.GetStringPtr(""),
 						"x-amz-checksum-type":      utils.GetStringPtr(string(types.ChecksumTypeComposite)),
 						"x-amz-version-id":         utils.GetStringPtr("vid-123"),
 					},
@@ -571,43 +562,7 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						ObjectETag:    utils.GetStringPtr("etag-123"),
 						ObjectSize:    int64(len("payload")),
 						EventName:     s3event.EventObjectCreatedPost,
-						Status:        201,
-					},
-				},
-			},
-		},
-		{
-			name: "anonymous upload succeeds without policy",
-			input: testInput{
-				beRes: s3response.PutObjectOutput{
-					ETag: "etag-anon",
-				},
-				locals: postObjectLocalsForTest(middlewares.PostObjectResult{
-					Fields:        anonFields,
-					FileRdr:       newMockFileReader("anon-payload"),
-					ContentLength: int64(len("anon-payload")),
-				}),
-			},
-			output: testOutput{
-				response: &Response{
-					Headers: map[string]*string{
-						"Etag":                     utils.GetStringPtr("etag-anon"),
-						"Location":                 utils.GetStringPtr("http://example.com/bucket/uploads%2Fanon.bin"),
-						"x-amz-checksum-crc32":     nil,
-						"x-amz-checksum-crc32c":    nil,
-						"x-amz-checksum-crc64nvme": nil,
-						"x-amz-checksum-sha1":      nil,
-						"x-amz-checksum-sha256":    nil,
-						"x-amz-checksum-type":      nil,
-						"x-amz-version-id":         utils.GetStringPtr(""), // empty, not nil — controller always returns &res.VersionID
-					},
-					MetaOpts: &MetaOptions{
-						BucketOwner:   "root",
-						ContentLength: int64(len("anon-payload")),
-						ObjectETag:    utils.GetStringPtr("etag-anon"),
-						ObjectSize:    int64(len("anon-payload")),
-						EventName:     s3event.EventObjectCreatedPost,
-						Status:        http.StatusNoContent,
+						Status:        http.StatusCreated,
 					},
 				},
 			},

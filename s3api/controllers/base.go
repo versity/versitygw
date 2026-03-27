@@ -296,7 +296,7 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 			})
 		}
 
-		return ctx.Send(responseBytes)
+		return ctx.Status(opts.Status).Send(responseBytes)
 	}
 
 	msglen := len(xmlhdr) + len(responseBytes)
@@ -333,7 +333,7 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 		})
 	}
 
-	return ctx.Send(res)
+	return ctx.Status(opts.Status).Send(res)
 }
 
 func ensureExposeMetaHeaders(ctx *fiber.Ctx) {

@@ -840,6 +840,7 @@ func TestFullFlow(ts *TestState) {
 	}
 	TestAccessControl(ts)
 	TestRouter(ts)
+	TestPostObject(ts)
 	TestUnsignedStreaminPayloadTrailer(ts)
 	TestSignedStreaminPayload(ts)
 	TestSignedStreaminPayloadTrailer(ts)
@@ -1140,6 +1141,41 @@ func TestRouter(ts *TestState) {
 	ts.Run(RouterGetUploadsWithKey)
 	ts.Run(RouterCopySourceNotAllowed)
 	ts.Run(RouterListVersionsWithKey)
+}
+
+func TestPostObject(ts *TestState) {
+	ts.Run(PostObject_invalid_content_type)
+	ts.Run(PostObject_missing_boundary)
+	ts.Run(PostObject_partial_auth_fields)
+	ts.Run(PostObject_invalid_algorithm)
+	ts.Run(PostObject_invalid_date)
+	ts.Run(PostObject_invalid_credential_format)
+	ts.Run(PostObject_incorrect_region)
+	ts.Run(PostObject_non_existing_access_key)
+	ts.Run(PostObject_signature_mismatch)
+	ts.Run(PostObject_expired_due_to_date)
+	ts.Run(PostObject_access_denied)
+	ts.Run(PostObject_policy_access_control)
+	ts.Run(PostObject_policy_expired)
+	ts.Run(PostObject_invalid_policy_document)
+	ts.Run(PostObject_policy_condition_key_mismatch)
+	ts.Run(PostObject_policy_extra_field)
+	ts.Run(PostObject_policy_missing_bucket_condition)
+	ts.Run(PostObject_policy_content_length_too_large)
+	ts.Run(PostObject_policy_content_length_too_small)
+	ts.Run(PostObject_success)
+	ts.Run(PostObject_success_status_200)
+	ts.Run(PostObject_success_status_201)
+	ts.Run(PostObject_should_ignore_anything_after_file)
+	ts.Run(PostObject_success_with_meta_properties)
+	ts.Run(PostObject_invalid_tagging)
+	ts.Run(PostObject_success_with_tagging)
+	if !ts.conf.azureTests {
+		ts.Run(PostObject_invalid_checksum_value)
+		ts.Run(PostObject_invalid_checksum_algorithm)
+		ts.Run(PostObject_multiple_checksum_headers)
+		ts.Run(PostObject_checksums_success)
+	}
 }
 
 func TestServer(ts *TestState) {
@@ -1905,5 +1941,35 @@ func GetIntTests() IntTests {
 		"NoAclMode_CreateBucket_with_acl":                                          NoAclMode_CreateBucket_with_acl,
 		"NoAclMode_PutBucketAcl":                                                   NoAclMode_PutBucketAcl,
 		"Server_large_http_header":                                                 Server_large_http_header,
+		"PostObject_invalid_content_type":                                          PostObject_invalid_content_type,
+		"PostObject_missing_boundary":                                              PostObject_missing_boundary,
+		"PostObject_partial_auth_fields":                                           PostObject_partial_auth_fields,
+		"PostObject_invalid_algorithm":                                             PostObject_invalid_algorithm,
+		"PostObject_invalid_date":                                                  PostObject_invalid_date,
+		"PostObject_invalid_credential_format":                                     PostObject_invalid_credential_format,
+		"PostObject_incorrect_region":                                              PostObject_incorrect_region,
+		"PostObject_non_existing_access_key":                                       PostObject_non_existing_access_key,
+		"PostObject_signature_mismatch":                                            PostObject_signature_mismatch,
+		"PostObject_expired_due_to_date":                                           PostObject_expired_due_to_date,
+		"PostObject_access_denied":                                                 PostObject_access_denied,
+		"PostObject_policy_access_control":                                         PostObject_policy_access_control,
+		"PostObject_policy_expired":                                                PostObject_policy_expired,
+		"PostObject_invalid_policy_document":                                       PostObject_invalid_policy_document,
+		"PostObject_policy_condition_key_mismatch":                                 PostObject_policy_condition_key_mismatch,
+		"PostObject_policy_extra_field":                                            PostObject_policy_extra_field,
+		"PostObject_policy_missing_bucket_condition":                               PostObject_policy_missing_bucket_condition,
+		"PostObject_policy_content_length_too_large":                               PostObject_policy_content_length_too_large,
+		"PostObject_policy_content_length_too_small":                               PostObject_policy_content_length_too_small,
+		"PostObject_success":                                                       PostObject_success,
+		"PostObject_success_status_200":                                            PostObject_success_status_200,
+		"PostObject_success_status_201":                                            PostObject_success_status_201,
+		"PostObject_should_ignore_anything_after_file":                             PostObject_should_ignore_anything_after_file,
+		"PostObject_success_with_meta_properties":                                  PostObject_success_with_meta_properties,
+		"PostObject_invalid_tagging":                                               PostObject_invalid_tagging,
+		"PostObject_success_with_tagging":                                          PostObject_success_with_tagging,
+		"PostObject_invalid_checksum_value":                                        PostObject_invalid_checksum_value,
+		"PostObject_invalid_checksum_algorithm":                                    PostObject_invalid_checksum_algorithm,
+		"PostObject_multiple_checksum_headers":                                     PostObject_multiple_checksum_headers,
+		"PostObject_checksums_success":                                             PostObject_checksums_success,
 	}
 }

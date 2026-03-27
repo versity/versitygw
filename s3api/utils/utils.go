@@ -1074,7 +1074,7 @@ func GenerateObjectLocation(ctx *fiber.Ctx, virtualDomain, bucket, object string
 	// escape the object name
 	obj := url.PathEscape(object)
 
-	if virtualDomain != "" && strings.Contains(host, virtualDomain) {
+	if virtualDomain != "" && strings.Contains(host, virtualDomain) && strings.Contains(host, bucket) {
 		// the host already contains the bucket name
 		return fmt.Sprintf("%s://%s/%s", scheme, host, obj)
 	}

@@ -204,7 +204,7 @@ func TestParsePOSTPolicyBase64_ConcreteParseErrors(t *testing.T) {
 		{
 			name:     "content-length-range with invalid quoted int",
 			encoded:  badQuotedRangeEncoded,
-			expected: s3err.InvalidPolicyDocument.ConditionFailed(`["content-length-range","abc",10]`),
+			expected: s3err.InvalidPolicyDocument.InvalidJSON(),
 		},
 	}
 

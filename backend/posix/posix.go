@@ -3510,6 +3510,17 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, fmt.Errorf("write object data: %w", err)
 	}
 
+	// If the file was pre-allocated (via fallocate) to a size larger than the
+	// bytes actually written, truncate it to the real content size. This can
+	// happen when Content-Length includes epilogue bytes after the multipart
+	// final boundary (e.g. browser-based POST Object with trailing data).
+	if f.size > 0 {
+		objsize -= f.size
+		if err := f.File().Truncate(objsize); err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("truncate object to actual size: %w", err)
+		}
+	}
+
 	dir := filepath.Dir(name)
 	if dir != "" {
 		err = backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)

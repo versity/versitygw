@@ -143,8 +143,8 @@ func (c S3ApiController) POSTObject(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	// parse POST policy — absent for anonymous uploads to public buckets
-	policyBase64 := parsed.Fields["policy"]
-	if policyBase64 != "" {
+	if !IsBucketPublic {
+		policyBase64 := parsed.Fields["policy"]
 		policy, err := auth.ParsePOSTPolicyBase64(policyBase64)
 		if err != nil {
 			return &Response{

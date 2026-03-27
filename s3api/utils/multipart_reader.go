@@ -27,6 +27,8 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
+const finalBoundaryDelimiterLen = 8 // len("\r\n--") + len("--\r\n")
+
 // MultipartParser parses S3 browser-based POST multipart/form-data in a streaming way.
 // It buffers regular form fields, but it does not buffer the file part.
 type MultipartParser struct {
@@ -128,7 +130,7 @@ func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 		// At this point, headers + blank line have already been consumed,
 		// so bytesRead points exactly at the first byte of file content.
 		if isFilePart {
-			fileContentLength := mp.requestContentLength - mp.bytesRead - int64(len(mp.boundary)) - 8
+			fileContentLength := mp.requestContentLength - mp.bytesRead - int64(len(mp.boundary)) - finalBoundaryDelimiterLen
 			if fileContentLength < 0 {
 				debuglogger.Logf("calculated negative multipart file content-length: %d", fileContentLength)
 				return nil, fmt.Errorf("calculated negative file content-length: %d", fileContentLength)

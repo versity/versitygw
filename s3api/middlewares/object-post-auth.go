@@ -35,6 +35,7 @@ const (
 	formFieldSignature  = "x-amz-signature"
 
 	aws4HMACSHA256 = "AWS4-HMAC-SHA256"
+	hourSeconds    = 60 * 60
 )
 
 type PostObjectResult struct {
@@ -94,23 +95,33 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 		// Determine if the request carries form-based credentials.
 		// A request is considered signed if ANY of the five auth fields is
 		// present; in that case ALL of them are required.
-		hasAnyAuthField := policyB64 != "" || algorithm != "" || credentialStr != "" || amzDate != "" || signatureHex != ""
+		var hasAnyAuthField bool
+
+		for _, field := range []string{
+			formFieldPolicy,
+			formFieldAlgorithm,
+			formFieldCredential,
+			formFieldDate,
+			formFieldSignature,
+		} {
+			if _, ok := fields[field]; ok {
+				hasAnyAuthField = true
+				break
+			}
+		}
 
 		if hasAnyAuthField {
 			// Signed POST Object — validate every required auth field.
-			for _, field := range []struct {
-				key   string
-				value string
-			}{
-				{formFieldPolicy, policyB64},
-				{formFieldAlgorithm, algorithm},
-				{formFieldCredential, credentialStr},
-				{formFieldDate, amzDate},
-				{formFieldSignature, signatureHex},
+			for _, field := range []string{
+				formFieldPolicy,
+				formFieldAlgorithm,
+				formFieldCredential,
+				formFieldDate,
+				formFieldSignature,
 			} {
-				if field.value == "" {
-					debuglogger.Logf("missing required POST object field: %s", field.key)
-					return s3err.PostAuth.MissingField(field.key)
+				if _, ok := fields[field]; !ok {
+					debuglogger.Logf("missing required POST object field: %s", field)
+					return s3err.PostAuth.MissingField(field)
 				}
 			}
 
@@ -126,11 +137,11 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 				return s3err.GetAPIError(s3err.ErrInvalidDateHeader)
 			}
 
-			// Validate the dates difference
-			// TODO: Seems s3 doesn't validate this
-			err = utils.ValidateDate(tdate)
-			if err != nil {
-				return err
+			// the signing date can't be older than an hour
+			// any future signing date is considered as valid
+			if time.Now().UTC().Unix()-tdate.UTC().Unix() > hourSeconds {
+				debuglogger.Logf("expired POST object x-amz-date: %q", amzDate)
+				return s3err.InvalidPolicyDocument.PolicyExpired()
 			}
 
 			creds, err := utils.ParseCredentials(credentialStr, s3err.PostAuth)
@@ -140,7 +151,7 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 
 			if region != creds.Region {
 				debuglogger.Logf("incorrect POST object credential region: got %q want %q", creds.Region, region)
-				return s3err.MalformedAuth.IncorrectRegion(region, creds.Region)
+				return s3err.PostAuth.IncorrectRegion(region, creds.Region)
 			}
 
 			account, err := acct.getAccount(creds.Access)
