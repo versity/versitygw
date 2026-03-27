@@ -18,8 +18,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
+	"golang.org/x/sync/errgroup"
 )
 
 func PutObject_overwrite_dir_obj(s *S3Conf) error {
@@ -216,5 +219,80 @@ func CopyObject_overwrite_same_file_object(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+// PutObject_race_with_delete tests the race between PutObject and DeleteObject
+// in the same subdirectory.
+// One goroutine sequentially puts "race-dir/0.txt" … "race-dir/N-1.txt".
+// A second goroutine loops for the same number of iterations: it lists all
+// objects under "race-dir/" and bulk-deletes them.  When the batch delete
+// removes the last visible object in the directory, removeParents() rmdir's
+// "race-dir/", which can race with the uploader's final link() step.
+// The test asserts that no error is returned from either goroutine.
+func PutObject_race_with_delete(s *S3Conf) error {
+	testName := "PutObject_race_with_delete"
+	const iterations = 100
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		eg := errgroup.Group{}
+
+		// Upload goroutine: sequentially puts objects into race-dir/
+		eg.Go(func() error {
+			for i := range iterations {
+				key := fmt.Sprintf("race-dir/%d.txt", i)
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+					Bucket: &bucket,
+					Key:    &key,
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("put %d: %w", i, err)
+				}
+			}
+			return nil
+		})
+
+		// Delete goroutine: repeatedly lists race-dir/ and bulk-deletes everything.
+		// When the last object is removed, removeParents() rmdir's the directory,
+		// racing with the concurrent link() call in the upload goroutine.
+		eg.Go(func() error {
+			for range iterations {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				res, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+					Bucket: &bucket,
+					Prefix: getPtr("race-dir/"),
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("list: %w", err)
+				}
+				if len(res.Contents) == 0 {
+					continue
+				}
+
+				objs := make([]types.ObjectIdentifier, 0, len(res.Contents))
+				for _, obj := range res.Contents {
+					objs = append(objs, types.ObjectIdentifier{Key: obj.Key})
+				}
+
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+					Bucket: &bucket,
+					Delete: &types.Delete{Objects: objs},
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("delete objects: %w", err)
+				}
+				if len(out.Errors) > 0 {
+					return fmt.Errorf("delete error: key=%v code=%v msg=%v",
+						aws.ToString(out.Errors[0].Key), aws.ToString(out.Errors[0].Code), aws.ToString(out.Errors[0].Message))
+				}
+			}
+			return nil
+		})
+
+		return eg.Wait()
 	})
 }
