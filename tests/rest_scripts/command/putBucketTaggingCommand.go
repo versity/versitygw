@@ -9,13 +9,13 @@ type PutBucketTaggingCommand struct {
 	*PutTaggingCommand
 }
 
-func NewPutBucketTaggingCommand(s3Command *S3Command, fields *TaggingFields) (*PutBucketTaggingCommand, error) {
-	if s3Command.BucketName == "" {
+func NewPutBucketTaggingCommand(s3Command *S3RequestBuilder, fields *TaggingFields) (*PutBucketTaggingCommand, error) {
+	if s3Command.Config.BucketName == "" {
 		return nil, errors.New("PutBucketTagging must have bucket name")
 	}
 	command := &PutBucketTaggingCommand{
 		&PutTaggingCommand{
-			S3Command: s3Command,
+			S3RequestBuilder: s3Command,
 		},
 	}
 	if err := command.createTaggingPayload(fields); err != nil {
