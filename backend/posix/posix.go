@@ -98,6 +98,12 @@ type Posix struct {
 	// execute blocking syscalls (stat, readdir, xattr, open, etc.), this limiter
 	// constrains parallelism to prevent excessive thread creation under load.
 	actionLimiter *semaphore.Weighted
+
+	// copyObjectThreshold is the maximum allowed size (in bytes) for a copy
+	// source object. Requests to copy objects larger than this value are
+	// rejected with an 'InvalidRequest' to comply with the S3 limit
+	// of 5 GiB.
+	copyObjectThreshold int64
 }
 
 var _ backend.Backend = &Posix{}
@@ -172,6 +178,11 @@ type PosixOpts struct {
 	// queue depth grows under sustained load, request latency increases and
 	// upstream timeouts may occur.
 	Concurrency int
+	// CopyObjectThreshold sets the maximum allowed source object size (in bytes)
+	// for CopyObject and UploadPartCopy operations. Requests exceeding this
+	// threshold are rejected with an 'InvalidRequest' error. Defaults to the
+	// S3 specification limit of 5 GiB.
+	CopyObjectThreshold int64
 }
 
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
@@ -235,6 +246,7 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
 		validateBucketName:   opts.ValidateBucketNames,
 		actionLimiter:        semaphore.NewWeighted(int64(concurrencyOrDefault(opts.Concurrency))),
+		copyObjectThreshold:  opts.CopyObjectThreshold,
 	}, nil
 }
 
@@ -3084,6 +3096,9 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	if err != nil {
 		return s3response.CopyPartResult{}, err
 	}
+	if length > p.copyObjectThreshold {
+		return s3response.CopyPartResult{}, s3err.GetCopySourceObjectTooLargeErr(p.copyObjectThreshold)
+	}
 
 	srcf, err := os.Open(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -4705,6 +4720,9 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	}
 	if !strings.HasSuffix(srcObject, "/") && fi.IsDir() {
 		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if fi.Size() > p.copyObjectThreshold {
+		return s3response.CopyObjectOutput{}, s3err.GetCopySourceObjectTooLargeErr(p.copyObjectThreshold)
 	}
 
 	b, err := p.meta.RetrieveAttribute(f, srcBucket, srcObject, etagkey)

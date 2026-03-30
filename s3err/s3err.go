@@ -1088,3 +1088,11 @@ func GetNegativeMaxLimiterErr(limiter string) APIError {
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }
+
+func GetCopySourceObjectTooLargeErr(limit int64) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("The specified copy source is larger than the maximum allowable size for a copy source: %d", limit),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}

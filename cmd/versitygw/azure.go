@@ -65,7 +65,7 @@ func azureCommand() *cli.Command {
 }
 
 func runAzure(ctx *cli.Context) error {
-	be, err := azure.New(azAccount, azKey, azServiceURL, azSASToken)
+	be, err := azure.New(azAccount, azKey, azServiceURL, azSASToken, copyObjectThreshold)
 	if err != nil {
 		return fmt.Errorf("init azure: %w", err)
 	}

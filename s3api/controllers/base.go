@@ -38,6 +38,7 @@ type S3ApiController struct {
 	logger        s3log.AuditLogger
 	evSender      s3event.S3EventSender
 	mm            metrics.Manager
+	mpMaxParts    int
 	readonly      bool
 	disableACL    bool
 	virtualDomain string
@@ -60,7 +61,7 @@ var (
 	xmlhdr = []byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 )
 
-func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly, disableACL bool, virtualDomain string) S3ApiController {
+func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly, disableACL bool, virtualDomain string, mpMaxParts int) S3ApiController {
 	return S3ApiController{
 		be:            be,
 		iam:           iam,
@@ -70,6 +71,7 @@ func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs 
 		mm:            mm,
 		disableACL:    disableACL,
 		virtualDomain: virtualDomain,
+		mpMaxParts:    mpMaxParts,
 	}
 }
 

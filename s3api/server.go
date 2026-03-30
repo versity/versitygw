@@ -175,6 +175,11 @@ func WithReadOnly() Option {
 	return func(s *S3ApiServer) { s.Router.readonly = true }
 }
 
+// WithMpMaxParts sets the maximum number of parts allowed in a multipart upload.
+func WithMpMaxParts(n int) Option {
+	return func(s *S3ApiServer) { s.Router.mpMaxParts = n }
+}
+
 // WithHostStyle enabled host-style bucket addressing on the server
 func WithHostStyle(virtualDomain string) Option {
 	return func(s *S3ApiServer) {

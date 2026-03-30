@@ -148,6 +148,7 @@ func runPosix(ctx *cli.Context) error {
 		ForceNoCopyFileRange: forceNoCopyFileRange,
 		ValidateBucketNames:  disableStrictBucketNames,
 		Concurrency:          actionsConcurrency,
+		CopyObjectThreshold:  copyObjectThreshold,
 	}
 
 	var ms meta.MetadataStorer

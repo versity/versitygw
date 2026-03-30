@@ -134,6 +134,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.ValidateBucketNames = disableStrictBucketNames
 	opts.SetProjectID = setProjectID
 	opts.Concurrency = actionsConcurrency
+	opts.CopyObjectThreshold = copyObjectThreshold
 
 	be, err := scoutfs.New(ctx.Args().Get(0), opts)
 	if err != nil {

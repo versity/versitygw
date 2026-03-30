@@ -34,6 +34,8 @@ func initEnv(dir string) {
 	maxConnections = 250000
 	maxRequests = 100000
 	ports = []string{"127.0.0.1:7070"}
+	mpMaxParts = 10000
+	copyObjectThreshold = 5 * 1024 * 1024 * 1024
 
 	// client
 	awsID = "user"
