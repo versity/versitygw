@@ -58,6 +58,7 @@ send_via_openssl() {
   if ! record_openssl_command "$1"; then
     log 3 "error recording openssl command"
   fi
+  log 5 "sending openssl command file '$1'"
   if ! result=$(openssl s_client -connect "$host" -ign_eof < "$1" 2>&1); then
     log 2 "error sending openssl command: $result"
     return 1

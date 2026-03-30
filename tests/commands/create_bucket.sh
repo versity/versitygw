@@ -26,7 +26,6 @@ create_bucket() {
   fi
 
   local exit_code=0
-  local error
   if [[ $1 == 's3' ]]; then
     error=$(send_command aws --no-verify-ssl s3 mb s3://"$2" 2>&1) || exit_code=$?
   elif [[ $1 == 's3api' ]]; then
