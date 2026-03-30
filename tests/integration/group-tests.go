@@ -529,6 +529,7 @@ func TestCompleteMultipartUpload(ts *TestState) {
 	ts.Run(CompleteMultipartUpload_success)
 	if !ts.conf.azureTests {
 		ts.Run(CompleteMultipartUpload_racey_success)
+		ts.Run(CompleteMultipartUpload_racey_data_integrity)
 	}
 }
 
@@ -952,6 +953,7 @@ func TestScoutfs(ts *TestState) {
 	ts.Run(CompleteMultipartUpload_should_ignore_the_final_checksum)
 	ts.Run(CompleteMultipartUpload_success)
 	ts.Run(CompleteMultipartUpload_racey_success)
+	ts.Run(CompleteMultipartUpload_racey_data_integrity)
 
 	// posix/scoutfs specific tests
 	ts.Run(PutObject_overwrite_dir_obj)
@@ -1563,6 +1565,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_should_succeed_without_final_checksum_type":       CompleteMultipartUpload_should_succeed_without_final_checksum_type,
 		"CompleteMultipartUpload_success":                                          CompleteMultipartUpload_success,
 		"CompleteMultipartUpload_racey_success":                                    CompleteMultipartUpload_racey_success,
+		"CompleteMultipartUpload_racey_data_integrity":                             CompleteMultipartUpload_racey_data_integrity,
 		"PutBucketAcl_non_existing_bucket":                                         PutBucketAcl_non_existing_bucket,
 		"PutBucketAcl_disabled":                                                    PutBucketAcl_disabled,
 		"PutBucketAcl_none_of_the_options_specified":                               PutBucketAcl_none_of_the_options_specified,

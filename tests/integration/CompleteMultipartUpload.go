@@ -1906,3 +1906,114 @@ func CompleteMultipartUpload_racey_success(s *S3Conf) error {
 			sums, csum)
 	})
 }
+
+// CompleteMultipartUpload_racey_data_integrity creates a single multipart
+// upload, uploads its parts, then fires multiple concurrent
+// CompleteMultipartUpload calls for the exact same upload ID.  Exactly one
+// call must succeed; the rest must fail with NoSuchUpload (the upload was
+// already consumed).  The surviving object must contain exactly the data that
+// was uploaded.  The whole sequence is repeated several times so that
+// intermittent scheduling cannot hide a data-corruption bug.
+func CompleteMultipartUpload_racey_data_integrity(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_racey_data_integrity"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		const (
+			concurrency = 5
+			iterations  = 10
+			partCount   = 3
+		)
+		obj := "my-obj"
+		objSize := int64(15 * 1024 * 1024) // 3 × 5 MiB parts
+		noSuchUpload := s3err.GetAPIError(s3err.ErrNoSuchUpload)
+
+		for iter := range iterations {
+			// Phase 1: create one upload and upload its parts.
+			out, err := createMp(s3client, bucket, obj)
+			if err != nil {
+				return fmt.Errorf("iteration %d: create mp: %w", iter, err)
+			}
+
+			parts, expectedCsum, err := uploadParts(s3client, objSize, partCount, bucket, obj, *out.UploadId)
+			if err != nil {
+				return fmt.Errorf("iteration %d: upload parts: %w", iter, err)
+			}
+
+			compParts := make([]types.CompletedPart, 0, len(parts))
+			for _, el := range parts {
+				compParts = append(compParts, types.CompletedPart{
+					ETag:       el.ETag,
+					PartNumber: el.PartNumber,
+				})
+			}
+
+			// Phase 2: race concurrency complete calls for the same upload ID.
+			// Exactly one must succeed; the others must return NoSuchUpload.
+			var (
+				mu         sync.Mutex
+				successCnt int
+			)
+			eg := errgroup.Group{}
+			for range concurrency {
+				eg.Go(func() error {
+					ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+					_, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+						Bucket:   &bucket,
+						Key:      &obj,
+						UploadId: out.UploadId,
+						MultipartUpload: &types.CompletedMultipartUpload{
+							Parts: compParts,
+						},
+					})
+					cancel()
+					if err == nil {
+						mu.Lock()
+						successCnt++
+						mu.Unlock()
+						return nil
+					}
+					// Every non-zero error must be NoSuchUpload.
+					return checkApiErr(err, noSuchUpload)
+				})
+			}
+			if err := eg.Wait(); err != nil {
+				return fmt.Errorf("iteration %d: complete phase: %w", iter, err)
+			}
+			if successCnt != 1 {
+				return fmt.Errorf("iteration %d: expected exactly 1 successful complete, got %d",
+					iter, successCnt)
+			}
+
+			// Phase 3: download the object and verify it is complete and
+			// uncorrupted — its checksum must match what was uploaded.
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			resp, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			if err != nil {
+				cancel()
+				return fmt.Errorf("iteration %d: get object: %w", iter, err)
+			}
+			bdy, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			cancel()
+			if err != nil {
+				return fmt.Errorf("iteration %d: read body: %w", iter, err)
+			}
+
+			if resp.ContentLength == nil || *resp.ContentLength != objSize {
+				return fmt.Errorf("iteration %d: expected content-length %d, got %v",
+					iter, objSize, resp.ContentLength)
+			}
+
+			got := sha256.Sum256(bdy)
+			gotHex := hex.EncodeToString(got[:])
+			if gotHex != expectedCsum {
+				return fmt.Errorf("iteration %d: object checksum %q does not match expected %q — data may be corrupted",
+					iter, gotHex, expectedCsum)
+			}
+		}
+
+		return nil
+	})
+}
