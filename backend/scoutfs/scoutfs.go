@@ -45,6 +45,11 @@ type ScoutfsOpts struct {
 	// Concurrency sets the maximum number of concurrently running POSIX actions.
 	// Defaults to 5000 when unset or non-positive.
 	Concurrency int
+	// CopyObjectThreshold sets the maximum allowed source object size (in bytes)
+	// for CopyObject and UploadPartCopy operations. Requests exceeding this
+	// threshold are rejected with an 'InvalidRequest' error. Defaults to the
+	// S3 specification limit of 5 GiB.
+	CopyObjectThreshold int64
 }
 
 var _ backend.Backend = &ScoutFS{}

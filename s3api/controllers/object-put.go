@@ -282,7 +282,7 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	if partNumber < minPartNumber || partNumber > maxPartNumber {
+	if partNumber < minPartNumber || partNumber > int32(c.mpMaxParts) {
 		debuglogger.Logf("invalid part number: %d", partNumber)
 		return &Response{
 			MetaOpts: &MetaOptions{

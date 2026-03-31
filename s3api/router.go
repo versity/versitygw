@@ -42,10 +42,11 @@ type S3ApiRouter struct {
 	region          string
 	virtualDomain   string
 	corsAllowOrigin string
+	mpMaxParts      int
 }
 
 func (sa *S3ApiRouter) Init() {
-	ctrl := controllers.New(sa.be, sa.iam, sa.logger, sa.evs, sa.mm, sa.readonly, sa.disableACL, sa.virtualDomain)
+	ctrl := controllers.New(sa.be, sa.iam, sa.logger, sa.evs, sa.mm, sa.readonly, sa.disableACL, sa.virtualDomain, sa.mpMaxParts)
 	sa.Ctrl = ctrl
 	adminServices := &controllers.Services{
 		Logger: sa.aLogger,

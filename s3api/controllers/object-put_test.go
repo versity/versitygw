@@ -607,7 +607,8 @@ func TestS3ApiController_UploadPart(t *testing.T) {
 			}
 
 			ctrl := S3ApiController{
-				be: be,
+				be:         be,
+				mpMaxParts: 10000,
 			}
 
 			testController(

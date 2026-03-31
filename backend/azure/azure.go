@@ -95,16 +95,17 @@ func (key) Table() map[string]struct{} {
 type Azure struct {
 	backend.BackendUnsupported
 
-	client         *azblob.Client
-	sharedkeyCreds *azblob.SharedKeyCredential
-	defaultCreds   *azidentity.DefaultAzureCredential
-	serviceURL     string
-	sasToken       string
+	client              *azblob.Client
+	sharedkeyCreds      *azblob.SharedKeyCredential
+	defaultCreds        *azidentity.DefaultAzureCredential
+	serviceURL          string
+	sasToken            string
+	copyObjectThreshold int64
 }
 
 var _ backend.Backend = &Azure{}
 
-func New(accountName, accountKey, serviceURL, sasToken string) (*Azure, error) {
+func New(accountName, accountKey, serviceURL, sasToken string, copyObjectThreshold int64) (*Azure, error) {
 	url := serviceURL
 	if serviceURL == "" && accountName != "" {
 		// if not otherwise specified, use the typical form:
@@ -117,7 +118,12 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*Azure, error) {
 		if err != nil {
 			return nil, fmt.Errorf("init client: %w", err)
 		}
-		return &Azure{client: client, serviceURL: serviceURL, sasToken: sasToken}, nil
+		return &Azure{
+			client:              client,
+			serviceURL:          serviceURL,
+			sasToken:            sasToken,
+			copyObjectThreshold: copyObjectThreshold,
+		}, nil
 	}
 
 	if accountName == "" {
@@ -134,7 +140,12 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*Azure, error) {
 		if err != nil {
 			return nil, fmt.Errorf("init client: %w", err)
 		}
-		return &Azure{client: client, serviceURL: url, defaultCreds: cred}, nil
+		return &Azure{
+			client:              client,
+			serviceURL:          url,
+			defaultCreds:        cred,
+			copyObjectThreshold: copyObjectThreshold,
+		}, nil
 	}
 
 	cred, err := azblob.NewSharedKeyCredential(accountName, accountKey)
@@ -147,7 +158,12 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*Azure, error) {
 		return nil, fmt.Errorf("init client: %w", err)
 	}
 
-	return &Azure{client: client, serviceURL: url, sharedkeyCreds: cred}, nil
+	return &Azure{
+		client:              client,
+		serviceURL:          url,
+		sharedkeyCreds:      cred,
+		copyObjectThreshold: copyObjectThreshold,
+	}, nil
 }
 
 func (az *Azure) Shutdown() {}
@@ -959,6 +975,15 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 		}
 
+		resp, err := dstClient.GetProperties(ctx, nil)
+		if err != nil {
+			return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
+		}
+
+		if resp.ContentLength != nil && *resp.ContentLength > az.copyObjectThreshold {
+			return s3response.CopyObjectOutput{}, s3err.GetCopySourceObjectTooLargeErr(az.copyObjectThreshold)
+		}
+
 		// Set object meta http headers
 		res, err := dstClient.SetHTTPHeaders(ctx, blob.HTTPHeaders{
 			BlobCacheControl:       input.CacheControl,
@@ -1044,6 +1069,10 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 	}
 	defer downloadResp.Body.Close()
+
+	if downloadResp.ContentLength != nil && *downloadResp.ContentLength > az.copyObjectThreshold {
+		return s3response.CopyObjectOutput{}, s3err.GetCopySourceObjectTooLargeErr(az.copyObjectThreshold)
+	}
 
 	pInput := s3response.PutObjectInput{
 		Body:                      downloadResp.Body,

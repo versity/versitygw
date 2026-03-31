@@ -103,6 +103,8 @@ var (
 	webuiPathPrefix                        string
 	webuiS3Prefix                          string
 	disableACLs                            bool
+	mpMaxParts                             int
+	copyObjectThreshold                    int64
 )
 
 var (
@@ -755,6 +757,20 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_IPA_INSECURE"},
 			Destination: &ipaInsecure,
 		},
+		&cli.IntFlag{
+			Name:        "mp-max-parts",
+			Usage:       "maximum number of parts allowed in a multipart upload",
+			EnvVars:     []string{"VGW_MP_MAX_PARTS"},
+			Value:       10000,
+			Destination: &mpMaxParts,
+		},
+		&cli.Int64Flag{
+			Name:        "copy-object-threshold",
+			Usage:       "maximum allowed source object size in bytes for CopyObject; objects larger than this are rejected",
+			EnvVars:     []string{"VGW_COPY_OBJECT_THRESHOLD"},
+			Value:       5 * 1024 * 1024 * 1024,
+			Destination: &copyObjectThreshold,
+		},
 	}
 }
 
@@ -777,6 +793,12 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	if maxRequests > maxConnections {
 		log.Printf("WARNING: max-requests (%d) exceeds max-connections (%d) which could allow for gateway to panic before throttling requests",
 			maxRequests, maxConnections)
+	}
+	if mpMaxParts < 1 {
+		return fmt.Errorf("mp-max-parts must be positive")
+	}
+	if copyObjectThreshold < 1 {
+		return fmt.Errorf("copy-object-threshold must be positive")
 	}
 
 	// Ensure we have at least one port specified
@@ -842,6 +864,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 
 	opts := []s3api.Option{
 		s3api.WithConcurrencyLimiter(maxConnections, maxRequests),
+		s3api.WithMpMaxParts(mpMaxParts),
 	}
 	if corsAllowOrigin != "" {
 		opts = append(opts, s3api.WithCORSAllowOrigin(corsAllowOrigin))

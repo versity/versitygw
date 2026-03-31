@@ -82,6 +82,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 		VersioningDir:       opts.VersioningDir,
 		ValidateBucketNames: opts.ValidateBucketNames,
 		Concurrency:         opts.Concurrency,
+		CopyObjectThreshold: opts.CopyObjectThreshold,
 	})
 	if err != nil {
 		return nil, err
