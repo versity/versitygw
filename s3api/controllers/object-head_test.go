@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 )
@@ -49,6 +50,34 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "anonymous access with override params",
+			input: testInput{
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyIsRoot: true,
+					utils.ContextKeyParsedAcl: auth.ACL{
+						Owner: "root",
+					},
+					utils.ContextKeyAccount: auth.Account{
+						Access: "root",
+						Role:   auth.RoleAdmin,
+					},
+					utils.ContextKeyRegion:       "us-east-1",
+					utils.ContextKeyPublicBucket: true,
+				},
+				queries: map[string]string{
+					"response-expires": "something",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrAnonymousResponseHeaders),
 			},
 		},
 		{

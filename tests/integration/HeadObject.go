@@ -18,12 +18,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
+	"github.com/versity/versitygw/s3err"
 )
 
 func HeadObject_non_existing_object(s *S3Conf) error {
@@ -675,4 +677,359 @@ func HeadObject_success(s *S3Conf) error {
 
 		return nil
 	})
+}
+
+func HeadObject_overrides_success(s *S3Conf) error {
+	testName := "HeadObject_overrides_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objKey := "test-object"
+		exp := time.Now()
+
+		_, err := s3client.PutObject(context.Background(), &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &objKey,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to put object: %v", err)
+		}
+
+		for _, test := range []PublicBucketTestCase{
+			{
+				Action: "HeadObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:               &bucket,
+						Key:                  &objKey,
+						ResponseCacheControl: getPtr("max-age=90"),
+					})
+					return err
+				},
+				ExpectedErr: nil,
+			},
+			{
+				Action: "HeadObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:                     &bucket,
+						Key:                        &objKey,
+						ResponseContentDisposition: getPtr("inline"),
+					})
+					return err
+				},
+				ExpectedErr: nil,
+			},
+			{
+				Action: "HeadObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:                  &bucket,
+						Key:                     &objKey,
+						ResponseContentEncoding: getPtr("txt"),
+					})
+					return err
+				},
+				ExpectedErr: nil,
+			},
+			{
+				Action: "HeadObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:                  &bucket,
+						Key:                     &objKey,
+						ResponseContentLanguage: getPtr("en"),
+					})
+					return err
+				},
+				ExpectedErr: nil,
+			},
+			{
+				Action: "HeadObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:              &bucket,
+						Key:                 &objKey,
+						ResponseContentType: getPtr("application/json"),
+					})
+					return err
+				},
+				ExpectedErr: nil,
+			},
+			{
+				Action: "HeadObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:          &bucket,
+						Key:             &objKey,
+						ResponseExpires: &exp,
+					})
+					return err
+				},
+				ExpectedErr: nil,
+			},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			err := test.Call(ctx)
+			cancel()
+			if err == nil && test.ExpectedErr != nil {
+				return fmt.Errorf("%v: expected err %v, instead got successful response", test.Action, test.ExpectedErr)
+			}
+			if err != nil {
+				if test.ExpectedErr == nil {
+					return fmt.Errorf("%v: expected no error, instead got %v", test.Action, err)
+				}
+
+				apiErr, ok := test.ExpectedErr.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("invalid error type provided in the test, expected s3err.APIError")
+				}
+
+				if err := checkApiErr(err, apiErr); err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
+func HeadObject_overrides_presign_success(s *S3Conf) error {
+	testName := "HeadObject_overrides_presign_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objKey := "test-object"
+
+		_, err := s3client.PutObject(context.Background(), &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &objKey,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to put object: %v", err)
+		}
+
+		testCases := []struct {
+			name           string
+			queryParam     string
+			expectedHeader string
+			expectedValue  string
+		}{
+			{
+				name:           "response-cache-control",
+				queryParam:     "response-cache-control=no-cache",
+				expectedHeader: "Cache-Control",
+				expectedValue:  "no-cache",
+			},
+			{
+				name:           "response-content-disposition",
+				queryParam:     "response-content-disposition=attachment%3B%20filename%3D%22test.txt%22",
+				expectedHeader: "Content-Disposition",
+				expectedValue:  "attachment; filename=\"test.txt\"",
+			},
+			{
+				name:           "response-content-encoding",
+				queryParam:     "response-content-encoding=txt",
+				expectedHeader: "Content-Encoding",
+				expectedValue:  "txt",
+			},
+			{
+				name:           "response-content-language",
+				queryParam:     "response-content-language=en-US",
+				expectedHeader: "Content-Language",
+				expectedValue:  "en-US",
+			},
+			{
+				name:           "response-content-type",
+				queryParam:     "response-content-type=text%2Fplain",
+				expectedHeader: "Content-Type",
+				expectedValue:  "text/plain",
+			},
+			{
+				name:           "response-expires",
+				queryParam:     "response-expires=Thu%2C%2001%20Dec%202024%2016%3A00%3A00%20GMT",
+				expectedHeader: "Expires",
+				expectedValue:  "Thu, 01 Dec 2024 16:00:00 GMT",
+			},
+		}
+
+		for _, tc := range testCases {
+			req, err := createSignedReq(
+				http.MethodHead,
+				s.endpoint,
+				fmt.Sprintf("%s/%s?%s", bucket, objKey, tc.queryParam),
+				s.awsID,
+				s.awsSecret,
+				"s3",
+				s.awsRegion,
+				nil,
+				time.Now(),
+				nil,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to create signed request for %s: %v", tc.name, err)
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("failed to execute request for %s: %v", tc.name, err)
+			}
+			resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("expected status 200 for %s, got %d", tc.name, resp.StatusCode)
+			}
+
+			actualValue := resp.Header.Get(tc.expectedHeader)
+			if actualValue != tc.expectedValue {
+				return fmt.Errorf("expected %s header to be %q for %s, got %q",
+					tc.expectedHeader, tc.expectedValue, tc.name, actualValue)
+			}
+		}
+
+		// Test multiple override parameters together
+		multiParam := "response-cache-control=max-age%3D3600&response-content-type=application%2Fjson&response-content-disposition=inline"
+		req, err := createSignedReq(
+			http.MethodHead,
+			s.endpoint,
+			fmt.Sprintf("%s/%s?%s", bucket, objKey, multiParam),
+			s.awsID,
+			s.awsSecret,
+			"s3",
+			s.awsRegion,
+			nil,
+			time.Now(),
+			nil,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create signed request for multiple overrides: %v", err)
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to execute request for multiple overrides: %v", err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200 for multiple overrides, got %d", resp.StatusCode)
+		}
+
+		expectedHeaders := map[string]string{
+			"Cache-Control":       "max-age=3600",
+			"Content-Type":        "application/json",
+			"Content-Disposition": "inline",
+		}
+
+		for headerName, expectedValue := range expectedHeaders {
+			actualValue := resp.Header.Get(headerName)
+			if actualValue != expectedValue {
+				return fmt.Errorf("expected %s header to be %q for multiple overrides, got %q",
+					headerName, expectedValue, actualValue)
+			}
+		}
+
+		return nil
+	})
+}
+
+func HeadObject_overrides_fail_public(s *S3Conf) error {
+	testName := "HeadObject_overrides_fail_public"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		rootClient := s.GetClient()
+		err := grantPublicBucketPolicy(rootClient, bucket, policyTypeObject)
+		if err != nil {
+			return err
+		}
+
+		objKey := "test-object"
+		exp := time.Now()
+
+		_, err = rootClient.PutObject(context.Background(), &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &objKey,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to put object: %v", err)
+		}
+
+		for _, test := range []PublicBucketTestCase{
+			{
+				Action: "HeadObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:               &bucket,
+						Key:                  &objKey,
+						ResponseCacheControl: getPtr("max-age=90"),
+					})
+					return err
+				},
+			},
+			{
+				Action: "HeadObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:                     &bucket,
+						Key:                        &objKey,
+						ResponseContentDisposition: getPtr("inline"),
+					})
+					return err
+				},
+			},
+			{
+				Action: "HeadObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:                  &bucket,
+						Key:                     &objKey,
+						ResponseContentEncoding: getPtr("txt"),
+					})
+					return err
+				},
+			},
+			{
+				Action: "HeadObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:                  &bucket,
+						Key:                     &objKey,
+						ResponseContentLanguage: getPtr("en"),
+					})
+					return err
+				},
+			},
+			{
+				Action: "HeadObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:              &bucket,
+						Key:                 &objKey,
+						ResponseContentType: getPtr("application/json"),
+					})
+					return err
+				},
+			},
+			{
+				Action: "HeadObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:          &bucket,
+						Key:             &objKey,
+						ResponseExpires: &exp,
+					})
+					return err
+				},
+			},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			err := test.Call(ctx)
+			cancel()
+			if err == nil {
+				return fmt.Errorf("%v: expected a BadRequest error, instead got successful response", test.Action)
+			}
+
+			if err := checkSdkApiErr(err, "BadRequest"); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}, withAnonymousClient())
 }
