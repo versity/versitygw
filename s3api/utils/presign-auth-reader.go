@@ -133,7 +133,7 @@ func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string, strea
 // &X-Amz-Expires=86400
 // &X-Amz-SignedHeaders=host
 // &X-Amz-Signature=1e68ad45c1db540284a4a1eca3884c293ba1a0ff63ab9db9a15b5b29dfa02cd8
-func ParsePresignedURIParts(ctx *fiber.Ctx) (AuthData, error) {
+func ParsePresignedURIParts(ctx *fiber.Ctx, region string) (AuthData, error) {
 	a := AuthData{}
 
 	// Get and verify algorithm query parameter
@@ -149,34 +149,14 @@ func ParsePresignedURIParts(ctx *fiber.Ctx) (AuthData, error) {
 		return a, s3err.QueryAuthErrors.MissingRequiredParams()
 	}
 
-	creds := strings.Split(credsQuery, "/")
-	if len(creds) != 5 {
-		return a, s3err.QueryAuthErrors.MalformedCredential()
-	}
-
-	// validate the service
-	if creds[3] != "s3" {
-		return a, s3err.QueryAuthErrors.IncorrectService(creds[3])
-	}
-
-	// validate the terminal
-	if creds[4] != "aws4_request" {
-		return a, s3err.QueryAuthErrors.IncorrectTerminal(creds[4])
-	}
-
-	// validate the date
-	_, err = time.Parse(yyyymmdd, creds[1])
+	creds, err := ParseCredentials(credsQuery, s3err.QueryAuthErrors)
 	if err != nil {
-		return a, s3err.QueryAuthErrors.InvalidDateFormat(creds[1])
+		return a, err
 	}
 
-	region, ok := ContextKeyRegion.Get(ctx).(string)
-	if !ok {
-		region = ""
-	}
 	// validate the region
-	if creds[2] != region {
-		return a, s3err.QueryAuthErrors.IncorrectRegion(region, creds[2])
+	if creds.Region != region {
+		return a, s3err.QueryAuthErrors.IncorrectRegion(region, creds.Region)
 	}
 
 	// Parse and validate Date query param
@@ -190,8 +170,8 @@ func ParsePresignedURIParts(ctx *fiber.Ctx) (AuthData, error) {
 		return a, s3err.QueryAuthErrors.InvalidXAmzDateFormat()
 	}
 
-	if date[:8] != creds[1] {
-		return a, s3err.QueryAuthErrors.DateMismatch(creds[1], date[:8])
+	if date[:8] != creds.Date {
+		return a, s3err.QueryAuthErrors.DateMismatch(creds.Date, date[:8])
 	}
 
 	signature := ctx.Query("X-Amz-Signature")
@@ -211,9 +191,9 @@ func ParsePresignedURIParts(ctx *fiber.Ctx) (AuthData, error) {
 	}
 
 	a.Signature = signature
-	a.Access = creds[0]
+	a.Access = creds.Access
 	a.Algorithm = algo
-	a.Region = creds[2]
+	a.Region = creds.Region
 	a.SignedHeaders = signedHdrs
 	a.Date = date
 

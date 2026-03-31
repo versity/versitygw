@@ -33,7 +33,7 @@ import (
 func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPermission auth.Action, permission auth.Permission, region string, streamBody bool) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// skip for authenticated requests
-		if utils.IsPresignedURLAuth(ctx) || ctx.Get("Authorization") != "" {
+		if utils.IsPresignedURLAuth(ctx) || ctx.Get("Authorization") != "" || utils.ContextKeyAuthenticated.IsSet(ctx) {
 			return nil
 		}
 

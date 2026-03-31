@@ -45,7 +45,7 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 		// otherwise the middleware will return the caucht error
 		utils.ContextKeyAuthenticated.Set(ctx, true)
 
-		authData, err := utils.ParsePresignedURIParts(ctx)
+		authData, err := utils.ParsePresignedURIParts(ctx, region)
 		if err != nil {
 			return err
 		}

@@ -1092,6 +1092,18 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.ParseAcl(sa.be),
 		))
 
+	bucketRouter.Post("",
+		controllers.ProcessHandlers(
+			ctrl.POSTObject,
+			metrics.ActionPostObject,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePostObject(sa.root, sa.iam, sa.region),
+			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPostObject, auth.PutObjectAction, auth.PermissionWrite, sa.region, false),
+			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
+			middlewares.ParseAcl(sa.be),
+		))
+
 	// object HEAD operation is not allowed with copy source
 	objectRouter.Head("/",
 		middlewares.MatchHeader("X-Amz-Copy-Source"),

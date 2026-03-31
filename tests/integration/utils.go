@@ -24,6 +24,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ import (
 	"math/big"
 	"math/bits"
 	rnd "math/rand"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -2519,4 +2521,182 @@ func getSigningKey(secret, yearMonthDay, region string) []byte {
 	dateRegionKey := hmacSHA256(dateKey, region)
 	dateRegionServiceKey := hmacSHA256(dateRegionKey, "s3")
 	return hmacSHA256(dateRegionServiceKey, "aws4_request")
+}
+
+// buildPostObjectBody builds a multipart/form-data body for a POST object request.
+// Fields are written first (in the order provided)
+// Returns (body bytes, boundary string, error).
+func buildPostObjectBody(fields, extraFields map[string]string, fileContent []byte) ([]byte, string, error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+
+	for key, value := range fields {
+		v, ok := extraFields[key]
+		if ok {
+			delete(extraFields, key)
+			if v == "" {
+				continue
+			}
+			value = v
+		}
+		if err := w.WriteField(key, value); err != nil {
+			return nil, "", err
+		}
+	}
+
+	for key, value := range extraFields {
+		if err := w.WriteField(key, value); err != nil {
+			return nil, "", err
+		}
+	}
+
+	fw, err := w.CreateFormFile("file", "upload.bin")
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err = fw.Write(fileContent); err != nil {
+		return nil, "", err
+	}
+
+	if err := w.Close(); err != nil {
+		return nil, "", err
+	}
+
+	return buf.Bytes(), w.Boundary(), nil
+}
+
+// encodePostPolicy base64-encodes a POST policy JSON document.
+// optionally it omits some fields based on the input configuration
+func encodePostPolicy(conditions []any, expiration time.Time, fields map[string]string, omitConditions map[string]struct{}) (string, error) {
+	for key, value := range fields {
+		if _, ok := omitConditions[key]; ok {
+			continue
+		}
+
+		conditions = append(conditions, map[string]string{
+			key: value,
+		})
+	}
+
+	if expiration.IsZero() {
+		expiration = time.Now().UTC().Add(15 * time.Minute)
+	}
+
+	policy := map[string]any{
+		"expiration": expiration.UTC().Format(time.RFC3339),
+		"conditions": conditions,
+	}
+
+	b, err := json.Marshal(policy)
+	if err != nil {
+		return "", err
+	}
+
+	return base64.StdEncoding.EncodeToString(b), nil
+}
+
+// signPostPolicy computes the AWS SigV4 HMAC-SHA256 signature over a base64-encoded
+// POST policy document.
+func signPostPolicy(policyB64, dateShort, region, secret string) string {
+	signingKey := getSigningKey(secret, dateShort, region)
+	sig := hmacSHA256(signingKey, policyB64)
+	return hex.EncodeToString(sig)
+}
+
+// buildSignedPostFields returns the complete set of AWS authentication form fields
+// for a signed POST object request.
+// - key
+// - x-amz-algorithm
+// - x-amz-credential
+// - x-amz-date
+func buildSignedPostFields(bucket, key, access, region string, date time.Time) map[string]string {
+	dateShort := date.Format("20060102")
+	dateLong := date.Format(iso8601Format)
+	credential := fmt.Sprintf("%s/%s/%s/s3/aws4_request", access, dateShort, region)
+
+	return map[string]string{
+		"bucket":           bucket,
+		"key":              key,
+		"x-amz-algorithm":  "AWS4-HMAC-SHA256",
+		"x-amz-credential": credential,
+		"x-amz-date":       dateLong,
+	}
+}
+
+type PostRequestConfig struct {
+	bucket               string
+	key                  string
+	access               string
+	secret               string
+	region               string
+	extraFields          map[string]string
+	fileContent          []byte
+	rawPolicy            *string
+	date                 time.Time
+	policyExpiration     time.Time
+	policyConditions     []any
+	omitPolicyConditions map[string]struct{}
+	s3Conf               *S3Conf
+}
+
+// sendPostObject sends a POST multipart/form-data request to /{bucket}.
+// Returns the raw *http.Response for flexible per-test assertions.
+func sendPostObject(input PostRequestConfig) (*http.Response, error) {
+	if input.date.IsZero() {
+		input.date = time.Now().UTC()
+	}
+	if input.policyExpiration.IsZero() {
+		input.policyExpiration = time.Now().UTC().AddDate(0, 0, 1)
+	}
+	if input.access == "" {
+		input.access = input.s3Conf.awsID
+	}
+	if input.secret == "" {
+		input.secret = input.s3Conf.awsSecret
+	}
+	if input.region == "" {
+		input.region = input.s3Conf.awsRegion
+	}
+
+	fields := buildSignedPostFields(input.bucket, input.key, input.access, input.region, input.date)
+
+	var policy string
+	if input.rawPolicy == nil {
+		var err error
+		policy, err = encodePostPolicy(input.policyConditions, input.policyExpiration, fields, input.omitPolicyConditions)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		policy = *input.rawPolicy
+	}
+
+	fields["policy"] = policy
+	fields["x-amz-signature"] = signPostPolicy(policy, input.date.Format("20060102"), input.region, input.secret)
+
+	body, boundary, err := buildPostObjectBody(fields, input.extraFields, input.fileContent)
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint := fmt.Sprintf("%s/%s", input.s3Conf.endpoint, input.bucket)
+	if input.s3Conf.hostStyle {
+		u, err := url.Parse(input.s3Conf.endpoint)
+		if err != nil {
+			return nil, err
+		}
+
+		u.Host = input.bucket + "." + u.Host
+		endpoint = u.String()
+	}
+
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", fmt.Sprintf("multipart/form-data; boundary=%s", boundary))
+	req.ContentLength = int64(len(body))
+
+	return input.s3Conf.httpClient.Do(req)
 }

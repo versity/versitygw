@@ -26,6 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 func PutBucketTagging_non_existing_bucket(s *S3Conf) error {
@@ -196,11 +197,13 @@ func PutBucketTagging_success(s *S3Conf) error {
 func PutBucketTagging_success_status(s *S3Conf) error {
 	testName := "PutBucketTagging_success_status"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		tagging := types.Tagging{
-			TagSet: []types.Tag{
-				{
-					Key:   getPtr("key"),
-					Value: getPtr("val"),
+		tagging := s3response.Tagging{
+			TagSet: s3response.TagSet{
+				Tags: []s3response.Tag{
+					{
+						Key:   "key",
+						Value: "value",
+					},
 				},
 			},
 		}

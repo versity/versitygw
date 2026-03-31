@@ -24,19 +24,20 @@ import (
 type ContextKey string
 
 const (
-	ContextKeyRegion         ContextKey = "region"
-	ContextKeyStartTime      ContextKey = "start-time"
-	ContextKeyIsRoot         ContextKey = "is-root"
-	ContextKeyRootAccessKey  ContextKey = "root-access-key"
-	ContextKeyAccount        ContextKey = "account"
-	ContextKeyAuthenticated  ContextKey = "authenticated"
-	ContextKeyPublicBucket   ContextKey = "public-bucket"
-	ContextKeyParsedAcl      ContextKey = "parsed-acl"
-	ContextKeySkipResBodyLog ContextKey = "skip-res-body-log"
-	ContextKeyBodyReader     ContextKey = "body-reader"
-	ContextKeySkip           ContextKey = "__skip"
-	ContextKeyStack          ContextKey = "stack"
-	ContextKeyBucketOwner    ContextKey = "bucket-owner"
+	ContextKeyRegion           ContextKey = "region"
+	ContextKeyStartTime        ContextKey = "start-time"
+	ContextKeyIsRoot           ContextKey = "is-root"
+	ContextKeyRootAccessKey    ContextKey = "root-access-key"
+	ContextKeyAccount          ContextKey = "account"
+	ContextKeyAuthenticated    ContextKey = "authenticated"
+	ContextKeyPublicBucket     ContextKey = "public-bucket"
+	ContextKeyParsedAcl        ContextKey = "parsed-acl"
+	ContextKeySkipResBodyLog   ContextKey = "skip-res-body-log"
+	ContextKeyBodyReader       ContextKey = "body-reader"
+	ContextKeySkip             ContextKey = "__skip"
+	ContextKeyStack            ContextKey = "stack"
+	ContextKeyBucketOwner      ContextKey = "bucket-owner"
+	ContextKeyObjectPostResult ContextKey = "object-post-result"
 )
 
 func (ck ContextKey) Values() []ContextKey {

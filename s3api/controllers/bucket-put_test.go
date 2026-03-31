@@ -32,7 +32,7 @@ import (
 )
 
 func TestS3ApiController_PutBucketTagging(t *testing.T) {
-	validTaggingBody, err := xml.Marshal(s3response.TaggingInput{
+	validTaggingBody, err := xml.Marshal(s3response.Tagging{
 		TagSet: s3response.TagSet{
 			Tags: []s3response.Tag{
 				{

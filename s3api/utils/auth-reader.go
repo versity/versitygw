@@ -15,6 +15,9 @@
 package utils
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -226,23 +229,13 @@ func ParseAuthorization(authorization string) (AuthData, error) {
 
 		switch key {
 		case "Credential":
-			creds := strings.Split(value, "/")
-			if len(creds) != 5 {
-				return a, s3err.MalformedAuth.MalformedCredential()
-			}
-			if creds[3] != "s3" {
-				return a, s3err.MalformedAuth.IncorrectService(creds[3])
-			}
-			if creds[4] != "aws4_request" {
-				return a, s3err.MalformedAuth.InvalidTerminal(creds[4])
-			}
-			_, err := time.Parse(yyyymmdd, creds[1])
+			creds, err := ParseCredentials(value, s3err.MalformedAuth)
 			if err != nil {
-				return a, s3err.MalformedAuth.InvalidDateFormat(creds[1])
+				return a, err
 			}
-			access = creds[0]
-			date = creds[1]
-			region = creds[2]
+			access = creds.Access
+			date = creds.Date
+			region = creds.Region
 		case "SignedHeaders":
 			signedHeaders = value
 		case "Signature":
@@ -260,6 +253,41 @@ func ParseAuthorization(authorization string) (AuthData, error) {
 	}, nil
 }
 
+type CredentialsScope struct {
+	Access string
+	Date   string
+	Region string
+}
+
+type CredsError interface {
+	MalformedCredential() s3err.APIError
+	IncorrectService(string) s3err.APIError
+	IncorrectTerminal(string) s3err.APIError
+	InvalidDateFormat(string) s3err.APIError
+}
+
+func ParseCredentials(input string, errHandler CredsError) (*CredentialsScope, error) {
+	creds := strings.Split(input, "/")
+	if len(creds) != 5 {
+		return nil, errHandler.MalformedCredential()
+	}
+	if creds[3] != "s3" {
+		return nil, errHandler.IncorrectService(creds[3])
+	}
+	if creds[4] != "aws4_request" {
+		return nil, errHandler.IncorrectTerminal(creds[4])
+	}
+	_, err := time.Parse(yyyymmdd, creds[1])
+	if err != nil {
+		return nil, errHandler.InvalidDateFormat(creds[1])
+	}
+	return &CredentialsScope{
+		Access: creds[0],
+		Date:   creds[1],
+		Region: creds[2],
+	}, nil
+}
+
 func removeSpace(str string) string {
 	var b strings.Builder
 	b.Grow(len(str))
@@ -269,4 +297,24 @@ func removeSpace(str string) string {
 		}
 	}
 	return b.String()
+}
+
+func SignPostPolicy(base64Policy, yyyymmdd, region, secretKey string) (string, error) {
+	signingKey := deriveSigningKey(secretKey, yyyymmdd, region)
+	sig := hmacSHA256(signingKey, []byte(base64Policy))
+	return hex.EncodeToString(sig), nil
+}
+
+func deriveSigningKey(secretKey, yyyymmdd, region string) []byte {
+	kDate := hmacSHA256([]byte("AWS4"+secretKey), []byte(yyyymmdd))
+	kRegion := hmacSHA256(kDate, []byte(region))
+	kService := hmacSHA256(kRegion, []byte(service))
+	kSigning := hmacSHA256(kService, []byte("aws4_request"))
+	return kSigning
+}
+
+func hmacSHA256(key, data []byte) []byte {
+	h := hmac.New(sha256.New, key)
+	h.Write(data)
+	return h.Sum(nil)
 }
