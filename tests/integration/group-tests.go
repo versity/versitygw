@@ -215,6 +215,9 @@ func TestHeadObject(ts *TestState) {
 		ts.Run(HeadObject_checksums)
 	}
 	ts.Run(HeadObject_success)
+	ts.Run(HeadObject_overrides_success)
+	ts.Run(HeadObject_overrides_presign_success)
+	ts.Run(HeadObject_overrides_fail_public)
 }
 
 func TestGetObjectAttributes(ts *TestState) {
@@ -1347,6 +1350,9 @@ func GetIntTests() IntTests {
 		"HeadObject_not_enabled_checksum_mode":                                     HeadObject_not_enabled_checksum_mode,
 		"HeadObject_checksums":                                                     HeadObject_checksums,
 		"HeadObject_success":                                                       HeadObject_success,
+		"HeadObject_overrides_success":                                             HeadObject_overrides_success,
+		"HeadObject_overrides_presign_success":                                     HeadObject_overrides_presign_success,
+		"HeadObject_overrides_fail_public":                                         HeadObject_overrides_fail_public,
 		"GetObjectAttributes_non_existing_bucket":                                  GetObjectAttributes_non_existing_bucket,
 		"GetObjectAttributes_non_existing_object":                                  GetObjectAttributes_non_existing_object,
 		"GetObjectAttributes_invalid_attrs":                                        GetObjectAttributes_invalid_attrs,

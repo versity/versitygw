@@ -41,6 +41,35 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 	objRange := ctx.Get("Range")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 
+	// Extract response override query parameters
+	responseOverrides := map[string]*string{
+		"Cache-Control":       utils.GetQueryParam(ctx, "response-cache-control"),
+		"Content-Disposition": utils.GetQueryParam(ctx, "response-content-disposition"),
+		"Content-Encoding":    utils.GetQueryParam(ctx, "response-content-encoding"),
+		"Content-Language":    utils.GetQueryParam(ctx, "response-content-language"),
+		"Content-Type":        utils.GetQueryParam(ctx, "response-content-type"),
+		"Expires":             utils.GetQueryParam(ctx, "response-expires"),
+	}
+
+	// Check if any response override parameters are present
+	hasResponseOverrides := false
+	for _, override := range responseOverrides {
+		if override != nil {
+			hasResponseOverrides = true
+			break
+		}
+	}
+
+	// Validate that response override parameters are not used with anonymous requests
+	if hasResponseOverrides && isPublicBucket {
+		debuglogger.Logf("anonymous access is denied with response override params")
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrAnonymousResponseHeaders)
+	}
+
 	action := auth.GetObjectAction
 	if ctx.Request().URI().QueryArgs().Has("versionId") {
 		action = auth.GetObjectVersionAction
@@ -137,13 +166,13 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Headers: map[string]*string{
 			"Content-Range":                       res.ContentRange,
-			"Content-Disposition":                 res.ContentDisposition,
-			"Content-Encoding":                    res.ContentEncoding,
-			"Content-Language":                    res.ContentLanguage,
-			"Cache-Control":                       res.CacheControl,
+			"Content-Disposition":                 utils.ApplyOverride(res.ContentDisposition, responseOverrides["Content-Disposition"]),
+			"Content-Encoding":                    utils.ApplyOverride(res.ContentEncoding, responseOverrides["Content-Encoding"]),
+			"Content-Language":                    utils.ApplyOverride(res.ContentLanguage, responseOverrides["Content-Language"]),
+			"Cache-Control":                       utils.ApplyOverride(res.CacheControl, responseOverrides["Cache-Control"]),
 			"Content-Length":                      utils.ConvertPtrToStringPtr(res.ContentLength),
-			"Content-Type":                        res.ContentType,
-			"Expires":                             res.ExpiresString,
+			"Content-Type":                        utils.ApplyOverride(res.ContentType, responseOverrides["Content-Type"]),
+			"Expires":                             utils.ApplyOverride(res.ExpiresString, responseOverrides["Expires"]),
 			"ETag":                                res.ETag,
 			"Last-Modified":                       utils.FormatDatePtrToString(res.LastModified, timefmt),
 			"x-amz-restore":                       res.Restore,
