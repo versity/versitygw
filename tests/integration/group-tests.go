@@ -362,6 +362,7 @@ func TestCopyObject(ts *TestState) {
 	}
 	ts.Run(CopyObject_with_special_characters)
 	ts.Run(CopyObject_success)
+	ts.Run(CopyObject_incorrect_source_bucket_expected_owner)
 }
 
 func TestPutObjectTagging(ts *TestState) {
@@ -451,6 +452,7 @@ func TestUploadPartCopy(ts *TestState) {
 		ts.Run(UploadPartCopy_should_calculate_the_checksum)
 		ts.Run(UploadPartCopy_conditional_reads)
 	}
+	ts.Run(UploadPartCopy_incorrect_source_bucket_expected_owner)
 }
 
 func TestListParts(ts *TestState) {
@@ -1489,6 +1491,7 @@ func GetIntTests() IntTests {
 		"CopyObject_to_itself_by_replacing_the_checksum":                           CopyObject_to_itself_by_replacing_the_checksum,
 		"CopyObject_with_special_characters":                                       CopyObject_with_special_characters,
 		"CopyObject_success":                                                       CopyObject_success,
+		"CopyObject_incorrect_source_bucket_expected_owner":                        CopyObject_incorrect_source_bucket_expected_owner,
 		"PutObjectTagging_non_existing_object":                                     PutObjectTagging_non_existing_object,
 		"PutObjectTagging_long_tags":                                               PutObjectTagging_long_tags,
 		"PutObjectTagging_duplicate_keys":                                          PutObjectTagging_duplicate_keys,
@@ -1548,6 +1551,7 @@ func GetIntTests() IntTests {
 		"UploadPartCopy_greater_range_than_obj_size":                               UploadPartCopy_greater_range_than_obj_size,
 		"UploadPartCopy_by_range_success":                                          UploadPartCopy_by_range_success,
 		"UploadPartCopy_conditional_reads":                                         UploadPartCopy_conditional_reads,
+		"UploadPartCopy_incorrect_source_bucket_expected_owner":                    UploadPartCopy_incorrect_source_bucket_expected_owner,
 		"UploadPartCopy_should_copy_the_checksum":                                  UploadPartCopy_should_copy_the_checksum,
 		"UploadPartCopy_should_not_copy_the_checksum":                              UploadPartCopy_should_not_copy_the_checksum,
 		"UploadPartCopy_should_calculate_the_checksum":                             UploadPartCopy_should_calculate_the_checksum,

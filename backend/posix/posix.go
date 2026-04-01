@@ -3053,6 +3053,20 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, fmt.Errorf("stat bucket: %w", err)
 	}
 
+	if upi.ExpectedSourceBucketOwner != nil && *upi.ExpectedSourceBucketOwner != "" {
+		aclData, err := p.meta.RetrieveAttribute(nil, srcBucket, "", aclkey)
+		if err != nil {
+			return s3response.CopyPartResult{}, fmt.Errorf("get src bucket acl: %w", err)
+		}
+		srcAcl, err := auth.ParseACL(aclData)
+		if err != nil {
+			return s3response.CopyPartResult{}, err
+		}
+		if srcAcl.Owner != *upi.ExpectedSourceBucketOwner {
+			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+		}
+	}
+
 	vStatus, err := p.getBucketVersioningStatus(ctx, srcBucket)
 	if err != nil {
 		return s3response.CopyPartResult{}, err
@@ -4672,6 +4686,20 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	}
 	if err != nil {
 		return s3response.CopyObjectOutput{}, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	if input.ExpectedSourceBucketOwner != nil && *input.ExpectedSourceBucketOwner != "" {
+		aclData, err := p.meta.RetrieveAttribute(nil, srcBucket, "", aclkey)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return s3response.CopyObjectOutput{}, fmt.Errorf("get src bucket acl: %w", err)
+		}
+		srcAcl, err := auth.ParseACL(aclData)
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
+		if srcAcl.Owner != *input.ExpectedSourceBucketOwner {
+			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+		}
 	}
 
 	vStatus, err := p.getBucketVersioningStatus(ctx, srcBucket)

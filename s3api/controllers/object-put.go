@@ -360,6 +360,7 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	copySource := strings.TrimPrefix(ctx.Get("X-Amz-Copy-Source"), "/")
 	copySrcRange := ctx.Get("X-Amz-Copy-Source-Range")
+	expectedSrcBucketOwnerUPC := ctx.Get("X-Amz-Source-Expected-Bucket-Owner")
 	partNumber := int32(ctx.QueryInt("partNumber", -1))
 	uploadId := ctx.Query("uploadId")
 	// context locals
@@ -429,6 +430,7 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 			CopySourceIfNoneMatch:       preconditionHdrs.IfNoneMatch,
 			CopySourceIfModifiedSince:   preconditionHdrs.IfModSince,
 			CopySourceIfUnmodifiedSince: preconditionHdrs.IfUnmodeSince,
+			ExpectedSourceBucketOwner:   &expectedSrcBucketOwnerUPC,
 		})
 	var headers map[string]*string
 	if err == nil && resp.CopySourceVersionId != "" {
@@ -500,6 +502,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	copySource := strings.TrimPrefix(ctx.Get("X-Amz-Copy-Source"), "/")
+	expectedSrcBucketOwner := ctx.Get("X-Amz-Source-Expected-Bucket-Owner")
 	metaDirective := types.MetadataDirective(ctx.Get("X-Amz-Metadata-Directive", string(types.MetadataDirectiveCopy)))
 	taggingDirective := types.TaggingDirective(ctx.Get("X-Amz-Tagging-Directive", string(types.TaggingDirectiveCopy)))
 	contentType := ctx.Get("Content-Type", defaultContentType)
@@ -626,6 +629,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 			CopySourceIfModifiedSince:   preconditionHdrs.IfModSince,
 			CopySourceIfUnmodifiedSince: preconditionHdrs.IfUnmodeSince,
 			ExpectedBucketOwner:         &acct.Access,
+			ExpectedSourceBucketOwner:   &expectedSrcBucketOwner,
 			Metadata:                    metadata,
 			MetadataDirective:           metaDirective,
 			StorageClass:                types.StorageClass(storageClass),
