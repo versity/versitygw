@@ -519,6 +519,10 @@ func (c S3ApiController) ListObjectsV2(ctx *fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
+	region, ok := utils.ContextKeyRegion.Get(ctx).(string)
+	if !ok {
+		region = defaultRegion
+	}
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
@@ -557,12 +561,23 @@ func (c S3ApiController) ListObjectsV2(ctx *fiber.Ctx) (*Response, error) {
 			StartAfter:        &sAfter,
 			FetchOwner:        &fetchOwner,
 		})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	return &Response{
+		Headers: map[string]*string{
+			"x-amz-bucket-region": &region,
+		},
 		Data: res,
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
 		},
-	}, err
+	}, nil
 }
 
 func (c S3ApiController) ListObjects(ctx *fiber.Ctx) (*Response, error) {
@@ -577,6 +592,10 @@ func (c S3ApiController) ListObjects(ctx *fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
+	region, ok := utils.ContextKeyRegion.Get(ctx).(string)
+	if !ok {
+		region = defaultRegion
+	}
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
@@ -614,12 +633,23 @@ func (c S3ApiController) ListObjects(ctx *fiber.Ctx) (*Response, error) {
 			Delimiter: &delimiter,
 			MaxKeys:   &maxkeys,
 		})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	return &Response{
+		Headers: map[string]*string{
+			"x-amz-bucket-region": &region,
+		},
 		Data: res,
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
 		},
-	}, err
+	}, nil
 }
 
 // GetBucketLocation handles GET /:bucket?location
