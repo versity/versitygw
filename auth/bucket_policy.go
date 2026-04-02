@@ -234,7 +234,11 @@ func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) err
 	return nil
 }
 
-func VerifyBucketPolicy(policy []byte, access, bucket, object string, action Action) error {
+func VerifyBucketPolicy(policy []byte, access, bucket, object string, actions ...Action) error {
+	if len(actions) == 0 {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	var bucketPolicy BucketPolicy
 	if err := json.Unmarshal(policy, &bucketPolicy); err != nil {
 		return fmt.Errorf("failed to parse the bucket policy: %w", err)
@@ -245,8 +249,10 @@ func VerifyBucketPolicy(policy []byte, access, bucket, object string, action Act
 		resource += "/" + object
 	}
 
-	if !bucketPolicy.isAllowed(access, action, resource) {
-		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	for _, action := range actions {
+		if !bucketPolicy.isAllowed(access, action, resource) {
+			return s3err.GetAPIError(s3err.ErrAccessDenied)
+		}
 	}
 
 	return nil

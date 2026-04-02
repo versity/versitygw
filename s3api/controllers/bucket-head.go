@@ -40,7 +40,7 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) (*Response, error) {
 			IsRoot:          isRoot,
 			Acc:             acct,
 			Bucket:          bucket,
-			Action:          auth.ListBucketAction,
+			Actions:         []auth.Action{auth.ListBucketAction},
 			IsPublicRequest: isPublicBucket,
 			DisableACL:      c.disableACL,
 		})
