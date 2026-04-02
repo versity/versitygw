@@ -43,7 +43,7 @@ type tmpfile struct {
 	objname    string
 	isOTmp     bool
 	size       int64
-	needsChown bool
+	doChown    bool
 	uid        int
 	gid        int
 	newDirPerm fs.FileMode
@@ -87,7 +87,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		objname:    obj,
 		isOTmp:     true,
 		size:       size,
-		needsChown: doChown,
+		doChown:    doChown,
 		uid:        uid,
 		gid:        gid,
 		newDirPerm: p.newDirPerm,
@@ -126,13 +126,13 @@ func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, u
 		return nil, err
 	}
 	tmp := &tmpfile{
-		f:          f,
-		bucket:     bucket,
-		objname:    obj,
-		size:       size,
-		needsChown: doChown,
-		uid:        uid,
-		gid:        gid,
+		f:       f,
+		bucket:  bucket,
+		objname: obj,
+		size:    size,
+		doChown: doChown,
+		uid:     uid,
+		gid:     gid,
 	}
 	// falloc is best effort, its fine if this fails
 	if size > 0 && dofalloc {
@@ -159,6 +159,40 @@ func (tmp *tmpfile) falloc() error {
 	return nil
 }
 
+const (
+	maxTmpFileNameRetries = 3
+	maxDirRecreateRetries = 3
+	initialBackoffMs      = 1
+	maxBackoffMs          = 1024 // ~1 second
+)
+
+// linkatOTmpfile links the O_TMPFILE identified by procdir/fdName into dir/basename.
+// Handles EEXIST by linking to a temporary name and atomically renaming it into place.
+func linkatOTmpfile(procdirFd, dirFd int, fdName, basename string) error {
+	err := unix.Linkat(procdirFd, fdName, dirFd, basename, unix.AT_SYMLINK_FOLLOW)
+	if !errors.Is(err, syscall.EEXIST) {
+		return err
+	}
+	// Linkat cannot overwrite an existing file; link to a temp name then rename atomically.
+	for retries := 1; ; retries++ {
+		tmpName := fmt.Sprintf(".%s.sgwtmp.%d", basename, time.Now().UnixNano())
+		err := unix.Linkat(procdirFd, fdName, dirFd, tmpName, unix.AT_SYMLINK_FOLLOW)
+		if errors.Is(err, syscall.EEXIST) && retries < maxTmpFileNameRetries {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("cannot find free temporary file: %w", err)
+		}
+		err = unix.Renameat(dirFd, tmpName, dirFd, basename)
+		if err != nil {
+			// cleanup temp name previously linked into namespace
+			_ = unix.Unlinkat(dirFd, tmpName, 0)
+			return fmt.Errorf("overwriting renameat failed: %w", err)
+		}
+		return nil
+	}
+}
+
 func (tmp *tmpfile) link() error {
 	// make sure this is cleaned up in all error cases
 	defer tmp.f.Close()
@@ -173,7 +207,7 @@ func (tmp *tmpfile) link() error {
 
 	dir := filepath.Dir(objPath)
 
-	err := backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.needsChown, tmp.newDirPerm)
+	err := backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.doChown, tmp.newDirPerm)
 	if err != nil {
 		return fmt.Errorf("make parent dir: %w", err)
 	}
@@ -189,39 +223,40 @@ func (tmp *tmpfile) link() error {
 	}
 	defer procdir.Close()
 
-	dirf, err := os.Open(dir)
-	if err != nil {
-		return fmt.Errorf("open parent dir: %w", err)
-	}
-	defer dirf.Close()
-
-	err = unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
-		int(dirf.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
-	if errors.Is(err, syscall.EEXIST) {
-		// Linkat cannot overwrite files; we will allocate a temporary file, Linkat to it and then Renameat it
-		// to avoid potential race condition
-		retries := 1
-		for {
-			tmpName := fmt.Sprintf(".%s.sgwtmp.%d", filepath.Base(objPath), time.Now().UnixNano())
-			err := unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
-				int(dirf.Fd()), tmpName, unix.AT_SYMLINK_FOLLOW)
-			if errors.Is(err, syscall.EEXIST) && retries < 3 {
-				retries += 1
-				continue
-			}
+	backoffMs := initialBackoffMs
+	var dirf *os.File
+	for {
+		dirf, err = os.Open(dir)
+		if errors.Is(err, fs.ErrNotExist) {
+			err := backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.doChown, tmp.newDirPerm)
 			if err != nil {
-				return fmt.Errorf("cannot find free temporary file: %w", err)
+				return fmt.Errorf("make parent dir: %w", err)
 			}
-
-			err = unix.Renameat(int(dirf.Fd()), tmpName, int(dirf.Fd()), filepath.Base(objPath))
-			if err != nil {
-				return fmt.Errorf("overwriting renameat failed: %w", err)
-			}
-			break
+			continue
 		}
-	} else if err != nil {
-		return fmt.Errorf("link tmpfile (fd %q as %q): %w",
-			filepath.Base(tmp.f.Name()), objPath, err)
+		if err != nil {
+			return fmt.Errorf("open parent dir: %w", err)
+		}
+		err = linkatOTmpfile(int(procdir.Fd()), int(dirf.Fd()),
+			filepath.Base(tmp.f.Name()), filepath.Base(objPath))
+		dirf.Close()
+		if errors.Is(err, syscall.ENOENT) {
+			// The directory was removed between open and linkat; backoff and retry.
+			// Add jitter to avoid synchronized retry waves.
+			sleepWithJitter(backoffMs)
+			backoffMs = min((backoffMs * 2), maxBackoffMs)
+
+			mkErr := backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.doChown, tmp.newDirPerm)
+			if mkErr != nil {
+				return fmt.Errorf("make parent dir: %w", mkErr)
+			}
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("link tmpfile (fd %q as %q): %w",
+				filepath.Base(tmp.f.Name()), objPath, err)
+		}
+		break
 	}
 
 	err = tmp.f.Close()
@@ -244,24 +279,50 @@ func (tmp *tmpfile) fallbackLink() error {
 	}
 
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
+	dir := filepath.Dir(objPath)
 	err = os.Rename(tempname, objPath)
+	if errors.Is(err, syscall.ENOENT) {
+		// The parent directory was concurrently removed; backoff and retry.
+		backoffMs := initialBackoffMs
+		for range maxDirRecreateRetries {
+			// Add jitter to avoid synchronized retry waves.
+			sleepWithJitter(backoffMs)
+			backoffMs = min((backoffMs * 2), maxBackoffMs)
+
+			err = backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.doChown, tmp.newDirPerm)
+			if err != nil {
+				return fmt.Errorf("recreate parent dir: %w", err)
+			}
+			err = os.Rename(tempname, objPath)
+			if !errors.Is(err, syscall.ENOENT) {
+				break
+			}
+		}
+	}
 	if err != nil {
 		// rename only works for files within the same filesystem
 		// if this fails fallback to copy
-		return backend.MoveFile(tempname, objPath, fs.FileMode(defaultFilePerm))
+		backoffMs := initialBackoffMs
+		for range maxDirRecreateRetries {
+			err = backend.MoveFile(tempname, objPath, fs.FileMode(defaultFilePerm))
+			if !errors.Is(err, syscall.ENOENT) {
+				break
+			}
+
+			// Add jitter to avoid synchronized retry waves.
+			sleepWithJitter(backoffMs)
+			backoffMs = min((backoffMs * 2), maxBackoffMs)
+
+			// The parent directory was concurrently removed; recreate and retry.
+			mkErr := backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.doChown, tmp.newDirPerm)
+			if mkErr != nil {
+				return fmt.Errorf("recreate parent dir: %w", mkErr)
+			}
+		}
+		return err
 	}
 
 	return nil
-}
-
-func (tmp *tmpfile) Write(b []byte) (int, error) {
-	if int64(len(b)) > tmp.size {
-		return 0, fmt.Errorf("write exceeds content length %v", tmp.size)
-	}
-
-	n, err := tmp.f.Write(b)
-	tmp.size -= int64(n)
-	return n, err
 }
 
 func (tmp *tmpfile) cleanup() {
@@ -269,8 +330,4 @@ func (tmp *tmpfile) cleanup() {
 	if !strings.HasPrefix(tmp.f.Name(), procfddir) {
 		os.Remove(tmp.f.Name())
 	}
-}
-
-func (tmp *tmpfile) File() *os.File {
-	return tmp.f
 }

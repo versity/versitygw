@@ -30,11 +30,20 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
+const (
+	initialBackoffMs = 1
+	maxBackoffMs     = 1024 // ~1 second
+)
+
 type tmpfile struct {
-	f       *os.File
-	bucket  string
-	objname string
-	size    int64
+	f          *os.File
+	bucket     string
+	objname    string
+	size       int64
+	newDirPerm fs.FileMode
+	uid        int
+	gid        int
+	doChown    bool
 }
 
 func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, _ bool, _ bool) (*tmpfile, error) {
@@ -67,7 +76,16 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		}
 	}
 
-	return &tmpfile{f: f, bucket: bucket, objname: obj, size: size}, nil
+	return &tmpfile{
+		f:          f,
+		bucket:     bucket,
+		objname:    obj,
+		size:       size,
+		newDirPerm: p.newDirPerm,
+		uid:        uid,
+		gid:        gid,
+		doChown:    doChown,
+	}, nil
 }
 
 var (
@@ -88,24 +106,27 @@ func (tmp *tmpfile) link() error {
 		return fmt.Errorf("close tmpfile: %w", err)
 	}
 
-	return backend.MoveFile(tempname, objPath, defaultFilePerm)
-}
+	backoffMs := initialBackoffMs
+	for {
+		err = backend.MoveFile(tempname, objPath, defaultFilePerm)
+		if !errors.Is(err, syscall.ENOENT) {
+			break
+		}
+		// The parent directory may have been concurrently removed; backoff and retry.
+		// Add jitter to avoid synchronized retry waves.
+		sleepWithJitter(backoffMs)
+		backoffMs = min((backoffMs * 2), maxBackoffMs)
 
-func (tmp *tmpfile) Write(b []byte) (int, error) {
-	if int64(len(b)) > tmp.size {
-		return 0, fmt.Errorf("write exceeds content length %v", tmp.size)
+		err = backend.MkdirAll(filepath.Dir(objPath), tmp.uid, tmp.gid,
+			tmp.doChown, tmp.newDirPerm)
+		if err != nil {
+			return fmt.Errorf("recreate parent dir: %w", err)
+		}
 	}
-
-	n, err := tmp.f.Write(b)
-	tmp.size -= int64(n)
-	return n, err
+	return err
 }
 
 func (tmp *tmpfile) cleanup() {
 	tmp.f.Close()
 	os.Remove(tmp.f.Name())
-}
-
-func (tmp *tmpfile) File() *os.File {
-	return tmp.f
 }
