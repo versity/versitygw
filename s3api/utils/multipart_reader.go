@@ -39,8 +39,7 @@ type MultipartParser struct {
 }
 
 // NewMultipartParser creates a new streaming multipart parser.
-// boundary should be the raw boundary value from Content-Type, without the leading "--".
-// If accidentally "--<boundary>" has been passed, it is normalized.
+// boundary should be the raw boundary value from Content-Type,
 func NewMultipartParser(body io.Reader, boundary string, requestContentLength int64) (*MultipartParser, error) {
 	if body == nil {
 		debuglogger.Logf("multipart parser requires non-nil body reader")
@@ -52,7 +51,6 @@ func NewMultipartParser(body io.Reader, boundary string, requestContentLength in
 	}
 
 	boundary = strings.TrimSpace(boundary)
-	boundary = strings.TrimPrefix(boundary, "--")
 	if boundary == "" {
 		debuglogger.Logf("multipart boundary is empty")
 		return nil, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)

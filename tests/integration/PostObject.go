@@ -20,6 +20,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -1091,6 +1092,87 @@ func PostObject_checksums_success(s *S3Conf) error {
 			if resp.StatusCode != http.StatusNoContent {
 				return fmt.Errorf("test %d failed: expected the response status code to be 204, instead got %d", i+1, resp.StatusCode)
 			}
+		}
+
+		return nil
+	})
+}
+
+func PostObject_success_double_dash_boundary(s *S3Conf) error {
+	testName := "PostObject_success_double_dash_boundary"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "test-object"
+		objData := []byte("hello world")
+		signingDate := time.Now().UTC()
+
+		fields := buildSignedPostFields(bucket, key, s.awsID, s.awsRegion, signingDate)
+		policy, err := encodePostPolicy([]any{}, time.Now().UTC().Add(10*time.Minute), fields, make(map[string]struct{}))
+		if err != nil {
+			return err
+		}
+		fields["policy"] = policy
+		fields["x-amz-signature"] = signPostPolicy(policy, signingDate.Format("20060102"), s.awsRegion, s.awsSecret)
+
+		var buf bytes.Buffer
+		w := multipart.NewWriter(&buf)
+		if err := w.SetBoundary("--custom-post-boundary"); err != nil {
+			return fmt.Errorf("failed to set boundary: %w", err)
+		}
+
+		for k, v := range fields {
+			if err := w.WriteField(k, v); err != nil {
+				return err
+			}
+		}
+
+		fw, err := w.CreateFormFile("file", "upload.bin")
+		if err != nil {
+			return err
+		}
+		if _, err = fw.Write(objData); err != nil {
+			return err
+		}
+		if err := w.Close(); err != nil {
+			return err
+		}
+
+		boundary := w.Boundary()
+		body := buf.Bytes()
+
+		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/%s", s.endpoint, bucket), bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", fmt.Sprintf("multipart/form-data; boundary=%s", boundary))
+		req.ContentLength = int64(len(body))
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("expected status 204, got %d", resp.StatusCode)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+
+		gotData, err := io.ReadAll(res.Body)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(gotData, objData) {
+			return fmt.Errorf("expected object data %q, got %q", objData, gotData)
 		}
 
 		return nil
