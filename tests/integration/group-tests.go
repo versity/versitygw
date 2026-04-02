@@ -1173,6 +1173,7 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_success_with_meta_properties)
 	ts.Run(PostObject_invalid_tagging)
 	ts.Run(PostObject_success_with_tagging)
+	ts.Run(PostObject_success_double_dash_boundary)
 	if !ts.conf.azureTests {
 		ts.Run(PostObject_invalid_checksum_value)
 		ts.Run(PostObject_invalid_checksum_algorithm)
@@ -1977,5 +1978,6 @@ func GetIntTests() IntTests {
 		"PostObject_invalid_checksum_algorithm":                                    PostObject_invalid_checksum_algorithm,
 		"PostObject_multiple_checksum_headers":                                     PostObject_multiple_checksum_headers,
 		"PostObject_checksums_success":                                             PostObject_checksums_success,
+		"PostObject_success_double_dash_boundary":                                  PostObject_success_double_dash_boundary,
 	}
 }

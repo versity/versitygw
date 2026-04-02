@@ -100,28 +100,28 @@ func TestMultipartParserParseSuccess(t *testing.T) {
 	t.Parallel()
 
 	body := strings.Join([]string{
-		"--abc\r\n",
+		"----abc\r\n",
 		"Content-Disposition: form-data; name=\"key\"\r\n",
 		"\r\n",
 		"uploads/photo.jpg\r\n",
-		"--abc\r\n",
+		"----abc\r\n",
 		"Content-Disposition: form-data; name=\"success_action_status\"\r\n",
 		"\r\n",
 		"201\r\n",
-		"--abc\r\n",
+		"----abc\r\n",
 		"Content-Disposition: form-data; name=\"x-amz-meta-color\"\r\n",
 		"\r\n",
 		"blue\r\n",
-		"--abc\r\n",
+		"----abc\r\n",
 		"Content-Disposition: form-data; name=\"x-amz-meta-color\"\r\n",
 		"\r\n",
 		"green\r\n",
-		"--abc\r\n",
+		"----abc\r\n",
 		"Content-Disposition: form-data; name=\"file\"; filename=\"photo.jpg\"\r\n",
 		"Content-Type: image/jpeg\r\n",
 		"\r\n",
 		"file-body-123",
-		"\r\n--abc--\r\n",
+		"\r\n----abc--\r\n",
 	}, "")
 
 	mp := newMultipartParserForTest(t, body, "--abc")
