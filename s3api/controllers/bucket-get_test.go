@@ -1107,7 +1107,6 @@ func TestS3ApiController_ListObjectsV2(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					Data: s3response.ListObjectsV2Result{},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},
@@ -1123,6 +1122,9 @@ func TestS3ApiController_ListObjectsV2(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
 					Data: listV2Result,
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
@@ -1214,7 +1216,6 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					Data: s3response.ListObjectsResult{},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},
@@ -1231,6 +1232,9 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 			output: testOutput{
 				response: &Response{
 					Data: listResult,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},
