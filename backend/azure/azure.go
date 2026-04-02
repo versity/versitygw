@@ -956,6 +956,20 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		return s3response.CopyObjectOutput{}, err
 	}
 
+	if input.ExpectedSourceBucketOwner != nil && *input.ExpectedSourceBucketOwner != "" {
+		aclData, err := az.GetBucketAcl(ctx, &s3.GetBucketAclInput{Bucket: &srcBucket})
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
+		srcAcl, err := auth.ParseACL(aclData)
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
+		if srcAcl.Owner != *input.ExpectedSourceBucketOwner {
+			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+		}
+	}
+
 	if !areNils(input.CopySourceIfMatch, input.CopySourceIfNoneMatch) || !areNils(input.CopySourceIfModifiedSince, input.CopySourceIfUnmodifiedSince) {
 		_, err = az.HeadObject(ctx, &s3.HeadObjectInput{
 			Bucket:            &srcBucket,

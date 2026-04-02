@@ -1020,3 +1020,41 @@ func UploadPartCopy_should_calculate_the_checksum(s *S3Conf) error {
 		return nil
 	})
 }
+
+func UploadPartCopy_incorrect_source_bucket_expected_owner(s *S3Conf) error {
+	testName := "UploadPartCopy_incorrect_source_bucket_expected_owner"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcBucket := getBucketName()
+		err := setup(s, srcBucket)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			_ = teardown(s, srcBucket)
+		}()
+
+		srcObj := "src-obj"
+		_, err = putObjects(s3client, []string{srcObj}, srcBucket)
+		if err != nil {
+			return err
+		}
+
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+			Bucket:                    &bucket,
+			Key:                       &obj,
+			CopySource:                getPtr(fmt.Sprintf("%v/%v", srcBucket, srcObj)),
+			UploadId:                  mp.UploadId,
+			PartNumber:                getPtr(int32(1)),
+			ExpectedSourceBucketOwner: getPtr("incorrect-owner"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}

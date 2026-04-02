@@ -1703,3 +1703,33 @@ func CopyObject_object_acl_not_supported(s *S3Conf) error {
 		return nil
 	})
 }
+
+func CopyObject_incorrect_source_bucket_expected_owner(s *S3Conf) error {
+	testName := "CopyObject_incorrect_source_bucket_expected_owner"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcBucket := getBucketName()
+		err := setup(s, srcBucket)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			_ = teardown(s, srcBucket)
+		}()
+
+		srcObj := "my-obj"
+		_, err = putObjects(s3client, []string{srcObj}, srcBucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:                    &bucket,
+			Key:                       getPtr("dst-obj"),
+			CopySource:                getPtr(fmt.Sprintf("%v/%v", srcBucket, srcObj)),
+			ExpectedSourceBucketOwner: getPtr("incorrect-owner"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}
