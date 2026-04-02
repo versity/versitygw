@@ -232,7 +232,7 @@ export RUN_USERS=true
 }
 
 @test "REST - ListBuckets - error Content-Type is application/xml" {
-  run send_rest_go_command_check_header_key_and_value "400" "Content-Type" "application/xml" "-method" "GET" "-omitDate"
+  run send_rest_go_command_check_header_key_and_value "403" "Content-Type" "application/xml" "-method" "GET" "-omitDate"
   assert_success
 }
 
