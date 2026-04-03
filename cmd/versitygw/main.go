@@ -1113,6 +1113,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	if len(webuiPorts) > 0 {
 		// Validate all webui addresses
 		for _, addr := range webuiPorts {
+			if utils.IsUnixSocketPath(addr) {
+				continue
+			}
 			_, webPrt, err := net.SplitHostPort(addr)
 			if err != nil {
 				return fmt.Errorf("webui listen address must be in the form ':port' or 'host:port': %w", err)
