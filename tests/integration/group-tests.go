@@ -274,6 +274,10 @@ func TestListObjects(ts *TestState) {
 	ts.Run(ListObjects_nested_dir_file_objs)
 	ts.Run(ListObjects_check_owner)
 	ts.Run(ListObjects_non_truncated_common_prefixes)
+	ts.Run(ListObjects_should_not_list_pending_mps)
+	ts.Run(ListObjects_mp_masking_with_marker)
+	ts.Run(ListObjects_mp_masking_truncation)
+	ts.Run(ListObjects_mp_masking_delimiter)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(ListObjects_with_checksum)
@@ -282,10 +286,7 @@ func TestListObjects(ts *TestState) {
 
 func TestListObjectsV2(ts *TestState) {
 	ts.Run(ListObjectsV2_start_after)
-	// posix continuation token not compatible with azure
-	if !ts.conf.azureTests {
-		ts.Run(ListObjectsV2_both_start_after_and_continuation_token)
-	}
+	ts.Run(ListObjectsV2_both_start_after_and_continuation_token)
 	ts.Run(ListObjectsV2_start_after_not_in_list)
 	ts.Run(ListObjectsV2_start_after_empty_result)
 	ts.Run(ListObjectsV2_both_delimiter_and_prefix)
@@ -301,6 +302,10 @@ func TestListObjectsV2(ts *TestState) {
 		ts.Run(ListObjectsV2_with_checksum)
 	}
 	ts.Run(ListObjectsV2_invalid_parent_prefix)
+	ts.Run(ListObjectsV2_should_not_list_pending_mps)
+	ts.Run(ListObjectsV2_mp_masking_start_after)
+	ts.Run(ListObjectsV2_mp_masking_truncation)
+	ts.Run(ListObjectsV2_mp_masking_delimiter)
 }
 
 // VD stands for Versioning Disabled
@@ -1433,7 +1438,16 @@ func GetIntTests() IntTests {
 		"ListObjects_nested_dir_file_objs":                                         ListObjects_nested_dir_file_objs,
 		"ListObjects_check_owner":                                                  ListObjects_check_owner,
 		"ListObjects_non_truncated_common_prefixes":                                ListObjects_non_truncated_common_prefixes,
+		"ListObjects_should_not_list_pending_mps":                                  ListObjects_should_not_list_pending_mps,
+		"ListObjects_mp_masking_with_marker":                                       ListObjects_mp_masking_with_marker,
+		"ListObjects_mp_masking_truncation":                                        ListObjects_mp_masking_truncation,
+		"ListObjects_mp_masking_delimiter":                                         ListObjects_mp_masking_delimiter,
 		"ListObjectsV2_non_truncated_common_prefixes":                              ListObjectsV2_non_truncated_common_prefixes,
+		"ListObjectsV2_invalid_parent_prefix":                                      ListObjectsV2_invalid_parent_prefix,
+		"ListObjectsV2_should_not_list_pending_mps":                                ListObjectsV2_should_not_list_pending_mps,
+		"ListObjectsV2_mp_masking_start_after":                                     ListObjectsV2_mp_masking_start_after,
+		"ListObjectsV2_mp_masking_truncation":                                      ListObjectsV2_mp_masking_truncation,
+		"ListObjectsV2_mp_masking_delimiter":                                       ListObjectsV2_mp_masking_delimiter,
 		"ListObjects_with_checksum":                                                ListObjects_with_checksum,
 		"ListObjectsV2_start_after":                                                ListObjectsV2_start_after,
 		"ListObjectsV2_both_start_after_and_continuation_token":                    ListObjectsV2_both_start_after_and_continuation_token,
