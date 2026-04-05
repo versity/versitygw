@@ -91,6 +91,10 @@ var (
 	webuiAdminGateways                     []string
 	webuiPathPrefix                        string
 	webuiS3Prefix                          string
+	websitePorts                           []string
+	websiteDomain                          string
+	websiteCertFile, websiteKeyFile        string
+	websiteNoTLS                           bool
 	disableACLs                            bool
 	mpMaxParts                             int
 	copyObjectThreshold                    int64
@@ -152,6 +156,7 @@ documentation can be found in the GitHub wiki.`,
 			webuiGateways = ctx.StringSlice("webui-gateways")
 			webuiAdminGateways = ctx.StringSlice("webui-admin-gateways")
 			webuiPathPrefix = ctx.String("webui-path-prefix")
+			websitePorts = ctx.StringSlice("website")
 
 			// Resolve relative UNIX socket paths to absolute before any backend
 			// (e.g. posix) can change the working directory via os.Chdir.
@@ -163,6 +168,9 @@ documentation can be found in the GitHub wiki.`,
 				return err
 			}
 			if webuiPorts, err = utils.AbsSocketPaths(webuiPorts); err != nil {
+				return err
+			}
+			if websitePorts, err = utils.AbsSocketPaths(websitePorts); err != nil {
 				return err
 			}
 			return nil
@@ -239,6 +247,35 @@ func initFlags() []cli.Flag {
 			Usage:       "mount the WebUI on the S3 port at the given path prefix (e.g. '/ui'); must start with '/', must not be '/', and must not end with '/'",
 			EnvVars:     []string{"VGW_WEBUI_S3_PREFIX"},
 			Destination: &webuiS3Prefix,
+		},
+		&cli.StringSliceFlag{
+			Name:    "website",
+			Usage:   "enable static website hosting endpoint on the specified listen address (e.g. ':8080'; same forms as --port; can be specified multiple times; requires --website-domain)",
+			EnvVars: []string{"VGW_WEBSITE_PORT"},
+		},
+		&cli.StringFlag{
+			Name:        "website-domain",
+			Usage:       "base domain for website virtual-host routing (e.g. 'example.com'); host 'blog.example.com' serves bucket 'blog', host 'example.com' serves bucket 'example.com'; when omitted the full hostname is used as the bucket name (catch-all mode, buckets named as FQDNs)",
+			EnvVars:     []string{"VGW_WEBSITE_DOMAIN"},
+			Destination: &websiteDomain,
+		},
+		&cli.StringFlag{
+			Name:        "website-cert",
+			Usage:       "TLS cert file for website endpoint (defaults to --cert value when website is enabled)",
+			EnvVars:     []string{"VGW_WEBSITE_CERT"},
+			Destination: &websiteCertFile,
+		},
+		&cli.StringFlag{
+			Name:        "website-key",
+			Usage:       "TLS key file for website endpoint (defaults to --key value when website is enabled)",
+			EnvVars:     []string{"VGW_WEBSITE_KEY"},
+			Destination: &websiteKeyFile,
+		},
+		&cli.BoolFlag{
+			Name:        "website-no-tls",
+			Usage:       "disable TLS for website endpoint even if TLS is configured for the gateway",
+			EnvVars:     []string{"VGW_WEBSITE_NO_TLS"},
+			Destination: &websiteNoTLS,
 		},
 		&cli.StringFlag{
 			Name:        "access",
