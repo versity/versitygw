@@ -38,7 +38,6 @@ const (
 	ContextKeyStack            ContextKey = "stack"
 	ContextKeyBucketOwner      ContextKey = "bucket-owner"
 	ContextKeyObjectPostResult ContextKey = "object-post-result"
-	ContextKeyWebsiteConfig    ContextKey = "website-config"
 )
 
 func (ck ContextKey) Values() []ContextKey {

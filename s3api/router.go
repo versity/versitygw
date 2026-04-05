@@ -1114,11 +1114,10 @@ func (sa *S3ApiRouter) Init() {
 	// HeadObject
 	objectRouter.Head("",
 		controllers.ProcessHandlers(
-			controllers.WebsiteErrorDocument(sa.be, ctrl.HeadObject),
+			ctrl.HeadObject,
 			metrics.ActionHeadObject,
 			services,
 			middlewares.BucketObjectNameValidator(),
-			middlewares.ResolveWebsiteIndex(sa.be),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionHeadObject, auth.GetObjectAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, false, false),
@@ -1226,11 +1225,10 @@ func (sa *S3ApiRouter) Init() {
 		))
 	objectRouter.Get("",
 		controllers.ProcessHandlers(
-			controllers.WebsiteErrorDocument(sa.be, ctrl.GetObject),
+			ctrl.GetObject,
 			metrics.ActionGetObject,
 			services,
 			middlewares.BucketObjectNameValidator(),
-			middlewares.ResolveWebsiteIndex(sa.be),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetObject, auth.GetObjectAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
