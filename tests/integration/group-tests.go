@@ -656,6 +656,16 @@ func TestDeleteBucketWebsite(ts *TestState) {
 	ts.Run(DeleteBucketWebsite_success)
 }
 
+func TestWebsiteHosting(ts *TestState) {
+	ts.Run(WebsiteHosting_error_document_served)
+	ts.Run(WebsiteHosting_error_document_not_found)
+	ts.Run(WebsiteHosting_no_error_document)
+	ts.Run(WebsiteHosting_routing_rule_post_request_redirect)
+	ts.Run(WebsiteHosting_routing_rule_pre_request_redirect)
+	ts.Run(WebsiteHosting_redirect_all_requests)
+	ts.Run(WebsiteHosting_index_document)
+}
+
 func TestPreflightOPTIONSEndpoint(ts *TestState) {
 	ts.Run(PreflightOPTIONS_non_existing_bucket)
 	ts.Run(PreflightOPTIONS_missing_origin)
@@ -854,6 +864,7 @@ func TestFullFlow(ts *TestState) {
 	TestPutBucketWebsite(ts)
 	TestGetBucketWebsite(ts)
 	TestDeleteBucketWebsite(ts)
+	TestWebsiteHosting(ts)
 	TestPreflightOPTIONSEndpoint(ts)
 	TestPutObjectLockConfiguration(ts)
 	TestGetObjectLockConfiguration(ts)
@@ -1717,6 +1728,13 @@ func GetIntTests() IntTests {
 		"GetBucketWebsite_success_redirect_all":                                    GetBucketWebsite_success_redirect_all,
 		"DeleteBucketWebsite_non_existing_bucket":                                  DeleteBucketWebsite_non_existing_bucket,
 		"DeleteBucketWebsite_success":                                              DeleteBucketWebsite_success,
+		"WebsiteHosting_error_document_served":                                     WebsiteHosting_error_document_served,
+		"WebsiteHosting_error_document_not_found":                                  WebsiteHosting_error_document_not_found,
+		"WebsiteHosting_no_error_document":                                         WebsiteHosting_no_error_document,
+		"WebsiteHosting_routing_rule_post_request_redirect":                        WebsiteHosting_routing_rule_post_request_redirect,
+		"WebsiteHosting_routing_rule_pre_request_redirect":                         WebsiteHosting_routing_rule_pre_request_redirect,
+		"WebsiteHosting_redirect_all_requests":                                     WebsiteHosting_redirect_all_requests,
+		"WebsiteHosting_index_document":                                            WebsiteHosting_index_document,
 		"PreflightOPTIONS_non_existing_bucket":                                     PreflightOPTIONS_non_existing_bucket,
 		"PreflightOPTIONS_missing_origin":                                          PreflightOPTIONS_missing_origin,
 		"PreflightOPTIONS_invalid_request_method":                                  PreflightOPTIONS_invalid_request_method,

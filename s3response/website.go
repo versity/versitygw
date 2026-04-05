@@ -149,3 +149,50 @@ func ParseWebsiteConfigOutput(data []byte) (*WebsiteConfiguration, error) {
 
 	return &config, nil
 }
+
+// MatchPreRequestRule returns the first routing rule that matches based only
+// on KeyPrefixEquals (i.e. rules without HttpErrorCodeReturnedEquals). These
+// rules can be evaluated before the backend request is made. A rule with no
+// condition at all is treated as an unconditional match.
+func (c *WebsiteConfiguration) MatchPreRequestRule(key string) *RoutingRule {
+	for i := range c.RoutingRules {
+		rule := &c.RoutingRules[i]
+
+		if rule.Condition != nil && rule.Condition.HttpErrorCodeReturnedEquals != "" {
+			// This is a post-request rule, skip it
+			continue
+		}
+
+		if rule.Condition == nil || strings.HasPrefix(key, rule.Condition.KeyPrefixEquals) {
+			return rule
+		}
+	}
+
+	return nil
+}
+
+// MatchPostRequestRule returns the first routing rule that matches based on
+// HttpErrorCodeReturnedEquals (and optionally KeyPrefixEquals). These rules
+// are evaluated after the backend returns an error.
+func (c *WebsiteConfiguration) MatchPostRequestRule(key, httpErrorCode string) *RoutingRule {
+	for i := range c.RoutingRules {
+		rule := &c.RoutingRules[i]
+
+		if rule.Condition == nil || rule.Condition.HttpErrorCodeReturnedEquals == "" {
+			// Not a post-request rule
+			continue
+		}
+
+		if rule.Condition.HttpErrorCodeReturnedEquals != httpErrorCode {
+			continue
+		}
+
+		if rule.Condition.KeyPrefixEquals != "" && !strings.HasPrefix(key, rule.Condition.KeyPrefixEquals) {
+			continue
+		}
+
+		return rule
+	}
+
+	return nil
+}

@@ -18,6 +18,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -26,12 +27,15 @@ import (
 	"github.com/versity/versitygw/s3response"
 )
 
-// ResolveWebsiteIndex rewrites directory-like object keys to include the
-// configured IndexDocument suffix when website hosting is enabled for the
-// bucket. It also handles RedirectAllRequestsTo by returning a 301 redirect.
+// ResolveWebsiteIndex handles website hosting logic for the request pipeline.
+// It fetches the website configuration and caches it in the context for
+// downstream use (e.g., error document serving). It handles:
+//   - RedirectAllRequestsTo: returns a 301 redirect
+//   - Pre-request routing rules: evaluates rules without HttpErrorCodeReturnedEquals
+//   - Index document rewriting: rewrites directory-like keys to append the suffix
 //
-// This middleware should be placed in the GetObject handler chain before
-// authentication and the controller.
+// This middleware should be placed in the GetObject/HeadObject handler chain
+// before authentication and the controller.
 func ResolveWebsiteIndex(be backend.Backend) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		if utils.ContextKeySkip.IsSet(ctx) {
@@ -44,11 +48,6 @@ func ResolveWebsiteIndex(be backend.Backend) fiber.Handler {
 		}
 
 		key := ctx.Params("*1")
-
-		// Only process directory-like keys (empty or ending with /)
-		if key != "" && !strings.HasSuffix(key, "/") {
-			return ctx.Next()
-		}
 
 		// Reject path traversal attempts
 		if strings.Contains(key, "..") {
@@ -66,16 +65,26 @@ func ResolveWebsiteIndex(be backend.Backend) fiber.Handler {
 			return ctx.Next()
 		}
 
+		// Cache the parsed config in context for the error document wrapper
+		utils.ContextKeyWebsiteConfig.Set(ctx, &config)
+
 		// Handle RedirectAllRequestsTo
 		if config.RedirectAllRequestsTo != nil {
 			return redirectAll(ctx, config.RedirectAllRequestsTo, key)
 		}
 
+		// Evaluate pre-request routing rules (key prefix matches, no error code condition)
+		if rule := config.MatchPreRequestRule(key); rule != nil {
+			return applyRoutingRuleRedirect(ctx, rule, key)
+		}
+
 		// Rewrite directory-like keys to include index document suffix
-		if config.IndexDocument != nil && config.IndexDocument.Suffix != "" {
-			newKey := key + config.IndexDocument.Suffix
-			newPath := fmt.Sprintf("/%s/%s", bucket, newKey)
-			ctx.Request().URI().SetPath(newPath)
+		if key == "" || strings.HasSuffix(key, "/") {
+			if config.IndexDocument != nil && config.IndexDocument.Suffix != "" {
+				newKey := key + config.IndexDocument.Suffix
+				newPath := fmt.Sprintf("/%s/%s", bucket, newKey)
+				ctx.Request().URI().SetPath(newPath)
+			}
 		}
 
 		return ctx.Next()
@@ -91,4 +100,38 @@ func redirectAll(ctx *fiber.Ctx, redirect *s3response.RedirectAllRequestsTo, key
 	location := fmt.Sprintf("%s://%s/%s", protocol, redirect.HostName, key)
 	ctx.Set("Location", location)
 	return ctx.SendStatus(http.StatusMovedPermanently)
+}
+
+// applyRoutingRuleRedirect constructs a redirect response from a matched
+// pre-request routing rule.
+func applyRoutingRuleRedirect(ctx *fiber.Ctx, rule *s3response.RoutingRule, originalKey string) error {
+	redirect := rule.Redirect
+
+	protocol := redirect.Protocol
+	if protocol == "" {
+		protocol = ctx.Protocol()
+	}
+
+	host := redirect.HostName
+	if host == "" {
+		host = ctx.Hostname()
+	}
+
+	key := originalKey
+	if redirect.ReplaceKeyWith != "" {
+		key = redirect.ReplaceKeyWith
+	} else if redirect.ReplaceKeyPrefixWith != "" && rule.Condition != nil && rule.Condition.KeyPrefixEquals != "" {
+		key = redirect.ReplaceKeyPrefixWith + strings.TrimPrefix(originalKey, rule.Condition.KeyPrefixEquals)
+	}
+
+	httpCode := http.StatusFound // 302 default
+	if redirect.HttpRedirectCode != "" {
+		if code, err := strconv.Atoi(redirect.HttpRedirectCode); err == nil {
+			httpCode = code
+		}
+	}
+
+	location := fmt.Sprintf("%s://%s/%s", protocol, host, key)
+	ctx.Set("Location", location)
+	return ctx.SendStatus(httpCode)
 }

@@ -1114,7 +1114,7 @@ func (sa *S3ApiRouter) Init() {
 	// HeadObject
 	objectRouter.Head("",
 		controllers.ProcessHandlers(
-			ctrl.HeadObject,
+			controllers.WebsiteErrorDocument(sa.be, ctrl.HeadObject),
 			metrics.ActionHeadObject,
 			services,
 			middlewares.BucketObjectNameValidator(),
@@ -1226,7 +1226,7 @@ func (sa *S3ApiRouter) Init() {
 		))
 	objectRouter.Get("",
 		controllers.ProcessHandlers(
-			ctrl.GetObject,
+			controllers.WebsiteErrorDocument(sa.be, ctrl.GetObject),
 			metrics.ActionGetObject,
 			services,
 			middlewares.BucketObjectNameValidator(),
