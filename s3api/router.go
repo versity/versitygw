@@ -444,7 +444,7 @@ func (sa *S3ApiRouter) Init() {
 	bucketRouter.Put("",
 		middlewares.MatchQueryArgs("website"),
 		controllers.ProcessHandlers(
-			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			ctrl.PutBucketWebsite,
 			metrics.ActionPutBucketWebsite,
 			services,
 			middlewares.BucketObjectNameValidator(),
@@ -665,7 +665,7 @@ func (sa *S3ApiRouter) Init() {
 	bucketRouter.Delete("",
 		middlewares.MatchQueryArgs("website"),
 		controllers.ProcessHandlers(
-			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			ctrl.DeleteBucketWebsite,
 			metrics.ActionDeleteBucketWebsite,
 			services,
 			middlewares.BucketObjectNameValidator(),
@@ -1056,7 +1056,7 @@ func (sa *S3ApiRouter) Init() {
 	bucketRouter.Get("",
 		middlewares.MatchQueryArgs("website"),
 		controllers.ProcessHandlers(
-			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			ctrl.GetBucketWebsite,
 			metrics.ActionGetBucketWebsite,
 			services,
 			middlewares.BucketObjectNameValidator(),
@@ -1152,6 +1152,7 @@ func (sa *S3ApiRouter) Init() {
 			metrics.ActionHeadObject,
 			services,
 			middlewares.BucketObjectNameValidator(),
+			middlewares.ResolveWebsiteIndex(sa.be),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionHeadObject, auth.GetObjectAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, false, false),
@@ -1269,6 +1270,7 @@ func (sa *S3ApiRouter) Init() {
 			metrics.ActionGetObject,
 			services,
 			middlewares.BucketObjectNameValidator(),
+			middlewares.ResolveWebsiteIndex(sa.be),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetObject, auth.GetObjectAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),

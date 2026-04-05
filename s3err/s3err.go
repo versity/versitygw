@@ -165,6 +165,10 @@ const (
 	ErrCORSForbidden
 	ErrMissingCORSOrigin
 	ErrCORSIsNotEnabled
+	ErrNoSuchWebsiteConfiguration
+	ErrInvalidWebsiteConfiguration
+	ErrInvalidWebsiteSuffix
+	ErrInvalidWebsiteRedirectCode
 	ErrNotModified
 	ErrInvalidLocationConstraint
 	ErrMalformedTrailer
@@ -638,6 +642,26 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "AccessForbidden",
 		Description:    "CORSResponse: CORS is not enabled for this bucket.",
 		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrNoSuchWebsiteConfiguration: {
+		Code:           "NoSuchWebsiteConfiguration",
+		Description:    "The specified bucket does not have a website configuration",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrInvalidWebsiteConfiguration: {
+		Code:           "InvalidRequest",
+		Description:    "The website configuration is not valid.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidWebsiteSuffix: {
+		Code:           "InvalidArgument",
+		Description:    "The IndexDocument Suffix is not well formed",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidWebsiteRedirectCode: {
+		Code:           "InvalidArgument",
+		Description:    "The website redirect code is not valid. Valid codes are 3XX.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNotModified: {
 		Code:           "NotModified",
