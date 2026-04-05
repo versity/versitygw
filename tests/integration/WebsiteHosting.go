@@ -22,11 +22,38 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
+
+// websiteHTTPClient returns an HTTP client suitable for website endpoint
+// requests. It does not follow redirects and skips TLS verification
+// (matching the behaviour of the S3Conf http client for self-signed certs).
+func websiteHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+// websiteGet issues a plain HTTP GET to the dedicated website endpoint.
+// The bucket is resolved from the Host header. No S3 signing is applied.
+func websiteGet(websiteEndpoint, host, path string) (*http.Response, error) {
+	url := fmt.Sprintf("%s/%s", strings.TrimRight(websiteEndpoint, "/"), strings.TrimLeft(path, "/"))
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Host = host
+	return websiteHTTPClient().Do(req)
+}
 
 // WebsiteHosting_error_document_served tests that when a website-enabled
 // bucket has an error document configured, requesting a non-existing key
@@ -66,19 +93,8 @@ func WebsiteHosting_error_document_served(s *S3Conf) error {
 			return err
 		}
 
-		// Request a non-existing key via raw HTTP to see the error document body
-		req, err := createSignedReq(
-			http.MethodGet,
-			s.endpoint,
-			fmt.Sprintf("%v/nonexistent-key", bucket),
-			s.awsID, s.awsSecret, "s3", s.awsRegion,
-			nil, time.Now(), nil,
-		)
-		if err != nil {
-			return err
-		}
-
-		resp, err := s.httpClient.Do(req)
+		// Request a non-existing key via plain HTTP on the website endpoint
+		resp, err := websiteGet(s.websiteEndpoint, bucket, "nonexistent-key")
 		if err != nil {
 			return err
 		}
@@ -102,7 +118,7 @@ func WebsiteHosting_error_document_served(s *S3Conf) error {
 }
 
 // WebsiteHosting_error_document_not_found tests that when the configured
-// error document itself does not exist, the original S3 error is returned.
+// error document itself does not exist, a 404 error page is returned.
 func WebsiteHosting_error_document_not_found(s *S3Conf) error {
 	testName := "WebsiteHosting_error_document_not_found"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -124,20 +140,23 @@ func WebsiteHosting_error_document_not_found(s *S3Conf) error {
 			return err
 		}
 
-		// Request a non-existing key - should get standard S3 error since error doc doesn't exist
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
-			Bucket: &bucket,
-			Key:    getPtr("nonexistent-key"),
-		})
-		cancel()
+		// Request a non-existing key - should get 404 since error doc doesn't exist either
+		resp, err := websiteGet(s.websiteEndpoint, bucket, "nonexistent-key")
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
 
-		return checkSdkApiErr(err, "NoSuchKey")
+		if resp.StatusCode != http.StatusNotFound {
+			return fmt.Errorf("expected status 404, got %v", resp.StatusCode)
+		}
+
+		return nil
 	})
 }
 
 // WebsiteHosting_no_error_document tests that when website is enabled
-// but no error document is configured, the standard S3 error is returned.
+// but no error document is configured, a 404 error page is returned.
 func WebsiteHosting_no_error_document(s *S3Conf) error {
 	testName := "WebsiteHosting_no_error_document"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -156,15 +175,18 @@ func WebsiteHosting_no_error_document(s *S3Conf) error {
 			return err
 		}
 
-		// Request a non-existing key - should get standard S3 error
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
-			Bucket: &bucket,
-			Key:    getPtr("nonexistent-key"),
-		})
-		cancel()
+		// Request a non-existing key - should get 404
+		resp, err := websiteGet(s.websiteEndpoint, bucket, "nonexistent-key")
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
 
-		return checkSdkApiErr(err, "NoSuchKey")
+		if resp.StatusCode != http.StatusNotFound {
+			return fmt.Errorf("expected status 404, got %v", resp.StatusCode)
+		}
+
+		return nil
 	})
 }
 
@@ -204,30 +226,8 @@ func WebsiteHosting_routing_rule_post_request_redirect(s *S3Conf) error {
 			return err
 		}
 
-		// Make a raw HTTP request (don't follow redirects)
-		req, err := createSignedReq(
-			http.MethodGet,
-			s.endpoint,
-			fmt.Sprintf("%v/missing-page", bucket),
-			s.awsID, s.awsSecret, "s3", s.awsRegion,
-			nil, time.Now(), nil,
-		)
-		if err != nil {
-			return err
-		}
-
-		noRedirectClient := &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
-			},
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
-
-		resp, err := noRedirectClient.Do(req)
+		// Request a non-existing key via the website endpoint
+		resp, err := websiteGet(s.websiteEndpoint, bucket, "missing-page")
 		if err != nil {
 			return err
 		}
@@ -283,30 +283,8 @@ func WebsiteHosting_routing_rule_pre_request_redirect(s *S3Conf) error {
 			return err
 		}
 
-		// Make a raw HTTP request for old-docs/page (don't follow redirects)
-		req, err := createSignedReq(
-			http.MethodGet,
-			s.endpoint,
-			fmt.Sprintf("%v/old-docs/page.html", bucket),
-			s.awsID, s.awsSecret, "s3", s.awsRegion,
-			nil, time.Now(), nil,
-		)
-		if err != nil {
-			return err
-		}
-
-		noRedirectClient := &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
-			},
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
-
-		resp, err := noRedirectClient.Do(req)
+		// Request old-docs/page.html via the website endpoint
+		resp, err := websiteGet(s.websiteEndpoint, bucket, "old-docs/page.html")
 		if err != nil {
 			return err
 		}
@@ -351,30 +329,8 @@ func WebsiteHosting_redirect_all_requests(s *S3Conf) error {
 			return err
 		}
 
-		// Make a raw HTTP request (don't follow redirects)
-		req, err := createSignedReq(
-			http.MethodGet,
-			s.endpoint,
-			fmt.Sprintf("%v/any/path/here", bucket),
-			s.awsID, s.awsSecret, "s3", s.awsRegion,
-			nil, time.Now(), nil,
-		)
-		if err != nil {
-			return err
-		}
-
-		noRedirectClient := &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
-			},
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
-
-		resp, err := noRedirectClient.Do(req)
+		// Request any path via the website endpoint
+		resp, err := websiteGet(s.websiteEndpoint, bucket, "any/path/here")
 		if err != nil {
 			return err
 		}
@@ -431,19 +387,8 @@ func WebsiteHosting_index_document(s *S3Conf) error {
 			return err
 		}
 
-		// Request the root (empty key) via raw HTTP
-		req, err := createSignedReq(
-			http.MethodGet,
-			s.endpoint,
-			fmt.Sprintf("%v/", bucket),
-			s.awsID, s.awsSecret, "s3", s.awsRegion,
-			nil, time.Now(), nil,
-		)
-		if err != nil {
-			return err
-		}
-
-		resp, err := s.httpClient.Do(req)
+		// Request the root path via the website endpoint
+		resp, err := websiteGet(s.websiteEndpoint, bucket, "/")
 		if err != nil {
 			return err
 		}

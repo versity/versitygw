@@ -14,6 +14,8 @@
 
 package integration
 
+import "fmt"
+
 func TestAuthentication(ts *TestState) {
 	ts.Run(Authentication_invalid_auth_header)
 	ts.Run(Authentication_unsupported_signature_version)
@@ -657,6 +659,10 @@ func TestDeleteBucketWebsite(ts *TestState) {
 }
 
 func TestWebsiteHosting(ts *TestState) {
+	if ts.conf.websiteEndpoint == "" {
+		fmt.Println("skipping TestWebsiteHosting: no website endpoint configured")
+		return
+	}
 	ts.Run(WebsiteHosting_error_document_served)
 	ts.Run(WebsiteHosting_error_document_not_found)
 	ts.Run(WebsiteHosting_no_error_document)

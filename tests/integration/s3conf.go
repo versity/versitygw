@@ -36,6 +36,7 @@ type S3Conf struct {
 	awsSecret         string
 	awsRegion         string
 	endpoint          string
+	websiteEndpoint   string
 	hostStyle         bool
 	checksumDisable   bool
 	PartSize          int64
@@ -83,6 +84,9 @@ func WithRegion(r string) Option {
 }
 func WithEndpoint(e string) Option {
 	return func(s *S3Conf) { s.endpoint = e }
+}
+func WithWebsiteEndpoint(e string) Option {
+	return func(s *S3Conf) { s.websiteEndpoint = e }
 }
 func WithDisableChecksum() Option {
 	return func(s *S3Conf) { s.checksumDisable = true }
