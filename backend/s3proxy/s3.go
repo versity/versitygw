@@ -37,9 +37,10 @@ import (
 type metaPrefix string
 
 const (
-	metaPrefixAcl    metaPrefix = "vgw-meta-acl-"
-	metaPrefixPolicy metaPrefix = "vgw-meta-policy-"
-	metaPrefixCors   metaPrefix = "vgw-meta-cors-"
+	metaPrefixAcl     metaPrefix = "vgw-meta-acl-"
+	metaPrefixPolicy  metaPrefix = "vgw-meta-policy-"
+	metaPrefixCors    metaPrefix = "vgw-meta-cors-"
+	metaPrefixWebsite metaPrefix = "vgw-meta-website-"
 )
 
 type S3Proxy struct {
@@ -1537,6 +1538,32 @@ func (s *S3Proxy) DeleteBucketCors(ctx context.Context, bucket string) error {
 	return nil
 }
 
+func (s *S3Proxy) PutBucketWebsite(ctx context.Context, bucket string, website []byte) error {
+	return handleError(s.putMetaBucketObj(ctx, bucket, website, metaPrefixWebsite))
+}
+
+func (s *S3Proxy) GetBucketWebsite(ctx context.Context, bucket string) ([]byte, error) {
+	data, err := s.getMetaBucketObjData(ctx, bucket, metaPrefixWebsite, false)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	return data, nil
+}
+
+func (s *S3Proxy) DeleteBucketWebsite(ctx context.Context, bucket string) error {
+	key := getMetaKey(bucket, metaPrefixWebsite)
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &s.metaBucket,
+		Key:    &key,
+	})
+	if err != nil && !areErrSame(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		return handleError(err)
+	}
+
+	return nil
+}
+
 func (s *S3Proxy) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
 	return handleError(s.putMetaBucketObj(ctx, bucket, policy, metaPrefixPolicy))
 }
@@ -1695,6 +1722,8 @@ func handleMetaBucketObjectNotFoundErr(prefix metaPrefix) ([]byte, error) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
 	case metaPrefixCors:
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchCORSConfiguration)
+	case metaPrefixWebsite:
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchWebsiteConfiguration)
 	}
 
 	return []byte{}, nil
