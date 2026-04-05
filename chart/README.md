@@ -83,6 +83,7 @@ The `gateway.backend.type` value selects the storage backend. Use `gateway.backe
 | **HTTPRoute** | `httpRoute.enabled=true` — Gateway API successor to Ingress for S3 API; also `admin.httpRoute.enabled=true` and `webui.httpRoute.enabled=true` to expose the admin API and/or WebUI |
 | **Admin API** | `admin.enabled=true` — exposes a separate management API on `admin.port` (default `7071`) |
 | **WebUI** | `webui.enabled=true` — browser-based management UI on `webui.port` (default `8080`); set `webui.apiGateways` and `webui.adminGateways` to your externally reachable endpoints |
+| **Website Hosting** | `website.enabled=true` — static website hosting endpoint on `website.port` (default `8090`); set `website.domain` to the base domain for virtual-host routing (e.g. `example.com`) |
 | **IAM** | `iam.enabled=true` — flat-file identity and access management stored alongside backend data |
 | **Persistence** | `persistence.enabled=true` — provisions a PVC for backend data and IAM storage; defaults to `10Gi`, or uses a hostPath volume specified by `persistence.hostPath` |
 | **NetworkPolicy** | `networkPolicy.enabled=true` — restricts ingress to selected pods/namespaces; allows all egress |

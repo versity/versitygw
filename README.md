@@ -26,6 +26,11 @@ Get more details about the new (optional) WebGUI management/explorer here: [http
 
 ![admin-explorer](https://github.com/user-attachments/assets/e99db171-2c72-4d0f-8c8d-480a56e1c8a1)
 
+### Static Website Hosting
+Serve S3 buckets as static websites with index documents, custom error pages, and routing rules.
+Enable a separate website endpoint with `--website :8090 --website-domain example.com` for virtual-host style routing (`blog.example.com` serves bucket `blog`, `example.com` serves bucket `example.com`).
+See [Global Options](https://github.com/versity/versitygw/wiki/Global-Options) for all `--website-*` flags.
+
 ### News
 Check out latest wiki articles: [https://github.com/versity/versitygw/wiki/Articles](https://github.com/versity/versitygw/wiki/Articles)
 
