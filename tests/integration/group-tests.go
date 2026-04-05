@@ -634,6 +634,28 @@ func TestDeleteBucketCors(ts *TestState) {
 	ts.Run(DeleteBucketCors_success)
 }
 
+func TestPutBucketWebsite(ts *TestState) {
+	ts.Run(PutBucketWebsite_non_existing_bucket)
+	ts.Run(PutBucketWebsite_empty_suffix)
+	ts.Run(PutBucketWebsite_suffix_with_slash)
+	ts.Run(PutBucketWebsite_invalid_redirect_protocol)
+	ts.Run(PutBucketWebsite_redirect_and_index)
+	ts.Run(PutBucketWebsite_success)
+	ts.Run(PutBucketWebsite_success_redirect_all)
+}
+
+func TestGetBucketWebsite(ts *TestState) {
+	ts.Run(GetBucketWebsite_non_existing_bucket)
+	ts.Run(GetBucketWebsite_no_such_website_config)
+	ts.Run(GetBucketWebsite_success)
+	ts.Run(GetBucketWebsite_success_redirect_all)
+}
+
+func TestDeleteBucketWebsite(ts *TestState) {
+	ts.Run(DeleteBucketWebsite_non_existing_bucket)
+	ts.Run(DeleteBucketWebsite_success)
+}
+
 func TestPreflightOPTIONSEndpoint(ts *TestState) {
 	ts.Run(PreflightOPTIONS_non_existing_bucket)
 	ts.Run(PreflightOPTIONS_missing_origin)
@@ -759,10 +781,6 @@ func TestNotImplementedActions(ts *TestState) {
 	// bucket acceleration actions
 	ts.Run(PutBucketAccelerateConfiguration_not_implemented)
 	ts.Run(GetBucketAccelerateConfiguration_not_implemented)
-	// bucket website actions
-	ts.Run(PutBucketWebsite_not_implemented)
-	ts.Run(GetBucketWebsite_not_implemented)
-	ts.Run(DeleteBucketWebsite_not_implemented)
 	// object acl actions
 	ts.Run(PutObjectAcl_not_implemented)
 	ts.Run(GetObjectAcl_not_implemented)
@@ -833,6 +851,9 @@ func TestFullFlow(ts *TestState) {
 	TestPutBucketCors(ts)
 	TestGetBucketCors(ts)
 	TestDeleteBucketCors(ts)
+	TestPutBucketWebsite(ts)
+	TestGetBucketWebsite(ts)
+	TestDeleteBucketWebsite(ts)
 	TestPreflightOPTIONSEndpoint(ts)
 	TestPutObjectLockConfiguration(ts)
 	TestGetObjectLockConfiguration(ts)
@@ -1683,6 +1704,19 @@ func GetIntTests() IntTests {
 		"DeleteBucketCors_non_existing_bucket":                                     DeleteBucketCors_non_existing_bucket,
 		"DeleteBucketCors_success":                                                 DeleteBucketCors_success,
 		"PutBucketCors_success":                                                    PutBucketCors_success,
+		"PutBucketWebsite_non_existing_bucket":                                     PutBucketWebsite_non_existing_bucket,
+		"PutBucketWebsite_empty_suffix":                                            PutBucketWebsite_empty_suffix,
+		"PutBucketWebsite_suffix_with_slash":                                       PutBucketWebsite_suffix_with_slash,
+		"PutBucketWebsite_invalid_redirect_protocol":                               PutBucketWebsite_invalid_redirect_protocol,
+		"PutBucketWebsite_redirect_and_index":                                      PutBucketWebsite_redirect_and_index,
+		"PutBucketWebsite_success":                                                 PutBucketWebsite_success,
+		"PutBucketWebsite_success_redirect_all":                                    PutBucketWebsite_success_redirect_all,
+		"GetBucketWebsite_non_existing_bucket":                                     GetBucketWebsite_non_existing_bucket,
+		"GetBucketWebsite_no_such_website_config":                                  GetBucketWebsite_no_such_website_config,
+		"GetBucketWebsite_success":                                                 GetBucketWebsite_success,
+		"GetBucketWebsite_success_redirect_all":                                    GetBucketWebsite_success_redirect_all,
+		"DeleteBucketWebsite_non_existing_bucket":                                  DeleteBucketWebsite_non_existing_bucket,
+		"DeleteBucketWebsite_success":                                              DeleteBucketWebsite_success,
 		"PreflightOPTIONS_non_existing_bucket":                                     PreflightOPTIONS_non_existing_bucket,
 		"PreflightOPTIONS_missing_origin":                                          PreflightOPTIONS_missing_origin,
 		"PreflightOPTIONS_invalid_request_method":                                  PreflightOPTIONS_invalid_request_method,
@@ -1769,9 +1803,6 @@ func GetIntTests() IntTests {
 		"GetBucketNotificationConfiguratio_not_implemented":                        GetBucketNotificationConfiguratio_not_implemented,
 		"PutBucketAccelerateConfiguration_not_implemented":                         PutBucketAccelerateConfiguration_not_implemented,
 		"GetBucketAccelerateConfiguration_not_implemented":                         GetBucketAccelerateConfiguration_not_implemented,
-		"PutBucketWebsite_not_implemented":                                         PutBucketWebsite_not_implemented,
-		"GetBucketWebsite_not_implemented":                                         GetBucketWebsite_not_implemented,
-		"DeleteBucketWebsite_not_implemented":                                      DeleteBucketWebsite_not_implemented,
 		"PutObjectAcl_not_implemented":                                             PutObjectAcl_not_implemented,
 		"GetObjectAcl_not_implemented":                                             GetObjectAcl_not_implemented,
 		"WORMProtection_bucket_object_lock_configuration_compliance_mode":          WORMProtection_bucket_object_lock_configuration_compliance_mode,
