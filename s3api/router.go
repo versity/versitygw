@@ -440,7 +440,7 @@ func (sa *S3ApiRouter) Init() {
 	bucketRouter.Put("",
 		middlewares.MatchQueryArgs("website"),
 		controllers.ProcessHandlers(
-			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			ctrl.PutBucketWebsite,
 			metrics.ActionPutBucketWebsite,
 			services,
 			middlewares.BucketObjectNameValidator(),
@@ -649,7 +649,7 @@ func (sa *S3ApiRouter) Init() {
 	bucketRouter.Delete("",
 		middlewares.MatchQueryArgs("website"),
 		controllers.ProcessHandlers(
-			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			ctrl.DeleteBucketWebsite,
 			metrics.ActionDeleteBucketWebsite,
 			services,
 			middlewares.BucketObjectNameValidator(),
@@ -1034,7 +1034,7 @@ func (sa *S3ApiRouter) Init() {
 	bucketRouter.Get("",
 		middlewares.MatchQueryArgs("website"),
 		controllers.ProcessHandlers(
-			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			ctrl.GetBucketWebsite,
 			metrics.ActionGetBucketWebsite,
 			services,
 			middlewares.BucketObjectNameValidator(),
