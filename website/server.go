@@ -67,7 +67,11 @@ func NewServer(be backend.Backend, domain string, opts ...Option) *Server {
 		opt(server)
 	}
 
-	fmt.Printf("initializing website endpoint (domain: %s)\n", domain)
+	domainInfo := "catch-all"
+	if domain != "" {
+		domainInfo = "domain: " + domain
+	}
+	fmt.Printf("initializing website endpoint (%s)\n", domainInfo)
 
 	// Panic recovery
 	app.Use(recover.New())

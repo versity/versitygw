@@ -233,9 +233,11 @@ website:
   enabled: false
   # The port the website endpoint listens on.
   port: 8090
-  # Base domain for virtual-host routing. Required when website is enabled.
+  # Base domain for virtual-host routing. Optional.
   # Host "blog.<domain>" serves bucket "blog"; host "<domain>" serves
   # bucket "<domain>" (apex domain support).
+  # When empty, catch-all mode is used: the full hostname is the bucket
+  # name (name buckets as FQDNs, e.g. "blog.example.com").
   domain: ""
   # - example: domain: "example.com"
   # Disable TLS for the website endpoint even when gateway TLS is enabled.

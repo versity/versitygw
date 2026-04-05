@@ -29,6 +29,7 @@ Get more details about the new (optional) WebGUI management/explorer here: [http
 ### Static Website Hosting
 Serve S3 buckets as static websites with index documents, custom error pages, and routing rules.
 Enable a separate website endpoint with `--website :8090 --website-domain example.com` for virtual-host style routing (`blog.example.com` serves bucket `blog`, `example.com` serves bucket `example.com`).
+When `--website-domain` is omitted, catch-all mode is used: the full hostname becomes the bucket name (name your buckets as FQDNs, e.g. `blog.example.com`).
 See [Global Options](https://github.com/versity/versitygw/wiki/Global-Options) for all `--website-*` flags.
 
 ### News

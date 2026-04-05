@@ -265,7 +265,7 @@ func initFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "website-domain",
-			Usage:       "base domain for website virtual-host routing (e.g. 'example.com'); host 'blog.example.com' serves bucket 'blog', host 'example.com' serves bucket 'example.com'",
+			Usage:       "base domain for website virtual-host routing (e.g. 'example.com'); host 'blog.example.com' serves bucket 'blog', host 'example.com' serves bucket 'example.com'; when omitted the full hostname is used as the bucket name (catch-all mode, buckets named as FQDNs)",
 			EnvVars:     []string{"VGW_WEBSITE_DOMAIN"},
 			Destination: &websiteDomain,
 		},
@@ -1265,10 +1265,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	wsTLSCert := ""
 	wsTLSKey := ""
 	if len(websitePorts) > 0 {
-		if websiteDomain == "" {
-			return fmt.Errorf("--website-domain is required when --website is specified")
-		}
-
 		// Validate all website addresses
 		for _, addr := range websitePorts {
 			if utils.IsUnixSocketPath(addr) {

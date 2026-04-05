@@ -35,6 +35,10 @@ import (
 // Virtual-host routing with --website-domain example.com:
 //   - Host "blog.example.com"  -> bucket "blog"
 //   - Host "example.com"       -> bucket "example.com" (apex)
+//
+// Catch-all mode (--website-domain omitted or empty):
+//   - Host "blog.example.com"  -> bucket "blog.example.com"
+//   - Host "mysite.org"        -> bucket "mysite.org"
 func newHandler(be backend.Backend, domain string) fiber.Handler {
 	// Pre-compute the domain suffix for subdomain extraction.
 	// Given domain "example.com", we look for ".example.com" suffix.
@@ -122,10 +126,20 @@ func newHandler(be backend.Backend, domain string) fiber.Handler {
 }
 
 // resolveBucket extracts the bucket name from the host header.
+//
+// When domain is set:
 //   - If host equals the domain exactly, the bucket IS the domain (apex).
 //   - If host ends with ".<domain>", the bucket is the subdomain part.
 //   - Otherwise, no bucket can be resolved.
+//
+// When domain is empty (catch-all mode):
+//   - The full hostname is used as the bucket name.
 func resolveBucket(host, domain, domainSuffix string) string {
+	if domain == "" {
+		// Catch-all: the full hostname is the bucket name
+		return host
+	}
+
 	if strings.EqualFold(host, domain) {
 		return domain
 	}
