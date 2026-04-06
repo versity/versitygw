@@ -2100,7 +2100,7 @@ func Versioning_PutObjectRetention_invalid_versionId(s *S3Conf) error {
 		})
 		cancel()
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
-	})
+	}, withLock())
 }
 
 func Versioning_PutObjectRetention_non_existing_object_version(s *S3Conf) error {
@@ -2149,7 +2149,7 @@ func Versioning_GetObjectRetention_invalid_versionId(s *S3Conf) error {
 		})
 		cancel()
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
-	})
+	}, withLock())
 }
 
 func Versioning_GetObjectRetention_non_existing_object_version(s *S3Conf) error {
@@ -2293,7 +2293,7 @@ func Versioning_PutObjectLegalHold_invalid_versionId(s *S3Conf) error {
 		})
 		cancel()
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
-	})
+	}, withLock())
 }
 
 func Versioning_PutObjectLegalHold_non_existing_object_version(s *S3Conf) error {
@@ -2340,7 +2340,7 @@ func Versioning_GetObjectLegalHold_invalid_versionId(s *S3Conf) error {
 		})
 		cancel()
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
-	})
+	}, withLock())
 }
 
 func Versioning_GetObjectLegalHold_non_existing_object_version(s *S3Conf) error {

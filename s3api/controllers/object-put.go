@@ -67,15 +67,6 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = utils.ValidateVersionId(versionId)
-	if err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
-	}
-
 	tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitObject)
 	if err != nil {
 		return &Response{
@@ -119,15 +110,6 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 		IsPublicRequest: IsBucketPublic,
 		DisableACL:      c.disableACL,
 	})
-	if err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
-	}
-
-	err = utils.ValidateVersionId(versionId)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -195,15 +177,6 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 		IsPublicRequest: IsBucketPublic,
 		DisableACL:      c.disableACL,
 	})
-	if err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
-	}
-
-	err = utils.ValidateVersionId(versionId)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
