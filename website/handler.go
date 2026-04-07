@@ -98,9 +98,11 @@ func newHandler(be backend.Backend, domain string) fiber.Handler {
 		}
 
 		// Fetch the object
+		emptyRange := ""
 		result, getErr := be.GetObject(ctx.Context(), &s3.GetObjectInput{
 			Bucket: &bucket,
 			Key:    &key,
+			Range:  &emptyRange,
 		})
 		if getErr == nil && result.Body != nil {
 			defer result.Body.Close()

@@ -79,7 +79,7 @@ func NewServer(be backend.Backend, domain string, opts ...Option) *Server {
 	// Request logging
 	if !server.quiet {
 		app.Use(logger.New(logger.Config{
-			Format: "${time} | web-site | ${status} | ${latency} | ${ip} | ${method} | ${path}\n",
+			Format: "${time} | website | ${status} | ${latency} | ${ip} | ${method} | ${path}\n",
 		}))
 	}
 
