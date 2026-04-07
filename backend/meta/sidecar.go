@@ -153,6 +153,25 @@ func (s SideCar) DeleteAttributes(bucket, object string) error {
 	return nil
 }
 
+// RenameObject renames the sidecar metadata directory from oldObject to
+// newObject so that path-based lookups continue to work after the data
+// directory has been renamed.
+func (s SideCar) RenameObject(bucket, oldObject, newObject string) error {
+	oldPath := filepath.Join(s.dir, bucket, oldObject)
+	newPath := filepath.Join(s.dir, bucket, newObject)
+
+	if err := os.MkdirAll(filepath.Dir(newPath), 0777); err != nil {
+		return fmt.Errorf("create parent for renamed metadata: %w", err)
+	}
+
+	err := os.Rename(oldPath, newPath)
+	if errors.Is(err, os.ErrNotExist) {
+		// No metadata stored yet — nothing to rename.
+		return nil
+	}
+	return err
+}
+
 func (s SideCar) cleanupEmptyDirs(metadir, bucket, object string) {
 	removeIfEmpty(metadir)
 	if bucket == "" {

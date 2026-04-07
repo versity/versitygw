@@ -39,4 +39,9 @@ type MetadataStorer interface {
 	// DeleteAttributes removes all attributes for an object or a bucket.
 	// Returns an error if the operation fails.
 	DeleteAttributes(bucket, object string) error
+
+	// RenameObject renames all stored metadata from oldObject to newObject
+	// within the given bucket. This must be called whenever the data
+	// directory for an object is renamed so that metadata stays in sync.
+	RenameObject(bucket, oldObject, newObject string) error
 }

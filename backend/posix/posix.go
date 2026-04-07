@@ -1698,9 +1698,22 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		}
 		return res, "", fmt.Errorf("mark upload in-progress: %w", err)
 	}
+
+	// Rename sidecar metadata to match the new data directory path.
+	// For xattr this is a no-op since attributes follow the inode.
+	metaObjDir := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
+	oldMetaObj := filepath.Join(metaObjDir, uploadID)
+	newMetaObj := filepath.Join(metaObjDir, activeUploadName)
+	if err := p.meta.RenameObject(bucket, oldMetaObj, newMetaObj); err != nil {
+		// Roll back the data directory rename so a future retry can succeed.
+		os.Rename(uploadIDInProgress, uploadIDDir)
+		return res, "", fmt.Errorf("rename metadata for in-progress: %w", err)
+	}
+
 	// Best-effort rename back on failure so a future retry can still complete.
 	// On success, os.RemoveAll below removes uploadIDInProgress so this is a no-op.
 	defer os.Rename(uploadIDInProgress, uploadIDDir)
+	defer p.meta.RenameObject(bucket, newMetaObj, oldMetaObj)
 
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, meta.ErrNoSuchKey) {

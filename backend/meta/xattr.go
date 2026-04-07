@@ -85,6 +85,12 @@ func (x XattrMeta) DeleteAttributes(bucket, object string) error {
 	return nil
 }
 
+// RenameObject is a no-op for xattr because extended attributes are stored
+// on the inodes and follow the file/directory when it is renamed.
+func (x XattrMeta) RenameObject(_, _, _ string) error {
+	return nil
+}
+
 // ListAttributes lists all attributes for an object in a bucket.
 func (x XattrMeta) ListAttributes(bucket, object string) ([]string, error) {
 	attrs, err := xattr.List(filepath.Join(bucket, object))
