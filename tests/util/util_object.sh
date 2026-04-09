@@ -28,6 +28,7 @@ source ./tests/commands/delete_object.sh
 source ./tests/commands/get_bucket_acl.sh
 source ./tests/commands/get_bucket_ownership_controls.sh
 source ./tests/commands/get_bucket_policy.sh
+source ./tests/commands/get_object.sh
 source ./tests/commands/get_object_legal_hold.sh
 source ./tests/commands/get_object_lock_configuration.sh
 source ./tests/commands/head_bucket.sh

@@ -19,6 +19,7 @@ load ./bats-assert/load
 
 source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/list_objects/list_objects_rest.sh
 
 @test "test_rest_list_objects" {
   run get_bucket_name "$BUCKET_ONE_NAME"
@@ -213,5 +214,51 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   assert_success
 
   run list_objects_check_key "$bucket_name" "$file_name" ""
+  assert_success
+}
+
+@test "REST - ListObjects - marker/max-keys" {
+  run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
+  assert_success
+  read -r bucket_name file_one_name file_two_name <<< "$output"
+
+  mapfile -t sorted_files < <(printf '%s\n' "$file_one_name" "$file_two_name" | sort)
+
+  run put_objects "$bucket_name" "$file_one_name" "$file_two_name"
+  assert_success
+
+  run list_objects_check_count_and_keys "$bucket_name" "1" "${sorted_files[0]}" "-query" "max-keys=1"
+  assert_success
+
+  run list_objects_check_count_and_keys "$bucket_name" "1" "${sorted_files[1]}" "-query" "max-keys=1&marker=${sorted_files[0]}"
+  assert_success
+
+  run list_objects_check_count_and_keys "$bucket_name" "0" "-query" "max-keys=1&marker=${sorted_files[1]}"
+  assert_success
+}
+
+@test "REST - ListObjects - prefix" {
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  local prefix="prefix"
+  run create_test_files_with_prefix "$prefix" 2
+  assert_success
+  read -r file_one_name file_two_name <<< "$output"
+
+  run put_objects "$bucket_name" "$file_one_name" "$file_two_name"
+  assert_success
+
+  run list_objects_check_count_and_keys "$bucket_name" "2" "$file_one_name" "$file_two_name" "-query" "prefix=$prefix"
+  assert_success
+
+  run list_objects_check_count_and_keys "$bucket_name" "0" "-query" "prefix=prefik"
+  assert_success
+
+  run list_objects_check_count_and_keys "$bucket_name" "1" "$file_one_name" "-query" "prefix=$file_one_name"
+  assert_success
+
+  run list_objects_check_count_and_keys "$bucket_name" "1" "$file_two_name" "-query" "prefix=$file_two_name"
   assert_success
 }

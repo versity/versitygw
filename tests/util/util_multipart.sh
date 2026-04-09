@@ -48,14 +48,15 @@ multipart_upload_from_bucket() {
     return 1
   fi
 
-  if ! split_file "$3" "$4"; then
+  if ! segments=$(split_file "$3" "$4" 2>&1); then
     log 2 "error splitting file"
     return 1
   fi
+  read -r -a segment_array <<< "$segments"
 
   for ((i=0;i<$4;i++)) {
     log 5 "key: $3"
-    if ! put_object "s3api" "$3-$i" "$1" "$2-$i"; then
+    if ! put_object "s3api" "${segment_array[$i]}" "$1" "$2-$i"; then
       log 2 "error copying object"
       return 1
     fi
@@ -77,13 +78,15 @@ split_and_put_file() {
   if ! check_param_count "split_and_put_file" "bucket, key, copy source, part count" 4 $#; then
     return 1
   fi
-  if ! split_file "$3" "$4"; then
-    log 2 "error splitting file"
+  if ! file_parts=$(split_file "$3" "$4" 2>&1); then
+    log 2 "error splitting file: $file_parts"
     return 1
   fi
+  read -r -a part_array <<< "$file_parts"
+
   for ((i=0;i<$4;i++)) {
-    log 5 "key: $2, file info: $(ls -l "$3"-"$i")"
-    if ! put_object "s3api" "$3-$i" "$1" "$2-$i"; then
+    log 5 "key: $2, file info: $(ls -l "${part_array[$i]}")"
+    if ! put_object "s3api" "${part_array[$i]}" "$1" "$2-$i"; then
       log 2 "error copying object"
       return 1
     fi
@@ -95,13 +98,15 @@ multipart_upload_from_bucket_range() {
   if ! check_param_count "multipart_upload_from_bucket_range" "bucket, copy source, key, part count, range" 5 $#; then
     return 1
   fi
-  if ! split_file "$3" "$4"; then
+  if ! segments=$(split_file "$3" "$4" 2>&1); then
     log 2 "error splitting file"
     return 1
   fi
+  read -r -a segment_array <<< "$segments"
+
   for ((i=0;i<$4;i++)) {
     log 5 "key: $3, file info: $(ls -l "$3"-"$i")"
-    if ! put_object "s3api" "$3-$i" "$1" "$2-$i"; then
+    if ! put_object "s3api" "${segment_array[$i]}" "$1" "$2-$i"; then
       log 2 "error copying object"
       return 1
     fi

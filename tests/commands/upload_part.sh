@@ -15,7 +15,7 @@
 # under the License.
 
 upload_part() {
-  if [ $# -ne 5 ]; then
+  if ! check_param_count_v2 "bucket, key, upload ID, file name, part number" 5 $#; then
     log 2 "upload multipart part function must have bucket, key, upload ID, file name, part number"
     return 1
   fi
@@ -27,12 +27,11 @@ upload_part() {
 }
 
 upload_part_with_user() {
-  if [ $# -ne 7 ]; then
-    log 2 "upload multipart part function must have bucket, key, upload ID, file name, part number, username, password"
+  if ! check_param_count_v2 "bucket, key, upload ID, file name, part number, username, password" 7 $#; then
     return 1
   fi
   local etag_json
-  if ! etag_json=$(AWS_ACCESS_KEY_ID="$6" AWS_SECRET_ACCESS_KEY="$7" send_command aws --no-verify-ssl s3api upload-part --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --body "$4-$(($5-1))" 2>&1); then
+  if ! etag_json=$(AWS_ACCESS_KEY_ID="$6" AWS_SECRET_ACCESS_KEY="$7" send_command aws --no-verify-ssl s3api upload-part --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --body "$4" 2>&1); then
     log 2 "Error uploading part $5: $etag_json"
     return 1
   fi
@@ -106,19 +105,22 @@ upload_part_rest_with_checksum() {
   if ! check_param_count_v2 "bucket name, key, upload ID, part number, part, checksum algorithm" 6 $#; then
     return 1
   fi
+  if ! response_file=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response_file"
+    return 1
+  fi
   # shellcheck disable=SC2154,SC2097,SC2098
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PART_NUMBER="$4" DATA_FILE="$5" CHECKSUM_TYPE="$6" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" OUTPUT_FILE="$TEST_FILE_FOLDER/etag.txt" ./tests/rest_scripts/upload_part.sh); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PART_NUMBER="$4" DATA_FILE="$5" CHECKSUM_TYPE="$6" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" OUTPUT_FILE="$TEST_FILE_FOLDER/$response_file" ./tests/rest_scripts/upload_part.sh); then
     log 2 "error sending upload-part REST command: $result"
     return 1
   fi
   if [[ "$result" != "200" ]]; then
-    log 2 "upload-part command returned error $result: $(cat "$TEST_FILE_FOLDER/etag.txt")"
+    log 2 "upload-part command returned error $result: $(cat "$TEST_FILE_FOLDER/$response_file")"
     return 1
   fi
-  log 5 "$(cat "$TEST_FILE_FOLDER/etag.txt")"
-  etag=$(grep -i "etag" "$TEST_FILE_FOLDER/etag.txt" | awk '{print $2}' | tr -d '\r')
+  etag=$(grep -i "etag" "$TEST_FILE_FOLDER/$response_file" | awk '{print $2}' | tr -d '\r')
   # shellcheck disable=SC2034
-  checksum=$(grep -i "x-amz-checksum-" "$TEST_FILE_FOLDER/etag.txt" | awk '{print $2}' | tr -d '\r')
+  checksum=$(grep -i "x-amz-checksum-" "$TEST_FILE_FOLDER/$response_file" | awk '{print $2}' | tr -d '\r')
   log 5 "etag:  $etag"
   return 0
 }

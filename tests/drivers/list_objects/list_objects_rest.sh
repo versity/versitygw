@@ -189,3 +189,37 @@ check_if_key_exists() {
   fi
   return 0
 }
+
+check_count_and_keys() {
+  if ! check_param_count_gt "data file, count, keys" 2 $#; then
+    return 1
+  fi
+  if ! xml_data=$(check_validity_and_or_parse_xml_data "$1" 2>&1); then
+    log 2 "error parsing xml data: $xml_data"
+    return 1
+  fi
+  if ! check_element_count "$xml_data" "$2" "ListBucketResult" "Contents" "Key"; then
+    log 2 "error checking element count"
+    return 1
+  fi
+  for key in "${@:3}"; do
+    if ! check_if_element_exists "$xml_data" "$key" "ListBucketResult" "Contents" "Key"; then
+      log 2 "error checking if element '$key' exists"
+      return 1
+    fi
+  done
+  return 0
+}
+
+list_objects_check_count_and_keys() {
+  if ! check_param_count_gt "bucket name, count, keys, additional params if any" 1 $#; then
+    return 1
+  fi
+  local count="$2"
+  local keys=("${@:3:$count}")
+  if ! send_rest_go_command_callback "200" "check_count_and_keys" "-bucketName" "$1" "${@:((3+$count))}" "--" "$count" "${keys[@]}"; then
+    log 2 "error sending list objects command"
+    return 1
+  fi
+  return 0
+}

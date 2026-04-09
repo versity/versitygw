@@ -241,7 +241,8 @@ get_bucket_name() {
   fi
   local bucket_name
   bucket_name="$1-${uuid,,}"
-  echo "${bucket_name:0:63}"
+  bucket_name_trimmed="${bucket_name:0:63}"
+  echo "${bucket_name_trimmed%-}"
   return 0
 }
 

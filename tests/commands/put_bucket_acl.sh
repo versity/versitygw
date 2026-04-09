@@ -14,7 +14,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util/util_file.sh
 source ./tests/commands/command.sh
 source ./tests/drivers/put_bucket_acl/put_bucket_acl.sh
 source ./tests/drivers/rest.sh

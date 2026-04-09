@@ -14,8 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/file.sh
 source ./tests/rest_scripts/rest.sh
-source ./tests/util/util_file.sh
 
 # Fields
 

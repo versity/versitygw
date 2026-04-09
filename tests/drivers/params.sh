@@ -61,3 +61,15 @@ check_param_count_gt() {
   fi
   return 0
 }
+
+check_param_count_le() {
+  if [ $# -lt 3 ]; then
+    log 2 "'check_param_count_le' requires params list, expected maximum, actual"
+    return 1
+  fi
+  if [ "$2" -lt "$3" ]; then
+    log_with_stack_ref 2 "function '${FUNCNAME[1]}' has maximum param count of $2 ($1)"
+    return 1
+  fi
+  return 0
+}

@@ -446,3 +446,16 @@ attempt_put_object_with_specific_acl() {
   fi
   return 0
 }
+
+put_objects() {
+  if ! check_param_count_gt "bucket name, file names" 2 $#; then
+    return 1
+  fi
+  for file_name in "${@:2}"; do
+    if ! send_rest_go_command "200" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$file_name" "-bucketName" "$1" "-objectKey" "$file_name"; then
+      log 2 "error putting file '$file_name'"
+      return 1
+    fi
+  done
+  return 0
+}
