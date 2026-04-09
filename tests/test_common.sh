@@ -32,7 +32,6 @@ source ./tests/commands/put_public_access_block.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/params.sh
-source ./tests/util/util_file.sh
 source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_object.sh
 source ./tests/util/util_policy.sh

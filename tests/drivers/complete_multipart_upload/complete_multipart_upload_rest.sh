@@ -43,9 +43,10 @@ complete_multipart_upload_with_checksum() {
   if ! check_param_count_v2 "bucket, key, file, upload ID, part count, checksum type, checksum algorithm" 7 $#; then
     return 1
   fi
+  log 5 "checksum algorithm: $7"
   lowercase_checksum_algorithm=$(echo -n "$7" | tr '[:upper:]' '[:lower:]')
   if ! upload_parts_rest_with_checksum_before_completion "$1" "$2" "$3" "$4" "$5" "$lowercase_checksum_algorithm"; then
-    log 2 "error uploading parts"
+    log 2 "error uploading REST parts with checksum before completion"
     return 1
   fi
   log 5 "parts payload: $parts_payload"
@@ -98,33 +99,46 @@ calculate_composite_checksum() {
 }
 
 test_multipart_upload_with_checksum() {
-  if ! check_param_count_v2 "bucket, filename, checksum type, algorithm" 4 $#; then
+  log 6 "test_multipart_upload_with_checksum"
+  if ! check_param_count_v2 "checksum type, algorithm" 2 $#; then
     return 1
   fi
-  if ! perform_full_multipart_upload_with_checksum_before_completion "$1" "$2" "$3" "$4"; then
+  if ! file_and_bucket=$(setup_bucket_and_file_v3 "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error setting up file and bucket"
+    return 1
+  fi
+  read -r bucket_name mp_file_name <<< "$file_and_bucket"
+  log 5 "file name: $mp_file_name, file info:  $(ls -l "$TEST_FILE_FOLDER/$mp_file_name")"
+  if ! perform_full_multipart_upload_with_checksum_before_completion "$bucket_name" "$mp_file_name" "$1" "$2"; then
     log 2 "error performing multipart upload with checksum before completion"
     return 1
   fi
-  if ! calculate_multipart_checksum "$3" 2 "$TEST_FILE_FOLDER/$2" ${checksums[@]}; then
+  if ! calculate_multipart_checksum "$1" 2 "$TEST_FILE_FOLDER/$mp_file_name" ${checksums[@]}; then
     log 2 "error calculating multipart checksum"
     return 1
   fi
-  if ! complete_multipart_upload_with_checksum "$bucket_name" "$2" "$TEST_FILE_FOLDER/$2" "$upload_id" 2 "$3" "$4"; then
-    log 2 "error completing multipart upload"
+  if ! complete_multipart_upload_with_checksum "$bucket_name" "$mp_file_name" "$TEST_FILE_FOLDER/$mp_file_name" "$upload_id" 2 "$1" "$2"; then
+    log 2 "error completing multipart upload with checksum"
     return 1
   fi
   return 0
 }
 
 test_complete_multipart_upload_unneeded_algorithm_parameter() {
-  if ! check_param_count_v2 "bucket, filename, checksum type, algorithm" 4 $#; then
+  if ! check_param_count_v2 "checksum type, algorithm" 2 $#; then
     return 1
   fi
-  if ! perform_full_multipart_upload_with_checksum_before_completion "$1" "$2" "$3" "$4"; then
+  if ! file_and_bucket=$(setup_bucket_and_file_v3 "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error setting up file and bucket"
+    return 1
+  fi
+  read -r bucket_name mp_file_name <<< "$file_and_bucket"
+  if ! perform_full_multipart_upload_with_checksum_before_completion "$bucket_name" "$mp_file_name" "$1" "$2"; then
     log 2 "error performing multipart upload with checksum before completion"
     return 1
   fi
-  if ! complete_multipart_upload_rest_nonexistent_param "$bucket_name" "$2" "$upload_id" "$parts_payload"; then
+  log 5 "upload ID: $upload_id"
+  if ! complete_multipart_upload_rest_nonexistent_param "$bucket_name" "$mp_file_name" "$upload_id" "$parts_payload"; then
     log 2 "error completing multipart upload with nonexistent param"
     return 1
   fi
@@ -132,18 +146,23 @@ test_complete_multipart_upload_unneeded_algorithm_parameter() {
 }
 
 test_complete_multipart_upload_incorrect_checksum() {
-  if ! check_param_count_v2 "bucket, filename, checksum type, algorithm" 4 $#; then
+  if ! check_param_count_v2 "checksum type, algorithm" 2 $#; then
     return 1
   fi
-  if ! perform_full_multipart_upload_with_checksum_before_completion "$1" "$2" "$3" "$4"; then
+  if ! file_and_bucket=$(setup_bucket_and_file_v3 "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error setting up file and bucket"
+    return 1
+  fi
+  read -r bucket_name mp_file_name <<< "$file_and_bucket"
+  if ! perform_full_multipart_upload_with_checksum_before_completion "$bucket_name" "$mp_file_name" "$1" "$2"; then
     log 2 "error performing multipart upload with checksum before completion"
     return 1
   fi
-  if ! calculate_multipart_checksum "$3" 2 "$TEST_FILE_FOLDER/$2" ${checksums[@]}; then
+  if ! calculate_multipart_checksum "$1" 2 "$TEST_FILE_FOLDER/$mp_file_name" ${checksums[@]}; then
     log 2 "error calculating multipart checksum"
     return 1
   fi
-  if ! complete_multipart_upload_rest_incorrect_checksum "$bucket_name" "$2" "$upload_id" "$parts_payload" "$3" "$4" "$checksum"; then
+  if ! complete_multipart_upload_rest_incorrect_checksum "$bucket_name" "$mp_file_name" "$upload_id" "$parts_payload" "$1" "$2" "$checksum"; then
     log 2 "error completing multipart upload with nonexistent param"
     return 1
   fi
@@ -151,14 +170,19 @@ test_complete_multipart_upload_incorrect_checksum() {
 }
 
 test_complete_multipart_upload_invalid_checksum() {
-  if ! check_param_count_v2 "bucket, filename, checksum type, algorithm" 4 $#; then
+  if ! check_param_count_v2 "checksum type, algorithm" 2 $#; then
     return 1
   fi
-  if ! perform_full_multipart_upload_with_checksum_before_completion "$1" "$2" "$3" "$4"; then
+  if ! file_and_bucket=$(setup_bucket_and_file_v3 "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error setting up file and bucket"
+    return 1
+  fi
+  read -r bucket_name mp_file_name <<< "$file_and_bucket"
+  if ! perform_full_multipart_upload_with_checksum_before_completion "$bucket_name" "$mp_file_name" "$1" "$2"; then
     log 2 "error performing multipart upload with checksum before completion"
     return 1
   fi
-  if ! complete_multipart_upload_rest_invalid_checksum "$bucket_name" "$2" "$upload_id" "$parts_payload" "$3" "$4" "wrong"; then
+  if ! complete_multipart_upload_rest_invalid_checksum "$bucket_name" "$mp_file_name" "$upload_id" "$parts_payload" "$1" "$2" "wrong"; then
     log 2 "error completing multipart upload with nonexistent param"
     return 1
   fi

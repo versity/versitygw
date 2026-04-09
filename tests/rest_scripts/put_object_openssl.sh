@@ -15,7 +15,6 @@
 # under the License.
 
 source ./tests/rest_scripts/rest.sh
-source ./tests/util/util_file.sh
 
 # Fields
 

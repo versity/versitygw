@@ -17,6 +17,7 @@
 load ./bats-support/load
 load ./bats-assert/load
 
+source ./tests/commands/get_object.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/setup.sh
 

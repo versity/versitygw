@@ -117,6 +117,7 @@ setup_bucket_and_files_base() {
     log 2 "error setting up bucket"
     return 1
   fi
+  log 5 "create test files: '${*:3}'"
   if ! create_test_files "${@:3}"; then
     log 2 "error creating test files"
     return 1
@@ -169,7 +170,7 @@ setup_bucket_and_large_file_v3() {
     log 2 "error setting up bucket: $bucket_name"
     return 1
   fi
-  if ! file_name=$(create_large_file_v2 "$file_name" 2>&1); then
+  if ! file_name=$(create_large_file "$file_name" 2>&1); then
     log 2 "error creating large file: $file_name"
     return 1
   fi
@@ -221,6 +222,7 @@ get_file_name_with_prefix() {
     return 1
   fi
   echo "$1-${uuid}"
+  return 0
 }
 
 create_test_files_and_folders() {
@@ -286,5 +288,346 @@ get_file_names() {
     file_names+=("$file_name")
   done
   echo "${file_names[*]}"
+  return 0
+}
+
+# Usage: create_test_files_with_prefix <prefix> [count]
+# Returns: Space-separated list of created filenames
+create_test_files_with_prefix() {
+  if ! check_param_count_gt "prefix, count (optional)" 1 $#; then
+    return 1
+  fi
+
+  local prefix="$1"
+  local count="${2:-1}"  # Default to 1 if not provided
+  local file_names=()
+  local file_name
+  local error
+
+  for ((i=0; i<count; i++)); do
+    # Generate the name
+    if ! file_name=$(get_file_name_with_prefix "$prefix" 2>&1); then
+      log 2 "error getting file name: $file_name"
+      return 1
+    fi
+
+    # Create the file
+    if ! error=$(create_test_file "$file_name" 2>&1); then
+      log 2 "error creating test file: $error"
+      return 1
+    fi
+
+    file_names+=("$file_name")
+  done
+
+  echo "${file_names[*]}"
+  return 0
+}
+
+# Combined function to setup environment and create test files
+# Params: filename1 [filename2 ...]
+# Note: Uses $FILE_SIZE if set, otherwise defaults to 10 bytes.  Requires $TEST_FILE_FOLDER.
+create_test_files() {
+  if ! check_param_count_gt "at least one filename" 1 $#; then
+    return 1
+  fi
+
+  if [[ -z "$TEST_FILE_FOLDER" ]]; then
+    log 2 "TEST_FILE_FOLDER must be defined"
+    return 1
+  fi
+
+  local file_size="${FILE_SIZE:-10}" # Use global $FILE_SIZE or default to 10
+  local error
+
+  log 5 "file size: $file_size"
+  for filename in "$@"; do
+    local full_path="$TEST_FILE_FOLDER/$filename"
+
+    # Clean up existing file if present
+    if ! error=$(rm -f "$full_path" 2>&1); then
+      log 2 "error removing existing file $filename: $error"
+      return 1
+    fi
+
+    # Create the file with random data
+    if [[ "$file_size" -eq 0 ]]; then
+      touch "$full_path"
+    else
+      # Use dd for specific size creation
+      if ! error=$(dd if=/dev/urandom of="$full_path" bs="$file_size" count=1 conv=notrunc 2>&1); then
+        log 2 "error adding $file_size bytes to $filename: $error"
+        return 1
+      fi
+    fi
+
+    log 5 "Created: $full_path ($file_size bytes)"
+  done
+
+  return 0
+}
+
+create_test_file() {
+  if ! check_param_count_gt "file name, size (optional)" 1 $#; then
+    return 1
+  fi
+  if ! error=$(FILE_SIZE="${2:-10}" create_test_files "$1" 2>&1); then
+    log 2 "error creating test file: $error"
+    return 1
+  fi
+  return 0
+}
+
+create_file_single_char() {
+  if ! check_param_count_v2 "filename, size, char" 3 $#; then
+    return 1
+  fi
+  if ! error=$(rm -f "$TEST_FILE_FOLDER/$1" 2>&1); then
+    log 2 "error removing existing file: $error"
+    return 1
+  fi
+  if ! error=$(touch "$TEST_FILE_FOLDER/$1" 2>&1); then
+    log 2 "error creating new file: $error"
+    return 1
+  fi
+  if ! error=$(dd if=/dev/zero bs=1 count="$2" | tr '\0' "$3" > "$TEST_FILE_FOLDER/$1" 2>&1); then
+    log 2 "error adding data to file: $error"
+    return 1
+  fi
+  return 0
+}
+
+# params:  folder name
+# fail if error
+create_test_folder() {
+  if  ! check_param_count_gt "folder names" 1 $#; then
+    return 1
+  fi
+  for name in "$@"; do
+    if ! error=$(mkdir -p "$TEST_FILE_FOLDER"/"$name" 2>&1); then
+      log 2 "error creating folder $name: $error"
+      return 1
+    fi
+  done
+  return 0
+}
+
+# delete a test file
+# params:  filename
+# return:  0 for success, 1 for error
+delete_test_files() {
+  if ! check_param_count_gt "filenames" 1 $#; then
+    return 1
+  fi
+  if [ -z "$TEST_FILE_FOLDER" ]; then
+    log 2 "no test file folder defined, not deleting"
+    return 1
+  fi
+  for name in "$@"; do
+    if ! error=$(rm -f "${TEST_FILE_FOLDER:?}"/"${name:?}" 2>&1); then
+      log 2 "error deleting file '$name': $error"
+    fi
+  done
+  return 0
+}
+
+get_file_size() {
+  if ! check_param_count_v2 "file location" 1 $#; then
+    return 1
+  fi
+  local file_size=""
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    if ! file_size=$(stat -f %z "$1" 2>&1); then
+      log 2 "error getting file size: $file_size"
+      return 1
+    fi
+  else
+    if ! file_size=$(stat -c %s "$1" 2>&1); then
+      log 2 "error getting file size: $file_size"
+      return 1
+    fi
+  fi
+  echo "$file_size"
+}
+
+# split file into pieces to test multipart upload
+# param: file location
+# return 0 for success, 1 for error
+split_file() {
+  if ! check_param_count_v2 "file name, number of pieces" 2 $#; then
+    return 1
+  fi
+  # -n l/K : Split into K pieces without breaking lines (or use 'K' for raw bytes)
+  # -d     : Use numeric suffixes
+  # -a 2   : Allow up to 100 pieces (00-99)
+  if ! error=$(split -a 2 -d -n "$2" "$1" "${1}-" 2>&1); then
+    log 2 "error splitting file: $error"
+    return 1
+  fi
+
+  local restore_nullglob
+  restore_nullglob="$(shopt -p nullglob)"
+  shopt -s nullglob
+
+  local parts=("${1}-"*)
+
+  eval "$restore_nullglob"
+
+  if [ "${#parts[@]}" -eq 0 ]; then
+    log 2 "split produced no output files"
+    return 1
+  fi
+
+  echo "${parts[*]}" | sort
+  return 0
+}
+
+compare_files() {
+   if ! check_param_count_v2 "two files" 2 $#; then
+    return 2
+  fi
+  log 5 "comparing files '$1' and '$2'"
+
+  local file1="$1"
+  local file2="$2"
+  local md5_cmd
+  local f1_sum f2_sum
+
+  if [[ "$(uname)" == "Darwin" ]]; then
+    md5_cmd="md5 -q"
+  else
+    md5_cmd="md5sum"
+  fi
+
+  if ! f1_raw=$($md5_cmd "$file1" 2>&1); then
+    log 2 "error getting md5 for '$file1': $f1_raw"
+    return 2
+  fi
+  # Clean the output (extract just the hex hash)
+  f1_sum=$(echo "$f1_raw" | awk '{print $1}')
+
+  if ! f2_raw=$($md5_cmd "$file2" 2>&1); then
+    log 2 "error getting md5 for '$file2': $f2_raw"
+    return 2
+  fi
+   # Clean the output (extract just the hex hash)
+  f2_sum=$(echo "$f2_raw" | awk '{print $1}')
+
+  if [[ "$f1_sum" == "$f2_sum" ]]; then
+    return 0
+  fi
+
+  log 2 "MD5 mismatch: $f1_sum ($file1) vs $f2_sum ($file2)"
+  return 1
+}
+
+# Usage: create_large_file [filename] [size_in_mb]
+# If filename is omitted, it generates one. Defaults to 160MB.
+create_large_file() {
+  if ! check_param_count_le "filename (optional), size in MB (optional)" 2 $#; then
+    return 1
+  fi
+
+  local file_name="$1"
+  local size_mb="${2:-160}"
+  local error
+
+  if [ -z "$TEST_FILE_FOLDER" ]; then
+    log 2 "TEST_FILE_FOLDER must be defined"
+    return 1
+  fi
+
+  if [[ -z "$file_name" ]]; then
+    if ! file_name=$(get_file_name 2>&1); then
+      log 2 "error generating automatic file name: $file_name"
+      return 1
+    fi
+  fi
+
+  log 6 "Creating ${size_mb}MB file: $file_name"
+  # bs=1M is significantly faster than bs=1024 for large files
+  if ! error=$(dd if=/dev/urandom of="${TEST_FILE_FOLDER}/${file_name}" bs=1M count="$size_mb" 2>&1); then
+    log 2 "error creating ${size_mb}MB file at ${file_name}: $error"
+    return 1
+  fi
+
+  echo "$file_name"
+  return 0
+}
+
+# param: number of files
+# fail on error
+create_test_file_count() {
+  if ! check_param_count_v2 "number of files" 1 $#; then
+    return 1
+  fi
+  for ((i=1;i<=$1;i++)) {
+    if ! error=$(touch "$TEST_FILE_FOLDER/file_$i" 2>&1); then
+      log 2 "error creating file_$i: $error"
+      return 1
+    fi
+  }
+  # shellcheck disable=SC2153
+  if [[ $LOG_LEVEL -ge 5 ]]; then
+    ls_result=$(ls "$TEST_FILE_FOLDER/file_*")
+    log 5 "$ls_result"
+  fi
+  return 0
+}
+
+download_and_compare_file_with_user() {
+  if ! check_param_count_gt "original file, bucket, key, destination, username, password, chunk size (optional)" 6 $#; then
+    return 1
+  fi
+  if [ -e "$4" ] && ! error=$(rm -f "$4"); then
+    log 2 "error deleting local file at download destination before download: $error"
+    return 1
+  fi
+  if ! download_file_with_user "$5" "$6" "$2" "$3" "$4" "$7"; then
+    log 2 "error downloading file"
+    return 1
+  fi
+  if ! compare_files "$1" "$4"; then
+    log 2 "files don't match"
+    return 1
+  fi
+  return 0
+}
+
+download_and_compare_file() {
+  log 6 "download_and_compare_file"
+  if ! check_param_count_gt "original file, bucket, key, destination, chunk size (optional)" 4 $#; then
+    return 1
+  fi
+  if ! download_and_compare_file_with_user "$1" "$2" "$3" "$4" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$5"; then
+    log 2 "error downloading and comparing file with user"
+    return 1
+  fi
+  return 0
+}
+
+# params:  src, dst
+# fail if error
+copy_file_locally() {
+  if ! check_param_count_v2 "src, dst" 2 $#; then
+    return 1
+  fi
+  if ! error=$(cp "$1" "$2" 2>&1); then
+    log 2 "error copying file: $error"
+    return 1
+  fi
+  return 0
+}
+
+# params: src, dst
+# fail if error
+move_file_locally() {
+  if ! check_param_count_v2 "src,dst" 2 $#; then
+    return 1
+  fi
+  if ! error=$(mv "$1" "$2" 2>&1); then
+    log 2 "error moving file: $error"
+    return 1
+  fi
   return 0
 }
