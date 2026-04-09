@@ -50,7 +50,7 @@ type ScoutFS struct {
 	// GET object:  if file offline, return invalid object state
 	// HEAD object: if file offline, set obj storage class to GLACIER
 	//              if file offline and staging, x-amz-restore: ongoing-request="true"
-	//              if file offline and not staging, x-amz-restore: ongoing-request="false"
+	//              if file offline and not staging, x-amz-restore: ongoing-request="false", expiry-date="Fri, 2 Dec 2050 00:00:00 GMT"
 	//              if file online, x-amz-restore: ongoing-request="false", expiry-date="Fri, 2 Dec 2050 00:00:00 GMT"
 	//              note: this expiry-date is not used but provided for client glacier compatibility
 	// ListObjects: if file offline, set obj storage class to GLACIER
@@ -116,7 +116,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 const (
 	stageComplete      = "ongoing-request=\"false\", expiry-date=\"Fri, 2 Dec 2050 00:00:00 GMT\""
 	stageInProgress    = "ongoing-request=\"true\""
-	stageNotInProgress = "ongoing-request=\"false\""
+	stageNotInProgress = "ongoing-request=\"false\", expiry-date=\"Fri, 2 Dec 2050 00:00:00 GMT\""
 )
 
 const (
