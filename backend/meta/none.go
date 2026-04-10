@@ -52,3 +52,8 @@ func (NoMeta) ListAttributes(_, _ string) ([]string, error) {
 func (NoMeta) DeleteAttributes(bucket, object string) error {
 	return nil
 }
+
+// RenameObject is a no-op because NoMeta does not store metadata.
+func (NoMeta) RenameObject(_, _, _ string) error {
+	return nil
+}
