@@ -819,8 +819,8 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		HTTPStatusCode: http.StatusNotFound,
 	},
 	ErrInvalidWebsiteConfiguration: {
-		Code:           "InvalidRequest",
-		Description:    "The website configuration is not valid.",
+		Code:           "MalformedXML",
+		Description:    "The XML you provided was not well-formed or did not validate against our published schema.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidWebsiteSuffix: {

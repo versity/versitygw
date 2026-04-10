@@ -71,13 +71,13 @@ func NewServer(be backend.Backend, domain string, opts ...Option) *Server {
 	if domain != "" {
 		domainInfo = "domain: " + domain
 	}
-	fmt.Printf("initializing website endpoint (%s)\n", domainInfo)
 
 	// Panic recovery
 	app.Use(recover.New())
 
 	// Request logging
 	if !server.quiet {
+		fmt.Printf("initializing website endpoint (%s)\n", domainInfo)
 		app.Use(logger.New(logger.Config{
 			Format: "${time} | website | ${status} | ${latency} | ${ip} | ${method} | ${path}\n",
 		}))

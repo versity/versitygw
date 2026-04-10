@@ -17,6 +17,7 @@ package website
 import (
 	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strconv"
@@ -62,7 +63,7 @@ func newHandler(be backend.Backend, domain string) fiber.Handler {
 		bucket := resolveBucket(host, domain, domainSuffix)
 		if bucket == "" {
 			return sendError(ctx, http.StatusForbidden, "Forbidden",
-				fmt.Sprintf("No bucket could be resolved from host %q", ctx.Hostname()))
+				fmt.Sprintf("No bucket could be resolved from host %q", html.EscapeString(ctx.Hostname())))
 		}
 
 		// Fetch website configuration
@@ -224,20 +225,22 @@ func serveObject(ctx *fiber.Ctx, result *s3.GetObjectOutput, key string) error {
 		ctx.Set("Last-Modified", result.LastModified.UTC().Format(http.TimeFormat))
 	}
 
-	body, err := io.ReadAll(result.Body)
+	_, err := io.Copy(ctx.Response().BodyWriter(), result.Body)
 	if err != nil {
 		return sendError(ctx, http.StatusInternalServerError, "Internal Server Error",
 			"Failed to read object")
 	}
 
-	return ctx.Send(body)
+	return nil
 }
 
 // serveErrorDocument fetches and serves the configured error document.
 func serveErrorDocument(ctx *fiber.Ctx, be backend.Backend, bucket, errorDocKey string, statusCode int) error {
+	emptyRange := ""
 	result, err := be.GetObject(ctx.Context(), &s3.GetObjectInput{
 		Bucket: &bucket,
 		Key:    &errorDocKey,
+		Range:  &emptyRange,
 	})
 	if err != nil {
 		return sendError(ctx, statusCode, "Not Found", "The specified key does not exist")
@@ -250,13 +253,13 @@ func serveErrorDocument(ctx *fiber.Ctx, be backend.Backend, bucket, errorDocKey 
 	contentType := guessContentType(result, errorDocKey)
 	ctx.Set("Content-Type", contentType)
 
-	body, readErr := io.ReadAll(result.Body)
-	if readErr != nil {
+	ctx.Status(statusCode)
+	_, writeErr := io.Copy(ctx.Response().BodyWriter(), result.Body)
+	if writeErr != nil {
 		return sendError(ctx, statusCode, "Not Found", "The specified key does not exist")
 	}
 
-	ctx.Status(statusCode)
-	return ctx.Send(body)
+	return nil
 }
 
 // guessContentType returns the content type from the GetObject result, or

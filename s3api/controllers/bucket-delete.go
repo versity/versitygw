@@ -177,7 +177,7 @@ func (c S3ApiController) DeleteBucketWebsite(ctx *fiber.Ctx) (*Response, error) 
 			IsRoot:          isRoot,
 			Acc:             acct,
 			Bucket:          bucket,
-			Action:          auth.PutBucketWebsiteAction,
+			Action:          auth.DeleteBucketWebsiteAction,
 			IsPublicRequest: IsBucketPublic,
 			DisableACL:      c.disableACL,
 		})
