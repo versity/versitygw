@@ -114,9 +114,8 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 }
 
 const (
-	stageComplete      = "ongoing-request=\"false\", expiry-date=\"Fri, 2 Dec 2050 00:00:00 GMT\""
-	stageInProgress    = "ongoing-request=\"true\""
-	stageNotInProgress = "ongoing-request=\"false\""
+	stageComplete   = "ongoing-request=\"false\", expiry-date=\"Fri, 2 Dec 2050 00:00:00 GMT\""
+	stageInProgress = "ongoing-request=\"true\""
 )
 
 const (
@@ -196,9 +195,7 @@ func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 		objPath := filepath.Join(*input.Bucket, *input.Key)
 
 		stclass := types.StorageClassStandard
-		requestOngoing := ""
-
-		requestOngoing = stageComplete
+		requestOngoing := stageComplete
 
 		// Check if there are any offline exents associated with this file.
 		// If so, we will set storage class to glacier.
@@ -211,7 +208,7 @@ func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 		}
 		if st.Offline_blocks != 0 {
 			stclass = types.StorageClassGlacier
-			requestOngoing = stageNotInProgress
+			requestOngoing = ""
 
 			ok, err := isStaging(objPath)
 			if errors.Is(err, fs.ErrNotExist) {
