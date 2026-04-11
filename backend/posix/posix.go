@@ -348,6 +348,18 @@ func (p *Posix) versioningEnabled() bool {
 	return p.versioningDir != ""
 }
 
+// validateVersionId checks if the input versionId is 'ulid' compatible
+func (p *Posix) validateVersionId(versionId string) error {
+	if versionId == "" || versionId == "null" {
+		return nil
+	}
+	_, err := ulid.Parse(versionId)
+	if err != nil {
+		return s3err.GetAPIError(s3err.ErrInvalidVersionId)
+	}
+	return nil
+}
+
 func (p *Posix) doesBucketAndObjectExist(bucket, object string) error {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1699,9 +1711,22 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		}
 		return res, "", fmt.Errorf("mark upload in-progress: %w", err)
 	}
+
+	// Rename sidecar metadata to match the new data directory path.
+	// For xattr this is a no-op since attributes follow the inode.
+	metaObjDir := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
+	oldMetaObj := filepath.Join(metaObjDir, uploadID)
+	newMetaObj := filepath.Join(metaObjDir, activeUploadName)
+	if err := p.meta.RenameObject(bucket, oldMetaObj, newMetaObj); err != nil {
+		// Roll back the data directory rename so a future retry can succeed.
+		os.Rename(uploadIDInProgress, uploadIDDir)
+		return res, "", fmt.Errorf("rename metadata for in-progress: %w", err)
+	}
+
 	// Best-effort rename back on failure so a future retry can still complete.
 	// On success, os.RemoveAll below removes uploadIDInProgress so this is a no-op.
 	defer os.Rename(uploadIDInProgress, uploadIDDir)
+	defer p.meta.RenameObject(bucket, newMetaObj, oldMetaObj)
 
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, meta.ErrNoSuchKey) {
@@ -3045,6 +3070,9 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	if err != nil {
 		return s3response.CopyPartResult{}, err
 	}
+	if err := p.validateVersionId(srcVersionId); err != nil {
+		return s3response.CopyPartResult{}, err
+	}
 
 	_, err = os.Stat(srcBucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -3728,6 +3756,10 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 
+	if err := p.validateVersionId(backend.GetStringFromPtr(input.VersionId)); err != nil {
+		return nil, err
+	}
+
 	_, err = os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4147,6 +4179,10 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		versionId = *input.VersionId
 	}
 
+	if err := p.validateVersionId(versionId); err != nil {
+		return nil, err
+	}
+
 	if input.PartNumber != nil {
 		// querying an object by part number is not supported
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
@@ -4412,6 +4448,10 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 	versionId := backend.GetStringFromPtr(input.VersionId)
 
+	if err := p.validateVersionId(versionId); err != nil {
+		return nil, err
+	}
+
 	if input.PartNumber != nil {
 		// querying an object by part number is not supported
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
@@ -4669,6 +4709,9 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 	srcBucket, srcObject, srcVersionId, err := backend.ParseCopySource(*input.CopySource)
 	if err != nil {
+		return s3response.CopyObjectOutput{}, err
+	}
+	if err := p.validateVersionId(srcVersionId); err != nil {
 		return s3response.CopyObjectOutput{}, err
 	}
 	if !p.isBucketValid(srcBucket) {
@@ -5382,6 +5425,10 @@ func (p *Posix) GetObjectTagging(ctx context.Context, bucket, object, versionId 
 		return nil, fmt.Errorf("stat bucket: %w", err)
 	}
 
+	if err := p.validateVersionId(versionId); err != nil {
+		return nil, err
+	}
+
 	if versionId != "" {
 		if !p.versioningEnabled() {
 			//TODO: Maybe we need to return our custom error here?
@@ -5453,6 +5500,10 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 	}
 	if err != nil {
 		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	if err := p.validateVersionId(versionId); err != nil {
+		return err
 	}
 
 	if versionId != "" {
@@ -5857,6 +5908,10 @@ func (p *Posix) PutObjectLegalHold(ctx context.Context, bucket, object, versionI
 		return err
 	}
 
+	if err := p.validateVersionId(versionId); err != nil {
+		return err
+	}
+
 	var statusData []byte
 	if status {
 		statusData = []byte{1}
@@ -5918,6 +5973,10 @@ func (p *Posix) GetObjectLegalHold(ctx context.Context, bucket, object, versionI
 	}
 	err = p.isBucketObjectLockEnabled(bucket)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := p.validateVersionId(versionId); err != nil {
 		return nil, err
 	}
 
@@ -5983,6 +6042,10 @@ func (p *Posix) PutObjectRetention(ctx context.Context, bucket, object, versionI
 		return err
 	}
 
+	if err := p.validateVersionId(versionId); err != nil {
+		return err
+	}
+
 	if versionId != "" {
 		if !p.versioningEnabled() {
 			//TODO: Maybe we need to return our custom error here?
@@ -6031,6 +6094,10 @@ func (p *Posix) GetObjectRetention(ctx context.Context, bucket, object, versionI
 	}
 	err = p.isBucketObjectLockEnabled(bucket)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := p.validateVersionId(versionId); err != nil {
 		return nil, err
 	}
 

@@ -48,23 +48,6 @@ func TestS3ApiController_DeleteObjectTagging(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid versionId",
-			input: testInput{
-				locals: defaultLocals,
-				queries: map[string]string{
-					"versionId": "invalid_versionId",
-				},
-			},
-			output: testOutput{
-				response: &Response{
-					MetaOpts: &MetaOptions{
-						BucketOwner: "root",
-					},
-				},
-				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
-			},
-		},
-		{
 			name: "backend returns error",
 			input: testInput{
 				queries: map[string]string{
@@ -236,23 +219,6 @@ func TestS3ApiController_DeleteObject(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
-			},
-		},
-		{
-			name: "invalid versionId",
-			input: testInput{
-				locals: defaultLocals,
-				queries: map[string]string{
-					"versionId": "invalid_versionId",
-				},
-			},
-			output: testOutput{
-				response: &Response{
-					MetaOpts: &MetaOptions{
-						BucketOwner: "root",
-					},
-				},
-				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
 			},
 		},
 		{
