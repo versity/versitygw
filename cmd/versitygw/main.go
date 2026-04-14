@@ -146,7 +146,8 @@ func main() {
 
 func initApp() *cli.App {
 	return &cli.App{
-		Usage: "Versity S3 Gateway",
+		EnableBashCompletion: true,
+		Usage:                "Versity S3 Gateway",
 		Description: `The Versity S3 Gateway is an S3 protocol translator that allows an S3 client
 to access the supported backend storage as if it was a native S3 service.
 VersityGW is an open-source project licensed under the Apache 2.0 License. The

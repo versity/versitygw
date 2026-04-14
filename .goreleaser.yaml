@@ -121,6 +121,25 @@ nfpms:
         file_info:
           mode: 0700
 
+      - src: extra/versitygw.sh
+        dst: /etc/profile.d/versitygw.sh
+        packager: rpm
+
+      - src: extra/versitygw.sh
+        dst: /etc/bash_completion.d/versitygw.sh
+        packager: deb
+
+      - src: extra/versitygw.zsh
+        dst: /usr/share/zsh/site-functions/_versitygw
+        packager: rpm
+
+      - src: extra/versitygw.zsh
+        dst: /usr/share/zsh/vendor-completions/_versitygw
+        packager: deb
+
+      - src: extra/versitygw.fish
+        dst: /usr/share/fish/vendor_completions.d/versitygw.fish
+
 
 
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
