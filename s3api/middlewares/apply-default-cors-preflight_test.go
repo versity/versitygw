@@ -35,6 +35,7 @@ func TestApplyDefaultCORSPreflight_OptionsSetsPreflightHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 	req.Header.Set("Origin", "https://request-origin.example")
 	req.Header.Set("Access-Control-Request-Method", "PATCH")
 	req.Header.Set("Access-Control-Request-Headers", "content-type,authorization")
