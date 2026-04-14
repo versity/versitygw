@@ -103,6 +103,7 @@ func makePostRequest(t *testing.T, body []byte, boundary string) *http.Request {
 
 	req, err := http.NewRequest(http.MethodPost, "/mybucket", bytes.NewReader(body))
 	assert.NoError(t, err)
+	req.Host = "localhost"
 	req.Header.Set("Content-Type", fmt.Sprintf("multipart/form-data; boundary=%s", boundary))
 	// Set both the header and the int64 field: app.Test() serialises the
 	// request via req.Write() which uses req.ContentLength; fasthttp then
@@ -283,6 +284,7 @@ func TestAuthorizePostObject_InvalidContentType_ReturnsError(t *testing.T) {
 
 	req, err := http.NewRequest(http.MethodPost, "/mybucket", strings.NewReader("body"))
 	assert.NoError(t, err)
+	req.Host = "localhost"
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Length", "4")
 

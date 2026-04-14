@@ -33,6 +33,7 @@ func TestApplyDefaultCORS_AddsHeaderWhenOriginSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 
 	resp, err := app.Test(req)
 	if err != nil {
@@ -62,6 +63,7 @@ func TestApplyDefaultCORS_DoesNotOverrideExistingHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 
 	resp, err := app.Test(req)
 	if err != nil {

@@ -53,6 +53,7 @@ func TestApplyBucketCORSPreflightFallback_NoBucketCors_Responds204(t *testing.T)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 	req.Header.Set("Origin", "https://request-origin.example")
 	req.Header.Set("Access-Control-Request-Method", "GET")
 	req.Header.Set("Access-Control-Request-Headers", "content-type")
@@ -95,6 +96,7 @@ func TestApplyBucketCORSPreflightFallback_NoSuchBucket_Responds204(t *testing.T)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 	req.Header.Set("Origin", "https://request-origin.example")
 	req.Header.Set("Access-Control-Request-Method", "PUT")
 	req.Header.Set("Access-Control-Request-Headers", "content-type")
@@ -134,6 +136,7 @@ func TestApplyBucketCORSPreflightFallback_BucketHasCors_CallsNext(t *testing.T) 
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 
 	resp, err := app.Test(req)
 	if err != nil {
