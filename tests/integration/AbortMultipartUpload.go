@@ -210,7 +210,7 @@ func AbortMultipartUpload_if_match_initiated_time(s *S3Conf) error {
 			{initiated, nil},
 			// should ignore future dates
 			{getPtr(initiated.AddDate(1, 0, 0)), nil},
-			// should fail if the initation date doesn't match
+			// should fail if the initiated date doesn't match
 			{getPtr(initiated.AddDate(-1, 0, 1)), s3err.GetAPIError(s3err.ErrPreconditionFailed)},
 		} {
 			err := abortMp(test.date)

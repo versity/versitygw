@@ -2242,7 +2242,7 @@ func (p *Posix) loadObjectMetadata(f *os.File, bucket, object string) map[string
 			if len(result) != 0 {
 				err = p.storeObjectMetadata(f, bucket, object, result)
 				if err == nil {
-					// if it succeded to store the metadata as a json
+					// if it succeeded to store the metadata as a json
 					// object in user.metadata, cleanup the legacy X-Amz-Meta.
 					// attributes
 					for _, attr := range legacyAttrs {
