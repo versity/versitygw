@@ -1502,7 +1502,21 @@ func areMapsSame(mp1, mp2 map[string]string) bool {
 	return true
 }
 
-func compareBuckets(list1 []types.Bucket, list2 []types.Bucket) bool {
+func compareBuckets(list1 []types.Bucket, list2 []types.Bucket, ignore ...string) bool {
+	if len(ignore) > 0 {
+		ignoreSet := make(map[string]struct{}, len(ignore))
+		for _, name := range ignore {
+			ignoreSet[name] = struct{}{}
+		}
+		filtered := make([]types.Bucket, 0, len(list1))
+		for _, b := range list1 {
+			if _, skip := ignoreSet[*b.Name]; !skip {
+				filtered = append(filtered, b)
+			}
+		}
+		list1 = filtered
+	}
+
 	if len(list1) != len(list2) {
 		return false
 	}
@@ -1771,8 +1785,17 @@ func listBuckets(s *S3Conf) error {
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
+// randCounter is an atomic counter used by genRandString. It is seeded once
+// with time.Now().UnixNano() so that values are unique even when many goroutines
+// call genRandString concurrently on systems with low-resolution clocks.
+var randCounter = atomic.Uint64{}
+
+func init() {
+	randCounter.Store(uint64(time.Now().UnixNano()))
+}
+
 func genRandString(length int) string {
-	source := rnd.NewSource(time.Now().UnixNano())
+	source := rnd.NewSource(int64(randCounter.Add(1)))
 	random := rnd.New(source)
 	result := make([]byte, length)
 	for i := range result {

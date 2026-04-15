@@ -14,12 +14,7 @@
 
 //go:build !windows
 
-package posix
+package meta
 
-import (
-	"github.com/versity/versitygw/s3err"
-)
-
-func handleParentDirError(_ string) error {
-	return s3err.GetAPIError(s3err.ErrObjectParentIsFile)
-}
+// trimVolume is a no-op on non-Windows platforms.
+func trimVolume(p string) string { return p }

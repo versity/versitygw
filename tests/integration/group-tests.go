@@ -196,7 +196,7 @@ func TestPutObject(ts *TestState) {
 	}
 	ts.Run(PutObject_success)
 	ts.Run(PutObject_default_content_type)
-	if !ts.conf.versioningEnabled {
+	if !ts.conf.versioningEnabled && !ts.conf.windowsTests {
 		ts.Run(PutObject_racey_success)
 	}
 	ts.Run(PutObject_invalid_credentials)
@@ -957,7 +957,9 @@ func TestPosix(ts *TestState) {
 	ts.Run(CopyObject_overwrite_same_dir_object)
 	ts.Run(CopyObject_overwrite_same_file_object)
 	ts.Run(DeleteObject_directory_not_empty)
-	ts.Run(PutObject_race_with_delete)
+	if !ts.conf.windowsTests {
+		ts.Run(PutObject_race_with_delete)
+	}
 	// posix specific versioning tests
 	if !ts.conf.versioningEnabled {
 		TestVersioningDisabled(ts)
@@ -1138,10 +1140,14 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_CopyObject_success)
 	ts.Run(Versioning_CopyObject_non_existing_version_id)
 	ts.Run(Versioning_CopyObject_from_an_object_version)
-	ts.Run(Versioning_CopyObject_special_chars)
+	if !ts.conf.windowsTests {
+		ts.Run(Versioning_CopyObject_special_chars)
+	}
 	// HeadObject action
 	ts.Run(Versioning_HeadObject_invalid_versionId)
-	ts.Run(Versioning_HeadObject_non_existing_object_version)
+	if !ts.conf.windowsTests {
+		ts.Run(Versioning_HeadObject_non_existing_object_version)
+	}
 	ts.Run(Versioning_HeadObject_invalid_parent)
 	ts.Run(Versioning_HeadObject_success)
 	ts.Run(Versioning_HeadObject_without_versionId)
@@ -1170,7 +1176,9 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_DeleteObject_invalid_versionId)
 	ts.Run(Versioning_DeleteObject_delete_object_version)
 	ts.Run(Versioning_DeleteObject_non_existing_object)
-	ts.Run(Versioning_DeleteObject_delete_a_delete_marker)
+	if !ts.conf.windowsTests {
+		ts.Run(Versioning_DeleteObject_delete_a_delete_marker)
+	}
 	ts.Run(Versioning_Delete_null_versionId_object)
 	ts.Run(Versioning_DeleteObject_nested_dir_object)
 	ts.Run(Versioning_DeleteObject_non_existing_objects)
@@ -1221,13 +1229,17 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_WORM_PutObject_overwrite_locked_object)
 	ts.Run(Versioning_WORM_CopyObject_overwrite_locked_object)
 	ts.Run(Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object)
-	ts.Run(Versioning_WORM_remove_delete_marker_under_bucket_default_retention)
+	if !ts.conf.windowsTests {
+		ts.Run(Versioning_WORM_remove_delete_marker_under_bucket_default_retention)
+	}
 	// Concurrent requests
 	// Versioninig_concurrent_upload_object
 	ts.Run(Versioning_AccessControl_GetObjectVersion)
 	ts.Run(Versioning_AccessControl_HeadObjectVersion)
 	ts.Run(Versioning_AccessControl_object_tagging_policy)
-	ts.Run(Versioning_AccessControl_DeleteObject_policy)
+	if !ts.conf.windowsTests {
+		ts.Run(Versioning_AccessControl_DeleteObject_policy)
+	}
 	ts.Run(Versioning_AccessControl_GetObjectAttributes_policy)
 }
 

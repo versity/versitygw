@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -437,12 +438,17 @@ func Versioning_CopyObject_special_chars(s *S3Conf) error {
 		}
 
 		srcObjVersionId := *srcObjVersions[0].VersionId
+		copySource := fmt.Sprintf("%v/%v?versionId=%v",
+			bucket,
+			url.PathEscape(srcObj),
+			url.QueryEscape(srcObjVersionId),
+		)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		res, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:     &bucket,
 			Key:        &dstObj,
-			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=%v", bucket, srcObj, srcObjVersionId)),
+			CopySource: getPtr(copySource),
 		})
 		cancel()
 		if err != nil {

@@ -14,33 +14,16 @@
 
 //go:build windows
 
-package posix
+package meta
 
 import (
-	"os"
 	"path/filepath"
-
-	"github.com/versity/versitygw/s3err"
+	"strings"
 )
 
-func handleParentDirError(name string) error {
-	dir := filepath.Dir(name)
-
-	// Walk up the directory hierarchy
-	for dir != "." && dir != "/" {
-		d, statErr := os.Stat(dir)
-		if statErr == nil {
-			// Path component exists
-			if !d.IsDir() {
-				// Found a file in the ancestor path
-				return s3err.GetAPIError(s3err.ErrObjectParentIsFile)
-			}
-			// Found a valid directory ancestor, parent truly doesn't exist
-			break
-		}
-		// Continue checking parent directories
-		dir = filepath.Dir(dir)
-	}
-	// Parent doesn't exist or is a directory, treat as ENOENT
-	return nil
+// trimVolume strips the Windows drive letter (e.g. "C:") and any leading
+// path separator from p so it can be safely used as a sub-path component
+// inside filepath.Join without becoming an absolute root.
+func trimVolume(p string) string {
+	return strings.TrimLeft(p[len(filepath.VolumeName(p)):], `\/`)
 }
