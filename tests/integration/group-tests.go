@@ -503,7 +503,7 @@ func TestCompleteMultipartUpload(ts *TestState) {
 	ts.Run(CompletedMultipartUpload_non_existing_bucket)
 	ts.Run(CompleteMultipartUpload_incorrect_part_number)
 	ts.Run(CompleteMultipartUpload_invalid_part_number)
-	ts.Run(CompleteMultipartUpload_defualt_content_type)
+	ts.Run(CompleteMultipartUpload_default_content_type)
 	ts.Run(CompleteMultipartUpload_invalid_ETag)
 	ts.Run(CompleteMultipartUpload_small_upload_size)
 	ts.Run(CompleteMultipartUpload_empty_parts)
@@ -1586,7 +1586,7 @@ func GetIntTests() IntTests {
 		"AbortMultipartUpload_if_match_initiated_time":                             AbortMultipartUpload_if_match_initiated_time,
 		"CompletedMultipartUpload_non_existing_bucket":                             CompletedMultipartUpload_non_existing_bucket,
 		"CompleteMultipartUpload_invalid_part_number":                              CompleteMultipartUpload_invalid_part_number,
-		"CompleteMultipartUpload_defualt_content_type":                             CompleteMultipartUpload_defualt_content_type,
+		"CompleteMultipartUpload_default_content_type":                             CompleteMultipartUpload_default_content_type,
 		"CompleteMultipartUpload_invalid_ETag":                                     CompleteMultipartUpload_invalid_ETag,
 		"CompleteMultipartUpload_small_upload_size":                                CompleteMultipartUpload_small_upload_size,
 		"CompleteMultipartUpload_empty_parts":                                      CompleteMultipartUpload_empty_parts,

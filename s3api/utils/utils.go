@@ -966,7 +966,7 @@ func ConvertToStringPtr[T any](val T) *string {
 	return &str
 }
 
-// Converst any pointer to a string pointer
+// Converts any pointer to a string pointer
 func ConvertPtrToStringPtr[T any](val *T) *string {
 	if val == nil {
 		return nil

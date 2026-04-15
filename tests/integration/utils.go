@@ -1715,7 +1715,7 @@ func extractCORSHeaders(resp *http.Response) (*PreflightResult, error) {
 		var errResp smithy.GenericAPIError
 		err = xml.Unmarshal(body, &errResp)
 		if err != nil {
-			return nil, fmt.Errorf("unmarshal respone body: %w", err)
+			return nil, fmt.Errorf("unmarshal response body: %w", err)
 		}
 
 		return &PreflightResult{

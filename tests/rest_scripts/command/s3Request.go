@@ -6,11 +6,12 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"github.com/versity/versitygw/tests/rest_scripts/logger"
 	"os"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/versity/versitygw/tests/rest_scripts/logger"
 )
 
 type S3Request struct {
@@ -104,7 +105,7 @@ func (s *S3Request) calculateCanonicalRequestHash() error {
 
 	canonicalQuery, err := s.getCanonicalQuery()
 	if err != nil {
-		return fmt.Errorf("error generating canoncial query: %w", err)
+		return fmt.Errorf("error generating canonical query: %w", err)
 	}
 	canonicalRequestLines = append(canonicalRequestLines, canonicalQuery)
 

@@ -302,7 +302,7 @@ func TestProcessController(t *testing.T) {
 		expected expected
 	}{
 		{
-			name: "no services successfull response",
+			name: "no services successful response",
 			args: args{
 				svc: &Services{},
 				controller: func(ctx *fiber.Ctx) (*Response, error) {

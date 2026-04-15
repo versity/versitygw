@@ -2,9 +2,10 @@ package command
 
 import (
 	"fmt"
-	"github.com/versity/versitygw/tests/rest_scripts/logger"
 	"os"
 	"strings"
+
+	"github.com/versity/versitygw/tests/rest_scripts/logger"
 )
 
 type OpenSSLCommand struct {
@@ -64,14 +65,14 @@ func (o *OpenSSLCommand) Render() error {
 		return fmt.Errorf("error writing to file: %w", err)
 	}
 	if o.Config.PayloadFile != "" || o.Config.Payload != "" {
-		if err = o.writePayload(file); err != nil {
+		if err = o.writePayload(); err != nil {
 			return fmt.Errorf("error writing openssl payload: %w", err)
 		}
 	}
 	return nil
 }
 
-func (o *OpenSSLCommand) writePayload(file *os.File) error {
+func (o *OpenSSLCommand) writePayload() error {
 	if awsPayload, ok := o.payloadManager.(*PayloadStreamingAWS4HMACSHA256); ok {
 		awsPayload.AddInitialSignatureAndSigningKey(o.signature, o.signingKey)
 	}
