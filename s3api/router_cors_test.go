@@ -71,6 +71,7 @@ func TestS3ApiRouter_ListBuckets_DefaultCORSAllowOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 
 	resp, err := app.Test(req)
 	if err != nil {
@@ -101,6 +102,7 @@ func TestS3ApiRouter_ListBuckets_OptionsPreflight_DefaultCORS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 	req.Header.Set("Origin", "https://client.example")
 	req.Header.Set("Access-Control-Request-Method", "GET")
 	req.Header.Set("Access-Control-Request-Headers", "authorization")
@@ -134,6 +136,7 @@ func TestS3ApiRouter_PutBucketTagging_ErrorStillIncludesFallbackCORS(t *testing.
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 	req.Header.Set("Origin", origin)
 
 	resp, err := app.Test(req)
@@ -162,6 +165,7 @@ func TestS3ApiRouter_PutObjectTagging_ErrorStillIncludesFallbackCORS(t *testing.
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 	req.Header.Set("Origin", origin)
 
 	resp, err := app.Test(req)
@@ -190,6 +194,7 @@ func TestS3ApiRouter_CopyObject_ErrorStillIncludesFallbackCORS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 	req.Header.Set("Origin", origin)
 	req.Header.Set("X-Amz-Copy-Source", "srcbucket/srckey")
 
@@ -219,6 +224,7 @@ func TestS3ApiRouter_PutObject_ErrorStillIncludesFallbackCORS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 	req.Header.Set("Origin", origin)
 
 	resp, err := app.Test(req)
@@ -263,6 +269,7 @@ func TestS3ApiRouter_OptionsWithBucketCORS_NoDuplicateHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 	req.Header.Set("Origin", bucketOrigin)
 	req.Header.Set("Access-Control-Request-Method", "PUT")
 	req.Header.Set("Access-Control-Request-Headers", "content-type")

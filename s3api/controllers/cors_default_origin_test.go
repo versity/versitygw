@@ -45,6 +45,7 @@ func TestApplyBucketCORS_FallbackOrigin_NoBucketCors_NoRequestOrigin(t *testing.
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 
 	resp, err := app.Test(req)
 	if err != nil {
@@ -80,6 +81,7 @@ func TestApplyBucketCORS_FallbackOrigin_NotAppliedWhenBucketCorsExists(t *testin
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
+	req.Host = "localhost"
 
 	resp, err := app.Test(req)
 	if err != nil {
