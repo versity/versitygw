@@ -80,11 +80,17 @@ func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, va
 		return fmt.Errorf("failed to create temporary file: %v", err)
 	}
 	defer os.Remove(tempfile.Name())
-	defer tempfile.Close()
 
 	_, err = tempfile.Write(value)
 	if err != nil {
+		tempfile.Close()
 		return fmt.Errorf("failed to write attribute: %v", err)
+	}
+
+	// Close explicitly before rename to prevent error on Windows:
+	// The process cannot access the file because it is being used by another process.
+	if err = tempfile.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary file: %v", err)
 	}
 
 	err = os.Rename(tempfile.Name(), attr)
