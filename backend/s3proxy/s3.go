@@ -58,6 +58,7 @@ type S3Proxy struct {
 	sslSkipVerify             bool
 	usePathStyle              bool
 	debug                     bool
+	gcsCompatibility          bool
 }
 
 var _ backend.Backend = &S3Proxy{}
@@ -70,7 +71,7 @@ func NewWithClient(ctx context.Context, client *s3.Client, metaBucket string) (*
 	return s, s.validate(ctx)
 }
 
-func New(ctx context.Context, access, secret, endpoint, region, metaBucket string, anonymousCredentials, disableChecksum, disableDataIntegrityCheck, sslSkipVerify, usePathStyle, debug bool) (*S3Proxy, error) {
+func New(ctx context.Context, access, secret, endpoint, region, metaBucket string, anonymousCredentials, disableChecksum, disableDataIntegrityCheck, sslSkipVerify, usePathStyle, debug, gcsCompatibility bool) (*S3Proxy, error) {
 	s := &S3Proxy{
 		access:                    access,
 		secret:                    secret,
@@ -83,6 +84,7 @@ func New(ctx context.Context, access, secret, endpoint, region, metaBucket strin
 		sslSkipVerify:             sslSkipVerify,
 		usePathStyle:              usePathStyle,
 		debug:                     debug,
+		gcsCompatibility:          gcsCompatibility,
 	}
 	client, err := s.getClientWithCtx(ctx)
 	if err != nil {

@@ -26,6 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 func (s *S3Proxy) getClientWithCtx(ctx context.Context) (*s3.Client, error) {
@@ -82,10 +83,75 @@ func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Con
 			config.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired))
 	}
 
+	if s.gcsCompatibility {
+		opts = append(opts, config.WithAPIOptions([]func(*middleware.Stack) error{
+			func(stack *middleware.Stack) error {
+				if err := stack.Finalize.Insert(gcsIgnoreHeadersMiddleware(), "Signing", middleware.Before); err != nil {
+					return err
+				}
+				return stack.Finalize.Insert(gcsRestoreHeadersMiddleware(), "Signing", middleware.After)
+			},
+		}))
+	}
+
 	if s.debug {
 		opts = append(opts,
 			config.WithClientLogMode(aws.LogSigning|aws.LogRetries|aws.LogRequest|aws.LogResponse|aws.LogRequestEventMessage|aws.LogResponseEventMessage))
 	}
 
 	return config.LoadDefaultConfig(ctx, opts...)
+}
+
+// gcsIgnoredHeadersKey is the context key for headers temporarily removed
+// before signing to work around GCS SigV4 compatibility issue.
+// See: https://github.com/aws/aws-sdk-go-v2/issues/1816
+type gcsIgnoredHeadersKey struct{}
+
+// gcsIgnoreHeadersMiddleware removes Accept-Encoding from the request before
+// the Signing step so it is not included in signed headers. GCS rejects
+// requests where Accept-Encoding is part of the signature because it rewrites
+// that header internally.
+func gcsIgnoreHeadersMiddleware() middleware.FinalizeMiddleware {
+	return middleware.FinalizeMiddlewareFunc("GCSIgnoreHeaders",
+		func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
+			out middleware.FinalizeOutput, metadata middleware.Metadata, err error,
+		) {
+			req, ok := in.Request.(*smithyhttp.Request)
+			if !ok {
+				return out, metadata, &v4.SigningError{
+					Err: fmt.Errorf("(GCSIgnoreHeaders) unexpected request type %T", in.Request),
+				}
+			}
+
+			const hdr = "Accept-Encoding"
+			saved := req.Header.Get(hdr)
+			req.Header.Del(hdr)
+			ctx = middleware.WithStackValue(ctx, gcsIgnoredHeadersKey{}, saved)
+
+			return next.HandleFinalize(ctx, in)
+		},
+	)
+}
+
+// gcsRestoreHeadersMiddleware restores the Accept-Encoding header that was
+// removed by gcsIgnoreHeadersMiddleware so it is still sent on the wire.
+func gcsRestoreHeadersMiddleware() middleware.FinalizeMiddleware {
+	return middleware.FinalizeMiddlewareFunc("GCSRestoreHeaders",
+		func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
+			out middleware.FinalizeOutput, metadata middleware.Metadata, err error,
+		) {
+			req, ok := in.Request.(*smithyhttp.Request)
+			if !ok {
+				return out, metadata, &v4.SigningError{
+					Err: fmt.Errorf("(GCSRestoreHeaders) unexpected request type %T", in.Request),
+				}
+			}
+
+			if saved, _ := middleware.GetStackValue(ctx, gcsIgnoredHeadersKey{}).(string); saved != "" {
+				req.Header.Set("Accept-Encoding", saved)
+			}
+
+			return next.HandleFinalize(ctx, in)
+		},
+	)
 }
