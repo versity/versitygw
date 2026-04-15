@@ -39,6 +39,7 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -71,6 +72,50 @@ type user struct {
 
 func getBucketName() string {
 	val := bcktCount.Add(1)
+
+	// Walk up the call stack to find the nearest integration test function
+	// (one whose name starts with an uppercase letter after the package prefix).
+	// This makes leftover bucket names self-documenting.
+	pcs := make([]uintptr, 20)
+	n := runtime.Callers(2, pcs)
+	frames := runtime.CallersFrames(pcs[:n])
+	for {
+		frame, more := frames.Next()
+		func_ := frame.Function
+		// Strip package path prefix, e.g. "github.com/.../integration.MyTest" -> "MyTest"
+		if idx := strings.LastIndex(func_, "."); idx >= 0 {
+			func_ = func_[idx+1:]
+		}
+		// Integration test functions start with an uppercase letter and
+		// are not framework helpers (actionHandler, setup, teardown, etc.).
+		if len(func_) > 0 && func_[0] >= 'A' && func_[0] <= 'Z' {
+			// Convert to a valid S3 bucket name: lowercase, replace _ with -, truncate.
+			name := strings.ToLower(strings.ReplaceAll(func_, "_", "-"))
+			// Remove any characters that are not alphanumeric or hyphen.
+			var b strings.Builder
+			for _, r := range name {
+				if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+					b.WriteRune(r)
+				}
+			}
+			name = b.String()
+			// Suffix with the counter to ensure uniqueness across multiple calls
+			// from the same test.
+			suffix := fmt.Sprintf("-%v", val)
+			// S3 bucket names max 63 chars.
+			if len(name)+len(suffix) > 63 {
+				name = name[:63-len(suffix)]
+			}
+			// Strip trailing hyphens that may result from truncation.
+			name = strings.TrimRight(name, "-")
+			return name + suffix
+		}
+		if !more {
+			break
+		}
+	}
+
+	// Fallback: no test function found in the call stack.
 	return fmt.Sprintf("test-bucket-%v", val)
 }
 
@@ -127,9 +172,10 @@ func teardown(s *S3Conf, bucket string) error {
 		for attempts < maxRetryAttempts {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
-				Bucket:    bucket,
-				Key:       key,
-				VersionId: versionId,
+				Bucket:                    bucket,
+				Key:                       key,
+				VersionId:                 versionId,
+				BypassGovernanceRetention: aws.Bool(true),
 			})
 			cancel()
 			if err == nil {
