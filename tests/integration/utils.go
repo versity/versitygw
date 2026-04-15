@@ -127,9 +127,10 @@ func teardown(s *S3Conf, bucket string) error {
 		for attempts < maxRetryAttempts {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
-				Bucket:    bucket,
-				Key:       key,
-				VersionId: versionId,
+				Bucket:                    bucket,
+				Key:                       key,
+				VersionId:                 versionId,
+				BypassGovernanceRetention: aws.Bool(true),
 			})
 			cancel()
 			if err == nil {
