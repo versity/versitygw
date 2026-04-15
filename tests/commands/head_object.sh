@@ -59,10 +59,11 @@ head_object_rest_expect_success_callback() {
     return 1
   fi
   env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2 $3"
-  if ! send_rest_command_expect_success_callback "$env_vars" "./tests/rest_scripts/head_object.sh" "200" "$4"; then
-    log 2 "error sending REST command and checking error"
+  if ! callback_result=$(send_rest_command_expect_success_callback "$env_vars" "./tests/rest_scripts/head_object.sh" "200" "$4" 2>&1); then
+    log 2 "error sending REST command and checking error: $callback_result"
     return 1
   fi
+  echo "$callback_result"
   return 0
 }
 

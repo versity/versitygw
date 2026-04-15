@@ -48,17 +48,14 @@ export RUN_USERS=true
 
 # complete-multipart-upload
 @test "test_complete_multipart_upload" {
-  local bucket_file="bucket-file"
-  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=20M count=1
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 20
+  assert_success
+  read -r bucket_name bucket_file <<< "$output"
+
+  run multipart_upload "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4
   assert_success
 
-  run setup_bucket "$BUCKET_ONE_NAME"
-  assert_success
-
-  run multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4
-  assert_success
-
-  run download_and_compare_file "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$bucket_file" "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
   assert_success
 }
 
@@ -107,35 +104,32 @@ export RUN_USERS=true
 }
 
 @test "test-multipart-upload-from-bucket" {
-  local bucket_file="bucket-file"
-  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=20M count=1
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 20
+  assert_success
+  read -r bucket_name bucket_file <<< "$output"
+
+  run multipart_upload_from_bucket "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4
   assert_success
 
-  run setup_bucket "$BUCKET_ONE_NAME"
-  assert_success
-
-  run multipart_upload_from_bucket "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4
-  assert_success
-
-  run download_and_compare_file "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "${bucket_file}-copy" "$TEST_FILE_FOLDER/$bucket_file-copy-two"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$bucket_file" "$bucket_name" "${bucket_file}-copy" "$TEST_FILE_FOLDER/$bucket_file-copy-two"
   assert_success
 }
 
 @test "test_multipart_upload_from_bucket_range_too_large" {
-  local bucket_file="bucket-file"
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$bucket_file"
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 20
   assert_success
+  read -r bucket_name bucket_file <<< "$output"
 
-  run multipart_upload_range_too_large "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file"
+  run multipart_upload_range_too_large "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file"
   assert_success
 }
 
 @test "test_multipart_upload_from_bucket_range_valid" {
-  local bucket_file="bucket-file"
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$bucket_file"
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 20
   assert_success
+  read -r bucket_name bucket_file <<< "$output"
 
-  run run_and_verify_multipart_upload_with_valid_range "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file"
+  run run_and_verify_multipart_upload_with_valid_range "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file"
   assert_success
 }
 

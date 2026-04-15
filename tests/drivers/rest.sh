@@ -36,12 +36,15 @@ check_rest_go_expected_error() {
     return 1
   fi
   result="$(cat "$1")"
-  if ! bypass_continues; then
-    log 2 "error bypassing continues"
+
+  local response
+  if ! response=$(bypass_continues "$result" 2>&1); then
+    log 2 "error bypassing continues: $response"
     return 1
   fi
+  status_code=$(echo -n "$response" | awk '{print $2}')
   if [ "$2" != "$status_code" ]; then
-    log 2 "expected curl response '$2', was '$status_code'"
+    log 2 "expected curl response '$2', was '$status_code' (response: '$result')"
     return 1
   fi
   if ! check_xml_error_contains "$1" "$3" "$4"; then
@@ -99,13 +102,14 @@ check_rest_expected_header_error() {
     return 1
   fi
   result="$(cat "$1")"
-  if ! bypass_continues; then
-    log 2 "error bypassing continues"
+
+  local response
+  if ! response=$(bypass_continues "$result" 2>&1); then
+    log 2 "error bypassing continues: $response"
     return 1
   fi
-  log 5 "status line: $status_line"
-  status_message=$(echo "$status_line" | cut -d' ' -f3- | tr -d '\r')
-  log 5 "status code: $status_code, status message: $status_message"
+  status_code=$(echo "$response" | awk '{print $2}')
+  status_message=$(echo "$response" | cut -d' ' -f3- | tr -d '\r')
   if [ "$2" != "$status_code" ]; then
     log 2 "expected curl response '$2', was '$status_code' ($(echo -n "$result"))"
     return 1
@@ -171,10 +175,15 @@ send_rest_command_expect_success_callback() {
     log 2 "expected '$3', was '$response_code' ($(cat "$output_file"))"
     return 1
   fi
-  if [ "$4" != "" ] && ! "$4" "$output_file"; then
-    log 2 "callback error"
+  if [ "$4" == "" ]; then
+    cat "$output_file"
+    return 0
+  fi
+  if ! callback_result=$("$4" "$output_file" 2>&1); then
+    log 2 "callback error: $callback_result"
     return 1
   fi
+  echo "$callback_result"
   return 0
 }
 
@@ -196,6 +205,7 @@ rest_go_command_perform_send() {
     return 1
   fi
   echo "$result"
+  return 0
 }
 
 send_rest_go_command_expect_error() {
@@ -250,11 +260,13 @@ send_rest_go_command_expect_error_callback() {
 }
 
 bypass_continues() {
-  status_line_idx=1
-  status_code=""
-  continue_count=0
+  if ! check_param_count_v2 "raw response" 1 $#; then
+    return 1
+  fi
+
+  local status_line_idx=1 status_code="" continue_count=0
   while ((continue_count<10)); do
-    status_line=$(sed -n "${status_line_idx}p" <<< "$result")
+    status_line=$(sed -n "${status_line_idx}p" <<< "$1")
     status_code=$(echo "$status_line" | awk '{print $2}')
     if [ "$status_code" != "100" ]; then
       break
@@ -266,6 +278,7 @@ bypass_continues() {
     log 2 "too many continues"
     return 1
   fi
+  echo "$status_line"
   return 0
 }
 
@@ -311,7 +324,7 @@ send_rest_go_command_callback() {
     return 1
   fi
 
-  local all_params=("${@:3}") no_callback_params=0 go_param_array=() callback_params=()
+  local all_params=("${@:3}") no_callback_params=0 go_param_array=() callback_params=() response
 
   if ! params_file=$(get_file_name 2>&1); then
     log 2 "error getting params file name: $params_file"
@@ -324,27 +337,46 @@ send_rest_go_command_callback() {
     mapfile -t callback_params < <(get_callback_params "${all_params[@]}")
   fi
 
-  if ! rest_go_command_perform_send "${go_param_array[@]}"; then
-    log 2 "error sending rest go command"
+  if ! result=$(rest_go_command_perform_send "${go_param_array[@]}" 2>&1); then
+    log 2 "error sending rest go command: $result"
     return 1
   fi
-  if ! bypass_continues; then
-    log 2 "error bypassing continues"
+  if ! response=$(bypass_continues "$result" 2>&1); then
+    log 2 "error bypassing continues: $response"
     return 1
   fi
+  status_code=$(echo -n "$response" | awk '{print $2}')
   if [ "$1" != "$status_code" ]; then
-    log 2 "expected curl response '$1', was '$status_code'"
+    log 2 "expected curl response '$1', was '$status_code' (response: '$result')"
     return 1
   fi
-  if ! output_file_name=$(get_file_name); then
+  if [ "$2" == "" ]; then
+    echo "$result"
+    return 0
+  fi
+  if ! callback_result=$(call_callback "$result" "$2" 2>&1); then
+    log 2 "callback error: $callback_result"
+    return 1
+  fi
+  echo "$callback_result"
+  return 0
+}
+
+call_callback() {
+  if ! check_param_count_v2 "response, callback" 2 $#; then
+    return 1
+  fi
+  if ! output_file_name=$(get_file_name 2>&1); then
     log 2 "error generating output file name: $output_file_name"
     return 1
   fi
-  echo -n "$result" > "$TEST_FILE_FOLDER/$output_file_name"
-  if [ "$2" != "" ] && ! "$2" "$TEST_FILE_FOLDER/$output_file_name" "${callback_params[@]}"; then
-    log 2 "error in callback"
+  echo -n "$1" > "$TEST_FILE_FOLDER/$output_file_name"
+  local callback_output
+  if ! callback_output=$("$2" "$TEST_FILE_FOLDER/$output_file_name" "${callback_params[@]}" 2>&1); then
+    log 2 "error in callback: $callback_output"
     return 1
   fi
+  echo "$callback_output"
   return 0
 }
 

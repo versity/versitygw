@@ -60,10 +60,14 @@ check_checksum_rest() {
     return 1
   fi
   header_key="$4"
-  if ! head_object_rest_expect_success_callback "$1" "$2" "CHECKSUM=true" "parse_head_checksum"; then
-    log 2 "error calling HeadObject command"
+
+  local response
+  if ! response=$(head_object_rest_expect_success_callback "$1" "$2" "CHECKSUM=true" "parse_head_checksum" 2>&1); then
+    log 2 "error calling HeadObject command: $response"
     return 1
   fi
+
+  head_checksum="$response"
   if [ "$3" != "$head_checksum" ]; then
     log 2 "'checksum mismatch (head '$head_checksum', local '$3')"
     return 1
@@ -76,6 +80,8 @@ parse_head_checksum() {
     return 1
   fi
   head_checksum=$(grep -i "$header_key" "$1" | awk '{print $2}' | sed 's/\r$//')
+  echo "$head_checksum"
+  return 0
 }
 
 verify_checksum_doesnt_exist() {
@@ -93,7 +99,8 @@ parse_content_length() {
   if ! check_param_count_v2 "file" 1 $#; then
     return 1
   fi
-  content_length=$(grep "Content-Length:" "$1" | awk '{print $2}' | tr -d '\r')
+  content_length="$(grep "Content-Length:" "$1" | awk '{print $2}' | tr -d '\r')"
+  echo "$content_length"
   return 0
 }
 
@@ -163,10 +170,14 @@ get_object_size_with_user() {
   if ! check_param_count_v2 "username, password, bucket, key" 4 $#; then
     return 1
   fi
-  if ! head_object_rest_expect_success_callback "$3" "$4" "AWS_ACCESS_KEY_ID=$1 AWS_SECRET_ACCESS_KEY=$2" "parse_content_length"; then
-    log 2 "error getting object size"
+
+  local response
+  if ! response=$(head_object_rest_expect_success_callback "$3" "$4" "AWS_ACCESS_KEY_ID=$1 AWS_SECRET_ACCESS_KEY=$2" "parse_content_length" 2>&1); then
+    log 2 "error getting object size: $response"
     return 1
   fi
+
+  content_length="$response"
   log 5 "file size: $content_length"
   echo "$content_length"
   return 0

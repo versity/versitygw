@@ -15,10 +15,10 @@
 # under the License.
 
 bucket_exists_in_list() {
-  if ! check_param_count_v2 "bucket" 1 $#; then
+  if ! check_param_count_gt "bucket, buckets in list" 2 $#; then
     return 1
   fi
-  for bucket in "${bucket_array[@]}"; do
+  for bucket in "${@:2}"; do
     if [ "$bucket" == "$1" ]; then
       return 0
     fi
@@ -41,18 +41,21 @@ list_check_buckets_rest_with_params() {
   if ! check_param_count_gt "params, expected buckets" 2 $#; then
     return 1
   fi
-  if ! list_buckets_rest "$1" "parse_bucket_list"; then
-    log 2 "error listing buckets"
+
+  local response
+  if ! response=$(list_buckets_rest "$1" "parse_bucket_list" 2>&1); then
+    log 2 "error listing buckets: $response"
     return 1
   fi
+  read -r -a bucket_array <<< "$response"
   for bucket in "${@:2}"; do
     log 5 "bucket: $bucket"
-    if ! bucket_exists_in_list "$bucket"; then
-      log 2 "bucket $bucket not found"
+    if ! bucket_exists_in_list "$bucket" "${bucket_array[@]}"; then
+      log 2 "bucket '$bucket' not found"
       return 1
     fi
   done
-    return 0
+  return 0
 }
 
 parse_bucket_list() {
@@ -61,7 +64,16 @@ parse_bucket_list() {
   fi
   # shellcheck disable=SC2154
   log 5 "bucket list: $(cat "$1")"
-  bucket_list=$(xmllint --xpath '//*[local-name()="Bucket"]/*[local-name()="Name"]/text()' "$1")
+  local response
+  if ! response=$(xmllint --xpath '//*[local-name()="Bucket"]/*[local-name()="Name"]/text()' "$1" 2>&1); then
+    if [[ "$response" == *"XPath set is empty"* ]]; then
+      return 0
+    fi
+    log 2 "error retrieving bucket list: $response"
+    return 1
+  else
+    bucket_list="$response"
+  fi
   bucket_array=()
   while read -r bucket; do
     if [ -n "$bucket" ]; then
@@ -69,28 +81,50 @@ parse_bucket_list() {
       bucket_array+=("$bucket")
     fi
   done <<< "$bucket_list"
-  log 5 "bucket array: ${bucket_array[*]}"
-  log 5 "bucket array length: ${#bucket_array[@]}"
+  # return val
+  echo "${bucket_array[*]}"
+  return 0
 }
 
 parse_buckets_and_continuation_token() {
   if ! check_param_count_v2 "data file" 1 $#; then
     return 1
   fi
-  if ! parse_bucket_list "$1"; then
-    log 2 "error parsing bucket list"
+
+  local response buckets continuation_token
+  if ! response=$(parse_bucket_list "$1" 2>&1); then
+    log 2 "error parsing bucket list: $response"
     return 1
   fi
-  continuation_token=$(xmllint --xpath '//*[local-name()="ListAllMyBucketsResult"]/*[local-name()="ContinuationToken"]/text()' "$1")
-  log 5 "token: $continuation_token"
+  buckets="$response"
+
+  if ! response=$(xmllint --xpath '//*[local-name()="ListAllMyBucketsResult"]/*[local-name()="ContinuationToken"]/text()' "$1" 2>&1); then
+    if [[ "$response" == *"XPath set is empty"* ]]; then
+      continuation_token=
+    else
+      log 2 "error getting continuation token: $response"
+      return 1
+    fi
+  else
+    continuation_token="$response"
+  fi
+
+  # return vals
+  echo "$continuation_token"
+  echo "$buckets"
   return 0
 }
 
 check_continuation_token() {
-  if ! list_buckets_rest "MAX_BUCKETS=1" "parse_buckets_and_continuation_token"; then
-    log 2 "error listing buckets"
+  local response
+  if ! response=$(list_buckets_rest "MAX_BUCKETS=1" "parse_buckets_and_continuation_token" 2>&1); then
+    log 2 "error listing buckets: $response"
     return 1
   fi
+  mapfile -t continuation_token_buckets_lines <<< "$response"
+  continuation_token="${continuation_token_buckets_lines[0]}"
+  read -r -a bucket_array <<< "${continuation_token_buckets_lines[1]}"
+
   if [ ${#bucket_array[@]} != "1" ]; then
     log 2 "expected one bucket to be returned, was ${#bucket_array}"
     return 1
@@ -105,10 +139,16 @@ check_for_buckets_with_multiple_pages() {
   if ! check_param_count_v2 "buckets" 2 $#; then
     return 1
   fi
-  if ! list_buckets_rest "MAX_BUCKETS=1" "parse_buckets_and_continuation_token"; then
-    log 2 "error listing buckets"
+
+  local response
+  if ! response=$(list_buckets_rest "MAX_BUCKETS=1" "parse_buckets_and_continuation_token" 2>&1); then
+    log 2 "error listing buckets: $response"
     return 1
   fi
+  mapfile -t continuation_token_buckets_lines <<< "$response"
+  continuation_token="${continuation_token_buckets_lines[0]}"
+  read -r -a bucket_array <<< "${continuation_token_buckets_lines[1]}"
+
   bucket_one_found="false"
   bucket_two_found="false"
   while true; do
@@ -123,10 +163,13 @@ check_for_buckets_with_multiple_pages() {
     if [ "$continuation_token" == "" ]; then
       break
     fi
-    if ! list_buckets_rest "MAX_BUCKETS=1 CONTINUATION_TOKEN=$continuation_token" "parse_buckets_and_continuation_token"; then
-      log 2 "error"
+    if ! response=$(list_buckets_rest "MAX_BUCKETS=1 CONTINUATION_TOKEN=$continuation_token" "parse_buckets_and_continuation_token" 2>&1); then
+      log 2 "error listing buckets: $response"
       return 1
     fi
+    mapfile -t continuation_token_buckets_lines <<< "$response"
+    continuation_token="${continuation_token_buckets_lines[0]}"
+    read -r -a bucket_array <<< "${continuation_token_buckets_lines[1]}"
   done
   if [ "$bucket_one_found" == "false" ]; then
     log 2 "bucket '$1' not found in list"
@@ -313,3 +356,5 @@ list_check_bucket_and_region() {
   fi
   return 0
 }
+
+

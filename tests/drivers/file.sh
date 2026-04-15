@@ -163,15 +163,25 @@ setup_bucket_and_large_file_v2() {
 }
 
 setup_bucket_and_large_file_v3() {
-  if ! check_param_count_v2 "bucket env var" 1 $#; then
+  if ! check_param_count_ge_le "bucket env var, file size in MBs (optional)" 1 2 $#; then
     return 1
   fi
-  if ! bucket_name=$(setup_bucket_v3 "$1" 2>&1); then
-    log 2 "error setting up bucket: $bucket_name"
+
+  local response bucket_name file_name error
+  if ! response=$(setup_bucket_v3 "$1" 2>&1); then
+    log 2 "error setting up bucket: $response"
     return 1
   fi
-  if ! file_name=$(create_large_file "$file_name" 2>&1); then
-    log 2 "error creating large file: $file_name"
+  bucket_name="$response"
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  file_name="$response"
+
+  if ! error=$(create_large_file "$file_name" "$2" 2>&1); then
+    log 2 "error creating large file: $error"
     return 1
   fi
   echo "$bucket_name $file_name"
@@ -521,38 +531,107 @@ compare_files() {
   return 1
 }
 
-# Usage: create_large_file [filename] [size_in_mb]
-# If filename is omitted, it generates one. Defaults to 160MB.
+# generate 160MB file
+# input: filename
+# fail on error
 create_large_file() {
-  if ! check_param_count_le "filename (optional), size in MB (optional)" 2 $#; then
+  log 6 "create_large_file"
+  if ! check_param_count_ge_le "file name, size in MBs (optional)" 1 2 $#; then
     return 1
   fi
-
-  local file_name="$1"
-  local size_mb="${2:-160}"
-  local error
-
-  if [ -z "$TEST_FILE_FOLDER" ]; then
-    log 2 "TEST_FILE_FOLDER must be defined"
+  file_size=${2:-160}
+  if ! error=$(create_large_file_with_size "$1" "$file_size" 2>&1); then
+    log 2 "error creating 160MB file: $error"
     return 1
   fi
+  return 0
+}
 
-  if [[ -z "$file_name" ]]; then
-    if ! file_name=$(get_file_name 2>&1); then
-      log 2 "error generating automatic file name: $file_name"
+create_large_file_v2() {
+  local response file_name
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  file_name="$response"
+
+  if ! error=$(create_large_file_with_size "$file_name" 160 2>&1); then
+    log 2 "error creating 160MB file with name '$file_name': $error"
+    return 1
+  fi
+  echo "$file_name"
+  return 0
+}
+
+create_large_file_with_size() {
+  if ! check_param_count_v2 "file name, size in MB" 2 $#; then
+    return 1
+  fi
+  file_size=$(($2*1024*1024))
+  if ! error=$(create_test_file_base "$1" "$file_size" 2>&1); then
+    log 2 "error creating large file with size ${2}MB: $error"
+    return 1
+  fi
+  return 0
+}
+
+create_test_file_base() {
+  if ! check_param_count_ge_le "file name, size (optional), block size (optional)" 1 3 $#; then
+    return 1
+  fi
+  log 5 "params: $*"
+
+  local file_name=$1
+  local requested_size=${2:-10}
+  local block_size=${3:-1048576}
+
+  if [ "$file_name" == "" ]; then
+    log 2 "no file name specified"
+    return 1
+  fi
+  local full_path="$TEST_FILE_FOLDER/$file_name"
+
+  if [[ "$requested_size" -eq 0 ]]; then
+    touch "$full_path"
+  elif [[ "$requested_size" -lt "$block_size" ]]; then
+    # For small files, use the size as the block size (1 write)
+    if ! error=$(dd if=/dev/urandom of="$full_path" bs="$requested_size" count=1 conv=notrunc 2>&1); then
+      log 2 "error writing file: $error"
+      return 1
+    fi
+  else
+    # For large files, use 1MB chunks to save RAM
+    count=$(( requested_size / block_size ))
+    remainder=$(( requested_size % block_size ))
+
+    # Write the big 1MB chunks
+    if ! error=$(dd if=/dev/urandom of="$full_path" bs="$block_size" count="$count" conv=notrunc 2>&1); then
+      log 2 "error writing file chunk: $error"
+      return 1
+    fi
+
+    # If there's a remainder (e.g., 1.5MB), append the last few bytes
+    if [[ $remainder -gt 0 ]] && ! error=$(dd if=/dev/urandom of="$full_path" bs=1 count="$remainder" oflag=append conv=notrunc 2>&1); then
+      log 2 "error writing final file chunk: $error"
       return 1
     fi
   fi
-
-  log 6 "Creating ${size_mb}MB file: $file_name"
-  # bs=1M is significantly faster than bs=1024 for large files
-  if ! error=$(dd if=/dev/urandom of="${TEST_FILE_FOLDER}/${file_name}" bs=1M count="$size_mb" 2>&1); then
-    log 2 "error creating ${size_mb}MB file at ${file_name}: $error"
-    return 1
-  fi
-
   echo "$file_name"
   return 0
+}
+
+create_and_split_large_file() {
+if ! check_param_count_v2 "file name, size in MB, pieces" 3 $#; then
+  return 1
+fi
+if ! error=$(create_large_file_with_size "$1" "$2" 2>&1); then
+  log 2 "error creating large file: $error"
+  return 1
+fi
+if ! split_file "$TEST_FILE_FOLDER/$1" "$3"; then
+  log 2 "error splitting file"
+  return 1
+fi
 }
 
 # param: number of files
@@ -561,17 +640,30 @@ create_test_file_count() {
   if ! check_param_count_v2 "number of files" 1 $#; then
     return 1
   fi
+  if [ -z "$TEST_FILE_FOLDER" ]; then
+    log 2 "TEST_FILE_FOLDER not defined"
+    return 1
+  fi
+
+  local response file_prefix
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file prefix: $response"
+    return 1
+  fi
+  file_prefix="$response"
+
   for ((i=1;i<=$1;i++)) {
-    if ! error=$(touch "$TEST_FILE_FOLDER/file_$i" 2>&1); then
+    if ! error=$(touch "$TEST_FILE_FOLDER/${file_prefix}_${i}" 2>&1); then
       log 2 "error creating file_$i: $error"
       return 1
     fi
   }
   # shellcheck disable=SC2153
   if [[ $LOG_LEVEL -ge 5 ]]; then
-    ls_result=$(ls "$TEST_FILE_FOLDER/file_*")
+    ls_result=$(ls "$TEST_FILE_FOLDER/${file_prefix}_*" 2>&1)
     log 5 "$ls_result"
   fi
+  echo "$file_prefix"
   return 0
 }
 
@@ -579,7 +671,7 @@ download_and_compare_file_with_user() {
   if ! check_param_count_gt "original file, bucket, key, destination, username, password, chunk size (optional)" 6 $#; then
     return 1
   fi
-  if [ -e "$4" ] && ! error=$(rm -f "$4"); then
+  if [ -e "$4" ] && ! error=$(rm -f "$4" 2>&1); then
     log 2 "error deleting local file at download destination before download: $error"
     return 1
   fi

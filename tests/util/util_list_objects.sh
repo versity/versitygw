@@ -21,21 +21,23 @@ parse_objects_list_rest() {
   if ! check_param_count_v2 "data file" 1 $#; then
     return 1
   fi
-  object_array=()
-  # shellcheck disable=SC2154
-  if ! object_list=$(xmllint --xpath '//*[local-name()="Key"]/text()' "$1" 2>&1); then
-    if [[ "$object_list" == *"XPath set is empty"* ]]; then
+
+  local response
+  if ! response=$(xmllint --xpath '//*[local-name()="Key"]/text()' "$1" 2>&1); then
+    if [[ "$response" == *"XPath set is empty"* ]]; then
       return 0
     fi
-    log 2 "error getting object list: $object_list"
+    log 2 "error getting object list: $response"
     return 1
+  else
+    object_list="$response"
   fi
   log 5 "object list: '$object_list'"
   while IFS= read -r object; do
     log 5 "parsed key: '$object'"
-    object_array+=("$(echo -n "$object" | xmlstarlet unesc)")
+    unescaped_object="$(echo -n "$object" | xmlstarlet unesc)"
+    echo "$unescaped_object"
   done <<< "$object_list"
-  log 5 "object array: ${object_array[*]}"
   return 0
 }
 
@@ -112,7 +114,14 @@ list_check_objects_rest() {
   if ! check_param_count "list_check_objects_rest" "bucket" 1 $#; then
     return 1
   fi
-  list_objects_rest "$1" "parse_objects_list_rest"
+
+  local response
+  if ! response=$(list_objects_rest "$1" "parse_objects_list_rest" 2>&1); then
+    log 2 "error listing and parsing objects: $response"
+    return 1
+  fi
+  mapfile -t object_array <<< "$response"
+
   object_found=false
   # shellcheck disable=SC2154
   for object in "${object_array[@]}"; do
