@@ -38,6 +38,7 @@ var (
 	checksumDisable   bool
 	versioningEnabled bool
 	azureTests        bool
+	windowsTests      bool
 	sidecarTests      bool
 	tlsStatus         bool
 	parallel          bool
@@ -118,6 +119,12 @@ func initTestCommands() []*cli.Command {
 					Aliases:     []string{"azure"},
 				},
 				&cli.BoolFlag{
+					Name:        "windows-test-mode",
+					Usage:       "Skips tests that are not supported on Windows",
+					Destination: &windowsTests,
+					Aliases:     []string{"windows"},
+				},
+				&cli.BoolFlag{
 					Name:        "sidecar-test-mode",
 					Usage:       "Skips tests that are not supported by Sidecar",
 					Destination: &sidecarTests,
@@ -141,6 +148,12 @@ func initTestCommands() []*cli.Command {
 					Usage:       "Test posix when versioning is enabled",
 					Destination: &versioningEnabled,
 					Aliases:     []string{"vs"},
+				},
+				&cli.BoolFlag{
+					Name:        "windows-test-mode",
+					Usage:       "Skips tests that are not supported on Windows",
+					Destination: &windowsTests,
+					Aliases:     []string{"windows"},
 				},
 			},
 		},
@@ -343,6 +356,10 @@ func getAction(tf testFunc) func(ctx *cli.Context) error {
 		if azureTests {
 			opts = append(opts, integration.WithAzureMode())
 		}
+		if windowsTests {
+			opts = append(opts, integration.WithWindowsMode())
+			opts = append(opts, integration.WithSidecarMode())
+		}
 		if sidecarTests {
 			opts = append(opts, integration.WithSidecarMode())
 		}
@@ -391,6 +408,10 @@ func extractIntTests() (commands []*cli.Command) {
 				}
 				if azureTests {
 					opts = append(opts, integration.WithAzureMode())
+				}
+				if windowsTests {
+					opts = append(opts, integration.WithWindowsMode())
+					opts = append(opts, integration.WithSidecarMode())
 				}
 				if sidecarTests {
 					opts = append(opts, integration.WithSidecarMode())
