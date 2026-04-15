@@ -37,8 +37,14 @@ func NewTestState(ctx context.Context, conf *S3Conf, parallel bool) *TestState {
 		parallel: parallel,
 	}
 
-	// Start background test processor (only used in parallel mode)
-	go ts.process()
+	// Start background test processor (only used in parallel mode).
+	// Track it in the WaitGroup so Wait() doesn't return until process()
+	// has drained mainCh and all launched goroutines have finished.
+	ts.wg.Add(1)
+	go func() {
+		defer ts.wg.Done()
+		ts.process()
+	}()
 
 	return ts
 }
@@ -99,9 +105,12 @@ func (ct *TestState) process() {
 // Wait blocks until all queued parallel tests complete, then runs all
 // synchronous tests. It also ensures proper cleanup of the test channel.
 func (ct *TestState) Wait() {
-	// Wait for all parallel tests to finish
-	ct.wg.Wait()
+	// Close the channel first so process() drains remaining items and exits.
+	// This must happen before wg.Wait() to avoid a race where wg.Wait()
+	// returns while process() still has buffered tests yet to start.
 	close(ct.mainCh)
+	// Wait for process() goroutine and all test goroutines to finish.
+	ct.wg.Wait()
 
 	// Run all synchronous tests sequentially
 	for _, fn := range ct.syncTests {
