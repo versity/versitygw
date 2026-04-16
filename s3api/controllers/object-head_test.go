@@ -99,6 +99,26 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 			},
 		},
 		{
+			name: "both partNumber and Range",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"partNumber": "6",
+				},
+				headers: map[string]string{
+					"Range": "bytes=1-3",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrRangeAndPartNumber),
+			},
+		},
+		{
 			name: "invalid checksum mode",
 			input: testInput{
 				locals: defaultLocals,

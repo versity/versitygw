@@ -2700,3 +2700,12 @@ func sendPostObject(input PostRequestConfig) (*http.Response, error) {
 
 	return input.s3Conf.httpClient.Do(req)
 }
+
+func getEtagBytes(etag string) ([]byte, error) {
+	return hex.DecodeString(strings.ReplaceAll(etag, string('"'), ""))
+}
+
+func md5String(data []byte) string {
+	sum := md5.Sum(data)
+	return hex.EncodeToString(sum[:])
+}

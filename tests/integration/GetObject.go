@@ -15,6 +15,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -1256,17 +1257,246 @@ func GetObject_invalid_part_number(s *S3Conf) error {
 	})
 }
 
-func GetObject_part_number_not_supported(s *S3Conf) error {
-	testName := "GetObject_part_number_not_supported"
+func GetObject_range_and_part_number(s *S3Conf) error {
+	testName := "GetObject_range_and_part_number"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		defer cancel()
-		_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
-			Bucket:     &bucket,
-			Key:        getPtr("obj"),
-			PartNumber: getPtr(int32(3)),
-		})
+		obj := "my-obj"
+		_, err := putObjectWithData(100, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
 
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+		pn := int32(1)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			Range:      getPtr("bytes=0-9"),
+			PartNumber: &pn,
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrRangeAndPartNumber))
+	})
+}
+
+func GetObject_mp_part_number_exceeds_parts_count(s *S3Conf) error {
+	testName := "GetObject_mp_part_number_exceeds_parts_count"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		const partCount = int64(5)
+		parts, _, err := uploadParts(s3client, partCount*5*1024*1024, partCount, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := make([]types.CompletedPart, len(parts))
+		for i, p := range parts {
+			compParts[i] = types.CompletedPart{
+				ETag:       p.ETag,
+				PartNumber: p.PartNumber,
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// partNumber exceeds the number of parts in the completed upload
+		pn := int32(partCount + 1)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			PartNumber: &pn,
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange))
+	})
+}
+
+func GetObject_mp_part_number_success(s *S3Conf) error {
+	testName := "GetObject_mp_part_number_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		const partCount = 3
+		const partSize = int64(5 * 1024 * 1024)
+		const totalSize = int64(partCount) * partSize
+
+		// Upload parts manually to capture per-part data for integrity checks
+		partNumbers := make([]int32, partCount)
+		partChecksums := make([][32]byte, partCount)
+		compParts := make([]types.CompletedPart, partCount)
+
+		for i := range partCount {
+			partNumbers[i] = int32(i + 1)
+			buf := make([]byte, partSize)
+			for j := range buf {
+				buf[j] = byte(i*17 + j%251)
+			}
+			partChecksums[i] = sha256.Sum256(buf)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				UploadId:   out.UploadId,
+				Body:       bytes.NewReader(buf),
+				PartNumber: &partNumbers[i],
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("upload part %d: %w", partNumbers[i], err)
+			}
+			compParts[i] = types.CompletedPart{
+				ETag:       res.ETag,
+				PartNumber: &partNumbers[i],
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		for i := range partCount {
+			pn := int32(i + 1)
+			startByte := int64(i) * partSize
+			endByte := startByte + partSize - 1
+			expectedContentRange := fmt.Sprintf("bytes %d-%d/%d", startByte, endByte, totalSize)
+
+			ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
+			res, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				PartNumber: &pn,
+			})
+			if err != nil {
+				cancel()
+				return fmt.Errorf("part %d: %w", pn, err)
+			}
+
+			if res.PartsCount == nil {
+				cancel()
+				return fmt.Errorf("part %d: expected non-nil x-amz-mp-parts-count", pn)
+			}
+			if *res.PartsCount != int32(partCount) {
+				cancel()
+				return fmt.Errorf("part %d: expected PartsCount %d, got %d", pn, partCount, *res.PartsCount)
+			}
+			if getString(res.ContentRange) != expectedContentRange {
+				cancel()
+				return fmt.Errorf("part %d: expected Content-Range %q, got %q", pn, expectedContentRange, getString(res.ContentRange))
+			}
+			if res.ContentLength == nil || *res.ContentLength != partSize {
+				cancel()
+				return fmt.Errorf("part %d: expected Content-Length %d, got %v", pn, partSize, res.ContentLength)
+			}
+			if getString(res.AcceptRanges) != "bytes" {
+				cancel()
+				return fmt.Errorf("part %d: expected Accept-Ranges 'bytes', got %q", pn, getString(res.AcceptRanges))
+			}
+
+			body, readErr := io.ReadAll(res.Body)
+			cancel()
+			res.Body.Close()
+			if readErr != nil {
+				return fmt.Errorf("part %d: read body: %w", pn, readErr)
+			}
+			gotSum := sha256.Sum256(body)
+			if gotSum != partChecksums[i] {
+				return fmt.Errorf("part %d: data integrity check failed: body checksum mismatch", pn)
+			}
+		}
+
+		return nil
+	})
+}
+
+func GetObject_non_mp_part_number_1_success(s *S3Conf) error {
+	testName := "GetObject_non_mp_part_number_1_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "put-object-part1"
+		const objSize = int64(1234)
+
+		out, err := putObjectWithData(objSize, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		pn := int32(1)
+		ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
+		res, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			PartNumber: &pn,
+		})
+		if err != nil {
+			cancel()
+			return err
+		}
+
+		if res.ContentLength == nil || *res.ContentLength != objSize {
+			cancel()
+			return fmt.Errorf("expected ContentLength %d, got %v", objSize, res.ContentLength)
+		}
+		if getString(res.ContentRange) != "" {
+			cancel()
+			return fmt.Errorf("expected empty Content-Range for non-multipart object, got %q", getString(res.ContentRange))
+		}
+		if res.PartsCount != nil {
+			cancel()
+			return fmt.Errorf("expected nil PartsCount for non-multipart object, got %d", *res.PartsCount)
+		}
+		if getString(res.AcceptRanges) != "bytes" {
+			cancel()
+			return fmt.Errorf("expected Accept-Ranges 'bytes', got %q", getString(res.AcceptRanges))
+		}
+
+		body, readErr := io.ReadAll(res.Body)
+		cancel()
+		res.Body.Close()
+		if readErr != nil {
+			return fmt.Errorf("read body: %w", readErr)
+		}
+		if gotSum := sha256.Sum256(body); gotSum != out.csum {
+			return fmt.Errorf("data integrity check failed: body checksum mismatch")
+		}
+
+		return nil
 	})
 }

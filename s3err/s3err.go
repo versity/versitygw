@@ -81,6 +81,8 @@ const (
 	ErrInvalidObjectAttributes
 	ErrInvalidPart
 	ErrInvalidPartNumber
+	ErrInvalidPartNumberRange
+	ErrRangeAndPartNumber
 	ErrInvalidPartOrder
 	ErrInvalidCompleteMpPartNumber
 	ErrInternalError
@@ -337,6 +339,16 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidPartNumber: {
 		Code:           "InvalidArgument",
 		Description:    "Part number must be an integer between 1 and 10000, inclusive.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidPartNumberRange: {
+		Code:           "InvalidPartNumber",
+		Description:    "The requested partnumber is not satisfiable.",
+		HTTPStatusCode: http.StatusRequestedRangeNotSatisfiable,
+	},
+	ErrRangeAndPartNumber: {
+		Code:           "InvalidRequest",
+		Description:    "Cannot specify both Range header and partNumber query parameter",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidPartOrder: {

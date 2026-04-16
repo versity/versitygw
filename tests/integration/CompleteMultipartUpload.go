@@ -1907,13 +1907,77 @@ func CompleteMultipartUpload_racey_success(s *S3Conf) error {
 	})
 }
 
+func CompleteMultipartUpload_already_completed(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_already_completed"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		completeInput := &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		first, err := s3client.CompleteMultipartUpload(ctx, completeInput)
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// Second call with the same upload ID should also succeed (idempotent).
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		second, err := s3client.CompleteMultipartUpload(ctx, completeInput)
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(second.Bucket) != bucket {
+			return fmt.Errorf("expected Bucket to be %s, instead got %s", bucket, getString(second.Bucket))
+		}
+		if getString(second.Key) != obj {
+			return fmt.Errorf("expected Key to be %s, instead got %s", obj, getString(second.Key))
+		}
+		if getString(second.ETag) != getString(first.ETag) {
+			return fmt.Errorf("expected ETag to be %s, instead got %s", getString(first.ETag), getString(second.ETag))
+		}
+		location := constructObjectLocation(s.endpoint, bucket, obj, s.hostStyle)
+		if getString(second.Location) != location {
+			return fmt.Errorf("expected Location to be %s, instead got %s", location, getString(second.Location))
+		}
+
+		return nil
+	})
+}
+
 // CompleteMultipartUpload_racey_data_integrity creates a single multipart
 // upload, uploads its parts, then fires multiple concurrent
-// CompleteMultipartUpload calls for the exact same upload ID.  Exactly one
-// call must succeed; the rest must fail with NoSuchUpload (the upload was
-// already consumed).  The surviving object must contain exactly the data that
-// was uploaded.  The whole sequence is repeated several times so that
-// intermittent scheduling cannot hide a data-corruption bug.
+// CompleteMultipartUpload calls for the exact same upload ID.  All calls must
+// succeed and return the same ETag (idempotent completion).  The surviving
+// object must contain exactly the data that was uploaded.  The whole sequence
+// is repeated several times so that intermittent scheduling cannot hide a
+// data-corruption bug.
 func CompleteMultipartUpload_racey_data_integrity(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_racey_data_integrity"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1924,7 +1988,6 @@ func CompleteMultipartUpload_racey_data_integrity(s *S3Conf) error {
 		)
 		obj := "my-obj"
 		objSize := int64(15 * 1024 * 1024) // 3 × 5 MiB parts
-		noSuchUpload := s3err.GetAPIError(s3err.ErrNoSuchUpload)
 
 		for iter := range iterations {
 			// Phase 1: create one upload and upload its parts.
@@ -1938,25 +2001,26 @@ func CompleteMultipartUpload_racey_data_integrity(s *S3Conf) error {
 				return fmt.Errorf("iteration %d: upload parts: %w", iter, err)
 			}
 
+			var partsEtagBytes []byte
 			compParts := make([]types.CompletedPart, 0, len(parts))
 			for _, el := range parts {
+				b, err := getEtagBytes(*el.ETag)
+				if err != nil {
+					return fmt.Errorf("iteration %d: %w", iter, err)
+				}
+				partsEtagBytes = append(partsEtagBytes, b...)
 				compParts = append(compParts, types.CompletedPart{
 					ETag:       el.ETag,
 					PartNumber: el.PartNumber,
 				})
 			}
+			expectedETag := fmt.Sprintf("\"%s-%d\"", md5String(partsEtagBytes), len(parts))
 
-			// Phase 2: race concurrency complete calls for the same upload ID.
-			// Exactly one must succeed; the others must return NoSuchUpload.
-			var (
-				mu         sync.Mutex
-				successCnt int
-			)
 			eg := errgroup.Group{}
 			for range concurrency {
 				eg.Go(func() error {
 					ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-					_, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+					res, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
 						Bucket:   &bucket,
 						Key:      &obj,
 						UploadId: out.UploadId,
@@ -1965,22 +2029,19 @@ func CompleteMultipartUpload_racey_data_integrity(s *S3Conf) error {
 						},
 					})
 					cancel()
-					if err == nil {
-						mu.Lock()
-						successCnt++
-						mu.Unlock()
-						return nil
+					if err != nil {
+						return err
 					}
-					// Every non-zero error must be NoSuchUpload.
-					return checkApiErr(err, noSuchUpload)
+
+					if getString(res.ETag) != expectedETag {
+						return fmt.Errorf("expected the multipart upload ETag to be %s, instead got %s", expectedETag, getString(res.ETag))
+					}
+
+					return nil
 				})
 			}
 			if err := eg.Wait(); err != nil {
 				return fmt.Errorf("iteration %d: complete phase: %w", iter, err)
-			}
-			if successCnt != 1 {
-				return fmt.Errorf("iteration %d: expected exactly 1 successful complete, got %d",
-					iter, successCnt)
 			}
 
 			// Phase 3: download the object and verify it is complete and
