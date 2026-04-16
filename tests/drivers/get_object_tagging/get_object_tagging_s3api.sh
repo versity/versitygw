@@ -15,6 +15,7 @@
 # under the License.
 
 parse_object_tags_s3api() {
+  # shellcheck disable=SC2154
   if ! tag_set_key=$(echo "$tags" | jq -r '.TagSet[0].Key' 2>&1); then
     log 2 "error retrieving tag key: $tag_set_key"
     return 1

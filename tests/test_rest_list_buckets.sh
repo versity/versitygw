@@ -26,6 +26,7 @@ source ./tests/setup.sh
 
 export RUN_USERS=true
 
+# tags: openssl,malformed-message
 @test "REST - empty message" {
   test_file="test_file"
   if [ "$DIRECT" != "true" ]; then
@@ -43,6 +44,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: malformed-message,openssl
 @test "REST - deformed message" {
   test_file="test_file"
   echo -en "abcdefg\r\n\r\n" > "$TEST_FILE_FOLDER/deformed.txt"
@@ -50,6 +52,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags, curl,ListBuckets,required-headers,authorization
 @test "REST - invalid authorization scheme" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1705"
@@ -58,21 +61,25 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags, curl,ListBuckets,required-headers,authorization
 @test "REST - very invalid credential string" {
   run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "the Credential is mal-formed" "-incorrectCredential" "Credentials"
   assert_success
 }
 
+# tags: curl,ListBuckets,required-headers,authorization
 @test "REST - nonexistent key ID" {
   run send_rest_go_command_expect_error "403" "InvalidAccessKeyId" "does not exist" "-awsAccessKeyId" "dummy"
   assert_success
 }
 
+# tags: curl,ListBuckets,required-headers,authorization,x-amz-date
 @test "REST - invalid year/month/day" {
   run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "incorrect date format" "-invalidYearMonthDay"
   assert_success
 }
 
+# tags: curl,ListBuckets,required-headers,authorization,x-amz-date
 @test "REST - incorrect year/month/day" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1514"
@@ -81,21 +88,25 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,required-headers,authorization
 @test "REST - invalid region" {
   run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "us-eest-1" "-awsRegion" "us-eest-1"
   assert_success
 }
 
+# tags: curl,ListBuckets,required-headers,authorization
 @test "REST - invalid service name" {
   run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "incorrect service" "-serviceName" "s2"
   assert_success
 }
 
+# tags: curl,ListBuckets,required-headers,authorization
 @test "REST - incorrect signature" {
   run send_rest_go_command_expect_error "403" "SignatureDoesNotMatch" "does not match" "-incorrectSignature"
   assert_success
 }
 
+# tags: openssl,ListBuckets,required-headers,host
 @test "REST - missing host parameter" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1530"
@@ -104,6 +115,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,minimal-request
 @test "test_rest_list_buckets" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -116,6 +128,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,max-buckets
 @test "REST - list buckets - continuation token isn't bucket name" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1399"
@@ -124,6 +137,7 @@ export RUN_USERS=true
   assert_success
   bucket_name="$output"
 
+  # shellcheck disable=SC2153
   run get_bucket_name "$BUCKET_TWO_NAME"
   assert_success
   bucket_two_name="$output"
@@ -135,6 +149,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,max-buckets,continuation-token
 @test "REST - list buckets - success (multiple pages)" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -151,6 +166,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,prefix
 @test "REST - list buckets w/prefix" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -173,6 +189,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,minimal-request,user
 @test "REST - ListBuckets - correct buckets show up" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skip versitygw-specific users tests"
@@ -204,7 +221,8 @@ export RUN_USERS=true
   assert_success
 }
 
-@test "REST - ListBuckets - invalid POST route" {
+# tags: curl,invalid-method
+@test "REST - service route - invalid POST route" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1810"
   fi
@@ -223,7 +241,8 @@ export RUN_USERS=true
   assert_success
 }
 
-@test "REST - ListBuckets - invalid method" {
+# tags: curl,invalid-method
+@test "REST - service route - invalid method" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1846"
   fi
@@ -231,11 +250,13 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,required-headers,x-amz-date
 @test "REST - ListBuckets - error Content-Type is application/xml" {
   run send_rest_go_command_check_header_key_and_value "403" "Content-Type" "application/xml" "-method" "GET" "-omitDate"
   assert_success
 }
 
+# tags: curl,ListBuckets,bucket-region
 @test "REST - ListBuckets - invalid bucket-region query" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1923"
@@ -254,6 +275,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,bucket-region
 @test "REST - ListBuckets - incorrect bucket region" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1930"
@@ -278,6 +300,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,bucket-region
 @test "REST - ListBuckets - correct bucket region" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -290,6 +313,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,required-headers,x-amz-content-sha256
 @test "REST - ListBuckets - missing sha256 hash" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -302,6 +326,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,required-headers,x-amz-content-sha256
 @test "REST - ListBuckets - invalid hash type" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -314,6 +339,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,required-headers,x-amz-content-sha256
 @test "REST - ListBuckets - non-matching hash type" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -326,6 +352,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,required-headers,x-amz-date
 @test "REST - ListBuckets - omit date" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1934"
@@ -341,6 +368,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,ListBuckets,required-headers,x-amz-date
 @test "REST - ListBuckets - invalid date" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1934"

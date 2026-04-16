@@ -26,3 +26,5 @@ jobs:
         run: |
           docker compose -f tests/docker-compose-bats.yml --project-directory . \
           up --exit-code-from s3api_np_only s3api_np_only
+          docker compose -f tests/docker-compose-bats.yml --project-directory . \
+          up --exit-code-from openssl_only openssl_only

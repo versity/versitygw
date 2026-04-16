@@ -28,6 +28,13 @@ services:
         - CONFIG_FILE=tests/.env.default
     image: bats_test
     command: ["s3api-bucket,s3api-object"]
+  openssl_only:
+    build:
+      dockerfile: tests/Dockerfile_test_bats
+      args:
+        - CONFIG_FILE=tests/.env.default
+    image: bats_test
+    command: ["--tags","openssl"]
   direct:
     build:
       dockerfile: tests/Dockerfile_direct

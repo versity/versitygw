@@ -23,6 +23,7 @@ get_check_acl_id() {
     log 2 "error retrieving acl"
     return 1
   fi
+  # shellcheck disable=SC2154
   log 5 "Initial ACLs: $acl"
   if ! id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Owner.ID' 2>&1); then
     log 2 "error getting ID: $id"

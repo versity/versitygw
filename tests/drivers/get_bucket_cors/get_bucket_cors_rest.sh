@@ -35,8 +35,8 @@ get_bucket_cors_check_404_header_and_bucket_name() {
   if ! check_param_count_v2 "bucket name" 1 $#; then
     return 1
   fi
-  argument_name="BucketName"
-  argument_value="$1"
+  # shellcheck disable=SC2034
+  argument_name="BucketName" argument_value="$1"
   if ! send_rest_go_command_expect_error_callback "404" "NoSuchCORSConfiguration" "The CORS configuration does not exist" \
     "check_cors_404_content_type_header_and_bucket_name" "-bucketName" "$1" "-query" "cors"; then
       log 2 "error sending get cors command and checking result"

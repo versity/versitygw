@@ -14,4 +14,14 @@ jobs:
     - name: Run checks
       run: |
         shellcheck --version
-        shellcheck -e SC1091 tests/*.sh tests/*/*.sh
+        overall_rc=0
+        while IFS= read -r -d '' f; do
+          rc=0
+          echo "CHECKING $f"
+          shellcheck -S error -e SC1091 "$f" || rc=$?
+          echo "exit=$rc file=$f"
+          if [ "$rc" -ne 0 ]; then
+            overall_rc="$rc"
+          fi
+        done < <(find . \( -path './tests/*.sh' -o -path './tests/*/*.sh' \) -print0)
+        exit "$overall_rc"

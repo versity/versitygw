@@ -20,7 +20,7 @@ calculate_multipart_checksum() {
   fi
   log 5 "checksums: ${*:4}"
   if [ "$1" == "COMPOSITE" ]; then
-    if ! calculate_composite_checksum "$lowercase_checksum_algorithm" ${@:4}; then
+    if ! calculate_composite_checksum "$lowercase_checksum_algorithm" "${@:4}"; then
       log 2 "error calculating checksum"
       return 1
     fi
@@ -51,7 +51,7 @@ complete_multipart_upload_with_checksum() {
   fi
   log 5 "parts payload: $parts_payload"
   log 5 "checksums: ${checksums[*]}"
-  if ! calculate_multipart_checksum "$6" "$5" "$3" ${checksums[@]}; then
+  if ! calculate_multipart_checksum "$6" "$5" "$3" "${checksums[@]}"; then
     log 2 "error calculating multipart checksum"
     return 1
   fi
@@ -76,7 +76,7 @@ calculate_composite_checksum() {
     return 1
   fi
   log 5 "checksums: ${*:2}"
-  for checksum in ${@:2}; do
+  for checksum in "${@:2}"; do
     if ! printf '%s' "$checksum" | base64 -d >> "$TEST_FILE_FOLDER/all_checksums.bin"; then
       log 2 "error calculating binary checksum and adding to file"
       return 1
@@ -113,7 +113,7 @@ test_multipart_upload_with_checksum() {
     log 2 "error performing multipart upload with checksum before completion"
     return 1
   fi
-  if ! calculate_multipart_checksum "$1" 2 "$TEST_FILE_FOLDER/$mp_file_name" ${checksums[@]}; then
+  if ! calculate_multipart_checksum "$1" 2 "$TEST_FILE_FOLDER/$mp_file_name" "${checksums[@]}"; then
     log 2 "error calculating multipart checksum"
     return 1
   fi
@@ -158,7 +158,7 @@ test_complete_multipart_upload_incorrect_checksum() {
     log 2 "error performing multipart upload with checksum before completion"
     return 1
   fi
-  if ! calculate_multipart_checksum "$1" 2 "$TEST_FILE_FOLDER/$mp_file_name" ${checksums[@]}; then
+  if ! calculate_multipart_checksum "$1" 2 "$TEST_FILE_FOLDER/$mp_file_name" "${checksums[@]}"; then
     log 2 "error calculating multipart checksum"
     return 1
   fi
