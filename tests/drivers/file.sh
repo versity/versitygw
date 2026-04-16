@@ -223,6 +223,22 @@ get_file_name() {
   return 0
 }
 
+get_file_names() {
+  if ! check_param_count_v2 "file name count" 1 $#; then
+    return 1
+  fi
+  local file_names=()
+  for ((i=0; i<$1; i++)); do
+    if ! response=$(get_file_name 2>&1); then
+      log 2 "error getting file name: $response"
+      return 1
+    fi
+    file_names+=("$response")
+  done
+  echo "${file_names[*]}"
+  return 0
+}
+
 get_file_name_with_prefix() {
   if ! check_param_count_v2 "prefix" 1 $#; then
     return 1
@@ -458,13 +474,69 @@ get_file_size() {
     fi
   fi
   echo "$file_size"
+  return 0
+}
+
+split_file_irregular() {
+  if ! check_param_count_v2 "file name, piece size" 2 $#; then
+    return 1
+  fi
+
+  local file="$1"
+  local piece_size="$2"
+
+  local file_size=""
+  if ! file_size=$(get_file_size "$file"); then
+    log 2 "error getting file size for '$file'"
+    return 1
+  fi
+
+  if [[ -z "$piece_size" || ! "$piece_size" =~ ^[0-9]+$ ]]; then
+    log 2 "invalid piece size '$piece_size' (must be integer bytes)"
+    return 1
+  fi
+  if [ "$piece_size" -le 0 ]; then
+    log 2 "invalid piece size '$piece_size' (must be > 0)"
+    return 1
+  fi
+
+  local offset=0
+  local idx=0
+  local part_file=""
+  local part_files=()
+
+  while [ "$offset" -lt "$file_size" ]; do
+    local remaining=$((file_size - offset))
+    local count="$piece_size"
+    if [ "$remaining" -lt "$piece_size" ]; then
+      count="$remaining"
+    fi
+
+    part_file=$(printf '%s-%02d' "$file" "$idx")
+    if ! error=$(dd if="$file" of="$part_file" bs=1 count="$count" skip="$offset" 2>&1); then
+      log 2 "error creating file part: $error"
+      return 1
+    fi
+
+    part_files+=("$part_file")
+    offset=$((offset + count))
+    idx=$((idx + 1))
+  done
+
+  if [ "${#part_files[@]}" -eq 0 ]; then
+    log 2 "no split files created"
+    return 1
+  fi
+
+  printf '%s\n' "${part_files[*]}"
+  return 0
 }
 
 # split file into pieces to test multipart upload
 # param: file location
 # return 0 for success, 1 for error
 split_file() {
-  if ! check_param_count_v2 "file name, number of pieces" 2 $#; then
+  if ! check_param_count_ge_le "file name, number of pieces, piece size (optional)" 2 3 $#; then
     return 1
   fi
   # -n l/K : Split into K pieces without breaking lines (or use 'K' for raw bytes)
