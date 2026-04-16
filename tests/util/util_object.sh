@@ -246,13 +246,18 @@ put_object_rest_checksum() {
   if ! check_param_count_v2 "data file, bucket name, key, checksum type" 4 $#; then
     return 1
   fi
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  file_name="$response"
   # shellcheck disable=SC2097,SC2098
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="$4" ./tests/rest_scripts/put_object.sh 2>&1); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" CHECKSUM_TYPE="$4" ./tests/rest_scripts/put_object.sh 2>&1); then
     log 2 "error: $result"
     return 1
   fi
   if [ "$result" != "200" ]; then
-    log 2 "expected response code of '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    log 2 "expected response code of '200', was '$result' ($(cat "$TEST_FILE_FOLDER/$file_name"))"
     return 1
   fi
   return 0

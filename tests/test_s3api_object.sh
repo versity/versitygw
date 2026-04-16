@@ -54,10 +54,12 @@ source ./tests/test_s3api_root_inner.sh
 export RUN_USERS=true
 
 # copy-object
+# tags: s3api, CopyObject, x-amz-copy-source
 @test "test_copy_object" {
   test_common_copy_object "s3api"
 }
 
+# tags: s3api, CopyObject, minimal-request
 @test "test_copy_object_empty" {
   run copy_object_empty
   assert_success
@@ -66,42 +68,51 @@ export RUN_USERS=true
 # delete-object - tested with bucket cleanup before or after tests
 
 # delete-object-tagging
+# tags: s3api, DeleteObjectTagging, tagging
 @test "test_delete_object_tagging" {
   test_common_delete_object_tagging "s3api"
 }
 
 # delete-objects
+# tags: s3api, DeleteObject
 @test "test_delete_objects" {
   test_delete_objects_s3api_root
 }
 
 # get-object
+# tags: s3api, GetObject, range
 @test "test_get_object_full_range" {
   test_get_object_full_range_s3api_root
 }
 
+# tags: s3api, GetObject, range, invalid-header
 @test "test_get_object_invalid_range" {
   test_get_object_invalid_range_s3api_root
 }
 
 # get-object-attributes
+# tags: s3api, GetObjectAttributes
 @test "test_get_object_attributes" {
   test_get_object_attributes_s3api_root
 }
 
+# tags: s3api, PutObjectLegalHold, GetObjectLegalHold, object-lock, legal-hold
 @test "test_get_put_object_legal_hold" {
   test_get_put_object_legal_hold_s3api_root
 }
 
+# tags: s3api, PutObjectRetention, GetObjectRetention, object-lock, retention
 @test "test_get_put_object_retention" {
   test_get_put_object_retention_s3api_root
 }
 
 # test listing a bucket's objects on versitygw
+# tags: s3api, ListObjects, minimal-request
 @test "test_list_objects" {
   test_common_list_objects "s3api"
 }
 
+# tags: s3api, ListObjects, delimiter, prefix
 @test "test-list-objects-delimiter" {
   folder_name="two"
   object_name="three"
@@ -119,23 +130,28 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: s3api, PutObject
 @test "test_put_object" {
   test_put_object_s3api_root
 }
 
 # test adding and removing an object on versitygw
+# tags: s3api, PutObject
 @test "test_put_object_with_data" {
   test_common_put_object_with_data "s3api"
 }
 
+# tags: s3api, PutObject
 @test "test_put_object_no_data" {
   test_common_put_object_no_data "s3api"
 }
 
+# tags: s3api, presigned-url
 @test "test-presigned-url-utf8-chars" {
   test_common_presigned_url_utf8_chars "s3api"
 }
 
+# tags: s3api, PutObjectLockConfiguration, GetObjectLockConfiguration, object-lock, retention
 @test "test_put_object_lock_configuration" {
   bucket_name=$BUCKET_ONE_NAME
   if [[ $RECREATE_BUCKETS == "true" ]]; then
@@ -155,6 +171,7 @@ export RUN_USERS=true
   assert_success "error getting and checking object lock config"
 }
 
+# tags: s3api, PutObject, x-amz-meta
 @test "test_put_object_metadata" {
   test_key="x-test-data"
   test_value="test-value"
@@ -174,21 +191,25 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: s3api, retention, object-lock, x-amz-bypass-governance-retention
 @test "test_retention_bypass" {
   test_retention_bypass_s3api_root
 }
 
 # test v1 s3api list objects command
+# tags: s3api, ListObjects
 @test "test-s3api-list-objects-v1" {
   test_s3api_list_objects_v1_s3api_root
 }
 
 # test v2 s3api list objects command
+# tags: s3api, ListObjectsV2, list-type
 @test "test-s3api-list-objects-v2" {
   test_s3api_list_objects_v2_s3api_root
 }
 
 # test abilty to set and retrieve object tags
+# tags: s3api, PutObjectTagging, GetObjectTagging, tagging
 @test "test-set-get-object-tags" {
   test_common_set_get_object_tags "s3api"
 }
@@ -218,10 +239,12 @@ export RUN_USERS=true
 #}
 
 
+# tags: s3api, ListObjects
 @test "test_ls_directory_object" {
   test_common_ls_directory_object "s3api"
 }
 
+# tags: s3api, PutObject, invalid-query
 @test "directory objects can't contain data" {
   if [ "$DIRECT" == "true" ]; then
     skip "for direct, directory objects can contain data (though discouraged)"
@@ -236,6 +259,7 @@ export RUN_USERS=true
   assert_output -p "Directory object contains data payload"
 }
 
+# tags: s3api, CopyObject, invalid-query
 @test "objects containing data can't be copied to directory objects with same name" {
   # operation is legal (though discouraged) for direct
   if [ "$DIRECT" == "true" ]; then
@@ -256,6 +280,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: s3api, CreateMultipartUpload, multipart, invalid-query
 @test "directory object - create multipart upload" {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
@@ -265,6 +290,7 @@ export RUN_USERS=true
   assert_output -p "Directory object contains data payload"
 }
 
+# tags: s3api, retention, object-lock, x-amz-bypass-governance-retention, invalid-header
 @test "s3api - --bypass-governance-retention w/o bucket w/object lock fails" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1218"
@@ -281,4 +307,3 @@ export RUN_USERS=true
   assert_output -p "InvalidArgument"
   assert_output -p "x-amz-bypass-governance-retention is only applicable"
 }
-

@@ -22,7 +22,7 @@ source ./tests/drivers/complete_multipart_upload/complete_multipart_upload_rest.
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/setup.sh
 
-# tags: curl, GetObject, HeadObject, range
+# tags: curl,GetObject,HeadObject,range
 @test "REST - range download and compare" {
   run get_file_name
   assert_success
@@ -43,7 +43,7 @@ source ./tests/setup.sh
   assert_success
 }
 
-# tags: rest, PutObject, GetObject
+# tags: curl,PutObject,GetObject,special-chars,encoding
 @test "REST - put, get object, encoded name" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -69,7 +69,7 @@ source ./tests/setup.sh
   assert_success
 }
 
-# tags: rest, GetObject,x-amz-content-sha256
+# tags: curl,GetObject,invalid-header,x-amz-content-sha256
 @test "REST - GetObject w/invalid payload type" {
   run get_file_name
   assert_success
@@ -86,7 +86,7 @@ source ./tests/setup.sh
   assert_success
 }
 
-# tags: curl,GetObject,partNumber
+# tags: curl,GetObject,partNumber,invalid-header
 @test "REST - GetObject - part number 2 w/o multipart upload" {
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -99,7 +99,7 @@ source ./tests/setup.sh
   assert_success
 }
 
-# tags: curl,GetObject,partNumber
+# tags: curl,GetObject,partNumber,range,Content-Range
 @test "REST - GetObject - part number 1 returns 206, Content-Range header" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/2074"
@@ -116,7 +116,7 @@ source ./tests/setup.sh
     assert_success
 }
 
-# tags: curl,GetObject,invalid-header
+# tags: curl,GetObject,invalid-header,response-headers
 @test "REST - GetObject - response query - invalid response type" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/2075"
@@ -134,37 +134,37 @@ source ./tests/setup.sh
   assert_success
 }
 
-# tags: curl,GetObject,response-cache-control
+# tags: curl,GetObject,response-cache-control,response-headers
 @test "REST - GetObject - response-cache-control" {
   run test_get_object_with_custom_content_header "cache-control" "dummy"
   assert_success
 }
 
-# tags: curl,GetObject,response-content-disposition
+# tags: curl,GetObject,response-content-disposition,response-headers
 @test "REST - GetObject - response-content-disposition" {
   run test_get_object_with_custom_content_header "content-disposition" "dummy"
   assert_success
 }
 
-# tags: curl,GetObject,response-content-encoding
+# tags: curl,GetObject,response-content-encoding,response-headers
 @test "REST - GetObject - response-content-encoding" {
   run test_get_object_with_custom_content_header "content-encoding" "dummy"
   assert_success
 }
 
-# tags: curl,GetObject,response-content-language
+# tags: curl,GetObject,response-content-language,response-headers
 @test "REST - GetObject - response-content-language" {
   run test_get_object_with_custom_content_header "content-language" "dummy"
   assert_success
 }
 
-# tags: curl,GetObject,response-content-type
+# tags: curl,GetObject,response-content-type,response-headers
 @test "REST - GetObject - response-content-type" {
   run test_get_object_with_custom_content_header "content-type" "dummy"
   assert_success
 }
 
-# tags: curl,GetObject,response-expires
+# tags: curl,GetObject,response-expires,response-headers
 @test "REST - GetObject - response-expires" {
   run test_get_object_with_custom_content_header "expires" "dummy+ one"
   assert_success

@@ -20,6 +20,7 @@ load ./bats-assert/load
 source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 
+# tags: curl, PutBucketVersioning, versioning, invalid-query
 @test "REST - PutBucketVersioning - empty payload" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

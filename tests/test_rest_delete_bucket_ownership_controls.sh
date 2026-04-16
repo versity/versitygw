@@ -24,6 +24,7 @@ source ./tests/setup.sh
 
 export RUN_USERS=true
 
+# tags: curl,DeleteBucketOwnershipControls,ownershipControls,user,invalid-header
 @test "REST - DeleteBucketOwnershipControls - lack permission" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skip versitygw-specific users tests"
@@ -44,6 +45,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,DeleteBucketOwnershipControls,ownershipControls,invalid-header
 @test "REST - DeleteBucketOwnershipControls - invalid username" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skip versitygw-specific users tests"
@@ -63,6 +65,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,DeleteBucketOwnershipControls,PutBucketOwnershipControls,GetBucketOwnershipControls,ownershipControls
 @test "REST - DeleteBucketOwnershipControls - success" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -88,6 +91,7 @@ export RUN_USERS=true
   assert_equal "$rule" ""
 }
 
+# tags: curl,DeleteBucketOwnershipControls,ownershipControls
 @test "REST - DeleteBucketOwnershipControls - BucketName is reported in error" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1493"

@@ -23,16 +23,19 @@ source ./tests/drivers/file.sh
 source ./tests/test_common.sh
 
 # complete-multipart-upload
+# tags: s3, multipart, CreateMultipartUpload, UploadPart, CompleteMultipartUpload
 @test "test_complete_multipart_upload" {
   test_common_multipart_upload "s3"
 }
 
 # copy-object
+# tags: s3, CopyObject, x-amz-copy-source
 @test "test_copy_object" {
   test_common_copy_object "s3"
 }
 
 # create-bucket
+# tags: s3, CreateBucket, DeleteBucket
 @test "test_create_delete_bucket" {
   test_common_create_delete_bucket "s3"
 }
@@ -44,18 +47,22 @@ source ./tests/test_common.sh
 # delete-objects - tested with recursive bucket delete
 
 # get-object
+# tags: s3, PutObject, GetObject
 @test "test_copy_get_object" {
   test_common_put_get_object "s3"
 }
 
+# tags: s3, PutObject
 @test "test_put_object" {
   test_common_put_object_no_data "s3"
 }
 
+# tags: s3, ListBuckets
 @test "test_list_buckets" {
   test_common_list_buckets "s3"
 }
 
+# tags: s3, DeleteBucket
 @test "test_delete_bucket" {
   if [[ $RECREATE_BUCKETS == "false" ]]; then
     skip "will not test bucket deletion in static bucket test config"
@@ -68,6 +75,7 @@ source ./tests/test_common.sh
   assert_success
 }
 
+# tags: s3, ListObjects
 @test "test_ls_directory_object" {
   test_common_ls_directory_object "s3"
 }

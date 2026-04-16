@@ -26,14 +26,17 @@ source ./tests/drivers/user.sh
 
 export RUN_USERS=true
 
+# tags: s3api, user
 @test "test_admin_user_aws" {
   test_admin_user "aws"
 }
 
+# tags: s3api, user, invalid-request
 @test "test_create_user_already_exists_aws" {
   test_create_user_already_exists "aws"
 }
 
+# tags: s3api, user, invalid-request
 @test "test_delete_user_no_access_key" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versitygw-specific users tests"
@@ -42,14 +45,17 @@ export RUN_USERS=true
   assert_failure
 }
 
+# tags: s3api, user
 @test "test_user_user_aws" {
   test_user_user "aws"
 }
 
+# tags: s3api, user
 @test "test_userplus_operation_aws" {
   test_userplus_operation "aws"
 }
 
+# tags: s3api, user, GetObject, PutObject, ownershipControls
 @test "test_user_get_object" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versitygw-specific users tests"
@@ -77,6 +83,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: s3api, user, GetObject, PutObject, ownershipControls
 @test "test_userplus_get_object" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versitygw-specific users tests"
@@ -104,6 +111,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: s3api, user, DeleteObject, PutObject, ownershipControls
 @test "test_user_delete_object" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versitygw-specific users tests"
@@ -131,6 +139,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: s3api, user, PutObject, GetObject, DeleteObject
 @test "test_admin_put_get_object" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versitygw-specific users tests"
@@ -162,6 +171,7 @@ export RUN_USERS=true
   assert_output -p "NoSuchKey"
 }
 
+# tags: s3api, user, multipart, CreateMultipartUpload, ownershipControls
 @test "test_user_create_multipart_upload" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versitygw-specific users tests"

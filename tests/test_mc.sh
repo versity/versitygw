@@ -34,21 +34,25 @@ source ./tests/util/util_head_bucket.sh
 export RUN_MC=true
 
 # complete-multipart-upload
+# tags:  mc,minimal-request,PutObject,multipart
 @test "test_multipart_upload_mc" {
   test_common_multipart_upload "mc"
 }
 
 # copy-object
+# tags:  mc,minimal-request,CopyObject
 @test "test_copy_object" {
   test_common_copy_object "mc"
 }
 
 # create-bucket
+# tags:  mc,minimal-request,CreateBucket,DeleteBucket
 @test "test_create_delete_bucket" {
   test_common_create_delete_bucket "mc"
 }
 
 # delete-bucket
+# tags:  mc,minimal-request,CreateBucket,DeleteBucket
 @test "test_delete_bucket" {
   if [[ $RECREATE_BUCKETS == "false" ]]; then
     skip "will not test bucket deletion in static bucket test config"
@@ -61,6 +65,7 @@ export RUN_MC=true
 }
 
 # delete-bucket-policy
+# tags:  mc,minimal-request,GetBucketPolicy,PutBucketPolicy
 @test "test_get_put_delete_bucket_policy" {
   if [[ -n $SKIP_POLICY ]]; then
     skip "will not test policy actions with SKIP_POLICY set"
@@ -68,58 +73,57 @@ export RUN_MC=true
   test_common_get_put_delete_bucket_policy "mc"
 }
 
-# delete-bucket-tagging
+# tags:  mc,minimal-request,GetBucketTagging,PutBucketTagging,DeleteBucketTagging
 @test "test_set_get_delete_bucket_tags" {
   test_common_set_get_delete_bucket_tags "mc"
 }
 
-# delete-object - put-object tests
-
-# delete-object-tagging
+# tags:  mc,minimal-request,GetObjectTagging,PutObjectTagging,DeleteObjectTagging
 @test "test_delete_object_tagging" {
   test_common_delete_object_tagging "mc"
 }
 
-# delete-objects - test setup/teardown
-
-# get-bucket-location
+# tags:  mc,minimal-request,GetBucketLocation
 @test "test_get_bucket_location" {
   test_common_get_bucket_location "mc"
 }
 
-# get-bucket-policy - test_get_put_delete_bucket_policy
-
-# get-bucket-tagging
+# tags:  mc,minimal-request,GetObjectTagging,PutObjectTagging,DeleteObjectTagging
 @test "test_set_get_object_tags_mc" {
   test_common_set_get_object_tags "mc"
 }
 
-# get-object
+# tags:  mc,minimal-request,PutObject,GetObject
 @test "test_put_get_object" {
   test_common_put_get_object "mc"
 }
 
+# tags:  mc,minimal-request,PutObject
 @test "test_put_object-with-data-mc" {
   test_common_put_object_with_data "mc"
 }
 
+# tags:  mc,minimal-request,PutObject
 @test "test_put_object-no-data-mc" {
   test_common_put_object_no_data "mc"
 }
 
+# tags:  mc,minimal-request,ListBuckets
 @test "test_list_buckets_mc" {
   test_common_list_buckets "mc"
 }
 
+# tags:  mc,minimal-request,ListObjects
 @test "test_list_objects_mc" {
   test_common_list_objects "mc"
 }
 
-
+# tags:  mc,presigned-url
 @test "test_presigned_url_utf8_chars_mc" {
   test_common_presigned_url_utf8_chars "mc"
 }
 
+# tags:  mc,minimal-request,CreateBucket
 @test "test_create_bucket_invalid_name_mc" {
   if [[ $RECREATE_BUCKETS != "true" ]]; then
     return
@@ -129,6 +133,7 @@ export RUN_MC=true
   assert_success
 }
 
+# tags:  mc,minimal-request,HeadBucket
 @test "test_get_bucket_info_mc" {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
@@ -137,6 +142,7 @@ export RUN_MC=true
   assert_success
 }
 
+# tags:  mc,minimal-request,HeadBucket
 @test "test_get_bucket_info_doesnt_exist_mc" {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
@@ -145,6 +151,7 @@ export RUN_MC=true
   assert_failure 1
 }
 
+# tags:  mc,minimal-request,ListObjects
 @test "test_ls_directory_object" {
   test_common_ls_directory_object "mc"
 }

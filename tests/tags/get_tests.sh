@@ -55,6 +55,12 @@ run_tests() {
     return 1
   fi
 
+  if [ -z "$VERSITYGW_TEST_ENV" ]; then
+    usage
+    echo "VERSITYGW_TEST_ENV must be defined" >&2
+    exit 1
+  fi
+
   local i=0 files=() names=() tags=()
 
   while IFS=$'\t' read -r loc t name || [ -n "$loc" ]; do
@@ -138,12 +144,6 @@ if [ "$list_tags_flag" -eq 1 ]; then
   fi
   python3 ./tests/tags/list_tags.py "$tag_type"
   exit 0
-fi
-
-if [ -z "$VERSITYGW_TEST_ENV" ]; then
-  usage
-  echo "VERSITYGW_TEST_ENV must be defined" >&2
-  exit 1
 fi
 
 list_and_run_tests "$tag_matching_mode" "$list_flag" "$count_flag" "$run_flag" "${forwarded_args[@]}"

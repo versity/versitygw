@@ -93,7 +93,7 @@ def print_tag_description(data: dict, tag: str) -> int:
         g_lower = {k.lower(): v for k, v in group_tags.items()}
         tag_lower = tag.lower()
         if tag_lower in g_lower:
-            desc = (group_tags.get(tag_lower, {}) or {}).get("desc", "")
+            desc = (g_lower.get(tag_lower, {}) or {}).get("desc", "")
             print(f"{tag}: {desc}")
             return 0
     return 1

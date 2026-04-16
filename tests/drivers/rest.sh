@@ -410,7 +410,7 @@ check_for_header_key_and_value() {
     elif [ "$check_result" -eq 0 ]; then
       return 0
     fi
-  done <<< "$(grep -E '^.+: .+$' "$1")"
+  done <<< "$(grep -aE '^.+: .+$' "$1")"
   log 2 "no header key '$2' found"
   return 1
 }

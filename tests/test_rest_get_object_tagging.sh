@@ -25,6 +25,7 @@ source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/drivers/get_object_tagging/get_object_tagging_rest.sh
 source ./tests/drivers/put_object/put_object_rest.sh
 
+# tags: curl,GetObjectTagging,tagging,minimal-request
 @test "REST - GetObjectTagging - no tags" {
   run get_file_name
   assert_success
@@ -41,6 +42,7 @@ source ./tests/drivers/put_object/put_object_rest.sh
   assert_success
 }
 
+# tags: curl,GetObjectTagging,PutObjectTagging,tagging,versioning
 @test "REST - GetObjectTagging - older version returns version ID" {
   run get_file_name
   assert_success
@@ -57,6 +59,7 @@ source ./tests/drivers/put_object/put_object_rest.sh
   assert_success
 }
 
+# tags: curl,GetObjectTagging,tagging,versioning,invalid-header,versionId
 @test "REST - GetObjectTagging - invalid version ID error returns version ID" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1698"
@@ -82,6 +85,7 @@ source ./tests/drivers/put_object/put_object_rest.sh
   assert_success
 }
 
+# tags: curl,PutObject,PutObjectTagging,GetObjectTagging,DeleteObjectTagging,tagging
 @test "test_rest_tagging" {
   test_key="TestKey"
   test_value="TestValue"

@@ -21,6 +21,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_bucket_cors/get_bucket_cors_rest.sh
 source ./tests/setup.sh
 
+# tags: curl,cors,GetBucketCors,minimal-request
 @test "REST - GetCors - correct content-type, and returns bucket name" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1842"
@@ -36,6 +37,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,GetBucketCors,content-md5
 @test "REST - PutBucketCors and GetBucketCors - valid configuration" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -48,6 +50,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,content-md5,invalid-header
 @test "REST - CORS - empty CORS rule" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -61,6 +64,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,content-md5,invalid-header
 @test "REST - CORS - missing allowed origin" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -74,6 +78,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,content-md5,invalid-header
 @test "REST - CORS - missing allowed method" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -87,6 +92,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,content-md5,invalid-header
 @test "REST - CORS - empty allowed method" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -100,6 +106,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,content-md5,invalid-header
 @test "REST - CORS - invalid origin" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -113,6 +120,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,DeleteBucketCors,GetBucketCors,content-md5
 @test "REST - CORS - delete" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -131,6 +139,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,GetBucketCors,content-md5,origin,access-control-expose-headers
 @test "REST - CORS - origin - ETag not returned in exposed headers" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1893"
@@ -149,6 +158,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,GetBucketCors,content-md5,origin,access-control-request-method,access-control-allow-methods
 @test "REST - CORS - non-allowed method" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -164,6 +174,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,GetBucketCors,content-md5,origin,access-control-request-method,access-control-allow-methods,access-control-allow-origin
 @test "REST - CORS - allowed method" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -180,6 +191,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,GetBucketCors,content-md5,access-control-request-headers,access-control-allow-headers
 @test "REST - CORS - non-allowed header" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -195,6 +207,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,GetBucketCors,content-md5,origin,access-control-request-headers,access-control-allow-headers
 @test "REST - CORS - allowed headers" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -215,6 +228,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,content-md5,invalid-header,access-control-max-age
 @test "REST - CORS - invalid max age seconds" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -227,6 +241,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,GetBucketCors,content-md5,origin,access-control-max-age
 @test "REST - CORS - valid max age seconds" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -243,6 +258,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,GetBucketCors,content-md5,origin,access-control-request-method,access-control-request-headers,access-control-allow-origin,access-control-allow-methods,access-control-allow-headers,access-control-expose-headers,access-control-max-age
 @test "REST - CORS - all fields" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1893"
@@ -263,6 +279,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,cors,PutBucketCors,GetBucketCors,content-md5,origin,access-control-request-method,access-control-allow-origin,access-control-allow-methods
 @test "REST - CORS - two rules" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

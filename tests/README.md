@@ -121,7 +121,7 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **VERSITY_EXE**:  location of the versity executable relative to test folder.
 
-**RUN_VERSITYGW**:  whether to run the versitygw executable, should be set to **false** when running tests directly against **s3**.
+**RUN_VERSITYGW**:  whether to run the versitygw executable, should be set to **false** when running tests directly against **s3**, or testing against another S3-compatible endpoint.
 
 **PORT**:  port to run the versity app on, if not specified, defaults to **7070**.
 
@@ -157,7 +157,7 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **VERSITY_LOG_FILE**:  log file for versity application as it is tested by bats tests.
 
-**DIRECT**:  if **true**, bypass versitygw and run directly against s3 (for comparison and validity-checking purposes).
+**DIRECT**:  if **true**, bypass versitygw and run directly against s3, for comparison and validity-checking purposes.  This parameter disables the `AWS_ENDPOINT_URL` parameter.
 
 **DIRECT_DISPLAY_NAME**:  AWS ACL main user display name if **DIRECT** is set to **true**.
 

@@ -31,6 +31,7 @@ assert_test_file_folder_exists() {
 }
 
 # shellcheck disable=SC2030
+# tags: curl, GetObject
 @test "test - download_and_compare_file" {
   file_exists_in_dest_location=("true" "false")
   pass_or_fail=("true" "false")

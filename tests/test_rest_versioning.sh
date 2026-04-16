@@ -26,6 +26,7 @@ source ./tests/util/util_rest.sh
 
 test_file="test_file"
 
+# tags: curl, versioning, PutBucketVersioning
 @test "REST - check, enable, suspend versioning" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "cannot change versioning status for static buckets"
@@ -53,6 +54,7 @@ test_file="test_file"
   assert_success
 }
 
+# tags: curl, versioning, PutBucketVersioning, PutObject, ListObjectVersions
 @test "test_rest_versioning" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "cannot change versioning status for static buckets"
@@ -83,6 +85,7 @@ test_file="test_file"
   assert_success
 }
 
+# tags: curl, versioning, PutBucketVersioning, PutObject, DeleteObject, ListObjectVersions
 @test "versioning - add version, then delete and check for marker" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "cannot change versioning status for static buckets"
@@ -107,6 +110,7 @@ test_file="test_file"
   assert_success
 }
 
+# tags: curl, versioning, PutBucketVersioning, PutObject, DeleteObject, GetObject
 @test "versioning - retrieve after delete" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -128,6 +132,7 @@ test_file="test_file"
   assert_failure
 }
 
+# tags: curl, versioning, PutBucketVersioning, PutObject, DeleteObject, HeadObject, object-lock
 @test "REST - HeadObject does not return 405 with versioning, after file deleted" {
   if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
     skip "test isn't valid for this configuration"
@@ -152,6 +157,7 @@ test_file="test_file"
   assert_success
 }
 
+# tags: curl, versioning, PutBucketVersioning, PutObject, DeleteObject, HeadObject, object-lock, versionId
 @test "REST - HeadObject returns 405 when querying DeleteMarker" {
   if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
     skip "test isn't valid for this configuration"

@@ -33,6 +33,7 @@ if [ "$SKIP_ACL_TESTING" == "true" ] || [ "$SKIP_USERS_TESTS" == "true" ]; then
   exit 0
 fi
 
+# tags: curl,minimal-request,GetBucketAcl
 @test "REST - get ACL" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -45,6 +46,7 @@ fi
   assert_success
 }
 
+# tags: curl,minimal-request,PutBucketAcl
 @test "REST - put ACL" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -84,6 +86,7 @@ fi
   assert_success
 }
 
+# tags: curl,PutBucketAcl,x-amz-acl
 @test "REST - put public-read canned acl" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -120,6 +123,7 @@ fi
   assert_success
 }
 
+# tags: curl,minimal-request,PutBucketAcl
 @test "REST - put invalid ACL" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -149,6 +153,7 @@ fi
   assert_success
 }
 
+# tags: curl,PutBucketAcl,x-amz-acl
 @test "REST - put public-read-write canned acl" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -182,6 +187,7 @@ fi
   assert_success
 }
 
+# tags: curl,PutBucketAcl,x-amz-acl
 @test "REST - invalid canned acl" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1367"
@@ -201,6 +207,7 @@ fi
   assert_success
 }
 
+# tags: curl,GetBucketAcl,x-amz-grant-read-acp
 @test "REST - FULL_CONTROL permission not returned for owner after CreateBucket with GRANT_READ_ACP" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1407"
