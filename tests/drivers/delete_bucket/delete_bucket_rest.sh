@@ -29,12 +29,12 @@ delete_buckets_with_prefix() {
     log 2 "delete_buckets_with_prefix requires non-empty prefix"
     return 1
   fi
-  if ! list_buckets_rest "PREFIX=$1" "parse_bucket_list"; then
-    log 2 "error listing buckets with prefix"
+  local response
+  if ! response=$(list_buckets_rest "PREFIX=$1" "parse_bucket_list" 2>&1); then
+    log 2 "error listing buckets with prefix: $response"
     return 1
   fi
-  # shellcheck disable=SC2154
-  log 5 "buckets: ${bucket_array[*]}"
+  read -r -a bucket_array <<< "$response"
   for bucket in "${bucket_array[@]}"; do
     if ! delete_bucket_recursive "$bucket"; then
       log 2 "error with recursive bucket delete of bucket '$bucket'"

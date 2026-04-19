@@ -93,8 +93,8 @@ var (
 
 // ParseObjectRange parses input range header and returns startoffset, length, isValid
 // and error. If no endoffset specified, then length is set to the object size
-// for invalid inputs, it returns no error, but isValid=false
-// `InvalidRange` error is returnd, only if startoffset is greater than the object size
+// for invalid inputs, it returns isValid=false and error=nil
+// `InvalidRange` error is returned only if startoffset is greater than the object size
 func ParseObjectRange(size int64, acceptRange string) (int64, int64, bool, error) {
 	// Return full object (invalid range, no error) if header empty
 	if acceptRange == "" {
@@ -498,7 +498,7 @@ type PreConditions struct {
 // - if-none-match
 // - if-modified-since
 // - if-unmodified-since
-// if-match and if-none-match are ETag comparisions
+// if-match and if-none-match are ETag comparisons
 // if-modified-since and if-unmodified-since are last modifed time comparisons
 func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreConditions) error {
 	if preconditions.IfMatch == nil && preconditions.IfNoneMatch == nil && preconditions.IfModSince == nil && preconditions.IfUnmodeSince == nil {

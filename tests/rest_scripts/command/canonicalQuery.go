@@ -34,12 +34,31 @@ func canonicalizeQuery(raw string) (string, error) {
 		raw += "="
 	}
 
-	vals, err := url.ParseQuery(raw)
-	if err != nil {
-		return "", fmt.Errorf("error parsing query: %w", err)
+	// Parse manually instead of url.ParseQuery so we don't treat '+' as space.
+	// S3 continuation tokens are opaque and may contain literal '+' characters.
+	pairs := make([]queryPair, 0)
+	for _, part := range strings.Split(raw, "&") {
+		if part == "" {
+			continue
+		}
+		kv := strings.SplitN(part, "=", 2)
+		keyRaw := kv[0]
+		valRaw := ""
+		if len(kv) == 2 {
+			valRaw = kv[1]
+		}
+
+		key, err := url.PathUnescape(keyRaw)
+		if err != nil {
+			return "", fmt.Errorf("error unescaping query key '%s': %w", keyRaw, err)
+		}
+		val, err := url.PathUnescape(valRaw)
+		if err != nil {
+			return "", fmt.Errorf("error unescaping query value for key '%s': %w", keyRaw, err)
+		}
+		pairs = append(pairs, queryPair{key: key, value: val})
 	}
 
-	pairs := getQueryPairs(vals)
 	sort.Slice(pairs, func(i, j int) bool {
 		escapedKeyI, escapedKeyJ := awsQueryEscape(pairs[i].key), awsQueryEscape(pairs[j].key)
 		if escapedKeyI != escapedKeyJ {
@@ -59,18 +78,4 @@ func canonicalizeQuery(raw string) (string, error) {
 		b.WriteString(awsQueryEscape(p.value))
 	}
 	return b.String(), nil
-}
-
-func getQueryPairs(values url.Values) []queryPair {
-	pairs := make([]queryPair, 0, len(values))
-	for queryKey, queryValues := range values {
-		if len(queryValues) == 0 {
-			pairs = append(pairs, queryPair{key: queryKey, value: ""})
-			continue
-		}
-		for _, v := range queryValues {
-			pairs = append(pairs, queryPair{key: queryKey, value: v})
-		}
-	}
-	return pairs
 }

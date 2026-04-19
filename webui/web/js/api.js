@@ -1334,7 +1334,7 @@ class VersityAPI {
     // Ensure prefix ends with /
     const folderKey = prefix.endsWith('/') ? prefix : prefix + '/';
 
-    const fetchParams = await this.buildFetchParams('PUT', `/${bucket}/${encodeURIComponent(folderKey)}`, {}, '');
+    const fetchParams = await this.buildFetchParams('PUT', `/${bucket}/${encodeS3Key(folderKey)}`, {}, '');
 
     const response = await fetch(fetchParams.url, {
       method: 'PUT',

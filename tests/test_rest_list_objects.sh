@@ -155,25 +155,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
 }
 
 @test "REST - ListObjects - delimiter" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  local bucket_name="$output"
-
-  file_names=("a-b-1.txt" "a-b-2.txt" "a-b/c-1.txt" "a-b/c-2.txt" "a-b/d.txt" "a/c.txt")
-  local prefix="a-"
-  run create_test_files_and_folders "${file_names[@]}"
-  assert_success
-
-  run setup_bucket_v2 "$bucket_name"
-  assert_success
-
-  for file_name in "${file_names[@]}"; do
-    run put_object "rest" "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name"
-    assert_success
-  done
-
-  run list_objects_with_prefix_and_delimiter_check_results "$bucket_name" "$prefix" "/" "a-b/" "--" "a-b-1.txt" "a-b-2.txt"
-  assert_success
+  list_objects_delimiter "1"
 }
 
 @test "REST - ListObjects - invalid encoding" {
@@ -260,5 +242,128 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 
   run list_objects_check_count_and_keys "$bucket_name" "1" "$file_two_name" "-query" "prefix=$file_two_name"
+  assert_success
+}
+
+@test "REST - ListObjectsV2 - continuation token" {
+  run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 3
+  assert_success
+  read -r bucket_name file_one file_two file_three <<< "$output"
+
+  mapfile -t sorted_files < <(printf '%s\n' "$file_one" "$file_two" "$file_three" | sort)
+
+  run put_objects "$bucket_name" "$file_one" "$file_two" "$file_three"
+  assert_success
+
+  run list_objects_v2_check_count_and_keys_get_token "$bucket_name" "" "1" "false" "${sorted_files[0]}" "-query" "list-type=2&max-keys=1"
+  assert_success
+  continuation_token=$output
+  log 5 "continuation token: $continuation_token"
+
+  run list_objects_v2_check_count_and_keys_get_token "$bucket_name" "$continuation_token" "1" "false" "${sorted_files[1]}" "-query" "list-type=2&max-keys=1&continuation-token=$continuation_token"
+  assert_success
+  continuation_token=$output
+
+  run list_objects_v2_check_count_and_keys_get_token "$bucket_name" "$continuation_token" "1" "true" "${sorted_files[2]}"  "-query" "list-type=2&max-keys=1&continuation-token=$continuation_token"
+  assert_success
+}
+
+@test "ListObjectsV1 - start-after - error" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/2004"
+  fi
+  run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
+  assert_success
+  read -r bucket_name file_one file_two <<< "$output"
+
+  mapfile -t sorted_files < <(printf '%s\n' "$file_one" "$file_two" | sort)
+
+  run put_objects "$bucket_name" "$file_one" "$file_two"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "InvalidArgument" "startAfter only supported in REST.GET.BUCKET with list-type=2" \
+    "-bucketName" "$bucket_name" "-query" "start-after=$file_one"
+  assert_success
+}
+
+@test "ListObjectsV1 - start-after - doesn't include continuation token" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/2007"
+  fi
+  run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
+  assert_success
+  read -r bucket_name file_one file_two <<< "$output"
+
+  mapfile -t sorted_files < <(printf '%s\n' "$file_one" "$file_two" | sort)
+
+  run put_objects "$bucket_name" "$file_one" "$file_two"
+  assert_success
+
+  run check_start_after_no_continuation_token "$bucket_name" "$file_two"
+  assert_success
+}
+
+@test "ListObjectsV2 - start-after - success" {
+  run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
+  assert_success
+  read -r bucket_name file_one file_two <<< "$output"
+
+  mapfile -t sorted_files < <(printf '%s\n' "$file_one" "$file_two" | sort)
+
+  run put_objects "$bucket_name" "$file_one" "$file_two"
+  assert_success
+
+  run list_objects_check_start_after_response "$bucket_name" "${sorted_files[0]}" "${sorted_files[1]}"
+  assert_success
+
+  run list_objects_check_start_after_response "$bucket_name" "${sorted_files[1]}"
+  assert_success
+}
+
+@test "ListObjectsV2 - fetch-owner" {
+  run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
+  assert_success
+  read -r bucket_name file_one file_two <<< "$output"
+
+  mapfile -t sorted_files < <(printf '%s\n' "$file_one" "$file_two" | sort)
+
+  run put_objects "$bucket_name" "$file_one" "$file_two"
+  assert_success
+
+  run list_objects_verify_owner_info_missing "$bucket_name" "$file_one" "$file_two"
+  assert_success
+
+  run list_objects_verify_owner_info_exists "$bucket_name" "$file_one" "$file_two"
+  assert_success
+}
+
+# shellcheck disable=SC2030
+@test "ListObjectsV2 - delimiter" {
+  list_objects_delimiter 2
+}
+
+list_objects_delimiter() {
+  run assert_param_count "ListObjects version" 1 $#
+  assert_success
+
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  # shellcheck disable=SC2031
+  local bucket_name="$output"
+
+  file_names=("a-b-1.txt" "a-b-2.txt" "a-b/c-1.txt" "a-b/c-2.txt" "a-b/d.txt" "a/c.txt")
+  local prefix="a-"
+  run create_test_files_and_folders "${file_names[@]}"
+  assert_success
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  for file_name in "${file_names[@]}"; do
+    run put_object "rest" "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name"
+    assert_success
+  done
+
+  run list_objects_with_prefix_and_delimiter_check_results "$bucket_name" "2" "$prefix" "/" "a-b/" "--" "a-b-1.txt" "a-b-2.txt"
   assert_success
 }

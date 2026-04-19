@@ -73,3 +73,15 @@ check_param_count_le() {
   fi
   return 0
 }
+
+check_param_count_ge_le() {
+  if [ $# -ne 4 ]; then
+    log 2 "'check_param_count_ge_le' requires params list, expected minimum, expected maximum, actual"
+    return 1
+  fi
+  if [ "$2" -gt "$4" ] || [ "$3" -lt "$4" ]; then
+    log_with_stack_ref 2 "function '${FUNCNAME[1]}' requires $1" 2
+    return 1
+  fi
+  return 0
+}

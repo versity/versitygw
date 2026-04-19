@@ -331,12 +331,13 @@ test_common_list_objects_file_count() {
 
   run create_test_file_count 1001
   assert_success
+  prefix=$output
 
   run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
   bucket_name=$output
 
-  run put_object_multiple "$1" "$TEST_FILE_FOLDER/file_*" "$bucket_name"
+  run put_object_multiple "$1" "$TEST_FILE_FOLDER/${prefix}_*" "$bucket_name"
   assert_success
 
   run list_objects_check_file_count "$1" "$bucket_name" 1001

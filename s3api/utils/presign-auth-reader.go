@@ -240,7 +240,7 @@ func validateAlgorithm(algo string) error {
 	case algoECDSA:
 		return s3err.QueryAuthErrors.OnlyHMACSupported()
 	default:
-		// all other algorithms are considerd as invalid
+		// all other algorithms are considered as invalid
 		return s3err.QueryAuthErrors.UnsupportedAlgorithm()
 	}
 }

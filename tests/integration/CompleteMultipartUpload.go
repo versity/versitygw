@@ -1626,8 +1626,8 @@ func CompleteMultipartUpload_invalid_part_number(s *S3Conf) error {
 	})
 }
 
-func CompleteMultipartUpload_defualt_content_type(s *S3Conf) error {
-	testName := "CompleteMultipartUpload_defualt_content_type"
+func CompleteMultipartUpload_default_content_type(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_default_content_type"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-object"
 		mp, err := createMp(s3client, bucket, obj)

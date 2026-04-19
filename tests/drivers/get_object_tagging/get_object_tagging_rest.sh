@@ -88,10 +88,10 @@ get_check_object_tags_empty() {
 }
 
 check_header_version_id() {
-  if ! check_param_count_v2 "data file" 1 $#; then
+  if ! check_param_count_v2 "data file, version ID" 2 $#; then
     return 1
   fi
-  if ! check_for_header_key_and_value "$1" "x-amz-version-id" "$version_id"; then
+  if ! check_for_header_key_and_value "$1" "x-amz-version-id" "$2"; then
     log 2 "error checking for x-amz-version-id header"
     return 1
   fi
@@ -107,7 +107,7 @@ add_version_tags_check_version_id() {
     return 1
   fi
   if ! send_rest_go_command_callback "200" "check_header_version_id" "-bucketName" "$1" "-objectKey" "$2" "-debug" "-logFile" "signature.log" \
-        "-method" "GET" "-query" "tagging=&versionId=$version_id" "-tagKey" "key" "-tagValue" "value" "-contentMD5"; then
+        "-method" "GET" "-query" "tagging=&versionId=$version_id" "-tagKey" "key" "-tagValue" "value" "-contentMD5" "--" "$version_id"; then
     log 2 "error tagging object"
     return 1
   fi

@@ -18,14 +18,22 @@ multipart_upload_rest_before_completion() {
   if ! check_param_count_v2 "bucket, key, file, part count" 4 $#; then
     return 1
   fi
-  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
-    log 2 "error creating multipart upload"
+
+  local response
+  if ! response=$(create_multipart_upload_rest "$1" "$2" "" "parse_upload_id" 2>&1); then
+    log 2 "error creating multipart upload: $response"
     return 1
   fi
-  if ! upload_parts_rest_before_completion "$1" "$2" "$3" "$upload_id" "$4"; then
-    log 2 "error uploading parts before completion"
+  upload_id="$response"
+
+  if ! response=$(upload_parts_rest_before_completion "$1" "$2" "$3" "$upload_id" "$4" 2>&1); then
+    log 2 "error uploading parts before completion: $response"
     return 1
   fi
+  parts_payload="$response"
+
+  echo "$upload_id $parts_payload"
+  return 0
 }
 
 upload_parts_rest_before_completion() {
@@ -92,10 +100,14 @@ perform_full_multipart_upload_with_checksum_before_completion() {
     log 2 "error setting up bucket and large file"
     return 1
   fi
-  if ! create_multipart_upload_rest "$bucket_name" "$2" "CHECKSUM_TYPE=$3 CHECKSUM_ALGORITHM=$4" "parse_upload_id"; then
-    log 2 "error creating multipart upload"
+
+  local response
+  if ! response=$(create_multipart_upload_rest "$bucket_name" "$2" "CHECKSUM_TYPE=$3 CHECKSUM_ALGORITHM=$4" "parse_upload_id" 2>&1); then
+    log 2 "error creating multipart upload: $response"
     return 1
   fi
+  upload_id="$response"
+
   lowercase_checksum_algorithm=$(echo -n "$4" | tr '[:upper:]' '[:lower:]')
   if ! upload_parts_rest_with_checksum_before_completion "$bucket_name" "$2" "$TEST_FILE_FOLDER/$2" "$upload_id" 2 "$lowercase_checksum_algorithm"; then
     log 2 "error uploading parts"

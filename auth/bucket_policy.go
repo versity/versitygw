@@ -64,7 +64,7 @@ func (bp *BucketPolicy) UnmarshalJSON(data []byte) error {
 	}
 
 	if tmp.Version == nil {
-		// bucket policy version should defualt to '2008-10-17'
+		// bucket policy version should default to '2008-10-17'
 		bp.Version = PolicyVersion2008
 	} else {
 		bp.Version = *tmp.Version

@@ -24,13 +24,16 @@ list_and_delete_objects() {
   if ! check_param_count "list_and_delete_objects" "bucket" 1 $#; then
     return 1
   fi
-  if ! list_objects_rest "$1" "parse_objects_list_rest"; then
-    log 2 "error getting object list"
+  local response
+  if ! response=$(list_objects_rest "$1" "parse_objects_list_rest" 2>&1); then
+    log 2 "error getting object list: $response"
     return 1
   fi
-  # shellcheck disable=SC2154
-  log 5 "objects: ${object_array[*]}"
+  mapfile -t object_array <<< "$response"
   for object in "${object_array[@]}"; do
+    if [ "$object" == "" ]; then
+      break
+    fi
     if ! clear_object_in_bucket "$1" "$object"; then
       log 2 "error deleting object $object"
       return 1
@@ -114,11 +117,16 @@ put_object_with_lock_mode_and_delete_latest_version() {
       log 2 "error sending put object command with object lock"
       return 1
   fi
-  if ! send_rest_go_command_callback "200" "parse_latest_version_id" \
-      "-method" "GET" "-bucketName" "$2" "-query" "versions="; then
-    log 2 "error checking versions before deletion"
+
+  local response
+  if ! response=$(send_rest_go_command_callback "200" "parse_latest_version_id" \
+      "-method" "GET" "-bucketName" "$2" "-query" "versions=" 2>&1); then
+    log 2 "error checking versions before deletion: $response"
     return 1
+  else
+    version_id="$response"
   fi
+  log 5 "version ID: $version_id"
   if ! delete_object_version_rest_expect_error "$2" "$3" "$version_id" "403" "AccessDenied" "object protected by object lock"; then
     log 2 "shouldn't have been able to delete"
     return 1
@@ -140,11 +148,15 @@ attempt_to_delete_version_after_retention_policy() {
       log 2 "error sending put object command"
       return 1
   fi
-  if ! send_rest_go_command_callback "200" "parse_latest_version_id" \
-      "-method" "GET" "-bucketName" "$2" "-query" "versions="; then
-    log 2 "error checking versions before deletion"
+
+  local response
+  if ! response=$(send_rest_go_command_callback "200" "parse_latest_version_id" \
+      "-method" "GET" "-bucketName" "$2" "-query" "versions=" 2>&1); then
+    log 2 "error checking versions before deletion: $response"
     return 1
   fi
+
+  version_id="$response"
   if ! delete_object_version_rest_expect_error "$2" "$3" "$version_id" "403" "AccessDenied" "object protected by object lock"; then
     log 2 "shouldn't have been able to delete"
     return 1

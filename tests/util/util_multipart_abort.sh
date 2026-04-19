@@ -43,10 +43,13 @@ create_abort_multipart_upload_rest() {
     return 1
   fi
   log 5 "uploads before upload: $(cat "$TEST_FILE_FOLDER/uploads.txt")"
-  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
-    log 2 "error creating upload"
+  local response
+  if ! response=$(create_multipart_upload_rest "$1" "$2" "" "parse_upload_id" 2>&1); then
+    log 2 "error creating upload: $response"
     return 1
   fi
+  upload_id="$response"
+
   if ! list_and_check_upload "$1" "$2" "$upload_id"; then
     log 2 "error listing multipart uploads after upload creation"
     return 1

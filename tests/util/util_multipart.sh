@@ -62,10 +62,12 @@ multipart_upload_from_bucket() {
     fi
   }
 
-  if ! create_multipart_upload_rest "$1" "$2-copy" "" "parse_upload_id"; then
-    log 2 "error running first multipart upload"
+  local response
+  if ! response=$(create_multipart_upload_rest "$1" "$2-copy" "" "parse_upload_id" 2>&1); then
+    log 2 "error running first multipart upload: $response"
     return 1
   fi
+  upload_id="$response"
 
   if ! multipart_upload_s3api_complete_from_bucket "$1" "$2" "$4"; then
     log 2 " error completing multipart upload from bucket"
@@ -112,10 +114,13 @@ multipart_upload_from_bucket_range() {
     fi
   }
 
-  if ! create_multipart_upload_rest "$1" "$2-copy" "" "parse_upload_id"; then
-    log 2 "error running first multpart upload"
+  local response
+  if ! response=$(create_multipart_upload_rest "$1" "$2-copy" "" "parse_upload_id" 2>&1); then
+    log 2 "error running first multpart upload: $response"
     return 1
   fi
+  upload_id="$response"
+
   parts="["
   for ((i = 1; i <= $4; i++)); do
     if ! upload_part_copy_with_range "$1" "$2-copy" "$upload_id" "$2" "$i" "$5"; then
@@ -227,10 +232,14 @@ create_upload_part_copy_rest() {
     log 2 "error splitting and putting file"
     return 1
   fi
-  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
-    log 2 "error creating upload and getting ID"
+
+  local response
+  if ! response=$(create_multipart_upload_rest "$1" "$2" "" "parse_upload_id" 2>&1); then
+    log 2 "error creating upload and getting ID: $response"
     return 1
   fi
+  upload_id="$response"
+
   parts_payload=""
   for ((i=0; i<=3; i++)); do
     part_number=$((i+1))
