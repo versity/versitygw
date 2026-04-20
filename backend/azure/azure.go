@@ -73,6 +73,10 @@ const (
 	// keyMpZeroBytesParts tracks zero-byte upload parts in the sgwtmp metadata.
 	// Azure StageBlock rejects Content-Length: 0, so zero-byte parts are stored here.
 	keyMpZeroBytesParts key = "Zerobytesparts"
+	// keyMpMetadata stores multipart upload part-offset metadata on the final
+	// committed blob so that GetObject/HeadObject can serve individual parts
+	// by part-number.
+	keyMpMetadata key = "Mpmetadata"
 
 	defaultListingMaxKeys = 1000
 )
@@ -89,6 +93,7 @@ func (key) Table() map[string]struct{} {
 		"objectlegalhold":   {},
 		"objname":           {},
 		".sgwtmp/multipart": {},
+		"mpmetadata":        {},
 	}
 }
 
@@ -463,11 +468,6 @@ func (az *Azure) DeleteBucketTagging(ctx context.Context, bucket string) error {
 }
 
 func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
-	if input.PartNumber != nil {
-		// querying an object with part number is not supported
-		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
-	}
-
 	client, err := az.getBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
 		return nil, err
@@ -492,8 +492,53 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 	}
 
 	var opts *azblob.DownloadStreamOptions
-	if *input.Range != "" {
-		offset, count, isValid, err := backend.ParseObjectRange(*resp.ContentLength, *input.Range)
+	var partsCount *int32
+	var contentRange *string
+
+	if input.PartNumber != nil {
+		// Serve a specific part if the object has multipart upload metadata.
+		// For non-multipart objects (no mp-metadata), partNumber=1 returns the
+		// full object with no Content-Range; any other partNumber is out of range.
+		if mpMetaStr, ok := resp.Metadata[string(keyMpMetadata)]; ok && mpMetaStr != nil {
+			var mpMeta backend.MpUploadMetadata
+			if err := json.Unmarshal([]byte(*mpMetaStr), &mpMeta); err != nil {
+				return nil, fmt.Errorf("parse object multipart metadata: %w", err)
+			}
+
+			partNum := *input.PartNumber
+			totalParts := int32(len(mpMeta.Parts))
+			partsCount = &totalParts
+			if partNum > totalParts {
+				return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
+			}
+
+			var startOffset int64
+			if partNum > 1 {
+				startOffset = mpMeta.Parts[partNum-2]
+			}
+			length := mpMeta.Parts[partNum-1] - startOffset
+			var objSize int64
+			if resp.ContentLength != nil {
+				objSize = *resp.ContentLength
+			}
+			contentRange = backend.GetPtrFromString(fmt.Sprintf("bytes %d-%d/%d", startOffset, startOffset+length-1, objSize))
+			opts = &azblob.DownloadStreamOptions{
+				Range: blob.HTTPRange{
+					Offset: startOffset,
+					Count:  length,
+				},
+			}
+		} else if *input.PartNumber > 1 {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
+		}
+		// partNumber=1 on a non-multipart object: fall through and serve the
+		// full object without a range (opts remains nil, contentRange stays nil).
+	} else if *input.Range != "" {
+		var objSize int64
+		if resp.ContentLength != nil {
+			objSize = *resp.ContentLength
+		}
+		offset, count, isValid, err := backend.ParseObjectRange(objSize, *input.Range)
 		if err != nil {
 			return nil, err
 		}
@@ -504,8 +549,10 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 					Offset: offset,
 				},
 			}
+			contentRange = backend.GetPtrFromString(fmt.Sprintf("bytes %v-%v/%v", offset, offset+count-1, objSize))
 		}
 	}
+
 	blobDownloadResponse, err := az.client.DownloadStream(ctx, *input.Bucket, *input.Key, opts)
 	if err != nil {
 		return nil, azureErrToS3Err(err)
@@ -529,18 +576,14 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 		LastModified:       blobDownloadResponse.LastModified,
 		Metadata:           parseAndFilterAzMetadata(blobDownloadResponse.Metadata),
 		TagCount:           &tagcount,
-		ContentRange:       blobDownloadResponse.ContentRange,
+		ContentRange:       contentRange,
 		Body:               blobDownloadResponse.Body,
 		StorageClass:       types.StorageClassStandard,
+		PartsCount:         partsCount,
 	}, nil
 }
 
 func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
-	if input.PartNumber != nil {
-		// querying an object with part number is not supported
-		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
-	}
-
 	client, err := az.getBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
 		return nil, err
@@ -569,21 +612,57 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 		size = *resp.ContentLength
 	}
 
-	startOffset, length, isValid, err := backend.ParseObjectRange(size, getString(input.Range))
-	if err != nil {
-		return nil, err
-	}
-
 	var contentRange string
-	if isValid {
-		contentRange = fmt.Sprintf("bytes %v-%v/%v",
-			startOffset, startOffset+length-1, size)
+	var length int64
+	var partsCount *int32
+
+	if input.PartNumber != nil {
+		// Serve a specific part if the object has multipart upload metadata.
+		// For non-multipart objects (no mp-metadata), partNumber=1 returns the
+		// full object with no Content-Range; any other partNumber is out of range.
+		if mpMetaStr, ok := resp.Metadata[string(keyMpMetadata)]; ok && mpMetaStr != nil {
+			var mpMeta backend.MpUploadMetadata
+			if err := json.Unmarshal([]byte(*mpMetaStr), &mpMeta); err != nil {
+				return nil, fmt.Errorf("parse object multipart metadata: %w", err)
+			}
+
+			partNum := *input.PartNumber
+			totalParts := int32(len(mpMeta.Parts))
+			partsCount = &totalParts
+			if partNum > totalParts {
+				return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
+			}
+
+			var startOffset int64
+			if partNum > 1 {
+				startOffset = mpMeta.Parts[partNum-2]
+			}
+			length = mpMeta.Parts[partNum-1] - startOffset
+			contentRange = fmt.Sprintf("bytes %d-%d/%d", startOffset, startOffset+length-1, size)
+		} else if *input.PartNumber > 1 {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
+		} else {
+			// partNumber=1 on a non-multipart object: return full object size,
+			// no Content-Range, no PartsCount.
+			length = size
+		}
+	} else {
+		startOffset, lgth, isValid, err := backend.ParseObjectRange(size, getString(input.Range))
+		if err != nil {
+			return nil, err
+		}
+		length = lgth
+		if isValid {
+			contentRange = fmt.Sprintf("bytes %v-%v/%v",
+				startOffset, startOffset+length-1, size)
+		}
 	}
 
 	result := &s3.HeadObjectOutput{
 		ContentRange:       &contentRange,
 		AcceptRanges:       backend.GetPtrFromString("bytes"),
 		ContentLength:      &length,
+		PartsCount:         partsCount,
 		ContentType:        resp.ContentType,
 		ContentEncoding:    resp.ContentEncoding,
 		ContentLanguage:    resp.ContentLanguage,
@@ -1680,7 +1759,29 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 
 	props, err := blobClient.GetProperties(ctx, nil)
 	if err != nil {
-		return res, "", parseMpError(err)
+		mpErr := parseMpError(err)
+		// If the tmp blob is already gone, the upload may have already been
+		// completed. Check the final object's mp-metadata and return success
+		// if the upload IDs match.
+		if errors.Is(mpErr, s3err.GetAPIError(s3err.ErrNoSuchUpload)) {
+			finalClient, clientErr := az.getBlobClient(*input.Bucket, *input.Key)
+			if clientErr == nil {
+				finalProps, propErr := finalClient.GetProperties(ctx, nil)
+				if propErr == nil {
+					if mpMetaStr, ok := finalProps.Metadata[string(keyMpMetadata)]; ok && mpMetaStr != nil {
+						var mpMeta backend.MpUploadMetadata
+						if jsonErr := json.Unmarshal([]byte(*mpMetaStr), &mpMeta); jsonErr == nil && mpMeta.UploadID == *input.UploadId {
+							return s3response.CompleteMultipartUploadResult{
+								Bucket: input.Bucket,
+								Key:    input.Key,
+								ETag:   backend.GetPtrFromString(convertAzureEtag(finalProps.ETag)),
+							}, "", nil
+						}
+					}
+				}
+			}
+		}
+		return res, "", mpErr
 	}
 	tags, err := blobClient.GetTags(ctx, nil)
 	if err != nil {
@@ -1728,6 +1829,8 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 	// The initial value is the lower limit of partNumber: 0
 	var totalSize int64
 	var partNumber int32
+	// partSizes[i] = cumulative byte offset after part i+1 (see backend.MpUploadMetadata)
+	var partSizes []int64
 	last := len(input.MultipartUpload.Parts) - 1
 	for i, part := range input.MultipartUpload.Parts {
 		if part.PartNumber == nil {
@@ -1754,6 +1857,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 					return res, "", s3err.GetAPIError(s3err.ErrEntityTooSmall)
 				}
 				// Zero-byte parts contribute no data; skip adding to blockIds.
+				partSizes = append(partSizes, totalSize)
 				continue
 			}
 			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
@@ -1768,6 +1872,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 			return res, "", s3err.GetAPIError(s3err.ErrEntityTooSmall)
 		}
 		totalSize += *block.Size
+		partSizes = append(partSizes, totalSize)
 		blockIds = append(blockIds, *block.Name)
 	}
 
@@ -1778,6 +1883,18 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 
 	// Remove internal tracking keys from metadata before storing on the final blob.
 	delete(props.Metadata, string(keyMpZeroBytesParts))
+
+	// Serialize multipart metadata so GetObject/HeadObject can serve by part-number.
+	mpMeta := backend.MpUploadMetadata{UploadID: *input.UploadId, Parts: partSizes}
+	mpMetaJSON, err := json.Marshal(mpMeta)
+	if err != nil {
+		return res, "", fmt.Errorf("marshal mp metadata: %w", err)
+	}
+	mpMetaStr := string(mpMetaJSON)
+	if props.Metadata == nil {
+		props.Metadata = map[string]*string{}
+	}
+	props.Metadata[string(keyMpMetadata)] = &mpMetaStr
 
 	opts := &blockblob.CommitBlockListOptions{
 		Metadata: props.Metadata,

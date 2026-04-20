@@ -201,7 +201,6 @@ func TestPutObject(ts *TestState) {
 func TestHeadObject(ts *TestState) {
 	ts.Run(HeadObject_non_existing_object)
 	ts.Run(HeadObject_invalid_part_number)
-	ts.Run(HeadObject_part_number_not_supported)
 	ts.Run(HeadObject_directory_object_noslash)
 	ts.Run(HeadObject_non_existing_dir_object)
 	ts.Run(HeadObject_invalid_parent_dir)
@@ -218,6 +217,10 @@ func TestHeadObject(ts *TestState) {
 	ts.Run(HeadObject_overrides_success)
 	ts.Run(HeadObject_overrides_presign_success)
 	ts.Run(HeadObject_overrides_fail_public)
+	ts.Run(HeadObject_range_and_part_number)
+	ts.Run(HeadObject_mp_part_number_exceeds_parts_count)
+	ts.Run(HeadObject_mp_part_number_success)
+	ts.Run(HeadObject_non_mp_part_number_1_success)
 }
 
 func TestGetObjectAttributes(ts *TestState) {
@@ -256,7 +259,10 @@ func TestGetObject(ts *TestState) {
 	ts.Run(GetObject_overrides_presign_success)
 	ts.Run(GetObject_overrides_fail_public)
 	ts.Run(GetObject_invalid_part_number)
-	ts.Run(GetObject_part_number_not_supported)
+	ts.Run(GetObject_range_and_part_number)
+	ts.Run(GetObject_mp_part_number_exceeds_parts_count)
+	ts.Run(GetObject_mp_part_number_success)
+	ts.Run(GetObject_non_mp_part_number_1_success)
 }
 
 func TestListObjects(ts *TestState) {
@@ -537,6 +543,7 @@ func TestCompleteMultipartUpload(ts *TestState) {
 		ts.Run(CompleteMultipartUpload_with_metadata)
 	}
 	ts.Run(CompleteMultipartUpload_success)
+	ts.Run(CompleteMultipartUpload_already_completed)
 	if !ts.conf.azureTests {
 		ts.Run(CompleteMultipartUpload_racey_success)
 		ts.Run(CompleteMultipartUpload_racey_data_integrity)
@@ -1383,7 +1390,6 @@ func GetIntTests() IntTests {
 		"PutObject_racey_success":                                                  PutObject_racey_success,
 		"HeadObject_non_existing_object":                                           HeadObject_non_existing_object,
 		"HeadObject_invalid_part_number":                                           HeadObject_invalid_part_number,
-		"HeadObject_part_number_not_supported":                                     HeadObject_part_number_not_supported,
 		"HeadObject_directory_object_noslash":                                      HeadObject_directory_object_noslash,
 		"HeadObject_non_existing_dir_object":                                       HeadObject_non_existing_dir_object,
 		"HeadObject_name_too_long":                                                 HeadObject_name_too_long,
@@ -1398,6 +1404,10 @@ func GetIntTests() IntTests {
 		"HeadObject_overrides_success":                                             HeadObject_overrides_success,
 		"HeadObject_overrides_presign_success":                                     HeadObject_overrides_presign_success,
 		"HeadObject_overrides_fail_public":                                         HeadObject_overrides_fail_public,
+		"HeadObject_range_and_part_number":                                         HeadObject_range_and_part_number,
+		"HeadObject_mp_part_number_exceeds_parts_count":                            HeadObject_mp_part_number_exceeds_parts_count,
+		"HeadObject_mp_part_number_success":                                        HeadObject_mp_part_number_success,
+		"HeadObject_non_mp_part_number_1_success":                                  HeadObject_non_mp_part_number_1_success,
 		"GetObjectAttributes_non_existing_bucket":                                  GetObjectAttributes_non_existing_bucket,
 		"GetObjectAttributes_non_existing_object":                                  GetObjectAttributes_non_existing_object,
 		"GetObjectAttributes_invalid_attrs":                                        GetObjectAttributes_invalid_attrs,
@@ -1424,7 +1434,10 @@ func GetIntTests() IntTests {
 		"GetObject_overrides_presign_success":                                      GetObject_overrides_presign_success,
 		"GetObject_overrides_fail_public":                                          GetObject_overrides_fail_public,
 		"GetObject_invalid_part_number":                                            GetObject_invalid_part_number,
-		"GetObject_part_number_not_supported":                                      GetObject_part_number_not_supported,
+		"GetObject_range_and_part_number":                                          GetObject_range_and_part_number,
+		"GetObject_mp_part_number_exceeds_parts_count":                             GetObject_mp_part_number_exceeds_parts_count,
+		"GetObject_mp_part_number_success":                                         GetObject_mp_part_number_success,
+		"GetObject_non_mp_part_number_1_success":                                   GetObject_non_mp_part_number_1_success,
 		"ListObjects_non_existing_bucket":                                          ListObjects_non_existing_bucket,
 		"ListObjects_with_prefix":                                                  ListObjects_with_prefix,
 		"ListObjects_truncated":                                                    ListObjects_truncated,
@@ -1626,6 +1639,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_should_ignore_the_final_checksum":                 CompleteMultipartUpload_should_ignore_the_final_checksum,
 		"CompleteMultipartUpload_should_succeed_without_final_checksum_type":       CompleteMultipartUpload_should_succeed_without_final_checksum_type,
 		"CompleteMultipartUpload_success":                                          CompleteMultipartUpload_success,
+		"CompleteMultipartUpload_already_completed":                                CompleteMultipartUpload_already_completed,
 		"CompleteMultipartUpload_racey_success":                                    CompleteMultipartUpload_racey_success,
 		"CompleteMultipartUpload_racey_data_integrity":                             CompleteMultipartUpload_racey_data_integrity,
 		"PutBucketAcl_non_existing_bucket":                                         PutBucketAcl_non_existing_bucket,

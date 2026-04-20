@@ -107,6 +107,15 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 			}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
 		}
 
+		if objRange != "" {
+			debuglogger.Logf("Range and partNumber cannot both be specified")
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, s3err.GetAPIError(s3err.ErrRangeAndPartNumber)
+		}
+
 		partNumber = &partNumberQuery
 	}
 

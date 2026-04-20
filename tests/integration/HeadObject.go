@@ -62,21 +62,6 @@ func HeadObject_invalid_part_number(s *S3Conf) error {
 	})
 }
 
-func HeadObject_part_number_not_supported(s *S3Conf) error {
-	testName := "HeadObject_part_number_not_supported"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		partNumber := int32(4)
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
-			Bucket:     &bucket,
-			Key:        getPtr("my-obj"),
-			PartNumber: &partNumber,
-		})
-		cancel()
-		return checkSdkApiErr(err, "NotImplemented")
-	})
-}
-
 func HeadObject_non_existing_dir_object(s *S3Conf) error {
 	testName := "HeadObject_non_existing_dir_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -924,6 +909,202 @@ func HeadObject_overrides_presign_success(s *S3Conf) error {
 				return fmt.Errorf("expected %s header to be %q for multiple overrides, got %q",
 					headerName, expectedValue, actualValue)
 			}
+		}
+
+		return nil
+	})
+}
+
+func HeadObject_range_and_part_number(s *S3Conf) error {
+	testName := "HeadObject_range_and_part_number"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjectWithData(100, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		pn := int32(1)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			Range:      getPtr("bytes=0-9"),
+			PartNumber: &pn,
+		})
+		cancel()
+		return checkSdkApiErr(err, "BadRequest")
+	})
+}
+
+func HeadObject_mp_part_number_exceeds_parts_count(s *S3Conf) error {
+	testName := "HeadObject_mp_part_number_exceeds_parts_count"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		const partCount = int64(5)
+		parts, _, err := uploadParts(s3client, partCount*5*1024*1024, partCount, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := make([]types.CompletedPart, len(parts))
+		for i, p := range parts {
+			compParts[i] = types.CompletedPart{
+				ETag:       p.ETag,
+				PartNumber: p.PartNumber,
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// partNumber exceeds the number of parts in the completed upload
+		pn := int32(partCount + 1)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			PartNumber: &pn,
+		})
+		cancel()
+		return checkSdkApiErr(err, "RequestedRangeNotSatisfiable")
+	})
+}
+
+func HeadObject_mp_part_number_success(s *S3Conf) error {
+	testName := "HeadObject_mp_part_number_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		const partCount = int64(3)
+		const partSize = int64(5 * 1024 * 1024)
+		const totalSize = partCount * partSize
+
+		parts, _, err := uploadParts(s3client, totalSize, partCount, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := make([]types.CompletedPart, len(parts))
+		for i, p := range parts {
+			compParts[i] = types.CompletedPart{
+				ETag:       p.ETag,
+				PartNumber: p.PartNumber,
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		for i := range partCount {
+			pn := int32(i + 1)
+			startByte := i * partSize
+			endByte := startByte + partSize - 1
+			expectedContentRange := fmt.Sprintf("bytes %d-%d/%d", startByte, endByte, totalSize)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				PartNumber: &pn,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("part %d: %w", pn, err)
+			}
+
+			if res.PartsCount == nil {
+				return fmt.Errorf("part %d: expected non-nil x-amz-mp-parts-count", pn)
+			}
+			if *res.PartsCount != int32(partCount) {
+				return fmt.Errorf("part %d: expected PartsCount %d, got %d", pn, partCount, *res.PartsCount)
+			}
+			if getString(res.ContentRange) != expectedContentRange {
+				return fmt.Errorf("part %d: expected Content-Range %q, got %q", pn, expectedContentRange, getString(res.ContentRange))
+			}
+			if res.ContentLength == nil || *res.ContentLength != partSize {
+				return fmt.Errorf("part %d: expected Content-Length %d, got %v", pn, partSize, res.ContentLength)
+			}
+			if getString(res.AcceptRanges) != "bytes" {
+				return fmt.Errorf("part %d: expected Accept-Ranges 'bytes', got %q", pn, getString(res.AcceptRanges))
+			}
+		}
+
+		return nil
+	})
+}
+
+func HeadObject_non_mp_part_number_1_success(s *S3Conf) error {
+	testName := "HeadObject_non_mp_part_number_1_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "put-object-part1"
+		const objSize = int64(1234)
+
+		_, err := putObjectWithData(objSize, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		pn := int32(1)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			PartNumber: &pn,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.ContentLength == nil || *res.ContentLength != objSize {
+			return fmt.Errorf("expected ContentLength %d, got %v", objSize, res.ContentLength)
+		}
+		if getString(res.ContentRange) != "" {
+			return fmt.Errorf("expected empty Content-Range for non-multipart object, got %q", getString(res.ContentRange))
+		}
+		if res.PartsCount != nil {
+			return fmt.Errorf("expected nil PartsCount for non-multipart object, got %d", *res.PartsCount)
+		}
+		if getString(res.AcceptRanges) != "bytes" {
+			return fmt.Errorf("expected Accept-Ranges 'bytes', got %q", getString(res.AcceptRanges))
 		}
 
 		return nil

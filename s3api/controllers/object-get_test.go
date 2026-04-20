@@ -723,6 +723,26 @@ func TestS3ApiController_GetObject(t *testing.T) {
 			},
 		},
 		{
+			name: "both partNumber and Range",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"partNumber": "2",
+				},
+				headers: map[string]string{
+					"Range": "bytes=10-20",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrRangeAndPartNumber),
+			},
+		},
+		{
 			name: "backend returns error",
 			input: testInput{
 				locals: defaultLocals,
