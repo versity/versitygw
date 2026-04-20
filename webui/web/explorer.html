@@ -654,7 +654,7 @@ under the License.
         <div class="flex items-center justify-between gap-3 p-6 sticky bottom-0 bg-white">
           <div></div>
           <div class="flex gap-3">
-            <button id="presigned-url-btn" onclick="closeModal('presigned-url-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+            <button id="presigned-close-btn" onclick="closeModal('presigned-url-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
               Close
             </button>
           </div>
@@ -1951,7 +1951,7 @@ under the License.
       }
     }
 
-    async function showPresignedUrl(key) {
+    function showPresignedUrl(key) {
       currentObjectKey = key;
 
       document.getElementById('presigned-url-result').classList.add('hidden');
@@ -1968,7 +1968,7 @@ under the License.
         return;
       }
       
-      document.getElementById('presigned-url-btn').setAttribute('disabled', true)
+      document.getElementById('presigned-url-btn').setAttribute('disabled', '')
       
       let expirationSecs = 0;
       
@@ -2003,7 +2003,7 @@ under the License.
         showToast('Presigned URL generated')
       } catch (e) {
         console.error('Error generating presigned URL:', e);
-        showToast('An error occured generating presigned URL', 'error');
+        showToast('An error occurred generating presigned URL', 'error');
       }
       
       document.getElementById('presigned-url-btn').removeAttribute('disabled')
@@ -2017,13 +2017,11 @@ under the License.
       }
       
       try {
-        const item = new ClipboardItem({ 'text/plain': new Blob([url], { type: 'text/plain' }) })
-        await navigator.clipboard.write([item]);
-        
+        await navigator.clipboard.writeText(url);       
         showToast('Presigned URL copied to your clipboard');
       } catch (e) {
         console.error('Error copying presigned URL to clipboard:', e);
-        showToast('An error occured while copying the presigned URL to your clipboard', 'error');
+        showToast('An error occurred while copying the presigned URL to your clipboard', 'error');
       }
     }
 
