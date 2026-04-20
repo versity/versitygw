@@ -599,6 +599,70 @@ under the License.
     </div>
   </div>
 
+  <!-- Presigned URL modal -->
+  <div id="presigned-url-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('presigned-url-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl relative max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
+          <h2 class="text-xl font-semibold text-charcoal">Generate presigned URL</h2>
+          <button onclick="closeModal('presigned-url-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="p-6 space-y-6">
+          <div>
+            <div class="space-y-3">
+              <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                <span class="text-charcoal-300">Bucket</span>
+                <span id="presigned-url-bucket" class="text-charcoal font-mono text-sm">-</span>
+              </div>
+              <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                <span class="text-charcoal-300">Key</span>
+                <span id="presigned-url-key" class="text-charcoal font-mono text-sm">-</span>
+              </div>
+              <div class="flex flex-col justify-between py-2 border-b border-gray-100">
+                <span class="text-charcoal-300 mb-1">Expiration</span>
+                <div class="flex gap-1 justify-center">
+                   <input id="presigned-url-exp-value" class="text-charcoal w-full px-3 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-accent" value="1" />
+                   <select id="presigned-url-exp-unit" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg bg-white text-charcoal focus:outline-none focus:border-accent">
+                     <option value="minutes" selected>minutes</option>
+                     <option value="hours">hours</option>
+                     <option value="days">days</option>
+                   </select>
+                </div>
+              </div>
+              <div class="text-right py-2 border-b border-gray-100">
+                <button onclick="generatePresignedUrl()" id="presigned-url-btn" class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-600 disabled:bg-gray-500 text-white font-medium rounded-lg transition-colors">
+                    Generate presigned URL
+                </button>
+              </div>
+              <div id="presigned-url-result" class="hidden flex flex-col items-start justify-between py-2 border-b border-gray-100">
+                <span class="flex col gap-2 items-center text-charcoal-300">
+                    URL
+                    <svg class="w-5 h-5 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor" onclick="copyPresignedUrl();" title="Copy to clipboard">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z" />
+                    </svg>
+                </span>
+                <input readonly id="presigned-url-url" class="text-charcoal w-full px-3 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-accent" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center justify-between gap-3 p-6 sticky bottom-0 bg-white">
+          <div></div>
+          <div class="flex gap-3">
+            <button id="presigned-close-btn" onclick="closeModal('presigned-url-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Versioning Modal -->
   <div id="versioning-modal" class="hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('versioning-modal')"></div>
@@ -1534,6 +1598,11 @@ under the License.
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                 </svg>
               </button>
+              <button onclick="showPresignedUrl('${escapeHtml(obj.key)}')" class="p-1.5 text-accent hover:bg-blue-50 rounded-lg transition-colors" title="Generate presigned URL">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" />
+                </svg>
+              </button>
               <button onclick="deleteObject('${escapeHtml(obj.key)}')" class="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
@@ -1879,6 +1948,80 @@ under the License.
       } catch (error) {
         console.error('Error fetching object info:', error);
         showToast('Error fetching object info: ' + error.message, 'error');
+      }
+    }
+
+    function showPresignedUrl(key) {
+      currentObjectKey = key;
+
+      document.getElementById('presigned-url-result').classList.add('hidden');
+      document.getElementById('presigned-url-bucket').textContent = currentBucket;
+      document.getElementById('presigned-url-key').textContent = key;
+      document.getElementById('presigned-url-exp-value').value = '1';
+      document.getElementById('presigned-url-exp-unit').value = 'minutes';
+
+      openModal('presigned-url-modal');
+    }
+
+    async function generatePresignedUrl() {
+      if (!currentBucket || !currentObjectKey) {
+        return;
+      }
+      
+      document.getElementById('presigned-url-btn').setAttribute('disabled', '')
+      
+      let expirationSecs = 0;
+      
+      const expirationValue = parseInt(document.getElementById('presigned-url-exp-value').value);
+      
+      if (isNaN(expirationValue) || expirationValue <= 0) {
+        document.getElementById('presigned-url-url').value = '-';
+        document.getElementById('presigned-url-btn').removeAttribute('disabled')
+        return;
+      }
+      
+      switch (document.getElementById('presigned-url-exp-unit').value) {
+        case 'minutes':
+          expirationSecs = expirationValue * 60;
+          break;
+        case 'hours':
+          expirationSecs = expirationValue * 3600;
+          break;
+        case 'days':
+          expirationSecs = expirationValue * 3600 * 24;
+          break;
+        default:
+          expirationSecs = expirationValue;
+      }
+      
+      try {
+        const url = await api.presignUrl('GET', `/${currentBucket}/${currentObjectKey}`, {}, expirationSecs);
+  
+        document.getElementById('presigned-url-result').classList.remove('hidden');
+        document.getElementById('presigned-url-url').value = url;
+        
+        showToast('Presigned URL generated')
+      } catch (e) {
+        console.error('Error generating presigned URL:', e);
+        showToast('An error occurred generating presigned URL', 'error');
+      }
+      
+      document.getElementById('presigned-url-btn').removeAttribute('disabled')
+    }
+    
+    async function copyPresignedUrl() {
+      const url = document.getElementById('presigned-url-url').value;
+      
+      if (url === '-') {
+        return;
+      }
+      
+      try {
+        await navigator.clipboard.writeText(url);       
+        showToast('Presigned URL copied to your clipboard');
+      } catch (e) {
+        console.error('Error copying presigned URL to clipboard:', e);
+        showToast('An error occurred while copying the presigned URL to your clipboard', 'error');
       }
     }
 
