@@ -272,7 +272,7 @@ under the License.
   </div>
 
   <!-- Object Info Modal -->
-  <div id="info-modal" class="hidden fixed inset-0 z-50">
+  <div id="info-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('info-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl relative max-h-[90vh] flex flex-col">
@@ -372,7 +372,7 @@ under the License.
   <input type="file" id="file-input" class="hidden" multiple onchange="handleFileSelect(event)">
 
   <!-- Object Versions Modal -->
-  <div id="versions-modal" class="hidden fixed inset-0 z-50">
+  <div id="versions-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('versions-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl relative max-h-[90vh] flex flex-col">
@@ -406,7 +406,7 @@ under the License.
   </div>
 
   <!-- Delete Confirmation Modal -->
-  <div id="delete-modal" class="hidden fixed inset-0 z-50">
+  <div id="delete-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('delete-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -432,7 +432,7 @@ under the License.
   </div>
 
   <!-- Create Folder Modal -->
-  <div id="create-folder-modal" class="hidden fixed inset-0 z-50">
+  <div id="create-folder-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('create-folder-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -462,7 +462,7 @@ under the License.
   </div>
 
   <!-- Create Bucket Modal -->
-  <div id="create-bucket-modal" class="hidden fixed inset-0 z-50">
+  <div id="create-bucket-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('create-bucket-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -492,7 +492,7 @@ under the License.
   </div>
 
   <!-- Delete Bucket Modal -->
-  <div id="delete-bucket-modal" class="hidden fixed inset-0 z-50">
+  <div id="delete-bucket-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('delete-bucket-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -526,7 +526,7 @@ under the License.
   </div>
 
   <!-- Bucket Info Modal -->
-  <div id="bucket-info-modal" class="hidden fixed inset-0 z-50">
+  <div id="bucket-info-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('bucket-info-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl relative max-h-[90vh] overflow-y-auto">
@@ -600,7 +600,7 @@ under the License.
   </div>
 
   <!-- Versioning Modal -->
-  <div id="versioning-modal" class="hidden fixed inset-0 z-50">
+  <div id="versioning-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('versioning-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -642,7 +642,7 @@ under the License.
   </div>
 
   <!-- Object Lock Modal -->
-  <div id="object-lock-modal" class="hidden fixed inset-0 z-50">
+  <div id="object-lock-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('object-lock-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -706,7 +706,7 @@ under the License.
   </div>
 
   <!-- Bucket Policy Modal -->
-  <div id="bucket-policy-modal" class="hidden fixed inset-0 z-50">
+  <div id="bucket-policy-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('bucket-policy-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl relative max-h-[90vh] flex flex-col">
@@ -878,7 +878,7 @@ under the License.
   </div>
 
   <!-- Multipart Uploads Modal -->
-  <div id="multipart-uploads-modal" class="hidden fixed inset-0 z-50">
+  <div id="multipart-uploads-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('multipart-uploads-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl relative max-h-[90vh] flex flex-col">
@@ -998,6 +998,9 @@ under the License.
     if (!requireAuth()) {
       // Will redirect to login
     } else {
+      // Clear history state on startup (can happen when reloading with popup open)
+      if (history.state) history.back();
+      
       initSidebarWithRole();
       updateUserInfo();
       init();
@@ -1021,10 +1024,27 @@ under the License.
             currentPrefix += '/';
           }
         }
+      } else {
+        currentBucket = "";
+        currentPrefix = "";
       }
 
       await loadBuckets();
     }
+    
+    // Rerun init() on hash change to allow for back/forward when browsing a bucket.
+    window.addEventListener('hashchange', async () => {
+      await init();
+    });
+    
+    // Catch the back button to close the open modal, if any is open.
+    window.addEventListener('popstate', (e) => {
+      Array.from(document.getElementsByClassName('modal')).forEach((modal) => {
+        if (!modal.classList.contains('hidden')) {
+          closeModal(modal.getAttribute('id'), false);
+        }
+      })
+    });
 
     // ============================================
     // Logout

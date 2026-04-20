@@ -129,13 +129,23 @@ function openModal(modalId) {
     // Focus first input
     const firstInput = modal.querySelector('input:not([readonly]), select');
     if (firstInput) setTimeout(() => firstInput.focus(), 100);
+    
+    // Push to history state so the back button can close the modal
+    history.pushState({ modal: true }, '');
   }
 }
 
-function closeModal(modalId) {
+// Close the currently opened modal, manually popping the modal
+// history state if the modal was closed manually (default). In the
+// case where the modal was closed due to navigating back, the state
+// is already popped and we can skip it.
+function closeModal(modalId, popState = true) {
   const modal = document.getElementById(modalId);
   if (modal) {
     modal.classList.add('hidden');
+    if (popState) {
+      history.back();
+    }
   }
 }
 
