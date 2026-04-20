@@ -1097,14 +1097,313 @@ func HeadObject_non_mp_part_number_1_success(s *S3Conf) error {
 		if res.ContentLength == nil || *res.ContentLength != objSize {
 			return fmt.Errorf("expected ContentLength %d, got %v", objSize, res.ContentLength)
 		}
-		if getString(res.ContentRange) != "" {
-			return fmt.Errorf("expected empty Content-Range for non-multipart object, got %q", getString(res.ContentRange))
+		expectedCRange := fmt.Sprintf("bytes 0-%d/%d", objSize-1, objSize)
+		if getString(res.ContentRange) != expectedCRange {
+			return fmt.Errorf("expected Content-Range to be %s, instead got %s", expectedCRange, getString(res.ContentRange))
 		}
 		if res.PartsCount != nil {
 			return fmt.Errorf("expected nil PartsCount for non-multipart object, got %d", *res.PartsCount)
 		}
 		if getString(res.AcceptRanges) != "bytes" {
 			return fmt.Errorf("expected Accept-Ranges 'bytes', got %q", getString(res.AcceptRanges))
+		}
+
+		return nil
+	})
+}
+
+func HeadObject_by_range_resp_status(s *S3Conf) error {
+	testName := "HeadObject_by_range_resp_status"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		objLength := int64(100)
+		_, err := putObjectWithData(objLength, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		checkRangeStatus := func(rng string, expectedStatus int) error {
+			req, err := createSignedReq(
+				http.MethodHead,
+				s.endpoint,
+				fmt.Sprintf("%v/%v", bucket, obj),
+				s.awsID,
+				s.awsSecret,
+				"s3",
+				s.awsRegion,
+				nil,
+				time.Now(),
+				map[string]string{"Range": rng},
+			)
+			if err != nil {
+				return err
+			}
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+			resp.Body.Close()
+			if resp.StatusCode != expectedStatus {
+				return fmt.Errorf("range %q: expected status %d, instead got %d", rng, expectedStatus, resp.StatusCode)
+			}
+			return nil
+		}
+
+		for _, tc := range []struct {
+			rng            string
+			expectedStatus int
+		}{
+			// Invalid/ignored ranges → full object, no Content-Range → 200
+			{"bytes=,", http.StatusOK},
+			{"bytes= -1", http.StatusOK},
+			{"bytes=--1", http.StatusOK},
+			{"bytes=0 -1", http.StatusOK},
+			{"bytes=0--1", http.StatusOK},
+			{"bytes=10-5", http.StatusOK},
+			{"bytes=abc", http.StatusOK},
+			{"bytes=a-z", http.StatusOK},
+			{"foo=0-1", http.StatusOK},
+			{"bytes=abc-xyz", http.StatusOK},
+			{"bytes=100-x", http.StatusOK},
+			{"bytes=0-0,1-2", http.StatusOK},
+			{fmt.Sprintf("bytes=%v-%v", objLength+2, objLength-100), http.StatusOK},
+
+			// Valid ranges → partial content, non-empty Content-Range → 206
+			{"bytes=00-01", http.StatusPartialContent},
+			{"bytes=-1", http.StatusPartialContent},
+			{"bytes=-2", http.StatusPartialContent},
+			{"bytes=-10", http.StatusPartialContent},
+			{"bytes=-100", http.StatusPartialContent},
+			{"bytes=-101", http.StatusPartialContent},
+			{"bytes=0-0", http.StatusPartialContent},
+			{"bytes=0-99", http.StatusPartialContent},
+			{"bytes=0-100", http.StatusPartialContent},
+			{"bytes=0-999999", http.StatusPartialContent},
+			{"bytes=1-99", http.StatusPartialContent},
+			{"bytes=50-99", http.StatusPartialContent},
+			{"bytes=50-", http.StatusPartialContent},
+			{"bytes=0-", http.StatusPartialContent},
+			{"bytes=99-99", http.StatusPartialContent},
+		} {
+			if err := checkRangeStatus(tc.rng, tc.expectedStatus); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func HeadObject_empty_object_part_number_1(s *S3Conf) error {
+	testName := "HeadObject_empty_object_part_number_1"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "empty-obj"
+
+		out, err := putObjectWithData(0, &s3.PutObjectInput{
+			Bucket:            &bucket,
+			Key:               &obj,
+			ChecksumAlgorithm: types.ChecksumAlgorithmSha256,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		pn := int32(1)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:       &bucket,
+			Key:          &obj,
+			PartNumber:   &pn,
+			ChecksumMode: types.ChecksumModeEnabled,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.ContentRange != nil {
+			return fmt.Errorf("expected nil Content-Range for empty object with partNumber=1, got %q", *res.ContentRange)
+		}
+		if res.ContentLength == nil || *res.ContentLength != 0 {
+			return fmt.Errorf("expected ContentLength 0, got %v", res.ContentLength)
+		}
+		if getString(res.ChecksumSHA256) != getString(out.res.ChecksumSHA256) {
+			return fmt.Errorf("expected sha256 checksum %v, got %v",
+				getString(out.res.ChecksumSHA256), getString(res.ChecksumSHA256))
+		}
+
+		return nil
+	})
+}
+
+func HeadObject_mp_part_number_resp_status(s *S3Conf) error {
+	testName := "HeadObject_mp_part_number_resp_status"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		const partCount = int64(2)
+		parts, _, err := uploadParts(s3client, partCount*5*1024*1024, partCount, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := make([]types.CompletedPart, len(parts))
+		for i, p := range parts {
+			compParts[i] = types.CompletedPart{
+				ETag:       p.ETag,
+				PartNumber: p.PartNumber,
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		req, err := createSignedReq(
+			http.MethodHead,
+			s.endpoint,
+			fmt.Sprintf("%v/%v?partNumber=1", bucket, obj),
+			s.awsID,
+			s.awsSecret,
+			"s3",
+			s.awsRegion,
+			nil,
+			time.Now(),
+			nil,
+		)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusPartialContent {
+			return fmt.Errorf("expected response status to be %v, instead got %v",
+				http.StatusPartialContent, resp.StatusCode)
+		}
+
+		return nil
+	})
+}
+
+func HeadObject_ranged_with_checksum_mode(s *S3Conf) error {
+	testName := "HeadObject_ranged_with_checksum_mode"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		checkNoChecksums := func(res *s3.HeadObjectOutput) error {
+			if res.ChecksumCRC32 != nil {
+				return fmt.Errorf("expected nil crc32 checksum, instead got %v", *res.ChecksumCRC32)
+			}
+			if res.ChecksumCRC32C != nil {
+				return fmt.Errorf("expected nil crc32c checksum, instead got %v", *res.ChecksumCRC32C)
+			}
+			if res.ChecksumSHA1 != nil {
+				return fmt.Errorf("expected nil sha1 checksum, instead got %v", *res.ChecksumSHA1)
+			}
+			if res.ChecksumSHA256 != nil {
+				return fmt.Errorf("expected nil sha256 checksum, instead got %v", *res.ChecksumSHA256)
+			}
+			if res.ChecksumCRC64NVME != nil {
+				return fmt.Errorf("expected nil crc64nvme checksum, instead got %v", *res.ChecksumCRC64NVME)
+			}
+			return nil
+		}
+
+		// Sub-test 1: regular object with Range header and ChecksumMode enabled
+		regularObj := "regular-obj"
+		_, err := putObjectWithData(500, &s3.PutObjectInput{
+			Bucket:            &bucket,
+			Key:               &regularObj,
+			ChecksumAlgorithm: types.ChecksumAlgorithmSha256,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:       &bucket,
+			Key:          &regularObj,
+			Range:        getPtr("bytes=0-99"),
+			ChecksumMode: types.ChecksumModeEnabled,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("ranged HEAD on regular object: %w", err)
+		}
+		if err := checkNoChecksums(res); err != nil {
+			return fmt.Errorf("ranged HEAD on regular object: %w", err)
+		}
+
+		// Sub-test 2: multipart object with partNumber and ChecksumMode enabled
+		mpObj := "mp-obj"
+		mpOut, err := createMp(s3client, bucket, mpObj)
+		if err != nil {
+			return err
+		}
+
+		const partCount = int64(2)
+		parts, _, err := uploadParts(s3client, partCount*5*1024*1024, partCount, bucket, mpObj, *mpOut.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := make([]types.CompletedPart, len(parts))
+		for i, p := range parts {
+			compParts[i] = types.CompletedPart{
+				ETag:       p.ETag,
+				PartNumber: p.PartNumber,
+			}
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &mpObj,
+			UploadId: mpOut.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		pn := int32(1)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		mpRes, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:       &bucket,
+			Key:          &mpObj,
+			PartNumber:   &pn,
+			ChecksumMode: types.ChecksumModeEnabled,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("partNumber HEAD on MP object: %w", err)
+		}
+		if err := checkNoChecksums(mpRes); err != nil {
+			return fmt.Errorf("partNumber HEAD on MP object: %w", err)
 		}
 
 		return nil
