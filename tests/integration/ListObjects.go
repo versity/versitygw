@@ -585,3 +585,205 @@ func ListObjects_non_truncated_common_prefixes(s *S3Conf) error {
 		return nil
 	})
 }
+
+// ListObjects should not list any pending multipart uploads
+// and no pending mp should block the bucket from deletion
+func ListObjects_should_not_list_pending_mps(s *S3Conf) error {
+	testName := "ListObjects_should_not_list_pending_mps"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i := range 5 {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+				Bucket: &bucket,
+				Key:    getPtr(fmt.Sprintf("obj-%d", i)),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(res.Contents) != 0 {
+			return fmt.Errorf("expected empty object list result, instead got %v", res.Contents)
+		}
+		if len(res.CommonPrefixes) != 0 {
+			return fmt.Errorf("expected empty object common prefixes result, instead got %v", res.CommonPrefixes)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		return err
+	}, withSkipTearDown())
+}
+
+// ListObjects with a marker should not surface pending multipart uploads
+// even when real objects are interleaved with the marker boundary.
+func ListObjects_mp_masking_with_marker(s *S3Conf) error {
+	testName := "ListObjects_mp_masking_with_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// Create pending multipart uploads with keys that sort after all real objects
+		for i := range 3 {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+				Bucket: &bucket,
+				Key:    getPtr(fmt.Sprintf("zzz-mp-%d", i+1)),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+
+		contents, err := putObjects(s3client, []string{"aaa", "bbb", "ccc"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+			Marker: getPtr("aaa"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// Expect only bbb and ccc (after marker "aaa"), no multipart upload objects
+		if !compareObjects(contents[1:], out.Contents) {
+			return fmt.Errorf("expected objects %v, instead got %v",
+				contents[1:], out.Contents)
+		}
+		if out.IsTruncated == nil || *out.IsTruncated {
+			return fmt.Errorf("expected non-truncated result")
+		}
+
+		return nil
+	})
+}
+
+// ListObjects truncation should count only real objects, not pending multipart uploads.
+func ListObjects_mp_masking_truncation(s *S3Conf) error {
+	testName := "ListObjects_mp_masking_truncation"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// Create pending multipart uploads with keys that sort after real objects
+		for i := range 2 {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+				Bucket: &bucket,
+				Key:    getPtr(fmt.Sprintf("zzz-mp-%d", i+1)),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+
+		contents, err := putObjects(s3client, []string{"obj-a", "obj-b", "obj-c", "obj-d"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		maxKeys := int32(2)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out1, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:  &bucket,
+			MaxKeys: &maxKeys,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out1.IsTruncated == nil || !*out1.IsTruncated {
+			return fmt.Errorf("expected first page to be truncated")
+		}
+		if !compareObjects(contents[:2], out1.Contents) {
+			return fmt.Errorf("expected first page objects %v, instead got %v",
+				contents[:2], out1.Contents)
+		}
+		if out1.NextMarker == nil || *out1.NextMarker == "" {
+			return fmt.Errorf("expected non-empty NextMarker")
+		}
+		if *out1.NextMarker != "obj-b" {
+			return fmt.Errorf("expected NextMarker to be obj-b, instead got %v", *out1.NextMarker)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out2, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+			Marker: out1.NextMarker,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out2.IsTruncated == nil || *out2.IsTruncated {
+			return fmt.Errorf("expected second page to not be truncated")
+		}
+		if !compareObjects(contents[2:], out2.Contents) {
+			return fmt.Errorf("expected second page objects %v, instead got %v",
+				contents[2:], out2.Contents)
+		}
+
+		return nil
+	})
+}
+
+// ListObjects with a delimiter should not include the .sgwtmp/ multipart prefix
+// in common prefixes, even when pending multipart uploads exist.
+func ListObjects_mp_masking_delimiter(s *S3Conf) error {
+	testName := "ListObjects_mp_masking_delimiter"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// Create pending multipart uploads
+		for i := range 2 {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+				Bucket: &bucket,
+				Key:    getPtr(fmt.Sprintf("zzz-mp-%d", i+1)),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+
+		_, err := putObjects(s3client, []string{"dir1/file1", "dir2/file2"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:    &bucket,
+			Delimiter: getPtr("/"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Contents) != 0 {
+			return fmt.Errorf("expected empty Contents, instead got %v", out.Contents)
+		}
+		if !comparePrefixes([]string{"dir1/", "dir2/"}, out.CommonPrefixes) {
+			return fmt.Errorf("expected common prefixes [dir1/ dir2/], instead got %v",
+				sprintPrefixes(out.CommonPrefixes))
+		}
+
+		return nil
+	})
+}

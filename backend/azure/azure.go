@@ -304,15 +304,21 @@ func (az *Azure) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3
 func (az *Azure) DeleteBucket(ctx context.Context, bucket string) error {
 	pager := az.client.NewListBlobsFlatPager(bucket, nil)
 
-	pg, err := pager.NextPage(ctx)
-	if err != nil {
-		return azureErrToS3Err(err)
+	for pager.More() {
+		pg, err := pager.NextPage(ctx)
+		if err != nil {
+			return azureErrToS3Err(err)
+		}
+
+		for _, item := range pg.Segment.BlobItems {
+			// ignore temp multipart objects when determining if bucket non-empty
+			if !strings.HasPrefix(backend.GetStringFromPtr(item.Name), string(metaTmpMultipartPrefix)) {
+				return s3err.GetAPIError(s3err.ErrBucketNotEmpty)
+			}
+		}
 	}
 
-	if len(pg.Segment.BlobItems) > 0 {
-		return s3err.GetAPIError(s3err.ErrBucketNotEmpty)
-	}
-	_, err = az.client.DeleteContainer(ctx, bucket, nil)
+	_, err := az.client.DeleteContainer(ctx, bucket, nil)
 	return azureErrToS3Err(err)
 }
 
@@ -659,92 +665,124 @@ func (az *Azure) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s
 		maxKeys = *input.MaxKeys
 	}
 
-	pager := client.NewListBlobsHierarchyPager(*input.Delimiter, &container.ListBlobsHierarchyOptions{
-		MaxResults: &maxKeys,
-		Prefix:     input.Prefix,
+	delimiter := backend.GetStringFromPtr(input.Delimiter)
+	prefix := backend.GetStringFromPtr(input.Prefix)
+	effectiveMarker := backend.GetStringFromPtr(input.Marker)
+
+	if maxKeys == 0 {
+		isFalse := false
+		return s3response.ListObjectsResult{
+			IsTruncated:    &isFalse,
+			MaxKeys:        &maxKeys,
+			Name:           input.Bucket,
+			Prefix:         backend.GetPtrFromString(prefix),
+			Marker:         backend.GetPtrFromString(effectiveMarker),
+			Delimiter:      backend.GetPtrFromString(delimiter),
+			CommonPrefixes: []types.CommonPrefix{},
+		}, nil
+	}
+
+	// Use flat listing (empty delimiter) and handle delimiter logic client-side,
+	// matching S3 semantics. Only pass Prefix and Marker to Azure.
+	pager := client.NewListBlobsHierarchyPager("", &container.ListBlobsHierarchyOptions{
+		Prefix: input.Prefix,
+		Marker: input.Marker,
 	})
 
 	var objects []s3response.Object
 	var cPrefixes []types.CommonPrefix
-	var nextMarker *string
-	var isTruncated bool
+	cpSet := make(map[string]struct{})
+	var pastMax, isTruncated bool
+	var candidateMarker string
+	var totalFound int32
 
-	// Convert marker to filter criteria
-	var markerFilter string
-	if input.Marker != nil && *input.Marker != "" {
-		markerFilter = *input.Marker
-	}
-
-	// Loop through pages until we have enough objects or no more pages
-	objectsFound := int32(0)
-	for pager.More() && objectsFound < maxKeys {
+loop:
+	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
 			return s3response.ListObjectsResult{}, azureErrToS3Err(err)
 		}
 
-		// Process objects from this page
-		var pageObjects []s3response.Object
 		for _, v := range resp.Segment.BlobItems {
-			// Skip objects that come before or equal to marker
-			if markerFilter != "" && *v.Name <= markerFilter {
+			name := backend.GetStringFromPtr(v.Name)
+
+			// Filter out multipart upload blobs
+			if strings.HasPrefix(name, string(metaTmpMultipartPrefix)) {
 				continue
 			}
 
-			pageObjects = append(pageObjects, s3response.Object{
-				ETag:         backend.GetPtrFromString(convertAzureEtag(v.Properties.ETag)),
-				Key:          v.Name,
-				LastModified: v.Properties.LastModified,
-				Size:         v.Properties.ContentLength,
-				StorageClass: types.ObjectStorageClassStandard,
-				Owner: &types.Owner{
-					ID: &acl.Owner,
-				},
-			})
-
-			objectsFound++
-			if objectsFound >= maxKeys {
-				// Set next marker to the current object name for pagination
-				nextMarker = v.Name
-				isTruncated = true
-				break
-			}
-		}
-
-		objects = append(objects, pageObjects...)
-
-		// Process common prefixes from this page
-		for _, v := range resp.Segment.BlobPrefixes {
-			// Skip prefixes that come before or equal to marker
-			if markerFilter != "" && *v.Name <= markerFilter {
-				continue
+			// Apply delimiter logic to determine if this blob contributes to
+			// a common prefix or is a regular object
+			isCP := false
+			cpKey := ""
+			if delimiter != "" {
+				suffix := strings.TrimPrefix(name, prefix)
+				before, _, found := strings.Cut(suffix, delimiter)
+				if found {
+					isCP = true
+					cpKey = prefix + before + delimiter
+				}
 			}
 
-			cPrefixes = append(cPrefixes, types.CommonPrefix{
-				Prefix: v.Name,
-			})
+			if isCP {
+				// Skip common prefixes at or before the marker
+				if cpKey <= effectiveMarker {
+					continue
+				}
+				// Deduplicate: multiple blobs can map to the same common prefix
+				if _, exists := cpSet[cpKey]; exists {
+					continue
+				}
+				// If we already reached maxKeys, this new unique CP means truncation
+				if pastMax {
+					isTruncated = true
+					break loop
+				}
+				cp := cpKey
+				cPrefixes = append(cPrefixes, types.CommonPrefix{Prefix: &cp})
+				cpSet[cpKey] = struct{}{}
+				candidateMarker = cpKey
+				totalFound++
+				if totalFound == maxKeys {
+					pastMax = true
+				}
+			} else {
+				if pastMax {
+					isTruncated = true
+					break loop
+				}
+				objects = append(objects, s3response.Object{
+					ETag:         backend.GetPtrFromString(convertAzureEtag(v.Properties.ETag)),
+					Key:          v.Name,
+					LastModified: v.Properties.LastModified,
+					Size:         v.Properties.ContentLength,
+					StorageClass: types.ObjectStorageClassStandard,
+					Owner: &types.Owner{
+						ID: &acl.Owner,
+					},
+				})
+				candidateMarker = name
+				totalFound++
+				if totalFound == maxKeys {
+					pastMax = true
+				}
+			}
 		}
+	}
 
-		// If we've reached maxKeys, break
-		if objectsFound >= maxKeys {
-			break
-		}
-
-		// If Azure indicates more pages but we need to continue for more objects
-		if resp.NextMarker != nil && *resp.NextMarker != "" && objectsFound < maxKeys {
-			continue
-		}
+	if !isTruncated {
+		candidateMarker = ""
 	}
 
 	return s3response.ListObjectsResult{
 		Contents:       objects,
-		Marker:         backend.GetPtrFromString(*input.Marker),
-		MaxKeys:        input.MaxKeys,
+		Marker:         backend.GetPtrFromString(effectiveMarker),
+		MaxKeys:        &maxKeys,
 		Name:           input.Bucket,
-		NextMarker:     nextMarker,
-		Prefix:         backend.GetPtrFromString(*input.Prefix),
+		NextMarker:     backend.GetPtrFromString(candidateMarker),
+		Prefix:         backend.GetPtrFromString(prefix),
 		IsTruncated:    &isTruncated,
-		Delimiter:      backend.GetPtrFromString(*input.Delimiter),
+		Delimiter:      backend.GetPtrFromString(delimiter),
 		CommonPrefixes: cPrefixes,
 	}, nil
 }
@@ -772,95 +810,139 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 		maxKeys = *input.MaxKeys
 	}
 
-	pager := client.NewListBlobsHierarchyPager(*input.Delimiter, &container.ListBlobsHierarchyOptions{
-		Marker:     input.ContinuationToken,
-		MaxResults: &maxKeys,
-		Prefix:     input.Prefix,
+	delimiter := backend.GetStringFromPtr(input.Delimiter)
+	prefix := backend.GetStringFromPtr(input.Prefix)
+	startAfterVal := backend.GetStringFromPtr(input.StartAfter)
+	continuationTokenVal := backend.GetStringFromPtr(input.ContinuationToken)
+
+	// Take the lexicographically larger of startAfter and continuationToken so
+	// listing starts strictly after both constraints.
+	effectiveMarker := startAfterVal
+	if continuationTokenVal > effectiveMarker {
+		effectiveMarker = continuationTokenVal
+	}
+
+	if maxKeys == 0 {
+		isFalse := false
+		return s3response.ListObjectsV2Result{
+			IsTruncated:       &isFalse,
+			MaxKeys:           &maxKeys,
+			Name:              input.Bucket,
+			Prefix:            backend.GetPtrFromString(prefix),
+			ContinuationToken: backend.GetPtrFromString(continuationTokenVal),
+			Delimiter:         backend.GetPtrFromString(delimiter),
+			StartAfter:        backend.GetPtrFromString(startAfterVal),
+			CommonPrefixes:    []types.CommonPrefix{},
+		}, nil
+	}
+
+	// Use flat listing (empty delimiter) and handle delimiter logic client-side,
+	// matching S3 semantics. Only pass Prefix and Marker to Azure.
+	// effectiveMarker is passed as Marker so Azure skips blobs before it.
+	pager := client.NewListBlobsHierarchyPager("", &container.ListBlobsHierarchyOptions{
+		Prefix: input.Prefix,
+		Marker: backend.GetPtrFromString(effectiveMarker),
 	})
 
 	var objects []s3response.Object
-	var resp container.ListBlobsHierarchyResponse
+	var cPrefixes []types.CommonPrefix
+	cpSet := make(map[string]struct{})
+	var pastMax, isTruncated bool
+	var candidateMarker string
+	var totalFound int32
 
-	// Loop through pages until we find objects or no more pages
-	for {
-		resp, err = pager.NextPage(ctx)
+loop:
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
 		if err != nil {
 			return s3response.ListObjectsV2Result{}, azureErrToS3Err(err)
 		}
 
-		// Convert Azure objects to S3 objects
-		var pageObjects []s3response.Object
 		for _, v := range resp.Segment.BlobItems {
-			pageObjects = append(pageObjects, s3response.Object{
-				ETag:         backend.GetPtrFromString(convertAzureEtag(v.Properties.ETag)),
-				Key:          v.Name,
-				LastModified: v.Properties.LastModified,
-				Size:         v.Properties.ContentLength,
-				StorageClass: types.ObjectStorageClassStandard,
-				Owner: &types.Owner{
-					ID: &acl.Owner,
-				},
-			})
-		}
+			name := backend.GetStringFromPtr(v.Name)
 
-		// If StartAfter is specified, filter objects
-		if input.StartAfter != nil && *input.StartAfter != "" {
-			startAfter := *input.StartAfter
-			startIndex := -1
-			for i, obj := range pageObjects {
-				if *obj.Key > startAfter {
-					startIndex = i
-					break
-				}
-			}
-
-			if startIndex != -1 {
-				// Found objects after StartAfter in this page
-				objects = append(objects, pageObjects[startIndex:]...)
-				break
-			} else {
-				// No objects after StartAfter in this page
-				// Check if there are more pages to examine
-				if resp.NextMarker == nil || *resp.NextMarker == "" {
-					// No more pages, so no objects after StartAfter
-					break
-				}
-				// Continue to next page without adding any objects
+			// Filter out multipart upload blobs
+			if strings.HasPrefix(name, string(metaTmpMultipartPrefix)) {
 				continue
 			}
-		} else {
-			// No StartAfter specified, add all objects from this page
-			objects = append(objects, pageObjects...)
-			break
+
+			// Apply delimiter logic to determine if this blob contributes to
+			// a common prefix or is a regular object
+			isCP := false
+			cpKey := ""
+			if delimiter != "" {
+				suffix := strings.TrimPrefix(name, prefix)
+				before, _, found := strings.Cut(suffix, delimiter)
+				if found {
+					isCP = true
+					cpKey = prefix + before + delimiter
+				}
+			}
+
+			if isCP {
+				// Skip common prefixes at or before the effective marker
+				if cpKey <= effectiveMarker {
+					continue
+				}
+				// Deduplicate: multiple blobs can map to the same common prefix
+				if _, exists := cpSet[cpKey]; exists {
+					continue
+				}
+				// If we already reached maxKeys, this new unique CP means truncation
+				if pastMax {
+					isTruncated = true
+					break loop
+				}
+				cp := cpKey
+				cPrefixes = append(cPrefixes, types.CommonPrefix{Prefix: &cp})
+				cpSet[cpKey] = struct{}{}
+				candidateMarker = cpKey
+				totalFound++
+				if totalFound == maxKeys {
+					pastMax = true
+				}
+			} else {
+				if pastMax {
+					isTruncated = true
+					break loop
+				}
+				objects = append(objects, s3response.Object{
+					ETag:         backend.GetPtrFromString(convertAzureEtag(v.Properties.ETag)),
+					Key:          v.Name,
+					LastModified: v.Properties.LastModified,
+					Size:         v.Properties.ContentLength,
+					StorageClass: types.ObjectStorageClassStandard,
+					Owner: &types.Owner{
+						ID: &acl.Owner,
+					},
+				})
+				candidateMarker = name
+				totalFound++
+				if totalFound == maxKeys {
+					pastMax = true
+				}
+			}
 		}
 	}
 
-	var cPrefixes []types.CommonPrefix
-	for _, v := range resp.Segment.BlobPrefixes {
-		cPrefixes = append(cPrefixes, types.CommonPrefix{
-			Prefix: v.Name,
-		})
+	if !isTruncated {
+		candidateMarker = ""
 	}
 
-	var isTruncated bool
-	var nextMarker *string
-	// If Azure returned a NextMarker, set it for the next request
-	if resp.NextMarker != nil && *resp.NextMarker != "" {
-		nextMarker = resp.NextMarker
-		isTruncated = true
-	}
+	keyCount := int32(len(objects) + len(cPrefixes))
 
 	return s3response.ListObjectsV2Result{
 		Contents:              objects,
-		ContinuationToken:     backend.GetPtrFromString(*input.ContinuationToken),
-		MaxKeys:               input.MaxKeys,
+		ContinuationToken:     backend.GetPtrFromString(continuationTokenVal),
+		KeyCount:              &keyCount,
+		MaxKeys:               &maxKeys,
 		Name:                  input.Bucket,
-		NextContinuationToken: nextMarker,
-		Prefix:                backend.GetPtrFromString(*input.Prefix),
+		NextContinuationToken: backend.GetPtrFromString(candidateMarker),
+		Prefix:                backend.GetPtrFromString(prefix),
 		IsTruncated:           &isTruncated,
-		Delimiter:             backend.GetPtrFromString(*input.Delimiter),
+		Delimiter:             backend.GetPtrFromString(delimiter),
 		CommonPrefixes:        cPrefixes,
-		StartAfter:            backend.GetPtrFromString(*input.StartAfter),
+		StartAfter:            backend.GetPtrFromString(startAfterVal),
 	}, nil
 }
 
