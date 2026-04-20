@@ -516,7 +516,7 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 	utils.SetMetaHeaders(ctx, res.Metadata)
 
 	status := http.StatusOK
-	if acceptRange != "" {
+	if res.ContentRange != nil && *res.ContentRange != "" {
 		status = http.StatusPartialContent
 	}
 

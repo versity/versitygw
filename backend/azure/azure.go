@@ -491,6 +491,11 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 		}
 	}
 
+	var objSize int64
+	if resp.ContentLength != nil {
+		objSize = *resp.ContentLength
+	}
+
 	var opts *azblob.DownloadStreamOptions
 	var partsCount *int32
 	var contentRange *string
@@ -530,14 +535,15 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 			}
 		} else if *input.PartNumber > 1 {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
+		} else {
+			// partNumber=1 on a non-multipart object: fall through and serve the
+			// full object without a range (opts remains nil)
+			if objSize != 0 {
+				// if object size is 0, the whole object is served, no content range should be set
+				contentRange = backend.GetPtrFromString(fmt.Sprintf("bytes 0-%d/%d", objSize-1, objSize))
+			}
 		}
-		// partNumber=1 on a non-multipart object: fall through and serve the
-		// full object without a range (opts remains nil, contentRange stays nil).
 	} else if *input.Range != "" {
-		var objSize int64
-		if resp.ContentLength != nil {
-			objSize = *resp.ContentLength
-		}
 		offset, count, isValid, err := backend.ParseObjectRange(objSize, *input.Range)
 		if err != nil {
 			return nil, err
@@ -612,7 +618,7 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 		size = *resp.ContentLength
 	}
 
-	var contentRange string
+	var contentRange *string
 	var length int64
 	var partsCount *int32
 
@@ -638,13 +644,17 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 				startOffset = mpMeta.Parts[partNum-2]
 			}
 			length = mpMeta.Parts[partNum-1] - startOffset
-			contentRange = fmt.Sprintf("bytes %d-%d/%d", startOffset, startOffset+length-1, size)
+			contentRange = backend.GetPtrFromString(fmt.Sprintf("bytes %d-%d/%d", startOffset, startOffset+length-1, size))
 		} else if *input.PartNumber > 1 {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
 		} else {
 			// partNumber=1 on a non-multipart object: return full object size,
 			// no Content-Range, no PartsCount.
 			length = size
+			if length != 0 {
+				// if object size is 0, the whole object is served, no content range should be set
+				contentRange = backend.GetPtrFromString(fmt.Sprintf("bytes 0-%d/%d", size-1, size))
+			}
 		}
 	} else {
 		startOffset, lgth, isValid, err := backend.ParseObjectRange(size, getString(input.Range))
@@ -653,13 +663,13 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 		}
 		length = lgth
 		if isValid {
-			contentRange = fmt.Sprintf("bytes %v-%v/%v",
-				startOffset, startOffset+length-1, size)
+			contentRange = backend.GetPtrFromString(fmt.Sprintf("bytes %v-%v/%v",
+				startOffset, startOffset+length-1, size))
 		}
 	}
 
 	result := &s3.HeadObjectOutput{
-		ContentRange:       &contentRange,
+		ContentRange:       contentRange,
 		AcceptRanges:       backend.GetPtrFromString("bytes"),
 		ContentLength:      &length,
 		PartsCount:         partsCount,

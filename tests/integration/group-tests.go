@@ -205,6 +205,7 @@ func TestHeadObject(ts *TestState) {
 	ts.Run(HeadObject_non_existing_dir_object)
 	ts.Run(HeadObject_invalid_parent_dir)
 	ts.Run(HeadObject_with_range)
+	ts.Run(HeadObject_by_range_resp_status)
 	ts.Run(HeadObject_zero_len_with_range)
 	ts.Run(HeadObject_dir_with_range)
 	ts.Run(HeadObject_conditional_reads)
@@ -212,6 +213,7 @@ func TestHeadObject(ts *TestState) {
 	if !ts.conf.azureTests {
 		ts.Run(HeadObject_not_enabled_checksum_mode)
 		ts.Run(HeadObject_checksums)
+		ts.Run(HeadObject_ranged_with_checksum_mode)
 	}
 	ts.Run(HeadObject_success)
 	ts.Run(HeadObject_overrides_success)
@@ -220,7 +222,9 @@ func TestHeadObject(ts *TestState) {
 	ts.Run(HeadObject_range_and_part_number)
 	ts.Run(HeadObject_mp_part_number_exceeds_parts_count)
 	ts.Run(HeadObject_mp_part_number_success)
+	ts.Run(HeadObject_mp_part_number_resp_status)
 	ts.Run(HeadObject_non_mp_part_number_1_success)
+	ts.Run(HeadObject_empty_object_part_number_1)
 }
 
 func TestGetObjectAttributes(ts *TestState) {
@@ -248,8 +252,10 @@ func TestGetObject(ts *TestState) {
 	ts.Run(GetObject_conditional_reads)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
+		ts.Run(GetObject_not_enabled_checksum_mode)
 		ts.Run(GetObject_checksums)
 		ts.Run(GetObject_dir_object_checksum)
+		ts.Run(GetObject_ranged_with_checksum_mode)
 	}
 	ts.Run(GetObject_success)
 	ts.Run(GetObject_directory_success)
@@ -262,7 +268,9 @@ func TestGetObject(ts *TestState) {
 	ts.Run(GetObject_range_and_part_number)
 	ts.Run(GetObject_mp_part_number_exceeds_parts_count)
 	ts.Run(GetObject_mp_part_number_success)
+	ts.Run(GetObject_mp_part_number_resp_status)
 	ts.Run(GetObject_non_mp_part_number_1_success)
+	ts.Run(GetObject_empty_object_part_number_1)
 }
 
 func TestListObjects(ts *TestState) {
@@ -1395,11 +1403,13 @@ func GetIntTests() IntTests {
 		"HeadObject_name_too_long":                                                 HeadObject_name_too_long,
 		"HeadObject_invalid_parent_dir":                                            HeadObject_invalid_parent_dir,
 		"HeadObject_with_range":                                                    HeadObject_with_range,
+		"HeadObject_by_range_resp_status":                                          HeadObject_by_range_resp_status,
 		"HeadObject_zero_len_with_range":                                           HeadObject_zero_len_with_range,
 		"HeadObject_dir_with_range":                                                HeadObject_dir_with_range,
 		"HeadObject_conditional_reads":                                             HeadObject_conditional_reads,
 		"HeadObject_not_enabled_checksum_mode":                                     HeadObject_not_enabled_checksum_mode,
 		"HeadObject_checksums":                                                     HeadObject_checksums,
+		"HeadObject_ranged_with_checksum_mode":                                     HeadObject_ranged_with_checksum_mode,
 		"HeadObject_success":                                                       HeadObject_success,
 		"HeadObject_overrides_success":                                             HeadObject_overrides_success,
 		"HeadObject_overrides_presign_success":                                     HeadObject_overrides_presign_success,
@@ -1407,7 +1417,9 @@ func GetIntTests() IntTests {
 		"HeadObject_range_and_part_number":                                         HeadObject_range_and_part_number,
 		"HeadObject_mp_part_number_exceeds_parts_count":                            HeadObject_mp_part_number_exceeds_parts_count,
 		"HeadObject_mp_part_number_success":                                        HeadObject_mp_part_number_success,
+		"HeadObject_mp_part_number_resp_status":                                    HeadObject_mp_part_number_resp_status,
 		"HeadObject_non_mp_part_number_1_success":                                  HeadObject_non_mp_part_number_1_success,
+		"HeadObject_empty_object_part_number_1":                                    HeadObject_empty_object_part_number_1,
 		"GetObjectAttributes_non_existing_bucket":                                  GetObjectAttributes_non_existing_bucket,
 		"GetObjectAttributes_non_existing_object":                                  GetObjectAttributes_non_existing_object,
 		"GetObjectAttributes_invalid_attrs":                                        GetObjectAttributes_invalid_attrs,
@@ -1424,8 +1436,10 @@ func GetIntTests() IntTests {
 		"GetObject_invalid_parent":                                                 GetObject_invalid_parent,
 		"GetObject_large_object":                                                   GetObject_large_object,
 		"GetObject_conditional_reads":                                              GetObject_conditional_reads,
+		"GetObject_not_enabled_checksum_mode":                                      GetObject_not_enabled_checksum_mode,
 		"GetObject_checksums":                                                      GetObject_checksums,
 		"GetObject_dir_object_checksum":                                            GetObject_dir_object_checksum,
+		"GetObject_ranged_with_checksum_mode":                                      GetObject_ranged_with_checksum_mode,
 		"GetObject_success":                                                        GetObject_success,
 		"GetObject_directory_success":                                              GetObject_directory_success,
 		"GetObject_by_range_resp_status":                                           GetObject_by_range_resp_status,
@@ -1437,7 +1451,9 @@ func GetIntTests() IntTests {
 		"GetObject_range_and_part_number":                                          GetObject_range_and_part_number,
 		"GetObject_mp_part_number_exceeds_parts_count":                             GetObject_mp_part_number_exceeds_parts_count,
 		"GetObject_mp_part_number_success":                                         GetObject_mp_part_number_success,
+		"GetObject_mp_part_number_resp_status":                                     GetObject_mp_part_number_resp_status,
 		"GetObject_non_mp_part_number_1_success":                                   GetObject_non_mp_part_number_1_success,
+		"GetObject_empty_object_part_number_1":                                     GetObject_empty_object_part_number_1,
 		"ListObjects_non_existing_bucket":                                          ListObjects_non_existing_bucket,
 		"ListObjects_with_prefix":                                                  ListObjects_with_prefix,
 		"ListObjects_truncated":                                                    ListObjects_truncated,

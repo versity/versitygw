@@ -4446,6 +4446,10 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 				return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
 			}
 			length = objSize
+			if objSize != 0 {
+				// if object size is 0, the whole object is served, no content range should be set
+				contentRange = backend.GetPtrFromString(fmt.Sprintf("bytes 0-%d/%d", objSize-1, objSize))
+			}
 		} else {
 			return nil, fmt.Errorf("retrieve mp metadata: %w", metaErr)
 		}
@@ -4474,7 +4478,7 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	}
 
 	var checksums s3response.Checksum
-	// Skip the checksums retreival if object isn't requested fully
+	// Return checksums only when the full object is requested
 	if input.ChecksumMode == types.ChecksumModeEnabled && length-startOffset == objSize {
 		checksums, err = p.retrieveChecksums(f, bucket, object)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -4681,6 +4685,10 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 				return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
 			}
 			length = size
+			if length != 0 {
+				// if object size is 0, the whole object is served, no content range should be set
+				contentRange = backend.GetPtrFromString(fmt.Sprintf("bytes 0-%d/%d", length-1, length))
+			}
 		} else {
 			return nil, fmt.Errorf("retrieve mp metadata: %w", metaErr)
 		}
@@ -4690,7 +4698,6 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 			return nil, err
 		}
 		startOffset, length = start, lgth
-
 		if isValid {
 			contentRange = backend.GetPtrFromString(fmt.Sprintf("bytes %v-%v/%v", start, start+lgth-1, size))
 		}
@@ -4718,7 +4725,8 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	var checksums s3response.Checksum
-	if input.ChecksumMode == types.ChecksumModeEnabled {
+	// Return checksums only when the full object is requested
+	if input.ChecksumMode == types.ChecksumModeEnabled && length-startOffset == size {
 		checksums, err = p.retrieveChecksums(nil, bucket, object)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return nil, fmt.Errorf("get object checksums: %w", err)
