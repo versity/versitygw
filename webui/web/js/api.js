@@ -2060,10 +2060,14 @@ ${tagsXml}
 }
 
 /**
- * Encode path and query params as defined as the AWS SigV4 specification: any
- * character other than A-Za-z0-9-_. should be hex-encoded.
+ * URI-encode a string per the AWS SigV4 specification.
+ * All characters except the unreserved set (A-Za-z0-9 - _ . ~) are percent-encoded,
+ * with hexadecimal digits in uppercase (e.g. %2F, not %2f).
+ *
+ * @param {string} text - The string to encode.
+ * @returns {string} The percent-encoded string.
  */
-function awsUriEncode(text) {
+ function awsUriEncode(text) {
   return encodeURIComponent(text)
     .replace(
       /['()*!]/g,
