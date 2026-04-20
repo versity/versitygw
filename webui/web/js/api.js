@@ -109,7 +109,7 @@ const hasSubtleCrypto = typeof crypto !== 'undefined' && typeof crypto.subtle !=
  */
 function encodeS3Key(key) {
   if (!key) return '';
-  return key.split('/').map(segment => encodeURIComponent(segment)).join('/');
+  return key.split('/').map(segment => awsUriEncode(segment)).join('/');
 }
 
 class VersityAPI {
@@ -161,7 +161,7 @@ class VersityAPI {
     // Sort query params for canonical request
     const sortedParams = [...url.searchParams.entries()].sort((a, b) => a[0].localeCompare(b[0]));
     const canonicalQueryString = sortedParams
-      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .map(([k, v]) => `${awsUriEncode(k)}=${awsUriEncode(v)}`)
       .join('&');
 
     const canonicalHeaders = `host:${host}\n`;
@@ -526,7 +526,7 @@ class VersityAPI {
     // Sort query parameters
     const sortedParams = [...url.searchParams.entries()].sort((a, b) => a[0].localeCompare(b[0]));
     const canonicalQueryString = sortedParams.map(([k, v]) =>
-      `${encodeURIComponent(k)}=${encodeURIComponent(v)}`
+      `${awsUriEncode(k)}=${awsUriEncode(v)}`
     ).join('&');
 
     // Hash the payload
@@ -627,7 +627,7 @@ class VersityAPI {
     // Sort query parameters
     const sortedParams = [...url.searchParams.entries()].sort((a, b) => a[0].localeCompare(b[0]));
     const canonicalQueryString = sortedParams.map(([k, v]) =>
-      `${encodeURIComponent(k)}=${encodeURIComponent(v)}`
+      `${awsUriEncode(k)}=${awsUriEncode(v)}`
     ).join('&');
 
     // Hash the payload
@@ -1234,7 +1234,7 @@ class VersityAPI {
     // Sort query parameters
     const sortedParams = [...url.searchParams.entries()].sort((a, b) => a[0].localeCompare(b[0]));
     const canonicalQueryString = sortedParams.map(([k, v]) =>
-      `${encodeURIComponent(k)}=${encodeURIComponent(v)}`
+      `${awsUriEncode(k)}=${awsUriEncode(v)}`
     ).join('&');
 
     // Create canonical headers
@@ -2057,6 +2057,18 @@ ${tagsXml}
     }
     return result;
   }
+}
+
+/**
+ * Encode path and query params as defined as the AWS SigV4 specification: any
+ * character other than A-Za-z0-9-_. should be hex-encoded.
+ */
+function awsUriEncode(text) {
+  return encodeURIComponent(text)
+    .replace(
+      /['()*!]/g,
+      (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+    );
 }
 
 // Create global API instance
