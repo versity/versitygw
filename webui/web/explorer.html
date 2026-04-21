@@ -999,7 +999,7 @@ under the License.
       // Will redirect to login
     } else {
       // Clear history state on startup (can happen when reloading with popup open)
-      if (history.state) history.back();
+      if (history.state?.modal) history.back();
       
       initSidebarWithRole();
       updateUserInfo();
@@ -1037,15 +1037,6 @@ under the License.
       await init();
     });
     
-    // Catch the back button to close the open modal, if any is open.
-    window.addEventListener('popstate', (e) => {
-      Array.from(document.getElementsByClassName('modal')).forEach((modal) => {
-        if (!modal.classList.contains('hidden')) {
-          closeModal(modal.getAttribute('id'), false);
-        }
-      })
-    });
-
     // ============================================
     // Logout
     // ============================================

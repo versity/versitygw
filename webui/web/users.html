@@ -325,15 +325,6 @@ under the License.
     let allUsers = [];
     let userToDelete = null;
     
-    // Catch the back button to close the open modal, if any is open.
-    window.addEventListener('popstate', (e) => {
-      Array.from(document.getElementsByClassName('modal')).forEach((modal) => {
-        if (!modal.classList.contains('hidden')) {
-          closeModal(modal.getAttribute('id'), false);
-        }
-      })
-    });
-
     // ============================================
     // Custom Dropdown Functions
     // ============================================
