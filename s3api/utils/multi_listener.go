@@ -272,6 +272,15 @@ func resolveHostnameAddrs(address string) ([]string, error) {
 	return addrs, nil
 }
 
+// ListenerOptions configures optional behaviour for NewMultiAddrListener and
+// NewMultiAddrTLSListener.
+type ListenerOptions struct {
+	// SocketPerm, when non-zero, sets the file-mode permissions on file-backed
+	// UNIX sockets after binding. It is ignored for TCP/IP addresses and
+	// abstract namespace sockets.
+	SocketPerm os.FileMode
+}
+
 // NewMultiAddrListener creates listeners for all IP addresses that the hostname
 // in the address resolves to. If the address is already an IP, it creates a
 // single listener. Returns a MultiListener if multiple addresses are resolved,
@@ -281,7 +290,10 @@ func resolveHostnameAddrs(address string) ([]string, error) {
 //   - "/path/to/socket" or "./rel/socket" — file-backed socket; any stale
 //     socket file is removed before binding.
 //   - "@name" — Linux abstract namespace socket; no file is created or removed.
-func NewMultiAddrListener(network, address string) (net.Listener, error) {
+//
+// opts.SocketPerm, when non-zero, sets the file-mode permissions on file-backed
+// sockets after binding. It is ignored for TCP/IP addresses and abstract sockets.
+func NewMultiAddrListener(network, address string, opts ListenerOptions) (net.Listener, error) {
 	if IsUnixSocketPath(address) {
 		// For file-backed sockets, remove any stale socket file so re-binding works cleanly.
 		// Abstract sockets (@name) have no filesystem entry; skip removal for them.
@@ -293,6 +305,12 @@ func NewMultiAddrListener(network, address string) (net.Listener, error) {
 		ln, err := net.Listen("unix", address)
 		if err != nil {
 			return nil, fmt.Errorf("failed to bind unix socket listener %s: %w", address, err)
+		}
+		if opts.SocketPerm != 0 && !isAbstractSocket(address) {
+			if err := os.Chmod(address, opts.SocketPerm); err != nil {
+				ln.Close()
+				return nil, fmt.Errorf("failed to set permissions on socket %s: %w", address, err)
+			}
 		}
 		return NewMultiListener(ln), nil
 	}
@@ -328,7 +346,10 @@ func NewMultiAddrListener(network, address string) (net.Listener, error) {
 //   - "/path/to/socket" or "./rel/socket" — file-backed socket; any stale
 //     socket file is removed before binding.
 //   - "@name" — Linux abstract namespace socket; no file is created or removed.
-func NewMultiAddrTLSListener(network, address string, getCertificateFunc func(*tls.ClientHelloInfo) (*tls.Certificate, error)) (net.Listener, error) {
+//
+// opts.SocketPerm, when non-zero, sets the file-mode permissions on file-backed
+// sockets after binding. It is ignored for TCP/IP addresses and abstract sockets.
+func NewMultiAddrTLSListener(network, address string, getCertificateFunc func(*tls.ClientHelloInfo) (*tls.Certificate, error), opts ListenerOptions) (net.Listener, error) {
 	config := &tls.Config{
 		MinVersion:     tls.VersionTLS12,
 		GetCertificate: getCertificateFunc,
@@ -343,6 +364,12 @@ func NewMultiAddrTLSListener(network, address string, getCertificateFunc func(*t
 		ln, err := net.Listen("unix", address)
 		if err != nil {
 			return nil, fmt.Errorf("failed to bind unix TLS socket listener %s: %w", address, err)
+		}
+		if opts.SocketPerm != 0 && !isAbstractSocket(address) {
+			if err := os.Chmod(address, opts.SocketPerm); err != nil {
+				ln.Close()
+				return nil, fmt.Errorf("failed to set permissions on socket %s: %w", address, err)
+			}
 		}
 		return NewMultiListener(tls.NewListener(ln, config)), nil
 	}
