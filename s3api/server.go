@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -54,6 +55,7 @@ type S3ApiServer struct {
 	maxRequests      int
 	webuiMountPrefix string
 	webuiSrvCfg      *webui.ServerConfig
+	socketPerm       os.FileMode
 }
 
 func New(
@@ -217,6 +219,13 @@ func WithConcurrencyLimiter(maxConnections, maxRequests int) Option {
 	}
 }
 
+// WithSocketPerm sets the file-mode permissions applied to file-backed UNIX
+// domain sockets after binding. It has no effect on TCP/IP or abstract
+// namespace sockets.
+func WithSocketPerm(perm os.FileMode) Option {
+	return func(s *S3ApiServer) { s.socketPerm = perm }
+}
+
 // WithDisableACL disables the s3 api server ACLs, by ignoring all
 // bucket/object ACL headers
 func WithDisableACL() Option {
@@ -239,9 +248,9 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 		var err error
 
 		if sa.CertStorage != nil {
-			ln, err = utils.NewMultiAddrTLSListener(sa.app.Config().Network, portSpec, sa.CertStorage.GetCertificate)
+			ln, err = utils.NewMultiAddrTLSListener(sa.app.Config().Network, portSpec, sa.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: sa.socketPerm})
 		} else {
-			ln, err = utils.NewMultiAddrListener(sa.app.Config().Network, portSpec)
+			ln, err = utils.NewMultiAddrListener(sa.app.Config().Network, portSpec, utils.ListenerOptions{SocketPerm: sa.socketPerm})
 		}
 		if err != nil {
 			return fmt.Errorf("failed to bind s3 listener %s: %w", portSpec, err)

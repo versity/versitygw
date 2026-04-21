@@ -17,6 +17,7 @@ package s3api
 import (
 	"fmt"
 	"net"
+	"os"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -40,6 +41,7 @@ type S3AdminServer struct {
 	corsAllowOrigin string
 	maxConnections  int
 	maxRequests     int
+	socketPerm      os.FileMode
 }
 
 func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region string, iam auth.IAMService, l s3log.AuditLogger, ctrl controllers.S3ApiController, opts ...AdminOpt) *S3AdminServer {
@@ -124,6 +126,13 @@ func WithAdminConcurrencyLimiter(maxConnections, maxRequests int) AdminOpt {
 	}
 }
 
+// WithAdminSocketPerm sets the file-mode permissions applied to file-backed
+// UNIX domain sockets after binding. It has no effect on TCP/IP or abstract
+// namespace sockets.
+func WithAdminSocketPerm(perm os.FileMode) AdminOpt {
+	return func(s *S3AdminServer) { s.socketPerm = perm }
+}
+
 // ServeMultiPort creates listeners for multiple port specifications and serves
 // on all of them simultaneously. This supports listening on multiple ports and/or
 // addresses (e.g., [":8080", "localhost:8081"]).
@@ -140,9 +149,9 @@ func (sa *S3AdminServer) ServeMultiPort(ports []string) error {
 		var err error
 
 		if sa.CertStorage != nil {
-			ln, err = utils.NewMultiAddrTLSListener(sa.app.Config().Network, portSpec, sa.CertStorage.GetCertificate)
+			ln, err = utils.NewMultiAddrTLSListener(sa.app.Config().Network, portSpec, sa.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: sa.socketPerm})
 		} else {
-			ln, err = utils.NewMultiAddrListener(sa.app.Config().Network, portSpec)
+			ln, err = utils.NewMultiAddrListener(sa.app.Config().Network, portSpec, utils.ListenerOptions{SocketPerm: sa.socketPerm})
 		}
 
 		if err != nil {

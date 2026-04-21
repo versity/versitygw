@@ -301,7 +301,7 @@ func TestNewMultiAddrListener(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ln, err := NewMultiAddrListener("tcp", tt.address)
+			ln, err := NewMultiAddrListener("tcp", tt.address, ListenerOptions{})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewMultiAddrListener() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -353,7 +353,7 @@ func TestNewMultiAddrTLSListener(t *testing.T) {
 		return &cert, err
 	}
 
-	ln, err := NewMultiAddrTLSListener("tcp", "127.0.0.1:0", getCertFunc)
+	ln, err := NewMultiAddrTLSListener("tcp", "127.0.0.1:0", getCertFunc, ListenerOptions{})
 	if err != nil {
 		t.Fatalf("NewMultiAddrTLSListener() error = %v", err)
 	}
