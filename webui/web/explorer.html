@@ -192,14 +192,50 @@ under the License.
 
           <!-- Buckets Table (shown when no bucket selected) -->
           <div id="buckets-view">
-            <!-- Create Bucket Button (shown for admin/userplus) -->
-            <div id="bucket-actions" class="flex justify-end mb-4">
-              <button onclick="openCreateBucketDialog()" class="inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                </svg>
-                Create Bucket
-              </button>
+            <!-- Action bar: go-to-bucket input + favorites + create bucket -->
+            <div class="flex items-center justify-between mb-4 gap-4 flex-wrap">
+              <div class="flex items-center gap-2">
+                <input type="text" id="goto-bucket-input"
+                  class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-accent w-56"
+                  placeholder="Enter bucket name..."
+                  onkeydown="if(event.key==='Enter') goToBucketByName()">
+                <button onclick="goToBucketByName()" class="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 hover:bg-gray-50 text-charcoal text-sm font-medium rounded-lg transition-colors" title="Open bucket">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                  </svg>
+                  Open
+                </button>
+                <button onclick="addInputBucketToFavorites()" class="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 hover:bg-yellow-50 hover:border-yellow-300 text-charcoal-300 hover:text-yellow-600 text-sm font-medium rounded-lg transition-colors" title="Save bucket name to favorites">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                  </svg>
+                  Favorite
+                </button>
+              </div>
+              <!-- Create Bucket Button (shown for admin/userplus) -->
+              <div id="bucket-actions">
+                <button onclick="openCreateBucketDialog()" class="inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                  </svg>
+                  Create Bucket
+                </button>
+              </div>
+            </div>
+
+            <!-- Favorites Section -->
+            <div id="favorites-section" class="mb-4 hidden">
+              <div class="bg-white rounded-xl shadow-sm border border-yellow-100 p-4">
+                <div class="flex items-center gap-2 mb-3">
+                  <svg class="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                  </svg>
+                  <h3 class="text-sm font-semibold text-charcoal">Favorites</h3>
+                </div>
+                <div id="favorites-list" class="flex flex-wrap gap-2">
+                  <!-- Populated by JS -->
+                </div>
+              </div>
             </div>
             <div class="bg-white rounded-xl shadow-sm border border-gray-100">
               <div class="overflow-x-auto">
@@ -1225,11 +1261,14 @@ under the License.
         if (createdCol) createdCol.style.display = 'none';
       }
 
+      const favoritesSet = new Set(loadFavorites());
+
       bucketsList.forEach(bucket => {
         const name = bucket.name || bucket.Name;
         const creationDate = bucket.creationdate || bucket.CreationDate;
         const versioningStatus = bucketsVersioningCache[name] || '';
         const objectLockConfig = bucketsObjectLockCache[name] || { enabled: false };
+        const starred = favoritesSet.has(name);
         const row = document.createElement('tr');
         row.className = 'file-row border-b border-gray-50';
         row.innerHTML = `
@@ -1250,6 +1289,11 @@ under the License.
           ${hasAnyCreationDate ? `<td class="py-3 px-4 text-charcoal-300 text-sm">${creationDate ? new Date(creationDate).toLocaleDateString() : '-'}</td>` : ''}
           <td class="py-3 px-4 text-center">
             <div class="flex items-center justify-center gap-1">
+              <button onclick="event.stopPropagation(); toggleFavorite('${escapeHtml(name)}')" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs ${starred ? 'text-yellow-500 hover:text-yellow-600' : 'text-charcoal-300 hover:text-yellow-500'} hover:bg-yellow-50 rounded transition-colors" title="${starred ? 'Remove from favorites' : 'Add to favorites'}">
+                <svg class="w-3.5 h-3.5" fill="${starred ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                </svg>
+              </button>
               <button onclick="event.stopPropagation(); openBucketInfoModal('${escapeHtml(name)}')" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-charcoal-400 hover:text-charcoal hover:bg-gray-100 rounded transition-colors" title="Bucket info">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -1332,6 +1376,7 @@ under the License.
       document.getElementById('search-container').classList.add('hidden');
       clearSearch();
       updateBreadcrumb();
+      renderFavoritesSection();
     }
 
     function showObjectsView() {
@@ -1347,6 +1392,128 @@ under the License.
       showBucketsView();
       renderBuckets();
       updateUrl();
+    }
+
+    async function selectBucketChecked(name) {
+      try {
+        await api.listObjectsV2(name, '', '/', 1);
+      } catch (e) {
+        showToast(`Cannot access bucket "${name}": ${e.message}`, 'error');
+        return false;
+      }
+      selectBucket(name);
+      return true;
+    }
+
+    async function goToBucketByName() {
+      const input = document.getElementById('goto-bucket-input');
+      const name = input.value.trim();
+      if (!name) {
+        showToast('Enter a bucket name first', 'warning');
+        return;
+      }
+      const ok = await selectBucketChecked(name);
+      if (ok) input.value = '';
+    }
+
+    function addInputBucketToFavorites() {
+      const input = document.getElementById('goto-bucket-input');
+      const name = input.value.trim();
+      if (!name) {
+        showToast('Enter a bucket name first', 'warning');
+        return;
+      }
+      addToFavorites(name);
+    }
+
+    // ============================================
+    // Favorites Management
+    // ============================================
+
+    function getFavoritesStorageKey() {
+      const info = api.getCredentialsInfo();
+      const key = (info && info.accessKey) ? info.accessKey : 'default';
+      return `explorer_favorites_${key}`;
+    }
+
+    function loadFavorites() {
+      try {
+        const raw = localStorage.getItem(getFavoritesStorageKey());
+        if (raw) return JSON.parse(raw);
+      } catch (e) {
+        console.error('Error loading favorites:', e);
+      }
+      return [];
+    }
+
+    function saveFavorites(favorites) {
+      try {
+        localStorage.setItem(getFavoritesStorageKey(), JSON.stringify(favorites));
+      } catch (e) {
+        console.error('Error saving favorites:', e);
+      }
+    }
+
+    function isFavorite(name) {
+      return loadFavorites().includes(name);
+    }
+
+    function addToFavorites(name) {
+      const favs = loadFavorites();
+      if (favs.includes(name)) {
+        showToast(`"${name}" is already in favorites`, 'info');
+        return;
+      }
+      favs.push(name);
+      saveFavorites(favs);
+      renderFavoritesSection();
+      // Re-render bucket rows to update star icons
+      if (bucketsList.length > 0) renderBuckets();
+      showToast(`Added "${name}" to favorites`, 'success');
+    }
+
+    function removeFromFavorites(name) {
+      const favs = loadFavorites().filter(f => f !== name);
+      saveFavorites(favs);
+      renderFavoritesSection();
+      // Re-render bucket rows to update star icons
+      if (bucketsList.length > 0) renderBuckets();
+      showToast(`Removed "${name}" from favorites`, 'info');
+    }
+
+    function toggleFavorite(name) {
+      if (isFavorite(name)) {
+        removeFromFavorites(name);
+      } else {
+        addToFavorites(name);
+      }
+    }
+
+    function renderFavoritesSection() {
+      const section = document.getElementById('favorites-section');
+      const list = document.getElementById('favorites-list');
+      if (!section || !list) return;
+
+      const favs = loadFavorites();
+
+      if (favs.length === 0) {
+        section.classList.add('hidden');
+        return;
+      }
+
+      section.classList.remove('hidden');
+      list.innerHTML = favs.map(name => `
+        <div class="group inline-flex items-center gap-1 pl-3 pr-1.5 py-1.5 bg-yellow-50 border border-yellow-200 hover:border-yellow-300 rounded-lg transition-colors">
+          <button onclick="selectBucketChecked('${escapeHtml(name)}')" class="text-sm text-charcoal font-mono hover:text-accent transition-colors">
+            ${escapeHtml(name)}
+          </button>
+          <button onclick="removeFromFavorites('${escapeHtml(name)}')" class="ml-1 p-0.5 text-charcoal-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100" title="Remove from favorites">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+      `).join('');
     }
 
     function refresh() {
