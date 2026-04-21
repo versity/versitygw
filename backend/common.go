@@ -384,26 +384,36 @@ func isValidTagComponent(str string) bool {
 	return validTagComponent.Match([]byte(str))
 }
 
-func GetMultipartMD5(parts []types.CompletedPart) string {
+func GetMultipartMD5(parts []types.CompletedPart) (string, error) {
 	var partsEtagBytes []byte
 	for _, part := range parts {
-		partsEtagBytes = append(partsEtagBytes, getEtagBytes(*part.ETag)...)
+		bts, err := getEtagBytes(*part.ETag)
+		if err != nil {
+			return "", fmt.Errorf("decode etag: %w", err)
+		}
+		partsEtagBytes = append(partsEtagBytes, bts...)
 	}
 
-	return fmt.Sprintf("\"%s-%d\"", md5String(partsEtagBytes), len(parts))
+	return fmt.Sprintf("\"%s-%d\"", md5String(partsEtagBytes), len(parts)), nil
 }
 
-func getEtagBytes(etag string) []byte {
-	decode, err := hex.DecodeString(strings.ReplaceAll(etag, string('"'), ""))
-	if err != nil {
-		return []byte(etag)
-	}
-	return decode
+func getEtagBytes(etag string) ([]byte, error) {
+	return hex.DecodeString(strings.ReplaceAll(etag, string('"'), ""))
 }
 
 func md5String(data []byte) string {
 	sum := md5.Sum(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// MpUploadMetadata is stored alongside the final object after a multipart
+// upload completes. It records the uploadId and the cumulative byte offsets
+// of each part: parts[i] = sum of sizes of parts 1..i+1. This allows O(1)
+// total size lookup (parts[last]) and O(1) part-start/size derivation for
+// GetObject/HeadObject part-number requests.
+type MpUploadMetadata struct {
+	UploadID string  `json:"uploadId"`
+	Parts    []int64 `json:"parts"`
 }
 
 type FileSectionReadCloser struct {

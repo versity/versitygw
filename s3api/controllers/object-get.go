@@ -460,6 +460,15 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 			}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
 		}
 
+		if acceptRange != "" {
+			debuglogger.Logf("Range and partNumber cannot both be specified")
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, s3err.GetAPIError(s3err.ErrRangeAndPartNumber)
+		}
+
 		partNumber = &partNumberQuery
 	}
 
@@ -507,7 +516,7 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 	utils.SetMetaHeaders(ctx, res.Metadata)
 
 	status := http.StatusOK
-	if acceptRange != "" {
+	if res.ContentRange != nil && *res.ContentRange != "" {
 		status = http.StatusPartialContent
 	}
 

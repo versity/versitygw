@@ -723,6 +723,26 @@ func TestS3ApiController_GetObject(t *testing.T) {
 			},
 		},
 		{
+			name: "both partNumber and Range",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"partNumber": "2",
+				},
+				headers: map[string]string{
+					"Range": "bytes=10-20",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrRangeAndPartNumber),
+			},
+		},
+		{
 			name: "backend returns error",
 			input: testInput{
 				locals: defaultLocals,
@@ -793,8 +813,52 @@ func TestS3ApiController_GetObject(t *testing.T) {
 					},
 					MetaOpts: &MetaOptions{
 						BucketOwner:   "root",
-						Status:        http.StatusPartialContent,
+						Status:        http.StatusOK,
 						ContentLength: cLength,
+					},
+				},
+			},
+		},
+		{
+			name: "successful partial response",
+			input: testInput{
+				locals: defaultLocals,
+				beRes: &s3.GetObjectOutput{
+					ContentRange: utils.GetStringPtr("bytes 2-4/15"),
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Headers: map[string]*string{
+						"ETag":                                nil,
+						"x-amz-restore":                       nil,
+						"accept-ranges":                       nil,
+						"Content-Range":                       utils.GetStringPtr("bytes 2-4/15"),
+						"Content-Disposition":                 nil,
+						"Content-Encoding":                    nil,
+						"Content-Language":                    nil,
+						"Cache-Control":                       nil,
+						"Expires":                             nil,
+						"x-amz-checksum-crc32":                nil,
+						"x-amz-checksum-crc64nvme":            nil,
+						"x-amz-checksum-crc32c":               nil,
+						"x-amz-checksum-sha1":                 nil,
+						"x-amz-checksum-sha256":               nil,
+						"x-amz-version-id":                    nil,
+						"x-amz-mp-parts-count":                nil,
+						"x-amz-object-lock-mode":              nil,
+						"x-amz-object-lock-legal-hold":        nil,
+						"x-amz-storage-class":                 nil,
+						"x-amz-checksum-type":                 nil,
+						"x-amz-object-lock-retain-until-date": nil,
+						"Last-Modified":                       nil,
+						"x-amz-tagging-count":                 nil,
+						"Content-Type":                        nil,
+						"Content-Length":                      nil,
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+						Status:      http.StatusPartialContent,
 					},
 				},
 			},

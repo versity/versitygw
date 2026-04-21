@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -107,6 +108,15 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 			}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
 		}
 
+		if objRange != "" {
+			debuglogger.Logf("Range and partNumber cannot both be specified")
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, s3err.GetAPIError(s3err.ErrRangeAndPartNumber)
+		}
+
 		partNumber = &partNumberQuery
 	}
 
@@ -154,6 +164,11 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 	// Set the metadata headers
 	utils.SetMetaHeaders(ctx, res.Metadata)
 
+	status := http.StatusOK
+	if res.ContentRange != nil && *res.ContentRange != "" {
+		status = http.StatusPartialContent
+	}
+
 	return &Response{
 		Headers: map[string]*string{
 			"Content-Range":                       res.ContentRange,
@@ -184,6 +199,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 		},
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
+			Status:      status,
 		},
 	}, nil
 }
