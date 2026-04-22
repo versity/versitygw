@@ -1,5 +1,21 @@
 #!/bin/bash
 
+# parse options
+USE_SIDECAR=false
+for arg in "$@"; do
+  case "$arg" in
+    --sidecar) USE_SIDECAR=true ;;
+  esac
+done
+
+# build sidecar flag for versitygw invocations
+SIDECAR_FLAG=""
+if $USE_SIDECAR; then
+  rm -rf /tmp/sidecar
+  mkdir /tmp/sidecar
+  SIDECAR_FLAG="--sidecar /tmp/sidecar"
+fi
+
 # make temp dirs
 rm -rf /tmp/gw
 mkdir /tmp/gw
@@ -26,7 +42,7 @@ openssl req -new -x509 -key key.pem -out cert.pem -days 365 -subj "/C=US/ST=Cali
 ECHO "Running the sdk test over http"
 # run server in background not versioning-enabled
 # port: 7070(default)
-GOCOVERDIR=/tmp/covdata ./versitygw -a user -s pass --iam-dir /tmp/gw posix /tmp/gw &
+GOCOVERDIR=/tmp/covdata ./versitygw -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
 GW_PID=$!
 
 sleep 1
@@ -63,7 +79,7 @@ ECHO "Running the sdk test over https"
 
 # run server in background with TLS certificate
 # port: 7071(default)
-GOCOVERDIR=/tmp/https.covdata ./versitygw --cert "$PWD/cert.pem" --key "$PWD/key.pem" -p :7071 -a user -s pass --iam-dir /tmp/gw posix /tmp/gw &
+GOCOVERDIR=/tmp/https.covdata ./versitygw --cert "$PWD/cert.pem" --key "$PWD/key.pem" -p :7071 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
 GW_HTTPS_PID=$!
 
 sleep 1
@@ -99,7 +115,7 @@ kill $GW_HTTPS_PID
 ECHO "Running the sdk test over http against the versioning-enabled gateway"
 # run server in background versioning-enabled
 # port: 7072
-GOCOVERDIR=/tmp/versioning.covdata ./versitygw -p :7072 -a user -s pass --iam-dir /tmp/gw posix --versioning-dir /tmp/versioningdir /tmp/gw &
+GOCOVERDIR=/tmp/versioning.covdata ./versitygw -p :7072 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG --versioning-dir /tmp/versioningdir /tmp/gw &
 GW_VS_PID=$!
 
 # wait a second for server to start up
@@ -131,7 +147,7 @@ kill $GW_VS_PID
 ECHO "Running the sdk test over https against the versioning-enabled gateway"
 # run server in background versioning-enabled
 # port: 7073
-GOCOVERDIR=/tmp/versioning.https.covdata ./versitygw --cert "$PWD/cert.pem" --key "$PWD/key.pem" -p :7073 -a user -s pass --iam-dir /tmp/gw posix --versioning-dir /tmp/versioningdir /tmp/gw &
+GOCOVERDIR=/tmp/versioning.https.covdata ./versitygw --cert "$PWD/cert.pem" --key "$PWD/key.pem" -p :7073 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG --versioning-dir /tmp/versioningdir /tmp/gw &
 GW_VS_HTTPS_PID=$!
 
 # wait a second for server to start up
@@ -163,7 +179,7 @@ kill $GW_VS_HTTPS_PID
 ECHO "Running No ACL integration tests"
 # run server in background versioning-enabled
 # port: 7073
-GOCOVERDIR=/tmp/noacl.covdata ./versitygw -p :7074 -a user -s pass -noacl --iam-dir /tmp/gw posix /tmp/gw &
+GOCOVERDIR=/tmp/noacl.covdata ./versitygw -p :7074 -a user -s pass -noacl --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
 GW_NO_ACL_PID=$!
 
 # wait a second for server to start up

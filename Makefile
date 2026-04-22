@@ -100,5 +100,10 @@ up-app:
 # Run the host-style tests in docker containers
 .PHONY: test-host-style
 test-host-style:
-	docker compose -f tests/host-style-tests/docker-compose.yml up --build --abort-on-container-exit --exit-code-from test
+	@compose_file=tests/host-style-tests/docker-compose.yml; \
+	COMPOSE_MENU=false docker compose -f "$$compose_file" down -v --remove-orphans >/dev/null 2>&1 || true; \
+	COMPOSE_MENU=false docker compose -f "$$compose_file" up --build --abort-on-container-exit --exit-code-from test; \
+	status=$$?; \
+	COMPOSE_MENU=false docker compose -f "$$compose_file" down -v --remove-orphans; \
+	exit $$status
 
