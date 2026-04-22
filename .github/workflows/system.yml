@@ -50,10 +50,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install s3cmd
 
-      - name: Install mc
-        run: |
-          curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o /usr/local/bin/mc
-          chmod 755 /usr/local/bin/mc
+# disable mc tests due to dl.min.io instability
+#      - name: Install mc
+#        run: |
+#          curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o /usr/local/bin/mc
+#          chmod 755 /usr/local/bin/mc
 
       - name: Install xml libraries (for rest)
         run: |

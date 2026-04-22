@@ -285,6 +285,42 @@ under the License.
                   </tbody>
                 </table>
               </div>
+              <!-- Pagination Bar -->
+              <div id="objects-pagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-gray-100">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm text-charcoal-300" id="pagination-info"></span>
+                </div>
+                <div class="flex items-center gap-4">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm text-charcoal-300">Rows per page:</span>
+                    <select id="page-size-select" onchange="changePageSize(parseInt(this.value, 10))" class="text-sm border border-gray-200 rounded-lg px-2 py-1.5 text-charcoal focus:outline-none focus:border-accent bg-white">
+                      <option value="10" selected>10</option>
+                      <option value="20">20</option>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                      <option value="1000">1000</option>
+                    </select>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <button id="pagination-first" onclick="changePage(1)" class="p-1.5 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title="First page">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+                      </svg>
+                    </button>
+                    <button id="pagination-prev" onclick="changePage(currentPage - 1)" class="p-1.5 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title="Previous page">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                      </svg>
+                    </button>
+                    <span id="pagination-pages" class="text-sm text-charcoal px-2"></span>
+                    <button id="pagination-next" onclick="changePage(currentPage + 1)" class="p-1.5 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title="Next page">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -308,7 +344,7 @@ under the License.
   </div>
 
   <!-- Object Info Modal -->
-  <div id="info-modal" class="hidden fixed inset-0 z-50">
+  <div id="info-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('info-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl relative max-h-[90vh] flex flex-col">
@@ -408,7 +444,7 @@ under the License.
   <input type="file" id="file-input" class="hidden" multiple onchange="handleFileSelect(event)">
 
   <!-- Object Versions Modal -->
-  <div id="versions-modal" class="hidden fixed inset-0 z-50">
+  <div id="versions-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('versions-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl relative max-h-[90vh] flex flex-col">
@@ -442,7 +478,7 @@ under the License.
   </div>
 
   <!-- Delete Confirmation Modal -->
-  <div id="delete-modal" class="hidden fixed inset-0 z-50">
+  <div id="delete-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('delete-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -468,7 +504,7 @@ under the License.
   </div>
 
   <!-- Create Folder Modal -->
-  <div id="create-folder-modal" class="hidden fixed inset-0 z-50">
+  <div id="create-folder-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('create-folder-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -498,7 +534,7 @@ under the License.
   </div>
 
   <!-- Create Bucket Modal -->
-  <div id="create-bucket-modal" class="hidden fixed inset-0 z-50">
+  <div id="create-bucket-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('create-bucket-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -528,7 +564,7 @@ under the License.
   </div>
 
   <!-- Delete Bucket Modal -->
-  <div id="delete-bucket-modal" class="hidden fixed inset-0 z-50">
+  <div id="delete-bucket-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('delete-bucket-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -562,7 +598,7 @@ under the License.
   </div>
 
   <!-- Bucket Info Modal -->
-  <div id="bucket-info-modal" class="hidden fixed inset-0 z-50">
+  <div id="bucket-info-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('bucket-info-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl relative max-h-[90vh] overflow-y-auto">
@@ -700,7 +736,7 @@ under the License.
   </div>
 
   <!-- Versioning Modal -->
-  <div id="versioning-modal" class="hidden fixed inset-0 z-50">
+  <div id="versioning-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('versioning-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -742,7 +778,7 @@ under the License.
   </div>
 
   <!-- Object Lock Modal -->
-  <div id="object-lock-modal" class="hidden fixed inset-0 z-50">
+  <div id="object-lock-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('object-lock-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -806,7 +842,7 @@ under the License.
   </div>
 
   <!-- Bucket Policy Modal -->
-  <div id="bucket-policy-modal" class="hidden fixed inset-0 z-50">
+  <div id="bucket-policy-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('bucket-policy-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl relative max-h-[90vh] flex flex-col">
@@ -978,7 +1014,7 @@ under the License.
   </div>
 
   <!-- Multipart Uploads Modal -->
-  <div id="multipart-uploads-modal" class="hidden fixed inset-0 z-50">
+  <div id="multipart-uploads-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('multipart-uploads-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl relative max-h-[90vh] flex flex-col">
@@ -1085,6 +1121,13 @@ under the License.
     let currentObjectKey = null; // For info modal
     let searchTerm = ''; // Search filter
 
+    // Pagination state
+    let currentPage = 1;
+    let pageSize = 10;
+    let continuationTokens = [null]; // continuationTokens[i] = S3 token needed to fetch page i+1
+    let isTruncated = false;
+    let isReloadingFirstPageForSearch = false;
+
     // Versioning state
     let showVersions = false;
     let currentBucketVersioningStatus = null;
@@ -1098,6 +1141,9 @@ under the License.
     if (!requireAuth()) {
       // Will redirect to login
     } else {
+      // Clear history state on startup (can happen when reloading with popup open)
+      if (history.state?.modal) history.back();
+      
       initSidebarWithRole();
       updateUserInfo();
       init();
@@ -1121,11 +1167,19 @@ under the License.
             currentPrefix += '/';
           }
         }
+      } else {
+        currentBucket = "";
+        currentPrefix = "";
       }
 
       await loadBuckets();
     }
-
+    
+    // Rerun init() on hash change to allow for back/forward when browsing a bucket.
+    window.addEventListener('hashchange', async () => {
+      await init();
+    });
+    
     // ============================================
     // Logout
     // ============================================
@@ -1528,15 +1582,23 @@ under the License.
     // Object Loading
     // ============================================
 
-    async function loadObjects() {
+    async function loadObjects(continuationToken = null, isPageChange = false) {
       if (!currentBucket) return;
 
       showTableLoading('objects-table', 6);
       clearSelection();
+      if (!isPageChange) {
+        currentPage = 1;
+        continuationTokens = [null];
+      }
       updateBreadcrumb();
 
       try {
-        const result = await api.listObjectsV2(currentBucket, currentPrefix);
+        const result = await api.listObjectsV2(currentBucket, currentPrefix, '/', pageSize, continuationToken);
+        isTruncated = result.isTruncated;
+        if (isTruncated && result.continuationToken) {
+          continuationTokens[currentPage] = result.continuationToken;
+        }
 
         folders = result.commonPrefixes || [];
         objects = result.contents || [];
@@ -1594,11 +1656,29 @@ under the License.
           }
         }
 
+        // When paginating, restrict deleted-with-versions objects to the current page's
+        // key range, since listObjectVersions returns all versions (not page-bounded).
+        if (isTruncated || currentPage > 1) {
+          const allPageKeys = [
+            ...folders.map(f => f.prefix),
+            ...objects.map(o => o.key)
+          ].sort();
+          const pageFirstKey = allPageKeys[0];
+          const pageLastKey = allPageKeys[allPageKeys.length - 1];
+          deletedObjectsWithVersions = deletedObjectsWithVersions.filter(obj => {
+            if (currentPage > 1 && pageFirstKey && obj.key < pageFirstKey) return false;
+            if (isTruncated && pageLastKey && obj.key > pageLastKey) return false;
+            return true;
+          });
+        }
+
         renderObjects();
+        return true;
       } catch (error) {
         console.error('Error loading objects:', error);
         showToast('Error loading objects: ' + error.message, 'error');
         showEmptyState('objects-table', 6, 'Error loading objects');
+        return false;
       }
     }
 
@@ -1642,6 +1722,7 @@ under the License.
 
       // Empty folder or no results
       if (filteredFolders.length === 0 && filteredObjects.length === 0 && filteredDeletedObjects.length === 0) {
+        document.getElementById('objects-pagination').classList.add('hidden');
         if (searchTerm) {
           tbody.innerHTML = `
             <tr>
@@ -1676,6 +1757,9 @@ under the License.
         }
         return;
       }
+
+      // Count after filtering (objects.filter above may have removed the prefix key)
+      const totalVisible = filteredFolders.length + filteredObjects.length + filteredDeletedObjects.length;
 
       // Render folders first
       filteredFolders.forEach(folder => {
@@ -1839,6 +1923,96 @@ under the License.
         `;
         tbody.appendChild(row);
       });
+
+      // Show and update pagination bar
+      updatePagination(totalVisible);
+    }
+
+    // ============================================
+    // Pagination
+    // ============================================
+
+    function updatePagination(itemCount) {
+      const bar = document.getElementById('objects-pagination');
+      bar.classList.remove('hidden');
+
+      const startItem = (currentPage - 1) * pageSize + 1;
+      const endItem = (currentPage - 1) * pageSize + itemCount;
+      const searchNote = searchTerm ? ' (filtered)' : '';
+      document.getElementById('pagination-info').textContent =
+        itemCount > 0 ? `${startItem}–${endItem}${isTruncated ? '+' : ''} items${searchNote}` : '';
+      document.getElementById('pagination-pages').textContent =
+        `Page ${currentPage}${isTruncated ? '' : ' (last)'}`;
+
+      const firstBtn = document.getElementById('pagination-first');
+      const prevBtn = document.getElementById('pagination-prev');
+      const nextBtn = document.getElementById('pagination-next');
+
+      const isFirst = currentPage <= 1;
+      const isLast = !isTruncated || !!searchTerm; // disable forward nav while search is active
+      firstBtn.disabled = isFirst;
+      prevBtn.disabled = isFirst;
+      nextBtn.disabled = isLast;
+
+      // Sync the select to the current pageSize
+      const select = document.getElementById('page-size-select');
+      if (select) select.value = String(pageSize);
+    }
+
+    async function changePage(page) {
+      if (page < 1) return false;
+      if (page === currentPage) return false;
+      if (page > currentPage && !isTruncated) return false;
+      const token = continuationTokens[page - 1];
+      if (token === undefined) return false; // token not yet known; can't jump
+
+      const previousPage = currentPage;
+      currentPage = page;
+      const loaded = await loadObjects(token, true);
+      if (!loaded) {
+        currentPage = previousPage;
+        renderObjects();
+      }
+
+      return loaded;
+    }
+
+    async function changePageSize(size) {
+      if (size === pageSize) return false;
+
+      const previousPageSize = pageSize;
+      const previousPage = currentPage;
+      const previousTokens = [...continuationTokens];
+
+      pageSize = size;
+      currentPage = 1;
+      continuationTokens = [null];
+      const loaded = await loadObjects();
+      if (!loaded) {
+        pageSize = previousPageSize;
+        currentPage = previousPage;
+        continuationTokens = previousTokens;
+        renderObjects();
+      }
+
+      return loaded;
+    }
+
+    async function reloadFirstPageForSearch() {
+      if (isReloadingFirstPageForSearch) return;
+
+      const previousTokens = [...continuationTokens];
+
+      isReloadingFirstPageForSearch = true;
+      continuationTokens = [null];
+      try {
+        const loaded = await changePage(1);
+        if (!loaded) {
+          continuationTokens = previousTokens;
+        }
+      } finally {
+        isReloadingFirstPageForSearch = false;
+      }
     }
 
 
@@ -1920,6 +2094,7 @@ under the License.
 
     function navigateToFolder(prefix) {
       currentPrefix = prefix;
+      currentPage = 1;
       loadObjects();
       updateUrl();
     }
@@ -3053,6 +3228,12 @@ under the License.
           } else {
             clearBtn.classList.add('hidden');
           }
+
+          if (currentBucket && (currentPage > 1 || isReloadingFirstPageForSearch)) {
+            reloadFirstPageForSearch();
+            return;
+          }
+
           renderObjects();
         }, 200));
       }
@@ -3068,7 +3249,15 @@ under the License.
       const clearBtn = document.getElementById('clear-search');
       if (searchInput) searchInput.value = '';
       if (clearBtn) clearBtn.classList.add('hidden');
-      if (currentBucket) renderObjects();
+
+      if (!currentBucket) return;
+
+      if (currentPage > 1 || isReloadingFirstPageForSearch) {
+        reloadFirstPageForSearch();
+        return;
+      }
+
+      renderObjects();
     }
 
     // ============================================

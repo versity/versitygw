@@ -32,7 +32,15 @@ case "$backend" in
         ;;
 esac
 
-set -- "$backend"
+# Global flags must precede the backend subcommand.
+if [ -n "${VGW_ARGS:-}" ]; then
+    # shellcheck disable=SC2086
+    set -- ${VGW_ARGS}
+else
+    set --
+fi
+
+set -- "$@" "$backend"
 
 if [ -n "${VGW_BACKEND_ARG:-}" ]; then
     set -- "$@" "$VGW_BACKEND_ARG"
@@ -41,11 +49,6 @@ fi
 if [ -n "${VGW_BACKEND_ARGS:-}" ]; then
     # shellcheck disable=SC2086
     set -- "$@" ${VGW_BACKEND_ARGS}
-fi
-
-if [ -n "${VGW_ARGS:-}" ]; then
-    # shellcheck disable=SC2086
-    set -- "$@" ${VGW_ARGS}
 fi
 
 exec "$BIN" "$@"

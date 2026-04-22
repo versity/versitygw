@@ -221,7 +221,7 @@ under the License.
   </div>
 
   <!-- Change Owner Modal -->
-  <div id="owner-modal" class="hidden fixed inset-0 z-50">
+  <div id="owner-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('owner-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -281,7 +281,7 @@ under the License.
   </div>
 
   <!-- Create Bucket Modal -->
-  <div id="create-bucket-modal" class="hidden fixed inset-0 z-50">
+  <div id="create-bucket-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('create-bucket-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -353,7 +353,7 @@ under the License.
     let allBuckets = [];
     let allUsers = [];
     let selectedBucket = null;
-
+    
     // ============================================
     // Custom Dropdown Functions
     // ============================================

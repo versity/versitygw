@@ -145,15 +145,24 @@ func (s SideCar) ListAttributes(bucket, object string) ([]string, error) {
 }
 
 // DeleteAttributes removes all attributes for an object or a bucket.
+// When object is empty the entire bucket sidecar directory is removed,
+// cleaning up any orphaned object or multipart metadata within it.
 func (s SideCar) DeleteAttributes(bucket, object string) error {
-	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
 	if object == "" {
-		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
+		// Remove the entire bucket sidecar directory so that orphaned
+		// object/multipart metadata does not accumulate after DeleteBucket.
+		bucketDir := filepath.Join(s.dir, bucket)
+		err := os.RemoveAll(bucketDir)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to remove bucket attributes: %w", err)
+		}
+		return nil
 	}
 
+	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
 	err := os.RemoveAll(metadir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("failed to remove attributes: %v", err)
+		return fmt.Errorf("failed to remove attributes: %w", err)
 	}
 	s.cleanupEmptyDirs(metadir, bucket, object)
 	return nil
