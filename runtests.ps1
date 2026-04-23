@@ -67,9 +67,9 @@ if ($gwProc.HasExited) {
 }
 
 Invoke-GwTest -Description "full flow tests" -GatewayProc $gwProc `
-    -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7070", "full-flow", "--parallel")
+    -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7070", "full-flow", "--parallel", "--windows-test-mode")
 Invoke-GwTest -Description "posix tests" -GatewayProc $gwProc `
-    -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7070", "posix")
+    -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7070", "posix", "--windows-test-mode")
 Invoke-GwTest -Description "iam tests" -GatewayProc $gwProc `
     -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7070", "iam")
 
@@ -90,9 +90,9 @@ if ($gwHttpsProc.HasExited) {
 }
 
 Invoke-GwTest -Description "https full flow tests" -GatewayProc $gwHttpsProc `
-    -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "https://127.0.0.1:7071", "full-flow", "--parallel")
+    -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "https://127.0.0.1:7071", "full-flow", "--parallel", "--windows-test-mode")
 Invoke-GwTest -Description "https posix tests" -GatewayProc $gwHttpsProc `
-    -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "https://127.0.0.1:7071", "posix")
+    -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "https://127.0.0.1:7071", "posix", "--windows-test-mode")
 Invoke-GwTest -Description "https iam tests" -GatewayProc $gwHttpsProc `
     -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "https://127.0.0.1:7071", "iam")
 
@@ -113,9 +113,9 @@ if ($gwVsProc.HasExited) {
 }
 
 Invoke-GwTest -Description "versioning-enabled full-flow tests" -GatewayProc $gwVsProc `
-    -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7072", "full-flow", "-vs", "--parallel")
+    -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7072", "full-flow", "-vs", "--parallel", "--windows-test-mode")
 Invoke-GwTest -Description "versioning-enabled posix tests" -GatewayProc $gwVsProc `
-    -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7072", "posix", "-vs")
+    -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7072", "posix", "-vs", "--windows-test-mode")
 
 Stop-Process -Id $gwVsProc.Id -Force -ErrorAction SilentlyContinue
 
@@ -135,9 +135,9 @@ if ($gwVsHttpsProc.HasExited) {
 }
 
 Invoke-GwTest -Description "versioning-enabled https full-flow tests" -GatewayProc $gwVsHttpsProc `
-    -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "https://127.0.0.1:7073", "full-flow", "-vs", "--parallel")
+    -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "https://127.0.0.1:7073", "full-flow", "-vs", "--parallel", "--windows-test-mode")
 Invoke-GwTest -Description "versioning-enabled https posix tests" -GatewayProc $gwVsHttpsProc `
-    -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "https://127.0.0.1:7073", "posix", "-vs")
+    -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "https://127.0.0.1:7073", "posix", "-vs", "--windows-test-mode")
 
 Stop-Process -Id $gwVsHttpsProc.Id -Force -ErrorAction SilentlyContinue
 
