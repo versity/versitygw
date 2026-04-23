@@ -394,3 +394,29 @@ verify_owner_info_exists() {
   done
   return 0
 }
+
+list_objects_delimiter() {
+  run assert_param_count "ListObjects version" 1 $#
+  assert_success
+
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  # shellcheck disable=SC2154
+  local bucket_name="$output"
+
+  file_names=("a-b-1.txt" "a-b-2.txt" "a-b/c-1.txt" "a-b/c-2.txt" "a-b/d.txt" "a/c.txt")
+  local prefix="a-"
+  run create_test_files_and_folders "${file_names[@]}"
+  assert_success
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  for file_name in "${file_names[@]}"; do
+    run put_object "rest" "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name"
+    assert_success
+  done
+
+  run list_objects_with_prefix_and_delimiter_check_results "$bucket_name" "2" "$prefix" "/" "a-b/" "--" "a-b-1.txt" "a-b-2.txt"
+  assert_success
+}

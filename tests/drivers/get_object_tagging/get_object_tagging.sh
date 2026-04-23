@@ -29,6 +29,7 @@ get_and_verify_object_tags() {
     return 1
   fi
   if [[ $1 == 'aws' ]]; then
+    # shellcheck disable=SC2154
     tag_set_key=$(echo "$tags" | jq '.TagSet[0].Key')
     tag_set_value=$(echo "$tags" | jq '.TagSet[0].Value')
     if [[ $tag_set_key != '"'$4'"' ]]; then

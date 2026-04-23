@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/logger.sh
+
 check_param_count() {
   if [ $# -ne 4 ]; then
     log 2 "'check_param_count' requires function name, params list, expected, actual"

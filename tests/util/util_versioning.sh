@@ -94,7 +94,6 @@ echo_versions() {
   else
     keys="$response"
   fi
-
   unescaped_keys=$(echo -n "$keys" | xmlstarlet unesc)
   log 5 "keys to append: ${unescaped_keys[*]}"
   echo "${unescaped_keys[*]}"

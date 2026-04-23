@@ -1,0 +1,40 @@
+version: 1
+
+tags:
+  feature:
+    invalid-method:
+      desc: "Tests for invalid methods"
+    malformed-message:
+      desc: "Tests for severely malformed messages"
+    minimal-request:
+      desc: "Tests that do not use any optional query or header values"
+    required-headers:
+      desc: "Required headers such as 'Authorization' and 'x-amz-date'"
+    user:
+      desc: "versitygw user tests"
+  client:
+    curl:
+      desc: "REST curl commands"
+    openssl:
+      desc: "REST OpenSSL commands"
+  command:
+    ListBuckets:
+      desc: "ListBuckets command"
+  header:
+    Authorization:
+      desc: "Authorization header"
+    host:
+      desc: "host header"
+    x-amz-content-sha256:
+      desc: "x-amz-content-sha256 header"
+    x-amz-date:
+      desc: "x-amz-date header"
+  query:
+    bucket-region:
+      desc: "ListBuckets bucket-region query"
+    continuation-token:
+      desc: "ListBuckets/ListObjects continuation token query"
+    max-buckets:
+      desc: "Maximum amount of buckets returned by ListBuckets command"
+    prefix:
+      desc: "bucket or object prefix query"
