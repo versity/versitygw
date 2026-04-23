@@ -763,6 +763,10 @@ func PresignedAuth_Put_GetObject_with_UTF8_chars(s *S3Conf) error {
 	testName := "PresignedAuth_Put_GetObject_with_UTF8_chars"
 	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		obj := "my-$%^&*;"
+		if s.windowsTests {
+			// '*' is not a valid filename character on Windows
+			obj = "my-$%^&;"
+		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		v4req, err := client.PresignPutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: &obj})

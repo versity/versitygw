@@ -38,6 +38,8 @@ var (
 	checksumDisable   bool
 	versioningEnabled bool
 	azureTests        bool
+	windowsTests      bool
+	skipRaceyTests    bool
 	tlsStatus         bool
 	parallel          bool
 )
@@ -115,6 +117,17 @@ func initTestCommands() []*cli.Command {
 					Usage:       "Skips tests that are not supported by Azure",
 					Destination: &azureTests,
 					Aliases:     []string{"azure"},
+				},
+				&cli.BoolFlag{
+					Name:        "windows-test-mode",
+					Usage:       "Skips or adjusts tests that are not compatible with Windows filesystems",
+					Destination: &windowsTests,
+					Aliases:     []string{"windows"},
+				},
+				&cli.BoolFlag{
+					Name:        "skip-racey",
+					Usage:       "Skips tests that are not reliably atomic (e.g. sidecar backend)",
+					Destination: &skipRaceyTests,
 				},
 				&cli.BoolFlag{
 					Name:        "parallel",
@@ -336,6 +349,12 @@ func getAction(tf testFunc) func(ctx *cli.Context) error {
 		if azureTests {
 			opts = append(opts, integration.WithAzureMode())
 		}
+		if windowsTests {
+			opts = append(opts, integration.WithWindowsMode())
+		}
+		if skipRaceyTests {
+			opts = append(opts, integration.WithSkipRaceyTests())
+		}
 		if hostStyle {
 			opts = append(opts, integration.WithHostStyle())
 		}
@@ -382,6 +401,12 @@ func extractIntTests() (commands []*cli.Command) {
 				if azureTests {
 					opts = append(opts, integration.WithAzureMode())
 				}
+				if windowsTests {
+					opts = append(opts, integration.WithWindowsMode())
+				}
+				if skipRaceyTests {
+					opts = append(opts, integration.WithSkipRaceyTests())
+				}
 
 				s := integration.NewS3Conf(opts...)
 				err := testFunc(s)
@@ -399,6 +424,17 @@ func extractIntTests() (commands []*cli.Command) {
 					Usage:       "Skips tests that are not supported by Azure",
 					Destination: &azureTests,
 					Aliases:     []string{"azure"},
+				},
+				&cli.BoolFlag{
+					Name:        "windows-test-mode",
+					Usage:       "Skips or adjusts tests that are not compatible with Windows filesystems",
+					Destination: &windowsTests,
+					Aliases:     []string{"windows"},
+				},
+				&cli.BoolFlag{
+					Name:        "skip-racey",
+					Usage:       "Skips tests that are not reliably atomic (e.g. sidecar backend)",
+					Destination: &skipRaceyTests,
 				},
 			},
 		})

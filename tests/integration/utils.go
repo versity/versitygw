@@ -1042,8 +1042,17 @@ func listBuckets(s *S3Conf) error {
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
+// randCounter is an atomic counter used by genRandString. It is seeded once
+// with time.Now().UnixNano() so that values are unique even when many goroutines
+// call genRandString concurrently on systems with low-resolution clocks.
+var randCounter = atomic.Uint64{}
+
+func init() {
+	randCounter.Store(uint64(time.Now().UnixNano()))
+}
+
 func genRandString(length int) string {
-	source := rnd.NewSource(time.Now().UnixNano())
+	source := rnd.NewSource(int64(randCounter.Add(1)))
 	random := rnd.New(source)
 	result := make([]byte, length)
 	for i := range result {
