@@ -109,7 +109,7 @@ func (tmp *tmpfile) link() error {
 	backoffMs := initialBackoffMs
 	for {
 		err = backend.MoveFile(tempname, objPath, defaultFilePerm)
-		if !errors.Is(err, syscall.ENOENT) {
+		if !os.IsNotExist(err) {
 			break
 		}
 		// The parent directory may have been concurrently removed; backoff and retry.
@@ -117,11 +117,12 @@ func (tmp *tmpfile) link() error {
 		sleepWithJitter(backoffMs)
 		backoffMs = min((backoffMs * 2), maxBackoffMs)
 
-		err = backend.MkdirAll(filepath.Dir(objPath), tmp.uid, tmp.gid,
+		// Best-effort: recreate the parent directory. Ignore errors here;
+		// if recreation fails transiently (e.g. Windows pending-delete on
+		// a recently removed directory), the next MoveFile attempt will
+		// return os.IsNotExist again and we will retry.
+		_ = backend.MkdirAll(filepath.Dir(objPath), tmp.uid, tmp.gid,
 			tmp.doChown, tmp.newDirPerm)
-		if err != nil {
-			return fmt.Errorf("recreate parent dir: %w", err)
-		}
 	}
 	return err
 }
