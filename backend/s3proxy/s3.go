@@ -102,19 +102,35 @@ func (s *S3Proxy) validate(ctx context.Context) error {
 }
 
 func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
-	output, err := s.client.ListBuckets(ctx, &s3.ListBucketsInput{
-		ContinuationToken: &input.ContinuationToken,
-		MaxBuckets:        &input.MaxBuckets,
-		Prefix:            &input.Prefix,
-	})
+	// Only set parameters when they carry a meaningful value. Passing empty
+	// string pointers (instead of nil) causes the AWS SDK to serialize them
+	// as empty query parameters (e.g. "continuation-token=&prefix="), and
+	// always forwarding max-buckets breaks backends such as GCS that only
+	// implement the original v1 ListBuckets API with no query parameters.
+	listInput := &s3.ListBucketsInput{}
+	if input.ContinuationToken != "" {
+		listInput.ContinuationToken = &input.ContinuationToken
+	}
+	if input.Prefix != "" {
+		listInput.Prefix = &input.Prefix
+	}
+
+	output, err := s.client.ListBuckets(ctx, listInput)
 	if err != nil {
 		return s3response.ListAllMyBucketsResult{}, handleError(err)
 	}
 
 	var buckets []s3response.ListAllMyBucketsEntry
+	var cToken string
 	for _, b := range output.Buckets {
 		if *b.Name == s.metaBucket {
 			continue
+		}
+		// Apply MaxBuckets client-side so that backends which do not support
+		// the max-buckets query parameter are still correctly paginated.
+		if input.MaxBuckets > 0 && int32(len(buckets)) >= input.MaxBuckets {
+			cToken = buckets[len(buckets)-1].Name
+			break
 		}
 		if input.IsAdmin || s.metaBucket == "" {
 			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
@@ -142,6 +158,13 @@ func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsI
 		}
 	}
 
+	// Prefer a server-side continuation token when available; fall back to
+	// the client-side token produced by the MaxBuckets cutoff above.
+	ct := backend.GetStringFromPtr(output.ContinuationToken)
+	if ct != "" {
+		cToken = ct
+	}
+
 	return s3response.ListAllMyBucketsResult{
 		Owner: s3response.CanonicalUser{
 			ID: *output.Owner.ID,
@@ -149,7 +172,7 @@ func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsI
 		Buckets: s3response.ListAllMyBucketsList{
 			Bucket: buckets,
 		},
-		ContinuationToken: backend.GetStringFromPtr(output.ContinuationToken),
+		ContinuationToken: cToken,
 		Prefix:            backend.GetStringFromPtr(output.Prefix),
 	}, nil
 }
