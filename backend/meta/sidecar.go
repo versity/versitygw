@@ -46,6 +46,7 @@ func NewSideCar(dir string) (SideCar, error) {
 
 // RetrieveAttribute retrieves the value of a specific attribute for an object or a bucket.
 func (s SideCar) RetrieveAttribute(_ *os.File, bucket, object, attribute string) ([]byte, error) {
+	bucket, object = trimVolume(bucket), trimVolume(object)
 	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
 	if object == "" {
 		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
@@ -65,6 +66,7 @@ func (s SideCar) RetrieveAttribute(_ *os.File, bucket, object, attribute string)
 
 // StoreAttribute stores the value of a specific attribute for an object or a bucket.
 func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, value []byte) error {
+	bucket, object = trimVolume(bucket), trimVolume(object)
 	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
 	if object == "" {
 		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
@@ -102,6 +104,7 @@ func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, va
 
 // DeleteAttribute removes the value of a specific attribute for an object or a bucket.
 func (s SideCar) DeleteAttribute(bucket, object, attribute string) error {
+	bucket, object = trimVolume(bucket), trimVolume(object)
 	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
 	if object == "" {
 		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
@@ -123,6 +126,7 @@ func (s SideCar) DeleteAttribute(bucket, object, attribute string) error {
 
 // ListAttributes lists all attributes for an object or a bucket.
 func (s SideCar) ListAttributes(bucket, object string) ([]string, error) {
+	bucket, object = trimVolume(bucket), trimVolume(object)
 	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
 	if object == "" {
 		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
@@ -148,6 +152,7 @@ func (s SideCar) ListAttributes(bucket, object string) ([]string, error) {
 // When object is empty the entire bucket sidecar directory is removed,
 // cleaning up any orphaned object or multipart metadata within it.
 func (s SideCar) DeleteAttributes(bucket, object string) error {
+	bucket, object = trimVolume(bucket), trimVolume(object)
 	if object == "" {
 		// Remove the entire bucket sidecar directory so that orphaned
 		// object/multipart metadata does not accumulate after DeleteBucket.
@@ -172,8 +177,9 @@ func (s SideCar) DeleteAttributes(bucket, object string) error {
 // newObject so that path-based lookups continue to work after the data
 // directory has been renamed.
 func (s SideCar) RenameObject(bucket, oldObject, newObject string) error {
-	oldPath := filepath.Join(s.dir, bucket, oldObject)
-	newPath := filepath.Join(s.dir, bucket, newObject)
+	bucket = trimVolume(bucket)
+	oldPath := filepath.Join(s.dir, bucket, trimVolume(oldObject))
+	newPath := filepath.Join(s.dir, bucket, trimVolume(newObject))
 
 	if err := os.MkdirAll(filepath.Dir(newPath), 0777); err != nil {
 		return fmt.Errorf("create parent for renamed metadata: %w", err)

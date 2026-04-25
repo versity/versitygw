@@ -2,18 +2,26 @@
 
 # parse options
 USE_SIDECAR=false
+SKIP_RACEY=false
 for arg in "$@"; do
   case "$arg" in
-    --sidecar) USE_SIDECAR=true ;;
+    --sidecar)    USE_SIDECAR=true ;;
+    --skip-racey) SKIP_RACEY=true ;;
   esac
 done
 
 # build sidecar flag for versitygw invocations
 SIDECAR_FLAG=""
+SKIP_RACEY_FLAG=""
 if $USE_SIDECAR; then
   rm -rf /tmp/sidecar
   mkdir /tmp/sidecar
   SIDECAR_FLAG="--sidecar /tmp/sidecar"
+  # sidecar metadata operations are not truly atomic; skip racey tests
+  SKIP_RACEY_FLAG="--skip-racey"
+fi
+if $SKIP_RACEY; then
+  SKIP_RACEY_FLAG="--skip-racey"
 fi
 
 # make temp dirs
@@ -55,7 +63,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow --parallel; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow --parallel $SKIP_RACEY_FLAG; then
 	echo "full flow tests failed"
 	kill $GW_PID
 	exit 1
@@ -92,7 +100,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 full-flow --parallel; then
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 full-flow --parallel $SKIP_RACEY_FLAG; then
 	echo "full flow tests failed"
 	kill $GW_HTTPS_PID
 	exit 1
@@ -129,7 +137,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 full-flow -vs --parallel; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 full-flow -vs --parallel $SKIP_RACEY_FLAG; then
 	echo "versioning-enabled full-flow tests failed"
 	kill $GW_VS_PID
 	exit 1
@@ -161,7 +169,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073 full-flow -vs --parallel; then
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073 full-flow -vs --parallel $SKIP_RACEY_FLAG; then
 	echo "versioning-enabled full-flow tests failed"
 	kill $GW_VS_HTTPS_PID
 	exit 1

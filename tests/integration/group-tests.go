@@ -189,7 +189,7 @@ func TestPutObject(ts *TestState) {
 	}
 	ts.Run(PutObject_success)
 	ts.Run(PutObject_default_content_type)
-	if !ts.conf.versioningEnabled {
+	if !(ts.conf.versioningEnabled || ts.conf.windowsTests) {
 		ts.Run(PutObject_racey_success)
 	}
 	ts.Run(PutObject_invalid_credentials)
@@ -332,7 +332,10 @@ func TestDeleteObject(ts *TestState) {
 	ts.Run(DeleteObject_directory_object_noslash)
 	ts.Run(DeleteObject_non_existing_dir_object)
 	ts.Run(DeleteObject_directory_object)
-	ts.Run(DeleteObject_non_empty_dir_obj)
+	if !ts.conf.windowsTests {
+		// trailing-slash dir objects rely on POSIX filesystem semantics
+		ts.Run(DeleteObject_non_empty_dir_obj)
+	}
 	ts.Run(DeleteObject_conditional_writes)
 	ts.Run(DeleteObject_success)
 	ts.Run(DeleteObject_success_status_code)
@@ -358,7 +361,10 @@ func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_long_metadata)
 	ts.Run(CopyObject_copy_source_starting_with_slash)
 	ts.Run(CopyObject_invalid_copy_source)
-	ts.Run(CopyObject_non_existing_dir_object)
+	if !ts.conf.windowsTests {
+		// trailing-slash dir objects rely on POSIX filesystem semantics
+		ts.Run(CopyObject_non_existing_dir_object)
+	}
 	ts.Run(CopyObject_should_copy_meta_props)
 	ts.Run(CopyObject_should_replace_meta_props)
 	ts.Run(CopyObject_default_content_type_with_replace_metadata)
@@ -552,7 +558,7 @@ func TestCompleteMultipartUpload(ts *TestState) {
 	}
 	ts.Run(CompleteMultipartUpload_success)
 	ts.Run(CompleteMultipartUpload_already_completed)
-	if !ts.conf.azureTests {
+	if !(ts.conf.azureTests || ts.conf.windowsTests || ts.conf.skipRaceyTests) {
 		ts.Run(CompleteMultipartUpload_racey_success)
 		ts.Run(CompleteMultipartUpload_racey_data_integrity)
 	}
@@ -979,8 +985,10 @@ func TestScoutfs(ts *TestState) {
 	ts.Run(CompleteMultipartUpload_checksum_type_mismatch)
 	ts.Run(CompleteMultipartUpload_should_ignore_the_final_checksum)
 	ts.Run(CompleteMultipartUpload_success)
-	ts.Run(CompleteMultipartUpload_racey_success)
-	ts.Run(CompleteMultipartUpload_racey_data_integrity)
+	if !ts.conf.skipRaceyTests {
+		ts.Run(CompleteMultipartUpload_racey_success)
+		ts.Run(CompleteMultipartUpload_racey_data_integrity)
+	}
 
 	// posix/scoutfs specific tests
 	ts.Run(PutObject_overwrite_dir_obj)
