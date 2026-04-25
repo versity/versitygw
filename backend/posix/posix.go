@@ -132,6 +132,7 @@ const (
 	objectRetentionKey  = "object-retention"
 	objectLegalHoldKey  = "object-legal-hold"
 	corskey             = "cors"
+	websitekey          = "website"
 	versioningKey       = "versioning"
 	deleteMarkerKey     = "delete-marker"
 	versionIdKey        = "version-id"
@@ -5941,6 +5942,77 @@ func (p *Posix) DeleteBucketCors(ctx context.Context, bucket string) error {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 	return p.PutBucketCors(ctx, bucket, nil)
+}
+
+func (p *Posix) PutBucketWebsite(ctx context.Context, bucket string, website []byte) error {
+	release, err := p.acquireActionSlot(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	_, err = os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	if website == nil {
+		err = p.meta.DeleteAttribute(bucket, "", websitekey)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return fmt.Errorf("remove website: %w", err)
+		}
+
+		return nil
+	}
+
+	err = p.meta.StoreAttribute(nil, bucket, "", websitekey, website)
+	if err != nil {
+		return fmt.Errorf("set website: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Posix) GetBucketWebsite(ctx context.Context, bucket string) ([]byte, error) {
+	release, err := p.acquireActionSlot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	if !p.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	_, err = os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	website, err := p.meta.RetrieveAttribute(nil, bucket, "", websitekey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchWebsiteConfiguration)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return website, nil
+}
+
+func (p *Posix) DeleteBucketWebsite(ctx context.Context, bucket string) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	return p.PutBucketWebsite(ctx, bucket, nil)
 }
 
 func (p *Posix) isBucketObjectLockEnabled(bucket string) error {

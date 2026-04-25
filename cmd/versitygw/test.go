@@ -22,24 +22,25 @@ import (
 )
 
 var (
-	awsID             string
-	awsSecret         string
-	endpoint          string
-	prefix            string
-	dstBucket         string
-	partSize          int64
-	objSize           int64
-	concurrency       int
-	files             int
-	totalReqs         int
-	upload            bool
-	download          bool
-	hostStyle         bool
-	checksumDisable   bool
-	versioningEnabled bool
-	azureTests        bool
-	tlsStatus         bool
-	parallel          bool
+	awsID               string
+	awsSecret           string
+	endpoint            string
+	websiteEndpointTest string
+	prefix              string
+	dstBucket           string
+	partSize            int64
+	objSize             int64
+	concurrency         int
+	files               int
+	totalReqs           int
+	upload              bool
+	download            bool
+	hostStyle           bool
+	checksumDisable     bool
+	versioningEnabled   bool
+	azureTests          bool
+	tlsStatus           bool
+	parallel            bool
 )
 
 func testCommand() *cli.Command {
@@ -74,6 +75,13 @@ func initTestFlags() []cli.Flag {
 			Usage:       "s3 server endpoint",
 			Destination: &endpoint,
 			Aliases:     []string{"e"},
+		},
+		&cli.StringFlag{
+			Name:        "website-endpoint",
+			Usage:       "dedicated website hosting endpoint (e.g. 'http://localhost:8080'); required for WebsiteHosting tests",
+			EnvVars:     []string{"VGW_TEST_WEBSITE_ENDPOINT"},
+			Destination: &websiteEndpointTest,
+			Aliases:     []string{"we"},
 		},
 		&cli.BoolFlag{
 			Name:        "host-style",
@@ -327,6 +335,9 @@ func getAction(tf testFunc) func(ctx *cli.Context) error {
 			integration.WithEndpoint(endpoint),
 			integration.WithTLSStatus(tlsStatus),
 		}
+		if websiteEndpointTest != "" {
+			opts = append(opts, integration.WithWebsiteEndpoint(websiteEndpointTest))
+		}
 		if debug {
 			opts = append(opts, integration.WithDebug())
 		}
@@ -369,6 +380,9 @@ func extractIntTests() (commands []*cli.Command) {
 					integration.WithRegion(region),
 					integration.WithEndpoint(endpoint),
 					integration.WithTLSStatus(tlsStatus),
+				}
+				if websiteEndpointTest != "" {
+					opts = append(opts, integration.WithWebsiteEndpoint(websiteEndpointTest))
 				}
 				if debug {
 					opts = append(opts, integration.WithDebug())
