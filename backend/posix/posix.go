@@ -1989,6 +1989,9 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		if errors.Is(err, syscall.EDQUOT) {
 			return res, "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
+		if errors.Is(err, syscall.ENOSPC) {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		}
 		return res, "", fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
@@ -2043,6 +2046,9 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		if err != nil {
 			if errors.Is(err, syscall.EDQUOT) {
 				return res, "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
+			}
+			if errors.Is(err, syscall.ENOSPC) {
+				return res, "", s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 			}
 			return res, "", fmt.Errorf("copy part %v: %v", part.PartNumber, err)
 		}
@@ -2877,6 +2883,9 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 		if errors.Is(err, syscall.EDQUOT) {
 			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
+		if errors.Is(err, syscall.ENOSPC) {
+			return nil, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		}
 		return nil, fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
@@ -2988,6 +2997,9 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
+		if errors.Is(err, syscall.ENOSPC) {
+			return nil, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 		}
 		// Return the error itself, if it's an 's3err.APIError'
 		if _, ok := err.(s3err.APIError); ok {
@@ -3253,6 +3265,9 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
+		if errors.Is(err, syscall.ENOSPC) {
+			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		}
 		return s3response.CopyPartResult{}, fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
@@ -3297,6 +3312,9 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
+		if errors.Is(err, syscall.ENOSPC) {
+			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 		}
 		return s3response.CopyPartResult{}, fmt.Errorf("copy part data: %w", err)
 	}
@@ -3494,6 +3512,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			if errors.Is(err, syscall.EDQUOT) {
 				return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 			}
+			if errors.Is(err, syscall.ENOSPC) {
+				return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+			}
 			return s3response.PutObjectOutput{}, err
 		}
 
@@ -3622,6 +3643,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
+		if errors.Is(err, syscall.ENOSPC) {
+			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		}
 		return s3response.PutObjectOutput{}, fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
@@ -3645,6 +3669,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
+		if errors.Is(err, syscall.ENOSPC) {
+			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 		}
 		// Return the error itself, if it's an 's3err.APIError'
 		if _, ok := err.(s3err.APIError); ok {

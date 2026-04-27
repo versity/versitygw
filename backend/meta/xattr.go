@@ -57,12 +57,18 @@ func (x XattrMeta) StoreAttribute(f *os.File, bucket, object, attribute string, 
 		if errors.Is(err, syscall.EROFS) {
 			return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
 		}
+		if errors.Is(err, syscall.ENOSPC) {
+			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		}
 		return err
 	}
 
 	err := xattr.Set(filepath.Join(bucket, object), xattrPrefix+attribute, value)
 	if errors.Is(err, syscall.EROFS) {
 		return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+	}
+	if errors.Is(err, syscall.ENOSPC) {
+		return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 	}
 	return err
 }
