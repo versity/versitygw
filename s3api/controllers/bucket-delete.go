@@ -37,7 +37,7 @@ func (c S3ApiController) DeleteBucketTagging(ctx *fiber.Ctx) (*Response, error) 
 			IsRoot:          isRoot,
 			Acc:             acct,
 			Bucket:          bucket,
-			Action:          auth.PutBucketTaggingAction,
+			Actions:         []auth.Action{auth.PutBucketTaggingAction},
 			IsPublicRequest: IsBucketPublic,
 			DisableACL:      c.disableACL,
 		})
@@ -72,7 +72,7 @@ func (c S3ApiController) DeleteBucketOwnershipControls(ctx *fiber.Ctx) (*Respons
 			IsRoot:        isRoot,
 			Acc:           acct,
 			Bucket:        bucket,
-			Action:        auth.PutBucketOwnershipControlsAction,
+			Actions:       []auth.Action{auth.PutBucketOwnershipControlsAction},
 			DisableACL:    c.disableACL,
 		})
 	if err != nil {
@@ -106,7 +106,7 @@ func (c S3ApiController) DeleteBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 			IsRoot:        isRoot,
 			Acc:           acct,
 			Bucket:        bucket,
-			Action:        auth.DeleteBucketPolicyAction,
+			Actions:       []auth.Action{auth.DeleteBucketPolicyAction},
 			DisableACL:    c.disableACL,
 		})
 	if err != nil {
@@ -141,7 +141,7 @@ func (c S3ApiController) DeleteBucketCors(ctx *fiber.Ctx) (*Response, error) {
 			IsRoot:          isRoot,
 			Acc:             acct,
 			Bucket:          bucket,
-			Action:          auth.PutBucketCorsAction,
+			Actions:         []auth.Action{auth.PutBucketCorsAction},
 			IsPublicRequest: IsBucketPublic,
 			DisableACL:      c.disableACL,
 		})
@@ -177,7 +177,7 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) (*Response, error) {
 			IsRoot:          isRoot,
 			Acc:             acct,
 			Bucket:          bucket,
-			Action:          auth.DeleteBucketAction,
+			Actions:         []auth.Action{auth.DeleteBucketAction},
 			IsPublicRequest: IsBucketPublic,
 			DisableACL:      c.disableACL,
 		})

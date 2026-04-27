@@ -85,7 +85,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 			Acc:             acct,
 			Bucket:          bucket,
 			Object:          key,
-			Action:          action,
+			Actions:         []auth.Action{action},
 			IsPublicRequest: isPublicBucket,
 			DisableACL:      c.disableACL,
 		})
