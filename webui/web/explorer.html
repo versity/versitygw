@@ -167,7 +167,7 @@ under the License.
             <svg class="w-4 h-4 text-charcoal-300 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
             </svg>
-            <input type="text" id="search-input" class="pl-9 pr-8 py-1.5 w-64 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-accent" placeholder="Filter by name...">
+            <input type="text" id="search-input" class="pl-9 pr-8 py-1.5 w-64 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-accent" placeholder="Filter by prefix...">
             <button id="clear-search" class="hidden absolute right-2 top-1/2 transform -translate-y-1/2 text-charcoal-300 hover:text-charcoal" onclick="clearSearch()">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -1119,14 +1119,13 @@ under the License.
     let bucketsList = [];
     let selectedObjects = new Set();
     let currentObjectKey = null; // For info modal
-    let searchTerm = ''; // Search filter
+    let searchPrefix = ''; // API prefix filter
 
     // Pagination state
     let currentPage = 1;
     let pageSize = 10;
     let continuationTokens = [null]; // continuationTokens[i] = S3 token needed to fetch page i+1
     let isTruncated = false;
-    let isReloadingFirstPageForSearch = false;
 
     // Versioning state
     let showVersions = false;
@@ -1594,7 +1593,7 @@ under the License.
       updateBreadcrumb();
 
       try {
-        const result = await api.listObjectsV2(currentBucket, currentPrefix, '/', pageSize, continuationToken);
+        const result = await api.listObjectsV2(currentBucket, currentPrefix + searchPrefix, '/', pageSize, continuationToken);
         isTruncated = result.isTruncated;
         if (isTruncated && result.continuationToken) {
           continuationTokens[currentPage] = result.continuationToken;
@@ -1700,61 +1699,27 @@ under the License.
         return;
       }
 
-      // Apply search filter
-      let filteredFolders = folders;
-      let filteredObjects = objects;
-      let filteredDeletedObjects = deletedObjectsWithVersions;
-
-      if (searchTerm) {
-        filteredFolders = folders.filter(f => {
-          const name = getFolderName(f.prefix);
-          return name.toLowerCase().includes(searchTerm);
-        });
-        filteredObjects = objects.filter(o => {
-          const name = getFileName(o.key);
-          return name.toLowerCase().includes(searchTerm);
-        });
-        filteredDeletedObjects = deletedObjectsWithVersions.filter(o => {
-          const name = getFileName(o.key);
-          return name.toLowerCase().includes(searchTerm);
-        });
-      }
+      const filteredFolders = folders;
+      const filteredObjects = objects;
+      const filteredDeletedObjects = deletedObjectsWithVersions;
 
       // Empty folder or no results
       if (filteredFolders.length === 0 && filteredObjects.length === 0 && filteredDeletedObjects.length === 0) {
         document.getElementById('objects-pagination').classList.add('hidden');
-        if (searchTerm) {
-          tbody.innerHTML = `
-            <tr>
-              <td colspan="6" class="py-12 text-center">
-                <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                </svg>
-                <p class="text-lg font-medium text-charcoal">No results found</p>
-                <p class="text-sm text-charcoal-300 mt-1">No items match "${escapeHtml(searchTerm)}"</p>
-                <button onclick="clearSearch()" class="mt-4 px-4 py-2 border border-gray-200 hover:bg-gray-50 text-charcoal font-medium rounded-lg transition-colors">
-                  Clear Filter
-                </button>
-              </td>
-            </tr>
-          `;
-        } else {
-          // Empty folder (no search active)
-          tbody.innerHTML = `
-            <tr>
-              <td colspan="6" class="py-12 text-center">
-                <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                </svg>
-                <p class="text-lg font-medium text-charcoal">This folder is empty</p>
-                <p class="text-sm text-charcoal-300 mt-1">Upload files to get started</p>
-                <button onclick="openUploadDialog()" class="mt-4 px-4 py-2 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
-                  Upload Files
-                </button>
-              </td>
-            </tr>
-          `;
-        }
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="py-12 text-center">
+              <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+              </svg>
+              <p class="text-lg font-medium text-charcoal">This folder is empty</p>
+              <p class="text-sm text-charcoal-300 mt-1">Upload files to get started</p>
+              <button onclick="openUploadDialog()" class="mt-4 px-4 py-2 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+                Upload Files
+              </button>
+            </td>
+          </tr>
+        `;
         return;
       }
 
@@ -1938,9 +1903,8 @@ under the License.
 
       const startItem = (currentPage - 1) * pageSize + 1;
       const endItem = (currentPage - 1) * pageSize + itemCount;
-      const searchNote = searchTerm ? ' (filtered)' : '';
       document.getElementById('pagination-info').textContent =
-        itemCount > 0 ? `${startItem}–${endItem}${isTruncated ? '+' : ''} items${searchNote}` : '';
+        itemCount > 0 ? `${startItem}–${endItem}${isTruncated ? '+' : ''} items` : '';
       document.getElementById('pagination-pages').textContent =
         `Page ${currentPage}${isTruncated ? '' : ' (last)'}`;
 
@@ -1949,7 +1913,7 @@ under the License.
       const nextBtn = document.getElementById('pagination-next');
 
       const isFirst = currentPage <= 1;
-      const isLast = !isTruncated || !!searchTerm; // disable forward nav while search is active
+      const isLast = !isTruncated;
       firstBtn.disabled = isFirst;
       prevBtn.disabled = isFirst;
       nextBtn.disabled = isLast;
@@ -1998,22 +1962,6 @@ under the License.
       return loaded;
     }
 
-    async function reloadFirstPageForSearch() {
-      if (isReloadingFirstPageForSearch) return;
-
-      const previousTokens = [...continuationTokens];
-
-      isReloadingFirstPageForSearch = true;
-      continuationTokens = [null];
-      try {
-        const loaded = await changePage(1);
-        if (!loaded) {
-          continuationTokens = previousTokens;
-        }
-      } finally {
-        isReloadingFirstPageForSearch = false;
-      }
-    }
 
 
     // ============================================
@@ -3221,21 +3169,20 @@ under the License.
       const searchInput = document.getElementById('search-input');
       if (searchInput) {
         searchInput.addEventListener('input', debounce((e) => {
-          searchTerm = e.target.value.toLowerCase();
+          searchPrefix = e.target.value;
           const clearBtn = document.getElementById('clear-search');
-          if (searchTerm) {
+          if (searchPrefix) {
             clearBtn.classList.remove('hidden');
           } else {
             clearBtn.classList.add('hidden');
           }
 
-          if (currentBucket && (currentPage > 1 || isReloadingFirstPageForSearch)) {
-            reloadFirstPageForSearch();
-            return;
-          }
+          if (!currentBucket) return;
 
-          renderObjects();
-        }, 200));
+          currentPage = 1;
+          continuationTokens = [null];
+          loadObjects();
+        }, 300));
       }
     });
 
@@ -3244,7 +3191,7 @@ under the License.
     // ============================================
 
     function clearSearch() {
-      searchTerm = '';
+      searchPrefix = '';
       const searchInput = document.getElementById('search-input');
       const clearBtn = document.getElementById('clear-search');
       if (searchInput) searchInput.value = '';
@@ -3252,12 +3199,9 @@ under the License.
 
       if (!currentBucket) return;
 
-      if (currentPage > 1 || isReloadingFirstPageForSearch) {
-        reloadFirstPageForSearch();
-        return;
-      }
-
-      renderObjects();
+      currentPage = 1;
+      continuationTokens = [null];
+      loadObjects();
     }
 
     // ============================================
@@ -3478,20 +3422,8 @@ under the License.
       const tbody = document.getElementById('objects-table');
       tbody.innerHTML = '';
 
-      // Apply search filter
-      let filteredFolders = folders;
-      let filteredVersions = objectVersions;
-
-      if (searchTerm) {
-        filteredFolders = folders.filter(f => {
-          const name = getFolderName(f.prefix);
-          return name.toLowerCase().includes(searchTerm);
-        });
-        filteredVersions = objectVersions.filter(v => {
-          const name = getFileName(v.key);
-          return name.toLowerCase().includes(searchTerm);
-        });
-      }
+      const filteredFolders = folders;
+      const filteredVersions = objectVersions;
 
       // Empty state
       if (filteredFolders.length === 0 && filteredVersions.length === 0) {
