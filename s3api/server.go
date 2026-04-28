@@ -55,7 +55,20 @@ type S3ApiServer struct {
 	maxRequests      int
 	webuiMountPrefix string
 	webuiSrvCfg      *webui.ServerConfig
+	routes           []routeMount
+	middlewares      []middlewareMount
 	socketPerm       os.FileMode
+}
+
+type routeMount struct {
+	method   string
+	path     string
+	handlers []fiber.Handler
+}
+
+type middlewareMount struct {
+	prefix  string
+	handler fiber.Handler
 }
 
 func New(
@@ -128,6 +141,34 @@ func New(
 	// Set up WebUI on the S3 port if configured
 	if server.webuiSrvCfg != nil {
 		webui.MountOn(app, server.webuiMountPrefix, server.webuiSrvCfg)
+	}
+
+	for _, route := range server.routes {
+		if route.method == "" {
+			return nil, fmt.Errorf("invalid route for path %q: empty method", route.path)
+		}
+		if route.path == "" || route.path[0] != '/' {
+			return nil, fmt.Errorf("invalid route path %q: must start with /", route.path)
+		}
+		if len(route.handlers) == 0 {
+			return nil, fmt.Errorf("invalid route for %s %s: no handlers", route.method, route.path)
+		}
+		for i, handler := range route.handlers {
+			if handler == nil {
+				return nil, fmt.Errorf("invalid route for %s %s: nil handler at index %d", route.method, route.path, i)
+			}
+		}
+		app.Add(route.method, route.path, route.handlers...)
+	}
+
+	for _, mount := range server.middlewares {
+		if mount.prefix == "" || mount.prefix[0] != '/' {
+			return nil, fmt.Errorf("invalid middleware prefix %q: must start with /", mount.prefix)
+		}
+		if mount.handler == nil {
+			return nil, fmt.Errorf("invalid middleware for prefix %q: nil handler", mount.prefix)
+		}
+		app.Use(mount.prefix, mount.handler)
 	}
 
 	// initialize total requests cap limiter middleware
@@ -207,6 +248,31 @@ func WithWebUI(prefix string, cfg *webui.ServerConfig) Option {
 	return func(s *S3ApiServer) {
 		s.webuiMountPrefix = prefix
 		s.webuiSrvCfg = cfg
+	}
+}
+
+// WithRoute registers a top-level Fiber route before S3 routes are registered.
+// Handlers are terminal unless they explicitly call ctx.Next().
+func WithRoute(method, path string, handlers ...fiber.Handler) Option {
+	return func(s *S3ApiServer) {
+		copied := append([]fiber.Handler(nil), handlers...)
+		s.routes = append(s.routes, routeMount{
+			method:   method,
+			path:     path,
+			handlers: copied,
+		})
+	}
+}
+
+// WithMiddleware mounts a Fiber middleware before the S3 route table is
+// registered. The middleware must call ctx.Next() for requests it does not
+// fully handle.
+func WithMiddleware(prefix string, handler fiber.Handler) Option {
+	return func(s *S3ApiServer) {
+		s.middlewares = append(s.middlewares, middlewareMount{
+			prefix:  prefix,
+			handler: handler,
+		})
 	}
 }
 

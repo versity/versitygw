@@ -15,10 +15,14 @@
 package s3api
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
@@ -57,5 +61,47 @@ func TestS3ApiServer_Serve(t *testing.T) {
 				t.Errorf("S3ApiServer.Serve() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestWithRouteRegistersBeforeMiddleware(t *testing.T) {
+	const routePath = "/custom/route"
+
+	middlewareCalled := false
+	server, err := New(
+		backend.BackendUnsupported{},
+		middlewares.RootUserConfig{Access: "access", Secret: "secret"},
+		"us-east-1",
+		auth.NewIAMServiceSingle(auth.Account{Access: "access", Secret: "secret"}),
+		nil,
+		nil,
+		nil,
+		nil,
+		WithRoute(http.MethodGet, routePath, func(ctx *fiber.Ctx) error {
+			return ctx.SendStatus(http.StatusNoContent)
+		}),
+		WithMiddleware("/", func(ctx *fiber.Ctx) error {
+			middlewareCalled = true
+			return ctx.SendStatus(http.StatusMisdirectedRequest)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	resp, err := server.app.Test(httptest.NewRequest(http.MethodGet, routePath, nil))
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Fatalf("response close error = %v", err)
+		}
+	}()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+	if middlewareCalled {
+		t.Fatal("middleware was called for top-level route")
 	}
 }
