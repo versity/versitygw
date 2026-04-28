@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -299,7 +300,7 @@ func (c S3ApiController) GetBucketPolicyStatus(ctx *fiber.Ctx) (*Response, error
 func (c S3ApiController) ListObjectVersions(ctx *fiber.Ctx) (*Response, error) {
 	// url values
 	bucket := ctx.Params("bucket")
-	prefix := ctx.Query("prefix")
+	prefix, _ := url.QueryUnescape(ctx.Query("prefix"))
 	delimiter := ctx.Query("delimiter")
 	maxkeysStr := ctx.Query("max-keys")
 	keyMarker := ctx.Query("key-marker")
@@ -451,7 +452,7 @@ func (c S3ApiController) GetBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 func (c S3ApiController) ListMultipartUploads(ctx *fiber.Ctx) (*Response, error) {
 	// url values
 	bucket := ctx.Params("bucket")
-	prefix := ctx.Query("prefix")
+	prefix, _ := url.QueryUnescape(ctx.Query("prefix"))
 	delimiter := ctx.Query("delimiter")
 	keyMarker := ctx.Query("key-marker")
 	maxUploadsStr := ctx.Query("max-uploads")
@@ -508,7 +509,7 @@ func (c S3ApiController) ListMultipartUploads(ctx *fiber.Ctx) (*Response, error)
 func (c S3ApiController) ListObjectsV2(ctx *fiber.Ctx) (*Response, error) {
 	// url values
 	bucket := ctx.Params("bucket")
-	prefix := ctx.Query("prefix")
+	prefix, _ := url.QueryUnescape(ctx.Query("prefix"))
 	cToken := ctx.Query("continuation-token")
 	sAfter := ctx.Query("start-after")
 	delimiter := ctx.Query("delimiter")
@@ -583,7 +584,7 @@ func (c S3ApiController) ListObjectsV2(ctx *fiber.Ctx) (*Response, error) {
 func (c S3ApiController) ListObjects(ctx *fiber.Ctx) (*Response, error) {
 	// url values
 	bucket := ctx.Params("bucket")
-	prefix := ctx.Query("prefix")
+	prefix, _ := url.QueryUnescape(ctx.Query("prefix"))
 	marker := ctx.Query("marker")
 	delimiter := ctx.Query("delimiter")
 	maxkeysStr := ctx.Query("max-keys")
