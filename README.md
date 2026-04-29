@@ -96,7 +96,6 @@ Our multi-layered testing strategy includes:
 - **System Tests** - Protocol-level validation using industry-standard S3 clients:
   - AWS CLI - Official AWS command-line tools
   - s3cmd - Popular S3 client
-  - MinIO mc - Modern S3-compatible client
   - Direct REST API testing with curl for request/response validation
 - **Security Testing** - Both HTTP and HTTPS configurations tested. Vulnerability scanning with govulncheck. And regular dependency updates with dependabot.
 - **Compatibility Testing** - Multiple backends, versioning scenarios, static bucket modes, and various authentication methods.

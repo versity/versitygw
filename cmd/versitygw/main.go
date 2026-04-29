@@ -110,6 +110,7 @@ var (
 	disableACLs                            bool
 	mpMaxParts                             int
 	copyObjectThreshold                    int64
+	socketPerm                             string
 )
 
 var (
@@ -810,6 +811,12 @@ func initFlags() []cli.Flag {
 			Value:       5 * 1024 * 1024 * 1024,
 			Destination: &copyObjectThreshold,
 		},
+		&cli.StringFlag{
+			Name:        "socket-perm",
+			Usage:       "file permissions for file-backed UNIX domain sockets (octal, e.g. '0660'); ignored for TCP/IP and abstract namespace sockets",
+			EnvVars:     []string{"VGW_SOCKET_PERM"},
+			Destination: &socketPerm,
+		},
 	}
 }
 
@@ -893,6 +900,15 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 
 	utils.SetBucketNameValidationStrict(!disableStrictBucketNames)
 
+	var parsedSocketPerm os.FileMode
+	if socketPerm != "" {
+		perm, err := strconv.ParseUint(socketPerm, 8, 32)
+		if err != nil {
+			return fmt.Errorf("invalid --socket-perm value %q: must be an octal integer (e.g. '0660'): %w", socketPerm, err)
+		}
+		parsedSocketPerm = os.FileMode(perm)
+	}
+
 	if pprof != "" {
 		// listen on specified port for pprof debug
 		// point browser to http://<ip:port>/debug/pprof/
@@ -904,6 +920,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	opts := []s3api.Option{
 		s3api.WithConcurrencyLimiter(maxConnections, maxRequests),
 		s3api.WithMpMaxParts(mpMaxParts),
+	}
+	if socketPerm != "" {
+		opts = append(opts, s3api.WithSocketPerm(parsedSocketPerm))
 	}
 	if corsAllowOrigin != "" {
 		opts = append(opts, s3api.WithCORSAllowOrigin(corsAllowOrigin))
@@ -1141,6 +1160,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		if debug {
 			opts = append(opts, s3api.WithAdminDebug())
 		}
+		if socketPerm != "" {
+			opts = append(opts, s3api.WithAdminSocketPerm(parsedSocketPerm))
+		}
 
 		admSrv = s3api.NewAdminServer(be, middlewares.RootUserConfig{Access: rootUserAccess, Secret: rootUserSecret}, region, iam, loggers.AdminLogger, srv.Router.Ctrl, opts...)
 	}
@@ -1252,6 +1274,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		}
 		if webuiPathPrefix != "" {
 			webOpts = append(webOpts, webui.WithPathPrefix(webuiPathPrefix))
+		}
+		if socketPerm != "" {
+			webOpts = append(webOpts, webui.WithSocketPerm(parsedSocketPerm))
 		}
 
 		webSrv = webui.NewServer(&webui.ServerConfig{

@@ -61,7 +61,7 @@ func VerifyObjectCopyAccess(ctx context.Context, be backend.Backend, copySource 
 		Acc:           opts.Acc,
 		Bucket:        srcBucket,
 		Object:        srcObject,
-		Action:        GetObjectAction,
+		Actions:       []Action{GetObjectAction},
 	}); err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ type AccessOptions struct {
 	Acc             Account
 	Bucket          string
 	Object          string
-	Action          Action
+	Actions         []Action
 	Readonly        bool
 	IsPublicRequest bool
 	DisableACL      bool
@@ -105,7 +105,7 @@ func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) e
 			return policyErr
 		}
 	} else {
-		return VerifyBucketPolicy(policy, opts.Acc.Access, opts.Bucket, opts.Object, opts.Action)
+		return VerifyBucketPolicy(policy, opts.Acc.Access, opts.Bucket, opts.Object, opts.Actions...)
 	}
 
 	if err := verifyACL(opts.Acl, opts.Acc.Access, opts.AclPermission, opts.DisableACL); err != nil {

@@ -48,7 +48,7 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 			Acc:             acct,
 			Bucket:          bucket,
 			Object:          key,
-			Action:          auth.RestoreObjectAction,
+			Actions:         []auth.Action{auth.RestoreObjectAction},
 			IsPublicRequest: isBucketPublic,
 			DisableACL:      c.disableACL,
 		})
@@ -100,7 +100,7 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 			Acc:             acct,
 			Bucket:          bucket,
 			Object:          key,
-			Action:          auth.GetObjectAction,
+			Actions:         []auth.Action{auth.GetObjectAction},
 			IsPublicRequest: isBucketPublic,
 			DisableACL:      c.disableACL,
 		})
@@ -154,10 +154,25 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 	contentEncoding := ctx.Get("Content-Encoding")
 	tagging := ctx.Get("X-Amz-Tagging")
 	expires := ctx.Get("Expires")
+	legalHoldHdr := ctx.Get("X-Amz-Object-Lock-Legal-Hold")
+	lockModeHdr := ctx.Get("X-Amz-Object-Lock-Mode")
+	objLockDate := ctx.Get("X-Amz-Object-Lock-Retain-Until-Date")
+
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
+
+	actions := []auth.Action{auth.PutObjectAction}
+	if tagging != "" {
+		actions = append(actions, auth.PutObjectTaggingAction)
+	}
+	if legalHoldHdr != "" {
+		actions = append(actions, auth.PutObjectLegalHoldAction)
+	}
+	if lockModeHdr != "" || objLockDate != "" {
+		actions = append(actions, auth.PutObjectRetentionAction)
+	}
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
@@ -168,7 +183,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 			Acc:           acct,
 			Bucket:        bucket,
 			Object:        key,
-			Action:        auth.PutObjectAction,
+			Actions:       actions,
 			DisableACL:    c.disableACL,
 		})
 	if err != nil {
@@ -261,7 +276,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 			Acc:             acct,
 			Bucket:          bucket,
 			Object:          key,
-			Action:          auth.PutObjectAction,
+			Actions:         []auth.Action{auth.PutObjectAction},
 			IsPublicRequest: isBucketPublic,
 			DisableACL:      c.disableACL,
 		})

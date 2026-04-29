@@ -63,6 +63,7 @@ delete_old_versions_base64() {
     return 1
   fi
 
+  # shellcheck disable=SC2154
   log 5 "base64 versions: ${base64_pairs[*]}"
   for pair in "${base64_pairs[@]}"; do
     log 5 "pair: $pair"
@@ -171,6 +172,7 @@ delete_delete_marker() {
     echo "error parsing delete marker ID"
     return 1
   fi
+  # shellcheck disable=SC2154
   log 5 "version or marker ID: $version_or_marker_id"
   if ! delete_object_version_rest "$bucket_name" "$object_key" "$version_or_marker_id"; then
     log 2 "error deleting delete marker"

@@ -45,7 +45,7 @@ func (c S3ApiController) PutBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 		IsRoot:          isRoot,
 		Acc:             acct,
 		Bucket:          bucket,
-		Action:          auth.PutBucketTaggingAction,
+		Actions:         []auth.Action{auth.PutBucketTaggingAction},
 		IsPublicRequest: isPublicBucket,
 		DisableACL:      c.disableACL,
 	})
@@ -88,7 +88,7 @@ func (c S3ApiController) PutBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 		IsRoot:        isRoot,
 		Acc:           acct,
 		Bucket:        bucket,
-		Action:        auth.PutBucketOwnershipControlsAction,
+		Actions:       []auth.Action{auth.PutBucketOwnershipControlsAction},
 		DisableACL:    c.disableACL,
 	}); err != nil {
 		return &Response{
@@ -143,7 +143,7 @@ func (c S3ApiController) PutBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 		IsRoot:          isRoot,
 		Acc:             acct,
 		Bucket:          bucket,
-		Action:          auth.PutBucketVersioningAction,
+		Actions:         []auth.Action{auth.PutBucketVersioningAction},
 		IsPublicRequest: isPublicBucket,
 		DisableACL:      c.disableACL,
 	})
@@ -198,7 +198,7 @@ func (c S3ApiController) PutObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 		IsRoot:          isRoot,
 		Acc:             acct,
 		Bucket:          bucket,
-		Action:          auth.PutBucketObjectLockConfigurationAction,
+		Actions:         []auth.Action{auth.PutBucketObjectLockConfigurationAction},
 		IsPublicRequest: isPublicBucket,
 		DisableACL:      c.disableACL,
 	}); err != nil {
@@ -240,7 +240,7 @@ func (c S3ApiController) PutBucketCors(ctx *fiber.Ctx) (*Response, error) {
 		IsRoot:          isRoot,
 		Acc:             acct,
 		Bucket:          bucket,
-		Action:          auth.PutBucketCorsAction,
+		Actions:         []auth.Action{auth.PutBucketCorsAction},
 		IsPublicRequest: isPublicBucket,
 		DisableACL:      c.disableACL,
 	})
@@ -352,7 +352,7 @@ func (c S3ApiController) PutBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 		IsRoot:        isRoot,
 		Acc:           acct,
 		Bucket:        bucket,
-		Action:        auth.PutBucketPolicyAction,
+		Actions:       []auth.Action{auth.PutBucketPolicyAction},
 		DisableACL:    c.disableACL,
 	})
 	if err != nil {
@@ -405,7 +405,7 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 			IsRoot:        isRoot,
 			Acc:           acct,
 			Bucket:        bucket,
-			Action:        auth.PutBucketAclAction,
+			Actions:       []auth.Action{auth.PutBucketAclAction},
 			DisableACL:    c.disableACL,
 		})
 	if err != nil {

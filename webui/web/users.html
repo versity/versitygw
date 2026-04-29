@@ -209,7 +209,7 @@ under the License.
   </div>
 
   <!-- Create/Edit User Modal -->
-  <div id="user-modal" class="hidden fixed inset-0 z-50">
+  <div id="user-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('user-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg relative">
@@ -298,7 +298,7 @@ under the License.
   </div>
 
   <!-- Delete Confirmation Modal -->
-  <div id="delete-modal" class="hidden fixed inset-0 z-50">
+  <div id="delete-modal" class="modal hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('delete-modal')"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
@@ -324,7 +324,7 @@ under the License.
   <script>
     let allUsers = [];
     let userToDelete = null;
-
+    
     // ============================================
     // Custom Dropdown Functions
     // ============================================

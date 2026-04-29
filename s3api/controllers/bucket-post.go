@@ -48,7 +48,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 			IsRoot:          isRoot,
 			Acc:             acct,
 			Bucket:          bucket,
-			Action:          auth.DeleteObjectAction,
+			Actions:         []auth.Action{auth.DeleteObjectAction},
 			IsPublicRequest: IsBucketPublic,
 			DisableACL:      c.disableACL,
 		})
@@ -130,7 +130,7 @@ func (c S3ApiController) POSTObject(ctx *fiber.Ctx) (*Response, error) {
 			IsRoot:          isRoot,
 			Acc:             acct,
 			Bucket:          bucket,
-			Action:          auth.PutObjectAction,
+			Actions:         []auth.Action{auth.PutObjectAction},
 			IsPublicRequest: IsBucketPublic,
 			DisableACL:      c.disableACL,
 		})

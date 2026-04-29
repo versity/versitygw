@@ -20,14 +20,35 @@ source ./tests/drivers/params.sh
 
 set -euo pipefail
 
+# Tests to exclude from the matrix (matched against file basename without extension)
+skip_list=(
+  "mc"
+  "mc_file_count"
+)
+
 files=()
 iam_types=()
 regions=()
 idx=0
 
+is_skipped() {
+  local basename="${1##*/}"
+  local name="${basename%.sh}"
+  name="${name#test_}"
+  for skip in "${skip_list[@]}"; do
+    if [[ "$name" == "$skip" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 check_for_and_load_test_file_and_params() {
   if ! check_param_count_v2 "file name" 1 $#; then
     exit 1
+  fi
+  if is_skipped "$1"; then
+    return 0
   fi
   if grep -q '@test' "$1"; then
     if [ $(( idx % 8 )) -eq 0 ]; then

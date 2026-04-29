@@ -29,7 +29,6 @@ setup_and_create_bucket_and_check_acl() {
   if ! check_param_count_v2 "grant env val" 1 $#; then
     return 1
   fi
-  test_file="$test_file"
   if ! bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"; then
     log 2 "error cleaning up bucket"
     return 1
@@ -46,6 +45,7 @@ setup_and_create_bucket_and_check_acl() {
     id="$user_canonical_id"
   fi
   log 5 "owner: $AWS_ACCESS_KEY_ID"
+  # shellcheck disable=SC2154
   log 5 "username=$username, password=$password"
   envs="$1=$id OBJECT_OWNERSHIP=BucketOwnerPreferred"
   log 5 "envs: $envs"

@@ -99,6 +99,7 @@ check_object_versions_before_deletion() {
     log 2 "error parsing versions"
     return 1
   fi
+  # shellcheck disable=SC2154
   if [ "${#version_ids[@]}" -ne 1 ]; then
     log 2 "expected version ID count of 1, was '${#version_ids[@]}'"
     return 1
@@ -133,6 +134,7 @@ check_object_versions_after_deletion() {
     log 2 "expected version ID of '$2', was '${version_ids[0]}'"
     return 1
   fi
+  # shellcheck disable=SC2154
   if [ "${version_islatests[0]}" != "false" ]; then
     log 2 "expected 'IsLatest' of version ID to be false, was '${version_islatests[0]}'"
     return 1

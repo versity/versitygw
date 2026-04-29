@@ -71,6 +71,13 @@ run_set_if_matching() {
   fi
 }
 
+handle_tags() {
+  if ! check_param_count_v2 "run sets, separated by comma" 1 $#; then
+    exit 1
+  fi
+  ./tests/tags/get_tests.sh --run "$1"
+}
+
 handle_param() {
   if ! check_param_count_v2 "run sets, separated by comma" 1 $#; then
     exit 1
@@ -97,6 +104,13 @@ handle_param() {
 
 if [ $# -le 0 ] || [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
   show_help
+  exit 0
+fi
+
+if [ "$1" == "--tags" ]; then
+  if ! handle_tags "${@:2}"; then
+    exit 1
+  fi
   exit 0
 fi
 

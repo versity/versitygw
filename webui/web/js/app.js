@@ -129,13 +129,26 @@ function openModal(modalId) {
     // Focus first input
     const firstInput = modal.querySelector('input:not([readonly]), select');
     if (firstInput) setTimeout(() => firstInput.focus(), 100);
+    
+    // Push to history state so the back button can close the modal
+    history.pushState({ modal: true }, '');
   }
 }
 
-function closeModal(modalId) {
+let navigatingBack = false
+
+// Close the currently opened modal, manually popping the modal
+// history state if the modal was closed manually (default). In the
+// case where the modal was closed due to navigating back, the state
+// is already popped and we can skip it.
+function closeModal(modalId, popState = true) {
   const modal = document.getElementById(modalId);
   if (modal) {
     modal.classList.add('hidden');
+    if (popState && history.state?.modal) {
+      navigatingBack = true;
+      history.back();
+    }
   }
 }
 
@@ -144,6 +157,24 @@ function closeAllModals() {
     modal.classList.add('hidden');
   });
 }
+
+function closeModalsOnNavigation() {
+  Array.from(document.getElementsByClassName('modal')).forEach((modal) => {
+    if (!modal.classList.contains('hidden')) {
+      closeModal(modal.getAttribute('id'), false);
+    }
+  })
+}
+
+// Catch the back button to close the open modal, if any is open.
+window.addEventListener('popstate', (e) => {
+  if (navigatingBack) {
+    navigatingBack = false;
+    return;
+  }
+  
+  closeModalsOnNavigation();
+});
 
 // Close modals on Escape key
 document.addEventListener('keydown', (e) => {

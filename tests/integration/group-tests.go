@@ -1059,6 +1059,15 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_root_PutBucketAcl)
 	ts.Run(AccessControl_user_PutBucketAcl_with_policy_access)
 	ts.Run(AccessControl_copy_object_with_starting_slash_for_user)
+	ts.Run(AccessControl_PutObject_with_tagging_policy)
+	ts.Run(AccessControl_PutObject_with_legal_hold_policy)
+	ts.Run(AccessControl_PutObject_with_retention_policy)
+	ts.Run(AccessControl_CreateMultipartUpload_with_tagging_policy)
+	ts.Run(AccessControl_CreateMultipartUpload_with_legal_hold_policy)
+	ts.Run(AccessControl_CreateMultipartUpload_with_retention_policy)
+	ts.Run(AccessControl_CopyObject_with_tagging_policy)
+	ts.Run(AccessControl_CopyObject_with_legal_hold_policy)
+	ts.Run(AccessControl_CopyObject_with_retention_policy)
 }
 
 func TestPublicBuckets(ts *TestState) {
@@ -1916,6 +1925,15 @@ func GetIntTests() IntTests {
 		"AccessControl_root_PutBucketAcl":                                          AccessControl_root_PutBucketAcl,
 		"AccessControl_user_PutBucketAcl_with_policy_access":                       AccessControl_user_PutBucketAcl_with_policy_access,
 		"AccessControl_copy_object_with_starting_slash_for_user":                   AccessControl_copy_object_with_starting_slash_for_user,
+		"AccessControl_PutObject_with_tagging_policy":                              AccessControl_PutObject_with_tagging_policy,
+		"AccessControl_PutObject_with_legal_hold_policy":                           AccessControl_PutObject_with_legal_hold_policy,
+		"AccessControl_PutObject_with_retention_policy":                            AccessControl_PutObject_with_retention_policy,
+		"AccessControl_CreateMultipartUpload_with_tagging_policy":                  AccessControl_CreateMultipartUpload_with_tagging_policy,
+		"AccessControl_CreateMultipartUpload_with_legal_hold_policy":               AccessControl_CreateMultipartUpload_with_legal_hold_policy,
+		"AccessControl_CreateMultipartUpload_with_retention_policy":                AccessControl_CreateMultipartUpload_with_retention_policy,
+		"AccessControl_CopyObject_with_tagging_policy":                             AccessControl_CopyObject_with_tagging_policy,
+		"AccessControl_CopyObject_with_legal_hold_policy":                          AccessControl_CopyObject_with_legal_hold_policy,
+		"AccessControl_CopyObject_with_retention_policy":                           AccessControl_CopyObject_with_retention_policy,
 		"PublicBucket_default_private_bucket":                                      PublicBucket_default_private_bucket,
 		"PublicBucket_public_bucket_policy":                                        PublicBucket_public_bucket_policy,
 		"PublicBucket_public_object_policy":                                        PublicBucket_public_object_policy,
