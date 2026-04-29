@@ -20,6 +20,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
+
+	"github.com/versity/versitygw/s3err"
 )
 
 // SideCar is a metadata storer that uses sidecar files to store metadata.
@@ -71,12 +74,18 @@ func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, va
 	}
 	err := os.MkdirAll(metadir, 0777)
 	if err != nil {
+		if errors.Is(err, syscall.ENOSPC) {
+			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		}
 		return fmt.Errorf("failed to create metadata directory: %v", err)
 	}
 
 	attr := filepath.Join(metadir, attribute)
 	tempfile, err := os.CreateTemp(metadir, attribute)
 	if err != nil {
+		if errors.Is(err, syscall.ENOSPC) {
+			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		}
 		return fmt.Errorf("failed to create temporary file: %v", err)
 	}
 	defer os.Remove(tempfile.Name())
@@ -84,6 +93,9 @@ func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, va
 	_, err = tempfile.Write(value)
 	if err != nil {
 		tempfile.Close()
+		if errors.Is(err, syscall.ENOSPC) {
+			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		}
 		return fmt.Errorf("failed to write attribute: %v", err)
 	}
 
@@ -176,6 +188,9 @@ func (s SideCar) RenameObject(bucket, oldObject, newObject string) error {
 	newPath := filepath.Join(s.dir, bucket, newObject)
 
 	if err := os.MkdirAll(filepath.Dir(newPath), 0777); err != nil {
+		if errors.Is(err, syscall.ENOSPC) {
+			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		}
 		return fmt.Errorf("create parent for renamed metadata: %w", err)
 	}
 

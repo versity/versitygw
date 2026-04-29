@@ -199,6 +199,7 @@ const (
 	ErrQuotaExceeded
 	ErrVersioningNotConfigured
 	ErrACLsDisabled
+	ErrNoSpaceLeftOnDevice
 
 	// Admin api errors
 	ErrAdminAccessDenied
@@ -903,6 +904,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "AccessControlListNotSupported",
 		Description:    "Access control lists are disabled at the gateway level",
 		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrNoSpaceLeftOnDevice: {
+		Code:           "InsufficientStorage",
+		Description:    "No space left on device.",
+		HTTPStatusCode: http.StatusInsufficientStorage,
 	},
 
 	// Admin api errors
