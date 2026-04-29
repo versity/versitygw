@@ -35,16 +35,15 @@ check_rest_go_expected_error() {
   if ! check_param_count_v2 "response file, expected http code, expected error code, expected error" 4 $#; then
     return 1
   fi
-  result="$(cat "$1")"
 
   local response
-  if ! response=$(bypass_continues "$result" 2>&1); then
+  if ! response=$(bypass_continues "$1" 2>&1); then
     log 2 "error bypassing continues: $response"
     return 1
   fi
   status_code=$(echo -n "$response" | awk '{print $2}')
   if [ "$2" != "$status_code" ]; then
-    log 2 "expected curl response '$2', was '$status_code' (response: '$result')"
+    log 2 "expected curl response '$2', was '$status_code' (response: '$(cat "$1")')"
     return 1
   fi
   if ! check_xml_error_contains "$1" "$3" "$4"; then
@@ -101,17 +100,16 @@ check_rest_expected_header_error() {
   if ! check_param_count_v2 "file, expected response, expected error" 3 $#; then
     return 1
   fi
-  result="$(cat "$1")"
 
   local response
-  if ! response=$(bypass_continues "$result" 2>&1); then
+  if ! response=$(bypass_continues "$1" 2>&1); then
     log 2 "error bypassing continues: $response"
     return 1
   fi
   status_code=$(echo "$response" | awk '{print $2}')
   status_message=$(echo "$response" | cut -d' ' -f3- | tr -d '\r')
   if [ "$2" != "$status_code" ]; then
-    log 2 "expected curl response '$2', was '$status_code' ($(echo -n "$result"))"
+    log 2 "expected curl response '$2', was '$status_code' ($(cat "$1"))"
     return 1
   fi
   if [ "$status_message" != "$3" ]; then
@@ -192,7 +190,25 @@ rest_go_command_perform_send() {
     log 2 "error getting XML file name: $xml_file"
     return 1
   fi
-  if ! curl_command=$(go run ./tests/rest_scripts/generateCommand.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -awsRegion "$AWS_REGION" -url "$AWS_ENDPOINT_URL" "-writeXMLPayloadToFile" "$xml_file" "$@" 2>&1); then
+  local header_file="" output_file="" params=("$@")
+  for ((i=0; i < $#; i++)); do
+    if [ "${!i}" == "-headerFile" ]; then
+      next_idx=$((i+1))
+      header_file=${!next_idx}
+    elif [ "${!i}" == "-outputFile" ]; then
+      next_idx=$((i+1))
+      output_file=${!next_idx}
+    fi
+  done
+  if [ "$output_file" == "" ]; then
+    if ! response=$(get_file_name 2>&1); then
+      log 2 "error getting output file name: $response"
+      return 1
+    fi
+    output_file="$TEST_FILE_FOLDER/$response"
+    params+=("-outputFile" "$output_file")
+  fi
+  if ! curl_command=$(go run ./tests/rest_scripts/generateCommand.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -awsRegion "$AWS_REGION" -url "$AWS_ENDPOINT_URL" "-writeXMLPayloadToFile" "$TEST_FILE_FOLDER/$xml_file" "${params[@]}" 2>&1); then
     log 2 "error: $curl_command"
     return 1
   fi
@@ -200,11 +216,16 @@ rest_go_command_perform_send() {
   mapfile -t curl_command_array < <(
     printf '%s' "$curl_command" | python3 -c 'import shlex, sys; [print(arg) for arg in shlex.split(sys.stdin.read())]'
   )
-  if ! result=$(send_command "${curl_command_array[@]}" 2>&1); then
-    log 2 "error sending command: $result"
+  if ! response=$(send_command "${curl_command_array[@]}" 2>&1); then
+    log 2 "error sending command: $response"
     return 1
   fi
-  echo "$result"
+  if [ "$header_file" != "" ]; then
+    response_file="$header_file"
+  else
+    response_file="$output_file"
+  fi
+  echo "$response_file"
   return 0
 }
 
@@ -239,16 +260,12 @@ send_rest_go_command_expect_error_callback() {
     mapfile -t callback_params < <(get_callback_params "${all_params[@]}")
   fi
 
-  if ! result=$(rest_go_command_perform_send "${go_param_array[@]}" 2>&1); then
-    log 2 "error sending rest go command: $result"
+  if ! response=$(rest_go_command_perform_send "${go_param_array[@]}" 2>&1); then
+    log 2 "error sending rest go command: $response"
     return 1
   fi
-  if ! file_name=$(get_file_name 2>&1); then
-    log 2 "error getting file name: $file_name"
-    return 1
-  fi
-  echo -n "$result" > "$TEST_FILE_FOLDER/$file_name"
-  if ! check_rest_go_expected_error "$TEST_FILE_FOLDER/$file_name" "$1" "$2" "$3"; then
+  response_file="$response"
+  if ! check_rest_go_expected_error "$response_file" "$1" "$2" "$3"; then
     log 2 "error checking expected header error"
     return 1
   fi
@@ -260,13 +277,13 @@ send_rest_go_command_expect_error_callback() {
 }
 
 bypass_continues() {
-  if ! check_param_count_v2 "raw response" 1 $#; then
+  if ! check_param_count_v2 "raw response file" 1 $#; then
     return 1
   fi
 
   local status_line_idx=1 status_code="" continue_count=0
   while ((continue_count<10)); do
-    status_line=$(sed -n "${status_line_idx}p" <<< "$1")
+    status_line=$(sed -n "${status_line_idx}p" < "$1")
     status_code=$(echo "$status_line" | awk '{print $2}')
     if [ "$status_code" != "100" ]; then
       break
@@ -337,46 +354,31 @@ send_rest_go_command_callback() {
     mapfile -t callback_params < <(get_callback_params "${all_params[@]}")
   fi
 
-  if ! result=$(rest_go_command_perform_send "${go_param_array[@]}" 2>&1); then
-    log 2 "error sending rest go command: $result"
+  if ! response=$(rest_go_command_perform_send "${go_param_array[@]}" 2>&1); then
+    log 2 "error sending rest go command: $response"
     return 1
   fi
-  if ! response=$(bypass_continues "$result" 2>&1); then
+  response_file="$response"
+
+  if ! response=$(bypass_continues "$response_file" 2>&1); then
     log 2 "error bypassing continues: $response"
     return 1
   fi
   status_code=$(echo -n "$response" | awk '{print $2}')
   if [ "$1" != "$status_code" ]; then
-    log 2 "expected curl response '$1', was '$status_code' (response: '$result')"
+    log 2 "expected curl response '$1', was '$status_code' (response: '$(cat "$response_file")')"
     return 1
   fi
   if [ "$2" == "" ]; then
-    echo "$result"
+    echo "$response_file"
     return 0
   fi
-  if ! callback_result=$(call_callback "$result" "$2" 2>&1); then
-    log 2 "callback error: $callback_result"
+  if ! response=$("$2" "$response_file" "${callback_params[@]}" 2>&1); then
+    log 2 "callback error: $response"
     return 1
   fi
+  callback_result="$response"
   echo "$callback_result"
-  return 0
-}
-
-call_callback() {
-  if ! check_param_count_v2 "response, callback" 2 $#; then
-    return 1
-  fi
-  if ! output_file_name=$(get_file_name 2>&1); then
-    log 2 "error generating output file name: $output_file_name"
-    return 1
-  fi
-  echo -n "$1" > "$TEST_FILE_FOLDER/$output_file_name"
-  local callback_output
-  if ! callback_output=$("$2" "$TEST_FILE_FOLDER/$output_file_name" "${callback_params[@]}" 2>&1); then
-    log 2 "error in callback: $callback_output"
-    return 1
-  fi
-  echo "$callback_output"
   return 0
 }
 
@@ -401,6 +403,7 @@ check_for_header_key_and_value() {
   fi
   while IFS=$': \r' read -r key value; do
     local check_result=0
+    value="${value%$'\r'}"
     check_key_and_value_pair_for_match "$key" "$value" "$2" "$3" || check_result=$?
     if [ "$check_result" -eq 2 ]; then
       return 1
@@ -464,23 +467,27 @@ send_rest_go_command_expect_error_with_specific_arg_name_value() {
 }
 
 check_specific_argument_names_and_values() {
-  if ! check_param_count_v2 "data file" 1 $#; then
+  if ! check_param_count_gt "data file, arg names and values" 1 $#; then
     return 1
   fi
-  for ((idx=0; idx<${#arg_names_and_values[@]}; idx+=2)); do
-    if ! check_error_parameter "$1" "${arg_names_and_values[$idx]}" "${arg_names_and_values[(($idx+1))]}"; then
-      log 2 "error checking '${arg_names_and_values[$idx]}' parameter"
+  local data_file="$1"
+  shift
+
+  while [ "$1" != "" ]; do
+    if ! check_error_parameter "$data_file" "$1" "$2"; then
+      log 2 "error checking '$1' parameter with value '$2'"
       return 1
     fi
+    shift 2
   done
+  return 0
 }
 
 send_rest_go_command_expect_error_with_specific_arg_names_values() {
   if ! check_param_count_gt "response code, error code, message, arg count, pairs of arg names and values, params" 6 $#; then
     return 1
   fi
-  arg_names_and_values=("${@:5:$4}")
-  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "check_specific_argument_names_and_values" "${@:((5+$4))}"; then
+  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "check_specific_argument_names_and_values" "${@:((5+$4))}" "--" "${@:5:$4}"; then
     log 2 "error checking error response values"
     return 1
   fi
@@ -488,10 +495,10 @@ send_rest_go_command_expect_error_with_specific_arg_names_values() {
 }
 
 check_header_key_and_value() {
-  if ! check_param_count_v2 "data file" 1 $#; then
+  if ! check_param_count_v2 "data file, header key, header value" 3 $#; then
     return 1
   fi
-  if ! check_for_header_key_and_value "$1" "$header_key" "$header_value"; then
+  if ! check_for_header_key_and_value "$1" "$2" "$3"; then
     log 2 "error checking header key and value"
     return 1
   fi
@@ -502,9 +509,7 @@ send_rest_go_command_check_header_key_and_value() {
   if ! check_param_count_gt "response code, header key, header values, params" 3 $#; then
     return 1
   fi
-  header_key="$2"
-  header_value="$3"
-  if ! send_rest_go_command_callback "$1" "check_header_key_and_value" "${@:4}"; then
+  if ! send_rest_go_command_callback "$1" "check_header_key_and_value" "${@:4}" "--" "$2" "$3"; then
     log 2 "error sending command and checking header key and value"
     return 1
   fi
@@ -515,11 +520,10 @@ send_rest_go_command_write_response_to_file() {
   if ! check_param_count_gt "file, params" 2 $#; then
     return 1
   fi
-  if ! rest_go_command_perform_send "${@:2}"; then
-    log 2 "error sending rest go command"
+  if ! response=$(rest_go_command_perform_send "${@:2}" "-outputFile" "$1" 2>&1); then
+    log 2 "error sending rest go command: $response"
     return 1
   fi
-  echo -n "$result" > "$1"
   return 0
 }
 

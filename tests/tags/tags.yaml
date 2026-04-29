@@ -4,10 +4,14 @@ tags:
   feature:
     invalid-method:
       desc: "Tests for invalid methods"
+    invalid-header:
+      desc: "Tests for invalid headers"
     malformed-message:
       desc: "Tests for severely malformed messages"
     minimal-request:
       desc: "Tests that do not use any optional query or header values"
+    multipart:
+      desc: "Multipart upload"
     required-headers:
       desc: "Required headers such as 'Authorization' and 'x-amz-date'"
     user:
@@ -18,6 +22,8 @@ tags:
     openssl:
       desc: "REST OpenSSL commands"
   command:
+    GetObject:
+      desc: "GetObject command"
     ListBuckets:
       desc: "ListBuckets command"
   header:
@@ -25,8 +31,10 @@ tags:
       desc: "Authorization header"
     host:
       desc: "host header"
+    range:
+      desc: "ranged download tests"
     x-amz-content-sha256:
-      desc: "x-amz-content-sha256 header"
+      desc: "x-amz-content-sha256 header (payload hash and/or type)"
     x-amz-date:
       desc: "x-amz-date header"
   query:
@@ -36,5 +44,19 @@ tags:
       desc: "ListBuckets/ListObjects continuation token query"
     max-buckets:
       desc: "Maximum amount of buckets returned by ListBuckets command"
+    partNumber:
+      desc: "partNumber query for multiparts and gets"
     prefix:
       desc: "bucket or object prefix query"
+    response-cache-control:
+      desc: "override cache-control header response"
+    response-content-disposition:
+      desc: "override content-disposition header response"
+    response-content-encoding:
+      desc: "override content-encoding header response"
+    response-content-language:
+      desc: "override content-language header response"
+    response-content-type:
+      desc: "override content-type header response"
+    response-expires:
+      desc: "override expires header response"

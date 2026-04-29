@@ -50,6 +50,8 @@ var commandType *string
 var checksumType *string
 var customSHA256Hash *string
 var customDate *string
+var outputFile *string
+var headerFile *string
 
 type arrayFlags []string
 
@@ -151,6 +153,8 @@ func main() {
 			OmitDate:              *omitDate,
 			CustomDate:            *customDate,
 			WriteXMLPayloadToFile: *writeXMLPayloadToFile,
+			OutputFile:            *outputFile,
+			HeaderFile:            *headerFile,
 		},
 	}
 
@@ -267,6 +271,8 @@ func checkFlags() error {
 	locationConstraint = flag.String("locationConstraint", "", "Location constraint for bucket creation")
 	flag.Var(&corsRules, "corsRule", "CORS rule for PutBucketCORS command (can add multiple)")
 	writeXMLPayloadToFile = flag.String("writeXMLPayloadToFile", "", "for curl commands, file to write XML payloads to")
+	outputFile = flag.String("outputFile", "", "for curl commands, location to save retrieved file data (to stdout if empty)")
+	headerFile = flag.String("headerFile", "", "for curl commands, location to save header file data (to stdout or outputFile if empty)")
 	// Parse the flags
 	flag.Parse()
 
