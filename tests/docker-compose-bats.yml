@@ -34,7 +34,7 @@ services:
       args:
         - CONFIG_FILE=tests/.env.default
     image: bats_test
-    command: ["--tags","openssl"]
+    command: ["--tags","--run", "openssl"]
   direct:
     build:
       dockerfile: tests/Dockerfile_direct
