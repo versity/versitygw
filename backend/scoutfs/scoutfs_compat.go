@@ -270,6 +270,8 @@ func (s *ScoutFS) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s
 		})
 }
 
+const scoutfsBlockSize = 4096
+
 // CompleteMultipartUpload scoutfs complete upload uses scoutfs move blocks
 // ioctl to not have to read and copy the part data to the final object. This
 // saves a read and write cycle for all mutlipart uploads.
@@ -279,9 +281,16 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 		acct = auth.Account{}
 	}
 
+	totalParts := len(input.MultipartUpload.Parts)
+	callCount := 0
+
 	return s.Posix.CompleteMultipartUploadWithCopy(ctx, input,
 		func(from *os.File, to *os.File) (bool, error) {
-			// May fail if the files are not 4K aligned; check for alignment
+			callCount++
+			isLast := callCount == totalParts
+
+			// May fail if the files are not 4K aligned; check for alignment.
+			// The last part is allowed to have a size that is not a multiple of 4K.
 			ffi, err := from.Stat()
 			if err != nil {
 				return true, fmt.Errorf("complete-mpu stat from: %w", err)
@@ -290,7 +299,7 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 			if err != nil {
 				return true, fmt.Errorf("complete-mpu stat to: %w", err)
 			}
-			if ffi.Size()%4096 != 0 || tfi.Size()%4096 != 0 {
+			if !isLast && (ffi.Size()%scoutfsBlockSize != 0 || tfi.Size()%scoutfsBlockSize != 0) {
 				return true, os.ErrInvalid
 			}
 
