@@ -22,6 +22,7 @@ import (
 	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -53,7 +54,9 @@ import (
 	"github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"github.com/cespare/xxhash/v2"
 	"github.com/versity/versitygw/s3err"
+	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
@@ -547,21 +550,46 @@ func hasPrefixName(prefixes []types.CommonPrefix, names []string) bool {
 	return true
 }
 
+type putObjectCfg struct {
+	checksumAlgorithm types.ChecksumAlgorithm
+}
+
+type putObjectOpt func(*putObjectCfg)
+
+func withPutObjectChecksumAlgo(algo types.ChecksumAlgorithm) putObjectOpt {
+	return func(poc *putObjectCfg) { poc.checksumAlgorithm = algo }
+}
+
 type putObjectOutput struct {
 	csum [32]byte
 	data []byte
 	res  *s3.PutObjectOutput
 }
 
-func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) (*putObjectOutput, error) {
+func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client, opts ...putObjectOpt) (*putObjectOutput, error) {
+	cfg := &putObjectCfg{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
 	var csum [32]byte
 	var data []byte
 	if input.Body == nil && lgth != 0 {
 		data = make([]byte, lgth)
 		rand.Read(data)
+
 		csum = sha256.Sum256(data)
-		r := bytes.NewReader(data)
-		input.Body = r
+		if cfg.checksumAlgorithm != "" {
+			hasher, err := NewHasher(cfg.checksumAlgorithm)
+			if err != nil {
+				return nil, err
+			}
+
+			hasher.Write(data)
+			sum := base64.StdEncoding.EncodeToString(hasher.Sum(nil))
+			setPutObjectChecksum(input, cfg.checksumAlgorithm, &sum)
+		}
+		input.Body = bytes.NewReader(data)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
@@ -713,6 +741,36 @@ func compareParts(parts1, parts2 []types.Part) bool {
 				return false
 			}
 		}
+		if prt.ChecksumSHA512 != nil {
+			if *prt.ChecksumSHA512 != getString(parts2[i].ChecksumSHA512) {
+				fmt.Printf("sha512 checksums are not equal, %v != %v\n", *prt.ChecksumSHA512, getString(parts2[i].ChecksumSHA512))
+				return false
+			}
+		}
+		if prt.ChecksumMD5 != nil {
+			if *prt.ChecksumMD5 != getString(parts2[i].ChecksumMD5) {
+				fmt.Printf("md5 checksums are not equal, %v != %v\n", *prt.ChecksumMD5, getString(parts2[i].ChecksumMD5))
+				return false
+			}
+		}
+		if prt.ChecksumXXHASH64 != nil {
+			if *prt.ChecksumXXHASH64 != getString(parts2[i].ChecksumXXHASH64) {
+				fmt.Printf("xxhash64 checksums are not equal, %v != %v\n", *prt.ChecksumXXHASH64, getString(parts2[i].ChecksumXXHASH64))
+				return false
+			}
+		}
+		if prt.ChecksumXXHASH3 != nil {
+			if *prt.ChecksumXXHASH3 != getString(parts2[i].ChecksumXXHASH3) {
+				fmt.Printf("xxhash3 checksums are not equal, %v != %v\n", *prt.ChecksumXXHASH3, getString(parts2[i].ChecksumXXHASH3))
+				return false
+			}
+		}
+		if prt.ChecksumXXHASH128 != nil {
+			if *prt.ChecksumXXHASH128 != getString(parts2[i].ChecksumXXHASH128) {
+				fmt.Printf("xxhash128 checksums are not equal, %v != %v\n", *prt.ChecksumXXHASH128, getString(parts2[i].ChecksumXXHASH128))
+				return false
+			}
+		}
 	}
 	return true
 }
@@ -773,6 +831,299 @@ func getString(str *string) string {
 
 func getPtr[T any](str T) *T {
 	return &str
+}
+
+func checksumHeaderName(algo types.ChecksumAlgorithm) string {
+	return fmt.Sprintf("x-amz-checksum-%s", strings.ToLower(string(algo)))
+}
+
+type checksumFields struct {
+	CRC32     **string
+	CRC32C    **string
+	SHA1      **string
+	SHA256    **string
+	CRC64NVME **string
+	SHA512    **string
+	MD5       **string
+	XXHASH64  **string
+	XXHASH3   **string
+	XXHASH128 **string
+}
+
+func selectChecksum(algo types.ChecksumAlgorithm, fields checksumFields) **string {
+	switch algo {
+	case types.ChecksumAlgorithmCrc32:
+		return fields.CRC32
+	case types.ChecksumAlgorithmCrc32c:
+		return fields.CRC32C
+	case types.ChecksumAlgorithmSha1:
+		return fields.SHA1
+	case types.ChecksumAlgorithmSha256:
+		return fields.SHA256
+	case types.ChecksumAlgorithmCrc64nvme:
+		return fields.CRC64NVME
+	case types.ChecksumAlgorithmSha512:
+		return fields.SHA512
+	case types.ChecksumAlgorithmMd5:
+		return fields.MD5
+	case types.ChecksumAlgorithmXxhash64:
+		return fields.XXHASH64
+	case types.ChecksumAlgorithmXxhash3:
+		return fields.XXHASH3
+	case types.ChecksumAlgorithmXxhash128:
+		return fields.XXHASH128
+	default:
+		return nil
+	}
+}
+
+func getChecksum(algo types.ChecksumAlgorithm, fields checksumFields) *string {
+	if checksum := selectChecksum(algo, fields); checksum != nil {
+		return *checksum
+	}
+	return nil
+}
+
+func setChecksum(algo types.ChecksumAlgorithm, fields checksumFields, checksum *string) {
+	if selected := selectChecksum(algo, fields); selected != nil {
+		*selected = checksum
+	}
+}
+
+func getPartChecksum(part types.Part, algo types.ChecksumAlgorithm) *string {
+	return getChecksum(algo, checksumFields{
+		CRC32:     &part.ChecksumCRC32,
+		CRC32C:    &part.ChecksumCRC32C,
+		SHA1:      &part.ChecksumSHA1,
+		SHA256:    &part.ChecksumSHA256,
+		CRC64NVME: &part.ChecksumCRC64NVME,
+		SHA512:    &part.ChecksumSHA512,
+		MD5:       &part.ChecksumMD5,
+		XXHASH64:  &part.ChecksumXXHASH64,
+		XXHASH3:   &part.ChecksumXXHASH3,
+		XXHASH128: &part.ChecksumXXHASH128,
+	})
+}
+
+func setPartChecksum(part *types.Part, algo types.ChecksumAlgorithm, checksum *string) {
+	setChecksum(algo, checksumFields{
+		CRC32:     &part.ChecksumCRC32,
+		CRC32C:    &part.ChecksumCRC32C,
+		SHA1:      &part.ChecksumSHA1,
+		SHA256:    &part.ChecksumSHA256,
+		CRC64NVME: &part.ChecksumCRC64NVME,
+		SHA512:    &part.ChecksumSHA512,
+		MD5:       &part.ChecksumMD5,
+		XXHASH64:  &part.ChecksumXXHASH64,
+		XXHASH3:   &part.ChecksumXXHASH3,
+		XXHASH128: &part.ChecksumXXHASH128,
+	}, checksum)
+}
+
+func getCompletedPartChecksum(part types.CompletedPart, algo types.ChecksumAlgorithm) *string {
+	return getChecksum(algo, checksumFields{
+		CRC32:     &part.ChecksumCRC32,
+		CRC32C:    &part.ChecksumCRC32C,
+		SHA1:      &part.ChecksumSHA1,
+		SHA256:    &part.ChecksumSHA256,
+		CRC64NVME: &part.ChecksumCRC64NVME,
+		SHA512:    &part.ChecksumSHA512,
+		MD5:       &part.ChecksumMD5,
+		XXHASH64:  &part.ChecksumXXHASH64,
+		XXHASH3:   &part.ChecksumXXHASH3,
+		XXHASH128: &part.ChecksumXXHASH128,
+	})
+}
+
+func completedPartFromPart(part types.Part) types.CompletedPart {
+	return types.CompletedPart{
+		ETag:              part.ETag,
+		PartNumber:        part.PartNumber,
+		ChecksumCRC32:     part.ChecksumCRC32,
+		ChecksumCRC32C:    part.ChecksumCRC32C,
+		ChecksumSHA1:      part.ChecksumSHA1,
+		ChecksumSHA256:    part.ChecksumSHA256,
+		ChecksumCRC64NVME: part.ChecksumCRC64NVME,
+		ChecksumSHA512:    part.ChecksumSHA512,
+		ChecksumMD5:       part.ChecksumMD5,
+		ChecksumXXHASH64:  part.ChecksumXXHASH64,
+		ChecksumXXHASH3:   part.ChecksumXXHASH3,
+		ChecksumXXHASH128: part.ChecksumXXHASH128,
+	}
+}
+
+func getPutObjectChecksum(out *s3.PutObjectOutput, algo types.ChecksumAlgorithm) *string {
+	return getChecksum(algo, checksumFields{
+		CRC32:     &out.ChecksumCRC32,
+		CRC32C:    &out.ChecksumCRC32C,
+		SHA1:      &out.ChecksumSHA1,
+		SHA256:    &out.ChecksumSHA256,
+		CRC64NVME: &out.ChecksumCRC64NVME,
+		SHA512:    &out.ChecksumSHA512,
+		MD5:       &out.ChecksumMD5,
+		XXHASH64:  &out.ChecksumXXHASH64,
+		XXHASH3:   &out.ChecksumXXHASH3,
+		XXHASH128: &out.ChecksumXXHASH128,
+	})
+}
+
+func setPutObjectChecksum(in *s3.PutObjectInput, algo types.ChecksumAlgorithm, checksum *string) {
+	setChecksum(algo, checksumFields{
+		CRC32:     &in.ChecksumCRC32,
+		CRC32C:    &in.ChecksumCRC32C,
+		SHA1:      &in.ChecksumSHA1,
+		SHA256:    &in.ChecksumSHA256,
+		CRC64NVME: &in.ChecksumCRC64NVME,
+		SHA512:    &in.ChecksumSHA512,
+		MD5:       &in.ChecksumMD5,
+		XXHASH64:  &in.ChecksumXXHASH64,
+		XXHASH3:   &in.ChecksumXXHASH3,
+		XXHASH128: &in.ChecksumXXHASH128,
+	}, checksum)
+}
+
+func getGetObjectChecksum(out *s3.GetObjectOutput, algo types.ChecksumAlgorithm) *string {
+	return getChecksum(algo, checksumFields{
+		CRC32:     &out.ChecksumCRC32,
+		CRC32C:    &out.ChecksumCRC32C,
+		SHA1:      &out.ChecksumSHA1,
+		SHA256:    &out.ChecksumSHA256,
+		CRC64NVME: &out.ChecksumCRC64NVME,
+		SHA512:    &out.ChecksumSHA512,
+		MD5:       &out.ChecksumMD5,
+		XXHASH64:  &out.ChecksumXXHASH64,
+		XXHASH3:   &out.ChecksumXXHASH3,
+		XXHASH128: &out.ChecksumXXHASH128,
+	})
+}
+
+func getHeadObjectChecksum(out *s3.HeadObjectOutput, algo types.ChecksumAlgorithm) *string {
+	return getChecksum(algo, checksumFields{
+		CRC32:     &out.ChecksumCRC32,
+		CRC32C:    &out.ChecksumCRC32C,
+		SHA1:      &out.ChecksumSHA1,
+		SHA256:    &out.ChecksumSHA256,
+		CRC64NVME: &out.ChecksumCRC64NVME,
+		SHA512:    &out.ChecksumSHA512,
+		MD5:       &out.ChecksumMD5,
+		XXHASH64:  &out.ChecksumXXHASH64,
+		XXHASH3:   &out.ChecksumXXHASH3,
+		XXHASH128: &out.ChecksumXXHASH128,
+	})
+}
+
+func getObjectAttributesChecksum(out *types.Checksum, algo types.ChecksumAlgorithm) *string {
+	if out == nil {
+		return nil
+	}
+	return getChecksum(algo, checksumFields{
+		CRC32:     &out.ChecksumCRC32,
+		CRC32C:    &out.ChecksumCRC32C,
+		SHA1:      &out.ChecksumSHA1,
+		SHA256:    &out.ChecksumSHA256,
+		CRC64NVME: &out.ChecksumCRC64NVME,
+		SHA512:    &out.ChecksumSHA512,
+		MD5:       &out.ChecksumMD5,
+		XXHASH64:  &out.ChecksumXXHASH64,
+		XXHASH3:   &out.ChecksumXXHASH3,
+		XXHASH128: &out.ChecksumXXHASH128,
+	})
+}
+
+func getUploadPartChecksum(out *s3.UploadPartOutput, algo types.ChecksumAlgorithm) *string {
+	return getChecksum(algo, checksumFields{
+		CRC32:     &out.ChecksumCRC32,
+		CRC32C:    &out.ChecksumCRC32C,
+		SHA1:      &out.ChecksumSHA1,
+		SHA256:    &out.ChecksumSHA256,
+		CRC64NVME: &out.ChecksumCRC64NVME,
+		SHA512:    &out.ChecksumSHA512,
+		MD5:       &out.ChecksumMD5,
+		XXHASH64:  &out.ChecksumXXHASH64,
+		XXHASH3:   &out.ChecksumXXHASH3,
+		XXHASH128: &out.ChecksumXXHASH128,
+	})
+}
+
+func setUploadPartChecksum(in *s3.UploadPartInput, algo types.ChecksumAlgorithm, checksum *string) {
+	setChecksum(algo, checksumFields{
+		CRC32:     &in.ChecksumCRC32,
+		CRC32C:    &in.ChecksumCRC32C,
+		SHA1:      &in.ChecksumSHA1,
+		SHA256:    &in.ChecksumSHA256,
+		CRC64NVME: &in.ChecksumCRC64NVME,
+		SHA512:    &in.ChecksumSHA512,
+		MD5:       &in.ChecksumMD5,
+		XXHASH64:  &in.ChecksumXXHASH64,
+		XXHASH3:   &in.ChecksumXXHASH3,
+		XXHASH128: &in.ChecksumXXHASH128,
+	}, checksum)
+}
+
+func getCompleteMultipartUploadChecksum(out *s3.CompleteMultipartUploadOutput, algo types.ChecksumAlgorithm) *string {
+	return getChecksum(algo, checksumFields{
+		CRC32:     &out.ChecksumCRC32,
+		CRC32C:    &out.ChecksumCRC32C,
+		SHA1:      &out.ChecksumSHA1,
+		SHA256:    &out.ChecksumSHA256,
+		CRC64NVME: &out.ChecksumCRC64NVME,
+		SHA512:    &out.ChecksumSHA512,
+		MD5:       &out.ChecksumMD5,
+		XXHASH64:  &out.ChecksumXXHASH64,
+		XXHASH3:   &out.ChecksumXXHASH3,
+		XXHASH128: &out.ChecksumXXHASH128,
+	})
+}
+
+func setCompleteMultipartUploadChecksum(in *s3.CompleteMultipartUploadInput, algo types.ChecksumAlgorithm, checksum *string) {
+	setChecksum(algo, checksumFields{
+		CRC32:     &in.ChecksumCRC32,
+		CRC32C:    &in.ChecksumCRC32C,
+		SHA1:      &in.ChecksumSHA1,
+		SHA256:    &in.ChecksumSHA256,
+		CRC64NVME: &in.ChecksumCRC64NVME,
+		SHA512:    &in.ChecksumSHA512,
+		MD5:       &in.ChecksumMD5,
+		XXHASH64:  &in.ChecksumXXHASH64,
+		XXHASH3:   &in.ChecksumXXHASH3,
+		XXHASH128: &in.ChecksumXXHASH128,
+	}, checksum)
+}
+
+func getCopyObjectChecksum(result *types.CopyObjectResult, algo types.ChecksumAlgorithm) *string {
+	if result == nil {
+		return nil
+	}
+	return getChecksum(algo, checksumFields{
+		CRC32:     &result.ChecksumCRC32,
+		CRC32C:    &result.ChecksumCRC32C,
+		SHA1:      &result.ChecksumSHA1,
+		SHA256:    &result.ChecksumSHA256,
+		CRC64NVME: &result.ChecksumCRC64NVME,
+		SHA512:    &result.ChecksumSHA512,
+		MD5:       &result.ChecksumMD5,
+		XXHASH64:  &result.ChecksumXXHASH64,
+		XXHASH3:   &result.ChecksumXXHASH3,
+		XXHASH128: &result.ChecksumXXHASH128,
+	})
+}
+
+func getUploadPartCopyChecksum(result *types.CopyPartResult, algo types.ChecksumAlgorithm) *string {
+	if result == nil {
+		return nil
+	}
+	return getChecksum(algo, checksumFields{
+		CRC32:     &result.ChecksumCRC32,
+		CRC32C:    &result.ChecksumCRC32C,
+		SHA1:      &result.ChecksumSHA1,
+		SHA256:    &result.ChecksumSHA256,
+		CRC64NVME: &result.ChecksumCRC64NVME,
+		SHA512:    &result.ChecksumSHA512,
+		MD5:       &result.ChecksumMD5,
+		XXHASH64:  &result.ChecksumXXHASH64,
+		XXHASH3:   &result.ChecksumXXHASH3,
+		XXHASH128: &result.ChecksumXXHASH128,
+	})
 }
 
 // mp1 needs to be the response from the server
@@ -921,7 +1272,8 @@ func compareDelObjects(list1, list2 []types.DeletedObject) bool {
 func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId string, opts ...mpOpt) (parts []types.Part, csum string, err error) {
 	partSize := size / partCount
 
-	var hash hash.Hash
+	var objHasher hash.Hash
+	var partHasher hash.Hash
 
 	cfg := new(mpCfg)
 	for _, opt := range opts {
@@ -930,17 +1282,34 @@ func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId
 
 	switch cfg.checksumAlgorithm {
 	case types.ChecksumAlgorithmCrc32:
-		hash = crc32.NewIEEE()
+		objHasher = crc32.NewIEEE()
 	case types.ChecksumAlgorithmCrc32c:
-		hash = crc32.New(crc32.MakeTable(crc32.Castagnoli))
+		objHasher = crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	case types.ChecksumAlgorithmMd5:
+		objHasher = md5.New()
 	case types.ChecksumAlgorithmSha1:
-		hash = sha1.New()
+		objHasher = sha1.New()
 	case types.ChecksumAlgorithmSha256:
-		hash = sha256.New()
+		objHasher = sha256.New()
+	case types.ChecksumAlgorithmSha512:
+		objHasher = sha512.New()
 	case types.ChecksumAlgorithmCrc64nvme:
-		hash = crc64.New(crc64.MakeTable(bits.Reverse64(0xad93d23594c93659)))
+		objHasher = crc64.New(crc64.MakeTable(bits.Reverse64(0xad93d23594c93659)))
+	case types.ChecksumAlgorithmXxhash64:
+		objHasher = xxhash.New()
+	case types.ChecksumAlgorithmXxhash3:
+		objHasher = xxh3.New()
+	case types.ChecksumAlgorithmXxhash128:
+		objHasher = xxh3.New128()
 	default:
-		hash = sha256.New()
+		objHasher = sha256.New()
+	}
+
+	if cfg.checksumAlgorithm != "" {
+		partHasher, err = NewHasher(cfg.checksumAlgorithm)
+		if err != nil {
+			return nil, "", err
+		}
 	}
 
 	for partNumber := int64(1); partNumber <= partCount; partNumber++ {
@@ -952,18 +1321,28 @@ func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId
 
 		partBuffer := make([]byte, partEnd-partStart+1)
 		rand.Read(partBuffer)
-		hash.Write(partBuffer)
+		objHasher.Write(partBuffer)
+		if partHasher != nil {
+			partHasher.Write(partBuffer)
+		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		pn := int32(partNumber)
-		out, err := client.UploadPart(ctx, &s3.UploadPartInput{
+		input := &s3.UploadPartInput{
 			Bucket:            &bucket,
 			Key:               &key,
 			UploadId:          &uploadId,
 			Body:              bytes.NewReader(partBuffer),
 			PartNumber:        &pn,
 			ChecksumAlgorithm: cfg.checksumAlgorithm,
-		})
+		}
+		if partHasher != nil {
+			partChecksum := base64.StdEncoding.EncodeToString(partHasher.Sum(nil))
+			setUploadPartChecksum(input, cfg.checksumAlgorithm, &partChecksum)
+			partHasher.Reset()
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := client.UploadPart(ctx, input)
 		cancel()
 		if err != nil {
 			return parts, "", err
@@ -975,22 +1354,11 @@ func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId
 			Size:       &partSize,
 		}
 
-		switch cfg.checksumAlgorithm {
-		case types.ChecksumAlgorithmCrc32:
-			part.ChecksumCRC32 = out.ChecksumCRC32
-		case types.ChecksumAlgorithmCrc32c:
-			part.ChecksumCRC32C = out.ChecksumCRC32C
-		case types.ChecksumAlgorithmSha1:
-			part.ChecksumSHA1 = out.ChecksumSHA1
-		case types.ChecksumAlgorithmSha256:
-			part.ChecksumSHA256 = out.ChecksumSHA256
-		case types.ChecksumAlgorithmCrc64nvme:
-			part.ChecksumCRC64NVME = out.ChecksumCRC64NVME
-		}
+		setPartChecksum(&part, cfg.checksumAlgorithm, getUploadPartChecksum(out, cfg.checksumAlgorithm))
 
 		parts = append(parts, part)
 	}
-	sum := hash.Sum(nil)
+	sum := objHasher.Sum(nil)
 
 	if cfg.checksumAlgorithm == "" {
 		csum = hex.EncodeToString(sum[:])
@@ -1276,6 +1644,26 @@ func createObjVersions(client *s3.Client, bucket, object string, count int, opts
 		case r.res.ChecksumSHA256 != nil:
 			version.ChecksumAlgorithm = []types.ChecksumAlgorithm{
 				types.ChecksumAlgorithmSha256,
+			}
+		case r.res.ChecksumSHA512 != nil:
+			version.ChecksumAlgorithm = []types.ChecksumAlgorithm{
+				types.ChecksumAlgorithmSha512,
+			}
+		case r.res.ChecksumMD5 != nil:
+			version.ChecksumAlgorithm = []types.ChecksumAlgorithm{
+				types.ChecksumAlgorithmMd5,
+			}
+		case r.res.ChecksumXXHASH64 != nil:
+			version.ChecksumAlgorithm = []types.ChecksumAlgorithm{
+				types.ChecksumAlgorithmXxhash64,
+			}
+		case r.res.ChecksumXXHASH3 != nil:
+			version.ChecksumAlgorithm = []types.ChecksumAlgorithm{
+				types.ChecksumAlgorithmXxhash3,
+			}
+		case r.res.ChecksumXXHASH128 != nil:
+			version.ChecksumAlgorithm = []types.ChecksumAlgorithm{
+				types.ChecksumAlgorithmXxhash128,
 			}
 		}
 
@@ -2012,19 +2400,53 @@ func lockObject(client *s3.Client, mode objectLockMode, bucket, object, versionI
 func NewHasher(algo types.ChecksumAlgorithm) (hash.Hash, error) {
 	var hasher hash.Hash
 	switch algo {
+	case types.ChecksumAlgorithmMd5:
+		hasher = md5.New()
 	case types.ChecksumAlgorithmSha256:
 		hasher = sha256.New()
+	case types.ChecksumAlgorithmSha512:
+		hasher = sha512.New()
 	case types.ChecksumAlgorithmSha1:
 		hasher = sha1.New()
 	case types.ChecksumAlgorithmCrc32:
 		hasher = crc32.NewIEEE()
 	case types.ChecksumAlgorithmCrc32c:
 		hasher = crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	case types.ChecksumAlgorithmCrc64nvme:
+		hasher = crc64.New(crc64.MakeTable(bits.Reverse64(0xad93d23594c93659)))
+	case types.ChecksumAlgorithmXxhash64:
+		hasher = xxhash.New()
+	case types.ChecksumAlgorithmXxhash3:
+		hasher = xxh3.New()
+	case types.ChecksumAlgorithmXxhash128:
+		hasher = xxh3.New128()
 	default:
 		return nil, fmt.Errorf("unsupported hash algorithm: %s", algo)
 	}
 
 	return hasher, nil
+}
+
+func wrongChecksumForAlgorithm(algo types.ChecksumAlgorithm) (string, error) {
+	var size int
+	switch algo {
+	case types.ChecksumAlgorithmCrc32, types.ChecksumAlgorithmCrc32c:
+		size = 4
+	case types.ChecksumAlgorithmCrc64nvme, types.ChecksumAlgorithmXxhash64, types.ChecksumAlgorithmXxhash3:
+		size = 8
+	case types.ChecksumAlgorithmMd5, types.ChecksumAlgorithmXxhash128:
+		size = 16
+	case types.ChecksumAlgorithmSha1:
+		size = 20
+	case types.ChecksumAlgorithmSha256:
+		size = 32
+	case types.ChecksumAlgorithmSha512:
+		size = 64
+	default:
+		return "", fmt.Errorf("unsupported hash algorithm: %s", algo)
+	}
+
+	return base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xff}, size)), nil
 }
 
 func processCompositeChecksum(hasher hash.Hash, checksum string) error {

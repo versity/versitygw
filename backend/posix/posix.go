@@ -1659,8 +1659,76 @@ func getPartChecksum(algo types.ChecksumAlgorithm, part types.CompletedPart) str
 		return backend.GetStringFromPtr(part.ChecksumSHA256)
 	case types.ChecksumAlgorithmCrc64nvme:
 		return backend.GetStringFromPtr(part.ChecksumCRC64NVME)
+	case types.ChecksumAlgorithmSha512:
+		return backend.GetStringFromPtr(part.ChecksumSHA512)
+	case types.ChecksumAlgorithmMd5:
+		return backend.GetStringFromPtr(part.ChecksumMD5)
+	case types.ChecksumAlgorithmXxhash64:
+		return backend.GetStringFromPtr(part.ChecksumXXHASH64)
+	case types.ChecksumAlgorithmXxhash3:
+		return backend.GetStringFromPtr(part.ChecksumXXHASH3)
+	case types.ChecksumAlgorithmXxhash128:
+		return backend.GetStringFromPtr(part.ChecksumXXHASH128)
 	default:
 		return ""
+	}
+}
+
+func setStoredChecksum(checksum *s3response.Checksum, algo types.ChecksumAlgorithm, sum *string) {
+	if sum == nil {
+		return
+	}
+
+	switch algo {
+	case types.ChecksumAlgorithmCrc32:
+		checksum.CRC32 = sum
+	case types.ChecksumAlgorithmCrc32c:
+		checksum.CRC32C = sum
+	case types.ChecksumAlgorithmSha1:
+		checksum.SHA1 = sum
+	case types.ChecksumAlgorithmSha256:
+		checksum.SHA256 = sum
+	case types.ChecksumAlgorithmCrc64nvme:
+		checksum.CRC64NVME = sum
+	case types.ChecksumAlgorithmSha512:
+		checksum.SHA512 = sum
+	case types.ChecksumAlgorithmMd5:
+		checksum.MD5 = sum
+	case types.ChecksumAlgorithmXxhash64:
+		checksum.XXHASH64 = sum
+	case types.ChecksumAlgorithmXxhash3:
+		checksum.XXHASH3 = sum
+	case types.ChecksumAlgorithmXxhash128:
+		checksum.XXHASH128 = sum
+	}
+}
+
+func setUploadPartChecksum(res *s3.UploadPartOutput, algo types.ChecksumAlgorithm, sum *string) {
+	if sum == nil {
+		return
+	}
+
+	switch algo {
+	case types.ChecksumAlgorithmCrc32:
+		res.ChecksumCRC32 = sum
+	case types.ChecksumAlgorithmCrc32c:
+		res.ChecksumCRC32C = sum
+	case types.ChecksumAlgorithmSha1:
+		res.ChecksumSHA1 = sum
+	case types.ChecksumAlgorithmSha256:
+		res.ChecksumSHA256 = sum
+	case types.ChecksumAlgorithmCrc64nvme:
+		res.ChecksumCRC64NVME = sum
+	case types.ChecksumAlgorithmSha512:
+		res.ChecksumSHA512 = sum
+	case types.ChecksumAlgorithmMd5:
+		res.ChecksumMD5 = sum
+	case types.ChecksumAlgorithmXxhash64:
+		res.ChecksumXXHASH64 = sum
+	case types.ChecksumAlgorithmXxhash3:
+		res.ChecksumXXHASH3 = sum
+	case types.ChecksumAlgorithmXxhash128:
+		res.ChecksumXXHASH128 = sum
 	}
 }
 
@@ -1947,6 +2015,11 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	var sha1 *string
 	var sha256 *string
 	var crc64nvme *string
+	var sha512 *string
+	var md5sum *string
+	var xxhash64 *string
+	var xxhash3 *string
+	var xxhash128 *string
 	var gotSum *string
 
 	switch checksums.Algorithm {
@@ -1970,6 +2043,26 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		gotSum = input.ChecksumCRC64NVME
 		checksums.CRC64NVME = &value
 		crc64nvme = &value
+	case types.ChecksumAlgorithmSha512:
+		gotSum = input.ChecksumSHA512
+		checksums.SHA512 = &value
+		sha512 = &value
+	case types.ChecksumAlgorithmMd5:
+		gotSum = input.ChecksumMD5
+		checksums.MD5 = &value
+		md5sum = &value
+	case types.ChecksumAlgorithmXxhash64:
+		gotSum = input.ChecksumXXHASH64
+		checksums.XXHASH64 = &value
+		xxhash64 = &value
+	case types.ChecksumAlgorithmXxhash3:
+		gotSum = input.ChecksumXXHASH3
+		checksums.XXHASH3 = &value
+		xxhash3 = &value
+	case types.ChecksumAlgorithmXxhash128:
+		gotSum = input.ChecksumXXHASH128
+		checksums.XXHASH128 = &value
+		xxhash128 = &value
 	}
 
 	// Check if the provided checksum and the calculated one are the same.
@@ -2176,6 +2269,11 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		ChecksumSHA1:      sha1,
 		ChecksumSHA256:    sha256,
 		ChecksumCRC64NVME: crc64nvme,
+		ChecksumSHA512:    sha512,
+		ChecksumMD5:       md5sum,
+		ChecksumXXHASH64:  xxhash64,
+		ChecksumXXHASH3:   xxhash3,
+		ChecksumXXHASH128: xxhash128,
 		ChecksumType:      &checksums.Type,
 	}, versionID, nil
 }
@@ -2212,6 +2310,11 @@ func validatePartChecksum(checksum s3response.Checksum, part types.CompletedPart
 		{part.ChecksumSHA1, getString(checksum.SHA1), types.ChecksumAlgorithmSha1},
 		{part.ChecksumSHA256, getString(checksum.SHA256), types.ChecksumAlgorithmSha256},
 		{part.ChecksumCRC64NVME, getString(checksum.CRC64NVME), types.ChecksumAlgorithmCrc64nvme},
+		{part.ChecksumSHA512, getString(checksum.SHA512), types.ChecksumAlgorithmSha512},
+		{part.ChecksumMD5, getString(checksum.MD5), types.ChecksumAlgorithmMd5},
+		{part.ChecksumXXHASH64, getString(checksum.XXHASH64), types.ChecksumAlgorithmXxhash64},
+		{part.ChecksumXXHASH3, getString(checksum.XXHASH3), types.ChecksumAlgorithmXxhash3},
+		{part.ChecksumXXHASH128, getString(checksum.XXHASH128), types.ChecksumAlgorithmXxhash128},
 	} {
 		if cs.checksum == nil {
 			continue
@@ -2252,6 +2355,21 @@ func numberOfChecksums(part types.CompletedPart) int {
 		counter++
 	}
 	if getString(part.ChecksumCRC64NVME) != "" {
+		counter++
+	}
+	if getString(part.ChecksumSHA512) != "" {
+		counter++
+	}
+	if getString(part.ChecksumMD5) != "" {
+		counter++
+	}
+	if getString(part.ChecksumXXHASH64) != "" {
+		counter++
+	}
+	if getString(part.ChecksumXXHASH3) != "" {
+		counter++
+	}
+	if getString(part.ChecksumXXHASH128) != "" {
 		counter++
 	}
 
@@ -2778,6 +2896,11 @@ func (p *Posix) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3resp
 			ChecksumSHA1:      checksum.SHA1,
 			ChecksumSHA256:    checksum.SHA256,
 			ChecksumCRC64NVME: checksum.CRC64NVME,
+			ChecksumSHA512:    checksum.SHA512,
+			ChecksumMD5:       checksum.MD5,
+			ChecksumXXHASH64:  checksum.XXHASH64,
+			ChecksumXXHASH3:   checksum.XXHASH3,
+			ChecksumXXHASH128: checksum.XXHASH128,
 		})
 	}
 
@@ -2899,6 +3022,11 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 			{input.ChecksumSHA1, utils.HashTypeSha1},
 			{input.ChecksumSHA256, utils.HashTypeSha256},
 			{input.ChecksumCRC64NVME, utils.HashTypeCRC64NVME},
+			{input.ChecksumSHA512, utils.HashTypeSha512},
+			{input.ChecksumMD5, utils.HashTypeMd5},
+			{input.ChecksumXXHASH64, utils.HashTypeXXHASH64},
+			{input.ChecksumXXHASH3, utils.HashTypeXXHASH3},
+			{input.ChecksumXXHASH128, utils.HashTypeXXHASH128},
 		}
 
 		for _, config := range hashConfigs {
@@ -3024,24 +3152,8 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 			sum = hashRdr.Sum()
 		}
 
-		// Assign the checksum
-		switch checksums.Algorithm {
-		case types.ChecksumAlgorithmCrc32:
-			checksum.CRC32 = &sum
-			res.ChecksumCRC32 = &sum
-		case types.ChecksumAlgorithmCrc32c:
-			checksum.CRC32C = &sum
-			res.ChecksumCRC32C = &sum
-		case types.ChecksumAlgorithmSha1:
-			checksum.SHA1 = &sum
-			res.ChecksumSHA1 = &sum
-		case types.ChecksumAlgorithmSha256:
-			checksum.SHA256 = &sum
-			res.ChecksumSHA256 = &sum
-		case types.ChecksumAlgorithmCrc64nvme:
-			checksum.CRC64NVME = &sum
-			res.ChecksumCRC64NVME = &sum
-		}
+		setStoredChecksum(&checksum, checksums.Algorithm, &sum)
+		setUploadPartChecksum(res, checksums.Algorithm, &sum)
 
 		err := p.storeChecksums(f.File(), bucket, partPath, checksum)
 		if err != nil {
@@ -3083,6 +3195,16 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 				res.ChecksumSHA256 = &sumToReturn
 			case utils.HashTypeCRC64NVME:
 				res.ChecksumCRC64NVME = &sumToReturn
+			case utils.HashTypeSha512:
+				res.ChecksumSHA512 = &sumToReturn
+			case utils.HashTypeMd5:
+				res.ChecksumMD5 = &sumToReturn
+			case utils.HashTypeXXHASH64:
+				res.ChecksumXXHASH64 = &sumToReturn
+			case utils.HashTypeXXHASH3:
+				res.ChecksumXXHASH3 = &sumToReturn
+			case utils.HashTypeXXHASH128:
+				res.ChecksumXXHASH128 = &sumToReturn
 			}
 		}
 	}
@@ -3321,18 +3443,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		}
 
 		sum := hashRdr.Sum()
-		switch algo {
-		case types.ChecksumAlgorithmCrc32:
-			checksums.CRC32 = &sum
-		case types.ChecksumAlgorithmCrc32c:
-			checksums.CRC32C = &sum
-		case types.ChecksumAlgorithmSha1:
-			checksums.SHA1 = &sum
-		case types.ChecksumAlgorithmSha256:
-			checksums.SHA256 = &sum
-		case types.ChecksumAlgorithmCrc64nvme:
-			checksums.CRC64NVME = &sum
-		}
+		setStoredChecksum(&checksums, algo, &sum)
 
 		err := p.storeChecksums(f.File(), *upi.Bucket, partPath, checksums)
 		if err != nil {
@@ -3374,6 +3485,11 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		ChecksumSHA1:        checksums.SHA1,
 		ChecksumSHA256:      checksums.SHA256,
 		ChecksumCRC64NVME:   checksums.CRC64NVME,
+		ChecksumSHA512:      checksums.SHA512,
+		ChecksumMD5:         checksums.MD5,
+		ChecksumXXHASH64:    checksums.XXHASH64,
+		ChecksumXXHASH3:     checksums.XXHASH3,
+		ChecksumXXHASH128:   checksums.XXHASH128,
 	}, nil
 }
 
@@ -3389,6 +3505,16 @@ func getEmptyChecksumValue(algo types.ChecksumAlgorithm) string {
 		return "2jmj7l5rSw0yVb/vlWAYkK/YBwk="
 	case types.ChecksumAlgorithmSha256:
 		return "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
+	case types.ChecksumAlgorithmSha512:
+		return "z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP+DGNKHfuwvY7kxvUdBeoGlODJ6+SfaPg=="
+	case types.ChecksumAlgorithmMd5:
+		return "1B2M2Y8AsgTpgAmY7PhCfg=="
+	case types.ChecksumAlgorithmXxhash64:
+		return "70bbN1HY6Zk="
+	case types.ChecksumAlgorithmXxhash3:
+		return "LQaABTjTlMI="
+	case types.ChecksumAlgorithmXxhash128:
+		return "maoG0wFHmNhgAcMkRo1Jfw=="
 	default:
 		// default to crc64nvme
 		return "AAAAAAAAAAA="
@@ -3464,6 +3590,11 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			{po.ChecksumSHA1, utils.HashTypeSha1},
 			{po.ChecksumSHA256, utils.HashTypeSha256},
 			{po.ChecksumCRC64NVME, utils.HashTypeCRC64NVME},
+			{po.ChecksumSHA512, utils.HashTypeSha512},
+			{po.ChecksumMD5, utils.HashTypeMd5},
+			{po.ChecksumXXHASH64, utils.HashTypeXXHASH64},
+			{po.ChecksumXXHASH3, utils.HashTypeXXHASH3},
+			{po.ChecksumXXHASH128, utils.HashTypeXXHASH128},
 		}
 
 		for _, config := range hashConfigs {
@@ -3535,19 +3666,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			Algorithm: checksumAlgorithm,
 		}
 
-		// Store the calculated checksum in the object metadata
-		switch checksumAlgorithm {
-		case types.ChecksumAlgorithmCrc32:
-			checksum.CRC32 = &expectedSum
-		case types.ChecksumAlgorithmCrc32c:
-			checksum.CRC32C = &expectedSum
-		case types.ChecksumAlgorithmSha1:
-			checksum.SHA1 = &expectedSum
-		case types.ChecksumAlgorithmSha256:
-			checksum.SHA256 = &expectedSum
-		case types.ChecksumAlgorithmCrc64nvme:
-			checksum.CRC64NVME = &expectedSum
-		}
+		setStoredChecksum(&checksum, checksumAlgorithm, &expectedSum)
 
 		err = p.storeChecksums(nil, *po.Bucket, *po.Key, checksum)
 		if err != nil {
@@ -3564,6 +3683,11 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			ChecksumCRC64NVME: checksum.CRC64NVME,
 			ChecksumSHA1:      checksum.SHA1,
 			ChecksumSHA256:    checksum.SHA256,
+			ChecksumSHA512:    checksum.SHA512,
+			ChecksumMD5:       checksum.MD5,
+			ChecksumXXHASH64:  checksum.XXHASH64,
+			ChecksumXXHASH3:   checksum.XXHASH3,
+			ChecksumXXHASH128: checksum.XXHASH128,
 		}, nil
 	}
 
@@ -3709,19 +3833,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		Algorithm: checksumAlgorithm,
 	}
 
-	// Store the calculated checksum in the object metadata
-	switch checksumAlgorithm {
-	case types.ChecksumAlgorithmCrc32:
-		checksum.CRC32 = &sum
-	case types.ChecksumAlgorithmCrc32c:
-		checksum.CRC32C = &sum
-	case types.ChecksumAlgorithmSha1:
-		checksum.SHA1 = &sum
-	case types.ChecksumAlgorithmSha256:
-		checksum.SHA256 = &sum
-	case types.ChecksumAlgorithmCrc64nvme:
-		checksum.CRC64NVME = &sum
-	}
+	setStoredChecksum(&checksum, checksumAlgorithm, &sum)
 	err = p.storeChecksums(f.File(), *po.Bucket, *po.Key, checksum)
 	if err != nil {
 		return s3response.PutObjectOutput{}, fmt.Errorf("store checksum: %w", err)
@@ -3822,6 +3934,11 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		ChecksumSHA1:      checksum.SHA1,
 		ChecksumSHA256:    checksum.SHA256,
 		ChecksumCRC64NVME: checksum.CRC64NVME,
+		ChecksumSHA512:    checksum.SHA512,
+		ChecksumMD5:       checksum.MD5,
+		ChecksumXXHASH64:  checksum.XXHASH64,
+		ChecksumXXHASH3:   checksum.XXHASH3,
+		ChecksumXXHASH128: checksum.XXHASH128,
 		Size:              &objsize,
 		ChecksumType:      checksum.Type,
 	}, nil
@@ -4423,6 +4540,11 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 			ChecksumSHA1:       checksums.SHA1,
 			ChecksumSHA256:     checksums.SHA256,
 			ChecksumCRC64NVME:  checksums.CRC64NVME,
+			ChecksumSHA512:     checksums.SHA512,
+			ChecksumMD5:        checksums.MD5,
+			ChecksumXXHASH64:   checksums.XXHASH64,
+			ChecksumXXHASH3:    checksums.XXHASH3,
+			ChecksumXXHASH128:  checksums.XXHASH128,
 			ChecksumType:       checksums.Type,
 			AcceptRanges:       backend.GetPtrFromString("bytes"),
 			ContentLength:      &length,
@@ -4586,6 +4708,11 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		ChecksumSHA1:       checksums.SHA1,
 		ChecksumSHA256:     checksums.SHA256,
 		ChecksumCRC64NVME:  checksums.CRC64NVME,
+		ChecksumSHA512:     checksums.SHA512,
+		ChecksumMD5:        checksums.MD5,
+		ChecksumXXHASH64:   checksums.XXHASH64,
+		ChecksumXXHASH3:    checksums.XXHASH3,
+		ChecksumXXHASH128:  checksums.XXHASH128,
 		ChecksumType:       checksums.Type,
 		PartsCount:         partsCount,
 	}, nil
@@ -4837,6 +4964,11 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		ChecksumSHA1:              checksums.SHA1,
 		ChecksumSHA256:            checksums.SHA256,
 		ChecksumCRC64NVME:         checksums.CRC64NVME,
+		ChecksumSHA512:            checksums.SHA512,
+		ChecksumMD5:               checksums.MD5,
+		ChecksumXXHASH64:          checksums.XXHASH64,
+		ChecksumXXHASH3:           checksums.XXHASH3,
+		ChecksumXXHASH128:         checksums.XXHASH128,
 		ChecksumType:              checksums.Type,
 		TagCount:                  tagCount,
 		PartsCount:                partsCount,
@@ -4880,6 +5012,11 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 			ChecksumSHA1:      data.ChecksumSHA1,
 			ChecksumSHA256:    data.ChecksumSHA256,
 			ChecksumCRC64NVME: data.ChecksumCRC64NVME,
+			ChecksumSHA512:    data.ChecksumSHA512,
+			ChecksumMD5:       data.ChecksumMD5,
+			ChecksumXXHASH64:  data.ChecksumXXHASH64,
+			ChecksumXXHASH3:   data.ChecksumXXHASH3,
+			ChecksumXXHASH128: data.ChecksumXXHASH128,
 			ChecksumType:      data.ChecksumType,
 		},
 	}, nil
@@ -5026,6 +5163,11 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	var sha1 *string
 	var sha256 *string
 	var crc64nvme *string
+	var sha512 *string
+	var md5sum *string
+	var xxhash64 *string
+	var xxhash3 *string
+	var xxhash128 *string
 	var chType types.ChecksumType
 
 	dstObjdPath := joinPathWithTrailer(dstBucket, dstObject)
@@ -5086,6 +5228,21 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 				case utils.HashTypeCRC64NVME:
 					checksums.CRC64NVME = &sum
 					crc64nvme = &sum
+				case utils.HashTypeSha512:
+					checksums.SHA512 = &sum
+					sha512 = &sum
+				case utils.HashTypeMd5:
+					checksums.MD5 = &sum
+					md5sum = &sum
+				case utils.HashTypeXXHASH64:
+					checksums.XXHASH64 = &sum
+					xxhash64 = &sum
+				case utils.HashTypeXXHASH3:
+					checksums.XXHASH3 = &sum
+					xxhash3 = &sum
+				case utils.HashTypeXXHASH128:
+					checksums.XXHASH128 = &sum
+					xxhash128 = &sum
 				}
 
 				// If a new checksum is calculated, the checksum type
@@ -5209,6 +5366,11 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		sha1 = res.ChecksumSHA1
 		sha256 = res.ChecksumSHA256
 		crc64nvme = res.ChecksumCRC64NVME
+		sha512 = res.ChecksumSHA512
+		md5sum = res.ChecksumMD5
+		xxhash64 = res.ChecksumXXHASH64
+		xxhash3 = res.ChecksumXXHASH3
+		xxhash128 = res.ChecksumXXHASH128
 		chType = res.ChecksumType
 	}
 
@@ -5226,6 +5388,11 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 			ChecksumSHA1:      sha1,
 			ChecksumSHA256:    sha256,
 			ChecksumCRC64NVME: crc64nvme,
+			ChecksumSHA512:    sha512,
+			ChecksumMD5:       md5sum,
+			ChecksumXXHASH64:  xxhash64,
+			ChecksumXXHASH3:   xxhash3,
+			ChecksumXXHASH128: xxhash128,
 			ChecksumType:      chType,
 		},
 		VersionId:           version,

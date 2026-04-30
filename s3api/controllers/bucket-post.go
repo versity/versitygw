@@ -222,6 +222,11 @@ func (c S3ApiController) POSTObject(ctx *fiber.Ctx) (*Response, error) {
 		ChecksumSHA1:       utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha1]),
 		ChecksumSHA256:     utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha256]),
 		ChecksumCRC64NVME:  utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc64nvme]),
+		ChecksumSHA512:     utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha512]),
+		ChecksumMD5:        utils.GetStringPtr(checksums[types.ChecksumAlgorithmMd5]),
+		ChecksumXXHASH64:   utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash64]),
+		ChecksumXXHASH3:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash3]),
+		ChecksumXXHASH128:  utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash128]),
 	})
 	if err != nil {
 		return &Response{
@@ -285,6 +290,11 @@ func (c S3ApiController) POSTObject(ctx *fiber.Ctx) (*Response, error) {
 			"x-amz-checksum-crc64nvme": res.ChecksumCRC64NVME,
 			"x-amz-checksum-sha1":      res.ChecksumSHA1,
 			"x-amz-checksum-sha256":    res.ChecksumSHA256,
+			"x-amz-checksum-sha512":    res.ChecksumSHA512,
+			"x-amz-checksum-md5":       res.ChecksumMD5,
+			"x-amz-checksum-xxhash64":  res.ChecksumXXHASH64,
+			"x-amz-checksum-xxhash3":   res.ChecksumXXHASH3,
+			"x-amz-checksum-xxhash128": res.ChecksumXXHASH128,
 			"x-amz-checksum-type":      utils.ConvertToStringPtr(res.ChecksumType),
 			"x-amz-version-id":         utils.GetStringPtr(res.VersionID),
 		},

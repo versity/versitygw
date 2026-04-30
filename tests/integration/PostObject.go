@@ -1070,6 +1070,11 @@ func PostObject_checksums_success(s *S3Conf) error {
 			{"x-amz-checksum-crc64nvme", "rsrzr5yYqFU="},
 			{"x-amz-checksum-sha1", "9I3YU4IIYIFsddVND1hNyGMyenw="},
 			{"x-amz-checksum-sha256", "kW8AJ6V1B0znKjMXd8NHjWUT94alkb2JLaGld78jNfk="},
+			{"x-amz-checksum-sha512", "Dh4h7PEF7IU9JNcohnrXBhPCFmOkaTB0sqNhnBvTnWa1iMM3I7tGbHJCToDjymPCSQeKs0e6uUKFAOfuQwWdDQ=="},
+			{"x-amz-checksum-md5", "63M6AMDJ0zbmVpGjerVCkw=="},
+			{"x-amz-checksum-xxhash64", "+lb36/ER8bo="},
+			{"x-amz-checksum-xxhash3", "jw+pSh/pbMQ="},
+			{"x-amz-checksum-xxhash128", "8BLDqqIWji+ITOsp/JjN/Q=="},
 		} {
 			resp, err := sendPostObject(PostRequestConfig{
 				bucket:      bucket,

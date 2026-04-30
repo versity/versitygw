@@ -17,8 +17,10 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"errors"
 	"hash"
@@ -30,8 +32,10 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/cespare/xxhash/v2"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
+	"github.com/zeebo/xxh3"
 )
 
 var (
@@ -353,6 +357,16 @@ func getHasher(ct checksumType) (hash.Hash, error) {
 		return sha1.New(), nil
 	case checksumTypeSha256:
 		return sha256.New(), nil
+	case checksumTypeSha512:
+		return sha512.New(), nil
+	case checksumTypeMd5:
+		return md5.New(), nil
+	case checksumTypeXxhash64:
+		return xxhash.New(), nil
+	case checksumTypeXxhash3:
+		return xxh3.New(), nil
+	case checksumTypeXxhash128:
+		return xxh3.New128(), nil
 	default:
 		return nil, errors.New("unsupported checksum type")
 	}
