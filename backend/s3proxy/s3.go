@@ -483,6 +483,21 @@ func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 	if input.ChecksumSHA256 != nil && *input.ChecksumSHA256 == "" {
 		input.ChecksumSHA256 = nil
 	}
+	if input.ChecksumSHA512 != nil && *input.ChecksumSHA512 == "" {
+		input.ChecksumSHA512 = nil
+	}
+	if input.ChecksumMD5 != nil && *input.ChecksumMD5 == "" {
+		input.ChecksumMD5 = nil
+	}
+	if input.ChecksumXXHASH64 != nil && *input.ChecksumXXHASH64 == "" {
+		input.ChecksumXXHASH64 = nil
+	}
+	if input.ChecksumXXHASH3 != nil && *input.ChecksumXXHASH3 == "" {
+		input.ChecksumXXHASH3 = nil
+	}
+	if input.ChecksumXXHASH128 != nil && *input.ChecksumXXHASH128 == "" {
+		input.ChecksumXXHASH128 = nil
+	}
 	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
 		input.ExpectedBucketOwner = nil
 	}
@@ -518,6 +533,11 @@ func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 			ChecksumCRC64NVME: out.ChecksumCRC64NVME,
 			ChecksumSHA1:      out.ChecksumSHA1,
 			ChecksumSHA256:    out.ChecksumSHA256,
+			ChecksumSHA512:    out.ChecksumSHA512,
+			ChecksumMD5:       out.ChecksumMD5,
+			ChecksumXXHASH64:  out.ChecksumXXHASH64,
+			ChecksumXXHASH3:   out.ChecksumXXHASH3,
+			ChecksumXXHASH128: out.ChecksumXXHASH128,
 			ChecksumType:      &out.ChecksumType,
 		}
 		if out.VersionId != nil {
@@ -653,6 +673,11 @@ func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3re
 			ChecksumCRC64NVME: p.ChecksumCRC64NVME,
 			ChecksumSHA1:      p.ChecksumSHA1,
 			ChecksumSHA256:    p.ChecksumSHA256,
+			ChecksumSHA512:    p.ChecksumSHA512,
+			ChecksumMD5:       p.ChecksumMD5,
+			ChecksumXXHASH64:  p.ChecksumXXHASH64,
+			ChecksumXXHASH3:   p.ChecksumXXHASH3,
+			ChecksumXXHASH128: p.ChecksumXXHASH128,
 		})
 	}
 	pnm, err := strconv.Atoi(*output.PartNumberMarker)
@@ -708,6 +733,21 @@ func (s *S3Proxy) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s
 	}
 	if input.ChecksumSHA256 != nil && *input.ChecksumSHA256 == "" {
 		input.ChecksumSHA256 = nil
+	}
+	if input.ChecksumSHA512 != nil && *input.ChecksumSHA512 == "" {
+		input.ChecksumSHA512 = nil
+	}
+	if input.ChecksumMD5 != nil && *input.ChecksumMD5 == "" {
+		input.ChecksumMD5 = nil
+	}
+	if input.ChecksumXXHASH64 != nil && *input.ChecksumXXHASH64 == "" {
+		input.ChecksumXXHASH64 = nil
+	}
+	if input.ChecksumXXHASH3 != nil && *input.ChecksumXXHASH3 == "" {
+		input.ChecksumXXHASH3 = nil
+	}
+	if input.ChecksumXXHASH128 != nil && *input.ChecksumXXHASH128 == "" {
+		input.ChecksumXXHASH128 = nil
 	}
 	if input.ContentMD5 != nil && *input.ContentMD5 == "" {
 		input.ContentMD5 = nil
@@ -790,6 +830,11 @@ func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyIn
 		ChecksumCRC64NVME: output.CopyPartResult.ChecksumCRC64NVME,
 		ChecksumSHA1:      output.CopyPartResult.ChecksumSHA1,
 		ChecksumSHA256:    output.CopyPartResult.ChecksumSHA256,
+		ChecksumSHA512:    output.CopyPartResult.ChecksumSHA512,
+		ChecksumMD5:       output.CopyPartResult.ChecksumMD5,
+		ChecksumXXHASH64:  output.CopyPartResult.ChecksumXXHASH64,
+		ChecksumXXHASH3:   output.CopyPartResult.ChecksumXXHASH3,
+		ChecksumXXHASH128: output.CopyPartResult.ChecksumXXHASH128,
 	}, nil
 }
 
@@ -814,6 +859,21 @@ func (s *S3Proxy) PutObject(ctx context.Context, input s3response.PutObjectInput
 	}
 	if input.ChecksumSHA256 != nil && *input.ChecksumSHA256 == "" {
 		input.ChecksumSHA256 = nil
+	}
+	if input.ChecksumSHA512 != nil && *input.ChecksumSHA512 == "" {
+		input.ChecksumSHA512 = nil
+	}
+	if input.ChecksumMD5 != nil && *input.ChecksumMD5 == "" {
+		input.ChecksumMD5 = nil
+	}
+	if input.ChecksumXXHASH64 != nil && *input.ChecksumXXHASH64 == "" {
+		input.ChecksumXXHASH64 = nil
+	}
+	if input.ChecksumXXHASH3 != nil && *input.ChecksumXXHASH3 == "" {
+		input.ChecksumXXHASH3 = nil
+	}
+	if input.ChecksumXXHASH128 != nil && *input.ChecksumXXHASH128 == "" {
+		input.ChecksumXXHASH128 = nil
 	}
 	if input.ContentDisposition != nil && *input.ContentDisposition == "" {
 		input.ContentDisposition = nil
@@ -913,6 +973,11 @@ func (s *S3Proxy) PutObject(ctx context.Context, input s3response.PutObjectInput
 		ChecksumSHA1:              input.ChecksumSHA1,
 		ChecksumSHA256:            input.ChecksumSHA256,
 		ChecksumCRC64NVME:         input.ChecksumCRC64NVME,
+		ChecksumSHA512:            input.ChecksumSHA512,
+		ChecksumMD5:               input.ChecksumMD5,
+		ChecksumXXHASH64:          input.ChecksumXXHASH64,
+		ChecksumXXHASH3:           input.ChecksumXXHASH3,
+		ChecksumXXHASH128:         input.ChecksumXXHASH128,
 		ContentMD5:                input.ContentMD5,
 		ExpectedBucketOwner:       input.ExpectedBucketOwner,
 		GrantFullControl:          input.GrantFullControl,
@@ -947,6 +1012,11 @@ func (s *S3Proxy) PutObject(ctx context.Context, input s3response.PutObjectInput
 		ChecksumCRC64NVME: output.ChecksumCRC64NVME,
 		ChecksumSHA1:      output.ChecksumSHA1,
 		ChecksumSHA256:    output.ChecksumSHA256,
+		ChecksumSHA512:    output.ChecksumSHA512,
+		ChecksumMD5:       output.ChecksumMD5,
+		ChecksumXXHASH64:  output.ChecksumXXHASH64,
+		ChecksumXXHASH3:   output.ChecksumXXHASH3,
+		ChecksumXXHASH128: output.ChecksumXXHASH128,
 		Size:              output.Size,
 	}, nil
 }
@@ -1292,6 +1362,11 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInp
 			ChecksumCRC64NVME: out.CopyObjectResult.ChecksumCRC64NVME,
 			ChecksumSHA1:      out.CopyObjectResult.ChecksumSHA1,
 			ChecksumSHA256:    out.CopyObjectResult.ChecksumSHA256,
+			ChecksumSHA512:    out.CopyObjectResult.ChecksumSHA512,
+			ChecksumMD5:       out.CopyObjectResult.ChecksumMD5,
+			ChecksumXXHASH64:  out.CopyObjectResult.ChecksumXXHASH64,
+			ChecksumXXHASH3:   out.CopyObjectResult.ChecksumXXHASH3,
+			ChecksumXXHASH128: out.CopyObjectResult.ChecksumXXHASH128,
 			ChecksumType:      out.CopyObjectResult.ChecksumType,
 			ETag:              out.CopyObjectResult.ETag,
 			LastModified:      out.CopyObjectResult.LastModified,

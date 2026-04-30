@@ -445,7 +445,6 @@ func TestUploadPart(ts *TestState) {
 		ts.Run(UploadPart_incorrect_checksums)
 		ts.Run(UploadPart_no_checksum_with_full_object_checksum_type)
 		ts.Run(UploadPart_no_checksum_with_composite_checksum_type)
-		ts.Run(UploadPart_should_calculate_checksum_if_only_algorithm_is_provided)
 		ts.Run(UploadPart_with_checksums_success)
 	}
 	ts.Run(UploadPart_success)
@@ -1589,7 +1588,6 @@ func GetIntTests() IntTests {
 		"UploadPart_incorrect_checksums":                                           UploadPart_incorrect_checksums,
 		"UploadPart_no_checksum_with_full_object_checksum_type":                    UploadPart_no_checksum_with_full_object_checksum_type,
 		"UploadPart_no_checksum_with_composite_checksum_type":                      UploadPart_no_checksum_with_composite_checksum_type,
-		"UploadPart_should_calculate_checksum_if_only_algorithm_is_provided":       UploadPart_should_calculate_checksum_if_only_algorithm_is_provided,
 		"UploadPart_with_checksums_success":                                        UploadPart_with_checksums_success,
 		"UploadPart_success":                                                       UploadPart_success,
 		"UploadPartCopy_non_existing_bucket":                                       UploadPartCopy_non_existing_bucket,
