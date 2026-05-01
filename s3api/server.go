@@ -143,36 +143,23 @@ func New(
 		webui.MountOn(app, server.webuiMountPrefix, server.webuiSrvCfg)
 	}
 
+	// initialize total requests cap limiter middleware
+	app.Use(middlewares.RateLimiter(server.maxRequests, mm, l))
+
 	for _, route := range server.routes {
-		if route.method == "" {
-			return nil, fmt.Errorf("invalid route for path %q: empty method", route.path)
+		method, err := validateRouteMount(route)
+		if err != nil {
+			return nil, err
 		}
-		if route.path == "" || route.path[0] != '/' {
-			return nil, fmt.Errorf("invalid route path %q: must start with /", route.path)
-		}
-		if len(route.handlers) == 0 {
-			return nil, fmt.Errorf("invalid route for %s %s: no handlers", route.method, route.path)
-		}
-		for i, handler := range route.handlers {
-			if handler == nil {
-				return nil, fmt.Errorf("invalid route for %s %s: nil handler at index %d", route.method, route.path, i)
-			}
-		}
-		app.Add(route.method, route.path, route.handlers...)
+		app.Add(method, route.path, route.handlers...)
 	}
 
 	for _, mount := range server.middlewares {
-		if mount.prefix == "" || mount.prefix[0] != '/' {
-			return nil, fmt.Errorf("invalid middleware prefix %q: must start with /", mount.prefix)
-		}
-		if mount.handler == nil {
-			return nil, fmt.Errorf("invalid middleware for prefix %q: nil handler", mount.prefix)
+		if err := validateMiddlewareMount(mount); err != nil {
+			return nil, err
 		}
 		app.Use(mount.prefix, mount.handler)
 	}
-
-	// initialize total requests cap limiter middleware
-	app.Use(middlewares.RateLimiter(server.maxRequests, mm, l))
 
 	// initilaze the default value setter middleware
 	app.Use(middlewares.SetDefaultValues(root, region))
@@ -189,6 +176,48 @@ func New(
 	server.Router.Init()
 
 	return server, nil
+}
+
+func validateRouteMount(route routeMount) (string, error) {
+	if route.method == "" {
+		return "", fmt.Errorf("invalid route for path %q: empty method", route.path)
+	}
+	method := strings.ToUpper(route.method)
+	if !isStandardHTTPMethod(method) {
+		return "", fmt.Errorf("invalid HTTP method %q for route path %q: must be one of %s",
+			route.method, route.path, strings.Join(fiber.DefaultMethods, ", "))
+	}
+	if route.path == "" || route.path[0] != '/' {
+		return "", fmt.Errorf("invalid route path %q: must start with /", route.path)
+	}
+	if len(route.handlers) == 0 {
+		return "", fmt.Errorf("invalid route for %s %s: no handlers", method, route.path)
+	}
+	for i, handler := range route.handlers {
+		if handler == nil {
+			return "", fmt.Errorf("invalid route for %s %s: nil handler at index %d", method, route.path, i)
+		}
+	}
+	return method, nil
+}
+
+func isStandardHTTPMethod(method string) bool {
+	for _, valid := range fiber.DefaultMethods {
+		if method == valid {
+			return true
+		}
+	}
+	return false
+}
+
+func validateMiddlewareMount(mount middlewareMount) error {
+	if mount.prefix == "" || mount.prefix[0] != '/' {
+		return fmt.Errorf("invalid middleware prefix %q: must start with /", mount.prefix)
+	}
+	if mount.handler == nil {
+		return fmt.Errorf("invalid middleware for prefix %q: nil handler", mount.prefix)
+	}
+	return nil
 }
 
 // Option sets various options for New()
@@ -251,8 +280,9 @@ func WithWebUI(prefix string, cfg *webui.ServerConfig) Option {
 	}
 }
 
-// WithRoute registers a top-level Fiber route before S3 routes are registered.
-// Handlers are terminal unless they explicitly call ctx.Next().
+// WithRoute registers a top-level Fiber route after the gateway rate limiter
+// and before S3 routes are registered. Handlers are terminal unless they
+// explicitly call ctx.Next().
 func WithRoute(method, path string, handlers ...fiber.Handler) Option {
 	return func(s *S3ApiServer) {
 		copied := append([]fiber.Handler(nil), handlers...)
@@ -264,9 +294,9 @@ func WithRoute(method, path string, handlers ...fiber.Handler) Option {
 	}
 }
 
-// WithMiddleware mounts a Fiber middleware before the S3 route table is
-// registered. The middleware must call ctx.Next() for requests it does not
-// fully handle.
+// WithMiddleware mounts a Fiber middleware after the gateway rate limiter and
+// before the S3 route table is registered. The middleware must call ctx.Next()
+// for requests it does not fully handle.
 func WithMiddleware(prefix string, handler fiber.Handler) Option {
 	return func(s *S3ApiServer) {
 		s.middlewares = append(s.middlewares, middlewareMount{
