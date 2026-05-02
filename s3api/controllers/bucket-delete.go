@@ -162,6 +162,42 @@ func (c S3ApiController) DeleteBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
+func (c S3ApiController) DeleteBucketWebsite(ctx *fiber.Ctx) (*Response, error) {
+	bucket := ctx.Params("bucket")
+	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
+	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
+	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
+	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
+
+	err := auth.VerifyAccess(ctx.Context(), c.be,
+		auth.AccessOptions{
+			Readonly:        c.readonly,
+			Acl:             parsedAcl,
+			AclPermission:   auth.PermissionWrite,
+			IsRoot:          isRoot,
+			Acc:             acct,
+			Bucket:          bucket,
+			Action:          auth.DeleteBucketWebsiteAction,
+			IsPublicRequest: IsBucketPublic,
+			DisableACL:      c.disableACL,
+		})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = c.be.DeleteBucketWebsite(ctx.Context(), bucket)
+	return &Response{
+		MetaOpts: &MetaOptions{
+			BucketOwner: parsedAcl.Owner,
+			Status:      http.StatusNoContent,
+		},
+	}, err
+}
+
 func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)

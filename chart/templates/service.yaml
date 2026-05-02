@@ -23,5 +23,11 @@ spec:
       protocol: TCP
       name: webui
     {{- end }}
+    {{- if .Values.website.enabled }}
+    - port: {{ .Values.website.port }}
+      targetPort: website
+      protocol: TCP
+      name: website
+    {{- end }}
   selector:
     {{- include "versitygw.selectorLabels" . | nindent 4 }}

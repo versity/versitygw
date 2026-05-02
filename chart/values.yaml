@@ -225,6 +225,24 @@ webui:
               type: PathPrefix
               value: /
 
+# --- Website Hosting ---
+website:
+  # Enable the static website hosting endpoint.
+  # Serves S3 buckets as static websites with index documents, custom error
+  # pages, and routing rules via a separate HTTP endpoint.
+  enabled: false
+  # The port the website endpoint listens on.
+  port: 8090
+  # Base domain for virtual-host routing. Optional.
+  # Host "blog.<domain>" serves bucket "blog"; host "<domain>" serves
+  # bucket "<domain>" (apex domain support).
+  # When empty, catch-all mode is used: the full hostname is the bucket
+  # name (name buckets as FQDNs, e.g. "blog.example.com").
+  domain: ""
+  # - example: domain: "example.com"
+  # Disable TLS for the website endpoint even when gateway TLS is enabled.
+  noTls: false
+
 # --- IAM (Identity and Access Management) ---
 iam:
   enabled: false
