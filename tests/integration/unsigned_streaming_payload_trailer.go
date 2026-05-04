@@ -134,6 +134,11 @@ func UnsignedStreamingPayloadTrailer_multiple_checksum_headers(s *S3Conf) error 
 			{"crc64nvme", "QFRKMGE3tuw="},
 			{"sha1", "qvTGHdzF6KLavt4PO0gs2a6pQ00="},
 			{"sha256", "LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ="},
+			{"sha512", "uiz+VuENyLjzFxWrdmbN/NdIdldj/V3saJF6FsckcYu6xu26fM0CfAaTySaoFJmIdI2m5wbYMJxtShQ1PXk3Tg=="},
+			{"md5", "EtWtthXtCk3RxUiXKw+ydw=="},
+			{"xxhash64", "McmxUfNFLUs="},
+			{"xxhash3", "tLh+aNltTM4="},
+			{"xxhash128", "MXqrLVobrQkTBf82+7i9AQ=="},
 		} {
 			reqHeaders := map[string]string{
 				"x-amz-decoded-content-length":             "5",
@@ -348,6 +353,11 @@ func UnsignedStreamingPayloadTrailer_no_payload_trailer_only_headers(s *S3Conf) 
 			{"crc64nvme", "SmzZ/LTp1CA="},
 			{"sha1", "L7XhNBn8iSRoZeejJPR27GJOh0A="},
 			{"sha256", "fRpUEnsiJQL1t5tfsIAwYRUqRPkrN+I8ZSe69mXU2po="},
+			{"sha512", "1xakGIVptoqxtt+sF45XARTN8Oo6HMDjFIbD5BJBvGp2Qk6MN6sm8Jb8he+YhsjLY0GH9P3f9kX7CZ8f9UxrjA=="},
+			{"md5", "esZsDxSN6VGbi9JkMSxNZA=="},
+			{"xxhash64", "GGCUDikCgi0="},
+			{"xxhash3", "WkDcP9RMBS8="},
+			{"xxhash128", "Kq/YOGmlnDE/55jA7aptxg=="},
 		} {
 			csumHdr := fmt.Sprintf("x-amz-checksum-%s", test.key)
 			reqHeaders := map[string]string{
@@ -387,6 +397,11 @@ func UnsignedStreamingPayloadTrailer_success_both_sdk_algo_and_trailer(s *S3Conf
 			{"crc64nvme", "SmzZ/LTp1CA="},
 			{"sha1", "L7XhNBn8iSRoZeejJPR27GJOh0A="},
 			{"sha256", "fRpUEnsiJQL1t5tfsIAwYRUqRPkrN+I8ZSe69mXU2po="},
+			{"sha512", "1xakGIVptoqxtt+sF45XARTN8Oo6HMDjFIbD5BJBvGp2Qk6MN6sm8Jb8he+YhsjLY0GH9P3f9kX7CZ8f9UxrjA=="},
+			{"md5", "esZsDxSN6VGbi9JkMSxNZA=="},
+			{"xxhash64", "GGCUDikCgi0="},
+			{"xxhash3", "WkDcP9RMBS8="},
+			{"xxhash128", "Kq/YOGmlnDE/55jA7aptxg=="},
 		} {
 			csumHdr := fmt.Sprintf("x-amz-checksum-%s", test.key)
 			reqHeaders := map[string]string{
@@ -508,23 +523,29 @@ func UnsignedStreamingPayloadTrailer_UploadPart_success_with_trailer(s *S3Conf) 
 		object := "my-object"
 
 		for i, test := range []struct {
-			key   string
+			algo  types.ChecksumAlgorithm
 			value string
 		}{
-			{"crc32", "QWaN2w=="},
-			{"crc32c", "R/I7iQ=="},
-			{"crc64nvme", "dPVWc2vU1+Q="},
-			{"sha1", "YR/1TvTYOJz5gtqVFoBJBtmTibY="},
-			{"sha256", "eXuwq/95jXIAr3aF3KeQHt/8Ur8mUA1b2XKCZY7iQVI="},
+			{types.ChecksumAlgorithmCrc32, "QWaN2w=="},
+			{types.ChecksumAlgorithmCrc32c, "R/I7iQ=="},
+			{types.ChecksumAlgorithmCrc64nvme, "dPVWc2vU1+Q="},
+			{types.ChecksumAlgorithmSha1, "YR/1TvTYOJz5gtqVFoBJBtmTibY="},
+			{types.ChecksumAlgorithmSha256, "eXuwq/95jXIAr3aF3KeQHt/8Ur8mUA1b2XKCZY7iQVI="},
+			{types.ChecksumAlgorithmSha512, "6tQCd6X50h2wXt5deAY0eKF5Xb1LLbSvkZt+Bqczz8bd1+rH+VYZSgWhjOG4zJ41K0kLmDQxuDyOeHMKqKQGNA=="},
+			{types.ChecksumAlgorithmMd5, "Mb+5cwrlGvc5U7pyDIZg1w=="},
+			{types.ChecksumAlgorithmXxhash64, "vYOmFpsGXtY="},
+			{types.ChecksumAlgorithmXxhash3, "9J6xx21X+f8="},
+			{types.ChecksumAlgorithmXxhash128, "menoCZOCZ2Acv4XMxaUR9w=="},
 		} {
-			mp, err := createMp(s3client, bucket, object, withChecksum(types.ChecksumAlgorithm(strings.ToUpper(test.key))))
+
+			mp, err := createMp(s3client, bucket, object, withChecksum(test.algo))
 			if err != nil {
 				return err
 			}
-			csumHdr := fmt.Sprintf("x-amz-checksum-%s", test.key)
+			csumHdr := checksumHeaderName(test.algo)
 			reqHeaders := map[string]string{
 				"x-amz-decoded-content-length": "10",
-				"x-amz-sdk-checksum-algorithm": test.key,
+				"x-amz-sdk-checksum-algorithm": strings.ToLower(string(test.algo)),
 				"x-amz-trailer":                csumHdr,
 			}
 			body := bytes.NewBuffer([]byte("A\r\ndummy data\r\n0\r\n"))

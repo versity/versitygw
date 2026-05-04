@@ -10,10 +10,12 @@ done
 
 # build sidecar flag for versitygw invocations
 SIDECAR_FLAG=""
+SIDECAR_TEST_FLAG=""
 if $USE_SIDECAR; then
   rm -rf /tmp/sidecar
   mkdir /tmp/sidecar
   SIDECAR_FLAG="--sidecar /tmp/sidecar"
+  SIDECAR_TEST_FLAG="--sidecar"
 fi
 
 # make temp dirs
@@ -55,7 +57,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow --parallel; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow --parallel $$SIDECAR_TEST_FLAG; then
 	echo "full flow tests failed"
 	kill $GW_PID
 	exit 1
@@ -92,7 +94,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 full-flow --parallel; then
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 full-flow --parallel $$SIDECAR_TEST_FLAG; then
 	echo "full flow tests failed"
 	kill $GW_HTTPS_PID
 	exit 1
@@ -129,7 +131,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 full-flow -vs --parallel; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 full-flow -vs --parallel $$SIDECAR_TEST_FLAG; then
 	echo "versioning-enabled full-flow tests failed"
 	kill $GW_VS_PID
 	exit 1
@@ -161,7 +163,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073 full-flow -vs --parallel; then
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073 full-flow -vs --parallel $$SIDECAR_TEST_FLAG; then
 	echo "versioning-enabled full-flow tests failed"
 	kill $GW_VS_HTTPS_PID
 	exit 1

@@ -764,7 +764,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrInvalidChecksumAlgorithm: {
 		Code:           "InvalidRequest",
-		Description:    "Checksum algorithm provided is unsupported. Please try again with any of the valid types: [CRC32, CRC32C, SHA1, SHA256]",
+		Description:    "Checksum algorithm provided is unsupported. Please try again with any of the valid types: [CRC32, CRC32C, CRC64NVME, MD5, SHA1, SHA256, SHA512, XXHASH128, XXHASH3, XXHASH64]",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidChecksumPart: {

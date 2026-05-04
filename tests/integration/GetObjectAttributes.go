@@ -235,38 +235,13 @@ func GetObjectAttributes_existing_object(s *S3Conf) error {
 func GetObjectAttributes_checksums(s *S3Conf) error {
 	testName := "GetObjectAttributes_checksums"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		objs := []struct {
-			key          string
-			checksumAlgo types.ChecksumAlgorithm
-		}{
-			{
-				key:          "obj-1",
-				checksumAlgo: types.ChecksumAlgorithmCrc32,
-			},
-			{
-				key:          "obj-2",
-				checksumAlgo: types.ChecksumAlgorithmCrc32c,
-			},
-			{
-				key:          "obj-3",
-				checksumAlgo: types.ChecksumAlgorithmSha1,
-			},
-			{
-				key:          "obj-4",
-				checksumAlgo: types.ChecksumAlgorithmSha256,
-			},
-			{
-				key:          "obj-5",
-				checksumAlgo: types.ChecksumAlgorithmCrc64nvme,
-			},
-		}
-
-		for i, el := range objs {
-			out, err := putObjectWithData(int64(i*120), &s3.PutObjectInput{
+		for i, checksumAlgo := range types.ChecksumAlgorithmCrc32.Values() {
+			key := fmt.Sprintf("obj-%v", i+1)
+			out, err := putObjectWithData(int64((i+1)*120), &s3.PutObjectInput{
 				Bucket:            &bucket,
-				Key:               &el.key,
-				ChecksumAlgorithm: el.checksumAlgo,
-			}, s3client)
+				Key:               &key,
+				ChecksumAlgorithm: checksumAlgo,
+			}, s3client, withPutObjectChecksumAlgo(checksumAlgo))
 			if err != nil {
 				return err
 			}
@@ -274,7 +249,7 @@ func GetObjectAttributes_checksums(s *S3Conf) error {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			res, err := s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
 				Bucket: &bucket,
-				Key:    &el.key,
+				Key:    &key,
 				ObjectAttributes: []types.ObjectAttributes{
 					types.ObjectAttributesChecksum,
 				},
@@ -288,28 +263,11 @@ func GetObjectAttributes_checksums(s *S3Conf) error {
 				return fmt.Errorf("expected non-nil checksum in the response")
 			}
 			if res.Checksum.ChecksumType != types.ChecksumTypeFullObject {
-				return fmt.Errorf("expected the %v object checksum type to be %v, instaed got %v",
-					el.key, types.ChecksumTypeFullObject, res.Checksum.ChecksumType)
+				return fmt.Errorf("expected the %v object checksum type to be %v, instead got %v",
+					key, types.ChecksumTypeFullObject, res.Checksum.ChecksumType)
 			}
-			if getString(res.Checksum.ChecksumCRC32) != getString(out.res.ChecksumCRC32) {
-				return fmt.Errorf("expected crc32 checksum to be %v, instead got %v",
-					getString(out.res.ChecksumCRC32), getString(res.Checksum.ChecksumCRC32))
-			}
-			if getString(res.Checksum.ChecksumCRC32C) != getString(out.res.ChecksumCRC32C) {
-				return fmt.Errorf("expected crc32c checksum to be %v, instead got %v",
-					getString(out.res.ChecksumCRC32C), getString(res.Checksum.ChecksumCRC32C))
-			}
-			if getString(res.Checksum.ChecksumSHA1) != getString(out.res.ChecksumSHA1) {
-				return fmt.Errorf("expected sha1 checksum to be %v, instead got %v",
-					getString(out.res.ChecksumSHA1), getString(res.Checksum.ChecksumSHA1))
-			}
-			if getString(res.Checksum.ChecksumSHA256) != getString(out.res.ChecksumSHA256) {
-				return fmt.Errorf("expected sha256 checksum to be %v, instead got %v",
-					getString(out.res.ChecksumSHA256), getString(res.Checksum.ChecksumSHA256))
-			}
-			if getString(res.Checksum.ChecksumCRC64NVME) != getString(out.res.ChecksumCRC64NVME) {
-				return fmt.Errorf("expected crc64nvme checksum to be %v, instead got %v",
-					getString(out.res.ChecksumCRC64NVME), getString(res.Checksum.ChecksumCRC64NVME))
+			if got, expected := getString(getObjectAttributesChecksum(res.Checksum, checksumAlgo)), getString(getPutObjectChecksum(out.res, checksumAlgo)); got != expected {
+				return fmt.Errorf("expected %s checksum to be %s, instead got %s", checksumAlgo, expected, got)
 			}
 		}
 		return nil

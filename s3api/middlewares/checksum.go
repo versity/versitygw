@@ -49,7 +49,7 @@ func VerifyChecksums(streamBody bool, requireBody bool, requireChecksum bool) fi
 
 			var err error
 			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
-				r, err = utils.NewHashReader(r, md5sum, utils.HashTypeMd5)
+				r, err = utils.NewHashReader(r, md5sum, utils.HashTypeContentMD5)
 				return r
 			})
 			if err != nil {
@@ -70,7 +70,7 @@ func VerifyChecksums(streamBody bool, requireBody bool, requireChecksum bool) fi
 				return s3err.GetAPIError(s3err.ErrInvalidDigest)
 			}
 
-			rdr, err = utils.NewHashReader(bytes.NewReader(body), md5sum, utils.HashTypeMd5)
+			rdr, err = utils.NewHashReader(bytes.NewReader(body), md5sum, utils.HashTypeContentMD5)
 			if err != nil {
 				return err
 			}

@@ -708,6 +708,41 @@ func TestIsChecksumAlgorithmValid(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "sha512",
+			args: args{
+				alg: types.ChecksumAlgorithmSha512,
+			},
+			wantErr: false,
+		},
+		{
+			name: "md5",
+			args: args{
+				alg: types.ChecksumAlgorithmMd5,
+			},
+			wantErr: false,
+		},
+		{
+			name: "xxhash64",
+			args: args{
+				alg: types.ChecksumAlgorithmXxhash64,
+			},
+			wantErr: false,
+		},
+		{
+			name: "xxhash3",
+			args: args{
+				alg: types.ChecksumAlgorithmXxhash3,
+			},
+			wantErr: false,
+		},
+		{
+			name: "xxhash128",
+			args: args{
+				alg: types.ChecksumAlgorithmXxhash128,
+			},
+			wantErr: false,
+		},
+		{
 			name: "invalid",
 			args: args{
 				alg: types.ChecksumAlgorithm("invalid_checksum_algorithm"),
@@ -803,6 +838,102 @@ func TestIsValidChecksum(t *testing.T) {
 			args: args{
 				checksum:  "d1SPCd/kZ2rAzbbLUC0n/bEaOSx70FNbXbIqoIxKuPY=",
 				algorithm: types.ChecksumAlgorithmSha256,
+			},
+			want: true,
+		},
+		{
+			name: "invalid-crc64nvme",
+			args: args{
+				checksum:  "ww2FVQ==",
+				algorithm: types.ChecksumAlgorithmCrc64nvme,
+			},
+			want: false,
+		},
+		{
+			name: "valid-crc64nvme",
+			args: args{
+				checksum:  "AAAAAAAAAAA=",
+				algorithm: types.ChecksumAlgorithmCrc64nvme,
+			},
+			want: true,
+		},
+		{
+			name: "invalid-sha512",
+			args: args{
+				checksum:  "d1SPCd/kZ2rAzbbLUC0n/bEaOSx70FNbXbIqoIxKuPY=",
+				algorithm: types.ChecksumAlgorithmSha512,
+			},
+			want: false,
+		},
+		{
+			name: "valid-sha512",
+			args: args{
+				checksum:  "z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP+DGNKHfuwvY7kxvUdBeoGlODJ6+SfaPg==",
+				algorithm: types.ChecksumAlgorithmSha512,
+			},
+			want: true,
+		},
+		{
+			name: "invalid-md5",
+			args: args{
+				checksum:  "L4q6V59Zcwn12wyLIytoE2c1ugk=",
+				algorithm: types.ChecksumAlgorithmMd5,
+			},
+			want: false,
+		},
+		{
+			name: "valid-md5",
+			args: args{
+				checksum:  "1B2M2Y8AsgTpgAmY7PhCfg==",
+				algorithm: types.ChecksumAlgorithmMd5,
+			},
+			want: true,
+		},
+		{
+			name: "invalid-xxhash64",
+			args: args{
+				checksum:  "1B2M2Y8AsgTpgAmY7PhCfg==",
+				algorithm: types.ChecksumAlgorithmXxhash64,
+			},
+			want: false,
+		},
+		{
+			name: "valid-xxhash64",
+			args: args{
+				checksum:  "70bbN1HY6Zk=",
+				algorithm: types.ChecksumAlgorithmXxhash64,
+			},
+			want: true,
+		},
+		{
+			name: "invalid-xxhash3",
+			args: args{
+				checksum:  "L4q6V59Zcwn12wyLIytoE2c1ugk=",
+				algorithm: types.ChecksumAlgorithmXxhash3,
+			},
+			want: false,
+		},
+		{
+			name: "valid-xxhash3",
+			args: args{
+				checksum:  "LQaABTjTlMI=",
+				algorithm: types.ChecksumAlgorithmXxhash3,
+			},
+			want: true,
+		},
+		{
+			name: "invalid-xxhash128",
+			args: args{
+				checksum:  "70bbN1HY6Zk=",
+				algorithm: types.ChecksumAlgorithmXxhash128,
+			},
+			want: false,
+		},
+		{
+			name: "valid-xxhash128",
+			args: args{
+				checksum:  "maoG0wFHmNhgAcMkRo1Jfw==",
+				algorithm: types.ChecksumAlgorithmXxhash128,
 			},
 			want: true,
 		},
@@ -1089,6 +1220,86 @@ func Test_checkChecksumTypeAndAlgo(t *testing.T) {
 				t:    types.ChecksumTypeComposite,
 			},
 			wantErr: true,
+		},
+		{
+			name: "full_object-sha512",
+			args: args{
+				algo: types.ChecksumAlgorithmSha512,
+				t:    types.ChecksumTypeFullObject,
+			},
+			wantErr: true,
+		},
+		{
+			name: "full_object-md5",
+			args: args{
+				algo: types.ChecksumAlgorithmMd5,
+				t:    types.ChecksumTypeFullObject,
+			},
+			wantErr: true,
+		},
+		{
+			name: "full_object-xxhash64",
+			args: args{
+				algo: types.ChecksumAlgorithmXxhash64,
+				t:    types.ChecksumTypeFullObject,
+			},
+			wantErr: true,
+		},
+		{
+			name: "full_object-xxhash3",
+			args: args{
+				algo: types.ChecksumAlgorithmXxhash3,
+				t:    types.ChecksumTypeFullObject,
+			},
+			wantErr: true,
+		},
+		{
+			name: "full_object-xxhash128",
+			args: args{
+				algo: types.ChecksumAlgorithmXxhash128,
+				t:    types.ChecksumTypeFullObject,
+			},
+			wantErr: true,
+		},
+		{
+			name: "composite-sha512",
+			args: args{
+				algo: types.ChecksumAlgorithmSha512,
+				t:    types.ChecksumTypeComposite,
+			},
+			wantErr: false,
+		},
+		{
+			name: "composite-md5",
+			args: args{
+				algo: types.ChecksumAlgorithmMd5,
+				t:    types.ChecksumTypeComposite,
+			},
+			wantErr: false,
+		},
+		{
+			name: "composite-xxhash64",
+			args: args{
+				algo: types.ChecksumAlgorithmXxhash64,
+				t:    types.ChecksumTypeComposite,
+			},
+			wantErr: false,
+		},
+		{
+			name: "composite-xxhash3",
+			args: args{
+				algo: types.ChecksumAlgorithmXxhash3,
+				t:    types.ChecksumTypeComposite,
+			},
+			wantErr: false,
+		},
+		{
+			name: "composite-xxhash128",
+			args: args{
+				algo: types.ChecksumAlgorithmXxhash128,
+				t:    types.ChecksumTypeComposite,
+			},
+			wantErr: false,
 		},
 		{
 			name: "composite-empty",

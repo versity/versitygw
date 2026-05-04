@@ -578,7 +578,7 @@ func ListObjectsV2_with_checksum(s *S3Conf) error {
 				Bucket:            &bucket,
 				Key:               &key,
 				ChecksumAlgorithm: el,
-			}, s3client)
+			}, s3client, withPutObjectChecksumAlgo(el))
 			if err != nil {
 				return err
 			}

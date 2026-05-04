@@ -79,6 +79,11 @@ const (
 	checksumTypeSha1      checksumType = "x-amz-checksum-sha1"
 	checksumTypeSha256    checksumType = "x-amz-checksum-sha256"
 	checksumTypeCrc64nvme checksumType = "x-amz-checksum-crc64nvme"
+	checksumTypeSha512    checksumType = "x-amz-checksum-sha512"
+	checksumTypeMd5       checksumType = "x-amz-checksum-md5"
+	checksumTypeXxhash64  checksumType = "x-amz-checksum-xxhash64"
+	checksumTypeXxhash3   checksumType = "x-amz-checksum-xxhash3"
+	checksumTypeXxhash128 checksumType = "x-amz-checksum-xxhash128"
 )
 
 func (c checksumType) isValid() bool {
@@ -86,7 +91,12 @@ func (c checksumType) isValid() bool {
 		c == checksumTypeCrc32c ||
 		c == checksumTypeSha1 ||
 		c == checksumTypeSha256 ||
-		c == checksumTypeCrc64nvme
+		c == checksumTypeCrc64nvme ||
+		c == checksumTypeSha512 ||
+		c == checksumTypeMd5 ||
+		c == checksumTypeXxhash64 ||
+		c == checksumTypeXxhash3 ||
+		c == checksumTypeXxhash128
 }
 
 // Extracts and validates the checksum type from the 'X-Amz-Trailer' header
