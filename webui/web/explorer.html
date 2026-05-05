@@ -1604,7 +1604,7 @@ under the License.
         objects = result.contents || [];
 
         // Filter out the current prefix itself (if it exists as an object)
-        objects = objects.filter(obj => obj.key !== currentPrefix);
+        objects = objects.filter(obj => obj.key !== decodeURIComponent(currentPrefix));
 
         // If versioning is enabled, fetch version counts for all objects
         objectVersionCounts = {};
@@ -2070,9 +2070,9 @@ under the License.
             </svg>
           `;
           if (isLast) {
-            html += `<span class="text-charcoal font-medium">${escapeHtml(part)}</span>`;
+            html += `<span class="text-charcoal font-medium">${escapeHtml(decodeURIComponent(part))}</span>`;
           } else {
-            html += `<button onclick="navigateToPrefix('${escapeHtml(path)}')" class="text-accent hover:text-accent-600">${escapeHtml(part)}</button>`;
+            html += `<button onclick="navigateToPrefix('${escapeHtml(path)}')" class="text-accent hover:text-accent-600">${escapeHtml(decodeURIComponent(part))}</button>`;
           }
         });
       }
