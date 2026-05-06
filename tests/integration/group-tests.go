@@ -38,6 +38,7 @@ func TestAuthentication(ts *TestState) {
 	ts.Run(Authentication_invalid_sha256_payload_hash)
 	ts.Run(Authentication_md5)
 	ts.Run(Authentication_signature_error_incorrect_secret_key)
+	ts.Run(Authentication_sigv2_not_supported)
 	ts.Run(Authentication_with_expect_header)
 }
 
@@ -62,6 +63,7 @@ func TestPresignedAuthentication(ts *TestState) {
 	ts.Run(PresignedAuth_exceeding_expiration_query_param)
 	ts.Run(PresignedAuth_expired_request)
 	ts.Run(PresignedAuth_incorrect_secret_key)
+	ts.Run(PresignedAuth_sigv2_not_supported)
 	ts.Run(PresignedAuth_PutObject_success)
 	ts.Run(PresignedAuth_Put_GetObject_with_data)
 	if !ts.conf.azureTests {
@@ -1293,6 +1295,7 @@ func GetIntTests() IntTests {
 		"Authentication_invalid_sha256_payload_hash":                               Authentication_invalid_sha256_payload_hash,
 		"Authentication_md5":                                                       Authentication_md5,
 		"Authentication_signature_error_incorrect_secret_key":                      Authentication_signature_error_incorrect_secret_key,
+		"Authentication_sigv2_not_supported":                                       Authentication_sigv2_not_supported,
 		"Authentication_with_expect_header":                                        Authentication_with_expect_header,
 		"PresignedAuth_security_token_not_supported":                               PresignedAuth_security_token_not_supported,
 		"PresignedAuth_unsupported_algorithm":                                      PresignedAuth_unsupported_algorithm,
@@ -1314,6 +1317,7 @@ func GetIntTests() IntTests {
 		"PresignedAuth_exceeding_expiration_query_param":                           PresignedAuth_exceeding_expiration_query_param,
 		"PresignedAuth_expired_request":                                            PresignedAuth_expired_request,
 		"PresignedAuth_incorrect_secret_key":                                       PresignedAuth_incorrect_secret_key,
+		"PresignedAuth_sigv2_not_supported":                                        PresignedAuth_sigv2_not_supported,
 		"PresignedAuth_PutObject_success":                                          PresignedAuth_PutObject_success,
 		"PutObject_missing_object_lock_retention_config":                           PutObject_missing_object_lock_retention_config,
 		"PutObject_name_too_long":                                                  PutObject_name_too_long,
