@@ -45,8 +45,13 @@
     openssl genpkey -algorithm RSA -out versitygw.pem -pkeyopt rsa_keygen_bits:2048
     openssl req -new -x509 -key versitygw.pem -out cert.pem -days 365
 ```
-10. Set `BUCKET_ONE_NAME` and `BUCKET_TWO_NAME` to the desired names of your buckets.  If you don't want them to be created each time, set `RECREATE_BUCKETS` to `false`.
-11. In the root repo folder, run single test group with `VERSITYGW_TEST_ENV=<env file> tests/run.sh <options>`.  To print options, run `tests/run.sh -h`.  To run all tests, run `VERSITYGW_TEST_ENV=<env file> tests/run_all.sh`.
+10. Set `BUCKET_ONE_NAME` and `BUCKET_TWO_NAME` to the desired names of your buckets, for older and static bucket tests, or prefixes, for newer and non-static bucket tests.  If you don't want them to be created each time, set `RECREATE_BUCKETS` to `false`.
+11. In the root repo folder, run single test group with `VERSITYGW_TEST_ENV=<env file> tests/run.sh <options>`.  To print options, run `tests/run.sh -h`.  To run all tests (not recommended), run `VERSITYGW_TEST_ENV=<env file> tests/run_all.sh`.
+12. BATS tests can also be run directly with the format `VERSIYTGW_TEST_ENV=<env file> tests/<test file name>`, or for single tests, `VERSIYTGW_TEST_ENV=<env file> tests/<file name> -f <test name>`.  Example:  `VERSITYGW_TEST_ENV=tests/.env tests/test_rest_bucket.sh -f "REST - HeadBucket"`.
+
+#### Tags
+
+The bats tests have tag headers to allow the test user to easily find tests that check against a certain client, feature, header value, query, etc.  More info can be found in `README.md` in `tests/tags/README.md`.
 
 ### Static Bucket Mode
 
@@ -77,7 +82,11 @@ To communicate directly with s3, in order to compare the gateway results to dire
 1.  Copy `.secrets.default` to `.secrets` in the `tests` folder and change the parameters and add the additional s3 fields explained in the **S3 Backend** section above if running with the s3 backend.
 2.  By default, the dockerfile uses the **arm** architecture (usually modern Mac).  If using **amd** (usually earlier Mac or Linux), you can either replace the corresponding `ARG` values directly, or with `arg="<param>=<amd library or folder>"`  Also, you can determine which is used by your OS with `uname -a`.
 3.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to your secrets and config file, respectively, if not using the defaults.  Example:  `docker build -t <tag> --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" -f tests/Dockerfile_test_bats .`.
-4.  To run the entire suite, run `docker run -it <image name>`.  This is not recommended due to the sheer amount of tests.  To run an individual suite, pass in the name of the suite as defined in `tests/run.sh` (e.g. REST tests -> `docker run -it <image name> rest`).  Also, multiple specific suites can be run, if separated by comma.
+4.  To run the entire suite, run `docker run -it <image name>`.  This is not recommended due to the sheer amount of tests.  To run an individual suite, pass in the name of the suite as defined in `tests/run.sh` (e.g. REST bucket tests -> `docker run -it <image tag or ID> rest-bucket`).  Also, multiple specific suites can be run, if separated by comma.  
+5.  To list all suites available, the `-h` tag can be passed.  Example:  `docker run -t <image tag or ID> -h`.
+6.  By default, the config is placed in the `/home/tester/config` folder inside the container.  Logs are printed to `/home/tester/log`.  To overwrite the config, an `.env` folder can be placed in a mounted host folder, and to view the logs, a mounted folder can also be used.  Example:  `docker run -v $PWD/runtime/config:/home/tester/config -v $PWD/runtime/log:/home/tester/log -t bats_test s3`
+6.  To use tag functionality, the `--tags` parameter can be passed to the container.
+7.  To troubleshoot the Docker container, use `docker run -it --entrypoint /bin/bash <image tag or ID>` to use the shell and examine the container.
 
 ## Instructions - Running with docker-compose
 

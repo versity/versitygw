@@ -32,7 +32,7 @@ Options:
   -h, --help    Show this help.
 
 Notes:
-  - Requires VERSITYGW_TEST_ENV to be set.
+  - Running tests requires VERSITYGW_TEST_ENV to be set.
   - Tags are passed as a single comma-separated argument.
 
 Examples:
@@ -125,7 +125,10 @@ for arg in "$@"; do
   case "$arg" in
     --count) count_flag=1 ;;
     --list) list_flag=1 ;;
-    --any) tag_matching_mode="any" ;;
+    --any)
+      tag_matching_mode="any"
+      list_flag=1
+      ;;
     -h|--help) usage; exit 0 ;;
     --list-tags) list_tags_flag=1
       shift
