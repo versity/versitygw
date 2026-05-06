@@ -190,6 +190,7 @@ const (
 	ErrMetadataTooLarge
 	ErrOnlyAws4HmacSha256
 	ErrInvalidDateHeader
+	ErrUnsupportedAuthorizationMechanism
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -866,6 +867,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidDateHeader: {
 		Code:           "InvalidArgument",
 		Description:    "X-Amz-Date must be formated via ISO8601 Long format",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrUnsupportedAuthorizationMechanism: {
+		Code:           "InvalidRequest",
+		Description:    "The authorization mechanism you have provided is not supported. Please use AWS4-HMAC-SHA256.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 

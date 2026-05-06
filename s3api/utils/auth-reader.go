@@ -191,7 +191,10 @@ func ParseAuthorization(authorization string) (AuthData, error) {
 	}
 
 	algo := authParts[0]
-
+	if algo == "AWS" {
+		// SigV2 authorization is not supported by the gateway
+		return a, s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationMechanism)
+	}
 	if algo != "AWS4-HMAC-SHA256" {
 		return a, s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationType)
 	}
