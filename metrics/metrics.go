@@ -131,6 +131,12 @@ func (m *manager) Send(ctx *fiber.Ctx, err error, action string, count int64, st
 		{Key: "action", Value: a.Name},
 	}
 
+	// add tag bucket=<bucketname> if the request specifies a bucket
+	bucket := ctx.Params("bucket")
+	if bucket != "" {
+		reqTags = append(reqTags, Tag{Key: "bucket", Value: bucket})
+	}
+
 	reqStatus := status
 
 	if err != nil {
