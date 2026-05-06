@@ -22,6 +22,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
 source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 
+# tags: curl, PutBucketTagging, tagging, invalid-query
 @test "REST PutBucketTagging - more than 50 tags" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -35,6 +36,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+# tags: curl, PutBucketTagging, tagging, invalid-query
 @test "REST PutBucketTagging - tag key with control character" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -48,6 +50,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+# tags: curl, PutBucketTagging, tagging, invalid-query
 @test "REST PutBucketTagging - duplicate tag key" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -62,6 +65,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+# tags: curl, PutBucketTagging, tagging, invalid-query
 @test "REST PutBucketTagging - tag value with control character" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -75,6 +79,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+# tags: curl, PutBucketTagging, tagging, invalid-query
 @test "REST PutBucketTagging - empty tag key" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1583"
@@ -87,6 +92,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+# tags: curl, PutBucketTagging, tagging, invalid-query
 @test "REST PutBucketTagging - returns invalid key" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1583"
@@ -99,6 +105,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+# tags: curl, PutBucketTagging, tagging
 @test "REST - PutBucketTagging - success" {
   test_key="testKey"
   test_value="testValue"
@@ -114,6 +121,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+# tags: openssl, PutBucketTagging, tagging, chunked, x-amz-content-sha256, invalid-header
 @test "REST - PutBucketTagging - STREAMING-UNSIGNED-PAYLOAD-TRAILER fails" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -128,6 +136,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+# tags: curl, PutBucketTagging, tagging, invalid-query
 @test "REST - PutBucketTagging - no payload" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -140,6 +149,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+# tags: curl, PutBucketTagging, tagging, content-md5, invalid-header
 @test "REST - PutBucketTagging - invalid Content-MD5" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -154,6 +164,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+# tags: curl, PutBucketTagging, tagging, content-md5, invalid-header
 @test "REST - PutBucketTagging - invalid Content-MD5 - invalid Content-MD5 itself returned" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1526"
@@ -169,6 +180,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+# tags: curl, PutBucketTagging, tagging, content-md5, invalid-header
 @test "REST - PutBucketTagging - incorrect Content-MD5" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -182,6 +194,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+# tags: curl, PutBucketTagging, tagging, content-md5, invalid-header
 @test "REST - PutBucketTagging - missing Content-MD5" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

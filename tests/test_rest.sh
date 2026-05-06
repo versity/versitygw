@@ -23,6 +23,7 @@ source ./tests/drivers/rest.sh
 source ./tests/logger.sh
 source ./tests/setup_unit.sh
 
+# tags:  unit
 @test "check_key_and_value_pair_for_match" {
   run check_key_and_value_pair_for_match "one" "two" "three"
   assert_failure 2
@@ -43,6 +44,7 @@ source ./tests/setup_unit.sh
   assert_success
 }
 
+# tags:  unit
 @test "check_for_key_and_value_within_pairs" {
   # match in middle, omit it
   run check_for_key_and_value_within_pairs "B" "2" "A" "1" "B" "2" "C" "3"
@@ -77,6 +79,7 @@ source ./tests/setup_unit.sh
   assert_failure 2
 }
 
+# tags:  unit
 @test "check_header_keys_and_values" {
   run get_file_name
   assert_success

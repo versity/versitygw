@@ -24,6 +24,7 @@ source ./tests/setup.sh
 export RUN_USERS=true
 test_file="test_file"
 
+# tags: curl,checksum,PutObject,invalid-header,x-amz-checksum-sha256
 @test "REST - invalid checksum type" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -36,21 +37,25 @@ test_file="test_file"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,invalid-header,x-amz-checksum-sha256
 @test "REST - sha256 checksum - invalid" {
   run check_checksum_rest_invalid "sha256"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,invalid-header,x-amz-checksum-sha256
 @test "REST - sha256 checksum - incorrect" {
   run check_checksum_rest_incorrect "sha256"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,x-amz-checksum-sha256
 @test "REST - sha256 checksum - correct" {
   run add_correct_checksum "sha256"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,HeadObject,x-amz-checksum-sha256
 @test "REST - HeadObject returns x-amz-checksum-sha256" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -66,21 +71,25 @@ test_file="test_file"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,invalid-header,x-amz-checksum-crc32c
 @test "REST - crc32 checksum - invalid" {
   run check_checksum_rest_invalid "crc32c"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,invalid-header,x-amz-checksum-crc32
 @test "REST - crc32 checksum - incorrect" {
   run check_checksum_rest_incorrect "crc32"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,x-amz-checksum-crc32
 @test "REST - crc32 checksum - correct" {
   run add_correct_checksum "crc32"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,HeadObject,x-amz-checksum-crc32
 @test "REST - crc32 checksum - HeadObject" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -96,51 +105,61 @@ test_file="test_file"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,invalid-header,x-amz-checksum-crc64nvme
 @test "REST - crc64nvme checksum - invalid" {
   run check_checksum_rest_invalid "crc64nvme"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,invalid-header,x-amz-checksum-crc64nvme
 @test "REST - crc64nvme checksum - incorrect" {
   run check_checksum_rest_incorrect "crc64nvme"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,x-amz-checksum-crc64nvme
 @test "REST - crc64nvme checksum - correct" {
-  run add_correct_checksum "sha256"
+  run add_correct_checksum "crc64nvme"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,invalid-header,x-amz-checksum-crc32c
 @test "REST - crc32c checksum - invalid" {
   run check_checksum_rest_invalid "crc32c"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,invalid-header,x-amz-checksum-crc32c
 @test "REST - crc32c checksum - incorrect" {
   run check_checksum_rest_incorrect "crc32c"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,x-amz-checksum-crc32c
 @test "REST - crc32c checksum - correct" {
   run add_correct_checksum "crc32c"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,invalid-header,x-amz-checksum-sha1
 @test "REST - sha1 checksum - invalid" {
   run check_checksum_rest_invalid "sha1"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,invalid-header,x-amz-checksum-sha1
 @test "REST - sha1 checksum - incorrect" {
   run check_checksum_rest_incorrect "sha1"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,x-amz-checksum-sha1
 @test "REST - sha1 checksum - correct" {
   run add_correct_checksum "sha1"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,HeadObject
 @test "REST - attempt to get checksum without checksum mode" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -156,6 +175,7 @@ test_file="test_file"
   assert_success
 }
 
+# tags: curl,checksum,PutObject,HeadObject,x-amz-checksum-crc64nvme
 @test "REST - HeadObject - default crc64nvme checksum" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

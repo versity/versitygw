@@ -27,35 +27,28 @@ source ./tests/setup.sh
 }
 
 @test "REST - GetBucketAnalyticsConfiguration - with template" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
-  bucket_name=$output
-
-  run setup_bucket_v2 "$bucket_name"
-  assert_success
-
-  run get_file_name
-  assert_success
-  file_name=$output
+  read -r bucket_name file_name <<< "$output"
 
   run send_rest_go_command_write_response_to_file "$TEST_FILE_FOLDER/$file_name" "-bucketName" "$bucket_name" "-query" "analytics="
   assert_success
 
-  run bash -c "go run ./tests/checker/main.go -dataFile $TEST_FILE_FOLDER/$file_name -batsTestFileName $BATS_TEST_FILENAME \
-    -batsTestName $BATS_TEST_NAME -serverName $SERVER_NAME -matrixFile $TEMPLATE_MATRIX_FILE"
+  run check_rest_expected_header_error "$TEST_FILE_FOLDER/$file_name" "501" "Not Implemented"
+  assert_success
+
+  run go run ./tests/checker/main.go -dataFile "$TEST_FILE_FOLDER/$file_name" -batsTestFileName "$BATS_TEST_FILENAME" \
+    -batsTestName "$BATS_TEST_NAME" -serverName "$SERVER_NAME" -matrixFile "$TEMPLATE_MATRIX_FILE"
   assert_success
 }
 
 @test "REST - NotImplemented - correct Content-Type header" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
-  bucket_name=$output
-
-  run setup_bucket_v2 "$bucket_name"
-  assert_success
+  bucket_name="$output"
 
   run send_rest_go_command_check_header_key_and_value "501" "Content-Type" "application/xml" "-bucketName" "$bucket_name" \
-    "-query" "analytics"
+    "-query" "analytics="
   assert_success
 }
 
@@ -232,14 +225,11 @@ source ./tests/setup.sh
 @test "REST - GetObjectAcl" {
   run get_file_name
   assert_success
-  file_name=$output
+  file_name="$output"
 
-  run get_bucket_name "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
-  bucket_name="$output"
-
-  run setup_bucket_and_add_file "$bucket_name" "$file_name"
-  assert_success
+  read -r bucket_name file_name <<< "$output"
 
   run send_not_implemented_expect_failure "-bucketName" "$bucket_name" "-query" "acl=" "-method" "GET" "-objectKey" "$file_name"
   assert_success
@@ -248,14 +238,11 @@ source ./tests/setup.sh
 @test "REST - PutObjectAcl" {
   run get_file_name
   assert_success
-  file_name=$output
+  file_name="$output"
 
-  run get_bucket_name "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
-  bucket_name="$output"
-
-  run setup_bucket_and_add_file "$bucket_name" "$file_name"
-  assert_success
+  read -r bucket_name file_name <<< "$output"
 
   run send_not_implemented_expect_failure "-bucketName" "$bucket_name" "-query" "acl=" "-method" "PUT" "-objectKey" "$file_name"
   assert_success

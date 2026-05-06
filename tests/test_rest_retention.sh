@@ -22,6 +22,7 @@ source ./tests/commands/put_object_retention.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/util/util_time.sh
 
+# tags: curl, PutObject, PutObjectRetention, object-lock, retention, content-md5
 @test "test_rest_retention" {
   run get_file_name
   assert_success
@@ -49,6 +50,7 @@ source ./tests/util/util_time.sh
   assert_success
 }
 
+# tags: curl, PutObject, PutObjectRetention, object-lock, retention, content-md5, invalid-query
 @test "REST - PutObjectRetention - w/o request body" {
   run get_file_name
   assert_success
@@ -70,4 +72,3 @@ source ./tests/util/util_time.sh
   run retention_rest_without_request_body "$bucket_name" "$test_file"
   assert_success
 }
-

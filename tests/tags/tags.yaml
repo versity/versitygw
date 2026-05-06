@@ -2,52 +2,294 @@ version: 1
 
 tags:
   feature:
+    cors:
+      desc: "Bucket CORS configuration and CORS response behavior"
+    location-constraint:
+      desc: "CreateBucket LocationConstraint XML field"
+    legal-hold:
+      desc: "Object Lock legal hold behavior"
+    object-lock:
+      desc: "Object Lock feature (retention/legal hold)"
+    retention:
+      desc: "Retention policy behavior"
+    composite-checksum:
+      desc: "Composite checksum calculation"
+    checksum:
+      desc: "Checksum behavior and validation"
+    chunked:
+      desc: "Chunked/streaming upload tests"
     invalid-method:
       desc: "Tests for invalid methods"
     invalid-header:
       desc: "Tests for invalid headers"
+    invalid-query:
+      desc: "Tests for invalid query parameters"
     malformed-message:
       desc: "Tests for severely malformed messages"
     minimal-request:
       desc: "Tests that do not use any optional query or header values"
     multipart:
       desc: "Multipart upload"
+    presigned-url:
+      desc: "Presigned URL"
     required-headers:
       desc: "Required headers such as 'Authorization' and 'x-amz-date'"
+    unit:
+      desc: "versitygw unit tests"
     user:
       desc: "versitygw user tests"
+    tagging:
+      desc: "Bucket/object tagging"
+    policy:
+      desc: "Bucket/object policies"
+    public-access:
+      desc: "Public access / policy status behavior"
+    versioning:
+      desc: "Versioning semantics"
+    not-implemented:
+      desc: "Operations expected to return 501 Not Implemented"
   client:
     curl:
       desc: "REST curl commands"
+    s3:
+      desc: "AWS CLI s3 commands"
+    s3api:
+      desc: "AWS CLI s3api commands"
+    s3cmd:
+      desc: "s3cmd client commands"
+    mc:
+      desc: "Minio MC commands"
     openssl:
       desc: "REST OpenSSL commands"
   command:
+    AbortMultipartUpload:
+      desc: "AbortMultipartUpload command"
+    CompleteMultipartUpload:
+      desc: "CompleteMultipartUpload command"
+    CopyObject:
+      desc: "CopyObject command"
+    CreateBucket:
+      desc: "CreateBucket command"
+    CreateMultipartUpload:
+      desc: "CreateMultipartUpload command"
+    DeleteBucket:
+      desc: "DeleteBucket command"
+    DeleteBucketCors:
+      desc: "DeleteBucketCors command"
+    DeleteBucketOwnershipControls:
+      desc: "DeleteBucketOwnershipControls command"
+    DeleteBucketPolicy:
+      desc: "DeleteBucketPolicy command"
+    DeleteBucketTagging:
+      desc: "DeleteBucketTagging command"
+    DeleteObject:
+      desc: "DeleteObject command"
+    DeleteObjectTagging:
+      desc: "DeleteObjectTagging command"
+    GetBucketAcl:
+      desc: "GetBucketAcl command"
+    GetBucketCors:
+      desc: "GetBucketCors command"
+    GetBucketLocation:
+      desc: "GetBucketLocation command"
+    GetBucketOwnershipControls:
+      desc: "GetBucketOwnershipControls command"
+    GetBucketPolicy:
+      desc: "GetBucketPolicy command"
+    GetBucketPolicyStatus:
+      desc: "GetBucketPolicyStatus command"
+    GetBucketTagging:
+      desc: "GetBucketTagging command"
     GetObject:
       desc: "GetObject command"
+    GetObjectAttributes:
+      desc: "GetObjectAttributes command"
+    GetObjectLegalHold:
+      desc: "GetObjectLegalHold command"
+    GetObjectLockConfiguration:
+      desc: "GetObjectLockConfiguration command"
+    GetObjectRetention:
+      desc: "GetObjectRetention command"
+    GetObjectTagging:
+      desc: "GetObjectTagging command"
+    HeadBucket:
+      desc: "HeadBucket command"
+    HeadObject:
+      desc: "HeadObject command"
     ListBuckets:
       desc: "ListBuckets command"
+    ListMultipartUploads:
+      desc: "ListMultipartUploads command"
+    ListObjects:
+      desc: "ListObjects (v1) command"
+    ListObjectsV2:
+      desc: "ListObjectsV2 (list-type=2) command"
+    ListObjectVersions:
+      desc: "ListObjectVersions command"
+    ListParts:
+      desc: "ListParts command"
+    PutBucketAcl:
+      desc: "PutBucketAcl command"
+    PutBucketCors:
+      desc: "PutBucketCors command"
+    PutBucketOwnershipControls:
+      desc: "PutBucketOwnershipControls command"
+    PutBucketPolicy:
+      desc: "PutBucketPolicy command"
+    PutBucketTagging:
+      desc: "PutBucketTagging command"
+    PutBucketVersioning:
+      desc: "PutBucketVersioning command"
+    PutObject:
+      desc: "PutObject command"
+    PutObjectLegalHold:
+      desc: "PutObjectLegalHold command"
+    PutObjectLockConfiguration:
+      desc: "PutObjectLockConfiguration command"
+    PutObjectRetention:
+      desc: "PutObjectRetention command"
+    PutObjectTagging:
+      desc: "PutObjectTagging command"
+    PutPublicAccessBlock:
+      desc: "PutPublicAccessBlock command"
+    SelectObjectContent:
+      desc: "SelectObjectContent command"
+    UploadPart:
+      desc: "UploadPart command"
+    UploadPartCopy:
+      desc: "UploadPartCopy command"
   header:
     Authorization:
       desc: "Authorization header"
     host:
       desc: "host header"
+    origin:
+      desc: "Origin header"
+    access-control-request-method:
+      desc: "Access-Control-Request-Method header (preflight)"
+    access-control-request-headers:
+      desc: "Access-Control-Request-Headers header (preflight)"
+    access-control-allow-origin:
+      desc: "Access-Control-Allow-Origin response header"
+    access-control-allow-methods:
+      desc: "Access-Control-Allow-Methods response header"
+    access-control-allow-headers:
+      desc: "Access-Control-Allow-Headers response header"
+    access-control-expose-headers:
+      desc: "Access-Control-Expose-Headers response header"
+    access-control-max-age:
+      desc: "Access-Control-Max-Age response header"
+    content-md5:
+      desc: "Content-MD5 header"
+    Content-Disposition:
+      desc: "Content-Disposition header"
+    content-length:
+      desc: "Content-Length header"
+    Content-Type:
+      desc: "Content-Type header"
+    Expect:
+      desc: "Expect header (e.g. 100-continue)"
+    ETag:
+      desc: "ETag response header"
+    Expires:
+      desc: "Expires header"
+    If-Match:
+      desc: "If-Match header"
+    If-None-Match:
+      desc: "If-None-Match header"
     range:
       desc: "ranged download tests"
+    x-amz-acl:
+      desc: "x-amz-acl (canned ACL) header"
+    x-amz-meta:
+      desc: "x-amz-meta-* user metadata headers"
     x-amz-content-sha256:
       desc: "x-amz-content-sha256 header (payload hash and/or type)"
+    x-amz-copy-source:
+      desc: "x-amz-copy-source header"
     x-amz-date:
       desc: "x-amz-date header"
+    x-amz-bucket-region:
+      desc: "x-amz-bucket-region response header"
+    x-amz-trailer:
+      desc: "x-amz-trailer header (checksum trailer declaration)"
+    x-amz-object-attributes:
+      desc: "x-amz-object-attributes header (requested attribute set)"
+    x-amz-object-lock-mode:
+      desc: "x-amz-object-lock-mode header"
+    x-amz-object-lock-retain-until-date:
+      desc: "x-amz-object-lock-retain-until-date header"
+    x-amz-checksum-sha256:
+      desc: "x-amz-checksum-sha256 header (checksum request/validation)"
+    x-amz-checksum-crc32:
+      desc: "x-amz-checksum-crc32 header (checksum request/validation)"
+    x-amz-checksum-crc32c:
+      desc: "x-amz-checksum-crc32c header (checksum request/validation)"
+    x-amz-checksum-crc64nvme:
+      desc: "x-amz-checksum-crc64nvme header (checksum request/validation)"
+    x-amz-checksum-sha1:
+      desc: "x-amz-checksum-sha1 header (checksum request/validation)"
+    x-amz-checksum-type:
+      desc: "x-amz-checksum-type header"
+    x-amz-checksum-algorithm:
+      desc: "x-amz-checksum-algorithm header"
+    x-amz-grant-read-acp:
+      desc: "ACL permission to read object ACL"
+    x-amz-grant-full-control:
+      desc: "x-amz-grant-full-control header"
+    x-amz-grant-read:
+      desc: "x-amz-grant-read header"
+    x-amz-grant-write:
+      desc: "x-amz-grant-write header"
+    x-amz-grant-write-acp:
+      desc: "x-amz-grant-write-acp header"
+    x-amz-expected-bucket-owner:
+      desc: "x-amz-expected-bucket-owner header"
+    x-amz-bypass-governance-retention:
+      desc: "x-amz-bypass-governance-retention header"
+    x-amz-mp-object-size:
+      desc: "x-amz-mp-object-size header"
   query:
     bucket-region:
       desc: "ListBuckets bucket-region query"
+    cors:
+      desc: "Bucket CORS subresource (?cors)"
     continuation-token:
       desc: "ListBuckets/ListObjects continuation token query"
+    delimiter:
+      desc: "ListObjects delimiter query"
+    legal-hold:
+      desc: "Object legal-hold subresource (?legal-hold=)"
+    encoding-type:
+      desc: "ListObjects encoding-type query"
+    fetch-owner:
+      desc: "ListObjectsV2 fetch-owner query"
+    list-type:
+      desc: "ListObjectsV2 list-type query"
+    marker:
+      desc: "ListObjects marker query"
+    max-keys:
+      desc: "ListObjects max-keys query"
+    object-lock:
+      desc: "Object lock configuration subresource (?object-lock=)"
     max-buckets:
       desc: "Maximum amount of buckets returned by ListBuckets command"
+    ownershipControls:
+      desc: "Bucket ownershipControls subresource (?ownershipControls=)"
+    policyStatus:
+      desc: "Bucket policyStatus subresource (?policyStatus=)"
+    policy:
+      desc: "Bucket policy subresource (?policy=)"
     partNumber:
       desc: "partNumber query for multiparts and gets"
+    uploadId:
+      desc: "Multipart uploadId query"
     prefix:
       desc: "bucket or object prefix query"
+    tagging:
+      desc: "Bucket/object tagging subresource (?tagging=)"
+    start-after:
+      desc: "ListObjectsV2 start-after query"
     response-cache-control:
       desc: "override cache-control header response"
     response-content-disposition:
@@ -60,3 +302,13 @@ tags:
       desc: "override content-type header response"
     response-expires:
       desc: "override expires header response"
+    retention:
+      desc: "Object retention subresource (?retention=)"
+    attributes:
+      desc: "GetObjectAttributes attributes query/subresource"
+    versionId:
+      desc: "Object versionId query"
+    versions:
+      desc: "ListObjectVersions subresource (?versions=)"
+    versioning:
+      desc: "Bucket versioning subresource (?versioning=)"

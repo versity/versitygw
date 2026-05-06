@@ -26,6 +26,7 @@ source ./tests/setup.sh
 
 test_file="test_file"
 
+# tags: curl, PutObjectTagging, tagging, content-md5
 @test "REST - PutObjectTagging - content-md5 not required for object tagging" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -38,6 +39,7 @@ test_file="test_file"
   assert_success
 }
 
+# tags: curl, PutObjectTagging, tagging, invalid-query
 @test "REST - PutObjectTagging - invalid key returns invalid key in error" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1663"
@@ -53,6 +55,7 @@ test_file="test_file"
   assert_success
 }
 
+# tags: curl, PutObjectTagging, tagging, content-md5
 @test "REST - PutObjectTagging - success with content-md5" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -65,6 +68,7 @@ test_file="test_file"
   assert_success
 }
 
+# tags: curl, PutObjectTagging, tagging, x-amz-expected-bucket-owner, invalid-header
 @test "REST - PutObjectTagging - mismatched bucket owner" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -75,6 +79,7 @@ test_file="test_file"
   assert_success
 }
 
+# tags: curl, PutObjectTagging, tagging, versioning, versionId
 @test "REST -PutObjectTagging - older version" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "cannot change versioning status for static buckets"

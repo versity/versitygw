@@ -24,6 +24,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_object_lock_config/get_object_lock_config_rest.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 
+# tags: openssl,chunked,PutObject,invalid-header,content-length
 @test "REST - chunked upload, no content length" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -40,6 +41,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,PutObject,invalid-header
 @test "REST - chunked upload, signature error" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -59,6 +61,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,PutObject,invalid-header
 @test "REST - chunked upload, final signature error" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -78,6 +81,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,PutObject
 @test "REST - chunked upload, success (file with just a's)" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -100,6 +104,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,PutObject
 @test "REST - chunked upload, success (null bytes)" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -122,6 +127,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,PutObject
 @test "REST - chunked upload, success (random bytes)" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -144,6 +150,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,PutObject
 @test "REST - chunked upload, success (zero-byte file)" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -166,31 +173,37 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,x-amz-trailer,x-amz-checksum-crc32c
 @test "REST - chunked upload - crc32c trailer - success" {
   run chunked_upload_trailer_success "crc32c"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,x-amz-trailer,x-amz-checksum-sha1
 @test "test - REST chunked upload - sha1 trailer - success" {
   run chunked_upload_trailer_success "sha1"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,x-amz-trailer,x-amz-checksum-sha256
 @test "test - REST chunked upload - sha256 trailer - success" {
   run chunked_upload_trailer_success "sha256"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,x-amz-trailer,x-amz-checksum-crc64nvme
 @test "test - REST chunked upload - crc64nvme trailer - success" {
   run chunked_upload_trailer_success "crc64nvme"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,x-amz-trailer,x-amz-checksum-crc32
 @test "test - REST chunked upload - crc32 trailer - success" {
   run chunked_upload_trailer_success "crc32"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,invalid-header,x-amz-trailer
 @test "test - REST chunked upload - invalid trailer" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -207,56 +220,67 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,invalid-header,x-amz-trailer,x-amz-checksum-sha1
 @test "test - REST chunked upload - sha1 trailer - invalid" {
   run chunked_upload_trailer_invalid_checksum "sha1"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,invalid-header,x-amz-trailer,x-amz-checksum-sha256
 @test "test - REST chunked upload - sha256 trailer - invalid" {
   run chunked_upload_trailer_invalid_checksum "sha256"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,invalid-header,x-amz-trailer,x-amz-checksum-crc32
 @test "test - REST chunked upload - crc32 trailer - invalid" {
   run chunked_upload_trailer_invalid_checksum "crc32"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,invalid-header,x-amz-trailer,x-amz-checksum-crc32c
 @test "test - REST chunked upload - crc32c trailer - invalid" {
   run chunked_upload_trailer_invalid_checksum "crc32c"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,invalid-header,x-amz-trailer,x-amz-checksum-crc64nvme
 @test "test - REST chunked upload - crc64nvme trailer - invalid" {
   run chunked_upload_trailer_invalid_checksum "crc64nvme"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,invalid-header,x-amz-trailer,x-amz-checksum-sha1
 @test "test - REST chunked upload - sha1 trailer - incorrect" {
   run chunked_upload_trailer_incorrect_checksum "sha1"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,invalid-header,x-amz-trailer,x-amz-checksum-sha256
 @test "test - REST chunked upload - sha256 trailer - incorrect" {
   run chunked_upload_trailer_incorrect_checksum "sha256"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,invalid-header,x-amz-trailer,x-amz-checksum-crc32
 @test "test - REST chunked upload - crc32 trailer - incorrect" {
   run chunked_upload_trailer_incorrect_checksum "crc32"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,invalid-header,x-amz-trailer,x-amz-checksum-crc32c
 @test "test - REST chunked upload - crc32c trailer - incorrect" {
   run chunked_upload_trailer_incorrect_checksum "crc32c"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,invalid-header,x-amz-trailer,x-amz-checksum-crc64nvme
 @test "test - REST chunked upload - crc64nvme trailer - incorrect" {
   run chunked_upload_trailer_incorrect_checksum "crc64nvme"
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,x-amz-trailer,x-amz-checksum-sha256
 @test "REST chunked upload - smaller chunk size" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -279,6 +303,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,PutObject,invalid-header,x-amz-trailer,x-amz-checksum-crc32
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER, x-amz-trailer of crc32, trailer missing" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -294,6 +319,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,x-amz-trailer,x-amz-checksum-sha256
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - 200 header returns correct checksum type" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -316,6 +342,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,x-amz-trailer,x-amz-checksum-sha1
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - success (sha1)" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -341,6 +368,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,x-amz-trailer,x-amz-checksum-crc32
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - success (crc32)" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -366,6 +394,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,x-amz-trailer,x-amz-checksum-crc32c
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - success (crc32c)" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -391,6 +420,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,x-amz-trailer,x-amz-checksum-crc64nvme
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - success (crc64nvme)" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -416,6 +446,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,PutObject,invalid-header,content-length
 @test "REST - PutObject - STREAMING-AWS4-HMAC-SHA256-PAYLOAD - missing content length" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1623"
@@ -431,6 +462,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,PutObject,invalid-header,x-amz-trailer
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER, x-amz-trailer of crc32, trailer key missing" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -446,6 +478,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 }
 
+# tags: openssl,chunked,checksum,PutObject,x-amz-trailer,x-amz-checksum-crc64nvme
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - default crc64nvme" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

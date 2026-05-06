@@ -20,6 +20,7 @@ load ./bats-assert/load
 source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 
+# tags: curl,HeadBucket,invalid-header,x-amz-expected-bucket-owner
 @test "REST - HeadBucket - mismatched owner" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -32,6 +33,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   assert_success
 }
 
+# tags: curl,HeadBucket,invalid-header,x-amz-expected-bucket-owner
 @test "REST - HeadBucket - invalid owner" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -51,11 +53,13 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   assert_success
 }
 
+# tags: curl,HeadBucket,minimal-request
 @test "REST - HeadBucket - doesn't exist" {
   run head_bucket_rest "$BUCKET_ONE_NAME-$(uuidgen)"
   assert_failure 1
 }
 
+# tags: curl,HeadBucket,x-amz-expected-bucket-owner
 @test "REST - HeadBucket - expected owner success" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

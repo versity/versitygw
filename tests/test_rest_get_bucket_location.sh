@@ -21,6 +21,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_bucket_location/get_bucket_location_rest.sh
 source ./tests/setup.sh
 
+# tags: curl,GetBucketLocation,location
 @test "REST - GetBucketLocation - no bucket" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "not valid for static mode"
@@ -33,6 +34,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,GetBucketLocation,location,region-us-east-1
 @test "REST - GetBucketLocation - us-east-1 is returned as null" {
   log 5 "AWS_REGION: $AWS_REGION"
   if [ "$AWS_REGION" != "us-east-1" ]; then
@@ -42,6 +44,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,GetBucketLocation,location,region-non-us-east-1
 @test "REST - GetBucketLocation - success (non us-east-1)" {
   if [ "$AWS_REGION" == "us-east-1" ]; then
     skip "test not valid for us-east-1"

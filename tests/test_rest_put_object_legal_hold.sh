@@ -20,6 +20,7 @@ load ./bats-assert/load
 source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 
+# tags: curl, PutObject, PutObjectLegalHold, legal-hold, object-lock, content-md5, invalid-header
 @test "REST - PutObjectLegalHold - missing content-md5" {
   run get_file_name
   assert_success
@@ -42,6 +43,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   assert_success
 }
 
+# tags: curl, PutObject, PutObjectLegalHold, legal-hold, object-lock, content-md5, invalid-query
 @test "REST - PutObjectLegalHold w/o payload" {
   run get_file_name
   assert_success
@@ -64,6 +66,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   assert_success
 }
 
+# tags: curl, PutObject, PutObjectLegalHold, legal-hold, object-lock, content-md5
 @test "REST - PutObjectLegalHold - success" {
   run get_file_name
   assert_success
