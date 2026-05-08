@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -37,8 +38,14 @@ func VerifyObjectCopyAccess(ctx context.Context, be backend.Backend, copySource 
 	if err := VerifyAccess(ctx, be, opts); err != nil {
 		return err
 	}
-	// Verify source bucket access
-	srcBucket, srcObject, found := strings.Cut(copySource, "/")
+	// Verify source bucket access.
+	// URL-decode the copy source before splitting so that clients which send
+	// the bucket/key separator as "%2F" correctly.
+	decodedSrc, err := url.QueryUnescape(strings.TrimPrefix(copySource, "/"))
+	if err != nil {
+		return s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)
+	}
+	srcBucket, srcObject, found := strings.Cut(decodedSrc, "/")
 	if !found {
 		return s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
 	}
