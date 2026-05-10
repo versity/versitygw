@@ -15,10 +15,12 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -116,7 +118,28 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 }
 
 func (ipa *IpaIAMService) CreateAccount(account Account) error {
-	return fmt.Errorf("not implemented")
+	if account.Access == ipa.rootAcc.Access {
+		return ErrUserExists
+	}
+
+	req, err := ipa.newRequest("vault_add/1", []string{ipa.vaultName},
+		map[string]any{
+			"username": account.Access,
+			"type":     "standard",
+		})
+	if err != nil {
+		return fmt.Errorf("ipa vault_add request: %w", err)
+	}
+
+	var dummy any
+	if err = ipa.rpc(req, &dummy); err != nil {
+		if errors.Is(err, errRpc) && strings.Contains(err.Error(), "DuplicateEntry") {
+			return ErrUserExists
+		}
+		return fmt.Errorf("ipa create vault: %w", err)
+	}
+
+	return ipa.archiveSecret(account.Access, account.Secret, account.Role)
 }
 
 func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
@@ -168,9 +191,18 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 		return account, fmt.Errorf("ipa cannot generate session key: %w", err)
 	}
 
+	// The Dogtag KRA transport protocol uses PKCS#1 v1.5 by default.
+	// OAEP is only used on FIPS-enabled KRA installations.
+	// There is no API to query which the server requires, so we try
+	// PKCS#1 v1.5 first and fall back to OAEP if it fails, mirroring
+	// the behaviour of the FreeIPA Python client.
 	encryptedKey, err := rsa.EncryptPKCS1v15(rand.Reader, ipa.kraTransportKey, session_key)
 	if err != nil {
-		return account, fmt.Errorf("ipa vault secret retrieval: %w", err)
+		// Fall back to OAEP (FIPS-enabled KRA)
+		encryptedKey, err = rsa.EncryptOAEP(sha256.New(), rand.Reader, ipa.kraTransportKey, session_key, nil)
+		if err != nil {
+			return account, fmt.Errorf("ipa vault secret retrieval: %w", err)
+		}
 	}
 
 	req, err = ipa.newRequest("vault_retrieve_internal/1", []string{ipa.vaultName},
@@ -204,15 +236,28 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 
 	secret := struct {
 		Data Base64Encoded
+		Role Role
 	}{}
 	json.Unmarshal(secretUnpaddedJson, &secret)
 	account.Secret = string(secret.Data)
+	if secret.Role.IsValid() {
+		account.Role = secret.Role
+	}
 
 	return account, nil
 }
 
 func (ipa *IpaIAMService) UpdateUserAccount(access string, props MutableProps) error {
-	return fmt.Errorf("not implemented")
+	acc, err := ipa.GetUserAccount(access)
+	if err != nil {
+		if errors.Is(err, errRpc) {
+			return ErrNoSuchUser
+		}
+		return err
+	}
+
+	updateAcc(&acc, props)
+	return ipa.archiveSecret(access, acc.Secret, acc.Role)
 }
 
 func (ipa *IpaIAMService) DeleteUserAccount(access string) error {
@@ -428,6 +473,72 @@ func (ipa *IpaIAMService) newRequest(method string, args []string, dict map[stri
 	}
 
 	return string(requestJSON), nil
+}
+
+// archiveSecret encrypts and stores the secret and role for a user into their IPA vault.
+func (ipa *IpaIAMService) archiveSecret(access, secret string, role Role) error {
+	payload := struct {
+		Data Base64Encoded `json:"data"`
+		Role Role          `json:"role"`
+	}{
+		Data: Base64Encoded(secret),
+		Role: role,
+	}
+
+	plaintext, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("ipa marshal secret: %w", err)
+	}
+
+	padded := pkcs7Pad(plaintext, 16)
+
+	sessionKey := make([]byte, 16)
+	if _, err = rand.Read(sessionKey); err != nil {
+		return fmt.Errorf("ipa generate session key: %w", err)
+	}
+
+	nonce := make([]byte, 16)
+	if _, err = rand.Read(nonce); err != nil {
+		return fmt.Errorf("ipa generate nonce: %w", err)
+	}
+
+	block, err := aes.NewCipher(sessionKey)
+	if err != nil {
+		return fmt.Errorf("ipa create AES cipher: %w", err)
+	}
+	cipher.NewCBCEncrypter(block, nonce).CryptBlocks(padded, padded)
+
+	// The Dogtag KRA transport protocol uses PKCS#1 v1.5 by default.
+	// OAEP is only used on FIPS-enabled KRA installations.
+	encryptedKey, err := rsa.EncryptPKCS1v15(rand.Reader, ipa.kraTransportKey, sessionKey)
+	if err != nil {
+		// Fall back to OAEP (FIPS-enabled KRA)
+		encryptedKey, err = rsa.EncryptOAEP(sha256.New(), rand.Reader, ipa.kraTransportKey, sessionKey, nil)
+		if err != nil {
+			return fmt.Errorf("ipa encrypt session key: %w", err)
+		}
+	}
+
+	req, err := ipa.newRequest("vault_archive_internal/1", []string{ipa.vaultName},
+		map[string]any{
+			"username":      access,
+			"vault_data":    Base64EncodedWrapped(padded),
+			"session_key":   Base64EncodedWrapped(encryptedKey),
+			"nonce":         Base64EncodedWrapped(nonce),
+			"wrapping_algo": "aes-128-cbc",
+		})
+	if err != nil {
+		return fmt.Errorf("ipa vault_archive_internal request: %w", err)
+	}
+
+	var dummy any
+	return ipa.rpc(req, &dummy)
+}
+
+// pkcs7Pad pads data to a multiple of blocksize using PKCS#7.
+func pkcs7Pad(b []byte, blocksize int) []byte {
+	n := blocksize - (len(b) % blocksize)
+	return append(b, bytes.Repeat([]byte{byte(n)}, n)...)
 }
 
 // pkcs7Unpad validates and unpads data from the given bytes slice.
