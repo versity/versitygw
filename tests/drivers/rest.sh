@@ -14,6 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/list_objects/list_objects_rest.sh
 source ./tests/drivers/xml.sh
 
 check_rest_expected_error() {
