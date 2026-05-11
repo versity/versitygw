@@ -40,8 +40,9 @@ func VerifyObjectCopyAccess(ctx context.Context, be backend.Backend, copySource 
 	}
 	// Verify source bucket access.
 	// URL-decode the copy source before splitting so that clients which send
-	// the bucket/key separator as "%2F" correctly.
-	decodedSrc, err := url.QueryUnescape(strings.TrimPrefix(copySource, "/"))
+	// the bucket/key separator as "%2F" are handled correctly.
+	// Callers are expected to have already stripped any leading '/'.
+	decodedSrc, err := url.QueryUnescape(copySource)
 	if err != nil {
 		return s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)
 	}

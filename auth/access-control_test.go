@@ -79,10 +79,6 @@ func TestVerifyObjectCopyAccess_URLEncodedSlashSeparator(t *testing.T) {
 			copySource: "my-namespace-test-container%2Ftest-blob",
 		},
 		{
-			name:       "leading slash with %2F separator",
-			copySource: "/my-namespace-test-container%2Ftest-blob",
-		},
-		{
 			name:       "%2F separator with encoded chars in key",
 			copySource: "src-bucket%2Fmy%20folder%2Fmy-key",
 		},
