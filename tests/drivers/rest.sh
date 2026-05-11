@@ -401,6 +401,7 @@ check_for_header_key_and_value() {
   if ! check_param_count_v2 "data file, header key, header value" 3 $#; then
     return 1
   fi
+  log 5 "header data: $(cat "$1")"
   while IFS=$': \r' read -r key value; do
     local check_result=0
     value="${value%$'\r'}"

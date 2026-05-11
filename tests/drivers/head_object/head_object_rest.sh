@@ -236,3 +236,21 @@ head_object_check_header_key_and_value() {
   fi
   return 0
 }
+
+check_header_partial_content_response() {
+  if ! check_param_count_v2 "header data, part number, full object size, part size" 4 $#; then
+    return 1
+  fi
+  log 5 "header: $(cat "$1")"
+  starting_byte=$((($2-1)*$4))
+  ending_byte=$(($2*$4-1))
+  if [ "$3" -lt "$ending_byte" ]; then
+    ending_byte="$(($3-1))"
+  fi
+  content_range_string="bytes $starting_byte-$ending_byte/$3"
+  if ! result=$(check_for_header_key_and_value "$1" "Content-Range" "$content_range_string" 2>&1); then
+    log 2 "error checking for header key and value: $result"
+    return 1
+  fi
+  return 0
+}

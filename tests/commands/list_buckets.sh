@@ -50,6 +50,8 @@ list_buckets() {
     bucket_name=$(echo "$line" | awk '{print $NF}')
     bucket_array+=("${bucket_name%/}")
   done <<< "$buckets"
+
+  echo "${bucket_array[*]}"
   return 0
 }
 
@@ -86,6 +88,8 @@ list_buckets_with_user() {
     bucket_name=$(echo "$line" | awk '{print $NF}')
     bucket_array+=("${bucket_name%/}")
   done <<< "$buckets"
+
+  echo "${bucket_array[*]}"
   return 0
 }
 
@@ -111,6 +115,7 @@ list_buckets_s3api() {
   names=$(jq -r '.Buckets[].Name' <<<"$modified_output")
   IFS=$'\n' read -rd '' -a bucket_array <<<"$names"
 
+  echo "${bucket_array[*]}"
   return 0
 }
 

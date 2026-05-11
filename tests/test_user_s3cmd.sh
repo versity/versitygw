@@ -17,6 +17,8 @@
 load ./bats-support/load
 load ./bats-assert/load
 
+source ./tests/drivers/list_buckets/list_buckets.sh
+source ./tests/drivers/list_buckets/list_buckets_s3api.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 source ./tests/drivers/user.sh
 source ./tests/test_user_common.sh
