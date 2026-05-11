@@ -27,6 +27,7 @@ source ./tests/drivers/head_object/head_object_s3api.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_object_legal_hold/get_object_legal_hold.sh
 source ./tests/drivers/get_object_tagging/get_object_tagging.sh
+source ./tests/drivers/list_multipart_uploads/list_multipart_uploads_s3api.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 source ./tests/util/util_multipart.sh
 source ./tests/util/util_multipart_abort.sh
@@ -160,16 +161,61 @@ export RUN_USERS=true
 # test listing of active uploads
 # tags: s3api, multipart, ListMultipartUploads
 @test "test-multipart-upload-list-uploads" {
-  if [[ $RECREATE_BUCKETS == false ]]; then
-    run abort_all_multipart_uploads "$BUCKET_ONE_NAME"
+  run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
+  assert_success
+  read -r bucket_name bucket_file_one bucket_file_two <<< "$output"
+
+  run create_list_check_multipart_uploads "$bucket_name" "$bucket_file_one" "$bucket_file_two"
+  assert_success
+}
+
+@test "s3api - ListMultipartUploads with upload ID" {
+  run get_bucket_prefix "$BUCKET_ONE_NAME"
+  assert_success
+  prefix="$output"
+
+  run bucket_cleanup_if_bucket_exists_v2 "$prefix"
+  assert_success
+
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  if [ "$RECREATE_BUCKETS" == "true" ]; then
+    run create_bucket "s3api" "$bucket_name"
     assert_success
   fi
 
-  local bucket_file_one="bucket-file-one"
-  local bucket_file_two="bucket-file-two"
-  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$bucket_file_one" "$bucket_file_two"
+  run create_test_files_with_prefix "file" 2
   assert_success
+  read -r file_one file_two <<< "$output"
 
-  run create_list_check_multipart_uploads "$BUCKET_ONE_NAME" "$bucket_file_one" "$bucket_file_two"
+  run create_multipart_upload_s3api "$bucket_name" "$file_one"
   assert_success
+  upload_id_one="$output"
+
+  run create_multipart_upload_s3api "$bucket_name" "$file_two"
+  assert_success
+  upload_id_two="$output"
+
+  local first_key first_upload_id second_key second_upload_id
+  if [[ "$file_one" < "$file_two" ]]; then
+    first_key="$file_one"
+    first_upload_id="$upload_id_one"
+    second_key="$file_two"
+    second_upload_id="$upload_id_two"
+  else
+    first_key="$file_two"
+    first_upload_id="$upload_id_two"
+    second_key="$file_one"
+    second_upload_id="$upload_id_one"
+  fi
+
+  run list_multipart_uploads_check_key_id_get_next_token "$bucket_name" "$first_key" "$first_upload_id"
+  assert_success
+  first_token="$output"
+
+  run list_multipart_uploads_check_key_id_get_next_token "$bucket_name" "$second_key" "$second_upload_id" "$first_token"
+  assert_success
+  assert_output "null"
 }

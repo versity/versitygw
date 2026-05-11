@@ -114,20 +114,27 @@ abort_all_multipart_uploads_rest() {
   if ! check_param_count "abort_all_multipart_uploads_rest" "bucket" 1 $#; then
     return 1
   fi
-  if ! list_multipart_uploads_rest "$1"; then
-    log 2 "error listing multipart uploads"
+  local response uploads upload_data key upload_id
+
+  if ! response=$(list_multipart_uploads_rest "$1" 2>&1); then
+    log 2 "error listing multipart uploads: $response"
     return 1
   fi
+  uploads="$response"
+
   # shellcheck disable=SC2154
   log 5 "UPLOADS: $uploads"
-  if ! upload_data=$(xmllint --xpath '//*[local-name()="Upload"]' "$TEST_FILE_FOLDER/uploads.txt" 2>&1); then
-    if [[ "$upload_data" == *"XPath set is empty"* ]]; then
+  if ! response=$(echo -n "$uploads" | xmllint --xpath '//*[local-name()="Upload"]' - 2>&1); then
+    if [[ "$response" == *"XPath set is empty"* ]]; then
       return 0
     fi
-    log 2 "error retrieving upload data: $upload_data"
+    log 2 "error retrieving upload data: $response"
     return 1
   fi
-  for upload in $upload_data; do
+  mapfile -t upload_data <<< "$response"
+
+  for upload in "${upload_data[@]}"; do
+    log 5 "upload: $upload"
     if ! key=$(echo -n "$upload" | xmllint --xpath '//*[local-name()="Key"]/text()' - 2>&1); then
       log 2 "error retrieving key: $key"
       return 1

@@ -21,7 +21,7 @@ source ./tests/rest_scripts/rest.sh
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2153
-key="$OBJECT_KEY"
+key="$(echo -n "$OBJECT_KEY" | jq -sRr 'split("/") | map(@uri) | join("/")')"
 # shellcheck disable=SC2153
 checksum_type="$CHECKSUM_TYPE"
 # shellcheck disable=SC2153
@@ -42,7 +42,7 @@ build_canonical_request "${cr_data[@]}"
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" -X POST "$AWS_ENDPOINT_URL/$bucket_name/$key?uploads="
+curl_command+=(curl -ks -w "\"%{http_code}\"" -X POST "\"$AWS_ENDPOINT_URL/$bucket_name/$key?uploads=\""
 -H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
 curl_command+=("${header_fields[@]}")
 curl_command+=(-o "$OUTPUT_FILE")

@@ -236,24 +236,29 @@ check_xml_error_contains_with_single_error_field() {
 
 check_if_element_exists() {
   if ! check_param_count_gt "data file, element, XML tree" 3 $#; then
-    return 1
+    return 2
   fi
-  if ! xpath=$(build_xpath_string_for_element "${@:3}" 2>&1); then
-    log 2 "error building XPath search string: $xpath"
-    return 1
-  fi
+  local response xpath data_file search_string
 
-  if ! data_file=$(check_validity_and_or_parse_xml_data "$1" 2>&1); then
-    log 2 "error checking XML data: $data_file"
-    return 1
+  if ! response=$(build_xpath_string_for_element "${@:3}" 2>&1); then
+    log 2 "error building XPath search string: $xpath"
+    return 2
   fi
+  xpath="$response"
+
+  if ! response=$(check_validity_and_or_parse_xml_data "$1" 2>&1); then
+    log 2 "error checking XML data: $data_file"
+    return 2
+  fi
+  data_file="$response"
+
   local search_string="boolean(${xpath}[text()='$2'])"
   log 5 "search string: $search_string"
-  if ! result=$(xmllint --xpath "$search_string" "$data_file" 2>&1); then
-    log 2 "error getting result: $result"
-    return 1
+  if ! response=$(xmllint --xpath "$search_string" "$data_file" 2>&1); then
+    log 2 "error getting result: $response"
+    return 2
   fi
-  if [ "$result" == "true" ]; then
+  if [ "$response" == "true" ]; then
     return 0
   fi
   log 5 "element '$2' not found"

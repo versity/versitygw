@@ -161,14 +161,17 @@ start_multipart_upload_and_list_parts() {
 }
 
 create_list_check_multipart_uploads() {
-  if [ $# -ne 3 ]; then
-    log 2 "list multipart uploads command requires bucket and two keys"
+  if ! check_param_count_v2 "bucket, two keys" 3 $#; then
     return 1
   fi
-  if ! create_and_list_multipart_uploads "$1" "$2" "$3"; then
+  local response uploads raw_uploads key_one key_two second_match
+
+  if ! response=$(create_and_list_multipart_uploads "$1" "$2" "$3" 2>&1); then
     log 2 "error creating and listing multipart uploads"
     return 1
   fi
+  uploads="$response"
+
   # shellcheck disable=SC2154
   log 5 "Uploads:  $uploads"
   raw_uploads=$(echo "$uploads" | grep -v "InsecureRequestWarning")
@@ -180,12 +183,18 @@ create_list_check_multipart_uploads() {
     log 2 "error getting key two: $key_two"
     return 1
   fi
+
   if [[ "$2" != "$key_one" ]]; then
-    log 2 "Key mismatch ($2, $key_one)"
-    return 1
+    if [ "$2" != "$key_two" ]; then
+      log 2 "Key mismatch ('$2' doesn't match '$key_one' or '$key_two')"
+      return 1
+    fi
+    second_match="$key_one"
+  else
+    second_match="$key_two"
   fi
-  if [[ "$3" != "$key_two" ]]; then
-    log 2 "Key mismatch ($3, $key_two)"
+  if [[ "$3" != "$second_match" ]]; then
+    log 2 "Key mismatch (expected '$3', actual '$second_match')"
     return 1
   fi
   return 0
@@ -195,25 +204,26 @@ create_list_check_multipart_uploads() {
 # params:  bucket, key one, key two
 # export current two uploads on success, return 1 for error
 create_and_list_multipart_uploads() {
-  if [ $# -ne 3 ]; then
-    log 2 "list multipart uploads command requires bucket and two keys"
+  if ! check_param_count_v2 "bucket, two keys" 3 $#; then
+    return 1
+  fi
+  local response
+
+  if ! response=$(create_multipart_upload_rest "$1" "$2" "" "" 2>&1); then
+    log 2 "error creating multipart upload one: $response"
     return 1
   fi
 
-  if ! create_multipart_upload_rest "$1" "$2" "" ""; then
-    log 2 "error creating multpart upload"
+  if ! response=$(create_multipart_upload_rest "$1" "$3" "" "" 2>&1); then
+    log 2 "error creating multipart upload two: $response"
     return 1
   fi
 
-  if ! create_multipart_upload_rest "$1" "$3" "" ""; then
-    log 2 "error creating multpart upload two"
+  if ! response=$(list_multipart_uploads "$1" 2>&1); then
+    log 2 "error listing uploads: $response"
     return 1
   fi
-
-  if ! list_multipart_uploads "$1"; then
-    log 2 "error listing uploads"
-    return 1
-  fi
+  echo "$response"
   return 0
 }
 

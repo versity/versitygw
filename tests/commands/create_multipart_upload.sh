@@ -18,11 +18,12 @@ create_multipart_upload_rest() {
   if ! check_param_count_v2 "bucket name, key, additional params, callback" 4 $#; then
     return 1
   fi
-  env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2 $3"
-  if ! send_rest_command_expect_success_callback "$env_vars" "./tests/rest_scripts/create_multipart_upload.sh" "200" "$4"; then
-    log 2 "error sending REST command and checking error"
+  local response env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2 $3"
+  if ! response=$(send_rest_command_expect_success_callback "$env_vars" "./tests/rest_scripts/create_multipart_upload.sh" "200" "$4" 2>&1); then
+    log 2 "error sending REST command and checking error: $response"
     return 1
   fi
+  echo "$response"
   return 0
 }
 
@@ -44,17 +45,20 @@ create_multipart_upload_s3api() {
   if ! check_param_count_v2 "bucket, key" 2 $#; then
     return 1
   fi
+  local response multipart_data upload_id
 
-  if ! multipart_data=$(send_command aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2" 2>&1); then
-    log 2 "Error creating multipart upload: $multipart_data"
+  if ! response=$(send_command aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2" 2>&1); then
+    log 2 "Error creating multipart upload: $response"
     return 1
   fi
+  multipart_data="$response"
 
-  if ! upload_id=$(echo "$multipart_data" | grep -v "InsecureRequestWarning" | jq -r '.UploadId' 2>&1); then
-    log 2 "error parsing upload ID: $upload_id"
+  if ! response=$(echo "$multipart_data" | grep -v "InsecureRequestWarning" | jq -r '.UploadId' 2>&1); then
+    log 2 "error parsing upload ID: $response"
     return 1
   fi
-  upload_id="${upload_id//\"/}"
+  upload_id="${response//\"/}"
+  echo "$upload_id"
   return 0
 }
 
