@@ -308,6 +308,20 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
+	// Both ETag and PartNumber are required per the CompleteMultipartUpload
+	// schema; treat a missing field as malformed XML to match S3 behaviour
+	// and to avoid passing nil pointers down to backends.
+	for _, part := range body.Parts {
+		if part.ETag == nil || part.PartNumber == nil {
+			debuglogger.Logf("missing ETag or PartNumber in complete multipart upload part")
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, s3err.GetAPIError(s3err.ErrMalformedXML)
+		}
+	}
+
 	var mpuObjectSize *int64
 	if mpuObjSizeHdr != "" {
 		val, err := strconv.ParseInt(mpuObjSizeHdr, 10, 64)

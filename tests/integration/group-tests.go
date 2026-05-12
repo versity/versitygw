@@ -525,6 +525,8 @@ func TestCompleteMultipartUpload(ts *TestState) {
 	ts.Run(CompleteMultipartUpload_invalid_part_number)
 	ts.Run(CompleteMultipartUpload_default_content_type)
 	ts.Run(CompleteMultipartUpload_invalid_ETag)
+	ts.Run(CompleteMultipartUpload_missing_ETag)
+	ts.Run(CompleteMultipartUpload_missing_PartNumber)
 	ts.Run(CompleteMultipartUpload_small_upload_size)
 	ts.Run(CompleteMultipartUpload_empty_parts)
 	ts.Run(CompleteMultipartUpload_incorrect_parts_order)
@@ -965,6 +967,8 @@ func TestScoutfs(ts *TestState) {
 	ts.Run(CompleteMultipartUpload_incorrect_part_number)
 	ts.Run(CompleteMultipartUpload_invalid_part_number)
 	ts.Run(CompleteMultipartUpload_invalid_ETag)
+	ts.Run(CompleteMultipartUpload_missing_ETag)
+	ts.Run(CompleteMultipartUpload_missing_PartNumber)
 	ts.Run(CompleteMultipartUpload_small_upload_size)
 	ts.Run(CompleteMultipartUpload_empty_parts)
 	ts.Run(CompleteMultipartUpload_incorrect_parts_order)
@@ -1642,6 +1646,8 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_invalid_part_number":                              CompleteMultipartUpload_invalid_part_number,
 		"CompleteMultipartUpload_default_content_type":                             CompleteMultipartUpload_default_content_type,
 		"CompleteMultipartUpload_invalid_ETag":                                     CompleteMultipartUpload_invalid_ETag,
+		"CompleteMultipartUpload_missing_ETag":                                     CompleteMultipartUpload_missing_ETag,
+		"CompleteMultipartUpload_missing_PartNumber":                               CompleteMultipartUpload_missing_PartNumber,
 		"CompleteMultipartUpload_small_upload_size":                                CompleteMultipartUpload_small_upload_size,
 		"CompleteMultipartUpload_empty_parts":                                      CompleteMultipartUpload_empty_parts,
 		"CompleteMultipartUpload_incorrect_part_number":                            CompleteMultipartUpload_incorrect_part_number,

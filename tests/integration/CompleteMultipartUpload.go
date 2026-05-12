@@ -1624,6 +1624,83 @@ func CompleteMultipartUpload_invalid_part_number(s *S3Conf) error {
 	})
 }
 
+func CompleteMultipartUpload_missing_ETag(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_missing_ETag"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
+		_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			UploadId:   out.UploadId,
+			PartNumber: &partNumber,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// Missing ETag in a CompletedPart must be rejected as MalformedXML.
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						PartNumber: &partNumber,
+					},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func CompleteMultipartUpload_missing_PartNumber(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_missing_PartNumber"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		// Missing PartNumber in a CompletedPart must be rejected as MalformedXML.
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						ETag: getPtr("e868e0f4719e394144ef36531ee6824c"),
+					},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func CompleteMultipartUpload_default_content_type(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_default_content_type"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
