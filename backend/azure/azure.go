@@ -1873,7 +1873,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
-		if *part.ETag != *block.Name {
+		if getString(part.ETag) != backend.GetStringFromPtr(block.Name) {
 			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 		// all parts except the last need to be greater, than
