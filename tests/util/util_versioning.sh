@@ -191,12 +191,14 @@ get_and_check_versions_rest() {
   if ! check_param_count_gt "bucket, key, count, expected islatest, expected id equal to null" 5 $#; then
     return 1
   fi
-  if ! list_object_versions_rest "$1"; then
-    log 2 "error listing object versions"
+  if ! response=$(list_object_versions_rest "$1" 2>&1); then
+    log 2 "error listing object versions: $response"
     return 1
   fi
-  log 5 "versions: $(cat "$TEST_FILE_FOLDER/object_versions.txt")"
-  if ! version_count=$(xmllint --xpath 'count(//*[local-name()="Version"])' "$TEST_FILE_FOLDER/object_versions.txt" 2>&1); then
+  versions_file="$response"
+
+  log 5 "versions: $(cat "$versions_file")"
+  if ! version_count=$(xmllint --xpath 'count(//*[local-name()="Version"])' "$versions_file" 2>&1); then
     log 2 "error getting version count: $version_count"
     return 1
   fi
@@ -213,7 +215,7 @@ get_and_check_versions_rest() {
     fi
     match_string="//*[local-name()=\"Version\"][*[local-name()=\"VersionId\" and text()$id_check\"null\"] and *[local-name()=\"IsLatest\" and text()=\"$4\"]]"
     log 5 "match string: $match_string"
-    if ! xmllint --xpath "$match_string" "$TEST_FILE_FOLDER/object_versions.txt" 2>&1; then
+    if ! xmllint --xpath "$match_string" "$versions_file" 2>&1; then
       return 1
     fi
     shift 2
@@ -225,12 +227,14 @@ check_versions_after_file_deletion() {
   if ! check_param_count "check_versions_after_file_deletion" "bucket, key" 2 $#; then
     return 1
   fi
-  if ! list_object_versions_rest "$1"; then
-    log 2 "error listing object versions"
+  if ! response=$(list_object_versions_rest "$1" 2>&1); then
+    log 2 "error listing object versions: $response"
     return 1
   fi
-  log 5 "versions: $(cat "$TEST_FILE_FOLDER/object_versions.txt")"
-  if ! version_key=$(xmllint --xpath '//*[local-name()="Version"]/*[local-name()="Key"]/text()' "$TEST_FILE_FOLDER/object_versions.txt" 2>&1); then
+  versions_file="$response"
+
+  log 5 "versions: $(cat "$versions_file")"
+  if ! version_key=$(xmllint --xpath '//*[local-name()="Version"]/*[local-name()="Key"]/text()' "$versions_file" 2>&1); then
     log 2 "error getting Version 'Key' value: $version_key"
     return 1
   fi
@@ -238,7 +242,7 @@ check_versions_after_file_deletion() {
     log 2 "version key mismatch (expected $2, actual $version_key)"
     return 1
   fi
-  if ! version_id=$(xmllint --xpath '//*[local-name()="Version"]/*[local-name()="VersionId"]/text()' "$TEST_FILE_FOLDER/object_versions.txt" 2>&1); then
+  if ! version_id=$(xmllint --xpath '//*[local-name()="Version"]/*[local-name()="VersionId"]/text()' "$versions_file" 2>&1); then
     log 2 "error getting Version 'VersionID' value: $version_id"
     return 1
   fi
@@ -246,7 +250,7 @@ check_versions_after_file_deletion() {
     log 2 "version ID mismatch (expected 'null', actual '$version_id')"
     return 1
   fi
-  if ! marker_key=$(xmllint --xpath '//*[local-name()="DeleteMarker"]/*[local-name()="Key"]/text()' "$TEST_FILE_FOLDER/object_versions.txt" 2>&1); then
+  if ! marker_key=$(xmllint --xpath '//*[local-name()="DeleteMarker"]/*[local-name()="Key"]/text()' "$versions_file" 2>&1); then
     log 2 "error getting Version 'Key' value: $marker_key"
     return 1
   fi
@@ -254,7 +258,7 @@ check_versions_after_file_deletion() {
     log 2 "delete marker key mismatch (expected $2, actual $marker_key)"
     return 1
   fi
-  if ! marker_id=$(xmllint --xpath '//*[local-name()="DeleteMarker"]/*[local-name()="VersionId"]/text()' "$TEST_FILE_FOLDER/object_versions.txt" 2>&1); then
+  if ! marker_id=$(xmllint --xpath '//*[local-name()="DeleteMarker"]/*[local-name()="VersionId"]/text()' "$versions_file" 2>&1); then
     log 2 "error getting Version 'VersionID' value: $versioning_info"
     return 1
   fi
@@ -262,4 +266,5 @@ check_versions_after_file_deletion() {
     log 2 "delete marker ID expected to be non-null"
     return 1
   fi
+  return 0
 }

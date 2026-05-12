@@ -53,12 +53,12 @@ source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
 source ./tests/drivers/head_bucket/head_bucket_rest.sh
 source ./tests/drivers/head_bucket/head_bucket_s3api.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
-source ./tests/util/util_head_bucket.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_object.sh
 
 export RUN_USERS=true
 
+# tags: s3api, CreateBucket, invalid-query
 @test "test_create_bucket_invalid_name" {
   if [[ $RECREATE_BUCKETS != "true" ]]; then
     return
@@ -69,6 +69,7 @@ export RUN_USERS=true
 }
 
 # create-bucket
+# tags: s3api, CreateBucket, DeleteBucket
 @test "test_create_delete_bucket_s3api" {
   test_common_create_delete_bucket "s3api"
 }
@@ -76,6 +77,7 @@ export RUN_USERS=true
 # delete-bucket - test_create_delete_bucket_s3api
 
 # delete-bucket-policy
+# tags: s3api, policy, GetBucketPolicy, PutBucketPolicy, DeleteBucketPolicy
 @test "test_get_put_delete_bucket_policy" {
   if [[ -n $SKIP_POLICY ]]; then
     skip "will not test policy actions with SKIP_POLICY set"
@@ -85,6 +87,7 @@ export RUN_USERS=true
 
 
 # get-bucket-acl
+# tags: s3api, GetBucketAcl
 @test "test_get_bucket_acl" {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
@@ -94,6 +97,7 @@ export RUN_USERS=true
 }
 
 # get-bucket-location
+# tags: s3api, GetBucketLocation
 @test "test_get_bucket_location" {
   test_common_get_bucket_location "s3api"
 }
@@ -102,6 +106,7 @@ export RUN_USERS=true
 
 # get-bucket-tagging - test_set_get_delete_bucket_tags
 
+# tags: s3api, HeadBucket, minimal-request
 @test "test_head_bucket" {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
@@ -110,6 +115,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: s3api, HeadBucket, invalid-query
 @test "test_head_bucket_doesnt_exist" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "skip test for static buckets"
@@ -121,6 +127,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: s3api, HeadBucket, invalid-query
 @test "test_head_bucket_invalid_name" {
   if head_bucket "s3api" ""; then
     fail "able to get bucket info for invalid name"
@@ -128,15 +135,18 @@ export RUN_USERS=true
 }
 
 # test listing buckets on versitygw
+# tags: s3api, ListBuckets, minimal-request
 @test "test_list_buckets" {
   test_common_list_buckets "s3api"
 }
 
+# tags: s3api, PutBucketAcl
 @test "test_put_bucket_acl" {
   test_common_put_bucket_acl "s3api"
 }
 
 # delete-bucket-tagging
+# tags: s3api, tagging, PutBucketTagging, GetBucketTagging, DeleteBucketTagging
 @test "test-set-get-delete-bucket-tags" {
   test_common_set_get_delete_bucket_tags "s3api"
 }

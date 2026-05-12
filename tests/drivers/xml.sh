@@ -93,7 +93,7 @@ check_for_empty_element() {
     log 2 "error getting XML data"
     return 1
   fi
-  if grep -q '<[^/][^ >]*>' "$1.xml"; then
+  if grep -q '<[^/ ?>].*>' "$1.xml"; then
     if xmllint --xpath "${xpath}[not(normalize-space())]" "$1.xml" 1>/dev/null 2>&1; then
       return 0
     fi
@@ -155,6 +155,7 @@ check_xml_element() {
     log 2 "error getting element text"
     return 1
   fi
+  log 5 "expect: '$2', actual: '$xml_val'"
   if [ "$2" != "$xml_val" ]; then
     log 2 "XML data mismatch, expected '$2', actual '$xml_val'"
     return 1

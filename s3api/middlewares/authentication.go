@@ -54,6 +54,10 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 		// Check X-Amz-Date header
 		date := ctx.Get("X-Amz-Date")
 		if date == "" {
+			// Fall back to `Date` header if `X-Amz-Date` is not set
+			date = ctx.Get("Date")
+		}
+		if date == "" {
 			return s3err.GetAPIError(s3err.ErrMissingDateHeader)
 		}
 

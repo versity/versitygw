@@ -1461,17 +1461,13 @@ func CopyObject_to_itself_by_replacing_the_checksum(s *S3Conf) error {
 		if out.CopyObjectResult.ChecksumCRC32 == nil {
 			return fmt.Errorf("expected non empty crc32 checksum")
 		}
-		if out.CopyObjectResult.ChecksumCRC32C != nil {
-			return fmt.Errorf("expected empty crc32c checksum")
-		}
-		if out.CopyObjectResult.ChecksumSHA1 != nil {
-			return fmt.Errorf("expected empty sha1 checksum")
-		}
-		if out.CopyObjectResult.ChecksumSHA256 != nil {
-			return fmt.Errorf("expected empty sha256 checksum")
-		}
-		if out.CopyObjectResult.ChecksumCRC64NVME != nil {
-			return fmt.Errorf("expected empty crc64nvme checksum")
+		for _, algo := range types.ChecksumAlgorithmCrc32.Values() {
+			if algo == types.ChecksumAlgorithmCrc32 {
+				continue
+			}
+			if checksum := getCopyObjectChecksum(out.CopyObjectResult, algo); checksum != nil {
+				return fmt.Errorf("expected empty %s checksum", algo)
+			}
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -1488,17 +1484,13 @@ func CopyObject_to_itself_by_replacing_the_checksum(s *S3Conf) error {
 		if res.ChecksumCRC32 == nil {
 			return fmt.Errorf("expected non empty crc32 checksum")
 		}
-		if res.ChecksumCRC32C != nil {
-			return fmt.Errorf("expected empty crc32c checksum")
-		}
-		if res.ChecksumSHA1 != nil {
-			return fmt.Errorf("expected empty sha1 checksum")
-		}
-		if res.ChecksumSHA256 != nil {
-			return fmt.Errorf("expected empty sha256 checksum")
-		}
-		if res.ChecksumCRC64NVME != nil {
-			return fmt.Errorf("expected empty crc64nvme checksum")
+		for _, algo := range types.ChecksumAlgorithmCrc32.Values() {
+			if algo == types.ChecksumAlgorithmCrc32 {
+				continue
+			}
+			if checksum := getHeadObjectChecksum(res, algo); checksum != nil {
+				return fmt.Errorf("expected empty %s checksum", algo)
+			}
 		}
 
 		return nil

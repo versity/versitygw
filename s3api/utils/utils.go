@@ -721,8 +721,13 @@ var checksumLengths = map[types.ChecksumAlgorithm]int{
 	types.ChecksumAlgorithmCrc32:     4,
 	types.ChecksumAlgorithmCrc32c:    4,
 	types.ChecksumAlgorithmCrc64nvme: 8,
+	types.ChecksumAlgorithmMd5:       16,
 	types.ChecksumAlgorithmSha1:      20,
 	types.ChecksumAlgorithmSha256:    32,
+	types.ChecksumAlgorithmSha512:    64,
+	types.ChecksumAlgorithmXxhash64:  8,
+	types.ChecksumAlgorithmXxhash3:   8,
+	types.ChecksumAlgorithmXxhash128: 16,
 }
 
 func IsValidChecksum(checksum string, algorithm types.ChecksumAlgorithm) bool {
@@ -753,7 +758,12 @@ func IsChecksumAlgorithmValid(alg types.ChecksumAlgorithm) error {
 		alg != types.ChecksumAlgorithmCrc32c &&
 		alg != types.ChecksumAlgorithmSha1 &&
 		alg != types.ChecksumAlgorithmSha256 &&
-		alg != types.ChecksumAlgorithmCrc64nvme {
+		alg != types.ChecksumAlgorithmCrc64nvme &&
+		alg != types.ChecksumAlgorithmSha512 &&
+		alg != types.ChecksumAlgorithmMd5 &&
+		alg != types.ChecksumAlgorithmXxhash64 &&
+		alg != types.ChecksumAlgorithmXxhash3 &&
+		alg != types.ChecksumAlgorithmXxhash128 {
 		debuglogger.Logf("invalid checksum algorithm: %v\n", alg)
 		return s3err.GetAPIError(s3err.ErrInvalidChecksumAlgorithm)
 	}
@@ -798,6 +808,26 @@ var checksumMap checksumSchema = checksumSchema{
 	types.ChecksumAlgorithmCrc64nvme: checksumTypeSchema{
 		types.ChecksumTypeFullObject: struct{}{},
 		"":                           struct{}{},
+	},
+	types.ChecksumAlgorithmSha512: checksumTypeSchema{
+		types.ChecksumTypeComposite: struct{}{},
+		"":                          struct{}{},
+	},
+	types.ChecksumAlgorithmMd5: checksumTypeSchema{
+		types.ChecksumTypeComposite: struct{}{},
+		"":                          struct{}{},
+	},
+	types.ChecksumAlgorithmXxhash64: checksumTypeSchema{
+		types.ChecksumTypeComposite: struct{}{},
+		"":                          struct{}{},
+	},
+	types.ChecksumAlgorithmXxhash3: checksumTypeSchema{
+		types.ChecksumTypeComposite: struct{}{},
+		"":                          struct{}{},
+	},
+	types.ChecksumAlgorithmXxhash128: checksumTypeSchema{
+		types.ChecksumTypeComposite: struct{}{},
+		"":                          struct{}{},
 	},
 	// Both could be empty
 	"": checksumTypeSchema{

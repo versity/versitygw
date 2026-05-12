@@ -35,6 +35,10 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 		if !utils.IsPresignedURLAuth(ctx) {
 			return nil
 		}
+		if utils.IsPresignedURLAuthV2(ctx) {
+			// SigV2 authorization is not supported by the gateway
+			return s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationMechanism)
+		}
 
 		if ctx.Request().URI().QueryArgs().Has("X-Amz-Security-Token") {
 			// OIDC Authorization with X-Amz-Security-Token is not supported

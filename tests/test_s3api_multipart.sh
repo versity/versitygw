@@ -25,6 +25,7 @@ source ./tests/commands/put_object.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/head_object/head_object_s3api.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/get_object_legal_hold/get_object_legal_hold.sh
 source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 source ./tests/util/util_multipart.sh
@@ -34,6 +35,7 @@ source ./tests/util/util_multipart_before_completion.sh
 export RUN_USERS=true
 
 # abort-multipart-upload
+# tags: s3api, multipart, CreateMultipartUpload, AbortMultipartUpload
 @test "test_abort_multipart_upload" {
   run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -47,6 +49,7 @@ export RUN_USERS=true
 }
 
 # complete-multipart-upload
+# tags: s3api, multipart, CreateMultipartUpload, UploadPart, CompleteMultipartUpload, GetObject
 @test "test_complete_multipart_upload" {
   run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 20
   assert_success
@@ -60,6 +63,7 @@ export RUN_USERS=true
 }
 
 # create-multipart-upload
+# tags: s3api, multipart, CreateMultipartUpload, UploadPart, CompleteMultipartUpload, tagging, legal-hold, retention, Content-Type, x-amz-meta
 @test "test_create_multipart_upload_properties" {
   run get_file_name
   assert_success
@@ -103,6 +107,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: s3api, multipart, UploadPartCopy, CompleteMultipartUpload
 @test "test-multipart-upload-from-bucket" {
   run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 20
   assert_success
@@ -115,6 +120,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: s3api, multipart, UploadPartCopy, range, invalid-header
 @test "test_multipart_upload_from_bucket_range_too_large" {
   run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 20
   assert_success
@@ -124,6 +130,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: s3api, multipart, UploadPartCopy, range
 @test "test_multipart_upload_from_bucket_range_valid" {
   run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 20
   assert_success
@@ -134,6 +141,7 @@ export RUN_USERS=true
 }
 
 # test multi-part upload list parts command
+# tags: s3api, multipart, CreateMultipartUpload, ListParts, AbortMultipartUpload
 @test "test-multipart-upload-list-parts" {
   local bucket_file="bucket-file"
   run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
@@ -150,6 +158,7 @@ export RUN_USERS=true
 }
 
 # test listing of active uploads
+# tags: s3api, multipart, ListMultipartUploads
 @test "test-multipart-upload-list-uploads" {
   if [[ $RECREATE_BUCKETS == false ]]; then
     run abort_all_multipart_uploads "$BUCKET_ONE_NAME"
@@ -164,4 +173,3 @@ export RUN_USERS=true
   run create_list_check_multipart_uploads "$BUCKET_ONE_NAME" "$bucket_file_one" "$bucket_file_two"
   assert_success
 }
-

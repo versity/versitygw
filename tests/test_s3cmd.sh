@@ -31,20 +31,24 @@ export RUN_S3CMD=true
 export RUN_USERS=true
 
 # complete-multipart-upload
+# tags: s3cmd, multipart, CreateMultipartUpload, UploadPart, CompleteMultipartUpload
 @test "test_complete_multipart_upload" {
   test_common_multipart_upload "s3cmd"
 }
 
 # copy-object
+# tags: s3cmd, CopyObject, x-amz-copy-source
 @test "test_copy_object" {
   test_common_copy_object "s3cmd"
 }
 
 # create-bucket
+# tags: s3cmd, CreateBucket, DeleteBucket
 @test "test_create_delete_bucket" {
   test_common_create_delete_bucket "s3cmd"
 }
 
+# tags: s3cmd, CreateBucket, invalid-query
 @test "test_create_bucket_invalid_name_s3cmd" {
   if [[ $RECREATE_BUCKETS != "true" ]]; then
     return
@@ -58,6 +62,7 @@ export RUN_USERS=true
 # delete-bucket - test_create_delete_bucket
 
 # delete-bucket-policy
+# tags: s3cmd, policy, GetBucketPolicy, PutBucketPolicy, DeleteBucketPolicy
 @test "test_get_put_delete_bucket_policy" {
   if [[ -n $SKIP_POLICY ]]; then
     skip "will not test policy actions with SKIP_POLICY set"
@@ -73,6 +78,7 @@ export RUN_USERS=true
 # get-bucket-acl - test_put_bucket_acl
 
 # get-bucket-location
+# tags: s3cmd, GetBucketLocation
 @test "test_get_bucket_location" {
   test_common_get_bucket_location "s3cmd"
 }
@@ -80,23 +86,28 @@ export RUN_USERS=true
 # get-bucket-policy - test_get_put_delete_bucket_policy
 
 # get-object
+# tags: s3cmd, PutObject, GetObject
 @test "test_put_get_object" {
   test_common_put_get_object "s3cmd"
 }
 
+# tags: s3cmd, PutObject
 @test "test_put_object_with_data" {
   test_common_put_object_with_data "s3cmd"
 }
 
+# tags: s3cmd, PutObject
 @test "test_put_object_no_data" {
   test_common_put_object_no_data "s3cmd"
 }
 
+# tags: s3cmd, PutBucketAcl
 @test "test_put_bucket_acl" {
   skip "https://github.com/versity/versitygw/issues/963"
   test_put_bucket_acl_s3cmd
 }
 
+# tags: s3cmd, PutPublicAccessBlock
 @test 's3cmd - can enable public ACLs for bucket' {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1154"
@@ -109,10 +120,12 @@ export RUN_USERS=true
 }
 
 # test listing buckets on versitygw
+# tags: s3cmd, ListBuckets, minimal-request
 @test "test_list_buckets_s3cmd" {
   test_common_list_buckets "s3cmd"
 }
 
+# tags: s3cmd, ListObjects
 @test "test_list_objects_s3cmd" {
   test_common_list_objects "s3cmd"
 }
@@ -121,6 +134,7 @@ export RUN_USERS=true
 #  test_common_presigned_url_utf8_chars "s3cmd"
 #}
 
+# tags: s3cmd, HeadBucket, minimal-request
 @test "test_get_bucket_info_s3cmd" {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
@@ -130,6 +144,7 @@ export RUN_USERS=true
   assert_output -p "s3://$BUCKET_ONE_NAME"
 }
 
+# tags: s3cmd, HeadBucket, invalid-query
 @test "test_get_bucket_info_doesnt_exist_s3cmd" {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
@@ -138,6 +153,7 @@ export RUN_USERS=true
   assert_failure 1
 }
 
+# tags: s3cmd, ListObjects
 @test "test_ls_directory_object" {
   test_common_ls_directory_object "s3cmd"
 }

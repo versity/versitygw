@@ -28,7 +28,10 @@ func (c *CurlCommand) DeriveHeaderValues() error {
 }
 
 func (c *CurlCommand) Render() error {
-	curlOpts := "-iks"
+	curlOpts := "-ks"
+	if c.Config.HeaderFile == "" {
+		curlOpts += "i"
+	}
 	if c.Config.Method == "HEAD" {
 		curlOpts += "I"
 	}
@@ -65,6 +68,12 @@ func (c *CurlCommand) Render() error {
 		if err != nil {
 			return err
 		}
+	}
+	if c.Config.HeaderFile != "" {
+		curlCommand = append(curlCommand, "-D", fmt.Sprintf("\"%s\"", c.Config.HeaderFile))
+	}
+	if c.Config.OutputFile != "" {
+		curlCommand = append(curlCommand, "-o", fmt.Sprintf("\"%s\"", c.Config.OutputFile))
 	}
 	c.curlCommandString = strings.Join(curlCommand, " ")
 	logger.PrintDebug("curl command: %s", c.curlCommandString)

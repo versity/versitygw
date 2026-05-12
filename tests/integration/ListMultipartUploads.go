@@ -612,6 +612,32 @@ func ListMultipartUploads_with_checksums(s *S3Conf) error {
 				algo: types.ChecksumAlgorithmCrc64nvme,
 				t:    types.ChecksumTypeFullObject,
 			},
+			{
+				obj:  "obj-6",
+				algo: types.ChecksumAlgorithmSha512,
+				t:    types.ChecksumTypeComposite,
+			},
+			{
+				obj:  "obj-7",
+				algo: types.ChecksumAlgorithmMd5,
+				t:    types.ChecksumTypeComposite,
+			},
+			{
+				obj:  "obj-8",
+				algo: types.ChecksumAlgorithmXxhash64,
+				t:    types.ChecksumTypeComposite,
+			},
+			{
+				obj:  "obj-9",
+				algo: types.ChecksumAlgorithmXxhash3,
+				t:    types.ChecksumTypeComposite,
+			},
+			// obj-91 to preserve the lexicographical order
+			{
+				obj:  "obj-91",
+				algo: types.ChecksumAlgorithmXxhash128,
+				t:    types.ChecksumTypeComposite,
+			},
 		} {
 			key := el.obj
 			mp, err := createMp(s3client, bucket, key, withChecksum(el.algo), withChecksumType(el.t))

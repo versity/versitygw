@@ -26,6 +26,7 @@ source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
 
 export RUN_USERS=true
 
+# tags: curl,DeleteBucketTagging,tagging,user,invalid-header
 @test "REST - DeleteBucketTagging - lack permission" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skip versitygw-specific users tests"
@@ -44,6 +45,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,PutBucketTagging,GetBucketTagging,DeleteBucketTagging,tagging
 @test "REST - DeleteBucketTagging - success" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

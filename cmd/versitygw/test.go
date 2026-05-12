@@ -39,6 +39,7 @@ var (
 	checksumDisable     bool
 	versioningEnabled   bool
 	azureTests          bool
+	sidecarTests        bool
 	tlsStatus           bool
 	parallel            bool
 )
@@ -123,6 +124,12 @@ func initTestCommands() []*cli.Command {
 					Usage:       "Skips tests that are not supported by Azure",
 					Destination: &azureTests,
 					Aliases:     []string{"azure"},
+				},
+				&cli.BoolFlag{
+					Name:        "sidecar-test-mode",
+					Usage:       "Skips tests that are not supported by Sidecar",
+					Destination: &sidecarTests,
+					Aliases:     []string{"sidecar"},
 				},
 				&cli.BoolFlag{
 					Name:        "parallel",
@@ -347,6 +354,9 @@ func getAction(tf testFunc) func(ctx *cli.Context) error {
 		if azureTests {
 			opts = append(opts, integration.WithAzureMode())
 		}
+		if sidecarTests {
+			opts = append(opts, integration.WithSidecarMode())
+		}
 		if hostStyle {
 			opts = append(opts, integration.WithHostStyle())
 		}
@@ -396,6 +406,9 @@ func extractIntTests() (commands []*cli.Command) {
 				if azureTests {
 					opts = append(opts, integration.WithAzureMode())
 				}
+				if sidecarTests {
+					opts = append(opts, integration.WithSidecarMode())
+				}
 
 				s := integration.NewS3Conf(opts...)
 				err := testFunc(s)
@@ -413,6 +426,12 @@ func extractIntTests() (commands []*cli.Command) {
 					Usage:       "Skips tests that are not supported by Azure",
 					Destination: &azureTests,
 					Aliases:     []string{"azure"},
+				},
+				&cli.BoolFlag{
+					Name:        "sidecar-test-mode",
+					Usage:       "Skips tests that are not supported by Sidecar",
+					Destination: &sidecarTests,
+					Aliases:     []string{"sidecar"},
 				},
 			},
 		})

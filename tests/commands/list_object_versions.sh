@@ -37,15 +37,22 @@ list_object_versions_rest() {
     log 2 "'list_object_versions_rest' requires bucket name"
     return 1
   fi
-  if ! result=$(BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/object_versions.txt" ./tests/rest_scripts/list_object_versions.sh 2>&1); then
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  file_name="$response"
+
+  if ! result=$(BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" ./tests/rest_scripts/list_object_versions.sh 2>&1); then
     log 2 "error listing object versions: $result"
     return 1
   fi
   if [ "$result" != "200" ]; then
-    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/object_versions.txt"))"
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/$file_name"))"
     return 1
   fi
-  versions=$(cat "$TEST_FILE_FOLDER/object_versions.txt")
+  versions=$(cat "$TEST_FILE_FOLDER/$file_name")
+  echo "$TEST_FILE_FOLDER/$file_name"
   return 0
 }
 

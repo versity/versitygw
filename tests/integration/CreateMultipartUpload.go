@@ -390,6 +390,11 @@ func CreateMultipartUpload_type_algo_mismatch(s *S3Conf) error {
 			{types.ChecksumTypeComposite, types.ChecksumAlgorithmCrc64nvme},
 			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmSha1},
 			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmSha256},
+			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmSha512},
+			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmMd5},
+			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmXxhash64},
+			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmXxhash3},
+			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmXxhash128},
 		} {
 			_, err := createMp(s3client, bucket, "my-obj", withChecksum(test.algo), withChecksumType(test.chType))
 			if err := checkApiErr(err, s3err.GetChecksumSchemaMismatchErr(test.algo, test.chType)); err != nil {
@@ -414,6 +419,11 @@ func CreateMultipartUpload_valid_algo_type(s *S3Conf) error {
 			{types.ChecksumTypeComposite, types.ChecksumAlgorithmCrc32c},
 			{types.ChecksumTypeComposite, types.ChecksumAlgorithmSha1},
 			{types.ChecksumTypeComposite, types.ChecksumAlgorithmSha256},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmSha512},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmMd5},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmXxhash64},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmXxhash3},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmXxhash128},
 			// full object type
 			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmCrc64nvme},
 			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmCrc32},

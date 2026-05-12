@@ -44,82 +44,102 @@ if [ -n "$SKIP_POLICY" ] || [ "$SKIP_USERS_TESTS" == "true" ]; then
   exit 0
 fi
 
+# tags: s3api, policy, multipart, AbortMultipartUpload, PutBucketPolicy
 @test "test_policy_abort_multipart_upload" {
   test_s3api_policy_abort_multipart_upload
 }
 
+# tags: s3api, policy, PutBucketPolicy, PutObject, GetObject
 @test "test_policy_allow_deny" {
   test_s3api_policy_allow_deny
 }
 
+# tags: s3api, policy, PutBucketPolicy, PutObject, DeleteObject
 @test "test_policy_delete" {
   test_s3api_policy_delete
 }
 
+# tags: s3api, policy, PutBucketPolicy, DeleteBucketPolicy
 @test "test_policy_delete_bucket_policy" {
   test_s3api_policy_delete_bucket_policy
 }
 
+# tags: s3api, policy, PutBucketPolicy, PutObject, GetObject
 @test "test_policy_deny" {
   test_s3api_policy_deny
 }
 
+# tags: s3api, policy, PutBucketPolicy, GetBucketAcl
 @test "test_policy_get_bucket_acl" {
   test_s3api_policy_get_bucket_acl
 }
 
+# tags: s3api, policy, PutBucketPolicy, GetBucketPolicy
 @test "test_policy_get_bucket_policy" {
   test_s3api_policy_get_bucket_policy
 }
 
+# tags: s3api, policy, PutBucketPolicy, PutBucketTagging, GetBucketTagging, tagging
 @test "test_policy_get_bucket_tagging" {
   test_s3api_policy_get_bucket_tagging
 }
 
+# tags: s3api, policy, PutBucketPolicy, PutObject, GetObject
 @test "test_policy_get_object_file_wildcard" {
   test_s3api_policy_get_object_file_wildcard
 }
 
+# tags: s3api, policy, PutBucketPolicy, PutObject, GetObject
 @test "test_policy_get_object_folder_wildcard" {
   test_s3api_policy_get_object_folder_wildcard
 }
 
+# tags: s3api, policy, PutBucketPolicy, PutObject, GetObject
 @test "test_policy_get_object_specific_file" {
   test_s3api_policy_get_object_specific_file
 }
 
+# tags: s3api, policy, PutBucketPolicy, PutObject, GetObject
 @test "test_policy_get_object_with_user" {
   test_s3api_policy_get_object_with_user
 }
 
+# tags: s3api, policy, multipart, PutBucketPolicy, ListMultipartUploads
 @test "test_policy_list_multipart_uploads" {
   test_s3api_policy_list_multipart_uploads
 }
 
+# tags: s3api, policy, multipart, PutBucketPolicy, ListParts
 @test "test_policy_list_upload_parts" {
   test_s3api_policy_list_upload_parts
 }
 
+# tags: s3api, policy, PutBucketPolicy, PutBucketAcl
 @test "test_policy_put_acl" {
   test_s3api_policy_put_acl
 }
 
+# tags: s3api, policy, PutBucketPolicy
 @test "test_policy_put_bucket_policy" {
   test_s3api_policy_put_bucket_policy
 }
 
+# tags: s3api, policy, PutBucketPolicy, PutBucketTagging, tagging
 @test "test_policy_put_bucket_tagging" {
   test_s3api_policy_put_bucket_tagging
 }
 
+# tags: s3api, policy, PutBucketPolicy
 @test "test_policy_two_principals" {
   test_s3api_policy_two_principals
 }
 
+# tags: s3api, policy, PutBucketPolicy, PutObject
 @test "test_policy_put_wildcard" {
   test_s3api_policy_put_wildcard
 }
 
+# tags: s3api, policy, PutBucketPolicy, invalid-query
 @test "test_put_policy_invalid_action" {
   test_s3api_policy_invalid_action
 }

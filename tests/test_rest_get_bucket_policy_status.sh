@@ -23,6 +23,7 @@ source ./tests/drivers/put_bucket_policy/put_bucket_policy_rest.sh
 source ./tests/util/util_public_access_block.sh
 source ./tests/setup.sh
 
+# tags: curl,GetBucketPolicyStatus,policy,policyStatus
 @test "REST - GetBucketPolicyStatus" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -38,6 +39,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,GetBucketPolicyStatus,policy,policyStatus,public-access
 @test "REST - GetBucketPolicyStatus true" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

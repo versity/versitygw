@@ -232,29 +232,28 @@ func ParseCopySource(copySourceHeader string) (string, string, string, error) {
 		copySourceHeader = copySourceHeader[1:]
 	}
 
-	var copySource, versionId string
+	// Split the raw header on the versionId query parameter before any
+	// URL-decoding so that the '?' delimiter is not percent-encoded.
+	var rawSource, versionId string
 	i := strings.LastIndex(copySourceHeader, "?versionId=")
 	if i == -1 {
-		copySource = copySourceHeader
+		rawSource = copySourceHeader
 	} else {
-		copySource = copySourceHeader[:i]
+		rawSource = copySourceHeader[:i]
 		versionId = copySourceHeader[i+11:]
 	}
 
-	srcBucket, srcObject, ok := strings.Cut(copySource, "/")
-	if !ok {
-		return "", "", "", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
+	// URL-decode the entire source path first so that clients that send the
+	// bucket/key separator as "%2F" (e.g. AWS .NET SDK v4) are handled
+	// correctly before we split on a literal '/'.
+	decoded, err := url.QueryUnescape(rawSource)
+	if err != nil {
+		return "", "", "", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)
 	}
 
-	var err error
-	// URL-decode the bucket and object names to handle special characters
-	srcBucket, err = url.QueryUnescape(srcBucket)
-	if err != nil {
-		return "", "", "", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)
-	}
-	srcObject, err = url.QueryUnescape(srcObject)
-	if err != nil {
-		return "", "", "", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)
+	srcBucket, srcObject, ok := strings.Cut(decoded, "/")
+	if !ok {
+		return "", "", "", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
 	}
 
 	return srcBucket, srcObject, versionId, nil

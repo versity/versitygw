@@ -155,95 +155,26 @@ func UploadPart_invalid_checksum_header(s *S3Conf) error {
 
 		partNumber := int32(1)
 
-		for _, el := range []struct {
-			algo      string
-			crc32     *string
-			crc32c    *string
-			sha1      *string
-			sha256    *string
-			crc64nvme *string
-		}{
-			// CRC32 tests
-			{
-				algo:  "crc32",
-				crc32: getPtr(""),
-			},
-			{
-				algo:  "crc32",
-				crc32: getPtr("invalid_base64!"), // invalid base64
-			},
-			{
-				algo:  "crc32",
-				crc32: getPtr("YXNrZGpoZ2tqYXNo"), // valid base64 but not crc32
-			},
-			// CRC32C tests
-			{
-				algo:   "crc32c",
-				crc32c: getPtr(""),
-			},
-			{
-				algo:   "crc32c",
-				crc32c: getPtr("invalid_base64!"), // invalid base64
-			},
-			{
-				algo:   "crc32c",
-				crc32c: getPtr("c2RhZnNhZGZzZGFm"), // valid base64 but not crc32c
-			},
-			// SHA1 tests
-			{
-				algo: "sha1",
-				sha1: getPtr(""),
-			},
-			{
-				algo: "sha1",
-				sha1: getPtr("invalid_base64!"), // invalid base64
-			},
-			{
-				algo: "sha1",
-				sha1: getPtr("c2RhZmRhc2Zkc2Fmc2RhZnNhZGZzYWRm"), // valid base64 but not sha1
-			},
-			// SHA256 tests
-			{
-				algo:   "sha256",
-				sha256: getPtr(""),
-			},
-			{
-				algo:   "sha256",
-				sha256: getPtr("invalid_base64!"), // invalid base64
-			},
-			{
-				algo:   "sha256",
-				sha256: getPtr("ZGZnbmRmZ2hoZmRoZmdkaA=="), // valid base64 but not sha56
-			},
-			// CRC64NVME tests
-			{
-				algo:      "crc64nvme",
-				crc64nvme: getPtr(""),
-			},
-			{
-				algo:      "crc64nvme",
-				crc64nvme: getPtr("invalid_base64!"), // invalid base64
-			},
-			{
-				algo:      "crc64nvme",
-				crc64nvme: getPtr("ZHNhZmRzYWZzZGFmZHNhZg=="), // valid base64 but not crc64nvme
-			},
-		} {
-			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-			_, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
-				Bucket:            &bucket,
-				Key:               &obj,
-				ChecksumCRC32:     el.crc32,
-				ChecksumCRC32C:    el.crc32c,
-				ChecksumSHA1:      el.sha1,
-				ChecksumSHA256:    el.sha256,
-				ChecksumCRC64NVME: el.crc64nvme,
-				PartNumber:        &partNumber,
-				UploadId:          mp.UploadId,
-			})
-			cancel()
-			if err := checkApiErr(err, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", el.algo))); err != nil {
-				return err
+		for _, algo := range types.ChecksumAlgorithmCrc32.Values() {
+			// tests against:
+			// - empty string
+			// - invalid base64
+			// - valid base64, but invalid checksum
+			for _, checksum := range []string{"", "invalid_base64!", "c2RhZnNhZGZzZGFm"} {
+				input := &s3.UploadPartInput{
+					Bucket:     &bucket,
+					Key:        &obj,
+					PartNumber: &partNumber,
+					UploadId:   mp.UploadId,
+				}
+				setUploadPartChecksum(input, algo, getPtr(checksum))
+
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := s3client.UploadPart(ctx, input)
+				cancel()
+				if err := checkApiErr(err, s3err.GetInvalidChecksumHeaderErr(checksumHeaderName(algo))); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -336,36 +267,13 @@ func UploadPart_incorrect_checksums(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		for _, el := range []struct {
-			algo      types.ChecksumAlgorithm
-			crc32     *string
-			crc32c    *string
-			sha1      *string
-			sha256    *string
-			crc64nvme *string
-		}{
-			{
-				algo:  types.ChecksumAlgorithmCrc32,
-				crc32: getPtr("DUoRhQ=="),
-			},
-			{
-				algo:   types.ChecksumAlgorithmCrc32c,
-				crc32c: getPtr("yZRlqg=="),
-			},
-			{
-				algo: types.ChecksumAlgorithmSha1,
-				sha1: getPtr("Kq5sNclPz7QV2+lfQIuc6R7oRu0="),
-			},
-			{
-				algo:   types.ChecksumAlgorithmSha256,
-				sha256: getPtr("uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek="),
-			},
-			{
-				algo:      types.ChecksumAlgorithmCrc64nvme,
-				crc64nvme: getPtr("MN2ofvMjpIQ="),
-			},
-		} {
-			mp, err := createMp(s3client, bucket, obj, withChecksum(el.algo))
+		for _, algo := range types.ChecksumAlgorithmCrc32.Values() {
+			wrongChecksum, err := wrongChecksumForAlgorithm(algo)
+			if err != nil {
+				return err
+			}
+
+			mp, err := createMp(s3client, bucket, obj, withChecksum(algo))
 			if err != nil {
 				return err
 			}
@@ -374,20 +282,17 @@ func UploadPart_incorrect_checksums(s *S3Conf) error {
 			partNumber := int32(1)
 
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-			_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
-				Bucket:            &bucket,
-				Key:               &obj,
-				ChecksumCRC32:     el.crc32,
-				ChecksumCRC32C:    el.crc32c,
-				ChecksumSHA1:      el.sha1,
-				ChecksumSHA256:    el.sha256,
-				ChecksumCRC64NVME: el.crc64nvme,
-				UploadId:          mp.UploadId,
-				PartNumber:        &partNumber,
-				Body:              body,
-			})
+			input := &s3.UploadPartInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				UploadId:   mp.UploadId,
+				PartNumber: &partNumber,
+				Body:       body,
+			}
+			setUploadPartChecksum(input, algo, &wrongChecksum)
+			_, err = s3client.UploadPart(ctx, input)
 			cancel()
-			if err := checkApiErr(err, s3err.GetChecksumBadDigestErr(el.algo)); err != nil {
+			if err := checkApiErr(err, s3err.GetChecksumBadDigestErr(algo)); err != nil {
 				return err
 			}
 		}
@@ -479,6 +384,11 @@ func UploadPart_no_checksum_with_composite_checksum_type(s *S3Conf) error {
 			types.ChecksumAlgorithmCrc32c,
 			types.ChecksumAlgorithmSha1,
 			types.ChecksumAlgorithmSha256,
+			types.ChecksumAlgorithmSha512,
+			types.ChecksumAlgorithmMd5,
+			types.ChecksumAlgorithmXxhash64,
+			types.ChecksumAlgorithmXxhash3,
+			types.ChecksumAlgorithmXxhash128,
 		} {
 			mp, err := createMp(customClient, bucket, obj, withChecksum(algo), withChecksumType(types.ChecksumTypeComposite))
 			if err != nil {
@@ -493,8 +403,8 @@ func UploadPart_no_checksum_with_composite_checksum_type(s *S3Conf) error {
 	})
 }
 
-func UploadPart_should_calculate_checksum_if_only_algorithm_is_provided(s *S3Conf) error {
-	testName := "UploadPart_should_calculate_checksum_if_only_algorithm_is_provided"
+func UploadPart_with_checksums_success(s *S3Conf) error {
+	testName := "UploadPart_with_checksums_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		customClient := s3.NewFromConfig(s.Config(), func(o *s3.Options) {
 			o.RequestChecksumCalculation = aws.RequestChecksumCalculationUnset
@@ -512,6 +422,11 @@ func UploadPart_should_calculate_checksum_if_only_algorithm_is_provided(s *S3Con
 			{types.ChecksumTypeComposite, types.ChecksumAlgorithmCrc32c},
 			{types.ChecksumTypeComposite, types.ChecksumAlgorithmSha1},
 			{types.ChecksumTypeComposite, types.ChecksumAlgorithmSha256},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmSha512},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmMd5},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmXxhash64},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmXxhash3},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmXxhash128},
 		} {
 			mp, err := createMp(customClient, bucket, obj, withChecksum(test.chAlgo), withChecksumType(test.chType))
 			if err != nil {
@@ -527,87 +442,10 @@ func UploadPart_should_calculate_checksum_if_only_algorithm_is_provided(s *S3Con
 				return fmt.Errorf("expected 1 uploaded part, instaed got %d", len(parts))
 			}
 
-			part := parts[0]
-			switch test.chAlgo {
-			case types.ChecksumAlgorithmCrc32:
-				if getString(part.ChecksumCRC32) != csum {
-					return fmt.Errorf("expected the uploaded part checksum %s to be %s, instead got %s", test.chAlgo, csum, getString(part.ChecksumCRC32))
-				}
-			case types.ChecksumAlgorithmCrc32c:
-				if getString(part.ChecksumCRC32C) != csum {
-					return fmt.Errorf("expected the uploaded part checksum %s to be %s, instead got %s", test.chAlgo, csum, getString(part.ChecksumCRC32C))
-				}
-			case types.ChecksumAlgorithmCrc64nvme:
-				if getString(part.ChecksumCRC64NVME) != csum {
-					return fmt.Errorf("expected the uploaded part checksum %s to be %s, instead got %s", test.chAlgo, csum, getString(part.ChecksumCRC64NVME))
-				}
-			case types.ChecksumAlgorithmSha1:
-				if getString(part.ChecksumSHA1) != csum {
-					return fmt.Errorf("expected the uploaded part checksum %s to be %s, instead got %s", test.chAlgo, csum, getString(part.ChecksumSHA1))
-				}
-			case types.ChecksumAlgorithmSha256:
-				if getString(part.ChecksumSHA256) != csum {
-					return fmt.Errorf("expected the uploaded part checksum %s to be %s, instead got %s", test.chAlgo, csum, getString(part.ChecksumSHA256))
-				}
+			if got := getString(getPartChecksum(parts[0], test.chAlgo)); got != csum {
+				return fmt.Errorf("expected the uploaded part checksum %s to be %s, instead got %s", test.chAlgo, csum, got)
 			}
 		}
-		return nil
-	})
-}
-
-func UploadPart_with_checksums_success(s *S3Conf) error {
-	testName := "UploadPart_with_checksums_success"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj := "my-obj"
-
-		for i, algo := range types.ChecksumAlgorithmCrc32.Values() {
-			mp, err := createMp(s3client, bucket, obj, withChecksum(algo))
-			if err != nil {
-				return err
-			}
-
-			partNumber := int32(1)
-			data := make([]byte, i*100)
-			rand.Read(data)
-
-			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-			res, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
-				Bucket:            &bucket,
-				Key:               &obj,
-				ChecksumAlgorithm: algo,
-				UploadId:          mp.UploadId,
-				PartNumber:        &partNumber,
-				Body:              bytes.NewReader(data),
-			})
-			cancel()
-			if err != nil {
-				return err
-			}
-
-			switch algo {
-			case types.ChecksumAlgorithmCrc32:
-				if res.ChecksumCRC32 == nil {
-					return fmt.Errorf("expected non empty crc32 checksum in the response")
-				}
-			case types.ChecksumAlgorithmCrc32c:
-				if res.ChecksumCRC32C == nil {
-					return fmt.Errorf("expected non empty crc32c checksum in the response")
-				}
-			case types.ChecksumAlgorithmSha1:
-				if res.ChecksumSHA1 == nil {
-					return fmt.Errorf("expected non empty sha1 checksum in the response")
-				}
-			case types.ChecksumAlgorithmSha256:
-				if res.ChecksumSHA256 == nil {
-					return fmt.Errorf("expected non empty sha256 checksum in the response")
-				}
-			case types.ChecksumAlgorithmCrc64nvme:
-				if res.ChecksumCRC64NVME == nil {
-					return fmt.Errorf("expected non empty crc64nvme checksum in the response")
-				}
-			}
-		}
-
 		return nil
 	})
 }

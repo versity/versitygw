@@ -845,57 +845,50 @@ func UploadPartCopy_conditional_reads(s *S3Conf) error {
 func UploadPartCopy_should_copy_the_checksum(s *S3Conf) error {
 	testName := "UploadPartCopy_should_copy_the_checksum"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj := "my-obj"
-		srcObj := "source-object"
+		for i, algo := range types.ChecksumAlgorithmCrc32.Values() {
+			obj := fmt.Sprintf("my-obj-%v", i+1)
+			srcObj := fmt.Sprintf("source-object-%v", i+1)
 
-		mp, err := createMp(s3client, bucket, obj, withChecksum(types.ChecksumAlgorithmCrc32))
-		if err != nil {
-			return err
-		}
+			mp, err := createMp(s3client, bucket, obj, withChecksum(algo))
+			if err != nil {
+				return err
+			}
 
-		out, err := putObjectWithData(300, &s3.PutObjectInput{
-			Bucket:            &bucket,
-			Key:               &srcObj,
-			ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
-		}, s3client)
-		if err != nil {
-			return err
-		}
+			out, err := putObjectWithData(300, &s3.PutObjectInput{
+				Bucket:            &bucket,
+				Key:               &srcObj,
+				ChecksumAlgorithm: algo,
+			}, s3client, withPutObjectChecksumAlgo(algo))
+			if err != nil {
+				return err
+			}
 
-		partNumber := int32(1)
+			partNumber := int32(1)
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		res, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
-			Bucket:     &bucket,
-			Key:        &obj,
-			UploadId:   mp.UploadId,
-			PartNumber: &partNumber,
-			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				UploadId:   mp.UploadId,
+				PartNumber: &partNumber,
+				CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
 
-		if getString(res.CopyPartResult.ChecksumCRC32) != getString(out.res.ChecksumCRC32) {
-			return fmt.Errorf("expected crc32 checksum to be %v, instead got %v",
-				getString(out.res.ChecksumCRC32), getString(res.CopyPartResult.ChecksumCRC32))
-		}
-		if res.CopyPartResult.ChecksumCRC32C != nil {
-			return fmt.Errorf("expected nil crc32c checksum, instead got %v",
-				*res.CopyPartResult.ChecksumCRC32C)
-		}
-		if res.CopyPartResult.ChecksumSHA1 != nil {
-			return fmt.Errorf("expected nil sha1 checksum, instead got %v",
-				*res.CopyPartResult.ChecksumSHA1)
-		}
-		if res.CopyPartResult.ChecksumSHA256 != nil {
-			return fmt.Errorf("expected nil sha256 checksum, instead got %v",
-				*res.CopyPartResult.ChecksumSHA256)
-		}
-		if res.CopyPartResult.ChecksumCRC64NVME != nil {
-			return fmt.Errorf("expected nil crc64nvme checksum, instead got %v",
-				*res.CopyPartResult.ChecksumCRC64NVME)
+			if got, expected := getString(getUploadPartCopyChecksum(res.CopyPartResult, algo)), getString(getPutObjectChecksum(out.res, algo)); got != expected {
+				return fmt.Errorf("expected %s checksum to be %v, instead got %v", algo, expected, got)
+			}
+			for _, otherAlgo := range types.ChecksumAlgorithmCrc32.Values() {
+				if otherAlgo == algo {
+					continue
+				}
+				if checksum := getUploadPartCopyChecksum(res.CopyPartResult, otherAlgo); checksum != nil {
+					return fmt.Errorf("expected nil %s checksum, instead got %v", otherAlgo, *checksum)
+				}
+			}
 		}
 
 		return nil
@@ -937,25 +930,10 @@ func UploadPartCopy_should_not_copy_the_checksum(s *S3Conf) error {
 			return err
 		}
 
-		if res.CopyPartResult.ChecksumCRC32 != nil {
-			return fmt.Errorf("expected nil crc32 checksum, instead got %v",
-				*res.CopyPartResult.ChecksumCRC32)
-		}
-		if res.CopyPartResult.ChecksumCRC32C != nil {
-			return fmt.Errorf("expected nil crc32c checksum, instead got %v",
-				*res.CopyPartResult.ChecksumCRC32C)
-		}
-		if res.CopyPartResult.ChecksumSHA1 != nil {
-			return fmt.Errorf("expected nil sha1 checksum, instead got %v",
-				*res.CopyPartResult.ChecksumSHA1)
-		}
-		if res.CopyPartResult.ChecksumSHA256 != nil {
-			return fmt.Errorf("expected nil sha256 checksum, instead got %v",
-				*res.CopyPartResult.ChecksumSHA256)
-		}
-		if res.CopyPartResult.ChecksumCRC64NVME != nil {
-			return fmt.Errorf("expected nil crc64nvme checksum, instead got %v",
-				*res.CopyPartResult.ChecksumCRC64NVME)
+		for _, algo := range types.ChecksumAlgorithmCrc32.Values() {
+			if checksum := getUploadPartCopyChecksum(res.CopyPartResult, algo); checksum != nil {
+				return fmt.Errorf("expected nil %s checksum, instead got %v", algo, *checksum)
+			}
 		}
 
 		return nil
@@ -965,56 +943,51 @@ func UploadPartCopy_should_not_copy_the_checksum(s *S3Conf) error {
 func UploadPartCopy_should_calculate_the_checksum(s *S3Conf) error {
 	testName := "UploadPartCopy_should_calculate_the_checksum"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj := "my-obj"
-		srcObj := "source-object"
+		for i, algo := range types.ChecksumAlgorithmCrc32.Values() {
+			obj := fmt.Sprintf("my-obj-%v", i+1)
+			srcObj := fmt.Sprintf("source-object-%v", i+1)
 
-		mp, err := createMp(s3client, bucket, obj, withChecksum(types.ChecksumAlgorithmSha256))
-		if err != nil {
-			return err
-		}
+			mp, err := createMp(s3client, bucket, obj, withChecksum(algo))
+			if err != nil {
+				return err
+			}
 
-		_, err = putObjectWithData(300, &s3.PutObjectInput{
-			Bucket:            &bucket,
-			Key:               &srcObj,
-			ChecksumAlgorithm: types.ChecksumAlgorithmSha1, // different from the mp checksum (sha256)
-		}, s3client)
-		if err != nil {
-			return err
-		}
+			_, err = putObjectWithData(300, &s3.PutObjectInput{
+				Bucket:            &bucket,
+				Key:               &srcObj,
+				ChecksumAlgorithm: types.ChecksumAlgorithmSha1,
+			}, s3client)
+			if err != nil {
+				return err
+			}
 
-		partNumber := int32(1)
+			partNumber := int32(1)
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		res, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
-			Bucket:     &bucket,
-			Key:        &obj,
-			UploadId:   mp.UploadId,
-			PartNumber: &partNumber,
-			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				UploadId:   mp.UploadId,
+				PartNumber: &partNumber,
+				CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
 
-		if res.CopyPartResult.ChecksumCRC32 != nil {
-			return fmt.Errorf("expected nil crc32 checksum, instead got %v",
-				*res.CopyPartResult.ChecksumCRC32)
-		}
-		if res.CopyPartResult.ChecksumCRC32C != nil {
-			return fmt.Errorf("expected nil crc32c checksum, instead got %v",
-				*res.CopyPartResult.ChecksumCRC32C)
-		}
-		if res.CopyPartResult.ChecksumCRC64NVME != nil {
-			return fmt.Errorf("expected nil crc64nvme checksum, instead got %v",
-				*res.CopyPartResult.ChecksumCRC64NVME)
-		}
-		if res.CopyPartResult.ChecksumSHA1 != nil {
-			return fmt.Errorf("expected nil sha1 checksum, instead got %v",
-				*res.CopyPartResult.ChecksumSHA1)
-		}
-		if getString(res.CopyPartResult.ChecksumSHA256) == "" {
-			return fmt.Errorf("expected non empty sha256 checksum")
+			for _, otherAlgo := range types.ChecksumAlgorithmCrc32.Values() {
+				checksum := getUploadPartCopyChecksum(res.CopyPartResult, otherAlgo)
+				if otherAlgo == algo {
+					if getString(checksum) == "" {
+						return fmt.Errorf("expected non empty %s checksum", algo)
+					}
+					continue
+				}
+				if checksum != nil {
+					return fmt.Errorf("expected nil %s checksum, instead got %v", otherAlgo, *checksum)
+				}
+			}
 		}
 
 		return nil

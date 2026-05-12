@@ -564,6 +564,37 @@ func Authentication_signature_error_incorrect_secret_key(s *S3Conf) error {
 	})
 }
 
+func Authentication_sigv2_not_supported(s *S3Conf) error {
+	testName := "Authentication_sigv2_not_supported"
+	bucket := getBucketName()
+	return authHandler(s, &authConfig{
+		testName: testName,
+		method:   http.MethodPut,
+		service:  "s3",
+		date:     time.Now(),
+		path:     fmt.Sprintf("%s/object", bucket),
+	}, func(req *http.Request) error {
+		err := setup(s, bucket)
+		if err != nil {
+			return err
+		}
+
+		req.Header.Del("Authorization")
+		req.Header.Set("Authorization", "AWS seed_signature")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationMechanism)); err != nil {
+			return err
+		}
+
+		return teardown(s, bucket)
+	})
+}
+
 func Authentication_with_expect_header(s *S3Conf) error {
 	testName := "Authentication_with_expect_header"
 	bucket, object := getBucketName(), "object"

@@ -1339,6 +1339,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		if quiet {
 			wsOpts = append(wsOpts, website.WithQuiet())
 		}
+		if socketPerm != "" {
+			wsOpts = append(wsOpts, website.WithSocketPerm(parsedSocketPerm))
+		}
 
 		wsSrv = website.NewServer(be, websiteDomain, wsOpts...)
 	}

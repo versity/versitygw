@@ -21,7 +21,7 @@ calculate_checksum_python() {
     log 2 "'calculate_checksum_python' requires checksum type, data file"
     return 1
   fi
-  if ! DEACTIVATE=false source ./tests/rest_scripts/init_python_env.sh; then
+  if ! DEACTIVATE=false source ./tests/rest_scripts/init_python_env.sh 2>/dev/null; then
     log_rest 2 "error initializing python environment"
     return 1
   fi

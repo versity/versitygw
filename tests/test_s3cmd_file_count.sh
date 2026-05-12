@@ -22,6 +22,7 @@ source ./tests/test_common.sh
 
 export RUN_S3CMD=true
 
+# tags: s3cmd, ListObjects, max-keys
 @test "test_list_objects_file_count" {
   test_common_list_objects_file_count "s3cmd"
 }

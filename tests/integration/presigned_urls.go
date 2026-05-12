@@ -665,6 +665,29 @@ func PresignedAuth_incorrect_secret_key(s *S3Conf) error {
 	})
 }
 
+func PresignedAuth_sigv2_not_supported(s *S3Conf) error {
+	testName := "PresignedAuth_sigv2_not_supported"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		expires := time.Now().UTC().Add(time.Hour).Unix()
+		uri := fmt.Sprintf("%s/%s/object?AWSAccessKeyId=%s&Expires=%d&Signature=my-signature", s.endpoint, bucket, s.awsID, expires)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, uri, nil)
+		if err != nil {
+			cancel()
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationMechanism))
+	})
+}
+
 func PresignedAuth_PutObject_success(s *S3Conf) error {
 	testName := "PresignedAuth_PutObject_success"
 	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {

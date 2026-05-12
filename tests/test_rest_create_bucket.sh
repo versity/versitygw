@@ -24,6 +24,7 @@ source ./tests/setup.sh
 
 export RUN_USERS=true
 
+# tags: curl,CreateBucket,minimal-request
 @test "REST - create bucket test" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "skip bucket create tests for static buckets"
@@ -39,6 +40,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,CreateBucket,invalid-header,x-amz-acl
 @test "REST - CreateBucket w/invalid acl" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "skip bucket create tests for static buckets"
@@ -55,6 +57,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,CreateBucket,invalid-header,x-amz-grant-full-control
 @test "REST - CreateBucket - x-amz-grant-full-control - non-existent user" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1384"
@@ -75,6 +78,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,CreateBucket,invalid-header,x-amz-grant-full-control
 @test "REST - CreateBucket - x-amz-grant-full-control - no ownership control change" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "skip bucket create tests for static buckets"
@@ -97,36 +101,43 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,CreateBucket,x-amz-grant-full-control
 @test "REST - CreateBucket - x-amz-grant-full-control - success w/tests" {
   run setup_and_create_bucket_and_check_acl "GRANT_FULL_CONTROL"
   assert_success
 }
 
+# tags: curl,CreateBucket,x-amz-grant-read
 @test "REST - CreateBucket - x-amz-grant-read" {
   run setup_and_create_bucket_and_check_acl "GRANT_READ"
   assert_success
 }
 
+# tags: curl,CreateBucket,x-amz-grant-write
 @test "REST - CreateBucket - x-amz-grant-write" {
   run setup_and_create_bucket_and_check_acl "GRANT_WRITE"
   assert_success
 }
 
+# tags: curl,CreateBucket,x-amz-grant-read-acp
 @test "REST - CreateBucket - x-amz-grant-read-acp" {
   run setup_and_create_bucket_and_check_acl "GRANT_READ_ACP"
   assert_success
 }
 
+# tags: curl,CreateBucket,x-amz-grant-write-acp
 @test "REST - CreateBucket - x-amz-grant-write-acp" {
   run setup_and_create_bucket_and_check_acl "GRANT_WRITE_ACP"
   assert_success
 }
 
+# tags: curl,CreateBucket,invalid-header,location-constraint
 @test "REST - CreateBucket - empty location constraint" {
   run send_curl_command_create_bucket_expect_error "400" "InvalidLocationConstraint" "The specified location-constraint is not valid" "-locationConstraint" ""
   assert_success
 }
 
+# tags: curl,CreateBucket,invalid-header,location-constraint
 @test "REST - CreateBucket - location constraint mismatch" {
   if [ "$DIRECT" == "true" ]; then
     skip "not valid for direct mode"
@@ -140,6 +151,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,CreateBucket,invalid-header,location-constraint
 @test "REST - CreateBucket - fail - us-east-1 with 'us-east-1' location constraint" {
   if [ "$AWS_REGION" != "us-east-1" ]; then
     skip "only valid for us-east-1 region"
@@ -148,6 +160,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl,CreateBucket,invalid-header,location-constraint
 @test "REST - CreateBucket - location constraint error returns invalid constraint" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1645"

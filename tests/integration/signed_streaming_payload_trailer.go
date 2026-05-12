@@ -108,24 +108,17 @@ func SignedStreamingPayloadTrailer_invalid_checksum(s *S3Conf) error {
 	testName := "SignedStreamingPayloadTrailer_invalid_checksum"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		object := "my-object"
-		for i, test := range []struct {
-			trailerHdr       string
-			trailingChecksum string
-		}{
-			{"x-amz-checksum-crc32", "x-amz-checksum-crc32:invalid"},
-			{"x-amz-checksum-crc32c", "x-amz-checksum-crc32c:invalid"},
-			{"x-amz-checksum-crc64nvme", "x-amz-checksum-crc64nvme:invalid"},
-			{"x-amz-checksum-sha1", "x-amz-checksum-sha1:invalid"},
-			{"x-amz-checksum-sha256", "x-amz-checksum-sha256:invalid"},
-		} {
-			_, apiErr, err := testSignedStreamingObjectPut(s, bucket, object, []byte("dummy data"), withTrailingChecksum(test.trailingChecksum), withCustomHeaders(map[string]string{
-				"x-amz-trailer": test.trailerHdr,
+		for i, algo := range types.ChecksumAlgorithmCrc32.Values() {
+			trailerHdr := checksumHeaderName(algo)
+			trailingChecksum := fmt.Sprintf("%s:invalid", trailerHdr)
+			_, apiErr, err := testSignedStreamingObjectPut(s, bucket, object, []byte("dummy data"), withTrailingChecksum(trailingChecksum), withCustomHeaders(map[string]string{
+				"x-amz-trailer": trailerHdr,
 			}))
 			if err != nil {
 				return fmt.Errorf("test %v failed: %w", i+1, err)
 			}
 
-			if err := compareS3ApiError(s3err.GetInvalidTrailingChecksumHeaderErr(test.trailerHdr), apiErr); err != nil {
+			if err := compareS3ApiError(s3err.GetInvalidTrailingChecksumHeaderErr(trailerHdr), apiErr); err != nil {
 				return fmt.Errorf("test %v failed: %w", i+1, err)
 			}
 		}
@@ -139,18 +132,24 @@ func SignedStreamingPayloadTrailer_bad_digest(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		object := "my-object"
 		for i, test := range []struct {
-			algo             types.ChecksumAlgorithm
-			trailerHdr       string
-			trailingChecksum string
+			algo     types.ChecksumAlgorithm
+			checksum string
 		}{
-			{types.ChecksumAlgorithmCrc32, "x-amz-checksum-crc32", "x-amz-checksum-crc32:NhCmhg=="},
-			{types.ChecksumAlgorithmCrc32c, "x-amz-checksum-crc32c", "x-amz-checksum-crc32c:+Cy97w=="},
-			{types.ChecksumAlgorithmCrc64nvme, "x-amz-checksum-crc64nvme", "x-amz-checksum-crc64nvme:QFRKMGE3tuw="},
-			{types.ChecksumAlgorithmSha1, "x-amz-checksum-sha1", "x-amz-checksum-sha1:qvTGHdzF6KLavt4PO0gs2a6pQ00="},
-			{types.ChecksumAlgorithmSha256, "x-amz-checksum-sha256", "x-amz-checksum-sha256:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ="},
+			{types.ChecksumAlgorithmCrc32, "NhCmhg=="},
+			{types.ChecksumAlgorithmCrc32c, "+Cy97w=="},
+			{types.ChecksumAlgorithmCrc64nvme, "QFRKMGE3tuw="},
+			{types.ChecksumAlgorithmSha1, "qvTGHdzF6KLavt4PO0gs2a6pQ00="},
+			{types.ChecksumAlgorithmSha256, "LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ="},
+			{types.ChecksumAlgorithmSha512, "mD1D3f9tqQ9qXTthckRqH/4ii4A/5k/dXc+rVkYHioloUf6C9iPJ1uVlSz0vNjoE7BfPtitgdDepx8Ey1RHlIg=="},
+			{types.ChecksumAlgorithmMd5, "Q3uTDbhLgHnC3YBKcZNrXw=="},
+			{types.ChecksumAlgorithmXxhash64, "dVz0EuroMyA="},
+			{types.ChecksumAlgorithmXxhash3, "OHmyyhTeg1E="},
+			{types.ChecksumAlgorithmXxhash128, "6fhA2KZsN830zx0e5P183w=="},
 		} {
-			_, apiErr, err := testSignedStreamingObjectPut(s, bucket, object, []byte("some random data"), withTrailingChecksum(test.trailingChecksum), withCustomHeaders(map[string]string{
-				"x-amz-trailer": test.trailerHdr,
+			trailerHdr := checksumHeaderName(test.algo)
+			trailingChecksum := fmt.Sprintf("%s:%s", trailerHdr, test.checksum)
+			_, apiErr, err := testSignedStreamingObjectPut(s, bucket, object, []byte("some random data"), withTrailingChecksum(trailingChecksum), withCustomHeaders(map[string]string{
+				"x-amz-trailer": trailerHdr,
 			}))
 			if err != nil {
 				return fmt.Errorf("test %v failed: %w", i+1, err)
@@ -178,6 +177,11 @@ func SignedStreamingPayloadTrailer_success(s *S3Conf) error {
 			{"x-amz-checksum-crc64nvme", "dYnI3/Fh0gM="},
 			{"x-amz-checksum-sha1", "8O8FwCfmd5fCbCBvH09mrKMVoHU="},
 			{"x-amz-checksum-sha256", "OoSow5X4zTIPl27MtdFdYT+9O3C367C75+Cb2MFtRBc="},
+			{"x-amz-checksum-sha512", "uiz+VuENyLjzFxWrdmbN/NdIdldj/V3saJF6FsckcYu6xu26fM0CfAaTySaoFJmIdI2m5wbYMJxtShQ1PXk3Tg=="},
+			{"x-amz-checksum-md5", "EtWtthXtCk3RxUiXKw+ydw=="},
+			{"x-amz-checksum-xxhash64", "McmxUfNFLUs="},
+			{"x-amz-checksum-xxhash3", "tLh+aNltTM4="},
+			{"x-amz-checksum-xxhash128", "MXqrLVobrQkTBf82+7i9AQ=="},
 		} {
 			headers, apiErr, err := testSignedStreamingObjectPut(
 				s,

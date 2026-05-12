@@ -15,12 +15,22 @@
 package utils
 
 import (
+	"bytes"
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
+	"hash"
 	"hash/crc32"
 	"hash/crc64"
+	"io"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/cespare/xxhash/v2"
+	"github.com/stretchr/testify/assert"
+	"github.com/zeebo/xxh3"
 )
 
 func TestAddCRCChecksum_CRC32(t *testing.T) {
@@ -116,5 +126,94 @@ func TestAddCRCChecksum_CRC64NVME(t *testing.T) {
 		uint64(combinedBytes[4])<<24 | uint64(combinedBytes[5])<<16 | uint64(combinedBytes[6])<<8 | uint64(combinedBytes[7])
 	if combinedVal != crcFull {
 		t.Errorf("CRC64NVME combine mismatch: got %x, want %x", combinedVal, crcFull)
+	}
+}
+
+func base64HashForTest(h hash.Hash, data []byte) string {
+	h.Write(data)
+	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+}
+
+func TestNewHashReader_NewChecksumAlgorithms(t *testing.T) {
+	data := []byte("checksum payload")
+
+	tests := []struct {
+		name     string
+		hashType HashType
+		hasher   hash.Hash
+	}{
+		{name: "md5", hashType: HashTypeMd5, hasher: md5.New()},
+		{name: "sha1", hashType: HashTypeSha1, hasher: sha1.New()},
+		{name: "sha256", hashType: HashTypeSha256, hasher: sha256.New()},
+		{name: "sha512", hashType: HashTypeSha512, hasher: sha512.New()},
+		{name: "crc32", hashType: HashTypeCRC32, hasher: crc32.NewIEEE()},
+		{name: "crc32c", hashType: HashTypeCRC32C, hasher: crc32.New(crc32.MakeTable(crc32.Castagnoli))},
+		{name: "crc64nvme", hashType: HashTypeCRC64NVME, hasher: crc64.New(crc64NVMETable)},
+		{name: "xxhash64", hashType: HashTypeXXHASH64, hasher: xxhash.New()},
+		{name: "xxhash3", hashType: HashTypeXXHASH3, hasher: xxh3.New()},
+		{name: "xxhash128", hashType: HashTypeXXHASH128, hasher: xxh3.New128()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expected := base64HashForTest(tt.hasher, data)
+			rdr, err := NewHashReader(bytes.NewReader(data), expected, tt.hashType)
+			if !assert.NoError(t, err) {
+				return
+			}
+			_, err = io.Copy(io.Discard, rdr)
+			assert.NoError(t, err)
+			assert.Equal(t, expected, rdr.Sum())
+		})
+	}
+}
+
+func TestNewCompositeChecksumReader_NewChecksumAlgorithms(t *testing.T) {
+	part1 := []byte("part one")
+	part2 := []byte("part two")
+
+	tests := []struct {
+		name      string
+		hashType  HashType
+		newHasher func() hash.Hash
+	}{
+		{name: "md5", hashType: HashTypeMd5, newHasher: md5.New},
+		{name: "sha1", hashType: HashTypeSha1, newHasher: sha1.New},
+		{name: "sha256", hashType: HashTypeSha256, newHasher: sha256.New},
+		{name: "sha512", hashType: HashTypeSha512, newHasher: sha512.New},
+		{name: "crc32", hashType: HashTypeCRC32, newHasher: func() hash.Hash { return crc32.NewIEEE() }},
+		{name: "crc32c", hashType: HashTypeCRC32C, newHasher: func() hash.Hash { return crc32.New(crc32.MakeTable(crc32.Castagnoli)) }},
+		{name: "xxhash64", hashType: HashTypeXXHASH64, newHasher: func() hash.Hash { return xxhash.New() }},
+		{name: "xxhash3", hashType: HashTypeXXHASH3, newHasher: func() hash.Hash { return xxh3.New() }},
+		{name: "xxhash128", hashType: HashTypeXXHASH128, newHasher: func() hash.Hash { return xxh3.New128() }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			part1Sum := base64HashForTest(tt.newHasher(), part1)
+			part2Sum := base64HashForTest(tt.newHasher(), part2)
+
+			composite, err := NewCompositeChecksumReader(tt.hashType)
+			if !assert.NoError(t, err) {
+				return
+			}
+			assert.NoError(t, composite.Process(part1Sum))
+			assert.NoError(t, composite.Process(part2Sum))
+
+			part1Bytes, err := base64.StdEncoding.DecodeString(part1Sum)
+			if !assert.NoError(t, err) {
+				return
+			}
+			part2Bytes, err := base64.StdEncoding.DecodeString(part2Sum)
+			if !assert.NoError(t, err) {
+				return
+			}
+			expectedHasher := tt.newHasher()
+			expectedHasher.Write(part1Bytes)
+			expectedHasher.Write(part2Bytes)
+			expected := base64.StdEncoding.EncodeToString(expectedHasher.Sum(nil))
+
+			assert.Equal(t, expected, composite.Sum())
+		})
 	}
 }

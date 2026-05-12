@@ -32,7 +32,7 @@ Options:
   -h, --help    Show this help.
 
 Notes:
-  - Requires VERSITYGW_TEST_ENV to be set.
+  - Running tests requires VERSITYGW_TEST_ENV to be set.
   - Tags are passed as a single comma-separated argument.
 
 Examples:
@@ -53,6 +53,12 @@ list_tests_by_tags() {
 run_tests() {
   if ! check_param_count_v2 "test lines" 1 $#; then
     return 1
+  fi
+
+  if [ -z "$VERSITYGW_TEST_ENV" ]; then
+    usage
+    echo "VERSITYGW_TEST_ENV must be defined" >&2
+    exit 1
   fi
 
   local i=0 files=() names=() tags=()
@@ -119,7 +125,10 @@ for arg in "$@"; do
   case "$arg" in
     --count) count_flag=1 ;;
     --list) list_flag=1 ;;
-    --any) tag_matching_mode="any" ;;
+    --any)
+      tag_matching_mode="any"
+      list_flag=1
+      ;;
     -h|--help) usage; exit 0 ;;
     --list-tags) list_tags_flag=1
       shift
@@ -138,12 +147,6 @@ if [ "$list_tags_flag" -eq 1 ]; then
   fi
   python3 ./tests/tags/list_tags.py "$tag_type"
   exit 0
-fi
-
-if [ -z "$VERSITYGW_TEST_ENV" ]; then
-  usage
-  echo "VERSITYGW_TEST_ENV must be defined" >&2
-  exit 1
 fi
 
 list_and_run_tests "$tag_matching_mode" "$list_flag" "$count_flag" "$run_flag" "${forwarded_args[@]}"

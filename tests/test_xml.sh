@@ -23,6 +23,7 @@ source ./tests/drivers/params.sh
 source ./tests/logger.sh
 source ./tests/setup_unit.sh
 
+# tags: unit
 @test "build_xpath_string_for_element" {
   run build_xpath_string_for_element
   assert_failure
@@ -45,18 +46,21 @@ source ./tests/setup_unit.sh
   assert_output -p "element 'XML With Space' contains a space"
 }
 
+# tags: unit
 @test "get_xml_data - missing params" {
   run get_xml_data "oneparam"
   assert_failure
   assert_output -p "requires data file, output file"
 }
 
+# tags: unit
 @test "get_xml_data - file doesn't exist" {
   run get_xml_data "/nonexistent_$$" "/tmp/out"
   assert_failure
   assert_output -p "does not exist"
 }
 
+# tags: unit
 @test "get_xml_data - no XML content" {
   input=$(get_file_name)
   printf 'HTTP/1.1 500\r\n\r\nNo XML here' > "$TEST_FILE_FOLDER/$input"
@@ -65,6 +69,7 @@ source ./tests/setup_unit.sh
   assert_output -p "No XML declaration found"
 }
 
+# tags: unit
 @test "get_xml_data - valid XML with declaration" {
   input=$(get_file_name)
   printf 'HTTP/1.1 200\r\n\r\n<?xml version="1.0"?><Value>OK</Value>' > "$TEST_FILE_FOLDER/$input"
@@ -72,6 +77,7 @@ source ./tests/setup_unit.sh
   assert_success
 }
 
+# tags: unit
 @test "get_xml_data - valid XML without declaration" {
   input=$(get_file_name)
   printf 'HTTP/1.1 200\r\n\r\n<Value>AlsoOK</Value>' > "$TEST_FILE_FOLDER/$input"
@@ -79,6 +85,7 @@ source ./tests/setup_unit.sh
   assert_success
 }
 
+# tags: unit
 @test "get_xml_data - XML with extra content after root" {
   input=$(get_file_name)
   printf 'HTTP/1.1 200\r\n\r\n<Value>AgainOK</Value>extra' > "$TEST_FILE_FOLDER/$input"

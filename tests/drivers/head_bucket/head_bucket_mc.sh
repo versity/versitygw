@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2024 Versity Software
+# Copyright 2026 Versity Software
 # This file is licensed under the Apache License, Version 2.0
 # (the "License"); you may not use this file except in compliance
 # with the License.  You may obtain a copy of the License at
@@ -14,18 +14,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
-get_bucket_acl_and_check_owner() {
-  if [ $# -ne 2 ]; then
-    log 2 "'get_acl_and_check_owner' requires client, bucket name"
+bucket_info_contains_bucket() {
+  if ! check_param_count_v2 "client, bucket" 2 $#; then
     return 1
   fi
-  if ! get_bucket_acl "$1" "$2"; then
-    log 2 "error getting bucket acl"
+  if ! head_bucket "mc" "$BUCKET_ONE_NAME"; then
+    log 2 "error getting bucket info"
     return 1
   fi
 
   # shellcheck disable=SC2154
-  log 5 "ACL: $acl"
-  id=$(echo "$acl" | jq -r '.Owner.ID')
-  [[ $id == "$AWS_ACCESS_KEY_ID" ]] || fail "Acl mismatch"
+  if [[ "$bucket_info" != *"$BUCKET_ONE_NAME"* ]]; then
+    return 1
+  fi
+  return 0
 }

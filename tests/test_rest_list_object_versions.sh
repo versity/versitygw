@@ -22,6 +22,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/list_object_versions/list_object_versions_rest.sh
 source ./tests/util/util_time.sh
 
+# tags: curl,ListObjectVersions,versions,invalid-query
 @test "ListObjectVersions - accidental query of versions on object returns correct error" {
   test_file="test_file"
 
@@ -37,6 +38,7 @@ source ./tests/util/util_time.sh
   assert_success
 }
 
+# tags: curl,ListObjectVersions,versions,versioning,object-lock,retention,x-amz-object-lock-mode,x-amz-object-lock-retain-until-date,content-md5
 @test "ListObjectVersions - version changes after deletion w/retention policy" {
   test_file="test_file"
 

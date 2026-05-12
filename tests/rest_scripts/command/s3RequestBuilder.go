@@ -78,6 +78,8 @@ type S3RequestConfigData struct {
 	OmitDate                     bool
 	CustomDate                   string
 	WriteXMLPayloadToFile        string
+	OutputFile                   string
+	HeaderFile                   string
 }
 
 type S3RequestBuilder struct {

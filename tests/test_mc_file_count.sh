@@ -22,6 +22,7 @@ source ./tests/test_common.sh
 
 export RUN_MC=true
 
+# tags:  mc,minimal-request,ListObjects
 @test "test_list_objects_file_count" {
   test_common_list_objects_file_count "mc"
 }

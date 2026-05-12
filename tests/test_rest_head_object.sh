@@ -21,6 +21,7 @@ source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
 
+# tags: curl,HeadObject,GetObjectAttributes,ETag,x-amz-object-attributes
 @test "REST - head object" {
   run get_file_name
   assert_success
@@ -40,10 +41,11 @@ source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
   assert_success
   expected_etag=$output
 
-  run get_etag_attribute_rest "$bucket_name" "$test_file" "$expected_etag"
+  run check_etag_attribute_rest "$bucket_name" "$test_file" "$expected_etag"
   assert_success
 }
 
+# tags: curl,HeadObject,Content-Type
 @test "REST - HeadObject - default Content-Type is binary/octet-stream" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

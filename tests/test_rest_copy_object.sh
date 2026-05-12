@@ -21,6 +21,7 @@ source ./tests/drivers/copy_object/copy_object_rest.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/setup.sh
 
+# tags: curl,CopyObject,invalid-header,x-amz-copy-source
 @test "REST - copy object w/invalid copy source" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -40,6 +41,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,CopyObject,invalid-header,x-amz-copy-source
 @test "REST - copy object w/copy source and payload" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

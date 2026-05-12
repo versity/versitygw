@@ -17,11 +17,11 @@
 source ./tests/commands/list_objects_v2.sh
 source ./tests/drivers/list_object_versions/list_object_versions_rest.sh
 source ./tests/drivers/xml.sh
-source ./tests/util/util_legal_hold.sh
+source ./tests/drivers/get_object_legal_hold/get_object_legal_hold_rest.sh
 
 list_and_delete_objects() {
-  log 6 "list_and_delete_objects"
-  if ! check_param_count "list_and_delete_objects" "bucket" 1 $#; then
+  log 6 "list_and_delete_objects: '$1'"
+  if ! check_param_count_v2 "bucket" 1 $#; then
     return 1
   fi
   local response
@@ -30,6 +30,7 @@ list_and_delete_objects() {
     return 1
   fi
   mapfile -t object_array <<< "$response"
+  log 5 "objects: ${object_array[*]}"
   for object in "${object_array[@]}"; do
     if [ "$object" == "" ]; then
       break

@@ -30,6 +30,7 @@ source ./tests/drivers/get_object/get_object_rest.sh
 test_file="test_file"
 export RUN_USERS=true
 
+# tags: curl, PutObject, chunked, x-amz-content-sha256, content-length
 @test "REST - put object w/STREAMING-AWS4-HMAC-SHA256-PAYLOAD without content length" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -42,6 +43,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, Expires, invalid-header
 @test "REST - PutObject - invalid 'Expires' parameter" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -54,6 +56,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: user, curl, PutObject
 @test "REST - PutObject with user permission - admin user" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versity-specific users tests"
@@ -72,6 +75,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: user, curl, PutObject
 @test "REST - PutObject with no permission - 'user' user" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versity-specific users tests"
@@ -89,6 +93,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, content-length, invalid-header
 @test "REST - put object, missing Content-Length" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1321"
@@ -104,6 +109,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, x-amz-checksum-algorithm, checksum
 @test "REST - PutObject w/x-amz-checksum-algorithm" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -116,6 +122,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, If-None-Match, not-implemented
 @test "REST - PutObject - If-None-Match - no asterisk" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -129,6 +136,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, If-None-Match
 @test "REST - PutObject - If-None-Match - block copy" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -142,6 +150,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, If-None-Match
 @test "REST - PutObject - If-None-Match - success" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -155,6 +164,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, If-Match
 @test "REST - PutObject - If-Match - file doesn't exist on server" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -168,6 +178,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, If-Match, ETag
 @test "REST - PutObject - If-Match - incorrect etag" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -181,6 +192,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, If-Match, ETag
 @test "REST - PutObject - If-Match - correct etag" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -199,6 +211,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject
 @test "PutObject - metadata keys are made lowercase" {
   uppercase_key="CAPITAL"
   uppercase_value="DUMMY"
@@ -218,6 +231,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: user, curl, PutObject
 @test "REST - PutObject - user permission, bad signature" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versitygw-specific users tests"
@@ -235,6 +249,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, Expect
 @test "REST - PutObject - expect continue - success" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -248,6 +263,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: user, curl, PutObject
 @test "REST - PutObject - invalid x-amz-request-payer" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -277,6 +293,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, Content-Disposition
 @test "REST - PutObject - content disposition" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -293,6 +310,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, object-lock, retention, x-amz-object-lock-retain-until-date, x-amz-object-lock-mode, content-md5, invalid-header
 @test "REST - PutObject - x-amz-object-lock-retain-until-date - invalid format" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -307,6 +325,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, object-lock, retention, x-amz-object-lock-retain-until-date, x-amz-object-lock-mode, content-md5, invalid-header
 @test "REST - PutObject - x-amz-object-lock-retain-until-date - earlier date" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1734"
@@ -325,6 +344,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, object-lock, retention, x-amz-object-lock-mode, x-amz-object-lock-retain-until-date, content-md5, invalid-header
 @test "REST - PutObject - x-amz-object-lock-mode - invalid mode" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1736"
@@ -347,6 +367,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, object-lock, retention, versioning, content-md5, invalid-header
 @test "TEST - REST - PutObject - not allowed without content-MD5 with lock configuration" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1740"
@@ -370,6 +391,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, object-lock, retention, versioning, content-md5, x-amz-object-lock-mode, x-amz-object-lock-retain-until-date
 @test "REST - PutObject - object lock - success" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -392,6 +414,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, x-amz-acl, not-implemented
 @test "PutObject - x-amz-acl - not implemented" {
   if [ "$DIRECT" != "true" ]; then
     skip "skip for versitygw - see #1904"
@@ -420,6 +443,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, x-amz-grant-full-control, not-implemented
 @test "PutObject - x-amz-grant-full-control - not implemented" {
   if [ "$DIRECT" != "true" ]; then
     skip "skip for versitygw - see #1904"
@@ -428,6 +452,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, x-amz-grant-read, not-implemented
 @test "PutObject - x-amz-grant-read - not implemented" {
   if [ "$DIRECT" != "true" ]; then
     skip "skip for versitygw - see #1904"
@@ -435,6 +460,7 @@ export RUN_USERS=true
   run attempt_put_object_with_specific_acl "x-amz-grant-read"
   assert_success
 }
+# tags: curl, PutObject, x-amz-grant-read-acp, not-implemented
 @test "PutObject - x-amz-grant-read-acp - not implemented" {
   if [ "$DIRECT" != "true" ]; then
     skip "skip for versitygw - see #1904"
@@ -443,6 +469,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, x-amz-grant-write-acp, not-implemented
 @test "PutObject - x-amz-grant-write-acp - not implemented" {
   if [ "$DIRECT" != "true" ]; then
     skip "skip for versitygw - see #1904"
@@ -451,6 +478,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, object-lock, legal-hold, x-amz-object-lock-legal-hold, invalid-header
 @test "PutObject - x-amz-object-lock-legal-hold - invalid value" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1775"
@@ -473,6 +501,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, object-lock, legal-hold, x-amz-object-lock-legal-hold, content-md5, invalid-header
 @test "PutObject - x-amz-object-lock-legal-hold - no Content-MD5" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1776"
@@ -496,6 +525,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, object-lock, legal-hold, x-amz-object-lock-legal-hold, content-md5
 @test "PutObject - x-amz-object-lock-legal-hold - success" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -519,6 +549,7 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: openssl, PutObject
 @test "REST - PutObject - openssl go non-file payload" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

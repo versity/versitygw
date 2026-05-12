@@ -25,6 +25,7 @@ source ./tests/drivers/complete_multipart_upload/complete_multipart_upload_rest.
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/drivers/upload_part/upload_part_rest.sh
 
+# tags: curl,multipart,CreateMultipartUpload,AbortMultipartUpload
 @test "REST - multipart upload create then abort" {
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -34,6 +35,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,CreateMultipartUpload,UploadPart,ListParts,CompleteMultipartUpload
 @test "REST - multipart upload create, list parts" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -59,6 +61,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,CompleteMultipartUpload,invalid-header,ETag
 @test "REST - complete upload - invalid part" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1008"
@@ -78,6 +81,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,UploadPartCopy,x-amz-copy-source
 @test "REST - upload part copy (UploadPartCopy)" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -97,6 +101,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,UploadPartCopy,partNumber,invalid-query
 @test "REST - UploadPartCopy w/o upload ID" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -111,6 +116,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,UploadPartCopy,invalid-query
 @test "REST - UploadPartCopy w/o part number" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -125,6 +131,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,UploadPartCopy,ETag
 @test "REST - UploadPartCopy - ETag is quoted" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -144,6 +151,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,UploadPart,ETag
 @test "REST - UploadPart - ETag is quoted" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -169,6 +177,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,UploadPart,invalid-query
 @test "REST - UploadPart w/o part number" {
 
   skip "versitygw/curl/fasthttp issue"
@@ -191,6 +200,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: openssl,multipart,UploadPart,partNumber,uploadId,invalid-query
 @test "REST - UploadPart w/o upload ID" {
 
   skip "versitygw/curl/fasthttp issue"
@@ -211,6 +221,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,checksum,CreateMultipartUpload,invalid-header,x-amz-checksum-type
 @test "REST - multipart w/invalid checksum type" {
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -221,6 +232,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,checksum,CreateMultipartUpload,invalid-header,x-amz-checksum-algorithm
 @test "REST - multipart w/invalid checksum algorithm" {
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -231,6 +243,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,checksum,CreateMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart checksum w/crc64nvme, composite" {
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -241,6 +254,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,checksum,CreateMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart checksum w/sha1, full object" {
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -251,6 +265,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,checksum,CreateMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart checksum w/sha256, full object" {
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -261,6 +276,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,checksum,CreateMultipartUpload,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - lowercase checksum type and algorithm" {
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -270,6 +286,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: curl,multipart,checksum,CreateMultipartUpload,UploadPart,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - full object checksum type doesn't require UploadPart checksums" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -291,6 +308,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
 }
 
+# tags: unit,checksum,composite-checksum
 @test "sha256 - calculate composite checksum w/null byte" {
   run calculate_composite_checksum "sha256" "Gaq9AN6Uxmk7WaTR9TzgDhE8m8bzXrfJWReDyLoZAo8=" "GohMQZ27EDvwB3n2iDx4irfxkTQDyvpDB7NFeTYaXn8="
   assert_success
@@ -298,116 +316,139 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_equal "$composite" "/UpzIA5Rft0d6bSkAlmgESdRE3vtDbo8hzAn//6Z5UU="
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - sha256" {
   run test_multipart_upload_with_checksum "COMPOSITE" "SHA256"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - sha1" {
   run test_multipart_upload_with_checksum "COMPOSITE" "SHA1"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - crc32" {
   run test_multipart_upload_with_checksum "COMPOSITE" "CRC32"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - crc32c" {
   run test_multipart_upload_with_checksum "COMPOSITE" "CRC32C"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - full object - crc32" {
   run test_multipart_upload_with_checksum "FULL_OBJECT" "CRC32"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - full object - crc32c" {
   run test_multipart_upload_with_checksum "FULL_OBJECT" "CRC32C"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - full object - crc64nvme" {
   run test_multipart_upload_with_checksum "FULL_OBJECT" "CRC64NVME"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,x-amz-checksum-algorithm
 @test "REST - multipart - x-amz-checksum-algorithm is ignored in CompleteMultipartUpload" {
   run test_complete_multipart_upload_unneeded_algorithm_parameter "FULL_OBJECT" "CRC32C"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - incorrect sha256" {
   run test_complete_multipart_upload_incorrect_checksum "COMPOSITE" "SHA256"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - incorrect sha1" {
   run test_complete_multipart_upload_incorrect_checksum "COMPOSITE" "SHA1"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - incorrect crc32" {
   run test_complete_multipart_upload_incorrect_checksum "COMPOSITE" "CRC32C"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - incorrect crc32c" {
   run test_complete_multipart_upload_incorrect_checksum "COMPOSITE" "CRC32C"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - full object - incorrect crc32" {
   run test_complete_multipart_upload_incorrect_checksum "FULL_OBJECT" "CRC32"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - full object - incorrect crc32c" {
   run test_complete_multipart_upload_incorrect_checksum "FULL_OBJECT" "CRC32C"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - full object - incorrect crc64nvme" {
   run test_complete_multipart_upload_incorrect_checksum "FULL_OBJECT" "CRC64NVME"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - invalid sha1" {
   run test_complete_multipart_upload_invalid_checksum "COMPOSITE" "SHA1"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - invalid sha256" {
   run test_complete_multipart_upload_invalid_checksum "COMPOSITE" "SHA256"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - invalid crc32" {
   run test_complete_multipart_upload_invalid_checksum "COMPOSITE" "CRC32"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - invalid crc32c" {
   run test_complete_multipart_upload_invalid_checksum "COMPOSITE" "CRC32C"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - full object - invalid crc32" {
   run test_complete_multipart_upload_invalid_checksum "FULL_OBJECT" "CRC32"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - full object - invalid crc32c" {
   run test_complete_multipart_upload_invalid_checksum "FULL_OBJECT" "CRC32C"
   assert_success
 }
 
+# tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - full object - invalid crc64nvme" {
   run test_complete_multipart_upload_invalid_checksum "FULL_OBJECT" "CRC64NVME"
   assert_success
 }
 
+# tags: curl,multipart,CompleteMultipartUpload,invalid-header,x-amz-mp-object-size
 @test "REST - multipart - x-amz-mp-object-size - invalid string" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

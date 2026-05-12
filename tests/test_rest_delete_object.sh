@@ -21,6 +21,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/delete_objects/delete_objects_rest.sh
 source ./tests/setup.sh
 
+# tags: curl,PutObject,GetObject,DeleteObject,minimal-request
 @test "test_rest_delete_object" {
   run get_file_name
   assert_success
@@ -46,6 +47,7 @@ source ./tests/setup.sh
   assert_failure
 }
 
+# tags: curl,DeleteObjects,invalid-header,content-md5
 @test "REST - delete objects - no content-md5 header" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -58,6 +60,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl,PutObject,DeleteObjects,content-md5
 @test "REST - delete objects command" {
   run get_file_name
   assert_success

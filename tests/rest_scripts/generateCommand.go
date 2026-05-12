@@ -13,6 +13,7 @@ import (
 
 const (
 	CreateBucket     = "createBucket"
+	DeleteObjects    = "deleteObjects"
 	PutBucketCors    = "putBucketCORS"
 	PutBucketTagging = "putBucketTagging"
 	PutObject        = "putObject"
@@ -50,6 +51,8 @@ var commandType *string
 var checksumType *string
 var customSHA256Hash *string
 var customDate *string
+var outputFile *string
+var headerFile *string
 
 type arrayFlags []string
 
@@ -70,6 +73,8 @@ var locationConstraint *string
 var locationConstraintSet bool = false
 
 var corsRules arrayFlags
+var objectsToDelete arrayFlags
+var deleteObjectsQuietMode *bool
 
 type restParams map[string]string
 
@@ -151,6 +156,8 @@ func main() {
 			OmitDate:              *omitDate,
 			CustomDate:            *customDate,
 			WriteXMLPayloadToFile: *writeXMLPayloadToFile,
+			OutputFile:            *outputFile,
+			HeaderFile:            *headerFile,
 		},
 	}
 
@@ -170,6 +177,10 @@ func getS3CommandType(baseCommand *command.S3RequestBuilder) (command.S3CommandC
 	case CreateBucket:
 		if s3Command, err = command.NewCreateBucketCommand(baseCommand, *locationConstraint, locationConstraintSet); err != nil {
 			return nil, fmt.Errorf("error setting up CreateBucket command: %w", err)
+		}
+	case DeleteObjects:
+		if s3Command, err = command.NewDeleteObjectsCommand(baseCommand, objectsToDelete, *deleteObjectsQuietMode); err != nil {
+			return nil, fmt.Errorf("error setting up DeleteObjects command: %w", err)
 		}
 	case PutBucketCors:
 		if s3Command, err = command.NewPutBucketCORSCommand(baseCommand, corsRules); err != nil {
@@ -267,6 +278,10 @@ func checkFlags() error {
 	locationConstraint = flag.String("locationConstraint", "", "Location constraint for bucket creation")
 	flag.Var(&corsRules, "corsRule", "CORS rule for PutBucketCORS command (can add multiple)")
 	writeXMLPayloadToFile = flag.String("writeXMLPayloadToFile", "", "for curl commands, file to write XML payloads to")
+	outputFile = flag.String("outputFile", "", "for curl commands, location to save retrieved file data (to stdout if empty)")
+	headerFile = flag.String("headerFile", "", "for curl commands, location to save header file data (to stdout or outputFile if empty)")
+	flag.Var(&objectsToDelete, "objectsToDelete", "Objects to delete in DeleteObjects command (can add multiple)")
+	deleteObjectsQuietMode = flag.Bool("deleteObjectsQuietMode", false, "Quiet mode for DeleteObjects command")
 	// Parse the flags
 	flag.Parse()
 

@@ -110,6 +110,7 @@ func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMSe
 		controllers.ProcessHandlers(ctrl.CreateBucket, metrics.ActionAdminListBuckets, services,
 			middlewares.VerifyV4Signature(root, iam, region, false, true, false),
 			middlewares.IsAdmin(metrics.ActionAdminCreateBucket),
+			middlewares.ApplyDefaultCORS(corsAllowOrigin),
 		))
 	app.Options("/:bucket/create",
 		middlewares.ApplyDefaultCORSPreflight(corsAllowOrigin),

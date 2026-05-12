@@ -697,7 +697,7 @@ class VersityAPI {
    * @param {string} contentType - Content type for the request
    * @param {Object} additionalHeaders - Additional headers to include
    */
-  async request(method, path, queryParams = {}, body = '', useAdminEndpoint = false, contentType = 'application/xml', additionalHeaders = {}) {
+  async request(method, path, queryParams = {}, body = '', useAdminEndpoint = false, contentType = 'application/xml', additionalHeaders = {}, signal = null) {
     if (!this.credentials) {
       throw new Error('Not authenticated');
     }
@@ -714,6 +714,7 @@ class VersityAPI {
         method,
         headers,
         body: body || undefined,
+        signal: signal || undefined,
       });
     } catch (e) {
       // Browsers surface CORS blocks as a generic TypeError.
@@ -1047,7 +1048,7 @@ class VersityAPI {
   /**
    * List objects in a bucket (S3 ListObjectsV2)
    */
-  async listObjectsV2(bucket, prefix = '', delimiter = '/', maxKeys = 1000, continuationToken = null) {
+  async listObjectsV2(bucket, prefix = '', delimiter = '/', maxKeys = 1000, continuationToken = null, signal = null) {
     const params = {
       'list-type': '2',
       'prefix': prefix,
@@ -1059,7 +1060,7 @@ class VersityAPI {
       params['continuation-token'] = continuationToken;
     }
 
-    const response = await this.request('GET', `/${bucket}`, params);
+    const response = await this.request('GET', `/${bucket}`, params, '', false, 'application/xml', {}, signal);
     return this.parseListObjectsV2Response(response);
   }
 
@@ -1615,7 +1616,7 @@ class VersityAPI {
   /**
    * List all versions of objects in a bucket
    */
-  async listObjectVersions(bucket, prefix = '', delimiter = '/', maxKeys = 1000, keyMarker = null, versionIdMarker = null) {
+  async listObjectVersions(bucket, prefix = '', delimiter = '/', maxKeys = 1000, keyMarker = null, versionIdMarker = null, signal = null) {
     const params = {
       versions: '',
       prefix: prefix,
@@ -1626,7 +1627,7 @@ class VersityAPI {
     if (keyMarker) params['key-marker'] = keyMarker;
     if (versionIdMarker) params['version-id-marker'] = versionIdMarker;
 
-    const response = await this.request('GET', `/${bucket}`, params);
+    const response = await this.request('GET', `/${bucket}`, params, '', false, 'application/xml', {}, signal);
     return this.parseListObjectVersionsResponse(response);
   }
 

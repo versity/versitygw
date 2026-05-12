@@ -18,6 +18,7 @@ import (
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -28,14 +29,18 @@ import (
 	"io"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/cespare/xxhash/v2"
 	"github.com/versity/versitygw/s3err"
+	"github.com/zeebo/xxh3"
 )
 
 // HashType identifies the checksum algorithm to be used
 type HashType string
 
 const (
-	// HashTypeMd5 generates MD5 checksum for the data stream
+	// HashTypeContentMD5 generates MD5 checksum for the Content-MD5 header.
+	HashTypeContentMD5 HashType = "content-md5"
+	// HashTypeMd5 generates MD5 Base64-Encoded checksum for the data stream
 	HashTypeMd5 HashType = "md5"
 	// HashTypeSha256 generates SHA256 Base64-Encoded checksum for the data stream
 	HashTypeSha256 HashType = "sha256"
@@ -43,12 +48,20 @@ const (
 	HashTypeSha256Hex HashType = "sha256-hex"
 	// HashTypeSha1 generates SHA1 Base64-Encoded checksum for the data stream
 	HashTypeSha1 HashType = "sha1"
+	// HashTypeSha512 generates SHA512 Base64-Encoded checksum for the data stream
+	HashTypeSha512 HashType = "sha512"
 	// HashTypeCRC32 generates CRC32 Base64-Encoded checksum for the data stream
 	HashTypeCRC32 HashType = "crc32"
 	// HashTypeCRC32C generates CRC32C Base64-Encoded checksum for the data stream
 	HashTypeCRC32C HashType = "crc32c"
 	// HashTypeCRC64NVME generates CRC64NVME Base64-Encoded checksum for the data stream
 	HashTypeCRC64NVME HashType = "crc64nvme"
+	// HashTypeXXHASH64 generates XXHASH64 Base64-Encoded checksum for the data stream
+	HashTypeXXHASH64 HashType = "xxhash64"
+	// HashTypeXXHASH3 generates XXHASH3 Base64-Encoded checksum for the data stream
+	HashTypeXXHASH3 HashType = "xxhash3"
+	// HashTypeXXHASH128 generates XXHASH128 Base64-Encoded checksum for the data stream
+	HashTypeXXHASH128 HashType = "xxhash128"
 	// HashTypeNone is a no-op checksum for the data stream
 	HashTypeNone HashType = "none"
 )
@@ -75,7 +88,7 @@ var (
 func NewHashReader(r io.Reader, expectedSum string, ht HashType) (*HashReader, error) {
 	var hash hash.Hash
 	switch ht {
-	case HashTypeMd5:
+	case HashTypeContentMD5, HashTypeMd5:
 		hash = md5.New()
 	case HashTypeSha256Hex:
 		hash = sha256.New()
@@ -83,12 +96,20 @@ func NewHashReader(r io.Reader, expectedSum string, ht HashType) (*HashReader, e
 		hash = sha256.New()
 	case HashTypeSha1:
 		hash = sha1.New()
+	case HashTypeSha512:
+		hash = sha512.New()
 	case HashTypeCRC32:
 		hash = crc32.NewIEEE()
 	case HashTypeCRC32C:
 		hash = crc32.New(crc32.MakeTable(crc32.Castagnoli))
 	case HashTypeCRC64NVME:
 		hash = crc64.New(crc64NVMETable)
+	case HashTypeXXHASH64:
+		hash = xxhash.New()
+	case HashTypeXXHASH3:
+		hash = xxh3.New()
+	case HashTypeXXHASH128:
+		hash = xxh3.New128()
 	case HashTypeNone:
 		hash = noop{}
 	default:
@@ -112,10 +133,15 @@ func (hr *HashReader) Read(p []byte) (int, error) {
 	}
 	if errors.Is(readerr, io.EOF) && hr.sum != "" {
 		switch hr.hashType {
-		case HashTypeMd5:
+		case HashTypeContentMD5:
 			sum := hr.Sum()
 			if sum != hr.sum {
 				return n, s3err.GetAPIError(s3err.ErrBadDigest)
+			}
+		case HashTypeMd5:
+			sum := hr.Sum()
+			if sum != hr.sum {
+				return n, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmMd5)
 			}
 		case HashTypeSha256Hex:
 			sum := hr.Sum()
@@ -142,10 +168,30 @@ func (hr *HashReader) Read(p []byte) (int, error) {
 			if sum != hr.sum {
 				return n, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmSha256)
 			}
+		case HashTypeSha512:
+			sum := hr.Sum()
+			if sum != hr.sum {
+				return n, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmSha512)
+			}
 		case HashTypeCRC64NVME:
 			sum := hr.Sum()
 			if sum != hr.sum {
 				return n, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmCrc64nvme)
+			}
+		case HashTypeXXHASH64:
+			sum := hr.Sum()
+			if sum != hr.sum {
+				return n, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmXxhash64)
+			}
+		case HashTypeXXHASH3:
+			sum := hr.Sum()
+			if sum != hr.sum {
+				return n, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmXxhash3)
+			}
+		case HashTypeXXHASH128:
+			sum := hr.Sum()
+			if sum != hr.sum {
+				return n, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmXxhash128)
 			}
 		default:
 			return n, errInvalidHashType
@@ -161,7 +207,7 @@ func (hr *HashReader) SetReader(r io.Reader) {
 // Sum returns the checksum hash of the data read so far
 func (hr *HashReader) Sum() string {
 	switch hr.hashType {
-	case HashTypeMd5:
+	case HashTypeContentMD5, HashTypeMd5:
 		return Base64SumString(hr.hash.Sum(nil))
 	case HashTypeSha256Hex:
 		return hex.EncodeToString(hr.hash.Sum(nil))
@@ -173,7 +219,15 @@ func (hr *HashReader) Sum() string {
 		return Base64SumString(hr.hash.Sum(nil))
 	case HashTypeSha256:
 		return Base64SumString(hr.hash.Sum(nil))
+	case HashTypeSha512:
+		return Base64SumString(hr.hash.Sum(nil))
 	case HashTypeCRC64NVME:
+		return Base64SumString(hr.hash.Sum(nil))
+	case HashTypeXXHASH64:
+		return Base64SumString(hr.hash.Sum(nil))
+	case HashTypeXXHASH3:
+		return Base64SumString(hr.hash.Sum(nil))
+	case HashTypeXXHASH128:
 		return Base64SumString(hr.hash.Sum(nil))
 	default:
 		return ""
@@ -197,8 +251,8 @@ func (n noop) Reset()                      {}
 func (n noop) Size() int                   { return 0 }
 func (n noop) BlockSize() int              { return 1 }
 
-// IsChecksumComposable tests if the final foll object crc can be calculated
-// based on the part crc values.
+// IsChecksumComposable tests if the final full-object crc can be calculated
+// from the part crc values.
 func IsChecksumComposable(algo types.ChecksumAlgorithm) bool {
 	switch algo {
 	case types.ChecksumAlgorithmCrc32, types.ChecksumAlgorithmCrc32c, types.ChecksumAlgorithmCrc64nvme:
@@ -309,17 +363,32 @@ func AddCRCChecksum(algo types.ChecksumAlgorithm, crc, partCrc string, partLen i
 // - CRC32C
 // - SHA1
 // - SHA256
+// - SHA512
+// - MD5
+// - XXHASH64
+// - XXHASH3
+// - XXHASH128
 func NewCompositeChecksumReader(ht HashType) (*CompositeChecksumReader, error) {
 	var hasher hash.Hash
 	switch ht {
+	case HashTypeMd5:
+		hasher = md5.New()
 	case HashTypeSha256:
 		hasher = sha256.New()
 	case HashTypeSha1:
 		hasher = sha1.New()
+	case HashTypeSha512:
+		hasher = sha512.New()
 	case HashTypeCRC32:
 		hasher = crc32.NewIEEE()
 	case HashTypeCRC32C:
 		hasher = crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	case HashTypeXXHASH64:
+		hasher = xxhash.New()
+	case HashTypeXXHASH3:
+		hasher = xxh3.New()
+	case HashTypeXXHASH128:
+		hasher = xxh3.New128()
 	case HashTypeNone:
 		hasher = noop{}
 	default:

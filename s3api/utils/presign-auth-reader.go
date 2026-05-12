@@ -254,11 +254,21 @@ func IsPresignedURLAuth(ctx *fiber.Ctx) bool {
 	signedHeaders := ctx.Query("X-Amz-SignedHeaders")
 	expires := ctx.Query("X-Amz-Expires")
 
-	return !isEmpty(algo, creds, signature, signedHeaders, expires)
+	return !allEmpty(algo, creds, signature, signedHeaders, expires) || IsPresignedURLAuthV2(ctx)
 }
 
-// isEmpty checks if all the given strings are empty
-func isEmpty(args ...string) bool {
+// IsPresignedURLAuthV2 determines if the request is
+// query-string signed with aws v2 signer
+func IsPresignedURLAuthV2(ctx *fiber.Ctx) bool {
+	expires := ctx.Query("Expires")
+	access := ctx.Query("AWSAccessKeyId")
+	signature := ctx.Query("Signature")
+
+	return anyNonEmpty(expires, access, signature)
+}
+
+// allEmpty reports whether every given string is empty.
+func allEmpty(args ...string) bool {
 	for _, a := range args {
 		if a != "" {
 			return false
@@ -266,4 +276,15 @@ func isEmpty(args ...string) bool {
 	}
 
 	return true
+}
+
+// anyNonEmpty reports whether at least one given string is non-empty.
+func anyNonEmpty(args ...string) bool {
+	for _, a := range args {
+		if a != "" {
+			return true
+		}
+	}
+
+	return false
 }

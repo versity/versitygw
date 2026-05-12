@@ -22,6 +22,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/delete_object/delete_object_rest.sh
 source ./tests/drivers/put_object/put_object_rest.sh
 
+# tags: curl,DeleteBucket,multipart
 @test "REST - DeleteBucket - can delete with partial multipart upload" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "avoid bucket deletion in static mode"
@@ -40,6 +41,7 @@ source ./tests/drivers/put_object/put_object_rest.sh
   assert_success
 }
 
+# tags: curl,DeleteBucket,DeleteObject
 @test "REST - DeleteBucket - file - non-versioning" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "avoid bucket deletion in static mode"
@@ -61,6 +63,7 @@ source ./tests/drivers/put_object/put_object_rest.sh
   assert_success
 }
 
+# tags: curl,DeleteBucket,DeleteObject,PutBucketVersioning,versioning
 @test "REST - DeleteBucket - file - versioning" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "avoid bucket deletion in static mode"
@@ -91,6 +94,7 @@ source ./tests/drivers/put_object/put_object_rest.sh
   assert_success
 }
 
+# tags: curl,DeleteBucket,invalid-header,x-amz-expected-bucket-owner
 @test "REST - DeleteBucket - invalid x-amz-expected-bucket-owner" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "avoid bucket deletion in static mode"
@@ -116,6 +120,7 @@ source ./tests/drivers/put_object/put_object_rest.sh
   assert_success
 }
 
+# tags: curl,DeleteBucket,invalid-header,x-amz-expected-bucket-owner
 @test "REST - DeleteBucket - incorrect x-amz-expected-bucket-owner" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "avoid bucket deletion in static mode"
@@ -131,6 +136,7 @@ source ./tests/drivers/put_object/put_object_rest.sh
   assert_success
 }
 
+# tags: curl,DeleteBucket,x-amz-expected-bucket-owner
 @test "REST - DeleteBucket - correct x-amz-expected-bucket-owner" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "avoid bucket deletion in static mode"
@@ -150,6 +156,7 @@ source ./tests/drivers/put_object/put_object_rest.sh
   assert_success
 }
 
+# tags: curl,DeleteBucket,PutObject
 @test "REST - DeleteBucket - BucketNotEmpty error contains bucket that is not empty" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1780"

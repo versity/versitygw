@@ -40,6 +40,7 @@ func TestAuthentication(ts *TestState) {
 	ts.Run(Authentication_invalid_sha256_payload_hash)
 	ts.Run(Authentication_md5)
 	ts.Run(Authentication_signature_error_incorrect_secret_key)
+	ts.Run(Authentication_sigv2_not_supported)
 	ts.Run(Authentication_with_expect_header)
 }
 
@@ -64,6 +65,7 @@ func TestPresignedAuthentication(ts *TestState) {
 	ts.Run(PresignedAuth_exceeding_expiration_query_param)
 	ts.Run(PresignedAuth_expired_request)
 	ts.Run(PresignedAuth_incorrect_secret_key)
+	ts.Run(PresignedAuth_sigv2_not_supported)
 	ts.Run(PresignedAuth_PutObject_success)
 	ts.Run(PresignedAuth_Put_GetObject_with_data)
 	if !ts.conf.azureTests {
@@ -447,7 +449,6 @@ func TestUploadPart(ts *TestState) {
 		ts.Run(UploadPart_incorrect_checksums)
 		ts.Run(UploadPart_no_checksum_with_full_object_checksum_type)
 		ts.Run(UploadPart_no_checksum_with_composite_checksum_type)
-		ts.Run(UploadPart_should_calculate_checksum_if_only_algorithm_is_provided)
 		ts.Run(UploadPart_with_checksums_success)
 	}
 	ts.Run(UploadPart_success)
@@ -554,7 +555,7 @@ func TestCompleteMultipartUpload(ts *TestState) {
 	}
 	ts.Run(CompleteMultipartUpload_success)
 	ts.Run(CompleteMultipartUpload_already_completed)
-	if !ts.conf.azureTests {
+	if !(ts.conf.azureTests || ts.conf.sidecarTests) {
 		ts.Run(CompleteMultipartUpload_racey_success)
 		ts.Run(CompleteMultipartUpload_racey_data_integrity)
 	}
@@ -1332,6 +1333,7 @@ func GetIntTests() IntTests {
 		"Authentication_invalid_sha256_payload_hash":                               Authentication_invalid_sha256_payload_hash,
 		"Authentication_md5":                                                       Authentication_md5,
 		"Authentication_signature_error_incorrect_secret_key":                      Authentication_signature_error_incorrect_secret_key,
+		"Authentication_sigv2_not_supported":                                       Authentication_sigv2_not_supported,
 		"Authentication_with_expect_header":                                        Authentication_with_expect_header,
 		"PresignedAuth_security_token_not_supported":                               PresignedAuth_security_token_not_supported,
 		"PresignedAuth_unsupported_algorithm":                                      PresignedAuth_unsupported_algorithm,
@@ -1353,6 +1355,7 @@ func GetIntTests() IntTests {
 		"PresignedAuth_exceeding_expiration_query_param":                           PresignedAuth_exceeding_expiration_query_param,
 		"PresignedAuth_expired_request":                                            PresignedAuth_expired_request,
 		"PresignedAuth_incorrect_secret_key":                                       PresignedAuth_incorrect_secret_key,
+		"PresignedAuth_sigv2_not_supported":                                        PresignedAuth_sigv2_not_supported,
 		"PresignedAuth_PutObject_success":                                          PresignedAuth_PutObject_success,
 		"PutObject_missing_object_lock_retention_config":                           PutObject_missing_object_lock_retention_config,
 		"PutObject_name_too_long":                                                  PutObject_name_too_long,
@@ -1627,7 +1630,6 @@ func GetIntTests() IntTests {
 		"UploadPart_incorrect_checksums":                                           UploadPart_incorrect_checksums,
 		"UploadPart_no_checksum_with_full_object_checksum_type":                    UploadPart_no_checksum_with_full_object_checksum_type,
 		"UploadPart_no_checksum_with_composite_checksum_type":                      UploadPart_no_checksum_with_composite_checksum_type,
-		"UploadPart_should_calculate_checksum_if_only_algorithm_is_provided":       UploadPart_should_calculate_checksum_if_only_algorithm_is_provided,
 		"UploadPart_with_checksums_success":                                        UploadPart_with_checksums_success,
 		"UploadPart_success":                                                       UploadPart_success,
 		"UploadPartCopy_non_existing_bucket":                                       UploadPartCopy_non_existing_bucket,

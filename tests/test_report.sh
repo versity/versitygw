@@ -21,6 +21,7 @@ source ./tests/logger.sh
 source ./tests/report.sh
 source ./tests/setup_unit.sh
 
+# tags:  unit
 @test "reporting - parse curl method" {
   tests=(" -Iks" "" " -X PUT" " -X DELETE")
   expected_results=("HEAD" "GET" "PUT" "DELETE")
@@ -32,6 +33,7 @@ source ./tests/setup_unit.sh
   done
 }
 
+# tags:  unit
 @test "reporting - parse curl route" {
   tests=("http://localhost:7070/bucket_name" "http://localhost:7070/bucket_name/file_name" "http://localhost:7070/" "")
   expected_results=("BUCKET" "OBJECT" "MAIN" "UNKNOWN")
@@ -43,6 +45,7 @@ source ./tests/setup_unit.sh
   done
 }
 
+# tags:  unit
 @test "reporting - get query" {
   tests=("https://localhost:7070/?query1=" "https://localhost/bucket?another=" "https://1.2.3.4/" "http://localhost/bucket/file?third")
   expected_results=("query1" "another" "" "third")
@@ -54,6 +57,7 @@ source ./tests/setup_unit.sh
   done
 }
 
+# tags:  unit
 @test "reporting - parse curl rest command" {
   tests=("curl -iks https://localhost:7070/versity-gwtest-bucket-one-1-20260127113351?location= -H Authorization: AWS4-HMAC-SHA256 Credential=AKIA6****/20260127/us-east-1/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=68c0b96180a5791be8a10335c10d302d31d358c4bc6028aec94faf502f3a185e -H host: localhost:7070 -H x-amz-content-sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 -H x-amz-date: 20260127T143355Z")
   expected_command=("GET BUCKET location")
@@ -64,6 +68,7 @@ source ./tests/setup_unit.sh
   done
 }
 
+# tags:  unit
 @test "openssl - get method, route, and queries" {
   tests=("GET / HTTP/1.1
           Authorization: AWS4-HMAC-SHA256 Credential=AKIAQJVWFRZQNI6LF3W7/20250911/us-east-1/s3/aws4_request,SignedHeaders=x-amz-content-sha256;x-amz-date,Signature=86ffbe2317caddcac569b25aa9b8e8db4a613a639b2a402cf4a9dc0e975ba997
@@ -83,6 +88,7 @@ source ./tests/setup_unit.sh
   done
 }
 
+# tags:  unit
 @test "report - check for copy header value" {
   test_clients=("OPENSSL" "OPENSSL" "CURL" "CURL" "CUR")
   test_data=("GET / HTTP/1.1

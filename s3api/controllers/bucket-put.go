@@ -297,7 +297,7 @@ func (c S3ApiController) PutBucketWebsite(ctx *fiber.Ctx) (*Response, error) {
 		IsRoot:          isRoot,
 		Acc:             acct,
 		Bucket:          bucket,
-		Action:          auth.PutBucketWebsiteAction,
+		Actions:         []auth.Action{auth.PutBucketWebsiteAction},
 		IsPublicRequest: isPublicBucket,
 		DisableACL:      c.disableACL,
 	})

@@ -18,10 +18,6 @@ source ./tests/commands/delete_objects.sh
 source ./tests/commands/list_objects_v2.sh
 source ./tests/commands/list_parts.sh
 source ./tests/drivers/put_object/put_object.sh
-source ./tests/util/util_get_bucket_acl.sh
-source ./tests/util/util_get_object_attributes.sh
-source ./tests/util/util_get_object_retention.sh
-source ./tests/util/util_legal_hold.sh
 source ./tests/util/util_list_objects.sh
 
 test_delete_objects_s3api_root() {

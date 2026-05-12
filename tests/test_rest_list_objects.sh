@@ -21,6 +21,7 @@ source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/list_objects/list_objects_rest.sh
 
+# tags: curl,ListObjects,minimal-request
 @test "test_rest_list_objects" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -40,6 +41,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjectsV2,continuation-token,invalid-query
 @test "REST - list objects v2 - invalid continuation token" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/993"
@@ -81,6 +83,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjectsV2,bucket-region,x-amz-bucket-region
 @test "REST - ListObjectsV2 - includes bucket header" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1814"
@@ -105,6 +108,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjectsV2,minimal-request
 @test "REST - ListObjectsV2 - success" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -125,6 +129,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjects,minimal-request
 @test "REST - list objects v1 - no NextMarker without delimiter" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/999"
@@ -154,10 +159,12 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjects,delimiter,prefix
 @test "REST - ListObjects - delimiter" {
   list_objects_delimiter "1"
 }
 
+# tags: curl,ListObjects,encoding-type,invalid-query
 @test "REST - ListObjects - invalid encoding" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1984"
@@ -175,6 +182,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjects,encoding-type
 @test "REST - ListObjects - encoding success" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1985"
@@ -199,6 +207,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjects,marker,max-keys
 @test "REST - ListObjects - marker/max-keys" {
   run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
   assert_success
@@ -219,6 +228,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjects,prefix
 @test "REST - ListObjects - prefix" {
   run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -245,6 +255,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjectsV2,continuation-token,max-keys
 @test "REST - ListObjectsV2 - continuation token" {
   run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 3
   assert_success
@@ -268,6 +279,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjects,start-after,invalid-query
 @test "ListObjectsV1 - start-after - error" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/2004"
@@ -286,6 +298,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjectsV2,start-after,continuation-token
 @test "ListObjectsV1 - start-after - doesn't include continuation token" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/2007"
@@ -303,6 +316,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjectsV2,start-after
 @test "ListObjectsV2 - start-after - success" {
   run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
   assert_success
@@ -320,6 +334,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
   assert_success
 }
 
+# tags: curl,ListObjectsV2,fetch-owner
 @test "ListObjectsV2 - fetch-owner" {
   run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
   assert_success
@@ -338,6 +353,7 @@ source ./tests/drivers/list_objects/list_objects_rest.sh
 }
 
 # shellcheck disable=SC2030
+# tags: curl,ListObjectsV2,delimiter,prefix
 @test "ListObjectsV2 - delimiter" {
   list_objects_delimiter 2
 }

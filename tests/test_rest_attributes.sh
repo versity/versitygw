@@ -21,6 +21,7 @@ source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
 
+# tags: curl,GetObjectAttributes,attributes,x-amz-object-attributes,multipart
 @test "REST - get object attributes" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1001"
@@ -47,6 +48,7 @@ source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
   assert_success
 }
 
+# tags: curl,GetObjectAttributes,attributes,x-amz-object-attributes,invalid-header
 @test "REST - attributes - invalid param" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1001"
@@ -70,6 +72,7 @@ source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
   assert_success
 }
 
+# tags: curl,PutObject,GetObjectAttributes,attributes,x-amz-object-attributes,x-amz-checksum-sha256
 @test "REST - attributes - checksum" {
   run get_file_name
   assert_success

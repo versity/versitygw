@@ -37,7 +37,7 @@ WORKDIR /tmp
 RUN curl "https://awscli.amazonaws.com/${AWS_CLI}" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install
 
 # Install mc
-RUN curl https://dl.min.io/client/mc/release/${MC_FOLDER}/mc \
+RUN curl -fL https://dl.min.io/client/mc/release/${MC_FOLDER}/mc \
   --create-dirs \
   -o /usr/local/minio-binaries/mc && \
 chmod -R 755 /usr/local/minio-binaries
@@ -98,11 +98,11 @@ RUN openssl genpkey -algorithm RSA -out versitygw-docker.pem -pkeyopt rsa_keygen
     openssl req -new -x509 -key versitygw-docker.pem -out cert-docker.pem -days 365 \
         -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
 
-ENV WORKSPACE=.
-ENV VERSITYGW_TEST_ENV=$CONFIG_FILE
-#ENV AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED
+RUN mkdir config log && cp $CONFIG_FILE config/.env
 
-RUN mkdir log
+ENV WORKSPACE=.
+ENV VERSITYGW_TEST_ENV=/home/tester/config/.env
+#ENV AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED
 
 ENTRYPOINT ["tests/run.sh"]
 CMD ["s3api,s3,s3cmd,mc,rest"]

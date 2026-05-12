@@ -107,3 +107,39 @@ delete_objects_verify_success() {
   fi
   return 0
 }
+
+check_delete_objects_precondition_error() {
+  if ! check_param_count_v2 "data file, key" 2 $#; then
+    return 1
+  fi
+  if ! response=$(get_element_with_matching_inner_value "$1" "$2" "DeleteResult" "Error" "--" "Key" 2>&1); then
+    log 2 "error finding element matching key '$2': $response"
+    return 1
+  fi
+  error_string="$response"
+  if ! error=$(check_xml_element_inside_string "$error_string" "PreconditionFailed" "Code" 2>&1); then
+    log 2 "error checking precondtion: $error"
+    return 1
+  fi
+  return 0
+}
+
+check_delete_objects_version_error() {
+  if ! check_param_count_v2 "data file, key, version ID" 3 $#; then
+    return 1
+  fi
+  if ! response=$(get_element_with_matching_inner_value "$1" "$2" "DeleteResult" "Error" "--" "Key" 2>&1); then
+    log 2 "error finding element matching key '$2': $response"
+    return 1
+  fi
+  error_string="$response"
+  if ! error=$(check_xml_element_inside_string "$error_string" "NoSuchVersion" "Code" 2>&1); then
+    log 2 "error checking error code: $error"
+    return 1
+  fi
+  if ! error=$(check_xml_element_inside_string "$error_string" "$3" "VersionId" 2>&1); then
+    log 2 "error checking version ID: $error"
+    return 1
+  fi
+  return 0
+}

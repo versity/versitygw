@@ -20,6 +20,7 @@ load ./bats-assert/load
 source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 
+# tags: curl, PutObjectLockConfiguration, object-lock, content-md5, invalid-query, versioning
 @test "REST - PutObjectLockConfig - missing payload" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -36,6 +37,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   assert_success
 }
 
+# tags: curl, PutObjectLockConfiguration, object-lock, retention, content-md5, invalid-query, versioning
 @test "REST - PutObjectLockConfig - zero day config, correct error code" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -52,6 +54,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   assert_success
 }
 
+# tags: curl, PutObjectLockConfiguration, object-lock, retention, content-md5, versioning
 @test "REST - PutObjectLockConfig - default retention period works" {
   test_file="test_file"
 

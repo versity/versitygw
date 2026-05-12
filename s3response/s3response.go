@@ -37,6 +37,11 @@ type PutObjectOutput struct {
 	ChecksumSHA1      *string
 	ChecksumSHA256    *string
 	ChecksumCRC64NVME *string
+	ChecksumSHA512    *string
+	ChecksumMD5       *string
+	ChecksumXXHASH64  *string
+	ChecksumXXHASH3   *string
+	ChecksumXXHASH128 *string
 	Size              *int64
 	ChecksumType      types.ChecksumType
 }
@@ -52,6 +57,11 @@ type Part struct {
 	ChecksumSHA1      *string
 	ChecksumSHA256    *string
 	ChecksumCRC64NVME *string
+	ChecksumSHA512    *string
+	ChecksumMD5       *string
+	ChecksumXXHASH64  *string
+	ChecksumXXHASH3   *string
+	ChecksumXXHASH128 *string
 }
 
 func (p Part) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
@@ -375,6 +385,11 @@ type CopyObjectResult struct {
 	ChecksumCRC64NVME *string
 	ChecksumSHA1      *string
 	ChecksumSHA256    *string
+	ChecksumSHA512    *string
+	ChecksumMD5       *string
+	ChecksumXXHASH64  *string
+	ChecksumXXHASH3   *string
+	ChecksumXXHASH128 *string
 	ChecksumType      types.ChecksumType
 	ETag              *string
 	LastModified      *time.Time
@@ -404,6 +419,11 @@ type CopyPartResult struct {
 	ChecksumSHA1      *string
 	ChecksumSHA256    *string
 	ChecksumCRC64NVME *string
+	ChecksumSHA512    *string
+	ChecksumMD5       *string
+	ChecksumXXHASH64  *string
+	ChecksumXXHASH3   *string
+	ChecksumXXHASH128 *string
 
 	// not included in the body
 	CopySourceVersionId string `xml:"-"`
@@ -439,6 +459,11 @@ type CompleteMultipartUploadResult struct {
 	ChecksumSHA1      *string
 	ChecksumSHA256    *string
 	ChecksumCRC64NVME *string
+	ChecksumSHA512    *string
+	ChecksumMD5       *string
+	ChecksumXXHASH64  *string
+	ChecksumXXHASH3   *string
+	ChecksumXXHASH128 *string
 	ChecksumType      *types.ChecksumType
 }
 
@@ -559,6 +584,11 @@ type PutObjectInput struct {
 	ChecksumSHA1            *string
 	ChecksumSHA256          *string
 	ChecksumCRC64NVME       *string
+	ChecksumSHA512          *string
+	ChecksumMD5             *string
+	ChecksumXXHASH64        *string
+	ChecksumXXHASH3         *string
+	ChecksumXXHASH128       *string
 	ContentMD5              *string
 	ExpectedBucketOwner     *string
 	GrantFullControl        *string
@@ -731,6 +761,11 @@ type Checksum struct {
 	SHA1      *string
 	SHA256    *string
 	CRC64NVME *string
+	SHA512    *string
+	MD5       *string
+	XXHASH64  *string
+	XXHASH3   *string
+	XXHASH128 *string
 }
 
 // LocationConstraint represents the GetBucketLocation response
