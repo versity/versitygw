@@ -139,6 +139,52 @@ func CompleteMultipartUpload_invalid_ETag(s *S3Conf) error {
 		return nil
 	})
 }
+
+func CompleteMultipartUpload_nil_ETag(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_nil_ETag"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
+		_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			UploadId:   out.UploadId,
+			PartNumber: &partNumber,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// A part whose ETag is omitted (nil) must not crash the backend
+		// (regression: azure CompleteMultipartUpload previously panicked
+		// dereferencing a nil ETag pointer).
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						PartNumber: &partNumber,
+					},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPart)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
 func CompleteMultipartUpload_invalid_checksum_type(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_invalid_checksum_type"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

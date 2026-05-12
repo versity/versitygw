@@ -1854,12 +1854,16 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		}
 		partNumber = *part.PartNumber
 
+		if part.ETag == nil {
+			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
+		}
+
 		block, ok := uncommittedBlocks[*part.PartNumber]
 		if !ok {
 			// Check if this is a tracked zero-byte part.
 			if zbPartsMap[*part.PartNumber] {
 				expectedETag := blockIDInt32ToBase64(*part.PartNumber)
-				if getString(part.ETag) != expectedETag {
+				if *part.ETag != expectedETag {
 					return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
 				}
 				// Non-last zero-byte parts violate the minimum part size.
