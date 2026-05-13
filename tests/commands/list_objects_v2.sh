@@ -30,7 +30,7 @@ list_objects_v2() {
 }
 
 list_objects_v2_rest_callback() {
-  if ! check_param_count_gt "bucket, expected response code, callback fn, params" 3 $#; then
+  if ! check_param_count_gt "bucket, expected response code, callback fn, params, --, callback params" 3 $#; then
     return 1
   fi
   if ! send_rest_go_command_callback "$2" "$3" "-bucketName" "$1" "-method" "GET" "-query" "list-type=2" "${@:4}"; then

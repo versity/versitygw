@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-source ./tests/util/util_list_objects.sh
-source ./tests/commands/command.sh
-
 # Copyright 2024 Versity Software
 # This file is licensed under the Apache License, Version 2.0
 # (the "License"); you may not use this file except in compliance
@@ -16,6 +13,8 @@ source ./tests/commands/command.sh
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+
+source ./tests/commands/command.sh
 
 # args: client, bucket name
 # return 0 if able to list, 1 if not
@@ -56,7 +55,8 @@ list_objects() {
     fi
   done <<< "$output"
 
-  export object_array
+  echo "${object_array[*]}"
+  return 0
 }
 
 # args: bucket name
@@ -76,12 +76,14 @@ list_objects_s3api() {
 
   object_array=()
   log 5 "modified output: $modified_output"
-  if echo "$modified_output" | jq -e 'has("Contents")'; then
+  if echo "$modified_output" | jq -e 'has("Contents")' >/dev/null; then
     contents=$(echo "$modified_output" | jq -r '.Contents[]')
     log 5 "contents: $contents"
     keys=$(echo "$contents" | jq -r '.Key')
     IFS=$'\n' read -rd '' -a object_array <<<"$keys"
   fi
+  log 5 "object array: ${object_array[*]}"
+  echo "${object_array[*]}"
   return 0
 }
 
