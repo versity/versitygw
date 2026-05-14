@@ -51,7 +51,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 				response: &Response{
 					MetaOpts: &MetaOptions{},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgMaxBuckets, "-1"),
 			},
 		},
 		{
@@ -66,7 +66,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 				response: &Response{
 					MetaOpts: &MetaOptions{},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgMaxBuckets, "10001"),
 			},
 		},
 		{
@@ -81,7 +81,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 				response: &Response{
 					MetaOpts: &MetaOptions{},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgMaxBuckets, "0"),
 			},
 		},
 		{
@@ -96,7 +96,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 				response: &Response{
 					MetaOpts: &MetaOptions{},
 				},
-				err: s3err.GetInvalidMaxLimiterErr("max-buckets"),
+				err: s3err.GetInvalidArgMaxLimiter("max-buckets", "bla"),
 			},
 		},
 		{

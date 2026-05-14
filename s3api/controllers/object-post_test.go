@@ -250,7 +250,7 @@ func TestS3ApiController_CreateMultipartUpload(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
+				err: s3err.GetMetadataTooLargeErr(2051, 2048),
 			},
 		},
 		{
@@ -267,7 +267,7 @@ func TestS3ApiController_CreateMultipartUpload(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockRetainDate, ""),
 			},
 		},
 		{
@@ -362,17 +362,9 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 		Parts: []types.CompletedPart{},
 	})
 	assert.NoError(t, err)
-	pn := int32(1)
 
-	validMpBody, err := xml.Marshal(s3response.CompleteMultipartUploadRequestBody{
-		Parts: []types.CompletedPart{
-			{
-				PartNumber: &pn,
-				ETag:       utils.GetStringPtr("ETag"),
-			},
-		},
-	})
-	assert.NoError(t, err)
+	validMpBody := []byte(`<CompleteMultipartUpload xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Part><PartNumber>1</PartNumber><ETag>ETag</ETag></Part></CompleteMultipartUpload>`)
+	s3cmdMpBody := []byte("<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>ETag</ETag></Part></CompleteMultipartUpload>")
 
 	versionId, ETag := "versionId", "mock-ETag"
 
@@ -549,6 +541,32 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 				headers: map[string]string{
 					"X-Amz-Mp-Object-Size": "3",
 				},
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
+			},
+			output: testOutput{
+				response: &Response{
+					Data: s3response.CompleteMultipartUploadResult{
+						ETag:     &ETag,
+						Location: utils.GetStringPtr("http://example.com/bucket/object"),
+					},
+					Headers: map[string]*string{
+						"x-amz-version-id": &versionId,
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+						EventName:   s3event.EventCompleteMultipartUpload,
+						VersionId:   &versionId,
+						ObjectETag:  &ETag,
+					},
+				},
+			},
+		},
+		{
+			name: "successful response with s3cmd request body",
+			input: testInput{
+				locals:       defaultLocals,
+				body:         s3cmdMpBody,
+				beRes:        s3response.CompleteMultipartUploadResult{ETag: &ETag},
 				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
 			},
 			output: testOutput{

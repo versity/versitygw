@@ -20,7 +20,7 @@ import (
 )
 
 // Factory for building AuthorizationQueryParametersError errors.
-func authQueryParamError(format string, args ...any) APIError {
+func authQueryParamError(format string, args ...any) S3Error {
 	return APIError{
 		Code:           "AuthorizationQueryParametersError",
 		Description:    fmt.Sprintf(format, args...),
@@ -30,60 +30,60 @@ func authQueryParamError(format string, args ...any) APIError {
 
 type queryAuthErrors struct{}
 
-func (queryAuthErrors) UnsupportedAlgorithm() APIError {
+func (queryAuthErrors) UnsupportedAlgorithm() S3Error {
 	return authQueryParamError(`X-Amz-Algorithm only supports "AWS4-HMAC-SHA256 and AWS4-ECDSA-P256-SHA256"`)
 }
 
-func (queryAuthErrors) MalformedCredential() APIError {
+func (queryAuthErrors) MalformedCredential(_ string) S3Error {
 	return authQueryParamError(`Error parsing the X-Amz-Credential parameter; the Credential is mal-formed; expecting "<YOUR-AKID>/YYYYMMDD/REGION/SERVICE/aws4_request".`)
 }
 
-func (queryAuthErrors) IncorrectService(s string) APIError {
+func (queryAuthErrors) IncorrectService(_, s string) S3Error {
 	return authQueryParamError(`Error parsing the X-Amz-Credential parameter; incorrect service %q. This endpoint belongs to "s3".`, s)
 }
 
-func (queryAuthErrors) IncorrectRegion(expected, actual string) APIError {
+func (queryAuthErrors) IncorrectRegion(expected, actual string) S3Error {
 	return authQueryParamError(`Error parsing the X-Amz-Credential parameter; the region %q is wrong; expecting %q`, actual, expected)
 }
 
-func (queryAuthErrors) IncorrectTerminal(s string) APIError {
+func (queryAuthErrors) IncorrectTerminal(_, s string) S3Error {
 	return authQueryParamError(`Error parsing the X-Amz-Credential parameter; incorrect terminal %q. This endpoint uses "aws4_request".`, s)
 }
 
-func (queryAuthErrors) InvalidDateFormat(s string) APIError {
+func (queryAuthErrors) InvalidDateFormat(_, s string) S3Error {
 	return authQueryParamError(`Error parsing the X-Amz-Credential parameter; incorrect date format %q. This date in the credential must be in the format "yyyyMMdd".`, s)
 }
 
-func (queryAuthErrors) DateMismatch(expected, actual string) APIError {
+func (queryAuthErrors) DateMismatch(expected, actual string) S3Error {
 	return authQueryParamError(`Invalid credential date %q. This date is not the same as X-Amz-Date: %q.`, expected, actual)
 }
 
-func (queryAuthErrors) ExpiresTooLarge() APIError {
+func (queryAuthErrors) ExpiresTooLarge() S3Error {
 	return authQueryParamError("X-Amz-Expires must be less than a week (in seconds); that is, the given X-Amz-Expires must be less than 604800 seconds")
 }
 
-func (queryAuthErrors) ExpiresNegative() APIError {
+func (queryAuthErrors) ExpiresNegative() S3Error {
 	return authQueryParamError("X-Amz-Expires must be non-negative")
 }
 
-func (queryAuthErrors) ExpiresNumber() APIError {
+func (queryAuthErrors) ExpiresNumber() S3Error {
 	return authQueryParamError("X-Amz-Expires should be a number")
 }
 
-func (queryAuthErrors) MissingRequiredParams() APIError {
+func (queryAuthErrors) MissingRequiredParams() S3Error {
 	return authQueryParamError("Query-string authentication version 4 requires the X-Amz-Algorithm, X-Amz-Credential, X-Amz-Signature, X-Amz-Date, X-Amz-SignedHeaders, and X-Amz-Expires parameters.")
 }
 
-func (queryAuthErrors) InvalidXAmzDateFormat() APIError {
+func (queryAuthErrors) InvalidXAmzDateFormat() S3Error {
 	return authQueryParamError(`X-Amz-Date must be in the ISO8601 Long Format "yyyyMMdd'T'HHmmss'Z'"`)
 }
 
 // a custom non-AWS error
-func (queryAuthErrors) OnlyHMACSupported() APIError {
+func (queryAuthErrors) OnlyHMACSupported() S3Error {
 	return authQueryParamError("X-Amz-Algorithm only supports \"AWS4-HMAC-SHA256\"")
 }
 
-func (queryAuthErrors) SecurityTokenNotSupported() APIError {
+func (queryAuthErrors) SecurityTokenNotSupported() S3Error {
 	return authQueryParamError("Authorization with X-Amz-Security-Token is not supported")
 }
 

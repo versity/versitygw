@@ -39,6 +39,9 @@ import (
 )
 
 var (
+	testRequestID = "5MRQJ97RHWJ4FMX9"
+	testHostID    = "eS8nILxNKeV1pNi2Z7Pv6mwC+nuquA2UTBwrBSxGq62e9NZ6f2G9aJPRetuD0/lF3OgqRF7N3GU="
+
 	defaultLocals map[utils.ContextKey]any = map[utils.ContextKey]any{
 		utils.ContextKeyIsRoot: true,
 		utils.ContextKeyParsedAcl: auth.ACL{
@@ -109,7 +112,7 @@ func testController(t *testing.T, ctrl Controller, resp *Response, expectedErr e
 			assert.Error(t, err)
 
 			switch expectedErr.(type) {
-			case s3err.APIError:
+			case s3err.S3Error:
 				assert.EqualValues(t, expectedErr, err)
 			default:
 				assert.ErrorContains(t, err, expectedErr.Error())
@@ -323,7 +326,7 @@ func TestProcessController(t *testing.T) {
 			},
 			expected: expected{
 				status: http.StatusBadRequest,
-				body:   s3err.GetAPIErrorResponse(s3err.GetAPIError(s3err.ErrInvalidRequest), "", "", ""),
+				body:   s3err.GetAPIError(s3err.ErrInvalidRequest).XMLBody(testRequestID, testHostID),
 			},
 		},
 		{
@@ -336,7 +339,7 @@ func TestProcessController(t *testing.T) {
 			},
 			expected: expected{
 				status: http.StatusInternalServerError,
-				body:   s3err.GetAPIErrorResponse(s3err.GetAPIError(s3err.ErrInternalError), "", "", ""),
+				body:   s3err.GetAPIError(s3err.ErrInternalError).XMLBody(testRequestID, testHostID),
 			},
 		},
 		{
@@ -351,7 +354,7 @@ func TestProcessController(t *testing.T) {
 			},
 			expected: expected{
 				status: http.StatusInternalServerError,
-				body:   s3err.GetAPIErrorResponse(s3err.GetAPIError(s3err.ErrInternalError), "", "", ""),
+				body:   s3err.GetAPIError(s3err.ErrInternalError).XMLBody(testRequestID, testHostID),
 			},
 		},
 		{
@@ -426,7 +429,7 @@ func TestProcessController(t *testing.T) {
 			},
 		},
 		{
-			name: "large paylod: should return internal error",
+			name: "large payload: should return internal error",
 			args: args{
 				svc: services,
 				controller: func(ctx *fiber.Ctx) (*Response, error) {
@@ -464,7 +467,7 @@ func TestProcessController(t *testing.T) {
 				},
 			},
 			expected: expected{
-				body:   s3err.GetAPIErrorResponse(s3err.GetAPIError(s3err.ErrInternalError), "", "", ""),
+				body:   s3err.GetAPIError(s3err.ErrInternalError).XMLBody(testRequestID, testHostID),
 				status: http.StatusInternalServerError,
 			},
 		},
@@ -492,11 +495,15 @@ func TestProcessController(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := fiber.New().AcquireCtx(&fasthttp.RequestCtx{})
+			utils.ContextKeyRequestID.Set(ctx, testRequestID)
+			utils.ContextKeyHostID.Set(ctx, testHostID)
 			err := ProcessController(ctx, tt.args.controller, metrics.ActionAbortMultipartUpload, tt.args.svc)
 			assert.NoError(t, err)
 
 			// check the status
 			assert.Equal(t, tt.expected.status, ctx.Response().StatusCode())
+			assert.Equal(t, testRequestID, string(ctx.Response().Header.Peek(utils.HeaderAmzRequestID)))
+			assert.Equal(t, testHostID, string(ctx.Response().Header.Peek(utils.HeaderAmzID2)))
 
 			// check the response headers to be set
 			if tt.expected.headers != nil {
@@ -556,7 +563,7 @@ func TestProcessHandlers(t *testing.T) {
 				svc: &Services{},
 			},
 			expected: expected{
-				body: s3err.GetAPIErrorResponse(s3err.GetAPIError(s3err.ErrAccessDenied), "", "", ""),
+				body: s3err.GetAPIError(s3err.ErrAccessDenied).XMLBody(testRequestID, testHostID),
 			},
 		},
 		{
@@ -591,6 +598,9 @@ func TestProcessHandlers(t *testing.T) {
 			app := fiber.New()
 
 			app.Post("/:bucket/*", func(ctx *fiber.Ctx) error {
+				utils.ContextKeyRequestID.Set(ctx, testRequestID)
+				utils.ContextKeyHostID.Set(ctx, testHostID)
+
 				// set the request locals
 				if tt.args.locals != nil {
 					for key, val := range tt.args.locals {
@@ -654,7 +664,7 @@ func TestWrapMiddleware(t *testing.T) {
 				logger: &mockAuditLogger{},
 			},
 			expected: expected{
-				body: s3err.GetAPIErrorResponse(s3err.GetAPIError(s3err.ErrAclNotSupported), "", "", ""),
+				body: s3err.GetAPIError(s3err.ErrAclNotSupported).XMLBody(testRequestID, testHostID),
 			},
 		},
 		{
@@ -665,7 +675,7 @@ func TestWrapMiddleware(t *testing.T) {
 				},
 			},
 			expected: expected{
-				body: s3err.GetAPIErrorResponse(s3err.GetAPIError(s3err.ErrInternalError), "", "", ""),
+				body: s3err.GetAPIError(s3err.ErrInternalError).XMLBody(testRequestID, testHostID),
 			},
 		},
 	}
@@ -675,6 +685,9 @@ func TestWrapMiddleware(t *testing.T) {
 			app := fiber.New()
 
 			app.Post("/:bucket/*", func(ctx *fiber.Ctx) error {
+				utils.ContextKeyRequestID.Set(ctx, testRequestID)
+				utils.ContextKeyHostID.Set(ctx, testHostID)
+
 				// call the controller by passing the ctx
 				err := mdlwr(ctx)
 				assert.NoError(t, err)

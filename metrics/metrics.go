@@ -140,9 +140,9 @@ func (m *manager) Send(ctx *fiber.Ctx, err error, action string, count int64, st
 	reqStatus := status
 
 	if err != nil {
-		var apierr s3err.APIError
+		var apierr s3err.S3Error
 		if errors.As(err, &apierr) {
-			reqStatus = apierr.HTTPStatusCode
+			reqStatus = apierr.StatusCode()
 		} else {
 			reqStatus = http.StatusInternalServerError
 		}

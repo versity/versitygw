@@ -222,7 +222,7 @@ func PutBucketTagging_success_status(s *S3Conf) error {
 		sum := hasher.Sum(nil)
 		md5Sum := base64.StdEncoding.EncodeToString(sum)
 
-		req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%v?tagging=", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, taggingParsed, time.Now(), map[string]string{
+		req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%v?tagging=", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, "", taggingParsed, time.Now(), map[string]string{
 			"Content-Md5": md5Sum,
 		})
 		if err != nil {

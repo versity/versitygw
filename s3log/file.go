@@ -111,7 +111,6 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	lf.Time = time.Now()
 	lf.RemoteIP = ctx.IP()
 	lf.Requester = access
-	lf.RequestID = genID()
 	lf.Operation = meta.Action
 	lf.Key = object
 	lf.RequestURI = reqURI
@@ -124,11 +123,13 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	lf.Referer = ctx.Get("Referer")
 	lf.UserAgent = ctx.Get("User-Agent")
 	lf.VersionID = ctx.Query("versionId")
-	lf.HostID = ctx.Get("X-Amz-Id-2")
 	lf.SignatureVersion = "SigV4"
 	lf.AuthenticationType = "AuthHeader"
 	lf.AccessPointARN = fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/"))
 	lf.AclRequired = "Yes"
+	requestID, hostID := utils.EnsureRequestIDs(ctx)
+	lf.RequestID = requestID
+	lf.HostID = hostID
 
 	f.writeLog(lf)
 }

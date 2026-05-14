@@ -74,7 +74,7 @@ func ListMultipartUploads_invalid_max_uploads(s *S3Conf) error {
 			MaxUploads: &maxUploads,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetNegativeMaxLimiterErr("max-uploads")); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgNegativeMaxLimiter("max-uploads", fmt.Sprint(maxUploads))); err != nil {
 			return err
 		}
 
@@ -251,19 +251,20 @@ func ListMultipartUploads_invalid_uploadId_marker(s *S3Conf) error {
 			UploadIdMarker: getPtr("invalid_uploadId_marker"),
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidUploadIdMarker)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgUploadIdMarker, "invalid_uploadId_marker")); err != nil {
 			return err
 		}
 
 		// valid UUID, but not from the list
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		uploadIDMarker := uuid.New().String()
 		_, err = s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
 			Bucket:         &bucket,
 			KeyMarker:      getPtr("obj-2"),
-			UploadIdMarker: getPtr(uuid.New().String()),
+			UploadIdMarker: &uploadIDMarker,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidUploadIdMarker)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgUploadIdMarker, uploadIDMarker)); err != nil {
 			return err
 		}
 
@@ -275,7 +276,7 @@ func ListMultipartUploads_invalid_uploadId_marker(s *S3Conf) error {
 			UploadIdMarker: uploads[4].UploadId,
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidUploadIdMarker))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgUploadIdMarker, *uploads[4].UploadId))
 	})
 }
 

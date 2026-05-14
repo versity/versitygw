@@ -83,6 +83,11 @@ type keyDerivator interface {
 	DeriveKey(credential aws.Credentials, service, region string, signingTime v4Internal.SigningTime) []byte
 }
 
+type SignMetadata struct {
+	StringToSign    string
+	CanonicalString string
+}
+
 // SignerOptions is the SigV4 Signer options.
 type SignerOptions struct {
 	// Disables the Signer's moving HTTP header key/value pairs from the HTTP
@@ -279,7 +284,7 @@ func buildAuthorizationHeader(credentialStr, signedHeadersStr, signingSignature 
 // will not be lost.
 //
 // The passed in request will be modified in place.
-func (s Signer) SignHTTP(ctx context.Context, credentials aws.Credentials, r *http.Request, payloadHash string, service string, region string, signingTime time.Time, signedHdrs []string, optFns ...func(options *SignerOptions)) error {
+func (s Signer) SignHTTP(ctx context.Context, credentials aws.Credentials, r *http.Request, payloadHash string, service string, region string, signingTime time.Time, signedHdrs []string, optFns ...func(options *SignerOptions)) (*SignMetadata, error) {
 	options := s.options
 
 	for _, fn := range optFns {
@@ -302,12 +307,15 @@ func (s Signer) SignHTTP(ctx context.Context, credentials aws.Credentials, r *ht
 
 	signedRequest, err := signer.Build()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	logSigningInfo(ctx, options, &signedRequest, false)
 
-	return nil
+	return &SignMetadata{
+		StringToSign:    signedRequest.StringToSign,
+		CanonicalString: signedRequest.CanonicalString,
+	}, nil
 }
 
 // PresignHTTP signs AWS v4 requests with the payload hash, service name, region
@@ -357,7 +365,7 @@ func (s *Signer) PresignHTTP(
 	payloadHash string, service string, region string, signingTime time.Time,
 	signedHdrs []string,
 	optFns ...func(*SignerOptions),
-) (signedURI string, signedHeaders http.Header, err error) {
+) (string, http.Header, *SignMetadata, error) {
 	options := s.options
 
 	for _, fn := range optFns {
@@ -381,12 +389,12 @@ func (s *Signer) PresignHTTP(
 
 	signedRequest, err := signer.Build()
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	logSigningInfo(ctx, options, &signedRequest, true)
 
-	signedHeaders = make(http.Header)
+	signedHeaders := make(http.Header)
 
 	// For the signed headers we canonicalize the header keys in the returned map.
 	// This avoids situations where can standard library double headers like host header. For example the standard
@@ -396,7 +404,10 @@ func (s *Signer) PresignHTTP(
 		signedHeaders[key] = append(signedHeaders[key], v...)
 	}
 
-	return signedRequest.Request.URL.String(), signedHeaders, nil
+	return signedRequest.Request.URL.String(), signedHeaders, &SignMetadata{
+		StringToSign:    signedRequest.StringToSign,
+		CanonicalString: signedRequest.CanonicalString,
+	}, nil
 }
 
 func (s *httpSigner) buildCredentialScope() string {

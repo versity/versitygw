@@ -74,7 +74,7 @@ func DeleteBucket_success_status_code(s *S3Conf) error {
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
-	req, err := createSignedReq(http.MethodDelete, s.endpoint, bucket, s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), nil)
+	req, err := createSignedReq(http.MethodDelete, s.endpoint, bucket, s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
 	if err != nil {
 		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)

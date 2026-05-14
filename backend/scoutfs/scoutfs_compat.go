@@ -334,12 +334,12 @@ func (s *ScoutFS) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 	object := *input.Key
 
 	if !s.isBucketValid(bucket) {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+		return nil, s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return nil, s3err.GetBucketErr(s3err.ErrNoSuchBucket, *input.Bucket)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat bucket: %w", err)
@@ -429,12 +429,12 @@ func (s *ScoutFS) RestoreObject(_ context.Context, input *s3.RestoreObjectInput)
 	object := *input.Key
 
 	if !s.isBucketValid(bucket) {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+		return s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return s3err.GetBucketErr(s3err.ErrNoSuchBucket, *input.Bucket)
 	}
 	if err != nil {
 		return fmt.Errorf("stat bucket: %w", err)

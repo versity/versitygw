@@ -65,7 +65,7 @@ func TestPresignRequest(t *testing.T) {
 
 	signedHdrs := []string{"content-length", "content-type", "host", "x-amz-date", "x-amz-meta-other-header", "x-amz-meta-other-header_with_underscore", "x-amz-security-token", "x-amz-target"}
 	signer := NewSigner()
-	signed, headers, err := signer.PresignHTTP(context.Background(), testCredentials, req, body, "dynamodb", "us-east-1", time.Unix(0, 0), signedHdrs)
+	signed, headers, _, err := signer.PresignHTTP(context.Background(), testCredentials, req, body, "dynamodb", "us-east-1", time.Unix(0, 0), signedHdrs)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -118,7 +118,7 @@ func TestPresignBodyWithArrayRequest(t *testing.T) {
 
 	signedHdrs := []string{"content-length", "content-type", "host", "x-amz-date", "x-amz-meta-other-header", "x-amz-meta-other-header_with_underscore", "x-amz-security-token", "x-amz-target"}
 	signer := NewSigner()
-	signed, headers, err := signer.PresignHTTP(context.Background(), testCredentials, req, body, "dynamodb", "us-east-1", time.Unix(0, 0), signedHdrs)
+	signed, headers, _, err := signer.PresignHTTP(context.Background(), testCredentials, req, body, "dynamodb", "us-east-1", time.Unix(0, 0), signedHdrs)
 	if err != nil {
 		t.Fatalf("expect no error, got %v", err)
 	}
@@ -165,7 +165,7 @@ func TestSignRequest(t *testing.T) {
 	req, body := buildRequest("dynamodb", "us-east-1", "{}")
 	signer := NewSigner()
 	signedHdrs := []string{"content-length", "content-type", "host", "x-amz-date", "x-amz-meta-other-header", "x-amz-meta-other-header_with_underscore", "x-amz-security-token", "x-amz-target"}
-	err := signer.SignHTTP(context.Background(), testCredentials, req, body, "dynamodb", "us-east-1", time.Unix(0, 0), signedHdrs)
+	_, err := signer.SignHTTP(context.Background(), testCredentials, req, body, "dynamodb", "us-east-1", time.Unix(0, 0), signedHdrs)
 	if err != nil {
 		t.Fatalf("expect no error, got %v", err)
 	}
@@ -213,7 +213,7 @@ func TestSigner_SignHTTP_NoReplaceRequestBody(t *testing.T) {
 
 	origBody := req.Body
 
-	err := s.SignHTTP(context.Background(), testCredentials, req, bodyHash, "dynamodb", "us-east-1", time.Now(), []string{})
+	_, err := s.SignHTTP(context.Background(), testCredentials, req, bodyHash, "dynamodb", "us-east-1", time.Now(), []string{})
 	if err != nil {
 		t.Fatalf("expect no error, got %v", err)
 	}
@@ -353,6 +353,6 @@ func BenchmarkSignRequest(b *testing.B) {
 	signer := NewSigner()
 	req, bodyHash := buildRequest("dynamodb", "us-east-1", "{}")
 	for i := 0; i < b.N; i++ {
-		signer.SignHTTP(context.Background(), testCredentials, req, bodyHash, "dynamodb", "us-east-1", time.Now(), []string{})
+		_, _ = signer.SignHTTP(context.Background(), testCredentials, req, bodyHash, "dynamodb", "us-east-1", time.Now(), []string{})
 	}
 }

@@ -439,7 +439,7 @@ func TestS3ApiController_UploadPart(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidPartNumber),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgPartNumber, "-2"),
 			},
 		},
 		{
@@ -620,7 +620,7 @@ func TestS3ApiController_UploadPartCopy(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "bad%G1"),
 			},
 		},
 		{
@@ -661,7 +661,7 @@ func TestS3ApiController_UploadPartCopy(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidPartNumber),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgPartNumber, "-2"),
 			},
 		},
 		{
@@ -860,7 +860,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, ""),
 			},
 		},
 		{
@@ -896,7 +896,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
+				err: s3err.GetMetadataTooLargeErr(2051, 2048),
 			},
 		},
 		{
@@ -916,7 +916,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidMetadataDirective),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgMetadataDirective, "invalid_metadat_directive"),
 			},
 		},
 		{
@@ -934,7 +934,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidTaggingDirective),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgTaggingDirective, "invalid_tagging_directive"),
 			},
 		},
 		{
@@ -970,7 +970,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockRetainDate, ""),
 			},
 		},
 		{
@@ -1159,7 +1159,7 @@ func TestS3ApiController_PutObject(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
+				err: s3err.GetMetadataTooLargeErr(2059, 2048),
 			},
 		},
 		{
@@ -1177,7 +1177,7 @@ func TestS3ApiController_PutObject(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockRetainDate, ""),
 			},
 		},
 		{

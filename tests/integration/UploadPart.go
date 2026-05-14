@@ -70,7 +70,7 @@ func UploadPart_invalid_part_number(s *S3Conf) error {
 				PartNumber: &el,
 			})
 			cancel()
-			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPartNumber)); err != nil {
+			if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgPartNumber, fmt.Sprint(el))); err != nil {
 				return err
 			}
 		}

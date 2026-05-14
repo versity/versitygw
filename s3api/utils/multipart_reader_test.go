@@ -292,7 +292,7 @@ func TestMultipartParserParseErrors(t *testing.T) {
 				"value\r\n",
 				"--abc--\r\n",
 			}, ""),
-			want: s3err.GetAPIError(s3err.ErrPOSTFileRequired),
+			want: s3err.GetInvalidArgumentErr(s3err.InvalidArgPOSTFileRequired, "0"),
 		},
 		{
 			name: "line without crlf terminator",

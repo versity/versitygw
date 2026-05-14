@@ -83,7 +83,7 @@ func ListParts_invalid_max_parts(s *S3Conf) error {
 			MaxParts: &invMaxParts,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetNegativeMaxLimiterErr("max-parts")); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgNegativeMaxLimiter("max-parts", fmt.Sprint(invMaxParts))); err != nil {
 			return err
 		}
 
@@ -113,18 +113,21 @@ func ListParts_invalid_part_number_marker(s *S3Conf) error {
 		}
 
 		// invalid part number marker
-		err = listparts("invalid")
-		if err := checkApiErr(err, s3err.GetInvalidMaxLimiterErr("part-number-marker")); err != nil {
+		partNumberMarker := "invalid"
+		err = listparts(partNumberMarker)
+		if err := checkApiErr(err, s3err.GetInvalidArgMaxLimiter("part-number-marker", partNumberMarker)); err != nil {
 			return err
 		}
 		// out of in range part number marker
-		err = listparts("2736457823532448723")
-		if err := checkApiErr(err, s3err.GetInvalidMaxLimiterErr("part-number-marker")); err != nil {
+		partNumberMarker = "2736457823532448723"
+		err = listparts(partNumberMarker)
+		if err := checkApiErr(err, s3err.GetInvalidArgMaxLimiter("part-number-marker", partNumberMarker)); err != nil {
 			return err
 		}
 		// negative part number marker
-		err = listparts("-14")
-		if err := checkApiErr(err, s3err.GetNegativeMaxLimiterErr("part-number-marker")); err != nil {
+		partNumberMarker = "-14"
+		err = listparts(partNumberMarker)
+		if err := checkApiErr(err, s3err.GetInvalidArgNegativeMaxLimiter("part-number-marker", partNumberMarker)); err != nil {
 			return err
 		}
 

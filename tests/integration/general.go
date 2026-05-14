@@ -50,7 +50,7 @@ func RouterPutPartNumberWithoutUploadId(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingUploadId)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingUploadId, "partNumber")); err != nil {
 			return err
 		}
 
@@ -71,7 +71,7 @@ func RouterPostRoot(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetMethodNotAllowedErr(http.MethodPost, s3err.ResourceTypeService, nil)); err != nil {
 			return err
 		}
 
@@ -92,7 +92,7 @@ func RouterPostObjectWithoutQuery(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetMethodNotAllowedErr(http.MethodPost, s3err.ResourceTypeService, nil)); err != nil {
 			return err
 		}
 
@@ -117,7 +117,11 @@ func RouterPUTObjectOnlyUploadId(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetMethodNotAllowedErr(
+			http.MethodPut,
+			s3err.ResourceTypeUpload,
+			[]string{http.MethodDelete, http.MethodPost, http.MethodGet},
+		)); err != nil {
 			return err
 		}
 
@@ -178,7 +182,7 @@ func RouterCopySourceNotAllowed(s *S3Conf) error {
 						return fmt.Errorf("expected 400 status code for HEAD %s request, instead got %v", path, resp.StatusCode)
 					}
 				} else {
-					if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)); err != nil {
+					if err := checkHTTPResponseApiErr(resp, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, "bucket/object")); err != nil {
 						return fmt.Errorf("%s %s: %w", method, path, err)
 					}
 				}
@@ -226,7 +230,7 @@ func CORSMiddleware_invalid_method(s *S3Conf) error {
 		}
 
 		// create a PutObject signed request
-		req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), map[string]string{
+		req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), map[string]string{
 			"Origin":                        "http://www.example.com",
 			"Access-Control-Request-Method": "invalid_method",
 		})
@@ -267,7 +271,7 @@ func CORSMiddleware_invalid_headers(s *S3Conf) error {
 		}
 
 		// create a PutObject signed request
-		req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), map[string]string{
+		req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), map[string]string{
 			"Origin":                         "http://www.example.com",
 			"Access-Control-Request-Headers": "invalid header",
 		})
@@ -330,7 +334,7 @@ func CORSMiddleware_access_forbidden(s *S3Conf) error {
 			// origin match, method not (2nd rule)
 			{"https://any-origin.com", http.MethodPost, ""},
 		} {
-			req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), map[string]string{
+			req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), map[string]string{
 				"Origin":                         test.origin,
 				"Access-Control-Request-Headers": test.headers,
 				"Access-Control-Request-Method":  test.method,
@@ -413,7 +417,7 @@ func CORSMiddleware_access_granted(s *S3Conf) error {
 			{"something.net", http.MethodPut, "Authorization", PreflightResult{"something.net", "POST, PUT", "authorization", "Content-Disposition, Content-Encoding", "3000", "true", varyHdr, nil}},
 			{"something.net", http.MethodPost, "", PreflightResult{"something.net", "POST, PUT", "", "Content-Disposition, Content-Encoding", "3000", "true", varyHdr, nil}},
 		} {
-			req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), map[string]string{
+			req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), map[string]string{
 				"Origin":                         test.origin,
 				"Access-Control-Request-Headers": test.headers,
 				"Access-Control-Request-Method":  test.method,

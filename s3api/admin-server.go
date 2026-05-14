@@ -79,6 +79,8 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 			Format: "${time} | adm | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 		}))
 	}
+	// initialize requestId middleware
+	app.Use(middlewares.RequestIDs())
 
 	// initialize total requests cap limiter middleware
 	app.Use(middlewares.RateLimiter(server.maxRequests, nil, l))

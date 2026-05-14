@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -200,7 +201,7 @@ func PresignedAuth_malformed_creds_invalid_parts(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.MalformedCredential())
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.MalformedCredential(""))
 	})
 }
 
@@ -229,7 +230,7 @@ func PresignedAuth_creds_invalid_terminal(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.IncorrectTerminal("aws5_request"))
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.IncorrectTerminal("", "aws5_request"))
 	})
 }
 
@@ -258,7 +259,7 @@ func PresignedAuth_creds_incorrect_service(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.IncorrectService("sns"))
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.IncorrectService("", "sns"))
 	})
 }
 
@@ -321,13 +322,14 @@ func PresignedAuth_creds_invalid_date(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.InvalidDateFormat("32234Z34"))
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.InvalidDateFormat("", "32234Z34"))
 	})
 }
 
 func PresignedAuth_non_existing_access_key_id(s *S3Conf) error {
 	testName := "PresignedAuth_non_existing_access_key_id"
 	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
+		accessKeyID := "a_rarely_existing_access_key_id890asd6f807as6ydf870say"
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
@@ -335,7 +337,7 @@ func PresignedAuth_non_existing_access_key_id(s *S3Conf) error {
 			return err
 		}
 
-		uri, err := changeAuthCred(v4req.URL, "a_rarely_existing_access_key_id890asd6f807as6ydf870say", credAccess)
+		uri, err := changeAuthCred(v4req.URL, accessKeyID, credAccess)
 		if err != nil {
 			return err
 		}
@@ -350,7 +352,7 @@ func PresignedAuth_non_existing_access_key_id(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID))
+		return checkHTTPResponseApiErr(resp, s3err.GetInvalidAccessKeyIdErr(accessKeyID))
 	})
 }
 
@@ -609,6 +611,10 @@ func PresignedAuth_expired_request(s *S3Conf) error {
 		queries := urlParsed.Query()
 		queries.Set("X-Amz-Date", expDate)
 		urlParsed.RawQuery = queries.Encode()
+		xAmzExpires, err := strconv.Atoi(queries.Get("X-Amz-Expires"))
+		if err != nil {
+			return err
+		}
 
 		uri, err := changeAuthCred(urlParsed.String(), expDate[:8], credDate)
 		if err != nil {
@@ -625,7 +631,7 @@ func PresignedAuth_expired_request(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrExpiredPresignRequest)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetExpiredPresignedURLError(xAmzExpires, "", "")); err != nil {
 			return err
 		}
 

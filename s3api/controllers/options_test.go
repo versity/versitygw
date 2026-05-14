@@ -143,7 +143,7 @@ func TestS3ApiController_CORSOptions(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrCORSIsNotEnabled),
+				err: s3err.GetAccessForbiddenErr(s3err.ErrCORSIsNotEnabled, http.MethodOptions, s3err.ResourceTypeBucket),
 			},
 		},
 		{
@@ -183,7 +183,7 @@ func TestS3ApiController_CORSOptions(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrCORSForbidden),
+				err: s3err.GetAccessForbiddenErr(s3err.ErrCORSForbidden, http.MethodOptions, s3err.ResourceTypeObject),
 			},
 		},
 		{

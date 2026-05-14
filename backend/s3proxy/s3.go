@@ -179,7 +179,7 @@ func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 		input.GrantWriteACP = nil
 	}
 	if *input.Bucket == s.metaBucket {
-		return s3err.GetAPIError(s3err.ErrBucketAlreadyExists)
+		return s3err.GetBucketErr(s3err.ErrBucketAlreadyExists, *input.Bucket)
 	}
 
 	acct, ok := ctx.Value("account").(auth.Account)
@@ -196,9 +196,9 @@ func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 			}
 
 			if acl.Owner == acct.Access {
-				return s3err.GetAPIError(s3err.ErrBucketAlreadyOwnedByYou)
+				return s3err.GetBucketErr(s3err.ErrBucketAlreadyOwnedByYou, *input.Bucket)
 			}
-			return s3err.GetAPIError(s3err.ErrBucketAlreadyExists)
+			return s3err.GetBucketErr(s3err.ErrBucketAlreadyExists, *input.Bucket)
 		}
 	}
 
@@ -1645,7 +1645,7 @@ func (s *S3Proxy) PutObjectLockConfiguration(ctx context.Context, bucket string,
 }
 
 func (s *S3Proxy) GetObjectLockConfiguration(ctx context.Context, bucket string) ([]byte, error) {
-	return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+	return nil, s3err.GetBucketErr(s3err.ErrObjectLockConfigurationNotFound, bucket)
 }
 
 func (s *S3Proxy) PutObjectRetention(ctx context.Context, bucket, object, versionId string, retention []byte) error {
@@ -1769,9 +1769,9 @@ func handleMetaBucketObjectNotFoundErr(prefix metaPrefix) ([]byte, error) {
 		// If bucket acl is not found, return default acl
 		return []byte{}, nil
 	case metaPrefixPolicy:
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
+		return nil, s3err.GetBucketErr(s3err.ErrNoSuchBucketPolicy, "")
 	case metaPrefixCors:
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchCORSConfiguration)
+		return nil, s3err.GetBucketErr(s3err.ErrNoSuchCORSConfiguration, "")
 	}
 
 	return []byte{}, nil
