@@ -58,46 +58,50 @@ var (
 // ChunkReader reads from chunked upload request body, and returns
 // object data stream
 type ChunkReader struct {
-	r              io.Reader
-	signingKey     []byte
-	prevSig        string
-	parsedSig      string
-	chunkDataLeft  int64
-	trailer        checksumType
-	trailerSig     string
-	parsedChecksum string
-	stash          []byte
-	chunkHash      hash.Hash
-	checksumHash   hash.Hash
-	isEOF          bool
-	isFirstHeader  bool
-	region         string
-	date           time.Time
-	requireTrailer bool
-	chunkSizes     []int64
-	cLength        int64
-	dataRead       int64
+	r               io.Reader
+	signingKey      []byte
+	prevSig         string
+	parsedSig       string
+	canonicalString string
+	accessKey       string
+	chunkDataLeft   int64
+	trailer         checksumType
+	trailerSig      string
+	parsedChecksum  string
+	stash           []byte
+	chunkHash       hash.Hash
+	checksumHash    hash.Hash
+	isEOF           bool
+	isFirstHeader   bool
+	region          string
+	date            time.Time
+	requireTrailer  bool
+	chunkSizes      []int64
+	cLength         int64
+	dataRead        int64
 }
 
 // NewChunkReader reads from request body io.Reader and parses out the
 // chunk metadata in stream. The headers are validated for proper signatures.
 // Reading from the chunk reader will read only the object data stream
 // without the chunk headers/trailers.
-func NewSignedChunkReader(r io.Reader, authdata AuthData, secret string, date time.Time, chType checksumType, requireTrailer bool, cLength int64) (io.Reader, error) {
+func NewSignedChunkReader(r io.Reader, authdata AuthData, canonicalString, secret string, date time.Time, chType checksumType, requireTrailer bool, cLength int64) (io.Reader, error) {
 	chRdr := &ChunkReader{
 		r:          r,
 		signingKey: getSigningKey(secret, authdata.Region, date),
 		// the authdata.Signature is validated in the auth-reader,
 		// so we can use that here without any other checks
-		prevSig:        authdata.Signature,
-		chunkHash:      sha256.New(),
-		isFirstHeader:  true,
-		date:           date,
-		region:         authdata.Region,
-		trailer:        chType,
-		requireTrailer: requireTrailer,
-		chunkSizes:     []int64{},
-		cLength:        cLength,
+		prevSig:         authdata.Signature,
+		canonicalString: canonicalString,
+		accessKey:       authdata.Access,
+		chunkHash:       sha256.New(),
+		isFirstHeader:   true,
+		date:            date,
+		region:          authdata.Region,
+		trailer:         chType,
+		requireTrailer:  requireTrailer,
+		chunkSizes:      []int64{},
+		cLength:         cLength,
 	}
 
 	if chType != "" {
@@ -224,7 +228,7 @@ func (cr *ChunkReader) verifyTrailerSignature() error {
 
 	if sig != cr.trailerSig {
 		debuglogger.Logf("incorrect trailing signature: (calculated): %v, (got): %v", sig, cr.trailerSig)
-		return s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)
+		return s3err.GetSignatureDoesNotMatchErr(cr.accessKey, strToSign, cr.trailerSig, HexBytes(strToSign), cr.canonicalString, HexBytes(cr.canonicalString))
 	}
 
 	return nil
@@ -251,7 +255,7 @@ func (cr *ChunkReader) checkSignature() error {
 
 	if cr.prevSig != cr.parsedSig {
 		debuglogger.Logf("incorrect signature: (calculated): %v, (got) %v", cr.prevSig, cr.parsedSig)
-		return s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)
+		return s3err.GetSignatureDoesNotMatchErr(cr.accessKey, sigstr, cr.parsedSig, HexBytes(sigstr), cr.canonicalString, HexBytes(cr.canonicalString))
 	}
 	cr.parsedSig = ""
 	return nil
@@ -327,7 +331,7 @@ func (cr *ChunkReader) parseAndRemoveChunkInfo(p []byte) (int, error) {
 		n, err := cr.parseAndRemoveChunkInfo(p[chunkSize:n])
 		if (chunkSize + int64(n)) > math.MaxInt {
 			debuglogger.Logf("exceeding the limit of maximum integer allowed: (value): %v, (limit): %v", chunkSize+int64(n), math.MaxInt)
-			return 0, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)
+			return 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
 		}
 		return n + int(chunkSize), err
 	}
@@ -541,7 +545,7 @@ func (cr *ChunkReader) parseChunkSize(rdr *bufio.Reader, header []byte) (int64, 
 	}
 
 	if !cr.isValidChunkSize(chunkSize) {
-		return 0, s3err.GetAPIError(s3err.ErrInvalidChunkSize)
+		return 0, s3err.GetInvalidChunkSizeErr(len(cr.chunkSizes)+1, chunkSize)
 	}
 
 	return chunkSize, nil

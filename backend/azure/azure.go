@@ -230,9 +230,9 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 		}
 
 		if acl.Owner == acct.Access {
-			return s3err.GetAPIError(s3err.ErrBucketAlreadyOwnedByYou)
+			return s3err.GetBucketErr(s3err.ErrBucketAlreadyOwnedByYou, *input.Bucket)
 		}
-		return s3err.GetAPIError(s3err.ErrBucketAlreadyExists)
+		return s3err.GetBucketErr(s3err.ErrBucketAlreadyExists, *input.Bucket)
 	}
 	return azureErrToS3Err(err)
 }
@@ -322,7 +322,6 @@ func (az *Azure) DeleteBucket(ctx context.Context, bucket string) error {
 			}
 		}
 	}
-
 	_, err := az.client.DeleteContainer(ctx, bucket, nil)
 	return azureErrToS3Err(err)
 }
@@ -338,7 +337,7 @@ func (az *Azure) GetBucketOwnershipControls(ctx context.Context, bucket string) 
 		return ownship, err
 	}
 	if len(ownership) == 0 {
-		return ownship, s3err.GetAPIError(s3err.ErrOwnershipControlsNotFound)
+		return ownship, s3err.GetBucketErr(s3err.ErrOwnershipControlsNotFound, bucket)
 	}
 
 	return types.ObjectOwnership(ownership), nil
@@ -451,7 +450,7 @@ func (az *Azure) GetBucketTagging(ctx context.Context, bucket string) (map[strin
 	}
 
 	if len(tagsJson) == 0 {
-		return nil, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)
+		return nil, s3err.GetBucketErr(s3err.ErrBucketTaggingNotFound, bucket)
 	}
 
 	var tags map[string]string
@@ -514,7 +513,7 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 			totalParts := int32(len(mpMeta.Parts))
 			partsCount = &totalParts
 			if partNum > totalParts {
-				return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
+				return nil, s3err.GetInvalidPartNumberRangeErr(totalParts, partNum)
 			}
 
 			var startOffset int64
@@ -534,7 +533,7 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 				},
 			}
 		} else if *input.PartNumber > 1 {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
+			return nil, s3err.GetInvalidPartNumberRangeErr(1, *input.PartNumber)
 		} else {
 			// partNumber=1 on a non-multipart object: fall through and serve the
 			// full object without a range (opts remains nil)
@@ -636,7 +635,7 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 			totalParts := int32(len(mpMeta.Parts))
 			partsCount = &totalParts
 			if partNum > totalParts {
-				return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
+				return nil, s3err.GetInvalidPartNumberRangeErr(totalParts, partNum)
 			}
 
 			var startOffset int64
@@ -646,7 +645,7 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 			length = mpMeta.Parts[partNum-1] - startOffset
 			contentRange = backend.GetPtrFromString(fmt.Sprintf("bytes %d-%d/%d", startOffset, startOffset+length-1, size))
 		} else if *input.PartNumber > 1 {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
+			return nil, s3err.GetInvalidPartNumberRangeErr(1, *input.PartNumber)
 		} else {
 			// partNumber=1 on a non-multipart object: return full object size,
 			// no Content-Range, no PartsCount.
@@ -1093,12 +1092,14 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 		if err == nil {
 			delResult = append(delResult, types.DeletedObject{Key: obj.Key})
 		} else {
-			serr, ok := err.(s3err.APIError)
+			serr, ok := err.(s3err.S3Error)
 			if ok {
+				code := serr.BaseError().Code
+				message := serr.BaseError().Description
 				errs = append(errs, types.Error{
 					Key:     obj.Key,
-					Code:    &serr.Code,
-					Message: &serr.Description,
+					Code:    &code,
+					Message: &message,
 				})
 			} else {
 				errs = append(errs, types.Error{
@@ -1543,7 +1544,7 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 		partNumberMarker, err = strconv.Atoi(*input.PartNumberMarker)
 		if err != nil {
 			return s3response.ListPartsResult{},
-				s3err.GetInvalidMaxLimiterErr("part-number-marker")
+				s3err.GetInvalidArgMaxLimiter("part-number-marker", *input.PartNumberMarker)
 		}
 	}
 	if input.MaxParts != nil {
@@ -1726,7 +1727,7 @@ func (az *Azure) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultip
 		}
 
 		if resp.LastModified != nil && resp.LastModified.Unix() != input.IfMatchInitiatedTime.Unix() {
-			return s3err.GetAPIError(s3err.ErrPreconditionFailed)
+			return s3err.GetPreconditionFailedErr(s3err.ConditionIfMatchInitiatedTime)
 		}
 	}
 	_, err := az.client.DeleteBlob(ctx, *input.Bucket, tmpPath, nil)
@@ -1823,7 +1824,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 	}
 
 	if len(blockList.UncommittedBlocks)+len(zbParts) != len(input.MultipartUpload.Parts) {
-		return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
+		return res, "", s3err.GetInvalidPartErr(*input.UploadId, 0, "")
 	}
 
 	uncommittedBlocks := map[int32]*blockblob.Block{}
@@ -1844,10 +1845,13 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 	last := len(input.MultipartUpload.Parts) - 1
 	for i, part := range input.MultipartUpload.Parts {
 		if part.PartNumber == nil {
-			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
+			return res, "", s3err.GetAPIError(s3err.ErrMalformedXML)
+		}
+		if part.ETag == nil {
+			return res, "", s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
 		if *part.PartNumber < 1 {
-			return res, "", s3err.GetAPIError(s3err.ErrInvalidCompleteMpPartNumber)
+			return res, "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCompleteMpPartNumber, fmt.Sprint(*part.PartNumber))
 		}
 		if *part.PartNumber <= partNumber {
 			return res, "", s3err.GetAPIError(s3err.ErrInvalidPartOrder)
@@ -1860,26 +1864,26 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 			if zbPartsMap[*part.PartNumber] {
 				expectedETag := blockIDInt32ToBase64(*part.PartNumber)
 				if getString(part.ETag) != expectedETag {
-					return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
+					return res, "", s3err.GetInvalidPartErr(*input.UploadId, *part.PartNumber, expectedETag)
 				}
 				// Non-last zero-byte parts violate the minimum part size.
 				if i < last {
-					return res, "", s3err.GetAPIError(s3err.ErrEntityTooSmall)
+					return res, "", s3err.GetEntityTooSmallErr(0, backend.MinPartSize)
 				}
 				// Zero-byte parts contribute no data; skip adding to blockIds.
 				partSizes = append(partSizes, totalSize)
 				continue
 			}
-			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
+			return res, "", s3err.GetInvalidPartErr(*input.UploadId, *part.PartNumber, "")
 		}
 
 		if *part.ETag != *block.Name {
-			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
+			return res, "", s3err.GetInvalidPartErr(*input.UploadId, *part.PartNumber, getString(part.ETag))
 		}
 		// all parts except the last need to be greater, than
 		// the minimum allowed size (5 Mib)
 		if i < last && *block.Size < backend.MinPartSize {
-			return res, "", s3err.GetAPIError(s3err.ErrEntityTooSmall)
+			return res, "", s3err.GetEntityTooSmallErr(*block.Size, backend.MinPartSize)
 		}
 		totalSize += *block.Size
 		partSizes = append(partSizes, totalSize)
@@ -1958,7 +1962,7 @@ func (az *Azure) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, er
 		return nil, err
 	}
 	if len(p) == 0 {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
+		return nil, s3err.GetBucketErr(s3err.ErrNoSuchBucketPolicy, bucket)
 	}
 	return p, nil
 }
@@ -1981,7 +1985,7 @@ func (az *Azure) GetBucketCors(ctx context.Context, bucket string) ([]byte, erro
 		return nil, err
 	}
 	if len(p) == 0 {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchCORSConfiguration)
+		return nil, s3err.GetBucketErr(s3err.ErrNoSuchCORSConfiguration, bucket)
 	}
 	return p, nil
 }
@@ -2001,7 +2005,7 @@ func (az *Azure) GetObjectLockConfiguration(ctx context.Context, bucket string) 
 	}
 
 	if len(cfg) == 0 {
-		return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+		return nil, s3err.GetBucketErr(s3err.ErrObjectLockConfigurationNotFound, bucket)
 	}
 
 	return cfg, nil
@@ -2538,7 +2542,7 @@ func (az *Azure) checkIfMpExists(ctx context.Context, bucket, obj, uploadId stri
 
 	_, err = blobClient.GetProperties(ctx, nil)
 	if err != nil {
-		return s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		return s3err.GetNoSuchUploadErr(uploadId)
 	}
 
 	return nil

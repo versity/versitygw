@@ -16,7 +16,7 @@ package utils
 
 import "testing"
 
-func TestIsValidSh256PayloadHeader(t *testing.T) {
+func TestIsValidSha256PayloadHeader(t *testing.T) {
 	tests := []struct {
 		name string
 		hash string
@@ -35,8 +35,8 @@ func TestIsValidSh256PayloadHeader(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsValidSh256PayloadHeader(tt.hash); got != tt.want {
-				t.Errorf("IsValidSh256PayloadHeader() = %v, want %v", got, tt.want)
+			if got := IsValidSha256PayloadHeader(tt.hash); got != tt.want {
+				t.Errorf("IsValidSha256PayloadHeader() = %v, want %v", got, tt.want)
 			}
 		})
 	}

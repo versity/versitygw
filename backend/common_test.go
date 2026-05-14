@@ -115,7 +115,7 @@ func TestParseCopySource(t *testing.T) {
 		wantObject       string
 		wantVersionId    string
 		wantErr          bool
-		wantErrCode      s3err.ErrorCode
+		wantErrValue     error
 	}{
 		{
 			name:             "simple path",
@@ -212,7 +212,7 @@ func TestParseCopySource(t *testing.T) {
 			wantObject:       "",
 			wantVersionId:    "",
 			wantErr:          true,
-			wantErrCode:      s3err.ErrInvalidCopySourceEncoding,
+			wantErrValue:     s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "mybucket/object%"),
 		},
 		{
 			name:             "invalid URL encoding - invalid hex",
@@ -221,7 +221,7 @@ func TestParseCopySource(t *testing.T) {
 			wantObject:       "",
 			wantVersionId:    "",
 			wantErr:          true,
-			wantErrCode:      s3err.ErrInvalidCopySourceEncoding,
+			wantErrValue:     s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "mybucket/object%ZZ"),
 		},
 		{
 			name:             "missing object",
@@ -230,7 +230,7 @@ func TestParseCopySource(t *testing.T) {
 			wantObject:       "",
 			wantVersionId:    "",
 			wantErr:          true,
-			wantErrCode:      s3err.ErrInvalidCopySourceBucket,
+			wantErrValue:     s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "mybucket"),
 		},
 	}
 
@@ -243,8 +243,8 @@ func TestParseCopySource(t *testing.T) {
 					t.Errorf("ParseCopySource() error = nil, wantErr %v", tt.wantErr)
 					return
 				}
-				if !errors.Is(err, s3err.GetAPIError(tt.wantErrCode)) {
-					t.Errorf("ParseCopySource() error = %v, want error code %v", err, tt.wantErrCode)
+				if !errors.Is(err, tt.wantErrValue) {
+					t.Errorf("ParseCopySource() error = %v, want error %v", err, tt.wantErrValue)
 				}
 				return
 			}

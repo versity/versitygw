@@ -135,7 +135,7 @@ func CopyObject_copy_to_itself_invalid_directive(s *S3Conf) error {
 			MetadataDirective: types.MetadataDirective("invalid"),
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMetadataDirective)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgMetadataDirective, "invalid")); err != nil {
 			return err
 		}
 		return nil
@@ -158,7 +158,7 @@ func CopyObject_invalid_tagging_directive(s *S3Conf) error {
 			TaggingDirective: types.TaggingDirective("invalid"),
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTaggingDirective)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgTaggingDirective, "invalid")); err != nil {
 			return err
 		}
 		return nil
@@ -246,7 +246,7 @@ func CopyObject_should_replace_tagging(s *S3Conf) error {
 					return err
 				}
 				switch eErr := expectedErr.(type) {
-				case s3err.APIError:
+				case s3err.S3Error:
 					return checkApiErr(err, eErr)
 				default:
 					return fmt.Errorf("invalid err provided: %w", expectedErr)
@@ -299,10 +299,10 @@ func CopyObject_should_replace_tagging(s *S3Conf) error {
 			{"key1=val1&key2=val2", map[string]string{"key1": "val1", "key2": "val2"}, nil},
 			{"key@=val@", map[string]string{"key@": "val@"}, nil},
 			// invalid url-encoded
-			{"=", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
-			{"key%", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			{"=", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "")},
+			{"key%", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "")},
 			// duplicate keys
-			{"key=val&key=val", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			{"key=val&key=val", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "")},
 			// invalid tag keys
 			{"key?=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key(=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
@@ -520,87 +520,87 @@ func CopyObject_invalid_copy_source(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		for _, test := range []struct {
 			copySource  string
-			expectedErr s3err.APIError
+			expectedErr s3err.S3Error
 		}{
 			// invalid encoding
 			{
 				// Invalid hex digits
 				copySource:  "bucket/%ZZ",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "bucket/%ZZ"),
 			},
 			{
 				// Ends with incomplete escape
 				copySource:  "100%/foo/bar/baz",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "100%/foo/bar/baz"),
 			},
 			{
 				// Only one digit after %
 				copySource:  "bucket/%A/bar",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "bucket/%A/bar"),
 			},
 			{
 				// 'G' is not a hex digit
 				copySource:  "bucket/%G1/",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "bucket/%G1/"),
 			},
 			{
 				// Just a single percent sign
 				copySource:  "%",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%"),
 			},
 			{
 				// Only one hex digit
 				copySource:  "bucket/%1",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "bucket/%1"),
 			},
 			{
 				// Incomplete multibyte UTF-8
 				copySource:  "bucket/%C3%",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "bucket/%C3%"),
 			},
 			// invalid bucket name
 			{
 				// ip v4 address
 				copySource:  "192.168.1.1/foo",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "192.168.1.1/foo"),
 			},
 			{
 				// ip v6 address
 				copySource:  "2001:0db8:85a3:0000:0000:8a2e:0370:7334/something",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "2001:0db8:85a3:0000:0000:8a2e:0370:7334/something"),
 			},
 			{
 				// some special chars
 				copySource:  "my-buc@k&()t/obj",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "my-buc@k&()t/obj"),
 			},
 			// invalid object key
 			{
 				// object is missing
 				copySource:  "bucket",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, ""),
 			},
 			{
 				// object is missing
 				copySource:  "bucket/",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, ""),
 			},
 			// directory navigation object keys
 			{
 				copySource:  "bucket/.",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "."),
 			},
 			{
 				copySource:  "bucket/..",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, ".."),
 			},
 			{
 				copySource:  "bucket/../",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "../"),
 			},
 			{
 				copySource:  "bucket/foo/ba/../../../r/baz",
-				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "foo/ba/../../../r/baz"),
 			},
 		} {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -876,7 +876,7 @@ func CopyObject_invalid_legal_hold(s *S3Conf) error {
 			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatus("invalid_status"),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidLegalHoldStatus))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, "invalid_status"))
 	}, withLock())
 }
 
@@ -902,7 +902,7 @@ func CopyObject_invalid_object_lock_mode(s *S3Conf) error {
 			ObjectLockMode:            types.ObjectLockMode("invalid_mode"),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectLockMode))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, "invalid_mode"))
 	}, withLock())
 }
 

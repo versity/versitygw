@@ -90,7 +90,7 @@ func ListObjectVersions_negative_max_keys(s *S3Conf) error {
 			MaxKeys: getPtr(int32(-123)),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNegativeMaxKeys))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgNegativeMaxKeys, "-123"))
 	}, withLock())
 }
 

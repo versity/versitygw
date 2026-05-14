@@ -512,6 +512,6 @@ func ValidateCannedACL(acl types.BucketCannedACL) error {
 		return nil
 	default:
 		debuglogger.Logf("invalid bucket canned acl: %v", acl)
-		return s3err.GetAPIError(s3err.ErrInvalidArgument)
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgCannedAcl, string(acl))
 	}
 }

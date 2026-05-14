@@ -226,13 +226,13 @@ func ListBuckets_invalid_max_buckets(s *S3Conf) error {
 
 		invMaxBuckets := int32(-3)
 		err := listBuckets(invMaxBuckets)
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxBuckets)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgMaxBuckets, fmt.Sprint(invMaxBuckets))); err != nil {
 			return err
 		}
 
 		invMaxBuckets = 2000000
 		err = listBuckets(invMaxBuckets)
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxBuckets)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgMaxBuckets, fmt.Sprint(invMaxBuckets))); err != nil {
 			return err
 		}
 

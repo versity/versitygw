@@ -663,7 +663,7 @@ func TestS3ApiController_ListObjectVersions(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetInvalidMaxLimiterErr(utils.LimiterTypeMaxKeys),
+				err: s3err.GetInvalidArgMaxLimiter(string(utils.LimiterTypeMaxKeys), "invalid"),
 			},
 		},
 		{
@@ -988,7 +988,7 @@ func TestS3ApiController_ListMultipartUploads(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetInvalidMaxLimiterErr(utils.LimiterTypeMaxUploads),
+				err: s3err.GetInvalidArgMaxLimiter(string(utils.LimiterTypeMaxUploads), "invalid"),
 			},
 		},
 		{
@@ -1095,7 +1095,7 @@ func TestS3ApiController_ListObjectsV2(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetNegativeMaxLimiterErr(utils.LimiterTypeMaxKeys),
+				err: s3err.GetInvalidArgNegativeMaxLimiter(string(utils.LimiterTypeMaxKeys), "-1"),
 			},
 		},
 		{
@@ -1204,7 +1204,7 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetInvalidMaxLimiterErr(utils.LimiterTypeMaxKeys),
+				err: s3err.GetInvalidArgMaxLimiter(string(utils.LimiterTypeMaxKeys), "bla"),
 			},
 		},
 		{

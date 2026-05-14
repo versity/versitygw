@@ -43,7 +43,7 @@ func ApplyBucketCORSPreflightFallback(be backend.Backend, fallbackOrigin string)
 		bucket := ctx.Params("bucket")
 		_, err := be.GetBucketCors(ctx.Context(), bucket)
 		if err != nil {
-			if s3Err, ok := err.(s3err.APIError); ok && (s3Err.Code == "NoSuchCORSConfiguration" || s3Err.Code == "NoSuchBucket") {
+			if s3Err, ok := err.(s3err.S3Error); ok && (s3Err.BaseError().Code == "NoSuchCORSConfiguration" || s3Err.BaseError().Code == "NoSuchBucket") {
 				if len(ctx.Response().Header.Peek("Access-Control-Allow-Origin")) == 0 {
 					ctx.Response().Header.Add("Access-Control-Allow-Origin", fallbackOrigin)
 				}

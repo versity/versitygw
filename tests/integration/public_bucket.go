@@ -2475,13 +2475,14 @@ func PublicBucket_incorrect_sha256_hash(s *S3Conf) error {
 		// in anonymous requests the sha256 hash validity is not checked
 		// so for any invalid values, the server calculates the hash
 		// and compares with the provided one
-		req.Header.Add("x-amz-content-sha256", "incorrect_hash")
+		const incorrectPayloadHash = "incorrect_hash"
+		req.Header.Add("x-amz-content-sha256", incorrectPayloadHash)
 
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch))
+		return checkHTTPResponseApiErr(resp, s3err.GetContentSHA256MismatchErr(incorrectPayloadHash, emptySHA256Hash))
 	})
 }

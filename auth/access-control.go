@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -44,11 +45,11 @@ func VerifyObjectCopyAccess(ctx context.Context, be backend.Backend, copySource 
 	// Callers are expected to have already stripped any leading '/'.
 	decodedSrc, err := url.QueryUnescape(copySource)
 	if err != nil {
-		return s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, copySource)
 	}
 	srcBucket, srcObject, found := strings.Cut(decodedSrc, "/")
 	if !found {
-		return s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, copySource)
 	}
 
 	// Get source bucket ACL
@@ -123,13 +124,6 @@ func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) e
 	return nil
 }
 
-// Detects if the action is policy related
-// e.g.
-// 'GetBucketPolicy', 'PutBucketPolicy'
-func isPolicyAction(action Action) bool {
-	return action == GetBucketPolicyAction || action == PutBucketPolicyAction
-}
-
 // VerifyPublicAccess checks if the bucket is publically accessible by ACL or Policy
 func VerifyPublicAccess(ctx context.Context, be backend.Backend, action Action, permission Permission, bucket, object string) error {
 	// ACL disabled
@@ -142,8 +136,13 @@ func VerifyPublicAccess(ctx context.Context, be backend.Backend, action Action, 
 		if err == nil {
 			// if ACLs are disabled, and the bucket grants public access,
 			// policy actions should return 'MethodNotAllowed'
-			if isPolicyAction(action) {
-				return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+			switch action {
+			case GetBucketPolicyAction:
+				return s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeBucketPolicy, nil)
+			case PutBucketPolicyAction:
+				return s3err.GetMethodNotAllowedErr(http.MethodPut, s3err.ResourceTypeBucketPolicy, nil)
+			case DeleteBucketPolicyAction:
+				return s3err.GetMethodNotAllowedErr(http.MethodDelete, s3err.ResourceTypeBucketPolicy, nil)
 			}
 
 			return nil

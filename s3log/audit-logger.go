@@ -16,10 +16,7 @@ package s3log
 
 import (
 	"crypto/tls"
-	"encoding/hex"
 	"fmt"
-	"math/rand"
-	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -78,6 +75,7 @@ type AdminLogFields struct {
 	RemoteIP           string
 	Requester          string
 	RequestID          string
+	HostID             string
 	Operation          string
 	RequestURI         string
 	HttpStatus         int
@@ -133,17 +131,6 @@ func InitLogger(cfg *LogConfig) (*Loggers, error) {
 	}
 
 	return loggers, nil
-}
-
-func genID() string {
-	src := rand.New(rand.NewSource(time.Now().UnixNano()))
-	b := make([]byte, 8)
-
-	if _, err := src.Read(b); err != nil {
-		panic(err)
-	}
-
-	return strings.ToUpper(hex.EncodeToString(b))
 }
 
 func getTLSVersionName(version uint16) string {
