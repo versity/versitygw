@@ -1500,7 +1500,21 @@ func areMapsSame(mp1, mp2 map[string]string) bool {
 	return true
 }
 
-func compareBuckets(list1 []types.Bucket, list2 []types.Bucket) bool {
+func compareBuckets(list1 []types.Bucket, list2 []types.Bucket, ignore ...string) bool {
+	if len(ignore) > 0 {
+		ignoreSet := make(map[string]struct{}, len(ignore))
+		for _, name := range ignore {
+			ignoreSet[name] = struct{}{}
+		}
+		filtered := make([]types.Bucket, 0, len(list1))
+		for _, b := range list1 {
+			if _, skip := ignoreSet[*b.Name]; !skip {
+				filtered = append(filtered, b)
+			}
+		}
+		list1 = filtered
+	}
+
 	if len(list1) != len(list2) {
 		return false
 	}
