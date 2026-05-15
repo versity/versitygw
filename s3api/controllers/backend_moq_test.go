@@ -56,6 +56,9 @@ var _ backend.Backend = &BackendMock{}
 //			DeleteBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) error {
 //				panic("mock out the DeleteBucketTagging method")
 //			},
+//			DeleteBucketWebsiteFunc: func(contextMoqParam context.Context, bucket string) error {
+//				panic("mock out the DeleteBucketWebsite method")
+//			},
 //			DeleteObjectFunc: func(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
 //				panic("mock out the DeleteObject method")
 //			},
@@ -82,6 +85,9 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //			GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
 //				panic("mock out the GetBucketVersioning method")
+//			},
+//			GetBucketWebsiteFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+//				panic("mock out the GetBucketWebsite method")
 //			},
 //			GetObjectFunc: func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 //				panic("mock out the GetObject method")
@@ -148,6 +154,9 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //			PutBucketVersioningFunc: func(contextMoqParam context.Context, bucket string, status types.BucketVersioningStatus) error {
 //				panic("mock out the PutBucketVersioning method")
+//			},
+//			PutBucketWebsiteFunc: func(contextMoqParam context.Context, bucket string, website []byte) error {
+//				panic("mock out the PutBucketWebsite method")
 //			},
 //			PutObjectFunc: func(contextMoqParam context.Context, putObjectInput s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 //				panic("mock out the PutObject method")
@@ -225,6 +234,9 @@ type BackendMock struct {
 	// DeleteBucketTaggingFunc mocks the DeleteBucketTagging method.
 	DeleteBucketTaggingFunc func(contextMoqParam context.Context, bucket string) error
 
+	// DeleteBucketWebsiteFunc mocks the DeleteBucketWebsite method.
+	DeleteBucketWebsiteFunc func(contextMoqParam context.Context, bucket string) error
+
 	// DeleteObjectFunc mocks the DeleteObject method.
 	DeleteObjectFunc func(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error)
 
@@ -251,6 +263,9 @@ type BackendMock struct {
 
 	// GetBucketVersioningFunc mocks the GetBucketVersioning method.
 	GetBucketVersioningFunc func(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error)
+
+	// GetBucketWebsiteFunc mocks the GetBucketWebsite method.
+	GetBucketWebsiteFunc func(contextMoqParam context.Context, bucket string) ([]byte, error)
 
 	// GetObjectFunc mocks the GetObject method.
 	GetObjectFunc func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput) (*s3.GetObjectOutput, error)
@@ -317,6 +332,9 @@ type BackendMock struct {
 
 	// PutBucketVersioningFunc mocks the PutBucketVersioning method.
 	PutBucketVersioningFunc func(contextMoqParam context.Context, bucket string, status types.BucketVersioningStatus) error
+
+	// PutBucketWebsiteFunc mocks the PutBucketWebsite method.
+	PutBucketWebsiteFunc func(contextMoqParam context.Context, bucket string, website []byte) error
 
 	// PutObjectFunc mocks the PutObject method.
 	PutObjectFunc func(contextMoqParam context.Context, putObjectInput s3response.PutObjectInput) (s3response.PutObjectOutput, error)
@@ -437,6 +455,13 @@ type BackendMock struct {
 			// Bucket is the bucket argument value.
 			Bucket string
 		}
+		// DeleteBucketWebsite holds details about calls to the DeleteBucketWebsite method.
+		DeleteBucketWebsite []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
+		}
 		// DeleteObject holds details about calls to the DeleteObject method.
 		DeleteObject []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -499,6 +524,13 @@ type BackendMock struct {
 		}
 		// GetBucketVersioning holds details about calls to the GetBucketVersioning method.
 		GetBucketVersioning []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
+		}
+		// GetBucketWebsite holds details about calls to the GetBucketWebsite method.
+		GetBucketWebsite []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
 			// Bucket is the bucket argument value.
@@ -680,6 +712,15 @@ type BackendMock struct {
 			// Status is the status argument value.
 			Status types.BucketVersioningStatus
 		}
+		// PutBucketWebsite holds details about calls to the PutBucketWebsite method.
+		PutBucketWebsite []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
+			// Website is the website argument value.
+			Website []byte
+		}
 		// PutObject holds details about calls to the PutObject method.
 		PutObject []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -788,6 +829,7 @@ type BackendMock struct {
 	lockDeleteBucketOwnershipControls sync.RWMutex
 	lockDeleteBucketPolicy            sync.RWMutex
 	lockDeleteBucketTagging           sync.RWMutex
+	lockDeleteBucketWebsite           sync.RWMutex
 	lockDeleteObject                  sync.RWMutex
 	lockDeleteObjectTagging           sync.RWMutex
 	lockDeleteObjects                 sync.RWMutex
@@ -797,6 +839,7 @@ type BackendMock struct {
 	lockGetBucketPolicy               sync.RWMutex
 	lockGetBucketTagging              sync.RWMutex
 	lockGetBucketVersioning           sync.RWMutex
+	lockGetBucketWebsite              sync.RWMutex
 	lockGetObject                     sync.RWMutex
 	lockGetObjectAcl                  sync.RWMutex
 	lockGetObjectAttributes           sync.RWMutex
@@ -819,6 +862,7 @@ type BackendMock struct {
 	lockPutBucketPolicy               sync.RWMutex
 	lockPutBucketTagging              sync.RWMutex
 	lockPutBucketVersioning           sync.RWMutex
+	lockPutBucketWebsite              sync.RWMutex
 	lockPutObject                     sync.RWMutex
 	lockPutObjectAcl                  sync.RWMutex
 	lockPutObjectLegalHold            sync.RWMutex
@@ -1237,6 +1281,42 @@ func (mock *BackendMock) DeleteBucketTaggingCalls() []struct {
 	return calls
 }
 
+// DeleteBucketWebsite calls DeleteBucketWebsiteFunc.
+func (mock *BackendMock) DeleteBucketWebsite(contextMoqParam context.Context, bucket string) error {
+	if mock.DeleteBucketWebsiteFunc == nil {
+		panic("BackendMock.DeleteBucketWebsiteFunc: method is nil but Backend.DeleteBucketWebsite was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+	}
+	mock.lockDeleteBucketWebsite.Lock()
+	mock.calls.DeleteBucketWebsite = append(mock.calls.DeleteBucketWebsite, callInfo)
+	mock.lockDeleteBucketWebsite.Unlock()
+	return mock.DeleteBucketWebsiteFunc(contextMoqParam, bucket)
+}
+
+// DeleteBucketWebsiteCalls gets all the calls that were made to DeleteBucketWebsite.
+// Check the length with:
+//
+//	len(mockedBackend.DeleteBucketWebsiteCalls())
+func (mock *BackendMock) DeleteBucketWebsiteCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}
+	mock.lockDeleteBucketWebsite.RLock()
+	calls = mock.calls.DeleteBucketWebsite
+	mock.lockDeleteBucketWebsite.RUnlock()
+	return calls
+}
+
 // DeleteObject calls DeleteObjectFunc.
 func (mock *BackendMock) DeleteObject(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
 	if mock.DeleteObjectFunc == nil {
@@ -1566,6 +1646,42 @@ func (mock *BackendMock) GetBucketVersioningCalls() []struct {
 	mock.lockGetBucketVersioning.RLock()
 	calls = mock.calls.GetBucketVersioning
 	mock.lockGetBucketVersioning.RUnlock()
+	return calls
+}
+
+// GetBucketWebsite calls GetBucketWebsiteFunc.
+func (mock *BackendMock) GetBucketWebsite(contextMoqParam context.Context, bucket string) ([]byte, error) {
+	if mock.GetBucketWebsiteFunc == nil {
+		panic("BackendMock.GetBucketWebsiteFunc: method is nil but Backend.GetBucketWebsite was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+	}
+	mock.lockGetBucketWebsite.Lock()
+	mock.calls.GetBucketWebsite = append(mock.calls.GetBucketWebsite, callInfo)
+	mock.lockGetBucketWebsite.Unlock()
+	return mock.GetBucketWebsiteFunc(contextMoqParam, bucket)
+}
+
+// GetBucketWebsiteCalls gets all the calls that were made to GetBucketWebsite.
+// Check the length with:
+//
+//	len(mockedBackend.GetBucketWebsiteCalls())
+func (mock *BackendMock) GetBucketWebsiteCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}
+	mock.lockGetBucketWebsite.RLock()
+	calls = mock.calls.GetBucketWebsite
+	mock.lockGetBucketWebsite.RUnlock()
 	return calls
 }
 
@@ -2402,6 +2518,46 @@ func (mock *BackendMock) PutBucketVersioningCalls() []struct {
 	mock.lockPutBucketVersioning.RLock()
 	calls = mock.calls.PutBucketVersioning
 	mock.lockPutBucketVersioning.RUnlock()
+	return calls
+}
+
+// PutBucketWebsite calls PutBucketWebsiteFunc.
+func (mock *BackendMock) PutBucketWebsite(contextMoqParam context.Context, bucket string, website []byte) error {
+	if mock.PutBucketWebsiteFunc == nil {
+		panic("BackendMock.PutBucketWebsiteFunc: method is nil but Backend.PutBucketWebsite was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+		Website         []byte
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+		Website:         website,
+	}
+	mock.lockPutBucketWebsite.Lock()
+	mock.calls.PutBucketWebsite = append(mock.calls.PutBucketWebsite, callInfo)
+	mock.lockPutBucketWebsite.Unlock()
+	return mock.PutBucketWebsiteFunc(contextMoqParam, bucket, website)
+}
+
+// PutBucketWebsiteCalls gets all the calls that were made to PutBucketWebsite.
+// Check the length with:
+//
+//	len(mockedBackend.PutBucketWebsiteCalls())
+func (mock *BackendMock) PutBucketWebsiteCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+	Website         []byte
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+		Website         []byte
+	}
+	mock.lockPutBucketWebsite.RLock()
+	calls = mock.calls.PutBucketWebsite
+	mock.lockPutBucketWebsite.RUnlock()
 	return calls
 }
 

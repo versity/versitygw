@@ -214,7 +214,7 @@ func TestValidatePortConflicts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePortConflicts(tt.ports, tt.admPorts, tt.webuiPorts)
+			err := validatePortConflicts(tt.ports, tt.admPorts, tt.webuiPorts, nil)
 			if tt.expectError && err == nil {
 				t.Errorf("%s: expected error but got none", tt.description)
 			}

@@ -129,6 +129,17 @@ spec:
               value: {{ .Values.webui.adminGateways | join "," | quote }}
             {{- end }}
             {{- end }}
+            # Website Hosting
+            {{- if .Values.website.enabled }}
+            - name: VGW_WEBSITE_PORT
+              value: ":{{ .Values.website.port }}"
+            - name: VGW_WEBSITE_DOMAIN
+              value: {{ .Values.website.domain | quote }}
+            {{- if .Values.website.noTls }}
+            - name: VGW_WEBSITE_NO_TLS
+              value: "true"
+            {{- end }}
+            {{- end }}
             {{- if .Values.iam.enabled }}
             # IAM settings
             {{- if eq .Values.iam.type "internal" }}
@@ -171,6 +182,11 @@ spec:
             {{- if .Values.webui.enabled }}
             - name: webui
               containerPort: {{ .Values.webui.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if .Values.website.enabled }}
+            - name: website
+              containerPort: {{ .Values.website.port }}
               protocol: TCP
             {{- end }}
           readinessProbe:
