@@ -15,11 +15,97 @@
 package backend
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/versity/versitygw/s3err"
 )
+
+func TestMpUploadMetadataRawGzipRoundTrip(t *testing.T) {
+	want := MpUploadMetadata{
+		UploadID: "upload-id",
+		Parts:    []int64{5, 12, 12},
+	}
+
+	stored, err := MarshalMpUploadMetadata(want, false)
+	if err != nil {
+		t.Fatalf("MarshalMpUploadMetadata: %v", err)
+	}
+	if len(stored) < 2 || stored[0] != 0x1f || stored[1] != 0x8b {
+		t.Fatalf("stored metadata should contain raw gzip payload: %q", stored)
+	}
+	if bytes.HasPrefix(stored, []byte("{")) {
+		t.Fatalf("stored metadata should not be raw JSON: %q", stored)
+	}
+
+	got, err := UnmarshalMpUploadMetadata(stored, false)
+	if err != nil {
+		t.Fatalf("UnmarshalMpUploadMetadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata mismatch: got %+v want %+v", got, want)
+	}
+}
+
+func TestMpUploadMetadataBase64RoundTrip(t *testing.T) {
+	want := MpUploadMetadata{
+		UploadID: "azure-upload-id",
+		Parts:    []int64{10, 20, 35},
+	}
+
+	stored, err := MarshalMpUploadMetadata(want, true)
+	if err != nil {
+		t.Fatalf("MarshalMpUploadMetadata: %v", err)
+	}
+	if len(stored) >= 2 && stored[0] == 0x1f && stored[1] == 0x8b {
+		t.Fatalf("stored metadata should not contain raw gzip bytes: %q", stored)
+	}
+
+	got, err := UnmarshalMpUploadMetadata(stored, true)
+	if err != nil {
+		t.Fatalf("UnmarshalMpUploadMetadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata mismatch: got %+v want %+v", got, want)
+	}
+}
+
+func TestUnmarshalMpUploadMetadataLegacyJSON(t *testing.T) {
+	want := MpUploadMetadata{
+		UploadID: "legacy-upload-id",
+		Parts:    []int64{1, 3, 6},
+	}
+
+	stored, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	got, err := UnmarshalMpUploadMetadata(stored, false)
+	if err != nil {
+		t.Fatalf("UnmarshalMpUploadMetadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata mismatch: got %+v want %+v", got, want)
+	}
+	got, err = UnmarshalMpUploadMetadata(stored, true)
+	if err != nil {
+		t.Fatalf("UnmarshalMpUploadMetadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata mismatch: got %+v want %+v", got, want)
+	}
+}
+
+func TestUnmarshalMpUploadMetadataInvalid(t *testing.T) {
+	_, err := UnmarshalMpUploadMetadata([]byte("not-gzip-or-json"), false)
+	if err == nil {
+		t.Fatal("expected invalid metadata error")
+	}
+}
 
 func TestParseCopySource(t *testing.T) {
 	tests := []struct {

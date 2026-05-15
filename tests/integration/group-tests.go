@@ -207,6 +207,7 @@ func TestHeadObject(ts *TestState) {
 	ts.Run(HeadObject_invalid_part_number)
 	ts.Run(HeadObject_directory_object_noslash)
 	ts.Run(HeadObject_non_existing_dir_object)
+	ts.Run(HeadObject_incidental_dir_object)
 	ts.Run(HeadObject_invalid_parent_dir)
 	ts.Run(HeadObject_with_range)
 	ts.Run(HeadObject_by_range_resp_status)
@@ -265,6 +266,7 @@ func TestGetObject(ts *TestState) {
 	ts.Run(GetObject_directory_success)
 	ts.Run(GetObject_by_range_resp_status)
 	ts.Run(GetObject_non_existing_dir_object)
+	ts.Run(GetObject_incidental_dir_object)
 	ts.Run(GetObject_overrides_success)
 	ts.Run(GetObject_overrides_presign_success)
 	ts.Run(GetObject_overrides_fail_public)
@@ -1450,6 +1452,7 @@ func GetIntTests() IntTests {
 		"HeadObject_invalid_part_number":                                           HeadObject_invalid_part_number,
 		"HeadObject_directory_object_noslash":                                      HeadObject_directory_object_noslash,
 		"HeadObject_non_existing_dir_object":                                       HeadObject_non_existing_dir_object,
+		"HeadObject_incidental_dir_object":                                         HeadObject_incidental_dir_object,
 		"HeadObject_name_too_long":                                                 HeadObject_name_too_long,
 		"HeadObject_invalid_parent_dir":                                            HeadObject_invalid_parent_dir,
 		"HeadObject_with_range":                                                    HeadObject_with_range,
@@ -1494,6 +1497,7 @@ func GetIntTests() IntTests {
 		"GetObject_directory_success":                                              GetObject_directory_success,
 		"GetObject_by_range_resp_status":                                           GetObject_by_range_resp_status,
 		"GetObject_non_existing_dir_object":                                        GetObject_non_existing_dir_object,
+		"GetObject_incidental_dir_object":                                          GetObject_incidental_dir_object,
 		"GetObject_overrides_success":                                              GetObject_overrides_success,
 		"GetObject_overrides_presign_success":                                      GetObject_overrides_presign_success,
 		"GetObject_overrides_fail_public":                                          GetObject_overrides_fail_public,

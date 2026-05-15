@@ -1158,7 +1158,9 @@ under the License.
 
     async function init() {
       // Check URL hash for bucket/prefix
-      const hash = window.location.hash.slice(1);
+      // decodeURIComponent is needed because browsers percent-encode characters
+      // like spaces when storing the hash
+      const hash = decodeURIComponent(window.location.hash.slice(1));
       if (hash) {
         const parts = hash.split('/');
         const bucketName = parts[0];

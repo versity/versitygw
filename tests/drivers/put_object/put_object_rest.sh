@@ -71,6 +71,35 @@ setup_bucket_and_add_files() {
   return 0
 }
 
+setup_bucket_and_add_file_v3() {
+  if ! check_param_count_v2 "bucket name or prefix" 1 $#; then
+    return 1
+  fi
+  if ! response=$(setup_bucket_v3 "$1" 2>&1); then
+    log 2 "error setting up bucket: $response"
+    return 1
+  fi
+  bucket_name="$response"
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  file_name="$response"
+
+  if ! response=$(create_test_files "$file_name" 2>&1); then
+    log 2 " error creating test file: $response"
+    return 1
+  fi
+  if ! response=$(put_object_rest "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name" 2>&1); then
+    log 2 "error adding file '$TEST_FILE_FOLDER/$file_name' to bucket '$bucket_name': $response"
+    return 1
+  fi
+  log 5 "file name: $file_name"
+  echo "$bucket_name $file_name"
+  return 0
+}
+
 send_openssl_go_command_chunked_no_content_length() {
   if ! check_param_count_gt "bucket name, key" 2 $#; then
     return 1

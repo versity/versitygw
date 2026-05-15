@@ -829,6 +829,34 @@ func GetObject_not_enabled_checksum_mode(s *S3Conf) error {
 	})
 }
 
+// GetObject_incidental_dir_object verifies that a directory created incidentally
+// as a parent during object upload (i.e. never explicitly PUT via S3 with a
+// trailing-slash key) is not accessible via GetObject.
+func GetObject_incidental_dir_object(s *S3Conf) error {
+	testName := "GetObject_incidental_dir_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// Upload an object under a prefix; this creates the parent directory
+		// incidentally on posix but the directory was never PUT as an S3 object.
+		obj := "my-dir/my-obj"
+		_, err := putObjectWithData(int64(64), &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		dir := "my-dir/"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &dir,
+		})
+		cancel()
+		return checkSdkApiErr(err, "NoSuchKey")
+	})
+}
+
 func GetObject_non_existing_dir_object(s *S3Conf) error {
 	testName := "GetObject_non_existing_dir_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

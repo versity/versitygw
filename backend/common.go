@@ -15,8 +15,12 @@
 package backend
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -413,6 +417,84 @@ func md5String(data []byte) string {
 type MpUploadMetadata struct {
 	UploadID string  `json:"uploadId"`
 	Parts    []int64 `json:"parts"`
+}
+
+// MarshalMpUploadMetadata returns a compressed representation of multipart
+// metadata. When base64Encode is true, the compressed bytes are base64-encoded
+// so they can be sent in azure string-only metadata headers
+func MarshalMpUploadMetadata(mpMeta MpUploadMetadata, base64Encode bool) ([]byte, error) {
+	mpMetaJSON, err := json.Marshal(mpMeta)
+	if err != nil {
+		return nil, fmt.Errorf("marshal mp metadata: %w", err)
+	}
+
+	compressed, err := compressMpUploadMetadata(mpMetaJSON)
+	if err != nil {
+		return nil, fmt.Errorf("compress mp metadata: %w", err)
+	}
+
+	if !base64Encode {
+		return compressed, nil
+	}
+
+	encoded := make([]byte, base64.StdEncoding.EncodedLen(len(compressed)))
+	base64.StdEncoding.Encode(encoded, compressed)
+	return encoded, nil
+}
+
+// UnmarshalMpUploadMetadata decodes metadata produced by MarshalMpUploadMetadata.
+// It also accepts the legacy raw JSON form so existing multipart objects remain readable
+func UnmarshalMpUploadMetadata(data []byte, base64Decode bool) (MpUploadMetadata, error) {
+	if base64Decode {
+		compressed, err := base64.StdEncoding.DecodeString(string(data))
+		if err == nil {
+			if mpMeta, err := unmarshalCompressedMpUploadMetadata(compressed); err == nil {
+				return mpMeta, nil
+			}
+		}
+	} else if mpMeta, err := unmarshalCompressedMpUploadMetadata(data); err == nil {
+		return mpMeta, nil
+	}
+
+	var mpMeta MpUploadMetadata
+	if err := json.Unmarshal(data, &mpMeta); err != nil {
+		return mpMeta, fmt.Errorf("unmarshal mp metadata: %w", err)
+	}
+	return mpMeta, nil
+}
+
+func compressMpUploadMetadata(data []byte) ([]byte, error) {
+	var compressed bytes.Buffer
+	gz := gzip.NewWriter(&compressed)
+	if _, err := gz.Write(data); err != nil {
+		_ = gz.Close()
+		return nil, err
+	}
+	if err := gz.Close(); err != nil {
+		return nil, err
+	}
+	return compressed.Bytes(), nil
+}
+
+func unmarshalCompressedMpUploadMetadata(compressed []byte) (MpUploadMetadata, error) {
+	var mpMeta MpUploadMetadata
+	gz, err := gzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		return mpMeta, fmt.Errorf("decompress mp metadata: %w", err)
+	}
+	decompressed, err := io.ReadAll(gz)
+	closeErr := gz.Close()
+	if err != nil {
+		return mpMeta, fmt.Errorf("decompress mp metadata: %w", err)
+	}
+	if closeErr != nil {
+		return mpMeta, fmt.Errorf("decompress mp metadata: %w", closeErr)
+	}
+
+	if err := json.Unmarshal(decompressed, &mpMeta); err != nil {
+		return mpMeta, fmt.Errorf("unmarshal mp metadata: %w", err)
+	}
+	return mpMeta, nil
 }
 
 type FileSectionReadCloser struct {

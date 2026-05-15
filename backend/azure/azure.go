@@ -505,8 +505,8 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 		// For non-multipart objects (no mp-metadata), partNumber=1 returns the
 		// full object with no Content-Range; any other partNumber is out of range.
 		if mpMetaStr, ok := resp.Metadata[string(keyMpMetadata)]; ok && mpMetaStr != nil {
-			var mpMeta backend.MpUploadMetadata
-			if err := json.Unmarshal([]byte(*mpMetaStr), &mpMeta); err != nil {
+			mpMeta, err := backend.UnmarshalMpUploadMetadata([]byte(*mpMetaStr), true)
+			if err != nil {
 				return nil, fmt.Errorf("parse object multipart metadata: %w", err)
 			}
 
@@ -627,8 +627,8 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 		// For non-multipart objects (no mp-metadata), partNumber=1 returns the
 		// full object with no Content-Range; any other partNumber is out of range.
 		if mpMetaStr, ok := resp.Metadata[string(keyMpMetadata)]; ok && mpMetaStr != nil {
-			var mpMeta backend.MpUploadMetadata
-			if err := json.Unmarshal([]byte(*mpMetaStr), &mpMeta); err != nil {
+			mpMeta, err := backend.UnmarshalMpUploadMetadata([]byte(*mpMetaStr), true)
+			if err != nil {
 				return nil, fmt.Errorf("parse object multipart metadata: %w", err)
 			}
 
@@ -1779,8 +1779,8 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 				finalProps, propErr := finalClient.GetProperties(ctx, nil)
 				if propErr == nil {
 					if mpMetaStr, ok := finalProps.Metadata[string(keyMpMetadata)]; ok && mpMetaStr != nil {
-						var mpMeta backend.MpUploadMetadata
-						if jsonErr := json.Unmarshal([]byte(*mpMetaStr), &mpMeta); jsonErr == nil && mpMeta.UploadID == *input.UploadId {
+						mpMeta, metaErr := backend.UnmarshalMpUploadMetadata([]byte(*mpMetaStr), true)
+						if metaErr == nil && mpMeta.UploadID == *input.UploadId {
 							return s3response.CompleteMultipartUploadResult{
 								Bucket: input.Bucket,
 								Key:    input.Key,
@@ -1896,11 +1896,11 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 
 	// Serialize multipart metadata so GetObject/HeadObject can serve by part-number.
 	mpMeta := backend.MpUploadMetadata{UploadID: *input.UploadId, Parts: partSizes}
-	mpMetaJSON, err := json.Marshal(mpMeta)
+	mpMetaBytes, err := backend.MarshalMpUploadMetadata(mpMeta, true)
 	if err != nil {
 		return res, "", fmt.Errorf("marshal mp metadata: %w", err)
 	}
-	mpMetaStr := string(mpMetaJSON)
+	mpMetaStr := string(mpMetaBytes)
 	if props.Metadata == nil {
 		props.Metadata = map[string]*string{}
 	}
