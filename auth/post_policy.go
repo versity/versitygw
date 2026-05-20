@@ -299,11 +299,11 @@ func (c contentLengthRangeCondition) validate() error {
 func (c contentLengthRangeCondition) match(in PostPolicyEvalInput) error {
 	if in.ContentLength > c.max {
 		debuglogger.Logf("POST policy content length %d exceeds max %d", in.ContentLength, c.max)
-		return s3err.GetAPIError(s3err.ErrEntityTooLarge)
+		return s3err.GetEntityTooLargeErr(in.ContentLength, c.max)
 	}
 	if in.ContentLength < c.min {
 		debuglogger.Logf("POST policy content length %d is smaller than min %d", in.ContentLength, c.min)
-		return s3err.GetAPIError(s3err.ErrEntityTooSmall)
+		return s3err.GetEntityTooSmallErr(in.ContentLength, c.min)
 	}
 
 	return nil

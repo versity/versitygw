@@ -445,7 +445,8 @@ func (r CopyPartResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error
 }
 
 type CompleteMultipartUploadRequestBody struct {
-	Parts []types.CompletedPart `xml:"Part"`
+	XMLName xml.Name              `xml:"CompleteMultipartUpload" json:"-"`
+	Parts   []types.CompletedPart `xml:"Part"`
 }
 
 type CompleteMultipartUploadResult struct {

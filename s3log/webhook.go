@@ -83,10 +83,10 @@ func (wl *WebhookLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMet
 	}
 
 	if err != nil {
-		serr, ok := err.(s3err.APIError)
+		serr, ok := err.(s3err.S3Error)
 		if ok {
-			errorCode = serr.Code
-			httpStatus = serr.HTTPStatusCode
+			errorCode = serr.BaseError().Code
+			httpStatus = serr.StatusCode()
 		} else {
 			errorCode = err.Error()
 			httpStatus = 500
@@ -103,7 +103,6 @@ func (wl *WebhookLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMet
 	lf.Time = time.Now()
 	lf.RemoteIP = ctx.IP()
 	lf.Requester = access
-	lf.RequestID = genID()
 	lf.Operation = meta.Action
 	lf.Key = object
 	lf.RequestURI = reqURI
@@ -116,12 +115,14 @@ func (wl *WebhookLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMet
 	lf.Referer = ctx.Get("Referer")
 	lf.UserAgent = ctx.Get("User-Agent")
 	lf.VersionID = ctx.Query("versionId")
-	lf.HostID = ctx.Get("X-Amz-Id-2")
 	lf.SignatureVersion = "SigV4"
 	lf.AuthenticationType = "AuthHeader"
 	lf.HostHeader = fmt.Sprintf("s3.%v.amazonaws.com", utils.ContextKeyRegion.Get(ctx).(string))
 	lf.AccessPointARN = fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/"))
 	lf.AclRequired = "Yes"
+	requestID, hostID := utils.EnsureRequestIDs(ctx)
+	lf.RequestID = requestID
+	lf.HostID = hostID
 
 	wl.sendLog(lf)
 }

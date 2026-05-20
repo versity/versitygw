@@ -266,7 +266,7 @@ func CreateMultipartUpload_with_object_lock_invalid_retention(s *S3Conf) error {
 			ObjectLockMode: types.ObjectLockModeGovernance,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockRetainDate, "")); err != nil {
 			return err
 		}
 
@@ -277,7 +277,7 @@ func CreateMultipartUpload_with_object_lock_invalid_retention(s *S3Conf) error {
 			ObjectLockRetainUntilDate: &retentionDate,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockMode, "")); err != nil {
 			return err
 		}
 
@@ -298,7 +298,7 @@ func CreateMultipartUpload_past_retain_until_date(s *S3Conf) error {
 			ObjectLockRetainUntilDate: &rDate,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, rDate.Format(time.RFC3339))); err != nil {
 			return err
 		}
 
@@ -316,7 +316,7 @@ func CreateMultipartUpload_invalid_legal_hold(s *S3Conf) error {
 			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatus("invalid_status"),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidLegalHoldStatus))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, "invalid_status"))
 	}, withLock())
 }
 
@@ -332,7 +332,7 @@ func CreateMultipartUpload_invalid_object_lock_mode(s *S3Conf) error {
 			ObjectLockRetainUntilDate: &rDate,
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectLockMode))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, "invalid_mode"))
 	}, withLock())
 }
 
@@ -468,7 +468,7 @@ func CreateMultipartUpload_with_tagging(s *S3Conf) error {
 					return err
 				}
 				switch eErr := expectedErr.(type) {
-				case s3err.APIError:
+				case s3err.S3Error:
 					return checkApiErr(err, eErr)
 				default:
 					return fmt.Errorf("invalid err provided: %w", expectedErr)
@@ -548,10 +548,10 @@ func CreateMultipartUpload_with_tagging(s *S3Conf) error {
 			{"key1=val1&key2=val2", map[string]string{"key1": "val1", "key2": "val2"}, nil},
 			{"key@=val@", map[string]string{"key@": "val@"}, nil},
 			// invalid url-encoded
-			{"=", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
-			{"key%", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			{"=", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "")},
+			{"key%", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "")},
 			// duplicate keys
-			{"key=val&key=val", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			{"key=val&key=val", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "")},
 			// invalid tag keys
 			{"key?=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key(=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},

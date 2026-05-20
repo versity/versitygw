@@ -433,7 +433,7 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
+				err: s3err.GetMetadataTooLargeErr(2053, 2048),
 			},
 		},
 		{

@@ -80,11 +80,11 @@ func (l *MultipartUploadLister) Run() (*ListMultipartUploadsPage, error) {
 		// any invalid uuid is considered as an invalid uploadIdMarker
 		_, err := uuid.Parse(uploadIDMarker)
 		if err != nil {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidUploadIdMarker)
+			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgUploadIdMarker, uploadIDMarker)
 		}
 		startIndex = l.findUploadIdMarkerIndex(uploadIDMarker)
 		if startIndex == -1 {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidUploadIdMarker)
+			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgUploadIdMarker, uploadIDMarker)
 		}
 		if startIndex >= len(l.Uploads) {
 			return out, nil

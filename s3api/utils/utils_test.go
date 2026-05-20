@@ -84,7 +84,7 @@ func TestCreateHttpRequestFromCtx(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := createHttpRequestFromCtx(tt.args.ctx, tt.hdrs, 0, true)
+			got, err := createHttpRequestFromCtx(tt.args.ctx, tt.hdrs, 0)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CreateHttpRequestFromCtx() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -169,7 +169,7 @@ func TestGetUserMetaData(t *testing.T) {
 			hdrs: [][2]string{
 				{"x-amz-meta-big", strings.Repeat("a", maxMetadataSize+1)},
 			},
-			wantErr: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
+			wantErr: s3err.GetMetadataTooLargeErr(2052, maxMetadataSize),
 		},
 		{
 			name: "metadata cumulative size exceeds limit (multiple headers)",
@@ -177,7 +177,7 @@ func TestGetUserMetaData(t *testing.T) {
 				{"x-amz-meta-a", strings.Repeat("a", maxMetadataSize/2)},
 				{"x-amz-meta-b", strings.Repeat("b", maxMetadataSize/2+10)},
 			},
-			wantErr: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
+			wantErr: s3err.GetMetadataTooLargeErr(2060, maxMetadataSize),
 		},
 		{
 			name: "duplicate keys combined",
@@ -398,7 +398,7 @@ func TestParseMaxLimiter(t *testing.T) {
 				lt:  LimiterTypeMaxParts,
 			},
 			expected: expected{
-				err: s3err.GetInvalidMaxLimiterErr(string(LimiterTypeMaxParts)),
+				err: s3err.GetInvalidArgMaxLimiter(string(LimiterTypeMaxParts), "bla"),
 				res: 0,
 			},
 		},
@@ -409,7 +409,7 @@ func TestParseMaxLimiter(t *testing.T) {
 				lt:  LimiterTypeMaxUploads,
 			},
 			expected: expected{
-				err: s3err.GetInvalidMaxLimiterErr(string(LimiterTypeMaxUploads)),
+				err: s3err.GetInvalidArgMaxLimiter(string(LimiterTypeMaxUploads), "invalid"),
 				res: 0,
 			},
 		},
@@ -420,7 +420,7 @@ func TestParseMaxLimiter(t *testing.T) {
 				lt:  LimiterTypeMaxBuckets,
 			},
 			expected: expected{
-				err: s3err.GetInvalidMaxLimiterErr(string(LimiterTypeMaxBuckets)),
+				err: s3err.GetInvalidArgMaxLimiter(string(LimiterTypeMaxBuckets), "invalid"),
 				res: 0,
 			},
 		},
@@ -431,7 +431,7 @@ func TestParseMaxLimiter(t *testing.T) {
 				lt:  LimiterTypeMaxKeys,
 			},
 			expected: expected{
-				err: s3err.GetInvalidMaxLimiterErr(string(LimiterTypeMaxKeys)),
+				err: s3err.GetInvalidArgMaxLimiter(string(LimiterTypeMaxKeys), "invalid"),
 				res: 0,
 			},
 		},
@@ -442,7 +442,7 @@ func TestParseMaxLimiter(t *testing.T) {
 				lt:  LimiterTypeMaxKeys,
 			},
 			expected: expected{
-				err: s3err.GetNegativeMaxLimiterErr(string(LimiterTypeMaxKeys)),
+				err: s3err.GetInvalidArgNegativeMaxLimiter(string(LimiterTypeMaxKeys), "-5"),
 				res: 0,
 			},
 		},
@@ -453,7 +453,7 @@ func TestParseMaxLimiter(t *testing.T) {
 				lt:  LimiterTypePartNumberMarker,
 			},
 			expected: expected{
-				err: s3err.GetNegativeMaxLimiterErr(string(LimiterTypePartNumberMarker)),
+				err: s3err.GetInvalidArgNegativeMaxLimiter(string(LimiterTypePartNumberMarker), "-5"),
 				res: 0,
 			},
 		},
@@ -464,7 +464,7 @@ func TestParseMaxLimiter(t *testing.T) {
 				lt:  LimiterTypeMaxBuckets,
 			},
 			expected: expected{
-				err: s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgMaxBuckets, "-12"),
 				res: 0,
 			},
 		},
@@ -475,7 +475,7 @@ func TestParseMaxLimiter(t *testing.T) {
 				lt:  LimiterTypeVersionsMaxKeys,
 			},
 			expected: expected{
-				err: s3err.GetAPIError(s3err.ErrNegativeMaxKeys),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgNegativeMaxKeys, "-12"),
 				res: 0,
 			},
 		},
@@ -486,7 +486,7 @@ func TestParseMaxLimiter(t *testing.T) {
 				lt:  LimiterTypeMaxBuckets,
 			},
 			expected: expected{
-				err: s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgMaxBuckets, "25000"),
 				res: 0,
 			},
 		},
@@ -989,7 +989,7 @@ func TestExtractMetadataFromFields(t *testing.T) {
 			fields: map[string]string{
 				"x-amz-meta-big": strings.Repeat("a", maxMetadataSize-len("big")+1),
 			},
-			wantErr: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
+			wantErr: s3err.GetMetadataTooLargeErr(2049, maxMetadataSize),
 		},
 	}
 
@@ -1574,32 +1574,32 @@ func TestValidateCopySource(t *testing.T) {
 		err        error
 	}{
 		// invalid encoding
-		{"invalid encoding 1", "%", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 2", "%2", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 3", "%G1", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 4", "%1Z", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 5", "%0H", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 6", "%XY", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 7", "%E", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 8", "hello%", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 9", "%%", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 10", "%2Gmore", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 11", "100%%sure", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 12", "%#00", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 13", "%0%0", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
-		{"invalid encoding 14", "%?versionId=id", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 1", "%", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%")},
+		{"invalid encoding 2", "%2", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%2")},
+		{"invalid encoding 3", "%G1", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%G1")},
+		{"invalid encoding 4", "%1Z", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%1Z")},
+		{"invalid encoding 5", "%0H", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%0H")},
+		{"invalid encoding 6", "%XY", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%XY")},
+		{"invalid encoding 7", "%E", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%E")},
+		{"invalid encoding 8", "hello%", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "hello%")},
+		{"invalid encoding 9", "%%", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%%")},
+		{"invalid encoding 10", "%2Gmore", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%2Gmore")},
+		{"invalid encoding 11", "100%%sure", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "100%%sure")},
+		{"invalid encoding 12", "%#00", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%#00")},
+		{"invalid encoding 13", "%0%0", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%0%0")},
+		{"invalid encoding 14", "%?versionId=id", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%?versionId=id")},
 		// invalid bucket name
-		{"invalid bucket name 1", "168.200.1.255/obj/foo", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)},
-		{"invalid bucket name 2", "/0000:0db8:85a3:0000:0000:8a2e:0370:7224/smth", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)},
-		{"invalid bucket name 3", "", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)},
-		{"invalid bucket name 4", "//obj/foo", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)},
-		{"invalid bucket name 5", "//obj/foo?versionId=id", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)},
+		{"invalid bucket name 1", "168.200.1.255/obj/foo", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "168.200.1.255/obj/foo")},
+		{"invalid bucket name 2", "/0000:0db8:85a3:0000:0000:8a2e:0370:7224/smth", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "/0000:0db8:85a3:0000:0000:8a2e:0370:7224/smth")},
+		{"invalid bucket name 3", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "")},
+		{"invalid bucket name 4", "//obj/foo", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "//obj/foo")},
+		{"invalid bucket name 5", "//obj/foo?versionId=id", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "//obj/foo?versionId=id")},
 		// invalid object name
-		{"invalid object name 1", "bucket/../foo", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
-		{"invalid object name 2", "bucket/", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
-		{"invalid object name 3", "bucket", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
-		{"invalid object name 4", "bucket/../foo/dir/../../../", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
-		{"invalid object name 5", "bucket/.?versionId=smth", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
+		{"invalid object name 1", "bucket/../foo", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "../foo")},
+		{"invalid object name 2", "bucket/", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "")},
+		{"invalid object name 3", "bucket", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "")},
+		{"invalid object name 4", "bucket/../foo/dir/../../../", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "../foo/dir/../../../")},
+		{"invalid object name 5", "bucket/.?versionId=smth", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, ".")},
 		// success
 		{"no error 1", "bucket/object", nil},
 		{"no error 2", "bucket/object/key", nil},

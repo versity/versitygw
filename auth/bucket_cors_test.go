@@ -279,7 +279,7 @@ func TestCORSConfiguration_IsAllowed(t *testing.T) {
 			},
 			output: output{
 				result: nil,
-				err:    s3err.GetAPIError(s3err.ErrCORSForbidden),
+				err:    s3err.GetAccessForbiddenErr(s3err.ErrCORSForbidden, http.MethodOptions, s3err.ResourceTypeBucket),
 			},
 		},
 		{
@@ -296,7 +296,7 @@ func TestCORSConfiguration_IsAllowed(t *testing.T) {
 			},
 			output: output{
 				result: nil,
-				err:    s3err.GetAPIError(s3err.ErrCORSForbidden),
+				err:    s3err.GetAccessForbiddenErr(s3err.ErrCORSForbidden, http.MethodOptions, s3err.ResourceTypeBucket),
 			},
 		},
 		{
@@ -313,14 +313,14 @@ func TestCORSConfiguration_IsAllowed(t *testing.T) {
 			},
 			output: output{
 				result: nil,
-				err:    s3err.GetAPIError(s3err.ErrCORSForbidden),
+				err:    s3err.GetAccessForbiddenErr(s3err.ErrCORSForbidden, http.MethodOptions, s3err.ResourceTypeBucket),
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := tt.input.cfg.IsAllowed(tt.input.origin, tt.input.method, tt.input.headers)
+			got, err := tt.input.cfg.IsAllowed(tt.input.origin, tt.input.method, tt.input.headers, s3err.ResourceTypeBucket)
 			assert.EqualValues(t, tt.output.err, err)
 			assert.EqualValues(t, tt.output.result, got)
 		})

@@ -27,7 +27,7 @@ import (
 func Server_large_http_header(s *S3Conf) error {
 	testName := "Server_large_http_header"
 	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
-		req, err := createSignedReq(http.MethodPut, s.endpoint, "/bucket/object", s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), map[string]string{
+		req, err := createSignedReq(http.MethodPut, s.endpoint, "/bucket/object", s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), map[string]string{
 			"x-amz-custom-header": strings.Repeat("d", 1024*8),
 		})
 		if err != nil {

@@ -189,6 +189,7 @@ func IAM_CreateBucket_empty_owner_header(s *S3Conf) error {
 			s.awsSecret,
 			"s3",
 			s.awsRegion,
+			"",
 			nil,
 			time.Now(),
 			nil,
@@ -217,6 +218,7 @@ func IAM_CreateBucket_non_existing_user(s *S3Conf) error {
 			s.awsSecret,
 			"s3",
 			s.awsRegion,
+			"",
 			nil,
 			time.Now(),
 			map[string]string{
@@ -263,6 +265,7 @@ func IAM_CreateBucket_success(s *S3Conf) error {
 			s.awsSecret,
 			"s3",
 			s.awsRegion,
+			"",
 			body,
 			time.Now(),
 			map[string]string{

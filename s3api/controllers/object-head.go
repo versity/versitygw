@@ -105,7 +105,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 				MetaOpts: &MetaOptions{
 					BucketOwner: parsedAcl.Owner,
 				},
-			}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
+			}, s3err.GetInvalidArgumentErr(s3err.InvalidArgPartNumber, ctx.Query("partNumber"))
 		}
 
 		if objRange != "" {

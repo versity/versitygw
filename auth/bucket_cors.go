@@ -122,12 +122,12 @@ type CORSAllowanceConfig struct {
 
 // IsAllowed walks through the CORS rules and finds the first one allowing access.
 // If no rule grants access, returns 'AccessForbidden'
-func (cc *CORSConfiguration) IsAllowed(origin string, method CORSHTTPMethod, headers []CORSHeader) (*CORSAllowanceConfig, error) {
+func (cc *CORSConfiguration) IsAllowed(origin string, method CORSHTTPMethod, headers []CORSHeader, rt s3err.ResourceType) (*CORSAllowanceConfig, error) {
 	// if method is empty, anyways cors is forbidden
 	// skip, without going through the rules
 	if method.IsEmpty() {
 		debuglogger.Logf("empty Access-Control-Request-Method")
-		return nil, s3err.GetAPIError(s3err.ErrCORSForbidden)
+		return nil, s3err.GetAccessForbiddenErr(s3err.ErrCORSForbidden, http.MethodOptions, rt)
 	}
 	for _, rule := range cc.Rules {
 		// find the first rule granting access
@@ -151,7 +151,7 @@ func (cc *CORSConfiguration) IsAllowed(origin string, method CORSHTTPMethod, hea
 	}
 
 	// if no matching rule is found, return AccessForbidden
-	return nil, s3err.GetAPIError(s3err.ErrCORSForbidden)
+	return nil, s3err.GetAccessForbiddenErr(s3err.ErrCORSForbidden, http.MethodOptions, rt)
 }
 
 type CORSRule struct {

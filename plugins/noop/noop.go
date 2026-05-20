@@ -219,7 +219,7 @@ func (n *noOp) GetBucketPolicy(_ context.Context, bucket string) ([]byte, error)
 }
 
 func (n *noOp) GetObjectLockConfiguration(_ context.Context, bucket string) ([]byte, error) {
-	return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+	return nil, s3err.GetBucketErr(s3err.ErrObjectLockConfigurationNotFound, bucket)
 }
 
 func (n *noOp) PutObjectTagging(context.Context, string, string, string, map[string]string) error {

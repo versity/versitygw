@@ -132,7 +132,7 @@ func AbortMultipartUpload_success_status_code(s *S3Conf) error {
 
 		req, err := createSignedReq(http.MethodDelete, s.endpoint,
 			fmt.Sprintf("%v/%v?uploadId=%v", bucket, obj, *out.UploadId),
-			s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), nil)
+			s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
 		if err != nil {
 			return err
 		}

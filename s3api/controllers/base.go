@@ -150,6 +150,8 @@ func ProcessHandlers(controller Controller, s3action string, svc *Services, hand
 // and metrics. It also handles the error parsing
 func WrapMiddleware(handler fiber.Handler, logger s3log.AuditLogger, mm metrics.Manager) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
+		requestID, hostID := utils.EnsureRequestIDs(ctx)
+
 		err := handler(ctx)
 		if err != nil {
 			if mm != nil {
@@ -163,18 +165,19 @@ func WrapMiddleware(handler fiber.Handler, logger s3log.AuditLogger, mm metrics.
 
 			ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
 
-			serr, ok := err.(s3err.APIError)
-			if ok {
-				ctx.Status(serr.HTTPStatusCode)
-				return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
+			if serr, ok := err.(s3err.S3Error); ok {
+				if mnaErr, ok := serr.(s3err.MethodNotAllowedError); ok && len(mnaErr.AllowedMethods) != 0 {
+					// for MethodNotAllowed errors, set the 'Allow' header
+					ctx.Response().Header.Set("Allow", mnaErr.AllowedMethodsString())
+				}
+				return ctx.Status(serr.StatusCode()).Send(serr.XMLBody(requestID, hostID))
 			}
 
 			debuglogger.InternalError(err)
 			ctx.Status(http.StatusInternalServerError)
 
-			// If the error is not 's3err.APIError' return 'InternalError'
-			return ctx.Send(s3err.GetAPIErrorResponse(
-				s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
+			// If the error is not 's3err.S3Error' return 'InternalError'
+			return ctx.Send(s3err.GetAPIError(s3err.ErrInternalError).XMLBody(requestID, hostID))
 		}
 
 		return ctx.Next()
@@ -188,6 +191,7 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 
 	// Set the response headers
 	SetResponseHeaders(ctx, response.Headers)
+	requestID, hostID := utils.EnsureRequestIDs(ctx)
 	ensureExposeMetaHeaders(ctx)
 
 	opts := response.MetaOpts
@@ -216,18 +220,17 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 		// set content type to application/xml
 		ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
 
-		serr, ok := err.(s3err.APIError)
-		if ok {
-			ctx.Status(serr.HTTPStatusCode)
-			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
+		if serr, ok := err.(s3err.S3Error); ok {
+			if mnaErr, ok := serr.(s3err.MethodNotAllowedError); ok && len(mnaErr.AllowedMethods) != 0 {
+				ctx.Response().Header.Set("Allow", mnaErr.AllowedMethodsString())
+			}
+			return ctx.Status(serr.StatusCode()).Send(serr.XMLBody(requestID, hostID))
 		}
 
 		debuglogger.InternalError(err)
-		ctx.Status(http.StatusInternalServerError)
 
-		// If the error is not 's3err.APIError' return 'InternalError'
-		return ctx.Send(s3err.GetAPIErrorResponse(
-			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
+		// If the error is not 's3err.S3Error' return 'InternalError'
+		return ctx.Status(http.StatusInternalServerError).Send(s3err.GetAPIError(s3err.ErrInternalError).XMLBody(requestID, hostID))
 	}
 
 	// At this point, the S3 action has succeeded in the backend and
@@ -276,8 +279,9 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 					ObjectSize:  opts.ObjectSize,
 				})
 			}
-			return ctx.Status(http.StatusInternalServerError).Send(s3err.GetAPIErrorResponse(
-				s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
+
+			err := s3err.GetAPIError(s3err.ErrInternalError)
+			return ctx.Status(err.HTTPStatusCode).Send(err.XMLBody(requestID, hostID))
 		}
 
 		if len(responseBytes) > 0 {
@@ -312,13 +316,12 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 				ObjectSize:  opts.ObjectSize,
 			})
 		}
-		ctx.Status(http.StatusInternalServerError)
 
 		// set content type to application/xml
 		ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
 
-		return ctx.Send(s3err.GetAPIErrorResponse(
-			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
+		err := s3err.GetAPIError(s3err.ErrInternalError)
+		return ctx.Status(err.HTTPStatusCode).Send(err.XMLBody(requestID, hostID))
 	}
 	res := make([]byte, 0, msglen)
 	res = append(res, xmlhdr...)
