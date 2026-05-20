@@ -464,3 +464,15 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   run complete_multipart_upload_invalid_object_size_string "$bucket_name" "$large_test_file" "$TEST_FILE_FOLDER/$large_test_file"
   assert_success
 }
+
+@test "REST - multipart - empty upload ID on completion" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/2146"
+  fi
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  read -r bucket_name file_name <<< "$output"
+
+  run complete_multipart_upload_empty_upload_id "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/$file_name"
+  assert_success
+}

@@ -56,14 +56,15 @@ list_objects_success_or_access_denied() {
 }
 
 check_v2_objects() {
-  if ! check_param_count_v2 "data file" 1 $#; then
+  if ! check_param_count_gt "data file, expected objects" 1 $#; then
     return 1
   fi
+  object_count=$(($#-1))
   if ! check_xml_element "$1" "$object_count" "ListBucketResult" "KeyCount"; then
     log 2 "error checking KeyCount element"
     return 1
   fi
-  for object in "${expected_objects[@]}"; do
+  for object in "${@:2}"; do
     if ! check_if_element_exists "$1" "$object" "ListBucketResult" "Contents" "Key"; then
       log 2 "error checking if element '$object' exists"
       return 1
@@ -78,7 +79,7 @@ list_check_objects_rest_v2() {
   fi
   object_count=$2
   expected_objects=("${@:3:$object_count}")
-  if ! list_objects_v2_rest_callback "$1" "200" "check_v2_objects" "${@:((3+$object_count))}"; then
+  if ! list_objects_v2_rest_callback "$1" "200" "check_v2_objects" "${@:((3+$object_count))}" "--" "${expected_objects[@]}"; then
     log 2 "error sending list objects v2 command and checking callback"
     return 1
   fi
@@ -419,4 +420,216 @@ list_objects_delimiter() {
 
   run list_objects_with_prefix_and_delimiter_check_results "$bucket_name" "2" "$prefix" "/" "a-b/" "--" "a-b-1.txt" "a-b-2.txt"
   assert_success
+}
+
+parse_objects_list_rest() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+
+  local response
+  if ! response=$(xmllint --xpath '//*[local-name()="Key"]/text()' "$1" 2>&1); then
+    if [[ "$response" == *"XPath set is empty"* ]]; then
+      return 0
+    fi
+    log 2 "error getting object list: $response"
+    return 1
+  else
+    object_list="$response"
+  fi
+  log 5 "object list: '$object_list'"
+  while IFS= read -r object; do
+    log 5 "parsed key: '$object'"
+    unescaped_object="$(echo -n "$object" | xmlstarlet unesc)"
+    echo "$unescaped_object"
+  done <<< "$object_list"
+  return 0
+}
+
+list_check_objects_rest() {
+  if ! check_param_count "list_check_objects_rest" "bucket" 1 $#; then
+    return 1
+  fi
+
+  local response
+  if ! response=$(list_objects_rest "$1" "parse_objects_list_rest" 2>&1); then
+    log 2 "error listing and parsing objects: $response"
+    return 1
+  fi
+  mapfile -t object_array <<< "$response"
+
+  object_found=false
+  # shellcheck disable=SC2154
+  for object in "${object_array[@]}"; do
+    log 5 "object: $object"
+    if [[ $object == "$test_file" ]]; then
+      object_found=true
+      break
+    fi
+  done
+  if [[ $object_found == "false" ]]; then
+    log 2 "object not found"
+    return 1
+  fi
+  return 0
+}
+
+list_objects_with_user_rest_verify_access_denied() {
+  if ! check_param_count "list_objects_with_user_rest_verify_access_denied" "bucket, username, password" 3 $#; then
+    return 1
+  fi
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  file_name="$response"
+
+  if ! result=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to list objects: $result"
+    return 1
+  fi
+  if [ "$result" != "403" ]; then
+    log 2 "expected response code of '403', was '$result'"
+    return 1
+  fi
+  error_message="$(cat "$TEST_FILE_FOLDER/$file_name")"
+  if [[ "$error_message" != *"Access Denied"* ]]; then
+    log 2 "unexpected error message: $error_message"
+    return 1
+  fi
+  return 0
+}
+
+list_objects_with_user_rest_verify_success() {
+  if ! check_param_count "list_objects_with_user_rest_verify_success" "bucket, username, password, expected object" 4 $#; then
+    return 1
+  fi
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  file_name="$response"
+
+  if ! result=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to list objects: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected response code of '200', was '$result' (error: $(cat "$TEST_FILE_FOLDER/$file_name"))"
+    return 1
+  fi
+  if ! key=$(xmllint --xpath '//*[local-name()="Key"]/text()' "$TEST_FILE_FOLDER/$file_name" 2>&1); then
+    log 2 "error getting object key: $key"
+    return 1
+  fi
+  if [ "$key" != "$4" ]; then
+    log 2 "expected '$4', was '$key'"
+    return 1
+  fi
+  return 0
+}
+
+list_objects_check_params_get_token() {
+  if ! check_param_count "list_objects_check_params_get_token" "bucket, files, version two" 4 $#; then
+    return 1
+  fi
+  if ! response=$(get_file_names 2 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  read -r file_name list_bucket_file <<< "$response"
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" VERSION_TWO="$4" MAX_KEYS=1 OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to get bucket ACL response: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200' was '$result' ($(cat "$TEST_FILE_FOLDER/$file_name"))"
+    return 1
+  fi
+  log 5 "objects: $(cat "$TEST_FILE_FOLDER/$file_name")"
+  if ! list_bucket_result=$(xmllint --xpath '//*[local-name()="ListBucketResult"]' "$TEST_FILE_FOLDER/$file_name" 2>&1); then
+    log 2 "error getting list bucket result: $list_bucket_result"
+    return 1
+  fi
+  echo -n "$list_bucket_result" > "$TEST_FILE_FOLDER/$list_bucket_file"
+  if ! check_xml_element "$TEST_FILE_FOLDER/$list_bucket_file" "$2" "Key"; then
+    log 2 "key mismatch"
+    return 1
+  fi
+  if ! check_xml_element "$TEST_FILE_FOLDER/$list_bucket_file" "1" "MaxKeys"; then
+    log 2 "max keys mismatch"
+    return 1
+  fi
+  if ! check_xml_element "$TEST_FILE_FOLDER/$list_bucket_file" "1" "KeyCount"; then
+    log 2 "key count mismatch"
+    return 1
+  fi
+  if ! check_xml_element "$TEST_FILE_FOLDER/$list_bucket_file" "true" "IsTruncated"; then
+    log 2 "key count mismatch"
+    return 1
+  fi
+  if ! continuation_token=$(xmllint --xpath '//*[local-name()="NextContinuationToken"]/text()' "$TEST_FILE_FOLDER/$list_bucket_file" 2>&1); then
+    log 2 "error getting next continuation token: $continuation_token"
+    return 1
+  fi
+  echo "$continuation_token"
+  return 0
+}
+
+list_objects_check_continuation_error() {
+  if ! check_param_count "list_objects_check_continuation_error" "bucket, continuation token" 2 $#; then
+    return 1
+  fi
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  file_name="$response"
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" VERSION_TWO="TRUE" MAX_KEYS=1 CONTINUATION_TOKEN="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to get bucket ACL response: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected result code of '400' was '$result'"
+    return 1
+  fi
+  if ! check_xml_element "$TEST_FILE_FOLDER/$file_name" "InvalidArgument" "Error" "Code"; then
+    log 2 "invalid error code"
+    return 1
+  fi
+  return 0
+}
+
+list_objects_v1_check_nextmarker_empty() {
+  if ! check_param_count "list_objects_v1_check_nextmarker_empty" "bucket" 1 $#; then
+    return 1
+  fi
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  file_name="$response"
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" VERSION_TWO="FALSE" MAX_KEYS=1 OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to get bucket ACL response: $result"
+    return 1
+  fi
+  log 5 "output: $(cat "$TEST_FILE_FOLDER/$file_name")"
+  if ! next_marker=$(xmllint --xpath '//*[local-name()="NextMarker"]' "$TEST_FILE_FOLDER/$file_name" 2>&1); then
+    if [[ "$next_marker" != *"XPath set is empty"* ]]; then
+      log 2 "unexpected error: $next_marker"
+      return 1
+    fi
+    return 0
+  fi
+  log 5 "next marker: $next_marker"
+  marker_text=$(xmllint --xpath 'string(/NextMarker)' <(echo "$next_marker") 2>&1)
+  log 5 "marker text: $marker_text"
+  if [[ "$marker_text" != *"Document is empty"* ]]; then
+    log 2 "NextMarker text should be empty, but is $marker_text"
+    return 1
+  fi
+  return 0
 }

@@ -19,7 +19,9 @@ load ./bats-assert/load
 
 source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/list_objects/list_objects.sh
 source ./tests/drivers/list_objects/list_objects_rest.sh
+source ./tests/drivers/list_objects/list_objects_s3api.sh
 
 # tags: curl,ListObjects,minimal-request
 @test "test_rest_list_objects" {
