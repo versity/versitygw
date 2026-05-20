@@ -1,0 +1,38 @@
+name: functional tests (windows)
+permissions: {}
+on: pull_request
+
+jobs:
+  build:
+    name: RunTestsWindows
+    runs-on: windows-latest
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v6
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: 'stable'
+      id: go
+
+    - name: Get Dependencies
+      run: go mod download
+
+    - name: Build
+      run: |
+        $version = if (Test-Path VERSION) { Get-Content VERSION } else { git describe --abbrev=0 --tags HEAD }
+        $build = git rev-parse --short HEAD
+        $time = (Get-Date -Format "yyyy-MM-dd_hh:mm:sstt")
+        go build -ldflags "-X=main.Build=$build -X=main.BuildTime=$time -X=main.Version=$version" `
+          -o versitygw.exe -cover -race ./cmd/versitygw
+      shell: pwsh
+
+    - name: Run Tests
+      run: pwsh -File .\runtests.ps1
+      shell: pwsh
+
+    - name: Coverage Report
+      run: go tool covdata percent -i="$env:TEMP\covdata"
+      shell: pwsh

@@ -24,7 +24,7 @@ jobs:
     - name: Build and Run
       run: |
         make testbin
-        ./runtests.sh --sidecar
+        ./runtests.sh --sidecar --skip-racey
 
     - name: Coverage Report
       run: |

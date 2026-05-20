@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -90,6 +91,29 @@ func ListBuckets_as_user(s *S3Conf) error {
 func ListBuckets_as_admin(s *S3Conf) error {
 	testName := "ListBuckets_as_admin"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser, adminUser := getUser("user"), getUser("admin")
+
+		err := createUsers(s, []user{testuser, adminUser})
+		if err != nil {
+			return err
+		}
+
+		adminClient := s.getUserClient(adminUser)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		initOut, err := adminClient.ListBuckets(ctx, &s3.ListBucketsInput{})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ignore := make([]string, 0, len(initOut.Buckets))
+		for _, b := range initOut.Buckets {
+			if *b.Name != bucket {
+				ignore = append(ignore, *b.Name)
+			}
+		}
+
 		buckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}
 		for range 6 {
 			bckt := getBucketName()
@@ -104,12 +128,6 @@ func ListBuckets_as_admin(s *S3Conf) error {
 				BucketRegion: &s.awsRegion,
 			})
 		}
-		testuser, adminUser := getUser("user"), getUser("admin")
-
-		err := createUsers(s, []user{testuser, adminUser})
-		if err != nil {
-			return err
-		}
 
 		bckts := []string{}
 		for i := range 3 {
@@ -121,9 +139,7 @@ func ListBuckets_as_admin(s *S3Conf) error {
 			return err
 		}
 
-		adminClient := s.getUserClient(adminUser)
-
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		out, err := adminClient.ListBuckets(ctx, &s3.ListBucketsInput{})
 		cancel()
 		if err != nil {
@@ -134,7 +150,7 @@ func ListBuckets_as_admin(s *S3Conf) error {
 			return fmt.Errorf("expected buckets owner to be %v, instead got %v",
 				adminUser.access, getString(out.Owner.ID))
 		}
-		if !compareBuckets(out.Buckets, buckets) {
+		if !compareBuckets(out.Buckets, buckets, ignore...) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
 				sprintBuckets(buckets), sprintBuckets(out.Buckets))
 		}
@@ -154,6 +170,21 @@ func ListBuckets_with_prefix(s *S3Conf) error {
 	testName := "ListBuckets_with_prefix"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		prefix := "my-prefix-"
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		prefixInitOut, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{
+			Prefix: &prefix,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ignore := make([]string, 0, len(prefixInitOut.Buckets))
+		for _, b := range prefixInitOut.Buckets {
+			ignore = append(ignore, *b.Name)
+		}
+
 		allBuckets, prefixedBuckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}, []types.Bucket{}
 		for i := range 5 {
 			bckt := getBucketName()
@@ -179,7 +210,7 @@ func ListBuckets_with_prefix(s *S3Conf) error {
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{
 			Prefix: &prefix,
 		})
@@ -196,7 +227,7 @@ func ListBuckets_with_prefix(s *S3Conf) error {
 			return fmt.Errorf("expected prefix to be %v, instead got %v",
 				prefix, getString(out.Prefix))
 		}
-		if !compareBuckets(out.Buckets, prefixedBuckets) {
+		if !compareBuckets(out.Buckets, prefixedBuckets, ignore...) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
 				prefixedBuckets, out.Buckets)
 		}
@@ -243,7 +274,14 @@ func ListBuckets_invalid_max_buckets(s *S3Conf) error {
 func ListBuckets_truncated(s *S3Conf) error {
 	testName := "ListBuckets_truncated"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		buckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		initOut, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		newBuckets := []types.Bucket{}
 		for range 5 {
 			bckt := getBucketName()
 
@@ -252,14 +290,19 @@ func ListBuckets_truncated(s *S3Conf) error {
 				return err
 			}
 
-			buckets = append(buckets, types.Bucket{
+			newBuckets = append(newBuckets, types.Bucket{
 				Name:         &bckt,
 				BucketRegion: &s.awsRegion,
 			})
 		}
 
+		buckets := append(initOut.Buckets, newBuckets...)
+		sort.Slice(buckets, func(i, j int) bool {
+			return *buckets[i].Name < *buckets[j].Name
+		})
+
 		maxBuckets := int32(3)
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{
 			MaxBuckets: &maxBuckets,
 		})
@@ -292,7 +335,7 @@ func ListBuckets_truncated(s *S3Conf) error {
 
 		if !compareBuckets(out.Buckets, buckets[maxBuckets:]) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
-				sprintBuckets(buckets[:maxBuckets]), sprintBuckets(out.Buckets))
+				sprintBuckets(buckets[maxBuckets:]), sprintBuckets(out.Buckets))
 		}
 		if out.ContinuationToken != nil {
 			return fmt.Errorf("expected nil continuation token, instead got %v",
@@ -302,7 +345,7 @@ func ListBuckets_truncated(s *S3Conf) error {
 			return fmt.Errorf("expected nil prefix, instead got %v", *out.Prefix)
 		}
 
-		for _, elem := range buckets[1:] {
+		for _, elem := range newBuckets {
 			err = teardown(s, *elem.Name)
 			if err != nil {
 				return err
@@ -335,6 +378,20 @@ func ListBuckets_empty_success(s *S3Conf) error {
 func ListBuckets_success(s *S3Conf) error {
 	testName := "ListBuckets_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		initOut, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ignore := make([]string, 0, len(initOut.Buckets))
+		for _, b := range initOut.Buckets {
+			if *b.Name != bucket {
+				ignore = append(ignore, *b.Name)
+			}
+		}
+
 		buckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}
 		for range 5 {
 			bckt := getBucketName()
@@ -350,7 +407,7 @@ func ListBuckets_success(s *S3Conf) error {
 			})
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{})
 		cancel()
 		if err != nil {
@@ -361,7 +418,7 @@ func ListBuckets_success(s *S3Conf) error {
 			return fmt.Errorf("expected owner to be %v, instead got %v",
 				s.awsID, getString(out.Owner.ID))
 		}
-		if !compareBuckets(out.Buckets, buckets) {
+		if !compareBuckets(out.Buckets, buckets, ignore...) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
 				sprintBuckets(buckets), sprintBuckets(out.Buckets))
 		}

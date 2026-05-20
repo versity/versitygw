@@ -1,4 +1,4 @@
-// Copyright 2026 Versity Software
+// Copyright 2025 Versity Software
 // This file is licensed under the Apache License, Version 2.0
 // (the "License"); you may not use this file except in compliance
 // with the License.  You may obtain a copy of the License at
@@ -14,12 +14,7 @@
 
 //go:build !windows
 
-package posix
+package meta
 
-import (
-	"github.com/versity/versitygw/s3err"
-)
-
-func handleParentDirError(_ string) error {
-	return s3err.GetAPIError(s3err.ErrObjectParentIsFile)
-}
+// trimVolume is a no-op on non-Windows platforms.
+func trimVolume(p string) string { return p }
