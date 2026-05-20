@@ -1195,6 +1195,7 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_signature_mismatch)
 	ts.Run(PostObject_expired_due_to_date)
 	ts.Run(PostObject_access_denied)
+	ts.Run(PostObject_invalid_object_names)
 	ts.Run(PostObject_policy_access_control)
 	ts.Run(PostObject_policy_expired)
 	ts.Run(PostObject_invalid_policy_document)
@@ -2036,6 +2037,7 @@ func GetIntTests() IntTests {
 		"PostObject_signature_mismatch":                                            PostObject_signature_mismatch,
 		"PostObject_expired_due_to_date":                                           PostObject_expired_due_to_date,
 		"PostObject_access_denied":                                                 PostObject_access_denied,
+		"PostObject_invalid_object_names":                                          PostObject_invalid_object_names,
 		"PostObject_policy_access_control":                                         PostObject_policy_access_control,
 		"PostObject_policy_expired":                                                PostObject_policy_expired,
 		"PostObject_invalid_policy_document":                                       PostObject_invalid_policy_document,

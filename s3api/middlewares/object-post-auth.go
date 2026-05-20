@@ -86,6 +86,11 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 
 		fields := result.Fields
 
+		if !utils.IsObjectNameValid(fields["key"]) {
+			debuglogger.Logf("invalid POST object key: %q", fields["key"])
+			return s3err.GetAPIError(s3err.ErrBadRequest)
+		}
+
 		policyB64 := fields[formFieldPolicy]
 		algorithm := fields[formFieldAlgorithm]
 		credentialStr := fields[formFieldCredential]
