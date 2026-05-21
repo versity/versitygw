@@ -23,7 +23,19 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-var ErrAccessDenied = errors.New("access denied")
+var errAccessDenied = errors.New("access denied")
+var errExplicitDeny = errors.New("explicit deny")
+
+// policyDecision preserves the difference between "not allowed" and "denied".
+// Public bucket authorization needs that distinction so no-match can fall back
+// to ACLs while explicit Deny cannot.
+type policyDecision int
+
+const (
+	policyDecisionNoMatch policyDecision = iota
+	policyDecisionAllow
+	policyDecisionDeny
+)
 
 type policyErr string
 
@@ -105,9 +117,7 @@ func (bp *BucketPolicy) isAllowed(principal string, action Action, resource stri
 	return isAllowed
 }
 
-// IsPublicFor checks if the bucket policy statements contain
-// an entity granting public access to the given resource and action
-func (bp *BucketPolicy) isPublicFor(resource string, action Action) bool {
+func (bp *BucketPolicy) publicDecisionFor(resource string, action Action) policyDecision {
 	var isAllowed bool
 	for _, statement := range bp.Statement {
 		if statement.isPublicFor(resource, action) {
@@ -115,12 +125,16 @@ func (bp *BucketPolicy) isPublicFor(resource string, action Action) bool {
 			case BucketPolicyAccessTypeAllow:
 				isAllowed = true
 			case BucketPolicyAccessTypeDeny:
-				return false
+				return policyDecisionDeny
 			}
 		}
 	}
 
-	return isAllowed
+	// A matching Allow grants access only when no matching Deny was found.
+	if isAllowed {
+		return policyDecisionAllow
+	}
+	return policyDecisionNoMatch
 }
 
 // IsPublic checks if one of bucket policy statments grant
@@ -270,11 +284,14 @@ func VerifyPublicBucketPolicy(policy []byte, bucket, object string, action Actio
 		resource += "/" + object
 	}
 
-	if !bucketPolicy.isPublicFor(resource, action) {
-		return ErrAccessDenied
+	switch bucketPolicy.publicDecisionFor(resource, action) {
+	case policyDecisionAllow:
+		return nil
+	case policyDecisionDeny:
+		return errExplicitDeny
+	default:
+		return errAccessDenied
 	}
-
-	return nil
 }
 
 // matchPattern checks if the input string matches the given pattern with wildcard(`*`) and any character(`?`).

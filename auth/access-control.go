@@ -133,6 +133,11 @@ func VerifyPublicAccess(ctx context.Context, be backend.Backend, action Action, 
 	}
 	if err == nil {
 		err = VerifyPublicBucketPolicy(policy, bucket, object, action)
+		if errors.Is(err, errExplicitDeny) {
+			// Explicit public-policy Deny has higher precedence than any
+			// public ACL grant, so do not continue to ACL fallback.
+			return s3err.GetAPIError(s3err.ErrAccessDenied)
+		}
 		if err == nil {
 			// if ACLs are disabled, and the bucket grants public access,
 			// policy actions should return 'MethodNotAllowed'
