@@ -1049,6 +1049,7 @@ func TestPublicBuckets(ts *TestState) {
 		ts.Run(PublicBucket_public_object_policy)
 	}
 	ts.Run(PublicBucket_public_acl)
+	ts.Run(PublicBucket_policy_deny_overrides_public_acl)
 	ts.Run(PublicBucket_signed_streaming_payload)
 	ts.Run(PublicBucket_incorrect_sha256_hash)
 }
@@ -1892,6 +1893,7 @@ func GetIntTests() IntTests {
 		"PublicBucket_public_bucket_policy":                                        PublicBucket_public_bucket_policy,
 		"PublicBucket_public_object_policy":                                        PublicBucket_public_object_policy,
 		"PublicBucket_public_acl":                                                  PublicBucket_public_acl,
+		"PublicBucket_policy_deny_overrides_public_acl":                            PublicBucket_policy_deny_overrides_public_acl,
 		"PublicBucket_signed_streaming_payload":                                    PublicBucket_signed_streaming_payload,
 		"PublicBucket_incorrect_sha256_hash":                                       PublicBucket_incorrect_sha256_hash,
 		"PutBucketVersioning_non_existing_bucket":                                  PutBucketVersioning_non_existing_bucket,

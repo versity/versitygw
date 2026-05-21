@@ -472,7 +472,7 @@ func VerifyPublicBucketACL(ctx context.Context, be backend.Backend, bucket strin
 	}
 
 	if !acl.IsPublic(permission) {
-		return ErrAccessDenied
+		return errAccessDenied
 	}
 
 	return nil
