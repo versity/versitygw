@@ -729,6 +729,7 @@ func GetObject_by_range_resp_status(s *S3Conf) error {
 				s.awsSecret,
 				"s3",
 				s.awsRegion,
+				"",
 				nil,
 				time.Now(),
 				map[string]string{"Range": rng},
@@ -1075,6 +1076,7 @@ func GetObject_overrides_presign_success(s *S3Conf) error {
 				s.awsSecret,
 				"s3",
 				s.awsRegion,
+				"",
 				nil,
 				time.Now(),
 				nil,
@@ -1121,6 +1123,7 @@ func GetObject_overrides_presign_success(s *S3Conf) error {
 			s.awsSecret,
 			"s3",
 			s.awsRegion,
+			"",
 			nil,
 			time.Now(),
 			nil,
@@ -1294,7 +1297,7 @@ func GetObject_invalid_part_number(s *S3Conf) error {
 			PartNumber: getPtr(int32(-3)),
 		})
 
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPartNumber))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgPartNumber, "-3"))
 	})
 }
 
@@ -1369,7 +1372,7 @@ func GetObject_mp_part_number_exceeds_parts_count(s *S3Conf) error {
 			PartNumber: &pn,
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange))
+		return checkApiErr(err, s3err.GetInvalidPartNumberRangeErr(int32(partCount), pn))
 	})
 }
 
@@ -1630,6 +1633,7 @@ func GetObject_mp_part_number_resp_status(s *S3Conf) error {
 			s.awsSecret,
 			"s3",
 			s.awsRegion,
+			"",
 			nil,
 			time.Now(),
 			nil,

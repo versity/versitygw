@@ -52,8 +52,8 @@ func chainHandlers(handlers ...fiber.Handler) fiber.Handler {
 func postObjectTestApp(root RootUserConfig, region string, next fiber.Handler) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
-			if apiErr, ok := err.(s3err.APIError); ok {
-				return c.Status(apiErr.HTTPStatusCode).SendString(apiErr.Code)
+			if s3Err, ok := err.(s3err.S3Error); ok {
+				return c.Status(s3Err.StatusCode()).Send(s3Err.XMLBody("", ""))
 			}
 			return c.Status(500).SendString(err.Error())
 		},

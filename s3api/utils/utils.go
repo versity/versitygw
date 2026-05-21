@@ -15,7 +15,6 @@
 package utils
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/xml"
@@ -94,7 +93,7 @@ func GetUserMetaData(headers *fasthttp.RequestHeader) (map[string]string, error)
 
 			if metadataSize > maxMetadataSize {
 				debuglogger.Logf("total meta headers size exceeded the maximum allowed: (size): %v, (max): %v", metadataSize, maxMetadataSize)
-				return nil, s3err.GetAPIError(s3err.ErrMetadataTooLarge)
+				return nil, s3err.GetMetadataTooLargeErr(metadataSize, maxMetadataSize)
 			}
 		}
 	}
@@ -115,7 +114,7 @@ func ExtractMetadataFromFields(fields map[string]string) (map[string]string, err
 		metadataSize += len(trimmedKey) + len(value)
 		if metadataSize > maxMetadataSize {
 			debuglogger.Logf("total meta headers size exceeded the maximum allowed: (size): %v, (max): %v", metadataSize, maxMetadataSize)
-			return nil, s3err.GetAPIError(s3err.ErrMetadataTooLarge)
+			return nil, s3err.GetMetadataTooLargeErr(metadataSize, maxMetadataSize)
 		}
 
 		metadata[trimmedKey] = value
@@ -124,18 +123,12 @@ func ExtractMetadataFromFields(fields map[string]string) (map[string]string, err
 	return metadata, nil
 }
 
-func createHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength int64, streamBody bool) (*http.Request, error) {
+func createHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength int64) (*http.Request, error) {
 	req := ctx.Request()
-	var body io.Reader
-	if streamBody {
-		body = req.BodyStream()
-	} else {
-		body = bytes.NewReader(req.Body())
-	}
 
 	uri := ctx.OriginalURL()
 
-	httpReq, err := http.NewRequest(string(req.Header.Method()), uri, body)
+	httpReq, err := http.NewRequest(string(req.Header.Method()), uri, nil)
 	if err != nil {
 		return nil, errors.New("error in creating an http request")
 	}
@@ -179,14 +172,8 @@ var (
 	}
 )
 
-func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength int64, streamBody bool) (*http.Request, error) {
+func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength int64) (*http.Request, error) {
 	req := ctx.Request()
-	var body io.Reader
-	if streamBody {
-		body = req.BodyStream()
-	} else {
-		body = bytes.NewReader(req.Body())
-	}
 
 	uri, _, _ := strings.Cut(ctx.OriginalURL(), "?")
 	isFirst := true
@@ -204,7 +191,7 @@ func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, cont
 		}
 	}
 
-	httpReq, err := http.NewRequest(string(req.Header.Method()), uri, body)
+	httpReq, err := http.NewRequest(string(req.Header.Method()), uri, nil)
 	if err != nil {
 		return nil, errors.New("error in creating an http request")
 	}
@@ -279,14 +266,14 @@ func ParseMaxLimiter(limiter string, lt LimiterType) (int32, error) {
 			lt = LimiterTypeMaxKeys
 		}
 		debuglogger.Logf("invalid %s provided: %s\n", lt, limiter)
-		return 0, s3err.GetInvalidMaxLimiterErr(string(lt))
+		return 0, s3err.GetInvalidArgMaxLimiter(string(lt), limiter)
 	}
 
 	// max-buckets has distinct range rules and errors.
 	if lt == LimiterTypeMaxBuckets {
 		if num < 1 || num > int64(defaultMaxBuckets) {
 			debuglogger.Logf("invalid max-buckets: %v", num)
-			return 0, s3err.GetAPIError(s3err.ErrInvalidMaxBuckets)
+			return 0, s3err.GetInvalidArgumentErr(s3err.InvalidArgMaxBuckets, limiter)
 		}
 		return int32(num), nil
 	}
@@ -302,10 +289,10 @@ func ParseMaxLimiter(limiter string, lt LimiterType) (int32, error) {
 
 		// versions_max_keys uses the MaxKeys negative error.
 		if lt == LimiterTypeVersionsMaxKeys {
-			return 0, s3err.GetAPIError(s3err.ErrNegativeMaxKeys)
+			return 0, s3err.GetInvalidArgumentErr(s3err.InvalidArgNegativeMaxKeys, limiter)
 		}
 
-		return 0, s3err.GetNegativeMaxLimiterErr(string(lt))
+		return 0, s3err.GetInvalidArgNegativeMaxLimiter(string(lt), limiter)
 	}
 
 	// Clamp excessive limiters to defaultMaxLimiter.
@@ -367,7 +354,7 @@ func includeHeader(hdr string, signedHdrs []string) bool {
 
 // expiration time window
 // https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html#RESTAuthenticationTimeStamp
-const timeExpirationSec = 15 * 60
+const timeExpirationSec = 15 * 60 // seconds
 
 func ValidateDate(date time.Time) error {
 	now := time.Now().UTC()
@@ -375,7 +362,7 @@ func ValidateDate(date time.Time) error {
 
 	// Checks the dates difference to be within allotted window
 	if diff > timeExpirationSec || diff < -timeExpirationSec {
-		return s3err.GetAPIError(s3err.ErrRequestTimeTooSkewed)
+		return s3err.GetRequestTimeTooSkewedErr(date.Format(iso8601Format), now.Format(time.RFC3339), timeExpirationSec*1000)
 	}
 
 	return nil
@@ -427,7 +414,7 @@ func ParseObjectAttributes(ctx *fiber.Ctx) (map[s3response.ObjectAttributes]stru
 				attr := s3response.ObjectAttributes(a)
 				if !attr.IsValid() {
 					debuglogger.Logf("invalid object attribute: %v\n", attr)
-					err = s3err.GetAPIError(s3err.ErrInvalidObjectAttributes)
+					err = s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectAttributes, string(value))
 					break
 				}
 				attrs[attr] = struct{}{}
@@ -458,9 +445,13 @@ func ParsObjectLockHdrs(ctx *fiber.Ctx) (*objLockCfg, error) {
 	objLockModeHdr := ctx.Get("X-Amz-Object-Lock-Mode")
 	objLockDate := ctx.Get("X-Amz-Object-Lock-Retain-Until-Date")
 
-	if (objLockDate != "" && objLockModeHdr == "") || (objLockDate == "" && objLockModeHdr != "") {
-		debuglogger.Logf("one of 2 required params is missing: (lock date): %v, (lock mode): %v\n", objLockDate, objLockModeHdr)
-		return nil, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)
+	if objLockDate != "" && objLockModeHdr == "" {
+		debuglogger.Logf("the missing x-amz-object-lock-mode is required with x-amz-object-lock-retain-until-date")
+		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockMode, "")
+	}
+	if objLockDate == "" && objLockModeHdr != "" {
+		debuglogger.Logf("the missing x-amz-object-lock-retain-until-date is required with x-amz-object-lock-mode")
+		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockRetainDate, "")
 	}
 
 	var retainUntilDate time.Time
@@ -468,11 +459,11 @@ func ParsObjectLockHdrs(ctx *fiber.Ctx) (*objLockCfg, error) {
 		rDate, err := time.Parse(time.RFC3339, objLockDate)
 		if err != nil {
 			debuglogger.Logf("failed to parse retain until date: %v\n", err)
-			return nil, s3err.GetAPIError(s3err.ErrInvalidRetainUntilDate)
+			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgRetainUntilDate, objLockDate)
 		}
 		if rDate.Before(time.Now()) {
 			debuglogger.Logf("expired retain until date: %v\n", rDate.Format(time.RFC3339))
-			return nil, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate)
+			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, objLockDate)
 		}
 		retainUntilDate = rDate
 	}
@@ -483,14 +474,14 @@ func ParsObjectLockHdrs(ctx *fiber.Ctx) (*objLockCfg, error) {
 		objLockMode != types.ObjectLockModeCompliance &&
 		objLockMode != types.ObjectLockModeGovernance {
 		debuglogger.Logf("invalid object lock mode: %v\n", objLockMode)
-		return nil, s3err.GetAPIError(s3err.ErrInvalidObjectLockMode)
+		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, objLockModeHdr)
 	}
 
 	legalHold := types.ObjectLockLegalHoldStatus(legalHoldHdr)
 
 	if legalHold != "" && legalHold != types.ObjectLockLegalHoldStatusOff && legalHold != types.ObjectLockLegalHoldStatusOn {
 		debuglogger.Logf("invalid object lock legal hold status: %v\n", legalHold)
-		return nil, s3err.GetAPIError(s3err.ErrInvalidLegalHoldStatus)
+		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, legalHoldHdr)
 	}
 
 	return &objLockCfg{
@@ -928,25 +919,25 @@ func ParseTagging(data []byte, limit TagLimit) (map[string]string, error) {
 		// validate tag key length
 		if len(tag.Key) == 0 || len(tag.Key) > 128 {
 			debuglogger.Logf("tag key should 0 < tag.Key <= 128, key: %v", tag.Key)
-			return nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)
+			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, tag.Key, "")
 		}
 
 		// validate tag key string chars
 		if !tagRule.MatchString(tag.Key) {
 			debuglogger.Logf("invalid tag key: %s", tag.Key)
-			return nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)
+			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, tag.Key, "")
 		}
 
 		// validate tag value length
 		if len(tag.Value) > 256 {
 			debuglogger.Logf("invalid long tag value: (length): %v, (value): %v", len(tag.Value), tag.Value)
-			return nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)
+			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagValue, tag.Key, tag.Value)
 		}
 
 		// validate tag value string chars
 		if !tagRule.MatchString(tag.Value) {
 			debuglogger.Logf("invalid tag value: %s", tag.Value)
-			return nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)
+			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagValue, tag.Key, tag.Value)
 		}
 
 		// make sure there are no duplicate keys
@@ -1028,18 +1019,17 @@ func GetInt64(n *int64) int64 {
 }
 
 // ValidateCopySource parses and validates the copy-source
-func ValidateCopySource(copysource string) error {
-	var err error
-	copysource, err = url.QueryUnescape(copysource)
+func ValidateCopySource(input string) error {
+	copysource, err := url.QueryUnescape(input)
 	if err != nil {
-		debuglogger.Logf("invalid copy source encoding: %s", copysource)
-		return s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)
+		debuglogger.Logf("invalid copy source encoding: %s", input)
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, input)
 	}
 
 	bucket, rest, _ := strings.Cut(copysource, "/")
 	if !IsValidBucketName(bucket) {
 		debuglogger.Logf("invalid copy source bucket: %s", bucket)
-		return s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, input)
 	}
 
 	// cut till the versionId as it's the only query param
@@ -1051,7 +1041,7 @@ func ValidateCopySource(copysource string) error {
 	// in the gateway
 	if !IsObjectNameValid(object) {
 		debuglogger.Logf("invalid copy source object: %s", object)
-		return s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, object)
 	}
 
 	return nil
@@ -1131,4 +1121,22 @@ func NewTLSListener(network string, address string, getCertificateFunc func(*tls
 		return nil, err
 	}
 	return tls.NewListener(ln, config), nil
+}
+
+func DetectResourceType(ctx *fiber.Ctx) s3err.ResourceType {
+	path := ctx.Path()
+	if path == "" || path == "/" {
+		return s3err.ResourceTypeService
+	}
+
+	path = strings.TrimPrefix(path, "/")
+	_, rest, found := strings.Cut(path, "/")
+	if !found {
+		return s3err.ResourceTypeBucket
+	}
+	if rest == "" {
+		return s3err.ResourceTypeBucket
+	}
+
+	return s3err.ResourceTypeObject
 }

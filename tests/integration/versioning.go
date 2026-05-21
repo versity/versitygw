@@ -239,7 +239,7 @@ func Versioning_CopyObject_invalid_versionId(s *S3Conf) error {
 			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=invalid_versionId", bucket, srcObj)),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_versionId"))
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
@@ -714,7 +714,7 @@ func Versioning_GetObject_invalid_versionId(s *S3Conf) error {
 			VersionId: getPtr("invalid_version_id"),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_version_id"))
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
@@ -994,7 +994,7 @@ func Versioning_GetObjectAttributes_invalid_versionId(s *S3Conf) error {
 			},
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_versionId"))
 	})
 }
 
@@ -1112,7 +1112,7 @@ func Versioning_DeleteObject_invalid_versionId(s *S3Conf) error {
 			VersionId: getPtr("invalid_versionId"),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_versionId"))
 	})
 }
 
@@ -1184,7 +1184,7 @@ func Versioning_DeleteObject_non_existing_object(s *S3Conf) error {
 			VersionId: getPtr("non_existing_version_id"),
 		})
 		canel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "non_existing_version_id")); err != nil {
 			return err
 		}
 
@@ -1893,7 +1893,7 @@ func Versioning_UploadPartCopy_invalid_versionId(s *S3Conf) error {
 				bucket, srcObj)),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_versionId"))
 	})
 }
 
@@ -2099,7 +2099,7 @@ func Versioning_PutObjectRetention_invalid_versionId(s *S3Conf) error {
 			},
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_version_id"))
 	}, withLock())
 }
 
@@ -2148,7 +2148,7 @@ func Versioning_GetObjectRetention_invalid_versionId(s *S3Conf) error {
 			VersionId: getPtr("invalid_versionId"),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_versionId"))
 	}, withLock())
 }
 
@@ -2292,7 +2292,7 @@ func Versioning_PutObjectLegalHold_invalid_versionId(s *S3Conf) error {
 			},
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_version_id"))
 	}, withLock())
 }
 
@@ -2339,7 +2339,7 @@ func Versioning_GetObjectLegalHold_invalid_versionId(s *S3Conf) error {
 			VersionId: getPtr("invalid_version_id"),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_version_id"))
 	}, withLock())
 }
 
@@ -3666,7 +3666,7 @@ func Versioning_GetObjectTagging_invalid_versionId(s *S3Conf) error {
 			VersionId: getPtr("invalid_versionId"),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_versionId"))
 	})
 }
 
@@ -3780,7 +3780,7 @@ func Versioning_PutObjectTagging_invalid_versionId(s *S3Conf) error {
 			VersionId: getPtr("invalid_versionId"),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_versionId"))
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
@@ -3826,7 +3826,7 @@ func Versioning_DeleteObjectTagging_invalid_versionId(s *S3Conf) error {
 			VersionId: getPtr("invalid_versionId"),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_versionId"))
 	})
 }
 

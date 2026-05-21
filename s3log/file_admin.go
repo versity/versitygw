@@ -80,7 +80,6 @@ func (f *AdminFileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMe
 	lf.Time = time.Now()
 	lf.RemoteIP = ctx.IP()
 	lf.Requester = access
-	lf.RequestID = genID()
 	lf.Operation = meta.Action
 	lf.RequestURI = reqURI
 	lf.HttpStatus = meta.HttpStatus
@@ -92,6 +91,9 @@ func (f *AdminFileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMe
 	lf.UserAgent = ctx.Get("User-Agent")
 	lf.SignatureVersion = "SigV4"
 	lf.AuthenticationType = "AuthHeader"
+	requestID, hostID := utils.EnsureRequestIDs(ctx)
+	lf.RequestID = requestID
+	lf.HostID = hostID
 
 	f.writeLog(lf)
 }
@@ -125,7 +127,7 @@ func (f *AdminFileLogger) writeLog(lf AdminLogFields) {
 		lf.TLSVersion = "-"
 	}
 
-	log := fmt.Sprintf("%v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v\n",
+	log := fmt.Sprintf("%v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v\n",
 		fmt.Sprintf("[%v]", lf.Time.Format(timeFormat)),
 		lf.RemoteIP,
 		lf.Requester,
@@ -139,6 +141,7 @@ func (f *AdminFileLogger) writeLog(lf AdminLogFields) {
 		lf.TurnAroundTime,
 		lf.Referer,
 		lf.UserAgent,
+		lf.HostID,
 		lf.SignatureVersion,
 		lf.CipherSuite,
 		lf.AuthenticationType,

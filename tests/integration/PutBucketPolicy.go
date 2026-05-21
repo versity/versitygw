@@ -700,7 +700,7 @@ func PutBucketPolicy_status(s *S3Conf) error {
 	testname := "PutBucketPolicy_status"
 	return actionHandler(s, testname, func(s3client *s3.Client, bucket string) error {
 		doc := genPolicyDoc("Allow", `"*"`, `"s3:GetObject"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
-		req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"?policy", s.awsID, s.awsSecret, "s3", s.awsRegion, []byte(doc), time.Now(), nil)
+		req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"?policy", s.awsID, s.awsSecret, "s3", s.awsRegion, "", []byte(doc), time.Now(), nil)
 		if err != nil {
 			return err
 		}

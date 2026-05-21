@@ -529,6 +529,7 @@ func TestCompleteMultipartUpload(ts *TestState) {
 	ts.Run(CompleteMultipartUpload_invalid_ETag)
 	ts.Run(CompleteMultipartUpload_small_upload_size)
 	ts.Run(CompleteMultipartUpload_empty_parts)
+	ts.Run(CompleteMultipartUpload_missing_part_fields)
 	ts.Run(CompleteMultipartUpload_incorrect_parts_order)
 	ts.Run(CompleteMultipartUpload_mpu_object_size)
 	ts.Run(CompleteMultipartUpload_conditional_writes)
@@ -969,6 +970,7 @@ func TestScoutfs(ts *TestState) {
 	ts.Run(CompleteMultipartUpload_invalid_ETag)
 	ts.Run(CompleteMultipartUpload_small_upload_size)
 	ts.Run(CompleteMultipartUpload_empty_parts)
+	ts.Run(CompleteMultipartUpload_missing_part_fields)
 	ts.Run(CompleteMultipartUpload_incorrect_parts_order)
 	ts.Run(CompleteMultipartUpload_mpu_object_size)
 	ts.Run(CompleteMultipartUpload_invalid_checksum_type)
@@ -1648,6 +1650,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_invalid_ETag":                                     CompleteMultipartUpload_invalid_ETag,
 		"CompleteMultipartUpload_small_upload_size":                                CompleteMultipartUpload_small_upload_size,
 		"CompleteMultipartUpload_empty_parts":                                      CompleteMultipartUpload_empty_parts,
+		"CompleteMultipartUpload_missing_part_fields":                              CompleteMultipartUpload_missing_part_fields,
 		"CompleteMultipartUpload_incorrect_part_number":                            CompleteMultipartUpload_incorrect_part_number,
 		"CompleteMultipartUpload_incorrect_parts_order":                            CompleteMultipartUpload_incorrect_parts_order,
 		"CompleteMultipartUpload_mpu_object_size":                                  CompleteMultipartUpload_mpu_object_size,

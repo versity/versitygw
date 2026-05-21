@@ -131,6 +131,10 @@ func New(
 			Format: "${time} | vgw | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 		}))
 	}
+
+	// initialize requestId middleware
+	app.Use(middlewares.RequestIDs())
+
 	// Set up health endpoint if specified
 	if server.health != "" {
 		app.Get(server.health, func(ctx *fiber.Ctx) error {
@@ -379,6 +383,8 @@ func stackTraceHandler(ctx *fiber.Ctx, e any) {
 // globalErrorHandler catches the errors before reaching to
 // the handlers and any system panics
 func globalErrorHandler(ctx *fiber.Ctx, er error) error {
+	requestID, hostID := utils.EnsureRequestIDs(ctx)
+
 	// set content type to application/xml
 	ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
 
@@ -406,8 +412,7 @@ func globalErrorHandler(ctx *fiber.Ctx, er error) error {
 				// which is a malfoedmed one. Return a BadRequest in this case
 				debuglogger.Logf("failed to parse the http request")
 				err := s3err.GetAPIError(s3err.ErrCannotParseHTTPRequest)
-				ctx.Status(err.HTTPStatusCode)
-				return ctx.Send(s3err.GetAPIErrorResponse(err, "", "", ""))
+				return ctx.Status(err.StatusCode()).Send(err.XMLBody(requestID, hostID))
 			}
 		}
 
@@ -417,6 +422,5 @@ func globalErrorHandler(ctx *fiber.Ctx, er error) error {
 
 	ctx.Status(http.StatusInternalServerError)
 
-	return ctx.Send(s3err.GetAPIErrorResponse(
-		s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
+	return ctx.Send(s3err.GetAPIError(s3err.ErrInternalError).XMLBody(requestID, hostID))
 }

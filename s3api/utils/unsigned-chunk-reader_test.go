@@ -167,11 +167,11 @@ func requireAPIErrorCode(t *testing.T, err error, code string) {
 	if err == nil {
 		t.Fatalf("expected %s error, got nil", code)
 	}
-	var apiErr s3err.APIError
+	var apiErr s3err.S3Error
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("expected APIError, got %T: %v", err, err)
 	}
-	if apiErr.Code != code {
-		t.Fatalf("APIError code = %q, want %q", apiErr.Code, code)
+	if apiErr.BaseError().Code != code {
+		t.Fatalf("APIError code = %q, want %q", apiErr.BaseError().Code, code)
 	}
 }

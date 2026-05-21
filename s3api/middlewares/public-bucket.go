@@ -119,7 +119,7 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 
 			// Compare the calculated hash with the hash provided
 			if payloadHash != hexPayload {
-				return s3err.GetAPIError(s3err.ErrContentSHA256Mismatch)
+				return s3err.GetContentSHA256MismatchErr(payloadHash, hexPayload)
 			}
 		}
 

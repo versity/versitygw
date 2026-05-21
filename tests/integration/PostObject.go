@@ -49,7 +49,7 @@ func PostObject_invalid_content_type(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrPreconditionFailed))
+		return checkHTTPResponseApiErr(resp, s3err.GetPreconditionFailedErr(s3err.ConditionPostBucket))
 	})
 }
 
@@ -123,7 +123,7 @@ func PostObject_invalid_algorithm(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrOnlyAws4HmacSha256))
+		return checkHTTPResponseApiErr(resp, s3err.GetInvalidArgumentErr(s3err.InvalidArgOnlyAws4HmacSha256, "invalid"))
 	})
 }
 
@@ -143,7 +143,7 @@ func PostObject_invalid_date(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidDateHeader))
+		return checkHTTPResponseApiErr(resp, s3err.GetInvalidArgumentErr(s3err.InvalidArgDateHeader, "invalid_date"))
 	})
 }
 
@@ -163,7 +163,7 @@ func PostObject_invalid_credential_format(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.PostAuth.MalformedCredential())
+		return checkHTTPResponseApiErr(resp, s3err.PostAuth.MalformedCredential("malformed-no-slashes"))
 	})
 }
 
@@ -186,18 +186,20 @@ func PostObject_incorrect_region(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.PostAuth.IncorrectRegion(s.awsRegion, wrongRegion))
+		expectedCreds := fmt.Sprintf("%s/%s/%s/s3/aws4_request", s.awsID, time.Now().UTC().Format("20060102"), wrongRegion)
+		return checkHTTPResponseApiErr(resp, s3err.PostAuth.IncorrectRegion(expectedCreds, s.awsRegion, wrongRegion))
 	})
 }
 
 func PostObject_non_existing_access_key(s *S3Conf) error {
 	testName := "PostObject_non_existing_access_key"
 	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		accessKeyID := "this_access_key_id_can_not_really_exist"
 		resp, err := sendPostObject(PostRequestConfig{
 			bucket:      bucket,
 			key:         "test-object",
 			s3Conf:      s,
-			access:      "this_access_key_id_can_not_really_exist",
+			access:      accessKeyID,
 			secret:      "a_very_secure_secret_access_key",
 			fileContent: []byte("data"),
 		})
@@ -205,28 +207,57 @@ func PostObject_non_existing_access_key(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID))
+		return checkHTTPResponseApiErr(resp, s3err.GetInvalidAccessKeyIdErr(accessKeyID))
 	})
 }
 
 func PostObject_signature_mismatch(s *S3Conf) error {
 	testName := "PostObject_signature_mismatch"
 	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
-		resp, err := sendPostObject(PostRequestConfig{
+		const signature = "incorrect_signature"
+		req, fields, err := newPostObjectRequest(PostRequestConfig{
 			bucket:      bucket,
 			key:         "test-object",
 			s3Conf:      s,
 			fileContent: []byte("data"),
 			extraFields: map[string]string{
-				"x-amz-signature": "incorrect_signature",
+				"x-amz-signature": signature,
 			},
 		})
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
 
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+
+		var errResp APIErrorResponse
+		err = xml.Unmarshal(body, &errResp)
+		if err != nil {
+			return err
+		}
+
+		expected := s3err.GetSignatureDoesNotMatchErr(s.awsID, fields["policy"], signature, hexBytes(fields["policy"]), "", "")
+
+		if resp.StatusCode != expected.HTTPStatusCode {
+			return fmt.Errorf("expected response status code to be %v, instead got %v", expected.HTTPStatusCode, resp.StatusCode)
+		}
+		return compareS3ApiErrFields(
+			compareErrField("AWSAccessKeyId", expected.AWSAccessKeyId, errResp.AWSAccessKeyId),
+			compareErrField("StringToSign", expected.StringToSign, errResp.StringToSign),
+			compareErrField("SignatureProvided", expected.SignatureProvided, errResp.SignatureProvided),
+			compareErrField("StringToSignBytes", expected.StringToSignBytes, errResp.StringToSignBytes),
+			checkErrFieldEmptiness("CanonicalRequest", expected.CanonicalRequest, false),
+			checkErrFieldEmptiness("CanonicalRequestBytes", expected.CanonicalRequestBytes, false),
+		)
 	})
 }
 
@@ -466,7 +497,7 @@ func PostObject_invalid_policy_document(s *S3Conf) error {
 			policy     *string
 			expiration time.Time
 			conditions []any
-			err        s3err.APIError
+			err        s3err.S3Error
 		}{
 			// empty policy document
 			{getPtr(""), time.Time{}, []any{}, s3err.InvalidPolicyDocument.EmptyPolicy()},
@@ -616,7 +647,7 @@ func PostObject_policy_content_length_too_large(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrEntityTooLarge))
+		return checkHTTPResponseApiErr(resp, s3err.GetEntityTooLargeErr(10, 5))
 	})
 }
 
@@ -637,7 +668,7 @@ func PostObject_policy_content_length_too_small(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrEntityTooSmall))
+		return checkHTTPResponseApiErr(resp, s3err.GetEntityTooSmallErr(2, 100))
 	})
 }
 

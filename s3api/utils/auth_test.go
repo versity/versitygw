@@ -92,7 +92,7 @@ func Test_Client_UserAgent(t *testing.T) {
 	}
 
 	app.Get("/", func(c *fiber.Ctx) error {
-		req, err := createHttpRequestFromCtx(c, signedHdrs, int64(c.Request().Header.ContentLength()), true)
+		req, err := createHttpRequestFromCtx(c, signedHdrs, int64(c.Request().Header.ContentLength()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,7 +102,7 @@ func Test_Client_UserAgent(t *testing.T) {
 
 		signer := v4.NewSigner()
 
-		signErr := signer.SignHTTP(req.Context(),
+		_, signErr := signer.SignHTTP(req.Context(),
 			aws.Credentials{
 				AccessKeyID:     access,
 				SecretAccessKey: secret,

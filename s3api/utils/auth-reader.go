@@ -18,9 +18,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"time"
@@ -39,77 +37,15 @@ const (
 	yyyymmdd      = "20060102"
 )
 
-// AuthReader is an io.Reader that validates the request authorization
-// once the underlying reader returns io.EOF.  This is needed for streaming
-// data requests where the data size and checksum are not known until
-// the data is completely read.
-type AuthReader struct {
-	ctx    *fiber.Ctx
-	auth   AuthData
-	secret string
-	size   int
-	r      *HashReader
-}
+func HexBytes(s string) string {
+	b := []byte(s) // raw UTF-8 bytes
 
-// NewAuthReader initializes an io.Reader that will verify the request
-// v4 auth when the underlying reader returns io.EOF. This postpones the
-// authorization check until the reader is consumed. So it is important that
-// the consumer of this reader checks for the auth errors while reading.
-func NewAuthReader(ctx *fiber.Ctx, r io.Reader, auth AuthData, secret string) *AuthReader {
-	var hr *HashReader
-	hashPayload := ctx.Get("X-Amz-Content-Sha256")
-	if !IsSpecialPayload(hashPayload) {
-		hr, _ = NewHashReader(r, "", HashTypeSha256Hex)
-	} else {
-		hr, _ = NewHashReader(r, "", HashTypeNone)
+	parts := make([]string, len(b))
+	for i, v := range b {
+		parts[i] = fmt.Sprintf("%02x", v)
 	}
 
-	return &AuthReader{
-		ctx:    ctx,
-		r:      hr,
-		auth:   auth,
-		secret: secret,
-	}
-}
-
-// Read allows *AuthReader to be used as an io.Reader
-func (ar *AuthReader) Read(p []byte) (int, error) {
-	n, err := ar.r.Read(p)
-	ar.size += n
-
-	if errors.Is(err, io.EOF) {
-		verr := ar.validateSignature()
-		if verr != nil {
-			return n, verr
-		}
-	}
-
-	return n, err
-}
-
-func (ar *AuthReader) validateSignature() error {
-	date := ar.ctx.Get("X-Amz-Date")
-	if date == "" {
-		return s3err.GetAPIError(s3err.ErrMissingDateHeader)
-	}
-
-	hashPayload := ar.ctx.Get("X-Amz-Content-Sha256")
-	if !IsSpecialPayload(hashPayload) {
-		hexPayload := ar.r.Sum()
-
-		// Compare the calculated hash with the hash provided
-		if hashPayload != hexPayload {
-			return s3err.GetAPIError(s3err.ErrContentSHA256Mismatch)
-		}
-	}
-
-	// Parse the date and check the date validity
-	tdate, err := time.Parse(iso8601Format, date)
-	if err != nil {
-		return s3err.GetAPIError(s3err.ErrMissingDateHeader)
-	}
-
-	return CheckValidSignature(ar.ctx, ar.auth, ar.secret, hashPayload, tdate, int64(ar.size), true)
+	return strings.Join(parts, " ")
 }
 
 const (
@@ -117,18 +53,18 @@ const (
 )
 
 // CheckValidSignature validates the ctx v4 auth signature
-func CheckValidSignature(ctx *fiber.Ctx, auth AuthData, secret, checksum string, tdate time.Time, contentLen int64, streamBody bool) error {
+func CheckValidSignature(ctx *fiber.Ctx, auth AuthData, secret, checksum string, tdate time.Time, contentLen int64) (string, error) {
 	signedHdrs := strings.Split(auth.SignedHeaders, ";")
 
 	// Create a new http request instance from fasthttp request
-	req, err := createHttpRequestFromCtx(ctx, signedHdrs, contentLen, streamBody)
+	req, err := createHttpRequestFromCtx(ctx, signedHdrs, contentLen)
 	if err != nil {
-		return fmt.Errorf("create http request from context: %w", err)
+		return "", fmt.Errorf("create http request from context: %w", err)
 	}
 
 	signer := v4.NewSigner()
 
-	signErr := signer.SignHTTP(req.Context(),
+	signMeta, err := signer.SignHTTP(req.Context(),
 		aws.Credentials{
 			AccessKeyID:     auth.Access,
 			SecretAccessKey: secret,
@@ -141,20 +77,27 @@ func CheckValidSignature(ctx *fiber.Ctx, auth AuthData, secret, checksum string,
 				options.Logger = logging.NewStandardLogger(os.Stderr)
 			}
 		})
-	if signErr != nil {
-		return fmt.Errorf("sign generated http request: %w", err)
+	if err != nil {
+		return "", fmt.Errorf("sign generated http request: %w", err)
 	}
 
 	genAuth, err := ParseAuthorization(req.Header.Get("Authorization"))
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if auth.Signature != genAuth.Signature {
-		return s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)
+		return "", s3err.GetSignatureDoesNotMatchErr(
+			auth.Access,
+			signMeta.StringToSign,
+			auth.Signature,
+			HexBytes(signMeta.StringToSign),
+			signMeta.CanonicalString,
+			HexBytes(signMeta.CanonicalString),
+		)
 	}
 
-	return nil
+	return signMeta.CanonicalString, nil
 }
 
 // AuthData is the parsed authorization data from the header
@@ -187,7 +130,7 @@ func ParseAuthorization(authorization string) (AuthData, error) {
 	}
 
 	if len(authParts) < 2 {
-		return a, s3err.GetAPIError(s3err.ErrInvalidAuthHeader)
+		return a, s3err.GetInvalidArgumentErr(s3err.InvalidArgAuthHeader, authorization)
 	}
 
 	algo := authParts[0]
@@ -196,7 +139,7 @@ func ParseAuthorization(authorization string) (AuthData, error) {
 		return a, s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationMechanism)
 	}
 	if algo != "AWS4-HMAC-SHA256" {
-		return a, s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationType)
+		return a, s3err.GetInvalidArgumentErr(s3err.InvalidArgAuthorizationType, algo)
 	}
 
 	kvData := authParts[1]
@@ -263,26 +206,26 @@ type CredentialsScope struct {
 }
 
 type CredsError interface {
-	MalformedCredential() s3err.APIError
-	IncorrectService(string) s3err.APIError
-	IncorrectTerminal(string) s3err.APIError
-	InvalidDateFormat(string) s3err.APIError
+	MalformedCredential(string) s3err.S3Error
+	IncorrectService(string, string) s3err.S3Error
+	IncorrectTerminal(string, string) s3err.S3Error
+	InvalidDateFormat(string, string) s3err.S3Error
 }
 
 func ParseCredentials(input string, errHandler CredsError) (*CredentialsScope, error) {
 	creds := strings.Split(input, "/")
 	if len(creds) != 5 {
-		return nil, errHandler.MalformedCredential()
+		return nil, errHandler.MalformedCredential(input)
 	}
 	if creds[3] != "s3" {
-		return nil, errHandler.IncorrectService(creds[3])
+		return nil, errHandler.IncorrectService(input, creds[3])
 	}
 	if creds[4] != "aws4_request" {
-		return nil, errHandler.IncorrectTerminal(creds[4])
+		return nil, errHandler.IncorrectTerminal(input, creds[4])
 	}
 	_, err := time.Parse(yyyymmdd, creds[1])
 	if err != nil {
-		return nil, errHandler.InvalidDateFormat(creds[1])
+		return nil, errHandler.InvalidDateFormat(input, creds[1])
 	}
 	return &CredentialsScope{
 		Access: creds[0],

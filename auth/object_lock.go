@@ -60,10 +60,10 @@ func ParseBucketLockConfigurationInput(input []byte) ([]byte, error) {
 		}
 
 		if retention.Days != nil && *retention.Days <= 0 {
-			return nil, s3err.GetAPIError(s3err.ErrObjectLockInvalidRetentionPeriod)
+			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionDays, fmt.Sprint(*retention.Days))
 		}
 		if retention.Years != nil && *retention.Years <= 0 {
-			return nil, s3err.GetAPIError(s3err.ErrObjectLockInvalidRetentionPeriod)
+			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionYears, fmt.Sprint(*retention.Years))
 		}
 
 		config.DefaultRetention = retention
@@ -102,7 +102,7 @@ func ParseObjectLockRetentionInput(input []byte) (*s3response.PutObjectRetention
 
 	if retention.RetainUntilDate.Before(time.Now()) {
 		debuglogger.Logf("object lock retain until date must be in the future")
-		return nil, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate)
+		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, retention.RetainUntilDate.Format(time.RFC3339))
 	}
 	switch retention.Mode {
 	case types.ObjectLockRetentionModeCompliance:
