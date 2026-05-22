@@ -224,7 +224,8 @@ func (mp *MultipartParser) readFieldValue() (string, error) {
 
 		case finalBoundaryLine:
 			debuglogger.Logf("multipart POST ended before file part was found")
-			return "", s3err.GetAPIError(s3err.ErrPOSTFileRequired)
+			// S3 returns '0' as ArgumentValue
+			return "", s3err.GetInvalidArgumentErr(s3err.InvalidArgPOSTFileRequired, "0")
 
 		default:
 			buf.Write(raw)

@@ -58,7 +58,7 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 
 		account, err := acct.getAccount(authData.Access)
 		if err == auth.ErrNoSuchUser {
-			return s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)
+			return s3err.GetInvalidAccessKeyIdErr(authData.Access)
 		}
 		if err != nil {
 			return err
@@ -75,7 +75,15 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 			}
 		}
 
+		err = utils.CheckPresignedSignature(ctx, authData, account.Secret)
+		if err != nil {
+			return err
+		}
+
 		if streamBody {
+			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
+				return r
+			})
 			// Content-Length has to be set for data uploads: PutObject, UploadPart
 			if contentLengthStr == "" {
 				return s3err.GetAPIError(s3err.ErrMissingContentLength)
@@ -83,18 +91,8 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 			// the upload limit for big data actions: PutObject, UploadPart
 			// is 5gb. If the size exceeds the limit, return 'EntityTooLarge' err
 			if contentLength > maxObjSizeLimit {
-				return s3err.GetAPIError(s3err.ErrEntityTooLarge)
+				return s3err.GetEntityTooLargeErr(contentLength, maxObjSizeLimit)
 			}
-			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
-				return utils.NewPresignedAuthReader(ctx, r, authData, account.Secret)
-			})
-
-			return nil
-		}
-
-		err = utils.CheckPresignedSignature(ctx, authData, account.Secret, streamBody)
-		if err != nil {
-			return err
 		}
 
 		return nil

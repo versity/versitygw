@@ -254,3 +254,35 @@ check_header_partial_content_response() {
   fi
   return 0
 }
+
+get_delete_marker_and_verify_405() {
+  if ! check_param_count "get_delete_marker_and_verify_405" "bucket, file name" 2 $#; then
+    return 1
+  fi
+  if ! response=$(list_object_versions_rest "$1" 2>&1); then
+    log 2 "error listing REST object versions"
+    return 1
+  fi
+  versions_file="$response"
+  log 5 "versions: $(cat "$versions_file")"
+
+  if ! version_id=$(xmllint --xpath "//*[local-name()=\"DeleteMarker\"]/*[local-name()=\"VersionId\"]/text()" "$versions_file" 2>&1); then
+    log 2 "error getting XML value: $version_id"
+    return 1
+  fi
+  log 5 "xml val: $version_id"
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  if ! result=$(OUTPUT_FILE="$TEST_FILE_FOLDER/$response" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" VERSION_ID="$version_id" ./tests/rest_scripts/head_object.sh); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  if [ "$result" != "405" ]; then
+    log 2 "expected '405', was '$result' ($(cat "$TEST_FILE_FOLDER/$response"))"
+    return 1
+  fi
+  return 0
+}

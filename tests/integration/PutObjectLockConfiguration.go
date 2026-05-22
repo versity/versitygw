@@ -88,6 +88,7 @@ func PutObjectLockConfiguration_malformed_body(s *S3Conf) error {
 			s.awsSecret,
 			"s3",
 			s.awsRegion,
+			"",
 			body,
 			time.Now(),
 			map[string]string{"Content-Md5": md5Sum},
@@ -227,7 +228,7 @@ func PutObjectLockConfiguration_invalid_years_days(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidRetentionPeriod)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionDays, fmt.Sprint(days))); err != nil {
 			return err
 		}
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -244,7 +245,7 @@ func PutObjectLockConfiguration_invalid_years_days(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidRetentionPeriod)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionYears, fmt.Sprint(years))); err != nil {
 			return err
 		}
 

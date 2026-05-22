@@ -84,7 +84,7 @@ func GetObjectAttributes_invalid_attrs(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectAttributes)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectAttributes, "Invalid_argument")); err != nil {
 			return err
 		}
 
@@ -133,7 +133,7 @@ func GetObjectAttributes_invalid_single_attribute(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectAttributes)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectAttributes, "invalid_attr")); err != nil {
 			return err
 		}
 

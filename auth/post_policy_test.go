@@ -288,7 +288,7 @@ func TestPOSTPolicyEvaluate_ConcretePolicyRejections(t *testing.T) {
 					"x-amz-algorithm": "AWS4-HMAC-SHA256",
 				},
 			},
-			expected: s3err.GetAPIError(s3err.ErrEntityTooLarge),
+			expected: s3err.GetEntityTooLargeErr(10, 4),
 		},
 		{
 			name: "content too small",
@@ -300,7 +300,7 @@ func TestPOSTPolicyEvaluate_ConcretePolicyRejections(t *testing.T) {
 					"x-amz-algorithm": "AWS4-HMAC-SHA256",
 				},
 			},
-			expected: s3err.GetAPIError(s3err.ErrEntityTooSmall),
+			expected: s3err.GetEntityTooSmallErr(1, 2),
 		},
 	}
 

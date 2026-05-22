@@ -261,7 +261,7 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
+		}, s3err.GetInvalidArgumentErr(s3err.InvalidArgPartNumber, ctx.Query("partNumber"))
 	}
 
 	contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
@@ -396,7 +396,7 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
+		}, s3err.GetInvalidArgumentErr(s3err.InvalidArgPartNumber, ctx.Query("partNumber"))
 	}
 
 	preconditionHdrs := utils.ParsePreconditionHeaders(ctx, utils.WithCopySource())
@@ -566,7 +566,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidMetadataDirective)
+		}, s3err.GetInvalidArgumentErr(s3err.InvalidArgMetadataDirective, string(metaDirective))
 	}
 
 	if taggingDirective != "" && taggingDirective != types.TaggingDirectiveCopy && taggingDirective != types.TaggingDirectiveReplace {
@@ -575,7 +575,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidTaggingDirective)
+		}, s3err.GetInvalidArgumentErr(s3err.InvalidArgTaggingDirective, string(taggingDirective))
 	}
 
 	checksumAlgorithm := types.ChecksumAlgorithm(ctx.Get("x-amz-checksum-algorithm"))

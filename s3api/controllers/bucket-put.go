@@ -17,7 +17,6 @@ package controllers
 import (
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -586,7 +585,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 			MetaOpts: &MetaOptions{
 				BucketOwner: bucketOwner.Access,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+		}, s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
 
 	// both bucket canned ACL and acl grants is not allowed
@@ -622,14 +621,10 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	// validate the object ownership value
 	if ok := utils.IsValidOwnership(objectOwnership); !ok {
 		return &Response{
-				MetaOpts: &MetaOptions{
-					BucketOwner: bucketOwner.Access,
-				},
-			}, s3err.APIError{
-				Code:           "InvalidArgument",
-				Description:    fmt.Sprintf("Invalid x-amz-object-ownership header: %v", objectOwnership),
-				HTTPStatusCode: http.StatusBadRequest,
-			}
+			MetaOpts: &MetaOptions{
+				BucketOwner: bucketOwner.Access,
+			},
+		}, s3err.GetInvalidArgObjectOwnership(string(objectOwnership))
 	}
 
 	// any bucket ACL(canned, grants) is not allowed with object ownership 'BucketOwnerEnforced'
@@ -666,7 +661,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 					MetaOpts: &MetaOptions{
 						BucketOwner: bucketOwner.Access,
 					},
-				}, s3err.GetAPIError(s3err.ErrInvalidLocationConstraint)
+				}, s3err.GetInvalidLocationConstraintErr(*body.LocationConstraint)
 			}
 		}
 	}

@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -137,11 +136,7 @@ func CreateBucket_invalid_ownership(s *S3Conf) error {
 
 	invalidOwnership := types.ObjectOwnership("invalid_ownership")
 	err := setup(s, getBucketName(), withOwnership(invalidOwnership))
-	if err := checkApiErr(err, s3err.APIError{
-		Code:           "InvalidArgument",
-		Description:    fmt.Sprintf("Invalid x-amz-object-ownership header: %v", invalidOwnership),
-		HTTPStatusCode: http.StatusBadRequest,
-	}); err != nil {
+	if err := checkApiErr(err, s3err.GetInvalidArgObjectOwnership(string(invalidOwnership))); err != nil {
 		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}

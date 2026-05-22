@@ -44,7 +44,7 @@ func VerifyChecksums(streamBody bool, requireBody bool, requireChecksum bool) fi
 			}
 
 			if !isValidMD5(md5sum) {
-				return s3err.GetAPIError(s3err.ErrInvalidDigest)
+				return s3err.GetInvalidDigestErr(md5sum)
 			}
 
 			var err error
@@ -67,7 +67,7 @@ func VerifyChecksums(streamBody bool, requireBody bool, requireChecksum bool) fi
 		var err error
 		if md5sum != "" {
 			if !isValidMD5(md5sum) {
-				return s3err.GetAPIError(s3err.ErrInvalidDigest)
+				return s3err.GetInvalidDigestErr(md5sum)
 			}
 
 			rdr, err = utils.NewHashReader(bytes.NewReader(body), md5sum, utils.HashTypeContentMD5)

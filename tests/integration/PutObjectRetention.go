@@ -107,7 +107,7 @@ func PutObjectRetention_expired_retain_until_date(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, date.Format(time.RFC3339))); err != nil {
 			return err
 		}
 

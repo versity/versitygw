@@ -28,7 +28,7 @@ func BucketObjectNameValidator() fiber.Handler {
 
 		// check if the provided bucket name is valid
 		if !utils.IsValidBucketName(bucket) {
-			return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+			return s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 		}
 
 		// check if the provided object name is valid

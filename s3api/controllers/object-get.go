@@ -457,7 +457,7 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 				MetaOpts: &MetaOptions{
 					BucketOwner: parsedAcl.Owner,
 				},
-			}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
+			}, s3err.GetInvalidArgumentErr(s3err.InvalidArgPartNumber, ctx.Query("partNumber"))
 		}
 
 		if acceptRange != "" {
@@ -533,7 +533,7 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 						BucketOwner:   parsedAcl.Owner,
 						Status:        status,
 					},
-				}, s3err.GetAPIError(s3err.ErrInvalidRange)
+				}, s3err.GetInvalidRangeErr("", *res.ContentLength)
 			}
 			contentLen = int(*res.ContentLength)
 		}

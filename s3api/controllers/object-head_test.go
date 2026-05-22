@@ -96,7 +96,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidPartNumber),
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgPartNumber, "-4"),
 			},
 		},
 		{

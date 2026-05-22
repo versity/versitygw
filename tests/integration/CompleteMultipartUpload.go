@@ -23,9 +23,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -226,7 +228,7 @@ func CompleteMultipartUpload_invalid_checksum_part(s *S3Conf) error {
 			ChecksumType: types.ChecksumTypeFullObject,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidChecksumPart)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgChecksumPart, "invalid_checksum")); err != nil {
 			return err
 		}
 
@@ -264,6 +266,7 @@ func CompleteMultipartUpload_multiple_checksum_part(s *S3Conf) error {
 				cParts[0].ChecksumSHA1 = getPtr("Kq5sNclPz7QV2+lfQIuc6R7oRu0=")
 			}
 		}
+		argValue := fmt.Sprintf("CRC32:%s;SHA1:%s;", getString(cParts[0].ChecksumCRC32), getString(cParts[0].ChecksumSHA1))
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
@@ -276,7 +279,7 @@ func CompleteMultipartUpload_multiple_checksum_part(s *S3Conf) error {
 			ChecksumType: types.ChecksumTypeComposite,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidChecksumPart)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgChecksumPart, argValue)); err != nil {
 			return err
 		}
 
@@ -1259,6 +1262,72 @@ func CompleteMultipartUpload_empty_parts(s *S3Conf) error {
 	})
 }
 
+func CompleteMultipartUpload_missing_part_fields(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_missing_part_fields"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		tests := []struct {
+			name string
+			body func(types.Part) []byte
+		}{
+			{
+				name: "missing ETag",
+				body: func(part types.Part) []byte {
+					return fmt.Appendf(nil, `<CompleteMultipartUpload xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Part><PartNumber>%d</PartNumber></Part></CompleteMultipartUpload>`,
+						getInt32(part.PartNumber))
+				},
+			},
+			{
+				name: "missing PartNumber",
+				body: func(part types.Part) []byte {
+					return fmt.Appendf(nil, `<CompleteMultipartUpload xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Part><ETag>%s</ETag></Part></CompleteMultipartUpload>`,
+						getString(part.ETag))
+				},
+			},
+		}
+
+		for i, test := range tests {
+			obj := fmt.Sprintf("my-obj-%d", i)
+			mp, err := createMp(s3client, bucket, obj)
+			if err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
+
+			parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *mp.UploadId)
+			if err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
+
+			req, err := createSignedReq(
+				http.MethodPost,
+				s.endpoint,
+				fmt.Sprintf("%s/%s?uploadId=%s", bucket, obj, url.QueryEscape(*mp.UploadId)),
+				s.awsID,
+				s.awsSecret,
+				"s3",
+				s.awsRegion,
+				"",
+				test.body(parts[0]),
+				time.Now(),
+				map[string]string{"Content-Type": "application/xml"},
+			)
+			if err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
+
+			if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func CompleteMultipartUpload_incorrect_parts_order(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_incorrect_parts_order"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1616,7 +1685,7 @@ func CompleteMultipartUpload_invalid_part_number(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidCompleteMpPartNumber)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgCompleteMpPartNumber, fmt.Sprint(invPartNumber))); err != nil {
 			return err
 		}
 

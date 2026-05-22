@@ -15,6 +15,8 @@
 package s3api
 
 import (
+	"net/http"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
@@ -156,7 +158,9 @@ func (sa *S3ApiRouter) Init() {
 	// copy source is not allowed on '/'
 	sa.app.Get("/", middlewares.MatchHeader("X-Amz-Copy-Source"),
 		controllers.ProcessHandlers(
-			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)),
+			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
+			},
 			metrics.ActionUndetected,
 			services,
 			middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
@@ -469,7 +473,13 @@ func (sa *S3ApiRouter) Init() {
 
 	// copy source is not allowed on bucket HEAD operation
 	bucketRouter.Head("/", middlewares.MatchHeader("X-Amz-Copy-Source"),
-		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+		controllers.ProcessHandlers(
+			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
+			},
+			metrics.ActionUndetected,
+			services,
+		),
 	)
 
 	bucketRouter.Head("",
@@ -489,7 +499,13 @@ func (sa *S3ApiRouter) Init() {
 
 	// copy source is not allowed on bucket DELETE operation
 	bucketRouter.Delete("/", middlewares.MatchHeader("X-Amz-Copy-Source"),
-		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+		controllers.ProcessHandlers(
+			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
+			},
+			metrics.ActionUndetected,
+			services,
+		),
 	)
 
 	bucketRouter.Delete("",
@@ -679,7 +695,13 @@ func (sa *S3ApiRouter) Init() {
 
 	// copy source is not allowed on bucket GET operation
 	bucketRouter.Get("/", middlewares.MatchHeader("X-Amz-Copy-Source"),
-		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+		controllers.ProcessHandlers(
+			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
+			},
+			metrics.ActionUndetected,
+			services,
+		),
 	)
 
 	bucketRouter.Get("",
@@ -1078,7 +1100,13 @@ func (sa *S3ApiRouter) Init() {
 	bucketRouter.Post("/",
 		middlewares.MatchHeader("X-Amz-Copy-Source"),
 		middlewares.MatchQueryArgs("uploadId"),
-		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+		controllers.ProcessHandlers(
+			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
+			},
+			metrics.ActionUndetected,
+			services,
+		),
 	)
 
 	// DeleteObjects action
@@ -1112,7 +1140,13 @@ func (sa *S3ApiRouter) Init() {
 	// object HEAD operation is not allowed with copy source
 	objectRouter.Head("/",
 		middlewares.MatchHeader("X-Amz-Copy-Source"),
-		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+		controllers.ProcessHandlers(
+			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
+			},
+			metrics.ActionUndetected,
+			services,
+		),
 	)
 
 	// HeadObject
@@ -1146,7 +1180,13 @@ func (sa *S3ApiRouter) Init() {
 	// object GET operation is not allowed with copy source
 	objectRouter.Get("/",
 		middlewares.MatchHeader("X-Amz-Copy-Source"),
-		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+		controllers.ProcessHandlers(
+			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
+			},
+			metrics.ActionUndetected,
+			services,
+		),
 	)
 
 	objectRouter.Get("",
@@ -1245,7 +1285,13 @@ func (sa *S3ApiRouter) Init() {
 	// object DELETE operation is not allowed with copy source
 	objectRouter.Delete("/",
 		middlewares.MatchHeader("X-Amz-Copy-Source"),
-		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+		controllers.ProcessHandlers(
+			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
+			},
+			metrics.ActionUndetected,
+			services,
+		),
 	)
 
 	objectRouter.Delete("",
@@ -1293,7 +1339,13 @@ func (sa *S3ApiRouter) Init() {
 	objectRouter.Post("/",
 		middlewares.MatchHeader("X-Amz-Copy-Source"),
 		middlewares.MatchQueryArgs("uploadId"),
-		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+		controllers.ProcessHandlers(
+			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
+			},
+			metrics.ActionUndetected,
+			services,
+		),
 	)
 
 	objectRouter.Post("",
@@ -1441,13 +1493,28 @@ func (sa *S3ApiRouter) Init() {
 	// return error if partNumber is used without uploadId
 	objectRouter.Put("",
 		middlewares.MatchQueryArgs("partNumber"),
-		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrMissingUploadId)), metrics.ActionUndetected, services))
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingUploadId, "partNumber")),
+			metrics.ActionUndetected,
+			services,
+		),
+	)
 
 	// return 'MethodNotAllowed' if uploadId is provided without partNumber
 	// before the router reaches to 'PutObject'
 	objectRouter.Put("",
 		middlewares.MatchQueryArgs("uploadId"),
-		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrMethodNotAllowed)), metrics.ActionUndetected, services))
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(
+				s3err.GetMethodNotAllowedErr(
+					http.MethodPut,
+					s3err.ResourceTypeUpload,
+					[]string{http.MethodDelete, http.MethodPost, http.MethodGet},
+				),
+			),
+			metrics.ActionUndetected,
+			services,
+		))
 
 	objectRouter.Put("",
 		middlewares.MatchHeader("X-Amz-Copy-Source"),
@@ -1493,5 +1560,7 @@ func (sa *S3ApiRouter) Init() {
 	)
 
 	// Return MethodNotAllowed for all the unmatched routes
-	sa.app.All("*", controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrMethodNotAllowed)), metrics.ActionUndetected, services))
+	sa.app.All("*", controllers.ProcessHandlers(func(ctx *fiber.Ctx) (*controllers.Response, error) {
+		return &controllers.Response{}, s3err.GetMethodNotAllowedErr(ctx.Method(), s3err.ResourceTypeService, nil)
+	}, metrics.ActionUndetected, services))
 }

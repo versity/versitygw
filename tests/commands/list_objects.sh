@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-source ./tests/util/util_list_objects.sh
-source ./tests/commands/command.sh
-
 # Copyright 2024 Versity Software
 # This file is licensed under the Apache License, Version 2.0
 # (the "License"); you may not use this file except in compliance
@@ -16,6 +13,8 @@ source ./tests/commands/command.sh
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+
+source ./tests/commands/command.sh
 
 # args: client, bucket name
 # return 0 if able to list, 1 if not
@@ -48,15 +47,13 @@ list_objects() {
     return 1
   fi
 
-  object_array=()
   while IFS= read -r line; do
     if [[ $line != *InsecureRequestWarning* ]]; then
-      object_name=$(echo "$line" | awk '{print $NF}')
-      object_array+=("$object_name")
+      printf '%s\n' "$line"
     fi
   done <<< "$output"
 
-  export object_array
+  return 0
 }
 
 # args: bucket name
@@ -74,13 +71,12 @@ list_objects_s3api() {
   log 5 "list_objects_s3api: raw data returned: $output"
   modified_output=$(echo "$output" | grep -v "InsecureRequestWarning")
 
-  object_array=()
   log 5 "modified output: $modified_output"
-  if echo "$modified_output" | jq -e 'has("Contents")'; then
+  if echo "$modified_output" | jq -e 'has("Contents")' >/dev/null; then
     contents=$(echo "$modified_output" | jq -r '.Contents[]')
     log 5 "contents: $contents"
     keys=$(echo "$contents" | jq -r '.Key')
-    IFS=$'\n' read -rd '' -a object_array <<<"$keys"
+    printf '%s\n' "$keys"
   fi
   return 0
 }
@@ -89,20 +85,25 @@ list_objects_s3api() {
 # param:  bucket
 # export objects on success, return 1 for failure
 list_objects_s3api_v1() {
-  if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-    log 2 "list objects command requires bucket, (optional) delimiter"
+  if ! check_param_count_ge_le "bucket, delimiter (optional)" 1 2 $#; then
     return 1
   fi
+  local result=0
   if [ "$2" == "" ]; then
-    objects=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$1") || local result=$?
+    objects=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$1" 2>&1) || result=$?
   else
-    objects=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$1" --delimiter "$2") || local result=$?
+    objects=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$1" --delimiter "$2" 2>&1) || result=$?
   fi
   if [[ $result -ne 0 ]]; then
     log 2 "error listing objects: $objects"
     return 1
   fi
-  export objects
+  while IFS= read -r line; do
+    if [[ $line != *InsecureRequestWarning* ]]; then
+      printf '%s\n' "$line"
+    fi
+  done <<< "$objects"
+  return 0
 }
 
 list_objects_with_prefix() {
@@ -126,8 +127,11 @@ list_objects_with_prefix() {
     log 2 "error listing objects: $objects"
     return 1
   fi
-  log 5 "output: $objects"
-  export objects
+  while IFS= read -r line; do
+    if [[ $line != *InsecureRequestWarning* ]]; then
+      printf '%s\n' "$line"
+    fi
+  done <<< "$objects"
   return 0
 }
 

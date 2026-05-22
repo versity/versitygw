@@ -531,6 +531,7 @@ func TestCompleteMultipartUpload(ts *TestState) {
 	ts.Run(CompleteMultipartUpload_invalid_ETag)
 	ts.Run(CompleteMultipartUpload_small_upload_size)
 	ts.Run(CompleteMultipartUpload_empty_parts)
+	ts.Run(CompleteMultipartUpload_missing_part_fields)
 	ts.Run(CompleteMultipartUpload_incorrect_parts_order)
 	ts.Run(CompleteMultipartUpload_mpu_object_size)
 	ts.Run(CompleteMultipartUpload_conditional_writes)
@@ -1007,6 +1008,7 @@ func TestScoutfs(ts *TestState) {
 	ts.Run(CompleteMultipartUpload_invalid_ETag)
 	ts.Run(CompleteMultipartUpload_small_upload_size)
 	ts.Run(CompleteMultipartUpload_empty_parts)
+	ts.Run(CompleteMultipartUpload_missing_part_fields)
 	ts.Run(CompleteMultipartUpload_incorrect_parts_order)
 	ts.Run(CompleteMultipartUpload_mpu_object_size)
 	ts.Run(CompleteMultipartUpload_invalid_checksum_type)
@@ -1085,6 +1087,7 @@ func TestPublicBuckets(ts *TestState) {
 		ts.Run(PublicBucket_public_object_policy)
 	}
 	ts.Run(PublicBucket_public_acl)
+	ts.Run(PublicBucket_policy_deny_overrides_public_acl)
 	ts.Run(PublicBucket_signed_streaming_payload)
 	ts.Run(PublicBucket_incorrect_sha256_hash)
 }
@@ -1686,6 +1689,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_invalid_ETag":                                     CompleteMultipartUpload_invalid_ETag,
 		"CompleteMultipartUpload_small_upload_size":                                CompleteMultipartUpload_small_upload_size,
 		"CompleteMultipartUpload_empty_parts":                                      CompleteMultipartUpload_empty_parts,
+		"CompleteMultipartUpload_missing_part_fields":                              CompleteMultipartUpload_missing_part_fields,
 		"CompleteMultipartUpload_incorrect_part_number":                            CompleteMultipartUpload_incorrect_part_number,
 		"CompleteMultipartUpload_incorrect_parts_order":                            CompleteMultipartUpload_incorrect_parts_order,
 		"CompleteMultipartUpload_mpu_object_size":                                  CompleteMultipartUpload_mpu_object_size,
@@ -1944,6 +1948,7 @@ func GetIntTests() IntTests {
 		"PublicBucket_public_bucket_policy":                                        PublicBucket_public_bucket_policy,
 		"PublicBucket_public_object_policy":                                        PublicBucket_public_object_policy,
 		"PublicBucket_public_acl":                                                  PublicBucket_public_acl,
+		"PublicBucket_policy_deny_overrides_public_acl":                            PublicBucket_policy_deny_overrides_public_acl,
 		"PublicBucket_signed_streaming_payload":                                    PublicBucket_signed_streaming_payload,
 		"PublicBucket_incorrect_sha256_hash":                                       PublicBucket_incorrect_sha256_hash,
 		"PutBucketVersioning_non_existing_bucket":                                  PutBucketVersioning_non_existing_bucket,

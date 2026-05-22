@@ -136,7 +136,7 @@ func (hr *HashReader) Read(p []byte) (int, error) {
 		case HashTypeContentMD5:
 			sum := hr.Sum()
 			if sum != hr.sum {
-				return n, s3err.GetAPIError(s3err.ErrBadDigest)
+				return n, s3err.GetBadDigestErr(sum, hr.base64ToHex(hr.sum))
 			}
 		case HashTypeMd5:
 			sum := hr.Sum()
@@ -146,7 +146,7 @@ func (hr *HashReader) Read(p []byte) (int, error) {
 		case HashTypeSha256Hex:
 			sum := hr.Sum()
 			if sum != hr.sum {
-				return n, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch)
+				return n, s3err.GetContentSHA256MismatchErr(hr.sum, sum)
 			}
 		case HashTypeCRC32:
 			sum := hr.Sum()
@@ -198,6 +198,15 @@ func (hr *HashReader) Read(p []byte) (int, error) {
 		}
 	}
 	return n, readerr
+}
+
+func (hr *HashReader) base64ToHex(s string) string {
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return ""
+	}
+
+	return hex.EncodeToString(b)
 }
 
 func (hr *HashReader) SetReader(r io.Reader) {

@@ -2435,6 +2435,61 @@ func PublicBucket_public_acl(s *S3Conf) error {
 	}, withAnonymousClient(), withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
+func PublicBucket_policy_deny_overrides_public_acl(s *S3Conf) error {
+	testName := "PublicBucket_policy_deny_overrides_public_acl"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		rootClient := s.GetClient()
+		publicKey := "public/object"
+		privateKey := "private/secret"
+
+		for _, key := range []string{publicKey, privateKey} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := rootClient.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+				Body:   bytes.NewReader([]byte(key)),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := rootClient.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACLPublicRead,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		policy := genPolicyDoc("Deny", `"*"`, `"s3:GetObject"`, fmt.Sprintf(`"arn:aws:s3:::%s/private/*"`, bucket))
+		if err := putBucketPolicy(rootClient, bucket, policy); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &publicKey,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected public-read ACL to allow non-denied object: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &privateKey,
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	}, withAnonymousClient(), withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
 func PublicBucket_signed_streaming_payload(s *S3Conf) error {
 	testName := "PublicBucket_signed_streaming_payload"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2475,13 +2530,14 @@ func PublicBucket_incorrect_sha256_hash(s *S3Conf) error {
 		// in anonymous requests the sha256 hash validity is not checked
 		// so for any invalid values, the server calculates the hash
 		// and compares with the provided one
-		req.Header.Add("x-amz-content-sha256", "incorrect_hash")
+		const incorrectPayloadHash = "incorrect_hash"
+		req.Header.Add("x-amz-content-sha256", incorrectPayloadHash)
 
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch))
+		return checkHTTPResponseApiErr(resp, s3err.GetContentSHA256MismatchErr(incorrectPayloadHash, emptySHA256Hash))
 	})
 }

@@ -85,6 +85,8 @@ upload_parts_rest_with_checksum_before_completion() {
     log 5 "parts payload: $parts_payload"
   done
   log 5 "CHECKSUMS:  ${checksums[*]}"
+  echo "${checksums[*]}"
+  echo "$parts_payload"
   return 0
 }
 
@@ -92,25 +94,21 @@ perform_full_multipart_upload_with_checksum_before_completion() {
   if ! check_param_count_v2 "bucket, filename, checksum type, algorithm" 4 $#; then
     return 1
   fi
-  if ! bucket_name=$(get_bucket_name "$1" 2>&1); then
-    log 2 "error getting bucket name: $bucket_name"
-    return 1
-  fi
-  if ! setup_bucket_and_large_file_v2 "$bucket_name" "$2"; then
-    log 2 "error setting up bucket and large file"
-    return 1
-  fi
+  lowercase_checksum_algorithm=$(echo -n "$4" | tr '[:upper:]' '[:lower:]')
 
   local response
-  if ! response=$(create_multipart_upload_rest "$bucket_name" "$2" "CHECKSUM_TYPE=$3 CHECKSUM_ALGORITHM=$4" "parse_upload_id" 2>&1); then
+  if ! response=$(create_multipart_upload_rest "$1" "$2" "CHECKSUM_TYPE=$3 CHECKSUM_ALGORITHM=$4" "parse_upload_id" 2>&1); then
     log 2 "error creating multipart upload: $response"
     return 1
   fi
   upload_id="$response"
 
-  lowercase_checksum_algorithm=$(echo -n "$4" | tr '[:upper:]' '[:lower:]')
-  if ! upload_parts_rest_with_checksum_before_completion "$bucket_name" "$2" "$TEST_FILE_FOLDER/$2" "$upload_id" 2 "$lowercase_checksum_algorithm"; then
-    log 2 "error uploading parts"
+  if ! response=$(upload_parts_rest_with_checksum_before_completion "$1" "$2" "$TEST_FILE_FOLDER/$2" "$upload_id" 2 "$lowercase_checksum_algorithm" 2>&1); then
+    log 2 "error uploading parts: $response"
     return 1
   fi
+  echo "$lowercase_checksum_algorithm"
+  echo "$upload_id"
+  echo "$response"
+  return 0
 }

@@ -17,6 +17,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -39,6 +40,74 @@ func (b noBucketPolicyBackend) GetBucketPolicy(_ context.Context, _ string) ([]b
 
 func (b noBucketPolicyBackend) GetBucketAcl(_ context.Context, _ *s3.GetBucketAclInput) ([]byte, error) {
 	return json.Marshal(b.srcAcl)
+}
+
+type publicBucketPolicyBackend struct {
+	backend.BackendUnsupported
+	policy   []byte
+	acl      ACL
+	aclCalls int
+}
+
+func (b *publicBucketPolicyBackend) GetBucketPolicy(_ context.Context, _ string) ([]byte, error) {
+	return b.policy, nil
+}
+
+func (b *publicBucketPolicyBackend) GetBucketAcl(_ context.Context, _ *s3.GetBucketAclInput) ([]byte, error) {
+	b.aclCalls++
+	return json.Marshal(b.acl)
+}
+
+func publicReadACL() ACL {
+	return ACL{
+		Owner: "owner",
+		Grantees: []Grantee{
+			{
+				Permission: PermissionRead,
+				Access:     "all-users",
+				Type:       types.TypeGroup,
+			},
+		},
+	}
+}
+
+func TestVerifyPublicAccess_PublicPolicyDenyStopsACLFallback(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		policy: []byte(`{
+			"Statement": [{
+				"Effect": "Deny",
+				"Principal": "*",
+				"Action": "s3:GetObject",
+				"Resource": "arn:aws:s3:::bucket/private/*"
+			}]
+		}`),
+		acl: publicReadACL(),
+	}
+
+	err := VerifyPublicAccess(context.Background(), be, GetObjectAction, PermissionRead, "bucket", "private/secret.txt")
+
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, s3err.GetAPIError(s3err.ErrAccessDenied)))
+	assert.Equal(t, 0, be.aclCalls)
+}
+
+func TestVerifyPublicAccess_PublicPolicyNoMatchFallsBackToACL(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		policy: []byte(`{
+			"Statement": [{
+				"Effect": "Deny",
+				"Principal": "*",
+				"Action": "s3:GetObject",
+				"Resource": "arn:aws:s3:::bucket/private/*"
+			}]
+		}`),
+		acl: publicReadACL(),
+	}
+
+	err := VerifyPublicAccess(context.Background(), be, GetObjectAction, PermissionRead, "bucket", "public/object.txt")
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, be.aclCalls)
 }
 
 func TestVerifyObjectCopyAccess_URLEncodedSlashSeparator(t *testing.T) {

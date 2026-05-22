@@ -72,7 +72,7 @@ func DeleteObjectTagging_success_status(s *S3Conf) error {
 
 		req, err := createSignedReq(http.MethodDelete, s.endpoint,
 			fmt.Sprintf("%v/%v?tagging", bucket, obj), s.awsID, s.awsSecret,
-			"s3", s.awsRegion, nil, time.Now(), nil)
+			"s3", s.awsRegion, "", nil, time.Now(), nil)
 		if err != nil {
 			return err
 		}

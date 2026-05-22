@@ -333,7 +333,7 @@ func DeleteObject_success_status_code(s *S3Conf) error {
 
 		req, err := createSignedReq(http.MethodDelete, s.endpoint,
 			fmt.Sprintf("%v/%v", bucket, obj), s.awsID, s.awsSecret, "s3",
-			s.awsRegion, nil, time.Now(), nil)
+			s.awsRegion, "", nil, time.Now(), nil)
 		if err != nil {
 			return err
 		}

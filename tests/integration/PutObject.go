@@ -98,7 +98,7 @@ func PutObject_tagging(s *S3Conf) error {
 					return err
 				}
 				switch eErr := expectedErr.(type) {
-				case s3err.APIError:
+				case s3err.S3Error:
 					return checkApiErr(err, eErr)
 				default:
 					return fmt.Errorf("invalid err provided: %w", expectedErr)
@@ -151,10 +151,10 @@ func PutObject_tagging(s *S3Conf) error {
 			{"key1=val1&key2=val2", map[string]string{"key1": "val1", "key2": "val2"}, nil},
 			{"key@=val@", map[string]string{"key@": "val@"}, nil},
 			// invalid url-encoded
-			{"=", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
-			{"key%", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			{"=", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "")},
+			{"key%", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "")},
 			// duplicate keys
-			{"key=val&key=val", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			{"key=val&key=val", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "")},
 			// invalid tag keys
 			{"key?=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key(=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
@@ -212,13 +212,13 @@ func PutObject_missing_object_lock_retention_config(s *S3Conf) error {
 			ObjectLockMode: types.ObjectLockModeCompliance,
 		})
 		cancel()
-		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
+		if err := checkSdkApiErr(err, "InvalidArgument"); err != nil {
 			return err
 		}
 		// client sdk regression issue prevents getting full error message,
 		// change back to below once this is fixed:
 		// https://github.com/aws/aws-sdk-go-v2/issues/2921
-		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+		// if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockRetainDate, "")); err != nil {
 		// 	return err
 		// }
 
@@ -231,13 +231,13 @@ func PutObject_missing_object_lock_retention_config(s *S3Conf) error {
 			ObjectLockRetainUntilDate: &retainDate,
 		})
 		cancel()
-		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
+		if err := checkSdkApiErr(err, "InvalidArgument"); err != nil {
 			return err
 		}
 		// client sdk regression issue prevents getting full error message,
 		// change back to below once this is fixed:
 		// https://github.com/aws/aws-sdk-go-v2/issues/2921
-		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+		// if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockMode, "")); err != nil {
 		// 	return err
 		// }
 
@@ -315,7 +315,7 @@ func PutObject_invalid_legal_hold(s *S3Conf) error {
 			Key:                       getPtr("foo"),
 			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatus("invalid_status"),
 		}, s3client)
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidLegalHoldStatus))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, "invalid_status"))
 	}, withLock())
 }
 
@@ -329,7 +329,7 @@ func PutObject_invalid_object_lock_mode(s *S3Conf) error {
 			ObjectLockRetainUntilDate: &rDate,
 			ObjectLockMode:            types.ObjectLockMode("invalid_mode"),
 		}, s3client)
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectLockMode))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, "invalid_mode"))
 	}, withLock())
 }
 
@@ -344,7 +344,7 @@ func PutObject_past_retain_until_date(s *S3Conf) error {
 			ObjectLockRetainUntilDate: &rDate,
 		}, s3client)
 
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, rDate.Format(time.RFC3339)))
 	}, withLock())
 }
 
@@ -359,6 +359,7 @@ func PutObject_invalid_retain_until_date(s *S3Conf) error {
 			s.awsSecret,
 			"s3",
 			s.awsRegion,
+			"",
 			nil,
 			time.Now(),
 			map[string]string{
@@ -375,7 +376,7 @@ func PutObject_invalid_retain_until_date(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidRetainUntilDate))
+		return checkHTTPResponseApiErr(resp, s3err.GetInvalidArgumentErr(s3err.InvalidArgRetainUntilDate, "invalid_date"))
 	}, withLock())
 }
 
