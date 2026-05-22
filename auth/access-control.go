@@ -114,7 +114,7 @@ func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) e
 			return policyErr
 		}
 	} else {
-		return VerifyBucketPolicy(policy, opts.Acc.Access, opts.Bucket, opts.Object, opts.Actions...)
+		return VerifyBucketPolicy(policy, opts.Acc.Access, opts.Bucket, opts.Object, be.NormalizeObjectKey, opts.Actions...)
 	}
 
 	if err := verifyACL(opts.Acl, opts.Acc.Access, opts.AclPermission, opts.DisableACL); err != nil {
@@ -132,7 +132,7 @@ func VerifyPublicAccess(ctx context.Context, be backend.Backend, action Action, 
 		return err
 	}
 	if err == nil {
-		err = VerifyPublicBucketPolicy(policy, bucket, object, action)
+		err = VerifyPublicBucketPolicy(policy, bucket, object, be.NormalizeObjectKey, action)
 		if errors.Is(err, errExplicitDeny) {
 			// Explicit public-policy Deny has higher precedence than any
 			// public ACL grant, so do not continue to ACL fallback.

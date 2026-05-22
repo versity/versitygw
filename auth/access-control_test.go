@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -44,9 +45,10 @@ func (b noBucketPolicyBackend) GetBucketAcl(_ context.Context, _ *s3.GetBucketAc
 
 type publicBucketPolicyBackend struct {
 	backend.BackendUnsupported
-	policy   []byte
-	acl      ACL
-	aclCalls int
+	policy      []byte
+	acl         ACL
+	aclCalls    int
+	normalizeFn objectKeyNormalizer
 }
 
 func (b *publicBucketPolicyBackend) GetBucketPolicy(_ context.Context, _ string) ([]byte, error) {
@@ -56,6 +58,27 @@ func (b *publicBucketPolicyBackend) GetBucketPolicy(_ context.Context, _ string)
 func (b *publicBucketPolicyBackend) GetBucketAcl(_ context.Context, _ *s3.GetBucketAclInput) ([]byte, error) {
 	b.aclCalls++
 	return json.Marshal(b.acl)
+}
+
+func (b *publicBucketPolicyBackend) NormalizeObjectKey(bucket, key string) string {
+	if b.normalizeFn == nil {
+		return b.BackendUnsupported.NormalizeObjectKey(bucket, key)
+	}
+
+	return b.normalizeFn(bucket, key)
+}
+
+func testNormalizeObjectKey(bucket, key string) string {
+	fullPath := filepath.Join(bucket, key)
+	normalizedKey, err := filepath.Rel(filepath.Clean(bucket), fullPath)
+	if err != nil {
+		return fullPath
+	}
+	if normalizedKey == "." {
+		return ""
+	}
+
+	return normalizedKey
 }
 
 func publicReadACL() ACL {
@@ -69,6 +92,53 @@ func publicReadACL() ACL {
 			},
 		},
 	}
+}
+
+func TestVerifyAccess_NormalizesObjectKeyBeforePolicyMatch(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		normalizeFn: testNormalizeObjectKey,
+		policy: []byte(`{
+			"Statement": [{
+				"Effect": "Allow",
+				"Principal": "testuser",
+				"Action": "s3:GetObject",
+				"Resource": "arn:aws:s3:::bucket/public/*"
+			}]
+		}`),
+	}
+
+	err := VerifyAccess(context.Background(), be, AccessOptions{
+		Acc:     Account{Access: "testuser", Role: RoleUser},
+		Bucket:  "bucket",
+		Object:  "public/../private.txt",
+		Actions: []Action{GetObjectAction},
+	})
+
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, s3err.GetAPIError(s3err.ErrAccessDenied)))
+}
+
+func TestVerifyAccess_NormalizesPolicyResourceBeforeMatch(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		normalizeFn: testNormalizeObjectKey,
+		policy: []byte(`{
+			"Statement": [{
+				"Effect": "Allow",
+				"Principal": "testuser",
+				"Action": "s3:GetObject",
+				"Resource": "arn:aws:s3:::bucket/public/../private.txt"
+			}]
+		}`),
+	}
+
+	err := VerifyAccess(context.Background(), be, AccessOptions{
+		Acc:     Account{Access: "testuser", Role: RoleUser},
+		Bucket:  "bucket",
+		Object:  "private.txt",
+		Actions: []Action{GetObjectAction},
+	})
+
+	assert.NoError(t, err)
 }
 
 func TestVerifyPublicAccess_PublicPolicyDenyStopsACLFallback(t *testing.T) {
@@ -108,6 +178,27 @@ func TestVerifyPublicAccess_PublicPolicyNoMatchFallsBackToACL(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, 1, be.aclCalls)
+}
+
+func TestVerifyPublicAccess_NormalizedDenyStopsACLFallback(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		normalizeFn: testNormalizeObjectKey,
+		policy: []byte(`{
+			"Statement": [{
+				"Effect": "Deny",
+				"Principal": "*",
+				"Action": "s3:GetObject",
+				"Resource": "arn:aws:s3:::bucket/private/*"
+			}]
+		}`),
+		acl: publicReadACL(),
+	}
+
+	err := VerifyPublicAccess(context.Background(), be, GetObjectAction, PermissionRead, "bucket", "public/../private/secret.txt")
+
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, s3err.GetAPIError(s3err.ErrAccessDenied)))
+	assert.Equal(t, 0, be.aclCalls)
 }
 
 func TestVerifyObjectCopyAccess_URLEncodedSlashSeparator(t *testing.T) {

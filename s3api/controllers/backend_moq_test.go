@@ -131,6 +131,9 @@ var _ backend.Backend = &BackendMock{}
 //			ListPartsFunc: func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResult, error) {
 //				panic("mock out the ListParts method")
 //			},
+//			NormalizeObjectKeyFunc: func(bucket string, object string) string {
+//				panic("mock out the NormalizeObjectKey method")
+//			},
 //			PutBucketAclFunc: func(contextMoqParam context.Context, bucket string, data []byte) error {
 //				panic("mock out the PutBucketAcl method")
 //			},
@@ -299,6 +302,9 @@ type BackendMock struct {
 
 	// ListPartsFunc mocks the ListParts method.
 	ListPartsFunc func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResult, error)
+
+	// NormalizeObjectKeyFunc mocks the NormalizeObjectKey method.
+	NormalizeObjectKeyFunc func(bucket string, object string) string
 
 	// PutBucketAclFunc mocks the PutBucketAcl method.
 	PutBucketAclFunc func(contextMoqParam context.Context, bucket string, data []byte) error
@@ -626,6 +632,13 @@ type BackendMock struct {
 			// ListPartsInput is the listPartsInput argument value.
 			ListPartsInput *s3.ListPartsInput
 		}
+		// NormalizeObjectKey holds details about calls to the NormalizeObjectKey method.
+		NormalizeObjectKey []struct {
+			// Bucket is the bucket argument value.
+			Bucket string
+			// Object is the object argument value.
+			Object string
+		}
 		// PutBucketAcl holds details about calls to the PutBucketAcl method.
 		PutBucketAcl []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -813,6 +826,7 @@ type BackendMock struct {
 	lockListObjects                   sync.RWMutex
 	lockListObjectsV2                 sync.RWMutex
 	lockListParts                     sync.RWMutex
+	lockNormalizeObjectKey            sync.RWMutex
 	lockPutBucketAcl                  sync.RWMutex
 	lockPutBucketCors                 sync.RWMutex
 	lockPutBucketOwnershipControls    sync.RWMutex
@@ -2162,6 +2176,42 @@ func (mock *BackendMock) ListPartsCalls() []struct {
 	mock.lockListParts.RLock()
 	calls = mock.calls.ListParts
 	mock.lockListParts.RUnlock()
+	return calls
+}
+
+// NormalizeObjectKey calls NormalizeObjectKeyFunc.
+func (mock *BackendMock) NormalizeObjectKey(bucket string, object string) string {
+	if mock.NormalizeObjectKeyFunc == nil {
+		panic("BackendMock.NormalizeObjectKeyFunc: method is nil but Backend.NormalizeObjectKey was just called")
+	}
+	callInfo := struct {
+		Bucket string
+		Object string
+	}{
+		Bucket: bucket,
+		Object: object,
+	}
+	mock.lockNormalizeObjectKey.Lock()
+	mock.calls.NormalizeObjectKey = append(mock.calls.NormalizeObjectKey, callInfo)
+	mock.lockNormalizeObjectKey.Unlock()
+	return mock.NormalizeObjectKeyFunc(bucket, object)
+}
+
+// NormalizeObjectKeyCalls gets all the calls that were made to NormalizeObjectKey.
+// Check the length with:
+//
+//	len(mockedBackend.NormalizeObjectKeyCalls())
+func (mock *BackendMock) NormalizeObjectKeyCalls() []struct {
+	Bucket string
+	Object string
+} {
+	var calls []struct {
+		Bucket string
+		Object string
+	}
+	mock.lockNormalizeObjectKey.RLock()
+	calls = mock.calls.NormalizeObjectKey
+	mock.lockNormalizeObjectKey.RUnlock()
 	return calls
 }
 

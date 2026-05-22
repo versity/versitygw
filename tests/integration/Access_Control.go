@@ -15,8 +15,10 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -452,6 +454,106 @@ func AccessControl_copy_object_with_starting_slash_for_user(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+func AccessControl_policy_normalizes_object_key_for_get_put_delete(s *S3Conf) error {
+	testName := "AccessControl_policy_normalizes_object_key_for_get_put_delete"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		privateKey := "private.txt"
+		traversalKey := "public/../" + privateKey
+		privateBody := []byte("private object body")
+
+		_, err := putObjectWithData(0, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &privateKey,
+			Body:   bytes.NewReader(privateBody),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access),
+			`["s3:GetObject","s3:PutObject","s3:DeleteObject"]`,
+			fmt.Sprintf(`"arn:aws:s3:::%s/public/*"`, bucket))
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &traversalKey,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		copySource := fmt.Sprintf("%s/%s", bucket, traversalKey)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        getPtr("public/copied.txt"),
+			CopySource: &copySource,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		_, err = putObjectWithData(0, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &traversalKey,
+			Body:   bytes.NewReader([]byte("overwrite")),
+		}, userClient)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &privateKey,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		defer out.Body.Close()
+
+		gotBody, err := io.ReadAll(out.Body)
+		if err != nil {
+			return fmt.Errorf("read private object body: %w", err)
+		}
+		if !bytes.Equal(gotBody, privateBody) {
+			return fmt.Errorf("expected private object body to remain %q, instead got %q", privateBody, gotBody)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &traversalKey,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &privateKey,
+		})
+		cancel()
+		return err
 	})
 }
 
