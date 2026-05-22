@@ -112,15 +112,7 @@ func (c S3ApiController) POSTObject(ctx *fiber.Ctx) (*Response, error) {
 	cacheControl := parsed.Fields["cache-control"]
 	expires := parsed.Fields["expires"]
 
-	key, ok := parsed.Fields["key"]
-	if !ok || key == "" {
-		debuglogger.Logf("missing object key")
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.PostAuth.MissingField("key")
-	}
+	key := parsed.Fields["key"]
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{

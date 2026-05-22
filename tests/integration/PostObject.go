@@ -309,6 +309,44 @@ func PostObject_access_denied(s *S3Conf) error {
 	})
 }
 
+func PostObject_invalid_object_names(s *S3Conf) error {
+	testName := "PostObject_invalid_object_names"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, obj := range []string{
+			".",
+			"..",
+			"./",
+			"/.",
+			"//",
+			"../",
+			"/..",
+			"../.",
+			"../../../.",
+			"../../../etc/passwd",
+			"../../../../tmp/foo",
+			"for/../../bar/",
+			"a/a/a/../../../../../etc/passwd",
+			"/a/../../b/../../c/../../../etc/passwd",
+		} {
+			resp, err := sendPostObject(PostRequestConfig{
+				bucket:      bucket,
+				key:         obj,
+				s3Conf:      s,
+				fileContent: []byte("data"),
+			})
+			if err != nil {
+				return err
+			}
+
+			if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
 func PostObject_policy_access_control(s *S3Conf) error {
 	testName := "PostObject_policy_access_control"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
