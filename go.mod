@@ -8,9 +8,9 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.7.0
 	github.com/DataDog/datadog-go/v5 v5.8.3
 	github.com/aws/aws-sdk-go-v2 v1.41.7
-	github.com/aws/aws-sdk-go-v2/config v1.32.17
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.16
-	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.1.21
+	github.com/aws/aws-sdk-go-v2/config v1.32.18
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.17
+	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.1.22
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.101.0
 	github.com/aws/smithy-go v1.25.1
 	github.com/cespare/xxhash/v2 v2.3.0
@@ -30,10 +30,10 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli/v2 v2.27.7
 	github.com/valyala/fasthttp v1.71.0
-	github.com/versity/scoutfs-go v0.0.0-20240625221833-95fd765b760b
+	github.com/versity/scoutfs-go v0.0.0-20260414000839-70f8b6bdfa96
 	github.com/zeebo/xxh3 v1.1.0
 	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.44.0
+	golang.org/x/sys v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -54,7 +54,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.23 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.11 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.17 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.21 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.36.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.42.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
@@ -79,9 +79,9 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
-	golang.org/x/net v0.54.0 // indirect
+	github.com/xrash/smetrics v0.0.0-20250705151800-55b8f293f342 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 )
