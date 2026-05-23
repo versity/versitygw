@@ -108,11 +108,16 @@ func (c S3ApiController) PutBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 	}
 
 	rulesCount := len(ownershipControls.Rules)
-	isValidOwnership := utils.IsValidOwnership(ownershipControls.Rules[0].ObjectOwnership)
-	if rulesCount != 1 || !isValidOwnership {
-		if rulesCount != 1 {
-			debuglogger.Logf("ownership control rules should be 1, got %v", rulesCount)
-		}
+	if rulesCount != 1 {
+		debuglogger.Logf("ownership control rules should be 1, got %v", rulesCount)
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+
+	if !utils.IsValidOwnership(ownershipControls.Rules[0].ObjectOwnership) {
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,

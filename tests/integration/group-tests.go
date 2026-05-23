@@ -119,6 +119,7 @@ func TestPutBucketOwnershipControls(ts *TestState) {
 	ts.Run(PutBucketOwnershipControls_non_existing_bucket)
 	ts.Run(PutBucketOwnershipControls_multiple_rules)
 	ts.Run(PutBucketOwnershipControls_invalid_ownership)
+	ts.Run(PutBucketOwnershipControls_empty_rules)
 	ts.Run(PutBucketOwnershipControls_success)
 }
 
@@ -1383,6 +1384,7 @@ func GetIntTests() IntTests {
 		"PutBucketOwnershipControls_non_existing_bucket":                           PutBucketOwnershipControls_non_existing_bucket,
 		"PutBucketOwnershipControls_multiple_rules":                                PutBucketOwnershipControls_multiple_rules,
 		"PutBucketOwnershipControls_invalid_ownership":                             PutBucketOwnershipControls_invalid_ownership,
+		"PutBucketOwnershipControls_empty_rules":                                   PutBucketOwnershipControls_empty_rules,
 		"PutBucketOwnershipControls_success":                                       PutBucketOwnershipControls_success,
 		"GetBucketOwnershipControls_non_existing_bucket":                           GetBucketOwnershipControls_non_existing_bucket,
 		"GetBucketOwnershipControls_default_ownership":                             GetBucketOwnershipControls_default_ownership,

@@ -16,6 +16,8 @@ package integration
 
 import (
 	"context"
+	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -91,6 +93,26 @@ func PutBucketOwnershipControls_invalid_ownership(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+func PutBucketOwnershipControls_empty_rules(s *S3Conf) error {
+	testName := "PutBucketOwnershipControls_empty_rules"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		body := []byte(`<OwnershipControls xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></OwnershipControls>`)
+		req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"?ownershipControls", s.awsID, s.awsSecret, "s3", s.awsRegion, "", body, time.Now(), map[string]string{
+			"Content-Type": "application/xml",
+		})
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMalformedXML))
 	})
 }
 

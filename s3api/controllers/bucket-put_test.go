@@ -158,6 +158,11 @@ func TestS3ApiController_PutBucketOwnershipControls(t *testing.T) {
 	)
 	assert.NoError(t, err)
 
+	emptyRulesBody, err := xml.Marshal(
+		s3response.OwnershipControls{},
+	)
+	assert.NoError(t, err)
+
 	tests := []struct {
 		name   string
 		input  testInput
@@ -195,6 +200,19 @@ func TestS3ApiController_PutBucketOwnershipControls(t *testing.T) {
 			input: testInput{
 				locals: defaultLocals,
 				body:   invalidRuleCountBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetAPIError(s3err.ErrMalformedXML),
+			},
+		},
+		{
+			name: "empty rules count",
+			input: testInput{
+				locals: defaultLocals,
+				body:   emptyRulesBody,
 			},
 			output: testOutput{
 				response: &Response{
