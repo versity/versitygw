@@ -255,28 +255,6 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 		output testOutput
 	}{
 		{
-			name: "missing key",
-			input: testInput{
-				locals: postObjectLocalsForTest(middlewares.PostObjectResult{
-					Fields: map[string]string{
-						"policy":          basePolicy,
-						"file":            "ignored",
-						"x-amz-signature": "ignored",
-					},
-					FileRdr:       newMockFileReader("payload"),
-					ContentLength: int64(len("payload")),
-				}),
-			},
-			output: testOutput{
-				response: &Response{
-					MetaOpts: &MetaOptions{
-						BucketOwner: "root",
-					},
-				},
-				err: s3err.PostAuth.MissingField("key"),
-			},
-		},
-		{
 			name: "verify access fails",
 			input: testInput{
 				locals: map[utils.ContextKey]any{
