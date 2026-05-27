@@ -22,8 +22,8 @@ import (
 )
 
 var (
-	sigDone = make(chan bool, 1)
-	sigHup  = make(chan bool, 1)
+	sigDone = make(chan struct{}, 1)
+	sigHup  = make(chan struct{}, 1)
 )
 
 func setupSignalHandler() {
@@ -35,9 +35,9 @@ func setupSignalHandler() {
 			fmt.Fprintf(os.Stderr, "caught signal %v\n", sig)
 			switch sig {
 			case syscall.SIGINT, syscall.SIGTERM:
-				sigDone <- true
+				sigDone <- struct{}{}
 			case syscall.SIGHUP:
-				sigHup <- true
+				sigHup <- struct{}{}
 			}
 		}
 	}()
