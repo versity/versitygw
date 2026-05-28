@@ -132,51 +132,194 @@ func TestValidate(t *testing.T) {
 }
 
 func TestFindMatch(t *testing.T) {
+	posixNormalizer := testNormalizeObjectKey
+
 	cases := []struct {
-		resources []string
-		input     string
-		expected  bool
+		name       string
+		resources  []string
+		input      string
+		normalizer objectKeyNormalizer
+		expected   bool
 	}{
-		{[]string{"arn:aws:s3:::my-bucket/*"}, "my-bucket/my-object", true},
-		{[]string{"arn:aws:s3:::my-bucket/object"}, "other-bucket/my-object", false},
-		{[]string{"arn:aws:s3:::my-bucket/object"}, "my-bucket/object", true},
-		{[]string{"arn:aws:s3:::my-bucket/*", "arn:aws:s3:::other-bucket/*"}, "other-bucket/something", true},
+		{
+			name:      "wildcard object match without normalizer",
+			resources: []string{"arn:aws:s3:::my-bucket/*"},
+			input:     "my-bucket/my-object",
+			expected:  true,
+		},
+		{
+			name:      "wrong bucket without normalizer",
+			resources: []string{"arn:aws:s3:::my-bucket/object"},
+			input:     "other-bucket/my-object",
+			expected:  false,
+		},
+		{
+			name:      "exact object match without normalizer",
+			resources: []string{"arn:aws:s3:::my-bucket/object"},
+			input:     "my-bucket/object",
+			expected:  true,
+		},
+		{
+			name:      "second resource matches without normalizer",
+			resources: []string{"arn:aws:s3:::my-bucket/*", "arn:aws:s3:::other-bucket/*"},
+			input:     "other-bucket/something",
+			expected:  true,
+		},
+		{
+			name:       "normalized private key does not match public prefix",
+			resources:  []string{"arn:aws:s3:::my-bucket/public/*"},
+			input:      "my-bucket/private.txt",
+			normalizer: posixNormalizer,
+			expected:   false,
+		},
+		{
+			name:       "policy resource parent segment normalizes before matching",
+			resources:  []string{"arn:aws:s3:::my-bucket/public/../private.txt"},
+			input:      "my-bucket/private.txt",
+			normalizer: posixNormalizer,
+			expected:   true,
+		},
+		{
+			name:       "policy resource escaping bucket does not normalize inside bucket",
+			resources:  []string{"arn:aws:s3:::my-bucket/../private.txt"},
+			input:      "my-bucket/private.txt",
+			normalizer: posixNormalizer,
+			expected:   false,
+		},
 	}
 
 	for _, tc := range cases {
-		r := Resources{}
-		for _, res := range tc.resources {
-			r.Add(res)
-		}
-		if r.FindMatch(tc.input) != tc.expected {
-			t.Errorf("Expected FindMatch to be %v for input %s", tc.expected, tc.input)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			r := Resources{}
+			for _, res := range tc.resources {
+				if err := r.Add(res); err != nil {
+					t.Fatalf("Add(%q): %v", res, err)
+				}
+			}
+			if r.FindMatch(tc.input, tc.normalizer) != tc.expected {
+				t.Errorf("Expected FindMatch to be %v for input %s", tc.expected, tc.input)
+			}
+		})
 	}
 }
 
 func TestMatch(t *testing.T) {
 	r := Resources{}
+	posixNormalizer := testNormalizeObjectKey
+
 	cases := []struct {
-		pattern  string
-		input    string
-		expected bool
+		name       string
+		pattern    string
+		input      string
+		normalizer objectKeyNormalizer
+		expected   bool
 	}{
-		{"my-bucket/*", "my-bucket/object", true},
-		{"my-bucket/?bject", "my-bucket/object", true},
-		{"my-bucket/*", "other-bucket/object", false},
-		{"*", "any-bucket/object", true},
-		{"my-bucket/*", "my-bucket/subdir/object", true},
-		{"my-bucket/*", "other-bucket", false},
-		{"my-bucket/*/*", "my-bucket/hello", false},
-		{"my-bucket/*/*", "my-bucket/hello/world", true},
-		{"foo/???/bar", "foo/qux/bar", true},
-		{"foo/???/bar", "foo/quxx/bar", false},
-		{"foo/???/bar/*/?", "foo/qux/bar/hello/g", true},
-		{"foo/???/bar/*/?", "foo/qux/bar/hello/smth", false},
+		{
+			name:     "wildcard object",
+			pattern:  "my-bucket/*",
+			input:    "my-bucket/object",
+			expected: true,
+		},
+		{
+			name:     "single char wildcard",
+			pattern:  "my-bucket/?bject",
+			input:    "my-bucket/object",
+			expected: true,
+		},
+		{
+			name:     "wrong bucket",
+			pattern:  "my-bucket/*",
+			input:    "other-bucket/object",
+			expected: false,
+		},
+		{
+			name:     "global wildcard",
+			pattern:  "*",
+			input:    "any-bucket/object",
+			expected: true,
+		},
+		{
+			name:     "wildcard nested object",
+			pattern:  "my-bucket/*",
+			input:    "my-bucket/subdir/object",
+			expected: true,
+		},
+		{
+			name:     "bucket only does not match object wildcard",
+			pattern:  "my-bucket/*",
+			input:    "other-bucket",
+			expected: false,
+		},
+		{
+			name:     "missing nested segment",
+			pattern:  "my-bucket/*/*",
+			input:    "my-bucket/hello",
+			expected: false,
+		},
+		{
+			name:     "nested segment",
+			pattern:  "my-bucket/*/*",
+			input:    "my-bucket/hello/world",
+			expected: true,
+		},
+		{
+			name:     "three char segment",
+			pattern:  "foo/???/bar",
+			input:    "foo/qux/bar",
+			expected: true,
+		},
+		{
+			name:     "too long for single char wildcards",
+			pattern:  "foo/???/bar",
+			input:    "foo/quxx/bar",
+			expected: false,
+		},
+		{
+			name:     "mixed wildcards",
+			pattern:  "foo/???/bar/*/?",
+			input:    "foo/qux/bar/hello/g",
+			expected: true,
+		},
+		{
+			name:     "mixed wildcards final segment too long",
+			pattern:  "foo/???/bar/*/?",
+			input:    "foo/qux/bar/hello/smth",
+			expected: false,
+		},
+		{
+			name:       "raw traversal key matches public prefix without normalization",
+			pattern:    "my-bucket/public/*",
+			input:      "my-bucket/public/../private.txt",
+			normalizer: nil,
+			expected:   true,
+		},
+		{
+			name:       "normalized traversal key does not match public prefix",
+			pattern:    "my-bucket/public/*",
+			input:      "my-bucket/private.txt",
+			normalizer: posixNormalizer,
+			expected:   false,
+		},
+		{
+			name:       "policy resource traversal normalizes to private object",
+			pattern:    "my-bucket/public/../private.txt",
+			input:      "my-bucket/private.txt",
+			normalizer: posixNormalizer,
+			expected:   true,
+		},
+		{
+			name:       "policy resource traversal escaping bucket does not match bucket object",
+			pattern:    "my-bucket/../private.txt",
+			input:      "my-bucket/private.txt",
+			normalizer: posixNormalizer,
+			expected:   false,
+		},
 	}
 	for _, tc := range cases {
-		if r.Match(tc.pattern, tc.input) != tc.expected {
-			t.Errorf("Match(%s, %s) failed, expected %v", tc.pattern, tc.input, tc.expected)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if r.Match(tc.pattern, tc.input, tc.normalizer) != tc.expected {
+				t.Errorf("Match(%s, %s) failed, expected %v", tc.pattern, tc.input, tc.expected)
+			}
+		})
 	}
 }

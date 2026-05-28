@@ -100,9 +100,9 @@ func (r Resources) Validate(bucket string) error {
 	return nil
 }
 
-func (r Resources) FindMatch(resource string) bool {
+func (r Resources) FindMatch(resource string, normalizer objectKeyNormalizer) bool {
 	for res := range r {
-		if r.Match(res, resource) {
+		if r.Match(res, resource, normalizer) {
 			return true
 		}
 	}
@@ -111,8 +111,17 @@ func (r Resources) FindMatch(resource string) bool {
 }
 
 // Match matches the given input resource with the pattern
-func (r Resources) Match(pattern, input string) bool {
-	return matchPattern(pattern, input)
+func (r Resources) Match(pattern, input string, normalizer objectKeyNormalizer) bool {
+	return matchPattern(normalizePolicyResource(pattern, normalizer), input)
+}
+
+func normalizePolicyResource(resource string, normalizeObjectKey objectKeyNormalizer) string {
+	bucket, key, ok := strings.Cut(resource, "/")
+	if !ok {
+		return resource
+	}
+
+	return bucket + "/" + normalizePolicyObjectKey(bucket, key, normalizeObjectKey)
 }
 
 // Checks the resource to have arn prefix and not starting with /

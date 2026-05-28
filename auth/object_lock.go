@@ -173,7 +173,7 @@ func IsObjectLockRetentionPutAllowed(ctx context.Context, be backend.Backend, bu
 		debuglogger.Logf("failed to get the bucket policy: %v", err)
 		return s3err.GetAPIError(s3err.ErrObjectLocked)
 	}
-	err = VerifyBucketPolicy(policy, userAccess, bucket, object, BypassGovernanceRetentionAction)
+	err = VerifyBucketPolicy(policy, userAccess, bucket, object, be.NormalizeObjectKey, BypassGovernanceRetentionAction)
 	if err != nil {
 		// if user doesn't have "s3:BypassGovernanceRetention" permission
 		// return object is locked
@@ -316,9 +316,9 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 							return err
 						}
 						if isBucketPublic {
-							err = VerifyPublicBucketPolicy(policy, bucket, key, BypassGovernanceRetentionAction)
+							err = VerifyPublicBucketPolicy(policy, bucket, key, be.NormalizeObjectKey, BypassGovernanceRetentionAction)
 						} else {
-							err = VerifyBucketPolicy(policy, userAccess, bucket, key, BypassGovernanceRetentionAction)
+							err = VerifyBucketPolicy(policy, userAccess, bucket, key, be.NormalizeObjectKey, BypassGovernanceRetentionAction)
 						}
 						if err != nil {
 							return s3err.GetAPIError(s3err.ErrObjectLocked)
@@ -362,9 +362,9 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 						return err
 					}
 					if isBucketPublic {
-						err = VerifyPublicBucketPolicy(policy, bucket, key, BypassGovernanceRetentionAction)
+						err = VerifyPublicBucketPolicy(policy, bucket, key, be.NormalizeObjectKey, BypassGovernanceRetentionAction)
 					} else {
-						err = VerifyBucketPolicy(policy, userAccess, bucket, key, BypassGovernanceRetentionAction)
+						err = VerifyBucketPolicy(policy, userAccess, bucket, key, be.NormalizeObjectKey, BypassGovernanceRetentionAction)
 					}
 					if err != nil {
 						return s3err.GetAPIError(s3err.ErrObjectLocked)

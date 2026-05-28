@@ -6598,6 +6598,19 @@ func (p *Posix) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.
 	return buckets, nil
 }
 
+func (p *Posix) NormalizeObjectKey(bucket, object string) string {
+	fullPath := filepath.Join(bucket, object)
+	key, err := filepath.Rel(filepath.Clean(bucket), fullPath)
+	if err != nil {
+		return fullPath
+	}
+	if key == "." {
+		return ""
+	}
+
+	return key
+}
+
 func (p *Posix) storeChecksums(f *os.File, bucket, object string, chs s3response.Checksum) error {
 	checksums, err := json.Marshal(chs)
 	if err != nil {

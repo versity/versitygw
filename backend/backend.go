@@ -30,6 +30,7 @@ import (
 type Backend interface {
 	fmt.Stringer
 	Shutdown()
+	NormalizeObjectKey(bucket, object string) string
 
 	// bucket operations
 	ListBuckets(context.Context, s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error)
@@ -110,6 +111,9 @@ func New() Backend {
 func (BackendUnsupported) Shutdown() {}
 func (BackendUnsupported) String() string {
 	return "Unsupported"
+}
+func (BackendUnsupported) NormalizeObjectKey(_, object string) string {
+	return object
 }
 func (BackendUnsupported) ListBuckets(context.Context, s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 	return s3response.ListAllMyBucketsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)

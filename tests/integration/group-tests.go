@@ -1036,6 +1036,9 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_CopyObject_with_tagging_policy)
 	ts.Run(AccessControl_CopyObject_with_legal_hold_policy)
 	ts.Run(AccessControl_CopyObject_with_retention_policy)
+	if !ts.conf.azureTests {
+		ts.Run(AccessControl_policy_normalizes_object_key_for_get_put_delete)
+	}
 }
 
 func TestPublicBuckets(ts *TestState) {
@@ -1892,6 +1895,7 @@ func GetIntTests() IntTests {
 		"AccessControl_CopyObject_with_tagging_policy":                             AccessControl_CopyObject_with_tagging_policy,
 		"AccessControl_CopyObject_with_legal_hold_policy":                          AccessControl_CopyObject_with_legal_hold_policy,
 		"AccessControl_CopyObject_with_retention_policy":                           AccessControl_CopyObject_with_retention_policy,
+		"AccessControl_policy_normalizes_object_key_for_get_put_delete":            AccessControl_policy_normalizes_object_key_for_get_put_delete,
 		"PublicBucket_default_private_bucket":                                      PublicBucket_default_private_bucket,
 		"PublicBucket_public_bucket_policy":                                        PublicBucket_public_bucket_policy,
 		"PublicBucket_public_object_policy":                                        PublicBucket_public_object_policy,
