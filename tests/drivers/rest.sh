@@ -154,22 +154,29 @@ send_rest_command_expect_success_callback() {
   if ! check_param_count_v2 "env vars, script, response code, callback fn" 4 $#; then
     return 1
   fi
-  if ! output_file_name=$(get_file_name 2>&1); then
+  local response output_file_name output_file env_array=() http_response response_code callback_response
+
+  if ! response=$(get_file_name 2>&1); then
     log 2 "error generating output file name: $output_file_name"
     return 1
   fi
+  output_file_name="$response"
+
   output_file="$TEST_FILE_FOLDER/$output_file_name"
   local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$output_file")
   if [ "$1" != "" ]; then
     IFS=' ' read -r -a env_vars <<< "$1"
     env_array+=("${env_vars[@]}")
   fi
+  log 5 "command: ${env_array[*]} $2"
   # shellcheck disable=SC2068
-  if ! result=$(${env_array[@]} "$2" 2>&1); then
+  if ! response=$(${env_array[@]} "$2" 2>&1); then
     log 2 "error sending command: $result"
     return 1
   fi
-  response_code="$(echo "$result" | tail -n 1)"
+  http_response="$response"
+
+  response_code="$(echo "$http_response" | tail -n 1)"
   if [ "$response_code" != "$3" ]; then
     log 2 "expected '$3', was '$response_code' ($(cat "$output_file"))"
     return 1
@@ -178,11 +185,11 @@ send_rest_command_expect_success_callback() {
     cat "$output_file"
     return 0
   fi
-  if ! callback_result=$("$4" "$output_file" 2>&1); then
-    log 2 "callback error: $callback_result"
+  if ! callback_response=$("$4" "$output_file" 2>&1); then
+    log 2 "callback error: $callback_response"
     return 1
   fi
-  echo "$callback_result"
+  echo "$callback_response"
   return 0
 }
 
@@ -270,8 +277,8 @@ send_rest_go_command_expect_error_callback() {
     log 2 "error checking expected header error"
     return 1
   fi
-  if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/$file_name" "${callback_params[@]}"; then
-    log 2 "callback error"
+  if [ "$4" != "" ] && ! response=$("$4" "$response_file" "${callback_params[@]}" 2>&1); then
+    log 2 "callback error: $response"
     return 1
   fi
   return 0

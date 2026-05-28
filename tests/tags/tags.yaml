@@ -256,10 +256,26 @@ tags:
       desc: "ListBuckets bucket-region query"
     cors:
       desc: "Bucket CORS subresource (?cors)"
+    partNumber:
+      desc: "Multipart part number query"
     continuation-token:
       desc: "ListBuckets/ListObjects continuation token query"
+    response-cache-control:
+      desc: "Override Cache-Control response header"
+    response-content-disposition:
+      desc: "Override Content-Disposition response header"
+    response-content-encoding:
+      desc: "Override Content-Encoding response header"
+    response-content-language:
+      desc: "Override Content-Language response header"
+    response-content-type:
+      desc: "Override Content-Type response header"
+    response-expires:
+      desc: "Override Expires response header"
     delimiter:
       desc: "ListObjects delimiter query"
+    key-marker:
+      desc: "ListMultipartUploads key-marker query"
     legal-hold:
       desc: "Object legal-hold subresource (?legal-hold=)"
     encoding-type:
@@ -282,8 +298,10 @@ tags:
       desc: "Bucket policyStatus subresource (?policyStatus=)"
     policy:
       desc: "Bucket policy subresource (?policy=)"
-    partNumber:
-      desc: "partNumber query for multiparts and gets"
+    next-key-marker:
+      desc: "ListMultipartUploads NextKeyMarker response value"
+    next-upload-id-marker:
+      desc: "ListMultipartUploads NextUploadIdMarker response value"
     uploadId:
       desc: "Multipart uploadId query"
     prefix:
@@ -292,18 +310,6 @@ tags:
       desc: "Bucket/object tagging subresource (?tagging=)"
     start-after:
       desc: "ListObjectsV2 start-after query"
-    response-cache-control:
-      desc: "override cache-control header response"
-    response-content-disposition:
-      desc: "override content-disposition header response"
-    response-content-encoding:
-      desc: "override content-encoding header response"
-    response-content-language:
-      desc: "override content-language header response"
-    response-content-type:
-      desc: "override content-type header response"
-    response-expires:
-      desc: "override expires header response"
     retention:
       desc: "Object retention subresource (?retention=)"
     attributes:

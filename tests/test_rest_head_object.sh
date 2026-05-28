@@ -47,6 +47,7 @@ source ./tests/drivers/string.sh
   assert_success
 }
 
+# tags: curl,HeadObject,partNumber,invalid-query
 @test "REST - HeadObject - letter partNumber" {
   run setup_bucket_and_add_file_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -56,6 +57,7 @@ source ./tests/drivers/string.sh
   assert_success
 }
 
+# tags: curl,HeadObject,partNumber,invalid-query
 @test "REST - HeadObject - invalid partNumber" {
   run setup_bucket_and_add_file_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -65,6 +67,7 @@ source ./tests/drivers/string.sh
   assert_success
 }
 
+# tags: curl,HeadObject,partNumber,multipart
 @test "REST - HeadObject - valid partNumbers" {
   file_mb=8
   run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" "$file_mb"
@@ -97,6 +100,7 @@ source ./tests/drivers/string.sh
   assert_success
 }
 
+# tags: curl,HeadObject,invalid-query
 @test "REST - HeadObject - invalid request header type" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/2075"
@@ -110,6 +114,7 @@ source ./tests/drivers/string.sh
   assert_success
 }
 
+# tags: curl,HeadObject,response-cache-control,response-content-disposition,response-content-encoding,response-content-language,response-content-type,response-expires
 @test "REST - HeadObject - response queries" {
   run setup_bucket_and_add_file_v3 "$BUCKET_ONE_NAME"
   assert_success

@@ -63,13 +63,16 @@ list_objects_s3api() {
   if ! check_param_count "list_objects_s3api" "bucket" 1 $#; then
     return 1
   fi
-  if ! output=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$1" 2>&1); then
+  local response object_list modified_output contents keys
+
+  if ! response=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$1" 2>&1); then
     log 2 "error listing objects: $output"
     return 1
   fi
+  object_list="$response"
 
   log 5 "list_objects_s3api: raw data returned: $output"
-  modified_output=$(echo "$output" | grep -v "InsecureRequestWarning")
+  modified_output=$(echo "$object_list" | grep -v "InsecureRequestWarning")
 
   log 5 "modified output: $modified_output"
   if echo "$modified_output" | jq -e 'has("Contents")' >/dev/null; then

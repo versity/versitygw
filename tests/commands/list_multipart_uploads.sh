@@ -15,29 +15,42 @@
 # under the License.
 
 list_multipart_uploads() {
-  if [[ $# -ne 1 ]]; then
-    log 2 "'list multipart uploads' command requires bucket name"
+  if ! check_param_count_gt "bucket name, parameters (optional)" 1 $#; then
     return 1
   fi
-  if ! uploads=$(send_command aws --no-verify-ssl s3api list-multipart-uploads --bucket "$1" 2>&1); then
-    log 2 "error listing uploads: $uploads"
+  local response
+
+  if ! response=$(send_command aws --no-verify-ssl s3api list-multipart-uploads --bucket "$1" "${@:2}" 2>&1); then
+    log 2 "error listing uploads: $response"
     return 1
   fi
+  echo "$response"
+  return 0
 }
 
 list_multipart_uploads_rest() {
   if ! check_param_count "list_multipart_upload_rest" "bucket" 1 $#; then
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/uploads.txt" ./tests/rest_scripts/list_multipart_uploads.sh 2>&1); then
-    log 2 "error listing multipart uploads: $result"
+  local response response_file uploads
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
     return 1
   fi
-  uploads=$(cat "$TEST_FILE_FOLDER/uploads.txt")
-  if [ "$result" != "200" ]; then
-    log 2 "expected '200', was '$result' ($uploads)"
+  response_file="$response"
+
+  if ! response=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/$response_file" ./tests/rest_scripts/list_multipart_uploads.sh 2>&1); then
+    log 2 "error listing multipart uploads: $response"
     return 1
   fi
+  uploads=$(cat "$TEST_FILE_FOLDER/$response_file")
+
+  if [ "$response" != "200" ]; then
+    log 2 "expected '200', was '$response' (data: $uploads)"
+    return 1
+  fi
+  echo "$uploads"
   return 0
 }
 
@@ -52,4 +65,5 @@ list_multipart_uploads_with_user() {
     list_multipart_uploads_error=$uploads
     return 1
   fi
+  return 0
 }
