@@ -55,8 +55,8 @@ func TestApplyBucketCORS_FallbackOrigin_NoBucketCors_NoRequestOrigin(t *testing.
 	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != origin {
 		t.Fatalf("expected Access-Control-Allow-Origin to be set to fallback, got %q", got)
 	}
-	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "ETag" {
-		t.Fatalf("expected Access-Control-Expose-Headers to include ETag, got %q", got)
+	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "ETag, x-amz-storage-class" {
+		t.Fatalf("expected Access-Control-Expose-Headers to include ETag and x-amz-storage-class, got %q", got)
 	}
 }
 

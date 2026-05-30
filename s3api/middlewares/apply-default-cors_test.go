@@ -43,8 +43,8 @@ func TestApplyDefaultCORS_AddsHeaderWhenOriginSet(t *testing.T) {
 	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != origin {
 		t.Fatalf("expected fallback origin header, got %q", got)
 	}
-	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "ETag" {
-		t.Fatalf("expected expose headers to include ETag, got %q", got)
+	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "ETag, x-amz-storage-class" {
+		t.Fatalf("expected expose headers to include ETag and x-amz-storage-class, got %q", got)
 	}
 }
 
