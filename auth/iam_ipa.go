@@ -49,21 +49,25 @@ type IpaIAMService struct {
 	vaultName       string
 	username        string
 	password        string
+	adminGroupCN    string
+	enableUserPlus  bool
 	kraTransportKey *rsa.PublicKey
 	rootAcc         Account
 }
 
 var _ IAMService = &IpaIAMService{}
 
-func NewIpaIAMService(rootAcc Account, host, vaultName, username, password string, isInsecure bool) (*IpaIAMService, error) {
+func NewIpaIAMService(rootAcc Account, host, vaultName, username, password, adminGroupCN string, enableUserPlus, isInsecure bool) (*IpaIAMService, error) {
 	ipa := IpaIAMService{
-		id:        0,
-		version:   IpaVersion,
-		host:      host,
-		vaultName: vaultName,
-		username:  username,
-		password:  password,
-		rootAcc:   rootAcc,
+		id:             0,
+		version:        IpaVersion,
+		host:           host,
+		vaultName:      vaultName,
+		username:       username,
+		password:       password,
+		adminGroupCN:   adminGroupCN,
+		enableUserPlus: enableUserPlus,
+		rootAcc:        rootAcc,
 	}
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -124,15 +128,16 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 		return ipa.rootAcc, nil
 	}
 
-	req, err := ipa.newRequest("user_show/1", []string{access}, map[string]any{})
+	req, err := ipa.newRequest("user_show/1", []string{access}, map[string]any{"all": true})
 	if err != nil {
 		return Account{}, fmt.Errorf("ipa user_show: %w", err)
 	}
 
 	userResult := struct {
-		Gidnumber []string
-		Uidnumber []string
-		PidNumber []string
+		Gidnumber     []string `json:"gidnumber"`
+		Uidnumber     []string `json:"uidnumber"`
+		PidNumber     []string `json:"pidnumber"`
+		MemberOfGroup []string `json:"memberof_group"`
 	}{}
 
 	err = ipa.rpc(req, &userResult)
@@ -153,9 +158,17 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 		return Account{}, err
 	}
 
+	role := RoleUser
+	if ipa.enableUserPlus {
+		role = RoleUserPlus
+	}
+	if ipa.adminGroupCN != "" && slices.Contains(userResult.MemberOfGroup, ipa.adminGroupCN) {
+		role = RoleAdmin
+	}
+
 	account := Account{
 		Access:    access,
-		Role:      RoleUser,
+		Role:      role,
 		UserID:    uid,
 		GroupID:   gid,
 		ProjectID: pId,
