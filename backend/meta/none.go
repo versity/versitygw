@@ -53,6 +53,16 @@ func (NoMeta) DeleteAttributes(bucket, object string) error {
 	return nil
 }
 
+// CommitMetadata is a no-op because NoMeta does not store any metadata.
+func (NoMeta) CommitMetadata(_, _, _, _ string) error {
+	return nil
+}
+
+// CleanupMetadata is a no-op because NoMeta does not store any metadata.
+func (NoMeta) CleanupMetadata(_, _ string) error {
+	return nil
+}
+
 // RenameObject is a no-op because NoMeta does not store metadata.
 func (NoMeta) RenameObject(_, _, _ string) error {
 	return nil

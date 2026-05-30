@@ -44,3 +44,17 @@ func handleParentDirError(name string) error {
 	// Parent doesn't exist or is a directory, treat as ENOENT
 	return nil
 }
+
+// captureIno returns 0 on Windows; POSIX inodes are not available.
+// Windows uploads always use CreateTemp which produces uniquely-named files,
+// so path-based sidecar tokens are safe there.
+func captureIno(_ *os.File) uint64 {
+	return 0
+}
+
+// didWinLink always returns true on Windows.  Windows uploads use CreateTemp
+// which produces uniquely-named files, so there is no fd-reuse race and no
+// concurrent winner determination is needed.
+func (tmp *tmpfile) didWinLink() bool {
+	return true
+}

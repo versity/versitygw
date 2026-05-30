@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -33,6 +34,28 @@ func (tmp *tmpfile) Write(b []byte) (int, error) {
 
 func (tmp *tmpfile) File() *os.File {
 	return tmp.f
+}
+
+// SidecarToken returns the per-upload identifier used to name the temporary
+// sidecar directory staged by StoreAttribute.  It must be called after
+// link() so that tmp.ino has been set.
+//
+// On Unix the token is "<pid>.<inode>", which is unique for the lifetime of
+// the upload's data file regardless of fd number reuse.
+// On platforms where inodes are unavailable (e.g. Windows) it falls back to
+// "<pid>.<basename(f.Name())>", which is unique because CreateTemp generates
+// uniquely-named files.
+//
+// IMPORTANT: the token format must stay in sync with tmpSidecarID() in
+// backend/meta/sidecar.go, which computes the same value from the live *os.File
+// during StoreAttribute.  Both functions must produce identical output for the
+// staging and commit steps to find the same directory.
+func (tmp *tmpfile) SidecarToken() string {
+	if tmp.ino != 0 {
+		return fmt.Sprintf("%d.%d", os.Getpid(), tmp.ino)
+	}
+	// Fallback: path-based token for platforms without POSIX inodes.
+	return fmt.Sprintf("%d.%s", os.Getpid(), filepath.Base(tmp.f.Name()))
 }
 
 func sleepWithJitter(backoffMs int) {

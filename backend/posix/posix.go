@@ -2266,6 +2266,15 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", fmt.Errorf("link object in namespace: %w", err)
 	}
 
+	if f.didWinLink() {
+		if err := p.meta.CommitMetadata(bucket, object, f.SidecarToken(), filepath.Join(bucket, object)); err != nil {
+			return res, "", fmt.Errorf("commit object metadata: %w", err)
+		}
+	} else {
+		// This upload lost the concurrent link() race; clean up its staged sidecar.
+		_ = p.meta.CleanupMetadata(bucket, f.SidecarToken())
+	}
+
 	// cleanup tmp dirs
 	os.RemoveAll(filepath.Join(bucket, objdir, activeUploadName))
 	// use Remove for objdir in case there are still other uploads
@@ -3251,6 +3260,15 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 		return nil, fmt.Errorf("link object in namespace: %w", err)
 	}
 
+	if f.didWinLink() {
+		if err := p.meta.CommitMetadata(bucket, partPath, f.SidecarToken(), filepath.Join(bucket, partPath)); err != nil {
+			return nil, fmt.Errorf("commit part metadata: %w", err)
+		}
+	} else {
+		// This upload lost the concurrent link() race; clean up its staged sidecar.
+		_ = p.meta.CleanupMetadata(bucket, f.SidecarToken())
+	}
+
 	return res, nil
 }
 
@@ -3507,6 +3525,15 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	err = f.link()
 	if err != nil {
 		return s3response.CopyPartResult{}, fmt.Errorf("link object in namespace: %w", err)
+	}
+
+	if f.didWinLink() {
+		if err := p.meta.CommitMetadata(*upi.Bucket, partPath, f.SidecarToken(), filepath.Join(*upi.Bucket, partPath)); err != nil {
+			return s3response.CopyPartResult{}, fmt.Errorf("commit part metadata: %w", err)
+		}
+	} else {
+		// This upload lost the concurrent link() race; clean up its staged sidecar.
+		_ = p.meta.CleanupMetadata(*upi.Bucket, f.SidecarToken())
 	}
 
 	fi, err = os.Stat(filepath.Join(*upi.Bucket, partPath))
@@ -3929,6 +3956,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 
 	err = f.link()
 	if errors.Is(err, syscall.EEXIST) {
+		// Another upload installed its data file first; discard our staged
+		// sidecar metadata to prevent .sgwtmp.* dirs from accumulating.
+		_ = p.meta.CleanupMetadata(*po.Bucket, f.SidecarToken())
 		return s3response.PutObjectOutput{
 			ETag:      etag,
 			VersionID: versionID,
@@ -3936,6 +3966,15 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	}
 	if err != nil {
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
+	}
+
+	if f.didWinLink() {
+		if err := p.meta.CommitMetadata(*po.Bucket, *po.Key, f.SidecarToken(), filepath.Join(*po.Bucket, *po.Key)); err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("commit object metadata: %w", err)
+		}
+	} else {
+		// This upload lost the concurrent link() race; clean up its staged sidecar.
+		_ = p.meta.CleanupMetadata(*po.Bucket, f.SidecarToken())
 	}
 
 	// Set object tagging

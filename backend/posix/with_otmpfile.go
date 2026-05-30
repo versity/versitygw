@@ -13,7 +13,6 @@
 // under the License.
 
 //go:build linux
-// +build linux
 
 package posix
 
@@ -47,6 +46,10 @@ type tmpfile struct {
 	uid        int
 	gid        int
 	newDirPerm fs.FileMode
+	// ino holds the inode of the temp file captured just before link() renames
+	// it into place.  Used by didWinLink() to determine whether this upload is
+	// the one currently installed at the final object path.
+	ino uint64
 }
 
 var (
@@ -217,6 +220,10 @@ func (tmp *tmpfile) link() error {
 		return tmp.fallbackLink()
 	}
 
+	// Capture the inode via fstat before linkat so didWinLink() can later
+	// verify that this upload's file is the one at the final path.
+	tmp.ino = captureIno(tmp.f)
+
 	procdir, err := os.Open(procfddir)
 	if err != nil {
 		return fmt.Errorf("open proc dir: %w", err)
@@ -269,6 +276,10 @@ func (tmp *tmpfile) link() error {
 
 func (tmp *tmpfile) fallbackLink() error {
 	tempname := tmp.f.Name()
+
+	// Capture the inode before closing/renaming so didWinLink() can later
+	// verify that this upload's file is the one at the final path.
+	tmp.ino = captureIno(tmp.f)
 
 	// reset default file mode because CreateTemp uses 0600
 	tmp.f.Chmod(fs.FileMode(defaultFilePerm))

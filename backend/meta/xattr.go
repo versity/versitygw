@@ -91,6 +91,18 @@ func (x XattrMeta) DeleteAttributes(bucket, object string) error {
 	return nil
 }
 
+// CommitMetadata is a no-op for xattr: extended attributes are stored on the
+// inode and travel atomically with the data file through link(), so there is
+// no temporary staging area to commit.
+func (x XattrMeta) CommitMetadata(_, _, _, _ string) error {
+	return nil
+}
+
+// CleanupMetadata is a no-op for xattr: there is no temporary staging area.
+func (x XattrMeta) CleanupMetadata(_, _ string) error {
+	return nil
+}
+
 // RenameObject is a no-op for xattr because extended attributes are stored
 // on the inodes and follow the file/directory when it is renamed.
 func (x XattrMeta) RenameObject(_, _, _ string) error {

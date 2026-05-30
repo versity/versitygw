@@ -20,6 +20,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/versity/versitygw/s3err"
@@ -66,32 +68,86 @@ func (s SideCar) RetrieveAttribute(_ *os.File, bucket, object, attribute string)
 	return value, nil
 }
 
-// StoreAttribute stores the value of a specific attribute for an object or a bucket.
-func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, value []byte) error {
-	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
-	if object == "" {
-		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
+// tmpSidecarID returns a string that uniquely identifies an in-flight upload
+// for the purpose of naming its temporary sidecar directory.
+//
+// On Unix it uses the file's inode number, which is stable for the lifetime
+// of the upload's data file regardless of fd-number reuse.  This is critical
+// on Linux where O_TMPFILE fds can be reused by other goroutines as soon as
+// link() closes the fd.
+// On platforms without POSIX inodes (e.g. Windows), fileIno returns 0 and
+// the function falls back to the path-based identifier, which is always
+// unique because CreateTemp generates uniquely-named files.
+//
+// IMPORTANT: the token format must stay in sync with tmpfile.SidecarToken() in
+// backend/posix/otmpfile_common.go, which computes the same value from the
+// captured inode after link().  Both functions must produce identical output for
+// the staging and commit steps to find the same directory.
+func tmpSidecarID(f *os.File) string {
+	if ino := fileIno(f); ino != 0 {
+		return fmt.Sprintf("%d.%d", os.Getpid(), ino)
 	}
-	err := os.MkdirAll(metadir, 0777)
-	if err != nil {
-		if errors.Is(err, syscall.ENOSPC) {
-			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
-		}
-		return fmt.Errorf("failed to create metadata directory: %v", err)
-	}
+	return fmt.Sprintf("%d.%s", os.Getpid(), filepath.Base(f.Name()))
+}
 
-	attr := filepath.Join(metadir, attribute)
-	tempfile, err := os.CreateTemp(metadir, attribute)
-	if err != nil {
+// StoreAttribute stores the value of a specific attribute for an object or a bucket.
+//
+// When f is non-nil and object is non-empty the attribute is written to a
+// per-upload temporary sidecar directory instead of the final path.  This
+// prevents a race where concurrent uploads of the same object could have their
+// checksum metadata and data file committed by different goroutines.  Call
+// CommitMetadata after the data file has been linked to atomically move the
+// temp sidecar to the final location.
+func (s SideCar) StoreAttribute(f *os.File, bucket, object, attribute string, value []byte) error {
+	var metadir string
+	if f != nil && object != "" {
+		metadir = filepath.Join(s.dir, bucket, ".sgwtmp."+tmpSidecarID(f), sidecarmeta)
+	} else {
+		metadir = filepath.Join(s.dir, bucket, object, sidecarmeta)
+		if object == "" {
+			metadir = filepath.Join(s.dir, bucket, sidecarmeta)
+		}
+	}
+	// mkdirAndCreateTemp atomically retries MkdirAll+CreateTemp when the
+	// directory is removed between the two calls.  This can happen when a
+	// concurrent CommitMetadata goroutine calls RemoveAll on the same
+	// inode-named temp sidecar directory (possible via inode reuse after
+	// a previous upload's data file was overwritten and its inode freed).
+	const maxRetries = 5
+	var (
+		tempfile *os.File
+		lastErr  error
+	)
+	for range maxRetries {
+		if err := os.MkdirAll(metadir, 0777); err != nil {
+			if errors.Is(err, syscall.ENOSPC) {
+				return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+			}
+			return fmt.Errorf("failed to create metadata directory: %v", err)
+		}
+		var err error
+		tempfile, err = os.CreateTemp(metadir, attribute)
+		if err == nil {
+			break
+		}
 		if errors.Is(err, syscall.ENOSPC) {
 			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 		}
-		return fmt.Errorf("failed to create temporary file: %v", err)
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to create temporary file: %v", err)
+		}
+		// ENOENT: the directory was removed by a concurrent CommitMetadata
+		// (inode reuse race); retry with a fresh MkdirAll.
+		lastErr = err
+	}
+	if tempfile == nil {
+		return fmt.Errorf("failed to create temporary file in %v after %v retries: %w", metadir, maxRetries, lastErr)
 	}
 	defer os.Remove(tempfile.Name())
 
-	_, err = tempfile.Write(value)
-	if err != nil {
+	attr := filepath.Join(metadir, attribute)
+
+	if _, err := tempfile.Write(value); err != nil {
 		tempfile.Close()
 		if errors.Is(err, syscall.ENOSPC) {
 			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
@@ -101,12 +157,11 @@ func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, va
 
 	// Close explicitly before rename to prevent error on Windows:
 	// The process cannot access the file because it is being used by another process.
-	if err = tempfile.Close(); err != nil {
+	if err := tempfile.Close(); err != nil {
 		return fmt.Errorf("failed to close temporary file: %v", err)
 	}
 
-	err = os.Rename(tempfile.Name(), attr)
-	if err != nil {
+	if err := os.Rename(tempfile.Name(), attr); err != nil {
 		return fmt.Errorf("failed to rename temporary file: %v", err)
 	}
 	return nil
@@ -177,6 +232,106 @@ func (s SideCar) DeleteAttributes(bucket, object string) error {
 		return fmt.Errorf("failed to remove attributes: %w", err)
 	}
 	s.cleanupEmptyDirs(metadir, bucket, object)
+	return nil
+}
+
+// inoFromToken extracts the inode encoded in a SidecarToken string.
+// Token format on Unix: "<pid>.<ino>" where ino is a decimal uint64.
+// Token format on Windows: "<pid>.<basename>" where basename is non-numeric.
+// Returns 0 if the suffix cannot be parsed as a uint64 (Windows fallback).
+func inoFromToken(token string) uint64 {
+	dot := strings.Index(token, ".")
+	if dot < 0 {
+		return 0
+	}
+	ino, err := strconv.ParseUint(token[dot+1:], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return ino
+}
+
+// CommitMetadata moves the per-upload temporary sidecar attributes written by
+// StoreAttribute to the final location for (bucket, object).  It must be
+// called after the data file has been linked into the namespace.
+//
+// token is the per-upload sidecar identifier returned by tmpfile.SidecarToken(),
+// computed before link() closed the file descriptor.
+//
+// dataPath is the filesystem path of the committed data file (e.g.
+// filepath.Join(bucket, object) from the POSIX backend).  It is used to
+// re-verify the inode before each attribute rename so that a goroutine whose
+// inode was subsequently displaced by a later link() aborts instead of
+// overwriting the correct winner's metadata.
+//
+// Each attribute file is moved individually (atomic rename).  Before each
+// rename the inode at dataPath is re-verified against the inode encoded in
+// token.  If the inode no longer matches (a later concurrent link() has
+// installed a different upload's data file), this goroutine is no longer the
+// winner: it aborts, removes its staged temp directory, and returns without
+// error.  The true winner's CommitMetadata will overwrite any partially
+// committed attributes before it finishes, leaving only consistent metadata.
+func (s SideCar) CommitMetadata(bucket, object, token, dataPath string) error {
+	if token == "" || object == "" {
+		return nil
+	}
+
+	myIno := inoFromToken(token)
+
+	tempDir := filepath.Join(s.dir, bucket, ".sgwtmp."+token)
+	tempMetaDir := filepath.Join(tempDir, sidecarmeta)
+	finalMetaDir := filepath.Join(s.dir, bucket, object, sidecarmeta)
+
+	entries, err := os.ReadDir(tempMetaDir)
+	if errors.Is(err, os.ErrNotExist) {
+		// No metadata was staged for this upload; nothing to commit.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read staged metadata: %w", err)
+	}
+
+	if err := os.MkdirAll(finalMetaDir, 0777); err != nil {
+		if errors.Is(err, syscall.ENOSPC) {
+			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		}
+		return fmt.Errorf("create final metadata dir: %w", err)
+	}
+
+	for _, ent := range entries {
+		// Re-verify we are still the link() winner before each rename.
+		// If a concurrent goroutine has since won link() (replacing our inode
+		// at dataPath), abort now.  Any attributes we already renamed will be
+		// overwritten by the true winner's CommitMetadata, which will run to
+		// completion because no later link() can displace its inode.
+		if myIno != 0 && pathIno(dataPath) != myIno {
+			os.RemoveAll(tempDir)
+			return nil
+		}
+
+		src := filepath.Join(tempMetaDir, ent.Name())
+		dst := filepath.Join(finalMetaDir, ent.Name())
+		if err := os.Rename(src, dst); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("commit attribute %s: %w", ent.Name(), err)
+		}
+	}
+
+	os.RemoveAll(tempDir)
+	return nil
+}
+
+// CleanupMetadata removes the per-upload temporary sidecar directory staged by
+// StoreAttribute without promoting it to the final location.  It should be
+// called when the upload lost the concurrent link() race or when link()
+// returned EEXIST, to prevent orphaned .sgwtmp.* directories from accumulating.
+func (s SideCar) CleanupMetadata(bucket, token string) error {
+	if token == "" {
+		return nil
+	}
+	tempDir := filepath.Join(s.dir, bucket, ".sgwtmp."+token)
+	if err := os.RemoveAll(tempDir); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("cleanup staged metadata: %w", err)
+	}
 	return nil
 }
 

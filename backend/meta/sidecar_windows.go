@@ -12,14 +12,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//go:build !windows
+//go:build windows
 
-package posix
+package meta
 
-import (
-	"github.com/versity/versitygw/s3err"
-)
+import "os"
 
-func handleParentDirError(_ string) error {
-	return s3err.GetAPIError(s3err.ErrObjectParentIsFile)
+// fileIno returns 0 on Windows because Windows does not expose POSIX inodes
+// via the standard syscall interface.  tmpSidecarID falls back to the
+// path-based identifier, which is always unique on Windows because
+// CreateTemp generates uniquely-named files.
+func fileIno(_ *os.File) uint64 {
+	return 0
+}
+
+// pathIno returns 0 on Windows; POSIX inodes are not available.
+func pathIno(_ string) uint64 {
+	return 0
 }

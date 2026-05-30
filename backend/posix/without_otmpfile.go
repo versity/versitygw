@@ -44,6 +44,10 @@ type tmpfile struct {
 	uid        int
 	gid        int
 	doChown    bool
+	// ino holds the inode of the temp file captured just before link() renames
+	// it into place.  Used by didWinLink() to determine whether this upload is
+	// the one currently installed at the final object path.
+	ino uint64
 }
 
 func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, _ bool, _ bool) (*tmpfile, error) {
@@ -97,6 +101,10 @@ func (tmp *tmpfile) link() error {
 	tempname := tmp.f.Name()
 
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
+
+	// Capture the inode before closing/renaming so didWinLink() can later
+	// verify that this upload's file is the one at the final path.
+	tmp.ino = captureIno(tmp.f)
 
 	// reset default file mode because CreateTemp uses 0600
 	tmp.f.Chmod(defaultFilePerm)

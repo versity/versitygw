@@ -44,4 +44,30 @@ type MetadataStorer interface {
 	// within the given bucket. This must be called whenever the data
 	// directory for an object is renamed so that metadata stays in sync.
 	RenameObject(bucket, oldObject, newObject string) error
+
+	// CommitMetadata atomically moves any per-upload temporary metadata written
+	// via StoreAttribute(f, bucket, object, …) to the final sidecar location
+	// for (bucket, object).  It must be called immediately after the data file
+	// has been linked into the namespace (tmpfile.link).  For backends that do
+	// not use a temporary staging area this is a no-op.
+	//
+	// token is the per-upload sidecar identifier computed by tmpfile.SidecarToken()
+	// before link() closed the temp file descriptor.
+	//
+	// dataPath is the filesystem path of the committed data file (e.g.
+	// filepath.Join(bucket, object) relative to the POSIX data root).  The
+	// SideCar implementation uses it to verify that this upload is still the
+	// inode at the final path before each attribute rename.  Other
+	// implementations may pass an empty string or ignore the parameter.
+	CommitMetadata(bucket, object, token, dataPath string) error
+
+	// CleanupMetadata removes any per-upload temporary metadata staged by
+	// StoreAttribute(f, bucket, object, …) without promoting it to the final
+	// location.  It must be called when this upload lost the concurrent link()
+	// race (didWinLink returned false) or when link() returned EEXIST, so that
+	// the temporary staging directory does not accumulate.  For backends that do
+	// not use a temporary staging area this is a no-op.
+	//
+	// token is the per-upload sidecar identifier computed by tmpfile.SidecarToken().
+	CleanupMetadata(bucket, token string) error
 }
