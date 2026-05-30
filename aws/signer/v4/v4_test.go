@@ -71,10 +71,9 @@ func TestPresignRequest(t *testing.T) {
 	}
 
 	expectedDate := "19700101T000000Z"
-	expectedHeaders := "content-length;content-type;host;x-amz-meta-other-header;x-amz-meta-other-header_with_underscore"
-	expectedSig := "122f0b9e091e4ba84286097e2b3404a1f1f4c4aad479adda95b7dff0ccbe5581"
+	expectedHeaders := "content-length;content-type;host;x-amz-meta-other-header;x-amz-meta-other-header_with_underscore;x-amz-target"
+	expectedSig := "266528f4c66b4b20807f199141c606c7aa81dd793592b4c6f8dc301c05691e54"
 	expectedCred := "AKID/19700101/us-east-1/dynamodb/aws4_request"
-	expectedTarget := "prefix.Operation"
 
 	q, err := url.ParseQuery(signed[strings.Index(signed, "?"):])
 	if err != nil {
@@ -96,8 +95,8 @@ func TestPresignRequest(t *testing.T) {
 	if a := q.Get("X-Amz-Meta-Other-Header"); len(a) != 0 {
 		t.Errorf("expect %v to be empty", a)
 	}
-	if e, a := expectedTarget, q.Get("X-Amz-Target"); e != a {
-		t.Errorf("expect %v, got %v", e, a)
+	if a := q.Get("X-Amz-Target"); len(a) != 0 {
+		t.Errorf("expect X-Amz-Target to be empty, got %v", a)
 	}
 
 	for h := range strings.SplitSeq(expectedHeaders, ";") {
@@ -129,10 +128,9 @@ func TestPresignBodyWithArrayRequest(t *testing.T) {
 	}
 
 	expectedDate := "19700101T000000Z"
-	expectedHeaders := "content-length;content-type;host;x-amz-meta-other-header;x-amz-meta-other-header_with_underscore"
-	expectedSig := "e3ac55addee8711b76c6d608d762cff285fe8b627a057f8b5ec9268cf82c08b1"
+	expectedHeaders := "content-length;content-type;host;x-amz-meta-other-header;x-amz-meta-other-header_with_underscore;x-amz-target"
+	expectedSig := "f8a1f60771366686c04045b64ae1381d302c83d67d84a02567926000e3e653c4"
 	expectedCred := "AKID/19700101/us-east-1/dynamodb/aws4_request"
-	expectedTarget := "prefix.Operation"
 
 	if e, a := expectedSig, q.Get("X-Amz-Signature"); e != a {
 		t.Errorf("expect %v, got %v", e, a)
@@ -149,8 +147,8 @@ func TestPresignBodyWithArrayRequest(t *testing.T) {
 	if a := q.Get("X-Amz-Meta-Other-Header"); len(a) != 0 {
 		t.Errorf("expect %v to be empty, was not", a)
 	}
-	if e, a := expectedTarget, q.Get("X-Amz-Target"); e != a {
-		t.Errorf("expect %v, got %v", e, a)
+	if a := q.Get("X-Amz-Target"); len(a) != 0 {
+		t.Errorf("expect X-Amz-Target to be empty, got %v", a)
 	}
 
 	for h := range strings.SplitSeq(expectedHeaders, ";") {

@@ -37,6 +37,8 @@ func TestAuthentication(ts *TestState) {
 	ts.Run(Authentication_incorrect_payload_hash)
 	ts.Run(Authentication_invalid_sha256_payload_hash)
 	ts.Run(Authentication_md5)
+	ts.Run(Authentication_unsigned_required_header)
+	ts.Run(Authentication_unsigned_non_required_header)
 	ts.Run(Authentication_signature_error_incorrect_secret_key)
 	ts.Run(Authentication_sigv2_not_supported)
 	ts.Run(Authentication_with_expect_header)
@@ -57,6 +59,8 @@ func TestPresignedAuthentication(ts *TestState) {
 	ts.Run(PresignedAuth_dates_mismatch)
 	ts.Run(PresignedAuth_non_existing_access_key_id)
 	ts.Run(PresignedAuth_missing_signed_headers_query_param)
+	ts.Run(PresignedAuth_unsigned_required_header)
+	ts.Run(PresignedAuth_unsigned_non_required_header)
 	ts.Run(PresignedAuth_missing_expiration_query_param)
 	ts.Run(PresignedAuth_invalid_expiration_query_param)
 	ts.Run(PresignedAuth_negative_expiration_query_param)
@@ -1304,6 +1308,8 @@ func GetIntTests() IntTests {
 		"Authentication_incorrect_payload_hash":                                    Authentication_incorrect_payload_hash,
 		"Authentication_invalid_sha256_payload_hash":                               Authentication_invalid_sha256_payload_hash,
 		"Authentication_md5":                                                       Authentication_md5,
+		"Authentication_unsigned_required_header":                                  Authentication_unsigned_required_header,
+		"Authentication_unsigned_non_required_header":                              Authentication_unsigned_non_required_header,
 		"Authentication_signature_error_incorrect_secret_key":                      Authentication_signature_error_incorrect_secret_key,
 		"Authentication_sigv2_not_supported":                                       Authentication_sigv2_not_supported,
 		"Authentication_with_expect_header":                                        Authentication_with_expect_header,
@@ -1321,6 +1327,8 @@ func GetIntTests() IntTests {
 		"PresignedAuth_dates_mismatch":                                             PresignedAuth_dates_mismatch,
 		"PresignedAuth_non_existing_access_key_id":                                 PresignedAuth_non_existing_access_key_id,
 		"PresignedAuth_missing_signed_headers_query_param":                         PresignedAuth_missing_signed_headers_query_param,
+		"PresignedAuth_unsigned_required_header":                                   PresignedAuth_unsigned_required_header,
+		"PresignedAuth_unsigned_non_required_header":                               PresignedAuth_unsigned_non_required_header,
 		"PresignedAuth_missing_expiration_query_param":                             PresignedAuth_missing_expiration_query_param,
 		"PresignedAuth_invalid_expiration_query_param":                             PresignedAuth_invalid_expiration_query_param,
 		"PresignedAuth_negative_expiration_query_param":                            PresignedAuth_negative_expiration_query_param,

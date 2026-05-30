@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -33,6 +34,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
+	signerV4 "github.com/versity/versitygw/aws/signer/v4"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
@@ -133,12 +135,8 @@ func createHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength
 		return nil, errors.New("error in creating an http request")
 	}
 
-	// Set the request headers
-	for key, value := range req.Header.All() {
-		keyStr := string(key)
-		if includeHeader(keyStr, signedHdrs) {
-			httpReq.Header.Add(keyStr, string(value))
-		}
+	if err := addRequestHeadersFromCtx(ctx, httpReq, signedHdrs); err != nil {
+		return nil, err
 	}
 
 	// make sure all headers in the signed headers are present
@@ -195,12 +193,8 @@ func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, cont
 	if err != nil {
 		return nil, errors.New("error in creating an http request")
 	}
-	// Set the request headers
-	for key, value := range req.Header.All() {
-		keyStr := string(key)
-		if includeHeader(keyStr, signedHdrs) {
-			httpReq.Header.Add(keyStr, string(value))
-		}
+	if err := addRequestHeadersFromCtx(ctx, httpReq, signedHdrs); err != nil {
+		return nil, err
 	}
 
 	// Check if Content-Length in signed headers
@@ -344,12 +338,31 @@ func IsValidBucketName(bucket string) bool {
 }
 
 func includeHeader(hdr string, signedHdrs []string) bool {
-	for _, shdr := range signedHdrs {
-		if strings.EqualFold(hdr, shdr) {
-			return true
+	return slices.ContainsFunc(signedHdrs, func(shdr string) bool {
+		return strings.EqualFold(hdr, shdr)
+	})
+}
+
+func addRequestHeadersFromCtx(ctx *fiber.Ctx, httpReq *http.Request, signedHdrs []string) error {
+	headersNotSigned := []string{}
+	for key, value := range ctx.Request().Header.All() {
+		keyStr := string(key)
+		if includeHeader(keyStr, signedHdrs) || signerV4.IsIgnoredHeader(keyStr) {
+			httpReq.Header.Add(keyStr, string(value))
+			continue
+		}
+		if signerV4.IsRequiredSignedHeader(keyStr) {
+			lowerKey := strings.ToLower(keyStr)
+			headersNotSigned = append(headersNotSigned, lowerKey)
 		}
 	}
-	return false
+
+	if len(headersNotSigned) != 0 {
+		debuglogger.Logf("headers present in request but not included in SignedHeaders: %q", strings.Join(headersNotSigned, ", "))
+		return s3err.GetHeadersNotSignedErr(headersNotSigned)
+	}
+
+	return nil
 }
 
 // expiration time window

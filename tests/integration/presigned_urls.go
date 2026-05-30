@@ -459,6 +459,66 @@ func PresignedAuth_missing_signed_headers_query_param(s *S3Conf) error {
 	})
 }
 
+func PresignedAuth_unsigned_required_header(s *S3Conf) error {
+	testName := "PresignedAuth_unsigned_required_header"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignPutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("my-obj")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest(v4req.Method, v4req.URL, nil)
+		if err != nil {
+			return err
+		}
+
+		req.Header.Set("X-Amz-Copy-Source", "source-bucket/source-key")
+		req.Header.Set("X-Amz-Tagging", "a=b")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetHeadersNotSignedErr([]string{"x-amz-copy-source", "x-amz-tagging"}))
+	})
+}
+
+func PresignedAuth_unsigned_non_required_header(s *S3Conf) error {
+	testName := "PresignedAuth_unsigned_non_required_header"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignPutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("my-obj")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest(v4req.Method, v4req.URL, nil)
+		if err != nil {
+			return err
+		}
+
+		req.Header.Set("Content-Type", "text/plain")
+		req.Header.Set("X-Custom-Header", "value")
+		req.Header.Set("X-Another-Custom-Header", "value")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected response status code to be %v, instead got %v", http.StatusOK, resp.StatusCode)
+		}
+
+		return nil
+	})
+}
+
 func PresignedAuth_missing_expiration_query_param(s *S3Conf) error {
 	testName := "PresignedAuth_missing_expiration_query_param"
 	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {

@@ -30,8 +30,12 @@ type MapRule map[string]struct{}
 
 // IsValid for the map Rule satisfies whether it exists in the map
 func (m MapRule) IsValid(value string) bool {
-	_, ok := m[value]
-	return ok
+	for key := range m {
+		if strings.EqualFold(key, value) {
+			return true
+		}
+	}
+	return false
 }
 
 // AllowList is a generic Rule for include listing

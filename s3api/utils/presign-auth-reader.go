@@ -54,7 +54,7 @@ func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string) error
 	// Create a new http request instance from fasthttp request
 	req, err := createPresignedHttpRequestFromCtx(ctx, signedHdrs, contentLength)
 	if err != nil {
-		return fmt.Errorf("create http request from context: %w", err)
+		return err
 	}
 
 	date, _ := time.Parse(iso8601Format, auth.Date)
