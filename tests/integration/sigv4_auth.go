@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -501,20 +502,7 @@ func Authentication_incorrect_payload_hash(s *S3Conf) error {
 
 func Authentication_md5(s *S3Conf) error {
 	testName := "Authentication_md5"
-	bucket := getBucketName()
-	return authHandler(s, &authConfig{
-		testName: testName,
-		method:   http.MethodPut,
-		body:     nil,
-		service:  "s3",
-		date:     time.Now(),
-		path:     fmt.Sprintf("%s/obj", bucket),
-	}, func(req *http.Request) error {
-		err := setup(s, bucket)
-		if err != nil {
-			return err
-		}
-
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
 		sum := md5.Sum(nil)
 		emptyMd5 := base64.StdEncoding.EncodeToString(sum[:])
 
@@ -528,7 +516,12 @@ func Authentication_md5(s *S3Conf) error {
 			// valid md5, but incorrect
 			{"XrY7u+Ae7tCTyyK7j1rNww==", s3err.GetBadDigestErr(emptyMd5, base64ToHexString("XrY7u+Ae7tCTyyK7j1rNww=="))},
 		} {
-			req.Header.Set("Content-Md5", test.md5)
+			req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%s/obj", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), map[string]string{
+				"Content-Md5": test.md5,
+			})
+			if err != nil {
+				return err
+			}
 
 			resp, err := s.httpClient.Do(req)
 			if err != nil {
@@ -536,13 +529,54 @@ func Authentication_md5(s *S3Conf) error {
 			}
 
 			if err := checkHTTPResponseApiErr(resp, test.err); err != nil {
-				return fmt.Errorf("test %v failed: %v", i+1, err)
+				return fmt.Errorf("test %v failed: %w", i+1, err)
 			}
 		}
 
-		err = teardown(s, bucket)
+		return nil
+	})
+}
+
+func Authentication_unsigned_required_header(s *S3Conf) error {
+	testName := "Authentication_unsigned_required_header"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%s/obj", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
 		if err != nil {
 			return err
+		}
+
+		req.Header.Set("X-Amz-Copy-Source", "source-bucket/source-key")
+		req.Header.Set("X-Amz-Tagging", "a=b")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetHeadersNotSignedErr([]string{"x-amz-copy-source", "x-amz-tagging"}))
+	})
+}
+
+func Authentication_unsigned_non_required_header(s *S3Conf) error {
+	testName := "Authentication_unsigned_non_required_header"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%s/obj", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+
+		req.Header.Set("Content-Type", "text/plain")
+		req.Header.Set("X-Custom-Header", "value")
+		req.Header.Set("X-Another-Custom-Header", "value")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected response status code to be %v, instead got %v", http.StatusOK, resp.StatusCode)
 		}
 
 		return nil

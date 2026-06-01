@@ -443,7 +443,7 @@ func (s *httpSigner) buildCanonicalHeaders(host string, rule v4Internal.Rule, he
 	}
 
 	for k, v := range header {
-		if !rule.IsValid(k) {
+		if !s.shouldSignHeader(k, rule) {
 			continue // ignored header
 		}
 		if strings.EqualFold(k, contentLengthHeader) {
@@ -491,6 +491,18 @@ func (s *httpSigner) buildCanonicalHeaders(host string, rule v4Internal.Rule, he
 	canonicalHeadersStr = canonicalHeaders.String()
 
 	return signed, signedHeaders, canonicalHeadersStr
+}
+
+func (s *httpSigner) shouldSignHeader(header string, rule v4Internal.Rule) bool {
+	if rule.IsValid(header) {
+		return true
+	}
+	if strings.EqualFold(header, authorizationHeader) {
+		return false
+	}
+	return slices.ContainsFunc(s.SignedHdrs, func(signedHeader string) bool {
+		return strings.EqualFold(signedHeader, header)
+	})
 }
 
 func (s *httpSigner) buildCanonicalString(method, uri, query, signedHeaders, canonicalHeaders string) string {

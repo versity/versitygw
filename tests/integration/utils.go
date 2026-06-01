@@ -426,6 +426,7 @@ type APIErrorResponse struct {
 	StringToSignBytes           string                     `xml:"StringToSignBytes,omitempty"`
 	CanonicalRequest            string                     `xml:"CanonicalRequest,omitempty"`
 	CanonicalRequestBytes       string                     `xml:"CanonicalRequestBytes,omitempty"`
+	HeadersNotSigned            string                     `xml:"HeadersNotSigned,omitempty"`
 	RequestID                   string                     `xml:"RequestId,omitempty"`
 	HostID                      string                     `xml:"HostId,omitempty"`
 }
@@ -558,6 +559,8 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 		)
 	case s3err.MalformedAuthError:
 		return compareErrField("Region", err.Region, received.Region)
+	case s3err.HeadersNotSignedError:
+		return compareErrField("HeadersNotSigned", err.HeadersNotSigned, received.HeadersNotSigned)
 	case s3err.NoSuchUploadError:
 		return compareErrField("UploadId", err.UploadId, received.UploadId)
 	case s3err.NoSuchVersionError:
