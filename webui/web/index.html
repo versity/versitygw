@@ -633,7 +633,7 @@ under the License.
         api.logout();
         console.error('Login error:', error);
 
-        if (error.message.includes('CORS blocked')) {
+        if (error.message.startsWith('Network error:')) {
           showError(error.message);
         } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
           showError('Unable to connect to the gateway. Please check the endpoint URL and ensure the server is running.');

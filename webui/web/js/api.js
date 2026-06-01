@@ -717,9 +717,10 @@ class VersityAPI {
         signal: signal || undefined,
       });
     } catch (e) {
-      // Browsers surface CORS blocks as a generic TypeError.
+      // Browsers surface network-level failures (CORS, TLS/certificate errors,
+      // unreachable host) as a generic TypeError with no further detail.
       if (e instanceof TypeError) {
-        throw new Error(`CORS blocked by gateway. Allow origin ${window.location.origin} and headers Authorization, X-Amz-Date, X-Amz-Content-Sha256, Content-Type.`);
+        throw new Error(`Network error: cannot reach gateway. Common causes: CORS policy (gateway must allow origin ${window.location.origin}), TLS/certificate error (untrusted or self-signed certificate rejected by the browser), or the gateway is unreachable.`);
       }
       throw e;
     }
@@ -788,9 +789,9 @@ class VersityAPI {
       await this.listBucketsS3();
       this.setAdminRole(false);
     } catch (s3Error) {
-      // If the gateway is reachable but the browser blocks the response due to CORS,
-      // surface that as an error so the UI can show a useful message.
-      if (s3Error && typeof s3Error.message === 'string' && s3Error.message.includes('CORS blocked')) {
+      // If the request failed at the network level (CORS, TLS, or unreachable),
+      // surface that error so the UI can show a useful diagnostic message.
+      if (s3Error && typeof s3Error.message === 'string' && s3Error.message.startsWith('Network error:')) {
         throw s3Error;
       }
       return 'none';
@@ -931,8 +932,10 @@ class VersityAPI {
     try {
       httpResponse = await fetch(presignedUrl, { method: 'GET' });
     } catch (e) {
+      // Browsers surface network-level failures (CORS, TLS/certificate errors,
+      // unreachable host) as a generic TypeError with no further detail.
       if (e instanceof TypeError) {
-        throw new Error(`CORS blocked by gateway. Allow origin ${window.location.origin} for S3 responses (GET / and bucket/object operations).`);
+        throw new Error(`Network error: cannot reach gateway. Common causes: CORS policy (gateway must allow origin ${window.location.origin}), TLS/certificate error (untrusted or self-signed certificate rejected by the browser), or the gateway is unreachable.`);
       }
       throw e;
     }
