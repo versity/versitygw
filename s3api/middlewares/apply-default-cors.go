@@ -22,7 +22,7 @@ import (
 
 func ensureExposeETag(ctx *fiber.Ctx) {
 	existing := strings.TrimSpace(string(ctx.Response().Header.Peek("Access-Control-Expose-Headers")))
-	defaults := []string{"ETag"}
+	defaults := []string{"ETag", "x-amz-storage-class"}
 	if existing == "" {
 		ctx.Response().Header.Add("Access-Control-Expose-Headers", strings.Join(defaults, ", "))
 		return
