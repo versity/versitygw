@@ -30,6 +30,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/cespare/xxhash/v2"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 	"github.com/zeebo/xxh3"
 )
@@ -127,6 +128,13 @@ func NewHashReader(r io.Reader, expectedSum string, ht HashType) (*HashReader, e
 // Read allows *HashReader to be used as an io.Reader
 func (hr *HashReader) Read(p []byte) (int, error) {
 	n, readerr := hr.r.Read(p)
+	// Treat ErrUnexpectedEOF as EOF so a truncated body triggers checksum
+	// validation (which will fail on partial data) rather than leaking a
+	// raw Go error as an internal server error.
+	if readerr == io.ErrUnexpectedEOF {
+		debuglogger.Logf("client connection terminated early")
+		readerr = io.EOF
+	}
 	_, err := hr.hash.Write(p[:n])
 	if err != nil {
 		return n, err

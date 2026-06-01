@@ -124,6 +124,14 @@ func NewSignedChunkReader(r io.Reader, authdata AuthData, canonicalString, secre
 // Read satisfies the io.Reader for this type
 func (cr *ChunkReader) Read(p []byte) (int, error) {
 	n, err := cr.r.Read(p)
+	// Treat ErrUnexpectedEOF as EOF so a connection that closes before
+	// all Content-Length bytes arrive follows the normal EOF path and
+	// returns a proper S3 error (e.g. ErrContentLengthMismatch or
+	// SignatureDoesNotMatch) instead of leaking an internal Go error.
+	if err == io.ErrUnexpectedEOF {
+		debuglogger.Logf("client connection terminated early")
+		err = io.EOF
+	}
 	if err != nil && err != io.EOF {
 		return 0, err
 	}
