@@ -21,17 +21,22 @@ send_command() {
   if ! check_param_count_gt "command data" 1 $#; then
     return 1
   fi
+
+  local response
   if [ -n "$COMMAND_LOG" ] || [ -n "$COVERAGE_LOG" ]; then
     args=(AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" "$@")
-    if ! mask_arg_array "${args[@]}"; then
+    if ! response=$(mask_arg_array "${args[@]}" 2>&1); then
+      echo "error masking args: $response"
       return 1
     fi
+    masked_args="$response"
+
     if [ -n "$COMMAND_LOG" ]; then
       # shellcheck disable=SC2154
-      echo "${masked_args[*]}" >> "$COMMAND_LOG"
+      echo "$masked_args" >> "$COMMAND_LOG"
     fi
     if [ -n "$COVERAGE_LOG" ]; then
-      record_command_v2 "${masked_args[*]}"
+      record_command_v2 "$masked_args"
     fi
   fi
   local command_result=0

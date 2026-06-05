@@ -14,53 +14,89 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/list_buckets.sh
+
 start_versity_process() {
-  if ! check_param_count "start_versity_process" "versity app index" 1 $#; then
+  if ! check_param_count_gt "versity app index, command array" 2 $#; then
     exit 1
   fi
-  build_run_and_log_command
-  # shellcheck disable=SC2181
-  if [[ $? -ne 0 ]]; then
-    sleep 1
-    if [ -n "$VERSITY_LOG_FILE" ]; then
-      log 1 "error running versitygw command: $(cat "$VERSITY_LOG_FILE")"
-      return 1
-    fi
-    return 1
-  fi
-  eval versitygw_pid_"$1"=$!
-  if [ -n "$VERSITY_LOG_FILE" ]; then
-    process_info="Versity process $1, PID $!"
-    echo "$process_info" >> "$VERSITY_LOG_FILE"
-  fi
-  log 4 "$process_info"
-  local pid
-  eval pid=\$versitygw_pid_"$1"
-  sleep 1
+  local response process_id
 
-  if ! check_result=$(kill -0 "$pid" 2>&1); then
-    log 1 "versitygw failed to start: $check_result"
-    if [ -n "$VERSITY_LOG_FILE" ]; then
-      log 1 "log data: $(cat "$VERSITY_LOG_FILE")"
-    fi
+  if ! response=$(build_run_and_log_command "$1" "${@:2}" 2>&1); then
+    log 2 "error building, logging, and/or running 'versitygw' executable: $response"
     return 1
   fi
-  export versitygw_pid_"$1"
+  process_id="$response"
+
+  printf -v "VERSITYGW_PID_$1" '%s' "$process_id"
+  export VERSITYGW_PID_"$1"
+
+  return 0
 }
 
 build_run_and_log_command() {
-  IFS=' ' read -r -a full_command <<< "${base_command[@]}"
+  if ! check_param_count_gt "versitygw process number (1 or 2), command array" 2 $#; then
+    return 1
+  fi
+  local response full_command versitygw_log_file_name="" pid check_result
+
+  IFS=' ' read -r -a full_command <<< "${@:2}"
   log 5 "versity command: ${full_command[*]}"
   if [ -n "$COMMAND_LOG" ]; then
-    mask_args "${full_command[*]}"
+    if ! response=$(mask_args "${full_command[*]}" 2>&1); then
+      log 2 "error masking versitygw command"
+      return 1
+    fi
     # shellcheck disable=SC2154
-    echo "${masked_args[@]}" >> "$COMMAND_LOG"
+    echo "$response" >> "$COMMAND_LOG"
   fi
   if [ -n "$VERSITY_LOG_FILE" ]; then
-    "${full_command[@]}" >> "$VERSITY_LOG_FILE" 2>&1 &
+    versitygw_log_file_name="$VERSITY_LOG_FILE.$TEST_ID".$1
+    echo "****************************** VERSITYGW $1 LOG ***********************************" >> "$versitygw_log_file_name"
+    "${full_command[@]}" >> "$versitygw_log_file_name" 2>&1 &
   else
-    "${full_command[@]}" 2>&1 &
+    "${full_command[@]}" >/dev/null 2>&1 &
   fi
+
+  pid="$!"
+  if ! verify_process_started "$pid" "$versitygw_log_file_name"; then
+    return 1
+  fi
+
+  echo "$pid"
+  return 0
+}
+
+verify_process_started() {
+  if ! check_param_count_ge_le "pid, log file (if any)" 1 2 $#; then
+    return 1
+  fi
+  local check_result process_running="false" proc_state
+
+  for ((check_num=1; check_num<=3; check_num++)); do
+    sleep 1
+    if [ "$process_running" == "false" ] && check_result=$(kill -0 "$1" 2>&1); then
+      process_running="true"
+    fi
+    if [ "$process_running" == "true" ]; then
+      proc_state=$(ps -p "$1" -o state= 2>/dev/null | tr -d ' ')
+      if [ "$proc_state" != "Z" ] && list_buckets_rest "" "" >/dev/null; then
+        return 0
+      fi
+    fi
+  done
+
+  if [ "$process_running" == "false" ]; then
+    log 1 "versitygw failed to start or crashed: $check_result"
+  elif [[ "$proc_state" == "Z" ]]; then
+    log 1 "versitygw process running in zombie state"
+  else
+    log 1 "process running in state '$proc_state', but not communicating properly"
+  fi
+  if [[ -n "$2" ]]; then
+    log 1 "log data: '$(cat "$2")'"
+  fi
+  return 1
 }
 
 run_versity_app_posix() {
@@ -84,9 +120,11 @@ run_versity_app_posix() {
     base_command+=(--versioning-dir "$VERSIONING_DIR")
   fi
   base_command+=("$LOCAL_FOLDER")
-  export base_command
 
-  start_versity_process "$3"
+  if ! start_versity_process "$3" "${base_command[@]}"; then
+    log 1 "error starting versity process"
+    return 1
+  fi
   return 0
 }
 
@@ -102,9 +140,11 @@ run_versity_app_scoutfs() {
     base_command+=(--port ":$PORT")
   fi
   base_command+=(scoutfs "$LOCAL_FOLDER")
-  export base_command
 
-  start_versity_process "$3"
+  if ! start_versity_process "$3" "${base_command[@]}"; then
+    log 1 "error starting versity process"
+    return 1
+  fi
   return 0
 }
 
@@ -122,20 +162,30 @@ run_versity_app_s3() {
     base_command+=(--port ":7071")
   fi
   base_command+=(s3 --access="$AWS_ACCESS_KEY_ID_TWO" --secret="$AWS_SECRET_ACCESS_KEY_TWO" --region="$AWS_REGION" --endpoint=https://s3.amazonaws.com)
-  export base_command
 
-  start_versity_process "$1"
+  if ! start_versity_process "$1" "${base_command[@]}"; then
+    log 2 "error starting versity process"
+    return 1
+  fi
   return 0
 }
 
 run_versity_app() {
   if [[ $BACKEND == 'posix' ]]; then
-    run_versity_app_posix "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "1"
+    if ! run_versity_app_posix "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "1"; then
+      return 1
+    fi
   elif [[ $BACKEND == 'scoutfs' ]]; then
-    run_versity_app_scoutfs "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "1"
+    if ! run_versity_app_scoutfs "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "1"; then
+      return 1
+    fi
   elif [[ $BACKEND == 's3' ]]; then
-    run_versity_app_posix "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "1"
-    run_versity_app_s3 "2"
+    if ! run_versity_app_posix "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "1"; then
+      return 1
+    fi
+    if ! run_versity_app_s3 "2"; then
+      return 1
+    fi
   else
     log 1 "unrecognized backend type $BACKEND"
     return 1
@@ -151,9 +201,10 @@ run_versity_app() {
     teardown
     return 1
   fi
+  return 0
 }
 
-stop_single_process() {
+stop_versity_process() {
   if ! check_param_count "stop_single_process" "versitygw PID" 1 $#; then
     return 1
   fi
@@ -161,27 +212,31 @@ stop_single_process() {
   # shellcheck disable=SC2086
   if ps_result=$(ps -p $1 2>&1) > /dev/null; then
     kill "$1"
-    wait "$1" || true
+    wait "$1" 2>/dev/null || true
   else
     log 3 "error stopping versity app: $ps_result"
   fi
 }
 
-stop_versity() {
-  if [ "$RUN_VERSITYGW" == "false" ]; then
-    return
-  fi
-  if [[ -z "$versitygw_pid_1" ]]; then
-    return
-  fi
-  # shellcheck disable=SC2154
-  if ! stop_single_process "$versitygw_pid_1"; then
-    log 2 "error stopping versity process"
-  fi
-  if [[ $BACKEND == 's3' ]] && [[ -n "$versitygw_pid_2" ]]; then
-    # shellcheck disable=SC2154
-    if ! stop_single_process "$versitygw_pid_2"; then
-      log 2 "error stopping versity process two"
+check_versity_process_status() {
+  local status_one="" status_two=""
+
+  status_one="none"
+  status_two="none"
+  if [ "$RUN_VERSITYGW" == "true" ]; then
+    if [[ -n "$VERSITYGW_PID_1" ]] && verify_process_started "$VERSITYGW_PID_1" >/dev/null; then
+      status_one="running"
+    else
+      status_one="failed"
+    fi
+    if [ "$BACKEND" == "s3" ]; then
+      if [ -n "$VERSITYGW_PID_2" ] && verify_process_started "$VERSITYGW_PID_2" >/dev/null; then
+        status_two="running"
+      else
+        status_two="failed"
+      fi
     fi
   fi
+  echo "$status_one $status_two"
+  return 0
 }

@@ -62,27 +62,36 @@ log_with_stack_ref() {
     log_mask "$log_level" "$2" "$3"
     return 0
   fi
-  log_message "$log_level" "$2" "$3"
+  if ! log_message "$log_level" "$2" "$3"; then
+    return 1
+  fi
+  return 0
 }
 
 log_mask() {
   if ! check_log_params "log_mask" "level, string, stack reference" 3 $#; then
     return 1
   fi
-  if ! mask_args "$2"; then
-    echo "error masking args"
+  local response masked_data
+
+  if ! response=$(mask_args "$2" 2>&1); then
+    echo "error masking args: $response"
     return 1
   fi
+  masked_data="$response"
 
-  log_message "$log_level" "$masked_data" "$3"
+  if ! log_message "$1" "$masked_data" "$3"; then
+    return 1
+  fi
+  return 0
 }
 
 mask_args() {
   if ! check_log_params "mask_args" "string" 1 $#; then
     return 1
   fi
-  unmasked_array=()
-  masked_data=""
+  local unmasked_array=() first_line masked_data="" response masked_line
+
   while IFS= read -r line; do
     unmasked_array+=("$line")
   done <<< "$1"
@@ -90,60 +99,69 @@ mask_args() {
   # shellcheck disable=SC2068
   first_line=true
   for line in "${unmasked_array[@]}"; do
-    if ! mask_arg_array "$line"; then
-      echo "error masking arg array"
+    if ! response=$(mask_arg_array "$line" 2>&1); then
+      echo "error masking arg array: $response"
       return 1
     fi
+    masked_line="$response"
+
     if [ "$first_line" == "true" ]; then
-      masked_data="${masked_args[*]}"
+      masked_data="$masked_line"
       first_line="false"
     else
-      masked_data+=$(printf "\n%s" "${masked_args[*]}")
+      masked_data+=$(printf "\n%s" "$masked_line")
     fi
   done
+  echo "$masked_data"
+  return 0
 }
 
 mask_arg_array() {
   if [ $# -eq 0 ]; then
-    echo "'mask_arg_array' requires parameters"
+    echo "'mask_arg_array' requires data to be logged"
     return 1
   fi
-  mask_next=false
-  is_access=false
-  masked_args=()  # Initialize an array to hold the masked arguments
+
+  local mask_next=false is_access=false masked_args=()  # Initialize an array to hold the masked arguments
   # shellcheck disable=SC2068
   for arg in $@; do
-    if ! check_arg_for_mask "$arg"; then
-      echo "error checking arg for mask"
+    if ! response=$(check_arg_for_mask "$mask_next" "$is_access" "$arg" 2>&1); then
+      echo "error checking arg for mask: $response"
       return 1
     fi
+    read -r mask_next is_access masked_arg <<< "$response"
+    masked_args+=("$masked_arg")
   done
+  echo "${masked_args[*]}"
+  return 0
 }
 
 check_arg_for_mask() {
-  if ! check_log_params "check_arg_for_mask" "arg" 1 $#; then
+  if ! check_log_params "check_arg_for_mask" "mask next, is access ID, arg" 3 $#; then
     return 1
   fi
+  local mask_next="$1" is_access="$2" arg="$3"
+
   if [[ $mask_next == true ]]; then
     if [ "$is_access" == "true" ]; then
-      masked_args+=("${arg:0:4}****")
+      masked_arg="${arg:0:4}****"
       is_access=false
     else
-      masked_args+=("\********")
+      masked_arg="\********"
     fi
     mask_next=false
   elif [[ "$arg" == --secret_key=* ]]; then
-    masked_args+=("--secret_key=********")
+    masked_arg="--secret_key=********"
   elif [[ "$arg" == --secret=* ]]; then
-    masked_args+=("--secret=********")
+    masked_arg="--secret=********"
   elif [[ "$arg" == --access=* ]]; then
-    masked_args+=("${arg:0:13}****")
+    masked_arg="${arg:0:13}****"
   elif [[ "$arg" == --access_key=* ]]; then
-    masked_args+=("${arg:0:17}****")
+    masked_arg="${arg:0:17}****"
   elif [[ "$arg" == *"Credential="* ]]; then
-    masked_args+=("$(echo "$arg" | sed -E 's/(Credential=[A-Z0-9]{5})[^\/]*/\1****/g')")
+    masked_arg="$(echo "$arg" | sed -E 's/(Credential=[A-Z0-9]{5})[^\/]*/\1****/g')"
   elif [[ "$arg" == *"AWS_ACCESS_KEY_ID="* ]]; then
-    masked_args+=("AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:0:5}****")
+    masked_arg="AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:0:5}****"
   else
     if [[ "$arg" == "--secret_key" ]] || [[ "$arg" == "--secret" ]] || [[ "$arg" == "--s3-iam-secret" ]]; then
       mask_next=true
@@ -151,21 +169,26 @@ check_arg_for_mask() {
       mask_next=true
       is_access=true
     fi
-    masked_args+=("$arg")
+    masked_arg="$arg"
   fi
+  echo "$mask_next $is_access $masked_arg"
+  return 0
 }
 
 log_message() {
   if ! check_log_params "log_message" "level, message, stack reference" 3 $#; then
     return 1
   fi
-  local bash_source_ref=$(($3+1))
+  local bash_source_ref=$(($3+1)) now
   now="$(date "+%Y-%m-%d %H:%M:%S")"
   if [[ ( "$1" == "CRIT" ) || ( "$1" == "ERROR" ) ]]; then
     printf "%s\n" "$now $1 $2" >&2
   fi
   if [[ -n "$TEST_LOG_FILE" ]]; then
-    printf "%s\n" "$now ${BASH_SOURCE[$bash_source_ref]}:${BASH_LINENO[$3]} $1 $2" >> "$TEST_LOG_FILE.tmp"
+    if ! printf "%s\n" "$now ${BASH_SOURCE[$bash_source_ref]}:${BASH_LINENO[$3]} $1 $2" >> "${TEST_LOG_FILE}.${TEST_ID}"; then
+      echo "unable to write to log file '${TEST_LOG_FILE}.${TEST_ID}'"
+      return 1
+    fi
   fi
-  sync
+  return 0
 }

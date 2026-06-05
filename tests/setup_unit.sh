@@ -24,6 +24,5 @@ setup() {
 }
 
 teardown() {
-  remove_test_log_file_if_desired
-  log_cleanup
+  teardown_logs
 }

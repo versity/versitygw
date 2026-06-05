@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/list_buckets.sh
+
 bucket_exists_in_list() {
   if ! check_param_count_gt "bucket, buckets in list" 2 $#; then
     return 1
