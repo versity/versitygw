@@ -58,6 +58,7 @@ type S3ApiServer struct {
 	routes           []routeMount
 	middlewares      []middlewareMount
 	socketPerm       os.FileMode
+	onListen         func()
 }
 
 type routeMount struct {
@@ -332,6 +333,14 @@ func WithDisableACL() Option {
 	return func(s *S3ApiServer) { s.Router.disableACL = true }
 }
 
+// WithOnListen registers a callback that is invoked once the server is bound
+// and ready to accept requests. It is called from the fiber OnListen hook,
+// which fires immediately before the server begins serving the first
+// connection. Use this instead of a fixed sleep to detect readiness reliably.
+func WithOnListen(fn func()) Option {
+	return func(s *S3ApiServer) { s.onListen = fn }
+}
+
 // ServeMultiPort creates listeners for multiple port specifications and serves
 // on all of them simultaneously. This supports listening on multiple ports and/or
 // addresses (e.g., [":7070", "localhost:8080", "0.0.0.0:9090"]).
@@ -365,6 +374,14 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 
 	// Combine all listeners
 	finalListener := utils.NewMultiListener(listeners...)
+
+	if sa.onListen != nil {
+		fn := sa.onListen
+		sa.app.Hooks().OnListen(func(fiber.ListenData) error {
+			fn()
+			return nil
+		})
+	}
 
 	return sa.app.Listener(finalListener)
 }
