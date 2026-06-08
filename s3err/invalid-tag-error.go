@@ -43,6 +43,13 @@ func (e InvalidTagError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e InvalidTagError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "TagKey", Value: e.TagKey},
+		ErrorField{Name: "TagValue", Value: e.TagValue},
+	)
+}
+
 func (e InvalidTagError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

@@ -55,6 +55,17 @@ func (e SignatureDoesNotMatchError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e SignatureDoesNotMatchError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "AWSAccessKeyId", Value: e.AWSAccessKeyId},
+		ErrorField{Name: "StringToSign", Value: e.StringToSign},
+		ErrorField{Name: "SignatureProvided", Value: e.SignatureProvided},
+		ErrorField{Name: "StringToSignBytes", Value: e.StringToSignBytes},
+		ErrorField{Name: "CanonicalRequest", Value: e.CanonicalRequest},
+		ErrorField{Name: "CanonicalRequestBytes", Value: e.CanonicalRequestBytes},
+	)
+}
+
 func (e SignatureDoesNotMatchError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

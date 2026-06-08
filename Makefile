@@ -107,3 +107,12 @@ test-host-style:
 	COMPOSE_MENU=false docker compose -f "$$compose_file" down -v --remove-orphans; \
 	exit $$status
 
+# Run the static website hosting tests in docker containers
+.PHONY: test-website-hosting
+test-website-hosting:
+	@compose_file=tests/website-hosting-tests/docker-compose.yml; \
+	COMPOSE_MENU=false docker compose -f "$$compose_file" down -v --remove-orphans >/dev/null 2>&1 || true; \
+	COMPOSE_MENU=false docker compose -f "$$compose_file" up --build --abort-on-container-exit --exit-code-from test; \
+	status=$$?; \
+	COMPOSE_MENU=false docker compose -f "$$compose_file" down -v --remove-orphans; \
+	exit $$status

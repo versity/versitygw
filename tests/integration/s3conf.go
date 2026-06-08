@@ -36,7 +36,9 @@ type S3Conf struct {
 	awsSecret         string
 	awsRegion         string
 	endpoint          string
-	websiteEndpoint   string
+	websiteScheme     string
+	websiteDomain     string
+	websitePort       string
 	hostStyle         bool
 	checksumDisable   bool
 	PartSize          int64
@@ -65,6 +67,9 @@ func NewS3Conf(opts ...Option) *S3Conf {
 	customHTTPClient := &http.Client{
 		Transport: customTransport,
 		Timeout:   shortTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
 	s.httpClient = customHTTPClient
@@ -86,8 +91,14 @@ func WithRegion(r string) Option {
 func WithEndpoint(e string) Option {
 	return func(s *S3Conf) { s.endpoint = e }
 }
-func WithWebsiteEndpoint(e string) Option {
-	return func(s *S3Conf) { s.websiteEndpoint = e }
+func WithWebsiteScheme(scheme string) Option {
+	return func(s *S3Conf) { s.websiteScheme = scheme }
+}
+func WithWebsiteDomain(d string) Option {
+	return func(s *S3Conf) { s.websiteDomain = d }
+}
+func WithWebsitePort(p string) Option {
+	return func(s *S3Conf) { s.websitePort = p }
 }
 func WithDisableChecksum() Option {
 	return func(s *S3Conf) { s.checksumDisable = true }

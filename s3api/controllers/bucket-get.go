@@ -220,7 +220,7 @@ func (c S3ApiController) GetBucketWebsite(ctx *fiber.Ctx) (*Response, error) {
 		IsRoot:          isRoot,
 		Acc:             acct,
 		Bucket:          bucket,
-		Action:          auth.GetBucketWebsiteAction,
+		Actions:         []auth.Action{auth.GetBucketWebsiteAction},
 		IsPublicRequest: isPublicBucket,
 		DisableACL:      c.disableACL,
 	})

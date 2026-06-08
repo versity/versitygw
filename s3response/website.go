@@ -17,8 +17,10 @@ package s3response
 import (
 	"encoding/xml"
 	"fmt"
+	"strconv"
 	"strings"
 
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -74,10 +76,12 @@ type Redirect struct {
 func (c *WebsiteConfiguration) Validate() error {
 	if c.RedirectAllRequestsTo != nil {
 		if c.IndexDocument != nil || c.ErrorDocument != nil || len(c.RoutingRules) > 0 {
-			return s3err.GetAPIError(s3err.ErrInvalidWebsiteConfiguration)
+			debuglogger.Logf("website redirect conflicts with config")
+			return s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
 		if c.RedirectAllRequestsTo.HostName == "" {
-			return s3err.GetAPIError(s3err.ErrInvalidWebsiteConfiguration)
+			debuglogger.Logf("website redirect hostname is empty")
+			return s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
 		if err := validateProtocol(c.RedirectAllRequestsTo.Protocol); err != nil {
 			return err
@@ -86,26 +90,31 @@ func (c *WebsiteConfiguration) Validate() error {
 	}
 
 	if c.IndexDocument == nil {
-		return s3err.GetAPIError(s3err.ErrInvalidWebsiteConfiguration)
+		debuglogger.Logf("website index document is missing")
+		return s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 	if c.IndexDocument.Suffix == "" {
-		return s3err.GetAPIError(s3err.ErrInvalidWebsiteSuffix)
+		debuglogger.Logf("website index suffix is empty")
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgIndexDocumentSuffix, c.IndexDocument.Suffix)
 	}
 	if strings.Contains(c.IndexDocument.Suffix, "/") {
-		return s3err.GetAPIError(s3err.ErrInvalidWebsiteSuffix)
+		debuglogger.Logf("website index suffix contains slash")
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgIndexDocumentSuffix, c.IndexDocument.Suffix)
 	}
 
 	if c.ErrorDocument != nil && c.ErrorDocument.Key == "" {
-		return s3err.GetAPIError(s3err.ErrInvalidWebsiteConfiguration)
+		debuglogger.Logf("website error document key is empty")
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgErrorDocumentKey, "")
 	}
 
 	if len(c.RoutingRules) > maxRoutingRules {
-		return s3err.GetAPIError(s3err.ErrInvalidWebsiteConfiguration)
+		debuglogger.Logf("too many website routing rules: %d", len(c.RoutingRules))
+		return s3err.GetWebsiteRoutingRulesLimitedErr(len(c.RoutingRules))
 	}
 
-	for i, rule := range c.RoutingRules {
+	for _, rule := range c.RoutingRules {
 		if err := rule.Validate(); err != nil {
-			return fmt.Errorf("routing rule %d: %w", i, err)
+			return err
 		}
 	}
 
@@ -114,27 +123,84 @@ func (c *WebsiteConfiguration) Validate() error {
 
 // Validate checks a single routing rule for validity.
 func (r *RoutingRule) Validate() error {
-	if r.Redirect.ReplaceKeyWith != "" && r.Redirect.ReplaceKeyPrefixWith != "" {
-		return s3err.GetAPIError(s3err.ErrInvalidWebsiteConfiguration)
-	}
-
-	if err := validateProtocol(r.Redirect.Protocol); err != nil {
+	if err := r.Redirect.Validate(); err != nil {
 		return err
 	}
 
-	if r.Redirect.HttpRedirectCode != "" {
-		code := r.Redirect.HttpRedirectCode
-		if len(code) != 3 || code[0] != '3' {
-			return s3err.GetAPIError(s3err.ErrInvalidWebsiteRedirectCode)
-		}
+	if err := r.Condition.Validate(); err != nil {
+		return err
 	}
 
 	return nil
 }
 
+func (c *RoutingRuleCondition) Validate() error {
+	if c == nil {
+		return nil
+	}
+
+	return isValidHTTPCode(c.HttpErrorCodeReturnedEquals, validateErrorCode)
+}
+
+func (r *Redirect) Validate() error {
+	if r.ReplaceKeyWith != "" && r.ReplaceKeyPrefixWith != "" {
+		debuglogger.Logf("website redirect has both key replacements")
+		return s3err.GetAPIError(s3err.ErrBothReplaceKeyAndPrefix)
+	}
+
+	if err := validateProtocol(r.Protocol); err != nil {
+		return err
+	}
+
+	if err := isValidHTTPCode(r.HttpRedirectCode, validateRedirectCode); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type httpCodeValidator func(code int) error
+
+func isValidHTTPCode(input string, validateCode httpCodeValidator) error {
+	if input == "" {
+		return nil
+	}
+
+	code, err := strconv.Atoi(input)
+	if err != nil {
+		return s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+
+	return validateCode(code)
+}
+
+// isValidErrorCode checks if the provided code is a valid
+// HTTP error code: S3 considers 400-417 and 500-505 as valid
+func validateErrorCode(code int) error {
+	if (code >= 400 && code <= 417) || (code >= 500 && code <= 505) {
+		return nil
+	}
+
+	debuglogger.Logf("invalid website error code: %d", code)
+	return s3err.GetInvalidHTTPErrorCodeErr(code)
+}
+
+// validateRedirectCode check if the provided code
+// is a valid HTTP redirect code
+func validateRedirectCode(code int) error {
+	switch code {
+	case 301, 302, 303, 304, 305, 307, 308:
+		return nil
+	}
+
+	debuglogger.Logf("invalid website redirect code: %d", code)
+	return s3err.GetInvalidRedirectCodeErr(code)
+}
+
 func validateProtocol(protocol string) error {
 	if protocol != "" && protocol != "http" && protocol != "https" {
-		return s3err.GetAPIError(s3err.ErrInvalidWebsiteConfiguration)
+		debuglogger.Logf("invalid website redirect protocol: %q", protocol)
+		return s3err.GetAPIError(s3err.ErrInvalidWebsiteRedirectProtocol)
 	}
 	return nil
 }
@@ -144,26 +210,27 @@ func ParseWebsiteConfigOutput(data []byte) (*WebsiteConfiguration, error) {
 	var config WebsiteConfiguration
 	err := xml.Unmarshal(data, &config)
 	if err != nil {
+		debuglogger.Logf("failed to parse website config: %v", err)
 		return nil, fmt.Errorf("failed to parse website config: %w", err)
 	}
 
 	return &config, nil
 }
 
-// MatchPreRequestRule returns the first routing rule that matches based only
-// on KeyPrefixEquals (i.e. rules without HttpErrorCodeReturnedEquals). These
-// rules can be evaluated before the backend request is made. A rule with no
-// condition at all is treated as an unconditional match.
-func (c *WebsiteConfiguration) MatchPreRequestRule(key string) *RoutingRule {
+// MatchPrefetchRoutingRule returns the first rule that can be evaluated before
+// attempting an object read. Only prefix-only conditions participate in this
+// phase.
+func (c *WebsiteConfiguration) MatchPrefetchRoutingRule(key string) *RoutingRule {
 	for i := range c.RoutingRules {
 		rule := &c.RoutingRules[i]
-
-		if rule.Condition != nil && rule.Condition.HttpErrorCodeReturnedEquals != "" {
-			// This is a post-request rule, skip it
+		condition := rule.Condition
+		if condition == nil ||
+			condition.KeyPrefixEquals == "" ||
+			condition.HttpErrorCodeReturnedEquals != "" {
 			continue
 		}
 
-		if rule.Condition == nil || strings.HasPrefix(key, rule.Condition.KeyPrefixEquals) {
+		if condition.KeyPrefixEquals != "" && strings.HasPrefix(key, condition.KeyPrefixEquals) {
 			return rule
 		}
 	}
@@ -171,28 +238,39 @@ func (c *WebsiteConfiguration) MatchPreRequestRule(key string) *RoutingRule {
 	return nil
 }
 
-// MatchPostRequestRule returns the first routing rule that matches based on
-// HttpErrorCodeReturnedEquals (and optionally KeyPrefixEquals). These rules
-// are evaluated after the backend returns an error.
-func (c *WebsiteConfiguration) MatchPostRequestRule(key, httpErrorCode string) *RoutingRule {
+// MatchPostErrorRoutingRule returns the first rule that matches after a 4xx
+// object-read error. Prefix-only rules are skipped because they have already
+// been evaluated in the pre-fetch phase.
+func (c *WebsiteConfiguration) MatchPostErrorRoutingRule(key string, statusCode int) *RoutingRule {
 	for i := range c.RoutingRules {
 		rule := &c.RoutingRules[i]
-
-		if rule.Condition == nil || rule.Condition.HttpErrorCodeReturnedEquals == "" {
-			// Not a post-request rule
+		condition := rule.Condition
+		if condition != nil && condition.HttpErrorCodeReturnedEquals == "" {
 			continue
 		}
 
-		if rule.Condition.HttpErrorCodeReturnedEquals != httpErrorCode {
-			continue
+		if condition.Matches(key, statusCode) {
+			return rule
 		}
-
-		if rule.Condition.KeyPrefixEquals != "" && !strings.HasPrefix(key, rule.Condition.KeyPrefixEquals) {
-			continue
-		}
-
-		return rule
 	}
 
 	return nil
+}
+
+// Matches reports whether all configured condition fields match.
+func (c *RoutingRuleCondition) Matches(key string, statusCode int) bool {
+	if c == nil {
+		return true
+	}
+
+	if c.KeyPrefixEquals != "" && !strings.HasPrefix(key, c.KeyPrefixEquals) {
+		return false
+	}
+
+	if c.HttpErrorCodeReturnedEquals != "" &&
+		strconv.Itoa(statusCode) != c.HttpErrorCodeReturnedEquals {
+		return false
+	}
+
+	return true
 }

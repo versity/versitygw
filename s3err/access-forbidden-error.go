@@ -43,6 +43,13 @@ func (e AccessForbiddenError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e AccessForbiddenError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "Method", Value: e.Method},
+		ErrorField{Name: "ResourceType", Value: e.ResourceType},
+	)
+}
+
 func (e AccessForbiddenError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

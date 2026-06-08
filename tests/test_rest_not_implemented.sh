@@ -162,21 +162,6 @@ source ./tests/setup.sh
   assert_success
 }
 
-@test "REST - GetBucketWebsite" {
-  run test_not_implemented_expect_failure "$BUCKET_ONE_NAME" "website=" "GET"
-  assert_success
-}
-
-@test "REST - PutBucketWebsite" {
-  run test_not_implemented_expect_failure "$BUCKET_ONE_NAME" "website=" "PUT"
-  assert_success
-}
-
-@test "REST - DeleteBucketWebsite" {
-  run test_not_implemented_expect_failure "$BUCKET_ONE_NAME" "website=" "DELETE"
-  assert_success
-}
-
 @test "REST - GetPublicAccessBlock" {
   run test_not_implemented_expect_failure "$BUCKET_ONE_NAME" "publicAccessBlock=" "GET"
   assert_success

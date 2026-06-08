@@ -1759,7 +1759,7 @@ func (s *S3Proxy) putMetaBucketObj(ctx context.Context, bucket string, data []by
 func (s *S3Proxy) getMetaBucketObjData(ctx context.Context, bucket string, prefix metaPrefix, checkExists bool) ([]byte, error) {
 	// return default bahviour of get bucket policy/acl, if meta bucket is not provided
 	if s.metaBucket == "" {
-		return handleMetaBucketObjectNotFoundErr(prefix)
+		return handleMetaBucketObjectNotFoundErr(bucket, prefix)
 	}
 
 	key := getMetaKey(bucket, prefix)
@@ -1773,7 +1773,7 @@ func (s *S3Proxy) getMetaBucketObjData(ctx context.Context, bucket string, prefi
 			return nil, err
 		}
 
-		return handleMetaBucketObjectNotFoundErr(prefix)
+		return handleMetaBucketObjectNotFoundErr(bucket, prefix)
 	}
 	if err != nil {
 		return nil, err
@@ -1790,17 +1790,17 @@ func (s *S3Proxy) getMetaBucketObjData(ctx context.Context, bucket string, prefi
 // handles the case when an object with the given metprefix
 // is not found in meta bucket. Aggregates the not found errors
 // for each meta prefix
-func handleMetaBucketObjectNotFoundErr(prefix metaPrefix) ([]byte, error) {
+func handleMetaBucketObjectNotFoundErr(bucket string, prefix metaPrefix) ([]byte, error) {
 	switch prefix {
 	case metaPrefixAcl:
 		// If bucket acl is not found, return default acl
 		return []byte{}, nil
 	case metaPrefixPolicy:
-		return nil, s3err.GetBucketErr(s3err.ErrNoSuchBucketPolicy, "")
+		return nil, s3err.GetBucketErr(s3err.ErrNoSuchBucketPolicy, bucket)
 	case metaPrefixCors:
-		return nil, s3err.GetBucketErr(s3err.ErrNoSuchCORSConfiguration, "")
+		return nil, s3err.GetBucketErr(s3err.ErrNoSuchCORSConfiguration, bucket)
 	case metaPrefixWebsite:
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchWebsiteConfiguration)
+		return nil, s3err.GetBucketErr(s3err.ErrNoSuchWebsiteConfiguration, bucket)
 	}
 
 	return []byte{}, nil

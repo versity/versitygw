@@ -452,6 +452,147 @@ func checkHTTPResponseApiErr(resp *http.Response, expected s3err.S3Error) error 
 	return compareS3ApiError(expected, &errResp)
 }
 
+// websiteGet issues a plain HTTP GET to the dedicated website endpoint.
+// The bucket is resolved from the request URL host. No S3 signing is applied.
+func websiteGet(s *S3Conf, bucket, path string, headers map[string]string) (*http.Response, error) {
+	return websiteRequest(s, http.MethodGet, bucket, path, headers)
+}
+
+func websiteHead(s *S3Conf, bucket, path string, headers map[string]string) (*http.Response, error) {
+	return websiteRequest(s, http.MethodHead, bucket, path, headers)
+}
+
+func websiteOptions(s *S3Conf, bucket, path string, headers map[string]string) (*http.Response, error) {
+	return websiteRequest(s, http.MethodOptions, bucket, path, headers)
+}
+
+func websiteRequest(s *S3Conf, method, bucket, path string, headers map[string]string) (*http.Response, error) {
+	reqURL, err := websiteURL(s, bucket, path)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(method, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create website request: %w", err)
+	}
+	for key, val := range headers {
+		req.Header.Set(key, val)
+	}
+
+	return s.httpClient.Do(req)
+}
+
+func websiteHost(s *S3Conf, bucket string) string {
+	_, domain, port := websiteEndpointParts(s)
+
+	host := fmt.Sprintf("%s.%s", bucket, domain)
+	if port != "" {
+		host = fmt.Sprintf("%s:%s", host, port)
+	}
+	return host
+}
+
+func websiteURL(s *S3Conf, bucket, path string) (string, error) {
+	return websiteAbsoluteURL(s, websiteHost(s, bucket), path)
+}
+
+func websiteAbsoluteURL(s *S3Conf, host, path string) (string, error) {
+	scheme, _, _ := websiteEndpointParts(s)
+
+	rel, err := url.Parse("/" + strings.TrimLeft(path, "/"))
+	if err != nil {
+		return "", fmt.Errorf("parse website request path: %w", err)
+	}
+
+	return (&url.URL{
+		Scheme:   scheme,
+		Host:     host,
+		Path:     rel.Path,
+		RawQuery: rel.RawQuery,
+	}).String(), nil
+}
+
+func websiteEndpointParts(s *S3Conf) (scheme, domain, port string) {
+	scheme = strings.ToLower(strings.TrimSpace(s.websiteScheme))
+	domain = strings.TrimSpace(s.websiteDomain)
+	port = strings.TrimPrefix(strings.TrimSpace(s.websitePort), ":")
+
+	return scheme, domain, port
+}
+
+func putBucketWebsiteConfig(client *s3.Client, bucket string, config *types.WebsiteConfiguration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.PutBucketWebsite(ctx, &s3.PutBucketWebsiteInput{
+		Bucket:               &bucket,
+		WebsiteConfiguration: config,
+	})
+	cancel()
+	return err
+}
+
+func checkWebsiteResponse(resp *http.Response, expectedStatus int, expectedBody []byte) error {
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read website response body: %w", err)
+	}
+
+	if resp.StatusCode != expectedStatus {
+		return fmt.Errorf("expected status %v, got %v; body: %s", expectedStatus, resp.StatusCode, body)
+	}
+
+	return compareBodySHA256(expectedBody, body)
+}
+
+func checkWebsiteErrorResponse(resp *http.Response, expected s3err.S3Error) error {
+	apiErr := expected.BaseError()
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read website error body: %w", err)
+	}
+
+	if resp.StatusCode != apiErr.HTTPStatusCode {
+		return fmt.Errorf("expected status %v, got %v; body: %s", apiErr.HTTPStatusCode, resp.StatusCode, body)
+	}
+	if got := resp.Header.Get("x-amz-error-code"); got != apiErr.Code {
+		return fmt.Errorf("expected x-amz-error-code %q, got %q", apiErr.Code, got)
+	}
+	if got := resp.Header.Get("x-amz-error-message"); got != apiErr.Description {
+		return fmt.Errorf("expected x-amz-error-message %q, got %q", apiErr.Description, got)
+	}
+	requestID := resp.Header.Get("x-amz-request-id")
+	if requestID == "" {
+		return fmt.Errorf("expected x-amz-request-id header")
+	}
+	hostID := resp.Header.Get("x-amz-id-2")
+	if hostID == "" {
+		return fmt.Errorf("expected x-amz-id-2 header")
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.Contains(got, "text/html") {
+		return fmt.Errorf("expected html Content-Type, got %q", got)
+	}
+	if methodErr, ok := expected.(s3err.MethodNotAllowedError); ok && len(methodErr.AllowedMethods) != 0 {
+		if got, want := resp.Header.Get("Allow"), methodErr.AllowedMethodsString(); got != want {
+			return fmt.Errorf("expected Allow header %q, got %q", want, got)
+		}
+	}
+
+	expectedBody := expected.HTMLBody(requestID, hostID)
+	return compareBodySHA256(expectedBody, body)
+}
+
+func compareBodySHA256(expected, actual []byte) error {
+	expectedSum := sha256.Sum256(expected)
+	actualSum := sha256.Sum256(actual)
+	if expectedSum != actualSum {
+		return fmt.Errorf("body checksum mismatch: expected sha256 %x, got %x; expected body %q, got %q",
+			expectedSum, actualSum, string(expected), string(actual))
+	}
+
+	return nil
+}
+
 func compareS3ApiError(expected s3err.S3Error, received *APIErrorResponse) error {
 	apiErr := expected.BaseError()
 	if received == nil {

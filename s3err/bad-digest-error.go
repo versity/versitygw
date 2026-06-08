@@ -43,6 +43,13 @@ func (e BadDigestError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e BadDigestError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "CalculatedDigest", Value: e.CalculatedDigest},
+		ErrorField{Name: "ExpectedDigest", Value: e.ExpectedDigest},
+	)
+}
+
 func (e BadDigestError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

@@ -15,399 +15,770 @@
 package integration
 
 import (
-	"bytes"
-	"context"
-	"crypto/tls"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/s3err"
 )
 
-// websiteHTTPClient returns an HTTP client suitable for website endpoint
-// requests. It does not follow redirects and skips TLS verification
-// (matching the behaviour of the S3Conf http client for self-signed certs).
-func websiteHTTPClient() *http.Client {
-	return &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-}
-
-// websiteGet issues a plain HTTP GET to the dedicated website endpoint.
-// The bucket is resolved from the Host header. No S3 signing is applied.
-func websiteGet(websiteEndpoint, host, path string) (*http.Response, error) {
-	url := fmt.Sprintf("%s/%s", strings.TrimRight(websiteEndpoint, "/"), strings.TrimLeft(path, "/"))
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Host = host
-	return websiteHTTPClient().Do(req)
-}
-
-// WebsiteHosting_error_document_served tests that when a website-enabled
-// bucket has an error document configured, requesting a non-existing key
-// returns the error document content with the original 404 status code.
+// WebsiteHosting_error_document_served tests that a missing website object
+// serves the configured error document while preserving the original 404 status.
 func WebsiteHosting_error_document_served(s *S3Conf) error {
 	testName := "WebsiteHosting_error_document_served"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		// Configure website with error document
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketWebsite(ctx, &s3.PutBucketWebsiteInput{
-			Bucket: &bucket,
-			WebsiteConfiguration: &types.WebsiteConfiguration{
-				IndexDocument: &types.IndexDocument{
-					Suffix: getPtr("index.html"),
-				},
-				ErrorDocument: &types.ErrorDocument{
-					Key: getPtr("error.html"),
-				},
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
+			},
+			ErrorDocument: &types.ErrorDocument{
+				Key: getPtr("error.html"),
 			},
 		})
-		cancel()
 		if err != nil {
 			return err
 		}
+		if err := grantPublicBucketPolicy(s3client, bucket, policyTypeObject); err != nil {
+			return err
+		}
 
-		// Upload the error document
 		errorContent := "<html><body>Custom Error Page</body></html>"
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
+		_, err = putObjectWithData(int64(len(errorContent)), &s3.PutObjectInput{
 			Bucket:      &bucket,
 			Key:         getPtr("error.html"),
 			Body:        strings.NewReader(errorContent),
 			ContentType: getPtr("text/html"),
-		})
-		cancel()
+		}, s3client)
 		if err != nil {
 			return err
 		}
 
-		// Request a non-existing key via plain HTTP on the website endpoint
-		resp, err := websiteGet(s.websiteEndpoint, bucket, "nonexistent-key")
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusNotFound {
-			return fmt.Errorf("expected status 404, got %v", resp.StatusCode)
-		}
-
-		body, err := io.ReadAll(resp.Body)
+		resp, err := websiteGet(s, bucket, "nonexistent-key", nil)
 		if err != nil {
 			return err
 		}
 
-		if string(body) != errorContent {
-			return fmt.Errorf("expected error document content %q, got %q", errorContent, string(body))
+		if got := resp.Header.Get("Content-Type"); got != "text/html" {
+			return fmt.Errorf("expected text/html Content-Type, got %q", got)
 		}
-
-		return nil
+		return checkWebsiteResponse(resp, http.StatusNotFound, []byte(errorContent))
 	})
 }
 
-// WebsiteHosting_error_document_not_found tests that when the configured
-// error document itself does not exist, a 404 error page is returned.
+// WebsiteHosting_error_document_not_found tests that a missing configured
+// error document returns the complete website NoSuchKey error response.
 func WebsiteHosting_error_document_not_found(s *S3Conf) error {
 	testName := "WebsiteHosting_error_document_not_found"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		// Configure website with error document (but don't upload it)
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketWebsite(ctx, &s3.PutBucketWebsiteInput{
-			Bucket: &bucket,
-			WebsiteConfiguration: &types.WebsiteConfiguration{
-				IndexDocument: &types.IndexDocument{
-					Suffix: getPtr("index.html"),
-				},
-				ErrorDocument: &types.ErrorDocument{
-					Key: getPtr("error.html"),
-				},
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
+			},
+			ErrorDocument: &types.ErrorDocument{
+				Key: getPtr("error.html"),
 			},
 		})
-		cancel()
+		if err != nil {
+			return err
+		}
+		if err := grantPublicBucketPolicy(s3client, bucket, policyTypeObject); err != nil {
+			return err
+		}
+
+		resp, err := websiteGet(s, bucket, "nonexistent-key", nil)
 		if err != nil {
 			return err
 		}
 
-		// Request a non-existing key - should get 404 since error doc doesn't exist either
-		resp, err := websiteGet(s.websiteEndpoint, bucket, "nonexistent-key")
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusNotFound {
-			return fmt.Errorf("expected status 404, got %v", resp.StatusCode)
-		}
-
-		return nil
+		return checkWebsiteErrorResponse(resp, s3err.GetAPIError(s3err.ErrNoSuchKey))
 	})
 }
 
-// WebsiteHosting_no_error_document tests that when website is enabled
-// but no error document is configured, a 404 error page is returned.
+// WebsiteHosting_no_error_document tests that a website bucket without an
+// error document returns the complete website NoSuchKey error response.
 func WebsiteHosting_no_error_document(s *S3Conf) error {
 	testName := "WebsiteHosting_no_error_document"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		// Configure website without error document
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketWebsite(ctx, &s3.PutBucketWebsiteInput{
-			Bucket: &bucket,
-			WebsiteConfiguration: &types.WebsiteConfiguration{
-				IndexDocument: &types.IndexDocument{
-					Suffix: getPtr("index.html"),
-				},
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
 			},
 		})
-		cancel()
+		if err != nil {
+			return err
+		}
+		if err := grantPublicBucketPolicy(s3client, bucket, policyTypeObject); err != nil {
+			return err
+		}
+
+		resp, err := websiteGet(s, bucket, "nonexistent-key", nil)
 		if err != nil {
 			return err
 		}
 
-		// Request a non-existing key - should get 404
-		resp, err := websiteGet(s.websiteEndpoint, bucket, "nonexistent-key")
+		return checkWebsiteErrorResponse(resp, s3err.GetAPIError(s3err.ErrNoSuchKey))
+	})
+}
+
+// WebsiteHosting_private_object_and_error_document tests that website hosting
+// does not serve either the requested object or the configured error document
+// unless public object access has been granted.
+func WebsiteHosting_private_object_and_error_document(s *S3Conf) error {
+	testName := "WebsiteHosting_private_object_and_error_document"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
+			},
+			ErrorDocument: &types.ErrorDocument{
+				Key: getPtr("error.html"),
+			},
+		})
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusNotFound {
-			return fmt.Errorf("expected status 404, got %v", resp.StatusCode)
+		privateError := "private error"
+		_, err = putObjectWithData(int64(len(privateError)), &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("error.html"),
+			Body:        strings.NewReader(privateError),
+			ContentType: getPtr("text/html"),
+		}, s3client)
+		if err != nil {
+			return err
 		}
 
-		return nil
+		resp, err := websiteGet(s, bucket, "private.html", nil)
+		if err != nil {
+			return err
+		}
+
+		return checkWebsiteErrorResponse(resp, s3err.GetAPIError(s3err.ErrAccessDenied))
 	})
 }
 
 // WebsiteHosting_routing_rule_post_request_redirect tests that a post-request
-// routing rule (matching on error code) issues a redirect instead of serving
-// the error or error document.
+// routing rule matching a 404 issues a redirect instead of serving an error.
 func WebsiteHosting_routing_rule_post_request_redirect(s *S3Conf) error {
 	testName := "WebsiteHosting_routing_rule_post_request_redirect"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		// Configure website with a post-request routing rule for 404
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketWebsite(ctx, &s3.PutBucketWebsiteInput{
-			Bucket: &bucket,
-			WebsiteConfiguration: &types.WebsiteConfiguration{
-				IndexDocument: &types.IndexDocument{
-					Suffix: getPtr("index.html"),
-				},
-				ErrorDocument: &types.ErrorDocument{
-					Key: getPtr("error.html"),
-				},
-				RoutingRules: []types.RoutingRule{
-					{
-						Condition: &types.Condition{
-							HttpErrorCodeReturnedEquals: getPtr("404"),
-						},
-						Redirect: &types.Redirect{
-							HostName:         getPtr("fallback.example.com"),
-							ReplaceKeyWith:   getPtr("not-found"),
-							HttpRedirectCode: getPtr("302"),
-						},
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
+			},
+			ErrorDocument: &types.ErrorDocument{
+				Key: getPtr("error.html"),
+			},
+			RoutingRules: []types.RoutingRule{
+				{
+					Condition: &types.Condition{
+						HttpErrorCodeReturnedEquals: getPtr("404"),
+					},
+					Redirect: &types.Redirect{
+						HostName:         getPtr("fallback.example.com"),
+						ReplaceKeyWith:   getPtr("not-found"),
+						HttpRedirectCode: getPtr("302"),
 					},
 				},
 			},
 		})
-		cancel()
+		if err != nil {
+			return err
+		}
+		if err := grantPublicBucketPolicy(s3client, bucket, policyTypeObject); err != nil {
+			return err
+		}
+
+		resp, err := websiteGet(s, bucket, "missing-page", nil)
 		if err != nil {
 			return err
 		}
 
-		// Request a non-existing key via the website endpoint
-		resp, err := websiteGet(s.websiteEndpoint, bucket, "missing-page")
+		wantLocation, err := websiteAbsoluteURL(s, "fallback.example.com", "not-found")
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusFound {
-			return fmt.Errorf("expected status 302, got %v", resp.StatusCode)
+		if got := resp.Header.Get("Location"); got != wantLocation {
+			return fmt.Errorf("expected Location %q, got %q", wantLocation, got)
 		}
-
-		location := resp.Header.Get("Location")
-		if location == "" {
-			return fmt.Errorf("expected Location header, got none")
-		}
-
-		// The redirect should point to fallback.example.com/not-found
-		if !strings.Contains(location, "fallback.example.com") || !strings.Contains(location, "not-found") {
-			return fmt.Errorf("expected redirect to fallback.example.com/not-found, got %q", location)
-		}
-
-		return nil
+		return checkWebsiteResponse(resp, http.StatusFound, []byte(http.StatusText(http.StatusFound)))
 	})
 }
 
-// WebsiteHosting_routing_rule_pre_request_redirect tests that a pre-request
-// routing rule (matching on key prefix only) issues a redirect before the
-// object is fetched.
+// WebsiteHosting_routing_rule_pre_request_redirect tests that a key-prefix
+// routing rule redirects before public access or object existence is checked.
 func WebsiteHosting_routing_rule_pre_request_redirect(s *S3Conf) error {
 	testName := "WebsiteHosting_routing_rule_pre_request_redirect"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		// Configure website with a pre-request routing rule
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketWebsite(ctx, &s3.PutBucketWebsiteInput{
-			Bucket: &bucket,
-			WebsiteConfiguration: &types.WebsiteConfiguration{
-				IndexDocument: &types.IndexDocument{
-					Suffix: getPtr("index.html"),
-				},
-				RoutingRules: []types.RoutingRule{
-					{
-						Condition: &types.Condition{
-							KeyPrefixEquals: getPtr("old-docs/"),
-						},
-						Redirect: &types.Redirect{
-							ReplaceKeyPrefixWith: getPtr("new-docs/"),
-							HttpRedirectCode:     getPtr("301"),
-						},
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
+			},
+			RoutingRules: []types.RoutingRule{
+				{
+					Condition: &types.Condition{
+						KeyPrefixEquals: getPtr("old-docs/"),
+					},
+					Redirect: &types.Redirect{
+						ReplaceKeyPrefixWith: getPtr("new-docs/"),
+						HttpRedirectCode:     getPtr("301"),
 					},
 				},
 			},
 		})
-		cancel()
 		if err != nil {
 			return err
 		}
 
-		// Request old-docs/page.html via the website endpoint
-		resp, err := websiteGet(s.websiteEndpoint, bucket, "old-docs/page.html")
+		resp, err := websiteGet(s, bucket, "old-docs/page.html", nil)
 		if err != nil {
 			return err
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusMovedPermanently {
-			return fmt.Errorf("expected status 301, got %v", resp.StatusCode)
+		wantLocation, err := websiteURL(s, bucket, "new-docs/page.html")
+		if err != nil {
+			return err
 		}
-
-		location := resp.Header.Get("Location")
-		if location == "" {
-			return fmt.Errorf("expected Location header, got none")
+		if got := resp.Header.Get("Location"); got != wantLocation {
+			return fmt.Errorf("expected Location %q, got %q", wantLocation, got)
 		}
-
-		// The redirect should rewrite old-docs/ -> new-docs/
-		if !strings.Contains(location, "new-docs/page.html") {
-			return fmt.Errorf("expected redirect to contain new-docs/page.html, got %q", location)
-		}
-
-		return nil
+		return checkWebsiteResponse(resp, http.StatusMovedPermanently, []byte(http.StatusText(http.StatusMovedPermanently)))
 	})
 }
 
-// WebsiteHosting_redirect_all_requests tests the RedirectAllRequestsTo
-// configuration, which should redirect any request to the specified host.
+// WebsiteHosting_routing_rule_prefix_and_error_redirect tests a routing rule
+// with both KeyPrefixEquals and HttpErrorCodeReturnedEquals conditions.
+func WebsiteHosting_routing_rule_prefix_and_error_redirect(s *S3Conf) error {
+	testName := "WebsiteHosting_routing_rule_prefix_and_error_redirect"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
+			},
+			ErrorDocument: &types.ErrorDocument{
+				Key: getPtr("error.html"),
+			},
+			RoutingRules: []types.RoutingRule{
+				{
+					Condition: &types.Condition{
+						KeyPrefixEquals:             getPtr("old/"),
+						HttpErrorCodeReturnedEquals: getPtr("404"),
+					},
+					Redirect: &types.Redirect{
+						ReplaceKeyPrefixWith: getPtr("archived/"),
+						HttpRedirectCode:     getPtr("307"),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := grantPublicBucketPolicy(s3client, bucket, policyTypeObject); err != nil {
+			return err
+		}
+
+		resp, err := websiteGet(s, bucket, "old/missing.html?ref=1", nil)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		wantLocation, err := websiteURL(s, bucket, "archived/missing.html?ref=1")
+		if err != nil {
+			return err
+		}
+		if got := resp.Header.Get("Location"); got != wantLocation {
+			return fmt.Errorf("expected Location %q, got %q", wantLocation, got)
+		}
+		return checkWebsiteResponse(resp, http.StatusTemporaryRedirect, []byte(http.StatusText(http.StatusTemporaryRedirect)))
+	})
+}
+
+// WebsiteHosting_routing_rule_no_match_serves_error_document tests that routing
+// rules which do not match fall back to the configured error document.
+func WebsiteHosting_routing_rule_no_match_serves_error_document(s *S3Conf) error {
+	testName := "WebsiteHosting_routing_rule_no_match_serves_error_document"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
+			},
+			ErrorDocument: &types.ErrorDocument{
+				Key: getPtr("error.html"),
+			},
+			RoutingRules: []types.RoutingRule{
+				{
+					Condition: &types.Condition{
+						KeyPrefixEquals:             getPtr("docs/"),
+						HttpErrorCodeReturnedEquals: getPtr("404"),
+					},
+					Redirect: &types.Redirect{
+						ReplaceKeyPrefixWith: getPtr("archive/"),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := grantPublicBucketPolicy(s3client, bucket, policyTypeObject); err != nil {
+			return err
+		}
+		errorContent := "<html><body>fallback error</body></html>"
+		_, err = putObjectWithData(int64(len(errorContent)), &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("error.html"),
+			Body:        strings.NewReader(errorContent),
+			ContentType: getPtr("text/html"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		resp, err := websiteGet(s, bucket, "images/missing.png", nil)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		return checkWebsiteResponse(resp, http.StatusNotFound, []byte(errorContent))
+	})
+}
+
+// WebsiteHosting_redirect_all_requests tests RedirectAllRequestsTo, including
+// path and query preservation, without requiring public object access.
 func WebsiteHosting_redirect_all_requests(s *S3Conf) error {
 	testName := "WebsiteHosting_redirect_all_requests"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		// Configure redirect-all
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketWebsite(ctx, &s3.PutBucketWebsiteInput{
-			Bucket: &bucket,
-			WebsiteConfiguration: &types.WebsiteConfiguration{
-				RedirectAllRequestsTo: &types.RedirectAllRequestsTo{
-					HostName: getPtr("www.example.com"),
-					Protocol: types.ProtocolHttps,
-				},
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			RedirectAllRequestsTo: &types.RedirectAllRequestsTo{
+				HostName: getPtr("www.example.com"),
+				Protocol: types.ProtocolHttps,
 			},
 		})
-		cancel()
 		if err != nil {
 			return err
 		}
 
-		// Request any path via the website endpoint
-		resp, err := websiteGet(s.websiteEndpoint, bucket, "any/path/here")
+		resp, err := websiteGet(s, bucket, "any/path/here?tracking=1", nil)
 		if err != nil {
 			return err
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusMovedPermanently {
-			return fmt.Errorf("expected status 301, got %v", resp.StatusCode)
+		if got, want := resp.Header.Get("Location"), "https://www.example.com/any/path/here?tracking=1"; got != want {
+			return fmt.Errorf("expected Location %q, got %q", want, got)
 		}
-
-		location := resp.Header.Get("Location")
-		if !strings.HasPrefix(location, "https://www.example.com/") {
-			return fmt.Errorf("expected redirect to https://www.example.com/, got %q", location)
-		}
-
-		if !strings.Contains(location, "any/path/here") {
-			return fmt.Errorf("expected redirect to preserve path, got %q", location)
-		}
-
-		return nil
+		return checkWebsiteResponse(resp, http.StatusMovedPermanently, []byte(http.StatusText(http.StatusMovedPermanently)))
 	})
 }
 
-// WebsiteHosting_index_document tests that requesting a directory-like
-// path on a website-enabled bucket serves the index document.
+// WebsiteHosting_index_document tests root and directory-style index document
+// resolution through the website endpoint.
 func WebsiteHosting_index_document(s *S3Conf) error {
 	testName := "WebsiteHosting_index_document"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		// Configure website
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketWebsite(ctx, &s3.PutBucketWebsiteInput{
-			Bucket: &bucket,
-			WebsiteConfiguration: &types.WebsiteConfiguration{
-				IndexDocument: &types.IndexDocument{
-					Suffix: getPtr("index.html"),
-				},
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
 			},
 		})
-		cancel()
 		if err != nil {
 			return err
 		}
+		if err := grantPublicBucketPolicy(s3client, bucket, policyTypeObject); err != nil {
+			return err
+		}
 
-		// Upload index document at root
 		indexContent := "<html><body>Welcome</body></html>"
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
+		_, err = putObjectWithData(int64(len(indexContent)), &s3.PutObjectInput{
 			Bucket:      &bucket,
 			Key:         getPtr("index.html"),
 			Body:        strings.NewReader(indexContent),
 			ContentType: getPtr("text/html"),
-		})
-		cancel()
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		docsContent := "<html><body>Docs Home</body></html>"
+		_, err = putObjectWithData(int64(len(docsContent)), &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("docs/index.html"),
+			Body:        strings.NewReader(docsContent),
+			ContentType: getPtr("text/html"),
+		}, s3client)
 		if err != nil {
 			return err
 		}
 
-		// Request the root path via the website endpoint
-		resp, err := websiteGet(s.websiteEndpoint, bucket, "/")
+		for _, test := range []struct {
+			path string
+			body string
+		}{
+			{"/", indexContent},
+			{"docs/", docsContent},
+		} {
+			resp, err := websiteGet(s, bucket, test.path, nil)
+			if err != nil {
+				return err
+			}
+
+			err = checkWebsiteResponse(resp, http.StatusOK, []byte(test.body))
+			resp.Body.Close()
+			if err != nil {
+				return fmt.Errorf("%s: %w", test.path, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// WebsiteHosting_index_error_document_and_routing_rules covers a combined
+// website configuration with index, error document, pre-rule, and post-rule.
+func WebsiteHosting_index_error_document_and_routing_rules(s *S3Conf) error {
+	testName := "WebsiteHosting_index_error_document_and_routing_rules"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
+			},
+			ErrorDocument: &types.ErrorDocument{
+				Key: getPtr("error.html"),
+			},
+			RoutingRules: []types.RoutingRule{
+				{
+					Condition: &types.Condition{
+						KeyPrefixEquals: getPtr("legacy/"),
+					},
+					Redirect: &types.Redirect{
+						ReplaceKeyPrefixWith: getPtr("docs/"),
+						HttpRedirectCode:     getPtr("301"),
+					},
+				},
+				{
+					Condition: &types.Condition{
+						HttpErrorCodeReturnedEquals: getPtr("404"),
+					},
+					Redirect: &types.Redirect{
+						HostName:         getPtr("fallback.example.com"),
+						ReplaceKeyWith:   getPtr("missing"),
+						HttpRedirectCode: getPtr("302"),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := grantPublicBucketPolicy(s3client, bucket, policyTypeObject); err != nil {
+			return err
+		}
+		indexContent := "<html><body>combined index</body></html>"
+		_, err = putObjectWithData(int64(len(indexContent)), &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("index.html"),
+			Body:        strings.NewReader(indexContent),
+			ContentType: getPtr("text/html"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		combinedError := "combined error"
+		_, err = putObjectWithData(int64(len(combinedError)), &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("error.html"),
+			Body:        strings.NewReader(combinedError),
+			ContentType: getPtr("text/html"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		indexResp, err := websiteGet(s, bucket, "/", nil)
+		if err != nil {
+			return err
+		}
+		if err := checkWebsiteResponse(indexResp, http.StatusOK, []byte(indexContent)); err != nil {
+			return err
+		}
+		indexResp.Body.Close()
+
+		preResp, err := websiteGet(s, bucket, "legacy/page.html", nil)
+		if err != nil {
+			return err
+		}
+		wantPreLocation, err := websiteURL(s, bucket, "docs/page.html")
+		if err != nil {
+			preResp.Body.Close()
+			return err
+		}
+		if got := preResp.Header.Get("Location"); got != wantPreLocation {
+			preResp.Body.Close()
+			return fmt.Errorf("expected pre-rule Location %q, got %q", wantPreLocation, got)
+		}
+		if err := checkWebsiteResponse(preResp, http.StatusMovedPermanently, []byte(http.StatusText(http.StatusMovedPermanently))); err != nil {
+			return err
+		}
+
+		postResp, err := websiteGet(s, bucket, "unknown.html", nil)
+		if err != nil {
+			return err
+		}
+		wantPostLocation, err := websiteAbsoluteURL(s, "fallback.example.com", "missing")
+		if err != nil {
+			postResp.Body.Close()
+			return err
+		}
+		if got := postResp.Header.Get("Location"); got != wantPostLocation {
+			postResp.Body.Close()
+			return fmt.Errorf("expected post-rule Location %q, got %q", wantPostLocation, got)
+		}
+		if err := checkWebsiteResponse(postResp, http.StatusFound, []byte(http.StatusText(http.StatusFound))); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func WebsiteHosting_options_preflight_access_granted(s *S3Conf) error {
+	testName := "WebsiteHosting_options_preflight_access_granted"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"https://client.example"},
+						AllowedMethods: []string{http.MethodGet, http.MethodHead},
+						AllowedHeaders: []string{"Content-Type", "X-Amz-Date"},
+						ExposeHeaders:  []string{"Content-Length"},
+						MaxAgeSeconds:  getPtr(int32(42)),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		resp, err := websiteOptions(s, bucket, "index.html", map[string]string{
+			"Origin":                         "https://client.example",
+			"Access-Control-Request-Method":  http.MethodGet,
+			"Access-Control-Request-Headers": "content-type, X-Amz-Date",
+		})
+		if err != nil {
+			return err
+		}
+
+		corsHeaders, err := extractCORSHeaders(resp)
+		if err != nil {
+			return err
+		}
+		if err := comparePreflightResult(&PreflightResult{
+			Origin:           "https://client.example",
+			Methods:          "GET, HEAD",
+			AllowHeaders:     "content-type, x-amz-date",
+			ExposeHeaders:    "Content-Length, ETag",
+			MaxAge:           "42",
+			AllowCredentials: "true",
+			Vary:             "Origin, Access-Control-Request-Headers, Access-Control-Request-Method",
+		}, corsHeaders); err != nil {
+			return err
+		}
+
+		return checkWebsiteResponse(resp, http.StatusOK, nil)
+	})
+}
+
+func WebsiteHosting_get_cors_headers(s *S3Conf) error {
+	testName := "WebsiteHosting_get_cors_headers"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := grantPublicBucketPolicy(s3client, bucket, policyTypeObject); err != nil {
+			return err
+		}
+
+		indexContent := "<html><body>CORS GET</body></html>"
+		_, err = putObjectWithData(int64(len(indexContent)), &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("index.html"),
+			Body:        strings.NewReader(indexContent),
+			ContentType: getPtr("text/html"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		maxAge := int32(42)
+		err = putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"https://client.example"},
+						AllowedMethods: []string{http.MethodGet, http.MethodHead},
+						ExposeHeaders:  []string{"Content-Length"},
+						MaxAgeSeconds:  &maxAge,
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		resp, err := websiteGet(s, bucket, "/", map[string]string{
+			"Origin": "https://client.example",
+		})
+		if err != nil {
+			return err
+		}
+
+		corsHeaders, err := extractCORSHeaders(resp)
+		if err != nil {
+			resp.Body.Close()
+			return err
+		}
+		if err := comparePreflightResult(&PreflightResult{
+			Origin:           "https://client.example",
+			Methods:          "GET, HEAD",
+			ExposeHeaders:    "Content-Length, ETag, x-amz-storage-class",
+			MaxAge:           "42",
+			AllowCredentials: "true",
+			Vary:             "Origin, Access-Control-Request-Headers, Access-Control-Request-Method",
+		}, corsHeaders); err != nil {
+			resp.Body.Close()
+			return err
+		}
+
+		return checkWebsiteResponse(resp, http.StatusOK, []byte(indexContent))
+	})
+}
+
+func WebsiteHosting_head_cors_headers(s *S3Conf) error {
+	testName := "WebsiteHosting_head_cors_headers"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := grantPublicBucketPolicy(s3client, bucket, policyTypeObject); err != nil {
+			return err
+		}
+
+		headContent := "<html><body>CORS HEAD</body></html>"
+		_, err = putObjectWithData(int64(len(headContent)), &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("head.html"),
+			Body:        strings.NewReader(headContent),
+			ContentType: getPtr("text/html"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		err = putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"*"},
+						AllowedMethods: []string{http.MethodHead},
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		resp, err := websiteHead(s, bucket, "head.html", map[string]string{
+			"Origin": "https://client.example",
+		})
+		if err != nil {
+			return err
+		}
+
+		corsHeaders, err := extractCORSHeaders(resp)
+		if err != nil {
+			resp.Body.Close()
+			return err
+		}
+		if err := comparePreflightResult(&PreflightResult{
+			Origin:           "*",
+			Methods:          "HEAD",
+			ExposeHeaders:    "ETag, x-amz-storage-class",
+			AllowCredentials: "false",
+			Vary:             "Origin, Access-Control-Request-Headers, Access-Control-Request-Method",
+		}, corsHeaders); err != nil {
+			resp.Body.Close()
+			return err
+		}
+
+		return checkWebsiteResponse(resp, http.StatusOK, nil)
+	})
+}
+
+func WebsiteHosting_options_preflight_access_forbidden(s *S3Conf) error {
+	testName := "WebsiteHosting_options_preflight_access_forbidden"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"https://client.example"},
+						AllowedMethods: []string{http.MethodHead},
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		resp, err := websiteOptions(s, bucket, "index.html", map[string]string{
+			"Origin":                        "https://client.example",
+			"Access-Control-Request-Method": http.MethodGet,
+		})
 		if err != nil {
 			return err
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("expected status 200, got %v; body: %s", resp.StatusCode, body)
-		}
+		return checkWebsiteErrorResponse(resp,
+			s3err.GetAccessForbiddenErr(s3err.ErrCORSForbidden, http.MethodOptions, s3err.ResourceTypeObject))
+	})
+}
 
-		body, err := io.ReadAll(resp.Body)
+func WebsiteHosting_options_preflight_missing_origin(s *S3Conf) error {
+	testName := "WebsiteHosting_options_preflight_missing_origin"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		resp, err := websiteOptions(s, bucket, "index.html", map[string]string{
+			"Access-Control-Request-Method": http.MethodGet,
+		})
 		if err != nil {
 			return err
 		}
+		defer resp.Body.Close()
 
-		if !bytes.Equal(body, []byte(indexContent)) {
-			return fmt.Errorf("expected index document content %q, got %q", indexContent, string(body))
-		}
-
-		return nil
+		return checkWebsiteErrorResponse(resp, s3err.GetAPIError(s3err.ErrMissingCORSOrigin))
 	})
 }

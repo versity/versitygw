@@ -20,12 +20,13 @@ import (
 
 func TestValidatePortConflicts(t *testing.T) {
 	tests := []struct {
-		name        string
-		ports       []string
-		admPorts    []string
-		webuiPorts  []string
-		expectError bool
-		description string
+		name         string
+		ports        []string
+		admPorts     []string
+		webuiPorts   []string
+		websitePorts []string
+		expectError  bool
+		description  string
 	}{
 		{
 			name:        "bare port conflict with bare port",
@@ -115,11 +116,38 @@ func TestValidatePortConflicts(t *testing.T) {
 			expectError: true,
 			description: "should fail: :8080 conflicts with 127.0.0.1:8080",
 		},
+		{
+			name:         "website bare port conflict with s3 port",
+			ports:        []string{"127.0.0.1:8080"},
+			admPorts:     []string{},
+			webuiPorts:   []string{},
+			websitePorts: []string{":8080"},
+			expectError:  true,
+			description:  "should fail: website bare :8080 conflicts with s3 127.0.0.1:8080",
+		},
+		{
+			name:         "website no conflict",
+			ports:        []string{":7070"},
+			admPorts:     []string{":8080"},
+			webuiPorts:   []string{":9090"},
+			websitePorts: []string{":8081"},
+			expectError:  false,
+			description:  "should pass: website uses a distinct port",
+		},
+		{
+			name:         "duplicate website unix socket conflict",
+			ports:        []string{"/tmp/versitygw.sock"},
+			admPorts:     []string{},
+			webuiPorts:   []string{},
+			websitePorts: []string{"/tmp/versitygw.sock"},
+			expectError:  true,
+			description:  "should fail: duplicate unix socket path conflicts across s3 and website",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePortConflicts(tt.ports, tt.admPorts, tt.webuiPorts)
+			err := validatePortConflicts(tt.ports, tt.admPorts, tt.webuiPorts, tt.websitePorts)
 			if tt.expectError && err == nil {
 				t.Errorf("%s: expected error but got none", tt.description)
 			}

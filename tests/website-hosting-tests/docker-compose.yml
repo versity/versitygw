@@ -1,0 +1,58 @@
+services:
+  dnsmasq:
+    image: strm/dnsmasq
+    container_name: website-dns-resolver
+    restart: on-failure
+    volumes:
+      - './dnsmasq.conf:/etc/dnsmasq.conf'
+    cap_add:
+      - NET_ADMIN
+    healthcheck:
+      test: 'if [ -z "$(netstat -nltu |grep \:53)" ]; then exit 1;else exit 0;fi'
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    networks:
+      devnet:
+        ipv4_address: 10.89.0.53
+
+  server:
+    build:
+      context: ../..
+      dockerfile: tests/host-style-tests/Dockerfile
+    depends_on:
+      dnsmasq:
+        condition: service_healthy
+    command: ["-a", "user", "-s", "pass", "--health", "/health", "--iam-dir", "/tmp/vgw", "--website", ":8080", "--website-domain", "dev", "--website-no-tls", "posix", "/tmp/vgw"]
+    dns:
+      - 10.89.0.53
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7070/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    networks:
+      devnet:
+        ipv4_address: 10.89.0.10
+
+  test:
+    build:
+      context: ../..
+      dockerfile: tests/host-style-tests/Dockerfile
+    depends_on:
+      server:
+        condition: service_healthy
+      dnsmasq:
+        condition: service_healthy
+    command: ["test", "-a", "user", "-s", "pass", "-e", "http://10.89.0.10:7070", "website-hosting", "--scheme", "http", "--domain", "dev", "--port", "8080"]
+    dns:
+      - 10.89.0.53
+    networks:
+      devnet:
+
+networks:
+  devnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.89.0.0/16

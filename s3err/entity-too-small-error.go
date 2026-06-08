@@ -43,6 +43,13 @@ func (e EntityTooSmallError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e EntityTooSmallError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "ProposedSize", Value: e.ProposedSize},
+		ErrorField{Name: "MinSizeAllowed", Value: e.MinSizeAllowed},
+	)
+}
+
 func (e EntityTooSmallError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

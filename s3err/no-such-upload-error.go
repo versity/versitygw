@@ -40,6 +40,12 @@ func (e NoSuchUploadError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e NoSuchUploadError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "UploadId", Value: e.UploadId},
+	)
+}
+
 func (e NoSuchUploadError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

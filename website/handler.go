@@ -15,9 +15,8 @@
 package website
 
 import (
-	"encoding/xml"
+	"errors"
 	"fmt"
-	"html"
 	"io"
 	"net/http"
 	"strconv"
@@ -25,11 +24,25 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/s3api/middlewares"
+	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
-// newHandler returns a fiber handler that serves static website content.
+var websiteAllowedMethods = []string{fiber.MethodGet, fiber.MethodHead, fiber.MethodOptions}
+
+type websiteController struct {
+	be           backend.Backend
+	domain       string
+	domainSuffix string
+	applyCORS    fiber.Handler
+}
+
+// newWebsiteController returns a controller that serves static website content.
 // It resolves the bucket name from the Host header using the configured domain,
 // fetches the website configuration, and serves objects accordingly.
 //
@@ -40,95 +53,202 @@ import (
 // Catch-all mode (--website-domain omitted or empty):
 //   - Host "blog.example.com"  -> bucket "blog.example.com"
 //   - Host "mysite.org"        -> bucket "mysite.org"
-func newHandler(be backend.Backend, domain string) fiber.Handler {
-	// Pre-compute the domain suffix for subdomain extraction.
-	// Given domain "example.com", we look for ".example.com" suffix.
-	domainSuffix := "." + domain
+func newWebsiteController(be backend.Backend, domain string) *websiteController {
+	controller := &websiteController{
+		be:           be,
+		domain:       domain,
+		domainSuffix: "." + domain,
+	}
+	controller.applyCORS = middlewares.ApplyBucketCORS(be, controller.resolveBucket, "")
+	return controller
+}
 
-	return func(ctx *fiber.Ctx) error {
-		host := ctx.Hostname()
-		if host == "" {
-			return sendError(ctx, http.StatusBadRequest, "Bad Request", "Missing Host header")
+func (c *websiteController) Get(ctx *fiber.Ctx) error {
+	return c.serve(ctx, c.getObject)
+}
+
+func (c *websiteController) Head(ctx *fiber.Ctx) error {
+	return c.serve(ctx, c.headObject)
+}
+
+func (c *websiteController) Options(ctx *fiber.Ctx) error {
+	bucket, err := c.resolveBucket(ctx)
+	if err != nil {
+		return sendError(ctx, err)
+	}
+
+	origin := ctx.Get("Origin")
+	method := auth.CORSHTTPMethod(ctx.Get("Access-Control-Request-Method"))
+	headers := ctx.Get("Access-Control-Request-Headers")
+
+	if origin == "" {
+		debuglogger.Logf("origin is missing: %v", origin)
+		return sendError(ctx, s3err.GetAPIError(s3err.ErrMissingCORSOrigin))
+	}
+
+	if !method.IsValid() {
+		debuglogger.Logf("invalid cors method: %s", method)
+		return sendError(ctx, s3err.GetInvalidCORSMethodErr(method.String()))
+	}
+
+	parsedHeaders, err := auth.ParseCORSHeaders(headers)
+	if err != nil {
+		return sendError(ctx, err)
+	}
+
+	cors, err := c.be.GetBucketCors(ctx.Context(), bucket)
+	if err != nil {
+		debuglogger.Logf("failed to get bucket cors: %v", err)
+		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchCORSConfiguration)) {
+			err = s3err.GetAccessForbiddenErr(s3err.ErrCORSIsNotEnabled, http.MethodOptions, s3err.ResourceTypeBucket)
+			debuglogger.Logf("bucket cors is not set: %v", err)
 		}
+		return sendError(ctx, err)
+	}
 
-		// Strip port from host if present
-		if idx := strings.LastIndex(host, ":"); idx != -1 {
-			// Be careful with IPv6: only strip if it's not inside brackets
-			if !strings.Contains(host[idx:], "]") {
-				host = host[:idx]
-			}
-		}
+	corsConfig, err := auth.ParseCORSOutput(cors)
+	if err != nil {
+		return sendError(ctx, err)
+	}
 
-		// Resolve bucket name from host
-		bucket := resolveBucket(host, domain, domainSuffix)
-		if bucket == "" {
-			return sendError(ctx, http.StatusForbidden, "Forbidden",
-				fmt.Sprintf("No bucket could be resolved from host %q", html.EscapeString(ctx.Hostname())))
-		}
+	allowConfig, err := corsConfig.IsAllowed(origin, method, parsedHeaders, s3err.ResourceTypeObject)
+	if err != nil {
+		debuglogger.Logf("cors access forbidden: %v", err)
+		return sendError(ctx, err)
+	}
 
-		// Fetch website configuration
-		data, err := be.GetBucketWebsite(ctx.Context(), bucket)
-		if err != nil {
-			return sendError(ctx, http.StatusNotFound, "Not Found",
-				fmt.Sprintf("No website configuration for bucket %q", bucket))
-		}
+	setCORSPreflightHeaders(ctx, allowConfig)
+	ctx.Status(http.StatusOK)
+	return nil
+}
 
-		var config s3response.WebsiteConfiguration
-		if xmlErr := xml.Unmarshal(data, &config); xmlErr != nil {
-			return sendError(ctx, http.StatusInternalServerError, "Internal Server Error",
-				"Invalid website configuration")
-		}
+func registerWebsiteRoutes(app *fiber.App, be backend.Backend, domain string) {
+	controller := newWebsiteController(be, domain)
 
-		key := strings.TrimPrefix(ctx.Path(), "/")
+	app.Head("*", controller.Head)
+	app.Get("*", controller.Get)
+	app.Options("*", controller.Options)
+	app.All("*", controller.MethodNotAllowed)
+}
 
-		// Handle RedirectAllRequestsTo
-		if config.RedirectAllRequestsTo != nil {
-			return handleRedirectAll(ctx, config.RedirectAllRequestsTo, key)
-		}
-
-		// Evaluate pre-request routing rules
-		if rule := config.MatchPreRequestRule(key); rule != nil {
-			return applyRedirect(ctx, &rule.Redirect, rule.Condition, key)
-		}
-
-		// Rewrite directory-like keys to include index document suffix
-		if config.IndexDocument != nil && config.IndexDocument.Suffix != "" {
-			if key == "" || strings.HasSuffix(key, "/") {
-				key = key + config.IndexDocument.Suffix
-			}
-		}
-
-		// Fetch the object
-		emptyRange := ""
-		result, getErr := be.GetObject(ctx.Context(), &s3.GetObjectInput{
-			Bucket: &bucket,
-			Key:    &key,
-			Range:  &emptyRange,
-		})
-		if getErr == nil && result.Body != nil {
-			defer result.Body.Close()
-			return serveObject(ctx, result, key)
-		}
-
-		// Object not found (or other error) — evaluate post-request routing rules
-		httpErrCode := http.StatusNotFound
-		errorCode := strconv.Itoa(httpErrCode)
-
-		if rule := config.MatchPostRequestRule(key, errorCode); rule != nil {
-			return applyRedirect(ctx, &rule.Redirect, rule.Condition, key)
-		}
-
-		// Serve error document if configured
-		if config.ErrorDocument != nil && config.ErrorDocument.Key != "" {
-			return serveErrorDocument(ctx, be, bucket, config.ErrorDocument.Key, httpErrCode)
-		}
-
-		return sendError(ctx, http.StatusNotFound, "Not Found",
-			fmt.Sprintf("The specified key %q does not exist", key))
+func setCORSPreflightHeaders(ctx *fiber.Ctx, allowConfig *auth.CORSAllowanceConfig) {
+	ctx.Set("Access-Control-Allow-Origin", allowConfig.Origin)
+	ctx.Set("Access-Control-Allow-Methods", allowConfig.Methods)
+	ctx.Set("Access-Control-Expose-Headers", corsExposeHeaders(allowConfig.ExposedHeaders))
+	ctx.Set("Access-Control-Allow-Credentials", allowConfig.AllowCredentials)
+	ctx.Set("Access-Control-Allow-Headers", allowConfig.AllowHeaders)
+	ctx.Set("Vary", middlewares.VaryHdr)
+	if allowConfig.MaxAge != nil {
+		ctx.Set("Access-Control-Max-Age", strconv.Itoa(int(*allowConfig.MaxAge)))
 	}
 }
 
-// resolveBucket extracts the bucket name from the host header.
+func corsExposeHeaders(exposed string) string {
+	exposed = strings.TrimSpace(exposed)
+	if exposed == "" {
+		return "ETag"
+	}
+	if exposed == "*" {
+		return exposed
+	}
+
+	for part := range strings.SplitSeq(exposed, ",") {
+		if strings.EqualFold(strings.TrimSpace(part), "ETag") {
+			return exposed
+		}
+	}
+
+	return exposed + ", ETag"
+}
+
+func (c *websiteController) MethodNotAllowed(ctx *fiber.Ctx) error {
+	return sendError(ctx, s3err.GetMethodNotAllowedErr(ctx.Method(), s3err.ResourceTypeObject, websiteAllowedMethods))
+}
+
+type websiteRequestInfo struct {
+	bucket string
+	config *s3response.WebsiteConfiguration
+	key    string
+}
+
+type websiteObjectReader func(ctx *fiber.Ctx, bucket, key string) websiteResult
+
+func (c *websiteController) serve(ctx *fiber.Ctx, readObject websiteObjectReader) error {
+	req, err := c.resolveRequest(ctx)
+	if err != nil {
+		return sendError(ctx, err)
+	}
+
+	if err := c.applyCORS(ctx); err != nil {
+		return sendError(ctx, err)
+	}
+
+	if req.config.RedirectAllRequestsTo != nil {
+		return handleRedirectAll(ctx, req.config.RedirectAllRequestsTo, req.key)
+	}
+
+	if rule := req.config.MatchPrefetchRoutingRule(req.key); rule != nil {
+		return applyRedirect(ctx, &rule.Redirect, rule.Condition, req.key)
+	}
+
+	resolvedKey := resolveIndexKey(req.key, req.config)
+	result := readObject(ctx, req.bucket, resolvedKey)
+	if result.Err == nil {
+		return serveWebsiteResult(ctx, req.bucket, req.config, result, readObject)
+	}
+	if result.StatusCode >= http.StatusInternalServerError {
+		return sendError(ctx, result.Err)
+	}
+
+	if rule := req.config.MatchPostErrorRoutingRule(req.key, result.StatusCode); rule != nil {
+		return applyRedirect(ctx, &rule.Redirect, rule.Condition, req.key)
+	}
+
+	return serveWebsiteResult(ctx, req.bucket, req.config, result, readObject)
+}
+
+func (c *websiteController) resolveRequest(ctx *fiber.Ctx) (*websiteRequestInfo, error) {
+	bucket, err := c.resolveBucket(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	key := strings.TrimPrefix(ctx.Path(), "/")
+	if err := validateWebsiteNames(bucket, key); err != nil {
+		return nil, err
+	}
+
+	data, err := c.be.GetBucketWebsite(ctx.Context(), bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	config, err := s3response.ParseWebsiteConfigOutput(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return &websiteRequestInfo{
+		bucket: bucket,
+		config: config,
+		key:    key,
+	}, nil
+}
+
+func validateWebsiteNames(bucket, key string) error {
+	if !utils.IsValidBucketName(bucket) {
+		return s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
+	}
+	if key != "" && !utils.IsObjectNameValid(key) {
+		return s3err.GetAPIError(s3err.ErrBadRequest)
+	}
+
+	return nil
+}
+
+// resolveBucket extracts the bucket name from the request host header.
+//
+// It strips the port when present before applying website endpoint routing.
 //
 // When domain is set:
 //   - If host equals the domain exactly, the bucket IS the domain (apex).
@@ -137,36 +257,146 @@ func newHandler(be backend.Backend, domain string) fiber.Handler {
 //
 // When domain is empty (catch-all mode):
 //   - The full hostname is used as the bucket name.
-func resolveBucket(host, domain, domainSuffix string) string {
-	if domain == "" {
-		// Catch-all: the full hostname is the bucket name
-		return host
+func (c *websiteController) resolveBucket(ctx *fiber.Ctx) (string, error) {
+	host := ctx.Hostname()
+	if host == "" {
+		return "", s3err.GetAPIError(s3err.ErrNoBucketInRequest)
 	}
 
-	if strings.EqualFold(host, domain) {
-		return domain
+	// Strip port from host if present. Be careful with IPv6: only strip if the
+	// last colon is not inside brackets.
+	if idx := strings.LastIndex(host, ":"); idx != -1 && !strings.Contains(host[idx:], "]") {
+		host = host[:idx]
 	}
 
-	lower := strings.ToLower(host)
-	if strings.HasSuffix(lower, strings.ToLower(domainSuffix)) {
-		sub := host[:len(host)-len(domainSuffix)]
-		if sub != "" && !strings.Contains(sub, ".") {
-			return sub
+	if c.domain == "" {
+		return host, nil
+	}
+
+	if strings.EqualFold(host, c.domain) {
+		return c.domain, nil
+	}
+
+	lowerHost := strings.ToLower(host)
+	lowerDomainSuffix := strings.ToLower(c.domainSuffix)
+	if strings.HasSuffix(lowerHost, lowerDomainSuffix) {
+		bucket := host[:len(host)-len(c.domainSuffix)]
+		if bucket != "" && !strings.Contains(bucket, ".") {
+			return bucket, nil
 		}
 	}
 
-	return ""
+	return "", s3err.GetAPIError(s3err.ErrNoBucketInRequest)
+}
+
+type websiteResult struct {
+	Key        string
+	StatusCode int
+	Object     websiteObject
+	Err        error
+}
+
+type websiteObject struct {
+	Body     io.ReadCloser
+	Headers  map[string]*string
+	Metadata map[string]string
+}
+
+func resolveIndexKey(key string, config *s3response.WebsiteConfiguration) string {
+	if config.IndexDocument != nil && config.IndexDocument.Suffix != "" {
+		if key == "" || strings.HasSuffix(key, "/") {
+			return key + config.IndexDocument.Suffix
+		}
+	}
+
+	return key
+}
+
+func (c *websiteController) getObject(ctx *fiber.Ctx, bucket, key string) websiteResult {
+	if err := auth.VerifyPublicAccess(ctx.Context(), c.be, auth.GetObjectAction, auth.PermissionRead, bucket, key); err != nil {
+		return websiteResult{
+			Key:        key,
+			StatusCode: statusCodeFromError(err),
+			Err:        err,
+		}
+	}
+
+	result, err := c.be.GetObject(ctx.Context(), &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		return websiteResult{
+			Key:        key,
+			StatusCode: statusCodeFromError(err),
+			Err:        err,
+		}
+	}
+
+	return websiteResult{
+		Key:        key,
+		StatusCode: http.StatusOK,
+		Object: websiteObject{
+			Body:     result.Body,
+			Headers:  getObjectHeaders(result),
+			Metadata: result.Metadata,
+		},
+	}
+}
+
+func (c *websiteController) headObject(ctx *fiber.Ctx, bucket, key string) websiteResult {
+	if err := auth.VerifyPublicAccess(ctx.Context(), c.be, auth.ListBucketAction, auth.PermissionRead, bucket, key); err != nil {
+		return websiteResult{
+			Key:        key,
+			StatusCode: statusCodeFromError(err),
+			Err:        err,
+		}
+	}
+
+	result, err := c.be.HeadObject(ctx.Context(), &s3.HeadObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		return websiteResult{
+			Key:        key,
+			StatusCode: statusCodeFromError(err),
+			Err:        err,
+		}
+	}
+
+	return websiteResult{
+		Key:        key,
+		StatusCode: http.StatusOK,
+		Object: websiteObject{
+			Headers:  headObjectHeaders(result),
+			Metadata: result.Metadata,
+		},
+	}
+}
+
+func statusCodeFromError(err error) int {
+	var serr s3err.S3Error
+	if errors.As(err, &serr) {
+		return serr.StatusCode()
+	}
+
+	return http.StatusInternalServerError
 }
 
 // handleRedirectAll sends a 301 redirect for RedirectAllRequestsTo configuration.
 func handleRedirectAll(ctx *fiber.Ctx, redirect *s3response.RedirectAllRequestsTo, key string) error {
 	protocol := redirect.Protocol
 	if protocol == "" {
-		protocol = "https"
+		protocol = "http"
 	}
 
 	location := fmt.Sprintf("%s://%s/%s", protocol, redirect.HostName, key)
+	if query := string(ctx.Request().URI().QueryString()); query != "" {
+		location += "?" + query
+	}
 	ctx.Set("Location", location)
+	_, _ = utils.EnsureRequestIDs(ctx)
 	return ctx.SendStatus(http.StatusMovedPermanently)
 }
 
@@ -189,7 +419,7 @@ func applyRedirect(ctx *fiber.Ctx, redirect *s3response.Redirect, condition *s3r
 		key = redirect.ReplaceKeyPrefixWith + strings.TrimPrefix(originalKey, condition.KeyPrefixEquals)
 	}
 
-	httpCode := http.StatusFound // 302 default
+	httpCode := http.StatusMovedPermanently
 	if redirect.HttpRedirectCode != "" {
 		if code, err := strconv.Atoi(redirect.HttpRedirectCode); err == nil {
 			httpCode = code
@@ -197,118 +427,112 @@ func applyRedirect(ctx *fiber.Ctx, redirect *s3response.Redirect, condition *s3r
 	}
 
 	location := fmt.Sprintf("%s://%s/%s", protocol, host, key)
+	if query := string(ctx.Request().URI().QueryString()); query != "" {
+		location += "?" + query
+	}
 	ctx.Set("Location", location)
 	return ctx.SendStatus(httpCode)
 }
 
-// serveObject writes the S3 object content to the response.
-func serveObject(ctx *fiber.Ctx, result *s3.GetObjectOutput, key string) error {
-	contentType := guessContentType(result, key)
-	ctx.Set("Content-Type", contentType)
+func getObjectHeaders(result *s3.GetObjectOutput) map[string]*string {
+	return map[string]*string{
+		"ETag":                result.ETag,
+		"accept-ranges":       result.AcceptRanges,
+		"Cache-Control":       result.CacheControl,
+		"Content-Disposition": result.ContentDisposition,
+		"Content-Encoding":    result.ContentEncoding,
+		"Content-Language":    result.ContentLanguage,
+		"Content-Length":      utils.ConvertPtrToStringPtr(result.ContentLength),
+		"Content-Range":       result.ContentRange,
+		"Content-Type":        result.ContentType,
+		"Expires":             result.ExpiresString,
+		"Last-Modified":       utils.FormatDatePtrToString(result.LastModified, http.TimeFormat),
+		"x-amz-restore":       result.Restore,
+		"x-amz-version-id":    result.VersionId,
+	}
+}
 
-	if result.ETag != nil {
-		ctx.Set("ETag", *result.ETag)
+func headObjectHeaders(result *s3.HeadObjectOutput) map[string]*string {
+	return map[string]*string{
+		"ETag":                result.ETag,
+		"accept-ranges":       result.AcceptRanges,
+		"Cache-Control":       result.CacheControl,
+		"Content-Disposition": result.ContentDisposition,
+		"Content-Encoding":    result.ContentEncoding,
+		"Content-Language":    result.ContentLanguage,
+		"Content-Length":      utils.ConvertPtrToStringPtr(result.ContentLength),
+		"Content-Range":       result.ContentRange,
+		"Content-Type":        result.ContentType,
+		"Expires":             result.ExpiresString,
+		"Last-Modified":       utils.FormatDatePtrToString(result.LastModified, http.TimeFormat),
+		"x-amz-restore":       result.Restore,
+		"x-amz-version-id":    result.VersionId,
 	}
-	if result.CacheControl != nil {
-		ctx.Set("Cache-Control", *result.CacheControl)
-	}
-	if result.ContentEncoding != nil {
-		ctx.Set("Content-Encoding", *result.ContentEncoding)
-	}
-	if result.ContentLanguage != nil {
-		ctx.Set("Content-Language", *result.ContentLanguage)
-	}
-	if result.ContentLength != nil {
-		ctx.Set("Content-Length", strconv.FormatInt(*result.ContentLength, 10))
-	}
-	if result.LastModified != nil {
-		ctx.Set("Last-Modified", result.LastModified.UTC().Format(http.TimeFormat))
+}
+
+func serveWebsiteResult(ctx *fiber.Ctx, bucket string, config *s3response.WebsiteConfiguration, result websiteResult, readObject websiteObjectReader) error {
+	if result.Err == nil {
+		return serveObject(ctx, result.Object, http.StatusOK)
 	}
 
-	_, err := io.Copy(ctx.Response().BodyWriter(), result.Body)
+	if config.ErrorDocument != nil && config.ErrorDocument.Key != "" {
+		return serveErrorDocument(ctx, readObject, bucket, config.ErrorDocument.Key, result.StatusCode)
+	}
+
+	return sendError(ctx, result.Err)
+}
+
+func serveObject(ctx *fiber.Ctx, object websiteObject, statusCode int) error {
+	ctx.Status(statusCode)
+	setWebsiteObjectHeaders(ctx, object)
+
+	if object.Body == nil {
+		return nil
+	}
+	defer object.Body.Close()
+
+	_, err := io.Copy(ctx.Response().BodyWriter(), object.Body)
 	if err != nil {
-		return sendError(ctx, http.StatusInternalServerError, "Internal Server Error",
-			"Failed to read object")
+		return sendError(ctx, err)
 	}
 
 	return nil
+}
+
+func setWebsiteObjectHeaders(ctx *fiber.Ctx, object websiteObject) {
+	utils.SetMetaHeaders(ctx, object.Metadata)
+	for key, value := range object.Headers {
+		if value != nil && *value != "" {
+			ctx.Set(key, *value)
+		}
+	}
 }
 
 // serveErrorDocument fetches and serves the configured error document.
-func serveErrorDocument(ctx *fiber.Ctx, be backend.Backend, bucket, errorDocKey string, statusCode int) error {
-	emptyRange := ""
-	result, err := be.GetObject(ctx.Context(), &s3.GetObjectInput{
-		Bucket: &bucket,
-		Key:    &errorDocKey,
-		Range:  &emptyRange,
-	})
-	if err != nil {
-		return sendError(ctx, statusCode, "Not Found", "The specified key does not exist")
-	}
-	if result.Body == nil {
-		return sendError(ctx, statusCode, "Not Found", "The specified key does not exist")
-	}
-	defer result.Body.Close()
-
-	contentType := guessContentType(result, errorDocKey)
-	ctx.Set("Content-Type", contentType)
-
-	ctx.Status(statusCode)
-	_, writeErr := io.Copy(ctx.Response().BodyWriter(), result.Body)
-	if writeErr != nil {
-		return sendError(ctx, statusCode, "Not Found", "The specified key does not exist")
+func serveErrorDocument(ctx *fiber.Ctx, readObject websiteObjectReader, bucket, errorDocKey string, statusCode int) error {
+	result := readObject(ctx, bucket, errorDocKey)
+	if result.Err != nil {
+		return sendError(ctx, result.Err)
 	}
 
-	return nil
-}
-
-// guessContentType returns the content type from the GetObject result, or
-// infers it from the key extension, defaulting to text/html.
-func guessContentType(result *s3.GetObjectOutput, key string) string {
-	if result.ContentType != nil && *result.ContentType != "" {
-		return *result.ContentType
-	}
-
-	// Simple extension-based inference for common web types
-	switch {
-	case strings.HasSuffix(key, ".html"), strings.HasSuffix(key, ".htm"):
-		return "text/html; charset=utf-8"
-	case strings.HasSuffix(key, ".css"):
-		return "text/css; charset=utf-8"
-	case strings.HasSuffix(key, ".js"):
-		return "application/javascript"
-	case strings.HasSuffix(key, ".json"):
-		return "application/json"
-	case strings.HasSuffix(key, ".xml"):
-		return "application/xml"
-	case strings.HasSuffix(key, ".svg"):
-		return "image/svg+xml"
-	case strings.HasSuffix(key, ".png"):
-		return "image/png"
-	case strings.HasSuffix(key, ".jpg"), strings.HasSuffix(key, ".jpeg"):
-		return "image/jpeg"
-	case strings.HasSuffix(key, ".gif"):
-		return "image/gif"
-	case strings.HasSuffix(key, ".ico"):
-		return "image/x-icon"
-	case strings.HasSuffix(key, ".txt"):
-		return "text/plain; charset=utf-8"
-	default:
-		return "text/html; charset=utf-8"
-	}
+	return serveObject(ctx, result.Object, statusCode)
 }
 
 // sendError sends a simple HTML error page.
-func sendError(ctx *fiber.Ctx, statusCode int, title, message string) error {
-	ctx.Set("Content-Type", "text/html; charset=utf-8")
-	ctx.Status(statusCode)
-	body := fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head><title>%d %s</title></head>
-<body>
-<h1>%d %s</h1>
-<p>%s</p>
-</body>
-</html>`, statusCode, title, statusCode, title, message)
-	return ctx.SendString(body)
+func sendError(ctx *fiber.Ctx, err error) error {
+	requestId, hostId := utils.EnsureRequestIDs(ctx)
+	serr, ok := err.(s3err.S3Error)
+	if !ok {
+		debuglogger.InternalError(err)
+		serr = s3err.GetAPIError(s3err.ErrInternalError)
+	}
+
+	ctx.Response().Header.Set("x-amz-error-code", serr.BaseError().Code)
+	ctx.Response().Header.Set("x-amz-error-message", serr.BaseError().Description)
+	if methodErr, ok := serr.(s3err.MethodNotAllowedError); ok && len(methodErr.AllowedMethods) != 0 {
+		ctx.Response().Header.Set("Allow", methodErr.AllowedMethodsString())
+	}
+
+	ctx.Response().Header.SetContentType(fiber.MIMETextHTMLCharsetUTF8)
+	return ctx.Status(serr.StatusCode()).Send(serr.HTMLBody(requestId, hostId))
 }

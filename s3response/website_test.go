@@ -15,7 +15,7 @@
 package s3response
 
 import (
-	"encoding/xml"
+	"errors"
 	"testing"
 
 	"github.com/versity/versitygw/s3err"
@@ -26,7 +26,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 		name    string
 		config  WebsiteConfiguration
 		wantErr bool
-		errCode s3err.ErrorCode
+		errCode string
 	}{
 		{
 			name: "valid index document only",
@@ -70,7 +70,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 			name:    "missing index document",
 			config:  WebsiteConfiguration{},
 			wantErr: true,
-			errCode: s3err.ErrInvalidWebsiteConfiguration,
+			errCode: "MalformedXML",
 		},
 		{
 			name: "empty index suffix",
@@ -78,7 +78,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 				IndexDocument: &IndexDocument{Suffix: ""},
 			},
 			wantErr: true,
-			errCode: s3err.ErrInvalidWebsiteSuffix,
+			errCode: "InvalidArgument",
 		},
 		{
 			name: "index suffix with slash",
@@ -86,7 +86,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 				IndexDocument: &IndexDocument{Suffix: "dir/index.html"},
 			},
 			wantErr: true,
-			errCode: s3err.ErrInvalidWebsiteSuffix,
+			errCode: "InvalidArgument",
 		},
 		{
 			name: "redirect all with index document",
@@ -95,7 +95,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 				IndexDocument:         &IndexDocument{Suffix: "index.html"},
 			},
 			wantErr: true,
-			errCode: s3err.ErrInvalidWebsiteConfiguration,
+			errCode: "MalformedXML",
 		},
 		{
 			name: "redirect all with empty hostname",
@@ -103,7 +103,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 				RedirectAllRequestsTo: &RedirectAllRequestsTo{HostName: ""},
 			},
 			wantErr: true,
-			errCode: s3err.ErrInvalidWebsiteConfiguration,
+			errCode: "MalformedXML",
 		},
 		{
 			name: "redirect all with invalid protocol",
@@ -114,7 +114,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 				},
 			},
 			wantErr: true,
-			errCode: s3err.ErrInvalidWebsiteConfiguration,
+			errCode: "InvalidRequest",
 		},
 		{
 			name: "routing rule with both replace key fields",
@@ -130,7 +130,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 				},
 			},
 			wantErr: true,
-			errCode: s3err.ErrInvalidWebsiteConfiguration,
+			errCode: "InvalidRequest",
 		},
 		{
 			name: "routing rule with invalid redirect code",
@@ -145,7 +145,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 				},
 			},
 			wantErr: true,
-			errCode: s3err.ErrInvalidWebsiteRedirectCode,
+			errCode: "InvalidRequest",
 		},
 		{
 			name: "routing rule with valid redirect code",
@@ -168,7 +168,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 				ErrorDocument: &ErrorDocument{Key: ""},
 			},
 			wantErr: true,
-			errCode: s3err.ErrInvalidWebsiteConfiguration,
+			errCode: "InvalidArgument",
 		},
 	}
 
@@ -179,14 +179,12 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 				if err == nil {
 					t.Fatal("expected error, got nil")
 				}
-				apiErr, ok := err.(s3err.APIError)
-				if !ok {
-					// wrapped error from routing rule validation
-					return
+				var apiErr s3err.S3Error
+				if !errors.As(err, &apiErr) {
+					t.Fatalf("expected S3 error, got %T: %v", err, err)
 				}
-				expectedErr := s3err.GetAPIError(tt.errCode)
-				if apiErr.Code != expectedErr.Code {
-					t.Errorf("expected error code %q, got %q", expectedErr.Code, apiErr.Code)
+				if apiErr.BaseError().Code != tt.errCode {
+					t.Errorf("expected error code %q, got %q", tt.errCode, apiErr.BaseError().Code)
 				}
 			} else {
 				if err != nil {
@@ -197,390 +195,83 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 	}
 }
 
-func TestWebsiteConfiguration_XMLRoundTrip(t *testing.T) {
-	original := WebsiteConfiguration{
+func TestWebsiteConfiguration_MatchPrefetchRoutingRuleUsesPrefixOnlyRules(t *testing.T) {
+	config := WebsiteConfiguration{
 		IndexDocument: &IndexDocument{Suffix: "index.html"},
-		ErrorDocument: &ErrorDocument{Key: "error.html"},
 		RoutingRules: []RoutingRule{
 			{
 				Condition: &RoutingRuleCondition{
-					KeyPrefixEquals:             "docs/",
 					HttpErrorCodeReturnedEquals: "404",
 				},
 				Redirect: Redirect{
-					HostName:             "example.com",
-					Protocol:             "https",
-					HttpRedirectCode:     "301",
-					ReplaceKeyPrefixWith: "documents/",
+					HostName: "error.example.com",
+				},
+			},
+			{
+				Condition: &RoutingRuleCondition{
+					KeyPrefixEquals:             "old/",
+					HttpErrorCodeReturnedEquals: "404",
+				},
+				Redirect: Redirect{
+					HostName: "both.example.com",
+				},
+			},
+			{
+				Condition: &RoutingRuleCondition{
+					KeyPrefixEquals: "old/",
+				},
+				Redirect: Redirect{
+					HostName: "prefix.example.com",
 				},
 			},
 		},
 	}
 
-	data, err := xml.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
+	rule := config.MatchPrefetchRoutingRule("old/page.html")
+	if rule == nil {
+		t.Fatal("expected a matching rule, got nil")
 	}
-
-	var parsed WebsiteConfiguration
-	if err := xml.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if parsed.IndexDocument == nil || parsed.IndexDocument.Suffix != "index.html" {
-		t.Error("IndexDocument.Suffix mismatch")
-	}
-	if parsed.ErrorDocument == nil || parsed.ErrorDocument.Key != "error.html" {
-		t.Error("ErrorDocument.Key mismatch")
-	}
-	if len(parsed.RoutingRules) != 1 {
-		t.Fatalf("expected 1 routing rule, got %d", len(parsed.RoutingRules))
-	}
-	rule := parsed.RoutingRules[0]
-	if rule.Condition == nil || rule.Condition.KeyPrefixEquals != "docs/" {
-		t.Error("RoutingRule Condition.KeyPrefixEquals mismatch")
-	}
-	if rule.Redirect.HostName != "example.com" {
-		t.Error("RoutingRule Redirect.HostName mismatch")
-	}
-	if rule.Redirect.ReplaceKeyPrefixWith != "documents/" {
-		t.Error("RoutingRule Redirect.ReplaceKeyPrefixWith mismatch")
+	if rule.Redirect.HostName != "prefix.example.com" {
+		t.Fatalf("expected prefix-only rule to match, got %q", rule.Redirect.HostName)
 	}
 }
 
-func TestParseWebsiteConfigOutput(t *testing.T) {
-	xmlData := `<WebsiteConfiguration>
-		<IndexDocument><Suffix>index.html</Suffix></IndexDocument>
-		<ErrorDocument><Key>error.html</Key></ErrorDocument>
-	</WebsiteConfiguration>`
+func TestRoutingRuleCondition_MatchesUsesAndLogic(t *testing.T) {
+	condition := RoutingRuleCondition{
+		KeyPrefixEquals:             "old/",
+		HttpErrorCodeReturnedEquals: "404",
+	}
 
-	config, err := ParseWebsiteConfigOutput([]byte(xmlData))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if config.IndexDocument == nil || config.IndexDocument.Suffix != "index.html" {
-		t.Error("IndexDocument.Suffix mismatch")
-	}
-	if config.ErrorDocument == nil || config.ErrorDocument.Key != "error.html" {
-		t.Error("ErrorDocument.Key mismatch")
-	}
-}
-
-func TestParseWebsiteConfigOutput_InvalidXML(t *testing.T) {
-	_, err := ParseWebsiteConfigOutput([]byte("not xml"))
-	if err == nil {
-		t.Fatal("expected error for invalid XML")
-	}
-}
-
-func TestWebsiteConfiguration_MatchPreRequestRule(t *testing.T) {
 	tests := []struct {
-		name     string
-		config   WebsiteConfiguration
-		key      string
-		wantNil  bool
-		wantHost string // expected redirect HostName if matched
+		name       string
+		key        string
+		statusCode int
+		want       bool
 	}{
 		{
-			name: "no routing rules",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-			},
-			key:     "docs/page.html",
-			wantNil: true,
+			name:       "both match",
+			key:        "old/missing.html",
+			statusCode: 404,
+			want:       true,
 		},
 		{
-			name: "key prefix match",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-				RoutingRules: []RoutingRule{
-					{
-						Condition: &RoutingRuleCondition{
-							KeyPrefixEquals: "docs/",
-						},
-						Redirect: Redirect{
-							HostName: "docs.example.com",
-						},
-					},
-				},
-			},
-			key:      "docs/page.html",
-			wantHost: "docs.example.com",
+			name:       "prefix only",
+			key:        "old/existing.html",
+			statusCode: 200,
+			want:       false,
 		},
 		{
-			name: "key prefix does not match",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-				RoutingRules: []RoutingRule{
-					{
-						Condition: &RoutingRuleCondition{
-							KeyPrefixEquals: "docs/",
-						},
-						Redirect: Redirect{
-							HostName: "docs.example.com",
-						},
-					},
-				},
-			},
-			key:     "images/photo.jpg",
-			wantNil: true,
-		},
-		{
-			name: "unconditional rule (no condition)",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-				RoutingRules: []RoutingRule{
-					{
-						Redirect: Redirect{
-							HostName: "redirect.example.com",
-						},
-					},
-				},
-			},
-			key:      "anything",
-			wantHost: "redirect.example.com",
-		},
-		{
-			name: "skips post-request rules",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-				RoutingRules: []RoutingRule{
-					{
-						Condition: &RoutingRuleCondition{
-							HttpErrorCodeReturnedEquals: "404",
-							KeyPrefixEquals:             "docs/",
-						},
-						Redirect: Redirect{
-							HostName: "error.example.com",
-						},
-					},
-				},
-			},
-			key:     "docs/page.html",
-			wantNil: true,
-		},
-		{
-			name: "first matching rule wins",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-				RoutingRules: []RoutingRule{
-					{
-						Condition: &RoutingRuleCondition{
-							KeyPrefixEquals: "docs/",
-						},
-						Redirect: Redirect{
-							HostName: "first.example.com",
-						},
-					},
-					{
-						Condition: &RoutingRuleCondition{
-							KeyPrefixEquals: "docs/api/",
-						},
-						Redirect: Redirect{
-							HostName: "second.example.com",
-						},
-					},
-				},
-			},
-			key:      "docs/api/endpoint",
-			wantHost: "first.example.com",
+			name:       "status only",
+			key:        "other/missing.html",
+			statusCode: 404,
+			want:       false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rule := tt.config.MatchPreRequestRule(tt.key)
-			if tt.wantNil {
-				if rule != nil {
-					t.Fatalf("expected nil, got rule with redirect to %q", rule.Redirect.HostName)
-				}
-				return
-			}
-			if rule == nil {
-				t.Fatal("expected a matching rule, got nil")
-			}
-			if rule.Redirect.HostName != tt.wantHost {
-				t.Errorf("expected redirect host %q, got %q", tt.wantHost, rule.Redirect.HostName)
-			}
-		})
-	}
-}
-
-func TestWebsiteConfiguration_MatchPostRequestRule(t *testing.T) {
-	tests := []struct {
-		name          string
-		config        WebsiteConfiguration
-		key           string
-		httpErrorCode string
-		wantNil       bool
-		wantHost      string
-	}{
-		{
-			name: "no routing rules",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-			},
-			key:           "page.html",
-			httpErrorCode: "404",
-			wantNil:       true,
-		},
-		{
-			name: "error code match",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-				RoutingRules: []RoutingRule{
-					{
-						Condition: &RoutingRuleCondition{
-							HttpErrorCodeReturnedEquals: "404",
-						},
-						Redirect: Redirect{
-							HostName: "notfound.example.com",
-						},
-					},
-				},
-			},
-			key:           "page.html",
-			httpErrorCode: "404",
-			wantHost:      "notfound.example.com",
-		},
-		{
-			name: "error code does not match",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-				RoutingRules: []RoutingRule{
-					{
-						Condition: &RoutingRuleCondition{
-							HttpErrorCodeReturnedEquals: "404",
-						},
-						Redirect: Redirect{
-							HostName: "notfound.example.com",
-						},
-					},
-				},
-			},
-			key:           "page.html",
-			httpErrorCode: "403",
-			wantNil:       true,
-		},
-		{
-			name: "error code and key prefix both match",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-				RoutingRules: []RoutingRule{
-					{
-						Condition: &RoutingRuleCondition{
-							HttpErrorCodeReturnedEquals: "404",
-							KeyPrefixEquals:             "docs/",
-						},
-						Redirect: Redirect{
-							HostName: "docs-error.example.com",
-						},
-					},
-				},
-			},
-			key:           "docs/missing.html",
-			httpErrorCode: "404",
-			wantHost:      "docs-error.example.com",
-		},
-		{
-			name: "error code matches but key prefix does not",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-				RoutingRules: []RoutingRule{
-					{
-						Condition: &RoutingRuleCondition{
-							HttpErrorCodeReturnedEquals: "404",
-							KeyPrefixEquals:             "docs/",
-						},
-						Redirect: Redirect{
-							HostName: "docs-error.example.com",
-						},
-					},
-				},
-			},
-			key:           "images/missing.jpg",
-			httpErrorCode: "404",
-			wantNil:       true,
-		},
-		{
-			name: "skips pre-request rules (no error code condition)",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-				RoutingRules: []RoutingRule{
-					{
-						Condition: &RoutingRuleCondition{
-							KeyPrefixEquals: "docs/",
-						},
-						Redirect: Redirect{
-							HostName: "pre-request.example.com",
-						},
-					},
-				},
-			},
-			key:           "docs/page.html",
-			httpErrorCode: "404",
-			wantNil:       true,
-		},
-		{
-			name: "skips rules with no condition",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-				RoutingRules: []RoutingRule{
-					{
-						Redirect: Redirect{
-							HostName: "unconditional.example.com",
-						},
-					},
-				},
-			},
-			key:           "page.html",
-			httpErrorCode: "404",
-			wantNil:       true,
-		},
-		{
-			name: "first matching rule wins",
-			config: WebsiteConfiguration{
-				IndexDocument: &IndexDocument{Suffix: "index.html"},
-				RoutingRules: []RoutingRule{
-					{
-						Condition: &RoutingRuleCondition{
-							HttpErrorCodeReturnedEquals: "404",
-						},
-						Redirect: Redirect{
-							HostName: "first.example.com",
-						},
-					},
-					{
-						Condition: &RoutingRuleCondition{
-							HttpErrorCodeReturnedEquals: "404",
-							KeyPrefixEquals:             "docs/",
-						},
-						Redirect: Redirect{
-							HostName: "second.example.com",
-						},
-					},
-				},
-			},
-			key:           "docs/page.html",
-			httpErrorCode: "404",
-			wantHost:      "first.example.com",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rule := tt.config.MatchPostRequestRule(tt.key, tt.httpErrorCode)
-			if tt.wantNil {
-				if rule != nil {
-					t.Fatalf("expected nil, got rule with redirect to %q", rule.Redirect.HostName)
-				}
-				return
-			}
-			if rule == nil {
-				t.Fatal("expected a matching rule, got nil")
-			}
-			if rule.Redirect.HostName != tt.wantHost {
-				t.Errorf("expected redirect host %q, got %q", tt.wantHost, rule.Redirect.HostName)
+			if got := condition.Matches(tt.key, tt.statusCode); got != tt.want {
+				t.Fatalf("Matches() = %v, want %v", got, tt.want)
 			}
 		})
 	}

@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 
@@ -31,6 +32,7 @@ type S3Error interface {
 	StatusCode() int
 	BaseError() APIError
 	XMLBody(requestID, hostID string) []byte
+	HTMLBody(requestID, hostID string) []byte
 }
 
 // APIError structure
@@ -67,6 +69,10 @@ func (e APIError) XMLBody(requestID, hostID string) []byte {
 		RequestID: requestID,
 		HostID:    hostID,
 	})
+}
+
+func (e APIError) HTMLBody(requestID, hostID string) []byte {
+	return e.encodeHTMLResponse(requestID, hostID)
 }
 
 // ErrorCode type of error status.
@@ -166,9 +172,9 @@ const (
 	ErrMissingCORSOrigin
 	ErrCORSIsNotEnabled
 	ErrNoSuchWebsiteConfiguration
-	ErrInvalidWebsiteConfiguration
-	ErrInvalidWebsiteSuffix
-	ErrInvalidWebsiteRedirectCode
+	ErrInvalidWebsiteRedirectProtocol
+	ErrBothReplaceKeyAndPrefix
+	ErrMaxMessageLengthExceeded
 	ErrNotModified
 	ErrInvalidLocationConstraint
 	ErrMalformedTrailer
@@ -176,6 +182,7 @@ const (
 	ErrSlowDown
 	ErrMetadataTooLarge
 	ErrUnsupportedAuthorizationMechanism
+	ErrNoBucketInRequest
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -648,19 +655,19 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "The specified bucket does not have a website configuration",
 		HTTPStatusCode: http.StatusNotFound,
 	},
-	ErrInvalidWebsiteConfiguration: {
-		Code:           "MalformedXML",
-		Description:    "The XML you provided was not well-formed or did not validate against our published schema.",
+	ErrInvalidWebsiteRedirectProtocol: {
+		Code:           "InvalidRequest",
+		Description:    "Invalid protocol, protocol can be http or https. If not defined the protocol will be selected automatically.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-	ErrInvalidWebsiteSuffix: {
-		Code:           "InvalidArgument",
-		Description:    "The IndexDocument Suffix is not well formed",
+	ErrBothReplaceKeyAndPrefix: {
+		Code:           "InvalidRequest",
+		Description:    "You can only define ReplaceKeyPrefix or ReplaceKey but not both.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-	ErrInvalidWebsiteRedirectCode: {
-		Code:           "InvalidArgument",
-		Description:    "The website redirect code is not valid. Valid codes are 3XX.",
+	ErrMaxMessageLengthExceeded: {
+		Code:           "MaxMessageLengthExceeded",
+		Description:    "Your request was too big.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNotModified: {
@@ -697,6 +704,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "InvalidRequest",
 		Description:    "The authorization mechanism you have provided is not supported. Please use AWS4-HMAC-SHA256.",
 		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrNoBucketInRequest: {
+		Code:           "WebsiteRedirect",
+		Description:    "Request does not contain a bucket name.",
+		HTTPStatusCode: http.StatusMovedPermanently,
 	},
 
 	// non aws errors
@@ -791,6 +803,42 @@ func encodeResponse(response any) []byte {
 	e := xml.NewEncoder(&bytesBuffer)
 	e.Encode(response)
 	return bytesBuffer.Bytes()
+}
+
+type ErrorField struct {
+	Name  string
+	Value any
+}
+
+func (e APIError) encodeHTMLResponse(requestID, hostID string, fields ...ErrorField) []byte {
+	status := fmt.Sprintf("%d %s", e.HTTPStatusCode, http.StatusText(e.HTTPStatusCode))
+
+	builder := &strings.Builder{}
+	builder.WriteString("<html>\n")
+	builder.WriteString("<head><title>")
+	builder.WriteString(html.EscapeString(status))
+	builder.WriteString("</title></head>\n<body>\n<h1>")
+	builder.WriteString(html.EscapeString(status))
+	builder.WriteString("</h1>\n<ul>\n")
+
+	writeHTMLErrorField(builder, "Code", e.Code)
+	writeHTMLErrorField(builder, "Message", e.Description)
+	for _, field := range fields {
+		writeHTMLErrorField(builder, field.Name, field.Value)
+	}
+	writeHTMLErrorField(builder, "RequestId", requestID)
+	writeHTMLErrorField(builder, "HostId", hostID)
+
+	builder.WriteString("</ul>\n<hr/>\n</body>\n</html>\n")
+	return []byte(builder.String())
+}
+
+func writeHTMLErrorField(builder *strings.Builder, name string, value any) {
+	builder.WriteString("<li>")
+	builder.WriteString(html.EscapeString(name))
+	builder.WriteString(": ")
+	builder.WriteString(html.EscapeString(fmt.Sprint(value)))
+	builder.WriteString("</li>\n")
 }
 
 // Returns invalid checksum error with the provided header in the error description
@@ -914,6 +962,30 @@ func GetCopySourceObjectTooLargeErr(limit int64) APIError {
 	return APIError{
 		Code:           "InvalidRequest",
 		Description:    fmt.Sprintf("The specified copy source is larger than the maximum allowable size for a copy source: %d", limit),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetInvalidRedirectCodeErr(input int) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("The provided HTTP redirect code (%d) is not valid. Valid codes are 3XX except 300.", input),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetInvalidHTTPErrorCodeErr(input int) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("The provided HTTP error code (%d) is not valid. Valid codes are 4XX or 5XX.", input),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetWebsiteRoutingRulesLimitedErr(rules int) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("%d routing rules provided, the number of routing rules in a website configuration is limited to 50.", rules),
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }

@@ -44,6 +44,13 @@ func (e InvalidPartNumberRangeError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e InvalidPartNumberRangeError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "ActualPartCount", Value: e.ActualPartCount},
+		ErrorField{Name: "PartNumberRequested", Value: e.PartNumberRequested},
+	)
+}
+
 func (e InvalidPartNumberRangeError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

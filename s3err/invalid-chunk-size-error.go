@@ -43,6 +43,13 @@ func (e InvalidChunkSizeError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e InvalidChunkSizeError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "Chunk", Value: e.Chunk},
+		ErrorField{Name: "BadChunkSize", Value: e.BadChunkSize},
+	)
+}
+
 func (e InvalidChunkSizeError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

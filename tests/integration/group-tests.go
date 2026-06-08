@@ -14,8 +14,6 @@
 
 package integration
 
-import "fmt"
-
 func TestAuthentication(ts *TestState) {
 	ts.Run(Authentication_invalid_auth_header)
 	ts.Run(Authentication_unsupported_signature_version)
@@ -670,7 +668,14 @@ func TestPutBucketWebsite(ts *TestState) {
 	ts.Run(PutBucketWebsite_empty_suffix)
 	ts.Run(PutBucketWebsite_suffix_with_slash)
 	ts.Run(PutBucketWebsite_invalid_redirect_protocol)
-	ts.Run(PutBucketWebsite_redirect_and_index)
+	ts.Run(PutBucketWebsite_redirectAll_index_error_routingRules)
+	ts.Run(PutBucketWebsite_invalid_routing_rule_protocol)
+	ts.Run(PutBucketWebsite_empty_error_document_key)
+	ts.Run(PutBucketWebsite_too_many_routing_rules)
+	ts.Run(PutBucketWebsite_routing_rule_replace_key_and_prefix)
+	ts.Run(PutBucketWebsite_invalid_http_redirect_code)
+	ts.Run(PutBucketWebsite_invalid_http_error_code)
+	ts.Run(PutBucketWebsite_request_too_large)
 	ts.Run(PutBucketWebsite_success)
 	ts.Run(PutBucketWebsite_success_redirect_all)
 }
@@ -688,17 +693,22 @@ func TestDeleteBucketWebsite(ts *TestState) {
 }
 
 func TestWebsiteHosting(ts *TestState) {
-	if ts.conf.websiteEndpoint == "" {
-		fmt.Println("skipping TestWebsiteHosting: no website endpoint configured")
-		return
-	}
 	ts.Run(WebsiteHosting_error_document_served)
 	ts.Run(WebsiteHosting_error_document_not_found)
 	ts.Run(WebsiteHosting_no_error_document)
+	ts.Run(WebsiteHosting_private_object_and_error_document)
 	ts.Run(WebsiteHosting_routing_rule_post_request_redirect)
 	ts.Run(WebsiteHosting_routing_rule_pre_request_redirect)
+	ts.Run(WebsiteHosting_routing_rule_prefix_and_error_redirect)
+	ts.Run(WebsiteHosting_routing_rule_no_match_serves_error_document)
 	ts.Run(WebsiteHosting_redirect_all_requests)
 	ts.Run(WebsiteHosting_index_document)
+	ts.Run(WebsiteHosting_index_error_document_and_routing_rules)
+	ts.Run(WebsiteHosting_get_cors_headers)
+	ts.Run(WebsiteHosting_head_cors_headers)
+	ts.Run(WebsiteHosting_options_preflight_access_granted)
+	ts.Run(WebsiteHosting_options_preflight_access_forbidden)
+	ts.Run(WebsiteHosting_options_preflight_missing_origin)
 }
 
 func TestPreflightOPTIONSEndpoint(ts *TestState) {
@@ -899,7 +909,6 @@ func TestFullFlow(ts *TestState) {
 	TestPutBucketWebsite(ts)
 	TestGetBucketWebsite(ts)
 	TestDeleteBucketWebsite(ts)
-	TestWebsiteHosting(ts)
 	TestPreflightOPTIONSEndpoint(ts)
 	TestPutObjectLockConfiguration(ts)
 	TestGetObjectLockConfiguration(ts)
@@ -1802,7 +1811,14 @@ func GetIntTests() IntTests {
 		"PutBucketWebsite_empty_suffix":                                            PutBucketWebsite_empty_suffix,
 		"PutBucketWebsite_suffix_with_slash":                                       PutBucketWebsite_suffix_with_slash,
 		"PutBucketWebsite_invalid_redirect_protocol":                               PutBucketWebsite_invalid_redirect_protocol,
-		"PutBucketWebsite_redirect_and_index":                                      PutBucketWebsite_redirect_and_index,
+		"PutBucketWebsite_redirectAll_index_error_routingRules":                    PutBucketWebsite_redirectAll_index_error_routingRules,
+		"PutBucketWebsite_invalid_routing_rule_protocol":                           PutBucketWebsite_invalid_routing_rule_protocol,
+		"PutBucketWebsite_empty_error_document_key":                                PutBucketWebsite_empty_error_document_key,
+		"PutBucketWebsite_too_many_routing_rules":                                  PutBucketWebsite_too_many_routing_rules,
+		"PutBucketWebsite_routing_rule_replace_key_and_prefix":                     PutBucketWebsite_routing_rule_replace_key_and_prefix,
+		"PutBucketWebsite_invalid_http_redirect_code":                              PutBucketWebsite_invalid_http_redirect_code,
+		"PutBucketWebsite_invalid_http_error_code":                                 PutBucketWebsite_invalid_http_error_code,
+		"PutBucketWebsite_request_too_large":                                       PutBucketWebsite_request_too_large,
 		"PutBucketWebsite_success":                                                 PutBucketWebsite_success,
 		"PutBucketWebsite_success_redirect_all":                                    PutBucketWebsite_success_redirect_all,
 		"GetBucketWebsite_non_existing_bucket":                                     GetBucketWebsite_non_existing_bucket,
@@ -1814,10 +1830,19 @@ func GetIntTests() IntTests {
 		"WebsiteHosting_error_document_served":                                     WebsiteHosting_error_document_served,
 		"WebsiteHosting_error_document_not_found":                                  WebsiteHosting_error_document_not_found,
 		"WebsiteHosting_no_error_document":                                         WebsiteHosting_no_error_document,
+		"WebsiteHosting_private_object_and_error_document":                         WebsiteHosting_private_object_and_error_document,
 		"WebsiteHosting_routing_rule_post_request_redirect":                        WebsiteHosting_routing_rule_post_request_redirect,
 		"WebsiteHosting_routing_rule_pre_request_redirect":                         WebsiteHosting_routing_rule_pre_request_redirect,
+		"WebsiteHosting_routing_rule_prefix_and_error_redirect":                    WebsiteHosting_routing_rule_prefix_and_error_redirect,
+		"WebsiteHosting_routing_rule_no_match_serves_error_document":               WebsiteHosting_routing_rule_no_match_serves_error_document,
 		"WebsiteHosting_redirect_all_requests":                                     WebsiteHosting_redirect_all_requests,
 		"WebsiteHosting_index_document":                                            WebsiteHosting_index_document,
+		"WebsiteHosting_index_error_document_and_routing_rules":                    WebsiteHosting_index_error_document_and_routing_rules,
+		"WebsiteHosting_get_cors_headers":                                          WebsiteHosting_get_cors_headers,
+		"WebsiteHosting_head_cors_headers":                                         WebsiteHosting_head_cors_headers,
+		"WebsiteHosting_options_preflight_access_granted":                          WebsiteHosting_options_preflight_access_granted,
+		"WebsiteHosting_options_preflight_access_forbidden":                        WebsiteHosting_options_preflight_access_forbidden,
+		"WebsiteHosting_options_preflight_missing_origin":                          WebsiteHosting_options_preflight_missing_origin,
 		"PreflightOPTIONS_non_existing_bucket":                                     PreflightOPTIONS_non_existing_bucket,
 		"PreflightOPTIONS_missing_origin":                                          PreflightOPTIONS_missing_origin,
 		"PreflightOPTIONS_invalid_request_method":                                  PreflightOPTIONS_invalid_request_method,

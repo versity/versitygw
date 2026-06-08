@@ -63,6 +63,7 @@ const (
 	keyTags                key = "Tags"
 	keyPolicy              key = "Policy"
 	keyCors                key = "Cors"
+	keyWebsite             key = "Website"
 	keyBucketLock          key = "Bucketlock"
 	keyObjRetention        key = "Objectretention"
 	keyObjLegalHold        key = "Objectlegalhold"
@@ -88,6 +89,7 @@ func (key) Table() map[string]struct{} {
 		"tags":              {},
 		"policy":            {},
 		"bucketlock":        {},
+		"website":           {},
 		"objectretention":   {},
 		"vgwexpires":        {},
 		"objectlegalhold":   {},
@@ -1992,6 +1994,40 @@ func (az *Azure) GetBucketCors(ctx context.Context, bucket string) ([]byte, erro
 
 func (az *Azure) DeleteBucketCors(ctx context.Context, bucket string) error {
 	return az.PutBucketCors(ctx, bucket, nil)
+}
+
+func (az *Azure) PutBucketWebsite(ctx context.Context, bucket string, website []byte) error {
+	if website == nil {
+		return az.deleteContainerMetaData(ctx, bucket, string(keyWebsite))
+	}
+
+	encoded, err := backend.MarshalWebsiteConfig(website, true)
+	if err != nil {
+		return err
+	}
+
+	return az.setContainerMetaData(ctx, bucket, string(keyWebsite), encoded)
+}
+
+func (az *Azure) GetBucketWebsite(ctx context.Context, bucket string) ([]byte, error) {
+	website, err := az.getContainerMetaData(ctx, bucket, string(keyWebsite))
+	if err != nil {
+		return nil, err
+	}
+	if len(website) == 0 {
+		return nil, s3err.GetBucketErr(s3err.ErrNoSuchWebsiteConfiguration, bucket)
+	}
+
+	decoded, err := backend.UnmarshalWebsiteConfig(website, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return decoded, nil
+}
+
+func (az *Azure) DeleteBucketWebsite(ctx context.Context, bucket string) error {
+	return az.PutBucketWebsite(ctx, bucket, nil)
 }
 
 func (az *Azure) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {

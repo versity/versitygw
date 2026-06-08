@@ -6196,7 +6196,14 @@ func (p *Posix) PutBucketWebsite(ctx context.Context, bucket string, website []b
 		return nil
 	}
 
-	err = p.meta.StoreAttribute(nil, bucket, "", websitekey, website)
+	// The website configuration can be up to 128KB
+	// compress the data to fit in 64KB xattr limits
+	encoded, err := backend.MarshalWebsiteConfig(website, false)
+	if err != nil {
+		return err
+	}
+
+	err = p.meta.StoreAttribute(nil, bucket, "", websitekey, encoded)
 	if err != nil {
 		return fmt.Errorf("set website: %w", err)
 	}
@@ -6224,13 +6231,18 @@ func (p *Posix) GetBucketWebsite(ctx context.Context, bucket string) ([]byte, er
 
 	website, err := p.meta.RetrieveAttribute(nil, bucket, "", websitekey)
 	if errors.Is(err, meta.ErrNoSuchKey) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchWebsiteConfiguration)
+		return nil, s3err.GetBucketErr(s3err.ErrNoSuchWebsiteConfiguration, bucket)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	return website, nil
+	decoded, err := backend.UnmarshalWebsiteConfig(website, false)
+	if err != nil {
+		return nil, err
+	}
+
+	return decoded, nil
 }
 
 func (p *Posix) DeleteBucketWebsite(ctx context.Context, bucket string) error {
