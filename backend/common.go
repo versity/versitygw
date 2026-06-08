@@ -230,6 +230,10 @@ func ParseCopySourceRange(size int64, acceptRange string) (int64, int64, error) 
 // ParseCopySource parses x-amz-copy-source header and returns source bucket,
 // source object, versionId, error respectively
 func ParseCopySource(copySourceHeader string) (string, string, string, error) {
+	if copySourceHeader == "" {
+		return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, copySourceHeader)
+	}
+
 	if copySourceHeader[0] == '/' {
 		copySourceHeader = copySourceHeader[1:]
 	}

@@ -224,6 +224,15 @@ func TestParseCopySource(t *testing.T) {
 			wantErrValue:     s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "mybucket/object%ZZ"),
 		},
 		{
+			name:             "empty string",
+			copySourceHeader: "",
+			wantBucket:       "",
+			wantObject:       "",
+			wantVersionId:    "",
+			wantErr:          true,
+			wantErrValue:     s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, ""),
+		},
+		{
 			name:             "missing object",
 			copySourceHeader: "mybucket",
 			wantBucket:       "",
