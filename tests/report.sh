@@ -194,6 +194,8 @@ write_to_coverage_log() {
   if ! check_param_count_v2 "string" 1 $#; then
     return 1
   fi
+  local response
+
   echo "$1" >> "$COVERAGE_LOG"
   sort "$COVERAGE_LOG" | uniq > "${COVERAGE_LOG}.tmp"
   mv "${COVERAGE_LOG}.tmp" "$COVERAGE_LOG"
@@ -224,14 +226,19 @@ parse_command_info() {
   if ! check_param_count_v2 "command string" 1 $#; then
     return 1
   fi
+  local response command_info
+
   if [[ "$1" == *"curl "* ]]; then
-    if ! command_info=$(parse_curl_rest_command "$1" 2>&1); then
-      echo "error parsing rest command: $command_info"
+    if ! response=$(parse_curl_rest_command "$1" 2>&1); then
+      echo "error parsing rest command: $response"
       return 1
     fi
+    command_info="$response"
   else
     command_info="OTHER"
   fi
+  echo "$command_info"
+  return 0
 }
 
 record_command_v2() {
@@ -239,13 +246,17 @@ record_command_v2() {
     log 5 "no coverage log set"
     return 0
   fi
+  local response command_info
+
   if ! check_param_count_v2 "command string" 1 $#; then
     return 1
   fi
-  if ! parse_command_info "$1"; then
-    log 2 "error parsing command info"
+  if ! response=$(parse_command_info "$1" 2>&1); then
+    log 2 "error parsing command info: $response"
     return 1
   fi
+  command_info="$response"
+
   if [ "$command_info" == "OTHER" ]; then
     return 0
   fi
@@ -253,4 +264,5 @@ record_command_v2() {
     log 2 "error writing to coverage log"
     return 1
   fi
+  return 0
 }

@@ -21,76 +21,106 @@ write_openssl_command_to_command_log() {
   if ! check_param_count_v2 "command file" 1 $#; then
     return 1
   fi
-  max_chars=1024
+
+  local max_chars=1024 response file_size log_data
+
   if [ -n "$MAX_OPENSSL_COMMAND_LOG_BYTES" ]; then
     max_chars="$MAX_OPENSSL_COMMAND_LOG_BYTES"
   fi
-  if ! file_size=$(get_file_size "$1"); then
+
+  if ! response=$(get_file_size "$1" 2>&1); then
+    log 2 "error getting file size: $response"
     return 1
   fi
+  file_size="$response"
+
   if [ "$max_chars" -eq -1 ] || [ "$file_size" -lt "$max_chars" ]; then
     log_data=$(perl -pe 's/\x00/<NULL>/g' "$1" | perl -pe 's/\r/<CR>/g')
   else
     log_data=$(head -c "$max_chars" "$1" | perl -pe 's/\x00/<NULL>/g' | perl -pe 's/\r/<CR>/g')
     log_data+="<TRUNC>"
   fi
+
   while IFS=$' ' read -r -a line_words; do
-    if ! mask_arg_array "${line_words[@]}"; then
+    if [ "${#line_words[@]}" -eq 0 ]; then
+      masked_words=""
+    elif ! response=$(mask_arg_array "${line_words[@]}" 2>&1); then
+      echo "error masking args: $response"
       return 1
+    else
+      masked_words="$response"
     fi
     # shellcheck disable=SC2154
-    echo "${masked_args[*]}" >> "$COMMAND_LOG"
+    echo "$masked_words" >> "$COMMAND_LOG"
   done <<< "$log_data"
+  return 0
 }
 
 send_via_openssl() {
   if ! check_param_count_v2 "command file" 1 $#; then
     return 1
   fi
+  local host response
+
   host="${AWS_ENDPOINT_URL#http*://}"
   if [[ "$host" =~ s3\..*amazonaws\.com ]]; then
     host+=":443"
   fi
   log 5 "connecting to $host"
   if [ -n "$COMMAND_LOG" ]; then
-    write_openssl_command_to_command_log "$1"
+    if ! response=$(write_openssl_command_to_command_log "$1" 2>&1); then
+      log 2 "error writing OpenSSL command to command log: $response"
+      return 1
+    fi
   fi
   if ! record_openssl_command "$1"; then
     log 3 "error recording openssl command"
   fi
   log 5 "sending openssl command file '$1'"
-  if ! result=$(openssl s_client -connect "$host" -ign_eof < "$1" 2>&1); then
-    log 2 "error sending openssl command: $result"
+  if ! response=$(openssl s_client -connect "$host" -ign_eof < "$1" 2>&1); then
+    log 2 "error sending openssl command: $response"
     return 1
   fi
-  echo "$result"
+  log 5 "response: $response"
+
+  echo "$response"
+  return 0
 }
 
 send_via_openssl_and_check_code() {
   if ! check_param_count_v2 "command file, expected code" 2 $#; then
     return 1
   fi
-  if ! result=$(send_via_openssl "$1"); then
-    log 2 "error sending command via openssl"
+
+  local response http_response response_code
+  if ! response=$(send_via_openssl "$1" 2>&1); then
+    log 2 "error sending command via openssl: $response"
     return 1
   fi
-  response_code="$(echo "$result" | grep "HTTP/" | awk '{print $2}')"
+  http_response="$response"
+
+  response_code="$(echo "$http_response" | grep "HTTP/" | awk '{print $2}')"
   if [ "$response_code" != "$2" ]; then
-    log 2 "expected '$2', actual '$response_code' (error response:  '$result')"
+    log 2 "expected '$2', actual '$response_code' (error response:  '$http_response')"
     return 1
   fi
-  echo "$result"
+  echo "$http_response"
+  return 0
 }
 
 send_via_openssl_and_check_code_header() {
   if ! check_param_count_v2 "command file, expected code, header key, expected value" 4 $#; then
     return 1
   fi
-  if ! send_via_openssl_and_check_code "$1" "$2"; then
-    log 2 "error sending via openssl and checking code"
+  local response http_response header_line header_value
+
+  if ! response=$(send_via_openssl_and_check_code "$1" "$2" 2>&1); then
+    log 2 "error sending via openssl and checking code: $response"
     return 1
   fi
-  header_line="$(echo "$result" | grep "$3")"
+  http_response="$response"
+
+  header_line="$(echo "$http_response" | grep "$3")"
   if [ "$header_line" == "" ]; then
     log 2 "header key '$3' not found in header data"
     return 1
@@ -107,16 +137,24 @@ send_via_openssl_check_code_error_contains() {
   if ! check_param_count_v2 "command file, expected code, error, message" 4 $#; then
     return 1
   fi
-  if ! result=$(send_via_openssl_and_check_code "$1" "$2"); then
-    log 2 "error sending and checking code"
+  local response response_file xml_file
+
+  if ! response=$(get_file_names 2 2>&1); then
+    log 2 "error getting file names: $response"
     return 1
   fi
-  echo -n "$result" > "$TEST_FILE_FOLDER/result.txt"
-  if ! get_xml_data "$TEST_FILE_FOLDER/result.txt" "$TEST_FILE_FOLDER/error_data.txt"; then
+  read -r response_file xml_file <<< "$response"
+
+  if ! response=$(send_via_openssl_and_check_code "$1" "$2" 2>&1); then
+    log 2 "error sending and checking code: $response"
+    return 1
+  fi
+  echo -n "$response" > "$TEST_FILE_FOLDER/$response_file"
+  if ! get_xml_data "$TEST_FILE_FOLDER/$response_file" "$TEST_FILE_FOLDER/$xml_file"; then
     log 2 "error parsing XML data from result"
     return 1
   fi
-  if ! check_xml_error_contains "$TEST_FILE_FOLDER/error_data.txt" "$3" "$4"; then
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/$xml_file" "$3" "$4"; then
     log 2 "error checking xml error, message"
     return 1
   fi
@@ -127,21 +165,24 @@ send_via_openssl_with_timeout() {
   if ! check_param_count_v2 "command file" 1 $#; then
     return 1
   fi
+  local host response exit_code=0 http_response
+
   host="${AWS_ENDPOINT_URL#http*://}"
   if [[ "$host" =~ s3\..*amazonaws\.com ]]; then
     host+=":443"
   fi
   log 5 "connecting to $host"
-  local exit_code=0
-  result=$(timeout 65 openssl s_client -connect "$host" -ign_eof < "$1" 2>&1) || exit_code=$?
+  response=$(timeout 65 openssl s_client -connect "$host" -ign_eof < "$1" 2>&1) || exit_code=$?
   if [ "$exit_code" == 124 ]; then
     log 2 "error:  openssl command timed out"
     return 1
   elif [ "$exit_code" != 0 ]; then
-    log 2 "error sending openssl command: exit code $exit_code, $result"
+    log 2 "error sending openssl command: exit code $exit_code, response: $response"
     return 1
   fi
-  if ! [[ "$result" =~ .*$'\nclosed' ]]; then
+  http_response="$response"
+
+  if ! [[ "$http_response" =~ .*$'\nclosed' ]]; then
     log 2 "connection not closed properly: $result"
     return 1
   fi
@@ -168,12 +209,20 @@ send_openssl_go_command() {
   if ! check_param_count_gt "expected HTTP code, params" 2 $#; then
     return 1
   fi
-  if ! result=$(go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-awsRegion" "$AWS_REGION" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:2}" 2>&1); then
-    log 2 "error sending go command and checking error: $result"
+  local response openssl_file
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting response file name: $response"
     return 1
   fi
-  if ! result=$(send_via_openssl_and_check_code "$TEST_FILE_FOLDER/openssl_command.txt" "$1" 2>&1); then
-    log 2 "error sending via openssl and checking code: $result"
+  openssl_file="$response"
+
+  if ! response=$(go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-awsRegion" "$AWS_REGION" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/$openssl_file" "${@:2}" 2>&1); then
+    log 2 "error sending go command and checking error: $response"
+    return 1
+  fi
+  if ! response=$(send_via_openssl_and_check_code "$TEST_FILE_FOLDER/$openssl_file" "$1" 2>&1); then
+    log 2 "error sending via openssl and checking code: $response"
     return 1
   fi
   return 0
@@ -183,12 +232,20 @@ send_openssl_go_command_check_header() {
   if ! check_param_count_gt "expected HTTP code, header key, value, params" 4 $#; then
     return 1
   fi
+  local response openssl_file
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting response file name: $response"
+    return 1
+  fi
+  openssl_file="$response"
+
   if ! result=$(go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" \
-      "-awsRegion" "$AWS_REGION" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:4}" 2>&1); then
+      "-awsRegion" "$AWS_REGION" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/$openssl_file" "${@:4}" 2>&1); then
     log 2 "error sending go command and checking error: $result"
     return 1
   fi
-  if ! send_via_openssl_and_check_code_header "$TEST_FILE_FOLDER/openssl_command.txt" "$1" "$2" "$3"; then
+  if ! send_via_openssl_and_check_code_header "$TEST_FILE_FOLDER/$openssl_file" "$1" "$2" "$3"; then
     log 2 "error sending command, checking code and header value"
     return 1
   fi

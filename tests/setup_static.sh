@@ -49,6 +49,6 @@ fi
 
 # shellcheck disable=SC2034
 RECREATE_BUCKETS=false
-if ! stop_versity; then
+if ! stop_versity_process "$VERSITYGW_PID_1"; then
   log 2 "error stopping versity"
 fi
