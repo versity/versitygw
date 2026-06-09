@@ -131,11 +131,13 @@ func (wl *WebhookLogger) sendLog(lf LogFields) {
 	jsonLog, err := json.Marshal(lf)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to parse the log data: %v\n", err.Error())
+		return
 	}
 
 	req, err := http.NewRequest(http.MethodPost, wl.url, bytes.NewReader(jsonLog))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		return
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
