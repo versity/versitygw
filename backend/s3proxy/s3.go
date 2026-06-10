@@ -258,6 +258,9 @@ func (s *S3Proxy) GetBucketOwnershipControls(ctx context.Context, bucket string)
 	if err != nil {
 		return ownship, handleError(err)
 	}
+	if resp.OwnershipControls == nil || len(resp.OwnershipControls.Rules) == 0 {
+		return ownship, s3err.GetBucketErr(s3err.ErrOwnershipControlsNotFound, bucket)
+	}
 	return resp.OwnershipControls.Rules[0].ObjectOwnership, nil
 }
 func (s *S3Proxy) DeleteBucketOwnershipControls(ctx context.Context, bucket string) error {
