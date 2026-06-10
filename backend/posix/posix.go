@@ -122,6 +122,7 @@ const (
 	contentDispHdr      = "content-disposition"
 	cacheCtrlHdr        = "cache-control"
 	expiresHdr          = "expires"
+	websiteRedirectHdr  = "website-redirect-location"
 	emptyMD5            = "\"d41d8cd98f00b204e9800998ecf8427e\""
 	aclkey              = "acl"
 	ownershipkey        = "ownership"
@@ -1549,13 +1550,14 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 
 	err = p.storeObjectMetaProperties(nil, bucket, filepath.Join(objdir, uploadID),
 		metaProperties{
-			ContentType:        mpu.ContentType,
-			ContentEncoding:    mpu.ContentEncoding,
-			ContentDisposition: mpu.ContentDisposition,
-			ContentLanguage:    mpu.ContentLanguage,
-			CacheControl:       mpu.CacheControl,
-			Expires:            mpu.Expires,
-			Metadata:           mpu.Metadata,
+			ContentType:             mpu.ContentType,
+			ContentEncoding:         mpu.ContentEncoding,
+			ContentDisposition:      mpu.ContentDisposition,
+			ContentLanguage:         mpu.ContentLanguage,
+			CacheControl:            mpu.CacheControl,
+			Expires:                 mpu.Expires,
+			WebsiteRedirectLocation: mpu.WebsiteRedirectLocation,
+			Metadata:                mpu.Metadata,
 		})
 	if err != nil {
 		// cleanup object if returning error
@@ -2403,13 +2405,14 @@ func (p *Posix) checkUploadIDExists(bucket, object, uploadID string) ([32]byte, 
 }
 
 type metaProperties struct {
-	ContentType        *string
-	ContentEncoding    *string
-	ContentDisposition *string
-	ContentLanguage    *string
-	CacheControl       *string
-	Expires            *string
-	Metadata           map[string]string
+	ContentType             *string
+	ContentEncoding         *string
+	ContentDisposition      *string
+	ContentLanguage         *string
+	CacheControl            *string
+	Expires                 *string
+	WebsiteRedirectLocation *string
+	Metadata                map[string]string
 }
 
 // loadObjectMetadata loads the given object metadata, if it fails to load
@@ -2508,6 +2511,11 @@ func (p *Posix) loadObjectMetaProperties(f *os.File, bucket, object string, fi *
 		result.Expires = backend.GetPtrFromString(string(b))
 	}
 
+	b, err = p.meta.RetrieveAttribute(f, bucket, object, websiteRedirectHdr)
+	if err == nil {
+		result.WebsiteRedirectLocation = backend.GetPtrFromString(string(b))
+	}
+
 	result.Metadata = p.loadObjectMetadata(f, bucket, object)
 
 	return result
@@ -2585,6 +2593,12 @@ func (p *Posix) storeObjectMetaProperties(f *os.File, bucket, object string, m m
 		err := p.meta.StoreAttribute(f, bucket, object, expiresHdr, []byte(*m.Expires))
 		if err != nil {
 			return fmt.Errorf("set expires: %w", err)
+		}
+	}
+	if getString(m.WebsiteRedirectLocation) != "" {
+		err := p.meta.StoreAttribute(f, bucket, object, websiteRedirectHdr, []byte(*m.WebsiteRedirectLocation))
+		if err != nil {
+			return fmt.Errorf("set website-redirect-location: %w", err)
 		}
 	}
 	if m.Metadata != nil {
@@ -3682,6 +3696,14 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			return s3response.PutObjectOutput{}, fmt.Errorf("set content-type attr: %w", err)
 		}
 
+		if getString(po.WebsiteRedirectLocation) != "" {
+			err = p.meta.StoreAttribute(nil, *po.Bucket, *po.Key, websiteRedirectHdr,
+				[]byte(*po.WebsiteRedirectLocation))
+			if err != nil {
+				return s3response.PutObjectOutput{}, fmt.Errorf("set website-redirect-location attr: %w", err)
+			}
+		}
+
 		expectedSum := getEmptyChecksumValue(checksumAlgorithm)
 		if checksumValue != "" && expectedSum != checksumValue {
 			return s3response.PutObjectOutput{}, s3err.GetChecksumBadDigestErr(checksumAlgorithm)
@@ -3879,13 +3901,14 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 
 	err = p.storeObjectMetaProperties(f.File(), *po.Bucket, *po.Key,
 		metaProperties{
-			ContentType:        po.ContentType,
-			ContentEncoding:    po.ContentEncoding,
-			ContentLanguage:    po.ContentLanguage,
-			ContentDisposition: po.ContentDisposition,
-			CacheControl:       po.CacheControl,
-			Expires:            po.Expires,
-			Metadata:           po.Metadata,
+			ContentType:             po.ContentType,
+			ContentEncoding:         po.ContentEncoding,
+			ContentLanguage:         po.ContentLanguage,
+			ContentDisposition:      po.ContentDisposition,
+			CacheControl:            po.CacheControl,
+			Expires:                 po.Expires,
+			WebsiteRedirectLocation: po.WebsiteRedirectLocation,
+			Metadata:                po.Metadata,
 		})
 	if err != nil {
 		return s3response.PutObjectOutput{}, err
@@ -4583,32 +4606,33 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 
 		var length int64 = 0
 		return &s3.GetObjectOutput{
-			ChecksumCRC32:      checksums.CRC32,
-			ChecksumCRC32C:     checksums.CRC32C,
-			ChecksumSHA1:       checksums.SHA1,
-			ChecksumSHA256:     checksums.SHA256,
-			ChecksumCRC64NVME:  checksums.CRC64NVME,
-			ChecksumSHA512:     checksums.SHA512,
-			ChecksumMD5:        checksums.MD5,
-			ChecksumXXHASH64:   checksums.XXHASH64,
-			ChecksumXXHASH3:    checksums.XXHASH3,
-			ChecksumXXHASH128:  checksums.XXHASH128,
-			ChecksumType:       checksums.Type,
-			AcceptRanges:       backend.GetPtrFromString("bytes"),
-			ContentLength:      &length,
-			ContentEncoding:    objMeta.ContentEncoding,
-			ContentType:        objMeta.ContentType,
-			ContentLanguage:    objMeta.ContentLanguage,
-			ContentDisposition: objMeta.ContentDisposition,
-			CacheControl:       objMeta.CacheControl,
-			ExpiresString:      objMeta.Expires,
-			ETag:               &etag,
-			LastModified:       backend.GetTimePtr(fid.ModTime()),
-			Metadata:           objMeta.Metadata,
-			TagCount:           tagCount,
-			ContentRange:       nil,
-			StorageClass:       types.StorageClassStandard,
-			VersionId:          &versionId,
+			ChecksumCRC32:           checksums.CRC32,
+			ChecksumCRC32C:          checksums.CRC32C,
+			ChecksumSHA1:            checksums.SHA1,
+			ChecksumSHA256:          checksums.SHA256,
+			ChecksumCRC64NVME:       checksums.CRC64NVME,
+			ChecksumSHA512:          checksums.SHA512,
+			ChecksumMD5:             checksums.MD5,
+			ChecksumXXHASH64:        checksums.XXHASH64,
+			ChecksumXXHASH3:         checksums.XXHASH3,
+			ChecksumXXHASH128:       checksums.XXHASH128,
+			ChecksumType:            checksums.Type,
+			AcceptRanges:            backend.GetPtrFromString("bytes"),
+			ContentLength:           &length,
+			ContentEncoding:         objMeta.ContentEncoding,
+			ContentType:             objMeta.ContentType,
+			ContentLanguage:         objMeta.ContentLanguage,
+			ContentDisposition:      objMeta.ContentDisposition,
+			CacheControl:            objMeta.CacheControl,
+			ExpiresString:           objMeta.Expires,
+			WebsiteRedirectLocation: objMeta.WebsiteRedirectLocation,
+			ETag:                    &etag,
+			LastModified:            backend.GetTimePtr(fid.ModTime()),
+			Metadata:                objMeta.Metadata,
+			TagCount:                tagCount,
+			ContentRange:            nil,
+			StorageClass:            types.StorageClassStandard,
+			VersionId:               &versionId,
 		}, nil
 	}
 
@@ -4735,34 +4759,35 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	}
 
 	return &s3.GetObjectOutput{
-		AcceptRanges:       backend.GetPtrFromString("bytes"),
-		ContentLength:      &length,
-		ContentEncoding:    objMeta.ContentEncoding,
-		ContentType:        objMeta.ContentType,
-		ContentDisposition: objMeta.ContentDisposition,
-		ContentLanguage:    objMeta.ContentLanguage,
-		CacheControl:       objMeta.CacheControl,
-		ExpiresString:      objMeta.Expires,
-		ETag:               &etag,
-		LastModified:       backend.GetTimePtr(fi.ModTime()),
-		Metadata:           objMeta.Metadata,
-		TagCount:           tagCount,
-		ContentRange:       contentRange,
-		StorageClass:       types.StorageClassStandard,
-		VersionId:          &versionId,
-		Body:               body,
-		ChecksumCRC32:      checksums.CRC32,
-		ChecksumCRC32C:     checksums.CRC32C,
-		ChecksumSHA1:       checksums.SHA1,
-		ChecksumSHA256:     checksums.SHA256,
-		ChecksumCRC64NVME:  checksums.CRC64NVME,
-		ChecksumSHA512:     checksums.SHA512,
-		ChecksumMD5:        checksums.MD5,
-		ChecksumXXHASH64:   checksums.XXHASH64,
-		ChecksumXXHASH3:    checksums.XXHASH3,
-		ChecksumXXHASH128:  checksums.XXHASH128,
-		ChecksumType:       checksums.Type,
-		PartsCount:         partsCount,
+		AcceptRanges:            backend.GetPtrFromString("bytes"),
+		ContentLength:           &length,
+		ContentEncoding:         objMeta.ContentEncoding,
+		ContentType:             objMeta.ContentType,
+		ContentDisposition:      objMeta.ContentDisposition,
+		ContentLanguage:         objMeta.ContentLanguage,
+		CacheControl:            objMeta.CacheControl,
+		ExpiresString:           objMeta.Expires,
+		WebsiteRedirectLocation: objMeta.WebsiteRedirectLocation,
+		ETag:                    &etag,
+		LastModified:            backend.GetTimePtr(fi.ModTime()),
+		Metadata:                objMeta.Metadata,
+		TagCount:                tagCount,
+		ContentRange:            contentRange,
+		StorageClass:            types.StorageClassStandard,
+		VersionId:               &versionId,
+		Body:                    body,
+		ChecksumCRC32:           checksums.CRC32,
+		ChecksumCRC32C:          checksums.CRC32C,
+		ChecksumSHA1:            checksums.SHA1,
+		ChecksumSHA256:          checksums.SHA256,
+		ChecksumCRC64NVME:       checksums.CRC64NVME,
+		ChecksumSHA512:          checksums.SHA512,
+		ChecksumMD5:             checksums.MD5,
+		ChecksumXXHASH64:        checksums.XXHASH64,
+		ChecksumXXHASH3:         checksums.XXHASH3,
+		ChecksumXXHASH128:       checksums.XXHASH128,
+		ChecksumType:            checksums.Type,
+		PartsCount:              partsCount,
 	}, nil
 }
 
@@ -5012,6 +5037,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		ContentLanguage:           objMeta.ContentLanguage,
 		CacheControl:              objMeta.CacheControl,
 		ExpiresString:             objMeta.Expires,
+		WebsiteRedirectLocation:   objMeta.WebsiteRedirectLocation,
 		ETag:                      &etag,
 		LastModified:              backend.GetTimePtr(fi.ModTime()),
 		Metadata:                  objMeta.Metadata,
@@ -5326,16 +5352,25 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		// Store the provided object meta properties
 		err = p.storeObjectMetaProperties(nil, dstBucket, dstObject,
 			metaProperties{
-				ContentType:        input.ContentType,
-				ContentEncoding:    input.ContentEncoding,
-				ContentLanguage:    input.ContentLanguage,
-				ContentDisposition: input.ContentDisposition,
-				CacheControl:       input.CacheControl,
-				Expires:            input.Expires,
-				Metadata:           input.Metadata,
+				ContentType:             input.ContentType,
+				ContentEncoding:         input.ContentEncoding,
+				ContentLanguage:         input.ContentLanguage,
+				ContentDisposition:      input.ContentDisposition,
+				CacheControl:            input.CacheControl,
+				Expires:                 input.Expires,
+				WebsiteRedirectLocation: input.WebsiteRedirectLocation,
+				Metadata:                input.Metadata,
 			})
 		if err != nil {
 			return s3response.CopyObjectOutput{}, err
+		}
+		// explicitly delete the website redirect location, as if it's not
+		// provided as CopyObject input, it should not be copied
+		if getString(input.WebsiteRedirectLocation) == "" {
+			err := p.meta.DeleteAttribute(dstBucket, dstObject, websiteRedirectHdr)
+			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+				return s3response.CopyObjectOutput{}, fmt.Errorf("delete website-redirect-location: %w", err)
+			}
 		}
 
 		if input.TaggingDirective == types.TaggingDirectiveReplace {
@@ -5375,6 +5410,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 			ContentLanguage:           input.ContentLanguage,
 			CacheControl:              input.CacheControl,
 			Expires:                   input.Expires,
+			WebsiteRedirectLocation:   input.WebsiteRedirectLocation,
 			Metadata:                  input.Metadata,
 			ObjectLockRetainUntilDate: input.ObjectLockRetainUntilDate,
 			ObjectLockMode:            input.ObjectLockMode,

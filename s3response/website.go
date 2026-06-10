@@ -54,7 +54,7 @@ type RedirectAllRequestsTo struct {
 // RoutingRule specifies a redirect rule with an optional condition.
 type RoutingRule struct {
 	Condition *RoutingRuleCondition `xml:"Condition,omitempty"`
-	Redirect  Redirect              `xml:"Redirect"`
+	Redirect  *Redirect             `xml:"Redirect"`
 }
 
 // RoutingRuleCondition specifies when a routing rule applies.
@@ -139,10 +139,28 @@ func (c *RoutingRuleCondition) Validate() error {
 		return nil
 	}
 
+	if c.HttpErrorCodeReturnedEquals == "" && c.KeyPrefixEquals == "" {
+		debuglogger.Logf("website routing rule condition is empty")
+		return s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+
 	return isValidHTTPCode(c.HttpErrorCodeReturnedEquals, validateErrorCode)
 }
 
 func (r *Redirect) Validate() error {
+	if r == nil {
+		return nil
+	}
+
+	if r.HostName == "" &&
+		r.HttpRedirectCode == "" &&
+		r.Protocol == "" &&
+		r.ReplaceKeyPrefixWith == "" &&
+		r.ReplaceKeyWith == "" {
+		debuglogger.Logf("website routing rule redirect is empty")
+		return s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+
 	if r.ReplaceKeyWith != "" && r.ReplaceKeyPrefixWith != "" {
 		debuglogger.Logf("website redirect has both key replacements")
 		return s3err.GetAPIError(s3err.ErrBothReplaceKeyAndPrefix)

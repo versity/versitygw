@@ -494,6 +494,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	contentLanguage := ctx.Get("Content-Language")
 	cacheControl := ctx.Get("Cache-Control")
 	expires := ctx.Get("Expires")
+	websiteRedirectLocation := ctx.Get("X-Amz-Website-Redirect-Location")
 	tagging := ctx.Get("x-amz-tagging")
 	storageClass := ctx.Get("X-Amz-Storage-Class")
 	legalHoldHdr := ctx.Get("X-Amz-Object-Lock-Legal-Hold")
@@ -578,6 +579,15 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetInvalidArgumentErr(s3err.InvalidArgTaggingDirective, string(taggingDirective))
 	}
 
+	err = utils.ValidateWebsiteRedirectLocation(websiteRedirectLocation)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	checksumAlgorithm := types.ChecksumAlgorithm(ctx.Get("x-amz-checksum-algorithm"))
 	err = utils.IsChecksumAlgorithmValid(checksumAlgorithm)
 	if err != nil {
@@ -618,6 +628,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 			ContentLanguage:             &contentLanguage,
 			CacheControl:                &cacheControl,
 			Expires:                     &expires,
+			WebsiteRedirectLocation:     &websiteRedirectLocation,
 			Tagging:                     &tagging,
 			TaggingDirective:            taggingDirective,
 			CopySource:                  &copySource,
@@ -665,6 +676,7 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 	contentLanguage := ctx.Get("Content-Language")
 	cacheControl := ctx.Get("Cache-Control")
 	expires := ctx.Get("Expires")
+	websiteRedirectLocation := ctx.Get("X-Amz-Website-Redirect-Location")
 	tagging := ctx.Get("x-amz-tagging")
 	legalHoldHdr := ctx.Get("X-Amz-Object-Lock-Legal-Hold")
 	lockModeHdr := ctx.Get("X-Amz-Object-Lock-Mode")
@@ -721,6 +733,15 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 
 	// load the meta headers
 	metadata, err := utils.GetUserMetaData(&ctx.Request().Header)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = utils.ValidateWebsiteRedirectLocation(websiteRedirectLocation)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -787,6 +808,7 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 			ContentLanguage:           &contentLanguage,
 			CacheControl:              &cacheControl,
 			Expires:                   &expires,
+			WebsiteRedirectLocation:   &websiteRedirectLocation,
 			Metadata:                  metadata,
 			Body:                      body,
 			Tagging:                   &tagging,

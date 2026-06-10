@@ -36,13 +36,14 @@ import (
 type websiteTestBackend struct {
 	backend.BackendUnsupported
 
-	websiteConfig []byte
-	corsConfig    []byte
-	corsErr       error
-	objects       map[string]string
-	objectErrors  map[string]error
-	public        bool
-	calls         []string
+	websiteConfig   []byte
+	corsConfig      []byte
+	corsErr         error
+	objects         map[string]string
+	objectRedirects map[string]string
+	objectErrors    map[string]error
+	public          bool
+	calls           []string
 }
 
 func (b *websiteTestBackend) record(call string) {
@@ -105,9 +106,11 @@ func (b *websiteTestBackend) HeadObject(_ context.Context, input *s3.HeadObjectI
 
 	length := int64(len(body))
 	contentType := "text/html"
+	redirectLocation := redirectPtr(b.objectRedirects[*input.Key])
 	return &s3.HeadObjectOutput{
-		ContentLength: &length,
-		ContentType:   &contentType,
+		ContentLength:           &length,
+		ContentType:             &contentType,
+		WebsiteRedirectLocation: redirectLocation,
 	}, nil
 }
 
@@ -126,11 +129,20 @@ func (b *websiteTestBackend) GetObject(_ context.Context, input *s3.GetObjectInp
 
 	length := int64(len(body))
 	contentType := "text/html"
+	redirectLocation := redirectPtr(b.objectRedirects[*input.Key])
 	return &s3.GetObjectOutput{
-		Body:          io.NopCloser(strings.NewReader(body)),
-		ContentLength: &length,
-		ContentType:   &contentType,
+		Body:                    io.NopCloser(strings.NewReader(body)),
+		ContentLength:           &length,
+		ContentType:             &contentType,
+		WebsiteRedirectLocation: redirectLocation,
 	}, nil
+}
+
+func redirectPtr(location string) *string {
+	if location == "" {
+		return nil
+	}
+	return &location
 }
 
 func TestWebsiteHandlerRoutingRuleOrder(t *testing.T) {
@@ -147,7 +159,7 @@ func TestWebsiteHandlerRoutingRuleOrder(t *testing.T) {
 					Condition: &s3response.RoutingRuleCondition{
 						KeyPrefixEquals: "old/",
 					},
-					Redirect: s3response.Redirect{
+					Redirect: &s3response.Redirect{
 						ReplaceKeyPrefixWith: "new/",
 						HttpRedirectCode:     "301",
 					},
@@ -156,7 +168,7 @@ func TestWebsiteHandlerRoutingRuleOrder(t *testing.T) {
 					Condition: &s3response.RoutingRuleCondition{
 						HttpErrorCodeReturnedEquals: "404",
 					},
-					Redirect: s3response.Redirect{
+					Redirect: &s3response.Redirect{
 						ReplaceKeyWith:   "error.html",
 						HttpRedirectCode: "302",
 					},
@@ -172,7 +184,7 @@ func TestWebsiteHandlerRoutingRuleOrder(t *testing.T) {
 					Condition: &s3response.RoutingRuleCondition{
 						HttpErrorCodeReturnedEquals: "404",
 					},
-					Redirect: s3response.Redirect{
+					Redirect: &s3response.Redirect{
 						ReplaceKeyWith:   "error.html",
 						HttpRedirectCode: "302",
 					},
@@ -181,7 +193,7 @@ func TestWebsiteHandlerRoutingRuleOrder(t *testing.T) {
 					Condition: &s3response.RoutingRuleCondition{
 						KeyPrefixEquals: "old/",
 					},
-					Redirect: s3response.Redirect{
+					Redirect: &s3response.Redirect{
 						ReplaceKeyPrefixWith: "new/",
 						HttpRedirectCode:     "301",
 					},
@@ -224,7 +236,7 @@ func TestWebsiteHandlerRoutingRuleBothConditions(t *testing.T) {
 					KeyPrefixEquals:             "old/",
 					HttpErrorCodeReturnedEquals: "404",
 				},
-				Redirect: s3response.Redirect{
+				Redirect: &s3response.Redirect{
 					ReplaceKeyPrefixWith: "new/",
 					HttpRedirectCode:     "302",
 				},
@@ -277,6 +289,61 @@ func TestWebsiteHandlerRoutingRuleBothConditions(t *testing.T) {
 	})
 }
 
+func TestWebsiteHandlerObjectRedirectLocation(t *testing.T) {
+	be := newWebsiteTestBackend(t, s3response.WebsiteConfiguration{
+		IndexDocument: &s3response.IndexDocument{Suffix: "index.html"},
+	}, map[string]string{
+		"old.html": "old",
+	}, true)
+	be.objectRedirects["old.html"] = "/new.html"
+
+	resp := websiteRequest(t, be, "/old.html")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusMovedPermanently {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusMovedPermanently)
+	}
+	if got := resp.Header.Get("Location"); got != "/new.html" {
+		t.Fatalf("Location = %q, want %q", got, "/new.html")
+	}
+	if got := readBody(t, resp); got != "" {
+		t.Fatalf("body = %q, want empty body", got)
+	}
+}
+
+func TestWebsiteHandlerPrefetchRoutingPrecedesObjectRedirect(t *testing.T) {
+	be := newWebsiteTestBackend(t, s3response.WebsiteConfiguration{
+		IndexDocument: &s3response.IndexDocument{Suffix: "index.html"},
+		RoutingRules: []s3response.RoutingRule{
+			{
+				Condition: &s3response.RoutingRuleCondition{
+					KeyPrefixEquals: "old/",
+				},
+				Redirect: &s3response.Redirect{
+					ReplaceKeyPrefixWith: "new/",
+					HttpRedirectCode:     "302",
+				},
+			},
+		},
+	}, map[string]string{
+		"old/page.html": "old",
+	}, true)
+	be.objectRedirects["old/page.html"] = "/object-redirect.html"
+
+	resp := websiteRequest(t, be, "/old/page.html")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusFound)
+	}
+	if got := resp.Header.Get("Location"); got != "http://site.test/new/page.html" {
+		t.Fatalf("Location = %q", got)
+	}
+	if containsCall(be.calls, "GetObject") {
+		t.Fatal("GetObject was called before pre-fetch routing completed")
+	}
+}
+
 func TestWebsiteHandlerRedirectConstruction(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -290,7 +357,7 @@ func TestWebsiteHandlerRedirectConstruction(t *testing.T) {
 				Condition: &s3response.RoutingRuleCondition{
 					HttpErrorCodeReturnedEquals: "404",
 				},
-				Redirect: s3response.Redirect{
+				Redirect: &s3response.Redirect{
 					ReplaceKeyWith: "error.html",
 				},
 			},
@@ -303,7 +370,7 @@ func TestWebsiteHandlerRedirectConstruction(t *testing.T) {
 				Condition: &s3response.RoutingRuleCondition{
 					KeyPrefixEquals: "old/",
 				},
-				Redirect: s3response.Redirect{
+				Redirect: &s3response.Redirect{
 					ReplaceKeyPrefixWith: "new/",
 				},
 			},
@@ -316,7 +383,7 @@ func TestWebsiteHandlerRedirectConstruction(t *testing.T) {
 				Condition: &s3response.RoutingRuleCondition{
 					KeyPrefixEquals: "old/",
 				},
-				Redirect: s3response.Redirect{
+				Redirect: &s3response.Redirect{
 					HostName:             "example.com",
 					Protocol:             "https",
 					ReplaceKeyPrefixWith: "new/",
@@ -331,7 +398,7 @@ func TestWebsiteHandlerRedirectConstruction(t *testing.T) {
 				Condition: &s3response.RoutingRuleCondition{
 					KeyPrefixEquals: "old/",
 				},
-				Redirect: s3response.Redirect{
+				Redirect: &s3response.Redirect{
 					ReplaceKeyPrefixWith: "new/",
 				},
 			},
@@ -369,7 +436,7 @@ func TestWebsiteHandlerPostErrorRoutingUsesOriginalKeyBeforeIndexExpansion(t *te
 					KeyPrefixEquals:             "blog/",
 					HttpErrorCodeReturnedEquals: "404",
 				},
-				Redirect: s3response.Redirect{
+				Redirect: &s3response.Redirect{
 					ReplaceKeyPrefixWith: "archive/",
 					HttpRedirectCode:     "302",
 				},
@@ -400,7 +467,7 @@ func TestWebsiteHandlerObjectStore5xxBypassesRoutingAndErrorDocument(t *testing.
 				Condition: &s3response.RoutingRuleCondition{
 					HttpErrorCodeReturnedEquals: "500",
 				},
-				Redirect: s3response.Redirect{
+				Redirect: &s3response.Redirect{
 					ReplaceKeyWith:   "elsewhere.html",
 					HttpRedirectCode: "302",
 				},
@@ -438,7 +505,7 @@ func TestWebsiteHandlerPublicAccessDeniedPreventsObjectReadAndCanRoute(t *testin
 				Condition: &s3response.RoutingRuleCondition{
 					HttpErrorCodeReturnedEquals: "403",
 				},
-				Redirect: s3response.Redirect{
+				Redirect: &s3response.Redirect{
 					ReplaceKeyWith:   "denied.html",
 					HttpRedirectCode: "302",
 				},
@@ -541,6 +608,28 @@ func TestWebsiteHandlerGetValidatesBucketName(t *testing.T) {
 	}
 	if len(be.calls) != 0 {
 		t.Fatalf("invalid bucket should not call backend, got calls: %v", be.calls)
+	}
+}
+
+func TestWebsiteHandlerNoBucketInRequestSetsLocation(t *testing.T) {
+	be := newWebsiteTestBackend(t, s3response.WebsiteConfiguration{
+		IndexDocument: &s3response.IndexDocument{Suffix: "index.html"},
+	}, nil, true)
+
+	resp := websiteRequestWithDomainHostAndHeaders(t, be, "site.test", http.MethodGet, "wrong.test:8080", "/", nil)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusMovedPermanently {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusMovedPermanently)
+	}
+	if got := resp.Header.Get("Location"); got != "http://site.test:8080/" {
+		t.Fatalf("Location = %q, want %q", got, "http://site.test:8080/")
+	}
+	if got := resp.Header.Get("x-amz-error-code"); got != "WebsiteRedirect" {
+		t.Fatalf("x-amz-error-code = %q, want %q", got, "WebsiteRedirect")
+	}
+	if len(be.calls) != 0 {
+		t.Fatalf("request without bucket should not call backend, got calls: %v", be.calls)
 	}
 }
 
@@ -707,7 +796,7 @@ func TestWebsiteHandlerOptionsAccessGranted(t *testing.T) {
 	if got := resp.Header.Get("Access-Control-Allow-Headers"); got != "content-type, x-amz-date" {
 		t.Fatalf("Access-Control-Allow-Headers = %q", got)
 	}
-	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "Content-Length, ETag" {
+	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "Content-Length" {
 		t.Fatalf("Access-Control-Expose-Headers = %q", got)
 	}
 	if got := resp.Header.Get("Access-Control-Max-Age"); got != "42" {
@@ -893,9 +982,10 @@ func newWebsiteTestBackend(t *testing.T, config s3response.WebsiteConfiguration,
 	}
 
 	return &websiteTestBackend{
-		websiteConfig: data,
-		objects:       objects,
-		public:        public,
+		websiteConfig:   data,
+		objects:         objects,
+		objectRedirects: map[string]string{},
+		public:          public,
 	}
 }
 
@@ -920,10 +1010,16 @@ func websiteRequestWithHeaders(t *testing.T, be backend.Backend, method, path st
 func websiteRequestWithHostAndHeaders(t *testing.T, be backend.Backend, method, host, path string, headers map[string]string) *http.Response {
 	t.Helper()
 
+	return websiteRequestWithDomainHostAndHeaders(t, be, "", method, host, path, headers)
+}
+
+func websiteRequestWithDomainHostAndHeaders(t *testing.T, be backend.Backend, domain, method, host, path string, headers map[string]string) *http.Response {
+	t.Helper()
+
 	app := fiber.New(fiber.Config{
 		ServerHeader: "VERSITYGW",
 	})
-	registerWebsiteRoutes(app, be, "")
+	registerWebsiteRoutes(app, be, domain)
 
 	req := httptest.NewRequest(method, path, nil)
 	req.Host = host

@@ -203,6 +203,7 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_invalid_object_names)
 	ts.Run(PutObject_object_acl_not_supported)
 	ts.Run(PutObject_long_metadata)
+	ts.Run(PutObject_invalid_website_redirect_location)
 }
 
 func TestHeadObject(ts *TestState) {
@@ -370,6 +371,7 @@ func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_non_existing_dir_object)
 	ts.Run(CopyObject_should_copy_meta_props)
 	ts.Run(CopyObject_should_replace_meta_props)
+	ts.Run(CopyObject_invalid_website_redirect_location)
 	ts.Run(CopyObject_default_content_type_with_replace_metadata)
 	ts.Run(CopyObject_missing_bucket_lock)
 	ts.Run(CopyObject_invalid_legal_hold)
@@ -420,6 +422,7 @@ func TestCreateMultipartUpload(ts *TestState) {
 	ts.Run(CreateMultipartUpload_non_existing_bucket)
 	ts.Run(CreateMultipartUpload_long_metadata)
 	ts.Run(CreateMultipartUpload_with_metadata)
+	ts.Run(CreateMultipartUpload_invalid_website_redirect_location)
 	ts.Run(CreateMultipartUpload_with_tagging)
 	ts.Run(CreateMultipartUpload_with_object_lock)
 	ts.Run(CreateMultipartUpload_with_object_lock_not_enabled)
@@ -670,6 +673,8 @@ func TestPutBucketWebsite(ts *TestState) {
 	ts.Run(PutBucketWebsite_invalid_redirect_protocol)
 	ts.Run(PutBucketWebsite_redirectAll_index_error_routingRules)
 	ts.Run(PutBucketWebsite_invalid_routing_rule_protocol)
+	ts.Run(PutBucketWebsite_empty_routing_rule_condition)
+	ts.Run(PutBucketWebsite_empty_routing_rule_redirect)
 	ts.Run(PutBucketWebsite_empty_error_document_key)
 	ts.Run(PutBucketWebsite_too_many_routing_rules)
 	ts.Run(PutBucketWebsite_routing_rule_replace_key_and_prefix)
@@ -696,12 +701,14 @@ func TestWebsiteHosting(ts *TestState) {
 	ts.Run(WebsiteHosting_error_document_served)
 	ts.Run(WebsiteHosting_error_document_not_found)
 	ts.Run(WebsiteHosting_no_error_document)
+	ts.Run(WebsiteHosting_no_bucket_in_request_location)
 	ts.Run(WebsiteHosting_private_object_and_error_document)
 	ts.Run(WebsiteHosting_routing_rule_post_request_redirect)
 	ts.Run(WebsiteHosting_routing_rule_pre_request_redirect)
 	ts.Run(WebsiteHosting_routing_rule_prefix_and_error_redirect)
 	ts.Run(WebsiteHosting_routing_rule_no_match_serves_error_document)
 	ts.Run(WebsiteHosting_redirect_all_requests)
+	ts.Run(WebsiteHosting_object_redirect_location)
 	ts.Run(WebsiteHosting_index_document)
 	ts.Run(WebsiteHosting_index_error_document_and_routing_rules)
 	ts.Run(WebsiteHosting_get_cors_headers)
@@ -1265,6 +1272,7 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_success_status_201)
 	ts.Run(PostObject_should_ignore_anything_after_file)
 	ts.Run(PostObject_success_with_meta_properties)
+	ts.Run(PostObject_invalid_website_redirect_location)
 	ts.Run(PostObject_invalid_tagging)
 	ts.Run(PostObject_success_with_tagging)
 	ts.Run(PostObject_success_double_dash_boundary)
@@ -1396,6 +1404,7 @@ func GetIntTests() IntTests {
 		"PutObject_should_combine_metadata":                                        PutObject_should_combine_metadata,
 		"PutObject_long_metadata":                                                  PutObject_long_metadata,
 		"PutObject_with_metadata":                                                  PutObject_with_metadata,
+		"PutObject_invalid_website_redirect_location":                              PutObject_invalid_website_redirect_location,
 		"PutObject_invalid_credentials":                                            PutObject_invalid_credentials,
 		"PutObject_checksum_algorithm_and_header_mismatch":                         PutObject_checksum_algorithm_and_header_mismatch,
 		"PutObject_multiple_checksum_headers":                                      PutObject_multiple_checksum_headers,
@@ -1600,6 +1609,7 @@ func GetIntTests() IntTests {
 		"CopyObject_non_existing_dir_object":                                       CopyObject_non_existing_dir_object,
 		"CopyObject_should_copy_meta_props":                                        CopyObject_should_copy_meta_props,
 		"CopyObject_should_replace_meta_props":                                     CopyObject_should_replace_meta_props,
+		"CopyObject_invalid_website_redirect_location":                             CopyObject_invalid_website_redirect_location,
 		"CopyObject_default_content_type_with_replace_metadata":                    CopyObject_default_content_type_with_replace_metadata,
 		"CopyObject_missing_bucket_lock":                                           CopyObject_missing_bucket_lock,
 		"CopyObject_invalid_legal_hold":                                            CopyObject_invalid_legal_hold,
@@ -1634,6 +1644,7 @@ func GetIntTests() IntTests {
 		"CreateMultipartUpload_non_existing_bucket":                                CreateMultipartUpload_non_existing_bucket,
 		"CreateMultipartUpload_long_metadata":                                      CreateMultipartUpload_long_metadata,
 		"CreateMultipartUpload_with_metadata":                                      CreateMultipartUpload_with_metadata,
+		"CreateMultipartUpload_invalid_website_redirect_location":                  CreateMultipartUpload_invalid_website_redirect_location,
 		"CreateMultipartUpload_with_tagging":                                       CreateMultipartUpload_with_tagging,
 		"CreateMultipartUpload_with_object_lock":                                   CreateMultipartUpload_with_object_lock,
 		"CreateMultipartUpload_with_object_lock_not_enabled":                       CreateMultipartUpload_with_object_lock_not_enabled,
@@ -1813,6 +1824,8 @@ func GetIntTests() IntTests {
 		"PutBucketWebsite_invalid_redirect_protocol":                               PutBucketWebsite_invalid_redirect_protocol,
 		"PutBucketWebsite_redirectAll_index_error_routingRules":                    PutBucketWebsite_redirectAll_index_error_routingRules,
 		"PutBucketWebsite_invalid_routing_rule_protocol":                           PutBucketWebsite_invalid_routing_rule_protocol,
+		"PutBucketWebsite_empty_routing_rule_condition":                            PutBucketWebsite_empty_routing_rule_condition,
+		"PutBucketWebsite_empty_routing_rule_redirect":                             PutBucketWebsite_empty_routing_rule_redirect,
 		"PutBucketWebsite_empty_error_document_key":                                PutBucketWebsite_empty_error_document_key,
 		"PutBucketWebsite_too_many_routing_rules":                                  PutBucketWebsite_too_many_routing_rules,
 		"PutBucketWebsite_routing_rule_replace_key_and_prefix":                     PutBucketWebsite_routing_rule_replace_key_and_prefix,
@@ -1830,12 +1843,14 @@ func GetIntTests() IntTests {
 		"WebsiteHosting_error_document_served":                                     WebsiteHosting_error_document_served,
 		"WebsiteHosting_error_document_not_found":                                  WebsiteHosting_error_document_not_found,
 		"WebsiteHosting_no_error_document":                                         WebsiteHosting_no_error_document,
+		"WebsiteHosting_no_bucket_in_request_location":                             WebsiteHosting_no_bucket_in_request_location,
 		"WebsiteHosting_private_object_and_error_document":                         WebsiteHosting_private_object_and_error_document,
 		"WebsiteHosting_routing_rule_post_request_redirect":                        WebsiteHosting_routing_rule_post_request_redirect,
 		"WebsiteHosting_routing_rule_pre_request_redirect":                         WebsiteHosting_routing_rule_pre_request_redirect,
 		"WebsiteHosting_routing_rule_prefix_and_error_redirect":                    WebsiteHosting_routing_rule_prefix_and_error_redirect,
 		"WebsiteHosting_routing_rule_no_match_serves_error_document":               WebsiteHosting_routing_rule_no_match_serves_error_document,
 		"WebsiteHosting_redirect_all_requests":                                     WebsiteHosting_redirect_all_requests,
+		"WebsiteHosting_object_redirect_location":                                  WebsiteHosting_object_redirect_location,
 		"WebsiteHosting_index_document":                                            WebsiteHosting_index_document,
 		"WebsiteHosting_index_error_document_and_routing_rules":                    WebsiteHosting_index_error_document_and_routing_rules,
 		"WebsiteHosting_get_cors_headers":                                          WebsiteHosting_get_cors_headers,
@@ -2147,6 +2162,7 @@ func GetIntTests() IntTests {
 		"PostObject_success_status_201":                                            PostObject_success_status_201,
 		"PostObject_should_ignore_anything_after_file":                             PostObject_should_ignore_anything_after_file,
 		"PostObject_success_with_meta_properties":                                  PostObject_success_with_meta_properties,
+		"PostObject_invalid_website_redirect_location":                             PostObject_invalid_website_redirect_location,
 		"PostObject_invalid_tagging":                                               PostObject_invalid_tagging,
 		"PostObject_success_with_tagging":                                          PostObject_success_with_tagging,
 		"PostObject_invalid_checksum_value":                                        PostObject_invalid_checksum_value,

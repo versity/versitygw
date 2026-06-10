@@ -134,31 +134,13 @@ func registerWebsiteRoutes(app *fiber.App, be backend.Backend, domain string) {
 func setCORSPreflightHeaders(ctx *fiber.Ctx, allowConfig *auth.CORSAllowanceConfig) {
 	ctx.Set("Access-Control-Allow-Origin", allowConfig.Origin)
 	ctx.Set("Access-Control-Allow-Methods", allowConfig.Methods)
-	ctx.Set("Access-Control-Expose-Headers", corsExposeHeaders(allowConfig.ExposedHeaders))
+	ctx.Set("Access-Control-Expose-Headers", allowConfig.ExposedHeaders)
 	ctx.Set("Access-Control-Allow-Credentials", allowConfig.AllowCredentials)
 	ctx.Set("Access-Control-Allow-Headers", allowConfig.AllowHeaders)
 	ctx.Set("Vary", middlewares.VaryHdr)
 	if allowConfig.MaxAge != nil {
 		ctx.Set("Access-Control-Max-Age", strconv.Itoa(int(*allowConfig.MaxAge)))
 	}
-}
-
-func corsExposeHeaders(exposed string) string {
-	exposed = strings.TrimSpace(exposed)
-	if exposed == "" {
-		return "ETag"
-	}
-	if exposed == "*" {
-		return exposed
-	}
-
-	for part := range strings.SplitSeq(exposed, ",") {
-		if strings.EqualFold(strings.TrimSpace(part), "ETag") {
-			return exposed
-		}
-	}
-
-	return exposed + ", ETag"
 }
 
 func (c *websiteController) MethodNotAllowed(ctx *fiber.Ctx) error {
@@ -188,7 +170,7 @@ func (c *websiteController) serve(ctx *fiber.Ctx, readObject websiteObjectReader
 	}
 
 	if rule := req.config.MatchPrefetchRoutingRule(req.key); rule != nil {
-		return applyRedirect(ctx, &rule.Redirect, rule.Condition, req.key)
+		return applyRedirect(ctx, rule.Redirect, rule.Condition, req.key)
 	}
 
 	resolvedKey := resolveIndexKey(req.key, req.config)
@@ -201,7 +183,7 @@ func (c *websiteController) serve(ctx *fiber.Ctx, readObject websiteObjectReader
 	}
 
 	if rule := req.config.MatchPostErrorRoutingRule(req.key, result.StatusCode); rule != nil {
-		return applyRedirect(ctx, &rule.Redirect, rule.Condition, req.key)
+		return applyRedirect(ctx, rule.Redirect, rule.Condition, req.key)
 	}
 
 	return serveWebsiteResult(ctx, req.bucket, req.config, result, readObject)
@@ -212,6 +194,8 @@ func (c *websiteController) resolveRequest(ctx *fiber.Ctx) (*websiteRequestInfo,
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Println(bucket)
 
 	key := strings.TrimPrefix(ctx.Path(), "/")
 	if err := validateWebsiteNames(bucket, key); err != nil {
@@ -260,14 +244,13 @@ func validateWebsiteNames(bucket, key string) error {
 func (c *websiteController) resolveBucket(ctx *fiber.Ctx) (string, error) {
 	host := ctx.Hostname()
 	if host == "" {
+		ctx.Set("Location", c.noBucketLocation(ctx, host))
 		return "", s3err.GetAPIError(s3err.ErrNoBucketInRequest)
 	}
 
 	// Strip port from host if present. Be careful with IPv6: only strip if the
 	// last colon is not inside brackets.
-	if idx := strings.LastIndex(host, ":"); idx != -1 && !strings.Contains(host[idx:], "]") {
-		host = host[:idx]
-	}
+	host = stripHostPort(host)
 
 	if c.domain == "" {
 		return host, nil
@@ -286,7 +269,41 @@ func (c *websiteController) resolveBucket(ctx *fiber.Ctx) (string, error) {
 		}
 	}
 
+	ctx.Set("Location", c.noBucketLocation(ctx, ctx.Hostname()))
 	return "", s3err.GetAPIError(s3err.ErrNoBucketInRequest)
+}
+
+func (c *websiteController) noBucketLocation(ctx *fiber.Ctx, host string) string {
+	locationHost := c.domain
+	if locationHost == "" {
+		locationHost = stripHostPort(host)
+	}
+	if locationHost == "" {
+		return "/"
+	}
+	if c.domain != "" {
+		if port := hostPort(host); port != "" {
+			locationHost += ":" + port
+		}
+	}
+
+	return fmt.Sprintf("%s://%s/", ctx.Protocol(), locationHost)
+}
+
+func stripHostPort(host string) string {
+	if idx := strings.LastIndex(host, ":"); idx != -1 && !strings.Contains(host[idx:], "]") {
+		return host[:idx]
+	}
+
+	return host
+}
+
+func hostPort(host string) string {
+	if idx := strings.LastIndex(host, ":"); idx != -1 && !strings.Contains(host[idx:], "]") {
+		return host[idx+1:]
+	}
+
+	return ""
 }
 
 type websiteResult struct {
@@ -297,9 +314,10 @@ type websiteResult struct {
 }
 
 type websiteObject struct {
-	Body     io.ReadCloser
-	Headers  map[string]*string
-	Metadata map[string]string
+	Body                    io.ReadCloser
+	Headers                 map[string]*string
+	Metadata                map[string]string
+	WebsiteRedirectLocation *string
 }
 
 func resolveIndexKey(key string, config *s3response.WebsiteConfiguration) string {
@@ -337,15 +355,16 @@ func (c *websiteController) getObject(ctx *fiber.Ctx, bucket, key string) websit
 		Key:        key,
 		StatusCode: http.StatusOK,
 		Object: websiteObject{
-			Body:     result.Body,
-			Headers:  getObjectHeaders(result),
-			Metadata: result.Metadata,
+			Body:                    result.Body,
+			Headers:                 getObjectHeaders(result),
+			Metadata:                result.Metadata,
+			WebsiteRedirectLocation: result.WebsiteRedirectLocation,
 		},
 	}
 }
 
 func (c *websiteController) headObject(ctx *fiber.Ctx, bucket, key string) websiteResult {
-	if err := auth.VerifyPublicAccess(ctx.Context(), c.be, auth.ListBucketAction, auth.PermissionRead, bucket, key); err != nil {
+	if err := auth.VerifyPublicAccess(ctx.Context(), c.be, auth.GetObjectAction, auth.PermissionRead, bucket, key); err != nil {
 		return websiteResult{
 			Key:        key,
 			StatusCode: statusCodeFromError(err),
@@ -369,8 +388,9 @@ func (c *websiteController) headObject(ctx *fiber.Ctx, bucket, key string) websi
 		Key:        key,
 		StatusCode: http.StatusOK,
 		Object: websiteObject{
-			Headers:  headObjectHeaders(result),
-			Metadata: result.Metadata,
+			Headers:                 headObjectHeaders(result),
+			Metadata:                result.Metadata,
+			WebsiteRedirectLocation: result.WebsiteRedirectLocation,
 		},
 	}
 }
@@ -388,16 +408,14 @@ func statusCodeFromError(err error) int {
 func handleRedirectAll(ctx *fiber.Ctx, redirect *s3response.RedirectAllRequestsTo, key string) error {
 	protocol := redirect.Protocol
 	if protocol == "" {
-		protocol = "http"
+		protocol = ctx.Protocol()
 	}
 
 	location := fmt.Sprintf("%s://%s/%s", protocol, redirect.HostName, key)
 	if query := string(ctx.Request().URI().QueryString()); query != "" {
 		location += "?" + query
 	}
-	ctx.Set("Location", location)
-	_, _ = utils.EnsureRequestIDs(ctx)
-	return ctx.SendStatus(http.StatusMovedPermanently)
+	return sendRedirect(ctx, http.StatusMovedPermanently, location)
 }
 
 // applyRedirect constructs and sends a redirect response from a routing rule.
@@ -430,8 +448,14 @@ func applyRedirect(ctx *fiber.Ctx, redirect *s3response.Redirect, condition *s3r
 	if query := string(ctx.Request().URI().QueryString()); query != "" {
 		location += "?" + query
 	}
+	return sendRedirect(ctx, httpCode, location)
+}
+
+func sendRedirect(ctx *fiber.Ctx, statusCode int, location string) error {
 	ctx.Set("Location", location)
-	return ctx.SendStatus(httpCode)
+	_, _ = utils.EnsureRequestIDs(ctx)
+	ctx.Status(statusCode)
+	return nil
 }
 
 func getObjectHeaders(result *s3.GetObjectOutput) map[string]*string {
@@ -472,6 +496,14 @@ func headObjectHeaders(result *s3.HeadObjectOutput) map[string]*string {
 
 func serveWebsiteResult(ctx *fiber.Ctx, bucket string, config *s3response.WebsiteConfiguration, result websiteResult, readObject websiteObjectReader) error {
 	if result.Err == nil {
+		// Precedence: RedirectAllRequestsTo, pre-fetch routing rules, object
+		// redirect metadata, then post-error routing/error documents.
+		if location := backend.GetStringFromPtr(result.Object.WebsiteRedirectLocation); location != "" {
+			if result.Object.Body != nil {
+				_ = result.Object.Body.Close()
+			}
+			return sendRedirect(ctx, http.StatusMovedPermanently, location)
+		}
 		return serveObject(ctx, result.Object, http.StatusOK)
 	}
 

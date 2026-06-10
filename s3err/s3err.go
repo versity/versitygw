@@ -173,6 +173,7 @@ const (
 	ErrCORSIsNotEnabled
 	ErrNoSuchWebsiteConfiguration
 	ErrInvalidWebsiteRedirectProtocol
+	ErrInvalidRedirectLocation
 	ErrBothReplaceKeyAndPrefix
 	ErrMaxMessageLengthExceeded
 	ErrNotModified
@@ -658,6 +659,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidWebsiteRedirectProtocol: {
 		Code:           "InvalidRequest",
 		Description:    "Invalid protocol, protocol can be http or https. If not defined the protocol will be selected automatically.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidRedirectLocation: {
+		Code:           "InvalidRedirectLocation",
+		Description:    "The website redirect location must have a prefix of 'http://' or 'https://' or '/'.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrBothReplaceKeyAndPrefix: {

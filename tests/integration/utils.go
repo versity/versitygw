@@ -2136,14 +2136,15 @@ func compareDelMarkers(d1, d2 []types.DeleteMarkerEntry) bool {
 }
 
 type ObjectMetaProps struct {
-	ContentLength      int64
-	ContentType        string
-	ContentEncoding    string
-	ContentDisposition string
-	ContentLanguage    string
-	CacheControl       string
-	ExpiresString      string
-	Metadata           map[string]string
+	ContentLength           int64
+	ContentType             string
+	ContentEncoding         string
+	ContentDisposition      string
+	ContentLanguage         string
+	CacheControl            string
+	ExpiresString           string
+	WebsiteRedirectLocation string
+	Metadata                map[string]string
 }
 
 func checkObjectMetaProps(client *s3.Client, bucket, object string, o ObjectMetaProps) error {
@@ -2185,6 +2186,9 @@ func checkObjectMetaProps(client *s3.Client, bucket, object string, o ObjectMeta
 	}
 	if o.ExpiresString != "" && getString(out.ExpiresString) != o.ExpiresString {
 		return fmt.Errorf("expected Expires %v, instead got %v", o.ExpiresString, getString(out.ExpiresString))
+	}
+	if o.WebsiteRedirectLocation != "" && getString(out.WebsiteRedirectLocation) != o.WebsiteRedirectLocation {
+		return fmt.Errorf("expected WebsiteRedirectLocation %v, instead got %v", o.WebsiteRedirectLocation, getString(out.WebsiteRedirectLocation))
 	}
 	if out.StorageClass != types.StorageClassStandard {
 		return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)

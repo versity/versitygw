@@ -59,7 +59,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 						Condition: &RoutingRuleCondition{
 							KeyPrefixEquals: "docs/",
 						},
-						Redirect: Redirect{
+						Redirect: &Redirect{
 							ReplaceKeyPrefixWith: "documents/",
 						},
 					},
@@ -122,7 +122,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 				IndexDocument: &IndexDocument{Suffix: "index.html"},
 				RoutingRules: []RoutingRule{
 					{
-						Redirect: Redirect{
+						Redirect: &Redirect{
 							ReplaceKeyWith:       "newkey",
 							ReplaceKeyPrefixWith: "newprefix/",
 						},
@@ -133,12 +133,44 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 			errCode: "InvalidRequest",
 		},
 		{
+			name: "routing rule with empty condition",
+			config: WebsiteConfiguration{
+				IndexDocument: &IndexDocument{Suffix: "index.html"},
+				RoutingRules: []RoutingRule{
+					{
+						Condition: &RoutingRuleCondition{},
+						Redirect: &Redirect{
+							HostName: "example.com",
+						},
+					},
+				},
+			},
+			wantErr: true,
+			errCode: "MalformedXML",
+		},
+		{
+			name: "routing rule with empty redirect",
+			config: WebsiteConfiguration{
+				IndexDocument: &IndexDocument{Suffix: "index.html"},
+				RoutingRules: []RoutingRule{
+					{
+						Condition: &RoutingRuleCondition{
+							KeyPrefixEquals: "docs/",
+						},
+						Redirect: &Redirect{},
+					},
+				},
+			},
+			wantErr: true,
+			errCode: "MalformedXML",
+		},
+		{
 			name: "routing rule with invalid redirect code",
 			config: WebsiteConfiguration{
 				IndexDocument: &IndexDocument{Suffix: "index.html"},
 				RoutingRules: []RoutingRule{
 					{
-						Redirect: Redirect{
+						Redirect: &Redirect{
 							HttpRedirectCode: "200",
 						},
 					},
@@ -153,7 +185,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 				IndexDocument: &IndexDocument{Suffix: "index.html"},
 				RoutingRules: []RoutingRule{
 					{
-						Redirect: Redirect{
+						Redirect: &Redirect{
 							HttpRedirectCode: "301",
 							HostName:         "example.com",
 						},
@@ -203,7 +235,7 @@ func TestWebsiteConfiguration_MatchPrefetchRoutingRuleUsesPrefixOnlyRules(t *tes
 				Condition: &RoutingRuleCondition{
 					HttpErrorCodeReturnedEquals: "404",
 				},
-				Redirect: Redirect{
+				Redirect: &Redirect{
 					HostName: "error.example.com",
 				},
 			},
@@ -212,7 +244,7 @@ func TestWebsiteConfiguration_MatchPrefetchRoutingRuleUsesPrefixOnlyRules(t *tes
 					KeyPrefixEquals:             "old/",
 					HttpErrorCodeReturnedEquals: "404",
 				},
-				Redirect: Redirect{
+				Redirect: &Redirect{
 					HostName: "both.example.com",
 				},
 			},
@@ -220,7 +252,7 @@ func TestWebsiteConfiguration_MatchPrefetchRoutingRuleUsesPrefixOnlyRules(t *tes
 				Condition: &RoutingRuleCondition{
 					KeyPrefixEquals: "old/",
 				},
-				Redirect: Redirect{
+				Redirect: &Redirect{
 					HostName: "prefix.example.com",
 				},
 			},

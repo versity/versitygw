@@ -67,18 +67,20 @@ func CreateMultipartUpload_with_metadata(s *S3Conf) error {
 		}
 		cType, cEnc, cDesp, cLang := "application/text", "testenc", "testdesp", "sp"
 		cacheControl, expires := "no-cache", time.Now().Add(time.Hour*5)
+		redirectLocation := "/multipart-redirect"
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket:             &bucket,
-			Key:                &obj,
-			Metadata:           meta,
-			ContentType:        &cType,
-			ContentEncoding:    &cEnc,
-			ContentDisposition: &cDesp,
-			ContentLanguage:    &cLang,
-			CacheControl:       &cacheControl,
-			Expires:            &expires,
+			Bucket:                  &bucket,
+			Key:                     &obj,
+			Metadata:                meta,
+			ContentType:             &cType,
+			ContentEncoding:         &cEnc,
+			ContentDisposition:      &cDesp,
+			ContentLanguage:         &cLang,
+			CacheControl:            &cacheControl,
+			Expires:                 &expires,
+			WebsiteRedirectLocation: &redirectLocation,
 		})
 		cancel()
 		if err != nil {
@@ -151,8 +153,26 @@ func CreateMultipartUpload_with_metadata(s *S3Conf) error {
 			return fmt.Errorf("expected uploaded object content-encoding to be %v, instead got %v",
 				expires.UTC().Format(timefmt), getString(resp.ExpiresString))
 		}
+		if getString(resp.WebsiteRedirectLocation) != redirectLocation {
+			return fmt.Errorf("expected uploaded object website redirect location to be %v, instead got %v",
+				redirectLocation, getString(resp.WebsiteRedirectLocation))
+		}
 
 		return nil
+	})
+}
+
+func CreateMultipartUpload_invalid_website_redirect_location(s *S3Conf) error {
+	testName := "CreateMultipartUpload_invalid_website_redirect_location"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:                  &bucket,
+			Key:                     getPtr("my-obj"),
+			WebsiteRedirectLocation: getPtr("example.com"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRedirectLocation))
 	})
 }
 

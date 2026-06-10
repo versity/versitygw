@@ -531,7 +531,7 @@ func DecompressData(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	if closeErr != nil {
-		return nil, err
+		return nil, closeErr
 	}
 
 	return decompressed, nil

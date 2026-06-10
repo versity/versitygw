@@ -111,6 +111,7 @@ func (c S3ApiController) POSTObject(ctx *fiber.Ctx) (*Response, error) {
 	contentLanguage := parsed.Fields["content-language"]
 	cacheControl := parsed.Fields["cache-control"]
 	expires := parsed.Fields["expires"]
+	websiteRedirectLocation := parsed.Fields["x-amz-website-redirect-location"]
 
 	key := parsed.Fields["key"]
 
@@ -196,29 +197,39 @@ func (c S3ApiController) POSTObject(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	err = utils.ValidateWebsiteRedirectLocation(websiteRedirectLocation)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	res, err := c.be.PutObject(ctx.Context(), s3response.PutObjectInput{
-		Bucket:             &bucket,
-		Key:                &key,
-		ContentType:        &contentType,
-		ContentEncoding:    &contentEncoding,
-		ContentDisposition: &contentDisposition,
-		ContentLanguage:    &contentLanguage,
-		CacheControl:       &cacheControl,
-		Expires:            &expires,
-		Body:               parsed.FileRdr,
-		ContentLength:      &parsed.ContentLength,
-		Tagging:            &tagging,
-		Metadata:           metadata,
-		ChecksumCRC32:      utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32]),
-		ChecksumCRC32C:     utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32c]),
-		ChecksumSHA1:       utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha1]),
-		ChecksumSHA256:     utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha256]),
-		ChecksumCRC64NVME:  utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc64nvme]),
-		ChecksumSHA512:     utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha512]),
-		ChecksumMD5:        utils.GetStringPtr(checksums[types.ChecksumAlgorithmMd5]),
-		ChecksumXXHASH64:   utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash64]),
-		ChecksumXXHASH3:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash3]),
-		ChecksumXXHASH128:  utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash128]),
+		Bucket:                  &bucket,
+		Key:                     &key,
+		ContentType:             &contentType,
+		ContentEncoding:         &contentEncoding,
+		ContentDisposition:      &contentDisposition,
+		ContentLanguage:         &contentLanguage,
+		CacheControl:            &cacheControl,
+		Expires:                 &expires,
+		WebsiteRedirectLocation: &websiteRedirectLocation,
+		Body:                    parsed.FileRdr,
+		ContentLength:           &parsed.ContentLength,
+		Tagging:                 &tagging,
+		Metadata:                metadata,
+		ChecksumCRC32:           utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32]),
+		ChecksumCRC32C:          utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32c]),
+		ChecksumSHA1:            utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha1]),
+		ChecksumSHA256:          utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha256]),
+		ChecksumCRC64NVME:       utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc64nvme]),
+		ChecksumSHA512:          utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha512]),
+		ChecksumMD5:             utils.GetStringPtr(checksums[types.ChecksumAlgorithmMd5]),
+		ChecksumXXHASH64:        utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash64]),
+		ChecksumXXHASH3:         utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash3]),
+		ChecksumXXHASH128:       utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash128]),
 	})
 	if err != nil {
 		return &Response{

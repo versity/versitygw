@@ -122,6 +122,44 @@ func WebsiteHosting_no_error_document(s *S3Conf) error {
 	})
 }
 
+// WebsiteHosting_no_bucket_in_request_location tests that website endpoint
+// requests that cannot resolve a bucket still include a useful Location header.
+func WebsiteHosting_no_bucket_in_request_location(s *S3Conf) error {
+	testName := "WebsiteHosting_no_bucket_in_request_location"
+	return actionHandlerNoSetup(s, testName, func(_ *s3.Client, _ string) error {
+		_, domain, port := websiteEndpointParts(s)
+		badHost := "nested.bucket." + domain
+		baseHost := domain
+		if port != "" {
+			badHost = fmt.Sprintf("%s:%s", badHost, port)
+			baseHost = fmt.Sprintf("%s:%s", baseHost, port)
+		}
+
+		reqURL, err := websiteAbsoluteURL(s, badHost, "/")
+		if err != nil {
+			return err
+		}
+		req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create website request: %w", err)
+		}
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		wantLocation, err := websiteAbsoluteURL(s, baseHost, "/")
+		if err != nil {
+			return err
+		}
+		if got := resp.Header.Get("Location"); got != wantLocation {
+			return fmt.Errorf("expected Location %q, got %q", wantLocation, got)
+		}
+
+		return checkWebsiteErrorResponse(resp, s3err.GetAPIError(s3err.ErrNoBucketInRequest))
+	})
+}
+
 // WebsiteHosting_private_object_and_error_document tests that website hosting
 // does not serve either the requested object or the configured error document
 // unless public object access has been granted.
@@ -203,7 +241,7 @@ func WebsiteHosting_routing_rule_post_request_redirect(s *S3Conf) error {
 		if got := resp.Header.Get("Location"); got != wantLocation {
 			return fmt.Errorf("expected Location %q, got %q", wantLocation, got)
 		}
-		return checkWebsiteResponse(resp, http.StatusFound, []byte(http.StatusText(http.StatusFound)))
+		return checkWebsiteResponse(resp, http.StatusFound, nil)
 	})
 }
 
@@ -245,7 +283,7 @@ func WebsiteHosting_routing_rule_pre_request_redirect(s *S3Conf) error {
 		if got := resp.Header.Get("Location"); got != wantLocation {
 			return fmt.Errorf("expected Location %q, got %q", wantLocation, got)
 		}
-		return checkWebsiteResponse(resp, http.StatusMovedPermanently, []byte(http.StatusText(http.StatusMovedPermanently)))
+		return checkWebsiteResponse(resp, http.StatusMovedPermanently, nil)
 	})
 }
 
@@ -294,7 +332,7 @@ func WebsiteHosting_routing_rule_prefix_and_error_redirect(s *S3Conf) error {
 		if got := resp.Header.Get("Location"); got != wantLocation {
 			return fmt.Errorf("expected Location %q, got %q", wantLocation, got)
 		}
-		return checkWebsiteResponse(resp, http.StatusTemporaryRedirect, []byte(http.StatusText(http.StatusTemporaryRedirect)))
+		return checkWebsiteResponse(resp, http.StatusTemporaryRedirect, nil)
 	})
 }
 
@@ -373,7 +411,49 @@ func WebsiteHosting_redirect_all_requests(s *S3Conf) error {
 		if got, want := resp.Header.Get("Location"), "https://www.example.com/any/path/here?tracking=1"; got != want {
 			return fmt.Errorf("expected Location %q, got %q", want, got)
 		}
-		return checkWebsiteResponse(resp, http.StatusMovedPermanently, []byte(http.StatusText(http.StatusMovedPermanently)))
+		return checkWebsiteResponse(resp, http.StatusMovedPermanently, nil)
+	})
+}
+
+// WebsiteHosting_object_redirect_location tests that an object-level website
+// redirect emits a 301 with the stored Location after object fetch succeeds.
+func WebsiteHosting_object_redirect_location(s *S3Conf) error {
+	testName := "WebsiteHosting_object_redirect_location"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := grantPublicBucketPolicy(s3client, bucket, policyTypeObject); err != nil {
+			return err
+		}
+
+		redirectLocation := "/new-page.html"
+		objectBody := "old"
+		_, err = putObjectWithData(int64(len(objectBody)), &s3.PutObjectInput{
+			Bucket:                  &bucket,
+			Key:                     getPtr("old-page.html"),
+			Body:                    strings.NewReader(objectBody),
+			ContentType:             getPtr("text/html"),
+			WebsiteRedirectLocation: &redirectLocation,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		resp, err := websiteGet(s, bucket, "old-page.html", nil)
+		if err != nil {
+			return err
+		}
+
+		if got := resp.Header.Get("Location"); got != redirectLocation {
+			return fmt.Errorf("expected Location %q, got %q", redirectLocation, got)
+		}
+		return checkWebsiteResponse(resp, http.StatusMovedPermanently, nil)
 	})
 }
 
@@ -521,7 +601,7 @@ func WebsiteHosting_index_error_document_and_routing_rules(s *S3Conf) error {
 			preResp.Body.Close()
 			return fmt.Errorf("expected pre-rule Location %q, got %q", wantPreLocation, got)
 		}
-		if err := checkWebsiteResponse(preResp, http.StatusMovedPermanently, []byte(http.StatusText(http.StatusMovedPermanently))); err != nil {
+		if err := checkWebsiteResponse(preResp, http.StatusMovedPermanently, nil); err != nil {
 			return err
 		}
 
@@ -538,7 +618,7 @@ func WebsiteHosting_index_error_document_and_routing_rules(s *S3Conf) error {
 			postResp.Body.Close()
 			return fmt.Errorf("expected post-rule Location %q, got %q", wantPostLocation, got)
 		}
-		if err := checkWebsiteResponse(postResp, http.StatusFound, []byte(http.StatusText(http.StatusFound))); err != nil {
+		if err := checkWebsiteResponse(postResp, http.StatusFound, nil); err != nil {
 			return err
 		}
 
@@ -584,7 +664,7 @@ func WebsiteHosting_options_preflight_access_granted(s *S3Conf) error {
 			Origin:           "https://client.example",
 			Methods:          "GET, HEAD",
 			AllowHeaders:     "content-type, x-amz-date",
-			ExposeHeaders:    "Content-Length, ETag",
+			ExposeHeaders:    "Content-Length",
 			MaxAge:           "42",
 			AllowCredentials: "true",
 			Vary:             "Origin, Access-Control-Request-Headers, Access-Control-Request-Method",

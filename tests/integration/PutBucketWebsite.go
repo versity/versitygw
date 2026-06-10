@@ -180,6 +180,56 @@ func PutBucketWebsite_invalid_routing_rule_protocol(s *S3Conf) error {
 	})
 }
 
+func PutBucketWebsite_empty_routing_rule_condition(s *S3Conf) error {
+	testName := "PutBucketWebsite_empty_routing_rule_condition"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketWebsite(ctx, &s3.PutBucketWebsiteInput{
+			Bucket: &bucket,
+			WebsiteConfiguration: &types.WebsiteConfiguration{
+				IndexDocument: &types.IndexDocument{
+					Suffix: getPtr("index.html"),
+				},
+				RoutingRules: []types.RoutingRule{
+					{
+						Condition: &types.Condition{},
+						Redirect: &types.Redirect{
+							HostName: getPtr("example.com"),
+						},
+					},
+				},
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML))
+	})
+}
+
+func PutBucketWebsite_empty_routing_rule_redirect(s *S3Conf) error {
+	testName := "PutBucketWebsite_empty_routing_rule_redirect"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketWebsite(ctx, &s3.PutBucketWebsiteInput{
+			Bucket: &bucket,
+			WebsiteConfiguration: &types.WebsiteConfiguration{
+				IndexDocument: &types.IndexDocument{
+					Suffix: getPtr("index.html"),
+				},
+				RoutingRules: []types.RoutingRule{
+					{
+						Condition: &types.Condition{
+							KeyPrefixEquals: getPtr("docs/"),
+						},
+						Redirect: &types.Redirect{},
+					},
+				},
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML))
+	})
+}
+
 func PutBucketWebsite_empty_error_document_key(s *S3Conf) error {
 	testName := "PutBucketWebsite_empty_error_document_key"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
