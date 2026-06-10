@@ -39,7 +39,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run check_legal_hold_without_lock_enabled "$bucket_name" "$test_file" "InvalidRequest"
+  run check_legal_hold_without_lock_enabled "$bucket_name" "$test_file" "InvalidRequest" "Bucket is missing Object Lock Configuration"
   assert_success
 }
 
@@ -62,6 +62,6 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run check_legal_hold_without_lock_enabled "$bucket_name" "$test_file" "NoSuchObjectLockConfiguration"
+  run check_legal_hold_without_lock_enabled "$bucket_name" "$test_file" "NoSuchObjectLockConfiguration" "does not have a ObjectLock configuration"
   assert_success
 }

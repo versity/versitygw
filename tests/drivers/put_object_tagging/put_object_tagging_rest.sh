@@ -52,12 +52,12 @@ tag_old_version() {
   fi
 
   version_id="$response"
-  if ! send_rest_go_command "200" "-bucketName" "$1" "-objectKey" "$2" "-query" "versionId=$version_id" "-debug" "-logFile" "signature.log" \
+  if ! send_rest_go_command "200" "-bucketName" "$1" "-objectKey" "$2" "-query" "versionId=$version_id" \
         "-commandType" "putObjectTagging" "-tagKey" "key" "-tagValue" "value" "-contentMD5"; then
     log 2 "error tagging object"
     return 1
   fi
-  if ! send_rest_go_command "200" "-bucketName" "$1" "-objectKey" "$2" "-debug" "-logFile" "signature.log" \
+  if ! send_rest_go_command "200" "-bucketName" "$1" "-objectKey" "$2" \
         "-method" "GET" "-query" "tagging=&versionId=$version_id" "-tagKey" "key" "-tagValue" "value" "-contentMD5"; then
     log 2 "error tagging object"
     return 1

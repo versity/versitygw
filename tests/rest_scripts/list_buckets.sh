@@ -46,7 +46,7 @@ fi
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"")
+curl_command+=(curl -ksS -w "\"%{http_code}\"")
 url="'$AWS_ENDPOINT_URL"
 if [ "$queries" != "" ]; then
   url+="?$queries"

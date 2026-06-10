@@ -198,18 +198,26 @@ chunked_upload_success() {
   if ! check_param_count_v2 "data file, bucket name, key" 3 $#; then
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" \
+  local response openssl_file
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting response: $response"
+    return 1
+  fi
+  openssl_file="$response"
+
+  if ! response=$(COMMAND_LOG="$COMMAND_LOG" \
          AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
          AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
          AWS_ENDPOINT_URL="$AWS_ENDPOINT_URL" \
          DATA_FILE="$1" \
          BUCKET_NAME="$2" \
-         OBJECT_KEY="$3" CHUNK_SIZE=8192 TEST_MODE=false COMMAND_FILE="$TEST_FILE_FOLDER/command.txt" ./tests/rest_scripts/put_object_openssl_chunked_example.sh 2>&1); then
-    log 2 "error creating command: $result"
+         OBJECT_KEY="$3" CHUNK_SIZE=8192 TEST_MODE=false COMMAND_FILE="$TEST_FILE_FOLDER/$openssl_file" ./tests/rest_scripts/put_object_openssl_chunked_example.sh 2>&1); then
+    log 2 "error creating command: $response"
     return 1
   fi
 
-  if ! send_via_openssl_and_check_code "$TEST_FILE_FOLDER/command.txt" 200; then
+  if ! send_via_openssl_and_check_code "$TEST_FILE_FOLDER/$openssl_file" 200; then
     log 2 "error sending command via openssl or checking response code"
     return 1
   fi

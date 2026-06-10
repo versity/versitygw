@@ -15,20 +15,15 @@
 # under the License.
 
 check_legal_hold_without_lock_enabled() {
-  if ! check_param_count_v2 "bucket, key, expected error" 3 $#; then
+  if ! check_param_count_v2 "bucket, key, expected code, expected error" 4 $#; then
     return 1
   fi
-  if get_object_legal_hold_rest "$1" "$2"; then
-    log 2 "get legal hold using REST succeeded without lock enabled"
-    return 1
-  fi
-  log 5 "legal hold info: $(cat "$TEST_FILE_FOLDER/legal_hold.txt")"
-  if ! code=$(xmllint --xpath '//*[local-name()="Code"]/text()' "$TEST_FILE_FOLDER/legal_hold.txt" 2>&1); then
-    log 2 "error getting error code: $code"
-    return 1
-  fi
-  if [ "$code" != "$3" ]; then
-    log 2 "code mismatch (expected '$3', actual '$code')"
+  local env_vars
+
+  env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2"
+
+  if ! send_rest_command_expect_error "$env_vars" ./tests/rest_scripts/get_object_legal_hold.sh "400" "$3" "$4"; then
+    log 2 "error sending get object legal hold command, checking error"
     return 1
   fi
   return 0
@@ -38,22 +33,20 @@ check_remove_legal_hold_versions() {
   if ! check_param_count "check_remove_legal_hold_versions" "bucket, key, version ID" 3 $#; then
     return 1
   fi
-  if ! get_object_legal_hold_rest_version_id "$1" "$2" "$3"; then
+  local response legal_hold_data
+
+  if ! response=$(get_object_legal_hold_rest_version_id "$1" "$2" "$3" 2>&1); then
     # shellcheck disable=SC2154
-    log 5 "legal hold: $legal_hold"
-    if [[ "$legal_hold" != *"MethodNotAllowed"* ]] && [[ "$legal_hold" != *"NoSuchObjectLockConfiguration"* ]]; then
-      log 2 "error getting object legal hold status with version id"
+    log 5 "legal hold: $response"
+    if [[ "$response" != *"MethodNotAllowed"* ]] && [[ "$response" != *"NoSuchObjectLockConfiguration"* ]]; then
+      log 2 "error getting object legal hold status with version id: $response"
       return 1
     fi
     return 0
   fi
-  log 5 "legal hold: $legal_hold"
-  echo -n "$legal_hold" > "$TEST_FILE_FOLDER/legal_hold.xml"
-  if ! status=$(get_element_text "$TEST_FILE_FOLDER/legal_hold.xml" "LegalHold" "Status"); then
-    log 2 "error getting XML legal hold status"
-    return 1
-  fi
-  if [ "$status" == "ON" ]; then
+  legal_hold_data="$response"
+
+  if check_xml_element_inside_string "$legal_hold_data" "ON" "LegalHold" "Status"; then
     if ! put_object_legal_hold_rest_version_id "$1" "$2" "$3" "OFF"; then
       log 2 "error removing legal hold of version ID"
       return 1
