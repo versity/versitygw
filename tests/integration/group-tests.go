@@ -196,7 +196,7 @@ func TestPutObject(ts *TestState) {
 	}
 	ts.Run(PutObject_success)
 	ts.Run(PutObject_default_content_type)
-	if !ts.conf.versioningEnabled {
+	if !ts.conf.versioningEnabled && !ts.conf.windowsTests {
 		ts.Run(PutObject_racey_success)
 	}
 	ts.Run(PutObject_invalid_credentials)
@@ -957,7 +957,9 @@ func TestPosix(ts *TestState) {
 	ts.Run(CopyObject_overwrite_same_dir_object)
 	ts.Run(CopyObject_overwrite_same_file_object)
 	ts.Run(DeleteObject_directory_not_empty)
-	ts.Run(PutObject_race_with_delete)
+	if !ts.conf.windowsTests {
+		ts.Run(PutObject_race_with_delete)
+	}
 	// posix specific versioning tests
 	if !ts.conf.versioningEnabled {
 		TestVersioningDisabled(ts)

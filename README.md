@@ -10,10 +10,9 @@
 
 ### Binary release builds
 Download [latest release](https://github.com/versity/versitygw/releases)
- | Linux/amd64 | Linux/arm64 | MacOS/amd64 | MacOS/arm64 | BSD/amd64 | BSD/arm64 |
- |:-----------:|:-----------:|:-----------:|:-----------:|:---------:|:---------:|
- |    ✔️    |  ✔️  |   ✔️   |  ✔️   |  ✔️   |  ✔️   |
-
+ | Linux amd64/arm64 | MacOS amd64/arm64 | BSD amd64/arm64 | Windows amd64/arm64 |
+ |:-----------:|:-----------:|:-----------:|:-----------:|
+ |    ✔️    |  ✔️  |   ✔️   |  ✔️   |
 ### Use Cases
 * Turn your local filesystem into an S3 server with a single command!
 * Proxy S3 requests to S3 storage
