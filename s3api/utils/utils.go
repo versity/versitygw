@@ -59,6 +59,16 @@ func SetBucketNameValidationStrict(strict bool) {
 // object metadata combined, excluded the 'x-amz-meta-' prefix
 const maxMetadataSize = 2048
 
+func ValidateWebsiteRedirectLocation(location string) error {
+	if location == "" || strings.HasPrefix(location, "http://") ||
+		strings.HasPrefix(location, "https://") || strings.HasPrefix(location, "/") {
+		return nil
+	}
+
+	debuglogger.Logf("invalid website redirect location: %q", location)
+	return s3err.GetAPIError(s3err.ErrInvalidRedirectLocation)
+}
+
 // GetUserMetaData extracts user metadata from headers with the "x-amz-meta-" prefix.
 // Keys are normalized to lowercase and duplicate headers are merged as
 // comma-separated values. The total metadata size is validated against the

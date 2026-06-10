@@ -40,6 +40,7 @@ const (
 	ContextKeyObjectPostResult ContextKey = "object-post-result"
 	ContextKeyRequestID        ContextKey = "request-id"
 	ContextKeyHostID           ContextKey = "host-id"
+	ContextKeyWebsiteConfig    ContextKey = "website-config"
 )
 
 func (ck ContextKey) Set(ctx *fiber.Ctx, val any) {

@@ -44,6 +44,12 @@ func (e MalformedAuthError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e MalformedAuthError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "Region", Value: e.Region},
+	)
+}
+
 func (e MalformedAuthError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

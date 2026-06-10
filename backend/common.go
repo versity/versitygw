@@ -436,7 +436,7 @@ func MarshalMpUploadMetadata(mpMeta MpUploadMetadata, base64Encode bool) ([]byte
 		return nil, fmt.Errorf("marshal mp metadata: %w", err)
 	}
 
-	compressed, err := compressMpUploadMetadata(mpMetaJSON)
+	compressed, err := CompressData(mpMetaJSON)
 	if err != nil {
 		return nil, fmt.Errorf("compress mp metadata: %w", err)
 	}
@@ -471,7 +471,43 @@ func UnmarshalMpUploadMetadata(data []byte, base64Decode bool) (MpUploadMetadata
 	return mpMeta, nil
 }
 
-func compressMpUploadMetadata(data []byte) ([]byte, error) {
+// MarshalWebsiteConfig returns a compressed representation of a website
+// configuration. When base64Encode is true, the compressed bytes are
+// base64-encoded so they can be stored in azure string-only metadata values.
+func MarshalWebsiteConfig(website []byte, base64Encode bool) ([]byte, error) {
+	compressed, err := CompressData(website)
+	if err != nil {
+		return nil, fmt.Errorf("compress website config: %w", err)
+	}
+
+	if !base64Encode {
+		return compressed, nil
+	}
+
+	encoded := make([]byte, base64.StdEncoding.EncodedLen(len(compressed)))
+	base64.StdEncoding.Encode(encoded, compressed)
+	return encoded, nil
+}
+
+// UnmarshalWebsiteConfig decodes data produced by MarshalWebsiteConfig.
+func UnmarshalWebsiteConfig(data []byte, base64Decode bool) ([]byte, error) {
+	if base64Decode {
+		compressed, err := base64.StdEncoding.DecodeString(string(data))
+		if err != nil {
+			return nil, fmt.Errorf("decode website config: %w", err)
+		}
+		data = compressed
+	}
+
+	website, err := DecompressData(data)
+	if err != nil {
+		return nil, fmt.Errorf("decompress website config: %w", err)
+	}
+
+	return website, nil
+}
+
+func CompressData(data []byte) ([]byte, error) {
 	var compressed bytes.Buffer
 	gz := gzip.NewWriter(&compressed)
 	if _, err := gz.Write(data); err != nil {
@@ -484,19 +520,28 @@ func compressMpUploadMetadata(data []byte) ([]byte, error) {
 	return compressed.Bytes(), nil
 }
 
-func unmarshalCompressedMpUploadMetadata(compressed []byte) (MpUploadMetadata, error) {
-	var mpMeta MpUploadMetadata
-	gz, err := gzip.NewReader(bytes.NewReader(compressed))
+func DecompressData(data []byte) ([]byte, error) {
+	gz, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
-		return mpMeta, fmt.Errorf("decompress mp metadata: %w", err)
+		return nil, err
 	}
 	decompressed, err := io.ReadAll(gz)
 	closeErr := gz.Close()
 	if err != nil {
-		return mpMeta, fmt.Errorf("decompress mp metadata: %w", err)
+		return nil, err
 	}
 	if closeErr != nil {
-		return mpMeta, fmt.Errorf("decompress mp metadata: %w", closeErr)
+		return nil, closeErr
+	}
+
+	return decompressed, nil
+}
+
+func unmarshalCompressedMpUploadMetadata(compressed []byte) (MpUploadMetadata, error) {
+	var mpMeta MpUploadMetadata
+	decompressed, err := DecompressData(compressed)
+	if err != nil {
+		return mpMeta, fmt.Errorf("decompress mp metadata: %w", err)
 	}
 
 	if err := json.Unmarshal(decompressed, &mpMeta); err != nil {

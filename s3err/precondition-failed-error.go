@@ -52,6 +52,12 @@ func (e PreconditionFailedError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e PreconditionFailedError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "Condition", Value: e.Condition},
+	)
+}
+
 func (e PreconditionFailedError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

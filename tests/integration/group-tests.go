@@ -203,6 +203,7 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_invalid_object_names)
 	ts.Run(PutObject_object_acl_not_supported)
 	ts.Run(PutObject_long_metadata)
+	ts.Run(PutObject_invalid_website_redirect_location)
 }
 
 func TestHeadObject(ts *TestState) {
@@ -370,6 +371,7 @@ func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_non_existing_dir_object)
 	ts.Run(CopyObject_should_copy_meta_props)
 	ts.Run(CopyObject_should_replace_meta_props)
+	ts.Run(CopyObject_invalid_website_redirect_location)
 	ts.Run(CopyObject_default_content_type_with_replace_metadata)
 	ts.Run(CopyObject_missing_bucket_lock)
 	ts.Run(CopyObject_invalid_legal_hold)
@@ -420,6 +422,7 @@ func TestCreateMultipartUpload(ts *TestState) {
 	ts.Run(CreateMultipartUpload_non_existing_bucket)
 	ts.Run(CreateMultipartUpload_long_metadata)
 	ts.Run(CreateMultipartUpload_with_metadata)
+	ts.Run(CreateMultipartUpload_invalid_website_redirect_location)
 	ts.Run(CreateMultipartUpload_with_tagging)
 	ts.Run(CreateMultipartUpload_with_object_lock)
 	ts.Run(CreateMultipartUpload_with_object_lock_not_enabled)
@@ -663,6 +666,58 @@ func TestDeleteBucketCors(ts *TestState) {
 	ts.Run(DeleteBucketCors_success)
 }
 
+func TestPutBucketWebsite(ts *TestState) {
+	ts.Run(PutBucketWebsite_non_existing_bucket)
+	ts.Run(PutBucketWebsite_empty_suffix)
+	ts.Run(PutBucketWebsite_suffix_with_slash)
+	ts.Run(PutBucketWebsite_invalid_redirect_protocol)
+	ts.Run(PutBucketWebsite_redirectAll_index_error_routingRules)
+	ts.Run(PutBucketWebsite_invalid_routing_rule_protocol)
+	ts.Run(PutBucketWebsite_empty_routing_rule_condition)
+	ts.Run(PutBucketWebsite_empty_routing_rule_redirect)
+	ts.Run(PutBucketWebsite_empty_error_document_key)
+	ts.Run(PutBucketWebsite_too_many_routing_rules)
+	ts.Run(PutBucketWebsite_routing_rule_replace_key_and_prefix)
+	ts.Run(PutBucketWebsite_invalid_http_redirect_code)
+	ts.Run(PutBucketWebsite_invalid_http_error_code)
+	ts.Run(PutBucketWebsite_request_too_large)
+	ts.Run(PutBucketWebsite_success)
+	ts.Run(PutBucketWebsite_success_redirect_all)
+}
+
+func TestGetBucketWebsite(ts *TestState) {
+	ts.Run(GetBucketWebsite_non_existing_bucket)
+	ts.Run(GetBucketWebsite_no_such_website_config)
+	ts.Run(GetBucketWebsite_success)
+	ts.Run(GetBucketWebsite_success_redirect_all)
+}
+
+func TestDeleteBucketWebsite(ts *TestState) {
+	ts.Run(DeleteBucketWebsite_non_existing_bucket)
+	ts.Run(DeleteBucketWebsite_success)
+}
+
+func TestWebsiteHosting(ts *TestState) {
+	ts.Run(WebsiteHosting_error_document_served)
+	ts.Run(WebsiteHosting_error_document_not_found)
+	ts.Run(WebsiteHosting_no_error_document)
+	ts.Run(WebsiteHosting_no_bucket_in_request_location)
+	ts.Run(WebsiteHosting_private_object_and_error_document)
+	ts.Run(WebsiteHosting_routing_rule_post_request_redirect)
+	ts.Run(WebsiteHosting_routing_rule_pre_request_redirect)
+	ts.Run(WebsiteHosting_routing_rule_prefix_and_error_redirect)
+	ts.Run(WebsiteHosting_routing_rule_no_match_serves_error_document)
+	ts.Run(WebsiteHosting_redirect_all_requests)
+	ts.Run(WebsiteHosting_object_redirect_location)
+	ts.Run(WebsiteHosting_index_document)
+	ts.Run(WebsiteHosting_index_error_document_and_routing_rules)
+	ts.Run(WebsiteHosting_get_cors_headers)
+	ts.Run(WebsiteHosting_head_cors_headers)
+	ts.Run(WebsiteHosting_options_preflight_access_granted)
+	ts.Run(WebsiteHosting_options_preflight_access_forbidden)
+	ts.Run(WebsiteHosting_options_preflight_missing_origin)
+}
+
 func TestPreflightOPTIONSEndpoint(ts *TestState) {
 	ts.Run(PreflightOPTIONS_non_existing_bucket)
 	ts.Run(PreflightOPTIONS_missing_origin)
@@ -788,10 +843,6 @@ func TestNotImplementedActions(ts *TestState) {
 	// bucket acceleration actions
 	ts.Run(PutBucketAccelerateConfiguration_not_implemented)
 	ts.Run(GetBucketAccelerateConfiguration_not_implemented)
-	// bucket website actions
-	ts.Run(PutBucketWebsite_not_implemented)
-	ts.Run(GetBucketWebsite_not_implemented)
-	ts.Run(DeleteBucketWebsite_not_implemented)
 	// object acl actions
 	ts.Run(PutObjectAcl_not_implemented)
 	ts.Run(GetObjectAcl_not_implemented)
@@ -862,6 +913,9 @@ func TestFullFlow(ts *TestState) {
 	TestPutBucketCors(ts)
 	TestGetBucketCors(ts)
 	TestDeleteBucketCors(ts)
+	TestPutBucketWebsite(ts)
+	TestGetBucketWebsite(ts)
+	TestDeleteBucketWebsite(ts)
 	TestPreflightOPTIONSEndpoint(ts)
 	TestPutObjectLockConfiguration(ts)
 	TestGetObjectLockConfiguration(ts)
@@ -1218,6 +1272,7 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_success_status_201)
 	ts.Run(PostObject_should_ignore_anything_after_file)
 	ts.Run(PostObject_success_with_meta_properties)
+	ts.Run(PostObject_invalid_website_redirect_location)
 	ts.Run(PostObject_invalid_tagging)
 	ts.Run(PostObject_success_with_tagging)
 	ts.Run(PostObject_success_double_dash_boundary)
@@ -1349,6 +1404,7 @@ func GetIntTests() IntTests {
 		"PutObject_should_combine_metadata":                                        PutObject_should_combine_metadata,
 		"PutObject_long_metadata":                                                  PutObject_long_metadata,
 		"PutObject_with_metadata":                                                  PutObject_with_metadata,
+		"PutObject_invalid_website_redirect_location":                              PutObject_invalid_website_redirect_location,
 		"PutObject_invalid_credentials":                                            PutObject_invalid_credentials,
 		"PutObject_checksum_algorithm_and_header_mismatch":                         PutObject_checksum_algorithm_and_header_mismatch,
 		"PutObject_multiple_checksum_headers":                                      PutObject_multiple_checksum_headers,
@@ -1553,6 +1609,7 @@ func GetIntTests() IntTests {
 		"CopyObject_non_existing_dir_object":                                       CopyObject_non_existing_dir_object,
 		"CopyObject_should_copy_meta_props":                                        CopyObject_should_copy_meta_props,
 		"CopyObject_should_replace_meta_props":                                     CopyObject_should_replace_meta_props,
+		"CopyObject_invalid_website_redirect_location":                             CopyObject_invalid_website_redirect_location,
 		"CopyObject_default_content_type_with_replace_metadata":                    CopyObject_default_content_type_with_replace_metadata,
 		"CopyObject_missing_bucket_lock":                                           CopyObject_missing_bucket_lock,
 		"CopyObject_invalid_legal_hold":                                            CopyObject_invalid_legal_hold,
@@ -1587,6 +1644,7 @@ func GetIntTests() IntTests {
 		"CreateMultipartUpload_non_existing_bucket":                                CreateMultipartUpload_non_existing_bucket,
 		"CreateMultipartUpload_long_metadata":                                      CreateMultipartUpload_long_metadata,
 		"CreateMultipartUpload_with_metadata":                                      CreateMultipartUpload_with_metadata,
+		"CreateMultipartUpload_invalid_website_redirect_location":                  CreateMultipartUpload_invalid_website_redirect_location,
 		"CreateMultipartUpload_with_tagging":                                       CreateMultipartUpload_with_tagging,
 		"CreateMultipartUpload_with_object_lock":                                   CreateMultipartUpload_with_object_lock,
 		"CreateMultipartUpload_with_object_lock_not_enabled":                       CreateMultipartUpload_with_object_lock_not_enabled,
@@ -1760,6 +1818,46 @@ func GetIntTests() IntTests {
 		"DeleteBucketCors_non_existing_bucket":                                     DeleteBucketCors_non_existing_bucket,
 		"DeleteBucketCors_success":                                                 DeleteBucketCors_success,
 		"PutBucketCors_success":                                                    PutBucketCors_success,
+		"PutBucketWebsite_non_existing_bucket":                                     PutBucketWebsite_non_existing_bucket,
+		"PutBucketWebsite_empty_suffix":                                            PutBucketWebsite_empty_suffix,
+		"PutBucketWebsite_suffix_with_slash":                                       PutBucketWebsite_suffix_with_slash,
+		"PutBucketWebsite_invalid_redirect_protocol":                               PutBucketWebsite_invalid_redirect_protocol,
+		"PutBucketWebsite_redirectAll_index_error_routingRules":                    PutBucketWebsite_redirectAll_index_error_routingRules,
+		"PutBucketWebsite_invalid_routing_rule_protocol":                           PutBucketWebsite_invalid_routing_rule_protocol,
+		"PutBucketWebsite_empty_routing_rule_condition":                            PutBucketWebsite_empty_routing_rule_condition,
+		"PutBucketWebsite_empty_routing_rule_redirect":                             PutBucketWebsite_empty_routing_rule_redirect,
+		"PutBucketWebsite_empty_error_document_key":                                PutBucketWebsite_empty_error_document_key,
+		"PutBucketWebsite_too_many_routing_rules":                                  PutBucketWebsite_too_many_routing_rules,
+		"PutBucketWebsite_routing_rule_replace_key_and_prefix":                     PutBucketWebsite_routing_rule_replace_key_and_prefix,
+		"PutBucketWebsite_invalid_http_redirect_code":                              PutBucketWebsite_invalid_http_redirect_code,
+		"PutBucketWebsite_invalid_http_error_code":                                 PutBucketWebsite_invalid_http_error_code,
+		"PutBucketWebsite_request_too_large":                                       PutBucketWebsite_request_too_large,
+		"PutBucketWebsite_success":                                                 PutBucketWebsite_success,
+		"PutBucketWebsite_success_redirect_all":                                    PutBucketWebsite_success_redirect_all,
+		"GetBucketWebsite_non_existing_bucket":                                     GetBucketWebsite_non_existing_bucket,
+		"GetBucketWebsite_no_such_website_config":                                  GetBucketWebsite_no_such_website_config,
+		"GetBucketWebsite_success":                                                 GetBucketWebsite_success,
+		"GetBucketWebsite_success_redirect_all":                                    GetBucketWebsite_success_redirect_all,
+		"DeleteBucketWebsite_non_existing_bucket":                                  DeleteBucketWebsite_non_existing_bucket,
+		"DeleteBucketWebsite_success":                                              DeleteBucketWebsite_success,
+		"WebsiteHosting_error_document_served":                                     WebsiteHosting_error_document_served,
+		"WebsiteHosting_error_document_not_found":                                  WebsiteHosting_error_document_not_found,
+		"WebsiteHosting_no_error_document":                                         WebsiteHosting_no_error_document,
+		"WebsiteHosting_no_bucket_in_request_location":                             WebsiteHosting_no_bucket_in_request_location,
+		"WebsiteHosting_private_object_and_error_document":                         WebsiteHosting_private_object_and_error_document,
+		"WebsiteHosting_routing_rule_post_request_redirect":                        WebsiteHosting_routing_rule_post_request_redirect,
+		"WebsiteHosting_routing_rule_pre_request_redirect":                         WebsiteHosting_routing_rule_pre_request_redirect,
+		"WebsiteHosting_routing_rule_prefix_and_error_redirect":                    WebsiteHosting_routing_rule_prefix_and_error_redirect,
+		"WebsiteHosting_routing_rule_no_match_serves_error_document":               WebsiteHosting_routing_rule_no_match_serves_error_document,
+		"WebsiteHosting_redirect_all_requests":                                     WebsiteHosting_redirect_all_requests,
+		"WebsiteHosting_object_redirect_location":                                  WebsiteHosting_object_redirect_location,
+		"WebsiteHosting_index_document":                                            WebsiteHosting_index_document,
+		"WebsiteHosting_index_error_document_and_routing_rules":                    WebsiteHosting_index_error_document_and_routing_rules,
+		"WebsiteHosting_get_cors_headers":                                          WebsiteHosting_get_cors_headers,
+		"WebsiteHosting_head_cors_headers":                                         WebsiteHosting_head_cors_headers,
+		"WebsiteHosting_options_preflight_access_granted":                          WebsiteHosting_options_preflight_access_granted,
+		"WebsiteHosting_options_preflight_access_forbidden":                        WebsiteHosting_options_preflight_access_forbidden,
+		"WebsiteHosting_options_preflight_missing_origin":                          WebsiteHosting_options_preflight_missing_origin,
 		"PreflightOPTIONS_non_existing_bucket":                                     PreflightOPTIONS_non_existing_bucket,
 		"PreflightOPTIONS_missing_origin":                                          PreflightOPTIONS_missing_origin,
 		"PreflightOPTIONS_invalid_request_method":                                  PreflightOPTIONS_invalid_request_method,
@@ -1846,9 +1944,6 @@ func GetIntTests() IntTests {
 		"GetBucketNotificationConfiguratio_not_implemented":                        GetBucketNotificationConfiguratio_not_implemented,
 		"PutBucketAccelerateConfiguration_not_implemented":                         PutBucketAccelerateConfiguration_not_implemented,
 		"GetBucketAccelerateConfiguration_not_implemented":                         GetBucketAccelerateConfiguration_not_implemented,
-		"PutBucketWebsite_not_implemented":                                         PutBucketWebsite_not_implemented,
-		"GetBucketWebsite_not_implemented":                                         GetBucketWebsite_not_implemented,
-		"DeleteBucketWebsite_not_implemented":                                      DeleteBucketWebsite_not_implemented,
 		"PutObjectAcl_not_implemented":                                             PutObjectAcl_not_implemented,
 		"GetObjectAcl_not_implemented":                                             GetObjectAcl_not_implemented,
 		"WORMProtection_bucket_object_lock_configuration_compliance_mode":          WORMProtection_bucket_object_lock_configuration_compliance_mode,
@@ -2067,6 +2162,7 @@ func GetIntTests() IntTests {
 		"PostObject_success_status_201":                                            PostObject_success_status_201,
 		"PostObject_should_ignore_anything_after_file":                             PostObject_should_ignore_anything_after_file,
 		"PostObject_success_with_meta_properties":                                  PostObject_success_with_meta_properties,
+		"PostObject_invalid_website_redirect_location":                             PostObject_invalid_website_redirect_location,
 		"PostObject_invalid_tagging":                                               PostObject_invalid_tagging,
 		"PostObject_success_with_tagging":                                          PostObject_success_with_tagging,
 		"PostObject_invalid_checksum_value":                                        PostObject_invalid_checksum_value,

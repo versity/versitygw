@@ -28,19 +28,29 @@ import (
 // Vary http response header is always the same below
 var VaryHdr = "Origin, Access-Control-Request-Headers, Access-Control-Request-Method"
 
+type BucketResolver func(ctx *fiber.Ctx) (string, error)
+
+func BucketFromPath(ctx *fiber.Ctx) (string, error) {
+	return ctx.Params("bucket"), nil
+}
+
 // ApplyBucketCORS retreives the bucket CORS configuration,
 // checks if origin and method meets the cors rules and
 // adds the necessary response headers.
 // CORS check is applied only when 'Origin' request header is present
-func ApplyBucketCORS(be backend.Backend, fallbackOrigin string) fiber.Handler {
+func ApplyBucketCORS(be backend.Backend, resolveBucket BucketResolver, fallbackOrigin string) fiber.Handler {
 	fallbackOrigin = strings.TrimSpace(fallbackOrigin)
 
 	return func(ctx *fiber.Ctx) error {
-		bucket := ctx.Params("bucket")
 		origin := ctx.Get("Origin")
 		// If neither Origin is present nor a fallback is configured, skip CORS entirely.
 		if origin == "" && fallbackOrigin == "" {
 			return nil
+		}
+
+		bucket, err := resolveBucket(ctx)
+		if err != nil {
+			return err
 		}
 
 		// if bucket cors is not set, skip the check

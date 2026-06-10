@@ -16,6 +16,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/tests/integration"
@@ -25,6 +26,9 @@ var (
 	awsID             string
 	awsSecret         string
 	endpoint          string
+	websiteSchemeTest string
+	websiteDomainTest string
+	websitePortTest   string
 	prefix            string
 	dstBucket         string
 	partSize          int64
@@ -38,9 +42,9 @@ var (
 	checksumDisable   bool
 	versioningEnabled bool
 	azureTests        bool
-	sidecarTests      bool
 	tlsStatus         bool
 	parallel          bool
+	sidecarTests      bool
 )
 
 func testCommand() *cli.Command {
@@ -128,6 +132,36 @@ func initTestCommands() []*cli.Command {
 					Usage:       "executes the tests concurrently",
 					Destination: &parallel,
 					Aliases:     []string{"p"},
+				},
+			},
+		},
+		{
+			Name:        "website-hosting",
+			Usage:       "Tests static website hosting endpoint.",
+			Description: `Runs the static website hosting integration tests against a dedicated website endpoint.`,
+			Action:      websiteHostingAction,
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:        "scheme",
+					Usage:       "website endpoint scheme: http or https",
+					EnvVars:     []string{"VGW_TEST_WEBSITE_SCHEME"},
+					Destination: &websiteSchemeTest,
+					Aliases:     []string{"website-scheme", "protocol"},
+					Value:       "http",
+				},
+				&cli.StringFlag{
+					Name:        "domain",
+					Usage:       "website endpoint base domain used for virtual-host routing",
+					EnvVars:     []string{"VGW_TEST_WEBSITE_DOMAIN"},
+					Destination: &websiteDomainTest,
+					Aliases:     []string{"website-domain"},
+				},
+				&cli.StringFlag{
+					Name:        "port",
+					Usage:       "website endpoint port",
+					EnvVars:     []string{"VGW_TEST_WEBSITE_PORT"},
+					Destination: &websitePortTest,
+					Aliases:     []string{"website-port"},
 				},
 			},
 		},
@@ -324,6 +358,50 @@ func initTestCommands() []*cli.Command {
 }
 
 type testFunc func(*integration.TestState)
+
+func websiteHostingAction(ctx *cli.Context) error {
+	websiteSchemeTest = strings.ToLower(strings.TrimSpace(websiteSchemeTest))
+	if websiteSchemeTest != "http" && websiteSchemeTest != "https" {
+		return fmt.Errorf("website scheme must be http or https")
+	}
+	if websiteDomainTest == "" {
+		return fmt.Errorf("must specify website domain")
+	}
+	if websitePortTest == "" {
+		return fmt.Errorf("must specify website port")
+	}
+
+	opts := []integration.Option{
+		integration.WithAccess(awsID),
+		integration.WithSecret(awsSecret),
+		integration.WithRegion(region),
+		integration.WithEndpoint(endpoint),
+	}
+	if websiteSchemeTest != "" {
+		opts = append(opts, integration.WithWebsiteScheme(websiteSchemeTest))
+	}
+	if websiteDomainTest != "" {
+		opts = append(opts, integration.WithWebsiteDomain(websiteDomainTest))
+	}
+	if websitePortTest != "" {
+		opts = append(opts, integration.WithWebsitePort(websitePortTest))
+	}
+	if debug {
+		opts = append(opts, integration.WithDebug())
+	}
+
+	s := integration.NewS3Conf(opts...)
+	ts := integration.NewTestState(ctx.Context, s, false)
+	integration.TestWebsiteHosting(ts)
+	ts.Wait()
+
+	fmt.Println()
+	fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load())
+	if integration.FailCount.Load() > 0 {
+		return fmt.Errorf("test failed with %v errors", integration.FailCount.Load())
+	}
+	return nil
+}
 
 func getAction(tf testFunc) func(ctx *cli.Context) error {
 	return func(ctx *cli.Context) error {

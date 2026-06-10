@@ -43,6 +43,13 @@ func (e NoSuchVersionError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e NoSuchVersionError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "Key", Value: e.Key},
+		ErrorField{Name: "VersionId", Value: e.VersionId},
+	)
+}
+
 func (e NoSuchVersionError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

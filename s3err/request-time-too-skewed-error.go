@@ -48,6 +48,14 @@ func (e RequestTimeTooSkewedError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e RequestTimeTooSkewedError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "RequestTime", Value: e.RequestTime},
+		ErrorField{Name: "ServerTime", Value: e.ServerTime},
+		ErrorField{Name: "MaxAllowedSkewMilliseconds", Value: e.MaxAllowedSkewMilliseconds},
+	)
+}
+
 func (e RequestTimeTooSkewedError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

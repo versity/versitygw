@@ -107,6 +107,53 @@ func TestUnmarshalMpUploadMetadataInvalid(t *testing.T) {
 	}
 }
 
+func TestWebsiteConfigRawGzipRoundTrip(t *testing.T) {
+	want := []byte(`<WebsiteConfiguration><IndexDocument><Suffix>index.html</Suffix></IndexDocument></WebsiteConfiguration>`)
+
+	stored, err := MarshalWebsiteConfig(want, false)
+	if err != nil {
+		t.Fatalf("MarshalWebsiteConfig: %v", err)
+	}
+	if len(stored) < 2 || stored[0] != 0x1f || stored[1] != 0x8b {
+		t.Fatalf("stored website config should contain raw gzip payload: %q", stored)
+	}
+
+	got, err := UnmarshalWebsiteConfig(stored, false)
+	if err != nil {
+		t.Fatalf("UnmarshalWebsiteConfig: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("website config mismatch: got %q want %q", got, want)
+	}
+}
+
+func TestWebsiteConfigBase64RoundTrip(t *testing.T) {
+	want := []byte(`<WebsiteConfiguration><RedirectAllRequestsTo><HostName>example.com</HostName></RedirectAllRequestsTo></WebsiteConfiguration>`)
+
+	stored, err := MarshalWebsiteConfig(want, true)
+	if err != nil {
+		t.Fatalf("MarshalWebsiteConfig: %v", err)
+	}
+	if len(stored) >= 2 && stored[0] == 0x1f && stored[1] == 0x8b {
+		t.Fatalf("stored website config should not contain raw gzip bytes: %q", stored)
+	}
+
+	got, err := UnmarshalWebsiteConfig(stored, true)
+	if err != nil {
+		t.Fatalf("UnmarshalWebsiteConfig: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("website config mismatch: got %q want %q", got, want)
+	}
+}
+
+func TestUnmarshalWebsiteConfigInvalid(t *testing.T) {
+	_, err := UnmarshalWebsiteConfig([]byte("not-gzip"), false)
+	if err == nil {
+		t.Fatal("expected invalid website config error")
+	}
+}
+
 func TestParseCopySource(t *testing.T) {
 	tests := []struct {
 		name             string

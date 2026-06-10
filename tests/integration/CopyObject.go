@@ -666,21 +666,23 @@ func CopyObject_should_copy_meta_props(s *S3Conf) error {
 
 		cType, cEnc, cDesp, cLang, cLength := "application/json", "base64", "test-desp", "us", int64(100)
 		cacheControl, expires := "no-cache", time.Now().Add(time.Hour*10)
+		redirectLocation := "/source-redirect"
 		meta := map[string]string{
 			"foo": "bar",
 			"baz": "quxx",
 		}
 
 		_, err := putObjectWithData(cLength, &s3.PutObjectInput{
-			Bucket:             &bucket,
-			Key:                &srcObj,
-			ContentDisposition: &cDesp,
-			ContentEncoding:    &cEnc,
-			ContentLanguage:    &cLang,
-			ContentType:        &cType,
-			CacheControl:       &cacheControl,
-			Expires:            &expires,
-			Metadata:           meta,
+			Bucket:                  &bucket,
+			Key:                     &srcObj,
+			ContentDisposition:      &cDesp,
+			ContentEncoding:         &cEnc,
+			ContentLanguage:         &cLang,
+			ContentType:             &cType,
+			CacheControl:            &cacheControl,
+			Expires:                 &expires,
+			WebsiteRedirectLocation: &redirectLocation,
+			Metadata:                meta,
 		}, s3client)
 		if err != nil {
 			return err
@@ -697,7 +699,7 @@ func CopyObject_should_copy_meta_props(s *S3Conf) error {
 			return err
 		}
 
-		return checkObjectMetaProps(s3client, bucket, dstObj, ObjectMetaProps{
+		if err := checkObjectMetaProps(s3client, bucket, dstObj, ObjectMetaProps{
 			ContentLength:      cLength,
 			ContentType:        cType,
 			ContentEncoding:    cEnc,
@@ -706,7 +708,24 @@ func CopyObject_should_copy_meta_props(s *S3Conf) error {
 			CacheControl:       cacheControl,
 			ExpiresString:      expires.UTC().Format(timefmt),
 			Metadata:           meta,
+		}); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &dstObj,
 		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if got := getString(out.WebsiteRedirectLocation); got != "" {
+			return fmt.Errorf("expected WebsiteRedirectLocation not to be copied, got %v", got)
+		}
+
+		return nil
 	})
 }
 
@@ -736,6 +755,7 @@ func CopyObject_should_replace_meta_props(s *S3Conf) error {
 
 		cType, cEnc, cDesp, cLang := "application/binary", "hex", "desp", "mex"
 		cacheControl, expires := "no-cache", time.Now().Add(time.Hour*10)
+		redirectLocation := "https://example.com/replaced"
 		meta := map[string]string{
 			"foo":                    "bar",
 			"baz":                    "quxx",
@@ -744,17 +764,18 @@ func CopyObject_should_replace_meta_props(s *S3Conf) error {
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
-			Bucket:             &bucket,
-			Key:                &dstObj,
-			CopySource:         getPtr(bucket + "/" + srcObj),
-			MetadataDirective:  types.MetadataDirectiveReplace,
-			ContentDisposition: &cDesp,
-			ContentEncoding:    &cEnc,
-			ContentLanguage:    &cLang,
-			ContentType:        &cType,
-			CacheControl:       &cacheControl,
-			Expires:            &expires,
-			Metadata:           meta,
+			Bucket:                  &bucket,
+			Key:                     &dstObj,
+			CopySource:              getPtr(bucket + "/" + srcObj),
+			MetadataDirective:       types.MetadataDirectiveReplace,
+			ContentDisposition:      &cDesp,
+			ContentEncoding:         &cEnc,
+			ContentLanguage:         &cLang,
+			ContentType:             &cType,
+			CacheControl:            &cacheControl,
+			Expires:                 &expires,
+			WebsiteRedirectLocation: &redirectLocation,
+			Metadata:                meta,
 		})
 		cancel()
 		if err != nil {
@@ -762,15 +783,41 @@ func CopyObject_should_replace_meta_props(s *S3Conf) error {
 		}
 
 		return checkObjectMetaProps(s3client, bucket, dstObj, ObjectMetaProps{
-			ContentLength:      contentLength,
-			ContentType:        cType,
-			ContentEncoding:    cEnc,
-			ContentDisposition: cDesp,
-			ContentLanguage:    cLang,
-			CacheControl:       cacheControl,
-			ExpiresString:      expires.UTC().Format(timefmt),
-			Metadata:           meta,
+			ContentLength:           contentLength,
+			ContentType:             cType,
+			ContentEncoding:         cEnc,
+			ContentDisposition:      cDesp,
+			ContentLanguage:         cLang,
+			CacheControl:            cacheControl,
+			ExpiresString:           expires.UTC().Format(timefmt),
+			WebsiteRedirectLocation: redirectLocation,
+			Metadata:                meta,
 		})
+	})
+}
+
+func CopyObject_invalid_website_redirect_location(s *S3Conf) error {
+	testName := "CopyObject_invalid_website_redirect_location"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "dest-object"
+
+		_, err := putObjectWithData(100, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:                  &bucket,
+			Key:                     &dstObj,
+			CopySource:              getPtr(bucket + "/" + srcObj),
+			WebsiteRedirectLocation: getPtr("ftp://example.com"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRedirectLocation))
 	})
 }
 

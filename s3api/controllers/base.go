@@ -49,9 +49,10 @@ const (
 	iso8601TimeFormatExtended = "Mon Jan _2 15:04:05 2006"
 	timefmt                   = "Mon, 02 Jan 2006 15:04:05 GMT"
 
-	maxXMLBodyLen = 4 * 1024 * 1024
-	minPartNumber = 1
-	maxPartNumber = 10000
+	maxXMLBodyLen                = 4 * 1024 * 1024
+	minPartNumber                = 1
+	maxPartNumber                = 10000
+	maxWebsiteConfigurationBytes = 131072
 
 	defaultRegion      = "us-east-1"
 	defaultContentType = "binary/octet-stream"

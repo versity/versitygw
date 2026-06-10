@@ -43,6 +43,13 @@ func (e MetadataTooLargeError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e MetadataTooLargeError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "Size", Value: e.Size},
+		ErrorField{Name: "MaxSizeAllowed", Value: e.MaxSizeAllowed},
+	)
+}
+
 func (e MetadataTooLargeError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

@@ -35,7 +35,7 @@ func TestApplyBucketCORS_FallbackOrigin_NoBucketCors_NoRequestOrigin(t *testing.
 
 	app := fiber.New()
 	app.Get("/:bucket/test",
-		middlewares.ApplyBucketCORS(mockedBackend, origin),
+		middlewares.ApplyBucketCORS(mockedBackend, middlewares.BucketFromPath, origin),
 		func(c *fiber.Ctx) error {
 			return c.SendStatus(http.StatusOK)
 		},
@@ -71,7 +71,7 @@ func TestApplyBucketCORS_FallbackOrigin_NotAppliedWhenBucketCorsExists(t *testin
 
 	app := fiber.New()
 	app.Get("/:bucket/test",
-		middlewares.ApplyBucketCORS(mockedBackend, origin),
+		middlewares.ApplyBucketCORS(mockedBackend, middlewares.BucketFromPath, origin),
 		func(c *fiber.Ctx) error {
 			return c.SendStatus(http.StatusOK)
 		},

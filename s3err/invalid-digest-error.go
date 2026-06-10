@@ -40,6 +40,12 @@ func (e InvalidDigestError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e InvalidDigestError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "Content-MD5", Value: e.ContentMD5},
+	)
+}
+
 func (e InvalidDigestError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

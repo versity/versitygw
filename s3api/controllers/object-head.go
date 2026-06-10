@@ -179,6 +179,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 			"Content-Length":                      utils.ConvertPtrToStringPtr(res.ContentLength),
 			"Content-Type":                        utils.ApplyOverride(res.ContentType, responseOverrides["Content-Type"]),
 			"Expires":                             utils.ApplyOverride(res.ExpiresString, responseOverrides["Expires"]),
+			"x-amz-website-redirect-location":     res.WebsiteRedirectLocation,
 			"ETag":                                res.ETag,
 			"Last-Modified":                       utils.FormatDatePtrToString(res.LastModified, timefmt),
 			"x-amz-restore":                       res.Restore,

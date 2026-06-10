@@ -56,6 +56,8 @@ const (
 	InvalidArgCannedAcl
 	InvalidArgOnlyAws4HmacSha256
 	InvalidArgDateHeader
+	InvalidArgIndexDocumentSuffix
+	InvalidArgErrorDocumentKey
 )
 
 var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
@@ -187,6 +189,14 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 		Description:  "X-Amz-Date must be formated via ISO8601 Long format",
 		ArgumentName: "X-Amz-Date",
 	},
+	InvalidArgIndexDocumentSuffix: {
+		Description:  "The IndexDocument Suffix is not well formed",
+		ArgumentName: "IndexDocument",
+	},
+	InvalidArgErrorDocumentKey: {
+		Description:  "The ErrorDocument Key is not well formed",
+		ArgumentName: "ErrorDocument",
+	},
 }
 
 // InvalidArgumentError is returned when a request argument is invalid.
@@ -233,6 +243,13 @@ func (e InvalidArgumentError) XMLBody(requestID, hostID string) []byte {
 		RequestId:     requestID,
 		HostId:        hostID,
 	})
+}
+
+func (e InvalidArgumentError) HTMLBody(requestID, hostID string) []byte {
+	return e.BaseError().encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "ArgumentName", Value: e.ArgumentName},
+		ErrorField{Name: "ArgumentValue", Value: e.ArgumentValue},
+	)
 }
 
 func GetInvalidArgumentErr(code InvalidArgErrorCode, value string) InvalidArgumentError {

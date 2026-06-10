@@ -569,18 +569,20 @@ func HeadObject_success(s *S3Conf) error {
 		}
 		ctype, cDisp, cEnc, cLang := defaultContentType, "cont-desp", "json", "eng"
 		cacheControl, expires := "cache-ctrl", time.Now().Add(time.Hour*2)
+		redirectLocation := "/head-object-redirect"
 
 		_, err := putObjectWithData(dataLen, &s3.PutObjectInput{
-			Bucket:             &bucket,
-			Key:                &obj,
-			Metadata:           meta,
-			ContentType:        &ctype,
-			ContentDisposition: &cDisp,
-			ContentEncoding:    &cEnc,
-			ContentLanguage:    &cLang,
-			CacheControl:       &cacheControl,
-			Expires:            &expires,
-			Tagging:            getPtr("key=value"),
+			Bucket:                  &bucket,
+			Key:                     &obj,
+			Metadata:                meta,
+			ContentType:             &ctype,
+			ContentDisposition:      &cDisp,
+			ContentEncoding:         &cEnc,
+			ContentLanguage:         &cLang,
+			CacheControl:            &cacheControl,
+			Expires:                 &expires,
+			WebsiteRedirectLocation: &redirectLocation,
+			Tagging:                 getPtr("key=value"),
 		}, s3client)
 		if err != nil {
 			return err
@@ -630,6 +632,10 @@ func HeadObject_success(s *S3Conf) error {
 		if getString(out.CacheControl) != cacheControl {
 			return fmt.Errorf("expected Cache-Control %v, instead got %v",
 				cacheControl, getString(out.CacheControl))
+		}
+		if getString(out.WebsiteRedirectLocation) != redirectLocation {
+			return fmt.Errorf("expected WebsiteRedirectLocation %v, instead got %v",
+				redirectLocation, getString(out.WebsiteRedirectLocation))
 		}
 		if out.StorageClass != types.StorageClassStandard {
 			return fmt.Errorf("expected the storage class to be %v, instead got %v",

@@ -154,6 +154,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 	contentEncoding := ctx.Get("Content-Encoding")
 	tagging := ctx.Get("X-Amz-Tagging")
 	expires := ctx.Get("Expires")
+	websiteRedirectLocation := ctx.Get("X-Amz-Website-Redirect-Location")
 	legalHoldHdr := ctx.Get("X-Amz-Object-Lock-Legal-Hold")
 	lockModeHdr := ctx.Get("X-Amz-Object-Lock-Mode")
 	objLockDate := ctx.Get("X-Amz-Object-Lock-Retain-Until-Date")
@@ -203,6 +204,15 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 		}, err
 	}
 
+	err = utils.ValidateWebsiteRedirectLocation(websiteRedirectLocation)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	objLockState, err := utils.ParsObjectLockHdrs(ctx)
 	if err != nil {
 		return &Response{
@@ -232,6 +242,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 			ContentLanguage:           &contentLanguage,
 			CacheControl:              &cacheControl,
 			Expires:                   &expires,
+			WebsiteRedirectLocation:   &websiteRedirectLocation,
 			ObjectLockRetainUntilDate: &objLockState.RetainUntilDate,
 			ObjectLockMode:            objLockState.ObjectLockMode,
 			ObjectLockLegalHoldStatus: objLockState.LegalHoldStatus,

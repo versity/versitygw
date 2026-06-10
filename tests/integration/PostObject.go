@@ -887,6 +887,7 @@ func PostObject_success_with_meta_properties(s *S3Conf) error {
 		cLanguage := "en-US"
 		cDisposition := "inline"
 		cEncoding := "gzip"
+		redirectLocation := "/post-object-redirect"
 
 		resp, err := sendPostObject(PostRequestConfig{
 			bucket:      bucket,
@@ -900,18 +901,20 @@ func PostObject_success_with_meta_properties(s *S3Conf) error {
 				[]any{"eq", "$Content-Encoding", cEncoding},
 				[]any{"eq", "$Cache-Control", cacheControl},
 				[]any{"eq", "$Expires", expires},
+				[]any{"eq", "$x-amz-website-redirect-location", redirectLocation},
 				[]any{"eq", "$x-amz-meta-foo", "bar"},
 				[]any{"eq", "$x-amz-meta-baz", "quxx"},
 			},
 			extraFields: map[string]string{
-				"Content-Type":        cType,
-				"Cache-Control":       cacheControl,
-				"Expires":             expires,
-				"Content-Language":    cLanguage,
-				"Content-Disposition": cDisposition,
-				"Content-Encoding":    cEncoding,
-				"x-amz-meta-foo":      "bar",
-				"x-amz-meta-baz":      "quxx",
+				"Content-Type":                    cType,
+				"Cache-Control":                   cacheControl,
+				"Expires":                         expires,
+				"Content-Language":                cLanguage,
+				"Content-Disposition":             cDisposition,
+				"Content-Encoding":                cEncoding,
+				"x-amz-website-redirect-location": redirectLocation,
+				"x-amz-meta-foo":                  "bar",
+				"x-amz-meta-baz":                  "quxx",
 			},
 		})
 		if err != nil {
@@ -955,6 +958,10 @@ func PostObject_success_with_meta_properties(s *S3Conf) error {
 			return fmt.Errorf("expected Cache-Control %s, instead got %s",
 				cacheControl, getString(out.CacheControl))
 		}
+		if getString(out.WebsiteRedirectLocation) != redirectLocation {
+			return fmt.Errorf("expected WebsiteRedirectLocation %s, instead got %s",
+				redirectLocation, getString(out.WebsiteRedirectLocation))
+		}
 
 		expectedMeta := map[string]string{
 			"foo": "bar",
@@ -966,6 +973,30 @@ func PostObject_success_with_meta_properties(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+func PostObject_invalid_website_redirect_location(s *S3Conf) error {
+	testName := "PostObject_invalid_website_redirect_location"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		redirectLocation := "ftp://example.com"
+		resp, err := sendPostObject(PostRequestConfig{
+			bucket:      bucket,
+			key:         "test-object",
+			s3Conf:      s,
+			fileContent: []byte("data"),
+			policyConditions: []any{
+				[]any{"eq", "$x-amz-website-redirect-location", redirectLocation},
+			},
+			extraFields: map[string]string{
+				"x-amz-website-redirect-location": redirectLocation,
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidRedirectLocation))
 	})
 }
 

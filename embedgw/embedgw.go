@@ -42,6 +42,7 @@ import (
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
+	"github.com/versity/versitygw/website"
 	"github.com/versity/versitygw/webui"
 )
 
@@ -423,6 +424,29 @@ type Config struct {
 	// endpoint.
 	WebuiS3Prefix string
 
+	// Static website hosting endpoint
+	//
+	// WebsitePorts is the list of listening addresses for the static website
+	// hosting endpoint. Accepts the same formats as Ports. When empty, the
+	// website endpoint is disabled.
+	WebsitePorts []string
+	// WebsiteDomain is the base domain for website virtual-host routing. For
+	// example, host "blog.example.com" serves bucket "blog" when this is
+	// "example.com". When empty, the full request hostname is used as the
+	// bucket name.
+	WebsiteDomain string
+	// WebsiteCertFile is the path to the TLS certificate for the website
+	// endpoint. When empty and gateway TLS (CertFile/KeyFile) is configured,
+	// the website endpoint inherits those certs. Both WebsiteCertFile and
+	// WebsiteKeyFile must be provided together.
+	WebsiteCertFile string
+	// WebsiteKeyFile is the path to the TLS private key for the website
+	// endpoint.
+	WebsiteKeyFile string
+	// WebsiteNoTLS forces the website endpoint to use plain HTTP even when TLS
+	// certificates are available.
+	WebsiteNoTLS bool
+
 	// SigHup is an optional channel that signals the gateway to reload TLS
 	// certificates and rotate log files (equivalent to SIGHUP). When nil,
 	// this feature is disabled.
@@ -514,7 +538,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		fmt.Fprintf(os.Stderr, "WARNING: WebuiPorts is set but CORSAllowOrigin is not; defaulting to '*'; %s\n", suggestion)
 	}
 
-	if err := validatePortConflicts(cfg.Ports, cfg.AdminPorts, cfg.WebuiPorts); err != nil {
+	if err := validatePortConflicts(cfg.Ports, cfg.AdminPorts, cfg.WebuiPorts, cfg.WebsitePorts); err != nil {
 		return err
 	}
 
@@ -882,6 +906,60 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		}, webOpts...)
 	}
 
+	var wsSrv *website.Server
+	wsTLSCert := ""
+	wsTLSKey := ""
+	if len(cfg.WebsitePorts) > 0 {
+		for _, addr := range cfg.WebsitePorts {
+			if utils.IsUnixSocketPath(addr) {
+				continue
+			}
+			_, wsPrt, err := net.SplitHostPort(addr)
+			if err != nil {
+				return fmt.Errorf("website listen address must be in the form ':port' or 'host:port': %w", err)
+			}
+			wsPortNum, err := strconv.Atoi(wsPrt)
+			if err != nil {
+				return fmt.Errorf("website port must be a number: %w", err)
+			}
+			if wsPortNum < 0 || wsPortNum > 65535 {
+				return fmt.Errorf("website port must be between 0 and 65535")
+			}
+		}
+
+		var wsOpts []website.Option
+		if !cfg.WebsiteNoTLS {
+			wsTLSCert = cfg.WebsiteCertFile
+			wsTLSKey = cfg.WebsiteKeyFile
+			if wsTLSCert == "" && wsTLSKey == "" {
+				wsTLSCert = cfg.CertFile
+				wsTLSKey = cfg.KeyFile
+			}
+			if wsTLSCert != "" || wsTLSKey != "" {
+				if wsTLSCert == "" {
+					return fmt.Errorf("website TLS key specified without cert file")
+				}
+				if wsTLSKey == "" {
+					return fmt.Errorf("website TLS cert specified without key file")
+				}
+				cs := utils.NewCertStorage()
+				if err := cs.SetCertificate(wsTLSCert, wsTLSKey); err != nil {
+					return fmt.Errorf("tls: load certs: %v", err)
+				}
+				wsOpts = append(wsOpts, website.WithTLS(cs))
+			}
+		}
+
+		if cfg.Quiet {
+			wsOpts = append(wsOpts, website.WithQuiet())
+		}
+		if cfg.SocketPerm != "" {
+			wsOpts = append(wsOpts, website.WithSocketPerm(parsedSocketPerm))
+		}
+
+		wsSrv = website.NewServer(be, cfg.WebsiteDomain, wsOpts...)
+	}
+
 	if !cfg.Quiet {
 		cfg.printBanner()
 	}
@@ -893,6 +971,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	if len(cfg.WebuiPorts) > 0 {
 		servers++
 	}
+	if len(cfg.WebsitePorts) > 0 {
+		servers++
+	}
 
 	c := make(chan error, servers)
 	go func() { c <- srv.ServeMultiPort(cfg.Ports) }()
@@ -901,6 +982,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	}
 	if len(cfg.WebuiPorts) > 0 {
 		go func() { c <- webSrv.ServeMultiPort(cfg.WebuiPorts) }()
+	}
+	if len(cfg.WebsitePorts) > 0 {
+		go func() { c <- wsSrv.ServeMultiPort(cfg.WebsitePorts) }()
 	}
 
 	// build a nil-safe sighup channel so the select below is always valid
@@ -957,6 +1041,14 @@ Loop:
 					fmt.Printf("webSrv cert reloaded (cert: %s, key: %s)\n", webTLSCert, webTLSKey)
 				}
 			}
+			if len(cfg.WebsitePorts) > 0 && wsTLSCert != "" && wsTLSKey != "" {
+				reloadErr := wsSrv.CertStorage.SetCertificate(wsTLSCert, wsTLSKey)
+				if reloadErr != nil {
+					debuglogger.InternalError(fmt.Errorf("wsSrv cert reload failed: %w", reloadErr))
+				} else {
+					fmt.Printf("wsSrv cert reloaded (cert: %s, key: %s)\n", wsTLSCert, wsTLSKey)
+				}
+			}
 		}
 	}
 	saveErr := err
@@ -977,6 +1069,13 @@ Loop:
 		err := webSrv.Shutdown()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "shutdown webui server: %v\n", err)
+		}
+	}
+
+	if wsSrv != nil {
+		err := wsSrv.Shutdown()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "shutdown website server: %v\n", err)
 		}
 	}
 
@@ -1023,6 +1122,7 @@ func (cfg Config) printBanner() {
 	ssl := cfg.CertFile != "" || cfg.KeyFile != ""
 	admSSL := cfg.AdminCertFile != "" || cfg.AdminKeyFile != ""
 	webuiSsl := !cfg.WebuiNoTLS && (cfg.WebuiCertFile != "" || cfg.WebuiKeyFile != "" || cfg.CertFile != "" || cfg.KeyFile != "")
+	websiteSsl := !cfg.WebsiteNoTLS && (cfg.WebsiteCertFile != "" || cfg.WebsiteKeyFile != "" || cfg.CertFile != "" || cfg.KeyFile != "")
 
 	if len(cfg.Ports) == 0 {
 		fmt.Fprintf(os.Stderr, "No ports specified\n")
@@ -1243,6 +1343,68 @@ func (cfg Config) printBanner() {
 		}
 	}
 
+	if len(cfg.WebsitePorts) > 0 {
+		var allWebsiteInterfaces []string
+		websiteInterfaceMap := make(map[string]bool)
+
+		for _, websiteAddr := range cfg.WebsitePorts {
+			if strings.TrimSpace(websiteAddr) == "" {
+				continue
+			}
+			if utils.IsUnixSocketPath(websiteAddr) {
+				if !websiteInterfaceMap[websiteAddr] {
+					websiteInterfaceMap[websiteAddr] = true
+					allWebsiteInterfaces = append(allWebsiteInterfaces, websiteAddr)
+				}
+				continue
+			}
+			websiteInterfaces, err := getMatchingIPs(websiteAddr)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to match website port local IP addresses for %s: %v\n", websiteAddr, err)
+				continue
+			}
+			_, websitePrt, err := net.SplitHostPort(websiteAddr)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to parse website port %s: %v\n", websiteAddr, err)
+				continue
+			}
+			for _, ip := range websiteInterfaces {
+				key := net.JoinHostPort(ip, websitePrt)
+				if !websiteInterfaceMap[key] {
+					websiteInterfaceMap[key] = true
+					allWebsiteInterfaces = append(allWebsiteInterfaces, key)
+				}
+			}
+		}
+
+		if len(allWebsiteInterfaces) > 0 {
+			domainInfo := ""
+			if cfg.WebsiteDomain != "" {
+				domainInfo = fmt.Sprintf(" (domain: %s)", cfg.WebsiteDomain)
+			}
+			lines = append(lines,
+				centerText(""),
+				leftText("Website endpoint listening on:"+domainInfo),
+			)
+			for _, addrPort := range allWebsiteInterfaces {
+				if utils.IsUnixSocketPath(addrPort) {
+					lines = append(lines, leftText("  unix:"+addrPort))
+					continue
+				}
+				ip, prt, err := net.SplitHostPort(addrPort)
+				if err != nil {
+					continue
+				}
+				hostPort := net.JoinHostPort(ip, prt)
+				u := fmt.Sprintf("http://%s", hostPort)
+				if websiteSsl {
+					u = fmt.Sprintf("https://%s", hostPort)
+				}
+				lines = append(lines, leftText("  "+u))
+			}
+		}
+	}
+
 	fmt.Println("┌" + strings.Repeat("─", columnWidth-2) + "┐")
 	for _, line := range lines {
 		fmt.Printf("│%-*s│\n", columnWidth-2, line)
@@ -1436,13 +1598,13 @@ func sortGatewayURLs(urls []string) {
 }
 
 // validatePortConflicts checks for port conflicts across the S3 API, admin,
-// and WebUI port lists before the servers are started.
+// WebUI, and website port lists before the servers are started.
 //
 // A bare port spec (e.g. ":7071") binds to all interfaces and conflicts with
 // any other spec on the same port number. Two identical "ip:port" specs are
 // allowed and will be caught by the OS later. UNIX socket paths are checked
 // for duplicate path conflicts only and never conflict with TCP specs.
-func validatePortConflicts(ports, admPorts, webuiPorts []string) error {
+func validatePortConflicts(ports, admPorts, webuiPorts, websitePorts []string) error {
 	type portSpec struct {
 		spec     string
 		port     string
@@ -1501,6 +1663,23 @@ func validatePortConflicts(ports, admPorts, webuiPorts []string) error {
 			port:     port,
 			isBare:   strings.HasPrefix(p, ":"),
 			portType: "webui",
+		})
+	}
+
+	for _, p := range websitePorts {
+		if utils.IsUnixSocketPath(p) {
+			allSpecs = append(allSpecs, portSpec{spec: p, port: p, isUnix: true, portType: "website"})
+			continue
+		}
+		_, port, err := net.SplitHostPort(p)
+		if err != nil {
+			continue
+		}
+		allSpecs = append(allSpecs, portSpec{
+			spec:     p,
+			port:     port,
+			isBare:   strings.HasPrefix(p, ":"),
+			portType: "website",
 		})
 	}
 

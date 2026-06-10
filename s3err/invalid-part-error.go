@@ -48,6 +48,14 @@ func (e InvalidPartError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e InvalidPartError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "UploadId", Value: e.UploadId},
+		ErrorField{Name: "PartNumber", Value: e.PartNumber},
+		ErrorField{Name: "ETag", Value: e.ETag},
+	)
+}
+
 func (e InvalidPartError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

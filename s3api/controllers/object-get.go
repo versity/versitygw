@@ -551,6 +551,7 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 			"Content-Language":                    utils.ApplyOverride(res.ContentLanguage, responseOverrides["Content-Language"]),
 			"Cache-Control":                       utils.ApplyOverride(res.CacheControl, responseOverrides["Cache-Control"]),
 			"Expires":                             utils.ApplyOverride(res.ExpiresString, responseOverrides["Expires"]),
+			"x-amz-website-redirect-location":     res.WebsiteRedirectLocation,
 			"x-amz-checksum-crc32":                res.ChecksumCRC32,
 			"x-amz-checksum-crc64nvme":            res.ChecksumCRC64NVME,
 			"x-amz-checksum-crc32c":               res.ChecksumCRC32C,

@@ -43,6 +43,13 @@ func (e EntityTooLargeError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e EntityTooLargeError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "ProposedSize", Value: e.ProposedSize},
+		ErrorField{Name: "MaxSizeAllowed", Value: e.MaxSizeAllowed},
+	)
+}
+
 func (e EntityTooLargeError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

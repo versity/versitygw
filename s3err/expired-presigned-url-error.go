@@ -46,6 +46,14 @@ func (e ExpiredPresignedURLError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e ExpiredPresignedURLError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "ServerTime", Value: e.ServerTime},
+		ErrorField{Name: "X-Amz-Expires", Value: e.XAmzExpires},
+		ErrorField{Name: "Expires", Value: e.Expires},
+	)
+}
+
 func (e ExpiredPresignedURLError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

@@ -287,6 +287,70 @@ func (c S3ApiController) PutBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
+func (c S3ApiController) PutBucketWebsite(ctx *fiber.Ctx) (*Response, error) {
+	bucket := ctx.Params("bucket")
+	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
+	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
+	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
+	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
+
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionWrite,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Actions:         []auth.Action{auth.PutBucketWebsiteAction},
+		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
+	})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	body := ctx.Body()
+	if len(body) > maxWebsiteConfigurationBytes {
+		debuglogger.Logf("the request size exceeded the 128KB limit: %d", len(body))
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetMaxMessageLengthExceeded(maxWebsiteConfigurationBytes)
+	}
+
+	var websiteConfig s3response.WebsiteConfiguration
+	err = xml.Unmarshal(body, &websiteConfig)
+	if err != nil {
+		debuglogger.Logf("invalid website config request body: %v", err)
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+
+	err = websiteConfig.Validate()
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = c.be.PutBucketWebsite(ctx.Context(), bucket, body)
+	return &Response{
+		MetaOpts: &MetaOptions{
+			BucketOwner: parsedAcl.Owner,
+		},
+	}, err
+}
+
 func (c S3ApiController) PutBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)

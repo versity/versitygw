@@ -52,6 +52,13 @@ func (e MethodNotAllowedError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e MethodNotAllowedError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "Method", Value: e.Method},
+		ErrorField{Name: "ResourceType", Value: e.ResourceType},
+	)
+}
+
 func (e MethodNotAllowedError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

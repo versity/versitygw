@@ -629,6 +629,19 @@ func PutObject_with_metadata(s *S3Conf) error {
 	})
 }
 
+func PutObject_invalid_website_redirect_location(s *S3Conf) error {
+	testName := "PutObject_invalid_website_redirect_location"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:                  &bucket,
+			Key:                     &obj,
+			WebsiteRedirectLocation: getPtr("ftp://example.com"),
+		}, s3client)
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRedirectLocation))
+	})
+}
+
 func PutObject_checksum_algorithm_and_header_mismatch(s *S3Conf) error {
 	testName := "PutObject_checksum_algorithm_and_header_mismatch"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

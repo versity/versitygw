@@ -43,6 +43,13 @@ func (e InvalidRangeError) XMLBody(requestID, hostID string) []byte {
 	})
 }
 
+func (e InvalidRangeError) HTMLBody(requestID, hostID string) []byte {
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "RangeRequested", Value: e.RangeRequested},
+		ErrorField{Name: "ActualObjectSize", Value: e.ActualObjectSize},
+	)
+}
+
 func (e InvalidRangeError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t

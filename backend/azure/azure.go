@@ -63,10 +63,12 @@ const (
 	keyTags                key = "Tags"
 	keyPolicy              key = "Policy"
 	keyCors                key = "Cors"
+	keyWebsite             key = "Website"
 	keyBucketLock          key = "Bucketlock"
 	keyObjRetention        key = "Objectretention"
 	keyObjLegalHold        key = "Objectlegalhold"
 	keyExpires             key = "Vgwexpires"
+	keyWebsiteRedirect     key = "Vgwwebsiteredirect"
 	onameAttr              key = "Objname"
 	onameAttrLower         key = "objname"
 	metaTmpMultipartPrefix key = ".sgwtmp" + "/multipart"
@@ -83,17 +85,19 @@ const (
 
 func (key) Table() map[string]struct{} {
 	return map[string]struct{}{
-		"acl":               {},
-		"ownership":         {},
-		"tags":              {},
-		"policy":            {},
-		"bucketlock":        {},
-		"objectretention":   {},
-		"vgwexpires":        {},
-		"objectlegalhold":   {},
-		"objname":           {},
-		".sgwtmp/multipart": {},
-		"mpmetadata":        {},
+		"acl":                {},
+		"ownership":          {},
+		"tags":               {},
+		"policy":             {},
+		"bucketlock":         {},
+		"website":            {},
+		"objectretention":    {},
+		"vgwexpires":         {},
+		"vgwwebsiteredirect": {},
+		"objectlegalhold":    {},
+		"objname":            {},
+		".sgwtmp/multipart":  {},
+		"mpmetadata":         {},
 	}
 }
 
@@ -370,6 +374,15 @@ func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s
 			metadata[string(keyExpires)] = po.Expires
 		}
 	}
+	if getString(po.WebsiteRedirectLocation) != "" {
+		if metadata == nil {
+			metadata = map[string]*string{
+				string(keyWebsiteRedirect): po.WebsiteRedirectLocation,
+			}
+		} else {
+			metadata[string(keyWebsiteRedirect)] = po.WebsiteRedirectLocation
+		}
+	}
 
 	opts := &blockblob.UploadStreamOptions{
 		Metadata: metadata,
@@ -569,22 +582,23 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 	}
 
 	return &s3.GetObjectOutput{
-		AcceptRanges:       backend.GetPtrFromString("bytes"),
-		ContentLength:      blobDownloadResponse.ContentLength,
-		ContentEncoding:    blobDownloadResponse.ContentEncoding,
-		ContentType:        blobDownloadResponse.ContentType,
-		ContentDisposition: blobDownloadResponse.ContentDisposition,
-		ContentLanguage:    blobDownloadResponse.ContentLanguage,
-		CacheControl:       blobDownloadResponse.CacheControl,
-		ExpiresString:      blobDownloadResponse.Metadata[string(keyExpires)],
-		ETag:               backend.GetPtrFromString(convertAzureEtag(blobDownloadResponse.ETag)),
-		LastModified:       blobDownloadResponse.LastModified,
-		Metadata:           parseAndFilterAzMetadata(blobDownloadResponse.Metadata),
-		TagCount:           &tagcount,
-		ContentRange:       contentRange,
-		Body:               blobDownloadResponse.Body,
-		StorageClass:       types.StorageClassStandard,
-		PartsCount:         partsCount,
+		AcceptRanges:            backend.GetPtrFromString("bytes"),
+		ContentLength:           blobDownloadResponse.ContentLength,
+		ContentEncoding:         blobDownloadResponse.ContentEncoding,
+		ContentType:             blobDownloadResponse.ContentType,
+		ContentDisposition:      blobDownloadResponse.ContentDisposition,
+		ContentLanguage:         blobDownloadResponse.ContentLanguage,
+		CacheControl:            blobDownloadResponse.CacheControl,
+		ExpiresString:           blobDownloadResponse.Metadata[string(keyExpires)],
+		WebsiteRedirectLocation: blobDownloadResponse.Metadata[string(keyWebsiteRedirect)],
+		ETag:                    backend.GetPtrFromString(convertAzureEtag(blobDownloadResponse.ETag)),
+		LastModified:            blobDownloadResponse.LastModified,
+		Metadata:                parseAndFilterAzMetadata(blobDownloadResponse.Metadata),
+		TagCount:                &tagcount,
+		ContentRange:            contentRange,
+		Body:                    blobDownloadResponse.Body,
+		StorageClass:            types.StorageClassStandard,
+		PartsCount:              partsCount,
 	}, nil
 }
 
@@ -668,20 +682,21 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 	}
 
 	result := &s3.HeadObjectOutput{
-		ContentRange:       contentRange,
-		AcceptRanges:       backend.GetPtrFromString("bytes"),
-		ContentLength:      &length,
-		PartsCount:         partsCount,
-		ContentType:        resp.ContentType,
-		ContentEncoding:    resp.ContentEncoding,
-		ContentLanguage:    resp.ContentLanguage,
-		ContentDisposition: resp.ContentDisposition,
-		CacheControl:       resp.CacheControl,
-		ExpiresString:      resp.Metadata[string(keyExpires)],
-		ETag:               backend.GetPtrFromString(convertAzureEtag(resp.ETag)),
-		LastModified:       resp.LastModified,
-		Metadata:           parseAndFilterAzMetadata(resp.Metadata),
-		StorageClass:       types.StorageClassStandard,
+		ContentRange:            contentRange,
+		AcceptRanges:            backend.GetPtrFromString("bytes"),
+		ContentLength:           &length,
+		PartsCount:              partsCount,
+		ContentType:             resp.ContentType,
+		ContentEncoding:         resp.ContentEncoding,
+		ContentLanguage:         resp.ContentLanguage,
+		ContentDisposition:      resp.ContentDisposition,
+		CacheControl:            resp.CacheControl,
+		ExpiresString:           resp.Metadata[string(keyExpires)],
+		WebsiteRedirectLocation: resp.Metadata[string(keyWebsiteRedirect)],
+		ETag:                    backend.GetPtrFromString(convertAzureEtag(resp.ETag)),
+		LastModified:            resp.LastModified,
+		Metadata:                parseAndFilterAzMetadata(resp.Metadata),
+		StorageClass:            types.StorageClassStandard,
 	}
 
 	status, ok := resp.Metadata[string(keyObjLegalHold)]
@@ -1191,6 +1206,9 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		if getString(input.Expires) != "" {
 			meta[string(keyExpires)] = *input.Expires
 		}
+		if getString(input.WebsiteRedirectLocation) != "" {
+			meta[string(keyWebsiteRedirect)] = *input.WebsiteRedirectLocation
+		}
 		// Set object metadata
 		_, err = dstClient.SetMetadata(ctx, parseMetadata(meta), nil)
 		if err != nil {
@@ -1271,6 +1289,7 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		ContentLanguage:           input.ContentLanguage,
 		CacheControl:              input.CacheControl,
 		Expires:                   input.Expires,
+		WebsiteRedirectLocation:   input.WebsiteRedirectLocation,
 		Metadata:                  input.Metadata,
 		ObjectLockRetainUntilDate: input.ObjectLockRetainUntilDate,
 		ObjectLockMode:            input.ObjectLockMode,
@@ -1286,6 +1305,7 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		pInput.ContentLanguage = downloadResp.ContentLanguage
 		pInput.ContentType = downloadResp.ContentType
 		pInput.Metadata = parseAzMetadata(downloadResp.Metadata)
+		delete(pInput.Metadata, string(keyWebsiteRedirect))
 	}
 
 	if input.TaggingDirective == types.TaggingDirectiveReplace {
@@ -1394,6 +1414,9 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.Cre
 
 	if getString(input.Expires) != "" {
 		meta[string(keyExpires)] = input.Expires
+	}
+	if getString(input.WebsiteRedirectLocation) != "" {
+		meta[string(keyWebsiteRedirect)] = input.WebsiteRedirectLocation
 	}
 
 	// parse object tags
@@ -1992,6 +2015,40 @@ func (az *Azure) GetBucketCors(ctx context.Context, bucket string) ([]byte, erro
 
 func (az *Azure) DeleteBucketCors(ctx context.Context, bucket string) error {
 	return az.PutBucketCors(ctx, bucket, nil)
+}
+
+func (az *Azure) PutBucketWebsite(ctx context.Context, bucket string, website []byte) error {
+	if website == nil {
+		return az.deleteContainerMetaData(ctx, bucket, string(keyWebsite))
+	}
+
+	encoded, err := backend.MarshalWebsiteConfig(website, true)
+	if err != nil {
+		return err
+	}
+
+	return az.setContainerMetaData(ctx, bucket, string(keyWebsite), encoded)
+}
+
+func (az *Azure) GetBucketWebsite(ctx context.Context, bucket string) ([]byte, error) {
+	website, err := az.getContainerMetaData(ctx, bucket, string(keyWebsite))
+	if err != nil {
+		return nil, err
+	}
+	if len(website) == 0 {
+		return nil, s3err.GetBucketErr(s3err.ErrNoSuchWebsiteConfiguration, bucket)
+	}
+
+	decoded, err := backend.UnmarshalWebsiteConfig(website, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return decoded, nil
+}
+
+func (az *Azure) DeleteBucketWebsite(ctx context.Context, bucket string) error {
+	return az.PutBucketWebsite(ctx, bucket, nil)
 }
 
 func (az *Azure) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {
