@@ -115,7 +115,7 @@ check_object_versions_after_deletion() {
     return 1
   fi
 
-  local response
+  local response xml_data
   if ! response=$(check_validity_and_or_parse_xml_data "$1" 2>&1); then
     log 2 "error getting XML data: $response"
     return 1
@@ -182,5 +182,94 @@ parse_latest_version_id() {
   version_id="$response"
   log 5 "version ID: $version_id"
   echo "$version_id"
+  return 0
+}
+
+check_page_with_two_different_keys() {
+  if ! check_param_count_ge_le "data file, version ID marker, version ID, next version ID marker (optional)" 3 4 $#; then
+    return 1
+  fi
+  if ! check_version_page_order "$1" "KeyMarker" "Key" "NextKeyMarker" "$2" "$3" "$4"; then
+    log 2 "error checking pages for different keys"
+    return 1
+  fi
+  return 0
+}
+
+parse_version_ids_with_same_key() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  local response versions version_id
+
+  if ! response=$(get_element "$1" "ListVersionsResult" "Version" 2>&1); then
+    log 2 "error getting version: $response"
+    return 1
+  fi
+  log 5 "versions: $response"
+  mapfile -t versions <<< "$response"
+
+  for version in "${versions[@]}"; do
+    if ! response=$(get_element_text_inside_string "$version" "VersionId" 2>&1); then
+      log 2 "error getting VersionId element: $response"
+      return 1
+    fi
+    version_id="$response"
+    echo "$version_id"
+  done
+  return 0
+}
+
+check_page_order_of_version_ids_with_same_key() {
+  if ! check_param_count_ge_le "data file, version ID marker, version ID, next version ID marker (optional)" 3 4 $#; then
+    return 1
+  fi
+  if ! check_version_page_order "$1" "VersionIdMarker" "VersionId" "NextVersionIdMarker" "$2" "$3" "$4"; then
+    log 2 "error checking pages for same key, different version IDs"
+    return 1
+  fi
+  return 0
+}
+
+check_version_page_order() {
+  if ! check_param_count_ge_le "data file, previous marker name, value name, next marker name, prev value, value, next value" 6 7 $#; then
+    return 1
+  fi
+  if ! response=$(check_validity_and_or_parse_xml_data "$1" 2>&1); then
+    log 2 "error getting XML data: $response"
+    return 1
+  fi
+  xml_data="$response"
+
+  if ! check_xml_element "$xml_data" "$5" "ListVersionsResult" "$2"; then
+    log 2 "error checking KeyMarker element"
+    return 1
+  fi
+  if ! check_xml_element "$xml_data" "$6" "ListVersionsResult" "Version" "$3"; then
+    log 2 "error checking Key element"
+    return 1
+  fi
+  if [ $# -lt 7 ]; then
+    if ! check_for_empty_element "$xml_data" "ListVersionsResult" "$4"; then
+      log 2 "error checking for empty NextKeyMarker"
+      return 1
+    fi
+  else
+    if ! check_xml_element "$xml_data" "$7" "ListVersionsResult" "$4"; then
+      log 2 "error checking NextKeyMarker element"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+list_object_versions_with_prefix_and_delimiter_check_results() {
+  if ! check_param_count_gt "bucket name, prefix, delimiter, expected common prefixes, --, expected keys" 6 $#; then
+    return 1
+  fi
+  if ! send_rest_go_command_callback "200" "check_prefixes_delimiters_and_keys" "-bucketName" "$1" "-query" "versions&delimiter=$3&prefix=$2" "--" "ListVersionsResult" "Version" "${@:2}"; then
+    log 2 "error sending command to list objects or receiving response"
+    return 1
+  fi
   return 0
 }

@@ -83,10 +83,6 @@ setup() {
     return 1
   fi
 
-  if [ -n "$TEST_LOG_FILE" ]; then
-    printf "\n%s\n\n" "**** $TEST_ID ****" >> "$TEST_LOG_FILE.$TEST_ID"
-  fi
-
   if [ "$RUN_USERS" == "true" ] && [ "$DIRECT" != "true" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" == "true" ]; then
     if ! static_user_versitygw_setup; then
       log 2 "error setting up static versitygw users"

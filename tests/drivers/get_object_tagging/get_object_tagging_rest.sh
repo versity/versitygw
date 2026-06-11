@@ -68,7 +68,13 @@ check_for_empty_tagset() {
   if ! check_param_count_v2 "data file" 1 $#; then
     return 1
   fi
-  if ! check_for_empty_element "$1" "Tagging" "TagSet"; then
+
+  if ! get_element "$1" "Tagging"; then
+    log 2 "error getting Tagging element"
+    return 1
+  fi
+
+  if ! check_for_empty_or_nonexistent_element "$1" "Tagging" "TagSet"; then
     log 2 "error checking for empty XML element"
     return 1
   fi

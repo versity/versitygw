@@ -171,7 +171,7 @@ source ./tests/setup.sh
   run put_object_rest "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name"
   assert_success
 
-  run send_rest_go_command_callback "200" "check_for_empty_element" "-bucketName" "$bucket_name" "-commandType" "deleteObjects" \
+  run send_rest_go_command_callback "200" "check_for_empty_or_nonexistent_element" "-bucketName" "$bucket_name" "-commandType" "deleteObjects" \
    "-contentMD5" "-objectsToDelete" "key=${file_name}" "-deleteObjectsQuietMode" "--" "DeleteResult"
   assert_success
 

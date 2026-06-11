@@ -22,6 +22,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/list_objects/list_objects.sh
 source ./tests/drivers/list_objects/list_objects_rest.sh
 source ./tests/drivers/list_objects/list_objects_s3api.sh
+source ./tests/drivers/objects_and_versions.sh
 
 # tags: curl,ListObjects,minimal-request
 @test "test_rest_list_objects" {
@@ -169,18 +170,9 @@ source ./tests/drivers/list_objects/list_objects_s3api.sh
 # tags: curl,ListObjects,encoding-type,invalid-query
 @test "REST - ListObjects - invalid encoding" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1984"
+    skip "https://github.com/versity/versitygw/issues/1985"
   fi
-  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
-  assert_success
-  read -r bucket_name file_name <<< "$output"
-
-  run send_rest_go_command "200" "-method" PUT "-bucketName" "$bucket_name" "-payloadFile" "$TEST_FILE_FOLDER/$file_name" "-objectKey" "$file_name"
-  assert_success
-
-  local bad_encoding="jdfkllaj"
-  run send_rest_go_command_expect_error_with_arg_name_value "400" "InvalidArgument" "Invalid Encoding Method specified in Request" \
-    "encoding-type" "$bad_encoding" "-bucketName" "$bucket_name" "-query" "encoding-type=$bad_encoding"
+  run objects_versions_invalid_encoding ""
   assert_success
 }
 
@@ -189,23 +181,8 @@ source ./tests/drivers/list_objects/list_objects_s3api.sh
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1985"
   fi
-  run setup_bucket_v3 "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name=$output
 
-  file_name="a+ b.txt"
-  expected_encoding="a%2B+b.txt"
-  run create_test_file "$file_name"
-  assert_success
-
-  payload_file="$TEST_FILE_FOLDER/$file_name"
-  run send_rest_go_command "200" "-method" "PUT" "-payloadFile" "$payload_file" "-bucketName" "$bucket_name" "-objectKey" "$file_name"
-  assert_success
-
-  run list_objects_check_key "$bucket_name" "$expected_encoding" "url"
-  assert_success
-
-  run list_objects_check_key "$bucket_name" "$file_name" ""
+  run objects_versions_encoding_success "" "ListBucketResult" "Contents"
   assert_success
 }
 
@@ -361,27 +338,12 @@ source ./tests/drivers/list_objects/list_objects_s3api.sh
 }
 
 list_objects_delimiter() {
-  run assert_param_count "ListObjects version" 1 $#
+  run setup_delimiter_test
   assert_success
+  mapfile -t test_info <<< "$output"
+  bucket_name="${test_info[0]}"
+  prefix="${test_info[1]}"
 
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  # shellcheck disable=SC2031
-  local bucket_name="$output"
-
-  file_names=("a-b-1.txt" "a-b-2.txt" "a-b/c-1.txt" "a-b/c-2.txt" "a-b/d.txt" "a/c.txt")
-  local prefix="a-"
-  run create_test_files_and_folders "${file_names[@]}"
-  assert_success
-
-  run setup_bucket_v2 "$bucket_name"
-  assert_success
-
-  for file_name in "${file_names[@]}"; do
-    run put_object "rest" "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name"
-    assert_success
-  done
-
-  run list_objects_with_prefix_and_delimiter_check_results "$bucket_name" "2" "$prefix" "/" "a-b/" "--" "a-b-1.txt" "a-b-2.txt"
+  run list_objects_with_prefix_and_delimiter_check_results "$bucket_name" "$1" "$prefix" "/" "a-b/" "--" "a-b-1.txt" "a-b-2.txt"
   assert_success
 }

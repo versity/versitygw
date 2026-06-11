@@ -55,7 +55,6 @@ build_xpath_string_for_element() {
       xpath+='/'
     fi
   done
-  log 5 "xpath: $xpath"
   echo "$xpath"
   return 0
 }
@@ -79,24 +78,28 @@ get_inner_xpath_string_for_element() {
   return 0
 }
 
-check_for_empty_element() {
+check_for_empty_or_nonexistent_element() {
   if ! check_param_count_gt "data file, XML tree" 2 $#; then
     return 1
   fi
+  local response
 
-  # shellcheck disable=SC2068
-  if ! xpath=$(build_xpath_string_for_element ${@:2} 2>&1); then
+  if ! xpath=$(build_xpath_string_for_element "${@:2}" 2>&1); then
     log 2 "error building XPath search string: $xpath"
-    return 1
+    return 2
   fi
   if ! get_xml_data "$1" "$1.xml"; then
     log 2 "error getting XML data"
-    return 1
+    return 2
   fi
-  if grep -q '<[^/ ?>].*>' "$1.xml"; then
-    if xmllint --xpath "${xpath}[not(normalize-space())]" "$1.xml" 1>/dev/null 2>&1; then
+  if ! response=$(get_element "$1.xml" "${@:2}" 2>&1); then
+    if [[ "$response" == *"XPath set is empty"* ]]; then
       return 0
     fi
+    log 2 "error checking for empty or nonexistent param: $response"
+    return 2
+  elif xmllint --xpath "${xpath}[not(normalize-space())]" "$1.xml" 1>/dev/null 2>&1; then
+    return 0
   fi
   return 1
 }
@@ -115,6 +118,7 @@ get_element() {
     return 1
   fi
   echo "$xml_val"
+  return 0
 }
 
 get_element_text() {
@@ -144,15 +148,15 @@ get_element_text() {
     return 0
   fi
   echo "$xml_val"
+  return 0
 }
 
 check_xml_element() {
-  if [ $# -lt 3 ]; then
-    log 2 "'check_xml_element' requires data source, expected value, XML tree"
+  if ! check_param_count_gt "data source, expected value, XML tree" 3 $#; then
     return 1
   fi
-  if ! xml_val=$(get_element_text "$1" "${@:3}"); then
-    log 2 "error getting element text"
+  if ! xml_val=$(get_element_text "$1" "${@:3}" 2>&1); then
+    log 2 "error getting element text: $xml_val"
     return 1
   fi
   log 5 "expect: '$2', actual: '$xml_val'"
@@ -179,13 +183,43 @@ check_xml_element_inside_string() {
   return 0
 }
 
+get_element_text_inside_string() {
+  if ! check_param_count_gt "string, XML tree" 2 $#; then
+    return 1
+  fi
+  local response xpath result
+
+  if ! response=$(build_xpath_string_for_element "${@:2}" 2>&1); then
+    log 2 "error building XPath search string: $response"
+    return 1
+  fi
+  xpath="$response"
+
+  result=$(echo "$1" | xmllint --xpath "boolean($xpath)" - 2>&1)
+  if [ "$result" == "false" ]; then
+    log 2 "element matching '$xpath' doesn't exist"
+    return 1
+  fi
+
+  if ! response=$(echo "$1" | xmllint --xpath "${xpath}/text()" - 2>&1); then
+    if [[ "$response" == *"XPath set is empty"* ]]; then
+      echo ""
+      return 0
+    fi
+    log 2 "error getting element text: $response"
+    return 1
+  fi
+  echo "$response"
+  return 0
+}
+
 check_xml_element_contains() {
   if [ $# -lt 3 ]; then
     log 2 "'check_xml_element_contains' requires data source, expected value, XML tree"
     return 1
   fi
   if [ "$2" == "" ]; then
-    if ! check_for_empty_element "$1" "${@:3}"; then
+    if ! check_xml_element "$1" "" "${@:3}"; then
       log 2 "Message value not empty"
       return 1
     fi
