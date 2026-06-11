@@ -11,6 +11,11 @@ fullnameOverride: ""
 # you can only increase the number of replicas if you have a "ReadWriteMany" volume!
 replicaCount: 1
 
+# Specifies the strategy used to replace old Pods by new ones. strategy.type can be
+# "Recreate" or "RollingUpdate". "RollingUpdate" is the default value.
+# Using "Recreate" is often useful when using a "ReadWriteOnce" volume.
+strategy: {}
+
 # This section defines which image to use and how to pull it.
 # Find all available tags / releases at: https://github.com/versity/versitygw/pkgs/container/versitygw
 image:
