@@ -312,16 +312,6 @@ check_chunks_and_signatures_in_test_mode() {
   esac
 }
 
-record_command_lines() {
-  while IFS= read -r line; do
-    if ! mask_arg_array "$line"; then
-      return 1
-    fi
-    # shellcheck disable=SC2154
-    echo "${masked_args[*]}" >> "$COMMAND_LOG"
-  done <<< "$command"
-}
-
 build_initial_command() {
   command="PUT /$bucket_name/$key HTTP/1.1\r
 Host: $host\r
@@ -345,15 +335,6 @@ fi
   echo -en "$command" > "$COMMAND_FILE"
 }
 
-complete_command() {
-  echo -e "\r" >> "$COMMAND_FILE"
-  if [ -n "$COMMAND_LOG" ]; then
-    if ! record_command_lines; then
-      return 1
-    fi
-  fi
-}
-
 load_parameters
 
 if ! get_file_size_and_content_length; then
@@ -374,10 +355,7 @@ if ! build_chunks "$first_signature"; then
   log_rest 2 "error building chunks"
   exit 1
 fi
-if ! complete_command; then
-  log_rest 2 "error adding chunks"
-  exit 1
-fi
+echo -e "\r" >> "$COMMAND_FILE"
 
 if [ "$test_mode" == "true" ]; then
   log_rest 4 "TEST PASS"

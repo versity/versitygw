@@ -101,7 +101,7 @@ create_bucket_object_lock_enabled() {
   fi
 
   local exit_code=0
-  error=$(send_command aws --no-verify-ssl s3api create-bucket --bucket "$1" 2>&1 --object-lock-enabled-for-bucket) || local exit_code=$?
+  error=$(send_command aws --no-verify-ssl s3api create-bucket --bucket "$1" 2>&1 --object-lock-enabled-for-bucket 2>&1) || local exit_code=$?
   if [ $exit_code -ne 0 ]; then
     log 2 "error creating bucket: $error"
     return 1
@@ -128,9 +128,11 @@ create_bucket_rest_expect_error() {
   if ! check_param_count_v2 "bucket name, params, response code, error code, message" 5 $#; then
     return 1
   fi
+  local response
+
   env_vars="BUCKET_NAME=$1 $2"
-  if ! send_rest_command_expect_error "$env_vars" "./tests/rest_scripts/create_bucket.sh" "$3" "$4" "$5"; then
-    log 2 "error sending REST command and checking error"
+  if ! response=$(send_rest_command_expect_error "$env_vars" "./tests/rest_scripts/create_bucket.sh" "$3" "$4" "$5" 2>&1); then
+    log 2 "error sending REST command and checking error: $response"
     return 1
   fi
   return 0
@@ -140,9 +142,11 @@ create_bucket_rest_expect_success() {
   if ! check_param_count_v2 "bucket name, params" 2 $#; then
     return 1
   fi
+  local response
+
   env_vars="BUCKET_NAME=$1 $2"
-  if ! send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/create_bucket.sh" "200"; then
-    log 2 "error sending REST command and checking error"
+  if ! response=$(send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/create_bucket.sh" "200" 2>&1); then
+    log 2 "REST create bucket command error: $response"
     return 1
   fi
   return 0

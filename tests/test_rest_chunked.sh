@@ -496,7 +496,6 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
 
   run send_openssl_go_command "200" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-commandType" "putObject" \
     "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-omitPayloadTrailer" \
-    "-debug" "-logFile" "tagging.log" "-checksumType" "crc64nvme" \
-    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192"
+    "-checksumType" "crc64nvme" "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192"
   assert_success
 }

@@ -107,7 +107,7 @@ add_version_tags_check_version_id() {
     return 1
   fi
   # shellcheck disable=SC2154
-  if ! send_rest_go_command_callback "200" "check_header_version_id" "-bucketName" "$1" "-objectKey" "$2" "-debug" "-logFile" "signature.log" \
+  if ! send_rest_go_command_callback "200" "check_header_version_id" "-bucketName" "$1" "-objectKey" "$2" \
         "-method" "GET" "-query" "tagging=&versionId=$version_id" "-tagKey" "key" "-tagValue" "value" "-contentMD5" "--" "$version_id"; then
     log 2 "error tagging object"
     return 1

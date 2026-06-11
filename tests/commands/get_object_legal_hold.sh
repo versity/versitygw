@@ -28,18 +28,30 @@ get_object_legal_hold() {
 }
 
 get_object_legal_hold_rest() {
-  if [ $# -ne 2 ]; then
-    log 2 "'get_object_legal_hold_rest' requires bucket, key"
+  if ! check_param_count_v2 "bucket, key" 2 $#; then
     return 1
   fi
-  if ! result=$(COMMAND_LOG=$COMMAND_LOG BUCKET_NAME=$1 OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/legal_hold.txt" ./tests/rest_scripts/get_object_legal_hold.sh); then
-    log 2 "error getting object legal hold: $result"
+  local response output_file response_code legal_hold
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting output file name: $response"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "get-object-legal-hold returned code $result: $(cat "$TEST_FILE_FOLDER/legal_hold.txt")"
+  output_file="$response"
+
+  if ! response=$(COMMAND_LOG=$COMMAND_LOG BUCKET_NAME=$1 OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/$output_file" ./tests/rest_scripts/get_object_legal_hold.sh); then
+    log 2 "error getting object legal hold: $response"
     return 1
   fi
+  response_code="$response"
+
+  legal_hold=$(cat "$TEST_FILE_FOLDER/$output_file")
+  if [ "$response_code" != "200" ]; then
+    log 2 "get-object-legal-hold returned code '$response_code', data: '$legal_hold'"
+    return 1
+  fi
+
+  echo "$legal_hold"
   return 0
 }
 
@@ -60,14 +72,26 @@ get_object_legal_hold_rest_version_id() {
   if ! check_param_count "get_object_legal_hold_rest_version_id" "bucket, key, version ID" 3 $#; then
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" VERSION_ID="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/legal_hold.txt" ./tests/rest_scripts/get_object_legal_hold.sh); then
-    log 2 "error getting object legal hold: $result"
+  local response output_file response_code legal_hold
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting output file name: $response"
     return 1
   fi
-  legal_hold=$(cat "$TEST_FILE_FOLDER/legal_hold.txt")
-  if [ "$result" != "200" ]; then
-    log 2 "get-object-legal-hold returned code $result: $legal_hold)"
+  output_file="$response"
+
+  if ! response=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" VERSION_ID="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/$output_file" ./tests/rest_scripts/get_object_legal_hold.sh); then
+    log 2 "error getting object legal hold: $response"
     return 1
   fi
+  response_code="$response"
+
+  legal_hold=$(cat "$TEST_FILE_FOLDER/$output_file")
+  if [ "$response_code" != "200" ]; then
+    log 2 "get-object-legal-hold returned code '$response_code', data: '$legal_hold')"
+    return 1
+  fi
+
+  echo "$legal_hold"
   return 0
 }

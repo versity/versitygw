@@ -58,17 +58,20 @@ send_rest_command() {
   if ! check_param_count_v2 "env vars, script" 2 $#; then
     return 1
   fi
+  local response output_file response_code
+
   if [[ "$1" == *"OUTPUT_FILE"* ]]; then
-    if ! output_file=$(echo -n "$1" | sed -n 's/^.*OUTPUT_FILE=\([^ ]*\).*$/\1/p' 2>&1); then
-      log 2 "error getting output file: $output_file"
+    if ! response=$(echo -n "$1" | sed -n 's/^.*OUTPUT_FILE=\([^ ]*\).*$/\1/p' 2>&1); then
+      log 2 "error getting output file: $response"
     fi
+    output_file="$response"
     log 5 "output file: $output_file"
   else
-    if ! file_name=$(get_file_name 2>&1); then
-      log 2 "error getting file name: $file_name"
+    if ! response=$(get_file_name 2>&1); then
+      log 2 "error getting file name: $response"
       return 1
     fi
-    output_file="$TEST_FILE_FOLDER/$file_name"
+    output_file="$TEST_FILE_FOLDER/$response"
   fi
   local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$output_file")
   if [ "$1" != "" ]; then
@@ -76,21 +79,35 @@ send_rest_command() {
     env_array+=("${env_vars[@]}")
   fi
   # shellcheck disable=SC2068
-  if ! result=$(${env_array[@]} "$2" 2>&1); then
-    log 2 "error sending command: $result"
+  if ! response=$(${env_array[@]} "$2" 2>&1); then
+    log 2 "error sending command: $response"
+    if [ -e "$output_file" ]; then
+      log 2 "output data: '$(cat "$output_file")'"
+    fi
     return 1
   fi
+  response_code="$response"
+
+  echo "$response_code"
+  echo "$output_file"
+  return 0
 }
 
 send_rest_command_expect_error() {
   if ! check_param_count_v2 "env vars, script, response code, error, message" 5 $#; then
     return 1
   fi
-  if ! send_rest_command "$1" "$2"; then
-    log 2 "error sending REST command"
+  local response response_lines response_code output_file
+
+  if ! response=$(send_rest_command "$1" "$2" 2>&1); then
+    log 2 "error sending REST command: $response"
     return 1
   fi
-  if ! check_rest_expected_error "$result" "$output_file" "$3" "$4" "$5"; then
+  mapfile -t response_lines <<< "$response"
+  response_code="${response_lines[0]}"
+  output_file="${response_lines[1]}"
+
+  if ! check_rest_expected_error "$response_code" "$output_file" "$3" "$4" "$5"; then
     log 2 "error checking REST error"
     return 1
   fi
@@ -124,10 +141,15 @@ send_rest_command_expect_header_error() {
   if ! check_param_count_v2 "env vars, script, response code, message" 4 $#; then
     return 1
   fi
-  if ! send_rest_command "$1" "$2"; then
-    log 2 "error sending REST command"
+  local response response_lines output_file
+
+  if ! response=$(send_rest_command "$1" "$2" 2>&1); then
+    log 2 "error sending REST command: $response"
     return 1
   fi
+  mapfile -t response_lines <<< "$response"
+  output_file="${response_lines[1]}"
+
   if ! check_rest_expected_header_error "$output_file" "$3" "$4"; then
     log 2 "error checking REST error"
     return 1
@@ -136,18 +158,24 @@ send_rest_command_expect_header_error() {
 }
 
 send_rest_command_expect_success() {
-if ! check_param_count_v2 "env vars, script, response code" 3 $#; then
-  return 1
-fi
-if ! send_rest_command "$1" "$2"; then
-  log 2 "error sending REST command"
-  return 1
-fi
-if [ "$result" != "$3" ]; then
-  log 2 "expected '$3', was '$result' ($(cat "$output_file"))"
-  return 1
-fi
-return 0
+  if ! check_param_count_v2 "env vars, script, response code" 3 $#; then
+    return 1
+  fi
+  local response response_lines response_code output_file
+
+  if ! response=$(send_rest_command "$1" "$2" 2>&1); then
+    log 2 "error sending REST command: $response"
+    return 1
+  fi
+  mapfile -t response_lines <<< "$response"
+  response_code="${response_lines[0]}"
+  output_file="${response_lines[1]}"
+
+  if [ "$response_code" != "$3" ]; then
+    log 2 "expected '$3', was '$response_code' ($(cat "$output_file"))"
+    return 1
+  fi
+  return 0
 }
 
 send_rest_command_expect_success_callback() {
@@ -171,7 +199,7 @@ send_rest_command_expect_success_callback() {
   log 5 "command: ${env_array[*]} $2"
   # shellcheck disable=SC2068
   if ! response=$(${env_array[@]} "$2" 2>&1); then
-    log 2 "error sending command: $result"
+    log 2 "error sending command: $response"
     return 1
   fi
   http_response="$response"

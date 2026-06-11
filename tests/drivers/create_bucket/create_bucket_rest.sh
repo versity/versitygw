@@ -166,7 +166,7 @@ setup_bucket_v3() {
     return 1
   fi
   if ! error=$(bucket_cleanup_if_bucket_exists_v2 "$1" 2>&1); then
-    log 2 "error cleaning up bucket(s), if it/they exist(s): $error"
+    log 2 "error cleaning up bucket(s), if it/they exist(s): '$error'"
     return 1
   fi
   if [ "$RECREATE_BUCKETS" == "false" ]; then
