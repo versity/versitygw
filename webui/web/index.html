@@ -620,7 +620,25 @@ under the License.
         // Save gateway to recent list
         const rememberKey = document.getElementById('remember-access-key').checked;
         saveRecentGateway(s3Endpoint, region, accessKey, rememberKey);
-
+        
+        if (window.location.hash !== '') {
+          try {
+            const previousLocation = decodeURIComponent(window.location.hash.slice(1));
+            const url = new URL(previousLocation, window.location.origin)
+            
+            const ALLOWED_PAGES = ['/explorer.html', '/dashboard.html', '/buckets.html', '/users.html'];
+            
+            // Validate same origin and against an explicit page allowlist.
+            // Using URL() means javascript: URIs resolve with origin "null" and are rejected.
+            if (url.origin === window.location.origin && ALLOWED_PAGES.includes(url.pathname)) {
+              window.location.href = previousLocation;
+              return;
+            }
+          } catch (_) {
+              // Malformed URL — fall through to default role-based redirect below.
+          }
+        }
+        
         // Navigate based on role
         if (role === 'admin') {
           // Admin user - redirect to dashboard
