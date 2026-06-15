@@ -24,7 +24,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/smithy-go/logging"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	v4 "github.com/versity/versitygw/aws/signer/v4"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
@@ -38,7 +38,7 @@ const (
 )
 
 // CheckPresignedSignature validates presigned request signature
-func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string) error {
+func CheckPresignedSignature(ctx fiber.Ctx, auth AuthData, secret string) error {
 	signedHdrs := strings.Split(auth.SignedHeaders, ";")
 
 	var contentLength int64
@@ -60,7 +60,7 @@ func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string) error
 	date, _ := time.Parse(iso8601Format, auth.Date)
 
 	signer := v4.NewSigner()
-	uri, _, signMeta, signErr := signer.PresignHTTP(ctx.Context(), aws.Credentials{
+	uri, _, signMeta, signErr := signer.PresignHTTP(ctx.RequestCtx(), aws.Credentials{
 		AccessKeyID:     auth.Access,
 		SecretAccessKey: secret,
 	}, req, unsignedPayload, service, auth.Region, date, signedHdrs, func(options *v4.SignerOptions) {
@@ -104,7 +104,7 @@ func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string) error
 // &X-Amz-Expires=86400
 // &X-Amz-SignedHeaders=host
 // &X-Amz-Signature=1e68ad45c1db540284a4a1eca3884c293ba1a0ff63ab9db9a15b5b29dfa02cd8
-func ParsePresignedURIParts(ctx *fiber.Ctx, region string) (AuthData, error) {
+func ParsePresignedURIParts(ctx fiber.Ctx, region string) (AuthData, error) {
 	a := AuthData{}
 
 	// Get and verify algorithm query parameter
@@ -218,7 +218,7 @@ func validateAlgorithm(algo string) error {
 
 // IsPresignedURLAuth determines if the request is presigned:
 // which is authorization with query params
-func IsPresignedURLAuth(ctx *fiber.Ctx) bool {
+func IsPresignedURLAuth(ctx fiber.Ctx) bool {
 	algo := ctx.Query("X-Amz-Algorithm")
 	creds := ctx.Query("X-Amz-Credential")
 	signature := ctx.Query("X-Amz-Signature")
@@ -230,7 +230,7 @@ func IsPresignedURLAuth(ctx *fiber.Ctx) bool {
 
 // IsPresignedURLAuthV2 determines if the request is
 // query-string signed with aws v2 signer
-func IsPresignedURLAuthV2(ctx *fiber.Ctx) bool {
+func IsPresignedURLAuthV2(ctx fiber.Ctx) bool {
 	expires := ctx.Query("Expires")
 	access := ctx.Query("AWSAccessKeyId")
 	signature := ctx.Query("Signature")

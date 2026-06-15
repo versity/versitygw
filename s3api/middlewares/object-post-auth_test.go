@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -37,7 +37,7 @@ import (
 // versitygw middlewares) returns nil without calling c.Next(), so they must
 // be chained explicitly rather than relying on fiber's c.Next() mechanism.
 func chainHandlers(handlers ...fiber.Handler) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		for _, h := range handlers {
 			if err := h(c); err != nil {
 				return err
@@ -51,7 +51,7 @@ func chainHandlers(handlers ...fiber.Handler) fiber.Handler {
 // the provided follow-up handler on POST /:bucket.
 func postObjectTestApp(root RootUserConfig, region string, next fiber.Handler) *fiber.App {
 	app := fiber.New(fiber.Config{
-		ErrorHandler: func(c *fiber.Ctx, err error) error {
+		ErrorHandler: func(c fiber.Ctx, err error) error {
 			if s3Err, ok := err.(s3err.S3Error); ok {
 				return c.Status(s3Err.StatusCode()).Send(s3Err.XMLBody("", ""))
 			}
@@ -124,7 +124,7 @@ func TestAuthorizePostObject_AnonymousRequest(t *testing.T) {
 	app := postObjectTestApp(
 		RootUserConfig{Access: "root", Secret: "rootsecret"},
 		"us-east-1",
-		func(c *fiber.Ctx) error {
+		func(c fiber.Ctx) error {
 			gotResult = utils.ContextKeyObjectPostResult.Get(c).(PostObjectResult)
 			gotAuthenticated = utils.ContextKeyAuthenticated.IsSet(c)
 			return c.SendStatus(http.StatusOK)
@@ -150,7 +150,7 @@ func TestAuthorizePostObject_AnonymousRequest_SetsPostObjectResult(t *testing.T)
 	app := postObjectTestApp(
 		RootUserConfig{Access: "root", Secret: "rootsecret"},
 		"us-east-1",
-		func(c *fiber.Ctx) error {
+		func(c fiber.Ctx) error {
 			gotResult = utils.ContextKeyObjectPostResult.Get(c).(PostObjectResult)
 			return c.SendStatus(http.StatusOK)
 		},
@@ -194,7 +194,7 @@ func TestAuthorizePostObject_SignedRequest(t *testing.T) {
 	app := postObjectTestApp(
 		RootUserConfig{Access: accessKey, Secret: secretKey},
 		region,
-		func(c *fiber.Ctx) error {
+		func(c fiber.Ctx) error {
 			gotAuthenticated = utils.ContextKeyAuthenticated.IsSet(c)
 			return c.SendStatus(http.StatusOK)
 		},
@@ -236,7 +236,7 @@ func TestAuthorizePostObject_SignedRequest_WrongSignature(t *testing.T) {
 	app := postObjectTestApp(
 		RootUserConfig{Access: accessKey, Secret: secretKey},
 		region,
-		func(c *fiber.Ctx) error { return c.SendStatus(http.StatusOK) },
+		func(c fiber.Ctx) error { return c.SendStatus(http.StatusOK) },
 	)
 
 	body, boundary := buildMultipartBody(t, map[string]string{
@@ -259,7 +259,7 @@ func TestAuthorizePostObject_PartialAuthFields_ReturnsError(t *testing.T) {
 	app := postObjectTestApp(
 		RootUserConfig{Access: "root", Secret: "rootsecret"},
 		"us-east-1",
-		func(c *fiber.Ctx) error { return c.SendStatus(http.StatusOK) },
+		func(c fiber.Ctx) error { return c.SendStatus(http.StatusOK) },
 	)
 
 	// Only algorithm is provided — credential, date, policy, signature absent.
@@ -279,7 +279,7 @@ func TestAuthorizePostObject_InvalidContentType_ReturnsError(t *testing.T) {
 	app := postObjectTestApp(
 		RootUserConfig{Access: "root", Secret: "rootsecret"},
 		"us-east-1",
-		func(c *fiber.Ctx) error { return c.SendStatus(http.StatusOK) },
+		func(c fiber.Ctx) error { return c.SendStatus(http.StatusOK) },
 	)
 
 	req, err := http.NewRequest(http.MethodPost, "/mybucket", strings.NewReader("body"))

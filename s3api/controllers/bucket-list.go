@@ -15,13 +15,13 @@
 package controllers
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3response"
 )
 
-func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) ListBuckets(ctx fiber.Ctx) (*Response, error) {
 	cToken := ctx.Query("continuation-token")
 	prefix := ctx.Query("prefix")
 	maxBucketsStr := ctx.Query("max-buckets")
@@ -38,7 +38,7 @@ func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	res, err := c.be.ListBuckets(ctx.Context(),
+	res, err := c.be.ListBuckets(ctx.RequestCtx(),
 		s3response.ListBucketsInput{
 			Owner:             acct.Access,
 			IsAdmin:           acct.Role == auth.RoleAdmin,

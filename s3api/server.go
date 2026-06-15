@@ -23,9 +23,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/logger"
+	"github.com/gofiber/fiber/v3/middleware/recover"
+	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
@@ -40,7 +41,8 @@ import (
 )
 
 const (
-	shutDownDuration = time.Second * 10
+	shutDownDuration     = time.Second * 10
+	requestHeaderMaxSize = 8 * 1024
 )
 
 type S3ApiServer struct {
@@ -102,25 +104,24 @@ func New(
 	}
 
 	app := fiber.New(fiber.Config{
-		AppName:               "versitygw",
-		ServerHeader:          "VERSITYGW",
-		StreamRequestBody:     true,
-		DisableKeepalive:      !server.keepAlive,
-		Network:               fiber.NetworkTCP,
-		DisableStartupMessage: true,
-		ErrorHandler:          globalErrorHandler,
-		Concurrency:           server.maxConnections,
+		AppName:           "versitygw",
+		ServerHeader:      "VERSITYGW",
+		StreamRequestBody: true,
+		DisableKeepalive:  !server.keepAlive,
+		ErrorHandler:      globalErrorHandler,
+		Concurrency:       server.maxConnections,
 		// Sets buffer limit to read/parse incoming requests
 		// if the limit is reached, fiber/fasthttp will throw an error
 		// in the global error handler
-		ReadBufferSize: 8 * 1024, // 8 KB
+		ReadBufferSize: requestHeaderMaxSize,
 	})
+	installRequestHeaderLimitErrorHandler(app)
 
 	server.app = app
 	server.Router.app = app
 
 	// initialize the panic recovery middleware
-	app.Use(recover.New(
+	app.Use("*", recover.New(
 		recover.Config{
 			EnableStackTrace:  true,
 			StackTraceHandler: stackTraceHandler,
@@ -128,35 +129,41 @@ func New(
 
 	// Logging middlewares
 	if !server.quiet {
-		app.Use(logger.New(logger.Config{
+		app.Use("*", logger.New(logger.Config{
 			Format: "${time} | vgw | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 		}))
 	}
 
 	// initialize requestId middleware
-	app.Use(middlewares.RequestIDs())
+	app.Use("*", middlewares.RequestIDs())
 
 	// Set up health endpoint if specified
 	if server.health != "" {
-		app.Get(server.health, func(ctx *fiber.Ctx) error {
+		app.Get(server.health, func(ctx fiber.Ctx) error {
 			return ctx.SendStatus(http.StatusOK)
 		})
 	}
 
 	// Set up WebUI on the S3 port if configured
 	if server.webuiSrvCfg != nil {
-		webui.MountOn(app, server.webuiMountPrefix, server.webuiSrvCfg)
+		if err := webui.MountOn(app, server.webuiMountPrefix, server.webuiSrvCfg); err != nil {
+			return nil, fmt.Errorf("mount webui: %w", err)
+		}
 	}
 
 	// initialize total requests cap limiter middleware
-	app.Use(middlewares.RateLimiter(server.maxRequests, mm, l))
+	app.Use("*", middlewares.RateLimiter(server.maxRequests, mm, l))
 
 	for _, route := range server.routes {
 		method, err := validateRouteMount(route)
 		if err != nil {
 			return nil, err
 		}
-		app.Add(method, route.path, route.handlers...)
+		handlers := make([]any, len(route.handlers)-1)
+		for i := range handlers {
+			handlers[i] = route.handlers[i+1]
+		}
+		app.Add([]string{method}, route.path, route.handlers[0], handlers...)
 	}
 
 	for _, mount := range server.middlewares {
@@ -167,15 +174,15 @@ func New(
 	}
 
 	// initilaze the default value setter middleware
-	app.Use(middlewares.SetDefaultValues(root, region))
+	app.Use("*", middlewares.SetDefaultValues(root, region))
 
 	// initialize the 'DecodeURL' middleware which
 	// path unescapes the url
-	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, mm))
+	app.Use("*", controllers.WrapMiddleware(middlewares.DecodeURL, l, mm))
 
 	// initialize the debug logger in debug mode
 	if debuglogger.IsDebugEnabled() {
-		app.Use(middlewares.DebugLogger())
+		app.Use("*", middlewares.DebugLogger())
 	}
 
 	server.Router.Init()
@@ -357,9 +364,9 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 		var err error
 
 		if sa.CertStorage != nil {
-			ln, err = utils.NewMultiAddrTLSListener(sa.app.Config().Network, portSpec, sa.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = utils.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, sa.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: sa.socketPerm})
 		} else {
-			ln, err = utils.NewMultiAddrListener(sa.app.Config().Network, portSpec, utils.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = utils.NewMultiAddrListener(fiber.NetworkTCP, portSpec, utils.ListenerOptions{SocketPerm: sa.socketPerm})
 		}
 		if err != nil {
 			return fmt.Errorf("failed to bind s3 listener %s: %w", portSpec, err)
@@ -383,7 +390,9 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 		})
 	}
 
-	return sa.app.Listener(finalListener)
+	return sa.app.Listener(finalListener, fiber.ListenConfig{
+		DisableStartupMessage: true,
+	})
 }
 
 // ShutDown gracefully shuts down the server with a context timeout
@@ -393,13 +402,45 @@ func (sa *S3ApiServer) ShutDown() error {
 
 // stackTraceHandler stores the system panics
 // in the context locals
-func stackTraceHandler(ctx *fiber.Ctx, e any) {
+func stackTraceHandler(ctx fiber.Ctx, e any) {
 	utils.ContextKeyStack.Set(ctx, e)
+}
+
+// installRequestHeaderLimitErrorHandler converts fasthttp small-buffer errors
+// into the S3 RequestHeaderSectionTooLarge response.
+//
+// This is a temporary solution until Fiber handles request header limit errors
+// before response writes correctly. See:
+// https://github.com/gofiber/fiber/issues/4423
+func installRequestHeaderLimitErrorHandler(app *fiber.App) {
+	server := app.Server()
+	fiberErrorHandler := server.ErrorHandler
+	server.ErrorHandler = func(ctx *fasthttp.RequestCtx, err error) {
+		var smallBufferErr *fasthttp.ErrSmallBuffer
+		if errors.As(err, &smallBufferErr) {
+			debuglogger.Logf("total request headers size exceeds the allowed 8KB")
+
+			requestID := utils.NewS3RequestID()
+			hostID := utils.NewS3HostID()
+			apiErr := s3err.GetRequestHeaderSectionTooLargeErr(requestHeaderMaxSize)
+
+			ctx.Response.Reset()
+			ctx.Response.Header.SetContentType(fiber.MIMEApplicationXML)
+			ctx.Response.Header.Set(utils.HeaderAmzRequestID, requestID)
+			ctx.Response.Header.Set(utils.HeaderAmzID2, hostID)
+			ctx.SetStatusCode(apiErr.StatusCode())
+			ctx.SetConnectionClose()
+			ctx.SetBody(apiErr.XMLBody(requestID, hostID))
+			return
+		}
+
+		fiberErrorHandler(ctx, err)
+	}
 }
 
 // globalErrorHandler catches the errors before reaching to
 // the handlers and any system panics
-func globalErrorHandler(ctx *fiber.Ctx, er error) error {
+func globalErrorHandler(ctx fiber.Ctx, er error) error {
 	requestID, hostID := utils.EnsureRequestIDs(ctx)
 
 	// set content type to application/xml
@@ -416,8 +457,8 @@ func globalErrorHandler(ctx *fiber.Ctx, er error) error {
 		if errors.As(er, &fiberErr) {
 			if errors.Is(fiberErr, fiber.ErrRequestHeaderFieldsTooLarge) {
 				debuglogger.Logf("total request headers size exceeds the allowed 8KB")
-				ctx.Status(http.StatusBadRequest)
-				return nil
+				err := s3err.GetRequestHeaderSectionTooLargeErr(requestHeaderMaxSize)
+				return ctx.Status(err.StatusCode()).Send(err.XMLBody(requestID, hostID))
 			}
 			if strings.Contains(fiberErr.Message, "cannot parse Content-Length") {
 				debuglogger.Logf("failed to parse Content-Length")

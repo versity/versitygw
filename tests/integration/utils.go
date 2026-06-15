@@ -693,6 +693,8 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 			compareErrField("Size", int64(err.Size), received.Size),
 			compareErrField("MaxSizeAllowed", int64(err.MaxSizeAllowed), received.MaxSizeAllowed),
 		)
+	case s3err.RequestHeaderSectionTooLargeError:
+		return compareErrField("MaxSizeAllowed", int64(err.MaxSizeAllowed), received.MaxSizeAllowed)
 	case s3err.MethodNotAllowedError:
 		return compareS3ApiErrFields(
 			compareErrField("Method", err.Method, received.Method),

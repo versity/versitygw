@@ -15,7 +15,7 @@
 package middlewares
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -23,7 +23,7 @@ import (
 
 // IsAdmin is a middleware that restricts access to admin APIs, allowing only admin users
 func IsAdmin(action string) fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 		if acct.Role != auth.RoleAdmin {
 			return s3err.GetAPIError(s3err.ErrAdminAccessDenied)

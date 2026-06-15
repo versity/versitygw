@@ -20,8 +20,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/middlewares"
@@ -87,10 +88,10 @@ func TestWithRouteRegistersBeforeMiddleware(t *testing.T) {
 
 	middlewareCalled := false
 	server, err := newTestS3ApiServer(
-		WithRoute(http.MethodGet, routePath, func(ctx *fiber.Ctx) error {
+		WithRoute(http.MethodGet, routePath, func(ctx fiber.Ctx) error {
 			return ctx.SendStatus(http.StatusNoContent)
 		}),
-		WithMiddleware("/", func(ctx *fiber.Ctx) error {
+		WithMiddleware("/", func(ctx fiber.Ctx) error {
 			middlewareCalled = true
 			return ctx.SendStatus(http.StatusMisdirectedRequest)
 		}),
@@ -126,7 +127,7 @@ func TestWithRouteRegistersAfterRateLimiter(t *testing.T) {
 
 	server, err := newTestS3ApiServer(
 		WithConcurrencyLimiter(10, 1),
-		WithRoute(http.MethodGet, routePath, func(ctx *fiber.Ctx) error {
+		WithRoute(http.MethodGet, routePath, func(ctx fiber.Ctx) error {
 			once.Do(func() {
 				close(started)
 			})
@@ -139,7 +140,7 @@ func TestWithRouteRegistersAfterRateLimiter(t *testing.T) {
 	}
 
 	go func() {
-		resp, err := server.app.Test(httptest.NewRequest(http.MethodGet, routePath, nil), -1)
+		resp, err := server.app.Test(httptest.NewRequest(http.MethodGet, routePath, nil), fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 		if err != nil {
 			firstDone <- err
 			return
@@ -154,7 +155,7 @@ func TestWithRouteRegistersAfterRateLimiter(t *testing.T) {
 
 	<-started
 
-	resp, err := server.app.Test(httptest.NewRequest(http.MethodGet, routePath, nil), 100)
+	resp, err := server.app.Test(httptest.NewRequest(http.MethodGet, routePath, nil), fiber.TestConfig{Timeout: time.Duration(100) * time.Millisecond})
 	if err != nil {
 		close(release)
 		t.Fatalf("second app.Test() error = %v", err)
@@ -172,7 +173,7 @@ func TestWithRouteRegistersAfterRateLimiter(t *testing.T) {
 }
 
 func TestCustomMountValidation(t *testing.T) {
-	validHandler := func(ctx *fiber.Ctx) error {
+	validHandler := func(ctx fiber.Ctx) error {
 		return ctx.SendStatus(http.StatusNoContent)
 	}
 

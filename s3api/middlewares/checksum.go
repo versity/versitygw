@@ -20,7 +20,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 )
@@ -32,7 +32,7 @@ import (
 // it wraps the body reader to handle Content-MD5:
 // the x-amz-checksum-* headers are explicitly processed by the backend.
 func VerifyChecksums(streamBody bool, requireBody bool, requireChecksum bool) fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		md5sum := ctx.Get("Content-Md5")
 
 		if streamBody {
@@ -58,7 +58,7 @@ func VerifyChecksums(streamBody bool, requireBody bool, requireChecksum bool) fi
 			return nil
 		}
 
-		body := ctx.Body()
+		body := ctx.BodyRaw()
 		if requireBody && len(body) == 0 {
 			return s3err.GetAPIError(s3err.ErrMissingRequestBody)
 		}

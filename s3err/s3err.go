@@ -182,6 +182,7 @@ const (
 	ErrInvalidChunkSize
 	ErrSlowDown
 	ErrMetadataTooLarge
+	ErrRequestHeaderSectionTooLarge
 	ErrUnsupportedAuthorizationMechanism
 	ErrNoBucketInRequest
 
@@ -704,6 +705,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrMetadataTooLarge: {
 		Code:           "MetadataTooLarge",
 		Description:    "Your metadata headers exceed the maximum allowed metadata size",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrRequestHeaderSectionTooLarge: {
+		Code:           "RequestHeaderSectionTooLarge",
+		Description:    "Your request header section exceeds the maximum allowed size.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrUnsupportedAuthorizationMechanism: {

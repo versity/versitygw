@@ -14,7 +14,10 @@
 
 package webui
 
-import "embed"
+import (
+	"embed"
+	"io/fs"
+)
 
 // webFiles embeds the admin GUI static files from web/.
 // The "all:" prefix recursively includes all files and subdirectories.
@@ -23,4 +26,4 @@ import "embed"
 var webFiles embed.FS
 
 // webFS is an alias for webFiles for consistency with server.go
-var webFS = webFiles
+var webFS fs.FS = webFiles

@@ -899,11 +899,14 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			webOpts = append(webOpts, webui.WithSocketPerm(parsedSocketPerm))
 		}
 
-		webSrv = webui.NewServer(&webui.ServerConfig{
+		webSrv, err = webui.NewServer(&webui.ServerConfig{
 			Gateways:      gateways,
 			AdminGateways: adminGateways,
 			Region:        cfg.Region,
 		}, webOpts...)
+		if err != nil {
+			return fmt.Errorf("init webui: %w", err)
+		}
 	}
 
 	var wsSrv *website.Server

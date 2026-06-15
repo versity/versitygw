@@ -22,7 +22,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/middlewares"
@@ -32,7 +32,7 @@ import (
 	"github.com/versity/versitygw/s3response"
 )
 
-func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) DeleteObjects(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	bypass := strings.EqualFold(ctx.Get("X-Amz-Bypass-Governance-Retention"), "true")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
@@ -40,7 +40,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -61,7 +61,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	var dObj s3response.DeleteObjects
-	err = xml.Unmarshal(ctx.Body(), &dObj)
+	err = xml.Unmarshal(ctx.BodyRaw(), &dObj)
 	if err != nil {
 		debuglogger.Logf("error unmarshalling delete objects: %v", err)
 		return &Response{
@@ -71,7 +71,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, dObj.Objects, bypass, IsBucketPublic, c.be, false)
+	err = auth.CheckObjectAccess(ctx.RequestCtx(), bucket, acct.Access, dObj.Objects, bypass, IsBucketPublic, c.be, false)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -80,7 +80,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	res, err := c.be.DeleteObjects(ctx.Context(),
+	res, err := c.be.DeleteObjects(ctx.RequestCtx(),
 		&s3.DeleteObjectsInput{
 			Bucket: &bucket,
 			Delete: &types.Delete{
@@ -97,7 +97,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) POSTObject(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
@@ -115,7 +115,7 @@ func (c S3ApiController) POSTObject(ctx *fiber.Ctx) (*Response, error) {
 
 	key := parsed.Fields["key"]
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -206,7 +206,7 @@ func (c S3ApiController) POSTObject(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	res, err := c.be.PutObject(ctx.Context(), s3response.PutObjectInput{
+	res, err := c.be.PutObject(ctx.RequestCtx(), s3response.PutObjectInput{
 		Bucket:                  &bucket,
 		Key:                     &key,
 		ContentType:             &contentType,

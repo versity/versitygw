@@ -17,15 +17,15 @@ package webui
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net"
-	"net/http"
 	"os"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/filesystem"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/logger"
+	"github.com/gofiber/fiber/v3/middleware/recover"
+	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
@@ -73,12 +73,10 @@ func WithSocketPerm(perm os.FileMode) Option {
 }
 
 // NewServer creates a new GUI server instance
-func NewServer(cfg *ServerConfig, opts ...Option) *Server {
+func NewServer(cfg *ServerConfig, opts ...Option) (*Server, error) {
 	app := fiber.New(fiber.Config{
-		AppName:               "versitygw",
-		ServerHeader:          "VERSITYGW",
-		DisableStartupMessage: true,
-		Network:               fiber.NetworkTCP,
+		AppName:      "versitygw",
+		ServerHeader: "VERSITYGW",
 	})
 
 	server := &Server{
@@ -93,50 +91,55 @@ func NewServer(cfg *ServerConfig, opts ...Option) *Server {
 	fmt.Printf("initializing web dashboard\n")
 
 	server.setupMiddleware()
-	server.setupRoutes()
+	if err := server.setupRoutes(); err != nil {
+		return nil, err
+	}
 
-	return server
+	return server, nil
 }
 
 // setupMiddleware configures middleware
 func (s *Server) setupMiddleware() {
 	// Panic recovery
-	s.app.Use(recover.New())
+	s.app.Use("*", recover.New())
 
 	// Request logging
 	if !s.quiet {
-		s.app.Use(logger.New(logger.Config{
+		s.app.Use("*", logger.New(logger.Config{
 			Format: "${time} | web | ${status} | ${latency} | ${ip} | ${method} | ${path}\n",
 		}))
 	}
 }
 
 // setupRoutes configures all routes
-func (s *Server) setupRoutes() {
+func (s *Server) setupRoutes() error {
 	prefix := s.pathPrefix
 
 	// Serve index.html with server-side config injection
 	s.app.Get(prefix+"/", s.handleIndexHTML)
 	s.app.Get(prefix+"/index.html", s.handleIndexHTML)
 
-	// Serve embedded static files from web/
-	s.app.Use(prefix+"/", filesystem.New(filesystem.Config{
-		Root:       http.FS(webFS),
-		PathPrefix: "web",
-		Browse:     false,
+	staticFS, err := fs.Sub(webFS, "web")
+	if err != nil {
+		return fmt.Errorf("initialize embedded web UI filesystem: %w", err)
+	}
+
+	// Serve embedded static files from web/.
+	s.app.Use(prefix+"/", static.New("", static.Config{
+		FS:     staticFS,
+		Browse: false,
 	}))
 
-	// Catch-all: absorb any request the filesystem did not fully handle.
-	// The filesystem middleware calls Next() for non-GET/HEAD methods and for
-	// paths not found in the embedded FS, which would otherwise fall through
-	// to the S3 router and be interpreted as bucket/object operations.
-	s.app.Use(prefix+"/", func(c *fiber.Ctx) error {
-		return c.SendStatus(http.StatusBadRequest)
+	// Catch-all: absorb any request the static middleware did not fully handle.
+	s.app.Use(prefix+"/", func(c fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusBadRequest)
 	})
+
+	return nil
 }
 
 // handleIndexHTML serves index.html with server config injected as an inline script.
-func (s *Server) handleIndexHTML(c *fiber.Ctx) error {
+func (s *Server) handleIndexHTML(c fiber.Ctx) error {
 	data, err := webFiles.ReadFile("web/index.html")
 	if err != nil {
 		return fiber.ErrInternalServerError
@@ -184,9 +187,9 @@ func (s *Server) ServeMultiPort(ports []string) error {
 		var err error
 
 		if s.CertStorage != nil {
-			ln, err = utils.NewMultiAddrTLSListener(s.app.Config().Network, addrSpec, s.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: s.socketPerm})
+			ln, err = utils.NewMultiAddrTLSListener(fiber.NetworkTCP, addrSpec, s.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: s.socketPerm})
 		} else {
-			ln, err = utils.NewMultiAddrListener(s.app.Config().Network, addrSpec, utils.ListenerOptions{SocketPerm: s.socketPerm})
+			ln, err = utils.NewMultiAddrListener(fiber.NetworkTCP, addrSpec, utils.ListenerOptions{SocketPerm: s.socketPerm})
 		}
 
 		if err != nil {
@@ -203,7 +206,9 @@ func (s *Server) ServeMultiPort(ports []string) error {
 	// Combine all listeners
 	finalListener := utils.NewMultiListener(listeners...)
 
-	return s.app.Listener(finalListener)
+	return s.app.Listener(finalListener, fiber.ListenConfig{
+		DisableStartupMessage: true,
+	})
 }
 
 // Shutdown gracefully shuts down the server
@@ -214,12 +219,12 @@ func (s *Server) Shutdown() error {
 // MountOn registers the WebUI routes on an existing Fiber app at the given path prefix.
 // This allows hosting the WebUI on the same port as another service (e.g. the S3 API server).
 // The prefix must start with "/" and must not be empty or just "/".
-func MountOn(app *fiber.App, prefix string, cfg *ServerConfig) {
+func MountOn(app *fiber.App, prefix string, cfg *ServerConfig) error {
 	s := &Server{
 		app:        app,
 		config:     cfg,
 		pathPrefix: prefix,
 	}
 	fmt.Printf("initializing web dashboard\n")
-	s.setupRoutes()
+	return s.setupRoutes()
 }

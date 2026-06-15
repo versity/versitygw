@@ -20,7 +20,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
+	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttputil"
 	v4 "github.com/versity/versitygw/aws/signer/v4"
 )
@@ -84,14 +85,14 @@ func Test_Client_UserAgent(t *testing.T) {
 	expectedSig := "37a35d96998d786113ad420c57c22c5433f6aca74f88f26566caa047fc3601c6"
 	dateStr := "20240206T210328Z"
 
-	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app := fiber.New(fiber.Config{})
 
 	tdate, err := time.Parse(iso8601Format, dateStr)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	app.Get("/", func(c *fiber.Ctx) error {
+	app.Get("/", func(c fiber.Ctx) error {
 		req, err := createHttpRequestFromCtx(c, signedHdrs, int64(c.Request().Header.ContentLength()))
 		if err != nil {
 			t.Fatal(err)
@@ -135,10 +136,18 @@ func Test_Client_UserAgent(t *testing.T) {
 		}
 	}()
 
-	c := fiber.AcquireClient()
-	c.UserAgent = agent
-	a := c.Get("http://example.com")
-	a.HostClient.Dial = func(_ string) (net.Conn, error) { return ln.Dial() }
-	a.String()
-	fiber.ReleaseClient(c)
+	client := fasthttp.Client{
+		Dial: func(_ string) (net.Conn, error) { return ln.Dial() },
+	}
+
+	req := fasthttp.AcquireRequest()
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(resp)
+
+	req.SetRequestURI("http://example.com")
+	req.Header.SetUserAgent(agent)
+	if err := client.Do(req, resp); err != nil {
+		t.Fatal(err)
+	}
 }

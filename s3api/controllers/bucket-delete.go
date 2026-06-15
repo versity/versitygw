@@ -17,19 +17,19 @@ package controllers
 import (
 	"net/http"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
-func (c S3ApiController) DeleteBucketTagging(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) DeleteBucketTagging(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -49,7 +49,7 @@ func (c S3ApiController) DeleteBucketTagging(ctx *fiber.Ctx) (*Response, error) 
 		}, err
 	}
 
-	err = c.be.DeleteBucketTagging(ctx.Context(), bucket)
+	err = c.be.DeleteBucketTagging(ctx.RequestCtx(), bucket)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -58,13 +58,13 @@ func (c S3ApiController) DeleteBucketTagging(ctx *fiber.Ctx) (*Response, error) 
 	}, err
 }
 
-func (c S3ApiController) DeleteBucketOwnershipControls(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) DeleteBucketOwnershipControls(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:      c.readonly,
 			Acl:           parsedAcl,
@@ -83,7 +83,7 @@ func (c S3ApiController) DeleteBucketOwnershipControls(ctx *fiber.Ctx) (*Respons
 		}, err
 	}
 
-	err = c.be.DeleteBucketOwnershipControls(ctx.Context(), bucket)
+	err = c.be.DeleteBucketOwnershipControls(ctx.RequestCtx(), bucket)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -92,13 +92,13 @@ func (c S3ApiController) DeleteBucketOwnershipControls(ctx *fiber.Ctx) (*Respons
 	}, err
 }
 
-func (c S3ApiController) DeleteBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) DeleteBucketPolicy(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:      c.readonly,
 			Acl:           parsedAcl,
@@ -117,7 +117,7 @@ func (c S3ApiController) DeleteBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.DeleteBucketPolicy(ctx.Context(), bucket)
+	err = c.be.DeleteBucketPolicy(ctx.RequestCtx(), bucket)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -126,14 +126,14 @@ func (c S3ApiController) DeleteBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) DeleteBucketCors(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) DeleteBucketCors(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -153,7 +153,7 @@ func (c S3ApiController) DeleteBucketCors(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.DeleteBucketCors(ctx.Context(), bucket)
+	err = c.be.DeleteBucketCors(ctx.RequestCtx(), bucket)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -162,14 +162,14 @@ func (c S3ApiController) DeleteBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) DeleteBucketWebsite(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) DeleteBucketWebsite(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -189,7 +189,7 @@ func (c S3ApiController) DeleteBucketWebsite(ctx *fiber.Ctx) (*Response, error) 
 		}, err
 	}
 
-	err = c.be.DeleteBucketWebsite(ctx.Context(), bucket)
+	err = c.be.DeleteBucketWebsite(ctx.RequestCtx(), bucket)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -198,14 +198,14 @@ func (c S3ApiController) DeleteBucketWebsite(ctx *fiber.Ctx) (*Response, error) 
 	}, err
 }
 
-func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) DeleteBucket(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -225,7 +225,7 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.DeleteBucket(ctx.Context(), bucket)
+	err = c.be.DeleteBucket(ctx.RequestCtx(), bucket)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,

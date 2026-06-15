@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/valyala/fasthttp"
 	v4 "github.com/versity/versitygw/aws/signer/v4"
@@ -151,7 +151,7 @@ func buildPresignedURL(t *testing.T, headers http.Header) string {
 	return signedURL
 }
 
-func signedHeaderAuthCtx(t *testing.T, signedHeaders, extraHeaders http.Header) (*fiber.Ctx, AuthData, time.Time) {
+func signedHeaderAuthCtx(t *testing.T, signedHeaders, extraHeaders http.Header) (fiber.Ctx, AuthData, time.Time) {
 	t.Helper()
 
 	signingTime := time.Now().UTC()
@@ -192,7 +192,7 @@ func signedHeaderAuthCtx(t *testing.T, signedHeaders, extraHeaders http.Header) 
 	return ctx, authData, signingTime
 }
 
-func fiberCtxFromURL(t *testing.T, method, rawURL string, headers http.Header) *fiber.Ctx {
+func fiberCtxFromURL(t *testing.T, method, rawURL string, headers http.Header) fiber.Ctx {
 	t.Helper()
 
 	parsedURL, err := url.Parse(rawURL)

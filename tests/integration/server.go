@@ -16,12 +16,12 @@ package integration
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/versity/versitygw/s3err"
 )
 
 func Server_large_http_header(s *S3Conf) error {
@@ -39,20 +39,11 @@ func Server_large_http_header(s *S3Conf) error {
 			return err
 		}
 
-		if resp.StatusCode != http.StatusBadRequest {
-			return fmt.Errorf("expected the response status to be %v, instead got %v", http.StatusBadRequest, resp.StatusCode)
+		expectedErr := s3err.GetRequestHeaderSectionTooLargeErr(8 * 1024)
+		if resp.StatusCode != expectedErr.StatusCode() {
+			return fmt.Errorf("expected the response status to be %v, instead got %v", expectedErr.StatusCode(), resp.StatusCode)
 		}
 
-		defer resp.Body.Close()
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-
-		if len(body) != 0 {
-			return fmt.Errorf("expected empty response body, instead got %s", body)
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, expectedErr)
 	})
 }
