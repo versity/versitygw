@@ -43,6 +43,8 @@ const (
 	InvalidArgPastObjectLockRetainDate
 	InvalidArgObjectLockRetentionDays
 	InvalidArgObjectLockRetentionYears
+	InvalidArgObjectLockRetentionDaysTooLarge
+	InvalidArgObjectLockRetentionYearsTooLarge
 	InvalidArgMissingObjectLockRetainDate
 	InvalidArgMissingObjectLockMode
 	InvalidArgLegalHoldStatus
@@ -143,6 +145,14 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	},
 	InvalidArgObjectLockRetentionYears: {
 		Description:  "Default retention period must be a positive integer value.",
+		ArgumentName: "Years",
+	},
+	InvalidArgObjectLockRetentionDaysTooLarge: {
+		Description:  "Default retention period too large.",
+		ArgumentName: "Days",
+	},
+	InvalidArgObjectLockRetentionYearsTooLarge: {
+		Description:  "Default retention period too large.",
 		ArgumentName: "Years",
 	},
 	InvalidArgLegalHoldStatus: {

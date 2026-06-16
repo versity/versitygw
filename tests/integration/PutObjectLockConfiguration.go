@@ -211,42 +211,67 @@ func PutObjectLockConfiguration_both_years_and_days(s *S3Conf) error {
 }
 
 func PutObjectLockConfiguration_invalid_years_days(s *S3Conf) error {
-	testName := "PutObjectLockConfiguration_invalid_years"
+	testName := "PutObjectLockConfiguration_invalid_years_days"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		var days, years int32 = -3, -5
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
-			Bucket: &bucket,
-			ObjectLockConfiguration: &types.ObjectLockConfiguration{
-				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
-				Rule: &types.ObjectLockRule{
-					DefaultRetention: &types.DefaultRetention{
-						Days: &days,
-						Mode: types.ObjectLockRetentionModeCompliance,
+		putObjectLockConfiguration := func(retention *types.DefaultRetention) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+				Bucket: &bucket,
+				ObjectLockConfiguration: &types.ObjectLockConfiguration{
+					ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+					Rule: &types.ObjectLockRule{
+						DefaultRetention: retention,
 					},
 				},
-			},
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionDays, fmt.Sprint(days))); err != nil {
+			})
+			cancel()
 			return err
 		}
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
-			Bucket: &bucket,
-			ObjectLockConfiguration: &types.ObjectLockConfiguration{
-				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
-				Rule: &types.ObjectLockRule{
-					DefaultRetention: &types.DefaultRetention{
-						Years: &years,
-						Mode:  types.ObjectLockRetentionModeCompliance,
-					},
+
+		tests := []struct {
+			name      string
+			retention *types.DefaultRetention
+			err       s3err.InvalidArgumentError
+		}{
+			{
+				name: "negative days",
+				retention: &types.DefaultRetention{
+					Days: getPtr[int32](-3),
+					Mode: types.ObjectLockRetentionModeCompliance,
 				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionDays, "-3"),
 			},
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionYears, fmt.Sprint(years))); err != nil {
-			return err
+			{
+				name: "too many days",
+				retention: &types.DefaultRetention{
+					Days: getPtr[int32](36501),
+					Mode: types.ObjectLockRetentionModeCompliance,
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionDaysTooLarge, "36501"),
+			},
+			{
+				name: "negative years",
+				retention: &types.DefaultRetention{
+					Years: getPtr[int32](-5),
+					Mode:  types.ObjectLockRetentionModeCompliance,
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionYears, "-5"),
+			},
+			{
+				name: "too many years",
+				retention: &types.DefaultRetention{
+					Years: getPtr[int32](101),
+					Mode:  types.ObjectLockRetentionModeCompliance,
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionYearsTooLarge, "101"),
+			},
+		}
+
+		for _, test := range tests {
+			err := putObjectLockConfiguration(test.retention)
+			if err := checkApiErr(err, test.err); err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
 		}
 
 		return nil
