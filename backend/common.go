@@ -643,6 +643,7 @@ type PreConditions struct {
 // - if-modified-since
 // - if-unmodified-since
 // if-match and if-none-match are ETag comparisons
+// if-match "*" matches any ETag, and if-none-match "*" matches no ETag
 // if-modified-since and if-unmodified-since are last modifed time comparisons
 func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreConditions) error {
 	if preconditions.IfMatch == nil && preconditions.IfNoneMatch == nil && preconditions.IfModSince == nil && preconditions.IfUnmodeSince == nil {
@@ -654,10 +655,10 @@ func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreCond
 	// convert all conditions to *bool to evaluate the conditions
 	var ifMatch, ifNoneMatch, ifModSince, ifUnmodeSince *bool
 	if preconditions.IfMatch != nil {
-		ifMatch = getBoolPtr(*preconditions.IfMatch == etag)
+		ifMatch = getBoolPtr(*preconditions.IfMatch == "*" || *preconditions.IfMatch == etag)
 	}
 	if preconditions.IfNoneMatch != nil {
-		ifNoneMatch = getBoolPtr(*preconditions.IfNoneMatch != etag)
+		ifNoneMatch = getBoolPtr(*preconditions.IfNoneMatch != "*" && *preconditions.IfNoneMatch != etag)
 	}
 	if preconditions.IfModSince != nil {
 		ifModSince = getBoolPtr(preconditions.IfModSince.UTC().Before(modTime.UTC()))
