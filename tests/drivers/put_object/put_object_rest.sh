@@ -100,6 +100,35 @@ setup_bucket_and_add_file_v3() {
   return 0
 }
 
+setup_bucket_and_add_files_v3() {
+  if ! check_param_count_v2 "bucket prefix, number of files" 2 $#; then
+    return 1
+  fi
+  local response bucket_name files
+
+  if ! response=$(setup_bucket_v3 "$1" 2>&1); then
+    log 2 "error setting up bucket: $response"
+    return 1
+  fi
+  bucket_name="$response"
+
+  if ! response=$(create_test_files_with_random_names "$2" 2>&1); then
+    log 2 "error creating test files"
+    return 1
+  fi
+  read -r -a files <<< "$response"
+
+  for file in "${files[@]}"; do
+    if ! put_object_rest "$TEST_FILE_FOLDER/$file" "$bucket_name" "$file"; then
+      log 2 "error putting object '$file'"
+      return 1
+    fi
+  done
+
+  echo "$bucket_name ${files[*]}"
+  return 0
+}
+
 send_openssl_go_command_chunked_no_content_length() {
   if ! check_param_count_gt "bucket name, key" 2 $#; then
     return 1

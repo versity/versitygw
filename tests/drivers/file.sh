@@ -350,6 +350,26 @@ create_test_files_with_prefix() {
   return 0
 }
 
+create_test_files_with_random_names() {
+  if ! check_param_count_v2 "number of files" 1 $#; then
+    return 1
+  fi
+  local file_name error file_names=()
+  for ((i=0;i<$1;i++)); do
+    if ! file_name=$(get_file_name 2>&1); then
+      log 2 "error getting file name: $file_name"
+      return 1
+    fi
+    if ! error=$(create_test_file "$file_name" 2>&1); then
+      log 2 "error creating test file: $error"
+      return 1
+    fi
+    file_names+=("$file_name")
+  done
+  echo "${file_names[*]}"
+  return 0
+}
+
 # Combined function to setup environment and create test files
 # Params: filename1 [filename2 ...]
 # Note: Uses $FILE_SIZE if set, otherwise defaults to 10 bytes.  Requires $TEST_FILE_FOLDER.

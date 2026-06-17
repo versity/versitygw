@@ -99,7 +99,7 @@ list_objects_with_prefix_and_delimiter_check_results() {
 }
 
 list_objects_check_key() {
-  if ! check_param_count_v2 "bucket name, key, encoding type" 3 $#; then
+  if ! check_param_count_v2 "bucket name, key, encoding type and additional query if desired" 3 $#; then
     return 1
   fi
   query=()
