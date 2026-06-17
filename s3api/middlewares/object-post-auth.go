@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
@@ -49,7 +49,7 @@ type PostObjectResult struct {
 func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		contentLengthStr := ctx.Get("Content-Length")
 		reqContentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
 		if err != nil {
@@ -71,7 +71,7 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 
 		bodyRdr := ctx.Request().BodyStream()
 		if bodyRdr == nil {
-			bodyRdr = bytes.NewReader(ctx.Body())
+			bodyRdr = bytes.NewReader(ctx.BodyRaw())
 		}
 
 		mpParser, err := utils.NewMultipartParser(bodyRdr, boundary, reqContentLength)

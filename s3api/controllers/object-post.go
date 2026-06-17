@@ -22,7 +22,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
@@ -31,7 +31,7 @@ import (
 	"github.com/versity/versitygw/s3response"
 )
 
-func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) RestoreObject(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
@@ -39,7 +39,7 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -61,7 +61,7 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	var restoreRequest types.RestoreRequest
-	if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err != nil {
+	if err := xml.Unmarshal(ctx.BodyRaw(), &restoreRequest); err != nil {
 		debuglogger.Logf("failed to parse the request body: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -70,7 +70,7 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
-	err = c.be.RestoreObject(ctx.Context(), &s3.RestoreObjectInput{
+	err = c.be.RestoreObject(ctx.RequestCtx(), &s3.RestoreObjectInput{
 		Bucket:         &bucket,
 		Key:            &key,
 		RestoreRequest: &restoreRequest,
@@ -83,7 +83,7 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) SelectObjectContent(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
@@ -91,7 +91,7 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -113,7 +113,7 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 	}
 
 	var payload s3response.SelectObjectContentPayload
-	err = xml.Unmarshal(ctx.Body(), &payload)
+	err = xml.Unmarshal(ctx.BodyRaw(), &payload)
 	if err != nil {
 		debuglogger.Logf("error unmarshalling select object content: %v", err)
 		return &Response{
@@ -123,7 +123,7 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
-	sw := c.be.SelectObjectContent(ctx.Context(),
+	sw := c.be.SelectObjectContent(ctx.RequestCtx(),
 		&s3.SelectObjectContentInput{
 			Bucket:              &bucket,
 			Key:                 &key,
@@ -135,7 +135,7 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 			ScanRange:           payload.ScanRange,
 		})
 
-	ctx.Context().SetBodyStreamWriter(sw)
+	ctx.RequestCtx().SetBodyStreamWriter(sw)
 
 	return &Response{
 		MetaOpts: &MetaOptions{
@@ -144,7 +144,7 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 	}, nil
 }
 
-func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) CreateMultipartUpload(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	contentType := ctx.Get("Content-Type", defaultContentType)
@@ -175,7 +175,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 		actions = append(actions, auth.PutObjectRetentionAction)
 	}
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:      c.readonly,
 			Acl:           parsedAcl,
@@ -231,7 +231,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 		}, err
 	}
 
-	res, err := c.be.CreateMultipartUpload(ctx.Context(),
+	res, err := c.be.CreateMultipartUpload(ctx.RequestCtx(),
 		s3response.CreateMultipartUploadInput{
 			Bucket:                    &bucket,
 			Key:                       &key,
@@ -266,7 +266,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 	}, err
 }
 
-func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) CompleteMultipartUpload(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	uploadId := ctx.Query("uploadId")
@@ -278,7 +278,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -300,7 +300,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 	}
 
 	var body s3response.CompleteMultipartUploadRequestBody
-	err = xml.Unmarshal(ctx.Body(), &body)
+	err = xml.Unmarshal(ctx.BodyRaw(), &body)
 	if err != nil {
 		debuglogger.Logf("error unmarshalling complete multipart upload: %v", err)
 		return &Response{
@@ -363,7 +363,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 
 	ifMatch, ifNoneMatch := utils.ParsePreconditionMatchHeaders(ctx)
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []types.ObjectIdentifier{{Key: &key}}, true, isBucketPublic, c.be, true)
+	err = auth.CheckObjectAccess(ctx.RequestCtx(), bucket, acct.Access, []types.ObjectIdentifier{{Key: &key}}, true, isBucketPublic, c.be, true)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -372,7 +372,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 		}, err
 	}
 
-	res, versid, err := c.be.CompleteMultipartUpload(ctx.Context(),
+	res, versid, err := c.be.CompleteMultipartUpload(ctx.RequestCtx(),
 		&s3.CompleteMultipartUploadInput{
 			Bucket:   &bucket,
 			Key:      &key,

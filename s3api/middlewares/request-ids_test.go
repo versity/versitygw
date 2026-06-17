@@ -20,15 +20,15 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
 func TestRequestIDs(t *testing.T) {
 	app := fiber.New()
-	app.Use(RequestIDs())
-	app.Get("/", func(ctx *fiber.Ctx) error {
+	app.Use("*", RequestIDs())
+	app.Get("/", func(ctx fiber.Ctx) error {
 		assert.NotEmpty(t, utils.RequestID(ctx))
 		assert.NotEmpty(t, utils.HostID(ctx))
 		return ctx.SendStatus(http.StatusNoContent)

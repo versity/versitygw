@@ -17,13 +17,13 @@ package middlewares
 import (
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
 func SetDefaultValues(root RootUserConfig, region string) fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		// These are necessary for the server access logs
 		utils.ContextKeyRegion.Set(ctx, region)
 		utils.ContextKeyStartTime.Set(ctx, time.Now())

@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -57,7 +57,7 @@ func InitWebhookLogger(url string) (AuditLogger, error) {
 }
 
 // Log sends log message to webhook
-func (wl *WebhookLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
+func (wl *WebhookLogger) Log(ctx fiber.Ctx, err error, body []byte, meta LogMeta) {
 	wl.mu.Lock()
 	defer wl.mu.Unlock()
 
@@ -76,7 +76,7 @@ func (wl *WebhookLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMet
 	if !ok {
 		startTime = time.Now()
 	}
-	tlsConnState := ctx.Context().TLSConnectionState()
+	tlsConnState := ctx.RequestCtx().TLSConnectionState()
 	if tlsConnState != nil {
 		lf.CipherSuite = tls.CipherSuiteName(tlsConnState.CipherSuite)
 		lf.TLSVersion = getTLSVersionName(tlsConnState.Version)

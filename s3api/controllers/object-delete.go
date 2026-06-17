@@ -21,13 +21,13 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3event"
 )
 
-func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) DeleteObjectTagging(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	versionId := ctx.Query("versionId")
@@ -41,7 +41,7 @@ func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) 
 		action = auth.DeleteObjectVersionTaggingAction
 	}
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -62,7 +62,7 @@ func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) 
 		}, err
 	}
 
-	err = c.be.DeleteObjectTagging(ctx.Context(), bucket, key, versionId)
+	err = c.be.DeleteObjectTagging(ctx.RequestCtx(), bucket, key, versionId)
 	return &Response{
 		Headers: map[string]*string{
 			"x-amz-version-id": &versionId,
@@ -75,7 +75,7 @@ func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) 
 	}, err
 }
 
-func (c S3ApiController) AbortMultipartUpload(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) AbortMultipartUpload(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	uploadId := ctx.Query("uploadId")
@@ -85,7 +85,7 @@ func (c S3ApiController) AbortMultipartUpload(ctx *fiber.Ctx) (*Response, error)
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -106,7 +106,7 @@ func (c S3ApiController) AbortMultipartUpload(ctx *fiber.Ctx) (*Response, error)
 		}, err
 	}
 
-	err = c.be.AbortMultipartUpload(ctx.Context(),
+	err = c.be.AbortMultipartUpload(ctx.RequestCtx(),
 		&s3.AbortMultipartUploadInput{
 			UploadId:             &uploadId,
 			Bucket:               &bucket,
@@ -121,12 +121,12 @@ func (c S3ApiController) AbortMultipartUpload(ctx *fiber.Ctx) (*Response, error)
 	}, err
 }
 
-func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) DeleteObject(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	versionId := ctx.Query("versionId")
 	bypass := strings.EqualFold(ctx.Get("X-Amz-Bypass-Governance-Retention"), "true")
-	ifMatch := utils.GetStringPtr(utils.TrimQuotes(ctx.Get("If-Match")))
+	ifMatch := utils.GetStringPtr(strings.Trim(ctx.Get("If-Match"), `"`))
 	ifMatchLastModTime := utils.ParsePreconditionDateHeader(ctx.Get("X-Amz-If-Match-Last-Modified-Time"))
 	ifMatchSize := utils.ParseIfMatchSize(ctx)
 	// context locals
@@ -140,7 +140,7 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 		action = auth.DeleteObjectVersionAction
 	}
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -162,7 +162,7 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	err = auth.CheckObjectAccess(
-		ctx.Context(),
+		ctx.RequestCtx(),
 		bucket,
 		acct.Access,
 		[]types.ObjectIdentifier{
@@ -184,7 +184,7 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	res, err := c.be.DeleteObject(ctx.Context(),
+	res, err := c.be.DeleteObject(ctx.RequestCtx(),
 		&s3.DeleteObjectInput{
 			Bucket:                  &bucket,
 			Key:                     &key,

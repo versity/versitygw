@@ -22,7 +22,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 type Color string
@@ -40,9 +40,12 @@ const (
 	prefixInfo         prefix = "[INFO]: "
 	prefixDebug        prefix = "[DEBUG]: "
 
-	reset      = "\033[0m"
-	borderChar = "─"
-	boxWidth   = 120
+	reset             = "\033[0m"
+	borderChar        = "─"
+	boxWidth          = 120
+	boxContentWidth   = boxWidth - 4 // visible width between "│ " and " │"
+	minKeyColumnWidth = 13
+	keyValueSeparator = " : "
 )
 
 // Panic prints the panics out in the console
@@ -60,9 +63,9 @@ func printError(prefix prefix, er error) {
 }
 
 // Logs http request details: headers, body, params, query args
-func LogFiberRequestDetails(ctx *fiber.Ctx) {
+func LogFiberRequestDetails(ctx fiber.Ctx) {
 	// Log the full request url
-	fullURL := ctx.Protocol() + "://" + ctx.Hostname() + ctx.OriginalURL()
+	fullURL := ctx.Scheme() + "://" + ctx.Host() + ctx.OriginalURL()
 	fmt.Printf("%s[URL]: %s%s\n", green, fullURL, reset)
 
 	// log request headers
@@ -90,7 +93,7 @@ func LogFiberRequestDetails(ctx *fiber.Ctx) {
 }
 
 // Logs http response details: body, headers
-func LogFiberResponseDetails(ctx *fiber.Ctx) {
+func LogFiberResponseDetails(ctx fiber.Ctx) {
 	wrapInBox(green, "RESPONSE HEADERS", boxWidth, func() {
 		for key, value := range ctx.Response().Header.All() {
 			printWrappedLine(yellow, string(key), string(value))
@@ -213,11 +216,10 @@ func wrapInBox(color Color, title string, length int, fn func()) {
 	printHorizontalBorder(color, length, true)
 }
 
-// returns the provided string length
-// defaulting to 13 for exceeding lengths
-func getLen(str string) int {
-	if len(str) < 13 {
-		return 13
+// paddedKeyLen returns the visible key column width used by printWrappedLine.
+func paddedKeyLen(str string) int {
+	if len(str) < minKeyColumnWidth {
+		return minKeyColumnWidth
 	}
 
 	return len(str)
@@ -226,32 +228,112 @@ func getLen(str string) int {
 // prints a formatted key-value pair within a box layout,
 // wrapping the value text if it exceeds the allowed width.
 func printWrappedLine(keyColor Color, key, value string) {
-	prefix := fmt.Sprintf("%s│%s %s%-13s%s : ", green, reset, keyColor, key, reset)
-	prefixLen := len(prefix) - len(green) - len(reset) - len(keyColor) - len(reset)
-	// the actual prefix size without colors
-	actualPrefixLen := getLen(key) + 5
+	keyLen := paddedKeyLen(key)
+	valueIndent := keyLen + len(keyValueSeparator)
+	lineWidth := boxContentWidth - valueIndent
+	if lineWidth < 1 {
+		printWrappedLongKeyLine(keyColor, key, value)
+		return
+	}
 
-	lineWidth := boxWidth - prefixLen
+	prefix := fmt.Sprintf("%s│%s %s%-*s%s%s", green, reset, keyColor, minKeyColumnWidth, key, reset, keyValueSeparator)
 	valueLines := wrapText(value, lineWidth)
+	if len(valueLines) == 0 {
+		valueLines = []string{""}
+	}
 
 	for i, line := range valueLines {
 		if i == 0 {
-			if len(line) < lineWidth {
-				line += strings.Repeat(" ", lineWidth-len(line))
-			}
+			line += rightPadding(line, lineWidth)
 			fmt.Printf("%s%s%s %s│%s\n", prefix, reset, line, green, reset)
 		} else {
-			line = strings.Repeat(" ", actualPrefixLen-2) + line
-			if len(line) < boxWidth-4 {
-				line += strings.Repeat(" ", boxWidth-len(line)-4)
-			}
+			line = spaces(valueIndent) + line
+			line += rightPadding(line, boxContentWidth)
 			fmt.Printf("%s│ %s%s %s│%s\n", green, reset, line, green, reset)
 		}
 	}
 }
 
-// wrapText splits the input text into lines of at most `width` characters each.
+// printWrappedLongKeyLine handles headers whose key is too wide to leave
+// room for a value in the fixed key/value layout. It wraps the key and value
+// independently so keyColor never leaks into the separator or value text.
+func printWrappedLongKeyLine(keyColor Color, key, value string) {
+	keyLine, remainingKey := splitText(key, boxContentWidth)
+	for remainingKey != "" {
+		printColoredBoxLine(keyColor, keyLine, boxContentWidth)
+		keyLine, remainingKey = splitText(remainingKey, boxContentWidth)
+	}
+
+	valueLineWidth := boxContentWidth - len(keyLine) - len(keyValueSeparator)
+	if valueLineWidth < 1 {
+		printColoredBoxLine(keyColor, keyLine, boxContentWidth)
+		printWrappedPlainText(keyValueSeparator+value, boxContentWidth)
+		return
+	}
+
+	valueLine, remainingValue := splitText(value, valueLineWidth)
+	printKeyValueBoxLine(keyColor, keyLine, keyValueSeparator, valueLine, boxContentWidth)
+	printWrappedPlainText(remainingValue, boxContentWidth)
+}
+
+func printColoredBoxLine(color Color, text string, width int) {
+	fmt.Printf("%s│%s %s%s%s%s %s│%s\n", green, reset, color, text, reset, rightPadding(text, width), green, reset)
+}
+
+func printKeyValueBoxLine(keyColor Color, key, separator, value string, width int) {
+	lineLen := len(key) + len(separator) + len(value)
+	fmt.Printf("%s│%s %s%s%s%s%s%s %s│%s\n", green, reset, keyColor, key, reset, separator, value, spaces(width-lineLen), green, reset)
+}
+
+func printPlainBoxLine(text string, width int) {
+	fmt.Printf("%s│%s %s%s %s│%s\n", green, reset, text, rightPadding(text, width), green, reset)
+}
+
+func printWrappedPlainText(text string, width int) {
+	for text != "" {
+		var line string
+		line, text = splitText(text, width)
+		printPlainBoxLine(line, width)
+	}
+}
+
+func rightPadding(text string, width int) string {
+	return spaces(width - len(text))
+}
+
+func spaces(count int) string {
+	if count < 1 {
+		return ""
+	}
+
+	return strings.Repeat(" ", count)
+}
+
+// splitText returns the first width bytes from text and the remaining suffix.
+// The debug logger already measures line width with len, so this keeps the
+// wrapping behavior consistent with the rest of this file.
+func splitText(text string, width int) (string, string) {
+	if width < 1 {
+		return "", text
+	}
+	if len(text) <= width {
+		return text, ""
+	}
+
+	return text[:width], text[width:]
+}
+
+// wrapText splits the input text into lines of at most width bytes each.
+// When width is not positive, it returns the original text as one line so
+// callers never slice with an invalid bound while handling malformed layouts.
 func wrapText(text string, width int) []string {
+	if width < 1 {
+		if text == "" {
+			return nil
+		}
+		return []string{text}
+	}
+
 	var lines []string
 	for len(text) > width {
 		lines = append(lines, text[:width])
@@ -265,7 +347,7 @@ func wrapText(text string, width int) []string {
 
 // TODO: remove this and use utils.IsBidDataAction after refactoring
 // and creating 'internal' package
-func isLargeDataAction(ctx *fiber.Ctx) bool {
+func isLargeDataAction(ctx fiber.Ctx) bool {
 	pathParts := strings.Split(ctx.Path(), "/")
 
 	// PutObject and UploadPart

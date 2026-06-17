@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
@@ -38,9 +38,9 @@ func NewAdminController(iam auth.IAMService, be backend.Backend, l s3log.AuditLo
 	return AdminController{iam: iam, be: be, l: l, s3api: s3api}
 }
 
-func (c AdminController) CreateUser(ctx *fiber.Ctx) (*Response, error) {
+func (c AdminController) CreateUser(ctx fiber.Ctx) (*Response, error) {
 	var usr auth.Account
-	err := xml.Unmarshal(ctx.Body(), &usr)
+	err := xml.Unmarshal(ctx.BodyRaw(), &usr)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{},
@@ -71,7 +71,7 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) (*Response, error) {
 	}, nil
 }
 
-func (c AdminController) UpdateUser(ctx *fiber.Ctx) (*Response, error) {
+func (c AdminController) UpdateUser(ctx fiber.Ctx) (*Response, error) {
 	access := ctx.Query("access")
 	if access == "" {
 		return &Response{
@@ -80,7 +80,7 @@ func (c AdminController) UpdateUser(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	var props auth.MutableProps
-	if err := xml.Unmarshal(ctx.Body(), &props); err != nil {
+	if err := xml.Unmarshal(ctx.BodyRaw(), &props); err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
@@ -109,7 +109,7 @@ func (c AdminController) UpdateUser(ctx *fiber.Ctx) (*Response, error) {
 	}, nil
 }
 
-func (c AdminController) DeleteUser(ctx *fiber.Ctx) (*Response, error) {
+func (c AdminController) DeleteUser(ctx fiber.Ctx) (*Response, error) {
 	access := ctx.Query("access")
 	if access == "" {
 		return &Response{
@@ -123,7 +123,7 @@ func (c AdminController) DeleteUser(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c AdminController) ListUsers(ctx *fiber.Ctx) (*Response, error) {
+func (c AdminController) ListUsers(ctx fiber.Ctx) (*Response, error) {
 	accs, err := c.iam.ListUserAccounts()
 	return &Response{
 		Data:     auth.ListUserAccountsResult{Accounts: accs},
@@ -131,7 +131,7 @@ func (c AdminController) ListUsers(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) (*Response, error) {
+func (c AdminController) ChangeBucketOwner(ctx fiber.Ctx) (*Response, error) {
 	owner := ctx.Query("owner")
 	bucket := ctx.Query("bucket")
 
@@ -147,14 +147,14 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrAdminUserNotFound)
 	}
 
-	err = c.be.ChangeBucketOwner(ctx.Context(), bucket, owner)
+	err = c.be.ChangeBucketOwner(ctx.RequestCtx(), bucket, owner)
 	return &Response{
 		MetaOpts: &MetaOptions{},
 	}, err
 }
 
-func (c AdminController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
-	buckets, err := c.be.ListBucketsAndOwners(ctx.Context())
+func (c AdminController) ListBuckets(ctx fiber.Ctx) (*Response, error) {
+	buckets, err := c.be.ListBucketsAndOwners(ctx.RequestCtx())
 	return &Response{
 		Data: s3response.ListBucketsResult{
 			Buckets: buckets,
@@ -163,7 +163,7 @@ func (c AdminController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c AdminController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
+func (c AdminController) CreateBucket(ctx fiber.Ctx) (*Response, error) {
 	owner := ctx.Get("x-vgw-owner")
 	if owner == "" {
 		return &Response{
@@ -183,7 +183,7 @@ func (c AdminController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	// store the owner access key id in context
-	ctx.Context().SetUserValue("bucket-owner", acc)
+	ctx.RequestCtx().SetUserValue("bucket-owner", acc)
 
 	_, err = c.s3api.CreateBucket(ctx)
 	if err != nil {

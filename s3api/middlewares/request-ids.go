@@ -15,13 +15,13 @@
 package middlewares
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
 // RequestIDs sets requestID and hostID in context locals
 func RequestIDs() fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		utils.EnsureRequestIDs(ctx)
 		return ctx.Next()
 	}

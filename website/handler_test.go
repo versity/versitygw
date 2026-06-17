@@ -26,7 +26,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
@@ -1016,9 +1016,7 @@ func websiteRequestWithHostAndHeaders(t *testing.T, be backend.Backend, method, 
 func websiteRequestWithDomainHostAndHeaders(t *testing.T, be backend.Backend, domain, method, host, path string, headers map[string]string) *http.Response {
 	t.Helper()
 
-	app := fiber.New(fiber.Config{
-		ServerHeader: "VERSITYGW",
-	})
+	app := fiber.New(fiber.Config{ServerHeader: "VERSITYGW"})
 	registerWebsiteRoutes(app, be, domain)
 
 	req := httptest.NewRequest(method, path, nil)
@@ -1027,7 +1025,7 @@ func websiteRequestWithDomainHostAndHeaders(t *testing.T, be backend.Backend, do
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
 		t.Fatalf("website request failed: %v", err)
 	}

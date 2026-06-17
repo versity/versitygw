@@ -19,9 +19,9 @@ import (
 	"net"
 	"os"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/logger"
+	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
@@ -57,17 +57,15 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 	}
 
 	app := fiber.New(fiber.Config{
-		AppName:               "versitygw",
-		ServerHeader:          "VERSITYGW",
-		Network:               fiber.NetworkTCP,
-		DisableStartupMessage: true,
-		ErrorHandler:          globalErrorHandler,
-		Concurrency:           server.maxConnections,
+		AppName:      "versitygw",
+		ServerHeader: "VERSITYGW",
+		ErrorHandler: globalErrorHandler,
+		Concurrency:  server.maxConnections,
 	})
 
 	server.app = app
 
-	app.Use(recover.New(
+	app.Use("*", recover.New(
 		recover.Config{
 			EnableStackTrace:  true,
 			StackTraceHandler: stackTraceHandler,
@@ -75,21 +73,21 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 
 	// Logging middlewares
 	if !server.quiet {
-		app.Use(logger.New(logger.Config{
+		app.Use("*", logger.New(logger.Config{
 			Format: "${time} | adm | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 		}))
 	}
 	// initialize requestId middleware
-	app.Use(middlewares.RequestIDs())
+	app.Use("*", middlewares.RequestIDs())
 
 	// initialize total requests cap limiter middleware
-	app.Use(middlewares.RateLimiter(server.maxRequests, nil, l))
+	app.Use("*", middlewares.RateLimiter(server.maxRequests, nil, l))
 
-	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, nil))
+	app.Use("*", controllers.WrapMiddleware(middlewares.DecodeURL, l, nil))
 
 	// initialize the debug logger in debug mode
 	if debuglogger.IsDebugEnabled() {
-		app.Use(middlewares.DebugLogger())
+		app.Use("*", middlewares.DebugLogger())
 	}
 
 	server.router.Init(app, be, iam, l, root, region, server.debug, server.corsAllowOrigin)
@@ -151,9 +149,9 @@ func (sa *S3AdminServer) ServeMultiPort(ports []string) error {
 		var err error
 
 		if sa.CertStorage != nil {
-			ln, err = utils.NewMultiAddrTLSListener(sa.app.Config().Network, portSpec, sa.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = utils.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, sa.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: sa.socketPerm})
 		} else {
-			ln, err = utils.NewMultiAddrListener(sa.app.Config().Network, portSpec, utils.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = utils.NewMultiAddrListener(fiber.NetworkTCP, portSpec, utils.ListenerOptions{SocketPerm: sa.socketPerm})
 		}
 
 		if err != nil {
@@ -170,7 +168,9 @@ func (sa *S3AdminServer) ServeMultiPort(ports []string) error {
 	// Combine all listeners
 	finalListener := utils.NewMultiListener(listeners...)
 
-	return sa.app.Listener(finalListener)
+	return sa.app.Listener(finalListener, fiber.ListenConfig{
+		DisableStartupMessage: true,
+	})
 }
 
 // ShutDown gracefully shuts down the server with a context timeout

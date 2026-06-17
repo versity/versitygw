@@ -26,7 +26,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
@@ -95,7 +95,7 @@ type ctxInputs struct {
 func testController(t *testing.T, ctrl Controller, resp *Response, expectedErr error, input ctxInputs) {
 	app := fiber.New()
 
-	app.Post("/:bucket/*", func(ctx *fiber.Ctx) error {
+	app.Post("/:bucket/*", func(ctx fiber.Ctx) error {
 		// set the request body
 		ctx.Request().SetBody(input.body)
 		// set the request locals
@@ -259,23 +259,23 @@ func TestEnsureExposeMetaHeaders_AddsActualMetaHeaderNames(t *testing.T) {
 type mockAuditLogger struct {
 }
 
-func (m *mockAuditLogger) Log(_ *fiber.Ctx, _ error, _ []byte, _ s3log.LogMeta) {}
-func (m *mockAuditLogger) HangUp() error                                        { return nil }
-func (m *mockAuditLogger) Shutdown() error                                      { return nil }
+func (m *mockAuditLogger) Log(_ fiber.Ctx, _ error, _ []byte, _ s3log.LogMeta) {}
+func (m *mockAuditLogger) HangUp() error                                       { return nil }
+func (m *mockAuditLogger) Shutdown() error                                     { return nil }
 
 // mock S3 event sender
 type mockEvSender struct {
 }
 
-func (m *mockEvSender) SendEvent(_ *fiber.Ctx, _ s3event.EventMeta) {}
-func (m *mockEvSender) Close() error                                { return nil }
+func (m *mockEvSender) SendEvent(_ fiber.Ctx, _ s3event.EventMeta) {}
+func (m *mockEvSender) Close() error                               { return nil }
 
 // mock metrics manager
 
 type mockMetricsManager struct{}
 
-func (m *mockMetricsManager) Send(_ *fiber.Ctx, _ error, _ string, _ int64, _ int) {}
-func (m *mockMetricsManager) Close()                                               {}
+func (m *mockMetricsManager) Send(_ fiber.Ctx, _ error, _ string, _ int64, _ int) {}
+func (m *mockMetricsManager) Close()                                              {}
 
 func TestProcessController(t *testing.T) {
 	payload, err := xml.Marshal(s3response.Bucket{
@@ -308,7 +308,7 @@ func TestProcessController(t *testing.T) {
 			name: "no services successful response",
 			args: args{
 				svc: &Services{},
-				controller: func(ctx *fiber.Ctx) (*Response, error) {
+				controller: func(ctx fiber.Ctx) (*Response, error) {
 					return &Response{}, nil
 				},
 			},
@@ -320,7 +320,7 @@ func TestProcessController(t *testing.T) {
 			name: "handle api error",
 			args: args{
 				svc: services,
-				controller: func(ctx *fiber.Ctx) (*Response, error) {
+				controller: func(ctx fiber.Ctx) (*Response, error) {
 					return &Response{}, s3err.GetAPIError(s3err.ErrInvalidRequest)
 				},
 			},
@@ -333,7 +333,7 @@ func TestProcessController(t *testing.T) {
 			name: "handle custom error",
 			args: args{
 				svc: services,
-				controller: func(ctx *fiber.Ctx) (*Response, error) {
+				controller: func(ctx fiber.Ctx) (*Response, error) {
 					return &Response{}, errors.New("custom error")
 				},
 			},
@@ -346,7 +346,7 @@ func TestProcessController(t *testing.T) {
 			name: "body parsing fails",
 			args: args{
 				svc: services,
-				controller: func(ctx *fiber.Ctx) (*Response, error) {
+				controller: func(ctx fiber.Ctx) (*Response, error) {
 					return &Response{
 						Data: make(chan int),
 					}, nil
@@ -361,7 +361,7 @@ func TestProcessController(t *testing.T) {
 			name: "no data payload",
 			args: args{
 				svc: services,
-				controller: func(ctx *fiber.Ctx) (*Response, error) {
+				controller: func(ctx fiber.Ctx) (*Response, error) {
 					return &Response{
 						MetaOpts: &MetaOptions{
 							ObjectCount: 2,
@@ -377,7 +377,7 @@ func TestProcessController(t *testing.T) {
 			name: "should return 204 http status",
 			args: args{
 				svc: services,
-				controller: func(ctx *fiber.Ctx) (*Response, error) {
+				controller: func(ctx fiber.Ctx) (*Response, error) {
 					return &Response{
 						MetaOpts: &MetaOptions{
 							Status: http.StatusNoContent,
@@ -393,7 +393,7 @@ func TestProcessController(t *testing.T) {
 			name: "already encoded payload",
 			args: args{
 				svc: services,
-				controller: func(ctx *fiber.Ctx) (*Response, error) {
+				controller: func(ctx fiber.Ctx) (*Response, error) {
 					return &Response{
 						Data: []byte("encoded_data"),
 					}, nil
@@ -411,7 +411,7 @@ func TestProcessController(t *testing.T) {
 			name: "should set response headers",
 			args: args{
 				svc: services,
-				controller: func(ctx *fiber.Ctx) (*Response, error) {
+				controller: func(ctx fiber.Ctx) (*Response, error) {
 					return &Response{
 						Headers: map[string]*string{
 							"X-Amz-My-Custom-Header": utils.GetStringPtr("my_value"),
@@ -432,7 +432,7 @@ func TestProcessController(t *testing.T) {
 			name: "large payload: should return internal error",
 			args: args{
 				svc: services,
-				controller: func(ctx *fiber.Ctx) (*Response, error) {
+				controller: func(ctx fiber.Ctx) (*Response, error) {
 					type Item struct {
 						Value string `xml:"value"`
 					}
@@ -475,7 +475,7 @@ func TestProcessController(t *testing.T) {
 			name: "not encoded payload",
 			args: args{
 				svc: services,
-				controller: func(ctx *fiber.Ctx) (*Response, error) {
+				controller: func(ctx fiber.Ctx) (*Response, error) {
 					return &Response{
 						Data: s3response.Bucket{
 							Name: "something",
@@ -553,10 +553,10 @@ func TestProcessHandlers(t *testing.T) {
 			name: "handler returns error",
 			args: args{
 				handlers: []fiber.Handler{
-					func(ctx *fiber.Ctx) error {
+					func(ctx fiber.Ctx) error {
 						return nil
 					},
-					func(ctx *fiber.Ctx) error {
+					func(ctx fiber.Ctx) error {
 						return s3err.GetAPIError(s3err.ErrAccessDenied)
 					},
 				},
@@ -570,15 +570,15 @@ func TestProcessHandlers(t *testing.T) {
 			name: "should process the controller",
 			args: args{
 				handlers: []fiber.Handler{
-					func(ctx *fiber.Ctx) error {
+					func(ctx fiber.Ctx) error {
 						return nil
 					},
-					func(ctx *fiber.Ctx) error {
+					func(ctx fiber.Ctx) error {
 						return nil
 					},
 				},
 				svc: &Services{},
-				controller: func(ctx *fiber.Ctx) (*Response, error) {
+				controller: func(ctx fiber.Ctx) (*Response, error) {
 					return &Response{
 						Data: s3response.Checksum{
 							CRC32: utils.GetStringPtr("crc32"),
@@ -597,7 +597,7 @@ func TestProcessHandlers(t *testing.T) {
 
 			app := fiber.New()
 
-			app.Post("/:bucket/*", func(ctx *fiber.Ctx) error {
+			app.Post("/:bucket/*", func(ctx fiber.Ctx) error {
 				utils.ContextKeyRequestID.Set(ctx, testRequestID)
 				utils.ContextKeyHostID.Set(ctx, testHostID)
 
@@ -620,7 +620,7 @@ func TestProcessHandlers(t *testing.T) {
 				return nil
 			})
 
-			app.All("*", func(ctx *fiber.Ctx) error {
+			app.All("*", func(ctx fiber.Ctx) error {
 				return nil
 			})
 
@@ -649,7 +649,7 @@ func TestWrapMiddleware(t *testing.T) {
 		{
 			name: "handler returns no error",
 			args: args{
-				handler: func(ctx *fiber.Ctx) error {
+				handler: func(ctx fiber.Ctx) error {
 					return nil
 				},
 			},
@@ -657,7 +657,7 @@ func TestWrapMiddleware(t *testing.T) {
 		{
 			name: "handler returns api error",
 			args: args{
-				handler: func(ctx *fiber.Ctx) error {
+				handler: func(ctx fiber.Ctx) error {
 					return s3err.GetAPIError(s3err.ErrAclNotSupported)
 				},
 				mm:     &mockMetricsManager{},
@@ -670,7 +670,7 @@ func TestWrapMiddleware(t *testing.T) {
 		{
 			name: "handler returns custom error",
 			args: args{
-				handler: func(ctx *fiber.Ctx) error {
+				handler: func(ctx fiber.Ctx) error {
 					return errors.New("custom error")
 				},
 			},
@@ -684,7 +684,7 @@ func TestWrapMiddleware(t *testing.T) {
 			mdlwr := WrapMiddleware(tt.args.handler, tt.args.logger, tt.args.mm)
 			app := fiber.New()
 
-			app.Post("/:bucket/*", func(ctx *fiber.Ctx) error {
+			app.Post("/:bucket/*", func(ctx fiber.Ctx) error {
 				utils.ContextKeyRequestID.Set(ctx, testRequestID)
 				utils.ContextKeyHostID.Set(ctx, testHostID)
 
@@ -700,7 +700,7 @@ func TestWrapMiddleware(t *testing.T) {
 				return nil
 			})
 
-			app.All("*", func(ctx *fiber.Ctx) error {
+			app.All("*", func(ctx fiber.Ctx) error {
 				return nil
 			})
 

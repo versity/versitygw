@@ -17,7 +17,7 @@ package s3api
 import (
 	"net/http"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/metrics"
@@ -56,7 +56,7 @@ func (sa *S3ApiRouter) Init() {
 
 	// initialize global host-style parser middleware if virtual domain is specified
 	if sa.virtualDomain != "" {
-		sa.app.Use(middlewares.HostStyleParser(sa.virtualDomain))
+		sa.app.Use("*", middlewares.HostStyleParser(sa.virtualDomain))
 	}
 
 	if sa.WithAdmSrv {
@@ -158,7 +158,7 @@ func (sa *S3ApiRouter) Init() {
 	// copy source is not allowed on '/'
 	sa.app.Get("/", middlewares.MatchHeader("X-Amz-Copy-Source"),
 		controllers.ProcessHandlers(
-			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+			func(ctx fiber.Ctx) (*controllers.Response, error) {
 				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
 			},
 			metrics.ActionUndetected,
@@ -475,7 +475,7 @@ func (sa *S3ApiRouter) Init() {
 	// copy source is not allowed on bucket HEAD operation
 	bucketRouter.Head("/", middlewares.MatchHeader("X-Amz-Copy-Source"),
 		controllers.ProcessHandlers(
-			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+			func(ctx fiber.Ctx) (*controllers.Response, error) {
 				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
 			},
 			metrics.ActionUndetected,
@@ -501,7 +501,7 @@ func (sa *S3ApiRouter) Init() {
 	// copy source is not allowed on bucket DELETE operation
 	bucketRouter.Delete("/", middlewares.MatchHeader("X-Amz-Copy-Source"),
 		controllers.ProcessHandlers(
-			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+			func(ctx fiber.Ctx) (*controllers.Response, error) {
 				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
 			},
 			metrics.ActionUndetected,
@@ -697,7 +697,7 @@ func (sa *S3ApiRouter) Init() {
 	// copy source is not allowed on bucket GET operation
 	bucketRouter.Get("/", middlewares.MatchHeader("X-Amz-Copy-Source"),
 		controllers.ProcessHandlers(
-			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+			func(ctx fiber.Ctx) (*controllers.Response, error) {
 				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
 			},
 			metrics.ActionUndetected,
@@ -1102,7 +1102,7 @@ func (sa *S3ApiRouter) Init() {
 		middlewares.MatchHeader("X-Amz-Copy-Source"),
 		middlewares.MatchQueryArgs("uploadId"),
 		controllers.ProcessHandlers(
-			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+			func(ctx fiber.Ctx) (*controllers.Response, error) {
 				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
 			},
 			metrics.ActionUndetected,
@@ -1142,7 +1142,7 @@ func (sa *S3ApiRouter) Init() {
 	objectRouter.Head("/",
 		middlewares.MatchHeader("X-Amz-Copy-Source"),
 		controllers.ProcessHandlers(
-			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+			func(ctx fiber.Ctx) (*controllers.Response, error) {
 				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
 			},
 			metrics.ActionUndetected,
@@ -1182,7 +1182,7 @@ func (sa *S3ApiRouter) Init() {
 	objectRouter.Get("/",
 		middlewares.MatchHeader("X-Amz-Copy-Source"),
 		controllers.ProcessHandlers(
-			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+			func(ctx fiber.Ctx) (*controllers.Response, error) {
 				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
 			},
 			metrics.ActionUndetected,
@@ -1287,7 +1287,7 @@ func (sa *S3ApiRouter) Init() {
 	objectRouter.Delete("/",
 		middlewares.MatchHeader("X-Amz-Copy-Source"),
 		controllers.ProcessHandlers(
-			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+			func(ctx fiber.Ctx) (*controllers.Response, error) {
 				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
 			},
 			metrics.ActionUndetected,
@@ -1341,7 +1341,7 @@ func (sa *S3ApiRouter) Init() {
 		middlewares.MatchHeader("X-Amz-Copy-Source"),
 		middlewares.MatchQueryArgs("uploadId"),
 		controllers.ProcessHandlers(
-			func(ctx *fiber.Ctx) (*controllers.Response, error) {
+			func(ctx fiber.Ctx) (*controllers.Response, error) {
 				return &controllers.Response{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySource, ctx.Get("X-Amz-Copy-Source"))
 			},
 			metrics.ActionUndetected,
@@ -1561,7 +1561,7 @@ func (sa *S3ApiRouter) Init() {
 	)
 
 	// Return MethodNotAllowed for all the unmatched routes
-	sa.app.All("*", controllers.ProcessHandlers(func(ctx *fiber.Ctx) (*controllers.Response, error) {
+	sa.app.All("*", controllers.ProcessHandlers(func(ctx fiber.Ctx) (*controllers.Response, error) {
 		return &controllers.Response{}, s3err.GetMethodNotAllowedErr(ctx.Method(), s3err.ResourceTypeService, nil)
 	}, metrics.ActionUndetected, services))
 }

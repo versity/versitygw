@@ -18,7 +18,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/debuglogger"
 )
 
@@ -70,7 +70,7 @@ func NewS3HostID() string {
 // EnsureRequestIDs makes sure the request-local IDs exist and are present
 // in the response headers. Existing local values are reused so headers and XML
 // bodies stay consistent throughout the request.
-func EnsureRequestIDs(ctx *fiber.Ctx) (requestID, hostID string) {
+func EnsureRequestIDs(ctx fiber.Ctx) (requestID, hostID string) {
 	requestID = RequestID(ctx)
 	if requestID == "" {
 		requestID = NewS3RequestID()
@@ -89,7 +89,7 @@ func EnsureRequestIDs(ctx *fiber.Ctx) (requestID, hostID string) {
 	return requestID, hostID
 }
 
-func RequestID(ctx *fiber.Ctx) string {
+func RequestID(ctx fiber.Ctx) string {
 	requestID, _ := ContextKeyRequestID.Get(ctx).(string)
 	if requestID != "" {
 		return requestID
@@ -98,7 +98,7 @@ func RequestID(ctx *fiber.Ctx) string {
 	return string(ctx.Response().Header.Peek(HeaderAmzRequestID))
 }
 
-func HostID(ctx *fiber.Ctx) string {
+func HostID(ctx fiber.Ctx) string {
 	hostID, _ := ContextKeyHostID.Get(ctx).(string)
 	if hostID != "" {
 		return hostID

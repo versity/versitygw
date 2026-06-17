@@ -23,7 +23,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -43,7 +43,7 @@ type Tag struct {
 
 // Manager is the interface definition for metrics manager
 type Manager interface {
-	Send(ctx *fiber.Ctx, err error, action string, count int64, status int)
+	Send(ctx fiber.Ctx, err error, action string, count int64, status int)
 	Close()
 }
 
@@ -118,7 +118,7 @@ func NewManager(ctx context.Context, conf Config) (Manager, error) {
 	return mgr, nil
 }
 
-func (m *manager) Send(ctx *fiber.Ctx, err error, action string, count int64, status int) {
+func (m *manager) Send(ctx fiber.Ctx, err error, action string, count int64, status int) {
 	// In case of Authentication failures, url parsing ...
 	if action == "" {
 		action = ActionUndetected

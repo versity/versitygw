@@ -15,13 +15,13 @@
 package middlewares
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
 // Evaluates/Matches the provided requst query params
 func MatchQueryArgs(args ...string) fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		if utils.ContextKeySkip.IsSet(ctx) {
 			return ctx.Next()
 		}
@@ -37,7 +37,7 @@ func MatchQueryArgs(args ...string) fiber.Handler {
 
 // Evaluates/Matches the requst header
 func MatchHeader(key string) fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		if utils.ContextKeySkip.IsSet(ctx) {
 			return ctx.Next()
 		}
@@ -53,7 +53,7 @@ func MatchHeader(key string) fiber.Handler {
 
 // Evaluates/Matches the requst query param and value
 func MatchQueryArgWithValue(key, val string) fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		if utils.ContextKeySkip.IsSet(ctx) {
 			return ctx.Next()
 		}

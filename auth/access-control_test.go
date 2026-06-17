@@ -222,7 +222,6 @@ func TestVerifyObjectCopyAccess_URLEncodedSlashSeparator(t *testing.T) {
 	opts := AccessOptions{
 		Acl:           ACL{Owner: testUser},
 		AclPermission: PermissionWrite,
-		IsRoot:        false,
 		Acc:           Account{Access: testUser, Role: RoleUser},
 		Bucket:        "dst-bucket",
 		Object:        "dst-key",
@@ -276,7 +275,6 @@ func TestVerifyObjectCopyAccess_LiteralSlashSeparator(t *testing.T) {
 	opts := AccessOptions{
 		Acl:           ACL{Owner: testUser},
 		AclPermission: PermissionWrite,
-		IsRoot:        false,
 		Acc:           Account{Access: testUser, Role: RoleUser},
 		Bucket:        "dst-bucket",
 		Object:        "dst-key",

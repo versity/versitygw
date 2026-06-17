@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 )
@@ -100,7 +100,7 @@ func (c checksumType) isValid() bool {
 }
 
 // Extracts and validates the checksum type from the 'X-Amz-Trailer' header
-func ExtractChecksumType(ctx *fiber.Ctx) (checksumType, error) {
+func ExtractChecksumType(ctx fiber.Ctx) (checksumType, error) {
 	trailer := ctx.Get("X-Amz-Trailer")
 	chType := checksumType(strings.ToLower(trailer))
 	if chType != "" && !chType.isValid() {
@@ -172,7 +172,7 @@ func IsStreamingPayload(str string) bool {
 
 // ParseDecodedContentLength extracts and validates the
 // 'x-amz-decoded-content-length' from fiber context
-func ParseDecodedContentLength(ctx *fiber.Ctx) (int64, error) {
+func ParseDecodedContentLength(ctx fiber.Ctx) (int64, error) {
 	decContLengthStr := ctx.Get("X-Amz-Decoded-Content-Length")
 	if decContLengthStr == "" {
 		debuglogger.Logf("missing required header 'X-Amz-Decoded-Content-Length'")
@@ -192,7 +192,7 @@ func ParseDecodedContentLength(ctx *fiber.Ctx) (int64, error) {
 	return decContLength, nil
 }
 
-func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, canonicalString, secret string, date time.Time) (io.Reader, error) {
+func NewChunkReader(ctx fiber.Ctx, r io.Reader, authdata AuthData, canonicalString, secret string, date time.Time) (io.Reader, error) {
 	cLength, err := ParseDecodedContentLength(ctx)
 	if err != nil {
 		return nil, err

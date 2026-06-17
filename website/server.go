@@ -19,9 +19,9 @@ import (
 	"net"
 	"os"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/logger"
+	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/middlewares"
@@ -63,10 +63,8 @@ func WithSocketPerm(perm os.FileMode) Option {
 //   - Host "<domain>" (apex, no subdomain) resolves to bucket "<domain>"
 func NewServer(be backend.Backend, domain string, opts ...Option) *Server {
 	app := fiber.New(fiber.Config{
-		AppName:               "versitygw-website",
-		ServerHeader:          "VERSITYGW",
-		DisableStartupMessage: true,
-		Network:               fiber.NetworkTCP,
+		AppName:      "versitygw-website",
+		ServerHeader: "VERSITYGW",
 	})
 
 	server := &Server{
@@ -84,19 +82,19 @@ func NewServer(be backend.Backend, domain string, opts ...Option) *Server {
 	}
 
 	// Panic recovery
-	app.Use(recover.New())
+	app.Use("*", recover.New())
 
 	// Request logging
 	if !server.quiet {
 		fmt.Printf("initializing website endpoint (%s)\n", domainInfo)
-		app.Use(logger.New(logger.Config{
+		app.Use("*", logger.New(logger.Config{
 			Format: "${time} | website | ${status} | ${latency} | ${ip} | ${method} | ${path}\n",
 		}))
 	}
 
 	// initialize the debug logger in debug mode
 	if debuglogger.IsDebugEnabled() {
-		app.Use(middlewares.DebugLogger())
+		app.Use("*", middlewares.DebugLogger())
 	}
 
 	registerWebsiteRoutes(app, be, domain)
@@ -118,9 +116,9 @@ func (s *Server) ServeMultiPort(ports []string) error {
 		var err error
 
 		if s.CertStorage != nil {
-			ln, err = utils.NewMultiAddrTLSListener(s.app.Config().Network, addrSpec, s.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: s.socketPerm})
+			ln, err = utils.NewMultiAddrTLSListener(fiber.NetworkTCP, addrSpec, s.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: s.socketPerm})
 		} else {
-			ln, err = utils.NewMultiAddrListener(s.app.Config().Network, addrSpec, utils.ListenerOptions{SocketPerm: s.socketPerm})
+			ln, err = utils.NewMultiAddrListener(fiber.NetworkTCP, addrSpec, utils.ListenerOptions{SocketPerm: s.socketPerm})
 		}
 
 		if err != nil {
@@ -136,7 +134,9 @@ func (s *Server) ServeMultiPort(ports []string) error {
 
 	finalListener := utils.NewMultiListener(listeners...)
 
-	return s.app.Listener(finalListener)
+	return s.app.Listener(finalListener, fiber.ListenConfig{
+		DisableStartupMessage: true,
+	})
 }
 
 // Shutdown gracefully shuts down the server.

@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -72,7 +72,7 @@ func InitWebhookEventSender(url string, filter EventFilter) (S3EventSender, erro
 	}, nil
 }
 
-func (w *Webhook) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
+func (w *Webhook) SendEvent(ctx fiber.Ctx, meta EventMeta) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -83,7 +83,7 @@ func (w *Webhook) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 	if meta.EventName == EventObjectRemovedDeleteObjects {
 		var dObj s3response.DeleteObjects
 
-		if err := xml.Unmarshal(ctx.Body(), &dObj); err != nil {
+		if err := xml.Unmarshal(ctx.BodyRaw(), &dObj); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to parse delete objects input payload: %v\n", err.Error())
 			return
 		}

@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -56,7 +56,7 @@ func InitFileLogger(logname string) (AuditLogger, error) {
 }
 
 // Log sends log message to file logger
-func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
+func (f *FileLogger) Log(ctx fiber.Ctx, err error, body []byte, meta LogMeta) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -79,7 +79,7 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	if !ok {
 		startTime = time.Now()
 	}
-	tlsConnState := ctx.Context().TLSConnectionState()
+	tlsConnState := ctx.RequestCtx().TLSConnectionState()
 	if tlsConnState != nil {
 		lf.CipherSuite = tls.CipherSuiteName(tlsConnState.CipherSuite)
 		lf.TLSVersion = getTLSVersionName(tlsConnState.Version)
