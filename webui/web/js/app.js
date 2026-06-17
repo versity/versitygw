@@ -20,12 +20,83 @@
 // Navigation & Auth Guards
 // ============================================
 
+const POST_LOGIN_ROUTE_STORAGE_KEY = 'versitygw.postLoginRoute';
+
+const POST_LOGIN_ROUTE_BY_PATH = {
+  '/explorer.html': 'explorer',
+  '/dashboard.html': 'dashboard',
+  '/buckets.html': 'buckets',
+  '/users.html': 'users'
+};
+
+const POST_LOGIN_PATH_BY_ROUTE = {
+  explorer: 'explorer.html',
+  dashboard: 'dashboard.html',
+  buckets: 'buckets.html',
+  users: 'users.html'
+};
+
+function getCurrentPostLoginRouteKey() {
+  return POST_LOGIN_ROUTE_BY_PATH[window.location.pathname] || null;
+}
+
+function storePostLoginRouteKey() {
+  const routeKey = getCurrentPostLoginRouteKey();
+  if (!routeKey) {
+    return;
+  }
+
+  try {
+    sessionStorage.setItem(POST_LOGIN_ROUTE_STORAGE_KEY, routeKey);
+  } catch (_) {
+    // Ignore storage failures and fall back to role-based redirects.
+  }
+}
+
+function clearPostLoginRouteKey() {
+  try {
+    sessionStorage.removeItem(POST_LOGIN_ROUTE_STORAGE_KEY);
+  } catch (_) {
+    // Ignore storage failures.
+  }
+}
+
+function consumePostLoginRedirectTarget(role) {
+  const fallbackTarget = role === 'admin' ? 'dashboard.html' : 'explorer.html';
+
+  let routeKey = null;
+  try {
+    routeKey = sessionStorage.getItem(POST_LOGIN_ROUTE_STORAGE_KEY);
+  } catch (_) {
+    return fallbackTarget;
+  }
+
+  clearPostLoginRouteKey();
+
+  if (!routeKey) {
+    return fallbackTarget;
+  }
+
+  const target = POST_LOGIN_PATH_BY_ROUTE[routeKey];
+  if (!target) {
+    return fallbackTarget;
+  }
+
+  // Non-admin users should never be redirected to admin-only pages.
+  if (role !== 'admin' && routeKey !== 'explorer') {
+    return fallbackTarget;
+  }
+
+  return target;
+}
+
 /**
  * Check if user is authenticated, redirect to login if not
  * Also loads user context (user type and accessible gateways)
  */
 function requireAuth() {
   if (!api.loadCredentials()) {
+    storePostLoginRouteKey();
     window.location.href = 'index.html';
     return false;
   }
@@ -40,6 +111,7 @@ function requireAuth() {
  */
 function requireAdmin() {
   if (!api.loadCredentials()) {
+    storePostLoginRouteKey();
     window.location.href = 'index.html';
     return false;
   }

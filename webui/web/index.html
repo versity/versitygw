@@ -621,14 +621,8 @@ under the License.
         const rememberKey = document.getElementById('remember-access-key').checked;
         saveRecentGateway(s3Endpoint, region, accessKey, rememberKey);
 
-        // Navigate based on role
-        if (role === 'admin') {
-          // Admin user - redirect to dashboard
-          window.location.href = 'dashboard.html';
-        } else {
-          // Regular user with S3 access - redirect to explorer
-          window.location.href = 'explorer.html';
-        }
+        // Navigate based on stored route key with role-based fallback.
+        window.location.href = consumePostLoginRedirectTarget(role);
       } catch (error) {
         api.logout();
         console.error('Login error:', error);
