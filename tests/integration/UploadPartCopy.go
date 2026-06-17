@@ -804,6 +804,19 @@ func UploadPartCopy_conditional_reads(s *S3Conf) error {
 			{nil, &etagTrimmed, nil, &before, errCond},
 			{nil, &etagTrimmed, nil, &after, errMod},
 			{nil, &etagTrimmed, nil, nil, errMod},
+
+			// if-match and if-none-match with asterisk
+			{getPtr("*"), nil, nil, nil, nil},
+			{getPtr("*"), nil, &after, nil, errMod},
+			{getPtr("*"), getPtr("invalid_etag"), nil, nil, nil},
+			{getPtr("*"), etag, nil, nil, errMod},
+			{getPtr("*"), getPtr("*"), nil, nil, errMod},
+			{getPtr("*"), getPtr("*"), nil, &before, errMod},
+			{nil, getPtr("*"), nil, nil, errMod},
+			{nil, getPtr("*"), &before, nil, errMod},
+			{nil, getPtr("*"), nil, &after, errMod},
+			{nil, getPtr("*"), nil, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("*"), nil, nil, errCond},
 		} {
 			mpKey := "mp-key"
 			mp, err := createMp(s3client, bucket, mpKey)
