@@ -35,6 +35,11 @@ type BucketLockConfig struct {
 	CreatedAt        *time.Time
 }
 
+const (
+	maxObjectLockRetentionDays  int32 = 36500
+	maxObjectLockRetentionYears int32 = 100
+)
+
 func ParseBucketLockConfigurationInput(input []byte) ([]byte, error) {
 	var lockConfig types.ObjectLockConfiguration
 	if err := xml.Unmarshal(input, &lockConfig); err != nil {
@@ -62,8 +67,14 @@ func ParseBucketLockConfigurationInput(input []byte) ([]byte, error) {
 		if retention.Days != nil && *retention.Days <= 0 {
 			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionDays, fmt.Sprint(*retention.Days))
 		}
+		if retention.Days != nil && *retention.Days > maxObjectLockRetentionDays {
+			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionDaysTooLarge, fmt.Sprint(*retention.Days))
+		}
 		if retention.Years != nil && *retention.Years <= 0 {
 			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionYears, fmt.Sprint(*retention.Years))
+		}
+		if retention.Years != nil && *retention.Years > maxObjectLockRetentionYears {
+			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockRetentionYearsTooLarge, fmt.Sprint(*retention.Years))
 		}
 
 		config.DefaultRetention = retention
