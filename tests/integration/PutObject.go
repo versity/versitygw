@@ -17,6 +17,8 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
@@ -639,6 +641,54 @@ func PutObject_invalid_website_redirect_location(s *S3Conf) error {
 			WebsiteRedirectLocation: getPtr("ftp://example.com"),
 		}, s3client)
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRedirectLocation))
+	})
+}
+
+func PutObject_md5(s *S3Conf) error {
+	testName := "PutObject_md5"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		body := []byte("dummy data")
+		sum := md5.Sum(body)
+		contentMd5 := base64.StdEncoding.EncodeToString(sum[:])
+
+		for i, test := range []struct {
+			name string
+			md5  string
+			err  s3err.S3Error
+		}{
+			{"empty_md5", "", s3err.GetInvalidDigestErr("")},
+			{"invalid_md5", "invalid_md5", s3err.GetInvalidDigestErr("invalid_md5")},
+			// valid base64, but invalid md5
+			{"invalid_md5_length", "aGVsbCBzLGRham5mamFuc2Y=", s3err.GetInvalidDigestErr("aGVsbCBzLGRham5mamFuc2Y=")},
+			// valid md5, but incorrect
+			{"incorrect_md5", "XrY7u+Ae7tCTyyK7j1rNww==", s3err.GetBadDigestErr(contentMd5, base64ToHexString("XrY7u+Ae7tCTyyK7j1rNww=="))},
+			{"success", contentMd5, nil},
+		} {
+			req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%s/obj-%d", bucket, i), s.awsID, s.awsSecret, "s3", s.awsRegion, "", body, time.Now(), map[string]string{
+				"Content-Md5": test.md5,
+			})
+			if err != nil {
+				return err
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+
+			if test.err == nil {
+				if resp.StatusCode != http.StatusOK {
+					return fmt.Errorf("test %q failed: expected response status code to be %v, instead got %v", test.name, http.StatusOK, resp.StatusCode)
+				}
+				continue
+			}
+
+			if err := checkHTTPResponseApiErr(resp, test.err); err != nil {
+				return fmt.Errorf("test %q failed: %w", test.name, err)
+			}
+		}
+
+		return nil
 	})
 }
 

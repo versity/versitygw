@@ -15,8 +15,6 @@
 package integration
 
 import (
-	"crypto/md5"
-	"encoding/base64"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -497,43 +495,6 @@ func Authentication_incorrect_payload_hash(s *S3Conf) error {
 		}
 
 		return checkHTTPResponseApiErr(resp, s3err.GetContentSHA256MismatchErr(incorrectPayloadHash, emptySHA256Hash))
-	})
-}
-
-func Authentication_md5(s *S3Conf) error {
-	testName := "Authentication_md5"
-	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
-		sum := md5.Sum(nil)
-		emptyMd5 := base64.StdEncoding.EncodeToString(sum[:])
-
-		for i, test := range []struct {
-			md5 string
-			err s3err.S3Error
-		}{
-			{"invalid_md5", s3err.GetInvalidDigestErr("invalid_md5")},
-			// valid base64, but invalid md5
-			{"aGVsbCBzLGRham5mamFuc2Y=", s3err.GetInvalidDigestErr("aGVsbCBzLGRham5mamFuc2Y=")},
-			// valid md5, but incorrect
-			{"XrY7u+Ae7tCTyyK7j1rNww==", s3err.GetBadDigestErr(emptyMd5, base64ToHexString("XrY7u+Ae7tCTyyK7j1rNww=="))},
-		} {
-			req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%s/obj", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), map[string]string{
-				"Content-Md5": test.md5,
-			})
-			if err != nil {
-				return err
-			}
-
-			resp, err := s.httpClient.Do(req)
-			if err != nil {
-				return err
-			}
-
-			if err := checkHTTPResponseApiErr(resp, test.err); err != nil {
-				return fmt.Errorf("test %v failed: %w", i+1, err)
-			}
-		}
-
-		return nil
 	})
 }
 

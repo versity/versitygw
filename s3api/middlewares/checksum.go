@@ -33,13 +33,19 @@ import (
 // the x-amz-checksum-* headers are explicitly processed by the backend.
 func VerifyChecksums(streamBody bool, requireBody bool, requireChecksum bool) fiber.Handler {
 	return func(ctx fiber.Ctx) error {
-		md5sum := ctx.Get("Content-Md5")
+		md5Header := ctx.Request().Header.Peek("Content-Md5")
+		hasMD5Header := md5Header != nil
+		md5sum := string(md5Header)
+
+		if hasMD5Header && md5sum == "" {
+			return s3err.GetInvalidDigestErr(md5sum)
+		}
 
 		if streamBody {
 			// for large data actions(PutObject, UploadPart)
 			// only stack the md5 reader,as x-amz-checksum-*
 			// calculation is explicitly handled in back-end
-			if md5sum == "" {
+			if !hasMD5Header {
 				return nil
 			}
 

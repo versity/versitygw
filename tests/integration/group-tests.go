@@ -36,7 +36,6 @@ func TestAuthentication(ts *TestState) {
 	ts.Run(Authentication_date_mismatch)
 	ts.Run(Authentication_incorrect_payload_hash)
 	ts.Run(Authentication_invalid_sha256_payload_hash)
-	ts.Run(Authentication_md5)
 	ts.Run(Authentication_unsigned_required_header)
 	ts.Run(Authentication_unsigned_non_required_header)
 	ts.Run(Authentication_signature_error_incorrect_secret_key)
@@ -179,6 +178,7 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_invalid_retain_until_date)
 	ts.Run(PutObject_conditional_writes)
 	ts.Run(PutObject_should_combine_metadata)
+	ts.Run(PutObject_md5)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(PutObject_checksum_algorithm_and_header_mismatch)
@@ -1362,7 +1362,6 @@ func GetIntTests() IntTests {
 		"Authentication_date_mismatch":                                             Authentication_date_mismatch,
 		"Authentication_incorrect_payload_hash":                                    Authentication_incorrect_payload_hash,
 		"Authentication_invalid_sha256_payload_hash":                               Authentication_invalid_sha256_payload_hash,
-		"Authentication_md5":                                                       Authentication_md5,
 		"Authentication_unsigned_required_header":                                  Authentication_unsigned_required_header,
 		"Authentication_unsigned_non_required_header":                              Authentication_unsigned_non_required_header,
 		"Authentication_signature_error_incorrect_secret_key":                      Authentication_signature_error_incorrect_secret_key,
@@ -1402,6 +1401,7 @@ func GetIntTests() IntTests {
 		"PutObject_invalid_retain_until_date":                                      PutObject_invalid_retain_until_date,
 		"PutObject_conditional_writes":                                             PutObject_conditional_writes,
 		"PutObject_should_combine_metadata":                                        PutObject_should_combine_metadata,
+		"PutObject_md5":                                                            PutObject_md5,
 		"PutObject_long_metadata":                                                  PutObject_long_metadata,
 		"PutObject_with_metadata":                                                  PutObject_with_metadata,
 		"PutObject_invalid_website_redirect_location":                              PutObject_invalid_website_redirect_location,
