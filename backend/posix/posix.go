@@ -372,7 +372,7 @@ func (p *Posix) doesBucketAndObjectExist(bucket, object string) error {
 	}
 
 	_, err = os.Stat(filepath.Join(bucket, object))
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -1060,7 +1060,7 @@ func (p *Posix) ensureNotDeleteMarker(bucket, object, versionId string) error {
 	// data file simply doesn't exist — the two cases are indistinguishable
 	// from metadata alone.  Verify the data file directly so callers
 	// receive the correct NoSuchVersion / NoSuchKey error.
-	if _, statErr := os.Stat(filepath.Join(bucket, object)); errors.Is(statErr, fs.ErrNotExist) || errors.Is(statErr, syscall.ENOTDIR) {
+	if _, statErr := os.Stat(filepath.Join(bucket, object)); errors.Is(statErr, fs.ErrNotExist) || isErrNotDir(statErr) {
 		if versionId != "" {
 			return s3err.GetAPIError(s3err.ErrNoSuchVersion)
 		}
@@ -1068,7 +1068,7 @@ func (p *Posix) ensureNotDeleteMarker(bucket, object, versionId string) error {
 	}
 
 	_, err := p.meta.RetrieveAttribute(nil, bucket, object, deleteMarkerKey)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return s3err.GetNoSuchVersionErr(object, versionId)
 		}
@@ -1087,7 +1087,7 @@ func (p *Posix) ensureNotDeleteMarker(bucket, object, versionId string) error {
 // Check if the given object is a delete marker
 func (p *Posix) isObjDeleteMarker(bucket, object string) (bool, error) {
 	_, err := p.meta.RetrieveAttribute(nil, bucket, object, deleteMarkerKey)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		return false, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if errors.Is(err, meta.ErrNoSuchKey) {
@@ -3289,7 +3289,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3response.CopyPartResult{}, s3err.GetNoSuchUploadErr(*upi.UploadId)
 	}
-	if errors.Is(err, syscall.ENAMETOOLONG) {
+	if isErrNameTooLong(err) {
 		return s3response.CopyPartResult{}, s3err.GetKeyTooLongErr(int64(len(*upi.Key)), 1024)
 	}
 	if err != nil {
@@ -3360,7 +3360,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		}
 		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
-	if errors.Is(err, syscall.ENAMETOOLONG) {
+	if isErrNameTooLong(err) {
 		return s3response.CopyPartResult{}, s3err.GetKeyTooLongErr(int64(len(srcObject)), 1024)
 	}
 	if err != nil {
@@ -3776,10 +3776,10 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			_ = p.meta.DeleteAttribute(*po.Bucket, *po.Key, objectRetentionKey)
 		}
 	}
-	if errors.Is(err, syscall.ENAMETOOLONG) {
+	if isErrNameTooLong(err) {
 		return s3response.PutObjectOutput{}, s3err.GetKeyTooLongErr(int64(len(*po.Key)), 1024)
 	}
-	if errors.Is(err, syscall.ENOTDIR) {
+	if isErrNotDir(err) {
 		parentErr := handleParentDirError(name)
 		if parentErr != nil {
 			return s3response.PutObjectOutput{}, parentErr
@@ -4067,11 +4067,11 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		if getString(input.VersionId) == "" {
 			// if the versionId is not specified, make the current version a delete marker
 			fi, err := os.Stat(objpath)
-			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 				// AWS returns success if the object does not exist
 				return &s3.DeleteObjectOutput{}, nil
 			}
-			if errors.Is(err, syscall.ENAMETOOLONG) {
+			if isErrNameTooLong(err) {
 				return nil, s3err.GetKeyTooLongErr(int64(len(object)), 1024)
 			}
 			if err != nil {
@@ -4134,7 +4134,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			versionPath := p.genObjVersionPath(bucket, object)
 
 			vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 				// AWS returns success if the object does not exist
 				return &s3.DeleteObjectOutput{
 					VersionId: input.VersionId,
@@ -4151,7 +4151,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				// but "foo" is a regular file (not a directory), the path cannot
 				// contain any object.
 				_, statErr := os.Stat(filepath.Join(bucket, object))
-				if errors.Is(statErr, fs.ErrNotExist) || errors.Is(statErr, syscall.ENOTDIR) {
+				if errors.Is(statErr, fs.ErrNotExist) || isErrNotDir(statErr) {
 					return &s3.DeleteObjectOutput{VersionId: input.VersionId}, nil
 				}
 				vId = []byte(nullVersionId)
@@ -4204,7 +4204,6 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				if err != nil {
 					return nil, fmt.Errorf("open obj version: %w", err)
 				}
-				defer sf.Close()
 				acct, ok := ctx.Value("account").(auth.Account)
 				if !ok {
 					acct = auth.Account{}
@@ -4220,7 +4219,12 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 
 				_, err = io.Copy(f, sf)
 				if err != nil {
+					_ = sf.Close()
 					return nil, fmt.Errorf("copy object %w", err)
+				}
+
+				if err := sf.Close(); err != nil {
+					return nil, fmt.Errorf("close obj version: %w", err)
 				}
 
 				if err := f.link(); err != nil {
@@ -4275,10 +4279,10 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			isDelMarker, _ := p.isObjDeleteMarker(versionPath, *input.VersionId)
 
 			err = os.Remove(filepath.Join(versionPath, *input.VersionId))
-			if errors.Is(err, syscall.ENAMETOOLONG) {
+			if isErrNameTooLong(err) {
 				return nil, s3err.GetKeyTooLongErr(int64(len(object)), 1024)
 			}
-			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 				return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, *input.VersionId)
 			}
 			if err != nil {
@@ -4296,10 +4300,10 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	}
 
 	fi, err := os.Stat(objpath)
-	if errors.Is(err, syscall.ENAMETOOLONG) {
+	if isErrNameTooLong(err) {
 		return nil, s3err.GetKeyTooLongErr(int64(len(object)), 1024)
 	}
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		// AWS returns success if the object does not exist
 		return &s3.DeleteObjectOutput{}, nil
 	}
@@ -4329,7 +4333,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
-	if errors.Is(err, syscall.ENOTEMPTY) {
+	if isErrDirNotEmpty(err) {
 		// If the directory object has been uploaded explicitly
 		// remove the directory object (remove the ETag)
 		_, err = p.meta.RetrieveAttribute(nil, objpath, "", etagkey)
@@ -4489,7 +4493,7 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	object := *input.Key
 	if versionId != "" {
 		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -4508,13 +4512,13 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	objPath := filepath.Join(bucket, object)
 
 	fid, err := os.Stat(objPath)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return nil, s3err.GetNoSuchVersionErr(*input.Key, versionId)
 		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
-	if errors.Is(err, syscall.ENAMETOOLONG) {
+	if isErrNameTooLong(err) {
 		return nil, s3err.GetKeyTooLongErr(int64(len(*input.Key)), 1024)
 	}
 	if err != nil {
@@ -4648,7 +4652,10 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		versionId = string(vId)
 	}
 
-	f, err := os.Open(objPath)
+	// openForRead opens with FILE_SHARE_DELETE on Windows so that a concurrent
+	// DeleteObject can call os.Remove on this file while the GET response body
+	// is still being streamed. On POSIX, os.Open is sufficient.
+	f, err := openForRead(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
@@ -4657,13 +4664,13 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	}
 
 	fi, err := f.Stat()
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
-	if errors.Is(err, syscall.ENAMETOOLONG) {
+	if isErrNameTooLong(err) {
 		return nil, s3err.GetKeyTooLongErr(int64(len(*input.Key)), 1024)
 	}
 	if err != nil {
@@ -4829,7 +4836,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 
 	if versionId != "" {
 		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -4849,13 +4856,13 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	objPath := filepath.Join(bucket, object)
 
 	fi, err := os.Stat(objPath)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return nil, s3err.GetNoSuchVersionErr(*input.Key, versionId)
 		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
-	if errors.Is(err, syscall.ENAMETOOLONG) {
+	if isErrNameTooLong(err) {
 		return nil, s3err.GetKeyTooLongErr(int64(len(*input.Key)), 1024)
 	}
 	if err != nil {
@@ -5174,7 +5181,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 			return s3response.CopyObjectOutput{}, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, srcVersionId)
 		}
 		vId, err := p.meta.RetrieveAttribute(nil, srcBucket, srcObject, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -5197,13 +5204,13 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 	objPath := joinPathWithTrailer(srcBucket, srcObject)
 	f, err := os.Open(objPath)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if p.versioningEnabled() && vEnabled {
 			return s3response.CopyObjectOutput{}, s3err.GetNoSuchVersionErr(origSrcObject, srcVersionId)
 		}
 		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
-	if errors.Is(err, syscall.ENAMETOOLONG) {
+	if isErrNameTooLong(err) {
 		return s3response.CopyObjectOutput{}, s3err.GetKeyTooLongErr(int64(len(origSrcObject)), 1024)
 	}
 	if err != nil {
@@ -5344,7 +5351,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		b, _ := p.meta.RetrieveAttribute(nil, dstBucket, dstObject, etagkey)
 		etag = string(b)
 		vId, _ := p.meta.RetrieveAttribute(nil, dstBucket, dstObject, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		version = backend.GetPtrFromString(string(vId))
@@ -5888,10 +5895,10 @@ func (p *Posix) GetObjectTagging(ctx context.Context, bucket, object, versionId 
 
 	if versionId == "" {
 		_, err = os.Stat(filepath.Join(bucket, object))
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
-		if errors.Is(err, syscall.ENAMETOOLONG) {
+		if isErrNameTooLong(err) {
 			return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
 		}
 		if err != nil {
@@ -5905,7 +5912,7 @@ func (p *Posix) GetObjectTagging(ctx context.Context, bucket, object, versionId 
 			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 		}
 		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -5929,7 +5936,7 @@ func (p *Posix) GetObjectTagging(ctx context.Context, bucket, object, versionId 
 func (p *Posix) getAttrTags(bucket, object, versionId string) (map[string]string, error) {
 	tags := make(map[string]string)
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, tagHdr)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return nil, s3err.GetNoSuchVersionErr(object, versionId)
 		}
@@ -5978,10 +5985,10 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 
 	if versionId == "" {
 		_, err = os.Stat(filepath.Join(bucket, object))
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
-		if errors.Is(err, syscall.ENAMETOOLONG) {
+		if isErrNameTooLong(err) {
 			return s3err.GetAPIError(s3err.ErrKeyTooLong)
 		}
 		if err != nil {
@@ -5995,7 +6002,7 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 			return s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 		}
 		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -6015,7 +6022,7 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 
 	if tags == nil {
 		err = p.meta.DeleteAttribute(bucket, object, tagHdr)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			if versionId != "" {
 				return s3err.GetNoSuchVersionErr(object, versionId)
 			}
@@ -6036,7 +6043,7 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 	}
 
 	err = p.meta.StoreAttribute(nil, bucket, object, tagHdr, b)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return s3err.GetNoSuchVersionErr(object, versionId)
 		}
@@ -6420,7 +6427,7 @@ func (p *Posix) PutObjectLegalHold(ctx context.Context, bucket, object, versionI
 			return s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 		}
 		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -6439,7 +6446,7 @@ func (p *Posix) PutObjectLegalHold(ctx context.Context, bucket, object, versionI
 	}
 
 	err = p.meta.StoreAttribute(nil, bucket, object, objectLegalHoldKey, statusData)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return s3err.GetNoSuchVersionErr(object, versionId)
 		}
@@ -6481,7 +6488,7 @@ func (p *Posix) GetObjectLegalHold(ctx context.Context, bucket, object, versionI
 			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 		}
 		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -6500,7 +6507,7 @@ func (p *Posix) GetObjectLegalHold(ctx context.Context, bucket, object, versionI
 	}
 
 	data, err := p.meta.RetrieveAttribute(nil, bucket, object, objectLegalHoldKey)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return nil, s3err.GetNoSuchVersionErr(object, versionId)
 		}
@@ -6547,7 +6554,7 @@ func (p *Posix) PutObjectRetention(ctx context.Context, bucket, object, versionI
 			return s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 		}
 		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -6602,7 +6609,7 @@ func (p *Posix) GetObjectRetention(ctx context.Context, bucket, object, versionI
 			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 		}
 		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -6621,7 +6628,7 @@ func (p *Posix) GetObjectRetention(ctx context.Context, bucket, object, versionI
 	}
 
 	data, err := p.meta.RetrieveAttribute(nil, bucket, object, objectRetentionKey)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return nil, s3err.GetNoSuchVersionErr(object, versionId)
 		}
