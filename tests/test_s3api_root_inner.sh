@@ -89,7 +89,7 @@ test_put_object_s3api_root() {
   run copy_object "s3api" "$bucket_one/$bucket_file" "$bucket_two" "$bucket_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$bucket_file" "$bucket_two" "$bucket_file" "$TEST_FILE_FOLDER/${bucket_file}_copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$bucket_file" "$bucket_two" "$bucket_file" "$TEST_FILE_FOLDER/${bucket_file}_copy"
   assert_success
 }
 

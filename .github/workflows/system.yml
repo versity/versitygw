@@ -151,6 +151,7 @@ jobs:
           AWS_REGION=$AWS_REGION
           COVERAGE_LOG=$COVERAGE_LOG
           TEMPLATE_MATRIX_FILE=$TEMPLATE_MATRIX_FILE
+          QUICK_COMPARE_SIZE=1048576
           EOF
           sudo chown tester:tester /home/tester/test-files/.env
           sudo chmod 600 /home/tester/test-files/.env
