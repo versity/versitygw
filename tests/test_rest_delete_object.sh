@@ -37,7 +37,7 @@ source ./tests/setup.sh
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 
   run delete_object "rest" "$bucket_name" "$test_file"

@@ -133,3 +133,20 @@ source ./tests/drivers/string.sh
     assert_success
   done
 }
+
+@test "REST - quick compare" {
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 5
+  assert_success
+  read -r bucket_name file_name <<< "$output"
+
+  run put_object_rest "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name"
+  assert_success
+
+  export QUICK_COMPARE_SIZE=1000000
+  run check_quick_compare "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name"
+  assert_success
+
+  export QUICK_COMPARE_SIZE=10000000
+  run check_quick_compare "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name"
+  assert_failure 2
+}

@@ -199,6 +199,9 @@ check_universal_vars() {
   if [ -n "$COVERAGE_LOG" ]; then
     export COVERAGE_LOG
   fi
+  if [ -n "$QUICK_COMPARE_SIZE" ]; then
+    export QUICK_COMPARE_SIZE
+  fi
 
   if ! check_aws_vars; then
     log 1 "error checking AWS-related env vars"

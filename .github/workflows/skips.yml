@@ -7,7 +7,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Fail if any skip descriptions are empty or point to closed issues/PRs
         env:

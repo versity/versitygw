@@ -572,6 +572,6 @@ export RUN_USERS=true
   run send_openssl_go_command "200" "-method" "PUT" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-payload" "$payload_content"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/${test_file}_downloaded"
+  run check_file_integrity "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/${test_file}_downloaded"
   assert_success
 }

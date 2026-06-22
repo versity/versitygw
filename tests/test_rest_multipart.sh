@@ -57,7 +57,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
     "$part_one" "$part_two" "$part_three" "$part_four"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$large_test_file" "$bucket_name" "$large_test_file" "$TEST_FILE_FOLDER/$large_test_file-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$large_test_file" "$bucket_name" "$large_test_file" "$TEST_FILE_FOLDER/$large_test_file-copy"
   assert_success
 }
 
@@ -97,7 +97,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   run create_upload_part_copy_rest "$bucket_name" "$large_test_file" "$TEST_FILE_FOLDER/$large_test_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$large_test_file" "$bucket_name" "$large_test_file" "$TEST_FILE_FOLDER/$large_test_file-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$large_test_file" "$bucket_name" "$large_test_file" "$TEST_FILE_FOLDER/$large_test_file-copy"
   assert_success
 }
 

@@ -100,7 +100,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
@@ -123,7 +123,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
@@ -146,7 +146,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
@@ -169,7 +169,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
@@ -299,7 +299,7 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   run chunked_upload_trailer_different_chunk_size "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "sha256"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
