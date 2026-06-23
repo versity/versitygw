@@ -213,6 +213,12 @@ spec:
               mountPath: /mnt/iam
               subPath: iam
               readOnly: false
+            {{- if .Values.sidecar.enabled }}
+            - name: data
+              mountPath: /mnt/metadata
+              subPath: metadata
+              readOnly: false
+            {{- end }}
             {{- if .Values.tls.enabled }}
             - name: certificates
               mountPath: /certs
