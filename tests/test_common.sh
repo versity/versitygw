@@ -60,7 +60,7 @@ test_common_multipart_upload() {
   fi
 
   log 5 "file: $TEST_FILE_FOLDER/$bucket_file, bucket: $bucket_name"
-  run download_and_compare_file "$TEST_FILE_FOLDER/$bucket_file" "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$bucket_file" "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
   assert_success
 }
 
@@ -122,7 +122,7 @@ test_common_copy_object() {
     run copy_object "$1" "$bucket_one/$object_name" "$bucket_two" "$object_name"
     assert_success
   fi
-  run download_and_compare_file "$TEST_FILE_FOLDER/$object_name" "$bucket_two" "$object_name" "$TEST_FILE_FOLDER/$object_name-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$object_name" "$bucket_two" "$object_name" "$TEST_FILE_FOLDER/$object_name-copy"
   assert_success
 }
 
@@ -176,7 +176,7 @@ test_common_put_object() {
     assert_success
   fi
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$2" "$bucket_name" "$2" "$TEST_FILE_FOLDER/${2}-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$2" "$bucket_name" "$2" "$TEST_FILE_FOLDER/${2}-copy"
   assert_success
 
   run delete_object "$1" "$bucket_name" "$2"

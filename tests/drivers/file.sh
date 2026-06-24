@@ -790,6 +790,31 @@ download_and_compare_file() {
   return 0
 }
 
+check_file_integrity() {
+  if ! check_param_count_ge_le "original file, bucket, key, destination, chunk size (optional)" 4 5 $#; then
+    return 1
+  fi
+  local response compare_result=0
+
+  log 5 "quick compare size: '$QUICK_COMPARE_SIZE'"
+  if [ -n "$QUICK_COMPARE_SIZE" ]; then
+    log 5 "checking quick compare"
+    check_quick_compare "$1" "$2" "$3" || compare_result=$?
+    if [ "$compare_result" -eq 0 ]; then
+      return 0
+    elif [ "$compare_result" -eq 1 ] || [ "$compare_result" -eq 3 ]; then
+      return 1
+    fi
+    log 5 "skipping quick compare"
+  fi
+  log 5 "performing slow compare"
+  if ! download_and_compare_file "$1" "$2" "$3" "$4" "$5"; then
+    log 2 "error downloading and comparing file"
+    return 1
+  fi
+  return 0
+}
+
 # params:  src, dst
 # fail if error
 copy_file_locally() {

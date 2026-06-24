@@ -286,3 +286,90 @@ get_delete_marker_and_verify_405() {
   fi
   return 0
 }
+
+parse_checksum_and_file_size() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  local key value lowercase_key checksum_algorithm checksum checksum_type file_size
+
+  while IFS=$': \r' read -r key value; do
+    lowercase_key=${key,,}
+    if [[ "$lowercase_key" == "x-amz-checksum-type" ]]; then
+      checksum_type="$value"
+    elif [[ "$lowercase_key" == "x-amz-checksum-"* ]]; then
+      checksum_algorithm="${lowercase_key/x-amz-checksum-/}"
+      checksum="$value"
+    elif [[ "$lowercase_key" == "content-length" ]]; then
+      file_size="$value"
+    fi
+  done <<< "$(grep -aE '^.+: .+$' "$1")"
+
+  echo "${checksum_algorithm:-none} ${checksum:-none} ${checksum_type:-none} ${file_size:-none}"
+  return 0
+}
+
+get_checksum_and_file_size() {
+  if ! check_param_count_v2 "bucket name, object key" 2 $#; then
+    return 1
+  fi
+  local response
+
+  if ! response=$(send_rest_go_command_callback "200" "parse_checksum_and_file_size" "-method" "HEAD" "-bucketName" "$1" "-objectKey" "$2" "-signedParams" "x-amz-checksum-mode:ENABLED" 2>&1); then
+    log 2 "error sending HeadObject command and getting checksum and file size: $response"
+    return 1
+  fi
+  echo "$response"
+  return 0
+}
+
+# return 3 for error, 2 for skip, 1 for mismatch, 0 for match
+check_quick_compare() {
+  if ! check_param_count_v2 "local file, bucket name, object key" 3 $#; then
+    return 1
+  fi
+  local response local_file_size checksum_algorithm remote_checksum checksum_type remote_key_size
+
+  if [ -z "$QUICK_COMPARE_SIZE" ]; then
+    log 5 "no QUICK_COMPARE_SIZE env param"
+    return 2
+  fi
+
+  if ! response=$(get_file_size "$1" 2>&1); then
+    log 2 "error getting file size: $response"
+    return 1
+  fi
+  local_file_size="$response"
+
+  if [ "$local_file_size" -le "$QUICK_COMPARE_SIZE" ]; then
+    log 5 "file size '$local_file_size' less than quick compare size '$QUICK_COMPARE_SIZE'"
+    return 2
+  fi
+
+  if ! response=$(get_checksum_and_file_size "$2" "$3" 2>&1); then
+    log 2 "error getting checksum and file size: $response"
+    return 3
+  fi
+  log 5 "RESPONSE: $response"
+  read -r checksum_algorithm remote_checksum checksum_type remote_key_size <<< "$response"
+
+  if [ "$remote_checksum" == "none" ] || [ "$checksum_algorithm" == "none" ] || [ "$checksum_type" != "FULL_OBJECT" ] || [ "$remote_key_size" == "none" ]; then
+    log 5 "skipping calcuation, no checksum or checksum algorithm, wrong checksum type, or key size missing"
+    return 2
+  fi
+
+  if [ "$local_file_size" -ne "$remote_key_size" ]; then
+    log 2 "file size mismatch ('$local_file_size' locally, '$remote_key_size' remotely)"
+    return 1
+  fi
+
+  if ! local_checksum=$(DATA_FILE="$1" CHECKSUM_TYPE="$checksum_algorithm" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
+    log 2 "error calculating checksum: $local_checksum"
+    return 3
+  fi
+  if [ "$remote_checksum" != "$local_checksum" ]; then
+    log 2 "checksum mismatch ('$local_checksum' locally, '$remote_checksum' remotely)"
+    return 1
+  fi
+  return 0
+}

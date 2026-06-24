@@ -45,8 +45,8 @@
     openssl genpkey -algorithm RSA -out versitygw.pem -pkeyopt rsa_keygen_bits:2048
     openssl req -new -x509 -key versitygw.pem -out cert.pem -days 365
 ```
-10. Set `BUCKET_ONE_NAME` and `BUCKET_TWO_NAME` to the desired names of your buckets, for older and static bucket tests, or prefixes, for newer and non-static bucket tests.  If you don't want them to be created each time, set `RECREATE_BUCKETS` to `false`.
-11. In the root repo folder, run single test group with `VERSITYGW_TEST_ENV=<env file> tests/run.sh <options>`.  To print options, run `tests/run.sh -h`.  To run all tests (not recommended), run `VERSITYGW_TEST_ENV=<env file> tests/run_all.sh`.
+10. The program uses two environment values for the bucket names (or prefixes):  `BUCKET_ONE_NAME` and `BUCKET_TWO_NAME`.  Originally, and for static and some older tests, these are the full bucket names.  In later, non-static tests, these are prefixes, and bucket suffixes are auto-generated.  Set `BUCKET_ONE_NAME` and `BUCKET_TWO_NAME` to the desired names of your buckets, for older and static bucket tests, or prefixes, for newer and non-static bucket tests.  If you want static buckets, i.e. you don't want them to be re-created each test, set `RECREATE_BUCKETS` to `false`.
+11. In the root repo folder, run single test group with `VERSITYGW_TEST_ENV=<env file> tests/run.sh <options>`.  To print options, run `tests/run.sh -h`.  To run all tests (not currently recommended due to long running time), run `VERSITYGW_TEST_ENV=<env file> tests/run_all.sh`.
 12. BATS tests can also be run directly with the format `VERSIYTGW_TEST_ENV=<env file> tests/<test file name>`, or for single tests, `VERSIYTGW_TEST_ENV=<env file> tests/<file name> -f <test name>`.  Example:  `VERSITYGW_TEST_ENV=tests/.env tests/test_rest_bucket.sh -f "REST - HeadBucket"`.
 
 #### Tags

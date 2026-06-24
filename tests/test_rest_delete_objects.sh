@@ -67,7 +67,7 @@ source ./tests/setup.sh
    "-contentMD5" "-objectsToDelete" "key=$incorrect_file_name" "--" "$incorrect_file_name" "DeleteResult" "Deleted" "Key"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
   assert_success
 }
 
@@ -87,7 +87,7 @@ source ./tests/setup.sh
    "-contentMD5" "-objectsToDelete" "key=$file_name;eTag=abc" "--" "$file_name"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
   assert_success
 }
 
@@ -129,7 +129,7 @@ source ./tests/setup.sh
    "-contentMD5" "-objectsToDelete" "key=$file_name;versionId=$incorrect_version" "--" "$file_name" "$incorrect_version"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
   assert_success
 }
 
