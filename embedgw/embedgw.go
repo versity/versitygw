@@ -452,6 +452,11 @@ type Config struct {
 	// this feature is disabled.
 	SigHup <-chan struct{}
 
+	// S3Options are appended to the internally built s3api options before the
+	// S3 server is created. This allows callers to inject custom behavior such
+	// as request middleware.
+	S3Options []s3api.Option
+
 	// Version, Build, and BuildTime are displayed in the startup banner.
 	// All three are optional; omit or leave empty to suppress the field.
 	Version   string
@@ -618,6 +623,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	}
 	if cfg.DisableACLs {
 		opts = append(opts, s3api.WithDisableACL())
+	}
+	if len(cfg.S3Options) > 0 {
+		opts = append(opts, cfg.S3Options...)
 	}
 	if cfg.Debug {
 		debuglogger.SetDebugEnabled()
