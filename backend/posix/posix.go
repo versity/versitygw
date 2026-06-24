@@ -3024,9 +3024,11 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 		bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
+			drainBody(r)
 			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
 		if errors.Is(err, syscall.ENOSPC) {
+			drainBody(r)
 			return nil, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 		}
 		return nil, fmt.Errorf("open temp file: %w", err)
@@ -3144,9 +3146,11 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	_, err = io.Copy(f, tr)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
+			drainBody(tr)
 			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
 		if errors.Is(err, syscall.ENOSPC) {
+			drainBody(tr)
 			return nil, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 		}
 		// Return the error itself, if it implements the s3err.S3Error interface
@@ -3793,9 +3797,11 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		*po.Bucket, *po.Key, contentLength, acct, doFalloc, p.forceNoTmpFile)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
+			drainBody(po.Body)
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
 		if errors.Is(err, syscall.ENOSPC) {
+			drainBody(po.Body)
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 		}
 		return s3response.PutObjectOutput{}, fmt.Errorf("open temp file: %w", err)
@@ -3820,9 +3826,11 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	_, err = io.Copy(f, rdr)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
+			drainBody(rdr)
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
 		if errors.Is(err, syscall.ENOSPC) {
+			drainBody(rdr)
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 		}
 		// Return the error itself, if it implements the s3err.S3Error interface
@@ -6762,6 +6770,17 @@ func getString(str *string) string {
 		return ""
 	}
 	return *str
+}
+
+// drainBody consumes and discards all remaining bytes from r.
+// It is called after a server error is detected mid-stream so that
+// the client can read the error response before the write-side of the
+// connection is shut down.
+func drainBody(r io.Reader) {
+	if r == nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, r)
 }
 
 func joinPathWithTrailer(paths ...string) string {
