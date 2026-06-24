@@ -1,29 +1,10 @@
-name: Ubuntu AMD System Tests
+name: MacOS 15 Intel s3cmd test
 permissions: {}
 on: pull_request
 jobs:
-  generate:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.make.outputs.matrix }}
-    steps:
-      - uses: actions/checkout@v7
-      - id: make
-        run: |
-          if ! matrix_output=$(tests/generate_matrix.sh 2>&1); then
-            echo "error generating matrix: $matrix_output"
-            exit 1
-          fi
-          MATRIX_JSON=$(echo -n "$matrix_output" | jq -c . )
-          echo "matrix=$MATRIX_JSON" >> "$GITHUB_OUTPUT"
-
   build:
     name: RunTests
-    needs: generate
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.generate.outputs.matrix) }}
+    runs-on: macos-15-intel
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v7
@@ -38,9 +19,14 @@ jobs:
           go-version: "stable"
         id: go
 
-      - name: Get Go Dependencies
+      - name: Get Dependencies
         run: |
           go get -v -t -d ./...
+
+      - name: Upgrade bash
+        run: |
+          brew install bash
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
 
       - name: Install BATS
         run: |
@@ -49,11 +35,11 @@ jobs:
           git clone https://github.com/bats-core/bats-support.git ${{ github.workspace }}/tests/bats-support
           git clone https://github.com/ztombol/bats-assert.git ${{ github.workspace }}/tests/bats-assert
 
-# disable mc tests due to dl.min.io instability
-#      - name: Install mc
-#        run: |
-#          curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o /usr/local/bin/mc
-#          chmod 755 /usr/local/bin/mc
+      # disable mc tests due to dl.min.io instability
+      #      - name: Install mc
+      #        run: |
+      #          curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o /usr/local/bin/mc
+      #          chmod 755 /usr/local/bin/mc
 
       # see https://github.com/versity/versitygw/issues/1034
       - name: Install AWS cli
@@ -65,50 +51,50 @@ jobs:
 
       - name: Create test user
         run: |
-          sudo useradd -m -s /bin/bash tester
-          sudo mkdir -p /home/tester/test-files
-          sudo chown -R tester:tester /home/tester
+          sudo sysadminctl -addUser tester -shell /bin/bash -home /Users/tester -createHome
+          sudo mkdir -p /Users/tester/test-files
+          sudo chown -R tester:staff /Users/tester
 
       - name: Write env file for test user
         env:
-          IAM_TYPE: ${{ matrix.IAM_TYPE }}
-          RUN_SET: ${{ matrix.RUN_SET }}
+          IAM_TYPE: folder
+          RUN_SET: tests/test_user_s3cmd.sh
           AWS_PROFILE: versity
           VERSITY_EXE: ${{ github.workspace }}/versitygw
           RUN_VERSITYGW: true
-          BACKEND: ${{ matrix.BACKEND }}
-          RECREATE_BUCKETS: ${{ matrix.RECREATE_BUCKETS }}
-          DELETE_BUCKETS_AFTER_TEST: ${{ matrix.DELETE_BUCKETS_AFTER_TEST }}
-          CERT: /home/tester/test-files/cert.pem
-          KEY: /home/tester/test-files/versitygw.pem
+          BACKEND: posix
+          RECREATE_BUCKETS: true
+          DELETE_BUCKETS_AFTER_TEST: true
+          CERT: /Users/tester/test-files/cert.pem
+          KEY: /Users/tester/test-files/versitygw.pem
           LOCAL_FOLDER: /tmp/gw
           BUCKET_ONE_NAME: versity-gwtest-bucket-one
           BUCKET_TWO_NAME: versity-gwtest-bucket-two
-          USERS_FOLDER: /home/tester/test-files/iam
+          USERS_FOLDER: /Users/tester/test-files/iam
           USERS_BUCKET: versity-gwtest-iam
           AWS_ENDPOINT_URL: https://127.0.0.1:7070
           PORT: 7070
           S3CMD_CONFIG: tests/s3cfg.local.default
           MC_ALIAS: versity
           LOG_LEVEL: 4
-          GOCOVERDIR: /home/tester/test-files/cover
+          GOCOVERDIR: /Users/tester/test-files/cover
           USERNAME_ONE: HIJKLMN
           PASSWORD_ONE: 1234567
           USERNAME_TWO: OPQRSTU
           PASSWORD_TWO: 8901234
-          TEST_FILE_FOLDER: /home/tester/test-files/versity-gwtest-files
+          TEST_FILE_FOLDER: /Users/tester/test-files/versity-gwtest-files
           REMOVE_TEST_FILE_FOLDER: true
-          VERSIONING_DIR: /home/tester/test-files/versioning
-          COMMAND_LOG: /home/tester/test-files/command.log
-          TIME_LOG: /home/tester/test-files/time.log
-          PYTHON_ENV_FOLDER: /home/tester/test-files/env
+          VERSIONING_DIR: /Users/tester/test-files/versioning
+          COMMAND_LOG: /Users/tester/test-files/command.log
+          TIME_LOG: /Users/tester/test-files/time.log
+          PYTHON_ENV_FOLDER: /Users/tester/test-files/env
           AUTOGENERATE_USERS: true
           USER_AUTOGENERATION_PREFIX: github-actions-test-
-          AWS_REGION: ${{ matrix.AWS_REGION }}
-          COVERAGE_LOG: /home/tester/test-files/coverage.log
+          AWS_REGION: us-east-1
+          COVERAGE_LOG: /Users/tester/test-files/coverage.log
           TEMPLATE_MATRIX_FILE: ${{ github.workspace }}/tests/templates/matrix.yaml
         run: |
-          cat > /home/tester/test-files/.env <<EOF
+          cat > /Users/runner/.env <<EOF
           IAM_TYPE=$IAM_TYPE
           RUN_SET=$RUN_SET
           AWS_PROFILE=$AWS_PROFILE
@@ -146,10 +132,11 @@ jobs:
           COVERAGE_LOG=$COVERAGE_LOG
           TEMPLATE_MATRIX_FILE=$TEMPLATE_MATRIX_FILE
           QUICK_COMPARE_SIZE=1048576
-          GENERATE_COMMAND_EXECUTABLE=/home/tester/test-files/generateCommand
+          GENERATE_COMMAND_EXECUTABLE=/Users/tester/test-files/generateCommand
           EOF
-          sudo chown tester:tester /home/tester/test-files/.env
-          sudo chmod 600 /home/tester/test-files/.env
+          sudo chown tester:staff /Users/runner/.env
+          sudo mv /Users/runner/.env /Users/tester/test-files/.env
+          sudo chmod 600 /Users/tester/test-files/.env
 
       - name: Build and run
         run: |
@@ -160,16 +147,31 @@ jobs:
           sudo chmod 755 "$HOME"
           
           GO_BIN_DIR="$(dirname "$(which go)")"
-          setsid sudo -u tester -H bash -lc '
+          BREW_PREFIX="$(brew --prefix)/bin"
+          BREW_BASH="$(brew --prefix)/bin/bash"
+          
+          nohup sudo -u tester -H env BYPASS_ENV_FILE=true PATH="$BREW_PREFIX/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" BREW_BASH="$BREW_BASH" $BREW_BASH -c '
             set -euo pipefail
           
             export PATH="'"$GO_BIN_DIR"':$PATH"
             cd ${{ github.workspace }}
             go mod download
           
+            cat /Users/tester/test-files/.env
+          
             set -a
-            source /home/tester/test-files/.env
+            source /Users/tester/test-files/.env
             set +a
+          
+            echo "bash lookup:"
+            type -a bash || true
+            which -a bash || true
+            command -v bash || true
+            bash --version || true
+            /bin/bash --version || true
+            "$BREW_BASH" --version
+          
+            echo "$LOCAL_FOLDER $GOCOVERDIR $USERS_FOLDER"
           
             mkdir $LOCAL_FOLDER $GOCOVERDIR $USERS_FOLDER
           
@@ -177,18 +179,18 @@ jobs:
             export AWS_SECRET_ACCESS_KEY=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn
             export AWS_ACCESS_KEY_ID_TWO=user
             export AWS_SECRET_ACCESS_KEY_TWO=pass
-            
+          
             aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile versity
             aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile versity
             aws configure set aws_region $AWS_REGION --profile versity
-            
+          
             openssl genpkey -algorithm RSA -out $KEY -pkeyopt rsa_keygen_bits:2048
             openssl req -new -x509 -key $KEY -out $CERT -days 365 -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
           
             if [[ $RECREATE_BUCKETS == "false" ]]; then
-              BYPASS_ENV_FILE=true bash ${{ github.workspace }}/tests/setup_static.sh
+              $BREW_BASH ${{ github.workspace }}/tests/setup_static.sh
             fi
-            BYPASS_ENV_FILE=true ${{ github.workspace }}/bin/bats ${{ github.workspace }}/$RUN_SET
+            $BREW_BASH ${{ github.workspace }}/bin/bats ${{ github.workspace }}/$RUN_SET
           
             if [ -e "$COVERAGE_LOG" ]; then
               cat $COVERAGE_LOG
@@ -211,44 +213,3 @@ jobs:
           status=$?
           kill "$watchdog" 2>/dev/null || true
           exit "$status"
-          
-      - name: Ensure coverage file exists, and generate working name
-        id: prepare_coverage
-        run: |
-          touch /home/tester/test-files/coverage.log
-          run_set="${{ matrix.RUN_SET }}"
-          SAFE_RUN_SET="${run_set//\//-}"
-          echo "safe_run_set=$SAFE_RUN_SET" >> $GITHUB_OUTPUT
-
-      - name: Upload command coverage log
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage-${{ steps.prepare_coverage.outputs.safe_run_set }}-${{ matrix.RECREATE_BUCKETS }}
-          path: /home/tester/test-files/coverage.log
-          retention-days: 1
-
-      - name: Time report
-        run: | 
-          if [ -e /home/tester/test-files/time.log ]; then
-            cat /home/tester/test-files/time.log
-          fi
-
-      - name: Coverage report
-        run: |
-          go tool covdata percent -i=/home/tester/test-files/cover
-
-  print-coverage:
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - name: Download all S3 ops artifacts
-        uses: actions/download-artifact@v8
-        with:
-          path: artifacts
-
-      - name: Merge (sort | uniq)
-        run: |
-          find artifacts -type f -name coverage.log -exec sed '/^\s*$/d' {} \; | sort -u > combined-coverage.log
-
-          echo "Command coverage:"
-          cat combined-coverage.log
