@@ -45,5 +45,6 @@ dist/
 /CODE_OF_CONDUCT.md
 /README.md
 
-# standard bats test file folder
+# standard bats test file folders
 /versity-gwtest-files
+/tester
