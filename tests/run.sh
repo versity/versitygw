@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2024 Versity Software
 # This file is licensed under the Apache License, Version 2.0

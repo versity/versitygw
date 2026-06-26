@@ -21,7 +21,7 @@ send_not_implemented_expect_failure() {
   if ! check_param_count_gt "parameters" 1 $#; then
     return 1
   fi
-  if ! curl_command=$(go run ./tests/rest_scripts/generateCommand.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" \
+  if ! curl_command=$(generate_go_command -awsAccessKeyId "$AWS_ACCESS_KEY_ID" \
       -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -awsRegion "$AWS_REGION" -url "$AWS_ENDPOINT_URL" "$@" 2>&1); then
     log 2 "error: $curl_command"
     return 1
