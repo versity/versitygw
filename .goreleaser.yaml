@@ -98,6 +98,7 @@ nfpms:
     bindir: /usr/bin
     epoch: "1"
     release: "1"
+    section: "net"
 
     rpm:
       group: "System Environment/Daemons"
