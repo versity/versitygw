@@ -1,40 +1,28 @@
 FROM ubuntu:latest
 
+ARG TARGETARCH
 ARG DEBIAN_FRONTEND=noninteractive
 ARG SECRETS_FILE=tests/.secrets
 ARG CONFIG_FILE=tests/.env.docker
-ARG GO_LIBRARY=go1.21.13.linux-arm64.tar.gz
-# see https://github.com/versity/versitygw/issues/1034
-ARG AWS_CLI=awscli-exe-linux-aarch64-2.22.35.zip
-ARG MC_FOLDER=linux-arm64
+ARG GO_LIBRARY=go1.21.13.linux-${TARGETARCH}.tar.gz
+ARG MC_FOLDER=linux-${TARGETARCH}
 
 ENV TZ=Etc/UTC
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    git \
-    make \
-    wget \
-    curl \
-    unzip \
-    tzdata \
-    s3cmd \
-    jq \
-    bc \
-    libxml2-utils \
-    xmlstarlet \
-    python3-pip \
-    python3-venv \
-    xxd \
-    uuid-runtime \
-    ca-certificates && \
-    update-ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-
-# Set working directory
 WORKDIR /tmp
 
+COPY ./tests/install_base_dependencies.sh .
+RUN ./install_base_dependencies.sh
+
+RUN update-ca-certificates && rm -rf /var/lib/apt/lists/*
+
+RUN case "$TARGETARCH" in \
+      amd64) echo 'DOWNLOAD_ARCH=x86_64' > ./arch.env ;; \
+      arm64) echo 'DOWNLOAD_ARCH=aarch64' > ./arch.env ;; \
+      *) echo "Unsupported TARGETARCH: $TARGETARCH" && exit 1 ;; \
+    esac
+
 # Install AWS cli
-RUN curl "https://awscli.amazonaws.com/${AWS_CLI}" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install
+RUN . ./arch.env && curl "https://awscli.amazonaws.com/awscli-exe-linux-${DOWNLOAD_ARCH}.zip" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install
 
 # Install mc
 RUN curl -fL https://dl.min.io/client/mc/release/${MC_FOLDER}/mc \
@@ -102,7 +90,6 @@ RUN mkdir config log && cp $CONFIG_FILE config/.env
 
 ENV WORKSPACE=.
 ENV VERSITYGW_TEST_ENV=/home/tester/config/.env
-#ENV AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED
 
 ENTRYPOINT ["tests/run.sh"]
 CMD ["s3api,s3,s3cmd,mc,rest"]

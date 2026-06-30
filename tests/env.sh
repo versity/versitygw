@@ -202,6 +202,9 @@ check_universal_vars() {
   if [ -n "$QUICK_COMPARE_SIZE" ]; then
     export QUICK_COMPARE_SIZE
   fi
+  if [ -n "$GENERATE_COMMAND_EXECUTABLE" ]; then
+    export GENERATE_COMMAND_EXECUTABLE
+  fi
 
   if ! check_aws_vars; then
     log 1 "error checking AWS-related env vars"
