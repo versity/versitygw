@@ -505,7 +505,7 @@ func UploadPart_success(s *S3Conf) error {
 // isQuotedEtag reports whether an ETag is a non-empty double-quoted string,
 // as required by the S3 contract (e.g. "\"abc\"").
 func isQuotedEtag(etag string) bool {
-	return len(etag) >= 2 &&
+	return len(etag) >= 3 &&
 		strings.HasPrefix(etag, "\"") &&
 		strings.HasSuffix(etag, "\"")
 }
@@ -525,7 +525,7 @@ func UploadPart_etag_quoting_consistency(s *S3Conf) error {
 			return err
 		}
 
-		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj, *out.UploadId)
+		parts, _, err := uploadParts(s3client, 18*1024*1024, 3, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
 		}
