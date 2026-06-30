@@ -1492,7 +1492,7 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3
 
 	// block id serves as etag here
 	etag := blockIDInt32ToBase64(*input.PartNumber)
-	quotedETag := `"` + etag + `"`
+	quotedETag := fmt.Sprintf("%q", etag)
 
 	// Azure StageBlock rejects Content-Length: 0 as an invalid header value.
 	// Track zero-byte parts in the sgwtmp metadata instead of staging them.
@@ -1874,7 +1874,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		if part.ETag == nil {
 			return res, "", s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
-		clientETag := strings.Trim(getString(part.ETag), `"`)
+		clientETag := strings.Trim(getString(part.ETag), "\"")
 		if *part.PartNumber < 1 {
 			return res, "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCompleteMpPartNumber, fmt.Sprint(*part.PartNumber))
 		}
