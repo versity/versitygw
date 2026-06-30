@@ -1492,7 +1492,7 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3
 
 	// block id serves as etag here
 	etag := blockIDInt32ToBase64(*input.PartNumber)
-	quotedETag := fmt.Sprintf("%q", etag)
+	quotedETag := quoteETag(etag)
 
 	// Azure StageBlock rejects Content-Length: 0 as an invalid header value.
 	// Track zero-byte parts in the sgwtmp metadata instead of staging them.
@@ -1545,7 +1545,13 @@ func (az *Azure) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInp
 		return s3response.CopyPartResult{}, parseMpError(err)
 	}
 
-	return s3response.CopyPartResult{}, nil
+	// The staged block id serves as the part ETag, returned quoted to match
+	// the S3 contract and the form UploadPart/ListParts emit.
+	quotedETag := quoteETag(eTag)
+	return s3response.CopyPartResult{
+		ETag:         &quotedETag,
+		LastModified: time.Now(),
+	}, nil
 }
 
 // Lists all uncommitted parts from the blob
@@ -1596,7 +1602,7 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 			}
 			parts = append(parts, s3response.Part{
 				Size:         *el.Size,
-				ETag:         *el.Name,
+				ETag:         quoteETag(*el.Name),
 				PartNumber:   partNumber,
 				LastModified: time.Now(),
 			})
@@ -1611,7 +1617,7 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 		}
 		parts = append(parts, s3response.Part{
 			Size:         0,
-			ETag:         blockIDInt32ToBase64(zbPartNum),
+			ETag:         quoteETag(blockIDInt32ToBase64(zbPartNum)),
 			PartNumber:   int(zbPartNum),
 			LastModified: time.Now(),
 		})
@@ -1874,7 +1880,10 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		if part.ETag == nil {
 			return res, "", s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
-		clientETag := strings.Trim(getString(part.ETag), "\"")
+		// Clients may submit the part ETag in quoted form (as returned by
+		// UploadPart/ListParts) or raw; normalize before comparing to the
+		// raw Azure block id.
+		clientETag := getString(backend.TrimEtag(part.ETag))
 		if *part.PartNumber < 1 {
 			return res, "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCompleteMpPartNumber, fmt.Sprint(*part.PartNumber))
 		}
@@ -2361,6 +2370,16 @@ func getReadSeekCloser(input io.Reader) (io.ReadSeekCloser, error) {
 	}
 
 	return streaming.NopCloser(bytes.NewReader(buffer.Bytes())), nil
+}
+
+// quoteETag wraps a raw Azure block id (used as a multipart part ETag) in
+// double quotes. S3 ETags are quoted strings, and the posix backend follows
+// the same convention (see backend.GenerateEtag). Keeping all Azure part-ETag
+// surfaces (UploadPart, ListParts, UploadPartCopy) quoted ensures the values
+// returned to clients are consistent, while the raw (unquoted) block id is
+// still used for the Azure StageBlock/GetBlockList APIs.
+func quoteETag(etag string) string {
+	return fmt.Sprintf("%q", etag)
 }
 
 // Creates a new Base64 encoded block id from a 32 bit integer

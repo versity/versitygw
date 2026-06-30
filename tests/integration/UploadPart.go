@@ -501,3 +501,87 @@ func UploadPart_success(s *S3Conf) error {
 		return nil
 	})
 }
+
+// isQuotedEtag reports whether an ETag is a non-empty double-quoted string,
+// as required by the S3 contract (e.g. "\"abc\"").
+func isQuotedEtag(etag string) bool {
+	return len(etag) >= 2 &&
+		strings.HasPrefix(etag, "\"") &&
+		strings.HasSuffix(etag, "\"")
+}
+
+// UploadPart_etag_quoting_consistency verifies that multipart part ETags are
+// returned as quoted strings and stay consistent across the UploadPart
+// response, ListParts, and CompleteMultipartUpload. This is the S3 contract
+// (ETags are quoted) and matches the posix backend's GenerateEtag convention;
+// it is the regression guard for the Azure backend, which previously returned
+// raw, unquoted block ids.
+func UploadPart_etag_quoting_consistency(s *S3Conf) error {
+	testName := "UploadPart_etag_quoting_consistency"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		// Every ETag returned by UploadPart must be a quoted string.
+		for _, p := range parts {
+			etag := getString(p.ETag)
+			if !isQuotedEtag(etag) {
+				return fmt.Errorf("expected UploadPart etag to be quoted, instead got %q", etag)
+			}
+		}
+
+		// ListParts must report the same quoted ETags as UploadPart.
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		for _, p := range res.Parts {
+			etag := getString(p.ETag)
+			if !isQuotedEtag(etag) {
+				return fmt.Errorf("expected ListParts etag to be quoted, instead got %q", etag)
+			}
+		}
+		if ok := compareParts(parts, res.Parts); !ok {
+			return fmt.Errorf("expected ListParts parts %+v to match UploadPart parts %+v",
+				res.Parts, parts)
+		}
+
+		// CompleteMultipartUpload must accept the quoted ETags returned above.
+		compParts := []types.CompletedPart{}
+		for _, p := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       p.ETag,
+				PartNumber: p.PartNumber,
+			})
+		}
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("complete multipart upload with quoted etags: %w", err)
+		}
+
+		return nil
+	})
+}
