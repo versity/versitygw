@@ -1492,6 +1492,7 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3
 
 	// block id serves as etag here
 	etag := blockIDInt32ToBase64(*input.PartNumber)
+	quotedETag := `"` + etag + `"`
 
 	// Azure StageBlock rejects Content-Length: 0 as an invalid header value.
 	// Track zero-byte parts in the sgwtmp metadata instead of staging them.
@@ -1507,7 +1508,7 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3
 		if err != nil {
 			return nil, err
 		}
-		return &s3.UploadPartOutput{ETag: &etag}, nil
+		return &s3.UploadPartOutput{ETag: &quotedETag}, nil
 	}
 
 	client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
@@ -1521,7 +1522,7 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3
 	}
 
 	return &s3.UploadPartOutput{
-		ETag: &etag,
+		ETag: &quotedETag,
 	}, nil
 }
 
@@ -1873,6 +1874,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		if part.ETag == nil {
 			return res, "", s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
+		clientETag := strings.Trim(getString(part.ETag), `"`)
 		if *part.PartNumber < 1 {
 			return res, "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCompleteMpPartNumber, fmt.Sprint(*part.PartNumber))
 		}
@@ -1886,7 +1888,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 			// Check if this is a tracked zero-byte part.
 			if zbPartsMap[*part.PartNumber] {
 				expectedETag := blockIDInt32ToBase64(*part.PartNumber)
-				if getString(part.ETag) != expectedETag {
+				if clientETag != expectedETag {
 					return res, "", s3err.GetInvalidPartErr(*input.UploadId, *part.PartNumber, expectedETag)
 				}
 				// Non-last zero-byte parts violate the minimum part size.
@@ -1900,8 +1902,8 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 			return res, "", s3err.GetInvalidPartErr(*input.UploadId, *part.PartNumber, "")
 		}
 
-		if *part.ETag != *block.Name {
-			return res, "", s3err.GetInvalidPartErr(*input.UploadId, *part.PartNumber, getString(part.ETag))
+		if clientETag != *block.Name {
+			return res, "", s3err.GetInvalidPartErr(*input.UploadId, *part.PartNumber, clientETag)
 		}
 		// all parts except the last need to be greater, than
 		// the minimum allowed size (5 Mib)
