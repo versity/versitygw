@@ -26,7 +26,9 @@
  */
 function requireAuth() {
   if (!api.loadCredentials()) {
-    window.location.href = 'index.html';
+    const previousLocation = encodeURIComponent(`${window.location.pathname}${window.location.hash}`);
+
+    window.location.href = `index.html#${previousLocation}`;
     return false;
   }
   api.loadUserContext();
@@ -40,7 +42,9 @@ function requireAuth() {
  */
 function requireAdmin() {
   if (!api.loadCredentials()) {
-    window.location.href = 'index.html';
+    const previousLocation = encodeURIComponent(`${window.location.pathname}${window.location.hash}`);
+
+    window.location.href = `index.html#${previousLocation}`;
     return false;
   }
   api.loadUserContext();
