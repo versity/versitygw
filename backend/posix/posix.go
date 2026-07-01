@@ -91,6 +91,10 @@ type Posix struct {
 	// frontend handlers are already validating bucket names
 	validateBucketName bool
 
+	// defaultEtag is returned for objects that do not have an etag attribute
+	// stored (e.g. files placed on the filesystem outside of versitygw).
+	defaultEtag string
+
 	// actionLimiter limits the number of concurrently running POSIX actions.
 	// The primary goal is to bound OS thread growth: when goroutines block in
 	// filesystem syscalls, the Go scheduler may spawn additional OS threads to
@@ -186,6 +190,10 @@ type PosixOpts struct {
 	// threshold are rejected with an 'InvalidRequest' error. Defaults to the
 	// S3 specification limit of 5 GiB.
 	CopyObjectThreshold int64
+	// DefaultEtag is returned for objects that do not have a stored etag
+	// attribute (e.g. files placed on the filesystem outside of versitygw).
+	// When empty, such objects are served with an empty ETag.
+	DefaultEtag string
 }
 
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
@@ -250,6 +258,7 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		validateBucketName:   opts.ValidateBucketNames,
 		actionLimiter:        semaphore.NewWeighted(int64(concurrencyOrDefault(opts.Concurrency))),
 		copyObjectThreshold:  opts.CopyObjectThreshold,
+		defaultEtag:          opts.DefaultEtag,
 	}, nil
 }
 
@@ -3391,8 +3400,8 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	// evaluate preconditions
 	b, err := p.meta.RetrieveAttribute(srcf, srcBucket, srcObject, etagkey)
 	srcEtag := string(b)
-	if err != nil {
-		srcEtag = ""
+	if err != nil || srcEtag == "" {
+		srcEtag = p.defaultEtag
 	}
 
 	err = backend.EvaluatePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
@@ -4057,8 +4066,8 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 
 		b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 		etag := string(b)
-		if err != nil {
-			etag = ""
+		if err != nil || etag == "" {
+			etag = p.defaultEtag
 		}
 
 		// evaluate preconditions
@@ -4575,8 +4584,8 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	etag := string(b)
-	if err != nil {
-		etag = ""
+	if err != nil || etag == "" {
+		etag = p.defaultEtag
 	}
 
 	// evaluate preconditions
@@ -4928,8 +4937,8 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	etag := string(b)
-	if err != nil {
-		etag = ""
+	if err != nil || etag == "" {
+		etag = p.defaultEtag
 	}
 
 	// evaluate preconditions
@@ -5242,8 +5251,8 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 	b, err := p.meta.RetrieveAttribute(f, srcBucket, srcObject, etagkey)
 	srcEtag := string(b)
-	if err != nil {
-		srcEtag = ""
+	if err != nil || srcEtag == "" {
+		srcEtag = p.defaultEtag
 	}
 
 	err = backend.EvaluatePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
@@ -5654,6 +5663,9 @@ func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 		// so this will just set etag to "" if its not already set
 
 		etag := string(etagBytes)
+		if etag == "" {
+			etag = p.defaultEtag
+		}
 
 		fi, err := d.Info()
 		if errors.Is(err, fs.ErrNotExist) {

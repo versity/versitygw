@@ -106,6 +106,12 @@ move interfaces as well as support for tiered filesystems.`,
 				Value:       5000,
 				Destination: &actionsConcurrency,
 			},
+			&cli.StringFlag{
+				Name:        "default-etag",
+				Usage:       "default ETag value returned for objects that do not have a stored etag attribute (e.g. files placed on the filesystem outside of versitygw)",
+				EnvVars:     []string{"VGW_DEFAULT_ETAG"},
+				Destination: &defaultEtag,
+			},
 		},
 	}
 }
@@ -135,6 +141,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.SetProjectID = setProjectID
 	opts.Concurrency = actionsConcurrency
 	opts.CopyObjectThreshold = copyObjectThreshold
+	opts.DefaultEtag = defaultEtag
 
 	be, err := scoutfs.New(ctx.Args().Get(0), opts)
 	if err != nil {
