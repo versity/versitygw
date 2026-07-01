@@ -273,6 +273,12 @@ type Config struct {
 	IpaUser string
 	// IpaPassword is the FreeIPA password for authentication.
 	IpaPassword string
+	// IpaAdminGroupCN is the CN of the FreeIPA group whose members are granted
+	// the admin role. If empty, all users are assigned the user role.
+	IpaAdminGroupCN string
+	// IpaEnableUserPlus grants all FreeIPA users the userplus role by default
+	// instead of the user role. Members of IpaAdminGroupCN still get admin.
+	IpaEnableUserPlus bool
 	// IpaInsecure disables TLS certificate verification for the FreeIPA
 	// connection.
 	IpaInsecure bool
@@ -679,6 +685,8 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		IpaVaultName:                cfg.IpaVaultName,
 		IpaUser:                     cfg.IpaUser,
 		IpaPassword:                 cfg.IpaPassword,
+		IpaAdminGroupCN:             cfg.IpaAdminGroupCN,
+		IpaEnableUserPlus:           cfg.IpaEnableUserPlus,
 		IpaInsecure:                 cfg.IpaInsecure,
 	})
 	if err != nil {
