@@ -50,6 +50,10 @@ type ScoutfsOpts struct {
 	// threshold are rejected with an 'InvalidRequest' error. Defaults to the
 	// S3 specification limit of 5 GiB.
 	CopyObjectThreshold int64
+	// DefaultEtag is returned for objects that do not have a stored etag
+	// attribute (e.g. files placed on the filesystem outside of versitygw).
+	// When empty, such objects are served with an empty ETag.
+	DefaultEtag string
 }
 
 var _ backend.Backend = &ScoutFS{}

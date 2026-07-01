@@ -34,6 +34,7 @@ var (
 	forceNoTmpFile       bool
 	forceNoCopyFileRange bool
 	actionsConcurrency   int
+	defaultEtag          string
 )
 
 func posixCommand() *cli.Command {
@@ -115,6 +116,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_DISABLE_COPY_FILE_RANGE"},
 				Destination: &forceNoCopyFileRange,
 			},
+			&cli.StringFlag{
+				Name:        "default-etag",
+				Usage:       "default ETag value returned for objects that do not have a stored etag attribute (e.g. files placed on the filesystem outside of versitygw)",
+				EnvVars:     []string{"VGW_DEFAULT_ETAG"},
+				Destination: &defaultEtag,
+			},
 		},
 	}
 }
@@ -149,6 +156,7 @@ func runPosix(ctx *cli.Context) error {
 		ValidateBucketNames:  disableStrictBucketNames,
 		Concurrency:          actionsConcurrency,
 		CopyObjectThreshold:  copyObjectThreshold,
+		DefaultEtag:          defaultEtag,
 	}
 
 	var ms meta.MetadataStorer
