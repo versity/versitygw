@@ -140,6 +140,16 @@ func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsI
 				Name:         *b.Name,
 				CreationDate: *b.CreationDate,
 			})
+			continue
+		}
+
+		// not the owner — check if the bucket policy grants s3:ListBucket.
+		policy, perr := s.getMetaBucketObjData(ctx, *b.Name, metaPrefixPolicy, false)
+		if perr == nil && auth.PolicyGrantsListBucket(policy, input.Owner, *b.Name) {
+			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+				Name:         *b.Name,
+				CreationDate: *b.CreationDate,
+			})
 		}
 	}
 

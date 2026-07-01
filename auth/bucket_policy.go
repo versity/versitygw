@@ -250,6 +250,16 @@ func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) err
 	return nil
 }
 
+// PolicyGrantsListBucket reports whether the bucket policy grants the account
+// s3:ListBucket permission on the bucket. Returns false for an empty or
+// unparseable policy, or when access is denied (fail-closed).
+func PolicyGrantsListBucket(policy []byte, access, bucket string) bool {
+	if len(policy) == 0 {
+		return false
+	}
+	return VerifyBucketPolicy(policy, access, bucket, "", nil, ListBucketAction) == nil
+}
+
 func VerifyBucketPolicy(policy []byte, access, bucket, object string, normalizeObjectKey objectKeyNormalizer, actions ...Action) error {
 	if len(actions) == 0 {
 		return s3err.GetAPIError(s3err.ErrAccessDenied)

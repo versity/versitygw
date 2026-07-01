@@ -433,3 +433,64 @@ func ListBuckets_success(s *S3Conf) error {
 		return nil
 	})
 }
+
+func ListBuckets_with_bucket_policy(s *S3Conf) error {
+	testName := "ListBuckets_with_bucket_policy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+
+		err := createUsers(s, []user{testuser})
+		if err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+
+		// Before the policy, the user should not see the bucket.
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := userClient.ListBuckets(ctx, &s3.ListBucketsInput{})
+		cancel()
+		if err != nil {
+			return err
+		}
+		for _, b := range out.Buckets {
+			if *b.Name == bucket {
+				return fmt.Errorf("bucket %v should not be visible to user %v before policy is set",
+					bucket, testuser.access)
+			}
+		}
+
+		// Grant the test user s3:ListBucket on the bucket via bucket policy.
+		policy := genPolicyDoc("Allow",
+			fmt.Sprintf(`["%s"]`, testuser.access),
+			`["s3:ListBucket"]`,
+			fmt.Sprintf(`"arn:aws:s3:::%s"`, bucket))
+
+		err = putBucketPolicy(s3client, bucket, policy)
+		if err != nil {
+			return err
+		}
+
+		// After the policy, the user should see the bucket.
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = userClient.ListBuckets(ctx, &s3.ListBucketsInput{})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		found := false
+		for _, b := range out.Buckets {
+			if *b.Name == bucket {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("expected bucket %v in ListBuckets result for user %v after policy, but it was not found",
+				bucket, testuser.access)
+		}
+
+		return nil
+	})
+}

@@ -443,6 +443,18 @@ func (p *Posix) ListBuckets(ctx context.Context, input s3response.ListBucketsInp
 				Name:         fi.Name(),
 				CreationDate: fi.ModTime(),
 			})
+			continue
+		}
+
+		// not the owner — check if the bucket policy grants s3:ListBucket.
+		// Policy retrieval errors are tolerated (fail-closed) so a corrupted
+		// policy attribute on one bucket doesn't break listing for everyone.
+		policy, perr := p.meta.RetrieveAttribute(nil, fi.Name(), "", policykey)
+		if perr == nil && auth.PolicyGrantsListBucket(policy, input.Owner, fi.Name()) {
+			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+				Name:         fi.Name(),
+				CreationDate: fi.ModTime(),
+			})
 		}
 	}
 

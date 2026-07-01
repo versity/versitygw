@@ -289,6 +289,16 @@ outer:
 						// TODO: using modification date here instead of creation, is that ok?
 						CreationDate: *v.Properties.LastModified,
 					})
+				} else {
+					// not the owner — check if the bucket policy grants s3:ListBucket.
+					policy, perr := az.getContainerMetaData(ctx, *v.Name, string(keyPolicy))
+					if perr == nil && auth.PolicyGrantsListBucket(policy, input.Owner, *v.Name) {
+						buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+							Name: *v.Name,
+							// TODO: using modification date here instead of creation, is that ok?
+							CreationDate: *v.Properties.LastModified,
+						})
+					}
 				}
 			}
 		}

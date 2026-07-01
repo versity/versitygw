@@ -109,6 +109,7 @@ func TestListBuckets(ts *TestState) {
 	ts.Sync(ListBuckets_truncated)
 	ts.Sync(ListBuckets_success)
 	ts.Sync(ListBuckets_empty_success)
+	ts.Sync(ListBuckets_with_bucket_policy)
 }
 
 func TestDeleteBucket(ts *TestState) {
@@ -1456,6 +1457,7 @@ func GetIntTests() IntTests {
 		"ListBuckets_truncated":                                                    ListBuckets_truncated,
 		"ListBuckets_success":                                                      ListBuckets_success,
 		"ListBuckets_empty_success":                                                ListBuckets_empty_success,
+		"ListBuckets_with_bucket_policy":                                           ListBuckets_with_bucket_policy,
 		"DeleteBucket_non_existing_bucket":                                         DeleteBucket_non_existing_bucket,
 		"DeleteBucket_non_empty_bucket":                                            DeleteBucket_non_empty_bucket,
 		"DeleteBucket_incorrect_expected_bucket_owner":                             DeleteBucket_incorrect_expected_bucket_owner,
