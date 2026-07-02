@@ -53,3 +53,37 @@ send_command() {
   fi
   return $command_result
 }
+
+check_for_and_or_build_go_executable() {
+  if [ -z "$GO_COMMAND_GENERATOR_EXECUTABLE" ]; then
+    return 1
+  fi
+  if [ ! -f "$GO_COMMAND_GENERATOR_EXECUTABLE" ]; then
+    if ! build_output=$(go build -o "$GO_COMMAND_GENERATOR_EXECUTABLE" ./tests/rest_scripts/generateCommand.go 2>&1); then
+      log 2 "error building generateCommand executable: $build_output"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+generate_go_command() {
+  if ! check_param_count_gt "command params" 1 $#; then
+    return 1
+  fi
+  local go_response
+
+  if check_for_and_or_build_go_executable 2>/dev/null; then
+    if ! go_response=$("$GO_COMMAND_GENERATOR_EXECUTABLE" "$@" 2>&1); then
+      log 2 "error generating go command from executable: $go_response"
+      return 1
+    fi
+  else
+    if ! go_response=$(go run ./tests/rest_scripts/generateCommand.go "$@" 2>&1); then
+      log 2 "error generating go command from files (if using tester account, are you using -H tag?): $go_response"
+      return 1
+    fi
+  fi
+  echo "$go_response"
+  return 0
+}

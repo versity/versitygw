@@ -1,4 +1,4 @@
-name: system tests
+name: Ubuntu AMD System Tests
 permissions: {}
 on: pull_request
 jobs:
@@ -28,13 +28,17 @@ jobs:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v7
 
+      - name: Install base dependencies
+        run: |
+          ./tests/install_base_dependencies.sh
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version: "stable"
         id: go
 
-      - name: Get Dependencies
+      - name: Get Go Dependencies
         run: |
           go get -v -t -d ./...
 
@@ -45,21 +49,11 @@ jobs:
           git clone https://github.com/bats-core/bats-support.git ${{ github.workspace }}/tests/bats-support
           git clone https://github.com/ztombol/bats-assert.git ${{ github.workspace }}/tests/bats-assert
 
-      - name: Install s3cmd
-        run: |
-          sudo apt-get update
-          sudo apt-get install s3cmd
-
 # disable mc tests due to dl.min.io instability
 #      - name: Install mc
 #        run: |
 #          curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o /usr/local/bin/mc
 #          chmod 755 /usr/local/bin/mc
-
-      - name: Install xml libraries (for rest)
-        run: |
-          sudo apt-get update
-          sudo apt-get install libxml2-utils xmlstarlet
 
       # see https://github.com/versity/versitygw/issues/1034
       - name: Install AWS cli
@@ -152,6 +146,7 @@ jobs:
           COVERAGE_LOG=$COVERAGE_LOG
           TEMPLATE_MATRIX_FILE=$TEMPLATE_MATRIX_FILE
           QUICK_COMPARE_SIZE=1048576
+          GENERATE_COMMAND_EXECUTABLE=/home/tester/test-files/generateCommand
           EOF
           sudo chown tester:tester /home/tester/test-files/.env
           sudo chmod 600 /home/tester/test-files/.env

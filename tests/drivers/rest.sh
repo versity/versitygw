@@ -244,7 +244,7 @@ rest_go_command_perform_send() {
     output_file="$TEST_FILE_FOLDER/$response"
     params+=("-outputFile" "$output_file")
   fi
-  if ! curl_command=$(go run ./tests/rest_scripts/generateCommand.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -awsRegion "$AWS_REGION" -url "$AWS_ENDPOINT_URL" "-writeXMLPayloadToFile" "$TEST_FILE_FOLDER/$xml_file" "${params[@]}" 2>&1); then
+  if ! curl_command=$(generate_go_command -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -awsRegion "$AWS_REGION" -url "$AWS_ENDPOINT_URL" "-writeXMLPayloadToFile" "$TEST_FILE_FOLDER/$xml_file" "${params[@]}" 2>&1); then
     log 2 "error: $curl_command"
     return 1
   fi
