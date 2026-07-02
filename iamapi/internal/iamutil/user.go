@@ -1,0 +1,213 @@
+// Copyright 2026 Versity Software
+// This file is licensed under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+package iamutil
+
+import (
+	"crypto/rand"
+	"fmt"
+	"math/big"
+	"regexp"
+	"strings"
+
+	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/iamapi/iamerr"
+	"github.com/versity/versitygw/iamapi/types"
+)
+
+const (
+	DefaultAccountID = "000000000000"
+	DefaultUserPath  = "/"
+	DefaultMaxItems  = 100
+	MaxListItems     = 1000
+	MaxUserNameLen   = 64
+	MaxUserLookupLen = 128
+	MaxPathLen       = 512
+	userIDPrefix     = "AIDA"
+	userIDRandomLen  = 17
+	userIDAlphabet   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+	maxTagKeyLen     = 128
+	maxTagValLen     = 256
+)
+
+var (
+	userNamePattern = regexp.MustCompile(`^[A-Za-z0-9+=,.@_-]+$`)
+	tagKeyPattern   = regexp.MustCompile(`^[\p{L}\p{Z}\p{N}_.:/=+\-@]+$`)
+	tagValPattern   = regexp.MustCompile(`^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$`)
+)
+
+// RequestParam looks up key first in URL query args, then in the POST body.
+func RequestParam(ctx fiber.Ctx, key string) (string, bool) {
+	queryArgs := ctx.Request().URI().QueryArgs()
+	if queryArgs.Has(key) {
+		return string(queryArgs.Peek(key)), true
+	}
+
+	postArgs := ctx.Request().PostArgs()
+	if postArgs.Has(key) {
+		return string(postArgs.Peek(key)), true
+	}
+
+	return "", false
+}
+
+// ParseTags reads IAM tag members from the request (up to 50), validates each, and returns the list.
+func ParseTags(ctx fiber.Ctx) ([]types.Tag, error) {
+	var tags []types.Tag
+	seen := map[string]struct{}{}
+
+	for i := 1; ; i++ {
+		keyName := fmt.Sprintf("Tags.member.%d.Key", i)
+		valueName := fmt.Sprintf("Tags.member.%d.Value", i)
+
+		key, hasKey := RequestParam(ctx, keyName)
+		value, hasValue := RequestParam(ctx, valueName)
+		if !hasKey && !hasValue {
+			break
+		}
+		if len(tags) >= 50 {
+			debuglogger.Logf("IAM user tag count exceeds maximum: max=%d", 50)
+			return nil, iamerr.GetAPIError(iamerr.ErrTooManyTags)
+		}
+		if !hasKey {
+			debuglogger.Logf("missing required IAM tag parameter: %s", keyName)
+			return nil, iamerr.MissingParameter(keyName)
+		}
+		if !hasValue {
+			debuglogger.Logf("missing required IAM tag parameter: %s", valueName)
+			return nil, iamerr.MissingParameter(valueName)
+		}
+		if err := validateTag(i, key, value); err != nil {
+			return nil, err
+		}
+
+		normalizedKey := strings.ToLower(key)
+		if _, ok := seen[normalizedKey]; ok {
+			debuglogger.Logf("duplicate IAM tag key: %q", key)
+			return nil, iamerr.GetAPIError(iamerr.ErrDuplicateTagKeys)
+		}
+		seen[normalizedKey] = struct{}{}
+
+		tags = append(tags, types.Tag{Key: key, Value: value})
+	}
+
+	return tags, nil
+}
+
+// ValidateUserName checks that userName is non-empty, matches the allowed character set, and fits within maxLength.
+func ValidateUserName(field, userName string, maxLength int) error {
+	if len(userName) > maxLength {
+		debuglogger.Logf("IAM user name exceeds maximum length: field=%s length=%d max=%d", field, len(userName), maxLength)
+		return iamerr.UserNameTooLong(field, maxLength)
+	}
+	if userName == "" || !userNamePattern.MatchString(userName) {
+		debuglogger.Logf("invalid IAM user name: field=%s value=%q", field, userName)
+		return iamerr.InvalidUserName(field)
+	}
+
+	return nil
+}
+
+// ValidatePath checks that path is a valid IAM path (must start and end with '/') within MaxPathLen.
+func ValidatePath(field, path string) error {
+	if len(path) > MaxPathLen {
+		debuglogger.Logf("IAM path exceeds maximum length: field=%s length=%d max=%d", field, len(path), MaxPathLen)
+		return iamerr.PathTooLong(field, MaxPathLen)
+	}
+	if !isValidIAMPath(path) {
+		debuglogger.Logf("invalid IAM path: field=%s value=%q", field, path)
+		return iamerr.InvalidPath(field)
+	}
+
+	return nil
+}
+
+// ValidatePathPrefix checks that pathPrefix is a non-empty printable ASCII string starting with '/'.
+func ValidatePathPrefix(pathPrefix string) error {
+	if pathPrefix == "" || len(pathPrefix) > MaxPathLen || pathPrefix[0] != '/' || !isPrintableASCII(pathPrefix[1:]) {
+		debuglogger.Logf("invalid IAM path prefix: %q", pathPrefix)
+		return iamerr.GetAPIError(iamerr.ErrInvalidPathPrefix)
+	}
+
+	return nil
+}
+
+// BuildUserArn constructs the ARN for an IAM user.
+func BuildUserArn(accountID, path, userName string) string {
+	return fmt.Sprintf("arn:aws:iam::%s:user%s%s", accountID, path, userName)
+}
+
+// GenerateUserID returns a new cryptographically random IAM user ID in the AIDA… format.
+func GenerateUserID() (string, error) {
+	var b strings.Builder
+	b.Grow(len(userIDPrefix) + userIDRandomLen)
+	b.WriteString(userIDPrefix)
+
+	max := big.NewInt(int64(len(userIDAlphabet)))
+	for range userIDRandomLen {
+		n, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			debuglogger.Logf("failed to generate IAM user ID: %v", err)
+			return "", err
+		}
+		b.WriteByte(userIDAlphabet[n.Int64()])
+	}
+
+	return b.String(), nil
+}
+
+func validateTag(index int, key, value string) error {
+	if len(key) > maxTagKeyLen {
+		debuglogger.Logf("IAM tag key exceeds maximum length: index=%d length=%d max=%d", index, len(key), maxTagKeyLen)
+		return iamerr.TagKeyTooLong(index)
+	}
+	if key == "" || !tagKeyPattern.MatchString(key) {
+		debuglogger.Logf("invalid IAM tag key: index=%d value=%q", index, key)
+		return iamerr.InvalidTagKey(index)
+	}
+	if len(value) > maxTagValLen {
+		debuglogger.Logf("IAM tag value exceeds maximum length: index=%d length=%d max=%d", index, len(value), maxTagValLen)
+		return iamerr.TagValueTooLong(index)
+	}
+	if !tagValPattern.MatchString(value) {
+		debuglogger.Logf("invalid IAM tag value: index=%d value=%q", index, value)
+		return iamerr.InvalidTagValue(index)
+	}
+
+	return nil
+}
+
+func isValidIAMPath(path string) bool {
+	if path == "" || len(path) > MaxPathLen {
+		return false
+	}
+	if path == "/" {
+		return true
+	}
+	if path[0] != '/' || path[len(path)-1] != '/' {
+		return false
+	}
+
+	return isPrintableASCII(path[1 : len(path)-1])
+}
+
+func isPrintableASCII(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] < 0x21 || value[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}

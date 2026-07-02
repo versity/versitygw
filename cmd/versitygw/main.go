@@ -110,6 +110,7 @@ var (
 func main() {
 	gwcli.SetupSignalHandler()
 	gwcli.RunGateway = runGateway
+	gwcli.RunIAM = runIAM
 
 	app := initApp()
 
@@ -119,6 +120,7 @@ func main() {
 		gwcli.S3Command(),
 		gwcli.AzureCommand(),
 		gwcli.PluginCommand(),
+		gwcli.IAMCommand(),
 		gwcli.AdminCommand(),
 		testCommand(),
 		gwcli.UtilsCommand(),

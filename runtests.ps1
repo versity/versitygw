@@ -85,7 +85,7 @@ Invoke-GwTest -Description "full flow tests" -GatewayProc $gwProc `
 Invoke-GwTest -Description "posix tests" -GatewayProc $gwProc `
     -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7070", "posix", "--windows-test-mode")
 Invoke-GwTest -Description "iam tests" -GatewayProc $gwProc `
-    -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7070", "iam")
+    -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7070", "gw-iam")
 
 Stop-Process -Id $gwProc.Id -Force -ErrorAction SilentlyContinue
 
@@ -108,7 +108,7 @@ Invoke-GwTest -Description "https full flow tests" -GatewayProc $gwHttpsProc `
 Invoke-GwTest -Description "https posix tests" -GatewayProc $gwHttpsProc `
     -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "https://127.0.0.1:7071", "posix", "--windows-test-mode")
 Invoke-GwTest -Description "https iam tests" -GatewayProc $gwHttpsProc `
-    -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "https://127.0.0.1:7071", "iam")
+    -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "https://127.0.0.1:7071", "gw-iam")
 
 Stop-Process -Id $gwHttpsProc.Id -Force -ErrorAction SilentlyContinue
 

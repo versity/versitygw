@@ -15,32 +15,21 @@
 package utils
 
 import (
-	"fmt"
-	"net/url"
-	"os"
+	"errors"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/smithy-go/logging"
 	"github.com/gofiber/fiber/v3"
-	v4 "github.com/versity/versitygw/aws/signer/v4"
-	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/sigv4auth"
 	"github.com/versity/versitygw/s3err"
 )
 
 const (
 	unsignedPayload string = "UNSIGNED-PAYLOAD"
-
-	algoHMAC  string = "AWS4-HMAC-SHA256"
-	algoECDSA string = "AWS4-ECDSA-P256-SHA256"
 )
 
 // CheckPresignedSignature validates presigned request signature
 func CheckPresignedSignature(ctx fiber.Ctx, auth AuthData, secret string) error {
-	signedHdrs := strings.Split(auth.SignedHeaders, ";")
-
 	var contentLength int64
 	var err error
 	contentLengthStr := ctx.Get("Content-Length")
@@ -51,44 +40,14 @@ func CheckPresignedSignature(ctx fiber.Ctx, auth AuthData, secret string) error 
 		}
 	}
 
-	// Create a new http request instance from fasthttp request
-	req, err := createPresignedHttpRequestFromCtx(ctx, signedHdrs, contentLength)
-	if err != nil {
-		return err
-	}
-
 	date, _ := time.Parse(iso8601Format, auth.Date)
 
-	signer := v4.NewSigner()
-	uri, _, signMeta, signErr := signer.PresignHTTP(ctx.RequestCtx(), aws.Credentials{
-		AccessKeyID:     auth.Access,
-		SecretAccessKey: secret,
-	}, req, unsignedPayload, service, auth.Region, date, signedHdrs, func(options *v4.SignerOptions) {
-		options.DisableURIPathEscaping = true
-		if debuglogger.IsDebugEnabled() {
-			options.LogSigning = true
-			options.Logger = logging.NewStandardLogger(os.Stderr)
-		}
+	_, err = sigv4auth.CheckQuerySignature(ctx, auth, secret, unsignedPayload, date, contentLength, sigv4auth.CheckOptions{
+		Service:                service,
+		DisableURIPathEscaping: true,
 	})
-	if signErr != nil {
-		return fmt.Errorf("presign generated http request: %w", err)
-	}
-
-	urlParts, err := url.Parse(uri)
 	if err != nil {
-		return fmt.Errorf("parse presigned url: %w", err)
-	}
-
-	signature := urlParts.Query().Get("X-Amz-Signature")
-	if signature != auth.Signature {
-		return s3err.GetSignatureDoesNotMatchErr(
-			auth.Access,
-			signMeta.StringToSign,
-			auth.Signature,
-			HexBytes(signMeta.StringToSign),
-			signMeta.CanonicalString,
-			HexBytes(signMeta.CanonicalString),
-		)
+		return mapSigV4Error(err)
 	}
 
 	return nil
@@ -105,157 +64,83 @@ func CheckPresignedSignature(ctx fiber.Ctx, auth AuthData, secret string) error 
 // &X-Amz-SignedHeaders=host
 // &X-Amz-Signature=1e68ad45c1db540284a4a1eca3884c293ba1a0ff63ab9db9a15b5b29dfa02cd8
 func ParsePresignedURIParts(ctx fiber.Ctx, region string) (AuthData, error) {
-	a := AuthData{}
-
-	// Get and verify algorithm query parameter
-	algo := ctx.Query("X-Amz-Algorithm")
-	err := validateAlgorithm(algo)
+	auth, _, err := sigv4auth.ParseQueryAuthorization(ctx, sigv4auth.QueryAuthOptions{
+		Service:           service,
+		Region:            region,
+		RequireExpiration: true,
+	})
 	if err != nil {
-		return a, err
+		return AuthData{}, mapQueryAuthError(err)
 	}
 
-	// Parse and validate credentials query parameter
-	credsQuery := ctx.Query("X-Amz-Credential")
-	if credsQuery == "" {
-		return a, s3err.QueryAuthErrors.MissingRequiredParams()
-	}
-
-	creds, err := ParseCredentials(credsQuery, s3err.QueryAuthErrors)
-	if err != nil {
-		return a, err
-	}
-
-	// validate the region
-	if creds.Region != region {
-		return a, s3err.QueryAuthErrors.IncorrectRegion(region, creds.Region)
-	}
-
-	// Parse and validate Date query param
-	date := ctx.Query("X-Amz-Date")
-	if date == "" {
-		return a, s3err.QueryAuthErrors.MissingRequiredParams()
-	}
-
-	tdate, err := time.Parse(iso8601Format, date)
-	if err != nil {
-		return a, s3err.QueryAuthErrors.InvalidXAmzDateFormat()
-	}
-
-	if date[:8] != creds.Date {
-		return a, s3err.QueryAuthErrors.DateMismatch(creds.Date, date[:8])
-	}
-
-	signature := ctx.Query("X-Amz-Signature")
-	if signature == "" {
-		return a, s3err.QueryAuthErrors.MissingRequiredParams()
-	}
-
-	signedHdrs := ctx.Query("X-Amz-SignedHeaders")
-	if signedHdrs == "" {
-		return a, s3err.QueryAuthErrors.MissingRequiredParams()
-	}
-
-	// Validate X-Amz-Expires query param and check if request is expired
-	err = validateExpiration(ctx.Query("X-Amz-Expires"), tdate)
-	if err != nil {
-		return a, err
-	}
-
-	a.Signature = signature
-	a.Access = creds.Access
-	a.Algorithm = algo
-	a.Region = creds.Region
-	a.SignedHeaders = signedHdrs
-	a.Date = date
-
-	return a, nil
+	return auth, nil
 }
 
 func validateExpiration(str string, date time.Time) error {
-	if str == "" {
-		return s3err.QueryAuthErrors.MissingRequiredParams()
-	}
-
-	exp, err := strconv.Atoi(str)
-	if err != nil {
-		return s3err.QueryAuthErrors.ExpiresNumber()
-	}
-
-	if exp < 0 {
-		return s3err.QueryAuthErrors.ExpiresNegative()
-	}
-
-	if exp > 604800 {
-		return s3err.QueryAuthErrors.ExpiresTooLarge()
-	}
-
-	now := time.Now().UTC()
-	expiresAt := date.Add(time.Duration(exp) * time.Second)
-
-	if expiresAt.Before(now) {
-		return s3err.GetExpiredPresignedURLError(exp, expiresAt.Format(time.RFC3339), now.Format(time.RFC3339))
-	}
-
-	return nil
+	_, err := sigv4auth.ValidateQueryExpiration(str, date, time.Now().UTC())
+	return mapQueryAuthError(err)
 }
 
 // validateAlgorithm validates the algorithm
 // for AWS4-ECDSA-P256-SHA256 it returns a custom non AWS error
 // currently only AWS4-HMAC-SHA256 algorithm is supported
 func validateAlgorithm(algo string) error {
-	switch algo {
-	case "":
-		return s3err.QueryAuthErrors.MissingRequiredParams()
-	case algoHMAC:
-		return nil
-	case algoECDSA:
-		return s3err.QueryAuthErrors.OnlyHMACSupported()
-	default:
-		// all other algorithms are considered as invalid
-		return s3err.QueryAuthErrors.UnsupportedAlgorithm()
-	}
+	return mapQueryAuthError(sigv4auth.ValidateQueryAlgorithm(algo))
 }
 
 // IsPresignedURLAuth determines if the request is presigned:
 // which is authorization with query params
 func IsPresignedURLAuth(ctx fiber.Ctx) bool {
-	algo := ctx.Query("X-Amz-Algorithm")
-	creds := ctx.Query("X-Amz-Credential")
-	signature := ctx.Query("X-Amz-Signature")
-	signedHeaders := ctx.Query("X-Amz-SignedHeaders")
-	expires := ctx.Query("X-Amz-Expires")
-
-	return !allEmpty(algo, creds, signature, signedHeaders, expires) || IsPresignedURLAuthV2(ctx)
+	return sigv4auth.IsQueryAuth(ctx) || ctx.Query(sigv4auth.QueryExpires) != "" || IsPresignedURLAuthV2(ctx)
 }
 
 // IsPresignedURLAuthV2 determines if the request is
 // query-string signed with aws v2 signer
 func IsPresignedURLAuthV2(ctx fiber.Ctx) bool {
-	expires := ctx.Query("Expires")
-	access := ctx.Query("AWSAccessKeyId")
-	signature := ctx.Query("Signature")
-
-	return anyNonEmpty(expires, access, signature)
+	return sigv4auth.IsQueryAuthV2(ctx)
 }
 
-// allEmpty reports whether every given string is empty.
-func allEmpty(args ...string) bool {
-	for _, a := range args {
-		if a != "" {
-			return false
+func mapQueryAuthError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var queryErr *sigv4auth.QueryError
+	if errors.As(err, &queryErr) {
+		switch queryErr.Kind {
+		case sigv4auth.ErrQueryMissingRequiredParams:
+			return s3err.QueryAuthErrors.MissingRequiredParams()
+		case sigv4auth.ErrQueryUnsupportedAlgorithm:
+			return s3err.QueryAuthErrors.UnsupportedAlgorithm()
+		case sigv4auth.ErrQueryUnsupportedECDSA:
+			return s3err.QueryAuthErrors.OnlyHMACSupported()
+		case sigv4auth.ErrQueryInvalidDateFormat:
+			return s3err.QueryAuthErrors.InvalidXAmzDateFormat()
+		case sigv4auth.ErrQueryDateMismatch:
+			return s3err.QueryAuthErrors.DateMismatch(queryErr.Expected, queryErr.Actual)
+		case sigv4auth.ErrQueryIncorrectRegion:
+			return s3err.QueryAuthErrors.IncorrectRegion(queryErr.Expected, queryErr.Actual)
+		case sigv4auth.ErrQueryExpiresNumber:
+			return s3err.QueryAuthErrors.ExpiresNumber()
+		case sigv4auth.ErrQueryExpiresNegative:
+			return s3err.QueryAuthErrors.ExpiresNegative()
+		case sigv4auth.ErrQueryExpiresTooLarge:
+			return s3err.QueryAuthErrors.ExpiresTooLarge()
+		case sigv4auth.ErrQueryExpired:
+			return s3err.GetExpiredPresignedURLError(
+				queryErr.Expires,
+				queryErr.ExpiresAt.Format(time.RFC3339),
+				queryErr.ServerTime.Format(time.RFC3339),
+			)
+		case sigv4auth.ErrQuerySecurityToken:
+			return s3err.QueryAuthErrors.SecurityTokenNotSupported()
 		}
 	}
 
-	return true
-}
-
-// anyNonEmpty reports whether at least one given string is non-empty.
-func anyNonEmpty(args ...string) bool {
-	for _, a := range args {
-		if a != "" {
-			return true
-		}
+	var parseErr *sigv4auth.ParseError
+	if errors.As(err, &parseErr) {
+		return mapCredentialsParseError(parseErr, s3err.QueryAuthErrors)
 	}
 
-	return false
+	return err
 }

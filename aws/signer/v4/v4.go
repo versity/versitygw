@@ -494,15 +494,15 @@ func (s *httpSigner) buildCanonicalHeaders(host string, rule v4Internal.Rule, he
 }
 
 func (s *httpSigner) shouldSignHeader(header string, rule v4Internal.Rule) bool {
-	if rule.IsValid(header) {
-		return true
-	}
 	if strings.EqualFold(header, authorizationHeader) {
 		return false
 	}
-	return slices.ContainsFunc(s.SignedHdrs, func(signedHeader string) bool {
-		return strings.EqualFold(signedHeader, header)
-	})
+	if s.SignedHdrs != nil {
+		return slices.ContainsFunc(s.SignedHdrs, func(signedHeader string) bool {
+			return strings.EqualFold(signedHeader, header)
+		})
+	}
+	return rule.IsValid(header)
 }
 
 func (s *httpSigner) buildCanonicalString(method, uri, query, signedHeaders, canonicalHeaders string) string {

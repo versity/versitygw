@@ -16,14 +16,11 @@ package auth
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"sort"
 	"sync"
-	"time"
+
+	"github.com/versity/versitygw/internal/iamstore"
 )
 
 const (
@@ -40,12 +37,9 @@ type IAMServiceInternal struct {
 	// IAM service. All account updates should be sent to a single
 	// gateway instance if possible.
 	sync.RWMutex
-	dir     string
+	engine  *iamstore.Engine[iAMConfig]
 	rootAcc Account
 }
-
-// UpdateAcctFunc accepts the current data and returns the new data to be stored
-type UpdateAcctFunc func([]byte) ([]byte, error)
 
 // iAMConfig stores all internal IAM accounts
 type iAMConfig struct {
@@ -56,14 +50,14 @@ var _ IAMService = &IAMServiceInternal{}
 
 // NewInternal creates a new instance for the Internal IAM service
 func NewInternal(rootAcc Account, dir string) (*IAMServiceInternal, error) {
-	i := &IAMServiceInternal{
-		dir:     dir,
-		rootAcc: rootAcc,
-	}
-
-	err := i.initIAM()
+	engine, err := iamstore.New(dir, iamFile, iamBackupFile, defaultIAMConfig(), normalizeIAMConfig)
 	if err != nil {
 		return nil, fmt.Errorf("init iam: %w", err)
+	}
+
+	i := &IAMServiceInternal{
+		engine:  engine,
+		rootAcc: rootAcc,
 	}
 
 	return i, nil
@@ -79,7 +73,7 @@ func (s *IAMServiceInternal) CreateAccount(account Account) error {
 	s.Lock()
 	defer s.Unlock()
 
-	return s.storeIAM(func(data []byte) ([]byte, error) {
+	return s.engine.StoreIAM(func(data []byte) ([]byte, error) {
 		conf, err := parseIAM(data)
 		if err != nil {
 			return nil, fmt.Errorf("get iam data: %w", err)
@@ -110,7 +104,7 @@ func (s *IAMServiceInternal) GetUserAccount(access string) (Account, error) {
 	s.RLock()
 	defer s.RUnlock()
 
-	conf, err := s.getIAM()
+	conf, err := s.engine.GetIAM()
 	if err != nil {
 		return Account{}, fmt.Errorf("get iam data: %w", err)
 	}
@@ -129,7 +123,7 @@ func (s *IAMServiceInternal) UpdateUserAccount(access string, props MutableProps
 	s.Lock()
 	defer s.Unlock()
 
-	return s.storeIAM(func(data []byte) ([]byte, error) {
+	return s.engine.StoreIAM(func(data []byte) ([]byte, error) {
 		conf, err := parseIAM(data)
 		if err != nil {
 			return nil, fmt.Errorf("get iam data: %w", err)
@@ -158,7 +152,7 @@ func (s *IAMServiceInternal) DeleteUserAccount(access string) error {
 	s.Lock()
 	defer s.Unlock()
 
-	return s.storeIAM(func(data []byte) ([]byte, error) {
+	return s.engine.StoreIAM(func(data []byte) ([]byte, error) {
 		conf, err := parseIAM(data)
 		if err != nil {
 			return nil, fmt.Errorf("get iam data: %w", err)
@@ -180,7 +174,7 @@ func (s *IAMServiceInternal) ListUserAccounts() ([]Account, error) {
 	s.RLock()
 	defer s.RUnlock()
 
-	conf, err := s.getIAM()
+	conf, err := s.engine.GetIAM()
 	if err != nil {
 		return []Account{}, fmt.Errorf("get iam data: %w", err)
 	}
@@ -211,145 +205,16 @@ func (s *IAMServiceInternal) Shutdown() error {
 	return nil
 }
 
-const (
-	iamMode = 0600
-)
-
-func (s *IAMServiceInternal) initIAM() error {
-	fname := filepath.Join(s.dir, iamFile)
-
-	_, err := os.ReadFile(fname)
-	if errors.Is(err, fs.ErrNotExist) {
-		b, err := json.Marshal(iAMConfig{AccessAccounts: map[string]Account{}})
-		if err != nil {
-			return fmt.Errorf("marshal default iam: %w", err)
-		}
-		err = os.WriteFile(fname, b, iamMode)
-		if err != nil {
-			return fmt.Errorf("write default iam: %w", err)
-		}
-	}
-
-	return nil
-}
-
-func (s *IAMServiceInternal) getIAM() (iAMConfig, error) {
-	b, err := s.readIAMData()
-	if err != nil {
-		return iAMConfig{}, err
-	}
-
-	return parseIAM(b)
-}
-
 func parseIAM(b []byte) (iAMConfig, error) {
-	var conf iAMConfig
-	if err := json.Unmarshal(b, &conf); err != nil {
-		return iAMConfig{}, fmt.Errorf("failed to parse the config file: %w", err)
-	}
+	return iamstore.ParseIAM(b, normalizeIAMConfig)
+}
 
+func defaultIAMConfig() iAMConfig {
+	return iAMConfig{AccessAccounts: map[string]Account{}}
+}
+
+func normalizeIAMConfig(conf *iAMConfig) {
 	if conf.AccessAccounts == nil {
 		conf.AccessAccounts = make(map[string]Account)
 	}
-
-	return conf, nil
-}
-
-const (
-	backoff  = 100 * time.Millisecond
-	maxretry = 300
-)
-
-func (s *IAMServiceInternal) readIAMData() ([]byte, error) {
-	// We are going to be racing with other running gateways without any
-	// coordination. So we might find the file does not exist at times.
-	// For this case we need to retry for a while assuming the other gateway
-	// will eventually write the file. If it doesn't after the max retries,
-	// then we will return the error.
-
-	retries := 0
-
-	for {
-		b, err := os.ReadFile(filepath.Join(s.dir, iamFile))
-		if errors.Is(err, fs.ErrNotExist) {
-			// racing with someone else updating
-			// keep retrying after backoff
-			retries++
-			if retries < maxretry {
-				time.Sleep(backoff)
-				continue
-			}
-			return nil, fmt.Errorf("read iam file: %w", err)
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		return b, nil
-	}
-}
-
-func (s *IAMServiceInternal) storeIAM(update UpdateAcctFunc) error {
-	// We are going to be racing with other running gateways without any
-	// coordination. So the strategy here is to read the current file data,
-	// update the data, write back out to a temp file, then rename the
-	// temp file to the original file. This rename will replace the
-	// original file with the new file. This is atomic and should always
-	// allow for a consistent view of the data. There is a small
-	// window where the file could be read and then updated by
-	// another process. In this case any updates the other process did
-	// will be lost. This is a limitation of the internal IAM service.
-	// This should be rare, and even when it does happen should result
-	// in a valid IAM file, just without the other process's updates.
-
-	iamFname := filepath.Join(s.dir, iamFile)
-	backupFname := filepath.Join(s.dir, iamBackupFile)
-
-	b, err := os.ReadFile(iamFname)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("read iam file: %w", err)
-	}
-
-	// save copy of data
-	datacopy := make([]byte, len(b))
-	copy(datacopy, b)
-
-	// make a backup copy in case something happens
-	err = s.writeUsingTempFile(b, backupFname)
-	if err != nil {
-		return fmt.Errorf("write backup iam file: %w", err)
-	}
-
-	b, err = update(b)
-	if err != nil {
-		return fmt.Errorf("update iam data: %w", err)
-	}
-
-	err = s.writeUsingTempFile(b, iamFname)
-	if err != nil {
-		return fmt.Errorf("write iam file: %w", err)
-	}
-
-	return nil
-}
-
-func (s *IAMServiceInternal) writeUsingTempFile(b []byte, fname string) error {
-	f, err := os.CreateTemp(s.dir, iamFile)
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer os.Remove(f.Name())
-
-	_, err = f.Write(b)
-	f.Close()
-	if err != nil {
-		return fmt.Errorf("write temp file: %w", err)
-	}
-
-	err = os.Rename(f.Name(), fname)
-	if err != nil {
-		return fmt.Errorf("rename temp file: %w", err)
-	}
-
-	return nil
 }
