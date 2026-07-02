@@ -180,6 +180,30 @@ func TestSignRequest(t *testing.T) {
 	}
 }
 
+func TestSignRequestUsesExplicitSignedHeaders(t *testing.T) {
+	req, payloadHash := buildRequest("dynamodb", "us-east-1", "{}")
+	reqWithUnsignedHeaders, _ := buildRequest("dynamodb", "us-east-1", "{}")
+	reqWithUnsignedHeaders.Header.Set("Content-Type", "text/plain")
+	reqWithUnsignedHeaders.Header.Set("X-Unsigned-Header", "ignored")
+	signer := NewSigner()
+	signedHdrs := []string{"host", "x-amz-date"}
+
+	for _, request := range []*http.Request{req, reqWithUnsignedHeaders} {
+		_, err := signer.SignHTTP(context.Background(), testCredentials, request, payloadHash, "dynamodb", "us-east-1", time.Unix(0, 0), signedHdrs)
+		if err != nil {
+			t.Fatalf("expect no error, got %v", err)
+		}
+	}
+
+	authorization := req.Header.Get("Authorization")
+	if !strings.Contains(authorization, "SignedHeaders=host;x-amz-date,") {
+		t.Fatalf("expected only explicit signed headers, got %q", authorization)
+	}
+	if authorization != reqWithUnsignedHeaders.Header.Get("Authorization") {
+		t.Fatalf("unsigned headers changed the signature")
+	}
+}
+
 func TestBuildCanonicalRequest(t *testing.T) {
 	req, _ := buildRequest("dynamodb", "us-east-1", "{}")
 	req.URL.RawQuery = "Foo=z&Foo=o&Foo=m&Foo=a"

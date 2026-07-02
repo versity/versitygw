@@ -170,57 +170,6 @@ func createHttpRequestFromCtx(ctx fiber.Ctx, signedHdrs []string, contentLength 
 	return httpReq, nil
 }
 
-var (
-	signedQueryArgs = map[string]bool{
-		"X-Amz-Algorithm":     true,
-		"X-Amz-Credential":    true,
-		"X-Amz-Date":          true,
-		"X-Amz-SignedHeaders": true,
-		"X-Amz-Signature":     true,
-	}
-)
-
-func createPresignedHttpRequestFromCtx(ctx fiber.Ctx, signedHdrs []string, contentLength int64) (*http.Request, error) {
-	req := ctx.Request()
-
-	uri, _, _ := strings.Cut(ctx.OriginalURL(), "?")
-	isFirst := true
-
-	for key, value := range ctx.Request().URI().QueryArgs().All() {
-		_, ok := signedQueryArgs[string(key)]
-		if !ok {
-			escapeValue := url.QueryEscape(string(value))
-			if isFirst {
-				uri += fmt.Sprintf("?%s=%s", key, escapeValue)
-				isFirst = false
-			} else {
-				uri += fmt.Sprintf("&%s=%s", key, escapeValue)
-			}
-		}
-	}
-
-	httpReq, err := http.NewRequest(string(req.Header.Method()), uri, nil)
-	if err != nil {
-		return nil, errors.New("error in creating an http request")
-	}
-	if err := addRequestHeadersFromCtx(ctx, httpReq, signedHdrs); err != nil {
-		return nil, err
-	}
-
-	// Check if Content-Length in signed headers
-	// If content length is non 0, then the header will be included
-	if !includeHeader("Content-Length", signedHdrs) {
-		httpReq.ContentLength = 0
-	} else {
-		httpReq.ContentLength = contentLength
-	}
-
-	// Set the Host header
-	httpReq.Host = string(req.Header.Host())
-
-	return httpReq, nil
-}
-
 func SetMetaHeaders(ctx fiber.Ctx, meta map[string]string) {
 	ctx.Response().Header.DisableNormalizing()
 	for key, val := range meta {

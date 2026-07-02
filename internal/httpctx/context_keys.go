@@ -1,0 +1,56 @@
+// Copyright 2026 Versity Software
+// This file is licensed under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+package httpctx
+
+import "github.com/gofiber/fiber/v3"
+
+// ContextKey names a request-local value stored in fiber.Ctx locals.
+type ContextKey string
+
+const (
+	ContextKeyRegion           ContextKey = "region"
+	ContextKeyStartTime        ContextKey = "start-time"
+	ContextKeyIsRoot           ContextKey = "is-root"
+	ContextKeyRootAccessKey    ContextKey = "root-access-key"
+	ContextKeyAccount          ContextKey = "account"
+	ContextKeyAuthenticated    ContextKey = "authenticated"
+	ContextKeyPublicBucket     ContextKey = "public-bucket"
+	ContextKeyParsedAcl        ContextKey = "parsed-acl"
+	ContextKeySkipResBodyLog   ContextKey = "skip-res-body-log"
+	ContextKeyBodyReader       ContextKey = "body-reader"
+	ContextKeySkip             ContextKey = "__skip"
+	ContextKeyStack            ContextKey = "stack"
+	ContextKeyBucketOwner      ContextKey = "bucket-owner"
+	ContextKeyObjectPostResult ContextKey = "object-post-result"
+	ContextKeyRequestID        ContextKey = "request-id"
+	ContextKeyHostID           ContextKey = "host-id"
+	ContextKeyWebsiteConfig    ContextKey = "website-config"
+)
+
+func (ck ContextKey) Set(ctx fiber.Ctx, val any) {
+	ctx.Locals(string(ck), val)
+}
+
+func (ck ContextKey) IsSet(ctx fiber.Ctx) bool {
+	return ctx.Locals(string(ck)) != nil
+}
+
+func (ck ContextKey) Delete(ctx fiber.Ctx) {
+	ctx.Locals(string(ck), nil)
+}
+
+func (ck ContextKey) Get(ctx fiber.Ctx) any {
+	return ctx.Locals(string(ck))
+}

@@ -49,12 +49,15 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/cespare/xxhash/v2"
+	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/s3err"
 	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/errgroup"
@@ -297,6 +300,19 @@ func actionHandlerNoSetup(s *S3Conf, testName string, handler func(s3client *s3.
 	return handlerErr
 }
 
+func iamActionHandler(s *S3Conf, testName string, handler func(client *iam.Client) error) error {
+	runF(testName)
+
+	err := handler(s.GetIAMClient())
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	passF(testName)
+	return nil
+}
+
 type authConfig struct {
 	testName       string
 	path           string
@@ -304,13 +320,26 @@ type authConfig struct {
 	overrideSha256 string
 	body           []byte
 	service        string
+	access         string
+	secret         string
+	region         string
 	date           time.Time
 	headers        map[string]string
 }
 
 func authHandler(s *S3Conf, cfg *authConfig, handler func(req *http.Request) error) error {
 	runF(cfg.testName)
-	req, err := createSignedReq(cfg.method, s.endpoint, cfg.path, s.awsID, s.awsSecret, cfg.service, s.awsRegion, cfg.overrideSha256, cfg.body, cfg.date, cfg.headers)
+	access, secret, region := s.awsID, s.awsSecret, s.awsRegion
+	if cfg.access != "" {
+		access = cfg.access
+	}
+	if cfg.secret != "" {
+		secret = cfg.secret
+	}
+	if cfg.region != "" {
+		region = cfg.region
+	}
+	req, err := createSignedReq(cfg.method, s.endpoint, cfg.path, access, secret, cfg.service, region, cfg.overrideSha256, cfg.body, cfg.date, cfg.headers)
 	if err != nil {
 		failF("%v: %v", cfg.testName, err)
 		return fmt.Errorf("%v: %w", cfg.testName, err)
@@ -365,7 +394,12 @@ func createSignedReq(method, endpoint, path, access, secret, service, region, ov
 		hexPayload = hex.EncodeToString(hashedPayload[:])
 	}
 
-	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+	// x-amz-content-sha256 is an S3 signing header. Other services still use
+	// hexPayload in the canonical request, but should not send or sign this
+	// header unless the caller explicitly supplies it.
+	if service == "s3" {
+		req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+	}
 	for key, val := range headers {
 		req.Header.Add(key, val)
 	}
@@ -431,6 +465,16 @@ type APIErrorResponse struct {
 	HostID                      string                     `xml:"HostId,omitempty"`
 }
 
+type IAMErrorResponse struct {
+	XMLName xml.Name `xml:"ErrorResponse"`
+	Error   struct {
+		Type    string
+		Code    string
+		Message string
+	}
+	RequestID string `xml:"RequestId"`
+}
+
 func checkHTTPResponseApiErr(resp *http.Response, expected s3err.S3Error) error {
 	apiErr := expected.BaseError()
 	body, err := io.ReadAll(resp.Body)
@@ -450,6 +494,62 @@ func checkHTTPResponseApiErr(resp *http.Response, expected s3err.S3Error) error 
 		return fmt.Errorf("expected response status code to be %v, instead got %v", apiErr.HTTPStatusCode, resp.StatusCode)
 	}
 	return compareS3ApiError(expected, &errResp)
+}
+
+func checkIAMAuthRequest(s *S3Conf, req *http.Request, expected iamerr.APIError) error {
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	return checkHTTPResponseIAMErr(resp, expected)
+}
+
+func checkHTTPResponseIAMErr(resp *http.Response, expected iamerr.APIError) error {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	resp.Body.Close()
+
+	var errResp IAMErrorResponse
+	err = xml.Unmarshal(body, &errResp)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != expected.StatusCode() {
+		return fmt.Errorf("expected response status code to be %v, instead got %v", expected.StatusCode(), resp.StatusCode)
+	}
+	if errResp.XMLName.Space != iamerr.Namespace {
+		return fmt.Errorf("expected IAM error namespace, instead got %q", errResp.XMLName.Space)
+	}
+	if errResp.RequestID == "" {
+		return fmt.Errorf("expected IAM error response request id")
+	}
+
+	expectedBody := expected.XMLBody(errResp.RequestID)
+	if string(body) != string(expectedBody) {
+		return fmt.Errorf("expected IAM error response body to be %q, instead got %q", expectedBody, body)
+	}
+
+	return nil
+}
+
+// isSuccessStatus returns true for 2xx HTTP status codes.
+func isSuccessStatus(statusCode int) bool {
+	return statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices
+}
+
+func checkIAMSuccess(resp *http.Response) error {
+	defer resp.Body.Close()
+	if !isSuccessStatus(resp.StatusCode) {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("expected response status code to be %v, instead got %v: %s", http.StatusOK, resp.StatusCode, body)
+	}
+
+	return nil
 }
 
 // websiteGet issues a plain HTTP GET to the dedicated website endpoint.
@@ -797,6 +897,41 @@ func checkSdkApiErr(err error, code string) error {
 		return nil
 	}
 	return err
+}
+
+func checkIAMApiErr(err error, expected iamerr.APIError) error {
+	if err == nil {
+		return fmt.Errorf("expected IAM API error, instead got nil")
+	}
+
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) {
+		return fmt.Errorf("expected IAM API error, instead got: %w", err)
+	}
+
+	expectedErr, ok := expected.(iamerr.Error)
+	if !ok {
+		return fmt.Errorf("expected concrete IAM error, got %T", expected)
+	}
+	if apiErr.ErrorCode() != expectedErr.Code {
+		return fmt.Errorf("expected IAM error code to be %q, instead got %q", expectedErr.Code, apiErr.ErrorCode())
+	}
+	if apiErr.ErrorMessage() != expectedErr.Message {
+		return fmt.Errorf("expected IAM error message to be %q, instead got %q", expectedErr.Message, apiErr.ErrorMessage())
+	}
+
+	var responseErr *awshttp.ResponseError
+	if !errors.As(err, &responseErr) {
+		return fmt.Errorf("expected IAM HTTP response error, instead got: %w", err)
+	}
+	if responseErr.HTTPStatusCode() != expected.StatusCode() {
+		return fmt.Errorf("expected IAM response status code to be %v, instead got %v", expected.StatusCode(), responseErr.HTTPStatusCode())
+	}
+	if responseErr.ServiceRequestID() == "" {
+		return fmt.Errorf("expected IAM error response request id")
+	}
+
+	return nil
 }
 
 func putObjects(client *s3.Client, objs []string, bucket string) ([]types.Object, error) {
