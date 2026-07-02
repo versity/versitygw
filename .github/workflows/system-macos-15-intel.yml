@@ -1,0 +1,215 @@
+name: MacOS 15 Intel s3cmd test
+permissions: {}
+on: pull_request
+jobs:
+  build:
+    name: RunTests
+    runs-on: macos-15-intel
+    steps:
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v7
+
+      - name: Install base dependencies
+        run: |
+          ./tests/install_base_dependencies.sh
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "stable"
+        id: go
+
+      - name: Get Dependencies
+        run: |
+          go get -v -t -d ./...
+
+      - name: Upgrade bash
+        run: |
+          brew install bash
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      - name: Install BATS
+        run: |
+          git clone https://github.com/bats-core/bats-core.git
+          cd bats-core && ./install.sh ${{ github.workspace }}
+          git clone https://github.com/bats-core/bats-support.git ${{ github.workspace }}/tests/bats-support
+          git clone https://github.com/ztombol/bats-assert.git ${{ github.workspace }}/tests/bats-assert
+
+      # disable mc tests due to dl.min.io instability
+      #      - name: Install mc
+      #        run: |
+      #          curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o /usr/local/bin/mc
+      #          chmod 755 /usr/local/bin/mc
+
+      # see https://github.com/versity/versitygw/issues/1034
+      - name: Install AWS cli
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.22.35.zip" -o "awscliv2.zip" 
+          unzip -o awscliv2.zip 
+          ./aws/install -i ${{ github.workspace }}/aws-cli -b ${{ github.workspace }}/bin
+          echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
+
+      - name: Create test user
+        run: |
+          sudo sysadminctl -addUser tester -shell /bin/bash -home /Users/tester -createHome
+          sudo mkdir -p /Users/tester/test-files
+          sudo chown -R tester:staff /Users/tester
+
+      - name: Write env file for test user
+        env:
+          IAM_TYPE: folder
+          RUN_SET: tests/test_user_s3cmd.sh
+          AWS_PROFILE: versity
+          VERSITY_EXE: ${{ github.workspace }}/versitygw
+          RUN_VERSITYGW: true
+          BACKEND: posix
+          RECREATE_BUCKETS: true
+          DELETE_BUCKETS_AFTER_TEST: true
+          CERT: /Users/tester/test-files/cert.pem
+          KEY: /Users/tester/test-files/versitygw.pem
+          LOCAL_FOLDER: /tmp/gw
+          BUCKET_ONE_NAME: versity-gwtest-bucket-one
+          BUCKET_TWO_NAME: versity-gwtest-bucket-two
+          USERS_FOLDER: /Users/tester/test-files/iam
+          USERS_BUCKET: versity-gwtest-iam
+          AWS_ENDPOINT_URL: https://127.0.0.1:7070
+          PORT: 7070
+          S3CMD_CONFIG: tests/s3cfg.local.default
+          MC_ALIAS: versity
+          LOG_LEVEL: 4
+          GOCOVERDIR: /Users/tester/test-files/cover
+          USERNAME_ONE: HIJKLMN
+          PASSWORD_ONE: 1234567
+          USERNAME_TWO: OPQRSTU
+          PASSWORD_TWO: 8901234
+          TEST_FILE_FOLDER: /Users/tester/test-files/versity-gwtest-files
+          REMOVE_TEST_FILE_FOLDER: true
+          VERSIONING_DIR: /Users/tester/test-files/versioning
+          COMMAND_LOG: /Users/tester/test-files/command.log
+          TIME_LOG: /Users/tester/test-files/time.log
+          PYTHON_ENV_FOLDER: /Users/tester/test-files/env
+          AUTOGENERATE_USERS: true
+          USER_AUTOGENERATION_PREFIX: github-actions-test-
+          AWS_REGION: us-east-1
+          COVERAGE_LOG: /Users/tester/test-files/coverage.log
+          TEMPLATE_MATRIX_FILE: ${{ github.workspace }}/tests/templates/matrix.yaml
+        run: |
+          cat > /Users/runner/.env <<EOF
+          IAM_TYPE=$IAM_TYPE
+          RUN_SET=$RUN_SET
+          AWS_PROFILE=$AWS_PROFILE
+          VERSITY_EXE=$VERSITY_EXE
+          RUN_VERSITYGW=$RUN_VERSITYGW
+          BACKEND=$BACKEND
+          RECREATE_BUCKETS=$RECREATE_BUCKETS
+          DELETE_BUCKETS_AFTER_TEST=$DELETE_BUCKETS_AFTER_TEST
+          CERT=$CERT
+          KEY=$KEY
+          LOCAL_FOLDER=$LOCAL_FOLDER
+          BUCKET_ONE_NAME=$BUCKET_ONE_NAME
+          BUCKET_TWO_NAME=$BUCKET_TWO_NAME
+          USERS_FOLDER=$USERS_FOLDER
+          USERS_BUCKET=$USERS_BUCKET
+          AWS_ENDPOINT_URL=$AWS_ENDPOINT_URL
+          PORT=$PORT
+          S3CMD_CONFIG=$S3CMD_CONFIG
+          MC_ALIAS=$MC_ALIAS
+          LOG_LEVEL=$LOG_LEVEL
+          GOCOVERDIR=$GOCOVERDIR
+          USERNAME_ONE=$USERNAME_ONE
+          PASSWORD_ONE=$PASSWORD_ONE
+          USERNAME_TWO=$USERNAME_TWO
+          PASSWORD_TWO=$PASSWORD_TWO
+          TEST_FILE_FOLDER=$TEST_FILE_FOLDER
+          REMOVE_TEST_FILE_FOLDER=$REMOVE_TEST_FILE_FOLDER
+          VERSIONING_DIR=$VERSIONING_DIR
+          COMMAND_LOG=$COMMAND_LOG
+          TIME_LOG=$TIME_LOG
+          PYTHON_ENV_FOLDER=$PYTHON_ENV_FOLDER
+          AUTOGENERATE_USERS=$AUTOGENERATE_USERS
+          USER_AUTOGENERATION_PREFIX=$USER_AUTOGENERATION_PREFIX
+          AWS_REGION=$AWS_REGION
+          COVERAGE_LOG=$COVERAGE_LOG
+          TEMPLATE_MATRIX_FILE=$TEMPLATE_MATRIX_FILE
+          QUICK_COMPARE_SIZE=1048576
+          GENERATE_COMMAND_EXECUTABLE=/Users/tester/test-files/generateCommand
+          EOF
+          sudo chown tester:staff /Users/runner/.env
+          sudo mv /Users/runner/.env /Users/tester/test-files/.env
+          sudo chmod 600 /Users/tester/test-files/.env
+
+      - name: Build and run
+        run: |
+          set -euo pipefail
+          
+          make testbin
+          # github-actions normally sets this to 700, change so jailed tester can execute versitygw
+          sudo chmod 755 "$HOME"
+          
+          GO_BIN_DIR="$(dirname "$(which go)")"
+          BREW_PREFIX="$(brew --prefix)/bin"
+          BREW_BASH="$(brew --prefix)/bin/bash"
+          
+          nohup sudo -u tester -H env BYPASS_ENV_FILE=true PATH="$BREW_PREFIX/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" BREW_BASH="$BREW_BASH" $BREW_BASH -c '
+            set -euo pipefail
+          
+            export PATH="'"$GO_BIN_DIR"':$PATH"
+            cd ${{ github.workspace }}
+            go mod download
+          
+            cat /Users/tester/test-files/.env
+          
+            set -a
+            source /Users/tester/test-files/.env
+            set +a
+          
+            echo "bash lookup:"
+            type -a bash || true
+            which -a bash || true
+            command -v bash || true
+            bash --version || true
+            /bin/bash --version || true
+            "$BREW_BASH" --version
+          
+            echo "$LOCAL_FOLDER $GOCOVERDIR $USERS_FOLDER"
+          
+            mkdir $LOCAL_FOLDER $GOCOVERDIR $USERS_FOLDER
+          
+            export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST
+            export AWS_SECRET_ACCESS_KEY=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn
+            export AWS_ACCESS_KEY_ID_TWO=user
+            export AWS_SECRET_ACCESS_KEY_TWO=pass
+          
+            aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile versity
+            aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile versity
+            aws configure set aws_region $AWS_REGION --profile versity
+          
+            openssl genpkey -algorithm RSA -out $KEY -pkeyopt rsa_keygen_bits:2048
+            openssl req -new -x509 -key $KEY -out $CERT -days 365 -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
+          
+            if [[ $RECREATE_BUCKETS == "false" ]]; then
+              $BREW_BASH ${{ github.workspace }}/tests/setup_static.sh
+            fi
+            $BREW_BASH ${{ github.workspace }}/bin/bats ${{ github.workspace }}/$RUN_SET
+          
+            if [ -e "$COVERAGE_LOG" ]; then
+              cat $COVERAGE_LOG
+            fi
+          ' &
+          pid=$!
+          (
+            sleep 1200
+            echo "=== TIMEOUT DIAGNOSTICS ==="
+            ps -ef --forest || true
+            pgrep -af bash || true
+            pgrep -af versitygw || true
+            kill -TERM -"$pid" 2>/dev/null || true
+            sleep 10
+            kill -KILL -"$pid" 2>/dev/null || true
+          ) &
+          watchdog=$!
+          
+          wait "$pid"
+          status=$?
+          kill "$watchdog" 2>/dev/null || true
+          exit "$status"
