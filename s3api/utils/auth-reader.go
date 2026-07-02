@@ -18,97 +18,42 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
-	"os"
-	"strings"
+	"errors"
 	"time"
-	"unicode"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/smithy-go/logging"
 	"github.com/gofiber/fiber/v3"
-	v4 "github.com/versity/versitygw/aws/signer/v4"
-	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/sigv4auth"
 	"github.com/versity/versitygw/s3err"
 )
 
 const (
-	iso8601Format = "20060102T150405Z"
-	yyyymmdd      = "20060102"
+	iso8601Format = sigv4auth.ISO8601Format
+	yyyymmdd      = sigv4auth.YYYYMMDD
 )
 
 func HexBytes(s string) string {
-	b := []byte(s) // raw UTF-8 bytes
-
-	parts := make([]string, len(b))
-	for i, v := range b {
-		parts[i] = fmt.Sprintf("%02x", v)
-	}
-
-	return strings.Join(parts, " ")
+	return sigv4auth.HexBytes(s)
 }
 
 const (
-	service = "s3"
+	service = sigv4auth.ServiceS3
 )
 
 // CheckValidSignature validates the ctx v4 auth signature
 func CheckValidSignature(ctx fiber.Ctx, auth AuthData, secret, checksum string, tdate time.Time, contentLen int64) (string, error) {
-	signedHdrs := strings.Split(auth.SignedHeaders, ";")
-
-	// Create a new http request instance from fasthttp request
-	req, err := createHttpRequestFromCtx(ctx, signedHdrs, contentLen)
+	result, err := sigv4auth.CheckSignature(ctx, auth, secret, checksum, tdate, contentLen, sigv4auth.CheckOptions{
+		Service:                service,
+		DisableURIPathEscaping: true,
+	})
 	if err != nil {
-		return "", err
+		return "", mapSigV4Error(err)
 	}
 
-	signer := v4.NewSigner()
-
-	signMeta, err := signer.SignHTTP(req.Context(),
-		aws.Credentials{
-			AccessKeyID:     auth.Access,
-			SecretAccessKey: secret,
-		},
-		req, checksum, service, auth.Region, tdate, signedHdrs,
-		func(options *v4.SignerOptions) {
-			options.DisableURIPathEscaping = true
-			if debuglogger.IsDebugEnabled() {
-				options.LogSigning = true
-				options.Logger = logging.NewStandardLogger(os.Stderr)
-			}
-		})
-	if err != nil {
-		return "", fmt.Errorf("sign generated http request: %w", err)
-	}
-
-	genAuth, err := ParseAuthorization(req.Header.Get("Authorization"))
-	if err != nil {
-		return "", err
-	}
-
-	if auth.Signature != genAuth.Signature {
-		return "", s3err.GetSignatureDoesNotMatchErr(
-			auth.Access,
-			signMeta.StringToSign,
-			auth.Signature,
-			HexBytes(signMeta.StringToSign),
-			signMeta.CanonicalString,
-			HexBytes(signMeta.CanonicalString),
-		)
-	}
-
-	return signMeta.CanonicalString, nil
+	return result.CanonicalString, nil
 }
 
-// AuthData is the parsed authorization data from the header
-type AuthData struct {
-	Algorithm     string
-	Access        string
-	Region        string
-	SignedHeaders string
-	Signature     string
-	Date          string
-}
+// AuthData is the parsed authorization data from the header.
+type AuthData = sigv4auth.AuthData
 
 // ParseAuthorization returns the parsed fields for the aws v4 auth header
 // example authorization string from aws docs:
@@ -117,93 +62,14 @@ type AuthData struct {
 // SignedHeaders=host;range;x-amz-date,
 // Signature=fe5f80f77d5fa3beca038a248ff027d0445342fe2855ddc963176630326f1024
 func ParseAuthorization(authorization string) (AuthData, error) {
-	a := AuthData{}
-
-	// authorization must start with:
-	// Authorization: <ALGORITHM>
-	// followed by key=value pairs separated by ","
-	authParts := strings.SplitN(authorization, " ", 2)
-	for i, el := range authParts {
-		if strings.Contains(el, " ") {
-			authParts[i] = removeSpace(el)
-		}
+	authData, err := sigv4auth.ParseAuthorization(authorization, service)
+	if err != nil {
+		return AuthData{}, mapSigV4Error(err)
 	}
-
-	if len(authParts) < 2 {
-		return a, s3err.GetInvalidArgumentErr(s3err.InvalidArgAuthHeader, authorization)
-	}
-
-	algo := authParts[0]
-	if algo == "AWS" {
-		// SigV2 authorization is not supported by the gateway
-		return a, s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationMechanism)
-	}
-	if algo != "AWS4-HMAC-SHA256" {
-		return a, s3err.GetInvalidArgumentErr(s3err.InvalidArgAuthorizationType, algo)
-	}
-
-	kvData := authParts[1]
-	kvPairs := strings.Split(kvData, ",")
-	// we are expecting at least Credential, SignedHeaders, and Signature
-	// key value pairs here
-	if len(kvPairs) != 3 {
-		return a, s3err.MalformedAuth.MissingComponents()
-	}
-
-	var access, region, signedHeaders, signature, date string
-
-	for i, kv := range kvPairs {
-		keyValue := strings.Split(kv, "=")
-		if len(keyValue) != 2 {
-			return a, s3err.MalformedAuth.MalformedComponent(kv)
-		}
-		key, value := keyValue[0], keyValue[1]
-		switch i {
-		case 0:
-			if key != "Credential" {
-				return a, s3err.MalformedAuth.MissingCredential()
-			}
-		case 1:
-			if key != "SignedHeaders" {
-				return a, s3err.MalformedAuth.MissingSignedHeaders()
-			}
-		case 2:
-			if key != "Signature" {
-				return a, s3err.MalformedAuth.MissingSignature()
-			}
-		}
-
-		switch key {
-		case "Credential":
-			creds, err := ParseCredentials(value, s3err.MalformedAuth)
-			if err != nil {
-				return a, err
-			}
-			access = creds.Access
-			date = creds.Date
-			region = creds.Region
-		case "SignedHeaders":
-			signedHeaders = value
-		case "Signature":
-			signature = value
-		}
-	}
-
-	return AuthData{
-		Algorithm:     algo,
-		Access:        access,
-		Region:        region,
-		SignedHeaders: signedHeaders,
-		Signature:     signature,
-		Date:          date,
-	}, nil
+	return authData, nil
 }
 
-type CredentialsScope struct {
-	Access string
-	Date   string
-	Region string
-}
+type CredentialsScope = sigv4auth.CredentialsScope
 
 type CredsError interface {
 	MalformedCredential(string) s3err.S3Error
@@ -213,36 +79,11 @@ type CredsError interface {
 }
 
 func ParseCredentials(input string, errHandler CredsError) (*CredentialsScope, error) {
-	creds := strings.Split(input, "/")
-	if len(creds) != 5 {
-		return nil, errHandler.MalformedCredential(input)
-	}
-	if creds[3] != "s3" {
-		return nil, errHandler.IncorrectService(input, creds[3])
-	}
-	if creds[4] != "aws4_request" {
-		return nil, errHandler.IncorrectTerminal(input, creds[4])
-	}
-	_, err := time.Parse(yyyymmdd, creds[1])
+	creds, err := sigv4auth.ParseCredentials(input, service)
 	if err != nil {
-		return nil, errHandler.InvalidDateFormat(input, creds[1])
+		return nil, mapCredentialsError(input, err, errHandler)
 	}
-	return &CredentialsScope{
-		Access: creds[0],
-		Date:   creds[1],
-		Region: creds[2],
-	}, nil
-}
-
-func removeSpace(str string) string {
-	var b strings.Builder
-	b.Grow(len(str))
-	for _, ch := range str {
-		if !unicode.IsSpace(ch) {
-			b.WriteRune(ch)
-		}
-	}
-	return b.String()
+	return creds, nil
 }
 
 func SignPostPolicy(base64Policy, yyyymmdd, region, secretKey string) (string, error) {
@@ -263,4 +104,79 @@ func hmacSHA256(key, data []byte) []byte {
 	h := hmac.New(sha256.New, key)
 	h.Write(data)
 	return h.Sum(nil)
+}
+
+func mapSigV4Error(err error) error {
+	var parseErr *sigv4auth.ParseError
+	if errors.As(err, &parseErr) {
+		return mapAuthParseError(parseErr)
+	}
+
+	var headersErr *sigv4auth.HeadersNotSignedError
+	if errors.As(err, &headersErr) {
+		return s3err.GetHeadersNotSignedErr(headersErr.Headers)
+	}
+
+	var sigErr *sigv4auth.SignatureMismatchError
+	if errors.As(err, &sigErr) {
+		return s3err.GetSignatureDoesNotMatchErr(
+			sigErr.AccessKeyID,
+			sigErr.StringToSign,
+			sigErr.SignatureProvided,
+			sigErr.StringToSignBytes,
+			sigErr.CanonicalRequest,
+			sigErr.CanonicalRequestBytes,
+		)
+	}
+
+	return err
+}
+
+func mapAuthParseError(err *sigv4auth.ParseError) error {
+	switch err.Kind {
+	case sigv4auth.ErrInvalidAuthorizationHeader:
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgAuthHeader, err.Input)
+	case sigv4auth.ErrUnsupportedAuthorizationVersion:
+		return s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationMechanism)
+	case sigv4auth.ErrInvalidAuthorizationType:
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgAuthorizationType, err.Value)
+	case sigv4auth.ErrMissingComponents:
+		return s3err.MalformedAuth.MissingComponents()
+	case sigv4auth.ErrMissingCredential:
+		return s3err.MalformedAuth.MissingCredential()
+	case sigv4auth.ErrMissingSignedHeaders:
+		return s3err.MalformedAuth.MissingSignedHeaders()
+	case sigv4auth.ErrMissingSignature:
+		return s3err.MalformedAuth.MissingSignature()
+	case sigv4auth.ErrMalformedComponent:
+		return s3err.MalformedAuth.MalformedComponent(err.Value)
+	default:
+		return mapCredentialsParseError(err, s3err.MalformedAuth)
+	}
+}
+
+func mapCredentialsError(input string, err error, errHandler CredsError) error {
+	var parseErr *sigv4auth.ParseError
+	if !errors.As(err, &parseErr) {
+		return err
+	}
+	if parseErr.Input == "" {
+		parseErr.Input = input
+	}
+	return mapCredentialsParseError(parseErr, errHandler)
+}
+
+func mapCredentialsParseError(err *sigv4auth.ParseError, errHandler CredsError) error {
+	switch err.Kind {
+	case sigv4auth.ErrMalformedCredential:
+		return errHandler.MalformedCredential(err.Input)
+	case sigv4auth.ErrIncorrectService:
+		return errHandler.IncorrectService(err.Input, err.Actual)
+	case sigv4auth.ErrIncorrectTerminal:
+		return errHandler.IncorrectTerminal(err.Input, err.Actual)
+	case sigv4auth.ErrInvalidDateFormat:
+		return errHandler.InvalidDateFormat(err.Input, err.Value)
+	default:
+		return err
+	}
 }

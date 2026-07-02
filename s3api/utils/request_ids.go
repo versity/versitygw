@@ -27,9 +27,8 @@ const (
 	HeaderAmzID2       = "x-amz-id-2"
 
 	s3RequestIDAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-	s3RequestIDLength = 16
-	s3HostIDBytes     = 65
+	s3RequestIDLength   = 16
+	s3HostIDBytes       = 65
 )
 
 // NewS3RequestID returns a request ID, for example

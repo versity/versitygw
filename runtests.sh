@@ -68,9 +68,9 @@ if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 posix; then
 	kill $GW_PID
 	exit 1
 fi
-# iam tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 iam; then
-	echo "iam tests failed"
+# gateway iam tests
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 gw-iam; then
+	echo "gateway iam tests failed"
 	kill $GW_PID
 	exit 1
 fi
@@ -105,9 +105,9 @@ if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071
 	kill $GW_HTTPS_PID
 	exit 1
 fi
-# iam tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 iam; then
-	echo "iam tests failed"
+# gateway iam tests
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 gw-iam; then
+	echo "gateway iam tests failed"
 	kill $GW_HTTPS_PID
 	exit 1
 fi

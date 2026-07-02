@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go/middleware"
 )
@@ -151,6 +152,10 @@ func (c *S3Conf) GetClient() *s3.Client {
 			o.UsePathStyle = false
 		}
 	})
+}
+
+func (c *S3Conf) GetIAMClient() *iam.Client {
+	return iam.NewFromConfig(c.Config())
 }
 
 func (c *S3Conf) GetPresignClient() *s3.PresignClient {
