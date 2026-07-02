@@ -940,7 +940,7 @@ func TestFullFlow(ts *TestState) {
 	if ts.conf.versioningEnabled {
 		TestVersioning(ts)
 	}
-	TestIAM(ts)
+	TestGatewayIAM(ts)
 	TestServer(ts)
 }
 
@@ -1063,7 +1063,7 @@ func TestScoutfs(ts *TestState) {
 	ts.Run(DeleteObject_directory_not_empty)
 }
 
-func TestIAM(ts *TestState) {
+func TestGatewayIAM(ts *TestState) {
 	ts.Run(IAM_user_access_denied)
 	ts.Run(IAM_userplus_access_denied)
 	ts.Run(IAM_userplus_CreateBucket)
@@ -1073,6 +1073,115 @@ func TestIAM(ts *TestState) {
 	ts.Run(IAM_CreateBucket_empty_owner_header)
 	ts.Run(IAM_CreateBucket_non_existing_user)
 	ts.Run(IAM_CreateBucket_success)
+}
+
+func TestIAMAuth(ts *TestState) {
+	ts.Run(IAMAuth_invalid_auth_header)
+	ts.Run(IAMAuth_unsupported_signature_version)
+	ts.Run(IAMAuth_malformed_component)
+	ts.Run(IAMAuth_missing_authorization_component)
+	ts.Run(IAMAuth_malformed_credential)
+	ts.Run(IAMAuth_credentials_invalid_terminal)
+	ts.Run(IAMAuth_credentials_incorrect_service)
+	ts.Run(IAMAuth_credentials_incorrect_region)
+	ts.Run(IAMAuth_credentials_invalid_date)
+	ts.Run(IAMAuth_credentials_future_date)
+	ts.Run(IAMAuth_credentials_past_date)
+	ts.Run(IAMAuth_credentials_non_existing_access_key)
+	ts.Run(IAMAuth_missing_date_header)
+	ts.Run(IAMAuth_invalid_date_header)
+	ts.Run(IAMAuth_date_mismatch)
+	ts.Run(IAMAuth_invalid_sha256_payload_hash_ignored)
+	ts.Run(IAMAuth_unsigned_required_header)
+	ts.Run(IAMAuth_unsigned_non_required_header)
+	ts.Run(IAMAuth_signature_error_incorrect_secret_key)
+	ts.Run(IAMAuth_sigv2_not_supported)
+	ts.Run(IAMAuth_with_expect_header)
+}
+
+func TestIAMQueryAuth(ts *TestState) {
+	ts.Run(IAMQueryAuth_success)
+	ts.Run(IAMQueryAuth_security_token_not_supported)
+	ts.Run(IAMQueryAuth_unsupported_algorithm)
+	ts.Run(IAMQueryAuth_ECDSA_not_supported)
+	ts.Run(IAMQueryAuth_missing_query_parameters)
+	ts.Run(IAMQueryAuth_malformed_credential)
+	ts.Run(IAMQueryAuth_credentials_invalid_terminal)
+	ts.Run(IAMQueryAuth_credentials_incorrect_service)
+	ts.Run(IAMQueryAuth_credentials_incorrect_region)
+	ts.Run(IAMQueryAuth_credentials_invalid_date)
+	ts.Run(IAMQueryAuth_non_existing_access_key)
+	ts.Run(IAMQueryAuth_invalid_date)
+	ts.Run(IAMQueryAuth_date_mismatch)
+	ts.Run(IAMQueryAuth_unsigned_query_parameter)
+	ts.Run(IAMQueryAuth_incorrect_secret_key)
+	ts.Run(IAMQueryAuth_invalid_sha256_payload_hash_ignored)
+	ts.Run(IAMQueryAuth_with_expect_header)
+}
+
+func TestIAMCreateUser(ts *TestState) {
+	ts.Run(IAMCreateUser_user_already_exists)
+	ts.Run(IAMCreateUser_invalid_user_name)
+	ts.Run(IAMCreateUser_long_user_name)
+	ts.Run(IAMCreateUser_missing_user_name)
+	ts.Run(IAMCreateUser_invalid_tag_key)
+	ts.Run(IAMCreateUser_invalid_tag_value)
+	ts.Run(IAMCreateUser_long_tag_key)
+	ts.Run(IAMCreateUser_long_tag_value)
+	ts.Run(IAMCreateUser_duplicate_tag_keys)
+	ts.Run(IAMCreateUser_success)
+	ts.Run(IAMCreateUser_default_path)
+	ts.Run(IAMCreateUser_invalid_path)
+	ts.Run(IAMCreateUser_long_path)
+}
+
+func TestIAMGetUser(ts *TestState) {
+	ts.Run(IAMGetUser_long_user_name)
+	ts.Run(IAMGetUser_invalid_user_name)
+	ts.Run(IAMGetUser_non_existing_user)
+	ts.Run(IAMGetUser_success)
+	ts.Run(IAMGetUser_root_user)
+}
+
+func TestIAMListUsers(ts *TestState) {
+	ts.Run(IAMListUsers_invalid_path_prefix)
+	ts.Run(IAMListUsers_long_path_prefix)
+	ts.Run(IAMListUsers_invalid_max_items)
+	ts.Run(IAMListUsers_invalid_max_items_format)
+	ts.Run(IAMListUsers_empty_result)
+	ts.Run(IAMListUsers_success)
+	ts.Run(IAMListUsers_path_prefix)
+	ts.Run(IAMListUsers_pagination)
+	ts.Run(IAMListUsers_path_prefix_pagination)
+}
+
+func TestIAMDeleteUser(ts *TestState) {
+	ts.Run(IAMDeleteUser_invalid_user_name)
+	ts.Run(IAMDeleteUser_long_user_name)
+	ts.Run(IAMDeleteUser_non_existing_user)
+	ts.Run(IAMDeleteUser_success)
+}
+
+func TestIAMUpdateUser(ts *TestState) {
+	ts.Run(IAMUpdateUser_invalid_user_name)
+	ts.Run(IAMUpdateUser_long_user_name)
+	ts.Run(IAMUpdateUser_invalid_new_user_name)
+	ts.Run(IAMUpdateUser_long_new_user_name)
+	ts.Run(IAMUpdateUser_non_existing_user)
+	ts.Run(IAMUpdateUser_invalid_new_path)
+	ts.Run(IAMUpdateUser_long_new_path)
+	ts.Run(IAMUpdateUser_new_user_name_already_exists)
+	ts.Run(IAMUpdateUser_success)
+}
+
+func TestIAM(ts *TestState) {
+	TestIAMAuth(ts)
+	TestIAMQueryAuth(ts)
+	TestIAMCreateUser(ts)
+	TestIAMGetUser(ts)
+	TestIAMListUsers(ts)
+	TestIAMDeleteUser(ts)
+	TestIAMUpdateUser(ts)
 }
 
 func TestAccessControl(ts *TestState) {
@@ -1379,6 +1488,84 @@ func GetIntTests() IntTests {
 		"Authentication_signature_error_incorrect_secret_key":                      Authentication_signature_error_incorrect_secret_key,
 		"Authentication_sigv2_not_supported":                                       Authentication_sigv2_not_supported,
 		"Authentication_with_expect_header":                                        Authentication_with_expect_header,
+		"IAMAuth_invalid_auth_header":                                              IAMAuth_invalid_auth_header,
+		"IAMAuth_unsupported_signature_version":                                    IAMAuth_unsupported_signature_version,
+		"IAMAuth_malformed_component":                                              IAMAuth_malformed_component,
+		"IAMAuth_missing_authorization_component":                                  IAMAuth_missing_authorization_component,
+		"IAMAuth_malformed_credential":                                             IAMAuth_malformed_credential,
+		"IAMAuth_credentials_invalid_terminal":                                     IAMAuth_credentials_invalid_terminal,
+		"IAMAuth_credentials_incorrect_service":                                    IAMAuth_credentials_incorrect_service,
+		"IAMAuth_credentials_incorrect_region":                                     IAMAuth_credentials_incorrect_region,
+		"IAMAuth_credentials_invalid_date":                                         IAMAuth_credentials_invalid_date,
+		"IAMAuth_credentials_future_date":                                          IAMAuth_credentials_future_date,
+		"IAMAuth_credentials_past_date":                                            IAMAuth_credentials_past_date,
+		"IAMAuth_credentials_non_existing_access_key":                              IAMAuth_credentials_non_existing_access_key,
+		"IAMAuth_missing_date_header":                                              IAMAuth_missing_date_header,
+		"IAMAuth_invalid_date_header":                                              IAMAuth_invalid_date_header,
+		"IAMAuth_date_mismatch":                                                    IAMAuth_date_mismatch,
+		"IAMAuth_invalid_sha256_payload_hash_ignored":                              IAMAuth_invalid_sha256_payload_hash_ignored,
+		"IAMAuth_unsigned_required_header":                                         IAMAuth_unsigned_required_header,
+		"IAMAuth_unsigned_non_required_header":                                     IAMAuth_unsigned_non_required_header,
+		"IAMAuth_signature_error_incorrect_secret_key":                             IAMAuth_signature_error_incorrect_secret_key,
+		"IAMAuth_sigv2_not_supported":                                              IAMAuth_sigv2_not_supported,
+		"IAMAuth_with_expect_header":                                               IAMAuth_with_expect_header,
+		"IAMQueryAuth_success":                                                     IAMQueryAuth_success,
+		"IAMQueryAuth_security_token_not_supported":                                IAMQueryAuth_security_token_not_supported,
+		"IAMQueryAuth_unsupported_algorithm":                                       IAMQueryAuth_unsupported_algorithm,
+		"IAMQueryAuth_ECDSA_not_supported":                                         IAMQueryAuth_ECDSA_not_supported,
+		"IAMQueryAuth_missing_query_parameters":                                    IAMQueryAuth_missing_query_parameters,
+		"IAMQueryAuth_malformed_credential":                                        IAMQueryAuth_malformed_credential,
+		"IAMQueryAuth_credentials_invalid_terminal":                                IAMQueryAuth_credentials_invalid_terminal,
+		"IAMQueryAuth_credentials_incorrect_service":                               IAMQueryAuth_credentials_incorrect_service,
+		"IAMQueryAuth_credentials_incorrect_region":                                IAMQueryAuth_credentials_incorrect_region,
+		"IAMQueryAuth_credentials_invalid_date":                                    IAMQueryAuth_credentials_invalid_date,
+		"IAMQueryAuth_non_existing_access_key":                                     IAMQueryAuth_non_existing_access_key,
+		"IAMQueryAuth_invalid_date":                                                IAMQueryAuth_invalid_date,
+		"IAMQueryAuth_date_mismatch":                                               IAMQueryAuth_date_mismatch,
+		"IAMQueryAuth_unsigned_query_parameter":                                    IAMQueryAuth_unsigned_query_parameter,
+		"IAMQueryAuth_incorrect_secret_key":                                        IAMQueryAuth_incorrect_secret_key,
+		"IAMQueryAuth_invalid_sha256_payload_hash_ignored":                         IAMQueryAuth_invalid_sha256_payload_hash_ignored,
+		"IAMQueryAuth_with_expect_header":                                          IAMQueryAuth_with_expect_header,
+		"IAMCreateUser_user_already_exists":                                        IAMCreateUser_user_already_exists,
+		"IAMCreateUser_invalid_user_name":                                          IAMCreateUser_invalid_user_name,
+		"IAMCreateUser_long_user_name":                                             IAMCreateUser_long_user_name,
+		"IAMCreateUser_missing_user_name":                                          IAMCreateUser_missing_user_name,
+		"IAMCreateUser_invalid_tag_key":                                            IAMCreateUser_invalid_tag_key,
+		"IAMCreateUser_invalid_tag_value":                                          IAMCreateUser_invalid_tag_value,
+		"IAMCreateUser_long_tag_key":                                               IAMCreateUser_long_tag_key,
+		"IAMCreateUser_long_tag_value":                                             IAMCreateUser_long_tag_value,
+		"IAMCreateUser_duplicate_tag_keys":                                         IAMCreateUser_duplicate_tag_keys,
+		"IAMCreateUser_success":                                                    IAMCreateUser_success,
+		"IAMCreateUser_default_path":                                               IAMCreateUser_default_path,
+		"IAMCreateUser_invalid_path":                                               IAMCreateUser_invalid_path,
+		"IAMCreateUser_long_path":                                                  IAMCreateUser_long_path,
+		"IAMGetUser_long_user_name":                                                IAMGetUser_long_user_name,
+		"IAMGetUser_invalid_user_name":                                             IAMGetUser_invalid_user_name,
+		"IAMGetUser_non_existing_user":                                             IAMGetUser_non_existing_user,
+		"IAMGetUser_success":                                                       IAMGetUser_success,
+		"IAMGetUser_root_user":                                                     IAMGetUser_root_user,
+		"IAMListUsers_invalid_path_prefix":                                         IAMListUsers_invalid_path_prefix,
+		"IAMListUsers_long_path_prefix":                                            IAMListUsers_long_path_prefix,
+		"IAMListUsers_invalid_max_items":                                           IAMListUsers_invalid_max_items,
+		"IAMListUsers_invalid_max_items_format":                                    IAMListUsers_invalid_max_items_format,
+		"IAMListUsers_empty_result":                                                IAMListUsers_empty_result,
+		"IAMListUsers_success":                                                     IAMListUsers_success,
+		"IAMListUsers_path_prefix":                                                 IAMListUsers_path_prefix,
+		"IAMListUsers_pagination":                                                  IAMListUsers_pagination,
+		"IAMListUsers_path_prefix_pagination":                                      IAMListUsers_path_prefix_pagination,
+		"IAMDeleteUser_invalid_user_name":                                          IAMDeleteUser_invalid_user_name,
+		"IAMDeleteUser_long_user_name":                                             IAMDeleteUser_long_user_name,
+		"IAMDeleteUser_non_existing_user":                                          IAMDeleteUser_non_existing_user,
+		"IAMDeleteUser_success":                                                    IAMDeleteUser_success,
+		"IAMUpdateUser_invalid_user_name":                                          IAMUpdateUser_invalid_user_name,
+		"IAMUpdateUser_long_user_name":                                             IAMUpdateUser_long_user_name,
+		"IAMUpdateUser_invalid_new_user_name":                                      IAMUpdateUser_invalid_new_user_name,
+		"IAMUpdateUser_long_new_user_name":                                         IAMUpdateUser_long_new_user_name,
+		"IAMUpdateUser_non_existing_user":                                          IAMUpdateUser_non_existing_user,
+		"IAMUpdateUser_invalid_new_path":                                           IAMUpdateUser_invalid_new_path,
+		"IAMUpdateUser_long_new_path":                                              IAMUpdateUser_long_new_path,
+		"IAMUpdateUser_new_user_name_already_exists":                               IAMUpdateUser_new_user_name_already_exists,
+		"IAMUpdateUser_success":                                                    IAMUpdateUser_success,
 		"PresignedAuth_security_token_not_supported":                               PresignedAuth_security_token_not_supported,
 		"PresignedAuth_unsupported_algorithm":                                      PresignedAuth_unsupported_algorithm,
 		"PresignedAuth_ECDSA_not_supported":                                        PresignedAuth_ECDSA_not_supported,

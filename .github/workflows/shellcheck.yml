@@ -23,5 +23,5 @@ jobs:
           if [ "$rc" -ne 0 ]; then
             overall_rc="$rc"
           fi
-        done < <(find . \( -path './tests/*.sh' -o -path './tests/*/*.sh' \) -print0)
+        done < <(find . \( -path './runiamtests.sh' -o -path './tests/*.sh' -o -path './tests/*/*.sh' \) -print0)
         exit "$overall_rc"

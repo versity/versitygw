@@ -115,16 +115,7 @@ func main() {
 
 	app := initApp()
 
-	app.Commands = []*cli.Command{
-		posixCommand(),
-		scoutfsCommand(),
-		s3Command(),
-		azureCommand(),
-		pluginCommand(),
-		adminCommand(),
-		testCommand(),
-		utilsCommand(),
-	}
+	app.Commands = initCommands()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -135,6 +126,20 @@ func main() {
 
 	if err := app.RunContext(ctx, os.Args); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func initCommands() []*cli.Command {
+	return []*cli.Command{
+		posixCommand(),
+		scoutfsCommand(),
+		s3Command(),
+		azureCommand(),
+		iamCommand(),
+		pluginCommand(),
+		adminCommand(),
+		testCommand(),
+		utilsCommand(),
 	}
 }
 
