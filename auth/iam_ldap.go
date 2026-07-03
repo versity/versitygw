@@ -137,7 +137,7 @@ func (ld *LdapIAMService) CreateAccount(account Account) error {
 	if ld.rootAcc.Access == account.Access {
 		return ErrUserExists
 	}
-	userEntry := ldap.NewAddRequest(fmt.Sprintf("%v=%v,%v", ld.accessAtr, account.Access, ld.queryBase), nil)
+	userEntry := ldap.NewAddRequest(ld.buildUserDN(account.Access), nil)
 	userEntry.Attribute("objectClass", ld.objClasses)
 	userEntry.Attribute(ld.accessAtr, []string{account.Access})
 	userEntry.Attribute(ld.secretAtr, []string{account.Secret})
@@ -156,13 +156,17 @@ func (ld *LdapIAMService) CreateAccount(account Account) error {
 	return nil
 }
 
+func (ld *LdapIAMService) buildUserDN(access string) string {
+	return fmt.Sprintf("%v=%v,%v", ld.accessAtr, ldap.EscapeDN(access), ld.queryBase)
+}
+
 func (ld *LdapIAMService) buildSearchFilter(access string) string {
 	var searchFilter strings.Builder
 	for _, el := range ld.objClasses {
 		searchFilter.WriteString(fmt.Sprintf("(objectClass=%v)", el))
 	}
 	if access != "" {
-		searchFilter.WriteString(fmt.Sprintf("(%v=%v)", ld.accessAtr, access))
+		searchFilter.WriteString(fmt.Sprintf("(%v=%v)", ld.accessAtr, ldap.EscapeFilter(access)))
 	}
 	return fmt.Sprintf("(&%v)", searchFilter.String())
 }
@@ -236,7 +240,7 @@ func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
 }
 
 func (ld *LdapIAMService) UpdateUserAccount(access string, props MutableProps) error {
-	req := ldap.NewModifyRequest(fmt.Sprintf("%v=%v, %v", ld.accessAtr, access, ld.queryBase), nil)
+	req := ldap.NewModifyRequest(ld.buildUserDN(access), nil)
 	if props.Secret != nil {
 		req.Replace(ld.secretAtr, []string{*props.Secret})
 	}
@@ -264,7 +268,7 @@ func (ld *LdapIAMService) UpdateUserAccount(access string, props MutableProps) e
 }
 
 func (ld *LdapIAMService) DeleteUserAccount(access string) error {
-	delReq := ldap.NewDelRequest(fmt.Sprintf("%v=%v, %v", ld.accessAtr, access, ld.queryBase), nil)
+	delReq := ldap.NewDelRequest(ld.buildUserDN(access), nil)
 
 	err := ld.execute(func(c *ldap.Conn) error {
 		return c.Del(delReq)
