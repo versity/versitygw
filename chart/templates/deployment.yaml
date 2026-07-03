@@ -13,6 +13,12 @@
 {{- if and .Values.persistence.create .Values.persistence.hostPath }}
   {{- fail "persistence.create must be false for persistence.hostPath can be set" }}
 {{- end }}
+{{- if and .Values.gateway.backend.sidecarDir (ne .Values.gateway.backend.type "posix") }}
+  {{- fail "gateway.backend.sidecarDir is only supported with the posix backend" }}
+{{- end }}
+{{- if and .Values.gateway.backend.versioningDir (not (or (eq .Values.gateway.backend.type "posix") (eq .Values.gateway.backend.type "scoutfs"))) }}
+  {{- fail "gateway.backend.versioningDir is only supported with the posix and scoutfs backends" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -61,6 +67,14 @@ spec:
               value: {{ .Values.gateway.backend.type | quote }}
             - name: VGW_BACKEND_ARGS
               value: {{ .Values.gateway.backend.args | quote }}
+            {{- if .Values.gateway.backend.sidecarDir }}
+            - name: VGW_META_SIDECAR
+              value: {{ .Values.gateway.backend.sidecarDir | quote }}
+            {{- end }}
+            {{- if .Values.gateway.backend.versioningDir }}
+            - name: VGW_VERSIONING_DIR
+              value: {{ .Values.gateway.backend.versioningDir | quote }}
+            {{- end }}
             # Root credentials — sourced from a Kubernetes Secret
             - name: ROOT_ACCESS_KEY_ID
               valueFrom:
@@ -209,6 +223,18 @@ spec:
               mountPath: /mnt/data
               subPath: data
               readOnly: false
+            {{- if .Values.gateway.backend.sidecarDir }}
+            - name: data
+              mountPath: {{ .Values.gateway.backend.sidecarDir }}
+              subPath: metadata
+              readOnly: false
+            {{- end }}
+            {{- if .Values.gateway.backend.versioningDir }}
+            - name: data
+              mountPath: {{ .Values.gateway.backend.versioningDir }}
+              subPath: versioning
+              readOnly: false
+            {{- end }}
             - name: data
               mountPath: /mnt/iam
               subPath: iam

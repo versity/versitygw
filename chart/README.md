@@ -63,7 +63,7 @@ You can find the list of available Helm chart versions in the [GitHub packages p
 
 ## Backend Storage
 
-The `gateway.backend.type` value selects the storage backend. Use `gateway.backend.args` to pass backend-specific arguments.
+The `gateway.backend.type` value selects the storage backend. Use `gateway.backend.args` to pass backend-specific arguments. For the POSIX sidecar metadata store and POSIX/ScoutFS object versioning, prefer `gateway.backend.sidecarDir` and `gateway.backend.versioningDir`; the chart mounts those directories from persistent storage and wires the corresponding backend environment variables automatically.
 
 | Backend | Description | Example `gateway.backend.args` |
 |---------|-------------|--------------------------------|
@@ -72,6 +72,26 @@ The `gateway.backend.type` value selects the storage backend. Use `gateway.backe
 | [s3](https://github.com/versity/versitygw/wiki/S3-Backend) | Proxy to an existing S3-compatible object store | `--access KEY --secret SECRET --endpoint https://s3.example.com` |
 | [azure](https://github.com/versity/versitygw/wiki/AzureBlob-Backend) | Azure Blob Storage | `--account myaccount --key mykey` |
 | [plugin](https://github.com/versity/versitygw/wiki/Plugin-Backend) | Custom backend via shared library plugin | `/path/to/plugin.so` |
+
+Example for POSIX with sidecar metadata:
+
+```yaml
+gateway:
+  backend:
+    type: posix
+    args: /mnt/data
+    sidecarDir: /mnt/metadata
+```
+
+Example for POSIX or ScoutFS with object versioning enabled:
+
+```yaml
+gateway:
+  backend:
+    type: posix
+    args: /mnt/data
+    versioningDir: /mnt/versioning
+```
 
 ## Optional Features
 
