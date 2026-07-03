@@ -238,28 +238,20 @@ func ParseCopySource(copySourceHeader string) (string, string, string, error) {
 		copySourceHeader = copySourceHeader[1:]
 	}
 
-	// Split the raw header on the versionId query parameter before any
-	// URL-decoding so that the '?' delimiter is not percent-encoded.
-	var rawSource, versionId string
-	i := strings.LastIndex(copySourceHeader, "?versionId=")
-	if i == -1 {
-		rawSource = copySourceHeader
-	} else {
-		rawSource = copySourceHeader[:i]
-		versionId = copySourceHeader[i+11:]
-	}
-
-	// URL-decode the entire source path first so that clients that send the
-	// bucket/key separator as "%2F" (e.g. AWS .NET SDK v4) are handled
-	// correctly before we split on a literal '/'.
-	decoded, err := url.QueryUnescape(rawSource)
+	// URL-decode the entire header before splitting the versionId suffix so the
+	// backend interprets encoded separators the same way as controller
+	// validation. This also preserves encoded bucket/key separators such as
+	// "%2F" from AWS .NET SDK v4 clients.
+	decoded, err := url.QueryUnescape(copySourceHeader)
 	if err != nil {
-		return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, rawSource)
+		return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, copySourceHeader)
 	}
 
-	srcBucket, srcObject, ok := strings.Cut(decoded, "/")
+	decodedSource, versionId, _ := strings.Cut(decoded, "?versionId=")
+
+	srcBucket, srcObject, ok := strings.Cut(decodedSource, "/")
 	if !ok {
-		return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, rawSource)
+		return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, decodedSource)
 	}
 
 	return srcBucket, srcObject, versionId, nil

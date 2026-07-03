@@ -244,6 +244,31 @@ func Versioning_CopyObject_invalid_versionId(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_CopyObject_encoded_versionid_separator_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_CopyObject_encoded_versionid_separator_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dstObj, srcObj := "dst-obj", "src-obj"
+
+		srcObjLen := int64(2345)
+		_, err := putObjectWithData(srcObjLen, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			CopySource: getPtr(fmt.Sprintf("%v/%v%%3FversionId%%3D..%%2f..%%2fsecret.txt", bucket, srcObj)),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "../../secret.txt"))
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_CopyObject_success(s *S3Conf) error {
 	testName := "Versioning_CopyObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1900,6 +1925,36 @@ func Versioning_UploadPartCopy_invalid_versionId(s *S3Conf) error {
 		})
 		cancel()
 		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "invalid_versionId"))
+	})
+}
+
+func Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dstObj, srcObj := "dst-obj", "src-obj"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		mp, err := createMp(s3client, bucket, dstObj)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			UploadId:   mp.UploadId,
+			PartNumber: getPtr(int32(1)),
+			CopySource: getPtr(fmt.Sprintf("%v/%v%%3FversionId%%3D..%%2f..%%2fsecret.txt", bucket, srcObj)),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "../../secret.txt"))
 	})
 }
 
