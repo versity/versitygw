@@ -382,7 +382,7 @@ func initFlags() []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name:        "keep-alive",
-			Usage:       "enable keep-alive connections (for finnicky clients)",
+			Usage:       "enable keep-alive connections",
 			EnvVars:     []string{"VGW_KEEP_ALIVE"},
 			Destination: &keepAlive,
 		},
