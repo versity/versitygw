@@ -460,6 +460,7 @@ func TestUploadPart(ts *TestState) {
 		ts.Run(UploadPart_with_checksums_success)
 	}
 	ts.Run(UploadPart_success)
+	ts.Run(UploadPart_etag_quoting_consistency)
 }
 
 func TestUploadPartCopy(ts *TestState) {
@@ -898,6 +899,11 @@ func TestFullFlow(ts *TestState) {
 	TestDeleteObjectTagging(ts)
 	TestCreateMultipartUpload(ts)
 	TestUploadPart(ts)
+	// UploadPartCopy maps to Azure StageBlockFromURL, which Azurite does not
+	// implement (returns HTTP 500 InternalError), so the group is skipped in
+	// Azure full-flow. The backend now returns a populated, quoted CopyPartResult
+	// ETag (consistent with UploadPart/ListParts); that path is exercised against
+	// real Azure rather than Azurite.
 	if !ts.conf.azureTests {
 		TestUploadPartCopy(ts)
 	}
@@ -1685,6 +1691,7 @@ func GetIntTests() IntTests {
 		"UploadPart_no_checksum_with_composite_checksum_type":                      UploadPart_no_checksum_with_composite_checksum_type,
 		"UploadPart_with_checksums_success":                                        UploadPart_with_checksums_success,
 		"UploadPart_success":                                                       UploadPart_success,
+		"UploadPart_etag_quoting_consistency":                                      UploadPart_etag_quoting_consistency,
 		"UploadPartCopy_non_existing_bucket":                                       UploadPartCopy_non_existing_bucket,
 		"UploadPartCopy_incorrect_uploadId":                                        UploadPartCopy_incorrect_uploadId,
 		"UploadPartCopy_incorrect_object_key":                                      UploadPartCopy_incorrect_object_key,
