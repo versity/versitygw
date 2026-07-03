@@ -1143,6 +1143,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_PutObject_success)
 	// CopyObject action
 	ts.Run(Versioning_CopyObject_invalid_versionId)
+	ts.Run(Versioning_CopyObject_encoded_versionid_separator_invalid_versionId)
 	ts.Run(Versioning_CopyObject_success)
 	ts.Run(Versioning_CopyObject_non_existing_version_id)
 	ts.Run(Versioning_CopyObject_from_an_object_version)
@@ -1205,6 +1206,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_Multipart_Upload_success)
 	ts.Run(Versioning_Multipart_Upload_overwrite_an_object)
 	ts.Run(Versioning_UploadPartCopy_invalid_versionId)
+	ts.Run(Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId)
 	ts.Run(Versioning_UploadPartCopy_non_existing_versionId)
 	ts.Run(Versioning_UploadPartCopy_from_an_object_version)
 	// Object lock configuration
@@ -2038,6 +2040,7 @@ func GetIntTests() IntTests {
 		"Versioning_PutObject_overwrite_null_versionId_obj":                        Versioning_PutObject_overwrite_null_versionId_obj,
 		"Versioning_PutObject_success":                                             Versioning_PutObject_success,
 		"Versioning_CopyObject_invalid_versionId":                                  Versioning_CopyObject_invalid_versionId,
+		"Versioning_CopyObject_encoded_versionid_separator_invalid_versionId":      Versioning_CopyObject_encoded_versionid_separator_invalid_versionId,
 		"Versioning_CopyObject_success":                                            Versioning_CopyObject_success,
 		"Versioning_CopyObject_non_existing_version_id":                            Versioning_CopyObject_non_existing_version_id,
 		"Versioning_CopyObject_from_an_object_version":                             Versioning_CopyObject_from_an_object_version,
@@ -2087,6 +2090,7 @@ func GetIntTests() IntTests {
 		"Versioning_Multipart_Upload_success":                                      Versioning_Multipart_Upload_success,
 		"Versioning_Multipart_Upload_overwrite_an_object":                          Versioning_Multipart_Upload_overwrite_an_object,
 		"Versioning_UploadPartCopy_invalid_versionId":                              Versioning_UploadPartCopy_invalid_versionId,
+		"Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId":  Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId,
 		"Versioning_UploadPartCopy_non_existing_versionId":                         Versioning_UploadPartCopy_non_existing_versionId,
 		"Versioning_UploadPartCopy_from_an_object_version":                         Versioning_UploadPartCopy_from_an_object_version,
 		"Versioning_object_lock_not_enabled_on_bucket_creation":                    Versioning_object_lock_not_enabled_on_bucket_creation,

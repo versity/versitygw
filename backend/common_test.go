@@ -253,6 +253,14 @@ func TestParseCopySource(t *testing.T) {
 			wantErr:          false,
 		},
 		{
+			name:             "encoded versionId separator stays in version id",
+			copySourceHeader: "bucket/safe%3FversionId%3D..%2f..%2fsecret.txt",
+			wantBucket:       "bucket",
+			wantObject:       "safe",
+			wantVersionId:    "../../secret.txt",
+			wantErr:          false,
+		},
+		{
 			name:             "invalid URL encoding - incomplete escape",
 			copySourceHeader: "mybucket/object%",
 			wantBucket:       "",
