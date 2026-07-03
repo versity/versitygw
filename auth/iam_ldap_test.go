@@ -2,6 +2,20 @@ package auth
 
 import "testing"
 
+func TestLdapIAMService_BuildUserDN(t *testing.T) {
+	ld := &LdapIAMService{
+		accessAtr: "uid",
+		queryBase: "dc=example,dc=com",
+	}
+
+	access := "admin,+;<>\\value"
+	expected := `uid=admin\,\+\;\<\>\\value,dc=example,dc=com`
+
+	if result := ld.buildUserDN(access); result != expected {
+		t.Fatalf("buildUserDN() = %v, want %v", result, expected)
+	}
+}
+
 func TestLdapIAMService_BuildSearchFilter(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -37,6 +51,13 @@ func TestLdapIAMService_BuildSearchFilter(t *testing.T) {
 			accessAtr:  "cn",
 			access:     "",
 			expected:   "(&(objectClass=inetOrgPerson)(objectClass=organizationalPerson)(objectClass=person))",
+		},
+		{
+			name:       "escape ldap filter metacharacters in access",
+			objClasses: []string{"inetOrgPerson"},
+			accessAtr:  "uid",
+			access:     "admin)(s3secret=A*",
+			expected:   "(&(objectClass=inetOrgPerson)(uid=admin\\29\\28s3secret=A\\2a))",
 		},
 	}
 
