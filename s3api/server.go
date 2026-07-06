@@ -26,7 +26,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
-	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
@@ -115,7 +114,6 @@ func New(
 		// in the global error handler
 		ReadBufferSize: requestHeaderMaxSize,
 	})
-	installRequestHeaderLimitErrorHandler(app)
 
 	server.app = app
 	server.Router.app = app
@@ -404,38 +402,6 @@ func (sa *S3ApiServer) ShutDown() error {
 // in the context locals
 func stackTraceHandler(ctx fiber.Ctx, e any) {
 	utils.ContextKeyStack.Set(ctx, e)
-}
-
-// installRequestHeaderLimitErrorHandler converts fasthttp small-buffer errors
-// into the S3 RequestHeaderSectionTooLarge response.
-//
-// This is a temporary solution until Fiber handles request header limit errors
-// before response writes correctly. See:
-// https://github.com/gofiber/fiber/issues/4423
-func installRequestHeaderLimitErrorHandler(app *fiber.App) {
-	server := app.Server()
-	fiberErrorHandler := server.ErrorHandler
-	server.ErrorHandler = func(ctx *fasthttp.RequestCtx, err error) {
-		var smallBufferErr *fasthttp.ErrSmallBuffer
-		if errors.As(err, &smallBufferErr) {
-			debuglogger.Logf("total request headers size exceeds the allowed 8KB")
-
-			requestID := utils.NewS3RequestID()
-			hostID := utils.NewS3HostID()
-			apiErr := s3err.GetRequestHeaderSectionTooLargeErr(requestHeaderMaxSize)
-
-			ctx.Response.Reset()
-			ctx.Response.Header.SetContentType(fiber.MIMEApplicationXML)
-			ctx.Response.Header.Set(utils.HeaderAmzRequestID, requestID)
-			ctx.Response.Header.Set(utils.HeaderAmzID2, hostID)
-			ctx.SetStatusCode(apiErr.StatusCode())
-			ctx.SetConnectionClose()
-			ctx.SetBody(apiErr.XMLBody(requestID, hostID))
-			return
-		}
-
-		fiberErrorHandler(ctx, err)
-	}
 }
 
 // globalErrorHandler catches the errors before reaching to
