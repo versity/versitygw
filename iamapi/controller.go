@@ -233,3 +233,200 @@ func (c IAMApiController) UpdateUser(ctx fiber.Ctx) (*Response, error) {
 		Result: types.UpdateUserResult{User: updated},
 	}}, nil
 }
+
+func (c IAMApiController) CreateAccessKey(ctx fiber.Ctx) (*Response, error) {
+	userName, ok := iamutil.RequestParam(ctx, "UserName")
+	if !ok || userName == "" {
+		debuglogger.Logf("missing required CreateAccessKey parameter: UserName")
+		return nil, iamerr.MissingParameter("UserName")
+	}
+	if err := iamutil.ValidateUserName("userName", userName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	for range 3 {
+		accessKeyID, err := iamutil.GenerateAccessKeyID()
+		if err != nil {
+			return nil, err
+		}
+		secretAccessKey, err := iamutil.GenerateSecretAccessKey()
+		if err != nil {
+			return nil, err
+		}
+
+		stored, err := c.store.CreateAccessKey(ctx.Context(), storage.CreateAccessKeyInput{
+			UserName:        userName,
+			AccessKeyID:     accessKeyID,
+			SecretAccessKey: secretAccessKey,
+			Status:          iamutil.AccessKeyStatusActive,
+			CreateDate:      time.Now().UTC().Truncate(time.Second),
+		})
+		if errors.Is(err, storage.ErrAccessKeyIDAlreadyExists) {
+			debuglogger.Logf("IAM access key id collision for user %q: %v", userName, err)
+			continue
+		}
+		if err != nil {
+			debuglogger.Logf("failed to create IAM access key for user %q: %v", userName, err)
+			return nil, err
+		}
+
+		return &Response{
+			Data: &types.CreateAccessKeyResponse{
+				Result: types.CreateAccessKeyResult{AccessKey: *stored},
+			},
+		}, nil
+	}
+
+	err := fmt.Errorf("generate IAM access key id: exhausted collision retries")
+	debuglogger.Logf("failed to create IAM access key for user %q: %v", userName, err)
+	return nil, err
+}
+
+func (c IAMApiController) UpdateAccessKey(ctx fiber.Ctx) (*Response, error) {
+	userName, ok := iamutil.RequestParam(ctx, "UserName")
+	if !ok || userName == "" {
+		debuglogger.Logf("missing required UpdateAccessKey parameter: UserName")
+		return nil, iamerr.MissingParameter("UserName")
+	}
+	if err := iamutil.ValidateUserName("userName", userName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	accessKeyID, ok := iamutil.RequestParam(ctx, "AccessKeyId")
+	if !ok || accessKeyID == "" {
+		debuglogger.Logf("missing required UpdateAccessKey parameter: AccessKeyId")
+		return nil, iamerr.MissingParameter("AccessKeyId")
+	}
+	if err := iamutil.ValidateAccessKeyID(accessKeyID); err != nil {
+		return nil, err
+	}
+
+	status, ok := iamutil.RequestParam(ctx, "Status")
+	if !ok || status == "" {
+		debuglogger.Logf("missing required UpdateAccessKey parameter: Status")
+		return nil, iamerr.MissingParameter("Status")
+	}
+	if err := iamutil.ValidateAccessKeyStatus(status); err != nil {
+		return nil, err
+	}
+
+	if err := c.store.UpdateAccessKey(ctx.Context(), storage.UpdateAccessKeyInput{
+		UserName:    userName,
+		AccessKeyID: accessKeyID,
+		Status:      status,
+	}); err != nil {
+		debuglogger.Logf("failed to update IAM access key %q for user %q: %v", accessKeyID, userName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.UpdateAccessKeyResponse{}}, nil
+}
+
+func (c IAMApiController) DeleteAccessKey(ctx fiber.Ctx) (*Response, error) {
+	userName, ok := iamutil.RequestParam(ctx, "UserName")
+	if !ok || userName == "" {
+		debuglogger.Logf("missing required DeleteAccessKey parameter: UserName")
+		return nil, iamerr.MissingParameter("UserName")
+	}
+	if err := iamutil.ValidateUserName("userName", userName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	accessKeyID, ok := iamutil.RequestParam(ctx, "AccessKeyId")
+	if !ok || accessKeyID == "" {
+		debuglogger.Logf("missing required DeleteAccessKey parameter: AccessKeyId")
+		return nil, iamerr.MissingParameter("AccessKeyId")
+	}
+	if err := iamutil.ValidateAccessKeyID(accessKeyID); err != nil {
+		return nil, err
+	}
+
+	if err := c.store.DeleteAccessKey(ctx.Context(), userName, accessKeyID); err != nil {
+		debuglogger.Logf("failed to delete IAM access key %q for user %q: %v", accessKeyID, userName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.DeleteAccessKeyResponse{}}, nil
+}
+
+func (c IAMApiController) GetAccessKeyLastUsed(ctx fiber.Ctx) (*Response, error) {
+	accessKeyID, ok := iamutil.RequestParam(ctx, "AccessKeyId")
+	if !ok || accessKeyID == "" {
+		debuglogger.Logf("missing required GetAccessKeyLastUsed parameter: AccessKeyId")
+		return nil, iamerr.MissingParameter("AccessKeyId")
+	}
+	if err := iamutil.ValidateAccessKeyID(accessKeyID); err != nil {
+		return nil, err
+	}
+
+	out, err := c.store.GetAccessKeyLastUsed(ctx.Context(), accessKeyID)
+	if err != nil {
+		debuglogger.Logf("failed to get IAM access key last used %q: %v", accessKeyID, err)
+		return nil, err
+	}
+
+	serviceName := out.ServiceName
+	if serviceName == "" {
+		serviceName = "N/A"
+	}
+	region := out.Region
+	if region == "" {
+		region = "N/A"
+	}
+
+	var lastUsedDate *time.Time
+	if !out.LastUsedDate.IsZero() {
+		lastUsedDate = &out.LastUsedDate
+	}
+
+	return &Response{Data: &types.GetAccessKeyLastUsedResponse{
+		Result: types.GetAccessKeyLastUsedResult{
+			UserName: out.UserName,
+			AccessKeyLastUsed: types.AccessKeyLastUsed{
+				LastUsedDate: lastUsedDate,
+				ServiceName:  serviceName,
+				Region:       region,
+			},
+		},
+	}}, nil
+}
+
+func (c IAMApiController) ListAccessKeys(ctx fiber.Ctx) (*Response, error) {
+	userName, ok := iamutil.RequestParam(ctx, "UserName")
+	if !ok || userName == "" {
+		debuglogger.Logf("missing required ListAccessKeys parameter: UserName")
+		return nil, iamerr.MissingParameter("UserName")
+	}
+	if err := iamutil.ValidateUserName("userName", userName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	maxItems := int32(iamutil.DefaultMaxItems)
+	if rawMaxItems, ok := iamutil.RequestParam(ctx, "MaxItems"); ok && rawMaxItems != "" {
+		parsed, err := strconv.ParseInt(rawMaxItems, 10, 32)
+		if err != nil || parsed < 1 || parsed > iamutil.MaxListItems {
+			debuglogger.Logf("invalid ListAccessKeys MaxItems value %q: parse_error=%v", rawMaxItems, err)
+			return nil, iamerr.InvalidMaxItems(rawMaxItems)
+		}
+		maxItems = int32(parsed)
+	}
+
+	marker, _ := iamutil.RequestParam(ctx, "Marker")
+	out, err := c.store.ListAccessKeys(ctx.Context(), storage.ListAccessKeysInput{
+		UserName: userName,
+		Marker:   marker,
+		MaxItems: maxItems,
+	})
+	if err != nil {
+		debuglogger.Logf("failed to list IAM access keys for user %q: %v", userName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.ListAccessKeysResponse{
+		Result: types.ListAccessKeysResult{
+			AccessKeyMetadata: types.AccessKeyMetadataList{Members: out.AccessKeys},
+			IsTruncated:       out.IsTruncated,
+			Marker:            out.Marker,
+		},
+	}}, nil
+}
