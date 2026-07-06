@@ -19,13 +19,19 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/iamapi/types"
 )
 
+// MaxAccessKeysPerUser is the maximum number of access keys a single IAM
+// user may hold at once, matching the AWS IAM quota.
+const MaxAccessKeysPerUser = 2
+
 var (
-	ErrUserIDAlreadyExists = errors.New("iamapi: user id already exists")
+	ErrUserIDAlreadyExists      = errors.New("iamapi: user id already exists")
+	ErrAccessKeyIDAlreadyExists = errors.New("iamapi: access key id already exists")
 )
 
 type ListUsersInput struct {
@@ -47,6 +53,39 @@ type UpdateUserInput struct {
 	NewArn      string
 }
 
+type CreateAccessKeyInput struct {
+	UserName        string
+	AccessKeyID     string
+	SecretAccessKey string
+	Status          string
+	CreateDate      time.Time
+}
+
+type UpdateAccessKeyInput struct {
+	UserName    string
+	AccessKeyID string
+	Status      string
+}
+
+type ListAccessKeysInput struct {
+	UserName string
+	Marker   string
+	MaxItems int32
+}
+
+type ListAccessKeysOutput struct {
+	AccessKeys  []types.AccessKeyMetadata
+	IsTruncated bool
+	Marker      string
+}
+
+type GetAccessKeyLastUsedOutput struct {
+	UserName     string
+	LastUsedDate time.Time
+	ServiceName  string
+	Region       string
+}
+
 // Storer is the IAM API storage backend contract.
 type Storer interface {
 	CreateUser(ctx context.Context, user types.User) (*types.User, error)
@@ -54,6 +93,12 @@ type Storer interface {
 	GetUser(ctx context.Context, username string) (*types.User, error)
 	ListUsers(ctx context.Context, input ListUsersInput) (*ListUsersOutput, error)
 	UpdateUser(ctx context.Context, input UpdateUserInput) (*types.User, error)
+
+	CreateAccessKey(ctx context.Context, input CreateAccessKeyInput) (*types.AccessKey, error)
+	UpdateAccessKey(ctx context.Context, input UpdateAccessKeyInput) error
+	DeleteAccessKey(ctx context.Context, username, accessKeyID string) error
+	GetAccessKeyLastUsed(ctx context.Context, accessKeyID string) (*GetAccessKeyLastUsedOutput, error)
+	ListAccessKeys(ctx context.Context, input ListAccessKeysInput) (*ListAccessKeysOutput, error)
 }
 
 func unwrapAPIError(err error) error {

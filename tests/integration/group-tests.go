@@ -1159,6 +1159,7 @@ func TestIAMDeleteUser(ts *TestState) {
 	ts.Run(IAMDeleteUser_invalid_user_name)
 	ts.Run(IAMDeleteUser_long_user_name)
 	ts.Run(IAMDeleteUser_non_existing_user)
+	ts.Run(IAMDeleteUser_has_access_keys)
 	ts.Run(IAMDeleteUser_success)
 }
 
@@ -1174,6 +1175,64 @@ func TestIAMUpdateUser(ts *TestState) {
 	ts.Run(IAMUpdateUser_success)
 }
 
+func TestIAMCreateAccessKey(ts *TestState) {
+	ts.Run(IAMCreateAccessKey_missing_user_name)
+	ts.Run(IAMCreateAccessKey_invalid_user_name)
+	ts.Run(IAMCreateAccessKey_long_user_name)
+	ts.Run(IAMCreateAccessKey_non_existing_user)
+	ts.Run(IAMCreateAccessKey_limit_exceeded)
+	ts.Run(IAMCreateAccessKey_success)
+}
+
+func TestIAMUpdateAccessKey(ts *TestState) {
+	ts.Run(IAMUpdateAccessKey_missing_user_name)
+	ts.Run(IAMUpdateAccessKey_invalid_user_name)
+	ts.Run(IAMUpdateAccessKey_long_user_name)
+	ts.Run(IAMUpdateAccessKey_missing_access_key_id)
+	ts.Run(IAMUpdateAccessKey_access_key_id_too_short)
+	ts.Run(IAMUpdateAccessKey_access_key_id_too_long)
+	ts.Run(IAMUpdateAccessKey_invalid_access_key_id_chars)
+	ts.Run(IAMUpdateAccessKey_missing_status)
+	ts.Run(IAMUpdateAccessKey_invalid_status)
+	ts.Run(IAMUpdateAccessKey_non_existing_user)
+	ts.Run(IAMUpdateAccessKey_non_existing_access_key)
+	ts.Run(IAMUpdateAccessKey_success)
+}
+
+func TestIAMDeleteAccessKey(ts *TestState) {
+	ts.Run(IAMDeleteAccessKey_missing_user_name)
+	ts.Run(IAMDeleteAccessKey_invalid_user_name)
+	ts.Run(IAMDeleteAccessKey_long_user_name)
+	ts.Run(IAMDeleteAccessKey_missing_access_key_id)
+	ts.Run(IAMDeleteAccessKey_access_key_id_too_short)
+	ts.Run(IAMDeleteAccessKey_access_key_id_too_long)
+	ts.Run(IAMDeleteAccessKey_invalid_access_key_id_chars)
+	ts.Run(IAMDeleteAccessKey_non_existing_user)
+	ts.Run(IAMDeleteAccessKey_non_existing_access_key)
+	ts.Run(IAMDeleteAccessKey_success)
+}
+
+func TestIAMGetAccessKeyLastUsed(ts *TestState) {
+	ts.Run(IAMGetAccessKeyLastUsed_missing_access_key_id)
+	ts.Run(IAMGetAccessKeyLastUsed_access_key_id_too_short)
+	ts.Run(IAMGetAccessKeyLastUsed_access_key_id_too_long)
+	ts.Run(IAMGetAccessKeyLastUsed_invalid_access_key_id_chars)
+	ts.Run(IAMGetAccessKeyLastUsed_non_existing_access_key)
+	ts.Run(IAMGetAccessKeyLastUsed_success)
+}
+
+func TestIAMListAccessKeys(ts *TestState) {
+	ts.Run(IAMListAccessKeys_missing_user_name)
+	ts.Run(IAMListAccessKeys_invalid_user_name)
+	ts.Run(IAMListAccessKeys_long_user_name)
+	ts.Run(IAMListAccessKeys_invalid_max_items)
+	ts.Run(IAMListAccessKeys_invalid_max_items_format)
+	ts.Run(IAMListAccessKeys_non_existing_user)
+	ts.Run(IAMListAccessKeys_empty_result)
+	ts.Run(IAMListAccessKeys_success)
+	ts.Run(IAMListAccessKeys_pagination)
+}
+
 func TestIAM(ts *TestState) {
 	TestIAMAuth(ts)
 	TestIAMQueryAuth(ts)
@@ -1182,6 +1241,11 @@ func TestIAM(ts *TestState) {
 	TestIAMListUsers(ts)
 	TestIAMDeleteUser(ts)
 	TestIAMUpdateUser(ts)
+	TestIAMCreateAccessKey(ts)
+	TestIAMUpdateAccessKey(ts)
+	TestIAMDeleteAccessKey(ts)
+	TestIAMGetAccessKeyLastUsed(ts)
+	TestIAMListAccessKeys(ts)
 }
 
 func TestAccessControl(ts *TestState) {
@@ -1556,6 +1620,7 @@ func GetIntTests() IntTests {
 		"IAMDeleteUser_invalid_user_name":                                          IAMDeleteUser_invalid_user_name,
 		"IAMDeleteUser_long_user_name":                                             IAMDeleteUser_long_user_name,
 		"IAMDeleteUser_non_existing_user":                                          IAMDeleteUser_non_existing_user,
+		"IAMDeleteUser_has_access_keys":                                            IAMDeleteUser_has_access_keys,
 		"IAMDeleteUser_success":                                                    IAMDeleteUser_success,
 		"IAMUpdateUser_invalid_user_name":                                          IAMUpdateUser_invalid_user_name,
 		"IAMUpdateUser_long_user_name":                                             IAMUpdateUser_long_user_name,
@@ -1566,6 +1631,49 @@ func GetIntTests() IntTests {
 		"IAMUpdateUser_long_new_path":                                              IAMUpdateUser_long_new_path,
 		"IAMUpdateUser_new_user_name_already_exists":                               IAMUpdateUser_new_user_name_already_exists,
 		"IAMUpdateUser_success":                                                    IAMUpdateUser_success,
+		"IAMCreateAccessKey_missing_user_name":                                     IAMCreateAccessKey_missing_user_name,
+		"IAMCreateAccessKey_invalid_user_name":                                     IAMCreateAccessKey_invalid_user_name,
+		"IAMCreateAccessKey_long_user_name":                                        IAMCreateAccessKey_long_user_name,
+		"IAMCreateAccessKey_non_existing_user":                                     IAMCreateAccessKey_non_existing_user,
+		"IAMCreateAccessKey_limit_exceeded":                                        IAMCreateAccessKey_limit_exceeded,
+		"IAMCreateAccessKey_success":                                               IAMCreateAccessKey_success,
+		"IAMUpdateAccessKey_missing_user_name":                                     IAMUpdateAccessKey_missing_user_name,
+		"IAMUpdateAccessKey_invalid_user_name":                                     IAMUpdateAccessKey_invalid_user_name,
+		"IAMUpdateAccessKey_long_user_name":                                        IAMUpdateAccessKey_long_user_name,
+		"IAMUpdateAccessKey_missing_access_key_id":                                 IAMUpdateAccessKey_missing_access_key_id,
+		"IAMUpdateAccessKey_access_key_id_too_short":                               IAMUpdateAccessKey_access_key_id_too_short,
+		"IAMUpdateAccessKey_access_key_id_too_long":                                IAMUpdateAccessKey_access_key_id_too_long,
+		"IAMUpdateAccessKey_invalid_access_key_id_chars":                           IAMUpdateAccessKey_invalid_access_key_id_chars,
+		"IAMUpdateAccessKey_missing_status":                                        IAMUpdateAccessKey_missing_status,
+		"IAMUpdateAccessKey_invalid_status":                                        IAMUpdateAccessKey_invalid_status,
+		"IAMUpdateAccessKey_non_existing_user":                                     IAMUpdateAccessKey_non_existing_user,
+		"IAMUpdateAccessKey_non_existing_access_key":                               IAMUpdateAccessKey_non_existing_access_key,
+		"IAMUpdateAccessKey_success":                                               IAMUpdateAccessKey_success,
+		"IAMDeleteAccessKey_missing_user_name":                                     IAMDeleteAccessKey_missing_user_name,
+		"IAMDeleteAccessKey_invalid_user_name":                                     IAMDeleteAccessKey_invalid_user_name,
+		"IAMDeleteAccessKey_long_user_name":                                        IAMDeleteAccessKey_long_user_name,
+		"IAMDeleteAccessKey_missing_access_key_id":                                 IAMDeleteAccessKey_missing_access_key_id,
+		"IAMDeleteAccessKey_access_key_id_too_short":                               IAMDeleteAccessKey_access_key_id_too_short,
+		"IAMDeleteAccessKey_access_key_id_too_long":                                IAMDeleteAccessKey_access_key_id_too_long,
+		"IAMDeleteAccessKey_invalid_access_key_id_chars":                           IAMDeleteAccessKey_invalid_access_key_id_chars,
+		"IAMDeleteAccessKey_non_existing_user":                                     IAMDeleteAccessKey_non_existing_user,
+		"IAMDeleteAccessKey_non_existing_access_key":                               IAMDeleteAccessKey_non_existing_access_key,
+		"IAMDeleteAccessKey_success":                                               IAMDeleteAccessKey_success,
+		"IAMGetAccessKeyLastUsed_missing_access_key_id":                            IAMGetAccessKeyLastUsed_missing_access_key_id,
+		"IAMGetAccessKeyLastUsed_access_key_id_too_short":                          IAMGetAccessKeyLastUsed_access_key_id_too_short,
+		"IAMGetAccessKeyLastUsed_access_key_id_too_long":                           IAMGetAccessKeyLastUsed_access_key_id_too_long,
+		"IAMGetAccessKeyLastUsed_invalid_access_key_id_chars":                      IAMGetAccessKeyLastUsed_invalid_access_key_id_chars,
+		"IAMGetAccessKeyLastUsed_non_existing_access_key":                          IAMGetAccessKeyLastUsed_non_existing_access_key,
+		"IAMGetAccessKeyLastUsed_success":                                          IAMGetAccessKeyLastUsed_success,
+		"IAMListAccessKeys_missing_user_name":                                      IAMListAccessKeys_missing_user_name,
+		"IAMListAccessKeys_invalid_user_name":                                      IAMListAccessKeys_invalid_user_name,
+		"IAMListAccessKeys_long_user_name":                                         IAMListAccessKeys_long_user_name,
+		"IAMListAccessKeys_invalid_max_items":                                      IAMListAccessKeys_invalid_max_items,
+		"IAMListAccessKeys_invalid_max_items_format":                               IAMListAccessKeys_invalid_max_items_format,
+		"IAMListAccessKeys_non_existing_user":                                      IAMListAccessKeys_non_existing_user,
+		"IAMListAccessKeys_empty_result":                                           IAMListAccessKeys_empty_result,
+		"IAMListAccessKeys_success":                                                IAMListAccessKeys_success,
+		"IAMListAccessKeys_pagination":                                             IAMListAccessKeys_pagination,
 		"PresignedAuth_security_token_not_supported":                               PresignedAuth_security_token_not_supported,
 		"PresignedAuth_unsupported_algorithm":                                      PresignedAuth_unsupported_algorithm,
 		"PresignedAuth_ECDSA_not_supported":                                        PresignedAuth_ECDSA_not_supported,
