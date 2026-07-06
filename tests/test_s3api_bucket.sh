@@ -50,11 +50,11 @@ source ./tests/drivers/get_bucket_acl/get_bucket_acl.sh
 source ./tests/drivers/get_bucket_location/get_bucket_location.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
+source ./tests/drivers/get_object_lock_config/get_object_lock_config_s3api.sh
 source ./tests/drivers/head_bucket/head_bucket_rest.sh
 source ./tests/drivers/head_bucket/head_bucket_s3api.sh
 source ./tests/drivers/list_buckets/list_buckets.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
-source ./tests/util/util_lock_config.sh
 source ./tests/util/util_object.sh
 
 export RUN_USERS=true

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2024 Versity Software
+# Copyright 2026 Versity Software
 # This file is licensed under the Apache License, Version 2.0
 # (the "License"); you may not use this file except in compliance
 # with the License.  You may obtain a copy of the License at
@@ -14,24 +14,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# use mc tool to delete bucket and contents
-# params:  bucket name
-# return 0 for success, 1 for failure
-delete_bucket_recursive_mc() {
-  if [[ $# -ne 1 ]]; then
-    log 2 "delete bucket recursive mc command requires bucket name"
+source ./tests/commands/create_presigned_url.sh
+
+create_check_presigned_url() {
+  if ! check_param_count_v2 "client, bucket, key, save location" 4 $#; then
     return 1
   fi
-  local exit_code=0
-  local error
-  error=$(mc --insecure rm --recursive --force "$MC_ALIAS"/"$1" 2>&1) || exit_code="$?"
-  if [[ $exit_code -ne 0 ]]; then
-    log 2 "error deleting bucket contents: $error"
+  local response presigned_url
+
+  if ! response=$(create_presigned_url "$1" "$2" "$3" 2>&1); then
+    log 2 "error creating presigned URL: $response"
     return 1
   fi
-  error=$(mc --insecure rb "$MC_ALIAS"/"$1" 2>&1) || exit_code="$?"
-  if [[ $exit_code -ne 0 ]]; then
-    log 2 "error deleting bucket: $error"
+  presigned_url="$response"
+
+  if ! response=$(curl -k -v "$presigned_url" -o "$4"); then
+    log 2 "error downloading file with curl: $response"
     return 1
   fi
   return 0
