@@ -45,11 +45,18 @@ func (r *IAMApiRouter) Init() {
 	r.Ctrl = ctrl
 
 	r.actions = map[string]ActionHandler{
+		// User CRUD
 		"CreateUser": ctrl.CreateUser,
 		"DeleteUser": ctrl.DeleteUser,
 		"GetUser":    ctrl.GetUser,
 		"ListUsers":  ctrl.ListUsers,
 		"UpdateUser": ctrl.UpdateUser,
+		// User Access Key CRUD
+		"CreateAccessKey":      ctrl.CreateAccessKey,
+		"UpdateAccessKey":      ctrl.UpdateAccessKey,
+		"DeleteAccessKey":      ctrl.DeleteAccessKey,
+		"GetAccessKeyLastUsed": ctrl.GetAccessKeyLastUsed,
+		"ListAccessKeys":       ctrl.ListAccessKeys,
 	}
 
 	actionRoute := ProcessHandlers(r.routeAction, iammiddleware.VerifyIAMAuth(r.rootCreds))

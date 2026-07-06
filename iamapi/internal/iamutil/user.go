@@ -151,15 +151,25 @@ func BuildUserArn(accountID, path, userName string) string {
 
 // GenerateUserID returns a new cryptographically random IAM user ID in the AIDA… format.
 func GenerateUserID() (string, error) {
+	id, err := generateAWSID(userIDPrefix, userIDRandomLen)
+	if err != nil {
+		debuglogger.Logf("failed to generate IAM user ID: %v", err)
+		return "", err
+	}
+	return id, nil
+}
+
+// generateAWSID builds an AWS-style unique identifier: a fixed prefix
+// followed by randomLen characters drawn from userIDAlphabet.
+func generateAWSID(prefix string, randomLen int) (string, error) {
 	var b strings.Builder
-	b.Grow(len(userIDPrefix) + userIDRandomLen)
-	b.WriteString(userIDPrefix)
+	b.Grow(len(prefix) + randomLen)
+	b.WriteString(prefix)
 
 	max := big.NewInt(int64(len(userIDAlphabet)))
-	for range userIDRandomLen {
+	for range randomLen {
 		n, err := rand.Int(rand.Reader, max)
 		if err != nil {
-			debuglogger.Logf("failed to generate IAM user ID: %v", err)
 			return "", err
 		}
 		b.WriteByte(userIDAlphabet[n.Int64()])

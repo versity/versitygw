@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -228,8 +229,12 @@ func (s *VaultStore) CreateUser(_ context.Context, user types.User) (*types.User
 }
 
 func (s *VaultStore) DeleteUser(ctx context.Context, username string) error {
-	if _, err := s.GetUser(ctx, username); err != nil {
+	user, err := s.GetUser(ctx, username)
+	if err != nil {
 		return err
+	}
+	if len(user.AccessKeys) > 0 {
+		return iamerr.GetAPIError(iamerr.ErrDeleteConflict)
 	}
 	return s.deleteByPath(username)
 }
@@ -366,17 +371,186 @@ func (s *VaultStore) UpdateUser(ctx context.Context, input UpdateUserInput) (*ty
 		if err := s.deleteByPath(input.UserName); err != nil {
 			return nil, err
 		}
-	} else {
-		// Delete all versions then re-create so CAS=0 succeeds.
-		if err := s.deleteByPath(input.UserName); err != nil {
-			return nil, err
+	} else if _, err := s.replaceUser(ctx, *user); err != nil {
+		return nil, err
+	}
+
+	return cloneUser(*user), nil
+}
+
+// replaceUser overwrites the stored document for user.UserName by deleting
+// all existing versions and recreating with CAS=0.
+func (s *VaultStore) replaceUser(ctx context.Context, user types.User) (*types.User, error) {
+	if err := s.deleteByPath(user.UserName); err != nil {
+		return nil, err
+	}
+	return s.CreateUser(ctx, user)
+}
+
+func (s *VaultStore) CreateAccessKey(ctx context.Context, input CreateAccessKeyInput) (*types.AccessKey, error) {
+	user, err := s.GetUser(ctx, input.UserName)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(user.AccessKeys) >= MaxAccessKeysPerUser {
+		return nil, iamerr.AccessKeysLimitExceeded(MaxAccessKeysPerUser)
+	}
+	for _, key := range user.AccessKeys {
+		if key.AccessKeyId == input.AccessKeyID {
+			return nil, ErrAccessKeyIDAlreadyExists
 		}
-		if _, err := s.CreateUser(ctx, *user); err != nil {
+	}
+
+	user.AccessKeys = append(user.AccessKeys, types.AccessKeyEntry{
+		AccessKeyId:     input.AccessKeyID,
+		SecretAccessKey: input.SecretAccessKey,
+		Status:          input.Status,
+		CreateDate:      input.CreateDate,
+	})
+
+	if _, err := s.replaceUser(ctx, *user); err != nil {
+		return nil, err
+	}
+
+	return &types.AccessKey{
+		UserName:        input.UserName,
+		AccessKeyId:     input.AccessKeyID,
+		Status:          input.Status,
+		SecretAccessKey: input.SecretAccessKey,
+		CreateDate:      input.CreateDate,
+	}, nil
+}
+
+func (s *VaultStore) UpdateAccessKey(ctx context.Context, input UpdateAccessKeyInput) error {
+	user, err := s.GetUser(ctx, input.UserName)
+	if err != nil {
+		return err
+	}
+
+	found := false
+	for i, key := range user.AccessKeys {
+		if key.AccessKeyId == input.AccessKeyID {
+			user.AccessKeys[i].Status = input.Status
+			found = true
+			break
+		}
+	}
+	if !found {
+		return iamerr.NoSuchEntityAccessKey(input.AccessKeyID)
+	}
+
+	_, err = s.replaceUser(ctx, *user)
+	return err
+}
+
+func (s *VaultStore) DeleteAccessKey(ctx context.Context, username, accessKeyID string) error {
+	user, err := s.GetUser(ctx, username)
+	if err != nil {
+		return err
+	}
+
+	idx := -1
+	for i, key := range user.AccessKeys {
+		if key.AccessKeyId == accessKeyID {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return iamerr.NoSuchEntityAccessKey(accessKeyID)
+	}
+
+	user.AccessKeys = slices.Delete(user.AccessKeys, idx, idx+1)
+
+	_, err = s.replaceUser(ctx, *user)
+	return err
+}
+
+func (s *VaultStore) GetAccessKeyLastUsed(ctx context.Context, accessKeyID string) (*GetAccessKeyLastUsedOutput, error) {
+	resp, err := s.client.Secrets.KvV2List(context.Background(), s.secretStoragePath, s.kvReqOpts...)
+	if err != nil {
+		if vault.IsErrorStatus(err, http.StatusNotFound) {
+			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+		}
+		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+			return nil, reauthErr
+		}
+		resp, err = s.client.Secrets.KvV2List(context.Background(), s.secretStoragePath, s.kvReqOpts...)
+		if err != nil {
+			if vault.IsErrorStatus(err, http.StatusNotFound) {
+				return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+			}
 			return nil, err
 		}
 	}
 
-	return cloneUser(*user), nil
+	for _, username := range resp.Data.Keys {
+		user, err := s.GetUser(ctx, username)
+		if err != nil {
+			return nil, err
+		}
+		for _, key := range user.AccessKeys {
+			if key.AccessKeyId == accessKeyID {
+				return &GetAccessKeyLastUsedOutput{
+					UserName:     username,
+					LastUsedDate: key.LastUsedDate,
+					ServiceName:  key.LastUsedService,
+					Region:       key.LastUsedRegion,
+				}, nil
+			}
+		}
+	}
+
+	return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+}
+
+func (s *VaultStore) ListAccessKeys(ctx context.Context, input ListAccessKeysInput) (*ListAccessKeysOutput, error) {
+	user, err := s.GetUser(ctx, input.UserName)
+	if err != nil {
+		return nil, err
+	}
+
+	keys := make([]types.AccessKeyMetadata, 0, len(user.AccessKeys))
+	for _, key := range user.AccessKeys {
+		keys = append(keys, types.AccessKeyMetadata{
+			UserName:    input.UserName,
+			AccessKeyId: key.AccessKeyId,
+			Status:      key.Status,
+			CreateDate:  key.CreateDate,
+		})
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i].AccessKeyId < keys[j].AccessKeyId
+	})
+
+	start := 0
+	if input.Marker != "" {
+		start = len(keys)
+		for i, key := range keys {
+			if key.AccessKeyId == input.Marker {
+				start = i + 1
+				break
+			}
+		}
+	}
+	keys = keys[start:]
+
+	limit := len(keys)
+	if input.MaxItems > 0 && int(input.MaxItems) < limit {
+		limit = int(input.MaxItems)
+	}
+
+	out := &ListAccessKeysOutput{
+		AccessKeys: make([]types.AccessKeyMetadata, limit),
+	}
+	copy(out.AccessKeys, keys[:limit])
+	if limit < len(keys) {
+		out.IsTruncated = true
+		out.Marker = out.AccessKeys[limit-1].AccessKeyId
+	}
+
+	return out, nil
 }
 
 // deleteByPath permanently removes a secret and all its versions without

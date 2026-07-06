@@ -50,15 +50,24 @@ func NewInternal(dir string) (Storer, error) {
 
 type iamConfig struct {
 	Users map[string]types.User `json:"users"`
+	// AccessKeyIndex maps an access key id to the username that owns it,
+	// so GetAccessKeyLastUsed can resolve a key without scanning every user.
+	AccessKeyIndex map[string]string `json:"accessKeyIndex"`
 }
 
 func defaultIAMConfig() iamConfig {
-	return iamConfig{Users: map[string]types.User{}}
+	return iamConfig{
+		Users:          map[string]types.User{},
+		AccessKeyIndex: map[string]string{},
+	}
 }
 
 func normalizeIAMConfig(conf *iamConfig) {
 	if conf.Users == nil {
 		conf.Users = make(map[string]types.User)
+	}
+	if conf.AccessKeyIndex == nil {
+		conf.AccessKeyIndex = make(map[string]string)
 	}
 }
 
@@ -100,8 +109,12 @@ func (s *InternalStore) DeleteUser(_ context.Context, username string) error {
 			return nil, err
 		}
 
-		if _, ok := conf.Users[username]; !ok {
+		user, ok := conf.Users[username]
+		if !ok {
 			return nil, iamerr.NoSuchEntityUser(username)
+		}
+		if len(user.AccessKeys) > 0 {
+			return nil, iamerr.GetAPIError(iamerr.ErrDeleteConflict)
 		}
 
 		delete(conf.Users, username)
@@ -214,6 +227,9 @@ func (s *InternalStore) UpdateUser(_ context.Context, input UpdateUserInput) (*t
 
 		if user.UserName != input.UserName {
 			delete(conf.Users, input.UserName)
+			for _, key := range user.AccessKeys {
+				conf.AccessKeyIndex[key.AccessKeyId] = user.UserName
+			}
 		}
 		conf.Users[user.UserName] = user
 		updated = user
@@ -226,8 +242,212 @@ func (s *InternalStore) UpdateUser(_ context.Context, input UpdateUserInput) (*t
 	return cloneUser(updated), nil
 }
 
+func (s *InternalStore) CreateAccessKey(_ context.Context, input CreateAccessKeyInput) (*types.AccessKey, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	var created types.AccessKey
+	if err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		user, ok := conf.Users[input.UserName]
+		if !ok {
+			return nil, iamerr.NoSuchEntityUser(input.UserName)
+		}
+		if len(user.AccessKeys) >= MaxAccessKeysPerUser {
+			return nil, iamerr.AccessKeysLimitExceeded(MaxAccessKeysPerUser)
+		}
+		if _, ok := conf.AccessKeyIndex[input.AccessKeyID]; ok {
+			return nil, ErrAccessKeyIDAlreadyExists
+		}
+
+		user.AccessKeys = append(user.AccessKeys, types.AccessKeyEntry{
+			AccessKeyId:     input.AccessKeyID,
+			SecretAccessKey: input.SecretAccessKey,
+			Status:          input.Status,
+			CreateDate:      input.CreateDate,
+		})
+		conf.Users[input.UserName] = user
+		conf.AccessKeyIndex[input.AccessKeyID] = input.UserName
+
+		created = types.AccessKey{
+			UserName:        input.UserName,
+			AccessKeyId:     input.AccessKeyID,
+			Status:          input.Status,
+			SecretAccessKey: input.SecretAccessKey,
+			CreateDate:      input.CreateDate,
+		}
+
+		return json.Marshal(conf)
+	}); err != nil {
+		return nil, unwrapAPIError(err)
+	}
+
+	return &created, nil
+}
+
+func (s *InternalStore) UpdateAccessKey(_ context.Context, input UpdateAccessKeyInput) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		user, ok := conf.Users[input.UserName]
+		if !ok {
+			return nil, iamerr.NoSuchEntityUser(input.UserName)
+		}
+
+		found := false
+		for i, key := range user.AccessKeys {
+			if key.AccessKeyId == input.AccessKeyID {
+				user.AccessKeys[i].Status = input.Status
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, iamerr.NoSuchEntityAccessKey(input.AccessKeyID)
+		}
+
+		conf.Users[input.UserName] = user
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) DeleteAccessKey(_ context.Context, username, accessKeyID string) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		user, ok := conf.Users[username]
+		if !ok {
+			return nil, iamerr.NoSuchEntityUser(username)
+		}
+
+		idx := -1
+		for i, key := range user.AccessKeys {
+			if key.AccessKeyId == accessKeyID {
+				idx = i
+				break
+			}
+		}
+		if idx == -1 {
+			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+		}
+
+		user.AccessKeys = slices.Delete(user.AccessKeys, idx, idx+1)
+		conf.Users[username] = user
+		delete(conf.AccessKeyIndex, accessKeyID)
+
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) GetAccessKeyLastUsed(_ context.Context, accessKeyID string) (*GetAccessKeyLastUsedOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	username, ok := conf.AccessKeyIndex[accessKeyID]
+	if !ok {
+		return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+	}
+	user, ok := conf.Users[username]
+	if !ok {
+		return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+	}
+
+	for _, key := range user.AccessKeys {
+		if key.AccessKeyId == accessKeyID {
+			return &GetAccessKeyLastUsedOutput{
+				UserName:     username,
+				LastUsedDate: key.LastUsedDate,
+				ServiceName:  key.LastUsedService,
+				Region:       key.LastUsedRegion,
+			}, nil
+		}
+	}
+
+	return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+}
+
+func (s *InternalStore) ListAccessKeys(_ context.Context, input ListAccessKeysInput) (*ListAccessKeysOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	user, ok := conf.Users[input.UserName]
+	if !ok {
+		return nil, iamerr.NoSuchEntityUser(input.UserName)
+	}
+
+	keys := make([]types.AccessKeyMetadata, 0, len(user.AccessKeys))
+	for _, key := range user.AccessKeys {
+		keys = append(keys, types.AccessKeyMetadata{
+			UserName:    input.UserName,
+			AccessKeyId: key.AccessKeyId,
+			Status:      key.Status,
+			CreateDate:  key.CreateDate,
+		})
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i].AccessKeyId < keys[j].AccessKeyId
+	})
+
+	start := 0
+	if input.Marker != "" {
+		start = len(keys)
+		for i, key := range keys {
+			if key.AccessKeyId == input.Marker {
+				start = i + 1
+				break
+			}
+		}
+	}
+	keys = keys[start:]
+
+	limit := len(keys)
+	if input.MaxItems > 0 && int(input.MaxItems) < limit {
+		limit = int(input.MaxItems)
+	}
+
+	out := &ListAccessKeysOutput{
+		AccessKeys: make([]types.AccessKeyMetadata, limit),
+	}
+	copy(out.AccessKeys, keys[:limit])
+	if limit < len(keys) {
+		out.IsTruncated = true
+		out.Marker = out.AccessKeys[limit-1].AccessKeyId
+	}
+
+	return out, nil
+}
+
 func cloneUser(user types.User) *types.User {
 	cloned := user
 	cloned.Tags = slices.Clone(user.Tags)
+	cloned.AccessKeys = slices.Clone(user.AccessKeys)
 	return &cloned
 }

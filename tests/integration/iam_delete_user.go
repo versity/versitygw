@@ -47,6 +47,35 @@ func IAMDeleteUser_non_existing_user(s *S3Conf) error {
 	})
 }
 
+func IAMDeleteUser_has_access_keys(s *S3Conf) error {
+	testName := "IAMDeleteUser_has_access_keys"
+	return iamActionHandler(s, testName, func(client *iam.Client) error {
+		userName := newIAMUserName()
+		if _, err := createIAMUser(client, &iam.CreateUserInput{UserName: &userName}); err != nil {
+			return err
+		}
+
+		out, err := createIAMAccessKey(client, &iam.CreateAccessKeyInput{UserName: &userName})
+		if err != nil {
+			return err
+		}
+		accessKeyID := aws.ToString(out.AccessKey.AccessKeyId)
+
+		checkErr := checkIAMApiErr(deleteIAMUser(client, userName), iamerr.GetAPIError(iamerr.ErrDeleteConflict))
+
+		deleteKeyErr := deleteIAMAccessKey(client, userName, accessKeyID)
+		deleteUserErr := deleteIAMUser(client, userName)
+
+		if checkErr != nil {
+			return checkErr
+		}
+		if deleteKeyErr != nil {
+			return deleteKeyErr
+		}
+		return deleteUserErr
+	})
+}
+
 func IAMDeleteUser_success(s *S3Conf) error {
 	testName := "IAMDeleteUser_success"
 	return iamActionHandler(s, testName, func(client *iam.Client) error {
