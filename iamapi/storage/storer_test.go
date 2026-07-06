@@ -198,6 +198,22 @@ func TestInternalStoreUserCRUDAndPagination(t *testing.T) {
 		t.Fatalf("reopened tags = %#v, want %#v", reopenedUser.Tags, users[0].Tags)
 	}
 
+	if _, err := reopened.CreateAccessKey(ctx, CreateAccessKeyInput{
+		UserName:        "zoe",
+		AccessKeyID:     "AKIAZZZZZZZZZZZZZZZZ",
+		SecretAccessKey: "secret",
+		Status:          "Active",
+		CreateDate:      created,
+	}); err != nil {
+		t.Fatalf("CreateAccessKey: %v", err)
+	}
+	if err := reopened.DeleteUser(ctx, "zoe"); !errors.Is(err, iamerr.GetAPIError(iamerr.ErrDeleteConflict)) {
+		t.Fatalf("DeleteUser with access keys err = %v, want DeleteConflict", err)
+	}
+	if err := reopened.DeleteAccessKey(ctx, "zoe", "AKIAZZZZZZZZZZZZZZZZ"); err != nil {
+		t.Fatalf("DeleteAccessKey: %v", err)
+	}
+
 	if err := reopened.DeleteUser(ctx, "zoe"); err != nil {
 		t.Fatalf("DeleteUser: %v", err)
 	}

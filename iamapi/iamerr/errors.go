@@ -52,14 +52,14 @@ const (
 	ErrInvalidRegion
 	ErrMissingHostSignedHeader
 	ErrInvalidClientTokenID
-
 	ErrInvalidContentLength
 	ErrThrottling
-
 	ErrMissingUserNameValue
 	ErrTooManyTags
 	ErrInvalidPathPrefix
 	ErrDuplicateTagKeys
+	ErrInvalidAccessKeyIDChars
+	ErrDeleteConflict
 )
 
 type APIError interface {
@@ -123,7 +123,6 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "The request processing has failed because of an unknown error, exception or failure.",
 		HTTPStatusCode: http.StatusInternalServerError,
 	},
-
 	ErrInvalidContentLength: {
 		Type:           TypeSender,
 		Code:           "InvalidRequest",
@@ -136,7 +135,6 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "Rate exceeded.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-
 	ErrMissingAuthenticationToken: {
 		Type:           TypeSender,
 		Code:           "MissingAuthenticationToken",
@@ -155,7 +153,6 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "The security token included in the request is invalid.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
-
 	ErrIncompleteSignature: {
 		Type:           TypeSender,
 		Code:           "IncompleteSignature",
@@ -174,7 +171,6 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "Authorization header requires Credential, SignedHeaders, and Signature.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-
 	ErrSignatureDoesNotMatch: {
 		Type:           TypeSender,
 		Code:           "SignatureDoesNotMatch",
@@ -211,7 +207,6 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
-
 	ErrMissingUserNameValue: {
 		Type:           TypeSender,
 		Code:           "ValidationError",
@@ -235,6 +230,18 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Code:           "InvalidInput",
 		Message:        "Duplicate tag keys found. Please note that Tag keys are case insensitive.",
 		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidAccessKeyIDChars: {
+		Type:           TypeSender,
+		Code:           "ValidationError",
+		Message:        "The specified value for accessKeyId is invalid. It must contain only alphanumeric characters.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrDeleteConflict: {
+		Type:           TypeSender,
+		Code:           "DeleteConflict",
+		Message:        "Cannot delete entity, must delete access keys first.",
+		HTTPStatusCode: http.StatusConflict,
 	},
 }
 
@@ -334,6 +341,14 @@ func NoSuchEntityUser(userName string) Error {
 	return newSenderError("NoSuchEntity", fmt.Sprintf("The user with name %s cannot be found.", userName), http.StatusNotFound)
 }
 
+func NoSuchEntityAccessKey(accessKeyID string) Error {
+	return newSenderError("NoSuchEntity", fmt.Sprintf("The Access Key with id %s cannot be found", accessKeyID), http.StatusNotFound)
+}
+
+func AccessKeysLimitExceeded(maxKeys int) Error {
+	return newSenderError("LimitExceeded", fmt.Sprintf("Cannot exceed quota for AccessKeysPerUser: %d", maxKeys), http.StatusConflict)
+}
+
 func ValidationError(message string) Error {
 	return newSenderError("ValidationError", message, http.StatusBadRequest)
 }
@@ -360,6 +375,18 @@ func PathTooLong(field string, maxLength int) Error {
 
 func InvalidMaxItems(value string) Error {
 	return ValidationError(fmt.Sprintf("1 validation error detected: Value '%s' at 'maxItems' failed to satisfy constraint: Member must have value between 1 and 1000", value))
+}
+
+func AccessKeyIDTooShort(minLength int) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value at 'accessKeyId' failed to satisfy constraint: Member must have length greater than or equal to %d", minLength))
+}
+
+func AccessKeyIDTooLong(maxLength int) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value at 'accessKeyId' failed to satisfy constraint: Member must have length less than or equal to %d", maxLength))
+}
+
+func InvalidAccessKeyStatus(value string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value '%s' at 'status' failed to satisfy constraint: Member must satisfy enum value set: [Active, Inactive]", value))
 }
 
 func TagKeyTooLong(index int) Error {
