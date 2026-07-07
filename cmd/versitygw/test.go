@@ -197,8 +197,13 @@ func initTestCommands() []*cli.Command {
 			Action: getAction(integration.TestScoutfs),
 		},
 		{
+			Name:   "gw-iam",
+			Usage:  "Tests gateway IAM service integration",
+			Action: getAction(integration.TestGatewayIAM),
+		},
+		{
 			Name:   "iam",
-			Usage:  "Tests iam service",
+			Usage:  "Tests standalone IAM API integration",
 			Action: getAction(integration.TestIAM),
 		},
 		{

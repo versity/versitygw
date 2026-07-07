@@ -14,48 +14,29 @@
 
 package utils
 
-import (
-	"github.com/gofiber/fiber/v3"
-)
+import "github.com/versity/versitygw/internal/httpctx"
 
 // Region, StartTime, IsRoot, Account, AccessKey context locals
 // are set to default values in middlewares.SetDefaultValues
 // to avoid the nil interface conversions
-type ContextKey string
+type ContextKey = httpctx.ContextKey
 
 const (
-	ContextKeyRegion           ContextKey = "region"
-	ContextKeyStartTime        ContextKey = "start-time"
-	ContextKeyIsRoot           ContextKey = "is-root"
-	ContextKeyRootAccessKey    ContextKey = "root-access-key"
-	ContextKeyAccount          ContextKey = "account"
-	ContextKeyAuthenticated    ContextKey = "authenticated"
-	ContextKeyPublicBucket     ContextKey = "public-bucket"
-	ContextKeyParsedAcl        ContextKey = "parsed-acl"
-	ContextKeySkipResBodyLog   ContextKey = "skip-res-body-log"
-	ContextKeyBodyReader       ContextKey = "body-reader"
-	ContextKeySkip             ContextKey = "__skip"
-	ContextKeyStack            ContextKey = "stack"
-	ContextKeyBucketOwner      ContextKey = "bucket-owner"
-	ContextKeyObjectPostResult ContextKey = "object-post-result"
-	ContextKeyRequestID        ContextKey = "request-id"
-	ContextKeyHostID           ContextKey = "host-id"
-	ContextKeyWebsiteConfig    ContextKey = "website-config"
+	ContextKeyRegion           = httpctx.ContextKeyRegion
+	ContextKeyStartTime        = httpctx.ContextKeyStartTime
+	ContextKeyIsRoot           = httpctx.ContextKeyIsRoot
+	ContextKeyRootAccessKey    = httpctx.ContextKeyRootAccessKey
+	ContextKeyAccount          = httpctx.ContextKeyAccount
+	ContextKeyAuthenticated    = httpctx.ContextKeyAuthenticated
+	ContextKeyPublicBucket     = httpctx.ContextKeyPublicBucket
+	ContextKeyParsedAcl        = httpctx.ContextKeyParsedAcl
+	ContextKeySkipResBodyLog   = httpctx.ContextKeySkipResBodyLog
+	ContextKeyBodyReader       = httpctx.ContextKeyBodyReader
+	ContextKeySkip             = httpctx.ContextKeySkip
+	ContextKeyStack            = httpctx.ContextKeyStack
+	ContextKeyBucketOwner      = httpctx.ContextKeyBucketOwner
+	ContextKeyObjectPostResult = httpctx.ContextKeyObjectPostResult
+	ContextKeyRequestID        = httpctx.ContextKeyRequestID
+	ContextKeyHostID           = httpctx.ContextKeyHostID
+	ContextKeyWebsiteConfig    = httpctx.ContextKeyWebsiteConfig
 )
-
-func (ck ContextKey) Set(ctx fiber.Ctx, val any) {
-	ctx.Locals(string(ck), val)
-}
-
-func (ck ContextKey) IsSet(ctx fiber.Ctx) bool {
-	val := ctx.Locals(string(ck))
-	return val != nil
-}
-
-func (ck ContextKey) Delete(ctx fiber.Ctx) {
-	ctx.Locals(string(ck), nil)
-}
-
-func (ck ContextKey) Get(ctx fiber.Ctx) any {
-	return ctx.Locals(string(ck))
-}
