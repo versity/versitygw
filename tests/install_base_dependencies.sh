@@ -25,7 +25,7 @@ check_for_xcode() {
 
 install_mac_libraries() {
   if ! check_for_xcode; then
-    exit 1
+    return 1
   fi
 
   if ! command -v brew >/dev/null 2>&1; then
