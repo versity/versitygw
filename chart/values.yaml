@@ -133,10 +133,20 @@ gateway:
     type: posix
     # Additional arguments passed to the backend
     args: "/mnt/data"
+    # Optional directory for POSIX sidecar metadata storage. When set, the chart
+    # mounts this path from persistent storage and exports VGW_META_SIDECAR.
+    sidecarDir: ""
+    # Optional directory for POSIX or ScoutFS object version storage. When set,
+    # the chart mounts this path from persistent storage and exports VGW_VERSIONING_DIR.
+    versioningDir: ""
     # for s3 backend:
     # args: "--access 0123456 --secret 0xdeadbeef --endpoint http://s3.example.com"
     # for azure backend:
     # args: ""--account 0123456 --access-key 0xdeadbeef"
+    # for posix backend with sidecar metadata:
+    # sidecarDir: "/mnt/metadata"
+    # for posix or scoutfs backend with object versioning:
+    # versioningDir: "/mnt/versioning"
 
   # The port versitygw listens on for S3 API requests.
   port: 7070
