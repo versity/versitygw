@@ -233,6 +233,9 @@ func (s *VaultStore) DeleteUser(ctx context.Context, username string) error {
 	if err != nil {
 		return err
 	}
+	if len(user.Policies.Inline) > 0 {
+		return iamerr.GetAPIError(iamerr.ErrDeleteConflictPolicies)
+	}
 	if len(user.AccessKeys) > 0 {
 		return iamerr.GetAPIError(iamerr.ErrDeleteConflict)
 	}
@@ -548,6 +551,122 @@ func (s *VaultStore) ListAccessKeys(ctx context.Context, input ListAccessKeysInp
 	if limit < len(keys) {
 		out.IsTruncated = true
 		out.Marker = out.AccessKeys[limit-1].AccessKeyId
+	}
+
+	return out, nil
+}
+
+func (s *VaultStore) PutUserPolicy(ctx context.Context, input PutUserPolicyInput) error {
+	user, err := s.GetUser(ctx, input.UserName)
+	if err != nil {
+		return err
+	}
+
+	newTotal := len(input.PolicyDocument)
+	replaceAt := -1
+	for i, p := range user.Policies.Inline {
+		if p.PolicyName == input.PolicyName {
+			replaceAt = i
+			continue
+		}
+		newTotal += len(p.PolicyDocument)
+	}
+	if newTotal > MaxInlinePolicyBytesPerUser {
+		return iamerr.InlinePolicyQuotaExceeded("user", input.UserName, MaxInlinePolicyBytesPerUser)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	if replaceAt >= 0 {
+		user.Policies.Inline[replaceAt].PolicyDocument = input.PolicyDocument
+		user.Policies.Inline[replaceAt].UpdateDate = now
+	} else {
+		user.Policies.Inline = append(user.Policies.Inline, types.PolicyEntry{
+			PolicyName:     input.PolicyName,
+			PolicyDocument: input.PolicyDocument,
+			CreateDate:     now,
+			UpdateDate:     now,
+		})
+	}
+
+	_, err = s.replaceUser(ctx, *user)
+	return err
+}
+
+func (s *VaultStore) GetUserPolicy(ctx context.Context, userName, policyName string) (*types.PolicyEntry, error) {
+	user, err := s.GetUser(ctx, userName)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, p := range user.Policies.Inline {
+		if p.PolicyName == policyName {
+			cloned := p
+			return &cloned, nil
+		}
+	}
+
+	return nil, iamerr.NoSuchEntityUserPolicy(userName, policyName)
+}
+
+func (s *VaultStore) DeleteUserPolicy(ctx context.Context, userName, policyName string) error {
+	user, err := s.GetUser(ctx, userName)
+	if err != nil {
+		return err
+	}
+
+	idx := -1
+	for i, p := range user.Policies.Inline {
+		if p.PolicyName == policyName {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return iamerr.NoSuchEntityUserPolicy(userName, policyName)
+	}
+
+	user.Policies.Inline = slices.Delete(user.Policies.Inline, idx, idx+1)
+
+	_, err = s.replaceUser(ctx, *user)
+	return err
+}
+
+func (s *VaultStore) ListUserPolicies(ctx context.Context, input ListUserPoliciesInput) (*ListUserPoliciesOutput, error) {
+	user, err := s.GetUser(ctx, input.UserName)
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, 0, len(user.Policies.Inline))
+	for _, p := range user.Policies.Inline {
+		names = append(names, p.PolicyName)
+	}
+	sort.Strings(names)
+
+	start := 0
+	if input.Marker != "" {
+		start = len(names)
+		for i, name := range names {
+			if name == input.Marker {
+				start = i + 1
+				break
+			}
+		}
+	}
+	names = names[start:]
+
+	limit := len(names)
+	if input.MaxItems > 0 && int(input.MaxItems) < limit {
+		limit = int(input.MaxItems)
+	}
+
+	out := &ListUserPoliciesOutput{
+		PolicyNames: make([]string, limit),
+	}
+	copy(out.PolicyNames, names[:limit])
+	if limit < len(names) {
+		out.IsTruncated = true
+		out.Marker = out.PolicyNames[limit-1]
 	}
 
 	return out, nil
