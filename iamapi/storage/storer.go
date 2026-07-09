@@ -29,6 +29,10 @@ import (
 // user may hold at once, matching the AWS IAM quota.
 const MaxAccessKeysPerUser = 2
 
+// MaxInlinePolicyBytesPerUser is the maximum aggregate size, in bytes, of
+// all of a single IAM user's inline policy documents combined
+const MaxInlinePolicyBytesPerUser = 2048
+
 var (
 	ErrUserIDAlreadyExists      = errors.New("iamapi: user id already exists")
 	ErrAccessKeyIDAlreadyExists = errors.New("iamapi: access key id already exists")
@@ -86,6 +90,24 @@ type GetAccessKeyLastUsedOutput struct {
 	Region       string
 }
 
+type PutUserPolicyInput struct {
+	UserName       string
+	PolicyName     string
+	PolicyDocument string
+}
+
+type ListUserPoliciesInput struct {
+	UserName string
+	Marker   string
+	MaxItems int32
+}
+
+type ListUserPoliciesOutput struct {
+	PolicyNames []string
+	IsTruncated bool
+	Marker      string
+}
+
 // Storer is the IAM API storage backend contract.
 type Storer interface {
 	CreateUser(ctx context.Context, user types.User) (*types.User, error)
@@ -99,6 +121,11 @@ type Storer interface {
 	DeleteAccessKey(ctx context.Context, username, accessKeyID string) error
 	GetAccessKeyLastUsed(ctx context.Context, accessKeyID string) (*GetAccessKeyLastUsedOutput, error)
 	ListAccessKeys(ctx context.Context, input ListAccessKeysInput) (*ListAccessKeysOutput, error)
+
+	PutUserPolicy(ctx context.Context, input PutUserPolicyInput) error
+	GetUserPolicy(ctx context.Context, userName, policyName string) (*types.PolicyEntry, error)
+	DeleteUserPolicy(ctx context.Context, userName, policyName string) error
+	ListUserPolicies(ctx context.Context, input ListUserPoliciesInput) (*ListUserPoliciesOutput, error)
 }
 
 func unwrapAPIError(err error) error {

@@ -1233,6 +1233,47 @@ func TestIAMListAccessKeys(ts *TestState) {
 	ts.Run(IAMListAccessKeys_pagination)
 }
 
+func TestIAMPutUserPolicy(ts *TestState) {
+	ts.Run(IAMPutUserPolicy_missing_user_name)
+	ts.Run(IAMPutUserPolicy_missing_policy_name)
+	ts.Run(IAMPutUserPolicy_missing_policy_document)
+	ts.Run(IAMPutUserPolicy_invalid_policy_name)
+	ts.Run(IAMPutUserPolicy_long_policy_name)
+	ts.Run(IAMPutUserPolicy_non_ascii_policy_document)
+	ts.Run(IAMPutUserPolicy_non_existing_user)
+	ts.Run(IAMPutUserPolicy_malformed_policy_document)
+	ts.Run(IAMPutUserPolicy_principal_not_allowed)
+	ts.Run(IAMPutUserPolicy_limit_exceeded)
+	ts.Run(IAMPutUserPolicy_success)
+	ts.Run(IAMPutUserPolicy_overwrite_updates_existing)
+}
+
+func TestIAMGetUserPolicy(ts *TestState) {
+	ts.Run(IAMGetUserPolicy_missing_user_name)
+	ts.Run(IAMGetUserPolicy_missing_policy_name)
+	ts.Run(IAMGetUserPolicy_non_existing_user)
+	ts.Run(IAMGetUserPolicy_non_existing_policy)
+	ts.Run(IAMGetUserPolicy_success)
+}
+
+func TestIAMDeleteUserPolicy(ts *TestState) {
+	ts.Run(IAMDeleteUserPolicy_missing_user_name)
+	ts.Run(IAMDeleteUserPolicy_missing_policy_name)
+	ts.Run(IAMDeleteUserPolicy_non_existing_user)
+	ts.Run(IAMDeleteUserPolicy_non_existing_policy)
+	ts.Run(IAMDeleteUserPolicy_success)
+	ts.Run(IAMDeleteUserPolicy_blocks_user_deletion)
+}
+
+func TestIAMListUserPolicies(ts *TestState) {
+	ts.Run(IAMListUserPolicies_missing_user_name)
+	ts.Run(IAMListUserPolicies_non_existing_user)
+	ts.Run(IAMListUserPolicies_invalid_max_items)
+	ts.Run(IAMListUserPolicies_empty_result)
+	ts.Run(IAMListUserPolicies_success)
+	ts.Run(IAMListUserPolicies_pagination)
+}
+
 func TestIAM(ts *TestState) {
 	TestIAMAuth(ts)
 	TestIAMQueryAuth(ts)
@@ -1246,6 +1287,10 @@ func TestIAM(ts *TestState) {
 	TestIAMDeleteAccessKey(ts)
 	TestIAMGetAccessKeyLastUsed(ts)
 	TestIAMListAccessKeys(ts)
+	TestIAMPutUserPolicy(ts)
+	TestIAMGetUserPolicy(ts)
+	TestIAMDeleteUserPolicy(ts)
+	TestIAMListUserPolicies(ts)
 }
 
 func TestAccessControl(ts *TestState) {
@@ -1674,6 +1719,35 @@ func GetIntTests() IntTests {
 		"IAMListAccessKeys_empty_result":                                           IAMListAccessKeys_empty_result,
 		"IAMListAccessKeys_success":                                                IAMListAccessKeys_success,
 		"IAMListAccessKeys_pagination":                                             IAMListAccessKeys_pagination,
+		"IAMPutUserPolicy_missing_user_name":                                       IAMPutUserPolicy_missing_user_name,
+		"IAMPutUserPolicy_missing_policy_name":                                     IAMPutUserPolicy_missing_policy_name,
+		"IAMPutUserPolicy_missing_policy_document":                                 IAMPutUserPolicy_missing_policy_document,
+		"IAMPutUserPolicy_invalid_policy_name":                                     IAMPutUserPolicy_invalid_policy_name,
+		"IAMPutUserPolicy_long_policy_name":                                        IAMPutUserPolicy_long_policy_name,
+		"IAMPutUserPolicy_non_ascii_policy_document":                               IAMPutUserPolicy_non_ascii_policy_document,
+		"IAMPutUserPolicy_non_existing_user":                                       IAMPutUserPolicy_non_existing_user,
+		"IAMPutUserPolicy_malformed_policy_document":                               IAMPutUserPolicy_malformed_policy_document,
+		"IAMPutUserPolicy_principal_not_allowed":                                   IAMPutUserPolicy_principal_not_allowed,
+		"IAMPutUserPolicy_limit_exceeded":                                          IAMPutUserPolicy_limit_exceeded,
+		"IAMPutUserPolicy_success":                                                 IAMPutUserPolicy_success,
+		"IAMPutUserPolicy_overwrite_updates_existing":                              IAMPutUserPolicy_overwrite_updates_existing,
+		"IAMGetUserPolicy_missing_user_name":                                       IAMGetUserPolicy_missing_user_name,
+		"IAMGetUserPolicy_missing_policy_name":                                     IAMGetUserPolicy_missing_policy_name,
+		"IAMGetUserPolicy_non_existing_user":                                       IAMGetUserPolicy_non_existing_user,
+		"IAMGetUserPolicy_non_existing_policy":                                     IAMGetUserPolicy_non_existing_policy,
+		"IAMGetUserPolicy_success":                                                 IAMGetUserPolicy_success,
+		"IAMDeleteUserPolicy_missing_user_name":                                    IAMDeleteUserPolicy_missing_user_name,
+		"IAMDeleteUserPolicy_missing_policy_name":                                  IAMDeleteUserPolicy_missing_policy_name,
+		"IAMDeleteUserPolicy_non_existing_user":                                    IAMDeleteUserPolicy_non_existing_user,
+		"IAMDeleteUserPolicy_non_existing_policy":                                  IAMDeleteUserPolicy_non_existing_policy,
+		"IAMDeleteUserPolicy_success":                                              IAMDeleteUserPolicy_success,
+		"IAMDeleteUserPolicy_blocks_user_deletion":                                 IAMDeleteUserPolicy_blocks_user_deletion,
+		"IAMListUserPolicies_missing_user_name":                                    IAMListUserPolicies_missing_user_name,
+		"IAMListUserPolicies_non_existing_user":                                    IAMListUserPolicies_non_existing_user,
+		"IAMListUserPolicies_invalid_max_items":                                    IAMListUserPolicies_invalid_max_items,
+		"IAMListUserPolicies_empty_result":                                         IAMListUserPolicies_empty_result,
+		"IAMListUserPolicies_success":                                              IAMListUserPolicies_success,
+		"IAMListUserPolicies_pagination":                                           IAMListUserPolicies_pagination,
 		"PresignedAuth_security_token_not_supported":                               PresignedAuth_security_token_not_supported,
 		"PresignedAuth_unsupported_algorithm":                                      PresignedAuth_unsupported_algorithm,
 		"PresignedAuth_ECDSA_not_supported":                                        PresignedAuth_ECDSA_not_supported,
