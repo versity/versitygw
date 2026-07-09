@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -566,6 +567,31 @@ func (s *S3Proxy) AbortMultipartUpload(ctx context.Context, input *s3.AbortMulti
 	return handleError(err)
 }
 
+// s3ProxyOwner nil-safely converts an SDK owner pointer to s3response.Owner.
+// The real S3 response omits this element entirely in some cases (e.g. cross-
+// account or directory bucket responses), leaving it nil.
+func s3ProxyOwner(o *types.Owner) s3response.Owner {
+	if o == nil {
+		return s3response.Owner{}
+	}
+	return s3response.Owner{
+		ID:          aws.ToString(o.ID),
+		DisplayName: aws.ToString(o.DisplayName),
+	}
+}
+
+// s3ProxyInitiator nil-safely converts an SDK initiator pointer to s3response.Owner
+// (s3response.Initiator is a type alias of s3response.Owner).
+func s3ProxyInitiator(i *types.Initiator) s3response.Owner {
+	if i == nil {
+		return s3response.Owner{}
+	}
+	return s3response.Owner{
+		ID:          aws.ToString(i.ID),
+		DisplayName: aws.ToString(i.DisplayName),
+	}
+}
+
 func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
 	if *input.Bucket == s.metaBucket {
 		return s3response.ListMultipartUploadsResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
@@ -597,18 +623,12 @@ func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultip
 	var uploads []s3response.Upload
 	for _, u := range output.Uploads {
 		uploads = append(uploads, s3response.Upload{
-			Key:      *u.Key,
-			UploadID: *u.UploadId,
-			Initiator: s3response.Initiator{
-				ID:          *u.Initiator.ID,
-				DisplayName: *u.Initiator.DisplayName,
-			},
-			Owner: s3response.Owner{
-				ID:          *u.Owner.ID,
-				DisplayName: *u.Owner.DisplayName,
-			},
+			Key:               aws.ToString(u.Key),
+			UploadID:          aws.ToString(u.UploadId),
+			Initiator:         s3response.Initiator(s3ProxyInitiator(u.Initiator)),
+			Owner:             s3ProxyOwner(u.Owner),
 			StorageClass:      u.StorageClass,
-			Initiated:         *u.Initiated,
+			Initiated:         aws.ToTime(u.Initiated),
 			ChecksumAlgorithm: u.ChecksumAlgorithm,
 			ChecksumType:      u.ChecksumType,
 		})
@@ -617,21 +637,21 @@ func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultip
 	var cps []s3response.CommonPrefix
 	for _, c := range output.CommonPrefixes {
 		cps = append(cps, s3response.CommonPrefix{
-			Prefix: *c.Prefix,
+			Prefix: aws.ToString(c.Prefix),
 		})
 	}
 
 	return s3response.ListMultipartUploadsResult{
-		Bucket:             *output.Bucket,
-		KeyMarker:          *output.KeyMarker,
-		UploadIDMarker:     *output.UploadIdMarker,
-		NextKeyMarker:      *output.NextKeyMarker,
-		NextUploadIDMarker: *output.NextUploadIdMarker,
-		Delimiter:          *output.Delimiter,
-		Prefix:             *output.Prefix,
+		Bucket:             aws.ToString(output.Bucket),
+		KeyMarker:          aws.ToString(output.KeyMarker),
+		UploadIDMarker:     aws.ToString(output.UploadIdMarker),
+		NextKeyMarker:      aws.ToString(output.NextKeyMarker),
+		NextUploadIDMarker: aws.ToString(output.NextUploadIdMarker),
+		Delimiter:          aws.ToString(output.Delimiter),
+		Prefix:             aws.ToString(output.Prefix),
 		EncodingType:       string(output.EncodingType),
-		MaxUploads:         int(*output.MaxUploads),
-		IsTruncated:        *output.IsTruncated,
+		MaxUploads:         int(aws.ToInt32(output.MaxUploads)),
+		IsTruncated:        aws.ToBool(output.IsTruncated),
 		Uploads:            uploads,
 		CommonPrefixes:     cps,
 	}, nil
@@ -668,10 +688,10 @@ func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3re
 	var parts []s3response.Part
 	for _, p := range output.Parts {
 		parts = append(parts, s3response.Part{
-			PartNumber:        int(*p.PartNumber),
-			LastModified:      *p.LastModified,
-			ETag:              *p.ETag,
-			Size:              *p.Size,
+			PartNumber:        int(aws.ToInt32(p.PartNumber)),
+			LastModified:      aws.ToTime(p.LastModified),
+			ETag:              aws.ToString(p.ETag),
+			Size:              aws.ToInt64(p.Size),
 			ChecksumCRC32:     p.ChecksumCRC32,
 			ChecksumCRC32C:    p.ChecksumCRC32C,
 			ChecksumCRC64NVME: p.ChecksumCRC64NVME,
@@ -684,35 +704,40 @@ func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3re
 			ChecksumXXHASH128: p.ChecksumXXHASH128,
 		})
 	}
-	pnm, err := strconv.Atoi(*output.PartNumberMarker)
-	if err != nil {
-		return s3response.ListPartsResult{},
-			fmt.Errorf("parse part number marker: %w", err)
+
+	// PartNumberMarker/NextPartNumberMarker are absent from the response
+	// whenever no part-number-marker was requested, or the list isn't
+	// truncated, respectively - in both cases there's no marker value to
+	// parse, so default to 0 (the same meaning as "no marker").
+	var pnm int
+	if output.PartNumberMarker != nil {
+		pnm, err = strconv.Atoi(*output.PartNumberMarker)
+		if err != nil {
+			return s3response.ListPartsResult{},
+				fmt.Errorf("parse part number marker: %w", err)
+		}
 	}
 
-	npmn, err := strconv.Atoi(*output.NextPartNumberMarker)
-	if err != nil {
-		return s3response.ListPartsResult{},
-			fmt.Errorf("parse next part number marker: %w", err)
+	var npmn int
+	if output.NextPartNumberMarker != nil {
+		npmn, err = strconv.Atoi(*output.NextPartNumberMarker)
+		if err != nil {
+			return s3response.ListPartsResult{},
+				fmt.Errorf("parse next part number marker: %w", err)
+		}
 	}
 
 	return s3response.ListPartsResult{
-		Bucket:   *output.Bucket,
-		Key:      *output.Key,
-		UploadID: *output.UploadId,
-		Initiator: s3response.Initiator{
-			ID:          *output.Initiator.ID,
-			DisplayName: *output.Initiator.DisplayName,
-		},
-		Owner: s3response.Owner{
-			ID:          *output.Owner.ID,
-			DisplayName: *output.Owner.DisplayName,
-		},
+		Bucket:               aws.ToString(output.Bucket),
+		Key:                  aws.ToString(output.Key),
+		UploadID:             aws.ToString(output.UploadId),
+		Initiator:            s3response.Initiator(s3ProxyInitiator(output.Initiator)),
+		Owner:                s3ProxyOwner(output.Owner),
 		StorageClass:         output.StorageClass,
 		PartNumberMarker:     pnm,
 		NextPartNumberMarker: npmn,
-		MaxParts:             int(*output.MaxParts),
-		IsTruncated:          *output.IsTruncated,
+		MaxParts:             int(aws.ToInt32(output.MaxParts)),
+		IsTruncated:          aws.ToBool(output.IsTruncated),
 		Parts:                parts,
 		ChecksumAlgorithm:    output.ChecksumAlgorithm,
 		ChecksumType:         output.ChecksumType,
