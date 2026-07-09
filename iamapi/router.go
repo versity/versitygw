@@ -57,6 +57,11 @@ func (r *IAMApiRouter) Init() {
 		"DeleteAccessKey":      ctrl.DeleteAccessKey,
 		"GetAccessKeyLastUsed": ctrl.GetAccessKeyLastUsed,
 		"ListAccessKeys":       ctrl.ListAccessKeys,
+		// User Inline Policy CRUD
+		"PutUserPolicy":    ctrl.PutUserPolicy,
+		"GetUserPolicy":    ctrl.GetUserPolicy,
+		"DeleteUserPolicy": ctrl.DeleteUserPolicy,
+		"ListUserPolicies": ctrl.ListUserPolicies,
 	}
 
 	actionRoute := ProcessHandlers(r.routeAction, iammiddleware.VerifyIAMAuth(r.rootCreds))

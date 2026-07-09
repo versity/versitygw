@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -43,9 +44,9 @@ const (
 )
 
 var (
-	userNamePattern = regexp.MustCompile(`^[A-Za-z0-9+=,.@_-]+$`)
-	tagKeyPattern   = regexp.MustCompile(`^[\p{L}\p{Z}\p{N}_.:/=+\-@]+$`)
-	tagValPattern   = regexp.MustCompile(`^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$`)
+	namePattern   = regexp.MustCompile(`^[A-Za-z0-9+=,.@_-]+$`)
+	tagKeyPattern = regexp.MustCompile(`^[\p{L}\p{Z}\p{N}_.:/=+\-@]+$`)
+	tagValPattern = regexp.MustCompile(`^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$`)
 )
 
 // RequestParam looks up key first in URL query args, then in the POST body.
@@ -61,6 +62,42 @@ func RequestParam(ctx fiber.Ctx, key string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// GetUserName resolves the UserName request parameter and validates it
+// against maxLen, returning missingErr if the parameter is absent or empty.
+// operation is included in the debug log on failure (e.g. "DeleteUser").
+// missingErr lets callers match the exact AWS error their operation is
+// verified against (e.g. iamerr.MissingValue vs iamerr.MissingParameter).
+func GetUserName(ctx fiber.Ctx, operation string, maxLen int, missingErr error) (string, error) {
+	userName, ok := RequestParam(ctx, "UserName")
+	if !ok || userName == "" {
+		debuglogger.Logf("missing required %s parameter: UserName", operation)
+		return "", missingErr
+	}
+	if err := ValidateName("userName", userName, maxLen); err != nil {
+		return "", err
+	}
+
+	return userName, nil
+}
+
+// ParseMaxItems reads the MaxItems request parameter, defaulting to
+// DefaultMaxItems when absent. operation is included in the debug log on
+// parse failure (e.g. "ListUsers", "ListAccessKeys").
+func ParseMaxItems(ctx fiber.Ctx, operation string) (int32, error) {
+	rawMaxItems, ok := RequestParam(ctx, "MaxItems")
+	if !ok || rawMaxItems == "" {
+		return int32(DefaultMaxItems), nil
+	}
+
+	parsed, err := strconv.ParseInt(rawMaxItems, 10, 32)
+	if err != nil || parsed < 1 || parsed > MaxListItems {
+		debuglogger.Logf("invalid %s MaxItems value %q: parse_error=%v", operation, rawMaxItems, err)
+		return 0, iamerr.InvalidMaxItems(rawMaxItems)
+	}
+
+	return int32(parsed), nil
 }
 
 // ParseTags reads IAM tag members from the request (up to 50), validates each, and returns the list.
@@ -106,14 +143,16 @@ func ParseTags(ctx fiber.Ctx) ([]types.Tag, error) {
 	return tags, nil
 }
 
-// ValidateUserName checks that userName is non-empty, matches the allowed character set, and fits within maxLength.
-func ValidateUserName(field, userName string, maxLength int) error {
-	if len(userName) > maxLength {
-		debuglogger.Logf("IAM user name exceeds maximum length: field=%s length=%d max=%d", field, len(userName), maxLength)
+// ValidateName checks that name (an IAM identity or policy name, e.g.
+// userName or policyName) is non-empty, matches the allowed character set,
+// and fits within maxLength.
+func ValidateName(field, name string, maxLength int) error {
+	if len(name) > maxLength {
+		debuglogger.Logf("IAM name exceeds maximum length: field=%s length=%d max=%d", field, len(name), maxLength)
 		return iamerr.UserNameTooLong(field, maxLength)
 	}
-	if userName == "" || !userNamePattern.MatchString(userName) {
-		debuglogger.Logf("invalid IAM user name: field=%s value=%q", field, userName)
+	if name == "" || !namePattern.MatchString(name) {
+		debuglogger.Logf("invalid IAM name: field=%s value=%q", field, name)
 		return iamerr.InvalidUserName(field)
 	}
 
