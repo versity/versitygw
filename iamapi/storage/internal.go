@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/iamapi/types"
@@ -112,6 +113,9 @@ func (s *InternalStore) DeleteUser(_ context.Context, username string) error {
 		user, ok := conf.Users[username]
 		if !ok {
 			return nil, iamerr.NoSuchEntityUser(username)
+		}
+		if len(user.Policies.Inline) > 0 {
+			return nil, iamerr.GetAPIError(iamerr.ErrDeleteConflictPolicies)
 		}
 		if len(user.AccessKeys) > 0 {
 			return nil, iamerr.GetAPIError(iamerr.ErrDeleteConflict)
@@ -445,9 +449,163 @@ func (s *InternalStore) ListAccessKeys(_ context.Context, input ListAccessKeysIn
 	return out, nil
 }
 
+func (s *InternalStore) PutUserPolicy(_ context.Context, input PutUserPolicyInput) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		user, ok := conf.Users[input.UserName]
+		if !ok {
+			return nil, iamerr.NoSuchEntityUser(input.UserName)
+		}
+
+		now := time.Now().UTC().Truncate(time.Second)
+		newTotal := len(input.PolicyDocument)
+		replaceAt := -1
+		for i, p := range user.Policies.Inline {
+			if p.PolicyName == input.PolicyName {
+				replaceAt = i
+				continue
+			}
+			newTotal += len(p.PolicyDocument)
+		}
+		if newTotal > MaxInlinePolicyBytesPerUser {
+			return nil, iamerr.InlinePolicyQuotaExceeded("user", input.UserName, MaxInlinePolicyBytesPerUser)
+		}
+
+		if replaceAt >= 0 {
+			user.Policies.Inline[replaceAt].PolicyDocument = input.PolicyDocument
+			user.Policies.Inline[replaceAt].UpdateDate = now
+		} else {
+			user.Policies.Inline = append(user.Policies.Inline, types.PolicyEntry{
+				PolicyName:     input.PolicyName,
+				PolicyDocument: input.PolicyDocument,
+				CreateDate:     now,
+				UpdateDate:     now,
+			})
+		}
+
+		conf.Users[input.UserName] = user
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) GetUserPolicy(_ context.Context, userName, policyName string) (*types.PolicyEntry, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	user, ok := conf.Users[userName]
+	if !ok {
+		return nil, iamerr.NoSuchEntityUser(userName)
+	}
+
+	for _, p := range user.Policies.Inline {
+		if p.PolicyName == policyName {
+			cloned := p
+			return &cloned, nil
+		}
+	}
+
+	return nil, iamerr.NoSuchEntityUserPolicy(userName, policyName)
+}
+
+func (s *InternalStore) DeleteUserPolicy(_ context.Context, userName, policyName string) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		user, ok := conf.Users[userName]
+		if !ok {
+			return nil, iamerr.NoSuchEntityUser(userName)
+		}
+
+		idx := -1
+		for i, p := range user.Policies.Inline {
+			if p.PolicyName == policyName {
+				idx = i
+				break
+			}
+		}
+		if idx == -1 {
+			return nil, iamerr.NoSuchEntityUserPolicy(userName, policyName)
+		}
+
+		user.Policies.Inline = slices.Delete(user.Policies.Inline, idx, idx+1)
+		conf.Users[userName] = user
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) ListUserPolicies(_ context.Context, input ListUserPoliciesInput) (*ListUserPoliciesOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	user, ok := conf.Users[input.UserName]
+	if !ok {
+		return nil, iamerr.NoSuchEntityUser(input.UserName)
+	}
+
+	names := make([]string, 0, len(user.Policies.Inline))
+	for _, p := range user.Policies.Inline {
+		names = append(names, p.PolicyName)
+	}
+	sort.Strings(names)
+
+	start := 0
+	if input.Marker != "" {
+		start = len(names)
+		for i, name := range names {
+			if name == input.Marker {
+				start = i + 1
+				break
+			}
+		}
+	}
+	names = names[start:]
+
+	limit := len(names)
+	if input.MaxItems > 0 && int(input.MaxItems) < limit {
+		limit = int(input.MaxItems)
+	}
+
+	out := &ListUserPoliciesOutput{
+		PolicyNames: make([]string, limit),
+	}
+	copy(out.PolicyNames, names[:limit])
+	if limit < len(names) {
+		out.IsTruncated = true
+		out.Marker = out.PolicyNames[limit-1]
+	}
+
+	return out, nil
+}
+
 func cloneUser(user types.User) *types.User {
 	cloned := user
 	cloned.Tags = slices.Clone(user.Tags)
 	cloned.AccessKeys = slices.Clone(user.AccessKeys)
+	cloned.Policies.Inline = slices.Clone(user.Policies.Inline)
 	return &cloned
 }

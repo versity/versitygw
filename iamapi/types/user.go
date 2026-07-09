@@ -106,6 +106,7 @@ type User struct {
 	CreateDate time.Time        `xml:"CreateDate"`
 	Tags       []Tag            `xml:"Tags>member,omitempty"`
 	AccessKeys []AccessKeyEntry `xml:"-"`
+	Policies   Policies         `xml:"-"`
 }
 
 type Tag struct {

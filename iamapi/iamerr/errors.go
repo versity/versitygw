@@ -54,12 +54,12 @@ const (
 	ErrInvalidClientTokenID
 	ErrInvalidContentLength
 	ErrThrottling
-	ErrMissingUserNameValue
 	ErrTooManyTags
 	ErrInvalidPathPrefix
 	ErrDuplicateTagKeys
 	ErrInvalidAccessKeyIDChars
 	ErrDeleteConflict
+	ErrDeleteConflictPolicies
 )
 
 type APIError interface {
@@ -207,12 +207,6 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
-	ErrMissingUserNameValue: {
-		Type:           TypeSender,
-		Code:           "ValidationError",
-		Message:        "1 validation error detected: Value at 'userName' failed to satisfy constraint: Member must not be null",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
 	ErrInvalidPathPrefix: {
 		Type:           TypeSender,
 		Code:           "ValidationError",
@@ -241,6 +235,12 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Type:           TypeSender,
 		Code:           "DeleteConflict",
 		Message:        "Cannot delete entity, must delete access keys first.",
+		HTTPStatusCode: http.StatusConflict,
+	},
+	ErrDeleteConflictPolicies: {
+		Type:           TypeSender,
+		Code:           "DeleteConflict",
+		Message:        "Cannot delete entity, must delete policies first.",
 		HTTPStatusCode: http.StatusConflict,
 	},
 }
@@ -403,6 +403,30 @@ func TagValueTooLong(index int) Error {
 
 func InvalidTagValue(index int) Error {
 	return ValidationError(fmt.Sprintf("1 validation error detected: Value at 'tags.%d.member.value' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*", index))
+}
+
+func MissingValue(field string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value at '%s' failed to satisfy constraint: Member must not be null", field))
+}
+
+func ValueTooLong(field string, maxLength int) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value at '%s' failed to satisfy constraint: Member must have length less than or equal to %d", field, maxLength))
+}
+
+func InvalidCharset(field string) Error {
+	return ValidationError(fmt.Sprintf("The specified value for %s is invalid. It must contain only printable ASCII characters.", field))
+}
+
+func MalformedPolicyDocument(message string) Error {
+	return newSenderError("MalformedPolicyDocument", message, http.StatusBadRequest)
+}
+
+func NoSuchEntityUserPolicy(userName, policyName string) Error {
+	return newSenderError("NoSuchEntity", fmt.Sprintf("The user policy with name %s cannot be found.", policyName), http.StatusNotFound)
+}
+
+func InlinePolicyQuotaExceeded(entityKind, entityName string, maxBytes int) Error {
+	return newSenderError("LimitExceeded", fmt.Sprintf("Maximum policy size of %d bytes exceeded for %s %s", maxBytes, entityKind, entityName), http.StatusConflict)
 }
 
 func newSenderError(code, message string, statusCode int) Error {

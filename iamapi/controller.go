@@ -17,13 +17,13 @@ package iamapi
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/iamapi/internal/iamutil"
+	"github.com/versity/versitygw/iamapi/policy"
 	"github.com/versity/versitygw/iamapi/storage"
 	"github.com/versity/versitygw/iamapi/types"
 )
@@ -37,12 +37,8 @@ func NewController(store storage.Storer) IAMApiController {
 }
 
 func (c IAMApiController) CreateUser(ctx fiber.Ctx) (*Response, error) {
-	userName, ok := iamutil.RequestParam(ctx, "UserName")
-	if !ok {
-		debuglogger.Logf("missing required CreateUser parameter: UserName")
-		return nil, iamerr.GetAPIError(iamerr.ErrMissingUserNameValue)
-	}
-	if err := iamutil.ValidateUserName("userName", userName, iamutil.MaxUserNameLen); err != nil {
+	userName, err := iamutil.GetUserName(ctx, "CreateUser", iamutil.MaxUserNameLen, iamerr.MissingValue("userName"))
+	if err != nil {
 		return nil, err
 	}
 
@@ -95,12 +91,8 @@ func (c IAMApiController) CreateUser(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c IAMApiController) DeleteUser(ctx fiber.Ctx) (*Response, error) {
-	username, ok := iamutil.RequestParam(ctx, "UserName")
-	if !ok || username == "" {
-		debuglogger.Logf("missing required DeleteUser parameter: UserName")
-		return nil, iamerr.MissingParameter("UserName")
-	}
-	if err := iamutil.ValidateUserName("userName", username, iamutil.MaxUserLookupLen); err != nil {
+	username, err := iamutil.GetUserName(ctx, "DeleteUser", iamutil.MaxUserLookupLen, iamerr.MissingParameter("UserName"))
+	if err != nil {
 		return nil, err
 	}
 
@@ -126,7 +118,7 @@ func (c IAMApiController) GetUser(ctx fiber.Ctx) (*Response, error) {
 			}},
 		}}, nil
 	}
-	if err := iamutil.ValidateUserName("userName", username, iamutil.MaxUserLookupLen); err != nil {
+	if err := iamutil.ValidateName("userName", username, iamutil.MaxUserLookupLen); err != nil {
 		return nil, err
 	}
 
@@ -150,14 +142,9 @@ func (c IAMApiController) ListUsers(ctx fiber.Ctx) (*Response, error) {
 		return nil, err
 	}
 
-	maxItems := int32(iamutil.DefaultMaxItems)
-	if rawMaxItems, ok := iamutil.RequestParam(ctx, "MaxItems"); ok && rawMaxItems != "" {
-		parsed, err := strconv.ParseInt(rawMaxItems, 10, 32)
-		if err != nil || parsed < 1 || parsed > iamutil.MaxListItems {
-			debuglogger.Logf("invalid ListUsers MaxItems value %q: parse_error=%v", rawMaxItems, err)
-			return nil, iamerr.InvalidMaxItems(rawMaxItems)
-		}
-		maxItems = int32(parsed)
+	maxItems, err := iamutil.ParseMaxItems(ctx, "ListUsers")
+	if err != nil {
+		return nil, err
 	}
 
 	marker, _ := iamutil.RequestParam(ctx, "Marker")
@@ -181,12 +168,8 @@ func (c IAMApiController) ListUsers(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c IAMApiController) UpdateUser(ctx fiber.Ctx) (*Response, error) {
-	username, ok := iamutil.RequestParam(ctx, "UserName")
-	if !ok || username == "" {
-		debuglogger.Logf("missing required UpdateUser parameter: UserName")
-		return nil, iamerr.MissingParameter("UserName")
-	}
-	if err := iamutil.ValidateUserName("userName", username, iamutil.MaxUserLookupLen); err != nil {
+	username, err := iamutil.GetUserName(ctx, "UpdateUser", iamutil.MaxUserLookupLen, iamerr.MissingParameter("UserName"))
+	if err != nil {
 		return nil, err
 	}
 
@@ -198,7 +181,7 @@ func (c IAMApiController) UpdateUser(ctx fiber.Ctx) (*Response, error) {
 	}
 	newUserName, _ := iamutil.RequestParam(ctx, "NewUserName")
 	if newUserName != "" {
-		if err := iamutil.ValidateUserName("newUserName", newUserName, iamutil.MaxUserNameLen); err != nil {
+		if err := iamutil.ValidateName("newUserName", newUserName, iamutil.MaxUserNameLen); err != nil {
 			return nil, err
 		}
 	}
@@ -235,12 +218,8 @@ func (c IAMApiController) UpdateUser(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c IAMApiController) CreateAccessKey(ctx fiber.Ctx) (*Response, error) {
-	userName, ok := iamutil.RequestParam(ctx, "UserName")
-	if !ok || userName == "" {
-		debuglogger.Logf("missing required CreateAccessKey parameter: UserName")
-		return nil, iamerr.MissingParameter("UserName")
-	}
-	if err := iamutil.ValidateUserName("userName", userName, iamutil.MaxUserLookupLen); err != nil {
+	userName, err := iamutil.GetUserName(ctx, "CreateAccessKey", iamutil.MaxUserLookupLen, iamerr.MissingParameter("UserName"))
+	if err != nil {
 		return nil, err
 	}
 
@@ -277,18 +256,14 @@ func (c IAMApiController) CreateAccessKey(ctx fiber.Ctx) (*Response, error) {
 		}, nil
 	}
 
-	err := fmt.Errorf("generate IAM access key id: exhausted collision retries")
+	err = fmt.Errorf("generate IAM access key id: exhausted collision retries")
 	debuglogger.Logf("failed to create IAM access key for user %q: %v", userName, err)
 	return nil, err
 }
 
 func (c IAMApiController) UpdateAccessKey(ctx fiber.Ctx) (*Response, error) {
-	userName, ok := iamutil.RequestParam(ctx, "UserName")
-	if !ok || userName == "" {
-		debuglogger.Logf("missing required UpdateAccessKey parameter: UserName")
-		return nil, iamerr.MissingParameter("UserName")
-	}
-	if err := iamutil.ValidateUserName("userName", userName, iamutil.MaxUserLookupLen); err != nil {
+	userName, err := iamutil.GetUserName(ctx, "UpdateAccessKey", iamutil.MaxUserLookupLen, iamerr.MissingParameter("UserName"))
+	if err != nil {
 		return nil, err
 	}
 
@@ -323,12 +298,8 @@ func (c IAMApiController) UpdateAccessKey(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c IAMApiController) DeleteAccessKey(ctx fiber.Ctx) (*Response, error) {
-	userName, ok := iamutil.RequestParam(ctx, "UserName")
-	if !ok || userName == "" {
-		debuglogger.Logf("missing required DeleteAccessKey parameter: UserName")
-		return nil, iamerr.MissingParameter("UserName")
-	}
-	if err := iamutil.ValidateUserName("userName", userName, iamutil.MaxUserLookupLen); err != nil {
+	userName, err := iamutil.GetUserName(ctx, "DeleteAccessKey", iamutil.MaxUserLookupLen, iamerr.MissingParameter("UserName"))
+	if err != nil {
 		return nil, err
 	}
 
@@ -392,23 +363,14 @@ func (c IAMApiController) GetAccessKeyLastUsed(ctx fiber.Ctx) (*Response, error)
 }
 
 func (c IAMApiController) ListAccessKeys(ctx fiber.Ctx) (*Response, error) {
-	userName, ok := iamutil.RequestParam(ctx, "UserName")
-	if !ok || userName == "" {
-		debuglogger.Logf("missing required ListAccessKeys parameter: UserName")
-		return nil, iamerr.MissingParameter("UserName")
-	}
-	if err := iamutil.ValidateUserName("userName", userName, iamutil.MaxUserLookupLen); err != nil {
+	userName, err := iamutil.GetUserName(ctx, "ListAccessKeys", iamutil.MaxUserLookupLen, iamerr.MissingParameter("UserName"))
+	if err != nil {
 		return nil, err
 	}
 
-	maxItems := int32(iamutil.DefaultMaxItems)
-	if rawMaxItems, ok := iamutil.RequestParam(ctx, "MaxItems"); ok && rawMaxItems != "" {
-		parsed, err := strconv.ParseInt(rawMaxItems, 10, 32)
-		if err != nil || parsed < 1 || parsed > iamutil.MaxListItems {
-			debuglogger.Logf("invalid ListAccessKeys MaxItems value %q: parse_error=%v", rawMaxItems, err)
-			return nil, iamerr.InvalidMaxItems(rawMaxItems)
-		}
-		maxItems = int32(parsed)
+	maxItems, err := iamutil.ParseMaxItems(ctx, "ListAccessKeys")
+	if err != nil {
+		return nil, err
 	}
 
 	marker, _ := iamutil.RequestParam(ctx, "Marker")
@@ -427,6 +389,136 @@ func (c IAMApiController) ListAccessKeys(ctx fiber.Ctx) (*Response, error) {
 			AccessKeyMetadata: types.AccessKeyMetadataList{Members: out.AccessKeys},
 			IsTruncated:       out.IsTruncated,
 			Marker:            out.Marker,
+		},
+	}}, nil
+}
+
+func (c IAMApiController) PutUserPolicy(ctx fiber.Ctx) (*Response, error) {
+	policyDocument, ok := iamutil.RequestParam(ctx, "PolicyDocument")
+	if !ok {
+		debuglogger.Logf("missing required PutUserPolicy parameter: PolicyDocument")
+		return nil, iamerr.MissingValue("policyDocument")
+	}
+	if err := policy.Validate("policyDocument", policyDocument); err != nil {
+		return nil, err
+	}
+
+	policyName, ok := iamutil.RequestParam(ctx, "PolicyName")
+	if !ok {
+		debuglogger.Logf("missing required PutUserPolicy parameter: PolicyName")
+		return nil, iamerr.MissingValue("policyName")
+	}
+	if err := iamutil.ValidateName("policyName", policyName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	userName, err := iamutil.GetUserName(ctx, "PutUserPolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("userName"))
+	if err != nil {
+		return nil, err
+	}
+
+	// Confirm the user exists before inspecting policy document content
+	if _, err := c.store.GetUser(ctx.Context(), userName); err != nil {
+		debuglogger.Logf("failed to get IAM user %q for PutUserPolicy: %v", userName, err)
+		return nil, err
+	}
+
+	if err := policy.Parse(policyDocument); err != nil {
+		return nil, err
+	}
+
+	if err := c.store.PutUserPolicy(ctx.Context(), storage.PutUserPolicyInput{
+		UserName:       userName,
+		PolicyName:     policyName,
+		PolicyDocument: policyDocument,
+	}); err != nil {
+		debuglogger.Logf("failed to put IAM user policy %q for user %q: %v", policyName, userName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.PutUserPolicyResponse{}}, nil
+}
+
+func (c IAMApiController) GetUserPolicy(ctx fiber.Ctx) (*Response, error) {
+	policyName, ok := iamutil.RequestParam(ctx, "PolicyName")
+	if !ok {
+		debuglogger.Logf("missing required GetUserPolicy parameter: PolicyName")
+		return nil, iamerr.MissingValue("policyName")
+	}
+	if err := iamutil.ValidateName("policyName", policyName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	userName, err := iamutil.GetUserName(ctx, "GetUserPolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("userName"))
+	if err != nil {
+		return nil, err
+	}
+
+	entry, err := c.store.GetUserPolicy(ctx.Context(), userName, policyName)
+	if err != nil {
+		debuglogger.Logf("failed to get IAM user policy %q for user %q: %v", policyName, userName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.GetUserPolicyResponse{
+		Result: types.GetUserPolicyResult{
+			UserName:       userName,
+			PolicyName:     entry.PolicyName,
+			PolicyDocument: iamutil.EncodePolicyDocument(entry.PolicyDocument),
+		},
+	}}, nil
+}
+
+func (c IAMApiController) DeleteUserPolicy(ctx fiber.Ctx) (*Response, error) {
+	policyName, ok := iamutil.RequestParam(ctx, "PolicyName")
+	if !ok {
+		debuglogger.Logf("missing required DeleteUserPolicy parameter: PolicyName")
+		return nil, iamerr.MissingValue("policyName")
+	}
+	if err := iamutil.ValidateName("policyName", policyName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	userName, err := iamutil.GetUserName(ctx, "DeleteUserPolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("userName"))
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.store.DeleteUserPolicy(ctx.Context(), userName, policyName); err != nil {
+		debuglogger.Logf("failed to delete IAM user policy %q for user %q: %v", policyName, userName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.DeleteUserPolicyResponse{}}, nil
+}
+
+func (c IAMApiController) ListUserPolicies(ctx fiber.Ctx) (*Response, error) {
+	userName, err := iamutil.GetUserName(ctx, "ListUserPolicies", iamutil.MaxUserLookupLen, iamerr.MissingValue("userName"))
+	if err != nil {
+		return nil, err
+	}
+
+	maxItems, err := iamutil.ParseMaxItems(ctx, "ListUserPolicies")
+	if err != nil {
+		return nil, err
+	}
+
+	marker, _ := iamutil.RequestParam(ctx, "Marker")
+	out, err := c.store.ListUserPolicies(ctx.Context(), storage.ListUserPoliciesInput{
+		UserName: userName,
+		Marker:   marker,
+		MaxItems: maxItems,
+	})
+	if err != nil {
+		debuglogger.Logf("failed to list IAM user policies for user %q: %v", userName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.ListUserPoliciesResponse{
+		Result: types.ListUserPoliciesResult{
+			PolicyNames: types.PolicyNameList{Members: out.PolicyNames},
+			IsTruncated: out.IsTruncated,
+			Marker:      out.Marker,
 		},
 	}}, nil
 }
