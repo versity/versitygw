@@ -14,7 +14,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util/util_mc.sh
 source ./tests/util/util_multipart.sh
 source ./tests/util/util_versioning.sh
 source ./tests/logger.sh
@@ -44,6 +43,7 @@ source ./tests/commands/put_object_legal_hold.sh
 source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/upload_part_copy.sh
 source ./tests/commands/upload_part.sh
+source ./tests/drivers/delete_bucket/delete_bucket_mc.sh
 source ./tests/drivers/head_object/head_object_rest.sh
 source ./tests/drivers/openssl.sh
 source ./tests/util/util_users.sh

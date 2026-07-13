@@ -30,11 +30,11 @@ source ./tests/commands/put_object_tagging.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/put_public_access_block.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/create_presigned_url/create_presigned_url.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/params.sh
 source ./tests/util/util_object.sh
 source ./tests/util/util_policy.sh
-source ./tests/util/util_presigned_url.sh
 
 # param:  command type
 # fail on test failure

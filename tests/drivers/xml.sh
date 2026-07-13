@@ -14,69 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-build_xpath_string() {
-  if ! check_param_count_gt "XML tree" 1 $#; then
-    return 1
-  fi
-  if ! build_xpath_string_for_element "$@"; then
-    return 1
-  fi
-  xpath+='/text()'
-}
-
-get_xpath_segment() {
-  if ! check_param_count_gt "XML element name" 1 $#; then
-    return 1
-  fi
-  if [ "$1" == "" ]; then
-    log 2 "element has no name"
-    return 1
-  fi
-  if [[ "$1" =~ [[:space:]] ]]; then
-    log 2 "element '$1' contains a space"
-    return 1
-  fi
-  echo '*[local-name()="'"$1"'"]'
-}
-
-
-build_xpath_string_for_element() {
-  if ! check_param_count_gt "XML tree" 1 $#; then
-    return 1
-  fi
-  local xpath='//'
-  for ((idx=1;idx<=$#;idx++)); do
-    if ! segment=$(get_xpath_segment "${!idx}" 2>&1); then
-      log 2 "error getting xpath segment: $segment"
-      return 1
-    fi
-    xpath+="$segment"
-    if [ "$idx" != $# ]; then
-      xpath+='/'
-    fi
-  done
-  echo "$xpath"
-  return 0
-}
-
-get_inner_xpath_string_for_element() {
-  if ! check_param_count_gt "compare element, XML tree" 2 $#; then
-    return 1
-  fi
-  local xpath='['
-  for ((idx=2;idx<=$#;idx++)); do
-    if ! xpath+=$(get_xpath_segment "${!idx}" 2>&1); then
-      log 2 "error getting xpath segment: $xpath"
-      return 1
-    fi
-    if [ "$idx" != $# ]; then
-      xpath+='/'
-    fi
-  done
-  xpath+="='$1']"
-  echo "$xpath"
-  return 0
-}
+source ./tests/drivers/xml_string.sh
 
 check_for_empty_or_nonexistent_element() {
   if ! check_param_count_gt "data file, XML tree" 2 $#; then
@@ -164,52 +102,6 @@ check_xml_element() {
     log 2 "XML data mismatch, expected '$2', actual '$xml_val'"
     return 1
   fi
-  return 0
-}
-
-check_xml_element_inside_string() {
-  if ! check_param_count_gt "string, expected value, XML tree" 3 $#; then
-    return 1
-  fi
-  if ! data_file=$(get_file_name 2>&1); then
-    log 2 "error getting data file: $data_file"
-    return 1
-  fi
-  echo -n "$1" > "$TEST_FILE_FOLDER/$data_file"
-  if ! check_xml_element "$TEST_FILE_FOLDER/$data_file" "$2" "${@:3}"; then
-    log 2 "error checking XML element"
-    return 1
-  fi
-  return 0
-}
-
-get_element_text_inside_string() {
-  if ! check_param_count_gt "string, XML tree" 2 $#; then
-    return 1
-  fi
-  local response xpath result
-
-  if ! response=$(build_xpath_string_for_element "${@:2}" 2>&1); then
-    log 2 "error building XPath search string: $response"
-    return 1
-  fi
-  xpath="$response"
-
-  result=$(echo "$1" | xmllint --xpath "boolean($xpath)" - 2>&1)
-  if [ "$result" == "false" ]; then
-    log 2 "element matching '$xpath' doesn't exist"
-    return 1
-  fi
-
-  if ! response=$(echo "$1" | xmllint --xpath "${xpath}/text()" - 2>&1); then
-    if [[ "$response" == *"XPath set is empty"* ]]; then
-      echo ""
-      return 0
-    fi
-    log 2 "error getting element text: $response"
-    return 1
-  fi
-  echo "$response"
   return 0
 }
 

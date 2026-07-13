@@ -23,13 +23,13 @@ source ./tests/commands/list_buckets.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
+source ./tests/drivers/get_object_lock_config/get_object_lock_config_rest.sh
 source ./tests/drivers/head_bucket/head_bucket_s3api.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
-source ./tests/util/util_lock_config.sh
 source ./tests/util/util_public_access_block.sh
 source ./tests/util/util_rest.sh
 
@@ -92,8 +92,9 @@ export RUN_USERS=true
   run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run check_no_object_lock_config_rest "$bucket_name"
+  run check_object_lock_config "$bucket_name"
   assert_success
+  assert_output "false"
 
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

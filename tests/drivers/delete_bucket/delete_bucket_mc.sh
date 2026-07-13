@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2025 Versity Software
+# Copyright 2026 Versity Software
 # This file is licensed under the Apache License, Version 2.0
 # (the "License"); you may not use this file except in compliance
 # with the License.  You may obtain a copy of the License at
@@ -14,21 +14,24 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/drivers/delete_bucket/delete_bucket_mc.sh
-source ./tests/logger.sh
-
-create_and_check_bucket_invalid_name() {
-  if ! check_param_count_v2 "client" 1 $#; then
+# use mc tool to delete bucket and contents
+# params:  bucket name
+# return 0 for success, 1 for failure
+delete_bucket_recursive_mc() {
+  if [[ $# -ne 1 ]]; then
+    log 2 "delete bucket recursive mc command requires bucket name"
     return 1
   fi
-  if ! create_bucket_invalid_name "$1"; then
-    log 2 "error creating bucket with invalid name"
+  local exit_code=0
+  local error
+  error=$(mc --insecure rm --recursive --force "$MC_ALIAS"/"$1" 2>&1) || exit_code="$?"
+  if [[ $exit_code -ne 0 ]]; then
+    log 2 "error deleting bucket contents: $error"
     return 1
   fi
-
-  # shellcheck disable=SC2154
-  if [[ "$bucket_create_error" != *"Invalid bucket name "* ]] && [[ "$bucket_create_error" != *"Bucket name cannot"* ]]; then
-    log 2 "unexpected error:  $bucket_create_error"
+  error=$(mc --insecure rb "$MC_ALIAS"/"$1" 2>&1) || exit_code="$?"
+  if [[ $exit_code -ne 0 ]]; then
+    log 2 "error deleting bucket: $error"
     return 1
   fi
   return 0

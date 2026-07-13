@@ -20,21 +20,27 @@ get_object_lock_configuration() {
   if ! check_param_count "get_object_lock_configuration" "client, bucket name" 2 $#; then
     return 1
   fi
+  local response response_code response_data lock_config
+
   if [ "$1" == 'rest' ]; then
-    if ! get_object_lock_configuration_rest "$2"; then
-      log 2 "error getting REST object lock configuration"
-      get_object_lock_config_err=$(cat "$TEST_FILE_FOLDER/object-lock-config.txt")
+    if ! response=$(get_object_lock_configuration_rest "$2" 2>&1); then
+      log 2 "error getting REST object lock configuration: $response"
       return 1
     fi
+    read -r response_code response_data <<< "$response"
+    if [ "$response_code" != "200" ]; then
+      log 2 "get_object_lock_config returned error: $(cat "$response_data")"
+      return 1
+    fi
+    lock_config="$(cat "$response_data")"
   else
-    if ! lock_config=$(send_command aws --no-verify-ssl s3api get-object-lock-configuration --bucket "$2" 2>&1); then
-      log 2 "error obtaining lock config: $lock_config"
-      # shellcheck disable=SC2034
-      get_object_lock_config_err=$lock_config
+    if ! response=$(send_command aws --no-verify-ssl s3api get-object-lock-configuration --bucket "$2" 2>&1); then
+      log 2 "error obtaining lock config: $response"
       return 1
     fi
+    lock_config=$(echo "$response" | grep -v "InsecureRequestWarning")
+    echo "$lock_config"
   fi
-  lock_config=$(echo "$lock_config" | grep -v "InsecureRequestWarning")
   return 0
 }
 
@@ -43,15 +49,20 @@ get_object_lock_configuration_rest() {
   if ! check_param_count "get_object_lock_configuration_rest" "bucket name" 1 $#; then
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/object-lock-config.txt" ./tests/rest_scripts/get_object_lock_config.sh); then
-    log 2 "error getting lock configuration: $result"
+  local response output_file response_code return_code=0
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
     return 1
   fi
-  if [[ "$result" != "200" ]]; then
-    log 2 "expected '200', returned '$result': $(cat "$TEST_FILE_FOLDER/object-lock-config.txt")"
+  output_file="$response"
+
+  if ! response=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/$output_file" ./tests/rest_scripts/get_object_lock_config.sh 2>&1); then
+    log 2 "error getting lock configuration: $response"
     return 1
   fi
-  lock_config="$(cat "$TEST_FILE_FOLDER/object-lock-config.txt")"
-  log 5 "lock config: $lock_config"
-  return 0
+  response_code="$response"
+
+  echo "$response_code" "$TEST_FILE_FOLDER/$output_file"
+  return $return_code
 }

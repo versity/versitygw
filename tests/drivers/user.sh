@@ -124,15 +124,17 @@ reset_bucket() {
     return 1
   fi
   log 6 "reset bucket '$1'"
+  local response lock_config_exists
 
   if [[ $LOG_LEVEL_INT -ge 5 ]] && ! log_bucket_policy "$1"; then
     log 3 "error logging bucket policy"
   fi
 
-  if ! check_object_lock_config "$1"; then
-    log 2 "error checking object lock config"
+  if ! response=$(check_object_lock_config "$1" 2>&1); then
+    log 2 "error checking object lock config: $response"
     return 1
   fi
+  lock_config_exists="$response"
 
   if [[ "$DIRECT" != "true" ]] && ! add_governance_bypass_policy "$1"; then
     log 2 "error adding governance bypass policy"
@@ -169,6 +171,7 @@ reset_bucket() {
     log 2 "error changing bucket owner back to root"
     return 1
   fi
+  return 0
 }
 
 get_user_id() {
