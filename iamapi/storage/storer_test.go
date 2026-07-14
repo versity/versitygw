@@ -221,3 +221,166 @@ func TestInternalStoreUserCRUDAndPagination(t *testing.T) {
 		t.Fatalf("DeleteUser missing err = %v, want NoSuchEntity", err)
 	}
 }
+
+func TestInternalStoreUserNameCaseInsensitive(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewInternal(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewInternal: %v", err)
+	}
+
+	if _, err := store.CreateUser(ctx, types.User{UserName: "alice", UserID: "AIDA11111111111111111"}); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if _, err := store.CreateUser(ctx, types.User{UserName: "ALICE", UserID: "AIDA22222222222222222"}); !errors.Is(err, iamerr.EntityAlreadyExistsUser("ALICE")) {
+		t.Fatalf("CreateUser case-variant duplicate err = %v, want EntityAlreadyExists", err)
+	}
+
+	got, err := store.GetUser(ctx, "ALICE")
+	if err != nil {
+		t.Fatalf("GetUser case-insensitive lookup: %v", err)
+	}
+	if got.UserName != "alice" {
+		t.Fatalf("GetUser case-insensitive lookup = %#v, want canonical casing preserved", got)
+	}
+
+	if err := store.DeleteUser(ctx, "ALICE"); err != nil {
+		t.Fatalf("DeleteUser case-insensitive lookup: %v", err)
+	}
+	if _, err := store.GetUser(ctx, "alice"); !errors.Is(err, iamerr.NoSuchEntityUser("alice")) {
+		t.Fatalf("GetUser after case-insensitive delete err = %v, want NoSuchEntity", err)
+	}
+}
+
+func TestInternalStoreRoleCRUDAndPagination(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := NewInternal(dir)
+	if err != nil {
+		t.Fatalf("NewInternal: %v", err)
+	}
+
+	created := time.Date(2026, 7, 11, 18, 0, 0, 0, time.UTC)
+	roles := []types.Role{
+		{
+			Path:                     "/engineering/",
+			RoleName:                 "alice-role",
+			RoleID:                   "AROA22222222222222222",
+			Arn:                      "arn:aws:iam::000000000000:role/engineering/alice-role",
+			CreateDate:               created,
+			AssumeRolePolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`,
+			MaxSessionDuration:       3600,
+			Tags: []types.Tag{
+				{Key: "env", Value: "test"},
+			},
+		},
+		{
+			Path:                     "/engineering/platform/",
+			RoleName:                 "bob-role",
+			RoleID:                   "AROA33333333333333333",
+			Arn:                      "arn:aws:iam::000000000000:role/engineering/platform/bob-role",
+			CreateDate:               created.Add(time.Second),
+			AssumeRolePolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`,
+			MaxSessionDuration:       3600,
+		},
+		{
+			Path:                     "/ops/",
+			RoleName:                 "carol-role",
+			RoleID:                   "AROA44444444444444444",
+			Arn:                      "arn:aws:iam::000000000000:role/ops/carol-role",
+			CreateDate:               created.Add(2 * time.Second),
+			AssumeRolePolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`,
+			MaxSessionDuration:       3600,
+		},
+	}
+	for _, role := range roles {
+		created, err := store.CreateRole(ctx, role)
+		if err != nil {
+			t.Fatalf("CreateRole(%s): %v", role.RoleName, err)
+		}
+		if created.RoleLastUsed == nil {
+			t.Fatalf("CreateRole(%s) RoleLastUsed = nil, want non-nil empty element", role.RoleName)
+		}
+	}
+
+	if _, err := store.CreateRole(ctx, roles[0]); !errors.Is(err, iamerr.EntityAlreadyExistsRole("alice-role")) {
+		t.Fatalf("CreateRole duplicate err = %v, want EntityAlreadyExists", err)
+	}
+	if _, err := store.CreateRole(ctx, types.Role{RoleName: "ALICE-ROLE", RoleID: "AROA55555555555555555"}); !errors.Is(err, iamerr.EntityAlreadyExistsRole("ALICE-ROLE")) {
+		t.Fatalf("CreateRole case-variant duplicate err = %v, want EntityAlreadyExists", err)
+	}
+	duplicateID := roles[2]
+	duplicateID.RoleName = "dave-role"
+	if _, err := store.CreateRole(ctx, duplicateID); !errors.Is(err, ErrRoleIDAlreadyExists) {
+		t.Fatalf("CreateRole duplicate id err = %v, want ErrRoleIDAlreadyExists", err)
+	}
+
+	got, err := store.GetRole(ctx, "ALICE-ROLE")
+	if err != nil {
+		t.Fatalf("GetRole: %v", err)
+	}
+	if got.RoleName != "alice-role" || got.RoleID != roles[0].RoleID {
+		t.Fatalf("GetRole = %#v, want alice-role with stable id and preserved casing", got)
+	}
+	if !reflect.DeepEqual(got.Tags, roles[0].Tags) {
+		t.Fatalf("GetRole tags = %#v, want %#v", got.Tags, roles[0].Tags)
+	}
+	if got.RoleLastUsed == nil {
+		t.Fatal("GetRole RoleLastUsed = nil, want non-nil empty element")
+	}
+
+	page1, err := store.ListRoles(ctx, ListRolesInput{PathPrefix: "/engineering/", MaxItems: 1})
+	if err != nil {
+		t.Fatalf("ListRoles page1: %v", err)
+	}
+	if len(page1.Roles) != 1 || page1.Roles[0].RoleName != "alice-role" || !page1.IsTruncated || page1.Marker != "alice-role" {
+		t.Fatalf("page1 = %#v, want truncated alice-role page", page1)
+	}
+	if page1.Roles[0].RoleLastUsed != nil {
+		t.Fatalf("ListRoles RoleLastUsed = %#v, want nil (list/get asymmetry)", page1.Roles[0].RoleLastUsed)
+	}
+
+	page2, err := store.ListRoles(ctx, ListRolesInput{PathPrefix: "/engineering/", Marker: page1.Marker, MaxItems: 10})
+	if err != nil {
+		t.Fatalf("ListRoles page2: %v", err)
+	}
+	if len(page2.Roles) != 1 || page2.Roles[0].RoleName != "bob-role" || page2.IsTruncated {
+		t.Fatalf("page2 = %#v, want final bob-role page", page2)
+	}
+
+	updatedRole, err := store.UpdateAssumeRolePolicy(ctx, UpdateAssumeRolePolicyInput{
+		RoleName:       "alice-role",
+		PolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"sts.amazonaws.com"},"Action":"sts:AssumeRole"}]}`,
+	})
+	if err != nil {
+		t.Fatalf("UpdateAssumeRolePolicy: %v", err)
+	}
+	if updatedRole.AssumeRolePolicyDocument != `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"sts.amazonaws.com"},"Action":"sts:AssumeRole"}]}` {
+		t.Fatalf("UpdateAssumeRolePolicy result = %#v", updatedRole)
+	}
+	if updatedRole.RoleID != roles[0].RoleID {
+		t.Fatalf("UpdateAssumeRolePolicy identity changed: %#v", updatedRole)
+	}
+	if _, err := store.UpdateAssumeRolePolicy(ctx, UpdateAssumeRolePolicyInput{RoleName: "missing-role", PolicyDocument: "{}"}); !errors.Is(err, iamerr.NoSuchEntityRole("missing-role")) {
+		t.Fatalf("UpdateAssumeRolePolicy missing role err = %v, want NoSuchEntity", err)
+	}
+
+	reopened, err := NewInternal(dir)
+	if err != nil {
+		t.Fatalf("reopen NewInternal: %v", err)
+	}
+	reopenedRole, err := reopened.GetRole(ctx, "alice-role")
+	if err != nil {
+		t.Fatalf("GetRole after reopen: %v", err)
+	}
+	if reopenedRole.AssumeRolePolicyDocument != updatedRole.AssumeRolePolicyDocument {
+		t.Fatalf("reopened AssumeRolePolicyDocument = %q, want %q", reopenedRole.AssumeRolePolicyDocument, updatedRole.AssumeRolePolicyDocument)
+	}
+
+	if err := reopened.DeleteRole(ctx, "carol-role"); err != nil {
+		t.Fatalf("DeleteRole: %v", err)
+	}
+	if err := reopened.DeleteRole(ctx, "carol-role"); !errors.Is(err, iamerr.NoSuchEntityRole("carol-role")) {
+		t.Fatalf("DeleteRole missing err = %v, want NoSuchEntity", err)
+	}
+}

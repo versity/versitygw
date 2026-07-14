@@ -113,7 +113,7 @@ func (e Error) XMLBody(requestID string) []byte {
 type errorXML struct {
 	Type    ErrorType
 	Code    string
-	Message string
+	Message string `xml:",omitempty"`
 }
 
 var errorCodeResponse = map[ErrorCode]Error{
@@ -345,8 +345,20 @@ func NoSuchEntityAccessKey(accessKeyID string) Error {
 	return newSenderError("NoSuchEntity", fmt.Sprintf("The Access Key with id %s cannot be found", accessKeyID), http.StatusNotFound)
 }
 
+func EntityAlreadyExistsRole(roleName string) Error {
+	return newSenderError("EntityAlreadyExists", fmt.Sprintf("Role with name %s already exists.", roleName), http.StatusConflict)
+}
+
+func NoSuchEntityRole(roleName string) Error {
+	return newSenderError("NoSuchEntity", fmt.Sprintf("The role with name %s cannot be found.", roleName), http.StatusNotFound)
+}
+
 func AccessKeysLimitExceeded(maxKeys int) Error {
 	return newSenderError("LimitExceeded", fmt.Sprintf("Cannot exceed quota for AccessKeysPerUser: %d", maxKeys), http.StatusConflict)
+}
+
+func TrustPolicySizeLimitExceeded(maxBytes int) Error {
+	return newSenderError("LimitExceeded", fmt.Sprintf("Cannot exceed quota for ACLSizePerRole: %d", maxBytes), http.StatusConflict)
 }
 
 func ValidationError(message string) Error {
@@ -415,6 +427,22 @@ func ValueTooLong(field string, maxLength int) Error {
 
 func InvalidCharset(field string) Error {
 	return ValidationError(fmt.Sprintf("The specified value for %s is invalid. It must contain only printable ASCII characters.", field))
+}
+
+func InvalidDescriptionCharset(field string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value at '%s' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]*", field))
+}
+
+func MaxSessionDurationTooLow() Error {
+	return ValidationError("1 validation error detected: Value at 'maxSessionDuration' failed to satisfy constraint: Member must have value greater than or equal to 3600")
+}
+
+func MaxSessionDurationTooHigh() Error {
+	return ValidationError("1 validation error detected: Value at 'maxSessionDuration' failed to satisfy constraint: Member must have value less than or equal to 43200")
+}
+
+func MalformedInput() Error {
+	return newSenderError("MalformedInput", "", http.StatusBadRequest)
 }
 
 func MalformedPolicyDocument(message string) Error {

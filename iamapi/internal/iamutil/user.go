@@ -41,6 +41,15 @@ const (
 	userIDAlphabet   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 	maxTagKeyLen     = 128
 	maxTagValLen     = 256
+
+	roleIDPrefix    = "AROA"
+	roleIDRandomLen = 17
+
+	MaxRoleDescriptionLen = 1000
+
+	DefaultMaxSessionDuration = 3600
+	MinMaxSessionDuration     = 3600
+	MaxMaxSessionDuration     = 43200
 )
 
 var (
@@ -80,6 +89,68 @@ func GetUserName(ctx fiber.Ctx, operation string, maxLen int, missingErr error) 
 	}
 
 	return userName, nil
+}
+
+// GetRoleName resolves the RoleName request parameter and validates it
+// against maxLen, returning missingErr if the parameter is absent or empty.
+func GetRoleName(ctx fiber.Ctx, operation string, maxLen int, missingErr error) (string, error) {
+	roleName, ok := RequestParam(ctx, "RoleName")
+	if !ok || roleName == "" {
+		debuglogger.Logf("missing required %s parameter: RoleName", operation)
+		return "", missingErr
+	}
+	if err := ValidateName("roleName", roleName, maxLen); err != nil {
+		return "", err
+	}
+
+	return roleName, nil
+}
+
+// ParseMaxSessionDuration reads the MaxSessionDuration request parameter,
+// defaulting to DefaultMaxSessionDuration when absent, and validates it
+// falls within [MinMaxSessionDuration, MaxMaxSessionDuration].
+func ParseMaxSessionDuration(ctx fiber.Ctx) (int32, error) {
+	raw, ok := RequestParam(ctx, "MaxSessionDuration")
+	if !ok || raw == "" {
+		return DefaultMaxSessionDuration, nil
+	}
+
+	parsed, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil {
+		debuglogger.Logf("malformed MaxSessionDuration value %q", raw)
+		return 0, iamerr.MalformedInput()
+	}
+	if parsed < MinMaxSessionDuration {
+		debuglogger.Logf("invalid MaxSessionDuration value %q", raw)
+		return 0, iamerr.MaxSessionDurationTooLow()
+	}
+	if parsed > MaxMaxSessionDuration {
+		debuglogger.Logf("invalid MaxSessionDuration value %q", raw)
+		return 0, iamerr.MaxSessionDurationTooHigh()
+	}
+
+	return int32(parsed), nil
+}
+
+// ValidateDescription checks that the IAM role "Description" fits
+// within MaxRoleDescriptionLen and uses the allowed charset — printable
+// Latin-1 (excluding 0x7F-0xA0) plus tab/LF/CR
+func ValidateDescription(field, desc string) error {
+	if len(desc) > MaxRoleDescriptionLen {
+		debuglogger.Logf("IAM role description exceeds maximum length: field=%s length=%d max=%d", field, len(desc), MaxRoleDescriptionLen)
+		return iamerr.ValueTooLong(field, MaxRoleDescriptionLen)
+	}
+	for _, r := range desc {
+		switch r {
+		case '\t', '\n', '\r':
+			continue
+		}
+		if r < 0x20 || (r > 0x7E && r < 0xA1) || r > 0xFF {
+			debuglogger.Logf("invalid IAM role description charset: field=%s", field)
+			return iamerr.InvalidDescriptionCharset(field)
+		}
+	}
+	return nil
 }
 
 // ParseMaxItems reads the MaxItems request parameter, defaulting to
@@ -193,6 +264,21 @@ func GenerateUserID() (string, error) {
 	id, err := generateAWSID(userIDPrefix, userIDRandomLen)
 	if err != nil {
 		debuglogger.Logf("failed to generate IAM user ID: %v", err)
+		return "", err
+	}
+	return id, nil
+}
+
+// BuildRoleArn constructs the ARN for an IAM role.
+func BuildRoleArn(accountID, path, roleName string) string {
+	return fmt.Sprintf("arn:aws:iam::%s:role%s%s", accountID, path, roleName)
+}
+
+// GenerateRoleID returns a new cryptographically random IAM role ID in the AROA… format.
+func GenerateRoleID() (string, error) {
+	id, err := generateAWSID(roleIDPrefix, roleIDRandomLen)
+	if err != nil {
+		debuglogger.Logf("failed to generate IAM role ID: %v", err)
 		return "", err
 	}
 	return id, nil
