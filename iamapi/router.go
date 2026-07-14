@@ -62,6 +62,12 @@ func (r *IAMApiRouter) Init() {
 		"GetUserPolicy":    ctrl.GetUserPolicy,
 		"DeleteUserPolicy": ctrl.DeleteUserPolicy,
 		"ListUserPolicies": ctrl.ListUserPolicies,
+		// Role CRUD
+		"CreateRole":             ctrl.CreateRole,
+		"GetRole":                ctrl.GetRole,
+		"ListRoles":              ctrl.ListRoles,
+		"DeleteRole":             ctrl.DeleteRole,
+		"UpdateAssumeRolePolicy": ctrl.UpdateAssumeRolePolicy,
 	}
 
 	actionRoute := ProcessHandlers(r.routeAction, iammiddleware.VerifyIAMAuth(r.rootCreds))

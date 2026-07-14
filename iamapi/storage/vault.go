@@ -191,7 +191,45 @@ func (s *VaultStore) reAuthIfNeeded(err error) error {
 	return nil
 }
 
+// findUserKey resolves name to the exact stored KV path segment (the
+// original UserName casing used at creation), case-insensitively, by
+// listing the users under secretStoragePath and comparing with EqualFold.
+// AWS enforces case-insensitive UserName uniqueness but Vault's KV paths
+// are plain case-sensitive strings, so a list+compare fallback is needed —
+// KV has no native case-insensitive lookup. ok is false both when nothing
+// matches and (harmlessly) when the prefix has no children at all.
+func (s *VaultStore) findUserKey(name string) (string, bool, error) {
+	resp, err := s.client.Secrets.KvV2List(context.Background(), s.secretStoragePath, s.kvReqOpts...)
+	if err != nil {
+		if vault.IsErrorStatus(err, http.StatusNotFound) {
+			return "", false, nil
+		}
+		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+			return "", false, reauthErr
+		}
+		resp, err = s.client.Secrets.KvV2List(context.Background(), s.secretStoragePath, s.kvReqOpts...)
+		if err != nil {
+			if vault.IsErrorStatus(err, http.StatusNotFound) {
+				return "", false, nil
+			}
+			return "", false, err
+		}
+	}
+	for _, key := range resp.Data.Keys {
+		if strings.EqualFold(key, name) {
+			return key, true, nil
+		}
+	}
+	return "", false, nil
+}
+
 func (s *VaultStore) CreateUser(_ context.Context, user types.User) (*types.User, error) {
+	if _, ok, err := s.findUserKey(user.UserName); err != nil {
+		return nil, err
+	} else if ok {
+		return nil, iamerr.EntityAlreadyExistsUser(user.UserName)
+	}
+
 	userMap, err := userToVaultMap(user)
 	if err != nil {
 		return nil, fmt.Errorf("serialize user: %w", err)
@@ -239,11 +277,19 @@ func (s *VaultStore) DeleteUser(ctx context.Context, username string) error {
 	if len(user.AccessKeys) > 0 {
 		return iamerr.GetAPIError(iamerr.ErrDeleteConflict)
 	}
-	return s.deleteByPath(username)
+	return s.deleteByPath(user.UserName)
 }
 
 func (s *VaultStore) GetUser(_ context.Context, username string) (*types.User, error) {
-	path := s.secretStoragePath + "/" + username
+	canonical, ok, err := s.findUserKey(username)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, iamerr.NoSuchEntityUser(username)
+	}
+
+	path := s.secretStoragePath + "/" + canonical
 	resp, err := s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...)
 	if err != nil {
 		if vault.IsErrorStatus(err, http.StatusNotFound) {
@@ -261,7 +307,7 @@ func (s *VaultStore) GetUser(_ context.Context, username string) (*types.User, e
 		}
 	}
 
-	user, err := parseVaultUser(resp.Data.Data, username)
+	user, err := parseVaultUser(resp.Data.Data, canonical)
 	if err != nil {
 		return nil, err
 	}
@@ -340,13 +386,14 @@ func (s *VaultStore) UpdateUser(ctx context.Context, input UpdateUserInput) (*ty
 	if err != nil {
 		return nil, err
 	}
+	originalName := user.UserName
 
 	finalName := user.UserName
 	if input.NewUserName != "" {
 		finalName = input.NewUserName
 	}
 
-	if finalName != input.UserName {
+	if !strings.EqualFold(finalName, originalName) {
 		existing, err := s.GetUser(ctx, finalName)
 		if err != nil && !errors.Is(err, iamerr.NoSuchEntityUser(finalName)) {
 			return nil, err
@@ -366,12 +413,12 @@ func (s *VaultStore) UpdateUser(ctx context.Context, input UpdateUserInput) (*ty
 		user.Arn = input.NewArn
 	}
 
-	if user.UserName != input.UserName {
+	if user.UserName != originalName {
 		// Create at new path first to detect conflicts before deleting the old entry.
 		if _, err := s.CreateUser(ctx, *user); err != nil {
 			return nil, err
 		}
-		if err := s.deleteByPath(input.UserName); err != nil {
+		if err := s.deleteByPath(originalName); err != nil {
 			return nil, err
 		}
 	} else if _, err := s.replaceUser(ctx, *user); err != nil {
@@ -687,6 +734,273 @@ func (s *VaultStore) deleteByPath(username string) error {
 		}
 	}
 	return nil
+}
+
+// rolesPath is the KV prefix under which roles are stored, kept distinct
+// from secretStoragePath (which holds users) so listing one entity kind
+// never has to filter out the other's keys.
+func (s *VaultStore) rolesPath() string {
+	return s.secretStoragePath + "/roles"
+}
+
+// findRoleKey is findUserKey's counterpart for roles.
+func (s *VaultStore) findRoleKey(name string) (string, bool, error) {
+	resp, err := s.client.Secrets.KvV2List(context.Background(), s.rolesPath(), s.kvReqOpts...)
+	if err != nil {
+		if vault.IsErrorStatus(err, http.StatusNotFound) {
+			return "", false, nil
+		}
+		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+			return "", false, reauthErr
+		}
+		resp, err = s.client.Secrets.KvV2List(context.Background(), s.rolesPath(), s.kvReqOpts...)
+		if err != nil {
+			if vault.IsErrorStatus(err, http.StatusNotFound) {
+				return "", false, nil
+			}
+			return "", false, err
+		}
+	}
+	for _, key := range resp.Data.Keys {
+		if strings.EqualFold(key, name) {
+			return key, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+func (s *VaultStore) CreateRole(_ context.Context, role types.Role) (*types.Role, error) {
+	if _, ok, err := s.findRoleKey(role.RoleName); err != nil {
+		return nil, err
+	} else if ok {
+		return nil, iamerr.EntityAlreadyExistsRole(role.RoleName)
+	}
+
+	role.EnsureRoleLastUsed()
+
+	roleMap, err := roleToVaultMap(role)
+	if err != nil {
+		return nil, fmt.Errorf("serialize role: %w", err)
+	}
+
+	path := s.rolesPath() + "/" + role.RoleName
+	req := schema.KvV2WriteRequest{
+		Data: map[string]any{role.RoleName: roleMap},
+		Options: map[string]any{
+			"cas": 0,
+		},
+	}
+
+	_, err = s.client.Secrets.KvV2Write(context.Background(), path, req, s.kvReqOpts...)
+	if err != nil {
+		if strings.Contains(err.Error(), "check-and-set") {
+			return nil, iamerr.EntityAlreadyExistsRole(role.RoleName)
+		}
+		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+			return nil, reauthErr
+		}
+		// retry once after re-auth
+		_, err = s.client.Secrets.KvV2Write(context.Background(), path, req, s.kvReqOpts...)
+		if err != nil {
+			if strings.Contains(err.Error(), "check-and-set") {
+				return nil, iamerr.EntityAlreadyExistsRole(role.RoleName)
+			}
+			if vault.IsErrorStatus(err, http.StatusForbidden) {
+				return nil, fmt.Errorf("vault 403 permission denied on path %q. check KV mount path and policy. original: %w", path, err)
+			}
+			return nil, err
+		}
+	}
+	return cloneRole(role), nil
+}
+
+func (s *VaultStore) GetRole(_ context.Context, roleName string) (*types.Role, error) {
+	canonical, ok, err := s.findRoleKey(roleName)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, iamerr.NoSuchEntityRole(roleName)
+	}
+
+	path := s.rolesPath() + "/" + canonical
+	resp, err := s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...)
+	if err != nil {
+		if vault.IsErrorStatus(err, http.StatusNotFound) {
+			return nil, iamerr.NoSuchEntityRole(roleName)
+		}
+		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+			return nil, reauthErr
+		}
+		resp, err = s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...)
+		if err != nil {
+			if vault.IsErrorStatus(err, http.StatusNotFound) {
+				return nil, iamerr.NoSuchEntityRole(roleName)
+			}
+			return nil, err
+		}
+	}
+
+	role, err := parseVaultRole(resp.Data.Data, canonical)
+	if err != nil {
+		return nil, err
+	}
+	return cloneRole(role), nil
+}
+
+func (s *VaultStore) ListRoles(ctx context.Context, input ListRolesInput) (*ListRolesOutput, error) {
+	resp, err := s.client.Secrets.KvV2List(context.Background(), s.rolesPath(), s.kvReqOpts...)
+	if err != nil {
+		if vault.IsErrorStatus(err, http.StatusNotFound) {
+			return &ListRolesOutput{Roles: []types.Role{}}, nil
+		}
+		reauthErr := s.reAuthIfNeeded(err)
+		if reauthErr != nil {
+			if vault.IsErrorStatus(err, http.StatusNotFound) {
+				return &ListRolesOutput{Roles: []types.Role{}}, nil
+			}
+			return nil, reauthErr
+		}
+		resp, err = s.client.Secrets.KvV2List(context.Background(), s.rolesPath(), s.kvReqOpts...)
+		if err != nil {
+			if vault.IsErrorStatus(err, http.StatusNotFound) {
+				return &ListRolesOutput{Roles: []types.Role{}}, nil
+			}
+			return nil, err
+		}
+	}
+
+	roles := make([]types.Role, 0, len(resp.Data.Keys))
+	for _, key := range resp.Data.Keys {
+		role, err := s.GetRole(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		if input.PathPrefix != "" && !strings.HasPrefix(role.Path, input.PathPrefix) {
+			continue
+		}
+		// ListRoles entries omit RoleLastUsed even though GetRole (reused
+		// above to fetch each entry) attaches it — matches the documented
+		// list/get field asymmetry.
+		role.RoleLastUsed = nil
+		roles = append(roles, *role)
+	}
+
+	sort.Slice(roles, func(i, j int) bool {
+		return roles[i].RoleName < roles[j].RoleName
+	})
+
+	start := 0
+	if input.Marker != "" {
+		start = len(roles)
+		for i, role := range roles {
+			if role.RoleName == input.Marker {
+				start = i + 1
+				break
+			}
+		}
+	}
+	roles = roles[start:]
+
+	limit := len(roles)
+	if input.MaxItems > 0 && int(input.MaxItems) < limit {
+		limit = int(input.MaxItems)
+	}
+
+	out := &ListRolesOutput{
+		Roles: make([]types.Role, limit),
+	}
+	copy(out.Roles, roles[:limit])
+	if limit < len(roles) {
+		out.IsTruncated = true
+		out.Marker = out.Roles[limit-1].RoleName
+	}
+
+	return out, nil
+}
+
+func (s *VaultStore) DeleteRole(ctx context.Context, roleName string) error {
+	role, err := s.GetRole(ctx, roleName)
+	if err != nil {
+		return err
+	}
+	if len(role.Policies.Inline) > 0 {
+		return iamerr.GetAPIError(iamerr.ErrDeleteConflictPolicies)
+	}
+	return s.deleteRoleByPath(role.RoleName)
+}
+
+func (s *VaultStore) UpdateAssumeRolePolicy(ctx context.Context, input UpdateAssumeRolePolicyInput) (*types.Role, error) {
+	role, err := s.GetRole(ctx, input.RoleName)
+	if err != nil {
+		return nil, err
+	}
+	role.AssumeRolePolicyDocument = input.PolicyDocument
+
+	return s.replaceRole(ctx, *role)
+}
+
+// replaceRole overwrites the stored document for role.RoleName by deleting
+// all existing versions and recreating with CAS=0.
+func (s *VaultStore) replaceRole(ctx context.Context, role types.Role) (*types.Role, error) {
+	if err := s.deleteRoleByPath(role.RoleName); err != nil {
+		return nil, err
+	}
+	return s.CreateRole(ctx, role)
+}
+
+// deleteRoleByPath permanently removes a role secret and all its versions
+// without checking for existence first.
+func (s *VaultStore) deleteRoleByPath(roleName string) error {
+	path := s.rolesPath() + "/" + roleName
+	_, err := s.client.Secrets.KvV2DeleteMetadataAndAllVersions(context.Background(), path, s.kvReqOpts...)
+	if err != nil {
+		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+			return reauthErr
+		}
+		_, err = s.client.Secrets.KvV2DeleteMetadataAndAllVersions(context.Background(), path, s.kvReqOpts...)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var errInvalidVaultRole = errors.New("invalid role entry in vault secrets engine")
+
+// roleToVaultMap is userToVaultMap's counterpart for roles.
+func roleToVaultMap(role types.Role) (map[string]any, error) {
+	b, err := json.Marshal(role)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// parseVaultRole reconstructs a Role from the raw map[string]any that vault
+// returns. The outer key is the role name.
+func parseVaultRole(data map[string]any, roleName string) (types.Role, error) {
+	raw, ok := data[roleName]
+	if !ok {
+		return types.Role{}, errInvalidVaultRole
+	}
+	roleMap, ok := raw.(map[string]any)
+	if !ok {
+		return types.Role{}, errInvalidVaultRole
+	}
+	b, err := json.Marshal(roleMap)
+	if err != nil {
+		return types.Role{}, fmt.Errorf("re-marshal vault role: %w", err)
+	}
+	var role types.Role
+	if err := json.Unmarshal(b, &role); err != nil {
+		return types.Role{}, fmt.Errorf("unmarshal vault role: %w", err)
+	}
+	return role, nil
 }
 
 var errInvalidVaultUser = errors.New("invalid user entry in vault secrets engine")

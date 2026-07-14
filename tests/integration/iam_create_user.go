@@ -47,6 +47,27 @@ func IAMCreateUser_user_already_exists(s *S3Conf) error {
 	})
 }
 
+func IAMCreateUser_already_exists_case_insensitive(s *S3Conf) error {
+	testName := "IAMCreateUser_already_exists_case_insensitive"
+	return iamActionHandler(s, testName, func(client *iam.Client) error {
+		userName := newIAMUserName()
+		if _, err := createIAMUser(client, &iam.CreateUserInput{
+			UserName: &userName,
+		}); err != nil {
+			return err
+		}
+
+		upperName := strings.ToUpper(userName)
+		_, err := createIAMUser(client, &iam.CreateUserInput{UserName: &upperName})
+		checkErr := checkIAMApiErr(err, iamerr.EntityAlreadyExistsUser(upperName))
+		deleteErr := deleteIAMUser(client, userName)
+		if checkErr != nil {
+			return checkErr
+		}
+		return deleteErr
+	})
+}
+
 func IAMCreateUser_invalid_user_name(s *S3Conf) error {
 	testName := "IAMCreateUser_invalid_user_name"
 	return iamActionHandler(s, testName, func(client *iam.Client) error {
