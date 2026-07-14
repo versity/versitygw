@@ -1121,6 +1121,7 @@ func TestIAMQueryAuth(ts *TestState) {
 
 func TestIAMCreateUser(ts *TestState) {
 	ts.Run(IAMCreateUser_user_already_exists)
+	ts.Run(IAMCreateUser_already_exists_case_insensitive)
 	ts.Run(IAMCreateUser_invalid_user_name)
 	ts.Run(IAMCreateUser_long_user_name)
 	ts.Run(IAMCreateUser_missing_user_name)
@@ -1274,6 +1275,68 @@ func TestIAMListUserPolicies(ts *TestState) {
 	ts.Run(IAMListUserPolicies_pagination)
 }
 
+func TestIAMCreateRole(ts *TestState) {
+	ts.Run(IAMCreateRole_missing_role_name)
+	ts.Run(IAMCreateRole_invalid_role_name)
+	ts.Run(IAMCreateRole_long_role_name)
+	ts.Run(IAMCreateRole_already_exists)
+	ts.Run(IAMCreateRole_already_exists_case_insensitive)
+	ts.Run(IAMCreateRole_invalid_path)
+	ts.Run(IAMCreateRole_long_path)
+	ts.Run(IAMCreateRole_missing_assume_role_policy_document)
+	ts.Run(IAMCreateRole_non_ascii_assume_role_policy_document)
+	ts.Run(IAMCreateRole_trust_policy_size_limit_exceeded)
+	ts.Run(IAMCreateRole_description_invalid_charset)
+	ts.Run(IAMCreateRole_description_too_long)
+	ts.Run(IAMCreateRole_max_session_duration_invalid_format)
+	ts.Run(IAMCreateRole_max_session_duration_too_low)
+	ts.Run(IAMCreateRole_max_session_duration_too_high)
+	ts.Run(IAMCreateRole_duplicate_tag_keys)
+	ts.Run(IAMCreateRole_success)
+	ts.Run(IAMCreateRole_defaults)
+	ts.Run(IAMCreateRole_trust_policy_document_grammar)
+}
+
+func TestIAMGetRole(ts *TestState) {
+	ts.Run(IAMGetRole_missing_role_name)
+	ts.Run(IAMGetRole_invalid_role_name)
+	ts.Run(IAMGetRole_long_role_name)
+	ts.Run(IAMGetRole_non_existing_role)
+	ts.Run(IAMGetRole_success)
+}
+
+func TestIAMListRoles(ts *TestState) {
+	ts.Run(IAMListRoles_invalid_path_prefix)
+	ts.Run(IAMListRoles_long_path_prefix)
+	ts.Run(IAMListRoles_invalid_max_items)
+	ts.Run(IAMListRoles_invalid_max_items_format)
+	ts.Run(IAMListRoles_empty_result)
+	ts.Run(IAMListRoles_success)
+	ts.Run(IAMListRoles_path_prefix)
+	ts.Run(IAMListRoles_pagination)
+	ts.Run(IAMListRoles_path_prefix_pagination)
+}
+
+func TestIAMDeleteRole(ts *TestState) {
+	ts.Run(IAMDeleteRole_missing_role_name)
+	ts.Run(IAMDeleteRole_invalid_role_name)
+	ts.Run(IAMDeleteRole_long_role_name)
+	ts.Run(IAMDeleteRole_non_existing_role)
+	ts.Run(IAMDeleteRole_success)
+}
+
+func TestIAMUpdateAssumeRolePolicy(ts *TestState) {
+	ts.Run(IAMUpdateAssumeRolePolicy_missing_role_name)
+	ts.Run(IAMUpdateAssumeRolePolicy_missing_policy_document)
+	ts.Run(IAMUpdateAssumeRolePolicy_invalid_role_name)
+	ts.Run(IAMUpdateAssumeRolePolicy_long_role_name)
+	ts.Run(IAMUpdateAssumeRolePolicy_non_existing_role)
+	ts.Run(IAMUpdateAssumeRolePolicy_non_ascii_policy_document)
+	ts.Run(IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded)
+	ts.Run(IAMUpdateAssumeRolePolicy_success)
+	ts.Run(IAMUpdateAssumeRolePolicy_trust_policy_document_grammar)
+}
+
 func TestIAM(ts *TestState) {
 	TestIAMAuth(ts)
 	TestIAMQueryAuth(ts)
@@ -1291,6 +1354,11 @@ func TestIAM(ts *TestState) {
 	TestIAMGetUserPolicy(ts)
 	TestIAMDeleteUserPolicy(ts)
 	TestIAMListUserPolicies(ts)
+	TestIAMCreateRole(ts)
+	TestIAMGetRole(ts)
+	TestIAMListRoles(ts)
+	TestIAMDeleteRole(ts)
+	TestIAMUpdateAssumeRolePolicy(ts)
 }
 
 func TestAccessControl(ts *TestState) {
@@ -1636,6 +1704,7 @@ func GetIntTests() IntTests {
 		"IAMQueryAuth_invalid_sha256_payload_hash_ignored":                         IAMQueryAuth_invalid_sha256_payload_hash_ignored,
 		"IAMQueryAuth_with_expect_header":                                          IAMQueryAuth_with_expect_header,
 		"IAMCreateUser_user_already_exists":                                        IAMCreateUser_user_already_exists,
+		"IAMCreateUser_already_exists_case_insensitive":                            IAMCreateUser_already_exists_case_insensitive,
 		"IAMCreateUser_invalid_user_name":                                          IAMCreateUser_invalid_user_name,
 		"IAMCreateUser_long_user_name":                                             IAMCreateUser_long_user_name,
 		"IAMCreateUser_missing_user_name":                                          IAMCreateUser_missing_user_name,
@@ -1748,6 +1817,53 @@ func GetIntTests() IntTests {
 		"IAMListUserPolicies_empty_result":                                         IAMListUserPolicies_empty_result,
 		"IAMListUserPolicies_success":                                              IAMListUserPolicies_success,
 		"IAMListUserPolicies_pagination":                                           IAMListUserPolicies_pagination,
+		"IAMCreateRole_missing_role_name":                                          IAMCreateRole_missing_role_name,
+		"IAMCreateRole_invalid_role_name":                                          IAMCreateRole_invalid_role_name,
+		"IAMCreateRole_long_role_name":                                             IAMCreateRole_long_role_name,
+		"IAMCreateRole_already_exists":                                             IAMCreateRole_already_exists,
+		"IAMCreateRole_already_exists_case_insensitive":                            IAMCreateRole_already_exists_case_insensitive,
+		"IAMCreateRole_invalid_path":                                               IAMCreateRole_invalid_path,
+		"IAMCreateRole_long_path":                                                  IAMCreateRole_long_path,
+		"IAMCreateRole_missing_assume_role_policy_document":                        IAMCreateRole_missing_assume_role_policy_document,
+		"IAMCreateRole_non_ascii_assume_role_policy_document":                      IAMCreateRole_non_ascii_assume_role_policy_document,
+		"IAMCreateRole_trust_policy_size_limit_exceeded":                           IAMCreateRole_trust_policy_size_limit_exceeded,
+		"IAMCreateRole_description_invalid_charset":                                IAMCreateRole_description_invalid_charset,
+		"IAMCreateRole_description_too_long":                                       IAMCreateRole_description_too_long,
+		"IAMCreateRole_max_session_duration_invalid_format":                        IAMCreateRole_max_session_duration_invalid_format,
+		"IAMCreateRole_max_session_duration_too_low":                               IAMCreateRole_max_session_duration_too_low,
+		"IAMCreateRole_max_session_duration_too_high":                              IAMCreateRole_max_session_duration_too_high,
+		"IAMCreateRole_duplicate_tag_keys":                                         IAMCreateRole_duplicate_tag_keys,
+		"IAMCreateRole_success":                                                    IAMCreateRole_success,
+		"IAMCreateRole_defaults":                                                   IAMCreateRole_defaults,
+		"IAMCreateRole_trust_policy_document_grammar":                              IAMCreateRole_trust_policy_document_grammar,
+		"IAMGetRole_missing_role_name":                                             IAMGetRole_missing_role_name,
+		"IAMGetRole_invalid_role_name":                                             IAMGetRole_invalid_role_name,
+		"IAMGetRole_long_role_name":                                                IAMGetRole_long_role_name,
+		"IAMGetRole_non_existing_role":                                             IAMGetRole_non_existing_role,
+		"IAMGetRole_success":                                                       IAMGetRole_success,
+		"IAMListRoles_invalid_path_prefix":                                         IAMListRoles_invalid_path_prefix,
+		"IAMListRoles_long_path_prefix":                                            IAMListRoles_long_path_prefix,
+		"IAMListRoles_invalid_max_items":                                           IAMListRoles_invalid_max_items,
+		"IAMListRoles_invalid_max_items_format":                                    IAMListRoles_invalid_max_items_format,
+		"IAMListRoles_empty_result":                                                IAMListRoles_empty_result,
+		"IAMListRoles_success":                                                     IAMListRoles_success,
+		"IAMListRoles_path_prefix":                                                 IAMListRoles_path_prefix,
+		"IAMListRoles_pagination":                                                  IAMListRoles_pagination,
+		"IAMListRoles_path_prefix_pagination":                                      IAMListRoles_path_prefix_pagination,
+		"IAMDeleteRole_missing_role_name":                                          IAMDeleteRole_missing_role_name,
+		"IAMDeleteRole_invalid_role_name":                                          IAMDeleteRole_invalid_role_name,
+		"IAMDeleteRole_long_role_name":                                             IAMDeleteRole_long_role_name,
+		"IAMDeleteRole_non_existing_role":                                          IAMDeleteRole_non_existing_role,
+		"IAMDeleteRole_success":                                                    IAMDeleteRole_success,
+		"IAMUpdateAssumeRolePolicy_missing_role_name":                              IAMUpdateAssumeRolePolicy_missing_role_name,
+		"IAMUpdateAssumeRolePolicy_missing_policy_document":                        IAMUpdateAssumeRolePolicy_missing_policy_document,
+		"IAMUpdateAssumeRolePolicy_invalid_role_name":                              IAMUpdateAssumeRolePolicy_invalid_role_name,
+		"IAMUpdateAssumeRolePolicy_long_role_name":                                 IAMUpdateAssumeRolePolicy_long_role_name,
+		"IAMUpdateAssumeRolePolicy_non_existing_role":                              IAMUpdateAssumeRolePolicy_non_existing_role,
+		"IAMUpdateAssumeRolePolicy_non_ascii_policy_document":                      IAMUpdateAssumeRolePolicy_non_ascii_policy_document,
+		"IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded":               IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded,
+		"IAMUpdateAssumeRolePolicy_success":                                        IAMUpdateAssumeRolePolicy_success,
+		"IAMUpdateAssumeRolePolicy_trust_policy_document_grammar":                  IAMUpdateAssumeRolePolicy_trust_policy_document_grammar,
 		"PresignedAuth_security_token_not_supported":                               PresignedAuth_security_token_not_supported,
 		"PresignedAuth_unsupported_algorithm":                                      PresignedAuth_unsupported_algorithm,
 		"PresignedAuth_ECDSA_not_supported":                                        PresignedAuth_ECDSA_not_supported,

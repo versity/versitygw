@@ -41,6 +41,10 @@ type Statement struct {
 	NotResource  StringOrSlice
 	Principal    json.RawMessage
 	NotPrincipal json.RawMessage
+	// Condition is never structurally validated (neither the identity- nor
+	// trust-policy path models its grammar) — it is only checked for
+	// presence, by the trust-policy Cognito-provider rule.
+	Condition json.RawMessage
 }
 
 // UnmarshalJSON accepts Statement as either a single JSON object or an

@@ -934,6 +934,60 @@ func checkIAMApiErr(err error, expected iamerr.APIError) error {
 	return nil
 }
 
+type trustPolicyGrammarCase struct {
+	name    string
+	doc     string
+	wantErr iamerr.APIError // nil means the document must be accepted
+}
+
+// trustPolicyGrammarCases covers the role trust-policy grammar
+var trustPolicyGrammarCases = []trustPolicyGrammarCase{
+	{"valid AWS principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::123456789012:root"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid without version", `{"Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid Service principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"s3.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid multiple principal type keys together", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*","Service":"sts.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid Federated non-cognito provider (looks suspicious, is valid)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"bogus.example.com"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid non-AssumeRole sts action", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:TagSession"}]}`, nil},
+	{"valid NotAction with sts prefix", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Principal":{"AWS":"*"},"NotAction":"sts:AssumeRole"}]}`, nil},
+	{"valid action array all sts prefixed", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","sts:TagSession"]}]}`, nil},
+	{"valid multiple unique sids", `{"Version":"2012-10-17","Statement":[{"Sid":"A","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"},{"Sid":"B","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"cognito federated with condition", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"cognito-identity.amazonaws.com"},"Action":"sts:AssumeRole","Condition":{"StringEquals":{"cognito-identity.amazonaws.com:aud":"us-east-1:abc"}}}]}`, nil},
+	{"unrelated condition block ignored (looks suspicious, is valid)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","Condition":{"StringEquals":{"aws:SourceAccount":"123456789012"}}}]}`, nil},
+
+	{"invalid json syntax", `{invalid json`, iamerr.MalformedPolicyDocument("This policy contains invalid Json")},
+	{"invalid version", `{"Version":"2020-01-01","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("The policy must contain a valid version string")},
+	{"empty statement array", `{"Version":"2012-10-17","Statement":[]}`, iamerr.MalformedPolicyDocument("Could not parse the policy: Statement is empty!")},
+	{"missing statement", `{"Version":"2012-10-17"}`, iamerr.MalformedPolicyDocument("Could not parse the policy: Statement is empty!")},
+
+	{"invalid effect value", `{"Version":"2012-10-17","Statement":[{"Effect":"Maybe","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Invalid effect: Maybe")},
+	{"missing effect field", `{"Version":"2012-10-17","Statement":[{"Principal":{"Service":"s3.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Missing required field Effect")},
+
+	{"missing principal (opposite of an identity policy, which forbids it)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Missing required field Principal")},
+	{"empty principal object", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Missing required field Principal cannot be empty!")},
+	{"principal as bare string", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Principal must be a JSON object.")},
+	{"principal as array", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":["a"],"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Syntax error in policy.")},
+	{"principal has invalid key", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"CanonicalUser":"abc"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument(`Invalid principal in policy: "CanonicalUser"`)},
+	{"principal key wrong case (looks like it should work, key match is case-sensitive)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"service":"s3.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument(`Invalid principal in policy: "service"`)},
+	{"principal has unrecognized service", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"invalid.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument(`Invalid principal in policy: "SERVICE":"invalid.amazonaws.com"`)},
+	{"principal has ec2 service (valid on real AWS, unsupported by this gateway)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument(`Invalid principal in policy: "SERVICE":"ec2.amazonaws.com"`)},
+
+	{"allow with notprincipal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","NotPrincipal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Allow with NotPrincipal is not allowed.")},
+	{"deny with notprincipal", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","NotPrincipal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy must not contain NotPrincipal field.")},
+
+	{"missing action and notaction", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"}}]}`, iamerr.MalformedPolicyDocument("Missing required field Action")},
+	{"bare wildcard action rejected (legal in an identity policy, not here)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"non-sts vendor action rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"s3:GetObject"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"non-sts notaction rejected even on deny", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Principal":{"AWS":"*"},"NotAction":"s3:GetObject"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"one non-sts action in an otherwise-valid array rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","s3:GetObject"]}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+
+	{"resource forbidden", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","Resource":"*"}]}`, iamerr.MalformedPolicyDocument("Has prohibited field Resource")},
+	{"notresource forbidden", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","NotResource":"*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy must not contain resources.")},
+
+	{"duplicate sid across statements", `{"Version":"2012-10-17","Statement":[{"Sid":"Dup","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"},{"Sid":"Dup","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("The Statement Ids in the policy are not unique")},
+
+	{"cognito federated without condition (looks valid, Cognito needs a Condition)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"cognito-identity.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("A condition block must be present for the Cognito provider")},
+}
+
 func putObjects(client *s3.Client, objs []string, bucket string) ([]types.Object, error) {
 	var contents []types.Object
 	var size int64

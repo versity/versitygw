@@ -36,6 +36,7 @@ const MaxInlinePolicyBytesPerUser = 2048
 var (
 	ErrUserIDAlreadyExists      = errors.New("iamapi: user id already exists")
 	ErrAccessKeyIDAlreadyExists = errors.New("iamapi: access key id already exists")
+	ErrRoleIDAlreadyExists      = errors.New("iamapi: role id already exists")
 )
 
 type ListUsersInput struct {
@@ -108,6 +109,23 @@ type ListUserPoliciesOutput struct {
 	Marker      string
 }
 
+type ListRolesInput struct {
+	PathPrefix string
+	Marker     string
+	MaxItems   int32
+}
+
+type ListRolesOutput struct {
+	Roles       []types.Role
+	IsTruncated bool
+	Marker      string
+}
+
+type UpdateAssumeRolePolicyInput struct {
+	RoleName       string
+	PolicyDocument string
+}
+
 // Storer is the IAM API storage backend contract.
 type Storer interface {
 	CreateUser(ctx context.Context, user types.User) (*types.User, error)
@@ -126,6 +144,12 @@ type Storer interface {
 	GetUserPolicy(ctx context.Context, userName, policyName string) (*types.PolicyEntry, error)
 	DeleteUserPolicy(ctx context.Context, userName, policyName string) error
 	ListUserPolicies(ctx context.Context, input ListUserPoliciesInput) (*ListUserPoliciesOutput, error)
+
+	CreateRole(ctx context.Context, role types.Role) (*types.Role, error)
+	GetRole(ctx context.Context, roleName string) (*types.Role, error)
+	ListRoles(ctx context.Context, input ListRolesInput) (*ListRolesOutput, error)
+	DeleteRole(ctx context.Context, roleName string) error
+	UpdateAssumeRolePolicy(ctx context.Context, input UpdateAssumeRolePolicyInput) (*types.Role, error)
 }
 
 func unwrapAPIError(err error) error {
