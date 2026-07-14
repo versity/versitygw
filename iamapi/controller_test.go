@@ -30,6 +30,7 @@ import (
 )
 
 var userIDPattern = regexp.MustCompile(`^AIDA[A-Z2-7]{17}$`)
+var roleIDPattern = regexp.MustCompile(`^AROA[A-Z2-7]{17}$`)
 
 func TestIAMApiControllerUserLifecycle(t *testing.T) {
 	server := newIAMControllerTestServer(t)
@@ -826,6 +827,478 @@ func TestIAMApiControllerDeleteUserPolicyConflict(t *testing.T) {
 
 	deleteKeyOnly := doIAMAction(t, server, url.Values{"Action": {"DeleteUser"}, "UserName": {"alice"}})
 	requireIAMError(t, deleteKeyOnly, http.StatusConflict, "Sender", "DeleteConflict", "Cannot delete entity, must delete access keys first.")
+}
+
+const validTrustPolicy = `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`
+
+func TestIAMApiControllerRoleLifecycle(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+
+	create := doIAMAction(t, server, url.Values{
+		"Action":                   {"CreateRole"},
+		"RoleName":                 {"my-role"},
+		"Path":                     {"/engineering/"},
+		"AssumeRolePolicyDocument": {validTrustPolicy},
+		"Description":              {"a test role"},
+		"MaxSessionDuration":       {"7200"},
+		"Tags.member.1.Key":        {"env"},
+		"Tags.member.1.Value":      {"test"},
+	})
+	if create.StatusCode != http.StatusOK {
+		t.Fatalf("CreateRole status = %d, body=%s", create.StatusCode, readBody(t, create))
+	}
+	createBody := readBody(t, create)
+	var createOut iamtypes.CreateRoleResponse
+	unmarshalXML(t, createBody, &createOut)
+	if createOut.XMLName.Space != "https://iam.amazonaws.com/doc/2010-05-08/" || createOut.XMLName.Local != "CreateRoleResponse" {
+		t.Fatalf("CreateRole XMLName = %#v", createOut.XMLName)
+	}
+	role := createOut.Result.Role
+	if role.Path != "/engineering/" || role.RoleName != "my-role" {
+		t.Fatalf("created role = %#v, want path/name", role)
+	}
+	if !roleIDPattern.MatchString(role.RoleID) {
+		t.Fatalf("RoleId = %q, want AWS IAM role id form", role.RoleID)
+	}
+	if role.Arn != "arn:aws:iam::000000000000:role/engineering/my-role" {
+		t.Fatalf("Arn = %q", role.Arn)
+	}
+	if role.CreateDate.IsZero() {
+		t.Fatal("CreateDate is zero")
+	}
+	if role.Description != "a test role" {
+		t.Fatalf("Description = %q", role.Description)
+	}
+	if role.MaxSessionDuration != 7200 {
+		t.Fatalf("MaxSessionDuration = %d, want 7200", role.MaxSessionDuration)
+	}
+	wantEncodedPolicy := iamutil.EncodePolicyDocument(validTrustPolicy)
+	if role.AssumeRolePolicyDocument != wantEncodedPolicy {
+		t.Fatalf("AssumeRolePolicyDocument = %q, want %q", role.AssumeRolePolicyDocument, wantEncodedPolicy)
+	}
+	if role.RoleLastUsed == nil {
+		t.Fatal("CreateRole RoleLastUsed = nil, want non-nil empty element")
+	}
+	if len(role.Tags) != 1 || role.Tags[0].Key != "env" || role.Tags[0].Value != "test" {
+		t.Fatalf("Tags = %#v", role.Tags)
+	}
+	if createOut.ResponseMetadata.RequestID == "" {
+		t.Fatal("CreateRole missing RequestId")
+	}
+
+	duplicate := doIAMAction(t, server, url.Values{
+		"Action":                   {"CreateRole"},
+		"RoleName":                 {"MY-ROLE"},
+		"AssumeRolePolicyDocument": {validTrustPolicy},
+	})
+	requireIAMError(t, duplicate, http.StatusConflict, "Sender", "EntityAlreadyExists", "Role with name MY-ROLE already exists.")
+
+	get := doIAMAction(t, server, url.Values{
+		"Action":   {"GetRole"},
+		"RoleName": {"my-role"},
+	})
+	if get.StatusCode != http.StatusOK {
+		t.Fatalf("GetRole status = %d, body=%s", get.StatusCode, readBody(t, get))
+	}
+	var getOut iamtypes.GetRoleResponse
+	unmarshalXML(t, readBody(t, get), &getOut)
+	gotRole := getOut.Result.Role
+	if gotRole.RoleID != role.RoleID || !gotRole.CreateDate.Equal(role.CreateDate) {
+		t.Fatalf("GetRole identity = %#v, want RoleId/CreateDate preserved from %#v", gotRole, role)
+	}
+	if gotRole.RoleLastUsed == nil {
+		t.Fatal("GetRole RoleLastUsed = nil, want non-nil empty element")
+	}
+	if gotRole.AssumeRolePolicyDocument != wantEncodedPolicy {
+		t.Fatalf("GetRole AssumeRolePolicyDocument = %q, want %q", gotRole.AssumeRolePolicyDocument, wantEncodedPolicy)
+	}
+
+	list := doIAMAction(t, server, url.Values{
+		"Action":     {"ListRoles"},
+		"PathPrefix": {"/engineering/"},
+	})
+	if list.StatusCode != http.StatusOK {
+		t.Fatalf("ListRoles status = %d, body=%s", list.StatusCode, readBody(t, list))
+	}
+	var listOut iamtypes.ListRolesResponse
+	unmarshalXML(t, readBody(t, list), &listOut)
+	if len(listOut.Result.Roles.Members) != 1 || listOut.Result.Roles.Members[0].RoleName != "my-role" {
+		t.Fatalf("ListRoles = %#v, want my-role", listOut.Result.Roles.Members)
+	}
+	if listOut.Result.Roles.Members[0].RoleLastUsed != nil {
+		t.Fatalf("ListRoles RoleLastUsed = %#v, want nil (list/get asymmetry)", listOut.Result.Roles.Members[0].RoleLastUsed)
+	}
+	if listOut.Result.Roles.Members[0].AssumeRolePolicyDocument != wantEncodedPolicy {
+		t.Fatalf("ListRoles AssumeRolePolicyDocument = %q, want %q", listOut.Result.Roles.Members[0].AssumeRolePolicyDocument, wantEncodedPolicy)
+	}
+
+	const updatedTrustPolicy = `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"sts.amazonaws.com"},"Action":"sts:AssumeRole"}]}`
+	update := doIAMAction(t, server, url.Values{
+		"Action":         {"UpdateAssumeRolePolicy"},
+		"RoleName":       {"my-role"},
+		"PolicyDocument": {updatedTrustPolicy},
+	})
+	if update.StatusCode != http.StatusOK {
+		t.Fatalf("UpdateAssumeRolePolicy status = %d, body=%s", update.StatusCode, readBody(t, update))
+	}
+	var updateOut iamtypes.UpdateAssumeRolePolicyResponse
+	unmarshalXML(t, readBody(t, update), &updateOut)
+	if updateOut.XMLName.Local != "UpdateAssumeRolePolicyResponse" || updateOut.ResponseMetadata.RequestID == "" {
+		t.Fatalf("UpdateAssumeRolePolicy output = %#v", updateOut)
+	}
+
+	oversizedTrustPolicy := `{"Version":"2012-10-17","Statement":[{"Sid":"` + strings.Repeat("x", 2000) + `","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`
+	updateOversized := doIAMAction(t, server, url.Values{
+		"Action":         {"UpdateAssumeRolePolicy"},
+		"RoleName":       {"my-role"},
+		"PolicyDocument": {oversizedTrustPolicy},
+	})
+	requireIAMError(t, updateOversized, http.StatusConflict, "Sender", "LimitExceeded", "Cannot exceed quota for ACLSizePerRole: 2048")
+
+	getAfterUpdate := doIAMAction(t, server, url.Values{
+		"Action":   {"GetRole"},
+		"RoleName": {"my-role"},
+	})
+	var getAfterUpdateOut iamtypes.GetRoleResponse
+	unmarshalXML(t, readBody(t, getAfterUpdate), &getAfterUpdateOut)
+	wantUpdatedEncoded := iamutil.EncodePolicyDocument(updatedTrustPolicy)
+	if getAfterUpdateOut.Result.Role.AssumeRolePolicyDocument != wantUpdatedEncoded {
+		t.Fatalf("GetRole after update AssumeRolePolicyDocument = %q, want %q", getAfterUpdateOut.Result.Role.AssumeRolePolicyDocument, wantUpdatedEncoded)
+	}
+
+	deleteResp := doIAMAction(t, server, url.Values{
+		"Action":   {"DeleteRole"},
+		"RoleName": {"my-role"},
+	})
+	if deleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("DeleteRole status = %d, body=%s", deleteResp.StatusCode, readBody(t, deleteResp))
+	}
+	var deleteOut iamtypes.DeleteRoleResponse
+	unmarshalXML(t, readBody(t, deleteResp), &deleteOut)
+	if deleteOut.XMLName.Local != "DeleteRoleResponse" || deleteOut.ResponseMetadata.RequestID == "" {
+		t.Fatalf("DeleteRole output = %#v", deleteOut)
+	}
+
+	missing := doIAMAction(t, server, url.Values{
+		"Action":   {"GetRole"},
+		"RoleName": {"my-role"},
+	})
+	requireIAMError(t, missing, http.StatusNotFound, "Sender", "NoSuchEntity", "The role with name my-role cannot be found.")
+}
+
+func TestIAMApiControllerCreateRoleValidationErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		params  url.Values
+		status  int
+		code    string
+		message string
+	}{
+		{
+			name: "missing role name",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"AssumeRolePolicyDocument": {validTrustPolicy},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'roleName' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name: "invalid role name",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"bad/name"},
+				"AssumeRolePolicyDocument": {validTrustPolicy},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "The specified value for roleName is invalid. It must contain only alphanumeric characters and/or the following: +=,.@_-",
+		},
+		{
+			name: "long role name",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {strings.Repeat("a", 65)},
+				"AssumeRolePolicyDocument": {validTrustPolicy},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'roleName' failed to satisfy constraint: Member must have length less than or equal to 64",
+		},
+		{
+			name: "invalid path",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"Path":                     {"bad"},
+				"AssumeRolePolicyDocument": {validTrustPolicy},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "The specified value for path is invalid. It must begin and end with / and contain only alphanumeric characters and/or / characters.",
+		},
+		{
+			name: "missing assume role policy document",
+			params: url.Values{
+				"Action":   {"CreateRole"},
+				"RoleName": {"my-role"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'assumeRolePolicyDocument' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name: "invalid json policy",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {"{invalid"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "MalformedPolicyDocument",
+			message: "This policy contains invalid Json",
+		},
+		{
+			name: "policy statement empty",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {`{"Version":"2012-10-17","Statement":[]}`},
+			},
+			status:  http.StatusBadRequest,
+			code:    "MalformedPolicyDocument",
+			message: "Could not parse the policy: Statement is empty!",
+		},
+		{
+			name: "policy missing principal",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole"}]}`},
+			},
+			status:  http.StatusBadRequest,
+			code:    "MalformedPolicyDocument",
+			message: "Missing required field Principal",
+		},
+		{
+			name: "policy principal empty object",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{},"Action":"sts:AssumeRole"}]}`},
+			},
+			status:  http.StatusBadRequest,
+			code:    "MalformedPolicyDocument",
+			message: "Missing required field Principal cannot be empty!",
+		},
+		{
+			name: "policy action not sts prefixed",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"*"}]}`},
+			},
+			status:  http.StatusBadRequest,
+			code:    "MalformedPolicyDocument",
+			message: "AssumeRole policy may only specify STS AssumeRole actions.",
+		},
+		{
+			name: "policy has resource",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","Resource":"*"}]}`},
+			},
+			status:  http.StatusBadRequest,
+			code:    "MalformedPolicyDocument",
+			message: "Has prohibited field Resource",
+		},
+		{
+			name: "policy has notresource",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","NotResource":"*"}]}`},
+			},
+			status:  http.StatusBadRequest,
+			code:    "MalformedPolicyDocument",
+			message: "AssumeRole policy must not contain resources.",
+		},
+		{
+			name: "policy allow with notprincipal",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","NotPrincipal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`},
+			},
+			status:  http.StatusBadRequest,
+			code:    "MalformedPolicyDocument",
+			message: "Allow with NotPrincipal is not allowed.",
+		},
+		{
+			name: "policy too large",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {strings.Repeat("x", 131073)},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'assumeRolePolicyDocument' failed to satisfy constraint: Member must have length less than or equal to 131072",
+		},
+		{
+			name: "description invalid charset",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {validTrustPolicy},
+				"Description":              {"emoji\U0001F600test"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'description' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]*",
+		},
+		{
+			name: "trust policy exceeds ACLSizePerRole quota",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {`{"Version":"2012-10-17","Statement":[{"Sid":"` + strings.Repeat("x", 2000) + `","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`},
+			},
+			status:  http.StatusConflict,
+			code:    "LimitExceeded",
+			message: "Cannot exceed quota for ACLSizePerRole: 2048",
+		},
+		{
+			name: "max session duration not a number",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {validTrustPolicy},
+				"MaxSessionDuration":       {"not-a-number"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "MalformedInput",
+			message: "",
+		},
+		{
+			name: "max session duration too low",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {validTrustPolicy},
+				"MaxSessionDuration":       {"3599"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'maxSessionDuration' failed to satisfy constraint: Member must have value greater than or equal to 3600",
+		},
+		{
+			name: "max session duration too high",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {validTrustPolicy},
+				"MaxSessionDuration":       {"43201"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'maxSessionDuration' failed to satisfy constraint: Member must have value less than or equal to 43200",
+		},
+		{
+			name: "duplicate tag key",
+			params: url.Values{
+				"Action":                   {"CreateRole"},
+				"RoleName":                 {"my-role"},
+				"AssumeRolePolicyDocument": {validTrustPolicy},
+				"Tags.member.1.Key":        {"dup"},
+				"Tags.member.1.Value":      {"one"},
+				"Tags.member.2.Key":        {"DUP"},
+				"Tags.member.2.Value":      {"two"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "InvalidInput",
+			message: "Duplicate tag keys found. Please note that Tag keys are case insensitive.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newIAMControllerTestServer(t)
+			resp := doIAMActionPost(t, server, tt.params)
+			requireIAMError(t, resp, tt.status, "Sender", tt.code, tt.message)
+		})
+	}
+}
+
+func TestIAMApiControllerDeleteAndUpdateAssumeRolePolicyErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		params  url.Values
+		status  int
+		code    string
+		message string
+	}{
+		{
+			name: "get missing role name",
+			params: url.Values{
+				"Action": {"GetRole"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "MissingParameter",
+			message: "The request must contain the parameter RoleName.",
+		},
+		{
+			name: "get missing role",
+			params: url.Values{
+				"Action":   {"GetRole"},
+				"RoleName": {"asdfadsf"},
+			},
+			status:  http.StatusNotFound,
+			code:    "NoSuchEntity",
+			message: "The role with name asdfadsf cannot be found.",
+		},
+		{
+			name: "delete missing role",
+			params: url.Values{
+				"Action":   {"DeleteRole"},
+				"RoleName": {"asdfadsf"},
+			},
+			status:  http.StatusNotFound,
+			code:    "NoSuchEntity",
+			message: "The role with name asdfadsf cannot be found.",
+		},
+		{
+			name: "update assume role policy missing role",
+			params: url.Values{
+				"Action":         {"UpdateAssumeRolePolicy"},
+				"RoleName":       {"asdfadsf"},
+				"PolicyDocument": {validTrustPolicy},
+			},
+			status:  http.StatusNotFound,
+			code:    "NoSuchEntity",
+			message: "The role with name asdfadsf cannot be found.",
+		},
+		{
+			name: "update assume role policy missing document",
+			params: url.Values{
+				"Action":   {"UpdateAssumeRolePolicy"},
+				"RoleName": {"asdfadsf"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'policyDocument' failed to satisfy constraint: Member must not be null",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newIAMControllerTestServer(t)
+			resp := doIAMAction(t, server, tt.params)
+			requireIAMError(t, resp, tt.status, "Sender", tt.code, tt.message)
+		})
+	}
 }
 
 func newIAMControllerTestServer(t *testing.T) *IAMApiServer {
