@@ -336,9 +336,9 @@ func ListObjectVersions_containing_null_versionId_obj(s *S3Conf) error {
 			return err
 		}
 
-		if getString(out.res.VersionId) != nullVersionId {
-			return fmt.Errorf("expected the uploaded object versionId to be %v, instead got %v",
-				nullVersionId, getString(out.res.VersionId))
+		if out.res.VersionId != nil {
+			return fmt.Errorf("expected PutObject response to omit versionId, instead got %v",
+				getString(out.res.VersionId))
 		}
 
 		versions[0].IsLatest = getBoolPtr(false)

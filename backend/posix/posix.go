@@ -3938,6 +3938,12 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		}
 	}
 
+	// "null" identifies the current object internally while versioning is
+	// suspended, but S3 omits the version ID from the PutObject response.
+	if versionID == nullVersionId {
+		versionID = ""
+	}
+
 	err = postprocess(f.File())
 	if err != nil {
 		return s3response.PutObjectOutput{},

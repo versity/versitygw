@@ -198,9 +198,10 @@ func TestSetResponseHeaders(t *testing.T) {
 		headers map[string]*string
 	}
 	tests := []struct {
-		name     string
-		args     args
-		expected map[string]string
+		name       string
+		args       args
+		expected   map[string]string
+		unexpected []string
 	}{
 		{
 			name: "should not set if map is nil",
@@ -215,7 +216,7 @@ func TestSetResponseHeaders(t *testing.T) {
 				headers: map[string]*string{
 					"x-amz-checksum-algorithm": utils.GetStringPtr("crc32"),
 					"x-amz-meta-key":           utils.GetStringPtr("meta_key"),
-					"x-amz-mp-size":            utils.GetStringPtr(""),
+					"x-amz-version-id":         utils.GetStringPtr(""),
 					"something":                nil,
 				},
 			},
@@ -223,6 +224,7 @@ func TestSetResponseHeaders(t *testing.T) {
 				"x-amz-checksum-algorithm": "crc32",
 				"x-amz-meta-key":           "meta_key",
 			},
+			unexpected: []string{"x-amz-version-id", "something"},
 		},
 	}
 	for _, tt := range tests {
@@ -235,6 +237,9 @@ func TestSetResponseHeaders(t *testing.T) {
 					v := ctx.Response().Header.Peek(key)
 					assert.Equal(t, val, string(v))
 				}
+			}
+			for _, key := range tt.unexpected {
+				assert.Empty(t, ctx.Response().Header.Peek(key))
 			}
 		})
 	}
