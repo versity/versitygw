@@ -46,9 +46,7 @@ func isErrDirNotEmpty(err error) bool {
 	return errors.Is(err, syscall.ENOTEMPTY)
 }
 
-// openForRead opens a file for reading. On non-Windows systems, os.Open is
-// sufficient because POSIX allows removing (unlinking) a file that is still
-// open by another process.
-func openForRead(name string) (*os.File, error) {
-	return os.Open(name)
+// openForRead opens an object data file for reading.
+func openForRead(name string, useODirect bool) (*os.File, error) {
+	return openDataRead(name, useODirect)
 }

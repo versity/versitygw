@@ -110,22 +110,6 @@ func isErrNotDir(err error) bool {
 // is held open for streaming the GET response body. Without this flag,
 // Windows returns "The process cannot access the file because it is being
 // used by another process" on the Remove call.
-func openForRead(name string) (*os.File, error) {
-	ptr, err := syscall.UTF16PtrFromString(name)
-	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: name, Err: err}
-	}
-	h, err := syscall.CreateFile(
-		ptr,
-		syscall.GENERIC_READ,
-		syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE|syscall.FILE_SHARE_DELETE,
-		nil,
-		syscall.OPEN_EXISTING,
-		syscall.FILE_ATTRIBUTE_NORMAL,
-		0,
-	)
-	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: name, Err: err}
-	}
-	return os.NewFile(uintptr(h), name), nil
+func openForRead(name string, useODirect bool) (*os.File, error) {
+	return openDataRead(name, useODirect)
 }

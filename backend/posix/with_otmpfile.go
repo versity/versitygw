@@ -42,6 +42,8 @@ type tmpfile struct {
 	bucket     string
 	objname    string
 	isOTmp     bool
+	procFDName string
+	useODirect bool
 	size       int64
 	doChown    bool
 	uid        int
@@ -54,11 +56,11 @@ var (
 	defaultFilePerm uint32 = 0644
 )
 
-func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, dofalloc bool, forceNoTmpFile bool) (*tmpfile, error) {
+func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, dofalloc bool, forceNoTmpFile bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
 
 	if forceNoTmpFile {
-		return p.openMkTemp(dir, bucket, obj, size, dofalloc, uid, gid, doChown)
+		return p.openMkTemp(dir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 	}
 
 	// O_TMPFILE allows for a file handle to an unnamed file in the filesystem.
@@ -67,14 +69,34 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	// file descriptor into the namespace.
 	// Not all filesystems support this, so fallback to CreateTemp for when
 	// this is not supported.
-	fd, err := unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, defaultFilePerm)
+	openFlags := unix.O_RDWR | unix.O_TMPFILE | unix.O_CLOEXEC
+	useODirect := false
+	if p.enableODirect && bool(allowODirect) {
+		openFlags |= unix.O_DIRECT
+		useODirect = true
+	}
+
+	fd, err := unix.Open(dir, openFlags, defaultFilePerm)
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
 			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
 		}
 
-		// O_TMPFILE not supported, try fallback
-		return p.openMkTemp(dir, bucket, obj, size, dofalloc, uid, gid, doChown)
+		if p.enableODirect && bool(allowODirect) && isODirectUnsupportedOpenErr(err) {
+			warnODirectUnsupportedOnce("openTmpFile", err)
+
+			fd, err = unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, defaultFilePerm)
+			if err == nil {
+				useODirect = false
+			} else if errors.Is(err, syscall.EROFS) {
+				return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+			}
+		}
+
+		if err != nil {
+			// O_TMPFILE not supported, try fallback
+			return p.openMkTemp(dir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
+		}
 	}
 
 	// for O_TMPFILE, filename is /proc/self/fd/<fd> to be used
@@ -86,6 +108,8 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		bucket:     bucket,
 		objname:    obj,
 		isOTmp:     true,
+		procFDName: strconv.Itoa(fd),
+		useODirect: useODirect,
 		size:       size,
 		doChown:    doChown,
 		uid:        uid,
@@ -109,7 +133,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	return tmp, nil
 }
 
-func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, uid, gid int, doChown bool) (*tmpfile, error) {
+func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, uid, gid int, doChown bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	err := backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
@@ -125,14 +149,41 @@ func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, u
 		}
 		return nil, err
 	}
+
+	useODirect := false
+	if p.enableODirect && bool(allowODirect) {
+		name := f.Name()
+		if err := f.Close(); err != nil {
+			os.Remove(name)
+			return nil, fmt.Errorf("close temp file before O_DIRECT reopen: %w", err)
+		}
+
+		fd, err := unix.Open(name, unix.O_RDWR|unix.O_CLOEXEC|unix.O_DIRECT, defaultFilePerm)
+		if err == nil {
+			f = os.NewFile(uintptr(fd), name)
+			useODirect = true
+		} else if isODirectUnsupportedOpenErr(err) {
+			warnODirectUnsupportedOnce("openMkTemp", err)
+			f, err = os.OpenFile(name, os.O_RDWR, 0)
+			if err != nil {
+				os.Remove(name)
+				return nil, fmt.Errorf("reopen temp file after O_DIRECT fallback: %w", err)
+			}
+		} else {
+			os.Remove(name)
+			return nil, fmt.Errorf("open temp file with O_DIRECT: %w", err)
+		}
+	}
+
 	tmp := &tmpfile{
-		f:       f,
-		bucket:  bucket,
-		objname: obj,
-		size:    size,
-		doChown: doChown,
-		uid:     uid,
-		gid:     gid,
+		f:          f,
+		bucket:     bucket,
+		objname:    obj,
+		useODirect: useODirect,
+		size:       size,
+		doChown:    doChown,
+		uid:        uid,
+		gid:        gid,
 	}
 	// falloc is best effort, its fine if this fails
 	if size > 0 && dofalloc {
@@ -237,8 +288,12 @@ func (tmp *tmpfile) link() error {
 		if err != nil {
 			return fmt.Errorf("open parent dir: %w", err)
 		}
+		srcFDName := tmp.procFDName
+		if srcFDName == "" {
+			srcFDName = filepath.Base(tmp.f.Name())
+		}
 		err = linkatOTmpfile(int(procdir.Fd()), int(dirf.Fd()),
-			filepath.Base(tmp.f.Name()), filepath.Base(objPath))
+			srcFDName, filepath.Base(objPath))
 		dirf.Close()
 		if errors.Is(err, syscall.ENOENT) {
 			// The directory was removed between open and linkat; backoff and retry.
@@ -254,7 +309,7 @@ func (tmp *tmpfile) link() error {
 		}
 		if err != nil {
 			return fmt.Errorf("link tmpfile (fd %q as %q): %w",
-				filepath.Base(tmp.f.Name()), objPath, err)
+				srcFDName, objPath, err)
 		}
 		break
 	}
