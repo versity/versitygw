@@ -6,6 +6,13 @@ metadata:
     {{- include "versitygw.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
+  {{- if .Values.service.sessionAffinity }}
+  sessionAffinity: {{ .Values.service.sessionAffinity }}
+  {{- end }}
+  {{- with .Values.service.sessionAffinityConfig }}
+  sessionAffinityConfig:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
     - port: {{ .Values.gateway.port }}
       targetPort: s3-api

@@ -56,6 +56,15 @@ securityContext:
 # To make the server available outside the cluster, the type should be changed to `NodePort` or `LoadBalancer`.
 service:
   type: ClusterIP
+  # Session affinity for the Service. Supported values: "None" (default) or "ClientIP".
+  # Use "ClientIP" to route requests from the same client to the same pod.
+  sessionAffinity: ""
+  # Configuration for the session affinity (only used when sessionAffinity is "ClientIP").
+  # Example:
+  #   sessionAffinityConfig:
+  #     clientIP:
+  #       timeoutSeconds: 10800
+  sessionAffinityConfig: {}
 
 # --- Ingress ---
 # Expose the S3 API via a Kubernetes Ingress resource.
