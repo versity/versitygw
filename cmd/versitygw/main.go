@@ -82,7 +82,8 @@ var (
 	dogstatsServers                        string
 	ipaHost, ipaVaultName                  string
 	ipaUser, ipaPassword                   string
-	ipaInsecure                            bool
+	ipaAdminGroupCN                        string
+	ipaEnableUserPlus, ipaInsecure         bool
 	iamDebug                               bool
 	webuiPorts                             []string
 	webuiCertFile, webuiKeyFile            string
@@ -779,6 +780,18 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_IPA_PASSWORD"},
 			Destination: &ipaPassword,
 		},
+		&cli.StringFlag{
+			Name:        "ipa-admin-group-cn",
+			Usage:       "FreeIPA group CN whose members are granted the admin role",
+			EnvVars:     []string{"VGW_IPA_ADMIN_GROUP_CN"},
+			Destination: &ipaAdminGroupCN,
+		},
+		&cli.BoolFlag{
+			Name:        "ipa-enable-userplus",
+			Usage:       "Grant FreeIPA users the userplus role by default instead of user",
+			EnvVars:     []string{"VGW_IPA_ENABLE_USERPLUS"},
+			Destination: &ipaEnableUserPlus,
+		},
 		&cli.BoolFlag{
 			Name:        "ipa-insecure",
 			Usage:       "Disable verify TLS certificate of FreeIPA server",
@@ -889,6 +902,8 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		IpaVaultName:                ipaVaultName,
 		IpaUser:                     ipaUser,
 		IpaPassword:                 ipaPassword,
+		IpaAdminGroupCN:             ipaAdminGroupCN,
+		IpaEnableUserPlus:           ipaEnableUserPlus,
 		IpaInsecure:                 ipaInsecure,
 		AccessLog:                   accessLog,
 		LogWebhookURL:               logWebhookURL,
