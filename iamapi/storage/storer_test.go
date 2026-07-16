@@ -384,3 +384,130 @@ func TestInternalStoreRoleCRUDAndPagination(t *testing.T) {
 		t.Fatalf("DeleteRole missing err = %v, want NoSuchEntity", err)
 	}
 }
+
+func TestInternalStoreRolePolicyCRUD(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := NewInternal(dir)
+	if err != nil {
+		t.Fatalf("NewInternal: %v", err)
+	}
+
+	if _, err := store.CreateRole(ctx, types.Role{
+		RoleName:                 "alice-role",
+		RoleID:                   "AROA22222222222222222",
+		AssumeRolePolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`,
+	}); err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+
+	if err := store.PutRolePolicy(ctx, PutRolePolicyInput{
+		RoleName:       "ALICE-ROLE",
+		PolicyName:     "ReadOnly",
+		PolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`,
+	}); err != nil {
+		t.Fatalf("PutRolePolicy: %v", err)
+	}
+	if err := store.PutRolePolicy(ctx, PutRolePolicyInput{RoleName: "missing-role", PolicyName: "P", PolicyDocument: "{}"}); !errors.Is(err, iamerr.NoSuchEntityRole("missing-role")) {
+		t.Fatalf("PutRolePolicy missing role err = %v, want NoSuchEntity", err)
+	}
+
+	entry, err := store.GetRolePolicy(ctx, "alice-role", "ReadOnly")
+	if err != nil {
+		t.Fatalf("GetRolePolicy: %v", err)
+	}
+	if entry.PolicyDocument != `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}` {
+		t.Fatalf("GetRolePolicy document = %q", entry.PolicyDocument)
+	}
+	if entry.CreateDate.IsZero() || entry.UpdateDate.IsZero() {
+		t.Fatalf("GetRolePolicy CreateDate/UpdateDate zero: %#v", entry)
+	}
+	if _, err := store.GetRolePolicy(ctx, "alice-role", "NoSuchPolicy"); !errors.Is(err, iamerr.NoSuchEntityRolePolicy("alice-role", "NoSuchPolicy")) {
+		t.Fatalf("GetRolePolicy missing policy err = %v, want NoSuchEntity", err)
+	}
+	if _, err := store.GetRolePolicy(ctx, "missing-role", "P"); !errors.Is(err, iamerr.NoSuchEntityRole("missing-role")) {
+		t.Fatalf("GetRolePolicy missing role err = %v, want NoSuchEntity", err)
+	}
+
+	// Overwriting an existing PolicyName replaces its document rather than
+	// stacking toward the aggregate size quota.
+	if err := store.PutRolePolicy(ctx, PutRolePolicyInput{
+		RoleName:       "alice-role",
+		PolicyName:     "ReadOnly",
+		PolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"s3:DeleteObject","Resource":"*"}]}`,
+	}); err != nil {
+		t.Fatalf("overwrite PutRolePolicy: %v", err)
+	}
+	overwritten, err := store.GetRolePolicy(ctx, "alice-role", "ReadOnly")
+	if err != nil {
+		t.Fatalf("GetRolePolicy after overwrite: %v", err)
+	}
+	if !strings.Contains(overwritten.PolicyDocument, "Deny") {
+		t.Fatalf("GetRolePolicy after overwrite = %q, want the Deny statement", overwritten.PolicyDocument)
+	}
+
+	// Aggregate inline policy size for a role is capped at
+	// MaxInlinePolicyBytesPerRole (10240), distinct from and larger than
+	// the 2048 byte cap for users.
+	oversized := `{"Version":"2012-10-17","Statement":[{"Sid":"` + strings.Repeat("x", 10300) + `","Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`
+	if err := store.PutRolePolicy(ctx, PutRolePolicyInput{RoleName: "alice-role", PolicyName: "TooBig", PolicyDocument: oversized}); !errors.Is(err, iamerr.InlinePolicyQuotaExceeded("role", "alice-role", MaxInlinePolicyBytesPerRole)) {
+		t.Fatalf("PutRolePolicy oversized err = %v, want LimitExceeded", err)
+	}
+
+	if err := store.PutRolePolicy(ctx, PutRolePolicyInput{
+		RoleName:       "alice-role",
+		PolicyName:     "SecondPolicy",
+		PolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}`,
+	}); err != nil {
+		t.Fatalf("PutRolePolicy second policy: %v", err)
+	}
+
+	list, err := store.ListRolePolicies(ctx, ListRolePoliciesInput{RoleName: "ALICE-ROLE", MaxItems: 1})
+	if err != nil {
+		t.Fatalf("ListRolePolicies page1: %v", err)
+	}
+	if len(list.PolicyNames) != 1 || list.PolicyNames[0] != "ReadOnly" || !list.IsTruncated || list.Marker != "ReadOnly" {
+		t.Fatalf("ListRolePolicies page1 = %#v, want truncated ReadOnly page", list)
+	}
+	page2, err := store.ListRolePolicies(ctx, ListRolePoliciesInput{RoleName: "alice-role", Marker: list.Marker, MaxItems: 10})
+	if err != nil {
+		t.Fatalf("ListRolePolicies page2: %v", err)
+	}
+	if len(page2.PolicyNames) != 1 || page2.PolicyNames[0] != "SecondPolicy" || page2.IsTruncated {
+		t.Fatalf("ListRolePolicies page2 = %#v, want final SecondPolicy page", page2)
+	}
+	if _, err := store.ListRolePolicies(ctx, ListRolePoliciesInput{RoleName: "missing-role"}); !errors.Is(err, iamerr.NoSuchEntityRole("missing-role")) {
+		t.Fatalf("ListRolePolicies missing role err = %v, want NoSuchEntity", err)
+	}
+
+	// A role with attached inline policies cannot be deleted until they are
+	// all removed first.
+	if err := store.DeleteRole(ctx, "alice-role"); !errors.Is(err, iamerr.GetAPIError(iamerr.ErrDeleteConflictPolicies)) {
+		t.Fatalf("DeleteRole with policies err = %v, want DeleteConflict", err)
+	}
+
+	if err := store.DeleteRolePolicy(ctx, "alice-role", "SecondPolicy"); err != nil {
+		t.Fatalf("DeleteRolePolicy: %v", err)
+	}
+	if err := store.DeleteRolePolicy(ctx, "alice-role", "NoSuchPolicy"); !errors.Is(err, iamerr.NoSuchEntityRolePolicy("alice-role", "NoSuchPolicy")) {
+		t.Fatalf("DeleteRolePolicy missing policy err = %v, want NoSuchEntity", err)
+	}
+	if err := store.DeleteRolePolicy(ctx, "missing-role", "P"); !errors.Is(err, iamerr.NoSuchEntityRole("missing-role")) {
+		t.Fatalf("DeleteRolePolicy missing role err = %v, want NoSuchEntity", err)
+	}
+
+	reopened, err := NewInternal(dir)
+	if err != nil {
+		t.Fatalf("reopen NewInternal: %v", err)
+	}
+	if _, err := reopened.GetRolePolicy(ctx, "alice-role", "ReadOnly"); err != nil {
+		t.Fatalf("GetRolePolicy after reopen: %v", err)
+	}
+
+	if err := reopened.DeleteRolePolicy(ctx, "alice-role", "ReadOnly"); err != nil {
+		t.Fatalf("DeleteRolePolicy: %v", err)
+	}
+	if err := reopened.DeleteRole(ctx, "alice-role"); err != nil {
+		t.Fatalf("DeleteRole after removing all policies: %v", err)
+	}
+}

@@ -718,3 +718,133 @@ func (c IAMApiController) UpdateAssumeRolePolicy(ctx fiber.Ctx) (*Response, erro
 
 	return &Response{Data: &types.UpdateAssumeRolePolicyResponse{}}, nil
 }
+
+func (c IAMApiController) PutRolePolicy(ctx fiber.Ctx) (*Response, error) {
+	policyDocument, ok := iamutil.RequestParam(ctx, "PolicyDocument")
+	if !ok {
+		debuglogger.Logf("missing required PutRolePolicy parameter: PolicyDocument")
+		return nil, iamerr.MissingValue("policyDocument")
+	}
+	if err := policy.Validate("policyDocument", policyDocument); err != nil {
+		return nil, err
+	}
+
+	policyName, ok := iamutil.RequestParam(ctx, "PolicyName")
+	if !ok {
+		debuglogger.Logf("missing required PutRolePolicy parameter: PolicyName")
+		return nil, iamerr.MissingValue("policyName")
+	}
+	if err := iamutil.ValidateName("policyName", policyName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	roleName, err := iamutil.GetRoleName(ctx, "PutRolePolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	if err != nil {
+		return nil, err
+	}
+
+	// Confirm the role exists before inspecting policy document content
+	if _, err := c.store.GetRole(ctx.Context(), roleName); err != nil {
+		debuglogger.Logf("failed to get IAM role %q for PutRolePolicy: %v", roleName, err)
+		return nil, err
+	}
+
+	if err := policy.Parse(policyDocument); err != nil {
+		return nil, err
+	}
+
+	if err := c.store.PutRolePolicy(ctx.Context(), storage.PutRolePolicyInput{
+		RoleName:       roleName,
+		PolicyName:     policyName,
+		PolicyDocument: policyDocument,
+	}); err != nil {
+		debuglogger.Logf("failed to put IAM role policy %q for role %q: %v", policyName, roleName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.PutRolePolicyResponse{}}, nil
+}
+
+func (c IAMApiController) GetRolePolicy(ctx fiber.Ctx) (*Response, error) {
+	policyName, ok := iamutil.RequestParam(ctx, "PolicyName")
+	if !ok {
+		debuglogger.Logf("missing required GetRolePolicy parameter: PolicyName")
+		return nil, iamerr.MissingValue("policyName")
+	}
+	if err := iamutil.ValidateName("policyName", policyName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	roleName, err := iamutil.GetRoleName(ctx, "GetRolePolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	if err != nil {
+		return nil, err
+	}
+
+	entry, err := c.store.GetRolePolicy(ctx.Context(), roleName, policyName)
+	if err != nil {
+		debuglogger.Logf("failed to get IAM role policy %q for role %q: %v", policyName, roleName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.GetRolePolicyResponse{
+		Result: types.GetRolePolicyResult{
+			RoleName:       roleName,
+			PolicyName:     entry.PolicyName,
+			PolicyDocument: iamutil.EncodePolicyDocument(entry.PolicyDocument),
+		},
+	}}, nil
+}
+
+func (c IAMApiController) DeleteRolePolicy(ctx fiber.Ctx) (*Response, error) {
+	policyName, ok := iamutil.RequestParam(ctx, "PolicyName")
+	if !ok {
+		debuglogger.Logf("missing required DeleteRolePolicy parameter: PolicyName")
+		return nil, iamerr.MissingValue("policyName")
+	}
+	if err := iamutil.ValidateName("policyName", policyName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	roleName, err := iamutil.GetRoleName(ctx, "DeleteRolePolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.store.DeleteRolePolicy(ctx.Context(), roleName, policyName); err != nil {
+		debuglogger.Logf("failed to delete IAM role policy %q for role %q: %v", policyName, roleName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.DeleteRolePolicyResponse{}}, nil
+}
+
+func (c IAMApiController) ListRolePolicies(ctx fiber.Ctx) (*Response, error) {
+	roleName, err := iamutil.GetRoleName(ctx, "ListRolePolicies", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	if err != nil {
+		return nil, err
+	}
+
+	maxItems, err := iamutil.ParseMaxItems(ctx, "ListRolePolicies")
+	if err != nil {
+		return nil, err
+	}
+
+	marker, _ := iamutil.RequestParam(ctx, "Marker")
+	out, err := c.store.ListRolePolicies(ctx.Context(), storage.ListRolePoliciesInput{
+		RoleName: roleName,
+		Marker:   marker,
+		MaxItems: maxItems,
+	})
+	if err != nil {
+		debuglogger.Logf("failed to list IAM role policies for role %q: %v", roleName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.ListRolePoliciesResponse{
+		Result: types.ListRolePoliciesResult{
+			PolicyNames: types.PolicyNameList{Members: out.PolicyNames},
+			IsTruncated: out.IsTruncated,
+			Marker:      out.Marker,
+		},
+	}}, nil
+}
