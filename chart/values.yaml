@@ -164,6 +164,7 @@ gateway:
   # Access log file path for S3 requests (AWS log format). Empty = disabled.
   accessLog: ""
   # Default CORS allowed origin. Empty = CORS disabled.
+  # Must include the scheme prefix, e.g. "https://example.com" or "http://example.com".
   corsAllowOrigin: ""
   # Disable strict S3 bucket naming validation.
   disableStrictBucketNames: false
@@ -178,6 +179,20 @@ admin:
   maxConnections: 250000
   # Maximum in-flight requests for the admin server.
   maxRequests: 100000
+  # --- Ingress ---
+  # Expose the Admin API via a Kubernetes Ingress resource.
+  # Requires an ingress controller (e.g. nginx, traefik) to be installed in the cluster.
+  ingress:
+    enabled: false
+    # IngressClass to use (maps to spec.ingressClassName).
+    className: ""
+    annotations: {}
+    hosts:
+      - host: s3-admin.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
   # --- HTTPRoute ---
   # Expose the Admin API via a Gateway API HTTPRoute resource.
   # Requires Gateway API CRDs and a Gateway API implementation (Envoy Gateway, Istio, Kgateway, etc.) in the cluster.
@@ -218,6 +233,20 @@ webui:
   # Kubernetes because it uses the internal pod IP addresses.
   adminGateways: []
   # - s3-admin.example.com
+  # --- Ingress ---
+  # Expose the WebUI via a Kubernetes Ingress resource.
+  # Requires an ingress controller (e.g. nginx, traefik) to be installed in the cluster.
+  ingress:
+    enabled: false
+    # IngressClass to use (maps to spec.ingressClassName).
+    className: ""
+    annotations: {}
+    hosts:
+      - host: versitygw.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
   # --- HTTPRoute ---
   # Expose the WebUI via a Gateway API HTTPRoute resource.
   # Requires Gateway API CRDs and a Gateway API implementation (Envoy Gateway, Istio, Kgateway, etc.) in the cluster.
