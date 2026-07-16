@@ -33,6 +33,10 @@ const MaxAccessKeysPerUser = 2
 // all of a single IAM user's inline policy documents combined
 const MaxInlinePolicyBytesPerUser = 2048
 
+// MaxInlinePolicyBytesPerRole is the maximum aggregate size, in bytes, of
+// all of a single IAM role's inline policy documents combined
+const MaxInlinePolicyBytesPerRole = 10240
+
 var (
 	ErrUserIDAlreadyExists      = errors.New("iamapi: user id already exists")
 	ErrAccessKeyIDAlreadyExists = errors.New("iamapi: access key id already exists")
@@ -126,6 +130,24 @@ type UpdateAssumeRolePolicyInput struct {
 	PolicyDocument string
 }
 
+type PutRolePolicyInput struct {
+	RoleName       string
+	PolicyName     string
+	PolicyDocument string
+}
+
+type ListRolePoliciesInput struct {
+	RoleName string
+	Marker   string
+	MaxItems int32
+}
+
+type ListRolePoliciesOutput struct {
+	PolicyNames []string
+	IsTruncated bool
+	Marker      string
+}
+
 // Storer is the IAM API storage backend contract.
 type Storer interface {
 	CreateUser(ctx context.Context, user types.User) (*types.User, error)
@@ -150,6 +172,11 @@ type Storer interface {
 	ListRoles(ctx context.Context, input ListRolesInput) (*ListRolesOutput, error)
 	DeleteRole(ctx context.Context, roleName string) error
 	UpdateAssumeRolePolicy(ctx context.Context, input UpdateAssumeRolePolicyInput) (*types.Role, error)
+
+	PutRolePolicy(ctx context.Context, input PutRolePolicyInput) error
+	GetRolePolicy(ctx context.Context, roleName, policyName string) (*types.PolicyEntry, error)
+	DeleteRolePolicy(ctx context.Context, roleName, policyName string) error
+	ListRolePolicies(ctx context.Context, input ListRolePoliciesInput) (*ListRolePoliciesOutput, error)
 }
 
 func unwrapAPIError(err error) error {

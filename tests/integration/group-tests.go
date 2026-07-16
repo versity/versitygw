@@ -1322,6 +1322,7 @@ func TestIAMDeleteRole(ts *TestState) {
 	ts.Run(IAMDeleteRole_invalid_role_name)
 	ts.Run(IAMDeleteRole_long_role_name)
 	ts.Run(IAMDeleteRole_non_existing_role)
+	ts.Run(IAMDeleteRole_has_policies)
 	ts.Run(IAMDeleteRole_success)
 }
 
@@ -1335,6 +1336,47 @@ func TestIAMUpdateAssumeRolePolicy(ts *TestState) {
 	ts.Run(IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded)
 	ts.Run(IAMUpdateAssumeRolePolicy_success)
 	ts.Run(IAMUpdateAssumeRolePolicy_trust_policy_document_grammar)
+}
+
+func TestIAMPutRolePolicy(ts *TestState) {
+	ts.Run(IAMPutRolePolicy_missing_role_name)
+	ts.Run(IAMPutRolePolicy_missing_policy_name)
+	ts.Run(IAMPutRolePolicy_missing_policy_document)
+	ts.Run(IAMPutRolePolicy_invalid_policy_name)
+	ts.Run(IAMPutRolePolicy_long_policy_name)
+	ts.Run(IAMPutRolePolicy_non_ascii_policy_document)
+	ts.Run(IAMPutRolePolicy_non_existing_role)
+	ts.Run(IAMPutRolePolicy_malformed_policy_document)
+	ts.Run(IAMPutRolePolicy_principal_not_allowed)
+	ts.Run(IAMPutRolePolicy_limit_exceeded)
+	ts.Run(IAMPutRolePolicy_success)
+	ts.Run(IAMPutRolePolicy_overwrite_updates_existing)
+}
+
+func TestIAMGetRolePolicy(ts *TestState) {
+	ts.Run(IAMGetRolePolicy_missing_role_name)
+	ts.Run(IAMGetRolePolicy_missing_policy_name)
+	ts.Run(IAMGetRolePolicy_non_existing_role)
+	ts.Run(IAMGetRolePolicy_non_existing_policy)
+	ts.Run(IAMGetRolePolicy_success)
+}
+
+func TestIAMDeleteRolePolicy(ts *TestState) {
+	ts.Run(IAMDeleteRolePolicy_missing_role_name)
+	ts.Run(IAMDeleteRolePolicy_missing_policy_name)
+	ts.Run(IAMDeleteRolePolicy_non_existing_role)
+	ts.Run(IAMDeleteRolePolicy_non_existing_policy)
+	ts.Run(IAMDeleteRolePolicy_success)
+	ts.Run(IAMDeleteRolePolicy_blocks_role_deletion)
+}
+
+func TestIAMListRolePolicies(ts *TestState) {
+	ts.Run(IAMListRolePolicies_missing_role_name)
+	ts.Run(IAMListRolePolicies_non_existing_role)
+	ts.Run(IAMListRolePolicies_invalid_max_items)
+	ts.Run(IAMListRolePolicies_empty_result)
+	ts.Run(IAMListRolePolicies_success)
+	ts.Run(IAMListRolePolicies_pagination)
 }
 
 func TestIAM(ts *TestState) {
@@ -1359,6 +1401,10 @@ func TestIAM(ts *TestState) {
 	TestIAMListRoles(ts)
 	TestIAMDeleteRole(ts)
 	TestIAMUpdateAssumeRolePolicy(ts)
+	TestIAMPutRolePolicy(ts)
+	TestIAMGetRolePolicy(ts)
+	TestIAMDeleteRolePolicy(ts)
+	TestIAMListRolePolicies(ts)
 }
 
 func TestAccessControl(ts *TestState) {
@@ -1854,6 +1900,7 @@ func GetIntTests() IntTests {
 		"IAMDeleteRole_invalid_role_name":                                          IAMDeleteRole_invalid_role_name,
 		"IAMDeleteRole_long_role_name":                                             IAMDeleteRole_long_role_name,
 		"IAMDeleteRole_non_existing_role":                                          IAMDeleteRole_non_existing_role,
+		"IAMDeleteRole_has_policies":                                               IAMDeleteRole_has_policies,
 		"IAMDeleteRole_success":                                                    IAMDeleteRole_success,
 		"IAMUpdateAssumeRolePolicy_missing_role_name":                              IAMUpdateAssumeRolePolicy_missing_role_name,
 		"IAMUpdateAssumeRolePolicy_missing_policy_document":                        IAMUpdateAssumeRolePolicy_missing_policy_document,
@@ -1864,6 +1911,35 @@ func GetIntTests() IntTests {
 		"IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded":               IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded,
 		"IAMUpdateAssumeRolePolicy_success":                                        IAMUpdateAssumeRolePolicy_success,
 		"IAMUpdateAssumeRolePolicy_trust_policy_document_grammar":                  IAMUpdateAssumeRolePolicy_trust_policy_document_grammar,
+		"IAMPutRolePolicy_missing_role_name":                                       IAMPutRolePolicy_missing_role_name,
+		"IAMPutRolePolicy_missing_policy_name":                                     IAMPutRolePolicy_missing_policy_name,
+		"IAMPutRolePolicy_missing_policy_document":                                 IAMPutRolePolicy_missing_policy_document,
+		"IAMPutRolePolicy_invalid_policy_name":                                     IAMPutRolePolicy_invalid_policy_name,
+		"IAMPutRolePolicy_long_policy_name":                                        IAMPutRolePolicy_long_policy_name,
+		"IAMPutRolePolicy_non_ascii_policy_document":                               IAMPutRolePolicy_non_ascii_policy_document,
+		"IAMPutRolePolicy_non_existing_role":                                       IAMPutRolePolicy_non_existing_role,
+		"IAMPutRolePolicy_malformed_policy_document":                               IAMPutRolePolicy_malformed_policy_document,
+		"IAMPutRolePolicy_principal_not_allowed":                                   IAMPutRolePolicy_principal_not_allowed,
+		"IAMPutRolePolicy_limit_exceeded":                                          IAMPutRolePolicy_limit_exceeded,
+		"IAMPutRolePolicy_success":                                                 IAMPutRolePolicy_success,
+		"IAMPutRolePolicy_overwrite_updates_existing":                              IAMPutRolePolicy_overwrite_updates_existing,
+		"IAMGetRolePolicy_missing_role_name":                                       IAMGetRolePolicy_missing_role_name,
+		"IAMGetRolePolicy_missing_policy_name":                                     IAMGetRolePolicy_missing_policy_name,
+		"IAMGetRolePolicy_non_existing_role":                                       IAMGetRolePolicy_non_existing_role,
+		"IAMGetRolePolicy_non_existing_policy":                                     IAMGetRolePolicy_non_existing_policy,
+		"IAMGetRolePolicy_success":                                                 IAMGetRolePolicy_success,
+		"IAMDeleteRolePolicy_missing_role_name":                                    IAMDeleteRolePolicy_missing_role_name,
+		"IAMDeleteRolePolicy_missing_policy_name":                                  IAMDeleteRolePolicy_missing_policy_name,
+		"IAMDeleteRolePolicy_non_existing_role":                                    IAMDeleteRolePolicy_non_existing_role,
+		"IAMDeleteRolePolicy_non_existing_policy":                                  IAMDeleteRolePolicy_non_existing_policy,
+		"IAMDeleteRolePolicy_success":                                              IAMDeleteRolePolicy_success,
+		"IAMDeleteRolePolicy_blocks_role_deletion":                                 IAMDeleteRolePolicy_blocks_role_deletion,
+		"IAMListRolePolicies_missing_role_name":                                    IAMListRolePolicies_missing_role_name,
+		"IAMListRolePolicies_non_existing_role":                                    IAMListRolePolicies_non_existing_role,
+		"IAMListRolePolicies_invalid_max_items":                                    IAMListRolePolicies_invalid_max_items,
+		"IAMListRolePolicies_empty_result":                                         IAMListRolePolicies_empty_result,
+		"IAMListRolePolicies_success":                                              IAMListRolePolicies_success,
+		"IAMListRolePolicies_pagination":                                           IAMListRolePolicies_pagination,
 		"PresignedAuth_security_token_not_supported":                               PresignedAuth_security_token_not_supported,
 		"PresignedAuth_unsupported_algorithm":                                      PresignedAuth_unsupported_algorithm,
 		"PresignedAuth_ECDSA_not_supported":                                        PresignedAuth_ECDSA_not_supported,

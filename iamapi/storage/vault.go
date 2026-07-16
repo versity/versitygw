@@ -940,6 +940,122 @@ func (s *VaultStore) UpdateAssumeRolePolicy(ctx context.Context, input UpdateAss
 	return s.replaceRole(ctx, *role)
 }
 
+func (s *VaultStore) PutRolePolicy(ctx context.Context, input PutRolePolicyInput) error {
+	role, err := s.GetRole(ctx, input.RoleName)
+	if err != nil {
+		return err
+	}
+
+	newTotal := len(input.PolicyDocument)
+	replaceAt := -1
+	for i, p := range role.Policies.Inline {
+		if p.PolicyName == input.PolicyName {
+			replaceAt = i
+			continue
+		}
+		newTotal += len(p.PolicyDocument)
+	}
+	if newTotal > MaxInlinePolicyBytesPerRole {
+		return iamerr.InlinePolicyQuotaExceeded("role", input.RoleName, MaxInlinePolicyBytesPerRole)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	if replaceAt >= 0 {
+		role.Policies.Inline[replaceAt].PolicyDocument = input.PolicyDocument
+		role.Policies.Inline[replaceAt].UpdateDate = now
+	} else {
+		role.Policies.Inline = append(role.Policies.Inline, types.PolicyEntry{
+			PolicyName:     input.PolicyName,
+			PolicyDocument: input.PolicyDocument,
+			CreateDate:     now,
+			UpdateDate:     now,
+		})
+	}
+
+	_, err = s.replaceRole(ctx, *role)
+	return err
+}
+
+func (s *VaultStore) GetRolePolicy(ctx context.Context, roleName, policyName string) (*types.PolicyEntry, error) {
+	role, err := s.GetRole(ctx, roleName)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, p := range role.Policies.Inline {
+		if p.PolicyName == policyName {
+			cloned := p
+			return &cloned, nil
+		}
+	}
+
+	return nil, iamerr.NoSuchEntityRolePolicy(roleName, policyName)
+}
+
+func (s *VaultStore) DeleteRolePolicy(ctx context.Context, roleName, policyName string) error {
+	role, err := s.GetRole(ctx, roleName)
+	if err != nil {
+		return err
+	}
+
+	idx := -1
+	for i, p := range role.Policies.Inline {
+		if p.PolicyName == policyName {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return iamerr.NoSuchEntityRolePolicy(roleName, policyName)
+	}
+
+	role.Policies.Inline = slices.Delete(role.Policies.Inline, idx, idx+1)
+
+	_, err = s.replaceRole(ctx, *role)
+	return err
+}
+
+func (s *VaultStore) ListRolePolicies(ctx context.Context, input ListRolePoliciesInput) (*ListRolePoliciesOutput, error) {
+	role, err := s.GetRole(ctx, input.RoleName)
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, 0, len(role.Policies.Inline))
+	for _, p := range role.Policies.Inline {
+		names = append(names, p.PolicyName)
+	}
+	sort.Strings(names)
+
+	start := 0
+	if input.Marker != "" {
+		start = len(names)
+		for i, name := range names {
+			if name == input.Marker {
+				start = i + 1
+				break
+			}
+		}
+	}
+	names = names[start:]
+
+	limit := len(names)
+	if input.MaxItems > 0 && int(input.MaxItems) < limit {
+		limit = int(input.MaxItems)
+	}
+
+	out := &ListRolePoliciesOutput{
+		PolicyNames: make([]string, limit),
+	}
+	copy(out.PolicyNames, names[:limit])
+	if limit < len(names) {
+		out.IsTruncated = true
+		out.Marker = out.PolicyNames[limit-1]
+	}
+
+	return out, nil
+}
+
 // replaceRole overwrites the stored document for role.RoleName by deleting
 // all existing versions and recreating with CAS=0.
 func (s *VaultStore) replaceRole(ctx context.Context, role types.Role) (*types.Role, error) {
