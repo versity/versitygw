@@ -1301,6 +1301,376 @@ func TestIAMApiControllerDeleteAndUpdateAssumeRolePolicyErrors(t *testing.T) {
 	}
 }
 
+func TestIAMApiControllerRolePolicyLifecycle(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+
+	createRole := doIAMAction(t, server, url.Values{
+		"Action":                   {"CreateRole"},
+		"RoleName":                 {"my-role"},
+		"AssumeRolePolicyDocument": {validTrustPolicy},
+	})
+	if createRole.StatusCode != http.StatusOK {
+		t.Fatalf("CreateRole status = %d, body=%s", createRole.StatusCode, readBody(t, createRole))
+	}
+
+	policyDoc := `{"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "s3:GetObject", "Resource": "*"}]}`
+
+	put := doIAMAction(t, server, url.Values{
+		"Action":         {"PutRolePolicy"},
+		"RoleName":       {"my-role"},
+		"PolicyName":     {"ReadOnly"},
+		"PolicyDocument": {policyDoc},
+	})
+	if put.StatusCode != http.StatusOK {
+		t.Fatalf("PutRolePolicy status = %d, body=%s", put.StatusCode, readBody(t, put))
+	}
+	var putOut iamtypes.PutRolePolicyResponse
+	unmarshalXML(t, readBody(t, put), &putOut)
+	if putOut.XMLName.Space != "https://iam.amazonaws.com/doc/2010-05-08/" || putOut.XMLName.Local != "PutRolePolicyResponse" {
+		t.Fatalf("PutRolePolicy XMLName = %#v", putOut.XMLName)
+	}
+	if putOut.ResponseMetadata.RequestID == "" {
+		t.Fatal("PutRolePolicy missing RequestId")
+	}
+
+	get := doIAMAction(t, server, url.Values{
+		"Action":     {"GetRolePolicy"},
+		"RoleName":   {"my-role"},
+		"PolicyName": {"ReadOnly"},
+	})
+	if get.StatusCode != http.StatusOK {
+		t.Fatalf("GetRolePolicy status = %d, body=%s", get.StatusCode, readBody(t, get))
+	}
+	var getOut iamtypes.GetRolePolicyResponse
+	unmarshalXML(t, readBody(t, get), &getOut)
+	if getOut.Result.RoleName != "my-role" || getOut.Result.PolicyName != "ReadOnly" {
+		t.Fatalf("GetRolePolicy result = %#v", getOut.Result)
+	}
+	if !strings.Contains(getOut.Result.PolicyDocument, "%20") {
+		t.Fatalf("GetRolePolicy PolicyDocument = %q, want RFC 3986 percent-encoding (%%20 for space)", getOut.Result.PolicyDocument)
+	}
+	decoded, err := url.QueryUnescape(getOut.Result.PolicyDocument)
+	if err != nil {
+		t.Fatalf("QueryUnescape: %v", err)
+	}
+	if decoded != policyDoc {
+		t.Fatalf("GetRolePolicy PolicyDocument = %q, want verbatim %q", decoded, policyDoc)
+	}
+
+	list := doIAMAction(t, server, url.Values{
+		"Action":   {"ListRolePolicies"},
+		"RoleName": {"my-role"},
+	})
+	if list.StatusCode != http.StatusOK {
+		t.Fatalf("ListRolePolicies status = %d, body=%s", list.StatusCode, readBody(t, list))
+	}
+	var listOut iamtypes.ListRolePoliciesResponse
+	unmarshalXML(t, readBody(t, list), &listOut)
+	if len(listOut.Result.PolicyNames.Members) != 1 || listOut.Result.PolicyNames.Members[0] != "ReadOnly" {
+		t.Fatalf("ListRolePolicies = %#v, want [ReadOnly]", listOut.Result.PolicyNames.Members)
+	}
+	if listOut.Result.IsTruncated {
+		t.Fatal("ListRolePolicies IsTruncated = true, want false")
+	}
+
+	// Re-Put-ing the same PolicyName replaces it rather than erroring or
+	// stacking toward the aggregate size quota.
+	overwritePut := doIAMAction(t, server, url.Values{
+		"Action":         {"PutRolePolicy"},
+		"RoleName":       {"my-role"},
+		"PolicyName":     {"ReadOnly"},
+		"PolicyDocument": {`{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"s3:DeleteObject","Resource":"*"}]}`},
+	})
+	if overwritePut.StatusCode != http.StatusOK {
+		t.Fatalf("overwrite PutRolePolicy status = %d, body=%s", overwritePut.StatusCode, readBody(t, overwritePut))
+	}
+	overwriteGet := doIAMAction(t, server, url.Values{
+		"Action":     {"GetRolePolicy"},
+		"RoleName":   {"my-role"},
+		"PolicyName": {"ReadOnly"},
+	})
+	var overwriteOut iamtypes.GetRolePolicyResponse
+	unmarshalXML(t, readBody(t, overwriteGet), &overwriteOut)
+	overwriteDecoded, err := url.QueryUnescape(overwriteOut.Result.PolicyDocument)
+	if err != nil {
+		t.Fatalf("QueryUnescape: %v", err)
+	}
+	if !strings.Contains(overwriteDecoded, "Deny") {
+		t.Fatalf("GetRolePolicy after overwrite = %q, want the Deny statement", overwriteDecoded)
+	}
+
+	del := doIAMAction(t, server, url.Values{
+		"Action":     {"DeleteRolePolicy"},
+		"RoleName":   {"my-role"},
+		"PolicyName": {"ReadOnly"},
+	})
+	if del.StatusCode != http.StatusOK {
+		t.Fatalf("DeleteRolePolicy status = %d, body=%s", del.StatusCode, readBody(t, del))
+	}
+	var delOut iamtypes.DeleteRolePolicyResponse
+	unmarshalXML(t, readBody(t, del), &delOut)
+	if delOut.XMLName.Local != "DeleteRolePolicyResponse" || delOut.ResponseMetadata.RequestID == "" {
+		t.Fatalf("DeleteRolePolicy output = %#v", delOut)
+	}
+
+	missing := doIAMAction(t, server, url.Values{
+		"Action":     {"GetRolePolicy"},
+		"RoleName":   {"my-role"},
+		"PolicyName": {"ReadOnly"},
+	})
+	requireIAMError(t, missing, http.StatusNotFound, "Sender", "NoSuchEntity", "The role policy with name ReadOnly cannot be found.")
+
+	// A second delete of the same (now-gone) policy is a hard error, not an
+	// idempotent success.
+	doubleDelete := doIAMAction(t, server, url.Values{
+		"Action":     {"DeleteRolePolicy"},
+		"RoleName":   {"my-role"},
+		"PolicyName": {"ReadOnly"},
+	})
+	requireIAMError(t, doubleDelete, http.StatusNotFound, "Sender", "NoSuchEntity", "The role policy with name ReadOnly cannot be found.")
+}
+
+func TestIAMApiControllerRolePolicyValidationErrors(t *testing.T) {
+	validDoc := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`
+
+	tests := []struct {
+		name      string
+		setupRole bool
+		params    url.Values
+		status    int
+		code      string
+		message   string
+	}{
+		{
+			name:      "put missing policy document",
+			setupRole: true,
+			params:    url.Values{"Action": {"PutRolePolicy"}, "RoleName": {"my-role"}, "PolicyName": {"P"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'policyDocument' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:      "put missing policy name",
+			setupRole: true,
+			params:    url.Values{"Action": {"PutRolePolicy"}, "RoleName": {"my-role"}, "PolicyDocument": {validDoc}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'policyName' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:    "put missing role name",
+			params:  url.Values{"Action": {"PutRolePolicy"}, "PolicyName": {"P"}, "PolicyDocument": {validDoc}},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'roleName' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:      "put invalid policy name characters",
+			setupRole: true,
+			params:    url.Values{"Action": {"PutRolePolicy"}, "RoleName": {"my-role"}, "PolicyName": {"bad/name"}, "PolicyDocument": {validDoc}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "The specified value for policyName is invalid. It must contain only alphanumeric characters and/or the following: +=,.@_-",
+		},
+		{
+			name:      "put long policy name",
+			setupRole: true,
+			params:    url.Values{"Action": {"PutRolePolicy"}, "RoleName": {"my-role"}, "PolicyName": {strings.Repeat("p", 129)}, "PolicyDocument": {validDoc}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'policyName' failed to satisfy constraint: Member must have length less than or equal to 128",
+		},
+		{
+			name:      "put non-ascii policy document",
+			setupRole: true,
+			params:    url.Values{"Action": {"PutRolePolicy"}, "RoleName": {"my-role"}, "PolicyName": {"P"}, "PolicyDocument": {"emoji\U0001F600test"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "The specified value for policyDocument is invalid. It must contain only printable ASCII characters.",
+		},
+		{
+			name:    "put role does not exist",
+			params:  url.Values{"Action": {"PutRolePolicy"}, "RoleName": {"nonexistent"}, "PolicyName": {"P"}, "PolicyDocument": {validDoc}},
+			status:  http.StatusNotFound,
+			code:    "NoSuchEntity",
+			message: "The role with name nonexistent cannot be found.",
+		},
+		{
+			name:    "put nonexistent role wins over malformed document",
+			params:  url.Values{"Action": {"PutRolePolicy"}, "RoleName": {"nonexistent"}, "PolicyName": {"P"}, "PolicyDocument": {"{not valid json"}},
+			status:  http.StatusNotFound,
+			code:    "NoSuchEntity",
+			message: "The role with name nonexistent cannot be found.",
+		},
+		{
+			name:      "put malformed policy document",
+			setupRole: true,
+			params:    url.Values{"Action": {"PutRolePolicy"}, "RoleName": {"my-role"}, "PolicyName": {"P"}, "PolicyDocument": {"{not valid json"}},
+			status:    http.StatusBadRequest,
+			code:      "MalformedPolicyDocument",
+			message:   "Syntax errors in policy.",
+		},
+		{
+			name:      "put policy document with principal",
+			setupRole: true,
+			params: url.Values{"Action": {"PutRolePolicy"}, "RoleName": {"my-role"}, "PolicyName": {"P"}, "PolicyDocument": {
+				`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"*"}]}`,
+			}},
+			status:  http.StatusBadRequest,
+			code:    "MalformedPolicyDocument",
+			message: "Policy document should not specify a principal.",
+		},
+		{
+			name:    "get role does not exist",
+			params:  url.Values{"Action": {"GetRolePolicy"}, "RoleName": {"nonexistent"}, "PolicyName": {"P"}},
+			status:  http.StatusNotFound,
+			code:    "NoSuchEntity",
+			message: "The role with name nonexistent cannot be found.",
+		},
+		{
+			name:      "get policy does not exist",
+			setupRole: true,
+			params:    url.Values{"Action": {"GetRolePolicy"}, "RoleName": {"my-role"}, "PolicyName": {"NoSuchPolicy"}},
+			status:    http.StatusNotFound,
+			code:      "NoSuchEntity",
+			message:   "The role policy with name NoSuchPolicy cannot be found.",
+		},
+		{
+			name:    "delete role does not exist",
+			params:  url.Values{"Action": {"DeleteRolePolicy"}, "RoleName": {"nonexistent"}, "PolicyName": {"P"}},
+			status:  http.StatusNotFound,
+			code:    "NoSuchEntity",
+			message: "The role with name nonexistent cannot be found.",
+		},
+		{
+			name:      "delete policy does not exist",
+			setupRole: true,
+			params:    url.Values{"Action": {"DeleteRolePolicy"}, "RoleName": {"my-role"}, "PolicyName": {"NoSuchPolicy"}},
+			status:    http.StatusNotFound,
+			code:      "NoSuchEntity",
+			message:   "The role policy with name NoSuchPolicy cannot be found.",
+		},
+		{
+			name:    "list role does not exist",
+			params:  url.Values{"Action": {"ListRolePolicies"}, "RoleName": {"nonexistent"}},
+			status:  http.StatusNotFound,
+			code:    "NoSuchEntity",
+			message: "The role with name nonexistent cannot be found.",
+		},
+		{
+			name:      "list max items too large",
+			setupRole: true,
+			params:    url.Values{"Action": {"ListRolePolicies"}, "RoleName": {"my-role"}, "MaxItems": {"1001"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value '1001' at 'maxItems' failed to satisfy constraint: Member must have value between 1 and 1000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newIAMControllerTestServer(t)
+			if tt.setupRole {
+				resp := doIAMAction(t, server, url.Values{
+					"Action":                   {"CreateRole"},
+					"RoleName":                 {"my-role"},
+					"AssumeRolePolicyDocument": {validTrustPolicy},
+				})
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("CreateRole status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+				}
+			}
+			resp := doIAMAction(t, server, tt.params)
+			requireIAMError(t, resp, tt.status, "Sender", tt.code, tt.message)
+		})
+	}
+}
+
+func TestIAMApiControllerDeleteRolePolicyConflict(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+
+	create := doIAMAction(t, server, url.Values{
+		"Action":                   {"CreateRole"},
+		"RoleName":                 {"my-role"},
+		"AssumeRolePolicyDocument": {validTrustPolicy},
+	})
+	if create.StatusCode != http.StatusOK {
+		t.Fatalf("CreateRole status = %d, body=%s", create.StatusCode, readBody(t, create))
+	}
+	put := doIAMAction(t, server, url.Values{
+		"Action":         {"PutRolePolicy"},
+		"RoleName":       {"my-role"},
+		"PolicyName":     {"P"},
+		"PolicyDocument": {`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`},
+	})
+	if put.StatusCode != http.StatusOK {
+		t.Fatalf("PutRolePolicy status = %d, body=%s", put.StatusCode, readBody(t, put))
+	}
+
+	deleteRole := doIAMAction(t, server, url.Values{"Action": {"DeleteRole"}, "RoleName": {"my-role"}})
+	requireIAMError(t, deleteRole, http.StatusConflict, "Sender", "DeleteConflict", "Cannot delete entity, must delete policies first.")
+
+	delPolicy := doIAMAction(t, server, url.Values{"Action": {"DeleteRolePolicy"}, "RoleName": {"my-role"}, "PolicyName": {"P"}})
+	if delPolicy.StatusCode != http.StatusOK {
+		t.Fatalf("DeleteRolePolicy status = %d, body=%s", delPolicy.StatusCode, readBody(t, delPolicy))
+	}
+
+	deleteRoleAfter := doIAMAction(t, server, url.Values{"Action": {"DeleteRole"}, "RoleName": {"my-role"}})
+	if deleteRoleAfter.StatusCode != http.StatusOK {
+		t.Fatalf("DeleteRole status = %d, body=%s", deleteRoleAfter.StatusCode, readBody(t, deleteRoleAfter))
+	}
+}
+
+func TestIAMApiControllerPutRolePolicyOversizedDocument(t *testing.T) {
+	// A >131072 byte PolicyDocument does not fit in a GET query string
+	// against this test server's header/URL read-buffer limit, matching
+	// real IAM's own guidance to use POST rather than GET for large
+	// policy documents - so this one case is exercised over POST directly
+	// rather than through the doIAMAction GET helper used elsewhere.
+	server := newIAMControllerTestServer(t)
+	create := doIAMAction(t, server, url.Values{
+		"Action":                   {"CreateRole"},
+		"RoleName":                 {"my-role"},
+		"AssumeRolePolicyDocument": {validTrustPolicy},
+	})
+	if create.StatusCode != http.StatusOK {
+		t.Fatalf("CreateRole status = %d, body=%s", create.StatusCode, readBody(t, create))
+	}
+
+	resp := doIAMActionPost(t, server, url.Values{
+		"Action":         {"PutRolePolicy"},
+		"RoleName":       {"my-role"},
+		"PolicyName":     {"P"},
+		"PolicyDocument": {strings.Repeat("x", 131073)},
+	})
+	requireIAMError(t, resp, http.StatusBadRequest, "Sender", "ValidationError",
+		"1 validation error detected: Value at 'policyDocument' failed to satisfy constraint: Member must have length less than or equal to 131072")
+}
+
+func TestIAMApiControllerPutRolePolicyExceedsQuota(t *testing.T) {
+	// The role's aggregate inline-policy quota (10240 bytes) is well over
+	// this test server's GET header/URL read-buffer limit, so this case
+	// is exercised over POST, same as TestIAMApiControllerPutRolePolicyOversizedDocument.
+	server := newIAMControllerTestServer(t)
+	create := doIAMAction(t, server, url.Values{
+		"Action":                   {"CreateRole"},
+		"RoleName":                 {"my-role"},
+		"AssumeRolePolicyDocument": {validTrustPolicy},
+	})
+	if create.StatusCode != http.StatusOK {
+		t.Fatalf("CreateRole status = %d, body=%s", create.StatusCode, readBody(t, create))
+	}
+
+	oversizedDoc := `{"Version":"2012-10-17","Statement":[{"Sid":"` + strings.Repeat("x", 10300) + `","Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`
+	resp := doIAMActionPost(t, server, url.Values{
+		"Action":         {"PutRolePolicy"},
+		"RoleName":       {"my-role"},
+		"PolicyName":     {"P"},
+		"PolicyDocument": {oversizedDoc},
+	})
+	requireIAMError(t, resp, http.StatusConflict, "Sender", "LimitExceeded", "Maximum policy size of 10240 bytes exceeded for role my-role")
+}
+
 func newIAMControllerTestServer(t *testing.T) *IAMApiServer {
 	t.Helper()
 

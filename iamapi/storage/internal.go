@@ -816,6 +816,159 @@ func (s *InternalStore) UpdateAssumeRolePolicy(_ context.Context, input UpdateAs
 	return cloneRole(updated), nil
 }
 
+func (s *InternalStore) PutRolePolicy(_ context.Context, input PutRolePolicyInput) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		canonical, role, ok := lookupRole(conf, input.RoleName)
+		if !ok {
+			return nil, iamerr.NoSuchEntityRole(input.RoleName)
+		}
+
+		now := time.Now().UTC().Truncate(time.Second)
+		newTotal := len(input.PolicyDocument)
+		replaceAt := -1
+		for i, p := range role.Policies.Inline {
+			if p.PolicyName == input.PolicyName {
+				replaceAt = i
+				continue
+			}
+			newTotal += len(p.PolicyDocument)
+		}
+		if newTotal > MaxInlinePolicyBytesPerRole {
+			return nil, iamerr.InlinePolicyQuotaExceeded("role", input.RoleName, MaxInlinePolicyBytesPerRole)
+		}
+
+		if replaceAt >= 0 {
+			role.Policies.Inline[replaceAt].PolicyDocument = input.PolicyDocument
+			role.Policies.Inline[replaceAt].UpdateDate = now
+		} else {
+			role.Policies.Inline = append(role.Policies.Inline, types.PolicyEntry{
+				PolicyName:     input.PolicyName,
+				PolicyDocument: input.PolicyDocument,
+				CreateDate:     now,
+				UpdateDate:     now,
+			})
+		}
+
+		conf.Roles[canonical] = role
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) GetRolePolicy(_ context.Context, roleName, policyName string) (*types.PolicyEntry, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	_, role, ok := lookupRole(conf, roleName)
+	if !ok {
+		return nil, iamerr.NoSuchEntityRole(roleName)
+	}
+
+	for _, p := range role.Policies.Inline {
+		if p.PolicyName == policyName {
+			cloned := p
+			return &cloned, nil
+		}
+	}
+
+	return nil, iamerr.NoSuchEntityRolePolicy(roleName, policyName)
+}
+
+func (s *InternalStore) DeleteRolePolicy(_ context.Context, roleName, policyName string) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		canonical, role, ok := lookupRole(conf, roleName)
+		if !ok {
+			return nil, iamerr.NoSuchEntityRole(roleName)
+		}
+
+		idx := -1
+		for i, p := range role.Policies.Inline {
+			if p.PolicyName == policyName {
+				idx = i
+				break
+			}
+		}
+		if idx == -1 {
+			return nil, iamerr.NoSuchEntityRolePolicy(roleName, policyName)
+		}
+
+		role.Policies.Inline = slices.Delete(role.Policies.Inline, idx, idx+1)
+		conf.Roles[canonical] = role
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) ListRolePolicies(_ context.Context, input ListRolePoliciesInput) (*ListRolePoliciesOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	_, role, ok := lookupRole(conf, input.RoleName)
+	if !ok {
+		return nil, iamerr.NoSuchEntityRole(input.RoleName)
+	}
+
+	names := make([]string, 0, len(role.Policies.Inline))
+	for _, p := range role.Policies.Inline {
+		names = append(names, p.PolicyName)
+	}
+	sort.Strings(names)
+
+	start := 0
+	if input.Marker != "" {
+		start = len(names)
+		for i, name := range names {
+			if name == input.Marker {
+				start = i + 1
+				break
+			}
+		}
+	}
+	names = names[start:]
+
+	limit := len(names)
+	if input.MaxItems > 0 && int(input.MaxItems) < limit {
+		limit = int(input.MaxItems)
+	}
+
+	out := &ListRolePoliciesOutput{
+		PolicyNames: make([]string, limit),
+	}
+	copy(out.PolicyNames, names[:limit])
+	if limit < len(names) {
+		out.IsTruncated = true
+		out.Marker = out.PolicyNames[limit-1]
+	}
+
+	return out, nil
+}
+
 func cloneUser(user types.User) *types.User {
 	cloned := user
 	cloned.Tags = slices.Clone(user.Tags)
