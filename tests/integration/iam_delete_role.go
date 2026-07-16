@@ -67,6 +67,39 @@ func IAMDeleteRole_non_existing_role(s *S3Conf) error {
 	})
 }
 
+func IAMDeleteRole_has_policies(s *S3Conf) error {
+	testName := "IAMDeleteRole_has_policies"
+	return iamActionHandler(s, testName, func(client *iam.Client) error {
+		roleName := newIAMRoleName()
+		if _, err := createIAMRole(client, &iam.CreateRoleInput{
+			RoleName:                 &roleName,
+			AssumeRolePolicyDocument: aws.String(validTrustPolicyDocument),
+		}); err != nil {
+			return err
+		}
+		if _, err := putIAMRolePolicy(client, &iam.PutRolePolicyInput{
+			RoleName:       &roleName,
+			PolicyName:     aws.String("p"),
+			PolicyDocument: aws.String(validIAMPolicyDocument),
+		}); err != nil {
+			return err
+		}
+
+		checkErr := checkIAMApiErr(deleteIAMRole(client, roleName), iamerr.GetAPIError(iamerr.ErrDeleteConflictPolicies))
+
+		deletePolicyErr := deleteIAMRolePolicy(client, roleName, "p")
+		deleteRoleErr := deleteIAMRole(client, roleName)
+
+		if checkErr != nil {
+			return checkErr
+		}
+		if deletePolicyErr != nil {
+			return deletePolicyErr
+		}
+		return deleteRoleErr
+	})
+}
+
 func IAMDeleteRole_success(s *S3Conf) error {
 	testName := "IAMDeleteRole_success"
 	return iamActionHandler(s, testName, func(client *iam.Client) error {

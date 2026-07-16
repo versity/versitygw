@@ -453,6 +453,10 @@ func NoSuchEntityUserPolicy(userName, policyName string) Error {
 	return newSenderError("NoSuchEntity", fmt.Sprintf("The user policy with name %s cannot be found.", policyName), http.StatusNotFound)
 }
 
+func NoSuchEntityRolePolicy(roleName, policyName string) Error {
+	return newSenderError("NoSuchEntity", fmt.Sprintf("The role policy with name %s cannot be found.", policyName), http.StatusNotFound)
+}
+
 func InlinePolicyQuotaExceeded(entityKind, entityName string, maxBytes int) Error {
 	return newSenderError("LimitExceeded", fmt.Sprintf("Maximum policy size of %d bytes exceeded for %s %s", maxBytes, entityKind, entityName), http.StatusConflict)
 }
