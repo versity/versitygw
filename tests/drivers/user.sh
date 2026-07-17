@@ -119,56 +119,78 @@ setup_bucket_file_and_user_v2() {
   return 0
 }
 
-reset_bucket() {
-  if ! check_param_count "reset_bucket" "bucket" 1 $#; then
+perform_reset() {
+  if ! check_param_count_v2 "bucket" 1 $#; then
     return 1
   fi
-  log 6 "reset bucket '$1'"
+  local bucket="$1"
   local response lock_config_exists
 
-  if [[ $LOG_LEVEL_INT -ge 5 ]] && ! log_bucket_policy "$1"; then
+  if [[ $LOG_LEVEL_INT -ge 5 ]] && ! log_bucket_policy "$bucket"; then
     log 3 "error logging bucket policy"
   fi
 
-  if ! response=$(check_object_lock_config "$1" 2>&1); then
+  if ! response=$(check_object_lock_config_go "$bucket" 2>&1); then
     log 2 "error checking object lock config: $response"
     return 1
   fi
   lock_config_exists="$response"
 
-  if [[ "$DIRECT" != "true" ]] && ! add_governance_bypass_policy "$1"; then
+  if [[ "$DIRECT" != "true" ]] && ! add_governance_bypass_policy "$bucket"; then
     log 2 "error adding governance bypass policy"
     return 1
   fi
 
-  if ! list_and_delete_objects "$1"; then
+  if ! list_and_delete_objects "$bucket" "$lock_config_exists"; then
     log 2 "error listing and deleting objects"
     return 1
   fi
 
-  if ! abort_all_multipart_uploads_rest "$1"; then
+  if ! abort_all_multipart_uploads_rest "$bucket"; then
     log 2 "error aborting all multipart uploads"
     return 1
   fi
 
-  if [ "$SKIP_ACL_TESTING" != "true" ] && ! check_ownership_rule_and_reset_acl "$1"; then
+  if [ "$SKIP_ACL_TESTING" != "true" ] && ! check_ownership_rule_and_reset_acl "$bucket"; then
     log 2 "error checking ownership rule and resetting acl"
     return 1
   fi
 
-  if ! delete_bucket_policy_rest "$1"; then
+  if ! delete_bucket_policy_rest "$bucket"; then
     log 2 "error deleting bucket policy"
     return 1
   fi
 
   # shellcheck disable=SC2154
-  if [[ $lock_config_exists == true ]] && ! remove_retention_policy_rest "$1"; then
+  if [[ $lock_config_exists == true ]] && ! remove_retention_policy_rest "$bucket"; then
     log 2 "error removing bucket retention policy"
     return 1
   fi
 
-  if [ "$RUN_USERS" == "true" ] && [ "$DIRECT" != "true" ] && ! change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID"; then
+  if [ "$RUN_USERS" == "true" ] && [ "$DIRECT" != "true" ] && ! change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$bucket" "$AWS_ACCESS_KEY_ID"; then
     log 2 "error changing bucket owner back to root"
+    return 1
+  fi
+  return 0
+}
+
+reset_bucket() {
+  if ! check_param_count_ge_le "bucket, region (optional), endpoint (optional)" 1 3 $#; then
+    return 1
+  fi
+  local bucket="$1" region="$2" endpoint="$3"
+  local response
+
+  if [ -z "$region" ] || [ -z "$endpoint" ]; then
+    if ! response=$(get_bucket_location_and_endpoint "$bucket" 2>&1); then
+      log 2 "error getting bucket region and endpoint: $response"
+      return 1
+    fi
+    read -r region endpoint <<< "$response"
+  fi
+
+  if ! response=$(AWS_REGION="$region" AWS_ENDPOINT_URL="$endpoint" perform_reset "$bucket" 2>&1); then
+    log 2 "error performing bucket reset: $response"
     return 1
   fi
   return 0

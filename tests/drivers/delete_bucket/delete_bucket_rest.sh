@@ -132,19 +132,21 @@ delete_bucket_recursive() {
   if ! check_param_count "delete_bucket_recursive_s3api" "bucket" 1 $#; then
     return 1
   fi
+  local bucket="$1"
+  local response region endpoint
 
-  if ! location=$(get_bucket_location_rest "$1" "parse_bucket_location" 2>&1); then
-    log 2 "error getting bucket location: $location"
+  if ! response=$(get_bucket_location_and_endpoint "$bucket" 2>&1); then
+    log 2 "error getting bucket location and endpoint: $response"
     return 1
   fi
-  log 5 "location: $location"
+  read -r region endpoint <<< "$response"
 
-  if ! reset_bucket "$1"; then
+  if ! reset_bucket "$bucket" "$region" "$endpoint"; then
     log 2 "error clearing bucket (s3api)"
     return 1
   fi
 
-  if ! delete_bucket_rest "$1"; then
+  if ! AWS_REGION="$region" AWS_ENDPOINT_URL="$endpoint" delete_bucket_rest "$bucket"; then
     log 2 "error deleting bucket"
     return 1
   fi

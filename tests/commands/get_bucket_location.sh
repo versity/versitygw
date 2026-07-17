@@ -86,9 +86,13 @@ get_bucket_location_rest() {
   if ! check_param_count_v2 "bucket, callback" 2 $#; then
     return 1
   fi
-  if ! send_rest_go_command_callback "200" "$2" "-bucketName" "$1" "-method" "GET" "-query" "location=" "-awsRegion" "$AWS_REGION"; then
-    log 2 "error sending rest go command"
+  local bucket="$1" callback="$2"
+  local response
+
+  if ! response=$(send_rest_go_command_callback "200" "$callback" "-bucketName" "$bucket" "-method" "GET" "-query" "location=" 2>&1); then
+    log 2 "error sending rest go command: $response"
     return 1
   fi
+  echo "$response"
   return 0
 }

@@ -66,3 +66,18 @@ get_object_lock_configuration_rest() {
   echo "$response_code" "$TEST_FILE_FOLDER/$output_file"
   return $return_code
 }
+
+get_object_lock_configuration_rest_go() {
+  if ! check_param_count_gt "bucket, callback, additional params" 2 $#; then
+    return 1
+  fi
+  local bucket="$1" callback="$2"
+  local response
+
+  if ! response=$(send_rest_go_command_callback "200" "$callback" "-query" "object-lock" "-bucketName" "$bucket" "${@:3}" 2>&1); then
+    log 2 "error getting object lock configuration: $response"
+    return 1
+  fi
+  echo "$response"
+  return 0
+}

@@ -87,7 +87,7 @@ source ./tests/drivers/put_object/put_object_rest.sh
   run delete_bucket_rest_expect_error "$bucket_name" "" "409" "BucketNotEmpty" "is not empty"
   assert_success
 
-  run delete_old_versions_base64 "$bucket_name"
+  run delete_old_versions "$bucket_name" "false"
   assert_success
 
   run delete_bucket_rest "$bucket_name"

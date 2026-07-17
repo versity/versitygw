@@ -309,6 +309,7 @@ send_rest_go_command_expect_error_callback() {
     log 2 "callback error: $response"
     return 1
   fi
+  echo "$response"
   return 0
 }
 

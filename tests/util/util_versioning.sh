@@ -100,34 +100,6 @@ echo_versions() {
   return 0
 }
 
-get_base64_version_keys_and_ids() {
-  if ! check_param_count_v2 "'Version' or 'DeleteMarker'" 1 $#; then
-    return 1
-  fi
-  while IFS= read -r key && IFS= read -r vid; do
-    log 5 "key: $key, vid: $vid"
-    b_key="$(printf '%s' "$key" | base64 -w0)"
-    b_vid="$(printf '%s' "$vid" | base64 -w0)"
-    base64_pairs+=("$b_key:$b_vid")
-  done < <(xmlstarlet sel -t \
-               -m '//*[local-name()='"\"$1\""']' \
-               -v '*[local-name()="Key"]' -n \
-               -v '*[local-name()="VersionId"]' -n \
-               <<<"$versions" | xmlstarlet unesc)
-}
-
-parse_base64_versions_rest() {
-  base64_pairs=()
-  if ! get_base64_version_keys_and_ids "Version"; then
-    log 2 "error getting version base64 keys and IDs"
-    return 1
-  fi
-  if ! get_base64_version_keys_and_ids "DeleteMarker"; then
-    log 2 "error getting version base64 keys and IDs"
-    return 1
-  fi
-}
-
 parse_versions_rest() {
   if ! check_param_count_v2 "data file" 1 $#; then
     return 1
@@ -188,37 +160,44 @@ parse_versions_rest() {
 }
 
 get_and_check_versions_rest() {
-  if ! check_param_count_gt "bucket, key, count, expected islatest, expected id equal to null" 5 $#; then
+  if ! check_param_count_gt "bucket, key, count, expected islatest/expected id equal to null pairs" 5 $#; then
     return 1
   fi
-  if ! response=$(list_object_versions_rest "$1" 2>&1); then
+  local bucket="$1" key="$2" expected_count="$3" expected_pairs=("${@:4}")
+  local response versions_data versions_count id_check expected_islatest expected_id_is_null
+
+  if ! response=$(list_object_versions_rest "$bucket" 2>&1); then
     log 2 "error listing object versions: $response"
     return 1
   fi
-  versions_file="$response"
+  versions_data="$response"
 
-  log 5 "versions: $(cat "$versions_file")"
-  if ! version_count=$(xmllint --xpath 'count(//*[local-name()="Version"])' "$versions_file" 2>&1); then
-    log 2 "error getting version count: $version_count"
+  log 5 "versions data: $versions_data"
+  if ! response=$(xmllint --xpath 'count(//*[local-name()="Version"])' - <<< "$versions_data" 2>&1); then
+    log 2 "error getting version count: $response"
     return 1
   fi
-  log 5 "version count: $version_count"
-  if [ "$version_count" != "$3" ]; then
-    log 2 "version count mismatch (expected 1, actual $version_count)"
+  versions_count="$response"
+
+  log 5 "version count: $versions_count"
+  if [ "$versions_count" != "$expected_count" ]; then
+    log 2 "version count mismatch (expected '1', actual '$versions_count')"
     return 1
   fi
-  while [ $# -ge 5 ]; do
-    if [ "$5" == "true" ]; then
+  for ((i=0; i<"${#expected_pairs[@]}"; i+=2)); do
+    expected_islatest="${expected_pairs[$i]}"
+    expected_id_is_null="${expected_pairs[$((i+1))]}"
+    if [ "$expected_id_is_null" == "true" ]; then
       id_check="="
     else
       id_check="!="
     fi
-    match_string="//*[local-name()=\"Version\"][*[local-name()=\"VersionId\" and text()$id_check\"null\"] and *[local-name()=\"IsLatest\" and text()=\"$4\"]]"
+    match_string="//*[local-name()=\"Version\"][*[local-name()=\"VersionId\" and text()${id_check}\"null\"] and *[local-name()=\"IsLatest\" and text()=\"${expected_islatest}\"]]"
     log 5 "match string: $match_string"
-    if ! xmllint --xpath "$match_string" "$versions_file" 2>&1; then
+    if ! response=$(xmllint --xpath "$match_string" - <<< "$versions_data" 2>&1); then
+      log 2 "error matching: $response"
       return 1
     fi
-    shift 2
   done
   return 0
 }
@@ -227,22 +206,25 @@ check_versions_after_file_deletion() {
   if ! check_param_count "check_versions_after_file_deletion" "bucket, key" 2 $#; then
     return 1
   fi
-  if ! response=$(list_object_versions_rest "$1" 2>&1); then
+  local bucket="$1" key="$2"
+  local response versions_data version_key version_id marker_key marker_id
+
+  if ! response=$(list_object_versions_rest "$bucket" 2>&1); then
     log 2 "error listing object versions: $response"
     return 1
   fi
-  versions_file="$response"
+  versions_data="$response"
 
-  log 5 "versions: $(cat "$versions_file")"
-  if ! version_key=$(xmllint --xpath '//*[local-name()="Version"]/*[local-name()="Key"]/text()' "$versions_file" 2>&1); then
+  log 5 "versions: $(cat "$versions_data")"
+  if ! version_key=$(xmllint --xpath '//*[local-name()="Version"]/*[local-name()="Key"]/text()' - <<< "$versions_data" 2>&1); then
     log 2 "error getting Version 'Key' value: $version_key"
     return 1
   fi
-  if [ "$version_key" != "$2" ]; then
-    log 2 "version key mismatch (expected $2, actual $version_key)"
+  if [ "$version_key" != "$key" ]; then
+    log 2 "version key mismatch (expected '$key', actual '$version_key')"
     return 1
   fi
-  if ! version_id=$(xmllint --xpath '//*[local-name()="Version"]/*[local-name()="VersionId"]/text()' "$versions_file" 2>&1); then
+  if ! version_id=$(xmllint --xpath '//*[local-name()="Version"]/*[local-name()="VersionId"]/text()' - <<< "$versions_data" 2>&1); then
     log 2 "error getting Version 'VersionID' value: $version_id"
     return 1
   fi
@@ -250,15 +232,15 @@ check_versions_after_file_deletion() {
     log 2 "version ID mismatch (expected 'null', actual '$version_id')"
     return 1
   fi
-  if ! marker_key=$(xmllint --xpath '//*[local-name()="DeleteMarker"]/*[local-name()="Key"]/text()' "$versions_file" 2>&1); then
+  if ! marker_key=$(xmllint --xpath '//*[local-name()="DeleteMarker"]/*[local-name()="Key"]/text()' - <<< "$versions_data" 2>&1); then
     log 2 "error getting Version 'Key' value: $marker_key"
     return 1
   fi
-  if [ "$marker_key" != "$2" ]; then
-    log 2 "delete marker key mismatch (expected $2, actual $marker_key)"
+  if [ "$marker_key" != "$key" ]; then
+    log 2 "delete marker key mismatch (expected '$key', actual '$marker_key')"
     return 1
   fi
-  if ! marker_id=$(xmllint --xpath '//*[local-name()="DeleteMarker"]/*[local-name()="VersionId"]/text()' "$versions_file" 2>&1); then
+  if ! marker_id=$(xmllint --xpath '//*[local-name()="DeleteMarker"]/*[local-name()="VersionId"]/text()' - <<< "$versions_data" 2>&1); then
     log 2 "error getting Version 'VersionID' value: $versioning_info"
     return 1
   fi

@@ -20,12 +20,13 @@ source ./tests/drivers/xml.sh
 source ./tests/drivers/get_object_legal_hold/get_object_legal_hold_rest.sh
 
 list_and_delete_objects() {
-  log 6 "list_and_delete_objects: '$1'"
-  if ! check_param_count_v2 "bucket" 1 $#; then
+  if ! check_param_count_v2 "bucket, lock config exists" 2 $#; then
     return 1
   fi
+  local bucket="$1" lock_config_exists="$2"
+
   local response
-  if ! response=$(list_objects_rest "$1" "parse_objects_list_rest" 2>&1); then
+  if ! response=$(list_objects_rest_go "$bucket" "parse_objects_list_rest" 2>&1); then
     log 2 "error getting object list: $response"
     return 1
   fi
@@ -35,44 +36,85 @@ list_and_delete_objects() {
     if [ "$object" == "" ]; then
       break
     fi
-    if ! clear_object_in_bucket "$1" "$object"; then
+    if ! clear_object_in_bucket "$bucket" "$object"; then
       log 2 "error deleting object $object"
       return 1
     fi
   done
 
-  if ! delete_old_versions_base64 "$1"; then
+  if ! delete_old_versions "$bucket" "$lock_config_exists"; then
     log 2 "error deleting old version"
     return 1
   fi
   return 0
 }
 
-delete_old_versions_base64() {
-  if ! check_param_count "delete_old_versions" "bucket" 1 $#; then
+delete_old_versions() {
+  if ! check_param_count_v2 "bucket, lock config exists (true or false)" 2 $#; then
     return 1
   fi
-  if ! list_object_versions "rest" "$1"; then
-    log 2 "error listing object versions"
-    return 1
-  fi
-  # shellcheck disable=SC2154
-  log 5 "versions: $versions"
+  local bucket="$1" lock_config_exists="$2"
+  local response versions_xml
 
-  if ! parse_base64_versions_rest; then
-    log 2 "error parsing version data"
+  if ! response=$(list_object_versions_rest_v2 "$bucket" "get_xml_versions_data" 2>&1); then
+    log 2 "error listing object versions: $response"
     return 1
   fi
+  versions_xml="$response"
 
-  # shellcheck disable=SC2154
-  log 5 "base64 versions: ${base64_pairs[*]}"
-  for pair in "${base64_pairs[@]}"; do
-    log 5 "pair: $pair"
-    if ! delete_object_version_with_or_without_retention_base64 "$1" "$pair"; then
-      log 2 "error deleting version with or without retention"
+  if ! response=$(get_and_delete_old_versions_from_xml "$versions_xml" "Version" "$bucket" "$lock_config_exists" 2>&1); then
+    log 2 "error deleting Versions: $response"
+    return 1
+  fi
+  if ! response=$(get_and_delete_old_versions_from_xml "$versions_xml" "DeleteMarker" "$bucket" "$lock_config_exists" 2>&1); then
+    log 2 "error deleting DeleteMarkers: $response"
+    return 1
+  fi
+  return 0
+}
+
+get_and_delete_old_versions_from_xml() {
+  if ! check_param_count_v2 "version XML, 'Version' or 'DeleteMarker', bucket, lock config exists" $# 4; then
+    return 1
+  fi
+  local version_xml="$1" version_or_delete_marker="$2" bucket="$3" lock_config_exists="$4"
+
+  while IFS= read -r key && IFS= read -r version_id; do
+    if ! delete_single_version_or_delete_marker "$bucket" "$lock_config_exists" "$key" "$version_id"; then
+      log 2 "error deleting key '$key', version ID '$version_id'"
       return 1
     fi
-  done
+  done < <(xmlstarlet sel -t \
+               -m '//*[local-name()='"\"$version_or_delete_marker\""']' \
+               -v '*[local-name()="Key"]' -n \
+               -v '*[local-name()="VersionId"]' -n \
+               <<<"$version_xml" | xmlstarlet unesc)
+  return 0
+}
+
+delete_single_version_or_delete_marker() {
+  if ! check_param_count_v2 "bucket, lock config exists, key, version ID" 4 $#; then
+    return 1
+  fi
+  local bucket="$1" lock_config="$2" key="$3" version_id="$4"
+
+  if [ "$lock_config" == "true" ]; then
+    if ! check_remove_legal_hold_versions "$bucket" "$key" "$version_id"; then
+      log 2 "error checking, removing legal hold versions"
+      return 1
+    fi
+    if ! delete_object_version_rest_bypass_retention "$bucket" "$key" "$version_id"; then
+      log 2 "error deleting object version, bypassing retention"
+      return 1
+    fi
+  else
+    if ! delete_object_version_rest "$bucket" "$key" "$version_id"; then
+      log 2 "error deleting object version"
+      return 1
+    fi
+  fi
+  log 5 "successfully deleted version with key '$key', id '$version_id'"
+  return 0
 }
 
 delete_object_version_with_or_without_retention_base64() {
