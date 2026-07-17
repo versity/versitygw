@@ -33,3 +33,75 @@ spec:
           {{- end }}
     {{- end }}
 {{- end }}
+{{- if and .Values.admin.enabled .Values.admin.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "versitygw.fullname" . }}-admin
+  labels:
+    {{- include "versitygw.labels" . | nindent 4 }}
+  {{- with .Values.admin.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.admin.ingress.className }}
+  ingressClassName: {{ .Values.admin.ingress.className | quote }}
+  {{- end }}
+  {{- if .Values.admin.ingress.tls }}
+  tls:
+    {{- toYaml .Values.admin.ingress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.admin.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "versitygw.fullname" $ }}
+                port:
+                  name: admin
+          {{- end }}
+    {{- end }}
+{{- end }}
+{{- if and .Values.webui.enabled .Values.webui.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "versitygw.fullname" . }}-webui
+  labels:
+    {{- include "versitygw.labels" . | nindent 4 }}
+  {{- with .Values.webui.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.webui.ingress.className }}
+  ingressClassName: {{ .Values.webui.ingress.className | quote }}
+  {{- end }}
+  {{- if .Values.webui.ingress.tls }}
+  tls:
+    {{- toYaml .Values.webui.ingress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.webui.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "versitygw.fullname" $ }}
+                port:
+                  name: webui
+          {{- end }}
+    {{- end }}
+{{- end }}
