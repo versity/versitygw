@@ -16,6 +16,7 @@ const (
 	DeleteObjects    = "deleteObjects"
 	PutBucketCors    = "putBucketCORS"
 	PutBucketTagging = "putBucketTagging"
+	PutBucketWebsite = "putBucketWebsiteConfiguration"
 	PutObject        = "putObject"
 	PutObjectTagging = "putObjectTagging"
 )
@@ -83,6 +84,8 @@ var paramSeparator *string
 var writeXMLPayloadToFile *string
 
 var addressFormat *string
+
+var websiteConfiguration *string
 
 func (r *restParams) String() string {
 	return fmt.Sprintf("%v", *r)
@@ -161,6 +164,7 @@ func main() {
 			OutputFile:            *outputFile,
 			HeaderFile:            *headerFile,
 			AddressFormat:         *addressFormat,
+			WebsiteConfiguration:  *websiteConfiguration,
 		},
 	}
 
@@ -197,6 +201,10 @@ func getS3CommandType(baseCommand *command.S3RequestBuilder) (command.S3CommandC
 		}
 		if s3Command, err = command.NewPutBucketTaggingCommand(baseCommand, &fields); err != nil {
 			return nil, fmt.Errorf("error setting up PutBucketTagging command: %w", err)
+		}
+	case PutBucketWebsite:
+		if s3Command, err = command.NewPutBucketWebsiteCommand(baseCommand, *websiteConfiguration); err != nil {
+			return nil, fmt.Errorf("error setting up PutBucketWebsiteConfiguration commmand: %w", err)
 		}
 	case PutObject:
 		if s3Command, err = command.NewPutObjectCommand(baseCommand); err != nil {
@@ -286,6 +294,7 @@ func checkFlags() error {
 	flag.Var(&objectsToDelete, "objectsToDelete", "Objects to delete in DeleteObjects command (can add multiple)")
 	deleteObjectsQuietMode = flag.Bool("deleteObjectsQuietMode", false, "Quiet mode for DeleteObjects command")
 	addressFormat = flag.String("addressFormat", command.AddressFormatPath, "S3 command address format ('path' or 'virtual')")
+	websiteConfiguration = flag.String("websiteConfiguration", "", "JSON configuration for S3 bucket website")
 	// Parse the flags
 	flag.Parse()
 

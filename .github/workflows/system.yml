@@ -147,6 +147,8 @@ jobs:
           TEMPLATE_MATRIX_FILE=$TEMPLATE_MATRIX_FILE
           QUICK_COMPARE_SIZE=1048576
           GENERATE_COMMAND_EXECUTABLE=/home/tester/test-files/generateCommand
+          WEBSITE_DOMAIN=localhost
+          WEBSITE=:7071
           EOF
           sudo chown tester:tester /home/tester/test-files/.env
           sudo chmod 600 /home/tester/test-files/.env

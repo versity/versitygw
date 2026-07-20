@@ -86,6 +86,7 @@ type S3RequestConfigData struct {
 	OutputFile                   string
 	HeaderFile                   string
 	AddressFormat                string
+	WebsiteConfiguration         string
 }
 
 type S3RequestBuilder struct {

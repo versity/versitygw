@@ -50,7 +50,7 @@ func NewPutBucketCORSCommand(command *S3RequestBuilder, ruleStrings []string) (*
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling XML: %w", err)
 	}
-	command.Config.Payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + string(xmlData)
+	command.Config.Payload = xml.Header + string(xmlData)
 	return command, nil
 }
 
