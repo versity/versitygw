@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1669,6 +1670,335 @@ func TestIAMApiControllerPutRolePolicyExceedsQuota(t *testing.T) {
 		"PolicyDocument": {oversizedDoc},
 	})
 	requireIAMError(t, resp, http.StatusConflict, "Sender", "LimitExceeded", "Maximum policy size of 10240 bytes exceeded for role my-role")
+}
+
+func TestIAMApiControllerOIDCProviderLifecycle(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+
+	create := doIAMAction(t, server, url.Values{
+		"Action":                  {"CreateOpenIDConnectProvider"},
+		"Url":                     {"https://token.actions.githubusercontent.com"},
+		"ClientIDList.member.1":   {"sts.amazonaws.com"},
+		"ThumbprintList.member.1": {"6938FD4D98BAB03FAADB97B34396831E3780AEA1"},
+		"Tags.member.1.Key":       {"env"},
+		"Tags.member.1.Value":     {"test"},
+	})
+	if create.StatusCode != http.StatusOK {
+		t.Fatalf("CreateOpenIDConnectProvider status = %d, body=%s", create.StatusCode, readBody(t, create))
+	}
+	createBody := readBody(t, create)
+	var createOut iamtypes.CreateOpenIDConnectProviderResponse
+	unmarshalXML(t, createBody, &createOut)
+	if createOut.XMLName.Space != "https://iam.amazonaws.com/doc/2010-05-08/" || createOut.XMLName.Local != "CreateOpenIDConnectProviderResponse" {
+		t.Fatalf("CreateOpenIDConnectProvider XMLName = %#v", createOut.XMLName)
+	}
+	wantArn := "arn:aws:iam::000000000000:oidc-provider/token.actions.githubusercontent.com"
+	if createOut.Result.OpenIDConnectProviderArn != wantArn {
+		t.Fatalf("OpenIDConnectProviderArn = %q, want %q", createOut.Result.OpenIDConnectProviderArn, wantArn)
+	}
+	if len(createOut.Result.Tags) != 1 || createOut.Result.Tags[0].Key != "env" || createOut.Result.Tags[0].Value != "test" {
+		t.Fatalf("Tags = %#v", createOut.Result.Tags)
+	}
+	if createOut.ResponseMetadata.RequestID == "" {
+		t.Fatal("CreateOpenIDConnectProvider missing RequestId")
+	}
+
+	duplicate := doIAMAction(t, server, url.Values{
+		"Action":                  {"CreateOpenIDConnectProvider"},
+		"Url":                     {"https://token.actions.githubusercontent.com"},
+		"ThumbprintList.member.1": {"6938fd4d98bab03faadb97b34396831e3780aea1"},
+	})
+	requireIAMError(t, duplicate, http.StatusConflict, "Sender", "EntityAlreadyExists",
+		"Provider with url https://token.actions.githubusercontent.com already exists.")
+
+	get := doIAMAction(t, server, url.Values{
+		"Action":                   {"GetOpenIDConnectProvider"},
+		"OpenIDConnectProviderArn": {wantArn},
+	})
+	if get.StatusCode != http.StatusOK {
+		t.Fatalf("GetOpenIDConnectProvider status = %d, body=%s", get.StatusCode, readBody(t, get))
+	}
+	var getOut iamtypes.GetOpenIDConnectProviderResponse
+	unmarshalXML(t, readBody(t, get), &getOut)
+	if getOut.Result.Url != "token.actions.githubusercontent.com" {
+		t.Fatalf("Url = %q, want scheme stripped", getOut.Result.Url)
+	}
+	if len(getOut.Result.ClientIDList) != 1 || getOut.Result.ClientIDList[0] != "sts.amazonaws.com" {
+		t.Fatalf("ClientIDList = %#v", getOut.Result.ClientIDList)
+	}
+	// Submitted uppercase; AWS lowercases whatever is stored.
+	if len(getOut.Result.ThumbprintList) != 1 || getOut.Result.ThumbprintList[0] != "6938fd4d98bab03faadb97b34396831e3780aea1" {
+		t.Fatalf("ThumbprintList = %#v, want lowercased", getOut.Result.ThumbprintList)
+	}
+	if getOut.Result.CreateDate.IsZero() {
+		t.Fatal("CreateDate is zero")
+	}
+
+	list := doIAMAction(t, server, url.Values{"Action": {"ListOpenIDConnectProviders"}})
+	if list.StatusCode != http.StatusOK {
+		t.Fatalf("ListOpenIDConnectProviders status = %d, body=%s", list.StatusCode, readBody(t, list))
+	}
+	var listOut iamtypes.ListOpenIDConnectProvidersResponse
+	unmarshalXML(t, readBody(t, list), &listOut)
+	if len(listOut.Result.OpenIDConnectProviderList.Members) != 1 || listOut.Result.OpenIDConnectProviderList.Members[0].Arn != wantArn {
+		t.Fatalf("ListOpenIDConnectProviders = %#v, want [%s]", listOut.Result.OpenIDConnectProviderList.Members, wantArn)
+	}
+
+	addClientID := doIAMAction(t, server, url.Values{
+		"Action":                   {"AddClientIDToOpenIDConnectProvider"},
+		"OpenIDConnectProviderArn": {wantArn},
+		"ClientID":                 {"another-client"},
+	})
+	if addClientID.StatusCode != http.StatusOK {
+		t.Fatalf("AddClientIDToOpenIDConnectProvider status = %d, body=%s", addClientID.StatusCode, readBody(t, addClientID))
+	}
+
+	// Idempotent: adding an already-present client ID succeeds silently.
+	addDuplicate := doIAMAction(t, server, url.Values{
+		"Action":                   {"AddClientIDToOpenIDConnectProvider"},
+		"OpenIDConnectProviderArn": {wantArn},
+		"ClientID":                 {"another-client"},
+	})
+	if addDuplicate.StatusCode != http.StatusOK {
+		t.Fatalf("AddClientIDToOpenIDConnectProvider (duplicate) status = %d, body=%s", addDuplicate.StatusCode, readBody(t, addDuplicate))
+	}
+
+	removeClientID := doIAMAction(t, server, url.Values{
+		"Action":                   {"RemoveClientIDFromOpenIDConnectProvider"},
+		"OpenIDConnectProviderArn": {wantArn},
+		"ClientID":                 {"another-client"},
+	})
+	if removeClientID.StatusCode != http.StatusOK {
+		t.Fatalf("RemoveClientIDFromOpenIDConnectProvider status = %d, body=%s", removeClientID.StatusCode, readBody(t, removeClientID))
+	}
+
+	// Idempotent: removing an absent client ID succeeds silently.
+	removeAbsent := doIAMAction(t, server, url.Values{
+		"Action":                   {"RemoveClientIDFromOpenIDConnectProvider"},
+		"OpenIDConnectProviderArn": {wantArn},
+		"ClientID":                 {"never-existed"},
+	})
+	if removeAbsent.StatusCode != http.StatusOK {
+		t.Fatalf("RemoveClientIDFromOpenIDConnectProvider (absent) status = %d, body=%s", removeAbsent.StatusCode, readBody(t, removeAbsent))
+	}
+
+	getAfterClientIDChanges := doIAMAction(t, server, url.Values{
+		"Action":                   {"GetOpenIDConnectProvider"},
+		"OpenIDConnectProviderArn": {wantArn},
+	})
+	var getAfterClientIDOut iamtypes.GetOpenIDConnectProviderResponse
+	unmarshalXML(t, readBody(t, getAfterClientIDChanges), &getAfterClientIDOut)
+	if len(getAfterClientIDOut.Result.ClientIDList) != 1 || getAfterClientIDOut.Result.ClientIDList[0] != "sts.amazonaws.com" {
+		t.Fatalf("ClientIDList after add+remove = %#v, want [sts.amazonaws.com]", getAfterClientIDOut.Result.ClientIDList)
+	}
+
+	updateThumbprint := doIAMAction(t, server, url.Values{
+		"Action":                   {"UpdateOpenIDConnectProviderThumbprint"},
+		"OpenIDConnectProviderArn": {wantArn},
+		"ThumbprintList.member.1":  {strings.Repeat("a", 40)},
+		"ThumbprintList.member.2":  {strings.Repeat("B", 40)},
+	})
+	if updateThumbprint.StatusCode != http.StatusOK {
+		t.Fatalf("UpdateOpenIDConnectProviderThumbprint status = %d, body=%s", updateThumbprint.StatusCode, readBody(t, updateThumbprint))
+	}
+
+	getAfterThumbprintUpdate := doIAMAction(t, server, url.Values{
+		"Action":                   {"GetOpenIDConnectProvider"},
+		"OpenIDConnectProviderArn": {wantArn},
+	})
+	var getAfterThumbprintOut iamtypes.GetOpenIDConnectProviderResponse
+	unmarshalXML(t, readBody(t, getAfterThumbprintUpdate), &getAfterThumbprintOut)
+	wantThumbprints := []string{strings.Repeat("a", 40), strings.Repeat("b", 40)}
+	if !slices.Equal(getAfterThumbprintOut.Result.ThumbprintList, wantThumbprints) {
+		t.Fatalf("ThumbprintList after update = %#v, want %#v (full replace, lowercased)", getAfterThumbprintOut.Result.ThumbprintList, wantThumbprints)
+	}
+
+	deleteResp := doIAMAction(t, server, url.Values{
+		"Action":                   {"DeleteOpenIDConnectProvider"},
+		"OpenIDConnectProviderArn": {wantArn},
+	})
+	if deleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("DeleteOpenIDConnectProvider status = %d, body=%s", deleteResp.StatusCode, readBody(t, deleteResp))
+	}
+
+	// DeleteOpenIDConnectProvider is NOT idempotent, contradicting AWS's own
+	// published docs - a second delete of the same ARN must fail.
+	deleteAgain := doIAMAction(t, server, url.Values{
+		"Action":                   {"DeleteOpenIDConnectProvider"},
+		"OpenIDConnectProviderArn": {wantArn},
+	})
+	requireIAMError(t, deleteAgain, http.StatusNotFound, "Sender", "NoSuchEntity",
+		"OpenId connect Provider "+wantArn+" cannot be found.")
+
+	missing := doIAMAction(t, server, url.Values{
+		"Action":                   {"GetOpenIDConnectProvider"},
+		"OpenIDConnectProviderArn": {wantArn},
+	})
+	requireIAMError(t, missing, http.StatusNotFound, "Sender", "NoSuchEntity",
+		"OpenIDConnect Provider not found for arn "+wantArn)
+}
+
+func TestIAMApiControllerCreateOIDCProviderValidationErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		params  url.Values
+		status  int
+		code    string
+		message string
+	}{
+		{
+			name:    "missing url",
+			params:  url.Values{"Action": {"CreateOpenIDConnectProvider"}},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'url' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name: "no scheme at all",
+			params: url.Values{
+				"Action": {"CreateOpenIDConnectProvider"},
+				"Url":    {"example.com"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "Invalid Open ID Connect Provider URL",
+		},
+		{
+			name: "wrong scheme",
+			params: url.Values{
+				"Action": {"CreateOpenIDConnectProvider"},
+				"Url":    {"http://example.com"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "InvalidInput",
+			message: "Invalid Open ID Connect Provider URL. The URL must begin with https://.",
+		},
+		{
+			name: "query params",
+			params: url.Values{
+				"Action": {"CreateOpenIDConnectProvider"},
+				"Url":    {"https://example.com?foo=1"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "InvalidInput",
+			message: "Invalid Open ID Connect Provider URL.",
+		},
+		{
+			name: "explicit port",
+			params: url.Values{
+				"Action": {"CreateOpenIDConnectProvider"},
+				"Url":    {"https://example.com:8443"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "InvalidInput",
+			message: "Invalid Open ID Connect Provider URL.",
+		},
+		{
+			name: "url too long",
+			params: url.Values{
+				"Action": {"CreateOpenIDConnectProvider"},
+				"Url":    {"https://" + strings.Repeat("a", 250) + ".com"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'url' failed to satisfy constraint: Member must have length less than or equal to 255",
+		},
+		{
+			name: "client id too long",
+			params: url.Values{
+				"Action":                {"CreateOpenIDConnectProvider"},
+				"Url":                   {"https://example.com"},
+				"ClientIDList.member.1": {strings.Repeat("c", 256)},
+			},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'clientID' failed to satisfy constraint: Member must have length less than or equal to 255",
+		},
+		{
+			name: "thumbprint wrong length",
+			params: url.Values{
+				"Action":                  {"CreateOpenIDConnectProvider"},
+				"Url":                     {"https://example.com"},
+				"ThumbprintList.member.1": {strings.Repeat("a", 39)},
+			},
+			status:  http.StatusBadRequest,
+			code:    "InvalidInput",
+			message: "Thumbprint must be exactly 40 characters.",
+		},
+		{
+			name: "thumbprint too many",
+			params: url.Values{
+				"Action":                  {"CreateOpenIDConnectProvider"},
+				"Url":                     {"https://example.com"},
+				"ThumbprintList.member.1": {strings.Repeat("1", 40)},
+				"ThumbprintList.member.2": {strings.Repeat("2", 40)},
+				"ThumbprintList.member.3": {strings.Repeat("3", 40)},
+				"ThumbprintList.member.4": {strings.Repeat("4", 40)},
+				"ThumbprintList.member.5": {strings.Repeat("5", 40)},
+				"ThumbprintList.member.6": {strings.Repeat("6", 40)},
+			},
+			status:  http.StatusBadRequest,
+			code:    "InvalidInput",
+			message: "Thumbprint list must contain fewer than 5 entries.",
+		},
+		{
+			name: "duplicate tag keys",
+			params: url.Values{
+				"Action":                  {"CreateOpenIDConnectProvider"},
+				"Url":                     {"https://example.com"},
+				"ThumbprintList.member.1": {strings.Repeat("a", 40)},
+				"Tags.member.1.Key":       {"key"},
+				"Tags.member.1.Value":     {"one"},
+				"Tags.member.2.Key":       {"KEY"},
+				"Tags.member.2.Value":     {"two"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "InvalidInput",
+			message: "Duplicate tag keys found. Please note that Tag keys are case insensitive.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newIAMControllerTestServer(t)
+			resp := doIAMAction(t, server, tt.params)
+			requireIAMError(t, resp, tt.status, "Sender", tt.code, tt.message)
+		})
+	}
+}
+
+func TestIAMApiControllerOIDCThumbprintAutoFetchDisabled(t *testing.T) {
+	store, err := storage.New(storage.Config{Dir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	server, err := New(store, WithQuiet(), WithRootUserCreds(testRoot), WithOIDCThumbprintAutoFetchDisabled())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp := doIAMAction(t, server, url.Values{
+		"Action": {"CreateOpenIDConnectProvider"},
+		"Url":    {"https://example.com"},
+	})
+	requireIAMError(t, resp, http.StatusBadRequest, "Sender", "ValidationError",
+		"1 validation error detected: Value at 'thumbprintList' failed to satisfy constraint: Member must not be null")
+}
+
+// TestIAMApiControllerCreateOIDCProviderAutoFetchSSRFGuard confirms the
+// auto-fetch fallback's SSRF guard is wired all the way through the HTTP
+// action handler: an omitted ThumbprintList against a loopback URL must be
+// rejected before any real network attempt, deterministically and without
+// requiring outbound network access from the test environment.
+func TestIAMApiControllerCreateOIDCProviderAutoFetchSSRFGuard(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+
+	resp := doIAMAction(t, server, url.Values{
+		"Action": {"CreateOpenIDConnectProvider"},
+		"Url":    {"https://127.0.0.1"},
+	})
+	requireIAMError(t, resp, http.StatusBadRequest, "Sender", "OpenIdIdpCommunicationError",
+		"Could not connect to https://127.0.0.1")
 }
 
 func newIAMControllerTestServer(t *testing.T) *IAMApiServer {
