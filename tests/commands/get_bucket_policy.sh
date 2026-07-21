@@ -19,23 +19,26 @@ get_bucket_policy() {
   if ! check_param_count "get_bucket_policy" "command type, bucket" 2 $#; then
     return 1
   fi
-  local get_bucket_policy_result=0
-  if [[ $1 == 's3api' ]]; then
-    get_bucket_policy_s3api "$2" || get_bucket_policy_result=$?
-  elif [[ $1 == 's3cmd' ]]; then
-    get_bucket_policy_s3cmd "$2" || get_bucket_policy_result=$?
-  elif [[ $1 == 'mc' ]]; then
-    get_bucket_policy_mc "$2" || get_bucket_policy_result=$?
-  elif [ "$1" == 'rest' ]; then
-    get_bucket_policy_rest "$2" || get_bucket_policy_result=$?
+  local command_type="$1" bucket="$2"
+  local response get_bucket_policy_result=0
+
+  if [[ $command_type == 's3api' ]]; then
+    response=$(get_bucket_policy_s3api "$bucket" 2>&1) || get_bucket_policy_result=$?
+  elif [[ $command_type == 's3cmd' ]]; then
+    response=$(get_bucket_policy_s3cmd "$bucket" 2>&1) || get_bucket_policy_result=$?
+  elif [[ $command_type == 'mc' ]]; then
+    response=$(get_bucket_policy_mc "$bucket" 2>&1) || get_bucket_policy_result=$?
+  elif [ "$command_type" == 'rest' ]; then
+    response=$(get_bucket_policy_rest "$bucket" 2>&1) || get_bucket_policy_result=$?
   else
-    log 2 "command 'get bucket policy' not implemented for '$1'"
+    log 2 "command 'get bucket policy' not implemented for '$command_type'"
     return 1
   fi
   if [[ $get_bucket_policy_result -ne 0 ]]; then
-    log 2 "error getting policy: $bucket_policy"
+    log 2 "error getting policy: $response"
     return 1
   fi
+  echo "$response"
   return 0
 }
 
@@ -44,19 +47,20 @@ get_bucket_policy_s3api() {
   if ! check_param_count "get_bucket_policy_s3api" "bucket" 1 $#; then
     return 1
   fi
-  policy_json=$(send_command aws --no-verify-ssl s3api get-bucket-policy --bucket "$1" 2>&1) || local get_result=$?
-  policy_json=$(echo "$policy_json" | grep -v "InsecureRequestWarning")
-  log 5 "$policy_json"
-  if [[ $get_result -ne 0 ]]; then
-    if [[ "$policy_json" == *"(NoSuchBucketPolicy)"* ]]; then
+  local bucket="$1"
+  local response policy_json bucket_policy
+
+  if ! response=$(send_command aws --no-verify-ssl s3api get-bucket-policy --bucket "$bucket" 2>&1); then
+    if [[ "$response" == *"(NoSuchBucketPolicy)"* ]]; then
       bucket_policy=
     else
-      log 2 "error getting policy: $policy_json"
+      log 2 "error getting policy: $response"
       return 1
     fi
-  else
-    bucket_policy=$(echo "$policy_json" | jq -r '.Policy')
   fi
+  policy_json=$(echo "$response" | grep -v "InsecureRequestWarning")
+  bucket_policy=$(echo "$policy_json" | jq -r '.Policy')
+  echo "$bucket_policy"
   return 0
 }
 
@@ -82,81 +86,138 @@ get_bucket_policy_s3cmd() {
   if ! check_param_count "get_bucket_policy_s3cmd" "bucket" 1 $#; then
     return 1
   fi
+  local bucket="$1"
+  local response s3cmd_response bucket_policy
 
-  if ! info=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate --region "$AWS_REGION" info "s3://$1" 2>&1); then
-    log 2 "error getting bucket policy: $info"
+  if ! response=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate --region "$AWS_REGION" info "s3://$bucket" 2>&1); then
+    log 2 "error getting bucket policy: $response"
     return 1
   fi
+  s3cmd_response="$response"
 
-  log 5 "policy info: $info"
-  bucket_policy=""
-  policy_brackets=false
+  log 5 "policy info: $response"
   # NOTE:  versitygw sends policies back in multiple lines here, direct in single line
-  while IFS= read -r line; do
-    if check_and_load_policy_info; then
-      break
-    fi
-  done <<< "$info"
-  log 5 "bucket policy: $bucket_policy"
+  if ! response=$(parse_s3cmd_policy "$s3cmd_response"); then
+    log 2 "error parsing s3cmd policy: $response"
+    return 1
+  fi
+  log 5 "bucket policy: $response"
+  echo "$response"
   return 0
 }
 
+parse_s3cmd_policy() {
+  if ! check_param_count_v2 "response data" 1 $#; then
+    return 1
+  fi
+
+  local response_data="$1"
+  local line policy=""
+
+  while IFS= read -r line; do
+    if [[ -z $policy ]]; then
+      [[ $line =~ ^[[:space:]]*Policy:[[:space:]]*(.*)$ ]] || continue
+      policy=${BASH_REMATCH[1]}
+    else
+      policy+=$'\n'"$line"
+    fi
+
+    if [ "$policy" == "none" ]; then
+      echo ""
+      return 0
+    elif jq -e . >/dev/null 2>&1 <<<"$policy"; then
+      printf '%s\n' "$policy"
+      return 0
+    fi
+  done <<< "$response_data"
+
+  log 2 "policy data not found (data: '$response_data')"
+  return 1
+}
+
 get_bucket_policy_rest() {
-  if ! check_param_count "get_bucket_policy_rest" "bucket" 1 $#; then
+  if ! check_param_count_ge_le "bucket, region (optional)" 1 2 $#; then
     return 1
   fi
-  log 5 "aws region: $AWS_REGION"
-  if ! get_bucket_policy_rest_expect_code "$1" "200"; then
-    log 2 "error getting REST bucket policy"
+  local bucket="$1" region="$2"
+  local response
+
+  log 5 "aws region: $2"
+  if ! response=$(get_bucket_policy_rest_expect_code "$bucket" "200" "$region" 2>&1); then
+    log 2 "error getting REST bucket policy: $response"
     return 1
   fi
+  echo "$response"
+  return 0
+}
+
+get_bucket_policy_rest_go() {
+  if ! check_param_count_gt "bucket, params (optional)" 1 $#; then
+    return 1
+  fi
+  local bucket="$1" params=("${@:2}")
+  local response
+
+  if ! response=$(send_rest_go_command "200" "-bucketName" "$bucket" "-query" "policy" "${params[@]}" 2>&1); then
+    log 2 "error getting bucket policy: $response"
+    return 1
+  fi
+  echo "$response"
   return 0
 }
 
 get_bucket_policy_rest_expect_code() {
-  if ! check_param_count "get_bucket_policy_rest_expect_code" "bucket, code" 2 $#; then
+  if ! check_param_count_ge_le "bucket, code, region (optional)" 2 3 $#; then
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/policy.txt" ./tests/rest_scripts/get_bucket_policy.sh); then
-    log 2 "error attempting to get bucket policy response: $result"
-    return 1
-  fi
-  if [ "$result" != "$2" ]; then
-    log 2 "unexpected response code, expected '$2', actual '$result' (reply: $(cat "$TEST_FILE_FOLDER/policy.txt"))"
-    return 1
-  fi
-  bucket_policy="$(cat "$TEST_FILE_FOLDER/policy.txt")"
-}
+  local bucket_name="$1" expected_response_code="$2" region="$3"
+  local region_string response file_name
 
-# return 0 for no policy, single-line policy, or loading complete, 1 for still searching or loading
-check_and_load_policy_info() {
-  if [[ $policy_brackets == false ]]; then
-    if search_for_first_policy_line_or_full_policy; then
-      return 0
-    fi
+  if [ "$region" != "" ]; then
+    region_string="AWS_REGION=$3"
   else
-    bucket_policy+=$line
-    if [[ $line == "}" ]]; then
-      return 0
-    fi
+    region_string="AWS_REGION=$AWS_REGION"
   fi
-  return 1
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  file_name="$response"
+
+  if ! response=$(env COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$bucket_name" OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" "$region_string" ./tests/rest_scripts/get_bucket_policy.sh 2>&1); then
+    log 2 "error attempting to get bucket policy response: $response"
+    return 1
+  fi
+  if [ "$response" != "$expected_response_code" ]; then
+    log 2 "unexpected response code, expected '$expected_response_code', actual '$response' (reply: '$(cat "$TEST_FILE_FOLDER/$file_name")')"
+    return 1
+  fi
+  bucket_policy="$(cat "$TEST_FILE_FOLDER/$file_name")"
+  echo "$bucket_policy"
+  return 0
 }
 
-# return 0 for empty or single-line policy, 1 for other cases
+# return 0 for empty or single-line policy, 1 for not found or in progress, 2 for error
 search_for_first_policy_line_or_full_policy() {
-  policy_line=$(echo "$line" | grep 'Policy: ')
-  if [[ $policy_line != "" ]]; then
-    if [[ $policy_line != *'{'* ]]; then
+  if ! check_param_count_v2 "line" 1 $#; then
+    return 2
+  fi
+  local line="$1"
+  local policy_line
+
+  if grep 'Policy: ' "$line" >/dev/null; then
+    if [[ $line != *'{'* ]]; then
+      echo ""
       return 0
     fi
-    if [[ $policy_line == *'}'* ]]; then
+    if [[ $line == *'}'* ]]; then
       log 5 "policy on single line"
-      bucket_policy=${policy_line//Policy:/}
+      policy_line=${line//Policy:/}
+      echo "$policy_line"
       return 0
     else
-      policy_brackets=true
-      bucket_policy+="{"
+      echo "{"
     fi
   fi
   return 1

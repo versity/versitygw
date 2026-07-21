@@ -256,32 +256,39 @@ check_header_partial_content_response() {
 }
 
 get_delete_marker_and_verify_405() {
-  if ! check_param_count "get_delete_marker_and_verify_405" "bucket, file name" 2 $#; then
+  if ! check_param_count_v2 "bucket, key" 2 $#; then
     return 1
   fi
-  if ! response=$(list_object_versions_rest "$1" 2>&1); then
+  local bucket="$1" key="$2"
+  local response versions_data version_id file_name response_code
+
+  if ! response=$(list_object_versions_rest "$bucket" 2>&1); then
     log 2 "error listing REST object versions"
     return 1
   fi
-  versions_file="$response"
-  log 5 "versions: $(cat "$versions_file")"
+  versions_data="$response"
+  log 5 "versions: $versions_data"
 
-  if ! version_id=$(xmllint --xpath "//*[local-name()=\"DeleteMarker\"]/*[local-name()=\"VersionId\"]/text()" "$versions_file" 2>&1); then
+  if ! response=$(xmllint --xpath "//*[local-name()=\"DeleteMarker\"]/*[local-name()=\"VersionId\"]/text()" - <<< "$versions_data" 2>&1); then
     log 2 "error getting XML value: $version_id"
     return 1
   fi
-  log 5 "xml val: $version_id"
+  version_id="$response"
 
   if ! response=$(get_file_name 2>&1); then
     log 2 "error getting file name: $response"
     return 1
   fi
-  if ! result=$(OUTPUT_FILE="$TEST_FILE_FOLDER/$response" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" VERSION_ID="$version_id" ./tests/rest_scripts/head_object.sh); then
-    log 2 "error getting result: $result"
+  file_name="$response"
+
+  if ! response=$(OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$bucket" OBJECT_KEY="$key" VERSION_ID="$version_id" ./tests/rest_scripts/head_object.sh); then
+    log 2 "error getting result: $response"
     return 1
   fi
-  if [ "$result" != "405" ]; then
-    log 2 "expected '405', was '$result' ($(cat "$TEST_FILE_FOLDER/$response"))"
+  response_code="$response"
+
+  if [ "$response_code" != "405" ]; then
+    log 2 "expected '405', was '$response_code' ($(cat "$TEST_FILE_FOLDER/$file_name"))"
     return 1
   fi
   return 0

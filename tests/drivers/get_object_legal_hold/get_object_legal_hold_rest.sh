@@ -30,12 +30,13 @@ check_legal_hold_without_lock_enabled() {
 }
 
 check_remove_legal_hold_versions() {
-  if ! check_param_count "check_remove_legal_hold_versions" "bucket, key, version ID" 3 $#; then
+  if ! check_param_count_gt "bucket, key, version ID" 3 $#; then
     return 1
   fi
+  local bucket="$1" key="$2" version_id="$3"
   local response legal_hold_data
 
-  if ! response=$(get_object_legal_hold_rest_version_id "$1" "$2" "$3" 2>&1); then
+  if ! response=$(get_object_legal_hold_rest_version_id "$bucket" "$key" "$version_id" 2>&1); then
     # shellcheck disable=SC2154
     log 5 "legal hold: $response"
     if [[ "$response" != *"MethodNotAllowed"* ]] && [[ "$response" != *"NoSuchObjectLockConfiguration"* ]]; then

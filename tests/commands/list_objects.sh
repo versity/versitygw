@@ -151,6 +151,21 @@ list_objects_rest() {
   return 0
 }
 
+list_objects_rest_go() {
+  if ! check_param_count_gt "bucket, callback, params (optional)" 2 $#; then
+    return 1
+  fi
+  local bucket="$1" callback="$2" params=(${@:3})
+  local response
+
+  if ! response=$(send_rest_go_command_callback "200" "$callback" "-bucketName" "$bucket" "${params[@]}" 2>&1); then
+    log 2 "error sending ListObjects REST command: $response"
+    return 1
+  fi
+  echo "$response"
+  return 0
+}
+
 list_objects_rest_expect_error() {
   if ! check_param_count_v2 "bucket name, env vars, response code, error, message" 5 $#; then
     return 1

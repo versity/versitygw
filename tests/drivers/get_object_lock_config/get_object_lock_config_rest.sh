@@ -63,3 +63,22 @@ check_object_lock_config_enabled_rest() {
   fi
   return 0
 }
+
+check_object_lock_config_go() {
+  if ! check_param_count_gt "bucket, additional params (optional)" 1 $#; then
+    return 1
+  fi
+  local bucket="$1" params=("${@:2}")
+  local response
+
+  if ! response=$(get_object_lock_configuration_rest_go "$bucket" "" "${params[@]}" 2>&1); then
+    if [[ "$response" == *"HTTP/1.1 404 Not Found"* ]]; then
+      echo "false"
+      return 0
+    fi
+    log 2 "error checking object lock configuration: $response"
+    return 1
+  fi
+  echo "true"
+  return 0
+}

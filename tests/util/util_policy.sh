@@ -190,14 +190,18 @@ get_and_check_policy() {
   if ! check_param_count "get_and_check_policy" "client, bucket, expected effect, principal, action, resource" 6 $#; then
     return 1
   fi
-  if ! get_bucket_policy "$1" "$2"; then
-    log 2 "error getting bucket policy after setting"
+  local client="$1" bucket="$2" expected_effect="$3" expected_principal="$4" expected_action="$5" expected_resource="$6"
+  local response policy
+
+  if ! response=$(get_bucket_policy "$client" "$bucket" 2>&1); then
+    log 2 "error getting bucket policy after setting: $response"
     return 1
   fi
+  policy="$response"
 
   # shellcheck disable=SC2154
-  log 5 "POLICY:  $bucket_policy"
-  if ! check_policy "$bucket_policy" "$3" "$4" "$5" "$6"; then
+  log 5 "POLICY:  $policy"
+  if ! check_policy "$policy" "$expected_effect" "$expected_principal" "$expected_action" "$expected_resource"; then
     log 2 "error checking policy"
     return 1
   fi
@@ -304,28 +308,40 @@ get_and_compare_policy_with_file() {
 }
 
 put_and_check_policy_rest() {
-  if ! check_param_count "put_and_check_policy_rest" "bucket, policy file, effect, principal, action, resource" 6 $#; then
+  if ! check_param_count_v2 "bucket, policy file, effect, principal ID, action, resource" 6 $#; then
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" POLICY_FILE="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_bucket_policy.sh); then
-    log 2 "error putting policy: $result"
+  local bucket="$1" policy_file="$2" expected_effect="$3" principal_id="$4" expected_action="$5" expected_resource="$6"
+  local response file_name response_code policy expected_principal
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
     return 1
   fi
-  log 5 "response code: $result"
-  if [[ ( "$result" != "204" ) && ( "$result" != "200" ) ]]; then
-    log 2 "unexpected response code, expected '200' or '204', actual '$result' (reply: $(cat "$TEST_FILE_FOLDER/result.txt"))"
+  file_name="$response"
+
+  if ! response=$(env COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$bucket" POLICY_FILE="$policy_file" OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" ./tests/rest_scripts/put_bucket_policy.sh 2>&1); then
+    log 2 "error putting policy: $response"
     return 1
   fi
-  if ! get_bucket_policy_rest "$1"; then
-    log 2 "error attempting to get bucket policy response: $result"
+  response_code="$response"
+
+  if [[ ( "$response_code" != "204" ) && ( "$response_code" != "200" ) ]]; then
+    log 2 "unexpected response code, expected '200' or '204', actual '$response_code' (reply: '$(cat "$TEST_FILE_FOLDER/$file_name")')"
     return 1
   fi
+  if ! response=$(get_bucket_policy_rest "$bucket" 2>&1); then
+    log 2 "error attempting to get bucket policy response: $response"
+    return 1
+  fi
+  policy="$response"
+
   if [ "$DIRECT" == "true" ]; then
-    principal="arn:aws:iam::$DIRECT_AWS_USER_ID:user/$4"
+    expected_principal="arn:aws:iam::$DIRECT_AWS_USER_ID:user/$principal_id"
   else
-    principal="$4"
+    expected_principal="$principal_id"
   fi
-  if ! check_policy "$bucket_policy" "$3" "$principal" "$5" "$6"; then
+  if ! check_policy "$policy" "$expected_effect" "$expected_principal" "$expected_action" "$expected_resource"; then
     log 2 "policies not equal"
     return 1
   fi
@@ -334,13 +350,23 @@ put_and_check_policy_rest() {
 
 log_bucket_policy() {
   log 6 "log_bucket_policy"
-  if ! check_param_count "log_bucket_policy" "bucket" 1 $#; then
+  if ! check_param_count_gt "bucket, params (optional)" 1 $#; then
+    return 1
+  fi
+  local bucket="$1"
+  local response policy
+
+  if ! response=$(get_bucket_policy_rest_go "$bucket" "${@:2}" 2>&1); then
+    if [[ "$response" == *"HTTP/1.1 404 Not Found"* ]]; then
+      log 5 "BUCKET POLICY: NONE"
+      return 0
+    fi
+    log 2 "error getting bucket policy: $response"
     return
   fi
-  if ! get_bucket_policy "rest" "$1"; then
-    log 2 "error getting bucket policy"
-    return
-  fi
+  policy="$response"
+
   # shellcheck disable=SC2154
-  log 5 "BUCKET POLICY: $bucket_policy"
+  log 5 "BUCKET POLICY: '$policy'"
+  return 0
 }

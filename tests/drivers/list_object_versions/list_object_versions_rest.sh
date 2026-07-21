@@ -273,3 +273,18 @@ list_object_versions_with_prefix_and_delimiter_check_results() {
   fi
   return 0
 }
+
+get_xml_versions_data() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  local data_file="$1"
+  local response
+
+  if ! response=$(get_element "$data_file" "ListVersionsResult" 2>&1); then
+    log 2 "error getting ListVersionsResult: $response"
+    return 1
+  fi
+  printf '%s\n' "$response"
+  return 0
+}

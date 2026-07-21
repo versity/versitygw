@@ -356,17 +356,18 @@ parse_objects_list_rest() {
   if ! check_param_count_v2 "data file" 1 $#; then
     return 1
   fi
+  local data_file="$1"
+  local response object_list object unescaped_object
 
-  local response
-  if ! response=$(xmllint --xpath '//*[local-name()="Key"]/text()' "$1" 2>&1); then
-    if [[ "$response" == *"XPath set is empty"* ]]; then
+  if ! response=$(get_element_text "$data_file" "Key" 2>&1); then
+    if [[ "$response" == *"element matching"*"doesn't exist"* ]]; then
       return 0
     fi
-    log 2 "error getting object list: $response"
+    log 2 "error getting object keys: $response"
     return 1
-  else
-    object_list="$response"
   fi
+  object_list="$response"
+
   log 5 "object list: '$object_list'"
   while IFS= read -r object; do
     log 5 "parsed key: '$object'"

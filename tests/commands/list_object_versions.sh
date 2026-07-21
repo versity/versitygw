@@ -18,17 +18,21 @@ list_object_versions() {
   if ! check_param_count "list_object_versions" "client, bucket name" 2 $#; then
     return 1
   fi
-  local list_result=0
-  if [ "$1" == "rest" ]; then
-    list_object_versions_rest "$2" || list_result=$?
+  local client="$1" bucket="$2"
+  local list_result=0 response response_with_warning versions
+
+  if [ "$client" == "rest" ]; then
+    response=$(list_object_versions_rest "$bucket" 2>&1) || list_result=$?
   else
-    versions=$(send_command aws --no-verify-ssl s3api list-object-versions --bucket "$2" 2>&1) || list_result=$?
+    response_with_warning=$(send_command aws --no-verify-ssl s3api list-object-versions --bucket "$2" 2>&1) || list_result=$?
+    response=$(echo "$response_with_warning" | grep -v "InsecureRequestWarning")
   fi
   if [[ $list_result -ne 0 ]]; then
     log 2 "error listing object versions: $versions"
     return 1
   fi
-  versions=$(echo "$versions" | grep -v "InsecureRequestWarning")
+  versions="$response"
+  echo "$versions"
   return 0
 }
 
@@ -51,18 +55,21 @@ list_object_versions_rest() {
     log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/$file_name"))"
     return 1
   fi
-  versions=$(cat "$TEST_FILE_FOLDER/$file_name")
-  echo "$TEST_FILE_FOLDER/$file_name"
+  cat "$TEST_FILE_FOLDER/$file_name"
   return 0
 }
 
 list_object_versions_rest_v2() {
-  if ! check_param_count_v2 "bucket name, callback" 2 $#; then
+  if ! check_param_count_gt "bucket name, callback, params (optional)" 2 $#; then
     return 1
   fi
-  if ! send_rest_go_command_callback "200" "$2" "-bucketName" "$1" "-query" "versions="; then
-    log 2 "error sending REST list object versions command"
+  local bucket="$1" callback="$2" params=("${@:3}")
+  local response
+
+  if ! response=$(send_rest_go_command_callback "200" "$callback" "-bucketName" "$bucket" "-query" "versions=" "${params[@]}" 2>&1); then
+    log 2 "error sending REST list object versions command: $response"
     return 1
   fi
+  echo "$response"
   return 0
 }
