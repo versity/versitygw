@@ -28,6 +28,7 @@ type S3Request struct {
 	dataSource           DataSource
 	canonicalRequestHash string
 	signingKey           []byte
+	url                  string
 }
 
 func (s *S3Request) CalculateDateTimeParams() {
@@ -50,12 +51,21 @@ func (s *S3Request) DeriveHost() error {
 	if len(protocolAndHost) != 2 {
 		return fmt.Errorf("invalid URL value: %s", s.Config.Url)
 	}
-	s.host = protocolAndHost[1]
+	if s.Config.AddressFormat == AddressFormatVirtual && s.Config.BucketName != "" {
+		s.host = fmt.Sprintf("%s.%s", s.Config.BucketName, protocolAndHost[1])
+		s.url = strings.Join([]string{protocolAndHost[0], s.host}, "://")
+	} else {
+		s.host = protocolAndHost[1]
+		s.url = s.Config.Url
+	}
 	return nil
 }
 
 func (s *S3Request) DeriveBucketAndKeyPath() {
-	s.path = "/" + s.Config.BucketName
+	s.path = "/"
+	if s.Config.BucketName != "" && s.Config.AddressFormat == AddressFormatPath {
+		s.path += s.Config.BucketName
+	}
 	if s.Config.ObjectKey != "" {
 		s.path += "/" + s.Config.ObjectKey
 	}

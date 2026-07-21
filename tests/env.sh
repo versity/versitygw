@@ -116,6 +116,10 @@ check_aws_vars() {
     log 1 "AWS_PROFILE missing"
     return 1
   fi
+  if ! check_user_profile_and_add_if_needed; then
+    log 1 "user profile '$AWS_PROFILE' not found and unable to be added"
+    return 1
+  fi
   if [ "$DIRECT" != "true" ]; then
     if [ -z "$AWS_ENDPOINT_URL" ]; then
       log 1 "AWS_ENDPOINT_URL missing"
@@ -346,6 +350,34 @@ check_user_vars() {
   fi
   log 1 "unrecognized IAM_TYPE value: $IAM_TYPE"
   return 1
+}
+
+check_user_profile_and_add_if_needed() {
+  local response profile aws_profiles=()
+
+  if ! response=$(aws configure list-profiles 2>&1); then
+    log 2 "error listing aws profiles: $response"
+    return 1
+  fi
+  mapfile -t aws_profiles <<< "$response"
+  for profile in "${aws_profiles[@]}"; do
+    if [ "$profile" != "" ] && [ "$AWS_PROFILE" == "$profile" ]; then
+      return 0
+    fi
+  done
+  if ! response=$(aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" --profile "$AWS_PROFILE" 2>&1); then
+    log 2 "error calculating response: $response"
+    return 1
+  fi
+  if ! response=$(aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" --profile "$AWS_PROFILE" 2>&1); then
+    log 2 "error calculating response: $response"
+    return 1
+  fi
+  if ! response=$(aws configure set aws_region "$AWS_REGION" --profile "$AWS_PROFILE" 2>&1); then
+    log 2 "error calculating response: $response"
+    return 1
+  fi
+  return 0
 }
 
 delete_command_log() {
