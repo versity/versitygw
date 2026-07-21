@@ -109,6 +109,11 @@ func IAMCommand() *cli.Command {
 				EnvVars: []string{"VGW_QUIET"},
 				Aliases: []string{"q"},
 			},
+			&cli.BoolFlag{
+				Name:    "disable-oidc-thumbprint-autofetch",
+				Usage:   "reject CreateOpenIDConnectProvider requests that omit ThumbprintList instead of auto-fetching it over an outbound TLS connection",
+				EnvVars: []string{"VGW_IAM_DISABLE_OIDC_THUMBPRINT_AUTOFETCH"},
+			},
 		},
 	}
 }

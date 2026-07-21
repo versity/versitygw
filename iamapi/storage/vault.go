@@ -16,6 +16,7 @@ package storage
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,7 @@ import (
 	vault "github.com/hashicorp/vault-client-go"
 	"github.com/hashicorp/vault-client-go/schema"
 	"github.com/versity/versitygw/iamapi/iamerr"
+	"github.com/versity/versitygw/iamapi/internal/iamutil"
 	"github.com/versity/versitygw/iamapi/types"
 )
 
@@ -1117,6 +1119,296 @@ func parseVaultRole(data map[string]any, roleName string) (types.Role, error) {
 		return types.Role{}, fmt.Errorf("unmarshal vault role: %w", err)
 	}
 	return role, nil
+}
+
+// oidcProvidersPath is the KV prefix under which OIDC providers are stored,
+// kept distinct from secretStoragePath/rolesPath.
+func (s *VaultStore) oidcProvidersPath() string {
+	return s.secretStoragePath + "/oidc-providers"
+}
+
+// oidcProviderPathSegment returns the literal KV path segment for a
+// provider identified by its scheme-stripped url. OIDC provider URLs may
+// themselves contain "/" (e.g. "host/" and "host/path" are distinct valid
+// providers) and Vault KV paths treat "/" as a path
+// separator, so — unlike RoleName/UserName, which never contain "/" and are
+// used as literal path segments directly — the raw url cannot safely be
+// used as a KV path segment. base64url-encoding (RawURLEncoding: lossless,
+// produces only [A-Za-z0-9_-], no "/" or "=" padding) collapses it to one
+// opaque, path-safe segment. The same segment is reused as the single outer
+// JSON key inside the KV secret body (a deliberate deviation from
+// roleToVaultMap/userToVaultMap's convention of keying on the
+// human-readable name — simpler here since only one identifier needs to be
+// tracked for read-back, not two).
+func oidcProviderPathSegment(url string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(url))
+}
+
+func (s *VaultStore) CreateOIDCProvider(_ context.Context, provider types.OIDCProvider) (*types.OIDCProvider, error) {
+	segment := oidcProviderPathSegment(provider.Url)
+	path := s.oidcProvidersPath() + "/" + segment
+	displayURL := "https://" + provider.Url
+
+	resp, err := s.client.Secrets.KvV2List(context.Background(), s.oidcProvidersPath(), s.kvReqOpts...)
+	if err != nil && !vault.IsErrorStatus(err, http.StatusNotFound) {
+		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+			return nil, reauthErr
+		}
+		resp, err = s.client.Secrets.KvV2List(context.Background(), s.oidcProvidersPath(), s.kvReqOpts...)
+		if err != nil && !vault.IsErrorStatus(err, http.StatusNotFound) {
+			return nil, err
+		}
+	}
+	if resp != nil {
+		if slices.Contains(resp.Data.Keys, segment) {
+			return nil, iamerr.EntityAlreadyExistsOIDCProvider(displayURL)
+		}
+		if len(resp.Data.Keys) >= MaxOIDCProvidersPerAccount {
+			return nil, iamerr.OIDCProvidersPerAccountLimitExceeded(MaxOIDCProvidersPerAccount)
+		}
+	}
+
+	providerMap, err := oidcProviderToVaultMap(provider)
+	if err != nil {
+		return nil, fmt.Errorf("serialize oidc provider: %w", err)
+	}
+	req := schema.KvV2WriteRequest{
+		Data:    map[string]any{segment: providerMap},
+		Options: map[string]any{"cas": 0},
+	}
+
+	_, err = s.client.Secrets.KvV2Write(context.Background(), path, req, s.kvReqOpts...)
+	if err != nil {
+		if strings.Contains(err.Error(), "check-and-set") {
+			return nil, iamerr.EntityAlreadyExistsOIDCProvider(displayURL)
+		}
+		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+			return nil, reauthErr
+		}
+		_, err = s.client.Secrets.KvV2Write(context.Background(), path, req, s.kvReqOpts...)
+		if err != nil {
+			if strings.Contains(err.Error(), "check-and-set") {
+				return nil, iamerr.EntityAlreadyExistsOIDCProvider(displayURL)
+			}
+			if vault.IsErrorStatus(err, http.StatusForbidden) {
+				return nil, fmt.Errorf("vault 403 permission denied on path %q. check KV mount path and policy. original: %w", path, err)
+			}
+			return nil, err
+		}
+	}
+	return cloneOIDCProvider(provider), nil
+}
+
+func (s *VaultStore) GetOIDCProvider(_ context.Context, arn string) (*types.OIDCProvider, error) {
+	url, err := iamutil.ParseOIDCProviderArn(arn)
+	if err != nil {
+		return nil, err
+	}
+	segment := oidcProviderPathSegment(url)
+	path := s.oidcProvidersPath() + "/" + segment
+
+	resp, err := s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...)
+	if err != nil {
+		if vault.IsErrorStatus(err, http.StatusNotFound) {
+			return nil, iamerr.NoSuchEntityOIDCProviderGet(arn)
+		}
+		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+			return nil, reauthErr
+		}
+		resp, err = s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...)
+		if err != nil {
+			if vault.IsErrorStatus(err, http.StatusNotFound) {
+				return nil, iamerr.NoSuchEntityOIDCProviderGet(arn)
+			}
+			return nil, err
+		}
+	}
+
+	provider, err := parseVaultOIDCProvider(resp.Data.Data, segment)
+	if err != nil {
+		return nil, err
+	}
+	return cloneOIDCProvider(provider), nil
+}
+
+func (s *VaultStore) ListOIDCProviders(_ context.Context) (*ListOIDCProvidersOutput, error) {
+	resp, err := s.client.Secrets.KvV2List(context.Background(), s.oidcProvidersPath(), s.kvReqOpts...)
+	if err != nil {
+		if vault.IsErrorStatus(err, http.StatusNotFound) {
+			return &ListOIDCProvidersOutput{Providers: []types.OpenIDConnectProviderListEntry{}}, nil
+		}
+		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+			return nil, reauthErr
+		}
+		resp, err = s.client.Secrets.KvV2List(context.Background(), s.oidcProvidersPath(), s.kvReqOpts...)
+		if err != nil {
+			if vault.IsErrorStatus(err, http.StatusNotFound) {
+				return &ListOIDCProvidersOutput{Providers: []types.OpenIDConnectProviderListEntry{}}, nil
+			}
+			return nil, err
+		}
+	}
+
+	entries := make([]types.OpenIDConnectProviderListEntry, 0, len(resp.Data.Keys))
+	for _, segment := range resp.Data.Keys {
+		// Read each secret by its already-known key rather than decoding
+		// segment back to a url, populating the list from each secret's own
+		// stored fields.
+		path := s.oidcProvidersPath() + "/" + segment
+		secretResp, err := s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...)
+		if err != nil {
+			if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+				return nil, reauthErr
+			}
+			secretResp, err = s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...)
+			if err != nil {
+				return nil, err
+			}
+		}
+		provider, err := parseVaultOIDCProvider(secretResp.Data.Data, segment)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, types.OpenIDConnectProviderListEntry{Arn: provider.Arn})
+	}
+
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Arn < entries[j].Arn })
+	return &ListOIDCProvidersOutput{Providers: entries}, nil
+}
+
+func (s *VaultStore) DeleteOIDCProvider(_ context.Context, arn string) error {
+	url, err := iamutil.ParseOIDCProviderArn(arn)
+	if err != nil {
+		return err
+	}
+	path := s.oidcProvidersPath() + "/" + oidcProviderPathSegment(url)
+
+	// Existence check first: unlike deleteRoleByPath (only reached after
+	// DeleteRole's own prior GetRole existence check), Delete's own
+	// not-found path is load-bearing here (NOT idempotent).
+	if _, err := s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...); err != nil {
+		if vault.IsErrorStatus(err, http.StatusNotFound) {
+			return iamerr.NoSuchEntityOIDCProviderDelete(arn)
+		}
+		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+			return reauthErr
+		}
+		if _, err := s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...); err != nil {
+			if vault.IsErrorStatus(err, http.StatusNotFound) {
+				return iamerr.NoSuchEntityOIDCProviderDelete(arn)
+			}
+			return err
+		}
+	}
+
+	return s.deleteOIDCProviderByURL(url)
+}
+
+func (s *VaultStore) deleteOIDCProviderByURL(url string) error {
+	path := s.oidcProvidersPath() + "/" + oidcProviderPathSegment(url)
+	_, err := s.client.Secrets.KvV2DeleteMetadataAndAllVersions(context.Background(), path, s.kvReqOpts...)
+	if err != nil {
+		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
+			return reauthErr
+		}
+		_, err = s.client.Secrets.KvV2DeleteMetadataAndAllVersions(context.Background(), path, s.kvReqOpts...)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// AddClientIDToOIDCProvider / RemoveClientIDFromOIDCProvider /
+// UpdateOIDCProviderThumbprint use non-atomic get-then-replace, mirroring
+// the existing consistency model of UpdateAssumeRolePolicy/PutRolePolicy's
+// Vault implementations — this codebase has no CAS-protected
+// read-modify-write for Vault mutations today, and this does not introduce
+// one.
+
+func (s *VaultStore) AddClientIDToOIDCProvider(ctx context.Context, arn, clientID string) error {
+	provider, err := s.GetOIDCProvider(ctx, arn)
+	if err != nil {
+		return err
+	}
+	if slices.Contains(provider.ClientIDList, clientID) {
+		return nil
+	}
+	if len(provider.ClientIDList) >= MaxClientIDsPerOIDCProvider {
+		return iamerr.ClientIdsPerOpenIdConnectProviderLimitExceeded(MaxClientIDsPerOIDCProvider)
+	}
+	provider.ClientIDList = append(provider.ClientIDList, clientID)
+	return s.replaceOIDCProvider(ctx, *provider)
+}
+
+func (s *VaultStore) RemoveClientIDFromOIDCProvider(ctx context.Context, arn, clientID string) error {
+	provider, err := s.GetOIDCProvider(ctx, arn)
+	if err != nil {
+		return err
+	}
+	idx := slices.Index(provider.ClientIDList, clientID)
+	if idx == -1 {
+		return nil
+	}
+	provider.ClientIDList = slices.Delete(provider.ClientIDList, idx, idx+1)
+	return s.replaceOIDCProvider(ctx, *provider)
+}
+
+func (s *VaultStore) UpdateOIDCProviderThumbprint(ctx context.Context, arn string, thumbprints []string) error {
+	provider, err := s.GetOIDCProvider(ctx, arn)
+	if err != nil {
+		return err
+	}
+	provider.ThumbprintList = thumbprints
+	return s.replaceOIDCProvider(ctx, *provider)
+}
+
+// replaceOIDCProvider overwrites the stored document for provider.Url by
+// deleting all existing versions and recreating with CAS=0.
+func (s *VaultStore) replaceOIDCProvider(ctx context.Context, provider types.OIDCProvider) error {
+	if err := s.deleteOIDCProviderByURL(provider.Url); err != nil {
+		return err
+	}
+	_, err := s.CreateOIDCProvider(ctx, provider)
+	return err
+}
+
+var errInvalidVaultOIDCProvider = errors.New("invalid oidc provider entry in vault secrets engine")
+
+func oidcProviderToVaultMap(provider types.OIDCProvider) (map[string]any, error) {
+	b, err := json.Marshal(provider)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// parseVaultOIDCProvider reconstructs an OIDCProvider from the raw
+// map[string]any vault returns. The outer key is the base64url path
+// segment used at write time (oidcProviderPathSegment), not a
+// human-readable value — unlike parseVaultRole/parseVaultUser.
+func parseVaultOIDCProvider(data map[string]any, segment string) (types.OIDCProvider, error) {
+	raw, ok := data[segment]
+	if !ok {
+		return types.OIDCProvider{}, errInvalidVaultOIDCProvider
+	}
+	providerMap, ok := raw.(map[string]any)
+	if !ok {
+		return types.OIDCProvider{}, errInvalidVaultOIDCProvider
+	}
+	b, err := json.Marshal(providerMap)
+	if err != nil {
+		return types.OIDCProvider{}, fmt.Errorf("re-marshal vault oidc provider: %w", err)
+	}
+	var provider types.OIDCProvider
+	if err := json.Unmarshal(b, &provider); err != nil {
+		return types.OIDCProvider{}, fmt.Errorf("unmarshal vault oidc provider: %w", err)
+	}
+	return provider, nil
 }
 
 var errInvalidVaultUser = errors.New("invalid user entry in vault secrets engine")
