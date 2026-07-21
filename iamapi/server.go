@@ -58,6 +58,9 @@ type IAMApiServer struct {
 	maxRequests    int
 	socketPerm     os.FileMode
 	onListen       func()
+	// oidcThumbprintAutoFetchDisabled disables CreateOpenIDConnectProvider's
+	// TLS auto-fetch fallback; see WithOIDCThumbprintAutoFetchDisabled.
+	oidcThumbprintAutoFetchDisabled bool
 }
 
 func New(store storage.Storer, opts ...Option) (*IAMApiServer, error) {
@@ -89,6 +92,7 @@ func New(store storage.Storer, opts ...Option) (*IAMApiServer, error) {
 	server.app = app
 	server.Router.app = app
 	server.Router.rootCreds = server.rootCreds
+	server.Router.oidcThumbprintAutoFetchDisabled = server.oidcThumbprintAutoFetchDisabled
 
 	app.Use("*", recover.New(recover.Config{
 		EnableStackTrace:  true,
@@ -159,6 +163,15 @@ func WithRootUserCreds(root RootCredentials) Option {
 	return func(s *IAMApiServer) {
 		s.rootCreds = &root
 	}
+}
+
+// WithOIDCThumbprintAutoFetchDisabled disables CreateOpenIDConnectProvider's
+// TLS auto-fetch fallback for when ThumbprintList is omitted. When set, an
+// omitted ThumbprintList is rejected with a MissingValue error instead of
+// the gateway making an outbound TLS connection to the caller-supplied URL
+// — an operational safety valve for restricted/air-gapped deployments.
+func WithOIDCThumbprintAutoFetchDisabled() Option {
+	return func(s *IAMApiServer) { s.oidcThumbprintAutoFetchDisabled = true }
 }
 
 func (s *IAMApiServer) ServeMultiPort(ports []string) error {

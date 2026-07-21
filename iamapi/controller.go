@@ -30,10 +30,19 @@ import (
 
 type IAMApiController struct {
 	store storage.Storer
+	// oidcThumbprintAutoFetchDisabled disables CreateOpenIDConnectProvider's
+	// TLS auto-fetch fallback when ThumbprintList is omitted (operational
+	// safety valve for restricted/air-gapped deployments); set via
+	// iamapi.WithOIDCThumbprintAutoFetchDisabled(). Defaults to false
+	// (auto-fetch enabled), matching real AWS behavior.
+	oidcThumbprintAutoFetchDisabled bool
 }
 
-func NewController(store storage.Storer) IAMApiController {
-	return IAMApiController{store: store}
+func NewController(store storage.Storer, oidcThumbprintAutoFetchDisabled bool) IAMApiController {
+	return IAMApiController{
+		store:                           store,
+		oidcThumbprintAutoFetchDisabled: oidcThumbprintAutoFetchDisabled,
+	}
 }
 
 func (c IAMApiController) CreateUser(ctx fiber.Ctx) (*Response, error) {
@@ -847,4 +856,189 @@ func (c IAMApiController) ListRolePolicies(ctx fiber.Ctx) (*Response, error) {
 			Marker:      out.Marker,
 		},
 	}}, nil
+}
+
+func (c IAMApiController) CreateOpenIDConnectProvider(ctx fiber.Ctx) (*Response, error) {
+	rawURL, ok := iamutil.RequestParam(ctx, "Url")
+	if !ok || rawURL == "" {
+		debuglogger.Logf("missing required CreateOpenIDConnectProvider parameter: Url")
+		return nil, iamerr.MissingValue("url")
+	}
+	url, err := iamutil.ValidateOIDCProviderURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+
+	clientIDs := iamutil.ParseStringList(ctx, "ClientIDList")
+	if len(clientIDs) > storage.MaxClientIDsPerOIDCProvider {
+		return nil, iamerr.ClientIdsPerOpenIdConnectProviderLimitExceeded(storage.MaxClientIDsPerOIDCProvider)
+	}
+	for _, id := range clientIDs {
+		if len(id) > iamutil.MaxOIDCClientIDLen {
+			return nil, iamerr.ValueTooLong("clientID", iamutil.MaxOIDCClientIDLen)
+		}
+	}
+
+	thumbprints := iamutil.ParseStringList(ctx, "ThumbprintList")
+	if len(thumbprints) == 0 {
+		if c.oidcThumbprintAutoFetchDisabled {
+			debuglogger.Logf("CreateOpenIDConnectProvider: ThumbprintList omitted and auto-fetch is disabled")
+			return nil, iamerr.MissingValue("thumbprintList")
+		}
+		fetched, err := iamutil.FetchThumbprint(ctx.Context(), url)
+		if err != nil {
+			debuglogger.Logf("failed to auto-fetch OIDC thumbprint for url %q: %v", url, err)
+			return nil, err
+		}
+		thumbprints = []string{fetched}
+	} else {
+		if err := iamutil.ValidateThumbprintList(thumbprints, false); err != nil {
+			return nil, err
+		}
+		thumbprints = iamutil.NormalizeThumbprintList(thumbprints)
+	}
+
+	tags, err := iamutil.ParseTags(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	provider := types.OIDCProvider{
+		Arn:            iamutil.BuildOIDCProviderArn(iamutil.DefaultAccountID, url),
+		Url:            url,
+		ClientIDList:   clientIDs,
+		ThumbprintList: thumbprints,
+		CreateDate:     time.Now().UTC().Truncate(time.Second),
+		Tags:           tags,
+	}
+
+	stored, err := c.store.CreateOIDCProvider(ctx.Context(), provider)
+	if err != nil {
+		debuglogger.Logf("failed to create IAM OIDC provider for url %q: %v", url, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.CreateOpenIDConnectProviderResponse{
+		Result: types.CreateOpenIDConnectProviderResult{
+			OpenIDConnectProviderArn: stored.Arn,
+			Tags:                     stored.Tags,
+		},
+	}}, nil
+}
+
+func (c IAMApiController) GetOpenIDConnectProvider(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "GetOpenIDConnectProvider")
+	if err != nil {
+		return nil, err
+	}
+
+	provider, err := c.store.GetOIDCProvider(ctx.Context(), arn)
+	if err != nil {
+		debuglogger.Logf("failed to get IAM OIDC provider %q: %v", arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.GetOpenIDConnectProviderResponse{
+		Result: types.GetOpenIDConnectProviderResult{
+			Url:            provider.Url,
+			ClientIDList:   provider.ClientIDList,
+			ThumbprintList: provider.ThumbprintList,
+			CreateDate:     provider.CreateDate,
+			Tags:           provider.Tags,
+		},
+	}}, nil
+}
+
+func (c IAMApiController) ListOpenIDConnectProviders(ctx fiber.Ctx) (*Response, error) {
+	out, err := c.store.ListOIDCProviders(ctx.Context())
+	if err != nil {
+		debuglogger.Logf("failed to list IAM OIDC providers: %v", err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.ListOpenIDConnectProvidersResponse{
+		Result: types.ListOpenIDConnectProvidersResult{
+			OpenIDConnectProviderList: types.OpenIDConnectProviderList{Members: out.Providers},
+		},
+	}}, nil
+}
+
+func (c IAMApiController) DeleteOpenIDConnectProvider(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "DeleteOpenIDConnectProvider")
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.store.DeleteOIDCProvider(ctx.Context(), arn); err != nil {
+		debuglogger.Logf("failed to delete IAM OIDC provider %q: %v", arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.DeleteOpenIDConnectProviderResponse{}}, nil
+}
+
+func (c IAMApiController) AddClientIDToOpenIDConnectProvider(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "AddClientIDToOpenIDConnectProvider")
+	if err != nil {
+		return nil, err
+	}
+
+	clientID, ok := iamutil.RequestParam(ctx, "ClientID")
+	if !ok || clientID == "" {
+		debuglogger.Logf("missing required AddClientIDToOpenIDConnectProvider parameter: ClientID")
+		return nil, iamerr.MissingValue("clientID")
+	}
+	if len(clientID) > iamutil.MaxOIDCClientIDLen {
+		return nil, iamerr.ValueTooLong("clientID", iamutil.MaxOIDCClientIDLen)
+	}
+
+	if err := c.store.AddClientIDToOIDCProvider(ctx.Context(), arn, clientID); err != nil {
+		debuglogger.Logf("failed to add client id %q to IAM OIDC provider %q: %v", clientID, arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.AddClientIDToOpenIDConnectProviderResponse{}}, nil
+}
+
+func (c IAMApiController) RemoveClientIDFromOpenIDConnectProvider(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "RemoveClientIDFromOpenIDConnectProvider")
+	if err != nil {
+		return nil, err
+	}
+
+	clientID, ok := iamutil.RequestParam(ctx, "ClientID")
+	if !ok || clientID == "" {
+		debuglogger.Logf("missing required RemoveClientIDFromOpenIDConnectProvider parameter: ClientID")
+		return nil, iamerr.MissingValue("clientID")
+	}
+	if len(clientID) > iamutil.MaxOIDCClientIDLen {
+		return nil, iamerr.ValueTooLong("clientID", iamutil.MaxOIDCClientIDLen)
+	}
+
+	if err := c.store.RemoveClientIDFromOIDCProvider(ctx.Context(), arn, clientID); err != nil {
+		debuglogger.Logf("failed to remove client id %q from IAM OIDC provider %q: %v", clientID, arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.RemoveClientIDFromOpenIDConnectProviderResponse{}}, nil
+}
+
+func (c IAMApiController) UpdateOpenIDConnectProviderThumbprint(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "UpdateOpenIDConnectProviderThumbprint")
+	if err != nil {
+		return nil, err
+	}
+
+	thumbprints := iamutil.ParseStringList(ctx, "ThumbprintList")
+	if err := iamutil.ValidateThumbprintList(thumbprints, true); err != nil {
+		return nil, err
+	}
+	thumbprints = iamutil.NormalizeThumbprintList(thumbprints)
+
+	if err := c.store.UpdateOIDCProviderThumbprint(ctx.Context(), arn, thumbprints); err != nil {
+		debuglogger.Logf("failed to update IAM OIDC provider thumbprint for %q: %v", arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.UpdateOpenIDConnectProviderThumbprintResponse{}}, nil
 }

@@ -120,6 +120,13 @@ type IAMConfig struct {
 	Version   string
 	Build     string
 	BuildTime string
+
+	// DisableOIDCThumbprintAutoFetch disables CreateOpenIDConnectProvider's
+	// TLS auto-fetch fallback for when ThumbprintList is omitted. When set,
+	// an omitted ThumbprintList is rejected instead of the IAM API making an
+	// outbound TLS connection to the caller-supplied URL — for restricted
+	// or air-gapped deployments.
+	DisableOIDCThumbprintAutoFetch bool
 }
 
 var iamAPIRunning atomic.Bool
@@ -197,6 +204,9 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 	}
 	if cfg.Quiet {
 		opts = append(opts, iamapi.WithQuiet())
+	}
+	if cfg.DisableOIDCThumbprintAutoFetch {
+		opts = append(opts, iamapi.WithOIDCThumbprintAutoFetchDisabled())
 	}
 	if cfg.Debug {
 		debuglogger.SetDebugEnabled()

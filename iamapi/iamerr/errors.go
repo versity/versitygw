@@ -425,6 +425,10 @@ func ValueTooLong(field string, maxLength int) Error {
 	return ValidationError(fmt.Sprintf("1 validation error detected: Value at '%s' failed to satisfy constraint: Member must have length less than or equal to %d", field, maxLength))
 }
 
+func ValueTooShort(field string, minLength int) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value at '%s' failed to satisfy constraint: Member must have length greater than or equal to %d", field, minLength))
+}
+
 func InvalidCharset(field string) Error {
 	return ValidationError(fmt.Sprintf("The specified value for %s is invalid. It must contain only printable ASCII characters.", field))
 }
@@ -459,6 +463,47 @@ func NoSuchEntityRolePolicy(roleName, policyName string) Error {
 
 func InlinePolicyQuotaExceeded(entityKind, entityName string, maxBytes int) Error {
 	return newSenderError("LimitExceeded", fmt.Sprintf("Maximum policy size of %d bytes exceeded for %s %s", maxBytes, entityKind, entityName), http.StatusConflict)
+}
+
+func EntityAlreadyExistsOIDCProvider(url string) Error {
+	return newSenderError("EntityAlreadyExists", fmt.Sprintf("Provider with url %s already exists.", url), http.StatusConflict)
+}
+
+func NoSuchEntityOIDCProviderGet(arn string) Error {
+	return newSenderError("NoSuchEntity", fmt.Sprintf("OpenIDConnect Provider not found for arn %s", arn), http.StatusNotFound)
+}
+
+func NoSuchEntityOIDCProviderDelete(arn string) Error {
+	return newSenderError("NoSuchEntity", fmt.Sprintf("OpenId connect Provider %s cannot be found.", arn), http.StatusNotFound)
+}
+
+// AccessDeniedOIDCProvider is returned when a well-formed OIDC provider ARN
+// references an account id other than callerAccountID.
+func AccessDeniedOIDCProvider(callerAccountID, resourceArn string) Error {
+	return newSenderError("AccessDenied", fmt.Sprintf(
+		"User: arn:aws:iam::%s:root is not authorized to perform this action on resource: %s",
+		callerAccountID, resourceArn,
+	), http.StatusForbidden)
+}
+
+func ClientIdsPerOpenIdConnectProviderLimitExceeded(max int) Error {
+	return newSenderError("LimitExceeded", fmt.Sprintf("Cannot exceed quota for ClientIdsPerOpenIdConnectProvider: %d", max), http.StatusConflict)
+}
+
+func ThumbprintListTooLong(max int) Error {
+	return newSenderError("InvalidInput", fmt.Sprintf("Thumbprint list must contain fewer than %d entries.", max), http.StatusBadRequest)
+}
+
+func ThumbprintListEmpty() Error {
+	return newSenderError("InvalidInput", "Thumbprint list must contain at least one entry.", http.StatusBadRequest)
+}
+
+func OIDCProvidersPerAccountLimitExceeded(max int) Error {
+	return newSenderError("LimitExceeded", fmt.Sprintf("Cannot exceed quota for OpenIDConnectProvidersPerAccount: %d", max), http.StatusConflict)
+}
+
+func OpenIdIdpCommunicationError(url string) Error {
+	return newSenderError("OpenIdIdpCommunicationError", fmt.Sprintf("Could not connect to %s", url), http.StatusBadRequest)
 }
 
 func newSenderError(code, message string, statusCode int) Error {
