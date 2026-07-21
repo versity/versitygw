@@ -38,41 +38,51 @@ type IAMApiRouter struct {
 	Ctrl      IAMApiController
 	actions   map[string]ActionHandler
 	rootCreds *RootCredentials
+	// oidcThumbprintAutoFetchDisabled is threaded into the controller;
+	// see IAMApiController.oidcThumbprintAutoFetchDisabled.
+	oidcThumbprintAutoFetchDisabled bool
 }
 
 func (r *IAMApiRouter) Init() {
-	ctrl := NewController(r.store)
-	r.Ctrl = ctrl
+	r.Ctrl = NewController(r.store, r.oidcThumbprintAutoFetchDisabled)
 
 	r.actions = map[string]ActionHandler{
 		// User CRUD
-		"CreateUser": ctrl.CreateUser,
-		"DeleteUser": ctrl.DeleteUser,
-		"GetUser":    ctrl.GetUser,
-		"ListUsers":  ctrl.ListUsers,
-		"UpdateUser": ctrl.UpdateUser,
+		"CreateUser": r.Ctrl.CreateUser,
+		"DeleteUser": r.Ctrl.DeleteUser,
+		"GetUser":    r.Ctrl.GetUser,
+		"ListUsers":  r.Ctrl.ListUsers,
+		"UpdateUser": r.Ctrl.UpdateUser,
 		// User Access Key CRUD
-		"CreateAccessKey":      ctrl.CreateAccessKey,
-		"UpdateAccessKey":      ctrl.UpdateAccessKey,
-		"DeleteAccessKey":      ctrl.DeleteAccessKey,
-		"GetAccessKeyLastUsed": ctrl.GetAccessKeyLastUsed,
-		"ListAccessKeys":       ctrl.ListAccessKeys,
+		"CreateAccessKey":      r.Ctrl.CreateAccessKey,
+		"UpdateAccessKey":      r.Ctrl.UpdateAccessKey,
+		"DeleteAccessKey":      r.Ctrl.DeleteAccessKey,
+		"GetAccessKeyLastUsed": r.Ctrl.GetAccessKeyLastUsed,
+		"ListAccessKeys":       r.Ctrl.ListAccessKeys,
 		// User Inline Policy CRUD
-		"PutUserPolicy":    ctrl.PutUserPolicy,
-		"GetUserPolicy":    ctrl.GetUserPolicy,
-		"DeleteUserPolicy": ctrl.DeleteUserPolicy,
-		"ListUserPolicies": ctrl.ListUserPolicies,
+		"PutUserPolicy":    r.Ctrl.PutUserPolicy,
+		"GetUserPolicy":    r.Ctrl.GetUserPolicy,
+		"DeleteUserPolicy": r.Ctrl.DeleteUserPolicy,
+		"ListUserPolicies": r.Ctrl.ListUserPolicies,
 		// Role CRUD
-		"CreateRole":             ctrl.CreateRole,
-		"GetRole":                ctrl.GetRole,
-		"ListRoles":              ctrl.ListRoles,
-		"DeleteRole":             ctrl.DeleteRole,
-		"UpdateAssumeRolePolicy": ctrl.UpdateAssumeRolePolicy,
+		"CreateRole":             r.Ctrl.CreateRole,
+		"GetRole":                r.Ctrl.GetRole,
+		"ListRoles":              r.Ctrl.ListRoles,
+		"DeleteRole":             r.Ctrl.DeleteRole,
+		"UpdateAssumeRolePolicy": r.Ctrl.UpdateAssumeRolePolicy,
 		// Role Inline Policy CRUD
-		"PutRolePolicy":    ctrl.PutRolePolicy,
-		"GetRolePolicy":    ctrl.GetRolePolicy,
-		"DeleteRolePolicy": ctrl.DeleteRolePolicy,
-		"ListRolePolicies": ctrl.ListRolePolicies,
+		"PutRolePolicy":    r.Ctrl.PutRolePolicy,
+		"GetRolePolicy":    r.Ctrl.GetRolePolicy,
+		"DeleteRolePolicy": r.Ctrl.DeleteRolePolicy,
+		"ListRolePolicies": r.Ctrl.ListRolePolicies,
+		// OIDC Provider CRUD
+		"CreateOpenIDConnectProvider":             r.Ctrl.CreateOpenIDConnectProvider,
+		"GetOpenIDConnectProvider":                r.Ctrl.GetOpenIDConnectProvider,
+		"ListOpenIDConnectProviders":              r.Ctrl.ListOpenIDConnectProviders,
+		"DeleteOpenIDConnectProvider":             r.Ctrl.DeleteOpenIDConnectProvider,
+		"AddClientIDToOpenIDConnectProvider":      r.Ctrl.AddClientIDToOpenIDConnectProvider,
+		"RemoveClientIDFromOpenIDConnectProvider": r.Ctrl.RemoveClientIDFromOpenIDConnectProvider,
+		"UpdateOpenIDConnectProviderThumbprint":   r.Ctrl.UpdateOpenIDConnectProviderThumbprint,
 	}
 
 	actionRoute := ProcessHandlers(r.routeAction, iammiddleware.VerifyIAMAuth(r.rootCreds))

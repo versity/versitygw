@@ -37,6 +37,14 @@ const MaxInlinePolicyBytesPerUser = 2048
 // all of a single IAM role's inline policy documents combined
 const MaxInlinePolicyBytesPerRole = 10240
 
+// MaxClientIDsPerOIDCProvider is the maximum number of client IDs a single
+// OIDC provider may hold at once
+const MaxClientIDsPerOIDCProvider = 100
+
+// MaxOIDCProvidersPerAccount is the maximum number of OIDC providers a
+// single account may hold
+const MaxOIDCProvidersPerAccount = 100
+
 var (
 	ErrUserIDAlreadyExists      = errors.New("iamapi: user id already exists")
 	ErrAccessKeyIDAlreadyExists = errors.New("iamapi: access key id already exists")
@@ -148,6 +156,10 @@ type ListRolePoliciesOutput struct {
 	Marker      string
 }
 
+type ListOIDCProvidersOutput struct {
+	Providers []types.OpenIDConnectProviderListEntry
+}
+
 // Storer is the IAM API storage backend contract.
 type Storer interface {
 	CreateUser(ctx context.Context, user types.User) (*types.User, error)
@@ -177,6 +189,15 @@ type Storer interface {
 	GetRolePolicy(ctx context.Context, roleName, policyName string) (*types.PolicyEntry, error)
 	DeleteRolePolicy(ctx context.Context, roleName, policyName string) error
 	ListRolePolicies(ctx context.Context, input ListRolePoliciesInput) (*ListRolePoliciesOutput, error)
+
+	// OIDC Provider CRUD
+	CreateOIDCProvider(ctx context.Context, provider types.OIDCProvider) (*types.OIDCProvider, error)
+	GetOIDCProvider(ctx context.Context, arn string) (*types.OIDCProvider, error)
+	ListOIDCProviders(ctx context.Context) (*ListOIDCProvidersOutput, error)
+	DeleteOIDCProvider(ctx context.Context, arn string) error
+	AddClientIDToOIDCProvider(ctx context.Context, arn, clientID string) error
+	RemoveClientIDFromOIDCProvider(ctx context.Context, arn, clientID string) error
+	UpdateOIDCProviderThumbprint(ctx context.Context, arn string, thumbprints []string) error
 }
 
 func unwrapAPIError(err error) error {

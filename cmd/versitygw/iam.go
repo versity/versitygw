@@ -37,6 +37,8 @@ var (
 	iamServerVaultServerCert        string
 	iamServerVaultClientCert        string
 	iamServerVaultClientCertKey     string
+
+	iamServerDisableOIDCThumbprintAutoFetch bool
 )
 
 func iamCommand() *cli.Command {
@@ -137,6 +139,12 @@ func iamCommand() *cli.Command {
 				Destination: &quiet,
 				Aliases:     []string{"q"},
 			},
+			&cli.BoolFlag{
+				Name:        "disable-oidc-thumbprint-autofetch",
+				Usage:       "reject CreateOpenIDConnectProvider requests that omit ThumbprintList instead of auto-fetching it over an outbound TLS connection",
+				EnvVars:     []string{"VGW_IAM_DISABLE_OIDC_THUMBPRINT_AUTOFETCH"},
+				Destination: &iamServerDisableOIDCThumbprintAutoFetch,
+			},
 		},
 	}
 }
@@ -152,34 +160,35 @@ func runIAM(ctx *cli.Context) error {
 	}
 
 	return embedgw.RunIAMAPI(ctx.Context, &embedgw.IAMConfig{
-		RootUserAccess:              rootUserAccess,
-		RootUserSecret:              rootUserSecret,
-		Ports:                       ports,
-		MaxConnections:              maxConnections,
-		MaxRequests:                 maxRequests,
-		CertFile:                    certFile,
-		KeyFile:                     keyFile,
-		Debug:                       debug,
-		Quiet:                       quiet,
-		KeepAlive:                   keepAlive,
-		HealthPath:                  healthPath,
-		SocketPerm:                  socketPerm,
-		IAMDir:                      iamServerDir,
-		VaultEndpointURL:            iamServerVaultEndpointURL,
-		VaultNamespace:              iamServerVaultNamespace,
-		VaultSecretStoragePath:      iamServerVaultSecretStoragePath,
-		VaultSecretStorageNamespace: iamServerVaultSecretStorageNS,
-		VaultAuthMethod:             iamServerVaultAuthMethod,
-		VaultAuthNamespace:          iamServerVaultAuthNamespace,
-		VaultMountPath:              iamServerVaultMountPath,
-		VaultRootToken:              iamServerVaultRootToken,
-		VaultRoleID:                 iamServerVaultRoleID,
-		VaultRoleSecret:             iamServerVaultRoleSecret,
-		VaultServerCert:             iamServerVaultServerCert,
-		VaultClientCert:             iamServerVaultClientCert,
-		VaultClientCertKey:          iamServerVaultClientCertKey,
-		Version:                     Version,
-		Build:                       Build,
-		BuildTime:                   BuildTime,
+		RootUserAccess:                 rootUserAccess,
+		RootUserSecret:                 rootUserSecret,
+		Ports:                          ports,
+		MaxConnections:                 maxConnections,
+		MaxRequests:                    maxRequests,
+		CertFile:                       certFile,
+		KeyFile:                        keyFile,
+		Debug:                          debug,
+		Quiet:                          quiet,
+		KeepAlive:                      keepAlive,
+		HealthPath:                     healthPath,
+		SocketPerm:                     socketPerm,
+		IAMDir:                         iamServerDir,
+		VaultEndpointURL:               iamServerVaultEndpointURL,
+		VaultNamespace:                 iamServerVaultNamespace,
+		VaultSecretStoragePath:         iamServerVaultSecretStoragePath,
+		VaultSecretStorageNamespace:    iamServerVaultSecretStorageNS,
+		VaultAuthMethod:                iamServerVaultAuthMethod,
+		VaultAuthNamespace:             iamServerVaultAuthNamespace,
+		VaultMountPath:                 iamServerVaultMountPath,
+		VaultRootToken:                 iamServerVaultRootToken,
+		VaultRoleID:                    iamServerVaultRoleID,
+		VaultRoleSecret:                iamServerVaultRoleSecret,
+		VaultServerCert:                iamServerVaultServerCert,
+		VaultClientCert:                iamServerVaultClientCert,
+		VaultClientCertKey:             iamServerVaultClientCertKey,
+		DisableOIDCThumbprintAutoFetch: iamServerDisableOIDCThumbprintAutoFetch,
+		Version:                        Version,
+		Build:                          Build,
+		BuildTime:                      BuildTime,
 	})
 }

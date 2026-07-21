@@ -1379,6 +1379,70 @@ func TestIAMListRolePolicies(ts *TestState) {
 	ts.Run(IAMListRolePolicies_pagination)
 }
 
+func TestIAMCreateOpenIDConnectProvider(ts *TestState) {
+	ts.Run(IAMCreateOpenIDConnectProvider_missing_url)
+	ts.Run(IAMCreateOpenIDConnectProvider_invalid_url)
+	ts.Run(IAMCreateOpenIDConnectProvider_client_id_too_long)
+	ts.Run(IAMCreateOpenIDConnectProvider_too_many_client_ids)
+	ts.Run(IAMCreateOpenIDConnectProvider_invalid_thumbprint)
+	ts.Run(IAMCreateOpenIDConnectProvider_duplicate_tag_keys)
+	ts.Run(IAMCreateOpenIDConnectProvider_already_exists)
+	ts.Run(IAMCreateOpenIDConnectProvider_thumbprint_autofetch_communication_error)
+	ts.Run(IAMCreateOpenIDConnectProvider_quota_exceeded)
+	ts.Run(IAMCreateOpenIDConnectProvider_success)
+	ts.Run(IAMCreateOpenIDConnectProvider_defaults)
+	ts.Run(IAMCreateOpenIDConnectProvider_ip_literal_host)
+	ts.Run(IAMCreateOpenIDConnectProvider_thumbprint_edge_cases)
+	ts.Run(IAMCreateOpenIDConnectProvider_trailing_slash_distinct_identity)
+}
+
+func TestIAMGetOpenIDConnectProvider(ts *TestState) {
+	ts.Run(IAMGetOpenIDConnectProvider_missing_arn)
+	ts.Run(IAMGetOpenIDConnectProvider_invalid_arn)
+	ts.Run(IAMGetOpenIDConnectProvider_non_existing)
+	ts.Run(IAMGetOpenIDConnectProvider_success)
+}
+
+func TestIAMListOpenIDConnectProviders(ts *TestState) {
+	ts.Run(IAMListOpenIDConnectProviders_success)
+}
+
+func TestIAMDeleteOpenIDConnectProvider(ts *TestState) {
+	ts.Run(IAMDeleteOpenIDConnectProvider_missing_arn)
+	ts.Run(IAMDeleteOpenIDConnectProvider_non_existing)
+	ts.Run(IAMDeleteOpenIDConnectProvider_success)
+	ts.Run(IAMDeleteOpenIDConnectProvider_not_idempotent)
+}
+
+func TestIAMAddClientIDToOpenIDConnectProvider(ts *TestState) {
+	ts.Run(IAMAddClientIDToOpenIDConnectProvider_missing_arn)
+	ts.Run(IAMAddClientIDToOpenIDConnectProvider_missing_client_id)
+	ts.Run(IAMAddClientIDToOpenIDConnectProvider_client_id_too_long)
+	ts.Run(IAMAddClientIDToOpenIDConnectProvider_non_existing_provider)
+	ts.Run(IAMAddClientIDToOpenIDConnectProvider_limit_exceeded)
+	ts.Run(IAMAddClientIDToOpenIDConnectProvider_success)
+	ts.Run(IAMAddClientIDToOpenIDConnectProvider_idempotent_duplicate)
+}
+
+func TestIAMRemoveClientIDFromOpenIDConnectProvider(ts *TestState) {
+	ts.Run(IAMRemoveClientIDFromOpenIDConnectProvider_missing_arn)
+	ts.Run(IAMRemoveClientIDFromOpenIDConnectProvider_missing_client_id)
+	ts.Run(IAMRemoveClientIDFromOpenIDConnectProvider_client_id_too_long)
+	ts.Run(IAMRemoveClientIDFromOpenIDConnectProvider_non_existing_provider)
+	ts.Run(IAMRemoveClientIDFromOpenIDConnectProvider_success)
+	ts.Run(IAMRemoveClientIDFromOpenIDConnectProvider_idempotent_absent)
+}
+
+func TestIAMUpdateOpenIDConnectProviderThumbprint(ts *TestState) {
+	ts.Run(IAMUpdateOpenIDConnectProviderThumbprint_missing_arn)
+	ts.Run(IAMUpdateOpenIDConnectProviderThumbprint_missing_thumbprint_list)
+	ts.Run(IAMUpdateOpenIDConnectProviderThumbprint_too_many_thumbprints)
+	ts.Run(IAMUpdateOpenIDConnectProviderThumbprint_wrong_length_thumbprint)
+	ts.Run(IAMUpdateOpenIDConnectProviderThumbprint_non_existing_provider)
+	ts.Run(IAMUpdateOpenIDConnectProviderThumbprint_success)
+	ts.Run(IAMUpdateOpenIDConnectProviderThumbprint_boundary_max_thumbprints)
+}
+
 func TestIAM(ts *TestState) {
 	TestIAMAuth(ts)
 	TestIAMQueryAuth(ts)
@@ -1405,6 +1469,13 @@ func TestIAM(ts *TestState) {
 	TestIAMGetRolePolicy(ts)
 	TestIAMDeleteRolePolicy(ts)
 	TestIAMListRolePolicies(ts)
+	TestIAMCreateOpenIDConnectProvider(ts)
+	TestIAMGetOpenIDConnectProvider(ts)
+	TestIAMListOpenIDConnectProviders(ts)
+	TestIAMDeleteOpenIDConnectProvider(ts)
+	TestIAMAddClientIDToOpenIDConnectProvider(ts)
+	TestIAMRemoveClientIDFromOpenIDConnectProvider(ts)
+	TestIAMUpdateOpenIDConnectProviderThumbprint(ts)
 }
 
 func TestAccessControl(ts *TestState) {
@@ -1940,6 +2011,49 @@ func GetIntTests() IntTests {
 		"IAMListRolePolicies_empty_result":                                         IAMListRolePolicies_empty_result,
 		"IAMListRolePolicies_success":                                              IAMListRolePolicies_success,
 		"IAMListRolePolicies_pagination":                                           IAMListRolePolicies_pagination,
+		"IAMCreateOpenIDConnectProvider_missing_url":                               IAMCreateOpenIDConnectProvider_missing_url,
+		"IAMCreateOpenIDConnectProvider_invalid_url":                               IAMCreateOpenIDConnectProvider_invalid_url,
+		"IAMCreateOpenIDConnectProvider_client_id_too_long":                        IAMCreateOpenIDConnectProvider_client_id_too_long,
+		"IAMCreateOpenIDConnectProvider_too_many_client_ids":                       IAMCreateOpenIDConnectProvider_too_many_client_ids,
+		"IAMCreateOpenIDConnectProvider_invalid_thumbprint":                        IAMCreateOpenIDConnectProvider_invalid_thumbprint,
+		"IAMCreateOpenIDConnectProvider_duplicate_tag_keys":                        IAMCreateOpenIDConnectProvider_duplicate_tag_keys,
+		"IAMCreateOpenIDConnectProvider_already_exists":                            IAMCreateOpenIDConnectProvider_already_exists,
+		"IAMCreateOpenIDConnectProvider_thumbprint_autofetch_communication_error":  IAMCreateOpenIDConnectProvider_thumbprint_autofetch_communication_error,
+		"IAMCreateOpenIDConnectProvider_quota_exceeded":                            IAMCreateOpenIDConnectProvider_quota_exceeded,
+		"IAMCreateOpenIDConnectProvider_success":                                   IAMCreateOpenIDConnectProvider_success,
+		"IAMCreateOpenIDConnectProvider_defaults":                                  IAMCreateOpenIDConnectProvider_defaults,
+		"IAMCreateOpenIDConnectProvider_ip_literal_host":                           IAMCreateOpenIDConnectProvider_ip_literal_host,
+		"IAMCreateOpenIDConnectProvider_thumbprint_edge_cases":                     IAMCreateOpenIDConnectProvider_thumbprint_edge_cases,
+		"IAMCreateOpenIDConnectProvider_trailing_slash_distinct_identity":          IAMCreateOpenIDConnectProvider_trailing_slash_distinct_identity,
+		"IAMGetOpenIDConnectProvider_missing_arn":                                  IAMGetOpenIDConnectProvider_missing_arn,
+		"IAMGetOpenIDConnectProvider_invalid_arn":                                  IAMGetOpenIDConnectProvider_invalid_arn,
+		"IAMGetOpenIDConnectProvider_non_existing":                                 IAMGetOpenIDConnectProvider_non_existing,
+		"IAMGetOpenIDConnectProvider_success":                                      IAMGetOpenIDConnectProvider_success,
+		"IAMListOpenIDConnectProviders_success":                                    IAMListOpenIDConnectProviders_success,
+		"IAMDeleteOpenIDConnectProvider_missing_arn":                               IAMDeleteOpenIDConnectProvider_missing_arn,
+		"IAMDeleteOpenIDConnectProvider_non_existing":                              IAMDeleteOpenIDConnectProvider_non_existing,
+		"IAMDeleteOpenIDConnectProvider_success":                                   IAMDeleteOpenIDConnectProvider_success,
+		"IAMDeleteOpenIDConnectProvider_not_idempotent":                            IAMDeleteOpenIDConnectProvider_not_idempotent,
+		"IAMAddClientIDToOpenIDConnectProvider_missing_arn":                        IAMAddClientIDToOpenIDConnectProvider_missing_arn,
+		"IAMAddClientIDToOpenIDConnectProvider_missing_client_id":                  IAMAddClientIDToOpenIDConnectProvider_missing_client_id,
+		"IAMAddClientIDToOpenIDConnectProvider_client_id_too_long":                 IAMAddClientIDToOpenIDConnectProvider_client_id_too_long,
+		"IAMAddClientIDToOpenIDConnectProvider_non_existing_provider":              IAMAddClientIDToOpenIDConnectProvider_non_existing_provider,
+		"IAMAddClientIDToOpenIDConnectProvider_limit_exceeded":                     IAMAddClientIDToOpenIDConnectProvider_limit_exceeded,
+		"IAMAddClientIDToOpenIDConnectProvider_success":                            IAMAddClientIDToOpenIDConnectProvider_success,
+		"IAMAddClientIDToOpenIDConnectProvider_idempotent_duplicate":               IAMAddClientIDToOpenIDConnectProvider_idempotent_duplicate,
+		"IAMRemoveClientIDFromOpenIDConnectProvider_missing_arn":                   IAMRemoveClientIDFromOpenIDConnectProvider_missing_arn,
+		"IAMRemoveClientIDFromOpenIDConnectProvider_missing_client_id":             IAMRemoveClientIDFromOpenIDConnectProvider_missing_client_id,
+		"IAMRemoveClientIDFromOpenIDConnectProvider_client_id_too_long":            IAMRemoveClientIDFromOpenIDConnectProvider_client_id_too_long,
+		"IAMRemoveClientIDFromOpenIDConnectProvider_non_existing_provider":         IAMRemoveClientIDFromOpenIDConnectProvider_non_existing_provider,
+		"IAMRemoveClientIDFromOpenIDConnectProvider_success":                       IAMRemoveClientIDFromOpenIDConnectProvider_success,
+		"IAMRemoveClientIDFromOpenIDConnectProvider_idempotent_absent":             IAMRemoveClientIDFromOpenIDConnectProvider_idempotent_absent,
+		"IAMUpdateOpenIDConnectProviderThumbprint_missing_arn":                     IAMUpdateOpenIDConnectProviderThumbprint_missing_arn,
+		"IAMUpdateOpenIDConnectProviderThumbprint_missing_thumbprint_list":         IAMUpdateOpenIDConnectProviderThumbprint_missing_thumbprint_list,
+		"IAMUpdateOpenIDConnectProviderThumbprint_too_many_thumbprints":            IAMUpdateOpenIDConnectProviderThumbprint_too_many_thumbprints,
+		"IAMUpdateOpenIDConnectProviderThumbprint_wrong_length_thumbprint":         IAMUpdateOpenIDConnectProviderThumbprint_wrong_length_thumbprint,
+		"IAMUpdateOpenIDConnectProviderThumbprint_non_existing_provider":           IAMUpdateOpenIDConnectProviderThumbprint_non_existing_provider,
+		"IAMUpdateOpenIDConnectProviderThumbprint_success":                         IAMUpdateOpenIDConnectProviderThumbprint_success,
+		"IAMUpdateOpenIDConnectProviderThumbprint_boundary_max_thumbprints":        IAMUpdateOpenIDConnectProviderThumbprint_boundary_max_thumbprints,
 		"PresignedAuth_security_token_not_supported":                               PresignedAuth_security_token_not_supported,
 		"PresignedAuth_unsupported_algorithm":                                      PresignedAuth_unsupported_algorithm,
 		"PresignedAuth_ECDSA_not_supported":                                        PresignedAuth_ECDSA_not_supported,
