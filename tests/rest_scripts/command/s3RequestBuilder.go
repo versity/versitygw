@@ -13,6 +13,11 @@ const (
 )
 
 const (
+	AddressFormatPath    = "path"
+	AddressFormatVirtual = "virtual"
+)
+
+const (
 	UnsignedPayload                            = "UNSIGNED-PAYLOAD"
 	StreamingAWS4HMACSHA256Payload             = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
 	StreamingAWS4HMACSHA256PayloadTrailer      = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER"
@@ -80,6 +85,7 @@ type S3RequestConfigData struct {
 	WriteXMLPayloadToFile        string
 	OutputFile                   string
 	HeaderFile                   string
+	AddressFormat                string
 }
 
 type S3RequestBuilder struct {

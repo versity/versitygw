@@ -82,6 +82,8 @@ var paramSeparator *string
 
 var writeXMLPayloadToFile *string
 
+var addressFormat *string
+
 func (r *restParams) String() string {
 	return fmt.Sprintf("%v", *r)
 }
@@ -158,6 +160,7 @@ func main() {
 			WriteXMLPayloadToFile: *writeXMLPayloadToFile,
 			OutputFile:            *outputFile,
 			HeaderFile:            *headerFile,
+			AddressFormat:         *addressFormat,
 		},
 	}
 
@@ -282,6 +285,7 @@ func checkFlags() error {
 	headerFile = flag.String("headerFile", "", "for curl commands, location to save header file data (to stdout or outputFile if empty)")
 	flag.Var(&objectsToDelete, "objectsToDelete", "Objects to delete in DeleteObjects command (can add multiple)")
 	deleteObjectsQuietMode = flag.Bool("deleteObjectsQuietMode", false, "Quiet mode for DeleteObjects command")
+	addressFormat = flag.String("addressFormat", command.AddressFormatPath, "S3 command address format ('path' or 'virtual')")
 	// Parse the flags
 	flag.Parse()
 
@@ -291,6 +295,11 @@ func checkFlags() error {
 		}
 		if f.Name == "locationConstraint" {
 			locationConstraintSet = true
+		}
+		if f.Name == "addressFormat" {
+			if f.Value.String() != command.AddressFormatPath && f.Value.String() != command.AddressFormatVirtual {
+				panic("Invalid address format: " + f.Value.String())
+			}
 		}
 	})
 

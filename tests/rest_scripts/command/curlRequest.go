@@ -39,7 +39,7 @@ func (c *CurlCommand) Render() error {
 	if c.Config.Method != "GET" {
 		curlCommand = append(curlCommand, fmt.Sprintf("-X %s ", c.Config.Method))
 	}
-	fullPath := c.Config.Url + c.path
+	fullPath := c.url + c.path
 	awsUrl, err := url.Parse(fullPath)
 	if err != nil {
 		return fmt.Errorf("error parsing URL: %w", err)
