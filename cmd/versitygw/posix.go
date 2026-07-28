@@ -37,6 +37,7 @@ var (
 	actionsConcurrency   int
 	ioBufferSize         int
 	defaultEtag          string
+	dataIntegrityEtag    bool
 )
 
 func posixCommand() *cli.Command {
@@ -137,6 +138,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_DEFAULT_ETAG"},
 				Destination: &defaultEtag,
 			},
+			&cli.BoolFlag{
+				Name:        "data-integrity-etag",
+				Usage:       "use data-integrity checksum-derived ETags instead of MD5-based ETags (PUT object ETag, multipart part ETags, and completed multipart object ETag)",
+				EnvVars:     []string{"VGW_DATA_INTEGRITY_ETAG"},
+				Destination: &dataIntegrityEtag,
+			},
 		},
 	}
 }
@@ -174,6 +181,7 @@ func runPosix(ctx *cli.Context) error {
 		IOBufferSize:         ioBufferSize,
 		CopyObjectThreshold:  copyObjectThreshold,
 		DefaultEtag:          defaultEtag,
+		DataIntegrityEtag:    dataIntegrityEtag,
 	}
 
 	var ms meta.MetadataStorer

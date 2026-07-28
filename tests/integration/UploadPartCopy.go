@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -1001,6 +1002,71 @@ func UploadPartCopy_should_calculate_the_checksum(s *S3Conf) error {
 					return fmt.Errorf("expected nil %s checksum, instead got %v", otherAlgo, *checksum)
 				}
 			}
+		}
+
+		return nil
+	})
+}
+
+func UploadPartCopy_data_integrity_etag(s *S3Conf) error {
+	testName := "UploadPartCopy_data_integrity_etag"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		customClient := s3.NewFromConfig(s.Config(), func(o *s3.Options) {
+			o.RequestChecksumCalculation = aws.RequestChecksumCalculationUnset
+		})
+
+		obj := "my-obj"
+		srcObj := "source-object"
+
+		mp, err := createMp(customClient, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		if _, err := putObjectWithData(300, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, customClient); err != nil {
+			return err
+		}
+
+		partNumber := int32(1)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := customClient.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			UploadId:   mp.UploadId,
+			PartNumber: &partNumber,
+			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !isQuotedEtag(getString(res.CopyPartResult.ETag)) {
+			return fmt.Errorf("expected UploadPartCopy ETag to be quoted, instead got %s", getString(res.CopyPartResult.ETag))
+		}
+		if !strings.HasPrefix(getString(res.CopyPartResult.ETag), "\"CRC64NVME-") {
+			return fmt.Errorf("expected UploadPartCopy ETag to be CRC64NVME-based, instead got %s", getString(res.CopyPartResult.ETag))
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		parts, err := customClient.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(parts.Parts) != 1 {
+			return fmt.Errorf("expected one uploaded part, instead got %d", len(parts.Parts))
+		}
+		if got := getString(parts.Parts[0].ETag); got != getString(res.CopyPartResult.ETag) {
+			return fmt.Errorf("expected ListParts ETag to be %s, instead got %s", getString(res.CopyPartResult.ETag), got)
 		}
 
 		return nil

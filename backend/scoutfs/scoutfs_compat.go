@@ -84,6 +84,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 		Concurrency:         opts.Concurrency,
 		CopyObjectThreshold: opts.CopyObjectThreshold,
 		DefaultEtag:         opts.DefaultEtag,
+		DataIntegrityEtag:   opts.DataIntegrityEtag,
 	})
 	if err != nil {
 		return nil, err

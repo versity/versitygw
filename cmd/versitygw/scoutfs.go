@@ -112,6 +112,12 @@ move interfaces as well as support for tiered filesystems.`,
 				EnvVars:     []string{"VGW_DEFAULT_ETAG"},
 				Destination: &defaultEtag,
 			},
+			&cli.BoolFlag{
+				Name:        "data-integrity-etag",
+				Usage:       "use data-integrity checksum-derived ETags instead of MD5-based ETags (PUT object ETag, multipart part ETags, and completed multipart object ETag)",
+				EnvVars:     []string{"VGW_DATA_INTEGRITY_ETAG"},
+				Destination: &dataIntegrityEtag,
+			},
 		},
 	}
 }
@@ -142,6 +148,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.Concurrency = actionsConcurrency
 	opts.CopyObjectThreshold = copyObjectThreshold
 	opts.DefaultEtag = defaultEtag
+	opts.DataIntegrityEtag = dataIntegrityEtag
 
 	be, err := scoutfs.New(ctx.Args().Get(0), opts)
 	if err != nil {
