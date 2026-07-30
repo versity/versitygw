@@ -25,6 +25,12 @@ Get more details about the new (optional) WebGUI management/explorer here: [http
 
 ![admin-explorer](https://github.com/user-attachments/assets/e99db171-2c72-4d0f-8c8d-480a56e1c8a1)
 
+### S3 RDMA
+VersityGW supports S3 over RDMA (Remote Direct Memory Access), enabling high-throughput, low-latency object transfers that bypass the kernel network stack. This is particularly useful for HPC and data-intensive workloads where network overhead is a bottleneck.
+See the [S3 RDMA](https://github.com/versity/versitygw/wiki/S3-RDMA) wiki page for setup and usage details.
+
+`vgwrdma` is a VersityGW-based service that exposes a standard S3 API accelerated with NVIDIA's cuObject (GPUDirect Storage for Objects) protocol.
+
 ### Static Website Hosting
 Serve S3 buckets as static websites with index documents, custom error pages, and routing rules.
 Enable a separate website endpoint with `--website :8090 --website-domain example.com` for virtual-host style routing (`blog.example.com` serves bucket `blog`, `example.com` serves bucket `example.com`).

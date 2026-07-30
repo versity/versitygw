@@ -12,7 +12,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package main
+package gwcli
 
 import (
 	"fmt"
@@ -36,7 +36,8 @@ var (
 	s3proxyGCSCompatibility          bool
 )
 
-func s3Command() *cli.Command {
+// S3Command returns the "s3" subcommand, common to all versitygw binaries.
+func S3Command() *cli.Command {
 	return &cli.Command{
 		Name:  "s3",
 		Usage: "s3 storage backend",
@@ -139,5 +140,5 @@ func runS3(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("init s3 backend: %w", err)
 	}
-	return runGateway(ctx.Context, be)
+	return RunGateway(ctx.Context, be)
 }

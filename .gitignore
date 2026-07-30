@@ -10,6 +10,12 @@
 .DS_Store
 cmd/versitygw/versitygw
 /versitygw
+/vgwrdma
+/cuobjtest
+/.cache/
+/rdma/libcuobjwrapper.a
+/rdma/libcuobjclientwrapper.a
+/rdma/libhostclientwrapper.a
 
 # Test binary, built with `go test -c`
 *.test

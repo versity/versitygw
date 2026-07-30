@@ -12,7 +12,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package main
+package gwcli
 
 import (
 	"fmt"
@@ -29,7 +29,9 @@ var (
 	setProjectID     bool
 )
 
-func scoutfsCommand() *cli.Command {
+// ScoutfsCommand returns the "scoutfs" subcommand, common to all versitygw
+// binaries.
+func ScoutfsCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "scoutfs",
 		Usage: "scoutfs filesystem storage backend",
@@ -143,10 +145,10 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.NewDirPerm = fs.FileMode(dirPerms)
 	opts.DisableNoArchive = disableNoArchive
 	opts.VersioningDir = versioningDir
-	opts.ValidateBucketNames = disableStrictBucketNames
+	opts.ValidateBucketNames = DisableStrictBucketNames
 	opts.SetProjectID = setProjectID
 	opts.Concurrency = actionsConcurrency
-	opts.CopyObjectThreshold = copyObjectThreshold
+	opts.CopyObjectThreshold = CopyObjectThreshold
 	opts.DefaultEtag = defaultEtag
 	opts.DataIntegrityEtag = dataIntegrityEtag
 
@@ -155,5 +157,5 @@ func runScoutfs(ctx *cli.Context) error {
 		return fmt.Errorf("init scoutfs: %v", err)
 	}
 
-	return runGateway(ctx.Context, be)
+	return RunGateway(ctx.Context, be)
 }

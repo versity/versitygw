@@ -18,14 +18,20 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"strings"
 
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/cmd/internal/gwcli"
+	"github.com/versity/versitygw/cubackend"
+	"github.com/versity/versitygw/cumiddleware"
 	"github.com/versity/versitygw/embedgw"
+	"github.com/versity/versitygw/rdma"
+	"github.com/versity/versitygw/s3api"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
@@ -96,6 +102,15 @@ var (
 	disableACLs                            bool
 	mpMaxParts                             int
 	socketPerm                             string
+	rdmaIP                                 string
+	rdmaPort                               uint
+	poolBufSize                            int
+	poolBufCount                           int
+	rdmaDCKey                              uint64
+	rdmaNumDCIs                            int
+	rdmaCQDepth                            uint
+	rdmaRetryCount                         uint
+	rdmaTunablesSet                        bool
 )
 
 var (
@@ -106,6 +121,16 @@ var (
 	// BuildTime is the date/time of build (set within Makefile)
 	BuildTime = "none"
 )
+
+// gatewayCommands are the subcommands that call gwcli.RunGateway (and
+// therefore need --rdma-ip); admin, utils, help, and version do not.
+var gatewayCommands = map[string]bool{
+	"posix":   true,
+	"scoutfs": true,
+	"s3":      true,
+	"azure":   true,
+	"plugin":  true,
+}
 
 func main() {
 	gwcli.SetupSignalHandler()
@@ -120,7 +145,6 @@ func main() {
 		gwcli.AzureCommand(),
 		gwcli.PluginCommand(),
 		gwcli.AdminCommand(),
-		testCommand(),
 		gwcli.UtilsCommand(),
 	}
 
@@ -170,6 +194,18 @@ documentation can be found in the GitHub wiki.`,
 			}
 			if websitePorts, err = utils.AbsSocketPaths(websitePorts); err != nil {
 				return err
+			}
+
+			rdmaTunablesSet = ctx.IsSet("rdma-dc-key") ||
+				ctx.IsSet("rdma-num-dcis") ||
+				ctx.IsSet("rdma-cq-depth") ||
+				ctx.IsSet("rdma-retry-count")
+
+			// Only commands that actually start a gateway need --rdma-ip; admin,
+			// utils, help, and version subcommands print output and exit without
+			// ever calling runGateway.
+			if gatewayCommands[ctx.Args().First()] && strings.TrimSpace(rdmaIP) == "" {
+				return fmt.Errorf("rdma-ip is required")
 			}
 			return nil
 		},
@@ -798,6 +834,61 @@ func initFlags() []cli.Flag {
 			Destination: &gwcli.CopyObjectThreshold,
 		},
 		&cli.StringFlag{
+			Name:        "rdma-ip",
+			Usage:       "IP address for RDMA interface (required to enable cuObject RDMA backend)",
+			EnvVars:     []string{"VGW_RDMA_IP"},
+			Destination: &rdmaIP,
+		},
+		&cli.UintFlag{
+			Name:        "rdma-port",
+			Usage:       "port for RDMA listener",
+			EnvVars:     []string{"VGW_RDMA_PORT"},
+			Value:       19100,
+			Destination: &rdmaPort,
+		},
+		&cli.IntFlag{
+			Name:        "pool-buf-size",
+			Usage:       "size of each RDMA buffer in bytes",
+			EnvVars:     []string{"VGW_POOL_BUF_SIZE"},
+			Value:       1 << 30,
+			Destination: &poolBufSize,
+		},
+		&cli.IntFlag{
+			Name:        "pool-buf-count",
+			Usage:       "number of pre-allocated RDMA buffers",
+			EnvVars:     []string{"VGW_POOL_BUF_COUNT"},
+			Value:       4,
+			Destination: &poolBufCount,
+		},
+		&cli.Uint64Flag{
+			Name:        "rdma-dc-key",
+			Usage:       "InfiniBand DC security key (change in production)",
+			EnvVars:     []string{"VGW_RDMA_DC_KEY"},
+			Value:       0xffeeddcc,
+			Destination: &rdmaDCKey,
+		},
+		&cli.IntFlag{
+			Name:        "rdma-num-dcis",
+			Usage:       "number of Dynamic Connection Interfaces (max concurrent RDMA connections)",
+			EnvVars:     []string{"VGW_RDMA_NUM_DCIS"},
+			Value:       128,
+			Destination: &rdmaNumDCIs,
+		},
+		&cli.UintFlag{
+			Name:        "rdma-cq-depth",
+			Usage:       "completion queue depth",
+			EnvVars:     []string{"VGW_RDMA_CQ_DEPTH"},
+			Value:       640,
+			Destination: &rdmaCQDepth,
+		},
+		&cli.UintFlag{
+			Name:        "rdma-retry-count",
+			Usage:       "QP retry count (0-7)",
+			EnvVars:     []string{"VGW_RDMA_RETRY_COUNT"},
+			Value:       7,
+			Destination: &rdmaRetryCount,
+		},
+		&cli.StringFlag{
 			Name:        "socket-perm",
 			Usage:       "file permissions for file-backed UNIX domain sockets (octal, e.g. '0660'); ignored for TCP/IP and abstract namespace sockets",
 			EnvVars:     []string{"VGW_SOCKET_PERM"},
@@ -820,6 +911,53 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 
 	if gwcli.CopyObjectThreshold < 1 {
 		return fmt.Errorf("copy-object-threshold must be positive")
+	}
+	if rdmaPort > 65535 {
+		return fmt.Errorf("rdma-port %d is out of range (0-65535)", rdmaPort)
+	}
+	if rdmaRetryCount > 7 {
+		return fmt.Errorf("rdma-retry-count %d is out of range (0-7)", rdmaRetryCount)
+	}
+	if poolBufSize <= 0 {
+		return fmt.Errorf("pool-buf-size %d must be positive", poolBufSize)
+	}
+	if poolBufCount <= 0 {
+		return fmt.Errorf("pool-buf-count %d must be positive", poolBufCount)
+	}
+	if rdmaTunablesSet && rdmaNumDCIs <= 0 {
+		return fmt.Errorf("rdma-num-dcis %d must be positive", rdmaNumDCIs)
+	}
+	if rdmaTunablesSet && rdmaCQDepth > math.MaxUint32 {
+		return fmt.Errorf("rdma-cq-depth %d exceeds maximum %d", rdmaCQDepth, uint32(math.MaxUint32))
+	}
+
+	var s3Opts []s3api.Option
+	if rdmaIP != "" {
+		rdma.ConfigureTelemetry(debug)
+
+		var tunables *rdma.RDMATunables
+		if rdmaTunablesSet {
+			t := rdma.DefaultRDMATunables()
+			t.DCKey = rdmaDCKey
+			t.NumDCIs = rdmaNumDCIs
+			t.CQDepth = uint32(rdmaCQDepth)
+			t.RetryCount = uint8(rdmaRetryCount)
+			tunables = &t
+		}
+
+		cuserverBackend, err := cubackend.New(cubackend.CuServerOpts{
+			RDMAIP:       rdmaIP,
+			RDMAPort:     uint16(rdmaPort),
+			PoolBufSize:  poolBufSize,
+			PoolBufCount: poolBufCount,
+			RDMATunables: tunables,
+		}, be)
+		if err != nil {
+			return err
+		}
+		be = cuserverBackend
+
+		s3Opts = append(s3Opts, s3api.WithMiddleware("/", cumiddleware.CuObjMiddleware))
 	}
 
 	return embedgw.RunVersityGW(ctx, be, &embedgw.Config{
@@ -918,6 +1056,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		WebsiteKeyFile:              websiteKeyFile,
 		WebsiteNoTLS:                websiteNoTLS,
 		SigHup:                      gwcli.SigHup,
+		S3Options:                   s3Opts,
 		Version:                     Version,
 		Build:                       Build,
 		BuildTime:                   BuildTime,

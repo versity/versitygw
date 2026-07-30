@@ -1,0 +1,38 @@
+name: vgwrdma build
+permissions: {}
+on: pull_request
+
+jobs:
+
+  vgwrdma:
+    name: Build vgwrdma (linux/amd64, cgo)
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v7
+
+    - name: make vgwrdma-docker
+      run: make vgwrdma-docker
+
+  cuobjtest-gpu:
+    name: Build cuobjtest-gpu (linux/amd64, cgo)
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v7
+
+    - name: make cuobjtest-gpu-docker
+      run: make cuobjtest-gpu-docker
+
+  cuobjtest-host:
+    name: Build cuobjtest-host (linux/amd64, cgo)
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v7
+
+    - name: make cuobjtest-host-docker
+      run: make cuobjtest-host-docker

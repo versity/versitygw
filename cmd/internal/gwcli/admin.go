@@ -12,7 +12,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package main
+package gwcli
 
 import (
 	"bytes"
@@ -47,7 +47,9 @@ var (
 	allowInsecure bool
 )
 
-func adminCommand() *cli.Command {
+// AdminCommand returns the "admin" subcommand, common to all versitygw
+// binaries.
+func AdminCommand() *cli.Command {
 	return &cli.Command{
 		Name:        "admin",
 		Usage:       "admin CLI tool",
@@ -287,10 +289,10 @@ func getAdminCreds() (string, string, error) {
 
 	// Fallbacks to root user credentials
 	if access == "" {
-		access = rootUserAccess
+		access = RootUserAccess
 	}
 	if secret == "" {
-		secret = rootUserSecret
+		secret = RootUserSecret
 	}
 
 	if access == "" {

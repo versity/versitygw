@@ -12,7 +12,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package main
+package gwcli
 
 import (
 	"errors"
@@ -23,7 +23,9 @@ import (
 	"github.com/versity/versitygw/plugins"
 )
 
-func pluginCommand() *cli.Command {
+// PluginCommand returns the "plugin" subcommand, common to all versitygw
+// binaries.
+func PluginCommand() *cli.Command {
 	return &cli.Command{
 		Name:        "plugin",
 		Usage:       "load a backend from a plugin",
@@ -71,5 +73,5 @@ func runPluginBackend(ctx *cli.Context) error {
 		return err
 	}
 
-	return runGateway(ctx.Context, be)
+	return RunGateway(ctx.Context, be)
 }
