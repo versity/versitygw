@@ -451,7 +451,7 @@ func (c S3ApiController) GetObject(ctx fiber.Ctx) (*Response, error) {
 
 	var partNumber *int32
 	if ctx.Request().URI().QueryArgs().Has("partNumber") {
-		if partNumberQuery < minPartNumber || partNumberQuery > maxPartNumber {
+		if partNumberQuery < minPartNumber || partNumberQuery > int32(c.effectiveMpMaxParts()) {
 			debuglogger.Logf("invalid part number: %d", partNumberQuery)
 			return &Response{
 				MetaOpts: &MetaOptions{

@@ -84,6 +84,14 @@ func (c S3ApiController) getAclHeaderValue(ctx fiber.Ctx, key string, defaultVal
 	return ctx.Get(key, defaultValues...)
 }
 
+func (c S3ApiController) effectiveMpMaxParts() int {
+	if c.mpMaxParts > 0 {
+		return c.mpMaxParts
+	}
+
+	return maxPartNumber
+}
+
 // Returns MethodNotAllowed for unmatched routes
 func (c S3ApiController) HandleErrorRoute(err error) Controller {
 	return func(ctx fiber.Ctx) (*Response, error) {
