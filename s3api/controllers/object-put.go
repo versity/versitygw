@@ -255,7 +255,7 @@ func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	if partNumber < minPartNumber || partNumber > int32(c.mpMaxParts) {
+	if partNumber < minPartNumber || partNumber > int32(c.effectiveMpMaxParts()) {
 		debuglogger.Logf("invalid part number: %d", partNumber)
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -390,7 +390,7 @@ func (c S3ApiController) UploadPartCopy(ctx fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrNonEmptyRequestBody)
 	}
 
-	if partNumber < minPartNumber || partNumber > maxPartNumber {
+	if partNumber < minPartNumber || partNumber > int32(c.effectiveMpMaxParts()) {
 		debuglogger.Logf("invalid part number: %d", partNumber)
 		return &Response{
 			MetaOpts: &MetaOptions{
