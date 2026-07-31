@@ -21,6 +21,7 @@ source ./tests/commands/command.sh
 source ./tests/logger.sh
 source ./tests/setup_unit.sh
 
+# tags: unit
 @test "check_for_and_or_build_go_executable" {
   export GO_COMMAND_GENERATOR_EXECUTABLE=
   run check_for_and_or_build_go_executable

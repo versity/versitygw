@@ -17,6 +17,7 @@
 load ./bats-support/load
 load ./bats-assert/load
 
+source ./tests/drivers/list_objects/list_objects.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 source ./tests/test_common.sh
 
