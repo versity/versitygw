@@ -1356,6 +1356,14 @@ func TestNoAclMode(ts *TestState) {
 	ts.Run(NoAclMode_PutBucketAcl)
 }
 
+func TestDataIntegrityETag(ts *TestState) {
+	ts.Run(PutObject_data_integrity_etag)
+	ts.Run(PutObject_dir_object_data_integrity_etag)
+	ts.Run(UploadPart_data_integrity_etag)
+	ts.Run(UploadPartCopy_data_integrity_etag)
+	ts.Run(CompleteMultipartUpload_data_integrity_etag)
+}
+
 type IntTest func(s3 *S3Conf) error
 
 type IntTests map[string]IntTest
@@ -1431,6 +1439,8 @@ func GetIntTests() IntTests {
 		"PutObject_invalid_checksum_header":                                        PutObject_invalid_checksum_header,
 		"PutObject_incorrect_checksums":                                            PutObject_incorrect_checksums,
 		"PutObject_default_checksum":                                               PutObject_default_checksum,
+		"PutObject_data_integrity_etag":                                            PutObject_data_integrity_etag,
+		"PutObject_dir_object_data_integrity_etag":                                 PutObject_dir_object_data_integrity_etag,
 		"PutObject_dir_object_default_checksum":                                    PutObject_dir_object_default_checksum,
 		"PutObject_checksums_success":                                              PutObject_checksums_success,
 		"PutObject_dir_object_checksums_success":                                   PutObject_dir_object_checksums_success,
@@ -1694,6 +1704,7 @@ func GetIntTests() IntTests {
 		"UploadPart_with_checksums_success":                                        UploadPart_with_checksums_success,
 		"UploadPart_success":                                                       UploadPart_success,
 		"UploadPart_etag_quoting_consistency":                                      UploadPart_etag_quoting_consistency,
+		"UploadPart_data_integrity_etag":                                           UploadPart_data_integrity_etag,
 		"UploadPartCopy_non_existing_bucket":                                       UploadPartCopy_non_existing_bucket,
 		"UploadPartCopy_incorrect_uploadId":                                        UploadPartCopy_incorrect_uploadId,
 		"UploadPartCopy_incorrect_object_key":                                      UploadPartCopy_incorrect_object_key,
@@ -1711,6 +1722,7 @@ func GetIntTests() IntTests {
 		"UploadPartCopy_should_copy_the_checksum":                                  UploadPartCopy_should_copy_the_checksum,
 		"UploadPartCopy_should_not_copy_the_checksum":                              UploadPartCopy_should_not_copy_the_checksum,
 		"UploadPartCopy_should_calculate_the_checksum":                             UploadPartCopy_should_calculate_the_checksum,
+		"UploadPartCopy_data_integrity_etag":                                       UploadPartCopy_data_integrity_etag,
 		"ListParts_incorrect_uploadId":                                             ListParts_incorrect_uploadId,
 		"ListParts_incorrect_object_key":                                           ListParts_incorrect_object_key,
 		"ListParts_invalid_max_parts":                                              ListParts_invalid_max_parts,
@@ -1767,6 +1779,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_should_ignore_the_final_checksum":                 CompleteMultipartUpload_should_ignore_the_final_checksum,
 		"CompleteMultipartUpload_should_succeed_without_final_checksum_type":       CompleteMultipartUpload_should_succeed_without_final_checksum_type,
 		"CompleteMultipartUpload_success":                                          CompleteMultipartUpload_success,
+		"CompleteMultipartUpload_data_integrity_etag":                              CompleteMultipartUpload_data_integrity_etag,
 		"CompleteMultipartUpload_already_completed":                                CompleteMultipartUpload_already_completed,
 		"CompleteMultipartUpload_racey_success":                                    CompleteMultipartUpload_racey_success,
 		"CompleteMultipartUpload_racey_data_integrity":                             CompleteMultipartUpload_racey_data_integrity,

@@ -381,7 +381,9 @@ func isValidTagComponent(str string) bool {
 	return validTagComponent.Match([]byte(str))
 }
 
-func GetMultipartMD5(parts []types.CompletedPart) (string, error) {
+// ComputeMultipartETagFromPartETags computes the S3 multipart ETag
+// ("<md5>-<partCount>") from the completed-part ETags.
+func ComputeMultipartETagFromPartETags(parts []types.CompletedPart) (string, error) {
 	var partsEtagBytes []byte
 	for _, part := range parts {
 		if part.ETag == nil {

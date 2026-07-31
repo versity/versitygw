@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"net/http"
@@ -117,6 +118,16 @@ type Posix struct {
 	// ioBufferSize is the buffer size used by buffered copy/read paths.
 	ioBufferSize int
 	ioBufferPool sync.Pool
+
+	// dataIntegrityEtag, when true, replaces the standard MD5-based ETag with
+	// a checksum-derived ETag that embeds the algorithm name and value.
+	// For multipart uploads this applies to both part ETags and the final
+	// completed object ETag:
+	//   single PUT:          "ALGO-<checksum>"
+	//   multipart part:       "CRC64NVME-<part-checksum>"
+	//   multipart CRC64NVME: "CRC64NVME-<whole-file-checksum>"
+	//   multipart composite: "ALGO-<composite-checksum>-<part-count>"
+	dataIntegrityEtag bool
 }
 
 var _ backend.Backend = &Posix{}
@@ -216,6 +227,13 @@ type PosixOpts struct {
 	// IOBufferSize sets the buffer size (in bytes) for copy/read paths that use
 	// io.CopyBuffer or buffered readers. Defaults to 1MiB when unset or invalid.
 	IOBufferSize int
+	// DataIntegrityEtag, when enabled, replaces the standard MD5-based ETag
+	// with a checksum-derived value that embeds the algorithm name and checksum
+	// (e.g. "CRC64NVME-<base64>"). For multipart uploads, part ETags become
+	// CRC64NVME-based values and the completed object ETag is checksum-derived.
+	// For CRC64NVME full-object checksums, the composable whole-file checksum is
+	// used; other algorithms embed the part count (e.g. "SHA256-<composite>-<N>").
+	DataIntegrityEtag bool
 }
 
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
@@ -289,6 +307,7 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 			b := make([]byte, ioBufferSize)
 			return &b
 		}},
+		dataIntegrityEtag: opts.DataIntegrityEtag,
 	}, nil
 }
 
@@ -1864,30 +1883,141 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	sum := sha256.Sum256([]byte(object))
 	objdirFull := filepath.Join(bucket, MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
 	uploadIDDir := filepath.Join(objdirFull, uploadID)
-	// Calculate s3 compatible md5sum for complete multipart.
-	s3MD5, err := backend.GetMultipartMD5(parts)
+	// Compute the default multipart ETag token used for claim naming.
+	// In standard mode this is the S3-compatible multipart MD5 ETag; in
+	// dataIntegrityEtag mode it may fall back to a deterministic claim token.
+	multipartClaimToken, err := backend.ComputeMultipartETagFromPartETags(parts)
 	if err != nil {
-		return res, "", err
+		if !p.dataIntegrityEtag {
+			return res, "", err
+		}
+
+		// dataIntegrityEtag allows non-MD5 multipart part ETags (for example,
+		// "CRC64NVME-<checksum>"). In that mode, ComputeMultipartETagFromPartETags
+		// cannot decode part ETags as hex MD5 bytes. Build a deterministic
+		// claim token from part-number/etag pairs so concurrent complete calls
+		// still contend on the same in-progress directory name.
+		h := sha256.New()
+		for _, part := range parts {
+			if part.ETag == nil || part.PartNumber == nil {
+				return res, "", s3err.GetAPIError(s3err.ErrMalformedXML)
+			}
+			_, _ = h.Write([]byte(strconv.FormatInt(int64(*part.PartNumber), 10)))
+			_, _ = h.Write([]byte{':'})
+			_, _ = h.Write([]byte(strings.Trim(*part.ETag, "\"")))
+			_, _ = h.Write([]byte{';'})
+		}
+		multipartClaimToken = fmt.Sprintf("\"%x-%d\"", h.Sum(nil), len(parts))
 	}
-	activeUploadName := fmt.Sprintf("%s.%s%s", uploadID, strings.Trim(s3MD5, "\""), inProgressSuffix)
+	activeUploadName := fmt.Sprintf("%s.%s%s", uploadID, strings.Trim(multipartClaimToken, "\""), inProgressSuffix)
 	uploadIDInProgress := filepath.Join(objdirFull, activeUploadName)
+	objdir := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
+
+	predictDataIntegrityFinalETag := func(uploadName string) (string, error) {
+		checksums, err := p.retrieveChecksums(nil, bucket, filepath.Join(objdir, uploadName))
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return "", fmt.Errorf("get mp checksums: %w", err)
+		}
+
+		mpChecksumType := checksums.Type
+		if checksums.Type == "" {
+			checksums.Type = types.ChecksumTypeFullObject
+			checksums.Algorithm = types.ChecksumAlgorithmCrc64nvme
+		}
+
+		var compositeChecksumRdr *utils.CompositeChecksumReader
+		if checksums.Type == types.ChecksumTypeComposite {
+			compositeChecksumRdr, err = utils.NewCompositeChecksumReader(utils.HashType(strings.ToLower(string(checksums.Algorithm))))
+			if err != nil {
+				return "", fmt.Errorf("initialize composite checksum reader: %w", err)
+			}
+		}
+
+		var value string
+		var composableCsum string
+		for i, part := range parts {
+			if part.PartNumber == nil || part.ETag == nil {
+				return "", s3err.GetAPIError(s3err.ErrMalformedXML)
+			}
+
+			partObjPath := filepath.Join(objdir, uploadName, fmt.Sprintf("%v", *part.PartNumber))
+			fi, err := os.Lstat(filepath.Join(bucket, partObjPath))
+			if err != nil {
+				return "", s3err.GetInvalidPartErr(uploadID, *part.PartNumber, backend.GetStringFromPtr(part.ETag))
+			}
+
+			switch checksums.Type {
+			case types.ChecksumTypeFullObject:
+				var pcs string
+				if mpChecksumType != "" {
+					pcs = getPartChecksum(checksums.Algorithm, part)
+				} else {
+					crc64nvme, err := p.meta.RetrieveAttribute(nil, bucket, partObjPath, partCrc64nvme)
+					if err != nil {
+						return "", fmt.Errorf("retrieve part internal crc64nvme: %w", err)
+					}
+					pcs = string(crc64nvme)
+				}
+
+				if i == 0 {
+					composableCsum = pcs
+				} else {
+					composableCsum, err = utils.AddCRCChecksum(checksums.Algorithm, composableCsum, pcs, fi.Size())
+					if err != nil {
+						return "", fmt.Errorf("add part %v checksum: %w", *part.PartNumber, err)
+					}
+				}
+			case types.ChecksumTypeComposite:
+				if err := compositeChecksumRdr.Process(getPartChecksum(checksums.Algorithm, part)); err != nil {
+					return "", fmt.Errorf("process %v part checksum: %w", *part.PartNumber, err)
+				}
+			}
+		}
+
+		switch checksums.Type {
+		case types.ChecksumTypeComposite:
+			value = fmt.Sprintf("%s-%v", compositeChecksumRdr.Sum(), len(parts))
+		case types.ChecksumTypeFullObject:
+			value = composableCsum
+		}
+
+		if checksums.Algorithm == "" || value == "" {
+			return multipartClaimToken, nil
+		}
+		return fmt.Sprintf("\"%s-%s\"", strings.ToUpper(string(checksums.Algorithm)), value), nil
+	}
 
 	err = os.Rename(uploadIDDir, uploadIDInProgress)
 	if errors.Is(err, fs.ErrNotExist) {
 		// Another call already claimed this slot and is still assembling the object.
 		if _, statErr := os.Stat(uploadIDInProgress); statErr == nil {
+			etag := multipartClaimToken
+			if p.dataIntegrityEtag {
+				etag, err = predictDataIntegrityFinalETag(activeUploadName)
+				if err != nil {
+					return res, "", err
+				}
+			}
 			// Still in progress — treat as success for idempotency.
 			return s3response.CompleteMultipartUploadResult{
 				Bucket: &bucket,
-				ETag:   &s3MD5,
+				ETag:   &etag,
 				Key:    &object,
 			}, "", nil
 		}
 		// Directory is gone: the concurrent call already completed and cleaned up.
 		if _, statErr := os.Stat(filepath.Join(bucket, object)); statErr == nil {
+			etag := multipartClaimToken
+			if p.dataIntegrityEtag {
+				etagBytes, etagErr := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+				if etagErr != nil {
+					return res, "", fmt.Errorf("get object etag: %w", etagErr)
+				}
+				etag = string(etagBytes)
+			}
 			return s3response.CompleteMultipartUploadResult{
 				Bucket: &bucket,
-				ETag:   &s3MD5,
+				ETag:   &etag,
 				Key:    &object,
 			}, "", nil
 		}
@@ -1909,9 +2039,17 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 				return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
 			}
 
+			etag := multipartClaimToken
+			if p.dataIntegrityEtag {
+				etagBytes, etagErr := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+				if etagErr != nil {
+					return res, "", fmt.Errorf("get object etag: %w", etagErr)
+				}
+				etag = string(etagBytes)
+			}
 			return s3response.CompleteMultipartUploadResult{
 				Bucket: &bucket,
-				ETag:   &s3MD5,
+				ETag:   &etag,
 				Key:    &object,
 			}, "", nil
 		}
@@ -1945,8 +2083,6 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			return res, "", err
 		}
 	}
-
-	objdir := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
 	checksums, err := p.retrieveChecksums(nil, bucket, filepath.Join(objdir, activeUploadName))
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -2148,6 +2284,18 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		}
 	}
 
+	// Determine the ETag that will be stored on the final object and returned
+	// to the client.  By default this is the S3-compatible MD5-of-part-ETags
+	// value.  When dataIntegrityEtag is enabled, embed the checksum algorithm
+	// and computed value instead:
+	//   CRC64NVME full-object:  "CRC64NVME-<whole-file-checksum>"
+	//   composite other algo:   "ALGO-<composite-checksum>-<part-count>"
+	//   full-object other algo: "ALGO-<whole-file-checksum>"
+	finalEtag := multipartClaimToken
+	if p.dataIntegrityEtag && checksums.Algorithm != "" && value != "" {
+		finalEtag = fmt.Sprintf("\"%s-%s\"", strings.ToUpper(string(checksums.Algorithm)), value)
+	}
+
 	f, err := p.openTmpFile(filepath.Join(bucket, MetaTmpDir), bucket, object,
 		totalsize, acct, skipFalloc, p.forceNoTmpFile, odirectNotAllowed)
 	if err != nil {
@@ -2312,7 +2460,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		}
 	}
 
-	err = p.meta.StoreAttribute(f.File(), bucket, object, etagkey, []byte(s3MD5))
+	err = p.meta.StoreAttribute(f.File(), bucket, object, etagkey, []byte(finalEtag))
 	if err != nil {
 		return res, "", fmt.Errorf("set etag attr: %w", err)
 	}
@@ -2343,7 +2491,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 
 	return s3response.CompleteMultipartUploadResult{
 		Bucket:            &bucket,
-		ETag:              &s3MD5,
+		ETag:              &finalEtag,
 		Key:               &object,
 		ChecksumCRC32:     crc32,
 		ChecksumCRC32C:    crc32c,
@@ -3104,8 +3252,16 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	}
 	defer f.cleanup()
 
-	hash := md5.New()
-	tr := io.TeeReader(r, hash)
+	// When dataIntegrityEtag is enabled, MD5 is never used for the part ETag,
+	// so skip both md5.New() and the per-byte TeeReader overhead.
+	var md5hash hash.Hash
+	var tr io.Reader
+	if p.dataIntegrityEtag {
+		tr = r
+	} else {
+		md5hash = md5.New()
+		tr = io.TeeReader(r, md5hash)
+	}
 
 	chRdr, chunkUpload := input.Body.(middlewares.ChecksumReader)
 	isTrailingChecksum := chunkUpload && chRdr.Algorithm() != ""
@@ -3210,6 +3366,16 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 
 			tr = hashRdr
 		}
+		// When dataIntegrityEtag is enabled and the mp algo isn't CRC64NVME,
+		// wrap the reader chain with an internal CRC64NVME reader so the part
+		// ETag can be CRC64NVME-based (trailing or non-trailing).
+		if p.dataIntegrityEtag && checksums.Algorithm != types.ChecksumAlgorithmCrc64nvme {
+			crc64nvmeRdr, err = utils.NewHashReader(tr, "", utils.HashTypeCRC64NVME)
+			if err != nil {
+				return nil, fmt.Errorf("initialize internal crc64nvme reader: %w", err)
+			}
+			tr = crc64nvmeRdr
+		}
 	}
 
 	buf := p.getIOBuffer()
@@ -3232,7 +3398,30 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 		return nil, fmt.Errorf("write part data: %w", err)
 	}
 
-	etag := backend.GenerateEtag(hash)
+	// Generate the part ETag.
+	// When dataIntegrityEtag is enabled, use CRC64NVME instead of MD5.
+	// CRC64NVME is available from: hashRdr/chRdr when the mp or input algo
+	// is already CRC64NVME, or from crc64nvmeRdr which is always set up in
+	// the non-CRC64NVME paths (checksums.Type=="" branch) or was just added
+	// above in the storeChecksum branch.
+	var etag string
+	if p.dataIntegrityEtag {
+		var crc64Sum string
+		isCrc64 := checksums.Algorithm == types.ChecksumAlgorithmCrc64nvme ||
+			(checksums.Type == "" && inputChAlgo == utils.HashTypeCRC64NVME)
+		if isCrc64 {
+			if isTrailingChecksum {
+				crc64Sum = chRdr.Checksum()
+			} else {
+				crc64Sum = hashRdr.Sum()
+			}
+		} else {
+			crc64Sum = crc64nvmeRdr.Sum()
+		}
+		etag = fmt.Sprintf("\"CRC64NVME-%s\"", crc64Sum)
+	} else {
+		etag = backend.GenerateEtag(md5hash)
+	}
 	err = p.meta.StoreAttribute(f.File(), bucket, partPath, etagkey, []byte(etag))
 	if err != nil {
 		return nil, fmt.Errorf("set etag attr: %w", err)
@@ -3491,8 +3680,12 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	defer f.cleanup()
 
 	rdr := io.NewSectionReader(srcf, startOffset, length)
-	hash := md5.New()
-	tr := io.TeeReader(rdr, hash)
+	var md5hash hash.Hash
+	var tr io.Reader = rdr
+	if !p.dataIntegrityEtag {
+		md5hash = md5.New()
+		tr = io.TeeReader(rdr, md5hash)
+	}
 
 	mpChecksums, err := p.retrieveChecksums(nil, *upi.Bucket, filepath.Join(objdir, *upi.UploadId))
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -3522,6 +3715,15 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		crc64nvmeRdr, err = utils.NewHashReader(tr, "", utils.HashTypeCRC64NVME)
 		if err != nil {
 			return s3response.CopyPartResult{}, fmt.Errorf("initialize internal crc64nvme reader: %w", err)
+		}
+		tr = crc64nvmeRdr
+	}
+
+	if p.dataIntegrityEtag && crc64nvmeRdr == nil {
+		// still need a crc64nvme-derived ETag even though a different checksum is already being computed
+		crc64nvmeRdr, err = utils.NewHashReader(tr, "", utils.HashTypeCRC64NVME)
+		if err != nil {
+			return s3response.CopyPartResult{}, fmt.Errorf("initialize etag crc64nvme reader: %w", err)
 		}
 		tr = crc64nvmeRdr
 	}
@@ -3574,7 +3776,12 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		}
 	}
 
-	etag := backend.GenerateEtag(hash)
+	var etag string
+	if p.dataIntegrityEtag {
+		etag = fmt.Sprintf("\"CRC64NVME-%s\"", crc64nvmeRdr.Sum())
+	} else {
+		etag = backend.GenerateEtag(md5hash)
+	}
 	err = p.meta.StoreAttribute(f.File(), *upi.Bucket, partPath, etagkey, []byte(etag))
 	if err != nil {
 		return s3response.CopyPartResult{}, fmt.Errorf("set etag attr: %w", err)
@@ -3758,9 +3965,16 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			}
 		}
 
+		expectedSum := getEmptyChecksumValue(checksumAlgorithm)
+
+		dirETag := emptyMD5
+		if p.dataIntegrityEtag {
+			dirETag = fmt.Sprintf("\"%s-%s\"", strings.ToUpper(string(checksumAlgorithm)), expectedSum)
+		}
+
 		// set etag attribute to signify this dir was specifically put
 		err = p.meta.StoreAttribute(nil, *po.Bucket, *po.Key, etagkey,
-			[]byte(emptyMD5))
+			[]byte(dirETag))
 		if err != nil {
 			return s3response.PutObjectOutput{}, fmt.Errorf("set etag attr: %w", err)
 		}
@@ -3780,7 +3994,6 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			}
 		}
 
-		expectedSum := getEmptyChecksumValue(checksumAlgorithm)
 		if checksumValue != "" && expectedSum != checksumValue {
 			return s3response.PutObjectOutput{}, s3err.GetChecksumBadDigestErr(checksumAlgorithm)
 		}
@@ -3800,7 +4013,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 
 		// for directory object no version is created
 		return s3response.PutObjectOutput{
-			ETag:              emptyMD5,
+			ETag:              dirETag,
 			Size:              &contentLength,
 			ChecksumType:      checksum.Type,
 			ChecksumCRC32:     checksum.CRC32,
@@ -3882,8 +4095,16 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 
 	objsize := f.size
 
-	hash := md5.New()
-	rdr := io.TeeReader(po.Body, hash)
+	// When dataIntegrityEtag is enabled the MD5 is never used, so skip
+	// both the allocating md5.New() and the per-byte TeeReader overhead.
+	var md5hash hash.Hash
+	var rdr io.Reader
+	if p.dataIntegrityEtag {
+		rdr = po.Body
+	} else {
+		md5hash = md5.New()
+		rdr = io.TeeReader(po.Body, md5hash)
+	}
 
 	var hashRdr *utils.HashReader
 	if !isTrailingChecksum {
@@ -3934,8 +4155,6 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		}
 	}
 
-	etag := backend.GenerateEtag(hash)
-
 	// if the versioning is enabled, generate a new versionID for the object
 	var versionID string
 	if p.versioningEnabled() && vEnabled {
@@ -3964,6 +4183,18 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		sum = chRdr.Checksum()
 	} else {
 		sum = hashRdr.Sum()
+	}
+
+	// Generate the ETag for this object.
+	// When dataIntegrityEtag is enabled, embed the checksum algorithm name and
+	// value directly in the ETag (e.g. "CRC64NVME-<base64>") instead of the
+	// standard MD5 digest.  The checksum is always available here: either
+	// supplied by the client or computed internally as CRC64NVME by default.
+	var etag string
+	if p.dataIntegrityEtag {
+		etag = fmt.Sprintf("\"%s-%s\"", strings.ToUpper(string(checksumAlgorithm)), sum)
+	} else {
+		etag = backend.GenerateEtag(md5hash)
 	}
 
 	checksum := s3response.Checksum{

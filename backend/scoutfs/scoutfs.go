@@ -54,6 +54,11 @@ type ScoutfsOpts struct {
 	// attribute (e.g. files placed on the filesystem outside of versitygw).
 	// When empty, such objects are served with an empty ETag.
 	DefaultEtag string
+	// DataIntegrityEtag, when enabled, replaces the standard MD5-based ETag
+	// with a checksum-derived value that embeds the algorithm name and checksum
+	// (e.g. "CRC64NVME-<base64>"). For multipart uploads, part ETags become
+	// CRC64NVME-based values and the completed object ETag is checksum-derived.
+	DataIntegrityEtag bool
 }
 
 var _ backend.Backend = &ScoutFS{}

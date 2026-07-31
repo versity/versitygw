@@ -29,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -1844,6 +1845,88 @@ func CompleteMultipartUpload_success(s *S3Conf) error {
 		if csum != getsum {
 			return fmt.Errorf("expected the object checksum to be %v, instead got %v",
 				csum, getsum)
+		}
+
+		return nil
+	})
+}
+
+func CompleteMultipartUpload_data_integrity_etag(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_data_integrity_etag"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		customClient := s3.NewFromConfig(s.Config(), func(o *s3.Options) {
+			o.RequestChecksumCalculation = aws.RequestChecksumCalculationUnset
+		})
+
+		obj := "my-obj"
+		out, err := createMp(customClient, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		partNumber := int32(1)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partOut, err := customClient.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			UploadId:   out.UploadId,
+			PartNumber: &partNumber,
+			Body:       bytes.NewReader([]byte("payload-data")),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if !isQuotedEtag(getString(partOut.ETag)) {
+			return fmt.Errorf("expected UploadPart ETag to be quoted, instead got %s", getString(partOut.ETag))
+		}
+		if !strings.HasPrefix(getString(partOut.ETag), "\"CRC64NVME-") {
+			return fmt.Errorf("expected UploadPart ETag to be CRC64NVME-based, instead got %s", getString(partOut.ETag))
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := customClient.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{{
+					ETag:       partOut.ETag,
+					PartNumber: &partNumber,
+				}},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !isQuotedEtag(getString(res.ETag)) {
+			return fmt.Errorf("expected CompleteMultipartUpload ETag to be quoted, instead got %s", getString(res.ETag))
+		}
+		if !strings.HasPrefix(getString(res.ETag), "\"CRC64NVME-") {
+			return fmt.Errorf("expected CompleteMultipartUpload ETag to be CRC64NVME-based, instead got %s", getString(res.ETag))
+		}
+		if getString(res.ETag) != getString(partOut.ETag) {
+			return fmt.Errorf("expected single-part complete ETag %s, instead got %s", getString(partOut.ETag), getString(res.ETag))
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		head, err := customClient.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:       &bucket,
+			Key:          &obj,
+			ChecksumMode: types.ChecksumModeEnabled,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if got := getString(head.ETag); got != getString(res.ETag) {
+			return fmt.Errorf("expected HeadObject ETag to be %s, instead got %s", getString(res.ETag), got)
+		}
+		if getString(head.ChecksumCRC64NVME) == "" {
+			return fmt.Errorf("expected HeadObject CRC64NVME checksum to be set")
 		}
 
 		return nil

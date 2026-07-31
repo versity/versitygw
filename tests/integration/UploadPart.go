@@ -502,6 +502,68 @@ func UploadPart_success(s *S3Conf) error {
 	})
 }
 
+func UploadPart_data_integrity_etag(s *S3Conf) error {
+	testName := "UploadPart_data_integrity_etag"
+	partNumber := int32(1)
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		customClient := s3.NewFromConfig(s.Config(), func(o *s3.Options) {
+			o.RequestChecksumCalculation = aws.RequestChecksumCalculationUnset
+		})
+
+		obj := "my-obj"
+		out, err := createMp(customClient, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		payload := []byte("payload-data")
+		h := crc64.New(crc64.MakeTable(bits.Reverse64(0xad93d23594c93659)))
+		h.Write(payload)
+		expectedChecksum := base64.StdEncoding.EncodeToString(h.Sum(nil))
+		expectedETag := fmt.Sprintf("\"CRC64NVME-%s\"", expectedChecksum)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := customClient.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			UploadId:   out.UploadId,
+			PartNumber: &partNumber,
+			Body:       bytes.NewReader(payload),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if got := getString(res.ETag); got != expectedETag {
+			return fmt.Errorf("expected UploadPart ETag to be %s, instead got %s", expectedETag, got)
+		}
+		if res.ChecksumCRC64NVME != nil && getString(res.ChecksumCRC64NVME) != expectedChecksum {
+			return fmt.Errorf("expected UploadPart checksum to be %s, instead got %s", expectedChecksum, getString(res.ChecksumCRC64NVME))
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		listOut, err := customClient.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(listOut.Parts) != 1 {
+			return fmt.Errorf("expected 1 uploaded part, instead got %d", len(listOut.Parts))
+		}
+		if got := getString(listOut.Parts[0].ETag); got != expectedETag {
+			return fmt.Errorf("expected ListParts ETag to be %s, instead got %s", expectedETag, got)
+		}
+
+		return nil
+	})
+}
+
 // isQuotedEtag reports whether an ETag is a non-empty double-quoted string,
 // as required by the S3 contract (e.g. "\"abc\"").
 func isQuotedEtag(etag string) bool {

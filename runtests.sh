@@ -2,9 +2,11 @@
 
 # parse options
 USE_SIDECAR=false
+RUN_DATA_INTEGRITY_ETAG_TESTS=true
 for arg in "$@"; do
   case "$arg" in
     --sidecar) USE_SIDECAR=true ;;
+	--skip-data-integrity-etag-tests) RUN_DATA_INTEGRITY_ETAG_TESTS=false ;;
   esac
 done
 
@@ -177,6 +179,31 @@ fi
 
 # kill off server
 kill $GW_VS_HTTPS_PID
+
+if $RUN_DATA_INTEGRITY_ETAG_TESTS; then
+ECHO "Running data-integrity-etag integration tests"
+# run server in background with data-integrity-etag enabled
+# port: 7075
+GOCOVERDIR=/tmp/covdata ./versitygw -p :7075 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG --data-integrity-etag /tmp/gw &
+GW_DI_ETAG_PID=$!
+
+# wait a second for server to start up
+sleep 1
+
+# check if data-integrity-etag gateway process is still running
+if ! kill -0 $GW_DI_ETAG_PID; then
+	echo "data-integrity-etag server no longer running"
+	exit 1
+fi
+
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7075 data-integrity-etag; then
+	echo "data-integrity-etag tests failed"
+	kill $GW_DI_ETAG_PID
+	exit 1
+fi
+
+kill $GW_DI_ETAG_PID
+fi
 
 ECHO "Running No ACL integration tests"
 # run server in background versioning-enabled

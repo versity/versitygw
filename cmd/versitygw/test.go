@@ -212,6 +212,11 @@ func initTestCommands() []*cli.Command {
 			Action: getAction(integration.TestNoAclMode),
 		},
 		{
+			Name:   "data-integrity-etag",
+			Usage:  "Tests checksum-derived ETag behavior",
+			Action: getAction(integration.TestDataIntegrityETag),
+		},
+		{
 			Name:  "bench",
 			Usage: "Runs download/upload performance test on the gateway",
 			Description: `Uploads/downloads some number(specified by flags) of files with some capacity(bytes).
