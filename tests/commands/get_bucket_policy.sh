@@ -224,13 +224,16 @@ search_for_first_policy_line_or_full_policy() {
 }
 
 get_bucket_policy_mc() {
-  if ! check_param_count "get_bucket_policy_mc" "bucket" 1 $#; then
+  if ! check_param_count_v2 "bucket" 1 $#; then
     return 1
   fi
-  bucket_policy=$(send_command mc --insecure anonymous get-json "$MC_ALIAS/$1" 2>&1) || get_result=$?
-  if [[ $get_result -ne 0 ]]; then
-    log 2 "error getting policy: $bucket_policy"
+  local bucket="$1"
+  local response
+
+  if ! response=$(send_command mc --insecure anonymous get-json "$MC_ALIAS/$bucket" 2>&1); then
+    log 2 "error getting policy: $response"
     return 1
   fi
+  printf '%s\n' "$response"
   return 0
 }
