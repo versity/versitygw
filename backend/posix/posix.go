@@ -29,6 +29,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -87,6 +88,10 @@ type Posix struct {
 	// support copy_file_range is mounted over NFSv4.2.
 	forceNoCopyFileRange bool
 
+	// enableODirect is a flag to open object data files with O_DIRECT.
+	// This is best-effort and falls back to buffered I/O when unsupported.
+	enableODirect bool
+
 	// enable posix level bucket name validations, not needed if the
 	// frontend handlers are already validating bucket names
 	validateBucketName bool
@@ -108,6 +113,10 @@ type Posix struct {
 	// rejected with an 'InvalidRequest' to comply with the S3 limit
 	// of 5 GiB.
 	copyObjectThreshold int64
+
+	// ioBufferSize is the buffer size used by buffered copy/read paths.
+	ioBufferSize int
+	ioBufferPool sync.Pool
 }
 
 var _ backend.Backend = &Posix{}
@@ -149,9 +158,16 @@ const (
 	doFalloc   = true
 	skipFalloc = false
 
+	odirectAllowed    odirectPolicy = true
+	odirectNotAllowed odirectPolicy = false
+
 	// defaultConcurrency is the default limit for concurrent POSIX actions.
 	defaultConcurrency = 5000
+	// defaultIOBufferSize is the default buffer size used by io.CopyBuffer paths.
+	defaultIOBufferSize = 1024 * 1024
 )
+
+type odirectPolicy bool
 
 // PosixOpts are the options for the Posix backend
 type PosixOpts struct {
@@ -172,6 +188,9 @@ type PosixOpts struct {
 	ForceNoTmpFile bool
 	// ForceNoCopyFileRange disables the use of io.Copy for multipart uploads parts
 	ForceNoCopyFileRange bool
+	// EnableODirect enables best-effort O_DIRECT for object data reads/writes.
+	// Disabled by default.
+	EnableODirect bool
 	// ValidateBucketNames enables minimal bucket name validation to prevent
 	// incorrect access to the filesystem. This is only needed if the
 	// frontend is not already validating bucket names.
@@ -194,9 +213,14 @@ type PosixOpts struct {
 	// attribute (e.g. files placed on the filesystem outside of versitygw).
 	// When empty, such objects are served with an empty ETag.
 	DefaultEtag string
+	// IOBufferSize sets the buffer size (in bytes) for copy/read paths that use
+	// io.CopyBuffer or buffered readers. Defaults to 1MiB when unset or invalid.
+	IOBufferSize int
 }
 
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
+	ioBufferSize := ioBufferSizeOrDefault(opts.IOBufferSize)
+
 	if opts.SideCarDir != "" && strings.HasPrefix(opts.SideCarDir, rootdir) {
 		return nil, fmt.Errorf("sidecar directory cannot be inside the gateway root directory")
 	}
@@ -255,10 +279,16 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		newDirPerm:           opts.NewDirPerm,
 		forceNoTmpFile:       opts.ForceNoTmpFile,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
+		enableODirect:        opts.EnableODirect,
 		validateBucketName:   opts.ValidateBucketNames,
 		actionLimiter:        semaphore.NewWeighted(int64(concurrencyOrDefault(opts.Concurrency))),
 		copyObjectThreshold:  opts.CopyObjectThreshold,
 		defaultEtag:          opts.DefaultEtag,
+		ioBufferSize:         ioBufferSize,
+		ioBufferPool: sync.Pool{New: func() any {
+			b := make([]byte, ioBufferSize)
+			return &b
+		}},
 	}, nil
 }
 
@@ -268,6 +298,32 @@ func concurrencyOrDefault(n int) int {
 		return n
 	}
 	return defaultConcurrency
+}
+
+func ioBufferSizeOrDefault(n int) int {
+	if n > 0 {
+		return n
+	}
+	return defaultIOBufferSize
+}
+
+func (p *Posix) getIOBuffer() []byte {
+	bp, ok := p.ioBufferPool.Get().(*[]byte)
+	if !ok || bp == nil || cap(*bp) < p.ioBufferSize {
+		return make([]byte, p.ioBufferSize)
+	}
+	return (*bp)[:p.ioBufferSize]
+}
+
+func (p *Posix) putIOBuffer(b []byte) {
+	if b == nil {
+		return
+	}
+	if cap(b) < p.ioBufferSize {
+		return
+	}
+	b = b[:p.ioBufferSize]
+	p.ioBufferPool.Put(&b)
 }
 
 func validateSubDir(root, dir string) (string, error) {
@@ -945,12 +1001,13 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 	versioningKey := filepath.Join(genObjVersionKey(key), versionId)
 	versionTmpPath := filepath.Join(versionBucketPath, MetaTmpDir)
 	f, err := p.openTmpFile(versionTmpPath, versionBucketPath, versioningKey,
-		size, acc, doFalloc, p.forceNoTmpFile)
+		size, acc, doFalloc, p.forceNoTmpFile, odirectNotAllowed)
 	if err != nil {
 		return versionPath, err
 	}
 	defer f.cleanup()
 
+	// Prioritize copy_file_range for internal file-to-file version copies.
 	_, err = io.Copy(f.File(), sf)
 	if err != nil {
 		return versionPath, err
@@ -2092,7 +2149,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	}
 
 	f, err := p.openTmpFile(filepath.Join(bucket, MetaTmpDir), bucket, object,
-		totalsize, acct, skipFalloc, p.forceNoTmpFile)
+		totalsize, acct, skipFalloc, p.forceNoTmpFile, odirectNotAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return res, "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -2119,12 +2176,13 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 				// Fail back to standard copy
 				debuglogger.Logf("custom data block move failed (%q/%q): %v, failing back to io.Copy()",
 					bucket, object, err)
-				fw := f.File()
-				fw.Seek(0, io.SeekEnd)
+				_, _ = f.File().Seek(0, io.SeekEnd)
 				if p.forceNoCopyFileRange {
-					_, err = io.Copy(fw, &onlyRead{pf})
+					_, err = io.Copy(f, &onlyRead{pf})
 				} else {
-					_, err = io.Copy(fw, pf)
+					// Keep both endpoints as *os.File here so
+					// io.Copy can use copy_file_range.
+					_, err = io.Copy(f.File(), pf)
 				}
 			}
 			if !idemp && err == nil {
@@ -2145,8 +2203,10 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			}
 		} else {
 			if p.forceNoCopyFileRange {
-				_, err = io.Copy(f.File(), &onlyRead{pf})
+				_, err = io.Copy(f, &onlyRead{pf})
 			} else {
+				// Keep both endpoints as *os.File here so
+				// io.Copy can use copy_file_range.
 				_, err = io.Copy(f.File(), pf)
 			}
 		}
@@ -3030,7 +3090,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	partPath := filepath.Join(mpPath, fmt.Sprintf("%v", *part))
 
 	f, err := p.openTmpFile(filepath.Join(bucket, objdir),
-		bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile)
+		bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile, odirectAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(r)
@@ -3152,7 +3212,10 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 		}
 	}
 
-	_, err = io.Copy(f, tr)
+	buf := p.getIOBuffer()
+	defer p.putIOBuffer(buf)
+
+	_, err = io.CopyBuffer(f, tr, buf)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(tr)
@@ -3415,7 +3478,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}
 
 	f, err := p.openTmpFile(filepath.Join(*upi.Bucket, objdir),
-		*upi.Bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile)
+		*upi.Bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile, odirectNotAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -3803,7 +3866,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	}
 
 	f, err := p.openTmpFile(filepath.Join(*po.Bucket, MetaTmpDir),
-		*po.Bucket, *po.Key, contentLength, acct, doFalloc, p.forceNoTmpFile)
+		*po.Bucket, *po.Key, contentLength, acct, doFalloc, p.forceNoTmpFile, odirectAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(po.Body)
@@ -3832,7 +3895,10 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		rdr = hashRdr
 	}
 
-	_, err = io.Copy(f, rdr)
+	buf := p.getIOBuffer()
+	defer p.putIOBuffer(buf)
+
+	_, err = io.CopyBuffer(f, rdr, buf)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(rdr)
@@ -4234,13 +4300,14 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 
 				f, err := p.openTmpFile(filepath.Join(bucket, MetaTmpDir),
 					bucket, object, srcObjVersion.Size(), acct, doFalloc,
-					p.forceNoTmpFile)
+					p.forceNoTmpFile, odirectNotAllowed)
 				if err != nil {
 					return nil, fmt.Errorf("open tmp file: %w", err)
 				}
 				defer f.cleanup()
 
-				_, err = io.Copy(f, sf)
+				// Prioritize copy_file_range for internal file-to-file version restores.
+				_, err = io.Copy(f.File(), sf)
 				if err != nil {
 					_ = sf.Close()
 					return nil, fmt.Errorf("copy object %w", err)
@@ -4678,7 +4745,7 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	// openForRead opens with FILE_SHARE_DELETE on Windows so that a concurrent
 	// DeleteObject can call os.Remove on this file while the GET response body
 	// is still being streamed. On POSIX, os.Open is sufficient.
-	f, err := openForRead(objPath)
+	f, err := openForRead(objPath, p.enableODirect)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
@@ -4781,11 +4848,11 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		}
 	}
 
-	// using an os.File allows zero-copy sendfile via io.Copy(os.File, net.Conn)
-	var body io.ReadCloser = f
-	if startOffset != 0 || length != objSize {
-		rdr := io.NewSectionReader(f, startOffset, length)
-		body = &backend.FileSectionReadCloser{R: rdr, F: f}
+	// Full-object responses can keep the underlying *os.File for sendfile.
+	// Linux range reads on O_DIRECT may need runtime fallback to buffered I/O.
+	body, err := buildGetObjectBody(f, objPath, startOffset, length, objSize, p.enableODirect, p.ioBufferSize)
+	if err != nil {
+		return nil, fmt.Errorf("build get object body: %w", err)
 	}
 
 	return &s3.GetObjectOutput{

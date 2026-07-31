@@ -33,7 +33,9 @@ var (
 	nometa               bool
 	forceNoTmpFile       bool
 	forceNoCopyFileRange bool
+	enableODirect        bool
 	actionsConcurrency   int
+	ioBufferSize         int
 	defaultEtag          string
 )
 
@@ -98,6 +100,13 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				Value:       5000,
 				Destination: &actionsConcurrency,
 			},
+			&cli.IntFlag{
+				Name:        "io-buffer-size",
+				Usage:       "buffer size in bytes used by POSIX put/get/part read and write paths (<=0 uses backend default 1MiB)",
+				EnvVars:     []string{"VGW_POSIX_IO_BUFFER_SIZE"},
+				Value:       1024 * 1024,
+				Destination: &ioBufferSize,
+			},
 			&cli.BoolFlag{
 				Name:        "nometa",
 				Usage:       "disable metadata storage",
@@ -115,6 +124,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				Usage:       "explicitly copy multipart upload parts instead of using copy_file_range (which may hang with some NFS servers)",
 				EnvVars:     []string{"VGW_DISABLE_COPY_FILE_RANGE"},
 				Destination: &forceNoCopyFileRange,
+			},
+			&cli.BoolFlag{
+				Name:        "enable-odirect",
+				Usage:       "enable best-effort O_DIRECT for object data reads/writes",
+				EnvVars:     []string{"VGW_ENABLE_O_DIRECT"},
+				Destination: &enableODirect,
 			},
 			&cli.StringFlag{
 				Name:        "default-etag",
@@ -153,8 +168,10 @@ func runPosix(ctx *cli.Context) error {
 		NewDirPerm:           fs.FileMode(dirPerms),
 		ForceNoTmpFile:       forceNoTmpFile,
 		ForceNoCopyFileRange: forceNoCopyFileRange,
+		EnableODirect:        enableODirect,
 		ValidateBucketNames:  disableStrictBucketNames,
 		Concurrency:          actionsConcurrency,
+		IOBufferSize:         ioBufferSize,
 		CopyObjectThreshold:  copyObjectThreshold,
 		DefaultEtag:          defaultEtag,
 	}

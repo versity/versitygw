@@ -36,9 +36,13 @@ const (
 )
 
 type tmpfile struct {
-	f          *os.File
-	bucket     string
-	objname    string
+	f       *os.File
+	bucket  string
+	objname string
+	// Retained for compatibility with shared tmpfile methods in otmpfile_common.
+	isOTmp     bool
+	procFDName string
+	useODirect bool
 	size       int64
 	newDirPerm fs.FileMode
 	uid        int
@@ -46,8 +50,12 @@ type tmpfile struct {
 	doChown    bool
 }
 
-func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, _ bool, _ bool) (*tmpfile, error) {
+func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, _ bool, _ bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
+
+	if p.enableODirect && bool(allowODirect) {
+		warnODirectUnsupportedOnce("openTmpFile-nonlinux", os.ErrInvalid)
+	}
 
 	// Create a temp file for upload while in progress (see link comments below).
 	var err error
@@ -80,6 +88,9 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		f:          f,
 		bucket:     bucket,
 		objname:    obj,
+		isOTmp:     false,
+		procFDName: "",
+		useODirect: false,
 		size:       size,
 		newDirPerm: p.newDirPerm,
 		uid:        uid,
