@@ -12,7 +12,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package main
+package gwcli
 
 import (
 	"fmt"
@@ -40,7 +40,9 @@ var (
 	dataIntegrityEtag    bool
 )
 
-func posixCommand() *cli.Command {
+// PosixCommand returns the "posix" subcommand, common to all versitygw
+// binaries.
+func PosixCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "posix",
 		Usage: "posix filesystem storage backend",
@@ -176,10 +178,10 @@ func runPosix(ctx *cli.Context) error {
 		ForceNoTmpFile:       forceNoTmpFile,
 		ForceNoCopyFileRange: forceNoCopyFileRange,
 		EnableODirect:        enableODirect,
-		ValidateBucketNames:  disableStrictBucketNames,
+		ValidateBucketNames:  DisableStrictBucketNames,
 		Concurrency:          actionsConcurrency,
 		IOBufferSize:         ioBufferSize,
-		CopyObjectThreshold:  copyObjectThreshold,
+		CopyObjectThreshold:  CopyObjectThreshold,
 		DefaultEtag:          defaultEtag,
 		DataIntegrityEtag:    dataIntegrityEtag,
 	}
@@ -208,5 +210,5 @@ func runPosix(ctx *cli.Context) error {
 		return fmt.Errorf("failed to init posix backend: %w", err)
 	}
 
-	return runGateway(ctx.Context, be)
+	return RunGateway(ctx.Context, be)
 }

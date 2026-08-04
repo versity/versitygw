@@ -12,7 +12,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package main
+package gwcli
 
 import (
 	"encoding/json"
@@ -27,7 +27,9 @@ import (
 	"github.com/versity/versitygw/s3event"
 )
 
-func utilsCommand() *cli.Command {
+// UtilsCommand returns the "utils" subcommand, common to all versitygw
+// binaries.
+func UtilsCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "utils",
 		Usage: "utility helper CLI tool",

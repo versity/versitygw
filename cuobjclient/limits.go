@@ -1,4 +1,4 @@
-// Copyright 2023 Versity Software
+// Copyright 2026 Versity Software
 // This file is licensed under the Apache License, Version 2.0
 // (the "License"); you may not use this file except in compliance
 // with the License.  You may obtain a copy of the License at
@@ -12,33 +12,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package main
+package cuobjclient
 
-import (
-	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
-)
-
-var (
-	sigDone = make(chan struct{}, 1)
-	sigHup  = make(chan struct{}, 1)
-)
-
-func setupSignalHandler() {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-
-	go func() {
-		for sig := range sigs {
-			fmt.Fprintf(os.Stderr, "caught signal %v\n", sig)
-			switch sig {
-			case syscall.SIGINT, syscall.SIGTERM:
-				sigDone <- struct{}{}
-			case syscall.SIGHUP:
-				sigHup <- struct{}{}
-			}
-		}
-	}()
-}
+// MaxTransferSize is the largest transfer size supported by the cuObject
+// client path in this package.
+const MaxTransferSize = 1 << 30

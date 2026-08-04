@@ -11,6 +11,7 @@ import (
 
 	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/backend/posix"
+	"github.com/versity/versitygw/cmd/internal/gwcli"
 	"github.com/versity/versitygw/tests/integration"
 )
 
@@ -28,14 +29,14 @@ func initEnv(dir string) {
 	region = "us-east-1"
 
 	// server
-	rootUserAccess = "user"
-	rootUserSecret = "pass"
+	gwcli.RootUserAccess = "user"
+	gwcli.RootUserSecret = "pass"
 	iamDir = dir
 	maxConnections = 250000
 	maxRequests = 100000
 	ports = []string{"127.0.0.1:7070"}
 	mpMaxParts = 10000
-	copyObjectThreshold = 5 * 1024 * 1024 * 1024
+	gwcli.CopyObjectThreshold = 5 * 1024 * 1024 * 1024
 
 	// client
 	awsID = "user"

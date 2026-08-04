@@ -12,7 +12,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package main
+package gwcli
 
 import (
 	"fmt"
@@ -25,7 +25,9 @@ var (
 	azAccount, azKey, azServiceURL, azSASToken string
 )
 
-func azureCommand() *cli.Command {
+// AzureCommand returns the "azure" subcommand, common to all versitygw
+// binaries.
+func AzureCommand() *cli.Command {
 	return &cli.Command{
 		Name:        "azure",
 		Usage:       "azure blob storage backend",
@@ -65,10 +67,10 @@ func azureCommand() *cli.Command {
 }
 
 func runAzure(ctx *cli.Context) error {
-	be, err := azure.New(azAccount, azKey, azServiceURL, azSASToken, copyObjectThreshold)
+	be, err := azure.New(azAccount, azKey, azServiceURL, azSASToken, CopyObjectThreshold)
 	if err != nil {
 		return fmt.Errorf("init azure: %w", err)
 	}
 
-	return runGateway(ctx.Context, be)
+	return RunGateway(ctx.Context, be)
 }
