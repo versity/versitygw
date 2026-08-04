@@ -39,7 +39,7 @@ func NewCreateBucketCommand(s3Command *S3RequestBuilder, locationConstraint stri
 		if err != nil {
 			return nil, fmt.Errorf("error marshalling XML: %w", err)
 		}
-		s3Command.Config.Payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + string(xmlData)
+		s3Command.Config.Payload = xml.Header + string(xmlData)
 	}
 	return command, nil
 }

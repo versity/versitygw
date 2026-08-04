@@ -366,15 +366,15 @@ check_user_profile_and_add_if_needed() {
     fi
   done
   if ! response=$(aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" --profile "$AWS_PROFILE" 2>&1); then
-    log 2 "error calculating response: $response"
+    log 2 "error adding aws access key id to profile '$AWS_PROFILE': $response"
     return 1
   fi
   if ! response=$(aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" --profile "$AWS_PROFILE" 2>&1); then
-    log 2 "error calculating response: $response"
+    log 2 "error adding aws secret access key to profile '$AWS_PROFILE': $response"
     return 1
   fi
   if ! response=$(aws configure set aws_region "$AWS_REGION" --profile "$AWS_PROFILE" 2>&1); then
-    log 2 "error calculating response: $response"
+    log 2 "error adding aws region to profile '$AWS_PROFILE': $response"
     return 1
   fi
   return 0

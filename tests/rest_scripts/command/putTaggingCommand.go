@@ -40,6 +40,6 @@ func (p *PutTaggingCommand) createTaggingPayload(fields *TaggingFields) error {
 	if err != nil {
 		return fmt.Errorf("error marshalling XML: %w", err)
 	}
-	p.Config.Payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + string(xmlData)
+	p.Config.Payload = xml.Header + string(xmlData)
 	return nil
 }

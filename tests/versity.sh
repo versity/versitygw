@@ -115,6 +115,12 @@ run_versity_app_posix() {
   if [ -n "$PORT" ]; then
     base_command+=(--port ":$PORT")
   fi
+  if [ -n "$WEBSITE" ]; then
+    base_command+=(--website "$WEBSITE")
+  fi
+  if [ -n "$WEBSITE_DOMAIN" ]; then
+    base_command+=(--website-domain "$WEBSITE_DOMAIN")
+  fi
   base_command+=(posix)
   if [ -n "$VERSIONING_DIR" ]; then
     base_command+=(--versioning-dir "$VERSIONING_DIR")

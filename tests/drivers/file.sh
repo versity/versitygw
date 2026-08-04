@@ -713,17 +713,17 @@ create_test_file_base() {
 }
 
 create_and_split_large_file() {
-if ! check_param_count_v2 "file name, size in MB, pieces" 3 $#; then
-  return 1
-fi
-if ! error=$(create_large_file_with_size "$1" "$2" 2>&1); then
-  log 2 "error creating large file: $error"
-  return 1
-fi
-if ! split_file "$TEST_FILE_FOLDER/$1" "$3"; then
-  log 2 "error splitting file"
-  return 1
-fi
+  if ! check_param_count_v2 "file name, size in MB, pieces" 3 $#; then
+    return 1
+  fi
+  if ! error=$(create_large_file_with_size "$1" "$2" 2>&1); then
+    log 2 "error creating large file: $error"
+    return 1
+  fi
+  if ! split_file "$TEST_FILE_FOLDER/$1" "$3"; then
+    log 2 "error splitting file"
+    return 1
+  fi
 }
 
 # param: number of files
