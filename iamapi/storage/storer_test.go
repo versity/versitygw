@@ -17,6 +17,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -93,7 +94,7 @@ func TestInternalStoreUserCRUDAndPagination(t *testing.T) {
 		{
 			Path:       "/engineering/",
 			UserName:   "alice",
-			UserID:     "AIDA22222222222222222",
+			UserID:     "AIDAx2222222222222222",
 			Arn:        "arn:aws:iam::000000000000:user/engineering/alice",
 			CreateDate: created,
 			Tags: []types.Tag{
@@ -104,14 +105,14 @@ func TestInternalStoreUserCRUDAndPagination(t *testing.T) {
 		{
 			Path:       "/engineering/platform/",
 			UserName:   "bob",
-			UserID:     "AIDA33333333333333333",
+			UserID:     "AIDAx3333333333333333",
 			Arn:        "arn:aws:iam::000000000000:user/engineering/platform/bob",
 			CreateDate: created.Add(time.Second),
 		},
 		{
 			Path:       "/ops/",
 			UserName:   "carol",
-			UserID:     "AIDA44444444444444444",
+			UserID:     "AIDAx4444444444444444",
 			Arn:        "arn:aws:iam::000000000000:user/ops/carol",
 			CreateDate: created.Add(2 * time.Second),
 		},
@@ -200,7 +201,7 @@ func TestInternalStoreUserCRUDAndPagination(t *testing.T) {
 
 	if _, err := reopened.CreateAccessKey(ctx, CreateAccessKeyInput{
 		UserName:        "zoe",
-		AccessKeyID:     "AKIAZZZZZZZZZZZZZZZZ",
+		AccessKeyID:     "AKIAzZZZZZZZZZZZZZZZ",
 		SecretAccessKey: "secret",
 		Status:          "Active",
 		CreateDate:      created,
@@ -210,7 +211,7 @@ func TestInternalStoreUserCRUDAndPagination(t *testing.T) {
 	if err := reopened.DeleteUser(ctx, "zoe"); !errors.Is(err, iamerr.GetAPIError(iamerr.ErrDeleteConflict)) {
 		t.Fatalf("DeleteUser with access keys err = %v, want DeleteConflict", err)
 	}
-	if err := reopened.DeleteAccessKey(ctx, "zoe", "AKIAZZZZZZZZZZZZZZZZ"); err != nil {
+	if err := reopened.DeleteAccessKey(ctx, "zoe", "AKIAzZZZZZZZZZZZZZZZ"); err != nil {
 		t.Fatalf("DeleteAccessKey: %v", err)
 	}
 
@@ -222,6 +223,39 @@ func TestInternalStoreUserCRUDAndPagination(t *testing.T) {
 	}
 }
 
+func TestInternalStoreGetUserByAccessKeyID(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewInternal(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewInternal: %v", err)
+	}
+
+	if _, err := store.CreateUser(ctx, types.User{UserName: "alice", UserID: "AIDAx1111111111111111"}); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if _, err := store.CreateAccessKey(ctx, CreateAccessKeyInput{
+		UserName:        "alice",
+		AccessKeyID:     "AKIAALICE0000000000",
+		SecretAccessKey: "secret",
+		Status:          "Active",
+		CreateDate:      time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("CreateAccessKey: %v", err)
+	}
+
+	got, err := store.GetUserByAccessKeyID(ctx, "AKIAALICE0000000000")
+	if err != nil {
+		t.Fatalf("GetUserByAccessKeyID: %v", err)
+	}
+	if got.UserName != "alice" {
+		t.Fatalf("GetUserByAccessKeyID = %#v, want alice", got)
+	}
+
+	if _, err := store.GetUserByAccessKeyID(ctx, "AKIAuNKNOWN0000000000"); !errors.Is(err, iamerr.NoSuchEntityAccessKey("AKIAuNKNOWN0000000000")) {
+		t.Fatalf("GetUserByAccessKeyID unknown key err = %v, want NoSuchEntityAccessKey", err)
+	}
+}
+
 func TestInternalStoreUserNameCaseInsensitive(t *testing.T) {
 	ctx := context.Background()
 	store, err := NewInternal(t.TempDir())
@@ -229,10 +263,10 @@ func TestInternalStoreUserNameCaseInsensitive(t *testing.T) {
 		t.Fatalf("NewInternal: %v", err)
 	}
 
-	if _, err := store.CreateUser(ctx, types.User{UserName: "alice", UserID: "AIDA11111111111111111"}); err != nil {
+	if _, err := store.CreateUser(ctx, types.User{UserName: "alice", UserID: "AIDAx1111111111111111"}); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	if _, err := store.CreateUser(ctx, types.User{UserName: "ALICE", UserID: "AIDA22222222222222222"}); !errors.Is(err, iamerr.EntityAlreadyExistsUser("ALICE")) {
+	if _, err := store.CreateUser(ctx, types.User{UserName: "ALICE", UserID: "AIDAx2222222222222222"}); !errors.Is(err, iamerr.EntityAlreadyExistsUser("ALICE")) {
 		t.Fatalf("CreateUser case-variant duplicate err = %v, want EntityAlreadyExists", err)
 	}
 
@@ -265,7 +299,7 @@ func TestInternalStoreRoleCRUDAndPagination(t *testing.T) {
 		{
 			Path:                     "/engineering/",
 			RoleName:                 "alice-role",
-			RoleID:                   "AROA22222222222222222",
+			RoleID:                   "AROAx2222222222222222",
 			Arn:                      "arn:aws:iam::000000000000:role/engineering/alice-role",
 			CreateDate:               created,
 			AssumeRolePolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`,
@@ -277,7 +311,7 @@ func TestInternalStoreRoleCRUDAndPagination(t *testing.T) {
 		{
 			Path:                     "/engineering/platform/",
 			RoleName:                 "bob-role",
-			RoleID:                   "AROA33333333333333333",
+			RoleID:                   "AROAx3333333333333333",
 			Arn:                      "arn:aws:iam::000000000000:role/engineering/platform/bob-role",
 			CreateDate:               created.Add(time.Second),
 			AssumeRolePolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`,
@@ -286,7 +320,7 @@ func TestInternalStoreRoleCRUDAndPagination(t *testing.T) {
 		{
 			Path:                     "/ops/",
 			RoleName:                 "carol-role",
-			RoleID:                   "AROA44444444444444444",
+			RoleID:                   "AROAx4444444444444444",
 			Arn:                      "arn:aws:iam::000000000000:role/ops/carol-role",
 			CreateDate:               created.Add(2 * time.Second),
 			AssumeRolePolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`,
@@ -306,7 +340,7 @@ func TestInternalStoreRoleCRUDAndPagination(t *testing.T) {
 	if _, err := store.CreateRole(ctx, roles[0]); !errors.Is(err, iamerr.EntityAlreadyExistsRole("alice-role")) {
 		t.Fatalf("CreateRole duplicate err = %v, want EntityAlreadyExists", err)
 	}
-	if _, err := store.CreateRole(ctx, types.Role{RoleName: "ALICE-ROLE", RoleID: "AROA55555555555555555"}); !errors.Is(err, iamerr.EntityAlreadyExistsRole("ALICE-ROLE")) {
+	if _, err := store.CreateRole(ctx, types.Role{RoleName: "ALICE-ROLE", RoleID: "AROAx5555555555555555"}); !errors.Is(err, iamerr.EntityAlreadyExistsRole("ALICE-ROLE")) {
 		t.Fatalf("CreateRole case-variant duplicate err = %v, want EntityAlreadyExists", err)
 	}
 	duplicateID := roles[2]
@@ -395,7 +429,7 @@ func TestInternalStoreRolePolicyCRUD(t *testing.T) {
 
 	if _, err := store.CreateRole(ctx, types.Role{
 		RoleName:                 "alice-role",
-		RoleID:                   "AROA22222222222222222",
+		RoleID:                   "AROAx2222222222222222",
 		AssumeRolePolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`,
 	}); err != nil {
 		t.Fatalf("CreateRole: %v", err)
@@ -509,5 +543,138 @@ func TestInternalStoreRolePolicyCRUD(t *testing.T) {
 	}
 	if err := reopened.DeleteRole(ctx, "alice-role"); err != nil {
 		t.Fatalf("DeleteRole after removing all policies: %v", err)
+	}
+}
+
+func TestInternalStoreSessionCRUDAndExpiry(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := NewInternal(dir)
+	if err != nil {
+		t.Fatalf("NewInternal: %v", err)
+	}
+
+	// GetSession compares Expiration against the real wall clock, so (unlike
+	// most other timestamps in this package's tests) now must track it.
+	now := time.Now().UTC()
+	session := types.Session{
+		AccessKeyId:     "ASIAeXAMPLE1234567890",
+		SecretAccessKey: "secret",
+		SessionToken:    "token",
+		RoleArn:         "arn:aws:iam::000000000000:role/my-role",
+		RoleName:        "my-role",
+		RoleID:          "AROAeXAMPLE1234567890",
+		RoleSessionName: "my-session",
+		Provider:        "arn:aws:iam::000000000000:oidc-provider/example.com",
+		Audience:        "client1",
+		Subject:         "user1",
+		CreateDate:      now,
+		Expiration:      now.Add(time.Hour),
+	}
+
+	if _, err := store.CreateSession(ctx, session); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	got, err := store.GetSession(ctx, session.AccessKeyId)
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if !reflect.DeepEqual(*got, session) {
+		t.Fatalf("GetSession = %#v, want %#v", *got, session)
+	}
+
+	if _, err := store.GetSession(ctx, "ASIAUNKNOWN"); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("GetSession unknown access key err = %v, want ErrSessionNotFound", err)
+	}
+
+	// A session persists across process restarts (round-trips through the
+	// same on-disk file the rest of the IAM store uses).
+	reopened, err := NewInternal(dir)
+	if err != nil {
+		t.Fatalf("reopen NewInternal: %v", err)
+	}
+	if _, err := reopened.GetSession(ctx, session.AccessKeyId); err != nil {
+		t.Fatalf("GetSession after reopen: %v", err)
+	}
+
+	expired := types.Session{
+		AccessKeyId: "ASIAeXPIRED1234567890",
+		CreateDate:  now,
+		Expiration:  now.Add(-time.Minute),
+	}
+	if _, err := reopened.CreateSession(ctx, expired); err != nil {
+		t.Fatalf("CreateSession expired: %v", err)
+	}
+	if _, err := reopened.GetSession(ctx, expired.AccessKeyId); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("GetSession expired err = %v, want ErrSessionNotFound", err)
+	}
+
+	// Creating a new session opportunistically prunes the already-expired
+	// one from storage rather than letting it accumulate forever.
+	another := types.Session{
+		AccessKeyId: "ASIAaNOTHER1234567890",
+		CreateDate:  now,
+		Expiration:  now.Add(time.Hour),
+	}
+	if _, err := reopened.CreateSession(ctx, another); err != nil {
+		t.Fatalf("CreateSession another: %v", err)
+	}
+	internal := reopened.(*InternalStore)
+	conf, err := internal.engine.GetIAM()
+	if err != nil {
+		t.Fatalf("GetIAM: %v", err)
+	}
+	if _, ok := conf.Sessions[expired.AccessKeyId]; ok {
+		t.Fatalf("expired session %q was not pruned: %#v", expired.AccessKeyId, conf.Sessions)
+	}
+	if _, ok := conf.Sessions[another.AccessKeyId]; !ok {
+		t.Fatalf("unexpired session %q missing after prune: %#v", another.AccessKeyId, conf.Sessions)
+	}
+}
+
+func TestInternalStoreSessionCapPerRole(t *testing.T) {
+	// Each CreateSession call rewrites the whole IAM file, so hitting the
+	// real 1000 cap here would mean O(n^2) JSON work just to prove the cap
+	// is enforced. Lower it for the duration of the test instead.
+	orig := MaxActiveSessionsPerRole
+	MaxActiveSessionsPerRole = 5
+	t.Cleanup(func() { MaxActiveSessionsPerRole = orig })
+
+	ctx := context.Background()
+	store, err := NewInternal(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewInternal: %v", err)
+	}
+
+	now := time.Now().UTC()
+	newSession := func(i int, roleArn string) types.Session {
+		return types.Session{
+			AccessKeyId: fmt.Sprintf("ASIACAPPEDROLE%06d", i),
+			RoleArn:     roleArn,
+			CreateDate:  now,
+			Expiration:  now.Add(time.Hour),
+		}
+	}
+
+	const roleArn = "arn:aws:iam::000000000000:role/capped-role"
+	for i := range MaxActiveSessionsPerRole {
+		if _, err := store.CreateSession(ctx, newSession(i, roleArn)); err != nil {
+			t.Fatalf("CreateSession %d: %v", i, err)
+		}
+	}
+
+	// The role is now at its cap - one more session for the same role must
+	// be rejected rather than accepted unboundedly.
+	_, err = store.CreateSession(ctx, newSession(MaxActiveSessionsPerRole, roleArn))
+	var apiErr iamerr.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode() != 400 {
+		t.Fatalf("CreateSession at cap err = %v, want a Throttling APIError", err)
+	}
+
+	// A different role is entirely unaffected by the first role's cap.
+	const otherRoleArn = "arn:aws:iam::000000000000:role/other-role"
+	if _, err := store.CreateSession(ctx, newSession(MaxActiveSessionsPerRole+1, otherRoleArn)); err != nil {
+		t.Fatalf("CreateSession for a different role: %v", err)
 	}
 }

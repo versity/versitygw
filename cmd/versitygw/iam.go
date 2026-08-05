@@ -33,6 +33,11 @@ func runIAM(ctx *cli.Context) error {
 		}()
 	}
 
+	logLvl, err := parseLogLevel()
+	if err != nil {
+		return err
+	}
+
 	return embedgw.RunIAMAPI(ctx.Context, &embedgw.IAMConfig{
 		RootUserAccess:                 gwcli.RootUserAccess,
 		RootUserSecret:                 gwcli.RootUserSecret,
@@ -41,7 +46,7 @@ func runIAM(ctx *cli.Context) error {
 		MaxRequests:                    maxRequests,
 		CertFile:                       certFile,
 		KeyFile:                        keyFile,
-		Debug:                          debug,
+		LogLevel:                       logLvl,
 		Quiet:                          quiet || ctx.Bool("quiet"),
 		KeepAlive:                      keepAlive,
 		HealthPath:                     healthPath,

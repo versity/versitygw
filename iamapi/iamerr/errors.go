@@ -17,6 +17,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -26,6 +27,7 @@ import (
 const (
 	Namespace         = "https://iam.amazonaws.com/doc/2010-05-08/"
 	AWSFaultNamespace = "http://webservices.amazon.com/AWSFault/2005-15-09"
+	STSNamespace      = "https://sts.amazonaws.com/doc/2011-06-15/"
 )
 
 type ErrorType string
@@ -251,6 +253,24 @@ func GetAPIError(code ErrorCode) Error {
 	}
 
 	return errorCodeResponse[ErrInternalFailure]
+}
+
+// WithNamespace returns err with its XML namespace overridden to namespace,
+// for errors that must render under a different service's namespace than
+// the one they were originally constructed with (STS actions sharing this
+// gateway's IAM endpoint being the only current case). It never overrides
+// an already-explicit namespace (e.g. InvalidAction's AWSFaultNamespace,
+// used for a request whose Version doesn't even resolve to a known
+// action.
+func WithNamespace(err error, namespace string) error {
+	var apiErr Error
+	if errors.As(err, &apiErr) {
+		if apiErr.XMLNamespace == "" {
+			apiErr.XMLNamespace = namespace
+		}
+		return apiErr
+	}
+	return err
 }
 
 func InvalidAction(action, version string) Error {
@@ -504,6 +524,71 @@ func OIDCProvidersPerAccountLimitExceeded(max int) Error {
 
 func OpenIdIdpCommunicationError(url string) Error {
 	return newSenderError("OpenIdIdpCommunicationError", fmt.Sprintf("Could not connect to %s", url), http.StatusBadRequest)
+}
+
+func IncorrectServiceScope(expectedService string) Error {
+	return newSenderError("SignatureDoesNotMatch", fmt.Sprintf("Credential should be scoped to correct service: '%s'.", expectedService), http.StatusBadRequest)
+}
+
+func InvalidIdentityTokenMalformed() Error {
+	return newSenderError("InvalidIdentityToken", "The ID Token provided is not a valid JWT. (You may see this error if you sent an Access Token)", http.StatusBadRequest)
+}
+
+func InvalidIdentityTokenClaims() Error {
+	return newSenderError("InvalidIdentityToken", "The web identity token provided could not be validated. See the AssumeRoleWithWebIdentity documentation for requirements.", http.StatusBadRequest)
+}
+
+func InvalidIdentityTokenMultipleAudiences() Error {
+	return newSenderError("InvalidIdentityToken", "Token audience contains more than one audience while authorized party is not present", http.StatusBadRequest)
+}
+
+func InvalidIdentityTokenIDPCommunicationError() Error {
+	return newSenderError("InvalidIdentityToken", "Couldn't retrieve verification key from your identity provider,  please reference AssumeRoleWithWebIdentity documentation for requirements", http.StatusBadRequest)
+}
+
+func ExpiredWebIdentityToken(now, exp int64) Error {
+	return newSenderError("ExpiredTokenException", fmt.Sprintf("Token expired: current date/time %d must be before the expiration date/time %d", now, exp), http.StatusBadRequest)
+}
+
+func UnsupportedParameter(parameter string) Error {
+	return newSenderError("InvalidInput", fmt.Sprintf("%s is not supported by this implementation.", parameter), http.StatusBadRequest)
+}
+
+func InvalidIdentityTokenMissingClaim(claim string) Error {
+	return newSenderError("InvalidIdentityToken", fmt.Sprintf("Missing a required claim: %s.", claim), http.StatusBadRequest)
+}
+
+func AccessDeniedAssumeRoleWithWebIdentity() Error {
+	return newSenderError("AccessDenied", "Not authorized to perform sts:AssumeRoleWithWebIdentity", http.StatusForbidden)
+}
+
+func InvalidRoleSessionName(value string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value '%s' at 'roleSessionName' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\w+=,.@-]*", value))
+}
+
+func DurationSecondsTooLow(value string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value '%s' at 'durationSeconds' failed to satisfy constraint: Member must have value greater than or equal to 900", value))
+}
+
+func DurationSecondsTooHigh(value string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value '%s' at 'durationSeconds' failed to satisfy constraint: Member must have value less than or equal to 43200", value))
+}
+
+func DurationExceedsMaxSessionDuration() Error {
+	return ValidationError("The requested DurationSeconds exceeds the MaxSessionDuration set for this role.")
+}
+
+func AccessDeniedIAMAction(callerArn, action string) Error {
+	return newSenderError("AccessDenied", fmt.Sprintf(
+		"User: %s is not authorized to perform: %s because no identity-based policy allows the %s action",
+		callerArn, action, action,
+	), http.StatusForbidden)
+}
+
+func ConcurrentModification() Error {
+	return newSenderError("ConcurrentModificationException",
+		"The request was rejected because multiple requests to change this object were submitted simultaneously. Wait a few minutes and submit your request again.",
+		http.StatusConflict)
 }
 
 func newSenderError(code, message string, statusCode int) Error {

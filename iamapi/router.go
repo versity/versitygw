@@ -22,13 +22,25 @@ import (
 	"github.com/versity/versitygw/iamapi/internal/iammiddleware"
 	"github.com/versity/versitygw/iamapi/internal/iamutil"
 	"github.com/versity/versitygw/iamapi/storage"
+	"github.com/versity/versitygw/internal/sigv4auth"
 )
 
 const (
-	iamAPIVersion      = "2010-05-08"
-	noVersionSpecified = "NO_VERSION_SPECIFIED"
-	productURL         = "https://www.versity.com/products/versitygw/"
+	iamAPIVersion                   = "2010-05-08"
+	stsAPIVersion                   = "2011-06-15"
+	noVersionSpecified              = "NO_VERSION_SPECIFIED"
+	productURL                      = "https://www.versity.com/products/versitygw/"
+	actionAssumeRoleWithWebIdentity = "AssumeRoleWithWebIdentity"
 )
+
+// stsActions are routed through this same IAM endpoint but, being real STS
+// actions, are versioned against stsAPIVersion rather than iamAPIVersion —
+// and (see response.go's ProcessController) render under STS's own XML
+// namespace rather than IAM's.
+var stsActions = map[string]bool{
+	"AssumeRoleWithWebIdentity": true,
+	"GetCallerIdentity":         true,
+}
 
 var unknownOperationBody = []byte("<UnknownOperationException/>\n")
 
@@ -83,11 +95,34 @@ func (r *IAMApiRouter) Init() {
 		"AddClientIDToOpenIDConnectProvider":      r.Ctrl.AddClientIDToOpenIDConnectProvider,
 		"RemoveClientIDFromOpenIDConnectProvider": r.Ctrl.RemoveClientIDFromOpenIDConnectProvider,
 		"UpdateOpenIDConnectProviderThumbprint":   r.Ctrl.UpdateOpenIDConnectProviderThumbprint,
+		// STS actions (routed through this same endpoint; see stsActions)
+		"AssumeRoleWithWebIdentity": r.Ctrl.AssumeRoleWithWebIdentity,
+		"GetCallerIdentity":         r.Ctrl.GetCallerIdentity,
 	}
 
-	actionRoute := ProcessHandlers(r.routeAction, iammiddleware.VerifyIAMAuth(r.rootCreds))
-	r.app.Get("/*", iamutil.MatchQueryOrFormArgs("Action"), actionRoute)
-	r.app.Post("/*", iamutil.MatchQueryOrFormArgs("Action"), actionRoute)
+	iamRoute := ProcessHandlers(r.routeAction,
+		iammiddleware.VerifyIAMAuth(sigv4auth.ServiceIAM, r.rootCreds, r.store),
+		iammiddleware.VerifyIAMPolicy(r.store),
+	)
+	stsAuthRoute := ProcessHandlers(r.routeAction,
+		iammiddleware.VerifyIAMAuth(sigv4auth.ServiceSTS, r.rootCreds, r.store),
+	)
+	stsOpenRoute := ProcessHandlers(r.routeAction)
+
+	dispatch := func(ctx fiber.Ctx) error {
+		action, _ := iamutil.RequestParam(ctx, "Action")
+		switch {
+		case action == actionAssumeRoleWithWebIdentity:
+			return stsOpenRoute(ctx)
+		case stsActions[action]:
+			return stsAuthRoute(ctx)
+		default:
+			return iamRoute(ctx)
+		}
+	}
+
+	r.app.Get("/*", iamutil.MatchQueryOrFormArgs("Action"), dispatch)
+	r.app.Post("/*", iamutil.MatchQueryOrFormArgs("Action"), dispatch)
 
 	r.app.All("/", r.redirectRoot)
 	r.app.All("*", r.unknownOperation)
@@ -99,7 +134,12 @@ func (r *IAMApiRouter) routeAction(ctx fiber.Ctx) (*Response, error) {
 	if !versionSpecified {
 		version = noVersionSpecified
 	}
-	if version != iamAPIVersion {
+
+	expectedVersion := iamAPIVersion
+	if stsActions[action] {
+		expectedVersion = stsAPIVersion
+	}
+	if version != expectedVersion {
 		return &Response{}, iamerr.InvalidAction(action, version)
 	}
 

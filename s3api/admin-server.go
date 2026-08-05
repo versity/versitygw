@@ -75,6 +75,9 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 	if !server.quiet {
 		app.Use("*", logger.New(logger.Config{
 			Format: "${time} | adm | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
+			CustomTags: map[string]logger.LogFunc{
+				logger.TagQueryStringParams: debuglogger.RedactedQueryParamsTag,
+			},
 		}))
 	}
 	// initialize requestId middleware
