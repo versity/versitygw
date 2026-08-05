@@ -29,6 +29,7 @@ import (
 	"github.com/versity/versitygw/cmd/internal/gwcli"
 	"github.com/versity/versitygw/cubackend"
 	"github.com/versity/versitygw/cumiddleware"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/embedgw"
 	"github.com/versity/versitygw/rdma"
 	"github.com/versity/versitygw/s3api"
@@ -897,6 +898,14 @@ func initFlags() []cli.Flag {
 	}
 }
 
+// debugLogLevel translates the --debug flag into a debuglogger.Level.
+func debugLogLevel() debuglogger.Level {
+	if debug {
+		return debuglogger.LevelDebug
+	}
+	return debuglogger.LevelSilent
+}
+
 func runGateway(ctx context.Context, be backend.Backend) error {
 	if pprof != "" {
 		// Listen on the specified address for pprof debug endpoints.
@@ -976,7 +985,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		AdminCertFile:               admCertFile,
 		AdminKeyFile:                admKeyFile,
 		CORSAllowOrigin:             corsAllowOrigin,
-		Debug:                       debug,
+		LogLevel:                    debugLogLevel(),
 		IAMDebug:                    iamDebug,
 		Quiet:                       quiet,
 		Readonly:                    readonly,

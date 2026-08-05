@@ -25,6 +25,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/cmd/internal/gwcli"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/embedgw"
 	"github.com/versity/versitygw/s3api/utils"
 )
@@ -48,6 +49,7 @@ var (
 	adminLogFile                           string
 	healthPath                             string
 	virtualDomain                          string
+	logLevel                               string
 	debug                                  bool
 	keepAlive                              bool
 	pprof                                  string
@@ -367,9 +369,19 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_ADMIN_CERT_KEY"},
 			Destination: &admKeyFile,
 		},
+		&cli.StringFlag{
+			Name: "log-level",
+			Usage: `debug logger verbosity: "silent" (default, no debug output), ` +
+				`"debug" (full request/response logging with secrets and tokens masked), or ` +
+				`"unsafe" (full logging with NO masking -- prints access keys, secrets, session ` +
+				`tokens, and signatures in the clear; only use for local troubleshooting, never in production)`,
+			Value:       "silent",
+			EnvVars:     []string{"VGW_LOG_LEVEL"},
+			Destination: &logLevel,
+		},
 		&cli.BoolFlag{
 			Name:        "debug",
-			Usage:       "enable debug output",
+			Usage:       "enable debug output (deprecated: use --log-level=debug for finer-grained control)",
 			Value:       false,
 			EnvVars:     []string{"VGW_DEBUG"},
 			Destination: &debug,
@@ -808,6 +820,19 @@ func initFlags() []cli.Flag {
 	}
 }
 
+// parseLogLevel parses the --log-level flag value shared by the gateway and
+// standalone IAM API commands. --debug is a deprecated alias for
+// --log-level=debug, kept for backward compatibility.
+func parseLogLevel() (debuglogger.Level, error) {
+	if debug {
+		fmt.Fprintf(os.Stderr, "WARNING: --debug is deprecated; use --log-level=debug for finer-grained control over debug logging\n")
+		if logLevel == "silent" {
+			return debuglogger.LevelDebug, nil
+		}
+	}
+	return debuglogger.ParseLevel(logLevel)
+}
+
 func runGateway(ctx context.Context, be backend.Backend) error {
 	if pprof != "" {
 		// Listen on the specified address for pprof debug endpoints.
@@ -822,6 +847,11 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 
 	if gwcli.CopyObjectThreshold < 1 {
 		return fmt.Errorf("copy-object-threshold must be positive")
+	}
+
+	logLvl, err := parseLogLevel()
+	if err != nil {
+		return err
 	}
 
 	return embedgw.RunVersityGW(ctx, be, &embedgw.Config{
@@ -840,7 +870,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		AdminCertFile:               admCertFile,
 		AdminKeyFile:                admKeyFile,
 		CORSAllowOrigin:             corsAllowOrigin,
-		Debug:                       debug,
+		LogLevel:                    logLvl,
 		IAMDebug:                    iamDebug,
 		Quiet:                       quiet,
 		Readonly:                    readonly,

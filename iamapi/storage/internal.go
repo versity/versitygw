@@ -69,6 +69,11 @@ type iamConfig struct {
 	// stripped, exactly as given at creation — no index needed since
 	// lookup is by exact string, not a case-insensitive human name).
 	OIDCProviders map[string]types.OIDCProvider `json:"oidcProviders"`
+
+	// Sessions is keyed by AccessKeyId. Entries whose Expiration has
+	// passed are pruned opportunistically whenever a new session is
+	// created (see pruneExpiredSessions), rather than on a timer.
+	Sessions map[string]types.Session `json:"sessions"`
 }
 
 func defaultIAMConfig() iamConfig {
@@ -79,6 +84,7 @@ func defaultIAMConfig() iamConfig {
 		Roles:          map[string]types.Role{},
 		RoleNameIndex:  map[string]string{},
 		OIDCProviders:  map[string]types.OIDCProvider{},
+		Sessions:       map[string]types.Session{},
 	}
 }
 
@@ -114,6 +120,10 @@ func normalizeIAMConfig(conf *iamConfig) {
 
 	if conf.OIDCProviders == nil {
 		conf.OIDCProviders = make(map[string]types.OIDCProvider)
+	}
+
+	if conf.Sessions == nil {
+		conf.Sessions = make(map[string]types.Session)
 	}
 }
 
@@ -211,6 +221,26 @@ func (s *InternalStore) GetUser(_ context.Context, username string) (*types.User
 	}
 
 	return cloneUser(user), nil
+}
+
+func (s *InternalStore) GetUserByAccessKeyID(ctx context.Context, accessKeyID string) (*types.User, error) {
+	s.RLock()
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		s.RUnlock()
+		return nil, err
+	}
+	username, ok := conf.AccessKeyIndex[accessKeyID]
+	s.RUnlock()
+	if !ok {
+		return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+	}
+
+	user, err := s.GetUser(ctx, username)
+	if err != nil {
+		return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+	}
+	return user, nil
 }
 
 func (s *InternalStore) ListUsers(_ context.Context, input ListUsersInput) (*ListUsersOutput, error) {
@@ -462,6 +492,45 @@ func (s *InternalStore) GetAccessKeyLastUsed(_ context.Context, accessKeyID stri
 	}
 
 	return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+}
+
+func (s *InternalStore) RecordAccessKeyUsage(_ context.Context, accessKeyID, service, region string, when time.Time) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		username, ok := conf.AccessKeyIndex[accessKeyID]
+		if !ok {
+			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+		}
+		user, ok := conf.Users[username]
+		if !ok {
+			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+		}
+
+		found := false
+		for i, key := range user.AccessKeys {
+			if key.AccessKeyId == accessKeyID {
+				user.AccessKeys[i].LastUsedDate = when
+				user.AccessKeys[i].LastUsedService = service
+				user.AccessKeys[i].LastUsedRegion = region
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+		}
+
+		conf.Users[username] = user
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
 }
 
 func (s *InternalStore) ListAccessKeys(_ context.Context, input ListAccessKeysInput) (*ListAccessKeysOutput, error) {
@@ -1164,6 +1233,72 @@ func (s *InternalStore) UpdateOIDCProviderThumbprint(_ context.Context, arn stri
 		return json.Marshal(conf)
 	})
 	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) CreateSession(_ context.Context, session types.Session) (*types.Session, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	if err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		pruneExpiredSessions(conf, session.CreateDate)
+		if activeSessionCountForRole(conf, session.RoleArn) >= MaxActiveSessionsPerRole {
+			return nil, iamerr.GetAPIError(iamerr.ErrThrottling)
+		}
+		conf.Sessions[session.AccessKeyId] = session
+		return json.Marshal(conf)
+	}); err != nil {
+		return nil, unwrapAPIError(err)
+	}
+
+	cloned := session
+	return &cloned, nil
+}
+
+// activeSessionCountForRole counts conf's sessions belonging to roleArn.
+// Called after pruneExpiredSessions, so this only ever counts sessions that
+// are still actually active.
+func activeSessionCountForRole(conf iamConfig, roleArn string) int {
+	count := 0
+	for _, sess := range conf.Sessions {
+		if sess.RoleArn == roleArn {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *InternalStore) GetSession(_ context.Context, accessKeyID string) (*types.Session, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	session, ok := conf.Sessions[accessKeyID]
+	if !ok || !session.Expiration.After(time.Now().UTC()) {
+		return nil, ErrSessionNotFound
+	}
+
+	cloned := session
+	return &cloned, nil
+}
+
+// pruneExpiredSessions removes every session whose Expiration is at or
+// before now. Called from CreateSession so the sessions map never grows
+// unbounded, without needing a separate timer/goroutine.
+func pruneExpiredSessions(conf iamConfig, now time.Time) {
+	for accessKeyID, session := range conf.Sessions {
+		if !session.Expiration.After(now) {
+			delete(conf.Sessions, accessKeyID)
+		}
+	}
 }
 
 func cloneOIDCProvider(p types.OIDCProvider) *types.OIDCProvider {

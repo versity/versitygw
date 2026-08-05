@@ -32,11 +32,12 @@ import (
 const oidcThumbprintFetchTimeout = 8 * time.Second
 
 // FetchThumbprint implements CreateOpenIDConnectProvider's auto-fetch
-// behavior: it opens a raw TLS handshake (crypto/tls, not a full
-// HTTP GET) to host:443, where host is derived from providerURL (a
-// scheme-stripped OIDC provider Url), and returns the SHA-1 thumbprint of
-// the last (top-most/intermediate CA) certificate in the peer's presented
-// chain.
+// behavior: it opens a TLS handshake (crypto/tls, not a full HTTP GET) to
+// host:443, where host is derived from providerURL (a scheme-stripped OIDC
+// provider Url), verifying the presented chain against the system trust
+// store and the provider's own hostname like any normal TLS client, and
+// returns the SHA-1 thumbprint of the last (top-most/intermediate CA)
+// certificate in the peer's presented chain.
 //
 // SSRF hardening (mandatory): the hostname is resolved once via
 // net.DefaultResolver.LookupIP; if any resolved address is
@@ -47,13 +48,21 @@ const oidcThumbprintFetchTimeout = 8 * time.Second
 // time, closing the DNS-rebinding TOCTOU gap) while presenting the original
 // hostname via tls.Config.ServerName for SNI/certificate purposes.
 //
-// tls.Config.InsecureSkipVerify is deliberately set: this handshake exists
-// solely to observe whatever certificate chain the peer presents — that is
-// the entire point of AWS's thumbprint-pinning feature (trusting an
-// operator-established fingerprint for IDPs whose certs may not pass
-// standard verification). No application data is sent or received over
-// this connection, so skipping chain verification does not expose any real
-// traffic to a MITM.
+// Verification is deliberately NOT skipped here: unlike a one-shot
+// connection whose result is used and discarded, the certificate observed
+// during this handshake is persisted as a long-lived trust anchor, compared
+// against every future JWKS fetch for this provider. An unauthenticated
+// handshake would let an active network/DNS attacker present any chain they
+// control at enrollment time and have it pinned as trusted, then later
+// present a matching leaf issued by that same chain — with attacker-chosen
+// signing keys — to any subsequent (equally unauthenticated) JWKS fetch. A
+// provider whose certificate doesn't chain to a system-trusted root (e.g. a
+// private/self-hosted IdP on an internal CA) simply can't use auto-fetch:
+// the caller gets an error and must supply ThumbprintList explicitly, having
+// obtained the fingerprint through some independently verified channel —
+// the same operational shape WithOIDCThumbprintAutoFetchDisabled already
+// provides unconditionally, scoped here to just the providers that fail
+// public verification.
 func FetchThumbprint(ctx context.Context, providerURL string) (string, error) {
 	host := hostFromOIDCUrl(providerURL)
 	displayURL := "https://" + providerURL
@@ -73,25 +82,38 @@ func FetchThumbprint(ctx context.Context, providerURL string) (string, error) {
 		}
 	}
 
-	dialer := &tls.Dialer{Config: &tls.Config{ServerName: host, InsecureSkipVerify: true}}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(ips[0].String(), "443"))
+	thumbprint, err := dialAndVerifyThumbprint(ctx, net.JoinHostPort(ips[0].String(), "443"), host, nil)
 	if err != nil {
-		debuglogger.Logf("oidc thumbprint fetch: tls dial failed for %q (%s): %v", host, ips[0], err)
+		debuglogger.Logf("oidc thumbprint fetch: tls dial/verify failed for %q (%s): %v — supply ThumbprintList explicitly for providers that fail public CA verification", host, ips[0], err)
 		return "", iamerr.OpenIdIdpCommunicationError(displayURL)
+	}
+	debuglogger.Logf("oidc thumbprint fetch: verified %q via system trust store, computed thumbprint %s", displayURL, thumbprint)
+	return thumbprint, nil
+}
+
+// dialAndVerifyThumbprint dials addr over TLS, presenting host via SNI and
+// verifying the peer's certificate against roots (nil selects the host
+// system's trust store, FetchThumbprint's real usage), then returns
+// ThumbprintFromChain's result for the now-verified presented chain. Split
+// out from FetchThumbprint so the verification behavior itself is
+// unit-testable with an explicit root pool — the same rationale as
+// ThumbprintFromChain's own split, and for the same reason: FetchThumbprint's
+// SSRF guard must always reject loopback targets, so it can never itself be
+// exercised against a same-process test server.
+func dialAndVerifyThumbprint(ctx context.Context, addr, host string, roots *x509.CertPool) (string, error) {
+	dialer := &tls.Dialer{Config: &tls.Config{ServerName: host, RootCAs: roots}}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return "", err
 	}
 	defer conn.Close()
 
 	tlsConn, ok := conn.(*tls.Conn)
 	if !ok {
-		return "", iamerr.OpenIdIdpCommunicationError(displayURL)
+		return "", errors.New("iamutil: non-TLS connection")
 	}
 
-	thumbprint, err := ThumbprintFromChain(tlsConn.ConnectionState().PeerCertificates)
-	if err != nil {
-		debuglogger.Logf("oidc thumbprint fetch: %v", err)
-		return "", iamerr.OpenIdIdpCommunicationError(displayURL)
-	}
-	return thumbprint, nil
+	return ThumbprintFromChain(tlsConn.ConnectionState().PeerCertificates)
 }
 
 // ThumbprintFromChain computes AWS's documented OIDC thumbprint: the SHA-1
