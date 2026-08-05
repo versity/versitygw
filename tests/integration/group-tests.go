@@ -1473,6 +1473,7 @@ func TestIAMAssumeRoleWithWebIdentity(ts *TestState) {
 	ts.Run(IAMAssumeRoleWithWebIdentity_oaud_condition_mismatch)
 	ts.Run(IAMAssumeRoleWithWebIdentity_issuer_trailing_slash_mismatch)
 	ts.Run(IAMAssumeRoleWithWebIdentity_issuer_scheme_mismatch)
+	ts.Run(IAMAssumeRoleWithWebIdentity_github_oidc_live)
 }
 
 func TestIAMGetCallerIdentity(ts *TestState) {
@@ -2199,6 +2200,7 @@ func GetIntTests() IntTests {
 		"IAMAssumeRoleWithWebIdentity_oaud_condition_mismatch":                             IAMAssumeRoleWithWebIdentity_oaud_condition_mismatch,
 		"IAMAssumeRoleWithWebIdentity_issuer_trailing_slash_mismatch":                      IAMAssumeRoleWithWebIdentity_issuer_trailing_slash_mismatch,
 		"IAMAssumeRoleWithWebIdentity_issuer_scheme_mismatch":                              IAMAssumeRoleWithWebIdentity_issuer_scheme_mismatch,
+		"IAMAssumeRoleWithWebIdentity_github_oidc_live":                                    IAMAssumeRoleWithWebIdentity_github_oidc_live,
 		"IAMGetCallerIdentity_root_success":                                                IAMGetCallerIdentity_root_success,
 		"IAMGetCallerIdentity_user_success":                                                IAMGetCallerIdentity_user_success,
 		"IAMGetCallerIdentity_unknown_access_key":                                          IAMGetCallerIdentity_unknown_access_key,
