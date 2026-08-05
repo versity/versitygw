@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"net"
 	"net/http/httptest"
@@ -69,11 +70,56 @@ func TestThumbprintFromChainEmptyChain(t *testing.T) {
 	}
 }
 
+// TestDialAndVerifyThumbprintRejectsUntrustedCert verifies that
+// dialAndVerifyThumbprint rejects a certificate that doesn't chain to a
+// trusted root, rather than trusting whatever the peer presents — trusting
+// any presented chain is exactly what would let an active network/DNS
+// attacker at enrollment time have their own chain pinned as the provider's
+// permanent trust anchor. A self-signed test server's certificate, which
+// chains to nothing any real trust store recognizes, must be rejected
+// instead of silently hashed.
+func TestDialAndVerifyThumbprintRejectsUntrustedCert(t *testing.T) {
+	srv := httptest.NewTLSServer(nil)
+	defer srv.Close()
+
+	// roots=nil selects the host system's real trust store, the same as
+	// FetchThumbprint's actual usage - httptest's self-signed certificate
+	// must not verify against it.
+	if _, err := dialAndVerifyThumbprint(context.Background(), srv.Listener.Addr().String(), "example.com", nil); err == nil {
+		t.Fatal("dialAndVerifyThumbprint: expected verification error for untrusted self-signed certificate, got nil")
+	}
+}
+
+// TestDialAndVerifyThumbprintAcceptsVerifiedCert is the positive
+// counterpart: once the peer's certificate does verify (here, against an
+// explicit pool containing the test server's own certificate, standing in
+// for a real public CA in FetchThumbprint's system-trust-store case),
+// auto-fetch must still succeed and compute the same thumbprint
+// TestThumbprintFromChain gets by hashing the chain directly - proving the
+// stricter check rejects only genuinely untrusted chains, not every chain.
+func TestDialAndVerifyThumbprintAcceptsVerifiedCert(t *testing.T) {
+	srv := httptest.NewTLSServer(nil)
+	defer srv.Close()
+
+	roots := x509.NewCertPool()
+	roots.AddCert(srv.Certificate())
+
+	got, err := dialAndVerifyThumbprint(context.Background(), srv.Listener.Addr().String(), "example.com", roots)
+	if err != nil {
+		t.Fatalf("dialAndVerifyThumbprint: %v", err)
+	}
+
+	sum := sha1.Sum(srv.Certificate().Raw)
+	want := hex.EncodeToString(sum[:])
+	if got != want {
+		t.Fatalf("dialAndVerifyThumbprint thumbprint = %q, want %q", got, want)
+	}
+}
+
 // TestFetchThumbprintSSRFGuard confirms FetchThumbprint refuses to dial
-// loopback/private targets before any network attempt, matching the
-// mandatory SSRF hardening design: 127.0.0.1 is exactly the kind of
-// address a malicious CreateOpenIDConnectProvider caller could supply to
-// probe the gateway's own local network.
+// loopback/private targets before any network attempt: 127.0.0.1 is exactly
+// the kind of address a malicious CreateOpenIDConnectProvider caller could
+// supply to probe the gateway's own local network.
 func TestFetchThumbprintSSRFGuard(t *testing.T) {
 	tests := []string{
 		"127.0.0.1",

@@ -88,7 +88,12 @@ func CheckSignature(ctx fiber.Ctx, auth AuthData, secret, payloadHash string, td
 		req, payloadHash, service, auth.Region, tdate, signedHdrs,
 		func(options *v4.SignerOptions) {
 			options.DisableURIPathEscaping = opts.DisableURIPathEscaping
-			if debuglogger.IsDebugEnabled() {
+			// The signer's diagnostic logger prints the canonical request,
+			// string-to-sign, and (for presigned requests) the complete
+			// signed URL verbatim, bypassing the redaction layer entirely.
+			// That's replayable signature/session-token material, so only
+			// enable it at LevelUnsafe, never at plain debug.
+			if debuglogger.IsUnsafeEnabled() {
 				options.LogSigning = true
 				options.Logger = logging.NewStandardLogger(os.Stderr)
 			}
@@ -102,7 +107,7 @@ func CheckSignature(ctx fiber.Ctx, auth AuthData, secret, payloadHash string, td
 		return nil, err
 	}
 
-	if auth.Signature != genAuth.Signature {
+	if !SecureCompare(auth.Signature, genAuth.Signature) {
 		return nil, &SignatureMismatchError{
 			AccessKeyID:           auth.Access,
 			StringToSign:          signMeta.StringToSign,

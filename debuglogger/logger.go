@@ -64,30 +64,46 @@ func printError(prefix prefix, er error) {
 
 // Logs http request details: headers, body, params, query args
 func LogFiberRequestDetails(ctx fiber.Ctx) {
-	// Log the full request url
-	fullURL := ctx.Scheme() + "://" + ctx.Host() + ctx.OriginalURL()
+	// Log the full request url, with sensitive query parameter values
+	// redacted (ctx.OriginalURL() would print them in the clear).
+	fullURL := ctx.Scheme() + "://" + ctx.Host() + ctx.Path()
+	if qs := debugRedactedQueryString(ctx.Request().URI().QueryArgs()); qs != "" {
+		fullURL += "?" + qs
+	}
 	fmt.Printf("%s[URL]: %s%s\n", green, fullURL, reset)
 
 	// log request headers
 	wrapInBox(green, "REQUEST HEADERS", boxWidth, func() {
 		for key, value := range ctx.Request().Header.All() {
-			printWrappedLine(yellow, string(key), string(value))
+			printWrappedLine(yellow, string(key), debugRedact(string(key), string(value)))
 		}
 	})
 	// skip request body log for PutObject and UploadPart
 	skipBodyLog := isLargeDataAction(ctx)
 	if !skipBodyLog {
-		body := ctx.Request().Body()
-		if len(body) != 0 {
+		if postArgs := ctx.Request().PostArgs(); postArgs.Len() != 0 {
+			// form-encoded body (e.g. AWS Query protocol requests like
+			// IAM/STS): log key=value pairs so sensitive fields (e.g.
+			// WebIdentityToken) can be redacted individually, instead of
+			// printing the raw, still-encoded body bytes.
 			printBoxTitleLine(blue, "REQUEST BODY", boxWidth, false)
-			fmt.Printf("%s%s%s\n", blue, body, reset)
+			for key, value := range postArgs.All() {
+				fmt.Printf("%s%s=%s%s\n", blue, key, debugRedact(string(key), string(value)), reset)
+			}
 			printHorizontalBorder(blue, boxWidth, false)
+		} else {
+			body := ctx.Request().Body()
+			if len(body) != 0 {
+				printBoxTitleLine(blue, "REQUEST BODY", boxWidth, false)
+				fmt.Printf("%s%s%s\n", blue, formatBodyForLog(body), reset)
+				printHorizontalBorder(blue, boxWidth, false)
+			}
 		}
 	}
 
 	if ctx.Request().URI().QueryArgs().Len() != 0 {
 		for key, value := range ctx.Request().URI().QueryArgs().All() {
-			log.Printf("%s: %s", key, value)
+			log.Printf("%s: %s", key, debugRedact(string(key), string(value)))
 		}
 	}
 }
@@ -96,7 +112,7 @@ func LogFiberRequestDetails(ctx fiber.Ctx) {
 func LogFiberResponseDetails(ctx fiber.Ctx) {
 	wrapInBox(green, "RESPONSE HEADERS", boxWidth, func() {
 		for key, value := range ctx.Response().Header.All() {
-			printWrappedLine(yellow, string(key), string(value))
+			printWrappedLine(yellow, string(key), debugRedact(string(key), string(value)))
 		}
 	})
 
@@ -104,27 +120,26 @@ func LogFiberResponseDetails(ctx fiber.Ctx) {
 	if !ok {
 		body := ctx.Response().Body()
 		if len(body) != 0 {
-			PrintInsideHorizontalBorders(blue, "RESPONSE BODY", string(body), boxWidth)
+			PrintInsideHorizontalBorders(blue, "RESPONSE BODY", formatBodyForLog(body), boxWidth)
 		}
 	}
 }
 
-var debugEnabled atomic.Bool
-
-// SetDebugEnabled sets the debug mode
-func SetDebugEnabled() {
-	debugEnabled.Store(true)
-}
-
-// IsDebugEnabled returns true if debugging is enabled
-func IsDebugEnabled() bool {
-	return debugEnabled.Load()
+// formatBodyForLog returns body pretty-printed with property-level secret
+// masking when it parses as XML (the case for every S3 and IAM API request
+// or response body reaching this point), and the raw body unchanged
+// otherwise. Masking is skipped entirely at LevelUnsafe.
+func formatBodyForLog(body []byte) string {
+	if masked, ok := maskXMLBody(body); ok {
+		return string(masked)
+	}
+	return string(body)
 }
 
 // Logf is the same as 'fmt.Printf' with debug prefix,
 // a color added and '\n' at the end
 func Logf(format string, v ...any) {
-	if !debugEnabled.Load() {
+	if !IsDebugEnabled() {
 		return
 	}
 
@@ -133,7 +148,7 @@ func Logf(format string, v ...any) {
 
 // Infof prints out green info block with [INFO]: prefix
 func Infof(format string, v ...any) {
-	if !debugEnabled.Load() {
+	if !IsDebugEnabled() {
 		return
 	}
 
@@ -147,15 +162,16 @@ func SetIAMDebugEnabled() {
 	debugIAMEnabled.Store(true)
 }
 
-// IsDebugEnabled returns true if debugging enabled
+// IsIAMDebugEnabled returns true if IAM subsystem debugging is enabled: the
+// --iam-debug flag was set and the log level is not silent.
 func IsIAMDebugEnabled() bool {
-	return debugEnabled.Load()
+	return IsDebugEnabled() && debugIAMEnabled.Load()
 }
 
 // IAMLogf is the same as 'fmt.Printf' with debug prefix,
 // a color added and '\n' at the end
 func IAMLogf(format string, v ...any) {
-	if !debugIAMEnabled.Load() {
+	if !IsIAMDebugEnabled() {
 		return
 	}
 
@@ -165,7 +181,7 @@ func IAMLogf(format string, v ...any) {
 // PrintInsideHorizontalBorders prints the text inside horizontal
 // border and title in the center of upper border
 func PrintInsideHorizontalBorders(color Color, title, text string, width int) {
-	if !debugEnabled.Load() {
+	if !IsDebugEnabled() {
 		return
 	}
 	printBoxTitleLine(color, title, width, false)

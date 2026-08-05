@@ -24,7 +24,7 @@ var (
 
 func initEnv(dir string) {
 	// both
-	debug = true
+	logLevel = "debug"
 	region = "us-east-1"
 
 	// server
@@ -97,7 +97,7 @@ func TestIntegration(t *testing.T) {
 		integration.WithRegion(region),
 		integration.WithEndpoint(endpoint),
 	}
-	if debug {
+	if logLevel != "silent" && logLevel != "" {
 		opts = append(opts, integration.WithDebug())
 	}
 

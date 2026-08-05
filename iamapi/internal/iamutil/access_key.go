@@ -18,6 +18,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"regexp"
+	"strings"
 
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/iamapi/iamerr"
@@ -32,6 +33,12 @@ const (
 	minAccessKeyIDLen    = 16
 	maxAccessKeyIDLen    = 128
 	secretAccessKeyBytes = 30
+
+	// tempAccessKeyIDPrefix marks temporary credentials minted by
+	// AssumeRoleWithWebIdentity, matching AWS's ASIA… convention that
+	// distinguishes them from long-term AKIA… access keys.
+	tempAccessKeyIDPrefix = "ASIA"
+	sessionTokenBytes     = 128
 )
 
 var accessKeyIDPattern = regexp.MustCompile(`^[\w]+$`)
@@ -56,6 +63,39 @@ func GenerateSecretAccessKey() (string, error) {
 		return "", err
 	}
 	return base64.StdEncoding.EncodeToString(b), nil
+}
+
+// GenerateTempAccessKeyID returns a new cryptographically random temporary
+// access key id in the ASIA… format, for credentials minted by
+// AssumeRoleWithWebIdentity.
+func GenerateTempAccessKeyID() (string, error) {
+	id, err := generateAWSID(tempAccessKeyIDPrefix, accessKeyIDRandomLen)
+	if err != nil {
+		debuglogger.Logf("failed to generate temporary IAM access key id: %v", err)
+		return "", err
+	}
+	return id, nil
+}
+
+// GenerateSessionToken returns a new cryptographically random opaque
+// session token for temporary credentials. Unlike AWS's own STS, whose
+// session token self-encodes the session (so any STS host can validate it
+// without shared state), this gateway looks the token up in its own
+// session store, so an opaque random value is sufficient.
+func GenerateSessionToken() (string, error) {
+	b := make([]byte, sessionTokenBytes)
+	if _, err := rand.Read(b); err != nil {
+		debuglogger.Logf("failed to generate IAM session token: %v", err)
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// IsTempAccessKeyID reports whether accessKeyID has the ASIA… prefix used
+// for temporary credentials minted by AssumeRoleWithWebIdentity, as opposed
+// to a long-term AKIA… access key.
+func IsTempAccessKeyID(accessKeyID string) bool {
+	return strings.HasPrefix(accessKeyID, tempAccessKeyIDPrefix)
 }
 
 // ValidateAccessKeyID checks that accessKeyID fits within the allowed length
