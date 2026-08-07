@@ -276,7 +276,7 @@ delete_cloudfront_distribution() {
   if [ -z "$distribution_id" ] || [ "$distribution_id" == "null" ]; then
     return 0
   fi
-  if ! response="$(env AWS_IGNORE_CONFIGURED_ENDPOINT_URLS=true aws cloudfront get-distribution-config --id "$distribution_id" 2>&1)"; then
+  if ! response="$(send_command env AWS_IGNORE_CONFIGURED_ENDPOINT_URLS=true aws cloudfront get-distribution-config --id "$distribution_id" 2>&1)"; then
     if  [[ "$response" == *"The specified distribution does not exist"* ]]; then
       return 0
     fi
