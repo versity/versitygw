@@ -46,7 +46,7 @@
     openssl req -new -x509 -key versitygw.pem -out cert.pem -days 365
 ```
 10. The program uses two environment values for the bucket names (or prefixes):  `BUCKET_ONE_NAME` and `BUCKET_TWO_NAME`.  Originally, and for static and some older tests, these are the full bucket names.  In later, non-static tests, these are prefixes, and bucket suffixes are auto-generated.  Set `BUCKET_ONE_NAME` and `BUCKET_TWO_NAME` to the desired names of your buckets, for older and static bucket tests, or prefixes, for newer and non-static bucket tests.  If you want static buckets, i.e. you don't want them to be re-created each test, set `RECREATE_BUCKETS` to `false`.
-11. In the root repo folder, run single test group with `VERSITYGW_TEST_ENV=<env file> tests/run.sh <options>`.  To print options, run `tests/run.sh -h`.  To run all tests (not currently recommended due to long running time), run `VERSITYGW_TEST_ENV=<env file> tests/run_all.sh`.
+11. In the root repo folder, run single test group with `VERSITYGW_TEST_ENV=<env file> tests/run.sh <options>`.  To print options, run `tests/run.sh -h`.  To run all tests, technically, the user can run `VERSITYGW_TEST_ENV=<env file> tests/run_all.sh`, but this is not recommended due to long running time.  Instead, see the docker section below to run tests in parallel.
 12. BATS tests can also be run directly with the format `VERSIYTGW_TEST_ENV=<env file> tests/<test file name>`, or for single tests, `VERSIYTGW_TEST_ENV=<env file> tests/<file name> -f <test name>`.  Example:  `VERSITYGW_TEST_ENV=tests/.env tests/test_rest_bucket.sh -f "REST - HeadBucket"`.
 
 #### Tags
@@ -81,12 +81,16 @@ To communicate directly with s3, in order to compare the gateway results to dire
 
 1.  Copy `.secrets.default` to `.secrets` in the `tests` folder and change the parameters and add the additional s3 fields explained in the **S3 Backend** section above if running with the s3 backend.
 2.  By default, the dockerfile uses the **arm** architecture (usually modern Mac).  If using **amd** (usually earlier Mac or Linux), you can either replace the corresponding `ARG` values directly, or with `arg="<param>=<amd library or folder>"`  Also, you can determine which is used by your OS with `uname -a`.
-3.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to your secrets and config file, respectively, if not using the defaults.  Example:  `docker build -t <tag> --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" -f tests/Dockerfile_test_bats .`.
+3.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to your secrets and config file, respectively, if not using the defaults.  Example:  `docker build -t <tag> --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" -f tests/Dockerfile_test_bats .`.  Also, default docker parameters, such as `TARGETARCH`, at the top of the Dockerfile can be changed by the user if needed.
 4.  To run the entire suite, run `docker run -it <image name>`.  This is not recommended due to the sheer amount of tests.  To run an individual suite, pass in the name of the suite as defined in `tests/run.sh` (e.g. REST bucket tests -> `docker run -it <image tag or ID> rest-bucket`).  Also, multiple specific suites can be run, if separated by comma.  
 5.  To list all suites available, the `-h` tag can be passed.  Example:  `docker run -t <image tag or ID> -h`.
 6.  By default, the config is placed in the `/home/tester/config` folder inside the container.  Logs are printed to `/home/tester/log`.  To overwrite the config, an `.env` folder can be placed in a mounted host folder, and to view the logs, a mounted folder can also be used.  Example:  `docker run -v $PWD/runtime/config:/home/tester/config -v $PWD/runtime/log:/home/tester/log -t bats_test s3`
 6.  To use tag functionality, the `--tags` parameter can be passed to the container.
 7.  To troubleshoot the Docker container, use `docker run -it --entrypoint /bin/bash <image tag or ID>` to use the shell and examine the container.
+
+### In Parallel
+
+The script `run_parallel.sh` is provided to allow users to more quickly run tests in parallel on the local machine.  To use this script, first build and tag a docker container with the desired configuration.  Next, run the script with this tag, the desired tests (can find with `./tests/run.sh -l`) separated by comma, the maximum number of parallel jobs (default 4), and the folder to place the logs.
 
 ## Instructions - Running with docker-compose
 
@@ -215,6 +219,16 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 **SKIP_BUCKET_OWNERSHIP_CONTROLS**:  set to **true** to avoid bucket ownership operations.  This is needed to properly set up and clean the buckets if these operations are not supported by the server.
 
 **BYPASS_ENV_FILE**:  skip loading `.env` file on startup, default is **false**
+
+**DIRECT_CLOUDFRONT_TAG**:  if communicating directly with S3, name of tag used for HTTPS cloudfront distributions for bucket websites
+
+**GO_COMMAND_GENERATOR_EXECUTABLE**:  location to set executable for go REST command generation.  If not used, program will run `go run ...` each time rather than compiling.  However, if using, user must ensure that executable is removed and recompiled on go code updates.
+
+**QUICK_COMPARE_SIZE**:  for some comparisons between local and endpoint files to verify correct transfer, use checksum rather than full download to compare if file or part is above this size.  If not used, then just download and compare.
+
+**WEBSITE**:  website port, if using versitygw website functionality
+
+**WEBSITE_ENDPOINT**:  website endpoint, if using versitygw website functionality
 
 ## REST Scripts
 

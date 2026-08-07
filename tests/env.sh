@@ -36,8 +36,40 @@ base_setup() {
   return 0
 }
 
+get_log_name_from_placeholders() {
+  local test_log_file_string="$TEST_LOG_FILE_PATTERN"
+  if [[ "$test_log_file_string" == *"{timestamp}"* ]]; then
+    timestamp="$(date '+%Y%m%dT%H%M%S')"
+    test_log_file_string="${test_log_file_string//\{timestamp\}/$timestamp}"
+  fi
+  if [[ "$test_log_file_string" == *"{filename}"* ]]; then
+    test_filename="$(basename "$BATS_TEST_FILENAME")"
+    filename_root="${test_filename%.sh}"
+    test_log_file_string="${test_log_file_string//\{filename\}/$filename_root}"
+  fi
+  export TEST_LOG_FILE="$test_log_file_string"
+}
+
+get_log_name() {
+  if [ -n "$TEST_LOG_FILE_PATTERN" ]; then
+    if [ -n "$TEST_LOG_FILE" ]; then
+      echo "both TEST_LOG_FILE_PATTERN and TEST_LOG_FILE cannot be defined"
+      return 1
+    fi
+    if [[ ( "$TEST_LOG_FILE_PATTERN" == *'{'* ) || ( "$TEST_LOG_FILE_PATTERN" == *'}'* ) ]]; then
+      get_log_name_from_placeholders
+    else
+      export TEST_LOG_FILE="$TEST_LOG_FILE_PATTERN"
+    fi
+  fi
+}
+
 setup_test_log_file() {
-  if [ -n "$TEST_LOG_FILE" ]; then
+  if [ -n "$TEST_LOG_FILE" ] || [ -n "$TEST_LOG_FILE_PATTERN" ]; then
+    if ! get_log_name; then
+      log 1 "error getting log file name"
+      return 1
+    fi
     if ! error=$(touch "$TEST_LOG_FILE.$TEST_ID" 2>&1); then
       log 1 "error creating test log file: $error"
       return 1

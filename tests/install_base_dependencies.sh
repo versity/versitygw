@@ -2,7 +2,8 @@
 
 check_for_xcode() {
   if xcode-select -p >/dev/null 2>&1; then
-    echo "Xcode Command Line Tools already installed: $(xcode-select -p)"
+    xcode_tools=$(xcode-select -p)
+    printf "Xcode Command Line Tools already installed: %s\n" "$xcode_tools"
     return 0
   fi
 
@@ -113,7 +114,9 @@ install_linux_libraries() {
           python3-venv \
           xxd \
           uuid-runtime \
-          ca-certificates || return 1
+          ca-certificates \
+          build-essential \
+          libc6-dev || return 1
       ;;
 
     dnf)
@@ -187,6 +190,7 @@ install_linux_libraries() {
 
 check_required_commands() {
   local commands=(
+    go
     git
     make
     wget
@@ -212,6 +216,64 @@ check_required_commands() {
   return 0
 }
 
+check_for_and_install_go() {
+  if command -v go >/dev/null 2>&1; then
+    printf "Go already installed: %s\n" "$(go version)"
+    return 0
+  fi
+
+  local os pkg_manager
+  os=$(uname -s)
+
+  case "$os" in
+    Darwin)
+      if ! command -v brew >/dev/null 2>&1; then
+        echo "error: Homebrew is required to install Go on macOS" >&2
+        return 1
+      fi
+      echo "Installing go with Homebrew..."
+      if ! brew install go; then
+        echo "error: failed to install go with Homebrew" >&2
+        return 1
+      fi
+      ;;
+    Linux)
+      pkg_manager="$(detect_linux_package_manager)"
+      case "$pkg_manager" in
+        apt)
+          run_as_root env DEBIAN_FRONTEND=noninteractive apt-get update || return 1
+          run_as_root env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y golang-go || return 1
+          ;;
+        dnf)
+          run_as_root dnf install -y golang || return 1
+          ;;
+        yum)
+          run_as_root yum install -y golang || return 1
+          ;;
+        apk)
+          run_as_root apk add --no-cache go || return 1
+          ;;
+        *)
+          echo "error: unsupported Linux package manager for installing Go" >&2
+          return 1
+          ;;
+      esac
+      ;;
+    *)
+      echo "error: unsupported OS type for installing Go: $os" >&2
+      return 1
+      ;;
+  esac
+
+  if ! command -v go >/dev/null 2>&1; then
+    echo "error: Go still not found after installation" >&2
+    return 1
+  fi
+
+  printf "Installed Go: %s\n" "$(go version)"
+  return 0
+}
+
 os=$(uname -s)
 
 case "$os" in
@@ -233,5 +295,13 @@ case "$os" in
     echo "unsupported os type: $os" >&2
     exit 1
 esac
+
+if ! check_for_and_install_go; then
+  exit 1
+fi
+
+if ! check_required_commands; then
+  exit 1
+fi
 
 exit 0
