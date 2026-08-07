@@ -72,10 +72,6 @@ run_tests() {
     check_for_finished_processes "pids" "suites" "times"
     sleep 1
   done
-
-  end_time=$(date +%s)
-  duration=$((end_time-start_time))
-  printf '%s\n' "duration: ${duration}s"
 }
 
 if ! check_param_count_ge_le "docker image tag, test suites (separated by comma), max parallel jobs at once (default '$DEFAULT_MAX_PARALLEL_JOBS', log folder (default '$DEFAULT_DOCKER_LOG_FOLDER')" 2 4 $#; then
@@ -83,6 +79,7 @@ if ! check_param_count_ge_le "docker image tag, test suites (separated by comma)
 fi
 
 start_time=$(date +%s)
+
 image_tag="$1"
 test_list="$2"
 if [ "$3" == "" ]; then
@@ -111,3 +108,7 @@ if ! mkdir -p "$docker_log_folder"; then
 fi
 
 run_tests "$image_tag" "$test_list" "$max_parallel_jobs" "$docker_log_folder"
+
+end_time=$(date +%s)
+duration=$((end_time-start_time))
+printf '%s\n' "duration: ${duration}s"
