@@ -22,7 +22,6 @@ import (
 	"github.com/versity/versitygw/iamapi/iamerr"
 )
 
-// Every case below was verified against a live AWS IAM account.
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -38,6 +37,19 @@ func TestValidate(t *testing.T) {
 		{"valid unrecognized vendor/action accepted", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"totallyfakeservice:DoSomething","Resource":"*"}]}`, nil},
 		{"valid multiple unique sids", `{"Version":"2012-10-17","Statement":[{"Sid":"A","Effect":"Allow","Action":"s3:GetObject","Resource":"*"},{"Sid":"B","Effect":"Allow","Action":"s3:PutObject","Resource":"*"}]}`, nil},
 		{"valid action array", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject","s3:ListBucket"],"Resource":["arn:aws:s3:::b","arn:aws:s3:::b/*"]}]}`, nil},
+
+		{"valid condition, StringEquals", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{"StringEquals":{"aws:username":"alice"}}}]}`, nil},
+		{"valid condition, Null", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{"Null":{"aws:username":"true"}}}]}`, nil},
+		{"valid condition, Bool", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{"Bool":{"aws:MultiFactorAuthPresent":"true"}}}]}`, nil},
+		{"valid condition, NumericEquals", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{"NumericEquals":{"s3:max-keys":"5"}}}]}`, nil},
+		{"valid condition, ArnLike", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{"ArnLike":{"aws:PrincipalArn":"arn:aws:iam::123456789012:role/*"}}}]}`, nil},
+		{"valid condition, ForAllValues-qualified operator", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{"ForAllValues:StringEquals":{"aws:TagKeys":["a","b"]}}}]}`, nil},
+		{"valid condition, recognized operator with an unmodeled key", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{"StringEquals":{"aws:SomeRandomKey":"x"}}}]}`, nil},
+		{"valid condition, empty object", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{}}]}`, nil},
+
+		{"invalid condition, unrecognized operator", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{"FooBarOperator":{"aws:username":"alice"}}}]}`, errSyntax},
+		{"invalid condition, malformed shape", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":"not an object"}]}`, errSyntax},
+		{"invalid condition, NullIfExists", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{"NullIfExists":{"aws:username":"true"}}}]}`, errSyntax},
 
 		{"invalid json syntax", `{invalid json`, errSyntax},
 		{"empty object", `{}`, errSyntax},

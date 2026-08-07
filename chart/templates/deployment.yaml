@@ -92,8 +92,8 @@ spec:
               value: "true"
             {{- end }}
             {{- if .Values.gateway.debug }}
-            - name: VGW_DEBUG
-              value: "true"
+            - name: VGW_LOG_LEVEL
+              value: "debug"
             {{- end }}
             {{- if .Values.gateway.accessLog }}
             - name: VGW_ACCESS_LOG
