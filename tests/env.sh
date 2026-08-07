@@ -37,14 +37,15 @@ base_setup() {
 }
 
 get_log_name_from_placeholders() {
-  local test_log_file_string="$TEST_LOG_FILE_PATTERN"
+  local test_log_file_string="$TEST_LOG_FILE_PATTERN" timestamp test_filename filename_root
+
   if [[ "$test_log_file_string" == *"{timestamp}"* ]]; then
     timestamp="$(date '+%Y%m%dT%H%M%S')"
     test_log_file_string="${test_log_file_string//\{timestamp\}/$timestamp}"
   fi
   if [[ "$test_log_file_string" == *"{filename}"* ]]; then
     test_filename="$(basename "$BATS_TEST_FILENAME")"
-    filename_root="${test_filename%.sh}"
+    filename_root="${test_filename%.*}"
     test_log_file_string="${test_log_file_string//\{filename\}/$filename_root}"
   fi
   export TEST_LOG_FILE="$test_log_file_string"

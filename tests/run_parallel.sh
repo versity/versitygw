@@ -24,26 +24,28 @@ check_for_finished_processes() {
     return 1
   fi
   local -n pids_ref="$1" suites_ref="$2" times_ref="$3"
+  local -a pid_snapshot
   local pid status run_end_time
 
-  for pid in "${pids_ref[@]}"; do
+  pid_snapshot=("${!pids_ref[@]}")
+  for pid in "${pid_snapshot[@]}"; do
     if ! kill -0 "$pid" 2>/dev/null; then
       wait "$pid"
       status=$?
       run_end_time=$(date +%s)
       printf '%s\n' "'$pid' (${suites_ref[$pid]}) finished with status '$status' (duration: $((run_end_time-${times_ref[$pid]}))s)"
-      unset 'pids_ref[$pid]'
-      unset 'suites_ref[$pid]'
-      unset 'times_ref[$pid]'
+      unset "pids_ref[$pid]"
+      unset "suites_ref[$pid]"
+      unset "times_ref[$pid]"
     fi
   done
 }
 
 run_tests() {
-  if ! check_param_count_v2 "test list, max parallel jobs, docker log folder" 3 $#; then
+  if ! check_param_count_v2 "image tag, test list, max parallel jobs, docker log folder" 4 $#; then
     return 1
   fi
-  local test_list="$1" max_parallel_jobs="$2"
+  local image_tag="$1" test_list="$2" max_parallel_jobs="$3" docker_log_folder="$4"
   local test_array pids suites times timestamp test_suite end_time duration
 
   IFS=, read -r -a test_array <<< "$test_list"
@@ -108,4 +110,4 @@ if ! mkdir -p "$docker_log_folder"; then
   exit 1
 fi
 
-run_tests "$test_list" "$max_parallel_jobs" "$docker_log_folder"
+run_tests "$image_tag" "$test_list" "$max_parallel_jobs" "$docker_log_folder"

@@ -37,12 +37,8 @@ get_bats_executable() {
     printf '%s\n' "$BATS"
     return 0
   fi
-  if command -v bats >/dev/null 2>&1; then
-    command -v bats
-    return 0
-  fi
-  if [ -x "$HOME/bin/bats" ]; then
-    printf '%s\n' "$HOME/bin/bats"
+  if bats_cmd="$(command -v bats 2>/dev/null)" && [[ -x "$bats_cmd" ]]; then
+    printf '%s\n' "$bats_cmd"
     return 0
   fi
   echo "unable to find bats executable; set BATS=<path>" >&2
@@ -172,15 +168,21 @@ handle_param() {
 }
 
 list_all_test_suites() {
-  local run_set_list run_sets last_idx matching_test_string=""
+  local run_set_list run_sets set_length last_idx matching_test_string=""
 
   run_set_list=$(get_run_sets_and_files_if_needed)
   read -r -a run_sets <<< "$run_set_list"
+  set_length=${#run_sets[@]}
 
-  last_idx=$((${#run_sets[@]} - 1))
+  if [ "$set_length" -le 0 ]; then
+    printf '\n'
+    return 0
+  fi
+
+  last_idx=$((set_length-1))
   for idx in "${!run_sets[@]}"; do
     matching_test_string+="${run_sets[$idx]}"
-    if [ "$idx" -ne "$last_idx" ]; then
+    if [ "$idx" -lt "$last_idx" ]; then
       matching_test_string+=","
     fi
   done
