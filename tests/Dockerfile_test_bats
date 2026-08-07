@@ -32,18 +32,18 @@ chmod -R 755 /usr/local/minio-binaries
 ENV PATH=/usr/local/minio-binaries:${PATH}
 
 # Download Go 1.21 (adjust the version and platform as needed)
-RUN wget https://golang.org/dl/${GO_LIBRARY}
+#RUN wget https://golang.org/dl/${GO_LIBRARY}
 
 # Extract the downloaded archive
-RUN tar -xvf $GO_LIBRARY -C /usr/local
+#RUN tar -xvf $GO_LIBRARY -C /usr/local
 
 # Set Go environment variables
-ENV PATH="/usr/local/go/bin:${PATH}"
-ENV GOPATH="/go"
-ENV GOBIN="$GOPATH/bin"
+#ENV PATH="/usr/local/go/bin:${PATH}"
+#ENV GOPATH="/go"
+#ENV GOBIN="$GOPATH/bin"
 
 # Make the directory for Go packages
-RUN mkdir -p "$GOPATH/src" "$GOPATH/bin" && chmod -R 777 "$GOPATH"
+#RUN mkdir -p "$GOPATH/src" "$GOPATH/bin" && chmod -R 777 "$GOPATH"
 
 # Create tester user
 RUN groupadd -r tester && useradd -r -g tester tester
