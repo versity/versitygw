@@ -29,6 +29,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go/middleware"
 )
 
@@ -156,6 +157,11 @@ func (c *S3Conf) GetClient() *s3.Client {
 
 func (c *S3Conf) GetIAMClient() *iam.Client {
 	return iam.NewFromConfig(c.Config())
+}
+
+// GetSTSClient returns an SDK client for STS actions
+func (c *S3Conf) GetSTSClient() *sts.Client {
+	return sts.NewFromConfig(c.Config())
 }
 
 func (c *S3Conf) GetPresignClient() *s3.PresignClient {

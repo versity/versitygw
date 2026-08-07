@@ -27,9 +27,14 @@ const (
 	Terminal            = "aws4_request"
 	ServiceS3           = "s3"
 	ServiceIAM          = "iam"
+	ServiceSTS          = "sts"
 
 	ISO8601Format = "20060102T150405Z"
 	YYYYMMDD      = "20060102"
+
+	// HeaderSecurityToken is the header a temporary credential's
+	// SessionToken is presented in, matching AWS's X-Amz-Security-Token.
+	HeaderSecurityToken = "X-Amz-Security-Token"
 )
 
 type ParseErrorKind string

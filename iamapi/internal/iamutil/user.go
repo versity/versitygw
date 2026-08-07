@@ -73,6 +73,27 @@ func RequestParam(ctx fiber.Ctx, key string) (string, bool) {
 	return "", false
 }
 
+// HasRequestParamPrefix reports whether any query or form parameter key
+// (regardless of its value, including empty) starts with prefix. Unlike
+// RequestParam, which probes one exact name, this scans every key actually
+// present — needed to reject an AWS Query-protocol indexed-list parameter
+// (e.g. "PolicyArns.member.N.arn") for every N a caller might supply,
+// instead of only a fixed index like ".1.", which a caller could bypass
+// entirely by supplying a different index, a gap, or several members.
+func HasRequestParamPrefix(ctx fiber.Ctx, prefix string) bool {
+	for key := range ctx.Request().URI().QueryArgs().All() {
+		if strings.HasPrefix(string(key), prefix) {
+			return true
+		}
+	}
+	for key := range ctx.Request().PostArgs().All() {
+		if strings.HasPrefix(string(key), prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // GetUserName resolves the UserName request parameter and validates it
 // against maxLen, returning missingErr if the parameter is absent or empty.
 // operation is included in the debug log on failure (e.g. "DeleteUser").

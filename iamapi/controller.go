@@ -17,6 +17,7 @@ package iamapi
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -26,14 +27,24 @@ import (
 	"github.com/versity/versitygw/iamapi/policy"
 	"github.com/versity/versitygw/iamapi/storage"
 	"github.com/versity/versitygw/iamapi/types"
+	"github.com/versity/versitygw/internal/httpctx"
 )
 
 type IAMApiController struct {
 	store storage.Storer
+	// oidcThumbprintAutoFetchDisabled disables CreateOpenIDConnectProvider's
+	// TLS auto-fetch fallback when ThumbprintList is omitted (operational
+	// safety valve for restricted/air-gapped deployments); set via
+	// iamapi.WithOIDCThumbprintAutoFetchDisabled(). Defaults to false
+	// (auto-fetch enabled), matching real AWS behavior.
+	oidcThumbprintAutoFetchDisabled bool
 }
 
-func NewController(store storage.Storer) IAMApiController {
-	return IAMApiController{store: store}
+func NewController(store storage.Storer, oidcThumbprintAutoFetchDisabled bool) IAMApiController {
+	return IAMApiController{
+		store:                           store,
+		oidcThumbprintAutoFetchDisabled: oidcThumbprintAutoFetchDisabled,
+	}
 }
 
 func (c IAMApiController) CreateUser(ctx fiber.Ctx) (*Response, error) {
@@ -106,17 +117,24 @@ func (c IAMApiController) DeleteUser(ctx fiber.Ctx) (*Response, error) {
 
 func (c IAMApiController) GetUser(ctx fiber.Ctx) (*Response, error) {
 	username, ok := iamutil.RequestParam(ctx, "UserName")
-	if !ok {
-		debuglogger.Logf("missing required GetUser parameter: UserName")
-		return nil, iamerr.MissingParameter("UserName")
-	}
-	if username == "" {
-		return &Response{Data: &types.GetUserResponse{
-			Result: types.GetUserResult{User: types.User{
-				UserID: iamutil.DefaultAccountID,
-				Arn:    fmt.Sprintf("arn:aws:iam::%s:root", iamutil.DefaultAccountID),
-			}},
-		}}, nil
+	if !ok || username == "" {
+		// Real IAM treats an omitted UserName as "look up the caller's own identity
+		identity, _ := httpctx.ContextKeyCallerIdentity.Get(ctx).(types.Identity)
+		switch {
+		case identity.IsRoot:
+			return &Response{Data: &types.GetUserResponse{
+				Result: types.GetUserResult{User: types.User{
+					UserID: iamutil.DefaultAccountID,
+					Arn:    fmt.Sprintf("arn:aws:iam::%s:root", iamutil.DefaultAccountID),
+				}},
+			}}, nil
+		case identity.User != nil:
+			return &Response{Data: &types.GetUserResponse{
+				Result: types.GetUserResult{User: *identity.User},
+			}}, nil
+		default:
+			return nil, iamerr.ValidationError("Must specify userName when calling with non-User credentials")
+		}
 	}
 	if err := iamutil.ValidateName("userName", username, iamutil.MaxUserLookupLen); err != nil {
 		return nil, err
@@ -717,4 +735,571 @@ func (c IAMApiController) UpdateAssumeRolePolicy(ctx fiber.Ctx) (*Response, erro
 	}
 
 	return &Response{Data: &types.UpdateAssumeRolePolicyResponse{}}, nil
+}
+
+func (c IAMApiController) PutRolePolicy(ctx fiber.Ctx) (*Response, error) {
+	policyDocument, ok := iamutil.RequestParam(ctx, "PolicyDocument")
+	if !ok {
+		debuglogger.Logf("missing required PutRolePolicy parameter: PolicyDocument")
+		return nil, iamerr.MissingValue("policyDocument")
+	}
+	if err := policy.Validate("policyDocument", policyDocument); err != nil {
+		return nil, err
+	}
+
+	policyName, ok := iamutil.RequestParam(ctx, "PolicyName")
+	if !ok {
+		debuglogger.Logf("missing required PutRolePolicy parameter: PolicyName")
+		return nil, iamerr.MissingValue("policyName")
+	}
+	if err := iamutil.ValidateName("policyName", policyName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	roleName, err := iamutil.GetRoleName(ctx, "PutRolePolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	if err != nil {
+		return nil, err
+	}
+
+	// Confirm the role exists before inspecting policy document content
+	if _, err := c.store.GetRole(ctx.Context(), roleName); err != nil {
+		debuglogger.Logf("failed to get IAM role %q for PutRolePolicy: %v", roleName, err)
+		return nil, err
+	}
+
+	if err := policy.Parse(policyDocument); err != nil {
+		return nil, err
+	}
+
+	if err := c.store.PutRolePolicy(ctx.Context(), storage.PutRolePolicyInput{
+		RoleName:       roleName,
+		PolicyName:     policyName,
+		PolicyDocument: policyDocument,
+	}); err != nil {
+		debuglogger.Logf("failed to put IAM role policy %q for role %q: %v", policyName, roleName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.PutRolePolicyResponse{}}, nil
+}
+
+func (c IAMApiController) GetRolePolicy(ctx fiber.Ctx) (*Response, error) {
+	policyName, ok := iamutil.RequestParam(ctx, "PolicyName")
+	if !ok {
+		debuglogger.Logf("missing required GetRolePolicy parameter: PolicyName")
+		return nil, iamerr.MissingValue("policyName")
+	}
+	if err := iamutil.ValidateName("policyName", policyName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	roleName, err := iamutil.GetRoleName(ctx, "GetRolePolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	if err != nil {
+		return nil, err
+	}
+
+	entry, err := c.store.GetRolePolicy(ctx.Context(), roleName, policyName)
+	if err != nil {
+		debuglogger.Logf("failed to get IAM role policy %q for role %q: %v", policyName, roleName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.GetRolePolicyResponse{
+		Result: types.GetRolePolicyResult{
+			RoleName:       roleName,
+			PolicyName:     entry.PolicyName,
+			PolicyDocument: iamutil.EncodePolicyDocument(entry.PolicyDocument),
+		},
+	}}, nil
+}
+
+func (c IAMApiController) DeleteRolePolicy(ctx fiber.Ctx) (*Response, error) {
+	policyName, ok := iamutil.RequestParam(ctx, "PolicyName")
+	if !ok {
+		debuglogger.Logf("missing required DeleteRolePolicy parameter: PolicyName")
+		return nil, iamerr.MissingValue("policyName")
+	}
+	if err := iamutil.ValidateName("policyName", policyName, iamutil.MaxUserLookupLen); err != nil {
+		return nil, err
+	}
+
+	roleName, err := iamutil.GetRoleName(ctx, "DeleteRolePolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.store.DeleteRolePolicy(ctx.Context(), roleName, policyName); err != nil {
+		debuglogger.Logf("failed to delete IAM role policy %q for role %q: %v", policyName, roleName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.DeleteRolePolicyResponse{}}, nil
+}
+
+func (c IAMApiController) ListRolePolicies(ctx fiber.Ctx) (*Response, error) {
+	roleName, err := iamutil.GetRoleName(ctx, "ListRolePolicies", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	if err != nil {
+		return nil, err
+	}
+
+	maxItems, err := iamutil.ParseMaxItems(ctx, "ListRolePolicies")
+	if err != nil {
+		return nil, err
+	}
+
+	marker, _ := iamutil.RequestParam(ctx, "Marker")
+	out, err := c.store.ListRolePolicies(ctx.Context(), storage.ListRolePoliciesInput{
+		RoleName: roleName,
+		Marker:   marker,
+		MaxItems: maxItems,
+	})
+	if err != nil {
+		debuglogger.Logf("failed to list IAM role policies for role %q: %v", roleName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.ListRolePoliciesResponse{
+		Result: types.ListRolePoliciesResult{
+			PolicyNames: types.PolicyNameList{Members: out.PolicyNames},
+			IsTruncated: out.IsTruncated,
+			Marker:      out.Marker,
+		},
+	}}, nil
+}
+
+func (c IAMApiController) CreateOpenIDConnectProvider(ctx fiber.Ctx) (*Response, error) {
+	rawURL, ok := iamutil.RequestParam(ctx, "Url")
+	if !ok || rawURL == "" {
+		debuglogger.Logf("missing required CreateOpenIDConnectProvider parameter: Url")
+		return nil, iamerr.MissingValue("url")
+	}
+	url, err := iamutil.ValidateOIDCProviderURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+
+	clientIDs := iamutil.ParseStringList(ctx, "ClientIDList")
+	if len(clientIDs) > storage.MaxClientIDsPerOIDCProvider {
+		return nil, iamerr.ClientIdsPerOpenIdConnectProviderLimitExceeded(storage.MaxClientIDsPerOIDCProvider)
+	}
+	for _, id := range clientIDs {
+		if len(id) > iamutil.MaxOIDCClientIDLen {
+			return nil, iamerr.ValueTooLong("clientID", iamutil.MaxOIDCClientIDLen)
+		}
+	}
+
+	thumbprints := iamutil.ParseStringList(ctx, "ThumbprintList")
+	if len(thumbprints) == 0 {
+		if c.oidcThumbprintAutoFetchDisabled {
+			debuglogger.Logf("CreateOpenIDConnectProvider: ThumbprintList omitted and auto-fetch is disabled")
+			return nil, iamerr.MissingValue("thumbprintList")
+		}
+		fetched, err := iamutil.FetchThumbprint(ctx.Context(), url)
+		if err != nil {
+			debuglogger.Logf("failed to auto-fetch OIDC thumbprint for url %q: %v", url, err)
+			return nil, err
+		}
+		thumbprints = []string{fetched}
+	} else {
+		if err := iamutil.ValidateThumbprintList(thumbprints, false); err != nil {
+			return nil, err
+		}
+		thumbprints = iamutil.NormalizeThumbprintList(thumbprints)
+	}
+
+	tags, err := iamutil.ParseTags(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	provider := types.OIDCProvider{
+		Arn:            iamutil.BuildOIDCProviderArn(iamutil.DefaultAccountID, url),
+		Url:            url,
+		ClientIDList:   clientIDs,
+		ThumbprintList: thumbprints,
+		CreateDate:     time.Now().UTC().Truncate(time.Second),
+		Tags:           tags,
+	}
+
+	stored, err := c.store.CreateOIDCProvider(ctx.Context(), provider)
+	if err != nil {
+		debuglogger.Logf("failed to create IAM OIDC provider for url %q: %v", url, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.CreateOpenIDConnectProviderResponse{
+		Result: types.CreateOpenIDConnectProviderResult{
+			OpenIDConnectProviderArn: stored.Arn,
+			Tags:                     stored.Tags,
+		},
+	}}, nil
+}
+
+func (c IAMApiController) GetOpenIDConnectProvider(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "GetOpenIDConnectProvider")
+	if err != nil {
+		return nil, err
+	}
+
+	provider, err := c.store.GetOIDCProvider(ctx.Context(), arn)
+	if err != nil {
+		debuglogger.Logf("failed to get IAM OIDC provider %q: %v", arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.GetOpenIDConnectProviderResponse{
+		Result: types.GetOpenIDConnectProviderResult{
+			Url:            provider.Url,
+			ClientIDList:   provider.ClientIDList,
+			ThumbprintList: provider.ThumbprintList,
+			CreateDate:     provider.CreateDate,
+			Tags:           provider.Tags,
+		},
+	}}, nil
+}
+
+func (c IAMApiController) ListOpenIDConnectProviders(ctx fiber.Ctx) (*Response, error) {
+	out, err := c.store.ListOIDCProviders(ctx.Context())
+	if err != nil {
+		debuglogger.Logf("failed to list IAM OIDC providers: %v", err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.ListOpenIDConnectProvidersResponse{
+		Result: types.ListOpenIDConnectProvidersResult{
+			OpenIDConnectProviderList: types.OpenIDConnectProviderList{Members: out.Providers},
+		},
+	}}, nil
+}
+
+func (c IAMApiController) DeleteOpenIDConnectProvider(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "DeleteOpenIDConnectProvider")
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.store.DeleteOIDCProvider(ctx.Context(), arn); err != nil {
+		debuglogger.Logf("failed to delete IAM OIDC provider %q: %v", arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.DeleteOpenIDConnectProviderResponse{}}, nil
+}
+
+func (c IAMApiController) AddClientIDToOpenIDConnectProvider(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "AddClientIDToOpenIDConnectProvider")
+	if err != nil {
+		return nil, err
+	}
+
+	clientID, ok := iamutil.RequestParam(ctx, "ClientID")
+	if !ok || clientID == "" {
+		debuglogger.Logf("missing required AddClientIDToOpenIDConnectProvider parameter: ClientID")
+		return nil, iamerr.MissingValue("clientID")
+	}
+	if len(clientID) > iamutil.MaxOIDCClientIDLen {
+		return nil, iamerr.ValueTooLong("clientID", iamutil.MaxOIDCClientIDLen)
+	}
+
+	if err := c.store.AddClientIDToOIDCProvider(ctx.Context(), arn, clientID); err != nil {
+		debuglogger.Logf("failed to add client id %q to IAM OIDC provider %q: %v", clientID, arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.AddClientIDToOpenIDConnectProviderResponse{}}, nil
+}
+
+func (c IAMApiController) RemoveClientIDFromOpenIDConnectProvider(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "RemoveClientIDFromOpenIDConnectProvider")
+	if err != nil {
+		return nil, err
+	}
+
+	clientID, ok := iamutil.RequestParam(ctx, "ClientID")
+	if !ok || clientID == "" {
+		debuglogger.Logf("missing required RemoveClientIDFromOpenIDConnectProvider parameter: ClientID")
+		return nil, iamerr.MissingValue("clientID")
+	}
+	if len(clientID) > iamutil.MaxOIDCClientIDLen {
+		return nil, iamerr.ValueTooLong("clientID", iamutil.MaxOIDCClientIDLen)
+	}
+
+	if err := c.store.RemoveClientIDFromOIDCProvider(ctx.Context(), arn, clientID); err != nil {
+		debuglogger.Logf("failed to remove client id %q from IAM OIDC provider %q: %v", clientID, arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.RemoveClientIDFromOpenIDConnectProviderResponse{}}, nil
+}
+
+func (c IAMApiController) UpdateOpenIDConnectProviderThumbprint(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "UpdateOpenIDConnectProviderThumbprint")
+	if err != nil {
+		return nil, err
+	}
+
+	thumbprints := iamutil.ParseStringList(ctx, "ThumbprintList")
+	if err := iamutil.ValidateThumbprintList(thumbprints, true); err != nil {
+		return nil, err
+	}
+	thumbprints = iamutil.NormalizeThumbprintList(thumbprints)
+
+	if err := c.store.UpdateOIDCProviderThumbprint(ctx.Context(), arn, thumbprints); err != nil {
+		debuglogger.Logf("failed to update IAM OIDC provider thumbprint for %q: %v", arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.UpdateOpenIDConnectProviderThumbprintResponse{}}, nil
+}
+
+func (c IAMApiController) AssumeRoleWithWebIdentity(ctx fiber.Ctx) (*Response, error) {
+	rawRoleArn, ok := iamutil.RequestParam(ctx, "RoleArn")
+	if !ok || rawRoleArn == "" {
+		debuglogger.Logf("missing required AssumeRoleWithWebIdentity parameter: RoleArn")
+		return nil, iamerr.MissingValue("roleArn")
+	}
+	if err := iamutil.ValidateRoleArnLength(rawRoleArn); err != nil {
+		return nil, err
+	}
+
+	roleSessionName, ok := iamutil.RequestParam(ctx, "RoleSessionName")
+	if !ok || roleSessionName == "" {
+		debuglogger.Logf("missing required AssumeRoleWithWebIdentity parameter: RoleSessionName")
+		return nil, iamerr.MissingValue("roleSessionName")
+	}
+	if err := iamutil.ValidateRoleSessionName(roleSessionName); err != nil {
+		return nil, err
+	}
+
+	webIdentityToken, ok := iamutil.RequestParam(ctx, "WebIdentityToken")
+	if !ok || webIdentityToken == "" {
+		debuglogger.Logf("missing required AssumeRoleWithWebIdentity parameter: WebIdentityToken")
+		return nil, iamerr.MissingValue("webIdentityToken")
+	}
+	if err := iamutil.ValidateWebIdentityTokenLength(webIdentityToken); err != nil {
+		return nil, err
+	}
+
+	// PolicyArns (managed session policies) and ProviderId (legacy Login
+	// with Amazon support) are valid AssumeRoleWithWebIdentity parameters
+	// this implementation doesn't enforce. Rejecting them outright, rather
+	// than silently accepting and ignoring them
+	if iamutil.HasRequestParamPrefix(ctx, "PolicyArns.member.") {
+		debuglogger.Logf("AssumeRoleWithWebIdentity: PolicyArns is not supported")
+		return nil, iamerr.UnsupportedParameter("PolicyArns")
+	}
+	if providerID, ok := iamutil.RequestParam(ctx, "ProviderId"); ok && providerID != "" {
+		debuglogger.Logf("AssumeRoleWithWebIdentity: ProviderId is not supported")
+		return nil, iamerr.UnsupportedParameter("ProviderId")
+	}
+
+	durationSeconds, err := iamutil.ParseDurationSeconds(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// sessionPolicy is an optional additional permissions filter on top of
+	// the assumed role's own policies (Effective permissions = Role
+	// identity-based permissions ∩ Session policy permissions, enforced by
+	// iammiddleware.VerifyIAMPolicy); it uses identity-policy grammar, not
+	// trust-policy grammar, same as PutUserPolicy/PutRolePolicy.
+	sessionPolicy, ok := iamutil.RequestParam(ctx, "Policy")
+	if ok && sessionPolicy != "" {
+		if len(sessionPolicy) > policy.MaxSessionPolicyBytes {
+			return nil, iamerr.ValueTooLong("policy", policy.MaxSessionPolicyBytes)
+		}
+		if err := policy.Validate("policy", sessionPolicy); err != nil {
+			return nil, err
+		}
+		if err := policy.Parse(sessionPolicy); err != nil {
+			return nil, err
+		}
+	}
+
+	// Structural JWT parsing happens before the role is even looked up —
+	// a malformed token is rejected the same way regardless of whether
+	// RoleArn names a real role.
+	claims, err := iamutil.ParseWebIdentityClaims(webIdentityToken)
+	if err != nil {
+		return nil, err
+	}
+
+	roleName, ok := iamutil.RoleNameFromAssumeArn(rawRoleArn, iamutil.DefaultAccountID)
+	if !ok {
+		debuglogger.Logf("AssumeRoleWithWebIdentity: RoleArn is not a role in this account: %q", rawRoleArn)
+		return nil, iamerr.AccessDeniedAssumeRoleWithWebIdentity()
+	}
+
+	role, err := c.store.GetRole(ctx.Context(), roleName)
+	if err != nil {
+		debuglogger.Logf("AssumeRoleWithWebIdentity: role %q not found: %v", roleName, err)
+		return nil, iamerr.AccessDeniedAssumeRoleWithWebIdentity()
+	}
+	// RoleNameFromAssumeArn only extracted the final path segment; confirm
+	// the full ARN the caller supplied — path included — actually matches
+	// this role's own Arn. Without this, an ARN naming the right role name
+	// but a different (or missing) path would still resolve to, and assume,
+	// this role.
+	if rawRoleArn != role.Arn {
+		debuglogger.Logf("AssumeRoleWithWebIdentity: RoleArn %q does not match role %q's actual arn %q", rawRoleArn, roleName, role.Arn)
+		return nil, iamerr.AccessDeniedAssumeRoleWithWebIdentity()
+	}
+
+	if role.MaxSessionDuration > 0 && durationSeconds > role.MaxSessionDuration {
+		debuglogger.Logf("AssumeRoleWithWebIdentity: requested duration %ds exceeds role %q max session duration %ds", durationSeconds, roleName, role.MaxSessionDuration)
+		return nil, iamerr.DurationExceedsMaxSessionDuration()
+	}
+
+	issuer, ok := iamutil.WebIdentityIssuer(claims)
+	if !ok {
+		debuglogger.Logf("AssumeRoleWithWebIdentity: token has no iss claim")
+		return nil, iamerr.AccessDeniedAssumeRoleWithWebIdentity()
+	}
+
+	audience, originalAudience, err := iamutil.WebIdentityAudience(claims)
+	if err != nil {
+		return nil, err
+	}
+
+	subject, _ := claims["sub"].(string)
+	rawIssuer, _ := claims["iss"].(string)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	wctx := policy.WebIdentityContext{
+		ProviderURL:      issuer,
+		Audience:         audience,
+		OriginalAudience: originalAudience,
+		Subject:          subject,
+		Claims:           iamutil.ExtractClaimContext(claims),
+		SourceIP:         ctx.IP(),
+		Secure:           ctx.Secure(),
+		Now:              now,
+		RoleSessionName:  roleSessionName,
+	}
+
+	lookup := func(federatedArn string) (string, bool) {
+		provider, err := c.store.GetOIDCProvider(ctx.Context(), federatedArn)
+		if err != nil {
+			return "", false
+		}
+		return provider.Url, true
+	}
+
+	result, providerArn := policy.EvaluateWebIdentityTrust(role.AssumeRolePolicyDocument, lookup, wctx)
+	switch result {
+	case policy.NoPrincipal, policy.ExplicitlyDenied:
+		debuglogger.Logf("AssumeRoleWithWebIdentity: role %q trust policy does not authorize this request", roleName)
+		return nil, iamerr.AccessDeniedAssumeRoleWithWebIdentity()
+	case policy.NoIssuerMatch, policy.ConditionFailed:
+		debuglogger.Logf("AssumeRoleWithWebIdentity: role %q trust policy rejected the token's claims", roleName)
+		return nil, iamerr.InvalidIdentityTokenClaims()
+	}
+
+	provider, err := c.store.GetOIDCProvider(ctx.Context(), providerArn)
+	if err != nil {
+		debuglogger.Logf("AssumeRoleWithWebIdentity: matched provider %q vanished before use: %v", providerArn, err)
+		return nil, iamerr.AccessDeniedAssumeRoleWithWebIdentity()
+	}
+	if len(provider.ClientIDList) == 0 || !slices.Contains(provider.ClientIDList, audience) {
+		debuglogger.Logf("AssumeRoleWithWebIdentity: audience %q not in provider %q ClientIDList", audience, providerArn)
+		return nil, iamerr.InvalidIdentityTokenClaims()
+	}
+
+	verifiedClaims, err := iamutil.VerifyWebIdentitySignature(ctx.Context(), webIdentityToken, provider.Url, provider.ThumbprintList)
+	if err != nil {
+		return nil, err
+	}
+	if err := iamutil.VerifyWebIdentityExpiration(verifiedClaims, now); err != nil {
+		return nil, err
+	}
+	if err := iamutil.VerifyWebIdentityRequiredClaims(verifiedClaims, now); err != nil {
+		return nil, err
+	}
+
+	accessKeyID, err := iamutil.GenerateTempAccessKeyID()
+	if err != nil {
+		return nil, err
+	}
+	secretAccessKey, err := iamutil.GenerateSecretAccessKey()
+	if err != nil {
+		return nil, err
+	}
+	sessionToken, err := iamutil.GenerateSessionToken()
+	if err != nil {
+		return nil, err
+	}
+
+	expiration := now.Add(time.Duration(durationSeconds) * time.Second)
+
+	session := types.Session{
+		AccessKeyId:     accessKeyID,
+		SecretAccessKey: secretAccessKey,
+		SessionToken:    sessionToken,
+		RoleArn:         role.Arn,
+		RoleName:        role.RoleName,
+		RoleID:          role.RoleID,
+		RoleSessionName: roleSessionName,
+		Provider:        providerArn,
+		Audience:        audience,
+		Subject:         subject,
+		CreateDate:      now,
+		Expiration:      expiration,
+		Policy:          sessionPolicy,
+	}
+	if _, err := c.store.CreateSession(ctx.Context(), session); err != nil {
+		debuglogger.Logf("failed to store AssumeRoleWithWebIdentity session for access key %q: %v", accessKeyID, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.AssumeRoleWithWebIdentityResponse{
+		Result: types.AssumeRoleWithWebIdentityResult{
+			Audience: audience,
+			AssumedRoleUser: types.AssumedRoleUser{
+				AssumedRoleId: role.RoleID + ":" + roleSessionName,
+				Arn:           iamutil.BuildAssumedRoleArn(iamutil.DefaultAccountID, role.RoleName, roleSessionName),
+			},
+			Provider: rawIssuer,
+			Credentials: types.Credentials{
+				AccessKeyId:     accessKeyID,
+				SecretAccessKey: secretAccessKey,
+				SessionToken:    sessionToken,
+				Expiration:      expiration,
+			},
+			SubjectFromWebIdentityToken: subject,
+			PackedPolicySize:            iamutil.PackedPolicySize(sessionPolicy),
+		},
+	}}, nil
+}
+
+func (c IAMApiController) GetCallerIdentity(ctx fiber.Ctx) (*Response, error) {
+	identity, _ := httpctx.ContextKeyCallerIdentity.Get(ctx).(types.Identity)
+
+	switch {
+	case identity.Session != nil:
+		session := identity.Session
+		return &Response{Data: &types.GetCallerIdentityResponse{
+			Result: types.GetCallerIdentityResult{
+				Arn:     iamutil.BuildAssumedRoleArn(iamutil.DefaultAccountID, session.RoleName, session.RoleSessionName),
+				UserId:  session.RoleID + ":" + session.RoleSessionName,
+				Account: iamutil.DefaultAccountID,
+			},
+		}}, nil
+	case identity.User != nil:
+		user := identity.User
+		return &Response{Data: &types.GetCallerIdentityResponse{
+			Result: types.GetCallerIdentityResult{
+				Arn:     user.Arn,
+				UserId:  user.UserID,
+				Account: iamutil.DefaultAccountID,
+			},
+		}}, nil
+	default:
+		return &Response{Data: &types.GetCallerIdentityResponse{
+			Result: types.GetCallerIdentityResult{
+				Arn:     fmt.Sprintf("arn:aws:iam::%s:root", iamutil.DefaultAccountID),
+				UserId:  iamutil.DefaultAccountID,
+				Account: iamutil.DefaultAccountID,
+			},
+		}}, nil
+	}
 }

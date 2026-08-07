@@ -111,4 +111,47 @@ func TestDocumentUnmarshalJSON(t *testing.T) {
 			t.Fatal("Unmarshal() error = nil, want non-nil")
 		}
 	})
+
+	t.Run("unknown field on a statement in an array is rejected", func(t *testing.T) {
+		var doc Document
+		err := json.Unmarshal([]byte(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Conditon":{"StringEquals":{"aws:username":"alice"}}}]}`), &doc)
+		if err == nil {
+			t.Fatal("Unmarshal() error = nil, want non-nil")
+		}
+	})
+
+	t.Run("unknown field on a single-object statement is rejected", func(t *testing.T) {
+		var doc Document
+		err := json.Unmarshal([]byte(`{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Conditon":{"StringEquals":{"aws:username":"alice"}}}}`), &doc)
+		if err == nil {
+			t.Fatal("Unmarshal() error = nil, want non-nil")
+		}
+	})
+
+	t.Run("every legitimate statement field at once still succeeds", func(t *testing.T) {
+		var doc Document
+		err := json.Unmarshal([]byte(`{"Version":"2012-10-17","Statement":[{"Sid":"S1","Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{"StringEquals":{"aws:username":"alice"}}}]}`), &doc)
+		if err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		if len(doc.Statement) != 1 {
+			t.Fatalf("got %d statements, want 1", len(doc.Statement))
+		}
+	})
+
+	t.Run("unknown top-level document field is not rejected", func(t *testing.T) {
+		// Unlike Statement, Document's outer decode is deliberately not
+		// strict: real IAM documents can carry a top-level "Id" field this
+		// codebase doesn't model, and DisallowUnknownFields is recursive so
+		// it still catches a Statement-level typo without the outer struct
+		// needing it too.
+		var doc Document
+		err := json.Unmarshal([]byte(`{"Id":"some-policy-id","Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`), &doc)
+		if err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		if len(doc.Statement) != 1 {
+			t.Fatalf("got %d statements, want 1", len(doc.Statement))
+		}
+	})
 }

@@ -37,6 +37,7 @@ const (
 	ContextKeyRequestID        ContextKey = "request-id"
 	ContextKeyHostID           ContextKey = "host-id"
 	ContextKeyWebsiteConfig    ContextKey = "website-config"
+	ContextKeyCallerIdentity   ContextKey = "iam-caller-identity"
 )
 
 func (ck ContextKey) Set(ctx fiber.Ctx, val any) {

@@ -17,7 +17,6 @@ package policy
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/versity/versitygw/iamapi/iamerr"
@@ -34,6 +33,66 @@ var trustPrincipalKeys = map[string]bool{
 }
 
 const cognitoFederatedProvider = "cognito-identity.amazonaws.com"
+
+// azureSentinelProviderURL is Microsoft Sentinel's registered OIDC provider
+// Url (scheme stripped) — a shared provider like the ones in
+// sharedOIDCProviderRequiredClaim, but its required identity-provider
+// control is not a claim on the token at all: AWS requires the trust
+// statement's Condition to scope sts:RoleSessionName (a global STS
+// condition key, see policy.go's requestConditionContext and
+// webidentity.go's WebIdentityContext.RoleSessionName) instead of a
+// "<url>:<claim>" key, so it's handled as its own case in
+// validateSharedProviderTenancy rather than fitting the shared map.
+const azureSentinelProviderURL = "sts.windows.net/33e01921-4d64-4f8c-a055-5bdaffd5e33d"
+
+// azureSentinelRequiredKey is the condition key azureSentinelProviderURL's
+// trust statements must scope.
+const azureSentinelRequiredKey = "sts:RoleSessionName"
+
+// oidcProviderArnInfix is the fixed separator between the account segment
+// and the provider Url in an OIDC provider ARN, matching
+// iamutil.BuildOIDCProviderArn's "arn:aws:iam::<account>:oidc-provider/<url>"
+// shape (this package can't import iamutil to reuse its ARN parser: iamutil
+// already imports policy).
+const oidcProviderArnInfix = ":oidc-provider/"
+
+// sharedOIDCProviderRequiredClaim maps a known shared-audience OIDC issuer's
+// hostname (a registered provider's Url, scheme already stripped) to the
+// claim suffix a trust statement federating it must scope with a Condition.
+// AWS added this requirement for popular CI/CD OIDC issuers because their
+// audience is commonly left at a single shared, non-secret default (e.g.
+// "sts.amazonaws.com"): unlike a private or self-hosted provider, whose Url
+// alone is already tenant-specific, the audience here doesn't distinguish
+// one organization's/repo's token from any other's identically-configured
+// one, so the trust policy must scope its tenancy claim itself.
+//
+// Sourced from AWS's own published table of shared OIDC providers and their
+// required claims:
+// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc_secure-by-default.html
+// Amazon Cognito and Microsoft Sentinel are handled as
+// their own special cases in validateSharedProviderTenancy rather than this
+// map: Cognito's federated-principal value isn't an OIDC provider ARN at
+// all, and Sentinel's required control is a global STS key, not a claim.
+// IBM Turbonomic SaaS is a documented shared provider too, but AWS's own
+// table declines to give it a fixed Url ("periodically updates their OIDC
+// Issuer URL with new versions of the platform") — there is no stable
+// hostname to key a map entry on, so it's deliberately omitted here.
+var sharedOIDCProviderRequiredClaim = map[string]string{
+	"token.actions.githubusercontent.com":                "sub", // GitHub Actions
+	"vstoken.actions.githubusercontent.com":              "sub", // GitHub vstoken
+	"oidc-configuration.audit-log.githubusercontent.com": "sub", // GitHub audit log streaming
+	"gitlab.com":              "sub", // GitLab.com (SaaS)
+	"agent.buildkite.com":     "sub", // Buildkite
+	"app.terraform.io":        "sub", // HCP Terraform / Terraform Cloud
+	"oidc.codefresh.io":       "sub", // Codefresh SaaS
+	"studio.datachain.ai/api": "sub", // DVC Studio
+	"scalr.io":                "sub", // Scalr
+	"tokens.cloud.shisho.dev": "sub", // Shisho Cloud
+	"proidc.upbound.io":       "sub", // Upbound
+	"api.pulumi.com/oidc":     "aud", // Pulumi Cloud
+	"sandboxes.cloud":         "aud", // sandboxes.cloud
+	"oidc.vercel.com":         "aud", // Vercel global endpoint
+}
 
 // validServicePrincipals are the only Service principal values the gateway
 // recognizes. Real AWS validates Service against its live catalog of
@@ -114,8 +173,11 @@ func (d Document) ValidateTrust() error {
 
 // ValidateTrust checks s against IAM trust-policy statement grammar: a
 // valid Effect, a required Principal (never NotPrincipal), an Action or
-// NotAction with only "sts:"-prefixed values, and no Resource/NotResource.
-// Condition is not modeled or validated(not supported at the moment)
+// NotAction with only "sts:"-prefixed values, no Resource/NotResource, and -
+// if present - a Condition block whose operators are all recognized (see
+// conditionShapeValid, shared with the identity-policy side; condition
+// *keys* and operand *values* are deliberately not validated here, matching
+// AWS behavior).
 func (s Statement) ValidateTrust() error {
 	switch s.Effect {
 	case "Allow", "Deny":
@@ -135,6 +197,19 @@ func (s Statement) ValidateTrust() error {
 		return err
 	}
 
+	if !conditionShapeValid(s.Condition) {
+		return errTrustSyntax
+	}
+
+	if len(s.Action) > 0 && len(s.NotAction) > 0 {
+		// Same exclusivity identity policies already enforce (Statement.Validate):
+		// AWS documents Action and NotAction as mutually exclusive within a
+		// single statement, and real policy simulation rejects a document
+		// combining them with InvalidInput  - a trust statement isn't
+		// exempt just because its evaluator (statementCoversAction) happens
+		// to have well-defined single-field behavior.
+		return errTrustSyntax
+	}
 	if len(s.Action) == 0 && len(s.NotAction) == 0 {
 		return errTrustMissingAction
 	}
@@ -187,7 +262,6 @@ func (s Statement) validateTrustPrincipal() error {
 		return errTrustEmptyPrincipal
 	}
 
-	requiresCondition := false
 	for key, values := range principal {
 		if !trustPrincipalKeys[key] {
 			return iamerr.MalformedPolicyDocument(fmt.Sprintf("Invalid principal in policy: %q", key))
@@ -199,14 +273,137 @@ func (s Statement) validateTrustPrincipal() error {
 				}
 			}
 		}
-		if key == "Federated" && slices.Contains(values, cognitoFederatedProvider) {
-			requiresCondition = true
+	}
+
+	return validateSharedProviderTenancy(s, principal["Federated"])
+}
+
+// validateSharedProviderTenancy rejects a trust statement that federates a
+// known shared-audience provider (Cognito Identity Pools, or a registered
+// OIDC provider whose Url is in sharedOIDCProviderRequiredClaim) without a
+// Condition that scopes the provider's tenant-identifying claim to a
+// specific, non-wildcard value — see sharedOIDCProviderRequiredClaim's
+// doc comment for why the audience alone isn't enough for these providers.
+// A Federated value that doesn't match either shape (a private/self-hosted
+// OIDC provider, or a value too malformed to resolve to a real provider at
+// all) imposes no extra requirement here; those are unaffected by this
+// check.
+func validateSharedProviderTenancy(s Statement, federated []string) error {
+	for _, v := range federated {
+		if v == cognitoFederatedProvider {
+			if !conditionScopesClaim(s.Condition, cognitoFederatedProvider+":aud") {
+				return errTrustCognitoConditionRequired
+			}
+			continue
+		}
+
+		url, ok := oidcProviderURLFromFederatedArn(v)
+		if !ok {
+			continue
+		}
+
+		if url == azureSentinelProviderURL {
+			if !conditionScopesClaim(s.Condition, azureSentinelRequiredKey) {
+				return iamerr.MalformedPolicyDocument(fmt.Sprintf(
+					"The trust policy trusts shared OpenID Connect provider %q without a Condition scoping %q to your own tenant.", url, azureSentinelRequiredKey))
+			}
+			continue
+		}
+
+		claim, known := sharedOIDCProviderRequiredClaim[url]
+		if !known {
+			continue
+		}
+		key := url + ":" + claim
+		if !conditionScopesClaim(s.Condition, key) {
+			return iamerr.MalformedPolicyDocument(fmt.Sprintf(
+				"The trust policy trusts shared OpenID Connect provider %q without a Condition scoping %q to your own tenant.", url, key))
 		}
 	}
-
-	if requiresCondition && len(s.Condition) == 0 {
-		return errTrustCognitoConditionRequired
-	}
-
 	return nil
+}
+
+// oidcProviderURLFromFederatedArn extracts the provider Url from a Federated
+// principal ARN shaped like "arn:aws:iam::<account>:oidc-provider/<url>"
+// (see iamutil.BuildOIDCProviderArn), reporting ok=false for any value not
+// shaped like an OIDC provider ARN at all — a bare federation identifier
+// (e.g. "cognito-identity.amazonaws.com") or a malformed value, both handled
+// elsewhere (this is deliberately a lightweight shape check, not full ARN
+// validation: an actually-malformed ARN is caught later, when the runtime
+// AssumeRoleWithWebIdentity path resolves it against real registered
+// providers and finds nothing).
+func oidcProviderURLFromFederatedArn(value string) (string, bool) {
+	_, url, ok := strings.Cut(value, oidcProviderArnInfix)
+	if !ok || url == "" {
+		return "", false
+	}
+	return url, true
+}
+
+// conditionScopesClaim reports whether raw (a statement's Condition block)
+// contains a positive String-family comparison (StringEquals, StringLike, or
+// StringEqualsIgnoreCase — optionally ForAllValues/ForAnyValue-qualified;
+// their Not-negated counterparts don't count, since excluding one value
+// doesn't scope to a tenant) against key (matched case-insensitively, same
+// as identity-policy condition keys) with at least one value that actually
+// scopes the claim. For StringLike specifically — the one operator here
+// where '*'/'?' are wildcards, not literal characters — a value consisting
+// entirely of wildcard characters (e.g. "*", "**", "?", "*?*") is rejected
+// even though it's non-empty: AWS documents that a shared provider's
+// tenancy claim "must not consist only of wildcard characters", since
+// a pattern with no literal character left after stripping '*'/'?' matches
+// every possible value just as completely as a bare "*" does. StringEquals
+// and StringEqualsIgnoreCase don't treat '*'/'?' as wildcards at all, so
+// only the plain "empty or exactly '*'" check applies to them. A block that
+// fails to parse reports false, same as an absent one —
+// conditionShapeValid/evaluateCondition are responsible for rejecting or
+// fail-closing a block this can't understand; this check only ever adds a
+// stricter write-time requirement on top of that.
+func conditionScopesClaim(raw json.RawMessage, key string) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var block map[string]map[string]ConditionValues
+	if err := json.Unmarshal(raw, &block); err != nil {
+		return false
+	}
+	for operator, kvs := range block {
+		op, ok := parseOperatorName(operator)
+		if !ok {
+			continue
+		}
+		switch op.base {
+		case "StringEquals", "StringLike", "StringEqualsIgnoreCase":
+		default:
+			continue
+		}
+		for k, values := range kvs {
+			if !strings.EqualFold(k, key) {
+				continue
+			}
+			for _, v := range values {
+				if v == "" || v == "*" {
+					continue
+				}
+				if op.base == "StringLike" && !hasNonWildcardCharacter(v) {
+					continue
+				}
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasNonWildcardCharacter reports whether v contains at least one character
+// other than the StringLike wildcards '*' (any run of characters) and '?'
+// (any single character) — i.e. whether it scopes to anything narrower than
+// "every possible value".
+func hasNonWildcardCharacter(v string) bool {
+	for _, r := range v {
+		if r != '*' && r != '?' {
+			return true
+		}
+	}
+	return false
 }
