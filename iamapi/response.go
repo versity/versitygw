@@ -22,6 +22,7 @@ import (
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/iamapi/internal/iammiddleware"
+	"github.com/versity/versitygw/iamapi/internal/iamutil"
 	"github.com/versity/versitygw/iamapi/types"
 	"github.com/versity/versitygw/internal/httpctx"
 )
@@ -75,11 +76,17 @@ func ProcessController(ctx fiber.Ctx, controller ActionHandler) error {
 		ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
 
 		if apiErr, ok := err.(iamerr.APIError); ok {
+			if isSTSAction(ctx) {
+				apiErr = iamerr.WithNamespace(apiErr, iamerr.STSNamespace).(iamerr.APIError)
+			}
 			return ctx.Status(apiErr.StatusCode()).Send(apiErr.XMLBody(requestID))
 		}
 
 		debuglogger.InternalError(err)
 		internalErr := iamerr.GetAPIError(iamerr.ErrInternalFailure)
+		if isSTSAction(ctx) {
+			internalErr.XMLNamespace = iamerr.STSNamespace
+		}
 		return ctx.Status(internalErr.StatusCode()).Send(internalErr.XMLBody(requestID))
 	}
 
@@ -119,6 +126,15 @@ func ProcessController(ctx fiber.Ctx, controller ActionHandler) error {
 	ctx.Response().Header.SetContentLength(msglen)
 
 	return ctx.Status(status).Send(res)
+}
+
+// isSTSAction reports whether the current request's Action is one of the
+// STS actions sharing this IAM endpoint (see router.go's stsActions),
+// which render both success and error responses under STS's own XML
+// namespace rather than IAM's.
+func isSTSAction(ctx fiber.Ctx) bool {
+	action, _ := iamutil.RequestParam(ctx, "Action")
+	return stsActions[action]
 }
 
 func SetResponseHeaders(ctx fiber.Ctx, headers map[string]*string) {

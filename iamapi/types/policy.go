@@ -94,3 +94,53 @@ type ListUserPoliciesResult struct {
 type PolicyNameList struct {
 	Members []string `xml:"member"`
 }
+
+type PutRolePolicyResponse struct {
+	XMLName          xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ PutRolePolicyResponse"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *PutRolePolicyResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type DeleteRolePolicyResponse struct {
+	XMLName          xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ DeleteRolePolicyResponse"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *DeleteRolePolicyResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type GetRolePolicyResponse struct {
+	XMLName          xml.Name            `xml:"https://iam.amazonaws.com/doc/2010-05-08/ GetRolePolicyResponse"`
+	Result           GetRolePolicyResult `xml:"GetRolePolicyResult"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *GetRolePolicyResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type GetRolePolicyResult struct {
+	RoleName       string
+	PolicyName     string
+	PolicyDocument string
+}
+
+type ListRolePoliciesResponse struct {
+	XMLName          xml.Name               `xml:"https://iam.amazonaws.com/doc/2010-05-08/ ListRolePoliciesResponse"`
+	Result           ListRolePoliciesResult `xml:"ListRolePoliciesResult"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *ListRolePoliciesResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type ListRolePoliciesResult struct {
+	PolicyNames PolicyNameList
+	IsTruncated bool
+	Marker      string `xml:",omitempty"`
+}

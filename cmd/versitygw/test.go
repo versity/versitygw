@@ -42,6 +42,7 @@ var (
 	checksumDisable   bool
 	versioningEnabled bool
 	azureTests        bool
+	testDebug         bool
 	tlsStatus         bool
 	parallel          bool
 	windowsTests      bool
@@ -91,7 +92,7 @@ func initTestFlags() []cli.Flag {
 			Name:        "debug",
 			Usage:       "enable debug mode",
 			Aliases:     []string{"d"},
-			Destination: &debug,
+			Destination: &testDebug,
 		},
 		&cli.BoolFlag{
 			Name:        "allow-insecure",
@@ -296,7 +297,7 @@ func initTestCommands() []*cli.Command {
 					integration.WithPartSize(partSize),
 					integration.WithTLSStatus(tlsStatus),
 				}
-				if debug {
+				if testDebug {
 					opts = append(opts, integration.WithDebug())
 				}
 				if hostStyle {
@@ -357,7 +358,7 @@ func initTestCommands() []*cli.Command {
 					integration.WithConcurrency(concurrency),
 					integration.WithTLSStatus(tlsStatus),
 				}
-				if debug {
+				if testDebug {
 					opts = append(opts, integration.WithDebug())
 				}
 				if checksumDisable {
@@ -404,7 +405,7 @@ func websiteHostingAction(ctx *cli.Context) error {
 	if websitePortTest != "" {
 		opts = append(opts, integration.WithWebsitePort(websitePortTest))
 	}
-	if debug {
+	if testDebug {
 		opts = append(opts, integration.WithDebug())
 	}
 
@@ -414,7 +415,7 @@ func websiteHostingAction(ctx *cli.Context) error {
 	ts.Wait()
 
 	fmt.Println()
-	fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load())
+	fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load(), "SKIP:", integration.SkipCount.Load())
 	if integration.FailCount.Load() > 0 {
 		return fmt.Errorf("test failed with %v errors", integration.FailCount.Load())
 	}
@@ -430,7 +431,7 @@ func getAction(tf testFunc) func(ctx *cli.Context) error {
 			integration.WithEndpoint(endpoint),
 			integration.WithTLSStatus(tlsStatus),
 		}
-		if debug {
+		if testDebug {
 			opts = append(opts, integration.WithDebug())
 		}
 		if versioningEnabled {
@@ -456,7 +457,7 @@ func getAction(tf testFunc) func(ctx *cli.Context) error {
 		ts.Wait()
 
 		fmt.Println()
-		fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load())
+		fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load(), "SKIP:", integration.SkipCount.Load())
 		if integration.FailCount.Load() > 0 {
 			return fmt.Errorf("test failed with %v errors", integration.FailCount.Load())
 		}
@@ -480,7 +481,7 @@ func extractIntTests() (commands []*cli.Command) {
 					integration.WithEndpoint(endpoint),
 					integration.WithTLSStatus(tlsStatus),
 				}
-				if debug {
+				if testDebug {
 					opts = append(opts, integration.WithDebug())
 				}
 				if versioningEnabled {

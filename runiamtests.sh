@@ -152,7 +152,7 @@ fi
 vault_policy=$(printf '%s\n' \
 	"path \"$VAULT_MOUNT_PATH/data/$VAULT_SECRET_PATH/*\" { capabilities = [\"create\", \"update\", \"read\"] }" \
 	"path \"$VAULT_MOUNT_PATH/metadata/$VAULT_SECRET_PATH/\" { capabilities = [\"list\"] }" \
-	"path \"$VAULT_MOUNT_PATH/metadata/$VAULT_SECRET_PATH/*\" { capabilities = [\"delete\"] }")
+	"path \"$VAULT_MOUNT_PATH/metadata/$VAULT_SECRET_PATH/*\" { capabilities = [\"delete\", \"list\"] }")
 vault_policy_payload=$(jq -nc --arg policy "$vault_policy" '{policy: $policy}')
 vault_request PUT "sys/policies/acl/$VAULT_POLICY_NAME" "$vault_policy_payload" >/dev/null
 

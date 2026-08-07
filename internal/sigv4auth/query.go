@@ -278,7 +278,11 @@ func CheckQuerySignature(ctx fiber.Ctx, auth AuthData, secret, payloadHash strin
 		req, payloadHash, service, auth.Region, tdate, signedHdrs,
 		func(options *v4.SignerOptions) {
 			options.DisableURIPathEscaping = opts.DisableURIPathEscaping
-			if debuglogger.IsDebugEnabled() {
+			// See the identical comment in verify.go's CheckSignature: this
+			// logger dumps a complete, replayable signed URL (including
+			// X-Amz-Signature and any session token) unredacted, so it may
+			// only run at LevelUnsafe.
+			if debuglogger.IsUnsafeEnabled() {
 				options.LogSigning = true
 				options.Logger = logging.NewStandardLogger(os.Stderr)
 			}
@@ -293,7 +297,7 @@ func CheckQuerySignature(ctx fiber.Ctx, auth AuthData, secret, payloadHash strin
 	}
 
 	signature := urlParts.Query().Get(QuerySignature)
-	if signature != auth.Signature {
+	if !SecureCompare(signature, auth.Signature) {
 		return nil, &SignatureMismatchError{
 			AccessKeyID:           auth.Access,
 			StringToSign:          signMeta.StringToSign,

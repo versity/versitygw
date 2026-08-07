@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/versity/versitygw/iamapi/iamerr"
+	"github.com/versity/versitygw/iamapi/internal/iamutil"
 	"github.com/versity/versitygw/iamapi/types"
 	"github.com/versity/versitygw/internal/iamstore"
 )
@@ -54,12 +55,36 @@ type iamConfig struct {
 	// AccessKeyIndex maps an access key id to the username that owns it,
 	// so GetAccessKeyLastUsed can resolve a key without scanning every user.
 	AccessKeyIndex map[string]string `json:"accessKeyIndex"`
+	// UserNameIndex maps a lowercased user name to the canonical (as-created)
+	// stored user name, so lookups can enforce AWS's case-insensitive
+	// uniqueness while still preserving the original casing in conf.Users's
+	// key and the stored User.UserName.
+	UserNameIndex map[string]string `json:"userNameIndex"`
+
+	Roles map[string]types.Role `json:"roles"`
+	// RoleNameIndex is UserNameIndex's counterpart for roles.
+	RoleNameIndex map[string]string `json:"roleNameIndex"`
+
+	// OIDCProviders is keyed directly by the provider's Url (scheme
+	// stripped, exactly as given at creation — no index needed since
+	// lookup is by exact string, not a case-insensitive human name).
+	OIDCProviders map[string]types.OIDCProvider `json:"oidcProviders"`
+
+	// Sessions is keyed by AccessKeyId. Entries whose Expiration has
+	// passed are pruned opportunistically whenever a new session is
+	// created (see pruneExpiredSessions), rather than on a timer.
+	Sessions map[string]types.Session `json:"sessions"`
 }
 
 func defaultIAMConfig() iamConfig {
 	return iamConfig{
 		Users:          map[string]types.User{},
 		AccessKeyIndex: map[string]string{},
+		UserNameIndex:  map[string]string{},
+		Roles:          map[string]types.Role{},
+		RoleNameIndex:  map[string]string{},
+		OIDCProviders:  map[string]types.OIDCProvider{},
+		Sessions:       map[string]types.Session{},
 	}
 }
 
@@ -70,6 +95,57 @@ func normalizeIAMConfig(conf *iamConfig) {
 	if conf.AccessKeyIndex == nil {
 		conf.AccessKeyIndex = make(map[string]string)
 	}
+	if conf.UserNameIndex == nil {
+		conf.UserNameIndex = make(map[string]string)
+	}
+	for name := range conf.Users {
+		key := strings.ToLower(name)
+		if _, ok := conf.UserNameIndex[key]; !ok {
+			conf.UserNameIndex[key] = name
+		}
+	}
+
+	if conf.Roles == nil {
+		conf.Roles = make(map[string]types.Role)
+	}
+	if conf.RoleNameIndex == nil {
+		conf.RoleNameIndex = make(map[string]string)
+	}
+	for name := range conf.Roles {
+		key := strings.ToLower(name)
+		if _, ok := conf.RoleNameIndex[key]; !ok {
+			conf.RoleNameIndex[key] = name
+		}
+	}
+
+	if conf.OIDCProviders == nil {
+		conf.OIDCProviders = make(map[string]types.OIDCProvider)
+	}
+
+	if conf.Sessions == nil {
+		conf.Sessions = make(map[string]types.Session)
+	}
+}
+
+// lookupUser resolves name to the canonical stored user name and entry,
+// case-insensitively, via conf.UserNameIndex.
+func lookupUser(conf iamConfig, name string) (string, types.User, bool) {
+	canonical, ok := conf.UserNameIndex[strings.ToLower(name)]
+	if !ok {
+		return "", types.User{}, false
+	}
+	user, ok := conf.Users[canonical]
+	return canonical, user, ok
+}
+
+// lookupRole is lookupUser's counterpart for roles.
+func lookupRole(conf iamConfig, name string) (string, types.Role, bool) {
+	canonical, ok := conf.RoleNameIndex[strings.ToLower(name)]
+	if !ok {
+		return "", types.Role{}, false
+	}
+	role, ok := conf.Roles[canonical]
+	return canonical, role, ok
 }
 
 func (s *InternalStore) CreateUser(_ context.Context, user types.User) (*types.User, error) {
@@ -82,7 +158,8 @@ func (s *InternalStore) CreateUser(_ context.Context, user types.User) (*types.U
 			return nil, err
 		}
 
-		if _, ok := conf.Users[user.UserName]; ok {
+		key := strings.ToLower(user.UserName)
+		if _, ok := conf.UserNameIndex[key]; ok {
 			return nil, iamerr.EntityAlreadyExistsUser(user.UserName)
 		}
 		for _, existing := range conf.Users {
@@ -92,6 +169,7 @@ func (s *InternalStore) CreateUser(_ context.Context, user types.User) (*types.U
 		}
 
 		conf.Users[user.UserName] = user
+		conf.UserNameIndex[key] = user.UserName
 		return json.Marshal(conf)
 	}); err != nil {
 		return nil, unwrapAPIError(err)
@@ -110,7 +188,7 @@ func (s *InternalStore) DeleteUser(_ context.Context, username string) error {
 			return nil, err
 		}
 
-		user, ok := conf.Users[username]
+		canonical, user, ok := lookupUser(conf, username)
 		if !ok {
 			return nil, iamerr.NoSuchEntityUser(username)
 		}
@@ -121,7 +199,8 @@ func (s *InternalStore) DeleteUser(_ context.Context, username string) error {
 			return nil, iamerr.GetAPIError(iamerr.ErrDeleteConflict)
 		}
 
-		delete(conf.Users, username)
+		delete(conf.Users, canonical)
+		delete(conf.UserNameIndex, strings.ToLower(canonical))
 		return json.Marshal(conf)
 	})
 	return unwrapAPIError(err)
@@ -136,12 +215,32 @@ func (s *InternalStore) GetUser(_ context.Context, username string) (*types.User
 		return nil, err
 	}
 
-	user, ok := conf.Users[username]
+	_, user, ok := lookupUser(conf, username)
 	if !ok {
 		return nil, iamerr.NoSuchEntityUser(username)
 	}
 
 	return cloneUser(user), nil
+}
+
+func (s *InternalStore) GetUserByAccessKeyID(ctx context.Context, accessKeyID string) (*types.User, error) {
+	s.RLock()
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		s.RUnlock()
+		return nil, err
+	}
+	username, ok := conf.AccessKeyIndex[accessKeyID]
+	s.RUnlock()
+	if !ok {
+		return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+	}
+
+	user, err := s.GetUser(ctx, username)
+	if err != nil {
+		return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+	}
+	return user, nil
 }
 
 func (s *InternalStore) ListUsers(_ context.Context, input ListUsersInput) (*ListUsersOutput, error) {
@@ -204,7 +303,7 @@ func (s *InternalStore) UpdateUser(_ context.Context, input UpdateUserInput) (*t
 			return nil, err
 		}
 
-		user, ok := conf.Users[input.UserName]
+		canonical, user, ok := lookupUser(conf, input.UserName)
 		if !ok {
 			return nil, iamerr.NoSuchEntityUser(input.UserName)
 		}
@@ -213,8 +312,8 @@ func (s *InternalStore) UpdateUser(_ context.Context, input UpdateUserInput) (*t
 		if input.NewUserName != "" {
 			finalName = input.NewUserName
 		}
-		if finalName != input.UserName {
-			if _, ok := conf.Users[finalName]; ok {
+		if !strings.EqualFold(finalName, canonical) {
+			if _, ok := conf.UserNameIndex[strings.ToLower(finalName)]; ok {
 				return nil, iamerr.EntityAlreadyExistsUser(finalName)
 			}
 		}
@@ -229,13 +328,15 @@ func (s *InternalStore) UpdateUser(_ context.Context, input UpdateUserInput) (*t
 			user.Arn = input.NewArn
 		}
 
-		if user.UserName != input.UserName {
-			delete(conf.Users, input.UserName)
+		if user.UserName != canonical {
+			delete(conf.Users, canonical)
+			delete(conf.UserNameIndex, strings.ToLower(canonical))
 			for _, key := range user.AccessKeys {
 				conf.AccessKeyIndex[key.AccessKeyId] = user.UserName
 			}
 		}
 		conf.Users[user.UserName] = user
+		conf.UserNameIndex[strings.ToLower(user.UserName)] = user.UserName
 		updated = user
 
 		return json.Marshal(conf)
@@ -257,7 +358,7 @@ func (s *InternalStore) CreateAccessKey(_ context.Context, input CreateAccessKey
 			return nil, err
 		}
 
-		user, ok := conf.Users[input.UserName]
+		canonical, user, ok := lookupUser(conf, input.UserName)
 		if !ok {
 			return nil, iamerr.NoSuchEntityUser(input.UserName)
 		}
@@ -274,11 +375,11 @@ func (s *InternalStore) CreateAccessKey(_ context.Context, input CreateAccessKey
 			Status:          input.Status,
 			CreateDate:      input.CreateDate,
 		})
-		conf.Users[input.UserName] = user
-		conf.AccessKeyIndex[input.AccessKeyID] = input.UserName
+		conf.Users[canonical] = user
+		conf.AccessKeyIndex[input.AccessKeyID] = canonical
 
 		created = types.AccessKey{
-			UserName:        input.UserName,
+			UserName:        canonical,
 			AccessKeyId:     input.AccessKeyID,
 			Status:          input.Status,
 			SecretAccessKey: input.SecretAccessKey,
@@ -303,7 +404,7 @@ func (s *InternalStore) UpdateAccessKey(_ context.Context, input UpdateAccessKey
 			return nil, err
 		}
 
-		user, ok := conf.Users[input.UserName]
+		canonical, user, ok := lookupUser(conf, input.UserName)
 		if !ok {
 			return nil, iamerr.NoSuchEntityUser(input.UserName)
 		}
@@ -320,7 +421,7 @@ func (s *InternalStore) UpdateAccessKey(_ context.Context, input UpdateAccessKey
 			return nil, iamerr.NoSuchEntityAccessKey(input.AccessKeyID)
 		}
 
-		conf.Users[input.UserName] = user
+		conf.Users[canonical] = user
 		return json.Marshal(conf)
 	})
 	return unwrapAPIError(err)
@@ -336,7 +437,7 @@ func (s *InternalStore) DeleteAccessKey(_ context.Context, username, accessKeyID
 			return nil, err
 		}
 
-		user, ok := conf.Users[username]
+		canonical, user, ok := lookupUser(conf, username)
 		if !ok {
 			return nil, iamerr.NoSuchEntityUser(username)
 		}
@@ -353,7 +454,7 @@ func (s *InternalStore) DeleteAccessKey(_ context.Context, username, accessKeyID
 		}
 
 		user.AccessKeys = slices.Delete(user.AccessKeys, idx, idx+1)
-		conf.Users[username] = user
+		conf.Users[canonical] = user
 		delete(conf.AccessKeyIndex, accessKeyID)
 
 		return json.Marshal(conf)
@@ -393,6 +494,45 @@ func (s *InternalStore) GetAccessKeyLastUsed(_ context.Context, accessKeyID stri
 	return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
 }
 
+func (s *InternalStore) RecordAccessKeyUsage(_ context.Context, accessKeyID, service, region string, when time.Time) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		username, ok := conf.AccessKeyIndex[accessKeyID]
+		if !ok {
+			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+		}
+		user, ok := conf.Users[username]
+		if !ok {
+			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+		}
+
+		found := false
+		for i, key := range user.AccessKeys {
+			if key.AccessKeyId == accessKeyID {
+				user.AccessKeys[i].LastUsedDate = when
+				user.AccessKeys[i].LastUsedService = service
+				user.AccessKeys[i].LastUsedRegion = region
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+		}
+
+		conf.Users[username] = user
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
 func (s *InternalStore) ListAccessKeys(_ context.Context, input ListAccessKeysInput) (*ListAccessKeysOutput, error) {
 	s.RLock()
 	defer s.RUnlock()
@@ -402,7 +542,7 @@ func (s *InternalStore) ListAccessKeys(_ context.Context, input ListAccessKeysIn
 		return nil, err
 	}
 
-	user, ok := conf.Users[input.UserName]
+	canonical, user, ok := lookupUser(conf, input.UserName)
 	if !ok {
 		return nil, iamerr.NoSuchEntityUser(input.UserName)
 	}
@@ -410,7 +550,7 @@ func (s *InternalStore) ListAccessKeys(_ context.Context, input ListAccessKeysIn
 	keys := make([]types.AccessKeyMetadata, 0, len(user.AccessKeys))
 	for _, key := range user.AccessKeys {
 		keys = append(keys, types.AccessKeyMetadata{
-			UserName:    input.UserName,
+			UserName:    canonical,
 			AccessKeyId: key.AccessKeyId,
 			Status:      key.Status,
 			CreateDate:  key.CreateDate,
@@ -459,7 +599,7 @@ func (s *InternalStore) PutUserPolicy(_ context.Context, input PutUserPolicyInpu
 			return nil, err
 		}
 
-		user, ok := conf.Users[input.UserName]
+		canonical, user, ok := lookupUser(conf, input.UserName)
 		if !ok {
 			return nil, iamerr.NoSuchEntityUser(input.UserName)
 		}
@@ -490,7 +630,7 @@ func (s *InternalStore) PutUserPolicy(_ context.Context, input PutUserPolicyInpu
 			})
 		}
 
-		conf.Users[input.UserName] = user
+		conf.Users[canonical] = user
 		return json.Marshal(conf)
 	})
 	return unwrapAPIError(err)
@@ -505,7 +645,7 @@ func (s *InternalStore) GetUserPolicy(_ context.Context, userName, policyName st
 		return nil, err
 	}
 
-	user, ok := conf.Users[userName]
+	_, user, ok := lookupUser(conf, userName)
 	if !ok {
 		return nil, iamerr.NoSuchEntityUser(userName)
 	}
@@ -530,7 +670,7 @@ func (s *InternalStore) DeleteUserPolicy(_ context.Context, userName, policyName
 			return nil, err
 		}
 
-		user, ok := conf.Users[userName]
+		canonical, user, ok := lookupUser(conf, userName)
 		if !ok {
 			return nil, iamerr.NoSuchEntityUser(userName)
 		}
@@ -547,7 +687,7 @@ func (s *InternalStore) DeleteUserPolicy(_ context.Context, userName, policyName
 		}
 
 		user.Policies.Inline = slices.Delete(user.Policies.Inline, idx, idx+1)
-		conf.Users[userName] = user
+		conf.Users[canonical] = user
 		return json.Marshal(conf)
 	})
 	return unwrapAPIError(err)
@@ -562,7 +702,7 @@ func (s *InternalStore) ListUserPolicies(_ context.Context, input ListUserPolici
 		return nil, err
 	}
 
-	user, ok := conf.Users[input.UserName]
+	_, user, ok := lookupUser(conf, input.UserName)
 	if !ok {
 		return nil, iamerr.NoSuchEntityUser(input.UserName)
 	}
@@ -602,10 +742,569 @@ func (s *InternalStore) ListUserPolicies(_ context.Context, input ListUserPolici
 	return out, nil
 }
 
+func (s *InternalStore) CreateRole(_ context.Context, role types.Role) (*types.Role, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	role.EnsureRoleLastUsed()
+
+	if err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		key := strings.ToLower(role.RoleName)
+		if _, ok := conf.RoleNameIndex[key]; ok {
+			return nil, iamerr.EntityAlreadyExistsRole(role.RoleName)
+		}
+		for _, existing := range conf.Roles {
+			if existing.RoleID == role.RoleID {
+				return nil, ErrRoleIDAlreadyExists
+			}
+		}
+
+		conf.Roles[role.RoleName] = role
+		conf.RoleNameIndex[key] = role.RoleName
+		return json.Marshal(conf)
+	}); err != nil {
+		return nil, unwrapAPIError(err)
+	}
+
+	return cloneRole(role), nil
+}
+
+func (s *InternalStore) GetRole(_ context.Context, roleName string) (*types.Role, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	_, role, ok := lookupRole(conf, roleName)
+	if !ok {
+		return nil, iamerr.NoSuchEntityRole(roleName)
+	}
+
+	return cloneRole(role), nil
+}
+
+func (s *InternalStore) ListRoles(_ context.Context, input ListRolesInput) (*ListRolesOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	roles := make([]types.Role, 0, len(conf.Roles))
+	for _, role := range conf.Roles {
+		if input.PathPrefix != "" && !strings.HasPrefix(role.Path, input.PathPrefix) {
+			continue
+		}
+		// ListRoles entries omit RoleLastUsed even though it's persisted —
+		// matches the documented list/get field asymmetry.
+		role.RoleLastUsed = nil
+		roles = append(roles, role)
+	}
+	sort.Slice(roles, func(i, j int) bool {
+		return roles[i].RoleName < roles[j].RoleName
+	})
+
+	start := 0
+	if input.Marker != "" {
+		start = len(roles)
+		for i, role := range roles {
+			if role.RoleName == input.Marker {
+				start = i + 1
+				break
+			}
+		}
+	}
+	roles = roles[start:]
+
+	limit := len(roles)
+	if input.MaxItems > 0 && int(input.MaxItems) < limit {
+		limit = int(input.MaxItems)
+	}
+
+	out := &ListRolesOutput{
+		Roles: make([]types.Role, limit),
+	}
+	copy(out.Roles, roles[:limit])
+	if limit < len(roles) {
+		out.IsTruncated = true
+		out.Marker = out.Roles[limit-1].RoleName
+	}
+
+	return out, nil
+}
+
+func (s *InternalStore) DeleteRole(_ context.Context, roleName string) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		canonical, role, ok := lookupRole(conf, roleName)
+		if !ok {
+			return nil, iamerr.NoSuchEntityRole(roleName)
+		}
+		if len(role.Policies.Inline) > 0 {
+			return nil, iamerr.GetAPIError(iamerr.ErrDeleteConflictPolicies)
+		}
+
+		delete(conf.Roles, canonical)
+		delete(conf.RoleNameIndex, strings.ToLower(canonical))
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) UpdateAssumeRolePolicy(_ context.Context, input UpdateAssumeRolePolicyInput) (*types.Role, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	var updated types.Role
+	if err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		canonical, role, ok := lookupRole(conf, input.RoleName)
+		if !ok {
+			return nil, iamerr.NoSuchEntityRole(input.RoleName)
+		}
+
+		role.AssumeRolePolicyDocument = input.PolicyDocument
+		conf.Roles[canonical] = role
+		updated = role
+
+		return json.Marshal(conf)
+	}); err != nil {
+		return nil, unwrapAPIError(err)
+	}
+
+	return cloneRole(updated), nil
+}
+
+func (s *InternalStore) PutRolePolicy(_ context.Context, input PutRolePolicyInput) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		canonical, role, ok := lookupRole(conf, input.RoleName)
+		if !ok {
+			return nil, iamerr.NoSuchEntityRole(input.RoleName)
+		}
+
+		now := time.Now().UTC().Truncate(time.Second)
+		newTotal := len(input.PolicyDocument)
+		replaceAt := -1
+		for i, p := range role.Policies.Inline {
+			if p.PolicyName == input.PolicyName {
+				replaceAt = i
+				continue
+			}
+			newTotal += len(p.PolicyDocument)
+		}
+		if newTotal > MaxInlinePolicyBytesPerRole {
+			return nil, iamerr.InlinePolicyQuotaExceeded("role", input.RoleName, MaxInlinePolicyBytesPerRole)
+		}
+
+		if replaceAt >= 0 {
+			role.Policies.Inline[replaceAt].PolicyDocument = input.PolicyDocument
+			role.Policies.Inline[replaceAt].UpdateDate = now
+		} else {
+			role.Policies.Inline = append(role.Policies.Inline, types.PolicyEntry{
+				PolicyName:     input.PolicyName,
+				PolicyDocument: input.PolicyDocument,
+				CreateDate:     now,
+				UpdateDate:     now,
+			})
+		}
+
+		conf.Roles[canonical] = role
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) GetRolePolicy(_ context.Context, roleName, policyName string) (*types.PolicyEntry, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	_, role, ok := lookupRole(conf, roleName)
+	if !ok {
+		return nil, iamerr.NoSuchEntityRole(roleName)
+	}
+
+	for _, p := range role.Policies.Inline {
+		if p.PolicyName == policyName {
+			cloned := p
+			return &cloned, nil
+		}
+	}
+
+	return nil, iamerr.NoSuchEntityRolePolicy(roleName, policyName)
+}
+
+func (s *InternalStore) DeleteRolePolicy(_ context.Context, roleName, policyName string) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		canonical, role, ok := lookupRole(conf, roleName)
+		if !ok {
+			return nil, iamerr.NoSuchEntityRole(roleName)
+		}
+
+		idx := -1
+		for i, p := range role.Policies.Inline {
+			if p.PolicyName == policyName {
+				idx = i
+				break
+			}
+		}
+		if idx == -1 {
+			return nil, iamerr.NoSuchEntityRolePolicy(roleName, policyName)
+		}
+
+		role.Policies.Inline = slices.Delete(role.Policies.Inline, idx, idx+1)
+		conf.Roles[canonical] = role
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) ListRolePolicies(_ context.Context, input ListRolePoliciesInput) (*ListRolePoliciesOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	_, role, ok := lookupRole(conf, input.RoleName)
+	if !ok {
+		return nil, iamerr.NoSuchEntityRole(input.RoleName)
+	}
+
+	names := make([]string, 0, len(role.Policies.Inline))
+	for _, p := range role.Policies.Inline {
+		names = append(names, p.PolicyName)
+	}
+	sort.Strings(names)
+
+	start := 0
+	if input.Marker != "" {
+		start = len(names)
+		for i, name := range names {
+			if name == input.Marker {
+				start = i + 1
+				break
+			}
+		}
+	}
+	names = names[start:]
+
+	limit := len(names)
+	if input.MaxItems > 0 && int(input.MaxItems) < limit {
+		limit = int(input.MaxItems)
+	}
+
+	out := &ListRolePoliciesOutput{
+		PolicyNames: make([]string, limit),
+	}
+	copy(out.PolicyNames, names[:limit])
+	if limit < len(names) {
+		out.IsTruncated = true
+		out.Marker = out.PolicyNames[limit-1]
+	}
+
+	return out, nil
+}
+
 func cloneUser(user types.User) *types.User {
 	cloned := user
 	cloned.Tags = slices.Clone(user.Tags)
 	cloned.AccessKeys = slices.Clone(user.AccessKeys)
 	cloned.Policies.Inline = slices.Clone(user.Policies.Inline)
+	return &cloned
+}
+
+func cloneRole(role types.Role) *types.Role {
+	cloned := role
+	cloned.Tags = slices.Clone(role.Tags)
+	cloned.Policies.Inline = slices.Clone(role.Policies.Inline)
+	return &cloned
+}
+
+func (s *InternalStore) CreateOIDCProvider(_ context.Context, provider types.OIDCProvider) (*types.OIDCProvider, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	if err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, ok := conf.OIDCProviders[provider.Url]; ok {
+			return nil, iamerr.EntityAlreadyExistsOIDCProvider("https://" + provider.Url)
+		}
+		if len(conf.OIDCProviders) >= MaxOIDCProvidersPerAccount {
+			return nil, iamerr.OIDCProvidersPerAccountLimitExceeded(MaxOIDCProvidersPerAccount)
+		}
+
+		conf.OIDCProviders[provider.Url] = provider
+		return json.Marshal(conf)
+	}); err != nil {
+		return nil, unwrapAPIError(err)
+	}
+
+	return cloneOIDCProvider(provider), nil
+}
+
+func (s *InternalStore) GetOIDCProvider(_ context.Context, arn string) (*types.OIDCProvider, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	url, err := iamutil.ParseOIDCProviderArn(arn)
+	if err != nil {
+		return nil, err
+	}
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	provider, ok := conf.OIDCProviders[url]
+	if !ok {
+		return nil, iamerr.NoSuchEntityOIDCProviderGet(arn)
+	}
+	return cloneOIDCProvider(provider), nil
+}
+
+func (s *InternalStore) ListOIDCProviders(_ context.Context) (*ListOIDCProvidersOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]types.OpenIDConnectProviderListEntry, 0, len(conf.OIDCProviders))
+	for _, p := range conf.OIDCProviders {
+		entries = append(entries, types.OpenIDConnectProviderListEntry{Arn: p.Arn})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Arn < entries[j].Arn })
+
+	return &ListOIDCProvidersOutput{Providers: entries}, nil
+}
+
+func (s *InternalStore) DeleteOIDCProvider(_ context.Context, arn string) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+		url, err := iamutil.ParseOIDCProviderArn(arn)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := conf.OIDCProviders[url]; !ok {
+			return nil, iamerr.NoSuchEntityOIDCProviderDelete(arn)
+		}
+		delete(conf.OIDCProviders, url)
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) AddClientIDToOIDCProvider(_ context.Context, arn, clientID string) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+		url, err := iamutil.ParseOIDCProviderArn(arn)
+		if err != nil {
+			return nil, err
+		}
+		provider, ok := conf.OIDCProviders[url]
+		if !ok {
+			return nil, iamerr.NoSuchEntityOIDCProviderGet(arn)
+		}
+
+		if slices.Contains(provider.ClientIDList, clientID) {
+			return json.Marshal(conf)
+		}
+		if len(provider.ClientIDList) >= MaxClientIDsPerOIDCProvider {
+			return nil, iamerr.ClientIdsPerOpenIdConnectProviderLimitExceeded(MaxClientIDsPerOIDCProvider)
+		}
+		provider.ClientIDList = append(provider.ClientIDList, clientID)
+		conf.OIDCProviders[url] = provider
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) RemoveClientIDFromOIDCProvider(_ context.Context, arn, clientID string) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+		url, err := iamutil.ParseOIDCProviderArn(arn)
+		if err != nil {
+			return nil, err
+		}
+		provider, ok := conf.OIDCProviders[url]
+		if !ok {
+			return nil, iamerr.NoSuchEntityOIDCProviderGet(arn)
+		}
+
+		idx := slices.Index(provider.ClientIDList, clientID)
+		if idx == -1 {
+			return json.Marshal(conf)
+		}
+		provider.ClientIDList = slices.Delete(provider.ClientIDList, idx, idx+1)
+		conf.OIDCProviders[url] = provider
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) UpdateOIDCProviderThumbprint(_ context.Context, arn string, thumbprints []string) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+		url, err := iamutil.ParseOIDCProviderArn(arn)
+		if err != nil {
+			return nil, err
+		}
+		provider, ok := conf.OIDCProviders[url]
+		if !ok {
+			return nil, iamerr.NoSuchEntityOIDCProviderGet(arn)
+		}
+		provider.ThumbprintList = thumbprints
+		conf.OIDCProviders[url] = provider
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) CreateSession(_ context.Context, session types.Session) (*types.Session, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	if err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		pruneExpiredSessions(conf, session.CreateDate)
+		if activeSessionCountForRole(conf, session.RoleArn) >= MaxActiveSessionsPerRole {
+			return nil, iamerr.GetAPIError(iamerr.ErrThrottling)
+		}
+		conf.Sessions[session.AccessKeyId] = session
+		return json.Marshal(conf)
+	}); err != nil {
+		return nil, unwrapAPIError(err)
+	}
+
+	cloned := session
+	return &cloned, nil
+}
+
+// activeSessionCountForRole counts conf's sessions belonging to roleArn.
+// Called after pruneExpiredSessions, so this only ever counts sessions that
+// are still actually active.
+func activeSessionCountForRole(conf iamConfig, roleArn string) int {
+	count := 0
+	for _, sess := range conf.Sessions {
+		if sess.RoleArn == roleArn {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *InternalStore) GetSession(_ context.Context, accessKeyID string) (*types.Session, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	session, ok := conf.Sessions[accessKeyID]
+	if !ok || !session.Expiration.After(time.Now().UTC()) {
+		return nil, ErrSessionNotFound
+	}
+
+	cloned := session
+	return &cloned, nil
+}
+
+// pruneExpiredSessions removes every session whose Expiration is at or
+// before now. Called from CreateSession so the sessions map never grows
+// unbounded, without needing a separate timer/goroutine.
+func pruneExpiredSessions(conf iamConfig, now time.Time) {
+	for accessKeyID, session := range conf.Sessions {
+		if !session.Expiration.After(now) {
+			delete(conf.Sessions, accessKeyID)
+		}
+	}
+}
+
+func cloneOIDCProvider(p types.OIDCProvider) *types.OIDCProvider {
+	cloned := p
+	cloned.ClientIDList = slices.Clone(p.ClientIDList)
+	cloned.ThumbprintList = slices.Clone(p.ThumbprintList)
+	cloned.Tags = slices.Clone(p.Tags)
 	return &cloned
 }

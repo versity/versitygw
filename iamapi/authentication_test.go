@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -305,6 +306,25 @@ func TestVerifyIAMAuthRejectsUnsignedQueryParameter(t *testing.T) {
 	requireIAMError(t, resp, want.HTTPStatusCode, string(want.Type), want.Code, want.Message)
 }
 
+// TestVerifyIAMAuthRejectsRootQueryAuthWithSecurityToken confirms a security
+// token tacked onto a root-signed presigned request is rejected outright
+// (InvalidClientTokenId) rather than falling through to a
+// signature-mismatch error — root's own access key is never a temporary
+// one, so it can never legitimately carry a security token at all.
+func TestVerifyIAMAuthRejectsRootQueryAuthWithSecurityToken(t *testing.T) {
+	app := newIAMAuthTestApp(t)
+	req := querySignedIAMRequest(t, http.MethodGet, "http://example.com/?Action=ListUsers&Version=2010-05-08", nil, testRoot.Secret, iammiddleware.SigningRegion, time.Now().UTC())
+	query := req.URL.Query()
+	query.Set(sigv4auth.QuerySecurityToken, "bogus-token")
+	req.URL.RawQuery = query.Encode()
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	requireIAMError(t, resp, http.StatusForbidden, "Sender", "InvalidClientTokenId", "The security token included in the request is invalid.")
+}
+
 func TestVerifyIAMAuthRejectsQueryWrongCredentialRegion(t *testing.T) {
 	app := newIAMAuthTestApp(t)
 	req := querySignedIAMRequest(t, http.MethodGet, "http://example.com/?Action=ListUsers&Version=2010-05-08", nil, testRoot.Secret, "us-west-2", time.Now().UTC())
@@ -315,6 +335,105 @@ func TestVerifyIAMAuthRejectsQueryWrongCredentialRegion(t *testing.T) {
 	}
 
 	requireIAMError(t, resp, http.StatusForbidden, "Sender", "SignatureDoesNotMatch", "Credential should be scoped to a valid region. ")
+}
+
+// TestVerifyIAMAuthRejectsExpiredQueryRequest confirms a presigned IAM
+// request signed too long ago is rejected by the same fixed ±15-minute
+// freshness window (ValidateDateAt) header auth uses — confirmed live
+// (niksis02 profile): real IAM's query-auth ignores X-Amz-Expires entirely
+// (see TestVerifyIAMAuthQueryIgnoresXAmzExpires) and instead rejects a
+// stale signing time with SignatureDoesNotMatch: "Signature expired: ...
+// is now earlier than ... (... - 15 min.)" — byte-for-byte what this
+// codebase's own SignatureDoesNotMatchExpired already produces.
+func TestVerifyIAMAuthRejectsExpiredQueryRequest(t *testing.T) {
+	app := newIAMAuthTestApp(t)
+	signedTwoHoursAgo := time.Now().UTC().Add(-2 * time.Hour)
+	req := querySignedIAMRequest(t, http.MethodGet, "http://example.com/?Action=ListUsers&Version=2010-05-08",
+		nil, testRoot.Secret, iammiddleware.SigningRegion, signedTwoHoursAgo)
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+
+	var errResp struct {
+		XMLName xml.Name `xml:"ErrorResponse"`
+		Error   struct {
+			Type string
+			Code string
+		}
+	}
+	body := readBody(t, resp)
+	if err := xml.Unmarshal([]byte(body), &errResp); err != nil {
+		t.Fatalf("unmarshal IAM error: %v\n%s", err, body)
+	}
+	if resp.StatusCode != http.StatusForbidden || errResp.Error.Type != "Sender" || errResp.Error.Code != "SignatureDoesNotMatch" {
+		t.Fatalf("status=%d error=%#v, want 403 Sender/SignatureDoesNotMatch; body=%s", resp.StatusCode, errResp.Error, body)
+	}
+}
+
+// TestVerifyIAMAuthQueryIgnoresXAmzExpires confirms IAM/STS query-auth
+// neither requires nor validates X-Amz-Expires, unlike S3's presigned URLs
+// — confirmed live (niksis02 profile) that real IAM's ListUsers accepts a
+// presigned request with X-Amz-Expires omitted, non-numeric, negative, or
+// far beyond S3's 604800-second maximum, every time.
+func TestVerifyIAMAuthQueryIgnoresXAmzExpires(t *testing.T) {
+	for _, expires := range []string{"", "abc", "-5", "9999999"} {
+		t.Run(expires, func(t *testing.T) {
+			app := newIAMAuthTestApp(t)
+			target := "http://example.com/?Action=ListUsers&Version=2010-05-08"
+			if expires != "" {
+				target += "&X-Amz-Expires=" + expires
+			}
+			req := querySignedIAMRequest(t, http.MethodGet, target, nil, testRoot.Secret, iammiddleware.SigningRegion, time.Now().UTC())
+
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("app.Test: %v", err)
+			}
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want %d; body=%s", resp.StatusCode, http.StatusOK, readBody(t, resp))
+			}
+		})
+	}
+}
+
+// TestVerifyIAMAuthRejectsSessionTokenHeaderNotSigned confirms a temporary
+// (ASIA…) session's X-Amz-Security-Token header must itself be part of
+// SignedHeaders — present-but-unsigned is now rejected instead of being
+// silently dropped from the canonical request (see
+// requiredHeaderAuthSignedHeaders). Before this fix, this exact request
+// (correct token value, correct signature, token simply excluded from
+// SignedHeaders) would have authenticated successfully.
+func TestVerifyIAMAuthRejectsSessionTokenHeaderNotSigned(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+	session := createTestSession(t, server, "role-tokenheader",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:GetUser","Resource":"*"}]}`, "")
+
+	body := []byte(url.Values{"Action": {"GetUser"}, "Version": {iamAPIVersion}}.Encode())
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set(sigv4auth.HeaderSecurityToken, session.SessionToken)
+
+	hash := sha256.Sum256(body)
+	payloadHash := hex.EncodeToString(hash[:])
+
+	signer := vgwv4.NewSigner()
+	// Sign with only "host" listed — the security-token header is present
+	// on the wire but deliberately excluded from SignedHeaders, simulating
+	// a client (or tampering party) that never binds it to the signature.
+	if _, err := signer.SignHTTP(context.Background(),
+		aws.Credentials{AccessKeyID: session.AccessKeyId, SecretAccessKey: session.SecretAccessKey},
+		req, payloadHash, "iam", iammiddleware.SigningRegion, time.Now().UTC(), []string{"host"}); err != nil {
+		t.Fatalf("sign request: %v", err)
+	}
+
+	resp, err := server.app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	requireIAMError(t, resp, http.StatusBadRequest, "Sender", "IncompleteSignature",
+		"The request signature does not conform to AWS standards. Header(s) not signed: x-amz-security-token.")
 }
 
 func TestVerifyIAMAuthRejectsMissingAuthorization(t *testing.T) {
@@ -511,7 +630,7 @@ func newIAMAuthTestApp(t *testing.T) *fiber.App {
 		func(ctx fiber.Ctx) (*Response, error) {
 			return &Response{Status: http.StatusOK}, nil
 		},
-		iammiddleware.VerifyIAMAuth(&testRoot),
+		iammiddleware.VerifyIAMAuth(sigv4auth.ServiceIAM, &testRoot, nil),
 	))
 	return app
 }
