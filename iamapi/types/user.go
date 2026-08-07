@@ -99,12 +99,14 @@ func (r *DeleteUserResponse) SetRequestID(requestID string) {
 }
 
 type User struct {
-	Path       string    `xml:",omitempty"`
-	UserName   string    `xml:",omitempty"`
-	UserID     string    `xml:"UserId"`
-	Arn        string    `xml:"Arn"`
-	CreateDate time.Time `xml:"CreateDate"`
-	Tags       []Tag     `xml:"Tags>member,omitempty"`
+	Path       string           `xml:",omitempty"`
+	UserName   string           `xml:",omitempty"`
+	UserID     string           `xml:"UserId"`
+	Arn        string           `xml:"Arn"`
+	CreateDate time.Time        `xml:"CreateDate"`
+	Tags       []Tag            `xml:"Tags>member,omitempty"`
+	AccessKeys []AccessKeyEntry `xml:"-"`
+	Policies   Policies         `xml:"-"`
 }
 
 type Tag struct {

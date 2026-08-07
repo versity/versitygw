@@ -17,6 +17,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -26,6 +27,7 @@ import (
 const (
 	Namespace         = "https://iam.amazonaws.com/doc/2010-05-08/"
 	AWSFaultNamespace = "http://webservices.amazon.com/AWSFault/2005-15-09"
+	STSNamespace      = "https://sts.amazonaws.com/doc/2011-06-15/"
 )
 
 type ErrorType string
@@ -52,14 +54,14 @@ const (
 	ErrInvalidRegion
 	ErrMissingHostSignedHeader
 	ErrInvalidClientTokenID
-
 	ErrInvalidContentLength
 	ErrThrottling
-
-	ErrMissingUserNameValue
 	ErrTooManyTags
 	ErrInvalidPathPrefix
 	ErrDuplicateTagKeys
+	ErrInvalidAccessKeyIDChars
+	ErrDeleteConflict
+	ErrDeleteConflictPolicies
 )
 
 type APIError interface {
@@ -113,7 +115,7 @@ func (e Error) XMLBody(requestID string) []byte {
 type errorXML struct {
 	Type    ErrorType
 	Code    string
-	Message string
+	Message string `xml:",omitempty"`
 }
 
 var errorCodeResponse = map[ErrorCode]Error{
@@ -123,7 +125,6 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "The request processing has failed because of an unknown error, exception or failure.",
 		HTTPStatusCode: http.StatusInternalServerError,
 	},
-
 	ErrInvalidContentLength: {
 		Type:           TypeSender,
 		Code:           "InvalidRequest",
@@ -136,7 +137,6 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "Rate exceeded.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-
 	ErrMissingAuthenticationToken: {
 		Type:           TypeSender,
 		Code:           "MissingAuthenticationToken",
@@ -155,7 +155,6 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "The security token included in the request is invalid.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
-
 	ErrIncompleteSignature: {
 		Type:           TypeSender,
 		Code:           "IncompleteSignature",
@@ -174,7 +173,6 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "Authorization header requires Credential, SignedHeaders, and Signature.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-
 	ErrSignatureDoesNotMatch: {
 		Type:           TypeSender,
 		Code:           "SignatureDoesNotMatch",
@@ -211,13 +209,6 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "'Host' or ':authority' must be a 'SignedHeader' in the AWS Authorization.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
-
-	ErrMissingUserNameValue: {
-		Type:           TypeSender,
-		Code:           "ValidationError",
-		Message:        "1 validation error detected: Value at 'userName' failed to satisfy constraint: Member must not be null",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
 	ErrInvalidPathPrefix: {
 		Type:           TypeSender,
 		Code:           "ValidationError",
@@ -236,6 +227,24 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "Duplicate tag keys found. Please note that Tag keys are case insensitive.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
+	ErrInvalidAccessKeyIDChars: {
+		Type:           TypeSender,
+		Code:           "ValidationError",
+		Message:        "The specified value for accessKeyId is invalid. It must contain only alphanumeric characters.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrDeleteConflict: {
+		Type:           TypeSender,
+		Code:           "DeleteConflict",
+		Message:        "Cannot delete entity, must delete access keys first.",
+		HTTPStatusCode: http.StatusConflict,
+	},
+	ErrDeleteConflictPolicies: {
+		Type:           TypeSender,
+		Code:           "DeleteConflict",
+		Message:        "Cannot delete entity, must delete policies first.",
+		HTTPStatusCode: http.StatusConflict,
+	},
 }
 
 func GetAPIError(code ErrorCode) Error {
@@ -244,6 +253,24 @@ func GetAPIError(code ErrorCode) Error {
 	}
 
 	return errorCodeResponse[ErrInternalFailure]
+}
+
+// WithNamespace returns err with its XML namespace overridden to namespace,
+// for errors that must render under a different service's namespace than
+// the one they were originally constructed with (STS actions sharing this
+// gateway's IAM endpoint being the only current case). It never overrides
+// an already-explicit namespace (e.g. InvalidAction's AWSFaultNamespace,
+// used for a request whose Version doesn't even resolve to a known
+// action.
+func WithNamespace(err error, namespace string) error {
+	var apiErr Error
+	if errors.As(err, &apiErr) {
+		if apiErr.XMLNamespace == "" {
+			apiErr.XMLNamespace = namespace
+		}
+		return apiErr
+	}
+	return err
 }
 
 func InvalidAction(action, version string) Error {
@@ -334,6 +361,26 @@ func NoSuchEntityUser(userName string) Error {
 	return newSenderError("NoSuchEntity", fmt.Sprintf("The user with name %s cannot be found.", userName), http.StatusNotFound)
 }
 
+func NoSuchEntityAccessKey(accessKeyID string) Error {
+	return newSenderError("NoSuchEntity", fmt.Sprintf("The Access Key with id %s cannot be found", accessKeyID), http.StatusNotFound)
+}
+
+func EntityAlreadyExistsRole(roleName string) Error {
+	return newSenderError("EntityAlreadyExists", fmt.Sprintf("Role with name %s already exists.", roleName), http.StatusConflict)
+}
+
+func NoSuchEntityRole(roleName string) Error {
+	return newSenderError("NoSuchEntity", fmt.Sprintf("The role with name %s cannot be found.", roleName), http.StatusNotFound)
+}
+
+func AccessKeysLimitExceeded(maxKeys int) Error {
+	return newSenderError("LimitExceeded", fmt.Sprintf("Cannot exceed quota for AccessKeysPerUser: %d", maxKeys), http.StatusConflict)
+}
+
+func TrustPolicySizeLimitExceeded(maxBytes int) Error {
+	return newSenderError("LimitExceeded", fmt.Sprintf("Cannot exceed quota for ACLSizePerRole: %d", maxBytes), http.StatusConflict)
+}
+
 func ValidationError(message string) Error {
 	return newSenderError("ValidationError", message, http.StatusBadRequest)
 }
@@ -362,6 +409,18 @@ func InvalidMaxItems(value string) Error {
 	return ValidationError(fmt.Sprintf("1 validation error detected: Value '%s' at 'maxItems' failed to satisfy constraint: Member must have value between 1 and 1000", value))
 }
 
+func AccessKeyIDTooShort(minLength int) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value at 'accessKeyId' failed to satisfy constraint: Member must have length greater than or equal to %d", minLength))
+}
+
+func AccessKeyIDTooLong(maxLength int) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value at 'accessKeyId' failed to satisfy constraint: Member must have length less than or equal to %d", maxLength))
+}
+
+func InvalidAccessKeyStatus(value string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value '%s' at 'status' failed to satisfy constraint: Member must satisfy enum value set: [Active, Inactive]", value))
+}
+
 func TagKeyTooLong(index int) Error {
 	return ValidationError(fmt.Sprintf("1 validation error detected: Value at 'tags.%d.member.key' failed to satisfy constraint: Member must have length less than or equal to 128", index))
 }
@@ -376,6 +435,160 @@ func TagValueTooLong(index int) Error {
 
 func InvalidTagValue(index int) Error {
 	return ValidationError(fmt.Sprintf("1 validation error detected: Value at 'tags.%d.member.value' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*", index))
+}
+
+func MissingValue(field string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value at '%s' failed to satisfy constraint: Member must not be null", field))
+}
+
+func ValueTooLong(field string, maxLength int) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value at '%s' failed to satisfy constraint: Member must have length less than or equal to %d", field, maxLength))
+}
+
+func ValueTooShort(field string, minLength int) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value at '%s' failed to satisfy constraint: Member must have length greater than or equal to %d", field, minLength))
+}
+
+func InvalidCharset(field string) Error {
+	return ValidationError(fmt.Sprintf("The specified value for %s is invalid. It must contain only printable ASCII characters.", field))
+}
+
+func InvalidDescriptionCharset(field string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value at '%s' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]*", field))
+}
+
+func MaxSessionDurationTooLow() Error {
+	return ValidationError("1 validation error detected: Value at 'maxSessionDuration' failed to satisfy constraint: Member must have value greater than or equal to 3600")
+}
+
+func MaxSessionDurationTooHigh() Error {
+	return ValidationError("1 validation error detected: Value at 'maxSessionDuration' failed to satisfy constraint: Member must have value less than or equal to 43200")
+}
+
+func MalformedInput() Error {
+	return newSenderError("MalformedInput", "", http.StatusBadRequest)
+}
+
+func MalformedPolicyDocument(message string) Error {
+	return newSenderError("MalformedPolicyDocument", message, http.StatusBadRequest)
+}
+
+func NoSuchEntityUserPolicy(userName, policyName string) Error {
+	return newSenderError("NoSuchEntity", fmt.Sprintf("The user policy with name %s cannot be found.", policyName), http.StatusNotFound)
+}
+
+func NoSuchEntityRolePolicy(roleName, policyName string) Error {
+	return newSenderError("NoSuchEntity", fmt.Sprintf("The role policy with name %s cannot be found.", policyName), http.StatusNotFound)
+}
+
+func InlinePolicyQuotaExceeded(entityKind, entityName string, maxBytes int) Error {
+	return newSenderError("LimitExceeded", fmt.Sprintf("Maximum policy size of %d bytes exceeded for %s %s", maxBytes, entityKind, entityName), http.StatusConflict)
+}
+
+func EntityAlreadyExistsOIDCProvider(url string) Error {
+	return newSenderError("EntityAlreadyExists", fmt.Sprintf("Provider with url %s already exists.", url), http.StatusConflict)
+}
+
+func NoSuchEntityOIDCProviderGet(arn string) Error {
+	return newSenderError("NoSuchEntity", fmt.Sprintf("OpenIDConnect Provider not found for arn %s", arn), http.StatusNotFound)
+}
+
+func NoSuchEntityOIDCProviderDelete(arn string) Error {
+	return newSenderError("NoSuchEntity", fmt.Sprintf("OpenId connect Provider %s cannot be found.", arn), http.StatusNotFound)
+}
+
+// AccessDeniedOIDCProvider is returned when a well-formed OIDC provider ARN
+// references an account id other than callerAccountID.
+func AccessDeniedOIDCProvider(callerAccountID, resourceArn string) Error {
+	return newSenderError("AccessDenied", fmt.Sprintf(
+		"User: arn:aws:iam::%s:root is not authorized to perform this action on resource: %s",
+		callerAccountID, resourceArn,
+	), http.StatusForbidden)
+}
+
+func ClientIdsPerOpenIdConnectProviderLimitExceeded(max int) Error {
+	return newSenderError("LimitExceeded", fmt.Sprintf("Cannot exceed quota for ClientIdsPerOpenIdConnectProvider: %d", max), http.StatusConflict)
+}
+
+func ThumbprintListTooLong(max int) Error {
+	return newSenderError("InvalidInput", fmt.Sprintf("Thumbprint list must contain fewer than %d entries.", max), http.StatusBadRequest)
+}
+
+func ThumbprintListEmpty() Error {
+	return newSenderError("InvalidInput", "Thumbprint list must contain at least one entry.", http.StatusBadRequest)
+}
+
+func OIDCProvidersPerAccountLimitExceeded(max int) Error {
+	return newSenderError("LimitExceeded", fmt.Sprintf("Cannot exceed quota for OpenIDConnectProvidersPerAccount: %d", max), http.StatusConflict)
+}
+
+func OpenIdIdpCommunicationError(url string) Error {
+	return newSenderError("OpenIdIdpCommunicationError", fmt.Sprintf("Could not connect to %s", url), http.StatusBadRequest)
+}
+
+func IncorrectServiceScope(expectedService string) Error {
+	return newSenderError("SignatureDoesNotMatch", fmt.Sprintf("Credential should be scoped to correct service: '%s'.", expectedService), http.StatusBadRequest)
+}
+
+func InvalidIdentityTokenMalformed() Error {
+	return newSenderError("InvalidIdentityToken", "The ID Token provided is not a valid JWT. (You may see this error if you sent an Access Token)", http.StatusBadRequest)
+}
+
+func InvalidIdentityTokenClaims() Error {
+	return newSenderError("InvalidIdentityToken", "The web identity token provided could not be validated. See the AssumeRoleWithWebIdentity documentation for requirements.", http.StatusBadRequest)
+}
+
+func InvalidIdentityTokenMultipleAudiences() Error {
+	return newSenderError("InvalidIdentityToken", "Token audience contains more than one audience while authorized party is not present", http.StatusBadRequest)
+}
+
+func InvalidIdentityTokenIDPCommunicationError() Error {
+	return newSenderError("InvalidIdentityToken", "Couldn't retrieve verification key from your identity provider,  please reference AssumeRoleWithWebIdentity documentation for requirements", http.StatusBadRequest)
+}
+
+func ExpiredWebIdentityToken(now, exp int64) Error {
+	return newSenderError("ExpiredTokenException", fmt.Sprintf("Token expired: current date/time %d must be before the expiration date/time %d", now, exp), http.StatusBadRequest)
+}
+
+func UnsupportedParameter(parameter string) Error {
+	return newSenderError("InvalidInput", fmt.Sprintf("%s is not supported by this implementation.", parameter), http.StatusBadRequest)
+}
+
+func InvalidIdentityTokenMissingClaim(claim string) Error {
+	return newSenderError("InvalidIdentityToken", fmt.Sprintf("Missing a required claim: %s.", claim), http.StatusBadRequest)
+}
+
+func AccessDeniedAssumeRoleWithWebIdentity() Error {
+	return newSenderError("AccessDenied", "Not authorized to perform sts:AssumeRoleWithWebIdentity", http.StatusForbidden)
+}
+
+func InvalidRoleSessionName(value string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value '%s' at 'roleSessionName' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\w+=,.@-]*", value))
+}
+
+func DurationSecondsTooLow(value string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value '%s' at 'durationSeconds' failed to satisfy constraint: Member must have value greater than or equal to 900", value))
+}
+
+func DurationSecondsTooHigh(value string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value '%s' at 'durationSeconds' failed to satisfy constraint: Member must have value less than or equal to 43200", value))
+}
+
+func DurationExceedsMaxSessionDuration() Error {
+	return ValidationError("The requested DurationSeconds exceeds the MaxSessionDuration set for this role.")
+}
+
+func AccessDeniedIAMAction(callerArn, action string) Error {
+	return newSenderError("AccessDenied", fmt.Sprintf(
+		"User: %s is not authorized to perform: %s because no identity-based policy allows the %s action",
+		callerArn, action, action,
+	), http.StatusForbidden)
+}
+
+func ConcurrentModification() Error {
+	return newSenderError("ConcurrentModificationException",
+		"The request was rejected because multiple requests to change this object were submitted simultaneously. Wait a few minutes and submit your request again.",
+		http.StatusConflict)
 }
 
 func newSenderError(code, message string, statusCode int) Error {

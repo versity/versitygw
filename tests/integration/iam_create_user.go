@@ -47,6 +47,27 @@ func IAMCreateUser_user_already_exists(s *S3Conf) error {
 	})
 }
 
+func IAMCreateUser_already_exists_case_insensitive(s *S3Conf) error {
+	testName := "IAMCreateUser_already_exists_case_insensitive"
+	return iamActionHandler(s, testName, func(client *iam.Client) error {
+		userName := newIAMUserName()
+		if _, err := createIAMUser(client, &iam.CreateUserInput{
+			UserName: &userName,
+		}); err != nil {
+			return err
+		}
+
+		upperName := strings.ToUpper(userName)
+		_, err := createIAMUser(client, &iam.CreateUserInput{UserName: &upperName})
+		checkErr := checkIAMApiErr(err, iamerr.EntityAlreadyExistsUser(upperName))
+		deleteErr := deleteIAMUser(client, userName)
+		if checkErr != nil {
+			return checkErr
+		}
+		return deleteErr
+	})
+}
+
 func IAMCreateUser_invalid_user_name(s *S3Conf) error {
 	testName := "IAMCreateUser_invalid_user_name"
 	return iamActionHandler(s, testName, func(client *iam.Client) error {
@@ -226,6 +247,23 @@ func deleteIAMUser(client *iam.Client, userName string) error {
 	defer cancel()
 	_, err := client.DeleteUser(ctx, &iam.DeleteUserInput{UserName: &userName})
 	return err
+}
+
+// deleteIAMUserAndAccessKeys deletes all of the user's access keys before
+// deleting the user, since DeleteUser rejects users with access keys still
+// attached. Use this for test cleanup after a test has created access keys;
+// use deleteIAMUser directly when the test itself manages key deletion.
+func deleteIAMUserAndAccessKeys(client *iam.Client, userName string) error {
+	out, err := listIAMAccessKeys(client, &iam.ListAccessKeysInput{UserName: &userName})
+	if err != nil {
+		return err
+	}
+	for _, key := range out.AccessKeyMetadata {
+		if err := deleteIAMAccessKey(client, userName, aws.ToString(key.AccessKeyId)); err != nil {
+			return err
+		}
+	}
+	return deleteIAMUser(client, userName)
 }
 
 func newIAMUserName() string {
