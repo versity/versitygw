@@ -1231,6 +1231,7 @@ under the License.
         // If we have a bucket from URL, show it
         if (currentBucket) {
           showObjectsView();
+          await checkBucketVersioning();
           await loadObjects();
         } else {
           showBucketsView();
