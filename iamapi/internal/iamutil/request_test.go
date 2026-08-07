@@ -72,3 +72,54 @@ func TestMatchQueryOrFormArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestHasRequestParamPrefix(t *testing.T) {
+	tests := []struct {
+		name        string
+		method      string
+		target      string
+		body        string
+		contentType string
+		want        bool
+	}{
+		{name: "query, member 1", method: http.MethodGet, target: "/any?PolicyArns.member.1.arn=arn:aws:iam::000000000000:policy/p", want: true},
+		{name: "query, member 10", method: http.MethodGet, target: "/any?PolicyArns.member.10.arn=arn:aws:iam::000000000000:policy/p", want: true},
+		{name: "query, index gap (member 3 only)", method: http.MethodGet, target: "/any?PolicyArns.member.3.arn=arn:aws:iam::000000000000:policy/p", want: true},
+		{name: "query, empty-but-present value", method: http.MethodGet, target: "/any?PolicyArns.member.1.arn=", want: true},
+		{name: "form, member 2", method: http.MethodPost, target: "/any", body: "PolicyArns.member.2.arn=arn:aws:iam::000000000000:policy/p", contentType: fiber.MIMEApplicationForm, want: true},
+		{name: "absent", method: http.MethodGet, target: "/any?Action=AssumeRoleWithWebIdentity", want: false},
+		{name: "unrelated prefix untouched", method: http.MethodGet, target: "/any?PolicyArnsSomethingElse=x", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := fiber.New()
+			app.Add([]string{http.MethodGet, http.MethodPost}, "/*", func(ctx fiber.Ctx) error {
+				if HasRequestParamPrefix(ctx, "PolicyArns.member.") {
+					return ctx.SendString("found")
+				}
+				return ctx.SendString("absent")
+			})
+
+			req := httptest.NewRequest(tt.method, tt.target, bytes.NewBufferString(tt.body))
+			if tt.contentType != "" {
+				req.Header.Set("Content-Type", tt.contentType)
+			}
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("app.Test: %v", err)
+			}
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			want := "absent"
+			if tt.want {
+				want = "found"
+			}
+			if string(body) != want {
+				t.Fatalf("HasRequestParamPrefix result = %q, want %q", string(body), want)
+			}
+		})
+	}
+}

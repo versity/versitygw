@@ -2,6 +2,8 @@ module github.com/versity/versitygw
 
 go 1.25.0
 
+toolchain go1.26.5
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0
@@ -13,11 +15,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.2.12
 	github.com/aws/aws-sdk-go-v2/service/iam v1.54.5
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.104.1
+	github.com/aws/aws-sdk-go-v2/service/sts v1.43.4
 	github.com/aws/smithy-go v1.27.3
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/go-ldap/ldap/v3 v3.4.13
 	github.com/gofiber/fiber/v3 v3.3.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/vault-client-go v0.4.3
@@ -56,12 +60,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/signin v1.2.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.31.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.36.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.43.4 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667 // indirect
 	github.com/gofiber/schema v1.8.0 // indirect
 	github.com/gofiber/utils/v2 v2.1.1 // indirect
-	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
@@ -85,6 +87,6 @@ require (
 	github.com/xrash/smetrics v0.0.0-20250705151800-55b8f293f342 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 )
