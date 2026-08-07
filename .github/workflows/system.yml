@@ -32,37 +32,6 @@ jobs:
         run: |
           ./tests/install_base_dependencies.sh
 
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: "stable"
-        id: go
-
-      - name: Get Go Dependencies
-        run: |
-          go get -v -t -d ./...
-
-      - name: Install BATS
-        run: |
-          git clone https://github.com/bats-core/bats-core.git
-          cd bats-core && ./install.sh ${{ github.workspace }}
-          git clone https://github.com/bats-core/bats-support.git ${{ github.workspace }}/tests/bats-support
-          git clone https://github.com/ztombol/bats-assert.git ${{ github.workspace }}/tests/bats-assert
-
-# disable mc tests due to dl.min.io instability
-#      - name: Install mc
-#        run: |
-#          curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o /usr/local/bin/mc
-#          chmod 755 /usr/local/bin/mc
-
-      # see https://github.com/versity/versitygw/issues/1034
-      - name: Install AWS cli
-        run: |
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.22.35.zip" -o "awscliv2.zip" 
-          unzip -o awscliv2.zip 
-          ./aws/install -i ${{ github.workspace }}/aws-cli -b ${{ github.workspace }}/bin
-          echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
-
       - name: Create test user
         run: |
           sudo useradd -m -s /bin/bash tester
@@ -190,7 +159,7 @@ jobs:
             if [[ $RECREATE_BUCKETS == "false" ]]; then
               BYPASS_ENV_FILE=true bash ${{ github.workspace }}/tests/setup_static.sh
             fi
-            BYPASS_ENV_FILE=true ${{ github.workspace }}/bin/bats ${{ github.workspace }}/$RUN_SET
+            BYPASS_ENV_FILE=true bats ${{ github.workspace }}/$RUN_SET
           
             if [ -e "$COVERAGE_LOG" ]; then
               cat $COVERAGE_LOG

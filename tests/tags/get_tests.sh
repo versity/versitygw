@@ -81,7 +81,7 @@ run_tests() {
     file="${files[$j]}"
     name="${names[$j]}"
     name_re="$(escape_regex "$name")"
-    cmd=("$HOME/bin/bats" -f "$name_re" "$file")
+    cmd=(bats -f "$name_re" "$file")
     if ! VERSITYGW_TEST_ENV=$VERSITYGW_TEST_ENV "${cmd[@]}"; then
       echo "error running test"
       exit 1

@@ -20,6 +20,12 @@
 
 > **Note**:  many of the required libraries, and a good rundown of the installation procedure, can be found in the `Dockerfile_test_bats` dockerfile in the root folder.
 
+#### Automatic
+
+Run `tests/install_base_dependencies.sh` to automatically run steps 1 through 5 below.  Then proceed with manual setup.
+
+#### Manual
+
 1. Build the `versitygw` binary.
 2. Install the command-line interface(s) you want to test if unavailable on your machine.  
    * **aws cli**: Instructions are [here](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
@@ -81,7 +87,7 @@ To communicate directly with s3, in order to compare the gateway results to dire
 
 1.  Copy `.secrets.default` to `.secrets` in the `tests` folder and change the parameters and add the additional s3 fields explained in the **S3 Backend** section above if running with the s3 backend.
 2.  By default, the dockerfile uses the **arm** architecture (usually modern Mac).  If using **amd** (usually earlier Mac or Linux), you can either replace the corresponding `ARG` values directly, or with `arg="<param>=<amd library or folder>"`  Also, you can determine which is used by your OS with `uname -a`.
-3.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to your secrets and config file, respectively, if not using the defaults.  Example:  `docker build -t <tag> --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" -f tests/Dockerfile_test_bats .`.
+3.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to your secrets and config file, respectively, if not using the defaults.  Example:  `docker build -t <tag> --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" -f tests/Dockerfile_test_bats .`.  Also, default docker parameters, such as `TARGETARCH`, at the top of the Dockerfile can be changed by the user if needed.
 4.  To run the entire suite, run `docker run -it <image name>`.  This is not recommended due to the sheer amount of tests.  To run an individual suite, pass in the name of the suite as defined in `tests/run.sh` (e.g. REST bucket tests -> `docker run -it <image tag or ID> rest-bucket`).  Also, multiple specific suites can be run, if separated by comma.  
 5.  To list all suites available, the `-h` tag can be passed.  Example:  `docker run -t <image tag or ID> -h`.
 6.  By default, the config is placed in the `/home/tester/config` folder inside the container.  Logs are printed to `/home/tester/log`.  To overwrite the config, an `.env` folder can be placed in a mounted host folder, and to view the logs, a mounted folder can also be used.  Example:  `docker run -v $PWD/runtime/config:/home/tester/config -v $PWD/runtime/log:/home/tester/log -t bats_test s3`
