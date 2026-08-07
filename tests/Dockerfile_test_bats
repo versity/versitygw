@@ -53,7 +53,8 @@ ENV HOME=/home/tester
 # install bats
 RUN git clone https://github.com/bats-core/bats-core.git && \
     cd bats-core && \
-    ./install.sh /home/tester
+    ./install.sh /home/tester \
+ENV BATS=/home/tester/bin/bats
 
 # Create a shared venv & install Python deps there
 ENV VENV=/opt/venv
