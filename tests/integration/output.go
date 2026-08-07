@@ -20,16 +20,18 @@ import (
 )
 
 var (
-	colorReset = "\033[0m"
-	colorRed   = "\033[31m"
-	colorGreen = "\033[32m"
-	colorCyan  = "\033[36m"
+	colorReset  = "\033[0m"
+	colorRed    = "\033[31m"
+	colorGreen  = "\033[32m"
+	colorCyan   = "\033[36m"
+	colorYellow = "\033[33m"
 )
 
 var (
 	RunCount  atomic.Uint32
 	PassCount atomic.Uint32
 	FailCount atomic.Uint32
+	SkipCount atomic.Uint32
 )
 
 func runF(format string, a ...any) {
@@ -45,4 +47,9 @@ func failF(format string, a ...any) {
 func passF(format string, a ...any) {
 	PassCount.Add(1)
 	fmt.Printf(colorGreen+"PASS "+colorReset+format+"\n", a...)
+}
+
+func skipF(format string, a ...any) {
+	SkipCount.Add(1)
+	fmt.Printf(colorYellow+"SKIP "+colorReset+format+"\n", a...)
 }

@@ -415,7 +415,7 @@ func websiteHostingAction(ctx *cli.Context) error {
 	ts.Wait()
 
 	fmt.Println()
-	fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load())
+	fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load(), "SKIP:", integration.SkipCount.Load())
 	if integration.FailCount.Load() > 0 {
 		return fmt.Errorf("test failed with %v errors", integration.FailCount.Load())
 	}
@@ -457,7 +457,7 @@ func getAction(tf testFunc) func(ctx *cli.Context) error {
 		ts.Wait()
 
 		fmt.Println()
-		fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load())
+		fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load(), "SKIP:", integration.SkipCount.Load())
 		if integration.FailCount.Load() > 0 {
 			return fmt.Errorf("test failed with %v errors", integration.FailCount.Load())
 		}
