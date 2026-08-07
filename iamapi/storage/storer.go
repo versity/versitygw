@@ -37,10 +37,35 @@ const MaxInlinePolicyBytesPerUser = 2048
 // all of a single IAM role's inline policy documents combined
 const MaxInlinePolicyBytesPerRole = 10240
 
+// MaxClientIDsPerOIDCProvider is the maximum number of client IDs a single
+// OIDC provider may hold at once
+const MaxClientIDsPerOIDCProvider = 100
+
+// MaxOIDCProvidersPerAccount is the maximum number of OIDC providers a
+// single account may hold
+const MaxOIDCProvidersPerAccount = 100
+
+// MaxActiveSessionsPerRole bounds how many currently-unexpired
+// AssumeRoleWithWebIdentity sessions a single role may have at once.
+// AWS manages and rate-limits STS as a hosted service with no
+// customer-visible equivalent quota to match for fidelity; this exists
+// purely as local resource protection, since without it a single valid
+// federated token can be replayed indefinitely to grow the session
+// store — every InternalStore rewrite, or Vault KV path/metadata entry —
+// without bound. Chosen generously enough to not constrain any legitimate
+// workload's concurrent session count.
+//
+// A var, not a const, so tests can temporarily lower it rather than paying
+// the cost of actually creating 1000 sessions to exercise the cap.
+var MaxActiveSessionsPerRole = 1000
+
 var (
 	ErrUserIDAlreadyExists      = errors.New("iamapi: user id already exists")
 	ErrAccessKeyIDAlreadyExists = errors.New("iamapi: access key id already exists")
 	ErrRoleIDAlreadyExists      = errors.New("iamapi: role id already exists")
+	// ErrSessionNotFound is returned by GetSession when accessKeyID names no
+	// session, or names one whose Expiration has already passed.
+	ErrSessionNotFound = errors.New("iamapi: session not found")
 )
 
 type ListUsersInput struct {
@@ -148,11 +173,16 @@ type ListRolePoliciesOutput struct {
 	Marker      string
 }
 
+type ListOIDCProvidersOutput struct {
+	Providers []types.OpenIDConnectProviderListEntry
+}
+
 // Storer is the IAM API storage backend contract.
 type Storer interface {
 	CreateUser(ctx context.Context, user types.User) (*types.User, error)
 	DeleteUser(ctx context.Context, username string) error
 	GetUser(ctx context.Context, username string) (*types.User, error)
+	GetUserByAccessKeyID(ctx context.Context, accessKeyID string) (*types.User, error)
 	ListUsers(ctx context.Context, input ListUsersInput) (*ListUsersOutput, error)
 	UpdateUser(ctx context.Context, input UpdateUserInput) (*types.User, error)
 
@@ -161,6 +191,12 @@ type Storer interface {
 	DeleteAccessKey(ctx context.Context, username, accessKeyID string) error
 	GetAccessKeyLastUsed(ctx context.Context, accessKeyID string) (*GetAccessKeyLastUsedOutput, error)
 	ListAccessKeys(ctx context.Context, input ListAccessKeysInput) (*ListAccessKeysOutput, error)
+	// RecordAccessKeyUsage updates accessKeyID's GetAccessKeyLastUsed
+	// metadata (service, region, and timestamp) to reflect a successful
+	// authentication at when. Called best-effort/asynchronously by the auth
+	// middleware, so implementations should treat a lost update under
+	// concurrent use as acceptable rather than something worth retrying hard.
+	RecordAccessKeyUsage(ctx context.Context, accessKeyID, service, region string, when time.Time) error
 
 	PutUserPolicy(ctx context.Context, input PutUserPolicyInput) error
 	GetUserPolicy(ctx context.Context, userName, policyName string) (*types.PolicyEntry, error)
@@ -177,6 +213,18 @@ type Storer interface {
 	GetRolePolicy(ctx context.Context, roleName, policyName string) (*types.PolicyEntry, error)
 	DeleteRolePolicy(ctx context.Context, roleName, policyName string) error
 	ListRolePolicies(ctx context.Context, input ListRolePoliciesInput) (*ListRolePoliciesOutput, error)
+
+	// OIDC Provider CRUD
+	CreateOIDCProvider(ctx context.Context, provider types.OIDCProvider) (*types.OIDCProvider, error)
+	GetOIDCProvider(ctx context.Context, arn string) (*types.OIDCProvider, error)
+	ListOIDCProviders(ctx context.Context) (*ListOIDCProvidersOutput, error)
+	DeleteOIDCProvider(ctx context.Context, arn string) error
+	AddClientIDToOIDCProvider(ctx context.Context, arn, clientID string) error
+	RemoveClientIDFromOIDCProvider(ctx context.Context, arn, clientID string) error
+	UpdateOIDCProviderThumbprint(ctx context.Context, arn string, thumbprints []string) error
+
+	CreateSession(ctx context.Context, session types.Session) (*types.Session, error)
+	GetSession(ctx context.Context, accessKeyID string) (*types.Session, error)
 }
 
 func unwrapAPIError(err error) error {

@@ -120,8 +120,10 @@ func (d Document) Validate() error {
 
 // Validate checks s against IAM policy statement grammar: a valid Effect,
 // no Principal/NotPrincipal, an Action or NotAction (not both) with
-// vendor-prefixed values, and a Resource or NotResource (not both) with
-// ARN-shaped values. Condition is not modeled or validated.
+// vendor-prefixed values, a Resource or NotResource (not both) with
+// ARN-shaped values, and - if present - a Condition block whose operators
+// are all recognized (see conditionShapeValid; condition *keys* and operand
+// *values* are deliberately not validated here, matching AWS behavior).
 func (s Statement) Validate() error {
 	switch s.Effect {
 	case "Allow", "Deny":
@@ -131,6 +133,10 @@ func (s Statement) Validate() error {
 
 	if len(s.Principal) > 0 || len(s.NotPrincipal) > 0 {
 		return errPrincipalNotAllowed
+	}
+
+	if !conditionShapeValid(s.Condition) {
+		return errSyntax
 	}
 
 	if len(s.Action) > 0 && len(s.NotAction) > 0 {

@@ -60,8 +60,11 @@ type IAMConfig struct {
 	// KeyFile is the path to the TLS private key file for the IAM API server.
 	KeyFile string
 
-	// Debug enables verbose request/response debug logging.
-	Debug bool
+	// LogLevel controls the debug logger: LevelSilent (default) prints
+	// nothing, LevelDebug prints full request/response details with
+	// secrets and tokens masked, and LevelUnsafe prints them unmasked.
+	// Never use LevelUnsafe in production.
+	LogLevel debuglogger.Level
 	// Quiet suppresses per-request summary logging and startup output.
 	Quiet bool
 	// KeepAlive enables HTTP keep-alive on IAM API connections.
@@ -120,6 +123,13 @@ type IAMConfig struct {
 	Version   string
 	Build     string
 	BuildTime string
+
+	// DisableOIDCThumbprintAutoFetch disables CreateOpenIDConnectProvider's
+	// TLS auto-fetch fallback for when ThumbprintList is omitted. When set,
+	// an omitted ThumbprintList is rejected instead of the IAM API making an
+	// outbound TLS connection to the caller-supplied URL — for restricted
+	// or air-gapped deployments.
+	DisableOIDCThumbprintAutoFetch bool
 }
 
 var iamAPIRunning atomic.Bool
@@ -198,9 +208,10 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 	if cfg.Quiet {
 		opts = append(opts, iamapi.WithQuiet())
 	}
-	if cfg.Debug {
-		debuglogger.SetDebugEnabled()
+	if cfg.DisableOIDCThumbprintAutoFetch {
+		opts = append(opts, iamapi.WithOIDCThumbprintAutoFetchDisabled())
 	}
+	debuglogger.SetLevel(cfg.LogLevel)
 	if cfg.SocketPerm != "" {
 		perm, err := strconv.ParseUint(cfg.SocketPerm, 8, 32)
 		if err != nil {

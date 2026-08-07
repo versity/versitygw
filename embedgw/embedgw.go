@@ -114,10 +114,13 @@ type Config struct {
 	// (e.g. "https://webui.example.com") to restrict cross-origin access.
 	CORSAllowOrigin string
 
-	// Debug enables verbose debug logging to stdout, including details for
-	// signature verification steps. Not intended for production use.
-	Debug bool
-	// IAMDebug enables verbose IAM subsystem debug logging.
+	// LogLevel controls the debug logger: LevelSilent (default) prints
+	// nothing, LevelDebug prints full request/response details with
+	// secrets and tokens masked, and LevelUnsafe prints them unmasked.
+	// Never use LevelUnsafe in production.
+	LogLevel debuglogger.Level
+	// IAMDebug enables verbose IAM subsystem debug logging. Has no effect
+	// when LogLevel is LevelSilent.
 	IAMDebug bool
 	// Quiet suppresses per-request summary logging to stdout.
 	Quiet bool
@@ -627,9 +630,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	if len(cfg.S3Options) > 0 {
 		opts = append(opts, cfg.S3Options...)
 	}
-	if cfg.Debug {
-		debuglogger.SetDebugEnabled()
-	}
+	debuglogger.SetLevel(cfg.LogLevel)
 	if cfg.IAMDebug {
 		debuglogger.SetIAMDebugEnabled()
 	}
@@ -808,7 +809,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		if cfg.Quiet {
 			admOpts = append(admOpts, s3api.WithAdminQuiet())
 		}
-		if cfg.Debug {
+		if cfg.LogLevel != debuglogger.LevelSilent {
 			admOpts = append(admOpts, s3api.WithAdminDebug())
 		}
 		if cfg.SocketPerm != "" {
