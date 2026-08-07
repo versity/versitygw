@@ -114,7 +114,9 @@ install_linux_libraries() {
           python3-venv \
           xxd \
           uuid-runtime \
-          ca-certificates || return 1
+          ca-certificates \
+          build-essential \
+          libc6-dev || return 1
       ;;
 
     dnf)
