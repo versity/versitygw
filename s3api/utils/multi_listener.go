@@ -15,9 +15,11 @@
 package utils
 
 import (
+	"bufio"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -371,7 +373,7 @@ func NewMultiAddrTLSListener(network, address string, getCertificateFunc func(*t
 				return nil, fmt.Errorf("failed to set permissions on socket %s: %w", address, err)
 			}
 		}
-		return NewMultiListener(tls.NewListener(ln, config)), nil
+		return NewMultiListener(tls.NewListener(newHTTPDetectListener(ln), config)), nil
 	}
 
 	addrs, err := resolveHostnameAddrs(address)
@@ -391,9 +393,82 @@ func NewMultiAddrTLSListener(network, address string, getCertificateFunc func(*t
 			}
 			return nil, fmt.Errorf("failed to bind TLS listener %s: %w", addr, err)
 		}
-		listeners = append(listeners, tls.NewListener(ln, config))
+		listeners = append(listeners, tls.NewListener(newHTTPDetectListener(ln), config))
 	}
 
 	// Return MultiListener for multiple addresses
 	return NewMultiListener(listeners...), nil
+}
+
+// errPlaintextHTTPOnTLS is returned by httpDetectConn.Read after it has replied
+// to a plaintext HTTP request that was sent to a TLS listener. Returning an error
+// aborts the (impossible) TLS handshake so the connection is closed after the
+// 400 response has been written.
+var errPlaintextHTTPOnTLS = errors.New("plaintext HTTP request received on TLS listener")
+
+// plaintextHTTPResponse is the reply sent to a client that speaks plaintext HTTP
+// to a TLS port. It mirrors the behaviour of net/http's TLS server, which turns
+// the same misconfiguration into a clear 400 rather than an aborted connection.
+const plaintextHTTPResponse = "HTTP/1.0 400 Bad Request\r\n" +
+	"Content-Type: text/plain; charset=utf-8\r\n" +
+	"Connection: close\r\n" +
+	"\r\n" +
+	"Client sent an HTTP request to an HTTPS server.\n"
+
+// looksLikePlaintextHTTP reports whether the first bytes of a connection are the
+// start of a plaintext HTTP request line. A real TLS ClientHello begins with the
+// handshake record type byte (0x16), which never matches these method prefixes.
+func looksLikePlaintextHTTP(b []byte) bool {
+	if len(b) < 5 {
+		return false
+	}
+	switch string(b[:5]) {
+	case "GET /", "HEAD ", "POST ", "PUT /", "DELET", "OPTIO", "PATCH", "TRACE", "CONNE":
+		return true
+	}
+	return false
+}
+
+// httpDetectListener wraps a listener whose connections are about to be upgraded
+// to TLS. It detects the common misconfiguration of a client sending a plaintext
+// HTTP request to a TLS port and returns a clear 400 response instead of leaving
+// the client with an aborted/empty reply (curl exit code 52).
+type httpDetectListener struct {
+	net.Listener
+}
+
+func newHTTPDetectListener(ln net.Listener) net.Listener {
+	return httpDetectListener{Listener: ln}
+}
+
+func (l httpDetectListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &httpDetectConn{Conn: conn, r: bufio.NewReader(conn)}, nil
+}
+
+// httpDetectConn peeks at the first bytes of a connection before the TLS layer
+// consumes them. If they are a plaintext HTTP request, it writes a 400 response
+// and then fails subsequent reads so the handshake aborts cleanly.
+type httpDetectConn struct {
+	net.Conn
+	r       *bufio.Reader
+	checked bool
+	blocked bool
+}
+
+func (c *httpDetectConn) Read(p []byte) (int, error) {
+	if !c.checked {
+		c.checked = true
+		if peek, err := c.r.Peek(5); err == nil && looksLikePlaintextHTTP(peek) {
+			_, _ = io.WriteString(c.Conn, plaintextHTTPResponse)
+			c.blocked = true
+		}
+	}
+	if c.blocked {
+		return 0, errPlaintextHTTPOnTLS
+	}
+	return c.r.Read(p)
 }
