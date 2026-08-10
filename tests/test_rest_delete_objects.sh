@@ -160,6 +160,7 @@ source ./tests/setup.sh
   assert_success
 }
 
+# tags: curl, DeleteObjects
 @test "REST - DeleteObjects - quiet mode" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/2124"

@@ -28,6 +28,9 @@ source ./tests/drivers/get_bucket_location/get_bucket_location.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
 source ./tests/drivers/get_object_tagging/get_object_tagging.sh
+source ./tests/drivers/head_bucket/head_bucket_mc.sh
+source ./tests/drivers/list_buckets/list_buckets.sh
+source ./tests/drivers/list_objects/list_objects.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 
 export RUN_MC=true
