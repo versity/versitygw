@@ -113,7 +113,7 @@ func GetObjectRetention_success(s *S3Conf) error {
 			return err
 		}
 
-		date := time.Now().Add(time.Hour * 3)
+		date := time.Now().Add(lockWaitTime)
 		retention := types.ObjectLockRetention{
 			Mode:            types.ObjectLockRetentionModeCompliance,
 			RetainUntilDate: &date,

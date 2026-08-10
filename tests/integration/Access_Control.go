@@ -656,7 +656,7 @@ func AccessControl_PutObject_with_retention_policy(s *S3Conf) error {
 		}
 
 		objectResource := fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket)
-		date := time.Now().Add(time.Hour)
+		date := time.Now().Add(lockWaitTime)
 
 		// Error path: user has s3:PutObject but not s3:PutObjectRetention
 		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:PutObject"`, objectResource)
@@ -1060,13 +1060,14 @@ func AccessControl_CopyObject_with_retention_policy(s *S3Conf) error {
 		}
 
 		userClient := s.getUserClient(testuser)
+		date := time.Now().Add(lockWaitTime)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = userClient.CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:                    &bucket,
 			Key:                       &dstObj,
 			CopySource:                getPtr(fmt.Sprintf("%s/%s", bucket, srcObj)),
 			ObjectLockMode:            types.ObjectLockModeGovernance,
-			ObjectLockRetainUntilDate: getPtr(time.Now().AddDate(1, 0, 0)),
+			ObjectLockRetainUntilDate: &date,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
@@ -1100,7 +1101,7 @@ func AccessControl_CopyObject_with_retention_policy(s *S3Conf) error {
 			Key:                       &dstObj,
 			CopySource:                getPtr(fmt.Sprintf("%s/%s", bucket, srcObj)),
 			ObjectLockMode:            types.ObjectLockModeGovernance,
-			ObjectLockRetainUntilDate: getPtr(time.Now().AddDate(1, 0, 0)),
+			ObjectLockRetainUntilDate: &date,
 		})
 		cancel()
 		if err != nil {

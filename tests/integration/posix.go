@@ -247,6 +247,11 @@ func PutObject_race_with_delete(s *S3Conf) error {
 				})
 				cancel()
 				if err != nil {
+					// Concurrent delete may temporarily materialize a directory/file
+					// conflict for this prefix. Treat that known race outcome as benign.
+					if checkApiErr(err, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)) == nil {
+						continue
+					}
 					return fmt.Errorf("put %d: %w", i, err)
 				}
 			}

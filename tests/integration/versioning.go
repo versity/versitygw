@@ -2148,7 +2148,7 @@ func Versioning_PutObjectRetention_invalid_versionId(s *S3Conf) error {
 			return err
 		}
 
-		rDate := time.Now().Add(time.Hour * 48)
+		rDate := time.Now().Add(lockWaitTime)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket:    &bucket,
@@ -2173,7 +2173,7 @@ func Versioning_PutObjectRetention_non_existing_object_version(s *S3Conf) error 
 			return err
 		}
 
-		rDate := time.Now().Add(time.Hour * 48)
+		rDate := time.Now().Add(lockWaitTime)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket:    &bucket,
@@ -2298,7 +2298,7 @@ func Versioning_Put_GetObjectRetention_success(s *S3Conf) error {
 		}
 		objVersion := objVersions[1]
 
-		rDate := time.Now().Add(time.Hour * 48)
+		rDate := time.Now().Add(lockWaitTime)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket:    &bucket,
@@ -2583,7 +2583,7 @@ func Versioning_WORM_obj_version_locked_with_governance_retention(s *S3Conf) err
 		}
 		version := objVersions[0]
 
-		rDate := time.Now().Add(time.Hour * 48)
+		rDate := time.Now().Add(lockWaitTime)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket:    &bucket,
@@ -2629,7 +2629,7 @@ func Versioning_WORM_obj_version_locked_with_compliance_retention(s *S3Conf) err
 		}
 		version := objVersions[0]
 
-		rDate := time.Now().Add(time.Hour * 48)
+		rDate := time.Now().Add(lockWaitTime)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket:    &bucket,
@@ -2751,7 +2751,7 @@ func Versioning_WORM_delete_marker_locked_object_governance_retention(s *S3Conf)
 			Key:    &obj,
 			Retention: &types.ObjectLockRetention{
 				Mode:            types.ObjectLockRetentionModeGovernance,
-				RetainUntilDate: getPtr(time.Now().AddDate(1, 0, 0)),
+				RetainUntilDate: getPtr(time.Now().Add(lockWaitTime)),
 			},
 		})
 		cancel()
@@ -2820,7 +2820,7 @@ func Versioning_WORM_delete_marker_locked_object_compliance_retention(s *S3Conf)
 			Key:    &obj,
 			Retention: &types.ObjectLockRetention{
 				Mode:            types.ObjectLockRetentionModeCompliance,
-				RetainUntilDate: getPtr(time.Now().AddDate(1, 0, 0)),
+				RetainUntilDate: getPtr(time.Now().Add(lockWaitTime)),
 			},
 		})
 		cancel()

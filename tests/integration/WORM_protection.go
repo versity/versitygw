@@ -220,7 +220,7 @@ func WORMProtection_object_lock_retention_compliance_locked(s *S3Conf) error {
 			return err
 		}
 
-		date := time.Now().Add(time.Hour * 3)
+		date := time.Now().Add(lockWaitTime + 10*time.Second)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
@@ -239,7 +239,7 @@ func WORMProtection_object_lock_retention_compliance_locked(s *S3Conf) error {
 			return err
 		}
 
-		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: object, isCompliance: true}})
+		return waitAndDeleteLockedObject(s3client, bucket, object, date)
 	}, withLock())
 }
 
@@ -253,7 +253,7 @@ func WORMProtection_object_lock_retention_governance_locked(s *S3Conf) error {
 			return err
 		}
 
-		date := time.Now().Add(time.Hour * 3)
+		date := time.Now().Add(lockWaitTime + 10*time.Second)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
@@ -271,7 +271,7 @@ func WORMProtection_object_lock_retention_governance_locked(s *S3Conf) error {
 		if err := checkWORMProtection(s3client, bucket, object); err != nil {
 			return err
 		}
-		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: object}})
+		return waitAndDeleteLockedObject(s3client, bucket, object, date)
 	}, withLock())
 }
 

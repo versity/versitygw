@@ -263,7 +263,8 @@ func PutObject_with_object_lock(s *S3Conf) error {
 	testName := "PutObject_with_object_lock"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		retainUntilDate := time.Now().AddDate(1, 0, 0)
+		// Keep retention short so cleanup does not need to reduce COMPLIANCE retention.
+		retainUntilDate := time.Now().Add(lockWaitTime)
 
 		_, err := putObjectWithData(10, &s3.PutObjectInput{
 			Bucket:                    &bucket,

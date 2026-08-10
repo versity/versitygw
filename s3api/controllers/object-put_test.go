@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"strings"
 	"testing"
@@ -167,6 +168,42 @@ func TestS3ApiController_PutObjectRetention(t *testing.T) {
 		})
 	assert.NoError(t, err)
 
+	shortRetDate := time.Now().Add(time.Hour)
+	shortenedComplianceRetentionBody, err := xml.Marshal(
+		s3response.PutObjectRetentionInput{
+			Mode: types.ObjectLockRetentionModeCompliance,
+			RetainUntilDate: s3response.AmzDate{
+				Time: shortRetDate,
+			},
+		})
+	assert.NoError(t, err)
+
+	storedComplianceRetainUntilDate := time.Now().Add(time.Hour * 6)
+	storedComplianceRetentionData, err := json.Marshal(types.ObjectLockRetention{
+		Mode:            types.ObjectLockRetentionModeCompliance,
+		RetainUntilDate: &storedComplianceRetainUntilDate,
+	})
+	assert.NoError(t, err)
+
+	shortGovernanceRetDate := time.Now().Add(time.Hour)
+	shortenedGovernanceRetentionBody, err := xml.Marshal(
+		s3response.PutObjectRetentionInput{
+			Mode: types.ObjectLockRetentionModeGovernance,
+			RetainUntilDate: s3response.AmzDate{
+				Time: shortGovernanceRetDate,
+			},
+		})
+	assert.NoError(t, err)
+
+	storedGovernanceRetainUntilDate := time.Now().Add(time.Hour * 6)
+	storedGovernanceRetentionData, err := json.Marshal(types.ObjectLockRetention{
+		Mode:            types.ObjectLockRetentionModeGovernance,
+		RetainUntilDate: &storedGovernanceRetainUntilDate,
+	})
+	assert.NoError(t, err)
+
+	bypassGovernanceRetentionPolicy := []byte(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"root"},"Action":"s3:BypassGovernanceRetention","Resource":"arn:aws:s3:::bucket/object"}]}`)
+
 	tests := []struct {
 		name   string
 		input  testInput
@@ -250,6 +287,76 @@ func TestS3ApiController_PutObjectRetention(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "compliance retention cannot be shortened",
+			input: testInput{
+				locals:        defaultLocals,
+				body:          shortenedComplianceRetentionBody,
+				extraMockResp: storedComplianceRetentionData,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrObjectLocked),
+			},
+		},
+		{
+			name: "governance retention cannot be shortened without bypass header",
+			input: testInput{
+				locals:        defaultLocals,
+				body:          shortenedGovernanceRetentionBody,
+				extraMockResp: storedGovernanceRetentionData,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrObjectLocked),
+			},
+		},
+		{
+			name: "governance retention cannot be shortened without bypass permission",
+			input: testInput{
+				locals:        defaultLocals,
+				body:          shortenedGovernanceRetentionBody,
+				extraMockResp: storedGovernanceRetentionData,
+				headers: map[string]string{
+					"X-Amz-Bypass-Governance-Retention": "true",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrObjectLocked),
+			},
+		},
+		{
+			name: "governance retention can be shortened with bypass permission",
+			input: testInput{
+				locals:        defaultLocals,
+				body:          shortenedGovernanceRetentionBody,
+				extraMockResp: storedGovernanceRetentionData,
+				beRes:         bypassGovernanceRetentionPolicy,
+				headers: map[string]string{
+					"X-Amz-Bypass-Governance-Retention": "true",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -257,10 +364,21 @@ func TestS3ApiController_PutObjectRetention(t *testing.T) {
 				PutObjectRetentionFunc: func(contextMoqParam context.Context, bucket, object, versionId string, retention []byte) error {
 					return tt.input.beErr
 				},
+				NormalizeObjectKeyFunc: func(bucket, key string) string {
+					return key
+				},
 				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+					if tt.input.beRes != nil {
+						return tt.input.beRes.([]byte), nil
+					}
+
 					return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
 				},
 				GetObjectRetentionFunc: func(contextMoqParam context.Context, bucket, object, versionId string) ([]byte, error) {
+					if tt.input.extraMockResp != nil {
+						return tt.input.extraMockResp.([]byte), tt.input.extraMockErr
+					}
+
 					return nil, tt.input.extraMockErr
 				},
 			}

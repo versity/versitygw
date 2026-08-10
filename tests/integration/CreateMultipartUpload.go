@@ -180,7 +180,8 @@ func CreateMultipartUpload_with_object_lock(s *S3Conf) error {
 	testName := "CreateMultipartUpload_with_object_lock"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		retainUntilDate := time.Now().Add(24 * time.Hour)
+		// Keep retention short so cleanup does not need to shorten GOVERNANCE retention.
+		retainUntilDate := time.Now().Add(lockWaitTime)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
 			Bucket:                    &bucket,

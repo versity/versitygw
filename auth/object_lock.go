@@ -155,6 +155,25 @@ func IsObjectLockRetentionPutAllowed(ctx context.Context, be backend.Backend, bu
 		return err
 	}
 
+	if retention.Mode == types.ObjectLockRetentionModeCompliance && input.Mode == types.ObjectLockRetentionModeCompliance {
+		if retention.RetainUntilDate != nil && input.RetainUntilDate.Before(*retention.RetainUntilDate) {
+			debuglogger.Logf("object lock retention date cannot be reduced in COMPLIANCE mode")
+			return s3err.GetAPIError(s3err.ErrObjectLocked)
+		}
+
+		// COMPLIANCE retain-until date can only stay the same or be extended.
+		return nil
+	}
+
+	if retention.Mode == types.ObjectLockRetentionModeGovernance && input.Mode == types.ObjectLockRetentionModeGovernance {
+		if retention.RetainUntilDate != nil && input.RetainUntilDate.Before(*retention.RetainUntilDate) {
+			debuglogger.Logf("object lock retention date reduction in GOVERNANCE mode requires bypass governance retention permission")
+			return isBypassGovernanceRetentionAllowed(ctx, be, bucket, object, userAccess, bypass)
+		}
+
+		return nil
+	}
+
 	if retention.Mode == input.Mode {
 		// if retention mode is the same
 		// the operation is allowed
@@ -167,17 +186,19 @@ func IsObjectLockRetentionPutAllowed(ctx context.Context, be backend.Backend, bu
 		return s3err.GetAPIError(s3err.ErrObjectLocked)
 	}
 
+	// the last case left, when user tries to change
+	// from 'GOVERNANCE' to 'COMPLIANCE', verify bypass permission
+	return isBypassGovernanceRetentionAllowed(ctx, be, bucket, object, userAccess, bypass)
+}
+
+func isBypassGovernanceRetentionAllowed(ctx context.Context, be backend.Backend, bucket, object, userAccess string, bypass bool) error {
 	if !bypass {
 		// if x-amz-bypass-governance-retention is not provided
 		// return error: object is locked
-		debuglogger.Logf("object lock retention mode change is not allowed and bypass governence is not forced")
+		debuglogger.Logf("object lock retention modification requires bypass governance retention but bypass header is missing")
 		return s3err.GetAPIError(s3err.ErrObjectLocked)
 	}
 
-	// the last case left, when user tries to chenge
-	// from 'GOVERNANCE' to 'COMPLIANCE' with
-	// 'x-amz-bypass-governance-retention' header
-	// first we need to check if user has 's3:BypassGovernanceRetention'
 	policy, err := be.GetBucketPolicy(ctx, bucket)
 	if err != nil {
 		// if it fails to get the policy, return object is locked

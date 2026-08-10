@@ -1949,6 +1949,36 @@ func checkWORMProtection(client *s3.Client, bucket, object string) error {
 	return nil
 }
 
+func waitAndDeleteLockedObject(client *s3.Client, bucket, object string, retainUntil time.Time) error {
+	waitDur := time.Until(retainUntil.Add(time.Second))
+	if waitDur > 0 {
+		time.Sleep(waitDur)
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetryAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &object,
+		})
+		cancel()
+
+		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) || err == nil {
+			return nil
+		}
+
+		lastErr = err
+		if !errors.Is(err, s3err.GetAPIError(s3err.ErrObjectLocked)) {
+			return err
+		}
+
+		time.Sleep(time.Second)
+	}
+
+	return lastErr
+}
+
 func objStrings(objs []types.Object) []string {
 	objStrs := make([]string, len(objs))
 	for i, obj := range objs {

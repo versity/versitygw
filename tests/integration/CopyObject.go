@@ -1008,7 +1008,8 @@ func CopyObject_with_retention_lock(s *S3Conf) error {
 			return err
 		}
 
-		retDate := time.Now().Add(time.Hour * 7)
+		// Keep retention short so cleanup does not need to shorten GOVERNANCE retention.
+		retDate := time.Now().Add(lockWaitTime)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
