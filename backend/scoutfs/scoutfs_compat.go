@@ -74,18 +74,25 @@ type ScoutFS struct {
 func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 	metastore := meta.XattrMeta{}
 
-	p, err := posix.New(rootdir, metastore, posix.PosixOpts{
+	posixOpts := posix.PosixOpts{
 		ChownUID:            opts.ChownUID,
 		ChownGID:            opts.ChownGID,
 		BucketLinks:         opts.BucketLinks,
-		NewDirPerm:          opts.NewDirPerm,
 		VersioningDir:       opts.VersioningDir,
 		ValidateBucketNames: opts.ValidateBucketNames,
 		Concurrency:         opts.Concurrency,
 		CopyObjectThreshold: opts.CopyObjectThreshold,
 		DefaultEtag:         opts.DefaultEtag,
 		DataIntegrityEtag:   opts.DataIntegrityEtag,
-	})
+	}
+	if opts.newDirPermSet {
+		posixOpts.SetNewDirPerm(opts.NewDirPerm)
+	}
+	if opts.newFilePermSet {
+		posixOpts.SetNewFilePerm(opts.NewFilePerm)
+	}
+
+	p, err := posix.New(rootdir, metastore, posixOpts)
 	if err != nil {
 		return nil, err
 	}

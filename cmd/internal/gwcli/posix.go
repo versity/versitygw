@@ -24,11 +24,17 @@ import (
 	"github.com/versity/versitygw/backend/posix"
 )
 
+// maxFilePerms is the highest accepted value for the file-perms option. The
+// posix backend only applies permission bits to new objects, so anything
+// above this would be silently dropped.
+const maxFilePerms = 0777
+
 var (
 	chownuid, chowngid   bool
 	bucketlinks          bool
 	versioningDir        string
 	dirPerms             uint
+	filePerms            uint
 	sidecar              string
 	nometa               bool
 	forceNoTmpFile       bool
@@ -89,6 +95,14 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				Destination: &dirPerms,
 				DefaultText: "0755",
 				Value:       0755,
+			},
+			&cli.UintFlag{
+				Name:        "file-perms",
+				Usage:       "default file permissions for new objects",
+				EnvVars:     []string{"VGW_FILE_PERMS"},
+				Destination: &filePerms,
+				DefaultText: "0644",
+				Value:       0644,
 			},
 			&cli.StringFlag{
 				Name:        "sidecar",
@@ -161,6 +175,10 @@ func runPosix(ctx *cli.Context) error {
 		return fmt.Errorf("invalid directory permissions: %d", dirPerms)
 	}
 
+	if filePerms > maxFilePerms {
+		return fmt.Errorf("invalid file permissions: %o, must be within 0000-0777", filePerms)
+	}
+
 	if nometa && sidecar != "" {
 		return fmt.Errorf("cannot use both nometa and sidecar metadata")
 	}
@@ -174,7 +192,6 @@ func runPosix(ctx *cli.Context) error {
 		ChownGID:             chowngid,
 		BucketLinks:          bucketlinks,
 		VersioningDir:        versioningDir,
-		NewDirPerm:           fs.FileMode(dirPerms),
 		ForceNoTmpFile:       forceNoTmpFile,
 		ForceNoCopyFileRange: forceNoCopyFileRange,
 		EnableODirect:        enableODirect,
@@ -185,6 +202,8 @@ func runPosix(ctx *cli.Context) error {
 		DefaultEtag:          defaultEtag,
 		DataIntegrityEtag:    dataIntegrityEtag,
 	}
+	opts.SetNewDirPerm(fs.FileMode(dirPerms))
+	opts.SetNewFilePerm(fs.FileMode(filePerms))
 
 	var ms meta.MetadataStorer
 	switch {

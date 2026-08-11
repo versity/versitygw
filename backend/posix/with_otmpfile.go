@@ -38,23 +38,19 @@ import (
 const procfddir = "/proc/self/fd"
 
 type tmpfile struct {
-	f          *os.File
-	bucket     string
-	objname    string
-	isOTmp     bool
-	procFDName string
-	useODirect bool
-	size       int64
-	doChown    bool
-	uid        int
-	gid        int
-	newDirPerm fs.FileMode
+	f           *os.File
+	bucket      string
+	objname     string
+	isOTmp      bool
+	procFDName  string
+	useODirect  bool
+	size        int64
+	doChown     bool
+	uid         int
+	gid         int
+	newDirPerm  fs.FileMode
+	newFilePerm fs.FileMode
 }
-
-var (
-	// TODO: make this configurable
-	defaultFilePerm uint32 = 0644
-)
 
 func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, dofalloc bool, forceNoTmpFile bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
@@ -76,7 +72,9 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		useODirect = true
 	}
 
-	fd, err := unix.Open(dir, openFlags, defaultFilePerm)
+	filePerm := uint32(p.newFilePerm.Perm())
+
+	fd, err := unix.Open(dir, openFlags, filePerm)
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
 			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
@@ -85,7 +83,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		if p.enableODirect && bool(allowODirect) && isODirectUnsupportedOpenErr(err) {
 			warnODirectUnsupportedOnce("openTmpFile", err)
 
-			fd, err = unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, defaultFilePerm)
+			fd, err = unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, filePerm)
 			if err == nil {
 				useODirect = false
 			} else if errors.Is(err, syscall.EROFS) {
@@ -103,18 +101,29 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	// later to link file into namespace
 	f := os.NewFile(uintptr(fd), filepath.Join(procfddir, strconv.Itoa(fd)))
 
+	// The mode passed to open() is masked by the process umask. Set the
+	// configured mode explicitly so new objects get the same permissions
+	// regardless of umask, and regardless of whether this or the CreateTemp
+	// fallback path (which also chmods) created the file.
+	err = f.Chmod(p.newFilePerm)
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("set temp file mode: %w", err)
+	}
+
 	tmp := &tmpfile{
-		f:          f,
-		bucket:     bucket,
-		objname:    obj,
-		isOTmp:     true,
-		procFDName: strconv.Itoa(fd),
-		useODirect: useODirect,
-		size:       size,
-		doChown:    doChown,
-		uid:        uid,
-		gid:        gid,
-		newDirPerm: p.newDirPerm,
+		f:           f,
+		bucket:      bucket,
+		objname:     obj,
+		isOTmp:      true,
+		procFDName:  strconv.Itoa(fd),
+		useODirect:  useODirect,
+		size:        size,
+		doChown:     doChown,
+		uid:         uid,
+		gid:         gid,
+		newDirPerm:  p.newDirPerm,
+		newFilePerm: p.newFilePerm,
 	}
 
 	// falloc is best effort, its fine if this fails
@@ -158,7 +167,7 @@ func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, u
 			return nil, fmt.Errorf("close temp file before O_DIRECT reopen: %w", err)
 		}
 
-		fd, err := unix.Open(name, unix.O_RDWR|unix.O_CLOEXEC|unix.O_DIRECT, defaultFilePerm)
+		fd, err := unix.Open(name, unix.O_RDWR|unix.O_CLOEXEC|unix.O_DIRECT, uint32(p.newFilePerm.Perm()))
 		if err == nil {
 			f = os.NewFile(uintptr(fd), name)
 			useODirect = true
@@ -176,14 +185,16 @@ func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, u
 	}
 
 	tmp := &tmpfile{
-		f:          f,
-		bucket:     bucket,
-		objname:    obj,
-		useODirect: useODirect,
-		size:       size,
-		doChown:    doChown,
-		uid:        uid,
-		gid:        gid,
+		f:           f,
+		bucket:      bucket,
+		objname:     obj,
+		useODirect:  useODirect,
+		size:        size,
+		doChown:     doChown,
+		uid:         uid,
+		gid:         gid,
+		newDirPerm:  p.newDirPerm,
+		newFilePerm: p.newFilePerm,
 	}
 	// falloc is best effort, its fine if this fails
 	if size > 0 && dofalloc {
@@ -326,7 +337,7 @@ func (tmp *tmpfile) fallbackLink() error {
 	tempname := tmp.f.Name()
 
 	// reset default file mode because CreateTemp uses 0600
-	tmp.f.Chmod(fs.FileMode(defaultFilePerm))
+	tmp.f.Chmod(tmp.newFilePerm)
 
 	err := tmp.f.Close()
 	if err != nil {
@@ -359,7 +370,7 @@ func (tmp *tmpfile) fallbackLink() error {
 		// if this fails fallback to copy
 		backoffMs := initialBackoffMs
 		for range maxDirRecreateRetries {
-			err = backend.MoveFile(tempname, objPath, fs.FileMode(defaultFilePerm))
+			err = backend.MoveFile(tempname, objPath, tmp.newFilePerm)
 			if !errors.Is(err, syscall.ENOENT) {
 				break
 			}

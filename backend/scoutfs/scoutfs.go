@@ -32,8 +32,16 @@ type ScoutfsOpts struct {
 	BucketLinks bool
 	//VersioningDir sets the version directory to enable object versioning
 	VersioningDir string
-	// NewDirPerm specifies the permission to set on newly created directories
-	NewDirPerm fs.FileMode
+	// NewDirPerm specifies the permission to set on newly created directories.
+	// An explicit zero value (0000) is valid and is preserved when set via
+	// SetNewDirPerm.
+	NewDirPerm    fs.FileMode
+	newDirPermSet bool
+	// NewFilePerm specifies the permission to set on newly created object
+	// files. Defaults to 0644 when unset; an explicit zero value (0000) is
+	// valid and is preserved when set via SetNewFilePerm.
+	NewFilePerm    fs.FileMode
+	newFilePermSet bool
 	// GlacierMode enables glacier emulation for offline files
 	GlacierMode bool
 	// DisableNoArchive prevents setting noarchive on temporary files
@@ -59,6 +67,16 @@ type ScoutfsOpts struct {
 	// (e.g. "CRC64NVME-<base64>"). For multipart uploads, part ETags become
 	// CRC64NVME-based values and the completed object ETag is checksum-derived.
 	DataIntegrityEtag bool
+}
+
+func (o *ScoutfsOpts) SetNewDirPerm(perm fs.FileMode) {
+	o.NewDirPerm = perm
+	o.newDirPermSet = true
+}
+
+func (o *ScoutfsOpts) SetNewFilePerm(perm fs.FileMode) {
+	o.NewFilePerm = perm
+	o.newFilePermSet = true
 }
 
 var _ backend.Backend = &ScoutFS{}
