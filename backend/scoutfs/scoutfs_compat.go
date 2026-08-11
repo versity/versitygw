@@ -79,6 +79,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 		ChownGID:            opts.ChownGID,
 		BucketLinks:         opts.BucketLinks,
 		NewDirPerm:          opts.NewDirPerm,
+		NewFilePerm:         opts.NewFilePerm,
 		VersioningDir:       opts.VersioningDir,
 		ValidateBucketNames: opts.ValidateBucketNames,
 		Concurrency:         opts.Concurrency,

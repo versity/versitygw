@@ -95,6 +95,14 @@ move interfaces as well as support for tiered filesystems.`,
 				DefaultText: "0755",
 				Value:       0755,
 			},
+			&cli.UintFlag{
+				Name:        "file-perms",
+				Usage:       "default file permissions for new objects",
+				EnvVars:     []string{"VGW_FILE_PERMS"},
+				Destination: &filePerms,
+				DefaultText: "0644",
+				Value:       0644,
+			},
 			&cli.BoolFlag{
 				Name:        "disable-noarchive",
 				Usage:       "disable setting noarchive for multipart part uploads",
@@ -133,6 +141,10 @@ func runScoutfs(ctx *cli.Context) error {
 		return fmt.Errorf("invalid directory permissions: %d", dirPerms)
 	}
 
+	if filePerms > maxFilePerms {
+		return fmt.Errorf("invalid file permissions: %o, must be within 0000-0777", filePerms)
+	}
+
 	if actionsConcurrency <= 0 {
 		return fmt.Errorf("concurrency must be positive, got %d", actionsConcurrency)
 	}
@@ -143,6 +155,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.ChownGID = chowngid
 	opts.BucketLinks = bucketlinks
 	opts.NewDirPerm = fs.FileMode(dirPerms)
+	opts.NewFilePerm = fs.FileMode(filePerms)
 	opts.DisableNoArchive = disableNoArchive
 	opts.VersioningDir = versioningDir
 	opts.ValidateBucketNames = DisableStrictBucketNames

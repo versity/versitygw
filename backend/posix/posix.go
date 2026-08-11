@@ -78,6 +78,9 @@ type Posix struct {
 	// newDirPerm is the permission to set on newly created directories
 	newDirPerm fs.FileMode
 
+	// newFilePerm is the permission to set on newly created object files
+	newFilePerm fs.FileMode
+
 	// forceNoTmpFile is a flag to disable the use of O_TMPFILE even
 	// if the filesystem supports it. This is needed for cases where
 	// there are different filesystems mounted below the bucket level.
@@ -192,6 +195,10 @@ type PosixOpts struct {
 	VersioningDir string
 	// NewDirPerm specifies the permission to set on newly created directories
 	NewDirPerm fs.FileMode
+	// NewFilePerm specifies the permission to set on newly created object
+	// files. Defaults to 0644 when unset. Unlike NewDirPerm, this mode is
+	// applied explicitly and is therefore not reduced by the process umask.
+	NewFilePerm fs.FileMode
 	// SideCarDir sets the directory to store sidecar metadata
 	SideCarDir string
 	// ForceNoTmpFile disables the use of O_TMPFILE even if the filesystem
@@ -295,6 +302,7 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		bucketlinks:          opts.BucketLinks,
 		versioningDir:        versioningdirAbs,
 		newDirPerm:           opts.NewDirPerm,
+		newFilePerm:          filePermOrDefault(opts.NewFilePerm),
 		forceNoTmpFile:       opts.ForceNoTmpFile,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
 		enableODirect:        opts.EnableODirect,
@@ -309,6 +317,20 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		}},
 		dataIntegrityEtag: opts.DataIntegrityEtag,
 	}, nil
+}
+
+// defaultNewFilePerm is the permission used for newly created object files
+// when PosixOpts.NewFilePerm is not set.
+const defaultNewFilePerm fs.FileMode = 0644
+
+// filePermOrDefault returns the permission bits of perm if any are set,
+// otherwise defaultNewFilePerm. A zero mode would leave new objects
+// unreadable, so it is treated as "unset" rather than honored.
+func filePermOrDefault(perm fs.FileMode) fs.FileMode {
+	if perm.Perm() == 0 {
+		return defaultNewFilePerm
+	}
+	return perm.Perm()
 }
 
 // concurrencyOrDefault returns n if it is positive, otherwise defaultConcurrency.
