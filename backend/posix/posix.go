@@ -890,10 +890,6 @@ func (p *Posix) GetBucketVersioning(ctx context.Context, bucket string) (s3respo
 	}
 	defer release()
 
-	if !p.versioningEnabled() {
-		return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrVersioningNotConfigured)
-	}
-
 	if !p.isBucketValid(bucket) {
 		return s3response.GetBucketVersioningOutput{}, s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
@@ -904,6 +900,15 @@ func (p *Posix) GetBucketVersioning(ctx context.Context, bucket string) (s3respo
 	}
 	if err != nil {
 		return s3response.GetBucketVersioningOutput{}, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	if !p.versioningEnabled() {
+		// No versioning directory is configured: report the bucket as
+		// never-versioned (200 with an empty configuration) to match AWS,
+		// instead of failing with VersioningNotConfigured. GUI clients
+		// (S3 Browser, CloudBerry, ...) poll this API while browsing
+		// buckets. PutBucketVersioning still rejects the request.
+		return s3response.GetBucketVersioningOutput{}, nil
 	}
 
 	vData, err := p.meta.RetrieveAttribute(nil, bucket, "", versioningKey)

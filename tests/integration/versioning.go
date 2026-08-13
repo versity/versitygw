@@ -3620,8 +3620,32 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 func VersioningDisabled_GetBucketVersioning_not_configured(s *S3Conf) error {
 	testName := "VersioningDisabled_GetBucketVersioning_not_configured"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrVersioningNotConfigured)); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if res.Status != "" {
+			return fmt.Errorf("expected empty versioning status when versioning is not configured, instead got %v",
+				res.Status)
+		}
+
+		return nil
+	})
+}
+
+func VersioningDisabled_GetBucketVersioning_no_such_bucket(s *S3Conf) error {
+	testName := "VersioningDisabled_GetBucketVersioning_no_such_bucket"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
 			return err
 		}
 
@@ -3632,11 +3656,7 @@ func VersioningDisabled_GetBucketVersioning_not_configured(s *S3Conf) error {
 func VersioningDisabled_PutBucketVersioning_not_configured(s *S3Conf) error {
 	testName := "VersioningDisabled_PutBucketVersioning_not_configured"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
-			Bucket: &bucket,
-		})
-		cancel()
+		err := putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrVersioningNotConfigured)); err != nil {
 			return err
 		}
