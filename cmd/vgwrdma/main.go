@@ -31,9 +31,9 @@ import (
 	"github.com/versity/versitygw/cumiddleware"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/embedgw"
+	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/rdma"
 	"github.com/versity/versitygw/s3api"
-	"github.com/versity/versitygw/s3api/utils"
 )
 
 var (
@@ -184,16 +184,16 @@ documentation can be found in the GitHub wiki.`,
 			// Resolve relative UNIX socket paths to absolute before any backend
 			// (e.g. posix) can change the working directory via os.Chdir.
 			var err error
-			if ports, err = utils.AbsSocketPaths(ports); err != nil {
+			if ports, err = netutil.AbsSocketPaths(ports); err != nil {
 				return err
 			}
-			if admPorts, err = utils.AbsSocketPaths(admPorts); err != nil {
+			if admPorts, err = netutil.AbsSocketPaths(admPorts); err != nil {
 				return err
 			}
-			if webuiPorts, err = utils.AbsSocketPaths(webuiPorts); err != nil {
+			if webuiPorts, err = netutil.AbsSocketPaths(webuiPorts); err != nil {
 				return err
 			}
-			if websitePorts, err = utils.AbsSocketPaths(websitePorts); err != nil {
+			if websitePorts, err = netutil.AbsSocketPaths(websitePorts); err != nil {
 				return err
 			}
 

@@ -331,7 +331,7 @@ func resolveIndexKey(key string, config *s3response.WebsiteConfiguration) string
 }
 
 func (c *websiteController) getObject(ctx fiber.Ctx, bucket, key string) websiteResult {
-	if err := auth.VerifyPublicAccess(ctx.RequestCtx(), c.be, auth.GetObjectAction, auth.PermissionRead, bucket, key); err != nil {
+	if err := auth.VerifyPublicAccess(ctx, c.be, auth.GetObjectAction, auth.PermissionRead, bucket, key); err != nil {
 		return websiteResult{
 			Key:        key,
 			StatusCode: statusCodeFromError(err),
@@ -364,7 +364,7 @@ func (c *websiteController) getObject(ctx fiber.Ctx, bucket, key string) website
 }
 
 func (c *websiteController) headObject(ctx fiber.Ctx, bucket, key string) websiteResult {
-	if err := auth.VerifyPublicAccess(ctx.RequestCtx(), c.be, auth.GetObjectAction, auth.PermissionRead, bucket, key); err != nil {
+	if err := auth.VerifyPublicAccess(ctx, c.be, auth.GetObjectAction, auth.PermissionRead, bucket, key); err != nil {
 		return websiteResult{
 			Key:        key,
 			StatusCode: statusCodeFromError(err),

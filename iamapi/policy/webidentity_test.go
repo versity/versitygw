@@ -161,7 +161,7 @@ func TestEvaluateWebIdentityTrust(t *testing.T) {
 			// RequestContext.Condition on the identity-policy side - this
 			// is the most realistic place to exercise the multivalue
 			// aggregation semantics documented on aggregate() in
-			// condition.go. "banned" is present among the claim's values,
+			// internal/condition. "banned" is present among the claim's values,
 			// so unqualified StringNotEquals (pre-existing, unchanged
 			// semantics: fails to match if any actual value matches) fails
 			// to match, and the Allow's condition doesn't hold.

@@ -18,14 +18,11 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"net/url"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -34,7 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v3"
 	"github.com/valyala/fasthttp"
-	signerV4 "github.com/versity/versitygw/aws/signer/v4"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
@@ -133,41 +130,6 @@ func ExtractMetadataFromFields(fields map[string]string) (map[string]string, err
 	}
 
 	return metadata, nil
-}
-
-func createHttpRequestFromCtx(ctx fiber.Ctx, signedHdrs []string, contentLength int64) (*http.Request, error) {
-	req := ctx.Request()
-
-	uri := ctx.OriginalURL()
-
-	httpReq, err := http.NewRequest(string(req.Header.Method()), uri, nil)
-	if err != nil {
-		return nil, errors.New("error in creating an http request")
-	}
-
-	if err := addRequestHeadersFromCtx(ctx, httpReq, signedHdrs); err != nil {
-		return nil, err
-	}
-
-	// make sure all headers in the signed headers are present
-	for _, header := range signedHdrs {
-		if httpReq.Header.Get(header) == "" {
-			httpReq.Header.Set(header, "")
-		}
-	}
-
-	// Check if Content-Length in signed headers
-	// If content length is non 0, then the header will be included
-	if !includeHeader("Content-Length", signedHdrs) {
-		httpReq.ContentLength = 0
-	} else {
-		httpReq.ContentLength = contentLength
-	}
-
-	// Set the Host header
-	httpReq.Host = string(req.Header.Host())
-
-	return httpReq, nil
 }
 
 func SetMetaHeaders(ctx fiber.Ctx, meta map[string]string) {
@@ -294,34 +256,6 @@ func IsValidBucketName(bucket string) bool {
 		return false
 	}
 	return true
-}
-
-func includeHeader(hdr string, signedHdrs []string) bool {
-	return slices.ContainsFunc(signedHdrs, func(shdr string) bool {
-		return strings.EqualFold(hdr, shdr)
-	})
-}
-
-func addRequestHeadersFromCtx(ctx fiber.Ctx, httpReq *http.Request, signedHdrs []string) error {
-	headersNotSigned := []string{}
-	for key, value := range ctx.Request().Header.All() {
-		keyStr := string(key)
-		if includeHeader(keyStr, signedHdrs) || signerV4.IsIgnoredHeader(keyStr) {
-			httpReq.Header.Add(keyStr, string(value))
-			continue
-		}
-		if signerV4.IsRequiredSignedHeader(keyStr) {
-			lowerKey := strings.ToLower(keyStr)
-			headersNotSigned = append(headersNotSigned, lowerKey)
-		}
-	}
-
-	if len(headersNotSigned) != 0 {
-		debuglogger.Logf("headers present in request but not included in SignedHeaders: %q", strings.Join(headersNotSigned, ", "))
-		return s3err.GetHeadersNotSignedErr(headersNotSigned)
-	}
-
-	return nil
 }
 
 // expiration time window
@@ -1059,29 +993,6 @@ func GenerateObjectLocation(ctx fiber.Ctx, virtualDomain, bucket, object string)
 	)
 }
 
-type CertStorage struct {
-	cert atomic.Pointer[tls.Certificate]
-}
-
-func NewCertStorage() *CertStorage {
-	return &CertStorage{}
-}
-
-func (cs *CertStorage) GetCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	return cs.cert.Load(), nil
-}
-
-func (cs *CertStorage) SetCertificate(certFile string, keyFile string) error {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return fmt.Errorf("unable to set certificate: %w", err)
-	}
-
-	cs.cert.Store(&cert)
-
-	return nil
-}
-
 func NewTLSListener(network string, address string, getCertificateFunc func(*tls.ClientHelloInfo) (*tls.Certificate, error)) (net.Listener, error) {
 	config := &tls.Config{
 		MinVersion:     tls.VersionTLS12,
@@ -1093,6 +1004,55 @@ func NewTLSListener(network string, address string, getCertificateFunc func(*tls
 		return nil, err
 	}
 	return tls.NewListener(ln, config), nil
+}
+
+// MergeDeleteObjectsResult builds the final DeleteObjects response,
+// preserving the order objects were requested in across both the Deleted
+// and Error lists. objects is the full request; checkErrs is
+// VerifyObjectsAccess's per-object result for it (nil entries were sent to
+// the backend); backendResult is the backend's response for just those.
+//
+// The backend's own Deleted/Error order is not assumed to match the order
+// its objects were sent in, so objects are matched back to their backend
+// result by identity (key + version) rather than by position, with a FIFO
+// queue per identity to keep duplicate keys in the same request each paired
+// with their own result. versionID is "" for a keyed (unversioned) delete,
+// matching how both the request and every backend's response represent "no
+// version specified" — as a nil pointer.
+func MergeDeleteObjectsResult(objects []types.ObjectIdentifier, checkErrs []error, backendResult s3response.DeleteResult) s3response.DeleteResult {
+	type objectKey struct{ key, versionID string }
+
+	deletedByKey := make(map[objectKey][]types.DeletedObject, len(backendResult.Deleted))
+	for _, d := range backendResult.Deleted {
+		k := objectKey{backend.GetStringFromPtr(d.Key), backend.GetStringFromPtr(d.VersionId)}
+		deletedByKey[k] = append(deletedByKey[k], d)
+	}
+	errorByKey := make(map[objectKey][]types.Error, len(backendResult.Error))
+	for _, e := range backendResult.Error {
+		k := objectKey{backend.GetStringFromPtr(e.Key), backend.GetStringFromPtr(e.VersionId)}
+		errorByKey[k] = append(errorByKey[k], e)
+	}
+
+	var result s3response.DeleteResult
+	for i, obj := range objects {
+		if checkErrs[i] != nil {
+			result.Error = append(result.Error, s3err.ObjectDeleteError(obj.Key, obj.VersionId, checkErrs[i]))
+			continue
+		}
+
+		k := objectKey{backend.GetStringFromPtr(obj.Key), backend.GetStringFromPtr(obj.VersionId)}
+		if queue := deletedByKey[k]; len(queue) > 0 {
+			result.Deleted = append(result.Deleted, queue[0])
+			deletedByKey[k] = queue[1:]
+			continue
+		}
+		if queue := errorByKey[k]; len(queue) > 0 {
+			result.Error = append(result.Error, queue[0])
+			errorByKey[k] = queue[1:]
+		}
+	}
+
+	return result
 }
 
 func DetectResourceType(ctx fiber.Ctx) s3err.ResourceType {

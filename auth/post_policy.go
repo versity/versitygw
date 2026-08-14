@@ -346,6 +346,14 @@ func lookupField(in PostPolicyEvalInput, field string) (string, bool) {
 
 // isIgnoredCoverageField reports whether a submitted field is exempt from the
 // POST policy's field coverage requirement.
+//
+// x-amz-security-token is deliberately NOT exempt, despite being generated
+// by the SDK rather than chosen by the form author. The POST signature
+// covers only the base64 policy document, so an uncovered token field would
+// be completely unbound — anyone could swap in another session's token.
+// Requiring the policy to declare a condition for it is what binds it, and
+// is what real AWS requires as well; the SDK's POST presigner emits the
+// matching condition for exactly this reason.
 func isIgnoredCoverageField(field string) bool {
 	return field == "file" ||
 		field == "policy" ||

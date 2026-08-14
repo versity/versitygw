@@ -16,6 +16,7 @@ package netutil
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -270,10 +271,38 @@ func NewMultiAddrListener(network, address string, opts ListenerOptions) (net.Li
 	return NewMultiListener(listeners...), nil
 }
 
+// TLSOptions configures the server-side tls.Config for
+// NewMultiAddrTLSListenerWithOptions. A non-nil ClientCAs enables mTLS:
+// inbound connections must present a certificate verified against that
+// pool
+type TLSOptions struct {
+	GetCertificate    func(*tls.ClientHelloInfo) (*tls.Certificate, error)
+	ClientCAs         *x509.CertPool
+	RequireClientCert bool
+}
+
+// NewMultiAddrTLSListener creates TLS listeners for all IP addresses that the
+// hostname in the address resolves to. Similar to NewMultiAddrListener but with TLS.
 func NewMultiAddrTLSListener(network, address string, getCertificateFunc func(*tls.ClientHelloInfo) (*tls.Certificate, error), opts ListenerOptions) (net.Listener, error) {
+	return NewMultiAddrTLSListenerWithOptions(network, address, TLSOptions{GetCertificate: getCertificateFunc}, opts)
+}
+
+// NewMultiAddrTLSListenerWithOptions is NewMultiAddrTLSListener with control
+// over client-certificate verification (mTLS), for listeners — such as the
+// standalone IAM service's private endpoints — that must authenticate the
+// connecting client, not just the server.
+func NewMultiAddrTLSListenerWithOptions(network, address string, tlsOpts TLSOptions, opts ListenerOptions) (net.Listener, error) {
 	config := &tls.Config{
 		MinVersion:     tls.VersionTLS12,
-		GetCertificate: getCertificateFunc,
+		GetCertificate: tlsOpts.GetCertificate,
+	}
+	if tlsOpts.ClientCAs != nil {
+		config.ClientCAs = tlsOpts.ClientCAs
+		if tlsOpts.RequireClientCert {
+			config.ClientAuth = tls.RequireAndVerifyClientCert
+		} else {
+			config.ClientAuth = tls.VerifyClientCertIfGiven
+		}
 	}
 
 	if IsUnixSocketPath(address) {
@@ -313,4 +342,19 @@ func NewMultiAddrTLSListener(network, address string, getCertificateFunc func(*t
 	}
 
 	return NewMultiListener(listeners...), nil
+}
+
+// RequireSecureTransport enforces mTLS or unix socket a unix socket
+// is always acceptable (the filesystem is the trust boundary),
+// but a TCP address is only acceptable when mTLS (a server cert plus
+// mandatory client-certificate verification) is actually configured for
+// it
+func RequireSecureTransport(address string, hasMTLS bool) error {
+	if IsUnixSocketPath(address) {
+		return nil
+	}
+	if !hasMTLS {
+		return fmt.Errorf("private listener %q requires either a unix socket path or mTLS (server cert + client CA); refusing to serve on plain TCP", address)
+	}
+	return nil
 }

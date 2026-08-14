@@ -19,6 +19,7 @@ import (
 
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/iamapi/types"
+	"github.com/versity/versitygw/internal/condition"
 )
 
 // MaxSessionPolicyBytes is the maximum length, in bytes, of the optional
@@ -45,31 +46,53 @@ type RequestContext struct {
 	Condition map[string][]string
 }
 
-// EvaluateIdentityPolicies reports whether reqCtx is allowed by documents
-// (each a user's or role's inline policy entry), using IAM's evaluation
-// semantics: a statement must cover the action, the resource, and (if
-// present) its Condition block to be considered at all; an explicit Deny
-// statement that does so makes the whole evaluation deny regardless of any
-// Allow found elsewhere (in the same or another document), and absent an
-// explicit deny, at least one covering Allow statement is required — so an
-// identity with no matching statement at all is denied by default.
+// Decision is the tri-state result of evaluating a set of identity policy
+// documents. A caller combining this with another policy source (e.g. an S3
+// bucket policy) needs this distinction, not a plain bool, to implement
+// AWS's real cross-policy precedence: an explicit Deny from either source
+// wins outright over an Allow from the other, but a NoMatch from one source
+// leaves the other free to grant access on its own.
+type Decision int
+
+const (
+	// DecisionNoMatch means no statement in any document matched reqCtx at
+	// all — neither an Allow nor a Deny.
+	DecisionNoMatch Decision = iota
+	// DecisionAllow means at least one statement matched with Effect Allow,
+	// and no statement matched with Effect Deny.
+	DecisionAllow
+	// DecisionDeny means a statement matched with Effect Deny, or the
+	// evaluation failed closed (unparseable/invalid document, or a
+	// Condition that couldn't be evaluated).
+	DecisionDeny
+)
+
+// EvaluateIdentityPolicies reports how documents (each a user's or role's
+// inline policy entry) decide reqCtx, using IAM's evaluation semantics: a
+// statement must cover the action, the resource, and (if present) its
+// Condition block to be considered at all; a matching explicit Deny
+// statement makes the whole evaluation DecisionDeny regardless of any Allow
+// found elsewhere (in the same or another document); absent an explicit
+// deny, at least one covering Allow statement is required for DecisionAllow
+// — an identity with no matching statement at all gets DecisionNoMatch, not
+// DecisionAllow.
 //
-// A document that fails to parse, or a statement whose Condition block can't
-// be evaluated (see evaluateCondition's ok return), denies the whole
-// evaluation rather than being skipped: PutUserPolicy/PutRolePolicy already
-// reject any policy document that wouldn't parse or whose Condition uses an
+// A document that fails to parse, or a statement whose Condition block
+// can't be evaluated, returns DecisionDeny
+// rather than being skipped: PutUserPolicy/PutRolePolicy already reject any
+// policy document that wouldn't parse or whose Condition uses an
 // unrecognized operator, so this only matters for documents written before
 // that validation existed - and for exactly that legacy-data case, we can't
 // rule out a hidden Deny inside the part we can't evaluate, so the safe
 // outcome is to deny rather than silently proceed as if it wasn't there.
-func EvaluateIdentityPolicies(documents []types.PolicyEntry, reqCtx RequestContext) bool {
+func EvaluateIdentityPolicies(documents []types.PolicyEntry, reqCtx RequestContext) Decision {
 	allowed := false
 
 	for _, entry := range documents {
 		var doc Document
 		if err := json.Unmarshal([]byte(entry.PolicyDocument), &doc); err != nil {
 			debuglogger.Logf("identity policy document failed to parse: %v", err)
-			return false
+			return DecisionDeny
 		}
 		// PutUserPolicy/PutRolePolicy already reject a document that
 		// wouldn't pass Validate (e.g. both Action and NotAction on one
@@ -81,7 +104,7 @@ func EvaluateIdentityPolicies(documents []types.PolicyEntry, reqCtx RequestConte
 		// not just at ingress.
 		if err := doc.Validate(); err != nil {
 			debuglogger.Logf("identity policy document failed validation: %v", err)
-			return false
+			return DecisionDeny
 		}
 
 		for _, stmt := range doc.Statement {
@@ -94,10 +117,10 @@ func EvaluateIdentityPolicies(documents []types.PolicyEntry, reqCtx RequestConte
 			if !statementCoversResource(stmt, reqCtx.Resource, reqCtx.Condition, doc.Version) {
 				continue
 			}
-			matched, ok := evaluateCondition(stmt.Condition, reqCtx.Condition, doc.Version)
+			matched, ok := condition.Evaluate(stmt.Condition, reqCtx.Condition, doc.Version)
 			if !ok {
 				debuglogger.Logf("identity policy evaluation: statement condition could not be evaluated, denying")
-				return false
+				return DecisionDeny
 			}
 			if !matched {
 				continue
@@ -105,13 +128,16 @@ func EvaluateIdentityPolicies(documents []types.PolicyEntry, reqCtx RequestConte
 
 			if stmt.Effect == "Deny" {
 				debuglogger.Logf("identity policy evaluation: action %q on resource %q explicitly denied", reqCtx.Action, reqCtx.Resource)
-				return false
+				return DecisionDeny
 			}
 			allowed = true
 		}
 	}
 
-	return allowed
+	if allowed {
+		return DecisionAllow
+	}
+	return DecisionNoMatch
 }
 
 // statementCoversResource reports whether stmt's Resource/NotResource
@@ -140,9 +166,9 @@ func matchAnyResource(patterns []string, resource string, ctxVars map[string][]s
 	for _, p := range patterns {
 		pattern := p
 		if version == Version2012 {
-			pattern = substitutePolicyVariables(p, ctxVars)
+			pattern = condition.SubstitutePolicyVariables(p, ctxVars)
 		}
-		if globMatch(pattern, resource) {
+		if condition.GlobMatch(pattern, resource) {
 			return true
 		}
 	}

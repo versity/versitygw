@@ -36,6 +36,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api"
 	"github.com/versity/versitygw/s3api/middlewares"
@@ -160,15 +161,16 @@ type Config struct {
 
 	// IAM Backends
 	//
-	// The gateway supports five external IAM backends. At most one may be
+	// The gateway supports six external IAM backends. At most one may be
 	// active at a time. When the fields for more than one backend are
 	// populated, the first match in the following priority order wins:
 	//
-	//   1. IAMDir          -- local directory
-	//   2. LDAPServerURL   -- LDAP
-	//   3. S3IAMEndpoint   -- S3-backed
-	//   4. VaultEndpointURL -- HashiCorp Vault
-	//   5. IpaHost         -- FreeIPA
+	//   1. StandaloneIAMEndpoint -- standalone IAM service
+	//   2. IAMDir          -- local directory
+	//   3. LDAPServerURL   -- LDAP
+	//   4. S3IAMEndpoint   -- S3-backed
+	//   5. VaultEndpointURL -- HashiCorp Vault
+	//   6. IpaHost         -- FreeIPA
 	//
 	// Configuring an IAM backend is optional. When none of the trigger fields
 	// above are set, the gateway runs in single-account mode: only the root
@@ -279,6 +281,44 @@ type Config struct {
 	// IpaInsecure disables TLS certificate verification for the FreeIPA
 	// connection.
 	IpaInsecure bool
+
+	// Standalone IAM service backend. This is an AWS compatible IAM system
+	// Activated when StandaloneIAMEndpoint is non-empty. Unlike the other
+	// backends, this one never holds a plaintext secret for any account but
+	// its own signing identity and the local root account — every other account's
+	// secret and inline policy documents stay inside the IAM service process.
+	// Because of that, user management (CreateUser/UpdateUser/DeleteUser/ListUsers)
+	// is unavailable through this gateway's own admin API when this
+	// backend is active; manage users via the standalone IAM service's own
+	// control-plane API instead.
+
+	// StandaloneIAMEndpoint is either a "host:port" TCP address (mTLS
+	// required — see StandaloneClientCert/ClientCertKey/ServerCA) or a
+	// unix socket path for the standalone IAM service's private endpoints.
+	StandaloneIAMEndpoint string
+	// StandaloneIAMAccess/StandaloneIAMSecret are this gateway's own
+	// signing identity for its calls to the private endpoints — not a
+	// fetched account. Both default to RootUserAccess/RootUserSecret when
+	// unset.
+	StandaloneIAMAccess string
+	StandaloneIAMSecret string
+	// StandaloneClientCert/ClientCertKey are this gateway's client
+	// certificate/key for outbound mTLS to the private endpoints. Required
+	// (together with StandaloneServerCA) unless StandaloneIAMEndpoint is a
+	// unix socket.
+	StandaloneClientCert    string
+	StandaloneClientCertKey string
+	// StandaloneServerCA verifies the standalone IAM service's server
+	// certificate.
+	StandaloneServerCA string
+	// StandaloneDefaultUserID/GroupID/ProjectID are the POSIX uid/gid/
+	// project-id assigned to every account resolved through this backend.
+	// The standalone IAM service's user model has no per-user POSIX
+	// identity concept, so every standalone-backed account shares these
+	// one configured values for backend file-ownership purposes.
+	StandaloneDefaultUserID    int
+	StandaloneDefaultGroupID   int
+	StandaloneDefaultProjectID int
 
 	// IAM Cache
 	//
@@ -600,7 +640,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		if cfg.KeyFile == "" {
 			return fmt.Errorf("TLS cert specified without key file")
 		}
-		cs := utils.NewCertStorage()
+		cs := netutil.NewCertStorage()
 		if err := cs.SetCertificate(cfg.CertFile, cfg.KeyFile); err != nil {
 			return fmt.Errorf("tls: load certs: %v", err)
 		}
@@ -681,6 +721,15 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		IpaUser:                     cfg.IpaUser,
 		IpaPassword:                 cfg.IpaPassword,
 		IpaInsecure:                 cfg.IpaInsecure,
+		StandaloneIAMEndpoint:       cfg.StandaloneIAMEndpoint,
+		StandaloneIAMAccess:         cfg.StandaloneIAMAccess,
+		StandaloneIAMSecret:         cfg.StandaloneIAMSecret,
+		StandaloneClientCert:        cfg.StandaloneClientCert,
+		StandaloneClientCertKey:     cfg.StandaloneClientCertKey,
+		StandaloneServerCA:          cfg.StandaloneServerCA,
+		StandaloneDefaultUserID:     cfg.StandaloneDefaultUserID,
+		StandaloneDefaultGroupID:    cfg.StandaloneDefaultGroupID,
+		StandaloneDefaultProjectID:  cfg.StandaloneDefaultProjectID,
 	})
 	if err != nil {
 		return fmt.Errorf("setup iam: %w", err)
@@ -800,7 +849,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			if cfg.AdminKeyFile == "" {
 				return fmt.Errorf("TLS cert specified without key file")
 			}
-			cs := utils.NewCertStorage()
+			cs := netutil.NewCertStorage()
 			if err = cs.SetCertificate(cfg.AdminCertFile, cfg.AdminKeyFile); err != nil {
 				return fmt.Errorf("tls: load certs: %v", err)
 			}
@@ -824,7 +873,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	webTLSKey := ""
 	if len(cfg.WebuiPorts) > 0 {
 		for _, addr := range cfg.WebuiPorts {
-			if utils.IsUnixSocketPath(addr) {
+			if netutil.IsUnixSocketPath(addr) {
 				continue
 			}
 			_, webPrt, err := net.SplitHostPort(addr)
@@ -855,7 +904,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 				if webTLSKey == "" {
 					return fmt.Errorf("webui TLS cert specified without key file")
 				}
-				cs := utils.NewCertStorage()
+				cs := netutil.NewCertStorage()
 				if err := cs.SetCertificate(webTLSCert, webTLSKey); err != nil {
 					return fmt.Errorf("tls: load certs: %v", err)
 				}
@@ -923,7 +972,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	wsTLSKey := ""
 	if len(cfg.WebsitePorts) > 0 {
 		for _, addr := range cfg.WebsitePorts {
-			if utils.IsUnixSocketPath(addr) {
+			if netutil.IsUnixSocketPath(addr) {
 				continue
 			}
 			_, wsPrt, err := net.SplitHostPort(addr)
@@ -954,7 +1003,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 				if wsTLSKey == "" {
 					return fmt.Errorf("website TLS cert specified without key file")
 				}
-				cs := utils.NewCertStorage()
+				cs := netutil.NewCertStorage()
 				if err := cs.SetCertificate(wsTLSCert, wsTLSKey); err != nil {
 					return fmt.Errorf("tls: load certs: %v", err)
 				}
@@ -1146,7 +1195,7 @@ func (cfg Config) printBanner() {
 	interfaceMap := make(map[string]bool)
 
 	for _, portSpec := range cfg.Ports {
-		if utils.IsUnixSocketPath(portSpec) {
+		if netutil.IsUnixSocketPath(portSpec) {
 			allPorts = append(allPorts, portSpec)
 			if !interfaceMap[portSpec] {
 				interfaceMap[portSpec] = true
@@ -1182,7 +1231,7 @@ func (cfg Config) printBanner() {
 	var allAdmInterfaces []string
 	admInterfaceMap := make(map[string]bool)
 	for _, admPort := range cfg.AdminPorts {
-		if utils.IsUnixSocketPath(admPort) {
+		if netutil.IsUnixSocketPath(admPort) {
 			if !admInterfaceMap[admPort] {
 				admInterfaceMap[admPort] = true
 				allAdmInterfaces = append(allAdmInterfaces, admPort)
@@ -1215,7 +1264,7 @@ func (cfg Config) printBanner() {
 	var urls []string
 
 	for _, addrPort := range allInterfaces {
-		if utils.IsUnixSocketPath(addrPort) {
+		if netutil.IsUnixSocketPath(addrPort) {
 			urls = append(urls, "unix:"+addrPort)
 			continue
 		}
@@ -1233,7 +1282,7 @@ func (cfg Config) printBanner() {
 
 	var boundHost string
 	if len(cfg.Ports) == 1 {
-		if utils.IsUnixSocketPath(cfg.Ports[0]) {
+		if netutil.IsUnixSocketPath(cfg.Ports[0]) {
 			boundHost = fmt.Sprintf("(unix socket: %s)", cfg.Ports[0])
 		} else {
 			hst, prt, _ := net.SplitHostPort(cfg.Ports[0])
@@ -1267,7 +1316,7 @@ func (cfg Config) printBanner() {
 	if len(allAdmInterfaces) > 0 {
 		lines = append(lines, centerText(""), leftText("Admin service listening on:"))
 		for _, addrPort := range allAdmInterfaces {
-			if utils.IsUnixSocketPath(addrPort) {
+			if netutil.IsUnixSocketPath(addrPort) {
 				lines = append(lines, leftText("  unix:"+addrPort))
 				continue
 			}
@@ -1292,7 +1341,7 @@ func (cfg Config) printBanner() {
 			if strings.TrimSpace(webuiAddr) == "" {
 				continue
 			}
-			if utils.IsUnixSocketPath(webuiAddr) {
+			if netutil.IsUnixSocketPath(webuiAddr) {
 				if !webInterfaceMap[webuiAddr] {
 					webInterfaceMap[webuiAddr] = true
 					allWebInterfaces = append(allWebInterfaces, webuiAddr)
@@ -1321,7 +1370,7 @@ func (cfg Config) printBanner() {
 		if len(allWebInterfaces) > 0 {
 			lines = append(lines, centerText(""), leftText("WebUI listening on:"))
 			for _, addrPort := range allWebInterfaces {
-				if utils.IsUnixSocketPath(addrPort) {
+				if netutil.IsUnixSocketPath(addrPort) {
 					lines = append(lines, leftText("  unix:"+addrPort))
 					continue
 				}
@@ -1363,7 +1412,7 @@ func (cfg Config) printBanner() {
 			if strings.TrimSpace(websiteAddr) == "" {
 				continue
 			}
-			if utils.IsUnixSocketPath(websiteAddr) {
+			if netutil.IsUnixSocketPath(websiteAddr) {
 				if !websiteInterfaceMap[websiteAddr] {
 					websiteInterfaceMap[websiteAddr] = true
 					allWebsiteInterfaces = append(allWebsiteInterfaces, websiteAddr)
@@ -1399,7 +1448,7 @@ func (cfg Config) printBanner() {
 				leftText("Website endpoint listening on:"+domainInfo),
 			)
 			for _, addrPort := range allWebsiteInterfaces {
-				if utils.IsUnixSocketPath(addrPort) {
+				if netutil.IsUnixSocketPath(addrPort) {
 					lines = append(lines, leftText("  unix:"+addrPort))
 					continue
 				}
@@ -1439,11 +1488,11 @@ func leftText(text string) string {
 // getMatchingIPs returns all IP addresses that the server will listen on
 // for the given address specification.
 func getMatchingIPs(spec string) ([]string, error) {
-	if utils.IsUnixSocketPath(spec) {
+	if netutil.IsUnixSocketPath(spec) {
 		return []string{spec}, nil
 	}
 
-	ips, err := utils.ResolveHostnameIPs(spec)
+	ips, err := netutil.ResolveHostnameIPs(spec)
 	if err != nil {
 		return nil, fmt.Errorf("resolve hostname: %v", err)
 	}
@@ -1497,7 +1546,7 @@ func getAllLocalIPs() ([]string, error) {
 }
 
 func buildServiceURLs(spec string, ssl bool) ([]string, error) {
-	if utils.IsUnixSocketPath(spec) {
+	if netutil.IsUnixSocketPath(spec) {
 		return nil, nil
 	}
 
@@ -1628,7 +1677,7 @@ func validatePortConflicts(ports, admPorts, webuiPorts, websitePorts []string) e
 	var allSpecs []portSpec
 
 	for _, p := range ports {
-		if utils.IsUnixSocketPath(p) {
+		if netutil.IsUnixSocketPath(p) {
 			allSpecs = append(allSpecs, portSpec{spec: p, port: p, isUnix: true, portType: "s3"})
 			continue
 		}
@@ -1645,7 +1694,7 @@ func validatePortConflicts(ports, admPorts, webuiPorts, websitePorts []string) e
 	}
 
 	for _, p := range admPorts {
-		if utils.IsUnixSocketPath(p) {
+		if netutil.IsUnixSocketPath(p) {
 			allSpecs = append(allSpecs, portSpec{spec: p, port: p, isUnix: true, portType: "admin"})
 			continue
 		}
@@ -1662,7 +1711,7 @@ func validatePortConflicts(ports, admPorts, webuiPorts, websitePorts []string) e
 	}
 
 	for _, p := range webuiPorts {
-		if utils.IsUnixSocketPath(p) {
+		if netutil.IsUnixSocketPath(p) {
 			allSpecs = append(allSpecs, portSpec{spec: p, port: p, isUnix: true, portType: "webui"})
 			continue
 		}
@@ -1679,7 +1728,7 @@ func validatePortConflicts(ports, admPorts, webuiPorts, websitePorts []string) e
 	}
 
 	for _, p := range websitePorts {
-		if utils.IsUnixSocketPath(p) {
+		if netutil.IsUnixSocketPath(p) {
 			allSpecs = append(allSpecs, portSpec{spec: p, port: p, isUnix: true, portType: "website"})
 			continue
 		}

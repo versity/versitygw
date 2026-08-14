@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/versity/versitygw/iamapi/iamerr"
+	"github.com/versity/versitygw/internal/condition"
 )
 
 // MaxDocumentLength is IAM's parameter-level maximum length for a
@@ -122,8 +123,8 @@ func (d Document) Validate() error {
 // no Principal/NotPrincipal, an Action or NotAction (not both) with
 // vendor-prefixed values, a Resource or NotResource (not both) with
 // ARN-shaped values, and - if present - a Condition block whose operators
-// are all recognized (see conditionShapeValid; condition *keys* and operand
-// *values* are deliberately not validated here, matching AWS behavior).
+// are all recognized (condition *keys* and operand *values* are
+// deliberately not validated here, matching AWS behavior).
 func (s Statement) Validate() error {
 	switch s.Effect {
 	case "Allow", "Deny":
@@ -135,7 +136,7 @@ func (s Statement) Validate() error {
 		return errPrincipalNotAllowed
 	}
 
-	if !conditionShapeValid(s.Condition) {
+	if !condition.ShapeValid(s.Condition) {
 		return errSyntax
 	}
 

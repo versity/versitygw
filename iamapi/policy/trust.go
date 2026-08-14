@@ -20,12 +20,13 @@ import (
 	"strings"
 
 	"github.com/versity/versitygw/iamapi/iamerr"
+	"github.com/versity/versitygw/internal/condition"
 )
 
 // trustPrincipalKeys are the only keys IAM accepts inside a trust policy
 // statement's Principal object. CanonicalUser is deliberately not accepted
-// here (see errTrustInvalidPrincipalKey) since it identifies an S3 canonical
-// user id which is the legacy s3 user identifier and is not planned to support
+// since it identifies an S3 canonical user id, the legacy S3 user
+// identifier, which is not planned to be supported here.
 var trustPrincipalKeys = map[string]bool{
 	"AWS":       true,
 	"Service":   true,
@@ -175,7 +176,7 @@ func (d Document) ValidateTrust() error {
 // valid Effect, a required Principal (never NotPrincipal), an Action or
 // NotAction with only "sts:"-prefixed values, no Resource/NotResource, and -
 // if present - a Condition block whose operators are all recognized (see
-// conditionShapeValid, shared with the identity-policy side; condition
+// condition.ShapeValid, shared with the identity-policy side; condition
 // *keys* and operand *values* are deliberately not validated here, matching
 // AWS behavior).
 func (s Statement) ValidateTrust() error {
@@ -197,7 +198,7 @@ func (s Statement) ValidateTrust() error {
 		return err
 	}
 
-	if !conditionShapeValid(s.Condition) {
+	if !condition.ShapeValid(s.Condition) {
 		return errTrustSyntax
 	}
 
@@ -324,9 +325,9 @@ func validateSharedProviderTenancy(s Statement, federated []string) error {
 }
 
 // oidcProviderURLFromFederatedArn extracts the provider Url from a Federated
-// principal ARN shaped like "arn:aws:iam::<account>:oidc-provider/<url>"
-// (see iamutil.BuildOIDCProviderArn), reporting ok=false for any value not
-// shaped like an OIDC provider ARN at all — a bare federation identifier
+// principal ARN shaped like "arn:aws:iam::<account>:oidc-provider/<url>",
+// reporting ok=false for any value not shaped like an OIDC provider ARN at
+// all — a bare federation identifier
 // (e.g. "cognito-identity.amazonaws.com") or a malformed value, both handled
 // elsewhere (this is deliberately a lightweight shape check, not full ARN
 // validation: an actually-malformed ARN is caught later, when the runtime
@@ -356,23 +357,23 @@ func oidcProviderURLFromFederatedArn(value string) (string, bool) {
 // and StringEqualsIgnoreCase don't treat '*'/'?' as wildcards at all, so
 // only the plain "empty or exactly '*'" check applies to them. A block that
 // fails to parse reports false, same as an absent one —
-// conditionShapeValid/evaluateCondition are responsible for rejecting or
+// condition.ShapeValid/condition.Evaluate are responsible for rejecting or
 // fail-closing a block this can't understand; this check only ever adds a
 // stricter write-time requirement on top of that.
 func conditionScopesClaim(raw json.RawMessage, key string) bool {
 	if len(raw) == 0 {
 		return false
 	}
-	var block map[string]map[string]ConditionValues
-	if err := json.Unmarshal(raw, &block); err != nil {
+	block, err := condition.Parse(raw)
+	if err != nil {
 		return false
 	}
 	for operator, kvs := range block {
-		op, ok := parseOperatorName(operator)
+		op, ok := condition.ParseOperatorName(operator)
 		if !ok {
 			continue
 		}
-		switch op.base {
+		switch op.Base {
 		case "StringEquals", "StringLike", "StringEqualsIgnoreCase":
 		default:
 			continue
@@ -385,7 +386,7 @@ func conditionScopesClaim(raw json.RawMessage, key string) bool {
 				if v == "" || v == "*" {
 					continue
 				}
-				if op.base == "StringLike" && !hasNonWildcardCharacter(v) {
+				if op.Base == "StringLike" && !hasNonWildcardCharacter(v) {
 					continue
 				}
 				return true

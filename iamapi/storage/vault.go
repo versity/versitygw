@@ -40,8 +40,7 @@ const vaultRequestTimeout = 10 * time.Second
 // withRoleCAS/withOIDCProviderCAS run when a version-checked (CAS) write
 // loses a race against a concurrent writer updating the same entity —
 // mirroring the 3-attempt collision-retry loops already used elsewhere in
-// this package for ID generation (see controller.go's CreateUser/CreateRole/
-// CreateAccessKey).
+// this package for ID generation.
 const maxCASRetries = 3
 
 // errConcurrentModification is withUserCAS/withRoleCAS/withOIDCProviderCAS's
@@ -359,7 +358,7 @@ func (s *VaultStore) GetUser(_ context.Context, username string) (*types.User, e
 // readUserVersion resolves username the same way GetUser does, additionally
 // returning the KV version the record was read at, so a mutation can write
 // back with a matching CAS value instead of racing on a blind
-// delete-then-recreate (see replaceUser).
+// delete-then-recreate.
 func (s *VaultStore) readUserVersion(username string) (*types.User, int32, error) {
 	key := caseFoldKey(username)
 	path := s.usersPath() + "/" + key
@@ -752,13 +751,12 @@ const recordAccessKeyUsageTimeout = 5 * time.Second
 
 // RecordAccessKeyUsage updates accessKeyID's GetAccessKeyLastUsed metadata
 // in its own background goroutine, detached from ctx, and always returns
-// nil immediately: this runs on the hot path of every authenticated request
-// (see iammiddleware.recordAccessKeyUsage), and a Vault round trip — plus,
-// on a CAS conflict, withUserCAS's retry loop — is too expensive to add
-// synchronously to every one of them. A failure (including one that
-// exhausts those retries) is only logged, never surfaced: this is purely
-// informational metadata, and a lost update under concurrent use is
-// immaterial.
+// nil immediately: this runs on the hot path of every authenticated
+// request, and a Vault round trip — plus, on a CAS conflict, withUserCAS's
+// retry loop — is too expensive to add synchronously to every one of them.
+// A failure (including one that exhausts those retries) is only logged,
+// never surfaced: this is purely informational metadata, and a lost update
+// under concurrent use is immaterial.
 func (s *VaultStore) RecordAccessKeyUsage(_ context.Context, accessKeyID, service, region string, when time.Time) error {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), recordAccessKeyUsageTimeout)
@@ -1043,7 +1041,7 @@ func (s *VaultStore) GetRole(_ context.Context, roleName string) (*types.Role, e
 // readRoleVersion is GetRole's counterpart to readUserVersion: it
 // additionally returns the KV version the record was read at, so a
 // mutation can write back with a matching CAS value instead of racing on a
-// blind delete-then-recreate (see replaceRole).
+// blind delete-then-recreate.
 func (s *VaultStore) readRoleVersion(roleName string) (*types.Role, int32, error) {
 	key := caseFoldKey(roleName)
 	path := s.rolesPath() + "/" + key
@@ -1858,12 +1856,12 @@ func (s *VaultStore) GetSession(_ context.Context, accessKeyID string) (*types.S
 	if err != nil {
 		if vault.IsErrorStatus(err, http.StatusNotFound) {
 			// Either this access key never existed, or Vault's own
-			// delete_version_after TTL (see setSessionTTL) already
-			// soft-deleted the version — confirmed live: Vault answers a
-			// read for a soft-deleted-but-not-yet-destroyed version with
-			// 404, not 200-with-null-data. Either way, best-effort purge
-			// the lingering metadata record now, since Vault doesn't
-			// appear to reclaim it on its own once merely soft-deleted.
+			// delete_version_after TTL already soft-deleted the version —
+			// Vault answers a read for a soft-deleted-but-not-yet-destroyed
+			// version with 404, not 200-with-null-data. Either way,
+			// best-effort purge the lingering metadata record now, since
+			// Vault doesn't appear to reclaim it on its own once merely
+			// soft-deleted.
 			s.purgeSession(accessKeyID)
 			return nil, ErrSessionNotFound
 		}

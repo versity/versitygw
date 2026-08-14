@@ -83,8 +83,4 @@ func (queryAuthErrors) OnlyHMACSupported() S3Error {
 	return authQueryParamError("X-Amz-Algorithm only supports \"AWS4-HMAC-SHA256\"")
 }
 
-func (queryAuthErrors) SecurityTokenNotSupported() S3Error {
-	return authQueryParamError("Authorization with X-Amz-Security-Token is not supported")
-}
-
 var QueryAuthErrors queryAuthErrors

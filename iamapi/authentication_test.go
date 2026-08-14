@@ -31,7 +31,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/gofiber/fiber/v3"
-	vgwv4 "github.com/versity/versitygw/aws/signer/v4"
 	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/iamapi/internal/iammiddleware"
 	"github.com/versity/versitygw/internal/sigv4auth"
@@ -339,12 +338,11 @@ func TestVerifyIAMAuthRejectsQueryWrongCredentialRegion(t *testing.T) {
 
 // TestVerifyIAMAuthRejectsExpiredQueryRequest confirms a presigned IAM
 // request signed too long ago is rejected by the same fixed ±15-minute
-// freshness window (ValidateDateAt) header auth uses — confirmed live
-// (niksis02 profile): real IAM's query-auth ignores X-Amz-Expires entirely
-// (see TestVerifyIAMAuthQueryIgnoresXAmzExpires) and instead rejects a
-// stale signing time with SignatureDoesNotMatch: "Signature expired: ...
-// is now earlier than ... (... - 15 min.)" — byte-for-byte what this
-// codebase's own SignatureDoesNotMatchExpired already produces.
+// freshness window (ValidateDateAt) header auth uses: real IAM's
+// query-auth ignores X-Amz-Expires entirely and instead rejects a stale
+// signing time with SignatureDoesNotMatch: "Signature expired: ... is now
+// earlier than ... (... - 15 min.)" — byte-for-byte what this codebase's
+// own SignatureDoesNotMatchExpired already produces.
 func TestVerifyIAMAuthRejectsExpiredQueryRequest(t *testing.T) {
 	app := newIAMAuthTestApp(t)
 	signedTwoHoursAgo := time.Now().UTC().Add(-2 * time.Hour)
@@ -373,10 +371,10 @@ func TestVerifyIAMAuthRejectsExpiredQueryRequest(t *testing.T) {
 }
 
 // TestVerifyIAMAuthQueryIgnoresXAmzExpires confirms IAM/STS query-auth
-// neither requires nor validates X-Amz-Expires, unlike S3's presigned URLs
-// — confirmed live (niksis02 profile) that real IAM's ListUsers accepts a
-// presigned request with X-Amz-Expires omitted, non-numeric, negative, or
-// far beyond S3's 604800-second maximum, every time.
+// neither requires nor validates X-Amz-Expires, unlike S3's presigned URLs:
+// real IAM's ListUsers accepts a presigned request with X-Amz-Expires
+// omitted, non-numeric, negative, or far beyond S3's 604800-second
+// maximum, every time.
 func TestVerifyIAMAuthQueryIgnoresXAmzExpires(t *testing.T) {
 	for _, expires := range []string{"", "abc", "-5", "9999999"} {
 		t.Run(expires, func(t *testing.T) {
@@ -418,15 +416,21 @@ func TestVerifyIAMAuthRejectsSessionTokenHeaderNotSigned(t *testing.T) {
 	hash := sha256.Sum256(body)
 	payloadHash := hex.EncodeToString(hash[:])
 
-	signer := vgwv4.NewSigner()
 	// Sign with only "host" listed — the security-token header is present
 	// on the wire but deliberately excluded from SignedHeaders, simulating
 	// a client (or tampering party) that never binds it to the signature.
-	if _, err := signer.SignHTTP(context.Background(),
-		aws.Credentials{AccessKeyID: session.AccessKeyId, SecretAccessKey: session.SecretAccessKey},
-		req, payloadHash, "iam", iammiddleware.SigningRegion, time.Now().UTC(), []string{"host"}); err != nil {
-		t.Fatalf("sign request: %v", err)
-	}
+	signingTime := time.Now().UTC()
+	yyyymmdd := signingTime.Format(sigv4auth.YYYYMMDD)
+	derivedKey := sigv4auth.DeriveKey(session.SecretAccessKey, yyyymmdd, iammiddleware.SigningRegion, "iam")
+	in := sigv4auth.SigningInputFromRequest(req)
+	in.AccessKeyID = session.AccessKeyId
+	in.CredentialScope = sigv4auth.BuildCredentialScope(yyyymmdd, iammiddleware.SigningRegion, "iam")
+	in.SignedHdrs = []string{"host"}
+	in.PayloadHash = payloadHash
+	in.SigningTime = signingTime
+	result := sigv4auth.BuildAndSign(derivedKey, in)
+	req.Header.Set("X-Amz-Date", result.AmzDate)
+	req.Header.Set("Authorization", result.AuthorizationHeader)
 
 	resp, err := server.app.Test(req)
 	if err != nil {
@@ -672,23 +676,21 @@ func querySignedIAMRequest(t *testing.T, method, target string, body []byte, sec
 	hash := sha256.Sum256(body)
 	payloadHash := hex.EncodeToString(hash[:])
 
-	signer := vgwv4.NewSigner()
-	signedURL, signedHeaders, _, err := signer.PresignHTTP(
-		context.Background(),
-		aws.Credentials{AccessKeyID: testRoot.Access, SecretAccessKey: secret},
-		req,
-		payloadHash,
-		"iam",
-		region,
-		signingTime,
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("presign request: %v", err)
-	}
+	yyyymmdd := signingTime.Format(sigv4auth.YYYYMMDD)
+	derivedKey := sigv4auth.DeriveKey(secret, yyyymmdd, region, "iam")
+	in := sigv4auth.SigningInputFromRequest(req)
+	in.AccessKeyID = testRoot.Access
+	in.CredentialScope = sigv4auth.BuildCredentialScope(yyyymmdd, region, "iam")
+	in.PayloadHash = payloadHash
+	in.SigningTime = signingTime
+	in.IsPreSign = true
+	result := sigv4auth.BuildAndSign(derivedKey, in)
 
-	signedReq := httptest.NewRequest(method, signedURL, bytes.NewReader(body))
-	for key, values := range signedHeaders {
+	signedURL := *req.URL
+	signedURL.RawQuery = result.RawQuery
+
+	signedReq := httptest.NewRequest(method, signedURL.String(), bytes.NewReader(body))
+	for key, values := range result.SignedHeaders {
 		for _, value := range values {
 			signedReq.Header.Add(key, value)
 		}

@@ -40,7 +40,6 @@ import (
 
 const (
 	zeroLenSig               = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	awsV4                    = "AWS4"
 	awsS3Service             = "s3"
 	awsV4Request             = "aws4_request"
 	trailerSignatureHeader   = "x-amz-trailer-signature:"
@@ -84,11 +83,13 @@ type ChunkReader struct {
 // NewChunkReader reads from request body io.Reader and parses out the
 // chunk metadata in stream. The headers are validated for proper signatures.
 // Reading from the chunk reader will read only the object data stream
-// without the chunk headers/trailers.
-func NewSignedChunkReader(r io.Reader, authdata AuthData, canonicalString, secret string, date time.Time, chType checksumType, requireTrailer bool, cLength int64) (io.Reader, error) {
+// without the chunk headers/trailers. derivedKey is the same SigV4 kSigning
+// value the seed request's Authorization header was already checked
+// against, reused here rather than re-derived or re-fetched.
+func NewSignedChunkReader(r io.Reader, authdata AuthData, canonicalString string, derivedKey []byte, date time.Time, chType checksumType, requireTrailer bool, cLength int64) (io.Reader, error) {
 	chRdr := &ChunkReader{
 		r:          r,
-		signingKey: getSigningKey(secret, authdata.Region, date),
+		signingKey: derivedKey,
 		// the authdata.Signature is validated in the auth-reader,
 		// so we can use that here without any other checks
 		prevSig:         authdata.Signature,
@@ -351,18 +352,6 @@ func (cr *ChunkReader) parseAndRemoveChunkInfo(p []byte) (int, error) {
 	}
 
 	return n, nil
-}
-
-// https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
-// Task 3: Calculate Signature
-// https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html#signing-request-intro
-func getSigningKey(secret, region string, date time.Time) []byte {
-	dateKey := hmac256([]byte(awsV4+secret), []byte(date.Format(yyyymmdd)))
-	dateRegionKey := hmac256(dateKey, []byte(region))
-	dateRegionServiceKey := hmac256(dateRegionKey, []byte(awsS3Service))
-	signingKey := hmac256(dateRegionServiceKey, []byte(awsV4Request))
-	debuglogger.Infof("signing key: %s", hex.EncodeToString(signingKey))
-	return signingKey
 }
 
 func hmac256(key []byte, data []byte) []byte {

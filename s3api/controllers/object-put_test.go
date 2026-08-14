@@ -604,6 +604,27 @@ func TestS3ApiController_UploadPartCopy(t *testing.T) {
 			},
 		},
 		{
+			name: "readonly mode blocks upload part copy",
+			input: testInput{
+				locals: defaultLocals,
+				headers: map[string]string{
+					"X-Amz-Copy-Source": "bucket/key",
+				},
+				queries: map[string]string{
+					"partNumber": "2",
+				},
+				readonly: true,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
 			name: "invalid copy source",
 			input: testInput{
 				locals: defaultLocals,
@@ -729,7 +750,9 @@ func TestS3ApiController_UploadPartCopy(t *testing.T) {
 			}
 
 			ctrl := S3ApiController{
-				be: be,
+				be:         be,
+				readonly:   tt.input.readonly,
+				disableACL: tt.input.disableACL,
 			}
 
 			testController(
@@ -805,7 +828,7 @@ func TestS3ApiController_PutObjectAcl(t *testing.T) {
 					return tt.input.beErr
 				},
 				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
-					return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+					return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
 				},
 			}
 
@@ -839,6 +862,58 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 				headers: map[string]string{
 					"X-Amz-Copy-Source": "bucket/object",
 				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "readonly mode blocks copy object",
+			input: testInput{
+				locals: defaultLocals,
+				headers: map[string]string{
+					"X-Amz-Copy-Source": "bucket/object",
+				},
+				readonly: true,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "disableACL blocks a non-owner's grantee-based access",
+			input: testInput{
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyIsRoot: false,
+					utils.ContextKeyParsedAcl: auth.ACL{
+						Owner: "root",
+						Grantees: []auth.Grantee{
+							{
+								Access:     "user",
+								Permission: auth.PermissionWrite,
+								Type:       types.TypeCanonicalUser,
+							},
+						},
+					},
+					utils.ContextKeyAccount: auth.Account{
+						Access: "user",
+						Role:   auth.RoleUser,
+					},
+				},
+				headers: map[string]string{
+					"X-Amz-Copy-Source": "bucket/object",
+				},
+				disableACL: true,
 			},
 			output: testOutput{
 				response: &Response{
@@ -1059,7 +1134,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 					return tt.input.beRes.(s3response.CopyObjectOutput), tt.input.beErr
 				},
 				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
-					return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+					return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
 				},
 				GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
 					return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
@@ -1070,7 +1145,9 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 			}
 
 			ctrl := S3ApiController{
-				be: be,
+				be:         be,
+				readonly:   tt.input.readonly,
+				disableACL: tt.input.disableACL,
 			}
 
 			testController(

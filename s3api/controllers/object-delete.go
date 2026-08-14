@@ -41,9 +41,8 @@ func (c S3ApiController) DeleteObjectTagging(ctx fiber.Ctx) (*Response, error) {
 		action = auth.DeleteObjectVersionTaggingAction
 	}
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
 			IsRoot:          isRoot,
@@ -52,7 +51,6 @@ func (c S3ApiController) DeleteObjectTagging(ctx fiber.Ctx) (*Response, error) {
 			Object:          key,
 			Actions:         []auth.Action{action},
 			IsPublicRequest: isBucketPublic,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -85,9 +83,8 @@ func (c S3ApiController) AbortMultipartUpload(ctx fiber.Ctx) (*Response, error) 
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
 			IsRoot:          isRoot,
@@ -96,7 +93,6 @@ func (c S3ApiController) AbortMultipartUpload(ctx fiber.Ctx) (*Response, error) 
 			Object:          key,
 			Actions:         []auth.Action{auth.AbortMultipartUploadAction},
 			IsPublicRequest: isBucketPublic,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -125,7 +121,7 @@ func (c S3ApiController) DeleteObject(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	versionId := ctx.Query("versionId")
-	bypass := strings.EqualFold(ctx.Get("X-Amz-Bypass-Governance-Retention"), "true")
+	bypass := auth.BypassModeForRequest(strings.EqualFold(ctx.Get("X-Amz-Bypass-Governance-Retention"), "true"))
 	ifMatch := utils.GetStringPtr(strings.Trim(ctx.Get("If-Match"), `"`))
 	ifMatchLastModTime := utils.ParsePreconditionDateHeader(ctx.Get("X-Amz-If-Match-Last-Modified-Time"))
 	ifMatchSize := utils.ParseIfMatchSize(ctx)
@@ -140,9 +136,8 @@ func (c S3ApiController) DeleteObject(ctx fiber.Ctx) (*Response, error) {
 		action = auth.DeleteObjectVersionAction
 	}
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
 			IsRoot:          isRoot,
@@ -151,7 +146,6 @@ func (c S3ApiController) DeleteObject(ctx fiber.Ctx) (*Response, error) {
 			Object:          key,
 			Actions:         []auth.Action{action},
 			IsPublicRequest: isBucketPublic,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -162,9 +156,9 @@ func (c S3ApiController) DeleteObject(ctx fiber.Ctx) (*Response, error) {
 	}
 
 	err = auth.CheckObjectAccess(
-		ctx.RequestCtx(),
+		ctx,
 		bucket,
-		acct.Access,
+		acct,
 		[]types.ObjectIdentifier{
 			{
 				Key:       &key,
@@ -174,6 +168,7 @@ func (c S3ApiController) DeleteObject(ctx fiber.Ctx) (*Response, error) {
 		bypass,
 		isBucketPublic,
 		c.be,
+		c.iam,
 		false,
 	)
 	if err != nil {
