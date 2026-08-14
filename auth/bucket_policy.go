@@ -20,15 +20,19 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/versity/versitygw/internal/condition"
 	"github.com/versity/versitygw/s3err"
 )
 
 var errAccessDenied = errors.New("access denied")
 var errExplicitDeny = errors.New("explicit deny")
 
-// policyDecision preserves the difference between "not allowed" and "denied".
-// Public bucket authorization needs that distinction so no-match can fall back
-// to ACLs while explicit Deny cannot.
+// policyDecision preserves the difference between "not allowed" and
+// "denied". Public bucket authorization needs that distinction so no-match
+// can fall back to ACLs while explicit Deny cannot; VerifyAccess needs it to
+// combine a bucket policy's decision with an identity policy's own — an
+// explicit Deny from either source must override an Allow from the other,
+// which a plain bool can't express.
 type policyDecision int
 
 const (
@@ -44,15 +48,18 @@ func (p policyErr) Error() string {
 }
 
 const (
-	policyErrResourceMismatch     = policyErr("Action does not apply to any resource(s) in statement")
-	policyErrInvalidResource      = policyErr("Policy has invalid resource")
-	policyErrInvalidPrincipal     = policyErr("Invalid principal in policy")
-	policyErrInvalidAction        = policyErr("Policy has invalid action")
-	policyErrInvalidPolicy        = policyErr("This policy contains invalid Json")
-	policyErrInvalidFirstChar     = policyErr("Policies must be valid JSON and the first byte must be '{'")
-	policyErrEmptyStatement       = policyErr("Could not parse the policy: Statement is empty!")
-	policyErrMissingStatmentField = policyErr("Missing required field Statement")
-	policyErrInvalidVersion       = policyErr("The policy must contain a valid version string")
+	policyErrResourceMismatch        = policyErr("Action does not apply to any resource(s) in statement")
+	policyErrInvalidResource         = policyErr("Policy has invalid resource")
+	policyErrInvalidPrincipal        = policyErr("Invalid principal in policy")
+	policyErrInvalidAction           = policyErr("Policy has invalid action")
+	policyErrInvalidPolicy           = policyErr("This policy contains invalid Json")
+	policyErrInvalidFirstChar        = policyErr("Policies must be valid JSON and the first byte must be '{'")
+	policyErrEmptyStatement          = policyErr("Could not parse the policy: Statement is empty!")
+	policyErrMissingStatmentField    = policyErr("Missing required field Statement")
+	policyErrInvalidVersion          = policyErr("The policy must contain a valid version string")
+	policyErrInvalidConditionKey     = policyErr("Policy has an invalid condition key")
+	policyErrConditionActionMismatch = policyErr("Conditions do not apply to combination of actions and resources in statement")
+	policyErrInvalidIPCondition      = policyErr("Invalid IP address in Conditions")
 )
 
 type BucketPolicy struct {
@@ -103,32 +110,58 @@ func (bp *BucketPolicy) Validate(bucket string, iam IAMService) error {
 	return nil
 }
 
-func (bp *BucketPolicy) isAllowed(principal string, action Action, resource string, normalizeObjectKey objectKeyNormalizer) bool {
+// decisionFor evaluates a single action against bp for principal/resource,
+// returning the tri-state policyDecision. A statement whose principal/action/resource
+// otherwise matches but whose Condition block can't be evaluated
+// denies the whole decision immediately, regardless of that statement's own
+// Effect — the same "can't rule out a hidden Deny" fail-closed contract
+// iamapi/policy.EvaluateIdentityPolicies uses for identity policies,
+// enforced per-statement here instead of per-document. In practice this
+// branch is unreachable for any policy PutBucketPolicy accepted after
+// Condition write-time validation existed — it only guards a document
+// stored before that validation existed, or naming a future operator the
+// gateway doesn't yet recognize.
+func (bp *BucketPolicy) decisionFor(principal string, action Action, resource string, condCtx map[string][]string, normalizeObjectKey objectKeyNormalizer) policyDecision {
 	var isAllowed bool
 	for _, statement := range bp.Statement {
-		if statement.findMatch(principal, action, resource, normalizeObjectKey) {
-			switch statement.Effect {
-			case BucketPolicyAccessTypeAllow:
-				isAllowed = true
-			case BucketPolicyAccessTypeDeny:
-				return false
-			}
+		matched, evaluable := statement.findMatch(principal, action, resource, condCtx, bp.Version, normalizeObjectKey)
+		if !evaluable {
+			return policyDecisionDeny
+		}
+		if !matched {
+			continue
+		}
+		switch statement.Effect {
+		case BucketPolicyAccessTypeAllow:
+			isAllowed = true
+		case BucketPolicyAccessTypeDeny:
+			return policyDecisionDeny
 		}
 	}
 
-	return isAllowed
+	if isAllowed {
+		return policyDecisionAllow
+	}
+	return policyDecisionNoMatch
 }
 
-func (bp *BucketPolicy) publicDecisionFor(resource string, action Action, normalizeObjectKey objectKeyNormalizer) policyDecision {
+// publicDecisionFor mirrors decisionFor for the anonymous/public-bucket-access
+// path
+func (bp *BucketPolicy) publicDecisionFor(resource string, action Action, condCtx map[string][]string, normalizeObjectKey objectKeyNormalizer) policyDecision {
 	var isAllowed bool
 	for _, statement := range bp.Statement {
-		if statement.isPublicFor(resource, action, normalizeObjectKey) {
-			switch statement.Effect {
-			case BucketPolicyAccessTypeAllow:
-				isAllowed = true
-			case BucketPolicyAccessTypeDeny:
-				return policyDecisionDeny
-			}
+		matched, evaluable := statement.isPublicFor(resource, action, condCtx, bp.Version, normalizeObjectKey)
+		if !evaluable {
+			return policyDecisionDeny
+		}
+		if !matched {
+			continue
+		}
+		switch statement.Effect {
+		case BucketPolicyAccessTypeAllow:
+			isAllowed = true
+		case BucketPolicyAccessTypeDeny:
+			return policyDecisionDeny
 		}
 	}
 
@@ -156,6 +189,7 @@ type BucketPolicyItem struct {
 	Principals Principals             `json:"Principal"`
 	Actions    Actions                `json:"Action"`
 	Resources  Resources              `json:"Resource"`
+	Condition  json.RawMessage        `json:"Condition,omitempty"`
 }
 
 func (bpi *BucketPolicyItem) Validate(bucket string, iam IAMService) error {
@@ -166,6 +200,16 @@ func (bpi *BucketPolicyItem) Validate(bucket string, iam IAMService) error {
 		return err
 	}
 	if err := bpi.Resources.Validate(bucket); err != nil {
+		return err
+	}
+
+	// Condition applicability is checked before the action/resource-type
+	// pairing below: AWS reports a Condition key that doesn't apply to the
+	// statement's actions even when those actions also don't apply to the
+	// statement's resource type, e.g. s3:prefix with s3:ListBucketMultipartUploads
+	// against an object resource — reported as the Condition mismatch, not
+	// the resource-type one.
+	if err := validateBucketPolicyCondition(bpi.Condition, bpi.Actions); err != nil {
 		return err
 	}
 
@@ -188,18 +232,27 @@ func (bpi *BucketPolicyItem) Validate(bucket string, iam IAMService) error {
 	return nil
 }
 
-func (bpi *BucketPolicyItem) findMatch(principal string, action Action, resource string, normalizeObjectKey objectKeyNormalizer) bool {
-	if bpi.Principals.Contains(principal) && bpi.Actions.FindMatch(action) && bpi.Resources.FindMatch(resource, normalizeObjectKey) {
-		return true
+// findMatch reports whether the statement's principal/action/resource cover
+// this request, and — only when they do — whether its Condition block holds
+// against condCtx. matched is only meaningful when evaluable is true; see
+// condition.Evaluate and decisionFor's fail-closed handling of evaluable =false.
+func (bpi *BucketPolicyItem) findMatch(principal string, action Action, resource string, condCtx map[string][]string, version PolicyVersion, normalizeObjectKey objectKeyNormalizer) (matched bool, evaluable bool) {
+	if !(bpi.Principals.Contains(principal) && bpi.Actions.FindMatch(action) && bpi.Resources.FindMatch(resource, normalizeObjectKey)) {
+		return false, true
 	}
-
-	return false
+	return condition.Evaluate(bpi.Condition, condCtx, string(version))
 }
 
 // isPublicFor checks if the bucket policy statement grants public access
-// for given resource and action
-func (bpi *BucketPolicyItem) isPublicFor(resource string, action Action, normalizeObjectKey objectKeyNormalizer) bool {
-	return bpi.Principals.isPublic() && bpi.Actions.FindMatch(action) && bpi.Resources.FindMatch(resource, normalizeObjectKey)
+// for given resource and action, and — only when it otherwise matches —
+// whether its Condition block holds against condCtx. A public statement's
+// Condition is evaluated with whatever request-derived keys condCtx carries;
+// there is no caller identity to resolve for an anonymous request
+func (bpi *BucketPolicyItem) isPublicFor(resource string, action Action, condCtx map[string][]string, version PolicyVersion, normalizeObjectKey objectKeyNormalizer) (matched bool, evaluable bool) {
+	if !(bpi.Principals.isPublic() && bpi.Actions.FindMatch(action) && bpi.Resources.FindMatch(resource, normalizeObjectKey)) {
+		return false, true
+	}
+	return condition.Evaluate(bpi.Condition, condCtx, string(version))
 }
 
 // isPublic checks if the statement grants public access
@@ -250,29 +303,44 @@ func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) err
 	return nil
 }
 
-func VerifyBucketPolicy(policy []byte, access, bucket, object string, normalizeObjectKey objectKeyNormalizer, actions ...Action) error {
+// verifyBucketPolicy parses policyBytes and evaluates it against every
+// action, aggregating with the same precedence isAllowed uses for a single
+// action: a Deny on any action wins immediately (returned along with that
+// action, for building an AWS-shaped message); otherwise the decision is
+// Allow only if every action has a matching Allow; otherwise NoMatch,
+// paired with the first action that lacked one. Zero actions is
+// conservatively NoMatch, not vacuously Allow.
+func verifyBucketPolicy(policyBytes []byte, access, bucket, object string, condCtx map[string][]string, normalizeObjectKey objectKeyNormalizer, actions ...Action) (policyDecision, Action, error) {
 	if len(actions) == 0 {
-		return s3err.GetAPIError(s3err.ErrAccessDenied)
+		return policyDecisionNoMatch, "", nil
 	}
 
-	var bucketPolicy BucketPolicy
-	if err := json.Unmarshal(policy, &bucketPolicy); err != nil {
-		return fmt.Errorf("failed to parse the bucket policy: %w", err)
+	var bp BucketPolicy
+	if err := json.Unmarshal(policyBytes, &bp); err != nil {
+		return policyDecisionNoMatch, "", fmt.Errorf("failed to parse the bucket policy: %w", err)
 	}
 
 	resource := makePolicyResource(bucket, object, normalizeObjectKey)
 
+	result := policyDecisionAllow
+	var blamed Action
 	for _, action := range actions {
-		if !bucketPolicy.isAllowed(access, action, resource, normalizeObjectKey) {
-			return s3err.GetAPIError(s3err.ErrAccessDenied)
+		switch d := bp.decisionFor(access, action, resource, condCtx, normalizeObjectKey); d {
+		case policyDecisionDeny:
+			return policyDecisionDeny, action, nil
+		case policyDecisionNoMatch:
+			if result != policyDecisionNoMatch {
+				result = policyDecisionNoMatch
+				blamed = action
+			}
 		}
 	}
 
-	return nil
+	return result, blamed, nil
 }
 
 // Checks if the bucket policy grants public access
-func VerifyPublicBucketPolicy(policy []byte, bucket, object string, normalizeObjectKey objectKeyNormalizer, action Action) error {
+func VerifyPublicBucketPolicy(policy []byte, bucket, object string, condCtx map[string][]string, normalizeObjectKey objectKeyNormalizer, action Action) error {
 	var bucketPolicy BucketPolicy
 	if err := json.Unmarshal(policy, &bucketPolicy); err != nil {
 		return err
@@ -280,7 +348,7 @@ func VerifyPublicBucketPolicy(policy []byte, bucket, object string, normalizeObj
 
 	resource := makePolicyResource(bucket, object, normalizeObjectKey)
 
-	switch bucketPolicy.publicDecisionFor(resource, action, normalizeObjectKey) {
+	switch bucketPolicy.publicDecisionFor(resource, action, condCtx, normalizeObjectKey) {
 	case policyDecisionAllow:
 		return nil
 	case policyDecisionDeny:

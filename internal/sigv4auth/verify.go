@@ -14,18 +14,12 @@
 package sigv4auth
 
 import (
-	"errors"
 	"fmt"
-	"net/http"
-	"os"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/smithy-go/logging"
 	"github.com/gofiber/fiber/v3"
-	"github.com/versity/versitygw/aws/signer/v4"
 	"github.com/versity/versitygw/debuglogger"
 )
 
@@ -64,125 +58,57 @@ func (e *SignatureMismatchError) Error() string {
 }
 
 // CheckSignature rebuilds the canonical request with the supplied service,
-// region, payload hash, signing time, and signed headers, then compares the
+// region, payload hash, signing time, and signed headers. Then compares the
 // generated signature to the signature presented by the client.
-func CheckSignature(ctx fiber.Ctx, auth AuthData, secret, payloadHash string, tdate time.Time, contentLen int64, opts CheckOptions) (*CheckResult, error) {
+// derivedKey is the request's kSigning value — either computed
+// locally via DeriveKey from a known secret, or obtained from a standalone
+// IAM service that never reveals the secret itself.
+func CheckSignature(ctx fiber.Ctx, auth AuthData, derivedKey []byte, payloadHash string, tdate time.Time, contentLen int64, opts CheckOptions) (*CheckResult, error) {
 	service := opts.Service
 	if service == "" {
 		service = auth.Service
 	}
 	signedHdrs := strings.Split(auth.SignedHeaders, ";")
 
-	req, err := createHTTPRequestFromCtx(ctx, signedHdrs, contentLen, opts.RequiredSignedHeaders)
+	in, err := signingInputFromCtx(ctx, signedHdrs, contentLen, opts.RequiredSignedHeaders, false)
 	if err != nil {
 		return nil, err
 	}
+	in.AccessKeyID = auth.Access
+	in.CredentialScope = BuildCredentialScope(tdate.Format(YYYYMMDD), auth.Region, service)
+	in.SignedHdrs = signedHdrs
+	in.PayloadHash = payloadHash
+	in.SigningTime = tdate
+	in.DisableURIPathEscaping = opts.DisableURIPathEscaping
 
-	signer := v4.NewSigner()
+	result := BuildAndSign(derivedKey, in)
 
-	signMeta, err := signer.SignHTTP(req.Context(),
-		aws.Credentials{
-			AccessKeyID:     auth.Access,
-			SecretAccessKey: secret,
-		},
-		req, payloadHash, service, auth.Region, tdate, signedHdrs,
-		func(options *v4.SignerOptions) {
-			options.DisableURIPathEscaping = opts.DisableURIPathEscaping
-			// The signer's diagnostic logger prints the canonical request,
-			// string-to-sign, and (for presigned requests) the complete
-			// signed URL verbatim, bypassing the redaction layer entirely.
-			// That's replayable signature/session-token material, so only
-			// enable it at LevelUnsafe, never at plain debug.
-			if debuglogger.IsUnsafeEnabled() {
-				options.LogSigning = true
-				options.Logger = logging.NewStandardLogger(os.Stderr)
-			}
-		})
-	if err != nil {
-		return nil, fmt.Errorf("sign generated http request: %w", err)
+	// This prints the canonical request and string-to-sign verbatim,
+	// bypassing the redaction layer entirely — replayable signature
+	// material, so only ever log it at LevelUnsafe, never at plain debug.
+	if debuglogger.IsUnsafeEnabled() {
+		debuglogger.Logf("Request Signature:\n"+
+			"---[ CANONICAL STRING  ]-----------------------------\n%s\n"+
+			"---[ STRING TO SIGN ]--------------------------------\n%s\n"+
+			"-----------------------------------------------------",
+			result.CanonicalString, result.StringToSign)
 	}
 
-	genAuth, err := ParseAuthorization(req.Header.Get("Authorization"), service)
-	if err != nil {
-		return nil, err
-	}
-
-	if !SecureCompare(auth.Signature, genAuth.Signature) {
+	if !SecureCompare(auth.Signature, result.Signature) {
 		return nil, &SignatureMismatchError{
 			AccessKeyID:           auth.Access,
-			StringToSign:          signMeta.StringToSign,
+			StringToSign:          result.StringToSign,
 			SignatureProvided:     auth.Signature,
-			StringToSignBytes:     HexBytes(signMeta.StringToSign),
-			CanonicalRequest:      signMeta.CanonicalString,
-			CanonicalRequestBytes: HexBytes(signMeta.CanonicalString),
+			StringToSignBytes:     HexBytes(result.StringToSign),
+			CanonicalRequest:      result.CanonicalString,
+			CanonicalRequestBytes: HexBytes(result.CanonicalString),
 		}
 	}
 
 	return &CheckResult{
-		CanonicalString: signMeta.CanonicalString,
-		StringToSign:    signMeta.StringToSign,
+		CanonicalString: result.CanonicalString,
+		StringToSign:    result.StringToSign,
 	}, nil
-}
-
-func CreateHTTPRequestFromCtx(ctx fiber.Ctx, signedHdrs []string, contentLength int64) (*http.Request, error) {
-	return createHTTPRequestFromCtx(ctx, signedHdrs, contentLength, nil)
-}
-
-func createHTTPRequestFromCtx(ctx fiber.Ctx, signedHdrs []string, contentLength int64, requiredSignedHdrs []string) (*http.Request, error) {
-	req := ctx.Request()
-	if err := validateRequiredSignedHeaders(signedHdrs, requiredSignedHdrs); err != nil {
-		return nil, err
-	}
-
-	httpReq, err := http.NewRequest(string(req.Header.Method()), ctx.OriginalURL(), nil)
-	if err != nil {
-		return nil, errors.New("error in creating an http request")
-	}
-
-	if err := addRequestHeadersFromCtx(ctx, httpReq, signedHdrs, requiredSignedHdrs); err != nil {
-		return nil, err
-	}
-
-	for _, header := range signedHdrs {
-		if httpReq.Header.Get(header) == "" {
-			httpReq.Header.Set(header, "")
-		}
-	}
-
-	if !includeHeader("Content-Length", signedHdrs) {
-		httpReq.ContentLength = 0
-	} else {
-		httpReq.ContentLength = contentLength
-	}
-
-	httpReq.Host = string(req.Header.Host())
-
-	return httpReq, nil
-}
-
-func AddRequestHeadersFromCtx(ctx fiber.Ctx, httpReq *http.Request, signedHdrs []string) error {
-	return addRequestHeadersFromCtx(ctx, httpReq, signedHdrs, nil)
-}
-
-func addRequestHeadersFromCtx(ctx fiber.Ctx, httpReq *http.Request, signedHdrs, requiredSignedHdrs []string) error {
-	headersNotSigned := []string{}
-	for key, value := range ctx.Request().Header.All() {
-		keyStr := string(key)
-		if includeHeader(keyStr, signedHdrs) || v4.IsIgnoredHeader(keyStr) {
-			httpReq.Header.Add(keyStr, string(value))
-			continue
-		}
-		if isRequiredSignedHeader(keyStr, requiredSignedHdrs) {
-			headersNotSigned = append(headersNotSigned, strings.ToLower(keyStr))
-		}
-	}
-
-	if len(headersNotSigned) != 0 {
-		debuglogger.Logf("headers present in request but not included in SignedHeaders: %q", strings.Join(headersNotSigned, ", "))
-		return &HeadersNotSignedError{Headers: headersNotSigned}
-	}
-
-	return nil
 }
 
 func validateRequiredSignedHeaders(signedHdrs, requiredSignedHdrs []string) error {
@@ -205,7 +131,7 @@ func validateRequiredSignedHeaders(signedHdrs, requiredSignedHdrs []string) erro
 
 func isRequiredSignedHeader(header string, requiredSignedHdrs []string) bool {
 	if requiredSignedHdrs == nil {
-		return v4.IsRequiredSignedHeader(header)
+		return IsRequiredSignedHeader(header)
 	}
 
 	return includeHeader(header, requiredSignedHdrs)

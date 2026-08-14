@@ -14,23 +14,24 @@
 package utils
 
 import (
-	"context"
 	"net/http"
 	"net/url"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/valyala/fasthttp"
-	v4 "github.com/versity/versitygw/aws/signer/v4"
+	"github.com/versity/versitygw/internal/sigv4auth"
 	"github.com/versity/versitygw/s3err"
 )
 
 const signedHeadersTestRegion = "us-east-1"
 
-var signedHeadersTestCreds = aws.Credentials{
+var signedHeadersTestCreds = struct {
+	AccessKeyID     string
+	SecretAccessKey string
+}{
 	AccessKeyID:     "AKID",
 	SecretAccessKey: "SECRET",
 }
@@ -43,7 +44,7 @@ func TestCheckPresignedSignatureRejectsUnsignedAmzHeader(t *testing.T) {
 	authData, err := ParsePresignedURIParts(ctx, signedHeadersTestRegion)
 	require.NoError(t, err)
 
-	err = CheckPresignedSignature(ctx, authData, signedHeadersTestCreds.SecretAccessKey)
+	err = CheckPresignedSignature(ctx, authData, derivedKeyFor(authData))
 	requireHeadersNotSigned(t, err, "x-amz-copy-source")
 }
 
@@ -56,7 +57,7 @@ func TestCheckPresignedSignatureAllowsSignedAmzHeader(t *testing.T) {
 	authData, err := ParsePresignedURIParts(ctx, signedHeadersTestRegion)
 	require.NoError(t, err)
 
-	err = CheckPresignedSignature(ctx, authData, signedHeadersTestCreds.SecretAccessKey)
+	err = CheckPresignedSignature(ctx, authData, derivedKeyFor(authData))
 	require.NoError(t, err)
 }
 
@@ -69,7 +70,7 @@ func TestCheckPresignedSignatureAllowsUnsignedNonAmzHeader(t *testing.T) {
 	authData, err := ParsePresignedURIParts(ctx, signedHeadersTestRegion)
 	require.NoError(t, err)
 
-	err = CheckPresignedSignature(ctx, authData, signedHeadersTestCreds.SecretAccessKey)
+	err = CheckPresignedSignature(ctx, authData, derivedKeyFor(authData))
 	require.NoError(t, err)
 }
 
@@ -78,7 +79,7 @@ func TestCheckValidSignatureRejectsUnsignedAmzHeader(t *testing.T) {
 		"X-Amz-Tagging": []string{"a=b"},
 	})
 
-	_, err := CheckValidSignature(ctx, authData, signedHeadersTestCreds.SecretAccessKey, unsignedPayload, signingTime, 0)
+	_, err := CheckValidSignature(ctx, authData, derivedKeyFor(authData), unsignedPayload, signingTime, 0)
 	requireHeadersNotSigned(t, err, "x-amz-tagging")
 }
 
@@ -87,7 +88,7 @@ func TestCheckValidSignatureAllowsSignedAmzHeader(t *testing.T) {
 		"X-Amz-Tagging": []string{"a=b"},
 	}, nil)
 
-	_, err := CheckValidSignature(ctx, authData, signedHeadersTestCreds.SecretAccessKey, unsignedPayload, signingTime, 0)
+	_, err := CheckValidSignature(ctx, authData, derivedKeyFor(authData), unsignedPayload, signingTime, 0)
 	require.NoError(t, err)
 }
 
@@ -97,7 +98,7 @@ func TestCheckValidSignatureAllowsUnsignedNonAmzHeader(t *testing.T) {
 		"X-Custom-Header": []string{"value"},
 	})
 
-	_, err := CheckValidSignature(ctx, authData, signedHeadersTestCreds.SecretAccessKey, unsignedPayload, signingTime, 0)
+	_, err := CheckValidSignature(ctx, authData, derivedKeyFor(authData), unsignedPayload, signingTime, 0)
 	require.NoError(t, err)
 }
 
@@ -109,7 +110,7 @@ func TestCheckPresignedSignatureRejectsUnsignedAmzHeaderPattern(t *testing.T) {
 	authData, err := ParsePresignedURIParts(ctx, signedHeadersTestRegion)
 	require.NoError(t, err)
 
-	err = CheckPresignedSignature(ctx, authData, signedHeadersTestCreds.SecretAccessKey)
+	err = CheckPresignedSignature(ctx, authData, derivedKeyFor(authData))
 	requireHeadersNotSigned(t, err, "x-amz-some-other-header")
 }
 
@@ -118,8 +119,12 @@ func TestCheckValidSignatureRejectsUnsignedAmzHeaderPattern(t *testing.T) {
 		"X-Amz-Some-Other-Header": []string{"value"},
 	})
 
-	_, err := CheckValidSignature(ctx, authData, signedHeadersTestCreds.SecretAccessKey, unsignedPayload, signingTime, 0)
+	_, err := CheckValidSignature(ctx, authData, derivedKeyFor(authData), unsignedPayload, signingTime, 0)
 	requireHeadersNotSigned(t, err, "x-amz-some-other-header")
+}
+
+func derivedKeyFor(authData AuthData) []byte {
+	return sigv4auth.DeriveKey(signedHeadersTestCreds.SecretAccessKey, authData.Date[:8], signedHeadersTestRegion, service)
 }
 
 func buildPresignedURL(t *testing.T, headers http.Header) string {
@@ -132,23 +137,22 @@ func buildPresignedURL(t *testing.T, headers http.Header) string {
 		req.Header = make(http.Header)
 	}
 
-	signer := v4.NewSigner()
-	signedURL, _, _, err := signer.PresignHTTP(
-		context.Background(),
-		signedHeadersTestCreds,
-		req,
-		unsignedPayload,
-		service,
-		signedHeadersTestRegion,
-		time.Now().UTC(),
-		nil,
-		func(options *v4.SignerOptions) {
-			options.DisableURIPathEscaping = true
-		},
-	)
-	require.NoError(t, err)
+	signingTime := time.Now().UTC()
+	yyyymmdd := signingTime.Format(sigv4auth.YYYYMMDD)
+	derivedKey := sigv4auth.DeriveKey(signedHeadersTestCreds.SecretAccessKey, yyyymmdd, signedHeadersTestRegion, service)
 
-	return signedURL
+	in := sigv4auth.SigningInputFromRequest(req)
+	in.AccessKeyID = signedHeadersTestCreds.AccessKeyID
+	in.CredentialScope = sigv4auth.BuildCredentialScope(yyyymmdd, signedHeadersTestRegion, service)
+	in.PayloadHash = unsignedPayload
+	in.SigningTime = signingTime
+	in.DisableURIPathEscaping = true
+	in.IsPreSign = true
+	result := sigv4auth.BuildAndSign(derivedKey, in)
+
+	signedURL := *req.URL
+	signedURL.RawQuery = result.RawQuery
+	return signedURL.String()
 }
 
 func signedHeaderAuthCtx(t *testing.T, signedHeaders, extraHeaders http.Header) (fiber.Ctx, AuthData, time.Time) {
@@ -162,21 +166,18 @@ func signedHeaderAuthCtx(t *testing.T, signedHeaders, extraHeaders http.Header) 
 		req.Header = make(http.Header)
 	}
 
-	signer := v4.NewSigner()
-	_, err = signer.SignHTTP(
-		context.Background(),
-		signedHeadersTestCreds,
-		req,
-		unsignedPayload,
-		service,
-		signedHeadersTestRegion,
-		signingTime,
-		nil,
-		func(options *v4.SignerOptions) {
-			options.DisableURIPathEscaping = true
-		},
-	)
-	require.NoError(t, err)
+	yyyymmdd := signingTime.Format(sigv4auth.YYYYMMDD)
+	derivedKey := sigv4auth.DeriveKey(signedHeadersTestCreds.SecretAccessKey, yyyymmdd, signedHeadersTestRegion, service)
+
+	in := sigv4auth.SigningInputFromRequest(req)
+	in.AccessKeyID = signedHeadersTestCreds.AccessKeyID
+	in.CredentialScope = sigv4auth.BuildCredentialScope(yyyymmdd, signedHeadersTestRegion, service)
+	in.PayloadHash = unsignedPayload
+	in.SigningTime = signingTime
+	in.DisableURIPathEscaping = true
+	result := sigv4auth.BuildAndSign(derivedKey, in)
+	req.Header.Set("X-Amz-Date", result.AmzDate)
+	req.Header.Set("Authorization", result.AuthorizationHeader)
 
 	headers := req.Header.Clone()
 	for key, values := range extraHeaders {
@@ -224,4 +225,47 @@ func requireHeadersNotSigned(t *testing.T, err error, expected string) {
 	require.Truef(t, ok, "expected HeadersNotSignedError, got %T", err)
 	require.Equal(t, "AccessDenied", serr.Code)
 	require.Equal(t, expected, serr.HeadersNotSigned)
+}
+
+// TestCheckValidSignatureRejectsUnsignedSecurityToken pins the entire
+// binding argument for a session credential presented via header auth.
+//
+// The gateway adds no RequiredSignedHeaders entry for
+// X-Amz-Security-Token, and deliberately so: passing a non-nil list
+// *replaces* sigv4auth's default rule (host plus every X-Amz-* header)
+// rather than adding to it, which would weaken the binding for every other
+// X-Amz-* header. What keeps the token bound to the signature is that
+// default rule alone — so if anyone ever hands CheckValidSignature an
+// explicit list, this test is what catches it.
+func TestCheckValidSignatureRejectsUnsignedSecurityToken(t *testing.T) {
+	ctx, authData, signingTime := signedHeaderAuthCtx(t, nil, http.Header{
+		"X-Amz-Security-Token": []string{"a-session-token"},
+	})
+
+	_, err := CheckValidSignature(ctx, authData, derivedKeyFor(authData), unsignedPayload, signingTime, 0)
+	requireHeadersNotSigned(t, err, "x-amz-security-token")
+}
+
+// TestCheckValidSignatureAllowsSignedSecurityToken is the positive half:
+// a token that *was* part of the signed request passes, so a legitimate
+// session credential is not rejected by the rule above.
+func TestCheckValidSignatureAllowsSignedSecurityToken(t *testing.T) {
+	ctx, authData, signingTime := signedHeaderAuthCtx(t, http.Header{
+		"X-Amz-Security-Token": []string{"a-session-token"},
+	}, nil)
+
+	_, err := CheckValidSignature(ctx, authData, derivedKeyFor(authData), unsignedPayload, signingTime, 0)
+	require.NoError(t, err)
+}
+
+// TestCheckValidSignatureRejectsSwappedSecurityToken confirms the token
+// cannot be swapped for another session's after signing: it is part of the
+// canonical request, so altering it invalidates the signature.
+func TestCheckValidSignatureRejectsSwappedSecurityToken(t *testing.T) {
+	signed := http.Header{"X-Amz-Security-Token": []string{"the-real-session-token"}}
+	ctx, authData, signingTime := signedHeaderAuthCtx(t, signed, nil)
+	ctx.Request().Header.Set("X-Amz-Security-Token", "somebody-elses-session-token")
+
+	_, err := CheckValidSignature(ctx, authData, derivedKeyFor(authData), unsignedPayload, signingTime, 0)
+	require.Error(t, err, "swapping the security token after signing must invalidate the signature")
 }

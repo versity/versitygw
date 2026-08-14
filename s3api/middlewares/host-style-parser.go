@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/internal/httpctx"
 )
 
 // HostStyleParser is a middleware which parses the bucket name
@@ -31,6 +32,11 @@ func HostStyleParser(virtualDomain string) fiber.Handler {
 		if !found || bucket == "" {
 			return ctx.Next()
 		}
+		// SigV4 verification signs the request's original, on-the-wire path,
+		// not the bucket-prefixed one used for routing here — save it
+		// before ctx.Path() below overwrites fasthttp's URI.PathOriginal too.
+		httpctx.ContextKeyOriginalURIPath.Set(ctx, string(ctx.Request().URI().PathOriginal()))
+
 		path := ctx.Path()
 		if path == "/" {
 			// omit the trailing / for bucket operations

@@ -37,8 +37,7 @@ func (c S3ApiController) PutBucketTagging(ctx fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
-		Readonly:        c.readonly,
+	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
 		IsRoot:          isRoot,
@@ -46,7 +45,6 @@ func (c S3ApiController) PutBucketTagging(ctx fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Actions:         []auth.Action{auth.PutBucketTaggingAction},
 		IsPublicRequest: isPublicBucket,
-		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -80,15 +78,13 @@ func (c S3ApiController) PutBucketOwnershipControls(ctx fiber.Ctx) (*Response, e
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 
-	if err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
-		Readonly:      c.readonly,
+	if err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:           parsedAcl,
 		AclPermission: auth.PermissionWrite,
 		IsRoot:        isRoot,
 		Acc:           acct,
 		Bucket:        bucket,
 		Actions:       []auth.Action{auth.PutBucketOwnershipControlsAction},
-		DisableACL:    c.disableACL,
 	}); err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -140,8 +136,7 @@ func (c S3ApiController) PutBucketVersioning(ctx fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
-		Readonly:        c.readonly,
+	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
 		IsRoot:          isRoot,
@@ -149,7 +144,6 @@ func (c S3ApiController) PutBucketVersioning(ctx fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Actions:         []auth.Action{auth.PutBucketVersioningAction},
 		IsPublicRequest: isPublicBucket,
-		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -195,8 +189,7 @@ func (c S3ApiController) PutObjectLockConfiguration(ctx fiber.Ctx) (*Response, e
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	if err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
-		Readonly:        c.readonly,
+	if err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
 		IsRoot:          isRoot,
@@ -204,7 +197,6 @@ func (c S3ApiController) PutObjectLockConfiguration(ctx fiber.Ctx) (*Response, e
 		Bucket:          bucket,
 		Actions:         []auth.Action{auth.PutBucketObjectLockConfigurationAction},
 		IsPublicRequest: isPublicBucket,
-		DisableACL:      c.disableACL,
 	}); err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -237,8 +229,7 @@ func (c S3ApiController) PutBucketCors(ctx fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
-		Readonly:        c.readonly,
+	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
 		IsRoot:          isRoot,
@@ -246,7 +237,6 @@ func (c S3ApiController) PutBucketCors(ctx fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Actions:         []auth.Action{auth.PutBucketCorsAction},
 		IsPublicRequest: isPublicBucket,
-		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -294,8 +284,7 @@ func (c S3ApiController) PutBucketWebsite(ctx fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
-		Readonly:        c.readonly,
+	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
 		IsRoot:          isRoot,
@@ -303,7 +292,6 @@ func (c S3ApiController) PutBucketWebsite(ctx fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Actions:         []auth.Action{auth.PutBucketWebsiteAction},
 		IsPublicRequest: isPublicBucket,
-		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -357,15 +345,13 @@ func (c S3ApiController) PutBucketPolicy(ctx fiber.Ctx) (*Response, error) {
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
-		Readonly:      c.readonly,
+	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:           parsedAcl,
 		AclPermission: auth.PermissionWrite,
 		IsRoot:        isRoot,
 		Acc:           acct,
 		Bucket:        bucket,
 		Actions:       []auth.Action{auth.PutBucketPolicyAction},
-		DisableACL:    c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -409,16 +395,14 @@ func (c S3ApiController) PutBucketAcl(ctx fiber.Ctx) (*Response, error) {
 	grants := grantFullControl + grantRead + grantReadACP + grantWrite + grantWriteACP
 	var input *auth.PutBucketAclInput
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: auth.PermissionWriteAcp,
 			IsRoot:        isRoot,
 			Acc:           acct,
 			Bucket:        bucket,
 			Actions:       []auth.Action{auth.PutBucketAclAction},
-			DisableACL:    c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -585,11 +569,12 @@ func (c S3ApiController) CreateBucket(ctx fiber.Ctx) (*Response, error) {
 		utils.ContextKeyBucketOwner.Set(ctx, creator)
 	}
 	bucketOwner := utils.ContextKeyBucketOwner.Get(ctx).(auth.Account)
+	isRoot, _ := utils.ContextKeyIsRoot.Get(ctx).(bool)
 
-	if creator.Role != auth.RoleAdmin && creator.Role != auth.RoleUserPlus {
+	if err := auth.VerifyCreateBucketAccess(ctx, c.iam, isRoot, creator, bucket); err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{},
-		}, s3err.GetAPIError(s3err.ErrAccessDenied)
+		}, err
 	}
 
 	// validate the bucket name

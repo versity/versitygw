@@ -20,7 +20,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"math/rand"
-	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
@@ -28,74 +27,12 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
-
-func TestCreateHttpRequestFromCtx(t *testing.T) {
-	type args struct {
-		ctx fiber.Ctx
-	}
-
-	app := fiber.New()
-
-	// Expected output, Case 1
-	ctx := app.AcquireCtx(&fasthttp.RequestCtx{})
-	req := ctx.Request()
-	request, _ := http.NewRequest(string(req.Header.Method()), req.URI().String(), bytes.NewReader(req.Body()))
-
-	// Case 2
-	ctx2 := app.AcquireCtx(&fasthttp.RequestCtx{})
-	req2 := ctx2.Request()
-	req2.Header.Add("X-Amz-Mfa", "Some valid Mfa")
-
-	request2, _ := http.NewRequest(string(req2.Header.Method()), req2.URI().String(), bytes.NewReader(req2.Body()))
-	request2.Header.Add("X-Amz-Mfa", "Some valid Mfa")
-
-	tests := []struct {
-		name    string
-		args    args
-		want    *http.Request
-		wantErr bool
-		hdrs    []string
-	}{
-		{
-			name: "Success-response",
-			args: args{
-				ctx: ctx,
-			},
-			want:    request,
-			wantErr: false,
-			hdrs:    []string{},
-		},
-		{
-			name: "Success-response-With-Headers",
-			args: args{
-				ctx: ctx2,
-			},
-			want:    request2,
-			wantErr: false,
-			hdrs:    []string{"X-Amz-Mfa"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := createHttpRequestFromCtx(tt.args.ctx, tt.hdrs, 0)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("CreateHttpRequestFromCtx() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if !reflect.DeepEqual(got.Header, tt.want.Header) {
-				t.Errorf("CreateHttpRequestFromCtx() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
 
 // a helper method to construct a raw http request with the given http request headers
 // to further parse with fasthttp.Request.Read and return fasthttp.RequestHeader
@@ -225,42 +162,6 @@ func TestGetUserMetaData(t *testing.T) {
 			got, err := GetUserMetaData(h)
 			assert.Equal(t, tt.wantErr, err)
 			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func Test_includeHeader(t *testing.T) {
-	type args struct {
-		hdr        string
-		signedHdrs []string
-	}
-	tests := []struct {
-		name string
-		args args
-		want bool
-	}{
-		{
-			name: "include-header-falsy-case",
-			args: args{
-				hdr:        "Content-Type",
-				signedHdrs: []string{"X-Amz-Acl", "Content-Encoding"},
-			},
-			want: false,
-		},
-		{
-			name: "include-header-falsy-case",
-			args: args{
-				hdr:        "Content-Type",
-				signedHdrs: []string{"X-Amz-Acl", "Content-Type"},
-			},
-			want: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := includeHeader(tt.args.hdr, tt.args.signedHdrs); got != tt.want {
-				t.Errorf("includeHeader() = %v, want %v", got, tt.want)
-			}
 		})
 	}
 }

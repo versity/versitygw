@@ -23,22 +23,25 @@ import (
 )
 
 var (
-	iamServerDir                    string
-	iamServerVaultEndpointURL       string
-	iamServerVaultNamespace         string
-	iamServerVaultSecretStoragePath string
-	iamServerVaultSecretStorageNS   string
-	iamServerVaultAuthMethod        string
-	iamServerVaultAuthNamespace     string
-	iamServerVaultMountPath         string
-	iamServerVaultRootToken         string
-	iamServerVaultRoleID            string
-	iamServerVaultRoleSecret        string
-	iamServerVaultServerCert        string
-	iamServerVaultClientCert        string
-	iamServerVaultClientCertKey     string
-
+	iamServerDir                            string
+	iamServerVaultEndpointURL               string
+	iamServerVaultNamespace                 string
+	iamServerVaultSecretStoragePath         string
+	iamServerVaultSecretStorageNS           string
+	iamServerVaultAuthMethod                string
+	iamServerVaultAuthNamespace             string
+	iamServerVaultMountPath                 string
+	iamServerVaultRootToken                 string
+	iamServerVaultRoleID                    string
+	iamServerVaultRoleSecret                string
+	iamServerVaultServerCert                string
+	iamServerVaultClientCert                string
+	iamServerVaultClientCertKey             string
 	iamServerDisableOIDCThumbprintAutoFetch bool
+	iamServerPrivateCert                    string
+	iamServerPrivateCertKey                 string
+	iamServerPrivateClientCA                string
+	iamServerPrivateSocketPerm              string
 )
 
 func iamCommand() *cli.Command {
@@ -145,6 +148,35 @@ func iamCommand() *cli.Command {
 				EnvVars:     []string{"VGW_IAM_DISABLE_OIDC_THUMBPRINT_AUTOFETCH"},
 				Destination: &iamServerDisableOIDCThumbprintAutoFetch,
 			},
+			&cli.StringSliceFlag{
+				Name:    "private-ports",
+				Usage:   "private endpoint listen address: a unix socket path, or <ip>:<port>/:<port> when mTLS (--private-cert/--private-cert-key/--private-client-ca) is also configured — refuses to start otherwise (can be specified multiple times)",
+				EnvVars: []string{"VGW_IAM_PRIVATE_PORTS"},
+			},
+			&cli.StringFlag{
+				Name:        "private-cert",
+				Usage:       "TLS server certificate for the private endpoint listener (required for a non-unix-socket --private-ports address)",
+				EnvVars:     []string{"VGW_IAM_PRIVATE_CERT"},
+				Destination: &iamServerPrivateCert,
+			},
+			&cli.StringFlag{
+				Name:        "private-cert-key",
+				Usage:       "TLS private key for --private-cert",
+				EnvVars:     []string{"VGW_IAM_PRIVATE_CERT_KEY"},
+				Destination: &iamServerPrivateCertKey,
+			},
+			&cli.StringFlag{
+				Name:        "private-client-ca",
+				Usage:       "PEM-encoded CA bundle used to verify the S3 gateway's client certificate on the private endpoint listener (required for a non-unix-socket --private-ports address, together with --private-cert/--private-cert-key)",
+				EnvVars:     []string{"VGW_IAM_PRIVATE_CLIENT_CA"},
+				Destination: &iamServerPrivateClientCA,
+			},
+			&cli.StringFlag{
+				Name:        "private-socket-perm",
+				Usage:       "octal file-mode permission for a file-backed unix-socket --private-ports address (e.g. '0660'); no effect on TCP or abstract-namespace sockets",
+				EnvVars:     []string{"VGW_IAM_PRIVATE_SOCKET_PERM"},
+				Destination: &iamServerPrivateSocketPerm,
+			},
 		},
 	}
 }
@@ -177,6 +209,11 @@ func runIAM(ctx *cli.Context) error {
 		KeepAlive:                      keepAlive,
 		HealthPath:                     healthPath,
 		SocketPerm:                     socketPerm,
+		PrivatePorts:                   ctx.StringSlice("private-ports"),
+		PrivateCertFile:                iamServerPrivateCert,
+		PrivateKeyFile:                 iamServerPrivateCertKey,
+		PrivateClientCAFile:            iamServerPrivateClientCA,
+		PrivateSocketPerm:              iamServerPrivateSocketPerm,
 		IAMDir:                         iamServerDir,
 		VaultEndpointURL:               iamServerVaultEndpointURL,
 		VaultNamespace:                 iamServerVaultNamespace,

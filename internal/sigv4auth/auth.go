@@ -35,7 +35,18 @@ const (
 	// HeaderSecurityToken is the header a temporary credential's
 	// SessionToken is presented in, matching AWS's X-Amz-Security-Token.
 	HeaderSecurityToken = "X-Amz-Security-Token"
+
+	// TempAccessKeyIDPrefix marks temporary credentials minted by
+	// AssumeRoleWithWebIdentity, matching AWS's ASIA… convention that
+	// distinguishes them from long-term AKIA… access keys.
+	TempAccessKeyIDPrefix = "ASIA"
 )
+
+// IsTempAccessKeyID reports whether accessKeyID is a temporary (session)
+// credential rather than a long-term AKIA… access key.
+func IsTempAccessKeyID(accessKeyID string) bool {
+	return strings.HasPrefix(accessKeyID, TempAccessKeyIDPrefix)
+}
 
 type ParseErrorKind string
 

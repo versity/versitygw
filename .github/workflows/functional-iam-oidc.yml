@@ -46,43 +46,6 @@ jobs:
         run: |
           make testbin
 
-      - name: Run GitHub OIDC live web-identity test
+      - name: Run GitHub OIDC live web-identity and s3 session tests
         run: |
-          set -Eeuo pipefail
-
-          IAM_PID=""
-          cleanup() {
-            local status=$?
-            trap - EXIT
-            if [[ -n "$IAM_PID" ]] && kill -0 "$IAM_PID" 2>/dev/null; then
-              kill "$IAM_PID" 2>/dev/null || true
-            fi
-            if [[ -n "$IAM_PID" ]]; then
-              wait "$IAM_PID" 2>/dev/null || true
-            fi
-            exit "$status"
-          }
-          trap cleanup EXIT
-
-          mkdir -p /tmp/iam-oidc
-          ./versitygw --health /healthz -p :7078 -a user -s pass iam --dir /tmp/iam-oidc &
-          IAM_PID=$!
-
-          ready=""
-          for _ in {1..50}; do
-            if curl --fail --silent --max-time 1 http://127.0.0.1:7078/healthz >/dev/null 2>&1; then
-              ready=1
-              break
-            fi
-            if ! kill -0 "$IAM_PID" 2>/dev/null; then
-              echo "IAM API server stopped before becoming ready" >&2
-              exit 1
-            fi
-            sleep 0.2
-          done
-          if [[ -z "$ready" ]]; then
-            echo "timed out waiting for IAM API server" >&2
-            exit 1
-          fi
-
-          ./versitygw test -a user -s pass -e http://127.0.0.1:7078 IAMAssumeRoleWithWebIdentity_github_oidc_live
+          ./runoidctests.sh

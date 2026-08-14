@@ -4437,22 +4437,7 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 
 			delResult = append(delResult, delEntity)
 		} else {
-			serr, ok := err.(s3err.S3Error)
-			if ok {
-				errCode := serr.BaseError().Code
-				errMessage := serr.BaseError().Code
-				errs = append(errs, types.Error{
-					Key:     obj.Key,
-					Code:    &errCode,
-					Message: &errMessage,
-				})
-			} else {
-				errs = append(errs, types.Error{
-					Key:     obj.Key,
-					Code:    backend.GetPtrFromString("InternalError"),
-					Message: backend.GetPtrFromString(err.Error()),
-				})
-			}
+			errs = append(errs, s3err.ObjectDeleteError(obj.Key, obj.VersionId, err))
 		}
 	}
 
@@ -6733,17 +6718,23 @@ func (p *Posix) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.
 	return buckets, nil
 }
 
+// NormalizeObjectKey resolves object relative to bucket the same way the
+// filesystem will (collapsing ".."/"." segments, catching a traversal
+// attempt that escapes bucket), but the result names an S3 key, not a host
+// path: on Windows filepath.Join/Rel would return it with "\" separators,
+// which callers building a policy-resource ARN or match string must never
+// see, so it's converted back to "/" before returning.
 func (p *Posix) NormalizeObjectKey(bucket, object string) string {
 	fullPath := filepath.Join(bucket, object)
 	key, err := filepath.Rel(filepath.Clean(bucket), fullPath)
 	if err != nil {
-		return fullPath
+		return filepath.ToSlash(fullPath)
 	}
 	if key == "." {
 		return ""
 	}
 
-	return key
+	return filepath.ToSlash(key)
 }
 
 func (p *Posix) storeChecksums(f *os.File, bucket, object string, chs s3response.Checksum) error {

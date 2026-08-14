@@ -57,7 +57,7 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 		}
 
 		bucket, object := parsePath(ctx.Path())
-		err := auth.VerifyPublicAccess(ctx.RequestCtx(), be, policyPermission, permission, bucket, object)
+		err := auth.VerifyPublicAccess(ctx, be, policyPermission, permission, bucket, object)
 		if err != nil {
 			if s3action == metrics.ActionHeadBucket {
 				// add the bucket region header for HeadBucket

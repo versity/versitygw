@@ -135,7 +135,7 @@ func (c AdminController) ChangeBucketOwner(ctx fiber.Ctx) (*Response, error) {
 	owner := ctx.Query("owner")
 	bucket := ctx.Query("bucket")
 
-	accs, err := auth.CheckIfAccountsExist([]string{owner}, c.iam)
+	accs, err := c.iam.ResolveAccounts([]string{owner})
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{},

@@ -18,15 +18,31 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"path/filepath"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
+	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 )
+
+// testFiberCtx returns a fiber.Ctx for tests to pass to functions that read
+// request-derived data (e.g. the condition context) off it, released
+// automatically when the test ends.
+func testFiberCtx(t *testing.T) fiber.Ctx {
+	t.Helper()
+	app := fiber.New()
+	ctx := app.AcquireCtx(&fasthttp.RequestCtx{})
+	t.Cleanup(func() {
+		app.ReleaseCtx(ctx)
+	})
+	return ctx
+}
 
 // noBucketPolicyBackend is a test stub that returns ErrNoSuchBucketPolicy for
 // GetBucketPolicy and serves a configurable ACL for GetBucketAcl.
@@ -94,6 +110,264 @@ func publicReadACL() ACL {
 	}
 }
 
+// mockPolicyEvaluator implements IAMService (via the embedded
+// IAMServiceSingle, whose methods are never exercised here) and
+// PolicyEvaluator, recording every EvaluatePolicy call so tests can assert
+// both the outcome and exactly what VerifyAccess asked it to evaluate.
+type mockPolicyEvaluator struct {
+	IAMService
+	decision     policyDecision
+	principalArn string
+	err          error
+	calls        []evaluatePolicyCall
+}
+
+type evaluatePolicyCall struct {
+	access, sessionToken string
+	resources            []string
+	actions              []Action
+	condition            map[string][]string
+}
+
+func (m *mockPolicyEvaluator) EvaluatePolicy(access, sessionToken string, actions []Action, resources []string, condition map[string][]string) (PolicyEvaluation, error) {
+	m.calls = append(m.calls, evaluatePolicyCall{
+		access:       access,
+		sessionToken: sessionToken,
+		actions:      actions,
+		resources:    resources,
+		condition:    condition,
+	})
+	decisions := make([][]policyDecision, len(resources))
+	for i := range resources {
+		decisions[i] = make([]policyDecision, len(actions))
+		for j := range actions {
+			decisions[i][j] = m.decision
+		}
+	}
+	return PolicyEvaluation{Decisions: decisions, PrincipalArn: m.principalArn}, m.err
+}
+
+func newMockPolicyEvaluator(decision policyDecision) *mockPolicyEvaluator {
+	return &mockPolicyEvaluator{IAMService: NewIAMServiceSingle(Account{}), decision: decision}
+}
+
+// requireAccessDeniedAPIError asserts err is an s3err.APIError with the AWS
+// AccessDenied shape (Code, HTTP 403) and returns it for the caller to
+// inspect the dynamic Description text further.
+func requireAccessDeniedAPIError(t *testing.T, err error) s3err.APIError {
+	t.Helper()
+	apiErr, ok := err.(s3err.APIError)
+	if !ok {
+		t.Fatalf("err = %#v (%T), want s3err.APIError", err, err)
+	}
+	assert.Equal(t, "AccessDenied", apiErr.Code)
+	assert.Equal(t, http.StatusForbidden, apiErr.HTTPStatusCode)
+	return apiErr
+}
+
+// TestVerifyAccess_ResourceAllowStillChecksIdentityForExplicitDeny confirms
+// the fix for the core bug: a bucket policy Allow used to short-circuit
+// before the identity-policy layer was ever consulted, so an identity
+// policy's explicit Deny was silently ignored whenever the bucket policy
+// already allowed. Now the identity policy is always consulted too — here
+// it has no opinion (NoMatch), so the bucket policy's Allow still stands,
+// but EvaluatePolicy must actually have been called for that to be a real
+// verdict rather than a skipped check.
+func TestVerifyAccess_ResourceAllowStillChecksIdentityForExplicitDeny(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		policy: []byte(`{
+			"Statement": [{
+				"Effect": "Allow",
+				"Principal": "testuser",
+				"Action": "s3:GetObject",
+				"Resource": "arn:aws:s3:::bucket/*"
+			}]
+		}`),
+	}
+	pe := newMockPolicyEvaluator(policyDecisionNoMatch)
+
+	err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
+		Acc:     Account{Access: "testuser", Role: RoleUser},
+		Bucket:  "bucket",
+		Object:  "key.txt",
+		Actions: []Action{GetObjectAction},
+		Iam:     pe,
+	})
+
+	assert.NoError(t, err)
+	assert.Len(t, pe.calls, 1, "EvaluatePolicy must now be called even when the resource-level check already allows, so an explicit identity-policy Deny can still override it")
+}
+
+// TestVerifyAccess_IdentityExplicitDenyOverridesResourceAllow is the
+// explicit-deny-wins fix: a bucket policy Allow does not save a request the
+// caller's own identity policy explicitly denies. The Message names the
+// resolved principal ARN and calls out "an identity-based policy" —
+// matching what real AWS returns for this case.
+func TestVerifyAccess_IdentityExplicitDenyOverridesResourceAllow(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		policy: []byte(`{
+			"Statement": [{
+				"Effect": "Allow",
+				"Principal": "testuser",
+				"Action": "s3:GetObject",
+				"Resource": "arn:aws:s3:::bucket/*"
+			}]
+		}`),
+	}
+	pe := newMockPolicyEvaluator(policyDecisionDeny)
+	pe.principalArn = "arn:aws:iam::000000000000:user/testuser"
+
+	err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
+		Acc:     Account{Access: "testuser", Role: RoleUser},
+		Bucket:  "bucket",
+		Object:  "key.txt",
+		Actions: []Action{GetObjectAction},
+		Iam:     pe,
+	})
+
+	apiErr := requireAccessDeniedAPIError(t, err)
+	assert.Contains(t, apiErr.Description, "arn:aws:iam::000000000000:user/testuser")
+	assert.Contains(t, apiErr.Description, "s3:GetObject")
+	assert.Contains(t, apiErr.Description, "with an explicit deny in an identity-based policy")
+}
+
+// TestVerifyAccess_ResourceExplicitDenyOverridesIdentityAllow is the
+// reverse case: an identity policy Allow does not save a request the
+// bucket policy explicitly denies. The resource-level Deny short-circuits
+// before the identity policy is even consulted (it can't change the
+// outcome, and it saves the standalone IAM service round trip), and the
+// Message calls out "a resource-based policy".
+func TestVerifyAccess_ResourceExplicitDenyOverridesIdentityAllow(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		policy: []byte(`{
+			"Statement": [{
+				"Effect": "Deny",
+				"Principal": "testuser",
+				"Action": "s3:GetObject",
+				"Resource": "arn:aws:s3:::bucket/*"
+			}]
+		}`),
+	}
+	pe := newMockPolicyEvaluator(policyDecisionAllow)
+
+	err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
+		Acc:     Account{Access: "testuser", Role: RoleUser},
+		Bucket:  "bucket",
+		Object:  "key.txt",
+		Actions: []Action{GetObjectAction},
+		Iam:     pe,
+	})
+
+	apiErr := requireAccessDeniedAPIError(t, err)
+	assert.Contains(t, apiErr.Description, "testuser")
+	assert.Contains(t, apiErr.Description, "with an explicit deny in a resource-based policy")
+	assert.Empty(t, pe.calls, "a resource-level explicit deny should short-circuit before consulting the identity policy")
+}
+
+// TestVerifyAccess_IdentityPolicyAllowsWhenResourceDenies is the core
+// same-account fix: a private bucket with no ACL grant and no bucket policy
+// still allows access when the caller's IAM identity policy grants it —
+// matching real AWS, where a bucket policy is only *required* for
+// cross-account access; within the same account (this gateway is always
+// single-account) an identity-based Allow alone is sufficient.
+func TestVerifyAccess_IdentityPolicyAllowsWhenResourceDenies(t *testing.T) {
+	be := noBucketPolicyBackend{srcAcl: ACL{Owner: "someone-else"}}
+	pe := newMockPolicyEvaluator(policyDecisionAllow)
+
+	err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
+		Acc:           Account{Access: "testuser", Role: RoleUser},
+		Bucket:        "bucket",
+		Object:        "key.txt",
+		Actions:       []Action{GetObjectAction},
+		AclPermission: PermissionRead,
+		Iam:           pe,
+	})
+
+	assert.NoError(t, err)
+	assert.Len(t, pe.calls, 1)
+	assert.Equal(t, []string{"arn:aws:s3:::bucket/key.txt"}, pe.calls[0].resources)
+	assert.Equal(t, []Action{GetObjectAction}, pe.calls[0].actions)
+	assert.Equal(t, "testuser", pe.calls[0].access)
+}
+
+// TestVerifyAccess_DeniedWhenNeitherResourceNorIdentityPolicyAllows confirms
+// access is denied — with the AWS-shaped implicit-deny message, since a
+// PolicyEvaluator is configured — when neither the resource-level check
+// (ACL owned by someone else, no bucket policy) nor the identity policy has
+// any opinion at all (NoMatch, not an explicit Deny from either side). It
+// also pins that the message names the resolved principal ARN, not the
+// access key — matching real AWS's implicit-deny message shape (previously
+// this fell back to the access key even when the PolicyEvaluator resolved
+// an ARN, since identityPolicyDecision only threaded PrincipalArn through
+// on its Deny branch).
+func TestVerifyAccess_DeniedWhenNeitherResourceNorIdentityPolicyAllows(t *testing.T) {
+	be := noBucketPolicyBackend{srcAcl: ACL{Owner: "someone-else"}}
+	pe := newMockPolicyEvaluator(policyDecisionNoMatch)
+	pe.principalArn = "arn:aws:iam::000000000000:user/testuser"
+
+	err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
+		Acc:           Account{Access: "testuser", Role: RoleUser},
+		Bucket:        "bucket",
+		Object:        "key.txt",
+		Actions:       []Action{GetObjectAction},
+		AclPermission: PermissionRead,
+		Iam:           pe,
+	})
+
+	apiErr := requireAccessDeniedAPIError(t, err)
+	assert.Contains(t, apiErr.Description, "arn:aws:iam::000000000000:user/testuser")
+	assert.Contains(t, apiErr.Description, "because no identity-based policy allows the s3:GetObject action")
+	assert.Len(t, pe.calls, 1)
+}
+
+// TestVerifyAccess_NoPolicyEvaluatorIsANoOp confirms backends that don't
+// implement PolicyEvaluator (every backend except the standalone IAM
+// client) are entirely unaffected by this layer — backward compatibility
+// via the type assertion, not a config flag.
+func TestVerifyAccess_NoPolicyEvaluatorIsANoOp(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		policy: []byte(`{
+			"Statement": [{
+				"Effect": "Allow",
+				"Principal": "testuser",
+				"Action": "s3:GetObject",
+				"Resource": "arn:aws:s3:::bucket/*"
+			}]
+		}`),
+	}
+
+	err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
+		Acc:     Account{Access: "testuser", Role: RoleUser},
+		Bucket:  "bucket",
+		Object:  "key.txt",
+		Actions: []Action{GetObjectAction},
+		Iam:     NewIAMServiceSingle(Account{}),
+	})
+
+	assert.NoError(t, err)
+}
+
+// TestVerifyAccess_NoPolicyEvaluatorDeniedKeepsGenericMessage pins that,
+// with no PolicyEvaluator configured, a denied request's error stays
+// byte-for-byte today's generic message — the dynamic AWS-shaped messages
+// above only ever appear once a PolicyEvaluator is actually in play, so
+// every internal/LDAP/Vault/IPA/S3-IAM deployment sees no message change
+// from this fix at all.
+func TestVerifyAccess_NoPolicyEvaluatorDeniedKeepsGenericMessage(t *testing.T) {
+	be := noBucketPolicyBackend{srcAcl: ACL{Owner: "someone-else"}}
+
+	err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
+		Acc:           Account{Access: "testuser", Role: RoleUser},
+		Bucket:        "bucket",
+		Object:        "key.txt",
+		Actions:       []Action{GetObjectAction},
+		AclPermission: PermissionRead,
+		Iam:           NewIAMServiceSingle(Account{}),
+	})
+
+	assert.Equal(t, s3err.GetAPIError(s3err.ErrAccessDenied), err)
+}
+
 func TestVerifyAccess_NormalizesObjectKeyBeforePolicyMatch(t *testing.T) {
 	be := &publicBucketPolicyBackend{
 		normalizeFn: testNormalizeObjectKey,
@@ -107,7 +381,7 @@ func TestVerifyAccess_NormalizesObjectKeyBeforePolicyMatch(t *testing.T) {
 		}`),
 	}
 
-	err := VerifyAccess(context.Background(), be, AccessOptions{
+	err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
 		Acc:     Account{Access: "testuser", Role: RoleUser},
 		Bucket:  "bucket",
 		Object:  "public/../private.txt",
@@ -131,7 +405,7 @@ func TestVerifyAccess_NormalizesPolicyResourceBeforeMatch(t *testing.T) {
 		}`),
 	}
 
-	err := VerifyAccess(context.Background(), be, AccessOptions{
+	err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
 		Acc:     Account{Access: "testuser", Role: RoleUser},
 		Bucket:  "bucket",
 		Object:  "private.txt",
@@ -154,7 +428,7 @@ func TestVerifyPublicAccess_PublicPolicyDenyStopsACLFallback(t *testing.T) {
 		acl: publicReadACL(),
 	}
 
-	err := VerifyPublicAccess(context.Background(), be, GetObjectAction, PermissionRead, "bucket", "private/secret.txt")
+	err := VerifyPublicAccess(testFiberCtx(t), be, GetObjectAction, PermissionRead, "bucket", "private/secret.txt")
 
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, s3err.GetAPIError(s3err.ErrAccessDenied)))
@@ -174,7 +448,7 @@ func TestVerifyPublicAccess_PublicPolicyNoMatchFallsBackToACL(t *testing.T) {
 		acl: publicReadACL(),
 	}
 
-	err := VerifyPublicAccess(context.Background(), be, GetObjectAction, PermissionRead, "bucket", "public/object.txt")
+	err := VerifyPublicAccess(testFiberCtx(t), be, GetObjectAction, PermissionRead, "bucket", "public/object.txt")
 
 	assert.NoError(t, err)
 	assert.Equal(t, 1, be.aclCalls)
@@ -194,7 +468,7 @@ func TestVerifyPublicAccess_NormalizedDenyStopsACLFallback(t *testing.T) {
 		acl: publicReadACL(),
 	}
 
-	err := VerifyPublicAccess(context.Background(), be, GetObjectAction, PermissionRead, "bucket", "public/../private/secret.txt")
+	err := VerifyPublicAccess(testFiberCtx(t), be, GetObjectAction, PermissionRead, "bucket", "public/../private/secret.txt")
 
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, s3err.GetAPIError(s3err.ErrAccessDenied)))
@@ -204,21 +478,15 @@ func TestVerifyPublicAccess_NormalizedDenyStopsACLFallback(t *testing.T) {
 func TestVerifyObjectCopyAccess_URLEncodedSlashSeparator(t *testing.T) {
 	const testUser = "testuser"
 
-	// Source bucket ACL: grants READ to testUser.
-	srcAcl := ACL{
-		Owner: "owner",
-		Grantees: []Grantee{
-			{
-				Access:     testUser,
-				Permission: PermissionRead,
-				Type:       types.TypeCanonicalUser,
-			},
-		},
-	}
+	// Source and destination bucket ACLs: testUser owns both. opts sets
+	// DisableACL, which now applies uniformly to the source-bucket check
+	// VerifyObjectCopyAccess performs internally as well as the
+	// destination's, collapsing both to an owner-only check — a grantee
+	// entry alone (without ownership) would no longer be sufficient.
+	srcAcl := ACL{Owner: testUser}
 
 	be := noBucketPolicyBackend{srcAcl: srcAcl}
 
-	// Destination bucket ACL: testUser is the owner (DisableACL=true path).
 	opts := AccessOptions{
 		Acl:           ACL{Owner: testUser},
 		AclPermission: PermissionWrite,
@@ -249,7 +517,7 @@ func TestVerifyObjectCopyAccess_URLEncodedSlashSeparator(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := VerifyObjectCopyAccess(context.Background(), be, tt.copySource, opts)
+			err := VerifyObjectCopyAccess(testFiberCtx(t), be, tt.copySource, opts)
 			assert.NoError(t, err,
 				"should accept %%2F as the bucket/key separator in x-amz-copy-source")
 		})
@@ -259,16 +527,10 @@ func TestVerifyObjectCopyAccess_URLEncodedSlashSeparator(t *testing.T) {
 func TestVerifyObjectCopyAccess_LiteralSlashSeparator(t *testing.T) {
 	const testUser = "testuser"
 
-	srcAcl := ACL{
-		Owner: "owner",
-		Grantees: []Grantee{
-			{
-				Access:     testUser,
-				Permission: PermissionRead,
-				Type:       types.TypeCanonicalUser,
-			},
-		},
-	}
+	// testUser owns both source and destination buckets — see the comment
+	// in TestVerifyObjectCopyAccess_URLEncodedSlashSeparator on why
+	// DisableACL requires ownership here rather than a grantee entry.
+	srcAcl := ACL{Owner: testUser}
 
 	be := noBucketPolicyBackend{srcAcl: srcAcl}
 
@@ -282,6 +544,180 @@ func TestVerifyObjectCopyAccess_LiteralSlashSeparator(t *testing.T) {
 		DisableACL:    true,
 	}
 
-	err := VerifyObjectCopyAccess(context.Background(), be, "src-bucket/src-key", opts)
+	err := VerifyObjectCopyAccess(testFiberCtx(t), be, "src-bucket/src-key", opts)
 	assert.NoError(t, err, "literal slash separator should work")
 }
+
+// TestVerifyCreateBucketAccess_RootAndAdminBypass confirms root and admin
+// accounts may always create a bucket, with no iam backend consulted at
+// all — CreateBucket has no existing bucket to check a policy or ACL
+// against, so this bypass (unlike VerifyAccess's, which still runs the
+// resource-policy check first) is the entire decision.
+func TestVerifyCreateBucketAccess_RootAndAdminBypass(t *testing.T) {
+	err := VerifyCreateBucketAccess(testFiberCtx(t), NewIAMServiceSingle(Account{}), true, Account{Access: "testuser", Role: RoleUser}, "bucket")
+	assert.NoError(t, err)
+
+	err = VerifyCreateBucketAccess(testFiberCtx(t), NewIAMServiceSingle(Account{}), false, Account{Access: "testuser", Role: RoleAdmin}, "bucket")
+	assert.NoError(t, err)
+}
+
+// TestVerifyCreateBucketAccess_NoPolicyEvaluatorUsesLegacyRoleGate confirms
+// that for every backend without an identity-policy layer (internal, LDAP,
+// Vault, IPA, S3-IAM) bucket creation keeps working exactly as it always
+// has: userplus is allowed, a plain user is denied with the generic
+// AccessDenied error, and EvaluatePolicy is never a factor since these
+// backends don't implement PolicyEvaluator at all.
+func TestVerifyCreateBucketAccess_NoPolicyEvaluatorUsesLegacyRoleGate(t *testing.T) {
+	iam := NewIAMServiceSingle(Account{})
+
+	err := VerifyCreateBucketAccess(testFiberCtx(t), iam, false, Account{Access: "testuser", Role: RoleUserPlus}, "bucket")
+	assert.NoError(t, err)
+
+	err = VerifyCreateBucketAccess(testFiberCtx(t), iam, false, Account{Access: "testuser", Role: RoleUser}, "bucket")
+	assert.Equal(t, s3err.GetAPIError(s3err.ErrAccessDenied), err)
+}
+
+// TestVerifyCreateBucketAccess_PolicyEvaluatorAllow confirms the core fix:
+// a standalone-IAM-service user, who is always Role RoleUser regardless of
+// their attached IAM policy, can create a bucket when that policy grants
+// s3:CreateBucket — the identity-policy Allow is what grants access, not
+// the role.
+func TestVerifyCreateBucketAccess_PolicyEvaluatorAllow(t *testing.T) {
+	pe := newMockPolicyEvaluator(policyDecisionAllow)
+
+	err := VerifyCreateBucketAccess(testFiberCtx(t), pe, false, Account{Access: "testuser", Role: RoleUser}, "bucket")
+
+	assert.NoError(t, err)
+	assert.Len(t, pe.calls, 1)
+	assert.Equal(t, "testuser", pe.calls[0].access)
+	assert.Equal(t, []string{"arn:aws:s3:::bucket"}, pe.calls[0].resources)
+	assert.Equal(t, []Action{CreateBucketAction}, pe.calls[0].actions)
+}
+
+// TestVerifyCreateBucketAccess_PolicyEvaluatorNoMatchDenies confirms a
+// standalone-IAM-service user with no policy granting s3:CreateBucket is
+// denied — with the AWS-shaped implicit-deny message — even though the
+// legacy role gate alone would have denied them anyway; this pins that the
+// policy layer, not the role, is now what's actually being asked.
+func TestVerifyCreateBucketAccess_PolicyEvaluatorNoMatchDenies(t *testing.T) {
+	pe := newMockPolicyEvaluator(policyDecisionNoMatch)
+	pe.principalArn = "arn:aws:iam::000000000000:user/testuser"
+
+	err := VerifyCreateBucketAccess(testFiberCtx(t), pe, false, Account{Access: "testuser", Role: RoleUser}, "bucket")
+
+	apiErr := requireAccessDeniedAPIError(t, err)
+	assert.Contains(t, apiErr.Description, "arn:aws:iam::000000000000:user/testuser")
+	assert.Contains(t, apiErr.Description, "s3:CreateBucket")
+	assert.Contains(t, apiErr.Description, "because no identity-based policy allows the s3:CreateBucket action")
+}
+
+// TestVerifyCreateBucketAccess_PolicyEvaluatorExplicitDenyWins confirms an
+// explicit Deny in the identity policy is reported with the AWS-shaped
+// explicit-deny message, naming the resolved principal ARN when the
+// PolicyEvaluator reports one.
+func TestVerifyCreateBucketAccess_PolicyEvaluatorExplicitDenyWins(t *testing.T) {
+	pe := newMockPolicyEvaluator(policyDecisionDeny)
+	pe.principalArn = "arn:aws:iam::000000000000:user/testuser"
+
+	err := VerifyCreateBucketAccess(testFiberCtx(t), pe, false, Account{Access: "testuser", Role: RoleUser}, "bucket")
+
+	apiErr := requireAccessDeniedAPIError(t, err)
+	assert.Contains(t, apiErr.Description, "arn:aws:iam::000000000000:user/testuser")
+	assert.Contains(t, apiErr.Description, "s3:CreateBucket")
+	assert.Contains(t, apiErr.Description, "with an explicit deny in an identity-based policy")
+}
+
+// TestVerifyCreateBucketAccess_PolicyEvaluatorIgnoresUserPlus confirms the
+// legacy userplus bypass does not leak into the PolicyEvaluator path: once
+// a backend implements identity-policy evaluation, that policy is the sole
+// gate for non-admin accounts, matching the standalone IAM service's real
+// behavior (its accounts are always Role RoleUser, never RoleUserPlus, so
+// this also documents why the bypass would be a no-op there in practice).
+func TestVerifyCreateBucketAccess_PolicyEvaluatorIgnoresUserPlus(t *testing.T) {
+	pe := newMockPolicyEvaluator(policyDecisionNoMatch)
+
+	err := VerifyCreateBucketAccess(testFiberCtx(t), pe, false, Account{Access: "testuser", Role: RoleUserPlus}, "bucket")
+
+	assert.Error(t, err)
+	assert.Len(t, pe.calls, 1, "EvaluatePolicy must be consulted even for a userplus account once a PolicyEvaluator is configured")
+}
+
+// noObjectLockBackend answers "no lock configuration" for
+// GetObjectLockConfiguration, so VerifyObjectsAccess's lock check is a no-op
+// and only the policy/ACL half of the result is under test — matching what
+// loadObjectLockState treats as "object lock was never configured on this
+// bucket", not the BackendUnsupported stub's ErrNotImplemented, which would
+// otherwise fail the whole request before either object was authorized.
+type noObjectLockBackend struct {
+	noBucketPolicyBackend
+}
+
+func (b noObjectLockBackend) GetObjectLockConfiguration(_ context.Context, _ string) ([]byte, error) {
+	return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+}
+
+// actionSplitPolicyEvaluator denies exactly one action and allows every
+// other, recording each EvaluatePolicy call it receives — for asserting not
+// just the outcome but that DeleteObjects' mixed batch was split into one
+// call per action rather than evaluated as a single undifferentiated batch.
+type actionSplitPolicyEvaluator struct {
+	IAMService
+	denyAction Action
+	calls      []evaluatePolicyCall
+}
+
+func (m *actionSplitPolicyEvaluator) EvaluatePolicy(access, sessionToken string, actions []Action, resources []string, condition map[string][]string) (PolicyEvaluation, error) {
+	m.calls = append(m.calls, evaluatePolicyCall{
+		access:       access,
+		sessionToken: sessionToken,
+		actions:      actions,
+		resources:    resources,
+		condition:    condition,
+	})
+	decisions := make([][]policyDecision, len(resources))
+	for i := range resources {
+		decisions[i] = make([]policyDecision, len(actions))
+		for j, a := range actions {
+			if a == m.denyAction {
+				decisions[i][j] = policyDecisionNoMatch
+			} else {
+				decisions[i][j] = policyDecisionAllow
+			}
+		}
+	}
+	return PolicyEvaluation{Decisions: decisions}, nil
+}
+
+func TestVerifyObjectsAccess_VersionedDeleteNeedsSeparatePermission(t *testing.T) {
+	be := noObjectLockBackend{noBucketPolicyBackend{srcAcl: ACL{Owner: "someone-else"}}}
+	pe := &actionSplitPolicyEvaluator{denyAction: DeleteObjectVersionAction}
+
+	objects := []types.ObjectIdentifier{
+		{Key: strPtr("plain.txt")},
+		{Key: strPtr("versioned.txt"), VersionId: strPtr("v1")},
+	}
+
+	errs, err := VerifyObjectsAccess(testFiberCtx(t), be, AccessOptions{
+		Acc:           Account{Access: "testuser", Role: RoleUser},
+		Bucket:        "bucket",
+		AclPermission: PermissionWrite,
+		Iam:           pe,
+	}, objects, BypassNone)
+
+	assert.NoError(t, err)
+	if assert.Len(t, errs, 2) {
+		assert.NoError(t, errs[0], "the keyed delete should be authorized against s3:DeleteObject, which is allowed")
+		apiErr := requireAccessDeniedAPIError(t, errs[1])
+		assert.Contains(t, apiErr.Description, "s3:DeleteObjectVersion")
+		assert.Contains(t, apiErr.Description, "because no identity-based policy allows the s3:DeleteObjectVersion action")
+	}
+
+	if assert.Len(t, pe.calls, 2, "the batch should split into one EvaluatePolicy call per distinct action") {
+		assert.Equal(t, []Action{DeleteObjectAction}, pe.calls[0].actions)
+		assert.Equal(t, []string{"arn:aws:s3:::bucket/plain.txt"}, pe.calls[0].resources)
+		assert.Equal(t, []Action{DeleteObjectVersionAction}, pe.calls[1].actions)
+		assert.Equal(t, []string{"arn:aws:s3:::bucket/versioned.txt"}, pe.calls[1].resources)
+	}
+}
+
+func strPtr(s string) *string { return &s }

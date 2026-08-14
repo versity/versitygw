@@ -30,6 +30,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/middlewares"
@@ -49,7 +50,7 @@ type S3ApiServer struct {
 	Router           *S3ApiRouter
 	app              *fiber.App
 	backend          backend.Backend
-	CertStorage      *utils.CertStorage
+	CertStorage      *netutil.CertStorage
 	quiet            bool
 	keepAlive        bool
 	health           string
@@ -239,7 +240,7 @@ func validateMiddlewareMount(mount middlewareMount) error {
 type Option func(*S3ApiServer)
 
 // WithTLS sets TLS Credentials
-func WithTLS(cs *utils.CertStorage) Option {
+func WithTLS(cs *netutil.CertStorage) Option {
 	return func(s *S3ApiServer) { s.CertStorage = cs }
 }
 
@@ -367,9 +368,9 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 		var err error
 
 		if sa.CertStorage != nil {
-			ln, err = utils.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, sa.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, sa.CertStorage.GetCertificate, netutil.ListenerOptions{SocketPerm: sa.socketPerm})
 		} else {
-			ln, err = utils.NewMultiAddrListener(fiber.NetworkTCP, portSpec, utils.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, portSpec, netutil.ListenerOptions{SocketPerm: sa.socketPerm})
 		}
 		if err != nil {
 			return fmt.Errorf("failed to bind s3 listener %s: %w", portSpec, err)
@@ -383,7 +384,7 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 	}
 
 	// Combine all listeners
-	finalListener := utils.NewMultiListener(listeners...)
+	finalListener := netutil.NewMultiListener(listeners...)
 
 	if sa.onListen != nil {
 		fn := sa.onListen

@@ -26,6 +26,7 @@ var (
 	awsID             string
 	awsSecret         string
 	endpoint          string
+	iamEndpoint       string
 	websiteSchemeTest string
 	websiteDomainTest string
 	websitePortTest   string
@@ -81,6 +82,12 @@ func initTestFlags() []cli.Flag {
 			Usage:       "s3 server endpoint",
 			Destination: &endpoint,
 			Aliases:     []string{"e"},
+		},
+		&cli.StringFlag{
+			Name:        "iam-endpoint",
+			Usage:       "standalone IAM/STS service endpoint, when it is a separate process from the s3 endpoint (defaults to --endpoint)",
+			Destination: &iamEndpoint,
+			Aliases:     []string{"ie"},
 		},
 		&cli.BoolFlag{
 			Name:        "host-style",
@@ -211,6 +218,24 @@ func initTestCommands() []*cli.Command {
 			Name:   "access-control",
 			Usage:  "Tests gateway access control with bucket ACLs and Policies",
 			Action: getAction(integration.TestAccessControl),
+		},
+		{
+			Name:  "s3-iam",
+			Usage: "Tests s3 gateway access control backed by the standalone IAM service",
+			Description: `Runs the access-control tests for an s3 gateway configured with --iam-standalone-endpoint:
+			IAM user identity policies, their interaction with bucket policies, governance-retention
+			bypass, and bucket creation. Requires --iam-endpoint pointing at the IAM service's
+			control-plane API, since the tests create the users and policies they then exercise.`,
+			Action: getAction(integration.TestS3IAMAccessControl),
+		},
+		{
+			Name:  "s3-iam-session",
+			Usage: "Tests s3 gateway access control for assumed-role session credentials",
+			Description: `Runs the role/session access-control tests against an s3 gateway backed by the
+			standalone IAM service. Every test mints real temporary credentials via
+			AssumeRoleWithWebIdentity against GitHub Actions' OIDC issuer, so the whole group skips
+			itself outside a GitHub Actions job holding id-token: write permission.`,
+			Action: getAction(integration.TestS3IAMSessionAccessControl),
 		},
 		{
 			Name:   "noacl",
@@ -429,6 +454,7 @@ func getAction(tf testFunc) func(ctx *cli.Context) error {
 			integration.WithSecret(awsSecret),
 			integration.WithRegion(region),
 			integration.WithEndpoint(endpoint),
+			integration.WithIAMEndpoint(iamEndpoint),
 			integration.WithTLSStatus(tlsStatus),
 		}
 		if testDebug {
@@ -479,6 +505,7 @@ func extractIntTests() (commands []*cli.Command) {
 					integration.WithSecret(awsSecret),
 					integration.WithRegion(region),
 					integration.WithEndpoint(endpoint),
+					integration.WithIAMEndpoint(iamEndpoint),
 					integration.WithTLSStatus(tlsStatus),
 				}
 				if testDebug {

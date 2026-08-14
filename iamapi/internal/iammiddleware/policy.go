@@ -15,6 +15,7 @@
 package iammiddleware
 
 import (
+	"maps"
 	"strconv"
 	"time"
 
@@ -51,7 +52,7 @@ const iamActionPrefix = "iam:"
 // requestConditionContext supplies the request's aws:SourceIp/aws:username/
 // aws:PrincipalArn/aws:CurrentTime/aws:EpochTime values for a statement's
 // Condition block.
-func VerifyIAMPolicy(store IdentityStore) fiber.Handler {
+func VerifyIAMPolicy(store iamutil.IdentityStore) fiber.Handler {
 	return func(ctx fiber.Ctx) error {
 		identity, _ := httpctx.ContextKeyCallerIdentity.Get(ctx).(types.Identity)
 		if identity.IsRoot {
@@ -68,8 +69,8 @@ func VerifyIAMPolicy(store IdentityStore) fiber.Handler {
 			Condition: requestConditionContext(ctx, identity, action, resourceTags),
 		}
 
-		if !authorizeRequest(identity, reqCtx) {
-			return iamerr.AccessDeniedIAMAction(callerArn(identity), fullAction)
+		if Authorize(identity, reqCtx) != policy.DecisionAllow {
+			return iamerr.AccessDeniedIAMAction(CallerArn(identity), fullAction)
 		}
 
 		// A rename/path-move is a two-resource transition: AWS's UpdateUser
@@ -79,8 +80,8 @@ func VerifyIAMPolicy(store IdentityStore) fiber.Handler {
 			if target := updateUserTargetResource(ctx, store); target != "" {
 				targetCtx := reqCtx
 				targetCtx.Resource = target
-				if !authorizeRequest(identity, targetCtx) {
-					return iamerr.AccessDeniedIAMAction(callerArn(identity), fullAction)
+				if Authorize(identity, targetCtx) != policy.DecisionAllow {
+					return iamerr.AccessDeniedIAMAction(CallerArn(identity), fullAction)
 				}
 			}
 		}
@@ -89,20 +90,58 @@ func VerifyIAMPolicy(store IdentityStore) fiber.Handler {
 	}
 }
 
-// authorizeRequest reports whether reqCtx is allowed by identity's own
-// inline policies and, for a session with a session policy attached, the
-// narrowing session policy as well.
-func authorizeRequest(identity types.Identity, reqCtx policy.RequestContext) bool {
-	if !policy.EvaluateIdentityPolicies(identity.IdentityPolicies, reqCtx) {
-		return false
+// Authorize reports how identity's own inline policies and, for a session
+// with a session policy attached, the narrowing session policy as well,
+// decide reqCtx.
+//
+// A session policy can only narrow, never widen, what the role's identity
+// policies otherwise allow — matching AWS's permission-boundary semantics
+// for AssumeRole session policies — so this is an intersection, not the
+// "either source is independently sufficient" combination VerifyAccess uses
+// for S3 bucket-policy-vs-identity-policy: an explicit Deny from either
+// layer here always wins outright, and the result is DecisionAllow only
+// when both layers (or just the identity layer, absent a session policy)
+// independently reach DecisionAllow.
+func Authorize(identity types.Identity, reqCtx policy.RequestContext) policy.Decision {
+	d, sd, hasSessionPolicy := AuthorizeSplit(identity, reqCtx)
+	if d == policy.DecisionDeny {
+		return policy.DecisionDeny
 	}
-	if identity.Session != nil && identity.SessionPolicy != "" {
-		sessionPolicy := []types.PolicyEntry{{PolicyDocument: identity.SessionPolicy}}
-		if !policy.EvaluateIdentityPolicies(sessionPolicy, reqCtx) {
-			return false
-		}
+	if !hasSessionPolicy {
+		return d
 	}
-	return true
+	if sd == policy.DecisionDeny {
+		return policy.DecisionDeny
+	}
+	if d != policy.DecisionAllow || sd != policy.DecisionAllow {
+		return policy.DecisionNoMatch
+	}
+	return policy.DecisionAllow
+}
+
+// AuthorizeSplit reports the identity-policy and session-policy decisions
+// separately, rather than folded together as Authorize does, plus whether a
+// session policy applied at all.
+//
+// The two must stay separable for the S3 data plane, where a *resource*
+// policy is also in play. A session policy filters everything, including
+// permissions that came from the bucket policy rather than from the role
+// with a role carrying no identity policy at all, a bucket policy granting
+// s3:GetObject and s3:PutObject to that role, and a session policy allowing only
+// s3:GetObject, the Get succeeds and the Put is denied. Collapsing the two into
+// one decision here would lose the distinction between "the session policy did
+// not permit this" (which must deny even against a bucket-policy Allow) and
+// "the role's own policies did not permit this" (which a bucket-policy
+// Allow may still grant).
+func AuthorizeSplit(identity types.Identity, reqCtx policy.RequestContext) (identityDecision, sessionDecision policy.Decision, hasSessionPolicy bool) {
+	identityDecision = policy.EvaluateIdentityPolicies(identity.IdentityPolicies, reqCtx)
+
+	if identity.Session == nil || identity.SessionPolicy == "" {
+		return identityDecision, policy.DecisionNoMatch, false
+	}
+
+	sessionPolicy := []types.PolicyEntry{{PolicyDocument: identity.SessionPolicy}}
+	return identityDecision, policy.EvaluateIdentityPolicies(sessionPolicy, reqCtx), true
 }
 
 // resourceForAction resolves the ARN action targets and, when that ARN names
@@ -127,7 +166,7 @@ func authorizeRequest(identity types.Identity, reqCtx policy.RequestContext) boo
 // request still reaches the controller afterward, which reports the
 // specific NoSuchEntity/MissingValue error if authorization happens to pass
 // on a wildcard grant, or AccessDenied first if it doesn't.
-func resourceForAction(ctx fiber.Ctx, store IdentityStore, action string) (string, []types.Tag) {
+func resourceForAction(ctx fiber.Ctx, store iamutil.IdentityStore, action string) (string, []types.Tag) {
 	switch action {
 	case "CreateUser":
 		return newUserResource(ctx), nil
@@ -177,7 +216,7 @@ func newUserResource(ctx fiber.Ctx) string {
 // used elsewhere — none of this group's actions actually accept an omitted
 // UserName (the controller layer requires it), so this only guards against
 // a malformed request reaching here.
-func existingUserResource(ctx fiber.Ctx, store IdentityStore) (string, []types.Tag) {
+func existingUserResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag) {
 	userName, ok := iamutil.RequestParam(ctx, "UserName")
 	if !ok || userName == "" {
 		return "", nil
@@ -195,7 +234,7 @@ func existingUserResource(ctx fiber.Ctx, store IdentityStore) (string, []types.T
 // own Arn and Tags. A session (assumed role) has no self IAM user to
 // resolve, so it falls back to ("", nil), the same lookup-failure fallback
 // used elsewhere.
-func getUserResource(ctx fiber.Ctx, store IdentityStore) (string, []types.Tag) {
+func getUserResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag) {
 	userName, ok := iamutil.RequestParam(ctx, "UserName")
 	if !ok || userName == "" {
 		identity, _ := httpctx.ContextKeyCallerIdentity.Get(ctx).(types.Identity)
@@ -216,7 +255,7 @@ func getUserResource(ctx fiber.Ctx, store IdentityStore) (string, []types.Tag) {
 // AccessKeyId being queried, so the resource-level check is against the IAM
 // user that owns that key, matching real IAM's resource-type classification
 // for this action.
-func accessKeyOwnerResource(ctx fiber.Ctx, store IdentityStore) (string, []types.Tag) {
+func accessKeyOwnerResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag) {
 	accessKeyID, ok := iamutil.RequestParam(ctx, "AccessKeyId")
 	if !ok || accessKeyID == "" {
 		return "", nil
@@ -235,7 +274,7 @@ func accessKeyOwnerResource(ctx fiber.Ctx, store IdentityStore) (string, []types
 // "" when the request doesn't actually relocate the user (neither NewPath
 // nor NewUserName supplied) or when the source user can't be resolved, the
 // same fallback used elsewhere when a lookup fails.
-func updateUserTargetResource(ctx fiber.Ctx, store IdentityStore) string {
+func updateUserTargetResource(ctx fiber.Ctx, store iamutil.IdentityStore) string {
 	newPath, _ := iamutil.RequestParam(ctx, "NewPath")
 	newUserName, _ := iamutil.RequestParam(ctx, "NewUserName")
 	if newPath == "" && newUserName == "" {
@@ -272,7 +311,7 @@ func newRoleResource(ctx fiber.Ctx) string {
 	return iamutil.BuildRoleArn(iamutil.DefaultAccountID, path, roleName)
 }
 
-func existingRoleResource(ctx fiber.Ctx, store IdentityStore) (string, []types.Tag) {
+func existingRoleResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag) {
 	roleName, ok := iamutil.RequestParam(ctx, "RoleName")
 	if !ok || roleName == "" {
 		return "*", nil
@@ -333,21 +372,7 @@ func requestConditionContext(ctx fiber.Ctx, identity types.Identity, action stri
 	if ip := ctx.IP(); ip != "" {
 		condCtx["aws:SourceIp"] = []string{ip}
 	}
-	if arn := callerArn(identity); arn != "" {
-		condCtx["aws:PrincipalArn"] = []string{arn}
-		condCtx["aws:PrincipalAccount"] = []string{iamutil.DefaultAccountID}
-	}
-	switch {
-	case identity.User != nil:
-		condCtx["aws:username"] = []string{identity.User.UserName}
-		condCtx["aws:userid"] = []string{identity.User.UserID}
-		addPrincipalTagContext(condCtx, identity.User.Tags)
-	case identity.Session != nil:
-		condCtx["aws:userid"] = []string{identity.Session.RoleID + ":" + identity.Session.RoleSessionName}
-		if identity.Role != nil {
-			addPrincipalTagContext(condCtx, identity.Role.Tags)
-		}
-	}
+	maps.Copy(condCtx, IdentityConditionContext(identity))
 
 	for _, tag := range resourceTags {
 		condCtx["iam:ResourceTag/"+tag.Key] = []string{tag.Value}
@@ -360,6 +385,59 @@ func requestConditionContext(ctx fiber.Ctx, identity types.Identity, action stri
 	}
 
 	return condCtx
+}
+
+// IdentityConditionContext builds the condition keys that describe *who* is
+// calling — as opposed to the request-derived keys (time, source IP,
+// transport) that its callers add around it.
+//
+// Splitting these out is what lets the standalone-IAM private
+// evaluate-policy endpoint serve the S3 gateway: the gateway knows the
+// request but not the identity behind the access key, so it sends only the
+// request-derived keys and this side fills in the rest from the identity it
+// resolved. The gateway is never trusted to supply these keys itself, even
+// though it authenticates as root.
+func IdentityConditionContext(identity types.Identity) map[string][]string {
+	condCtx := map[string][]string{}
+	if arn := CallerArn(identity); arn != "" {
+		condCtx["aws:PrincipalArn"] = []string{arn}
+		condCtx["aws:PrincipalAccount"] = []string{iamutil.DefaultAccountID}
+	}
+	switch {
+	case identity.User != nil:
+		condCtx["aws:PrincipalType"] = []string{"User"}
+		condCtx["aws:username"] = []string{identity.User.UserName}
+		condCtx["aws:userid"] = []string{identity.User.UserID}
+		addPrincipalTagContext(condCtx, identity.User.Tags)
+	case identity.Session != nil:
+		condCtx["aws:PrincipalType"] = []string{"AssumedRole"}
+		condCtx["aws:userid"] = []string{identity.Session.RoleID + ":" + identity.Session.RoleSessionName}
+		if identity.Role != nil {
+			addPrincipalTagContext(condCtx, identity.Role.Tags)
+		}
+	}
+	return condCtx
+}
+
+// IdentityConditionKeyPrefixes lists the condition-key namespaces that
+// describe the caller or the resource, and that therefore only the IAM
+// service may populate. handleEvaluatePolicy strips every one of them from
+// a gateway-supplied context before overlaying its own — an
+// override-on-collision merge would leave any key the service happens *not*
+// to set (aws:PrincipalTag/x for an untagged role, say) under the
+// gateway's control, which is exactly what a StringNotEquals-guarded Allow
+// keys off.
+var IdentityConditionKeyPrefixes = []string{
+	"aws:PrincipalArn",
+	"aws:PrincipalAccount",
+	"aws:PrincipalType",
+	"aws:username",
+	"aws:userid",
+	"aws:PrincipalTag/",
+	"aws:ResourceTag/",
+	"iam:ResourceTag/",
+	"aws:RequestTag/",
+	"aws:TagKeys",
 }
 
 // addPrincipalTagContext populates aws:PrincipalTag/<key> from tags, the
@@ -390,9 +468,9 @@ func addRequestTagContext(condCtx map[string][]string, ctx fiber.Ctx) {
 	condCtx["aws:TagKeys"] = keys
 }
 
-// callerArn identifies identity the way real IAM error messages do: the
+// CallerArn identifies identity the way real IAM error messages do: the
 // user's own Arn, or the assumed-role session Arn.
-func callerArn(identity types.Identity) string {
+func CallerArn(identity types.Identity) string {
 	if identity.Session != nil {
 		return iamutil.BuildAssumedRoleArn(iamutil.DefaultAccountID, identity.Session.RoleName, identity.Session.RoleSessionName)
 	}

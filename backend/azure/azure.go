@@ -1107,22 +1107,7 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 		if err == nil {
 			delResult = append(delResult, types.DeletedObject{Key: obj.Key})
 		} else {
-			serr, ok := err.(s3err.S3Error)
-			if ok {
-				code := serr.BaseError().Code
-				message := serr.BaseError().Description
-				errs = append(errs, types.Error{
-					Key:     obj.Key,
-					Code:    &code,
-					Message: &message,
-				})
-			} else {
-				errs = append(errs, types.Error{
-					Key:     obj.Key,
-					Code:    backend.GetPtrFromString("InternalError"),
-					Message: backend.GetPtrFromString(err.Error()),
-				})
-			}
+			errs = append(errs, s3err.ObjectDeleteError(obj.Key, obj.VersionId, err))
 		}
 	}
 

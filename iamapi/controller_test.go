@@ -171,10 +171,9 @@ func TestIAMApiControllerUserLifecycle(t *testing.T) {
 // TestIAMApiControllerGetRootUser confirms GetUser's self-lookup form
 // (UserName omitted, the only way any real AWS SDK/CLI ever invokes it,
 // since Query-protocol clients simply don't serialize an absent optional
-// field — confirmed live: `aws iam get-user` with no --user-name, as root,
-// succeeds and returns the root pseudo-user) and its non-standard explicit-
-// empty-string equivalent both resolve to the actual authenticated caller —
-// root, here, since doIAMAction always signs as root.
+// field) and its non-standard explicit-empty-string equivalent both
+// resolve to the actual authenticated caller — root, here, since
+// doIAMAction always signs as root.
 func TestIAMApiControllerGetRootUser(t *testing.T) {
 	server := newIAMControllerTestServer(t)
 
@@ -2723,10 +2722,9 @@ func TestIAMApiControllerAssumeRoleWithWebIdentityMultiplePrincipalsInArray(t *t
 		"WebIdentityToken": {token},
 	})
 	// Passes trust evaluation and the audience check; fails only at the
-	// network-dependent signature verification step (see the IDP
-	// communication error test below for that path exercised
-	// deterministically) — here it's enough to confirm it gets that far
-	// rather than being rejected as AccessDenied/InvalidIdentityToken.
+	// network-dependent signature verification step — here it's enough to
+	// confirm it gets that far rather than being rejected as
+	// AccessDenied/InvalidIdentityToken.
 	requireSTSError(t, resp, http.StatusBadRequest, "Sender", "InvalidIdentityToken",
 		"Couldn't retrieve verification key from your identity provider,  please reference AssumeRoleWithWebIdentity documentation for requirements")
 }
@@ -2954,8 +2952,7 @@ func TestIAMApiControllerGetCallerIdentityIncorrectServiceScope(t *testing.T) {
 // URL), signed with the given credentials. When sessionToken is non-empty,
 // the real v4 signer adds X-Amz-Security-Token to the query string itself
 // — the same way AWS's own SDKs presign a request for temporary
-// credentials (confirmed live against real AWS: such a request, submitted
-// as a plain HTTP GET with no Authorization header, succeeds).
+// credentials.
 func querySignedSTSRequest(t *testing.T, access, secret, sessionToken, target string) *http.Request {
 	t.Helper()
 
@@ -2975,10 +2972,8 @@ func querySignedSTSRequest(t *testing.T, access, secret, sessionToken, target st
 
 // TestIAMApiControllerGetCallerIdentityQueryAuthWithSessionToken confirms a
 // temporary (ASIA…) session CAN authenticate via query-string (presigned
-// URL) auth when X-Amz-Security-Token matches the session — confirmed live
-// against real AWS (a genuine sts.PresignClient-generated presigned
-// GetCallerIdentity request, signed with real ASIA… credentials and
-// submitted as a plain HTTP GET, returns 200).
+// URL) auth when X-Amz-Security-Token matches the session, matching a
+// genuine sts.PresignClient-generated presigned GetCallerIdentity request.
 func TestIAMApiControllerGetCallerIdentityQueryAuthWithSessionToken(t *testing.T) {
 	server := newIAMControllerTestServer(t)
 

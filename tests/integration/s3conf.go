@@ -38,6 +38,7 @@ type S3Conf struct {
 	awsSecret         string
 	awsRegion         string
 	endpoint          string
+	iamEndpoint       string
 	websiteScheme     string
 	websiteDomain     string
 	websitePort       string
@@ -93,6 +94,13 @@ func WithRegion(r string) Option {
 }
 func WithEndpoint(e string) Option {
 	return func(s *S3Conf) { s.endpoint = e }
+}
+
+// WithIAMEndpoint points the IAM/STS clients at a standalone IAM service
+// separate from the S3 endpoint, for the test groups that drive both
+// processes at once
+func WithIAMEndpoint(e string) Option {
+	return func(s *S3Conf) { s.iamEndpoint = e }
 }
 func WithWebsiteScheme(scheme string) Option {
 	return func(s *S3Conf) { s.websiteScheme = scheme }
@@ -156,12 +164,22 @@ func (c *S3Conf) GetClient() *s3.Client {
 }
 
 func (c *S3Conf) GetIAMClient() *iam.Client {
-	return iam.NewFromConfig(c.Config())
+	return iam.NewFromConfig(c.iamConfig())
 }
 
 // GetSTSClient returns an SDK client for STS actions
 func (c *S3Conf) GetSTSClient() *sts.Client {
-	return sts.NewFromConfig(c.Config())
+	return sts.NewFromConfig(c.iamConfig())
+}
+
+// iamConfig is Config with the base endpoint pointed at the IAM service
+// when one was configured separately from the S3 endpoint.
+func (c *S3Conf) iamConfig() aws.Config {
+	cfg := c.Config()
+	if c.iamEndpoint != "" {
+		cfg.BaseEndpoint = &c.iamEndpoint
+	}
+	return cfg
 }
 
 func (c *S3Conf) GetPresignClient() *s3.PresignClient {

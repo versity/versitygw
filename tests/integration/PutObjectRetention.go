@@ -140,13 +140,13 @@ func PutObjectRetention_invalid_mode(s *S3Conf) error {
 func PutObjectRetention_overwrite_compliance_mode(s *S3Conf) error {
 	testName := "PutObjectRetention_overwrite_compliance_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		date := time.Now().Add(time.Hour * 3)
 		obj := "my-obj"
 		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
 
+		date := time.Now().Add(complianceTestRetention)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
@@ -161,13 +161,18 @@ func PutObjectRetention_overwrite_compliance_mode(s *S3Conf) error {
 			return err
 		}
 
+		// A fresh date, not the one above: COMPLIANCE denies a mode switch
+		// unconditionally regardless of what date is requested, so this only
+		// needs to still be in the future by request time, not tied to what
+		// was stored a round trip ago.
+		attempted := time.Now().Add(complianceTestRetention)
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &obj,
 			Retention: &types.ObjectLockRetention{
 				Mode:            types.ObjectLockRetentionModeGovernance,
-				RetainUntilDate: &date,
+				RetainUntilDate: &attempted,
 			},
 		})
 		cancel()
@@ -182,13 +187,13 @@ func PutObjectRetention_overwrite_compliance_mode(s *S3Conf) error {
 func PutObjectRetention_overwrite_compliance_with_compliance(s *S3Conf) error {
 	testName := "PutObjectRetention_overwrite_compliance_with_compliance"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		date := time.Now().Add(time.Hour * 200)
 		obj := "my-obj"
 		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
 
+		date := time.Now().Add(complianceTestRetention)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
@@ -203,7 +208,10 @@ func PutObjectRetention_overwrite_compliance_with_compliance(s *S3Conf) error {
 			return err
 		}
 
-		newDate := date.AddDate(2, 0, 0)
+		// Extending stays within complianceTestRetention's budget so the
+		// object can still be waited out: a COMPLIANCE retention pushed years
+		// into the future could never be cleaned up.
+		newDate := date.Add(complianceTestRetention)
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
@@ -247,7 +255,7 @@ func PutObjectRetention_overwrite_governance_with_governance(s *S3Conf) error {
 			return err
 		}
 
-		newDate := date.AddDate(2, 0, 0)
+		newDate := date.Add(time.Hour)
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
@@ -312,13 +320,13 @@ func PutObjectRetention_overwrite_governance_without_bypass_specified(s *S3Conf)
 func PutObjectRetention_overwrite_governance_with_permission(s *S3Conf) error {
 	testName := "PutObjectRetention_overwrite_governance_with_permission"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		date := time.Now().Add(time.Hour * 3)
 		obj := "my-obj"
 		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
 
+		date := time.Now().Add(complianceTestRetention)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
@@ -346,13 +354,14 @@ func PutObjectRetention_overwrite_governance_with_permission(s *S3Conf) error {
 			return err
 		}
 
+		complianceDate := time.Now().Add(complianceTestRetention)
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &obj,
 			Retention: &types.ObjectLockRetention{
 				Mode:            types.ObjectLockRetentionModeCompliance,
-				RetainUntilDate: &date,
+				RetainUntilDate: &complianceDate,
 			},
 			BypassGovernanceRetention: &bypass,
 		})
@@ -365,10 +374,249 @@ func PutObjectRetention_overwrite_governance_with_permission(s *S3Conf) error {
 	}, withLock())
 }
 
+func PutObjectRetention_shorten_governance_without_bypass(s *S3Conf) error {
+	testName := "PutObjectRetention_shorten_governance_without_bypass"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		date := time.Now().Add(time.Hour)
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: &date,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		shorter := time.Now().Add(complianceTestRetention / 2)
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: &shorter,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+			return err
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: obj}})
+	}, withLock())
+}
+
+func PutObjectRetention_shorten_governance_with_bypass(s *S3Conf) error {
+	testName := "PutObjectRetention_shorten_governance_with_bypass"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		date := time.Now().Add(time.Hour)
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: &date,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%v"`, s.awsID), `["s3:BypassGovernanceRetention"]`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket))
+		bypass := true
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &policy,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		shorter := time.Now().Add(complianceTestRetention / 2)
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: &shorter,
+			},
+			BypassGovernanceRetention: &bypass,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: obj}})
+	}, withLock())
+}
+
+func PutObjectRetention_shorten_compliance_denied(s *S3Conf) error {
+	testName := "PutObjectRetention_shorten_compliance_denied"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		date := time.Now().Add(complianceTestRetention)
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeCompliance,
+				RetainUntilDate: &date,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%v"`, s.awsID), `["s3:BypassGovernanceRetention"]`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket))
+		bypass := true
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &policy,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// Recomputed fresh right before each request below, rather than once
+		// up front: the server rejects a RetainUntilDate that has already
+		// passed (InvalidArgument) before it ever gets to the object-lock
+		// comparison this test is exercising (ErrObjectLocked)
+		newShorterDate := func() time.Time {
+			return time.Now().Add(time.Until(date) / 2)
+		}
+
+		// Neither asking to bypass nor holding the permission helps.
+		shorter := newShorterDate()
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeCompliance,
+				RetainUntilDate: &shorter,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+			return err
+		}
+
+		shorter = newShorterDate()
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeCompliance,
+				RetainUntilDate: &shorter,
+			},
+			BypassGovernanceRetention: &bypass,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+			return err
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: obj, isCompliance: true}})
+	}, withLock())
+}
+
+func PutObjectRetention_rewrite_same_date(s *S3Conf) error {
+	testName := "PutObjectRetention_rewrite_same_date"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		govObj, compObj := "my-obj-governance", "my-obj-compliance"
+		_, err := putObjects(s3client, []string{govObj, compObj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		for _, obj := range []struct {
+			key  string
+			mode types.ObjectLockRetentionMode
+		}{
+			{key: govObj, mode: types.ObjectLockRetentionModeGovernance},
+			{key: compObj, mode: types.ObjectLockRetentionModeCompliance},
+		} {
+			date := time.Now().Add(complianceTestRetention)
+			if obj.mode == types.ObjectLockRetentionModeGovernance {
+				date = time.Now().Add(time.Hour)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+				Bucket: &bucket,
+				Key:    &obj.key,
+				Retention: &types.ObjectLockRetention{
+					Mode:            obj.mode,
+					RetainUntilDate: &date,
+				},
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+				Bucket: &bucket,
+				Key:    &obj.key,
+				Retention: &types.ObjectLockRetention{
+					Mode:            obj.mode,
+					RetainUntilDate: &date,
+				},
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%v: rewriting the identical date must be allowed: %w", obj.mode, err)
+			}
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{key: govObj},
+			{key: compObj, isCompliance: true},
+		})
+	}, withLock())
+}
+
 func PutObjectRetention_success(s *S3Conf) error {
 	testName := "PutObjectRetention_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		date := time.Now().Add(time.Hour * 3)
 		key := "my-obj"
 
 		_, err := putObjects(s3client, []string{key}, bucket)
@@ -376,6 +624,7 @@ func PutObjectRetention_success(s *S3Conf) error {
 			return err
 		}
 
+		date := time.Now().Add(complianceTestRetention)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,

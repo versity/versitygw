@@ -16,15 +16,12 @@ package integration
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	vgwv4 "github.com/versity/versitygw/aws/signer/v4"
 	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/internal/sigv4auth"
 )
@@ -273,30 +270,38 @@ func createIAMQuerySignedRequest(endpoint string, cfg *authConfig, access, secre
 		payloadHash = hex.EncodeToString(hash[:])
 	}
 
-	signer := vgwv4.NewSigner()
-	signedURL, signedHeaders, _, err := signer.PresignHTTP(
-		context.Background(),
-		aws.Credentials{AccessKeyID: access, SecretAccessKey: secret},
-		req,
-		payloadHash,
-		cfg.service,
-		region,
-		cfg.date,
-		nil,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("sign IAM query auth request: %w", err)
-	}
+	yyyymmdd := cfg.date.Format(sigv4auth.YYYYMMDD)
+	derivedKey := sigv4auth.DeriveKey(secret, yyyymmdd, region, cfg.service)
+	in := sigv4auth.SigningInputFromRequest(req)
+	in.AccessKeyID = access
+	in.CredentialScope = sigv4auth.BuildCredentialScope(yyyymmdd, region, cfg.service)
+	in.PayloadHash = payloadHash
+	in.SigningTime = cfg.date
+	in.IsPreSign = true
+	result := sigv4auth.BuildAndSign(derivedKey, in)
 
-	signedReq, err := http.NewRequest(cfg.method, signedURL, bytes.NewReader(cfg.body))
+	signedURL := *req.URL
+	signedURL.RawQuery = result.RawQuery
+
+	signedReq, err := http.NewRequest(cfg.method, signedURL.String(), bytes.NewReader(cfg.body))
 	if err != nil {
 		return nil, fmt.Errorf("create signed IAM query auth request: %w", err)
 	}
 	for key, value := range cfg.headers {
 		signedReq.Header.Set(key, value)
 	}
-	for key, values := range signedHeaders {
-		signedReq.Header[key] = append([]string(nil), values...)
+	for key, values := range result.SignedHeaders {
+		if key == "host" {
+			// signedReq already carries the correct Host implicitly via its
+			// URL; result.SignedHeaders holds it under the raw lowercase
+			// canonical-header key "host" rather than Go's canonicalized
+			// "Host", so writing it into signedReq.Header would add a
+			// second, non-excluded Host header on the wire.
+			continue
+		}
+		for _, value := range values {
+			signedReq.Header.Add(key, value)
+		}
 	}
 
 	return signedReq, nil

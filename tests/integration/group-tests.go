@@ -44,7 +44,7 @@ func TestAuthentication(ts *TestState) {
 }
 
 func TestPresignedAuthentication(ts *TestState) {
-	ts.Run(PresignedAuth_security_token_not_supported)
+	ts.Run(PresignedAuth_security_token_with_permanent_credentials)
 	ts.Run(PresignedAuth_unsupported_algorithm)
 	ts.Run(PresignedAuth_ECDSA_not_supported)
 	ts.Run(PresignedAuth_missing_signature_query_param)
@@ -625,6 +625,10 @@ func TestPutBucketPolicy(ts *TestState) {
 	ts.Run(PutBucketPolicy_version)
 	ts.Run(PutBucketPolicy_success)
 	ts.Run(PutBucketPolicy_status)
+	ts.Run(PutBucketPolicy_condition_invalid_operator)
+	ts.Run(PutBucketPolicy_condition_invalid_key)
+	ts.Run(PutBucketPolicy_condition_action_mismatch)
+	ts.Run(PutBucketPolicy_condition_invalid_ip)
 }
 
 func TestGetBucketPolicy(ts *TestState) {
@@ -766,6 +770,10 @@ func TestPutObjectRetention(ts *TestState) {
 	ts.Run(PutObjectRetention_overwrite_governance_with_governance)
 	ts.Run(PutObjectRetention_overwrite_governance_without_bypass_specified)
 	ts.Run(PutObjectRetention_overwrite_governance_with_permission)
+	ts.Run(PutObjectRetention_shorten_governance_without_bypass)
+	ts.Run(PutObjectRetention_shorten_governance_with_bypass)
+	ts.Run(PutObjectRetention_shorten_compliance_denied)
+	ts.Run(PutObjectRetention_rewrite_same_date)
 	ts.Run(PutObjectRetention_success)
 }
 
@@ -853,6 +861,7 @@ func TestWORMProtection(ts *TestState) {
 	ts.Run(WORMProtection_bucket_object_lock_configuration_governance_mode)
 	ts.Run(WORMProtection_bucket_object_lock_governance_bypass_delete)
 	ts.Run(WORMProtection_bucket_object_lock_governance_bypass_delete_multiple)
+	ts.Run(WORMProtection_delete_objects_locked_object_partial_success)
 	ts.Run(WORMProtection_object_lock_retention_compliance_locked)
 	ts.Run(WORMProtection_object_lock_retention_governance_locked)
 	ts.Run(WORMProtection_object_lock_retention_governance_bypass_overwrite_put)
@@ -1547,6 +1556,67 @@ func TestIAMAccessControl(ts *TestState) {
 	ts.Run(IAMAccessControl_CrossIdentity_AssumeRoleWithWebIdentityHasNoCallerIdentityCheck)
 }
 
+func TestS3IAMAccessControl(ts *TestState) {
+	ts.Run(S3IAMAccessControl_no_policy_denies)
+	ts.Run(S3IAMAccessControl_root_bypasses_policies)
+	ts.Run(S3IAMAccessControl_identity_policy_allows_without_bucket_policy)
+	ts.Run(S3IAMAccessControl_identity_policy_action_wildcards)
+	ts.Run(S3IAMAccessControl_identity_policy_resource_scoping)
+	ts.Run(S3IAMAccessControl_identity_policy_bucket_vs_object_arn)
+	ts.Run(S3IAMAccessControl_identity_policy_not_action_and_not_resource)
+	ts.Run(S3IAMAccessControl_identity_policy_explicit_deny_wins)
+	ts.Run(S3IAMAccessControl_multiple_inline_policies_combine)
+	ts.Run(S3IAMAccessControl_bucket_policy_allows_without_identity_policy)
+	ts.Run(S3IAMAccessControl_bucket_policy_explicit_deny)
+	ts.Run(S3IAMAccessControl_policy_combinations)
+	ts.Run(S3IAMAccessControl_copy_object_requires_both_sides)
+	ts.Run(S3IAMAccessControl_create_bucket)
+	ts.Run(S3IAMAccessControl_governance_bypass_sources)
+	ts.Run(S3IAMAccessControl_governance_without_bypass_header)
+	ts.Run(S3IAMAccessControl_compliance_mode_not_bypassable)
+	ts.Run(S3IAMAccessControl_delete_objects_authorizes_each_key)
+	ts.Run(S3IAMAccessControl_delete_objects_version_needs_separate_permission)
+	ts.Run(S3IAMAccessControl_governance_bypass_delete_objects)
+	ts.Run(DeleteObjects_iam_mixed_denials_and_success)
+	ts.Run(DeleteObjects_iam_all_access_denied)
+	ts.Run(DeleteObjects_iam_all_locked)
+	ts.Run(S3IAMAccessControl_retention_extension_needs_no_bypass)
+	ts.Run(S3IAMAccessControl_governance_bypass_put_object_retention)
+	ts.Run(S3IAMAccessControl_retention_shortening_needs_bypass)
+	ts.Run(S3IAMAccessControl_condition_source_ip)
+	ts.Run(S3IAMAccessControl_condition_negated_operator_needs_context)
+	ts.Run(S3IAMAccessControl_condition_request_keys)
+	ts.Run(S3IAMAccessControl_condition_identity_keys)
+	ts.Run(S3IAMAccessControl_condition_principal_tag)
+	ts.Run(S3IAMAccessControl_condition_on_deny_statement)
+	ts.Run(S3IAMAccessControl_condition_multiple_keys_anded)
+	ts.Run(S3IAMAccessControl_inactive_and_deleted_credentials)
+	ts.Run(S3IAMAccessControl_bucket_policy_unknown_principal_rejected)
+}
+
+func TestS3IAMSessionAccessControl(ts *TestState) {
+	ts.Run(S3IAMSession_role_policy_allows)
+	ts.Run(S3IAMSession_role_without_policy_denied)
+	ts.Run(S3IAMSession_role_policy_explicit_deny_wins)
+	ts.Run(S3IAMSession_role_policy_resource_scoped)
+	ts.Run(S3IAMSession_session_policy_narrows_role)
+	ts.Run(S3IAMSession_session_policy_cannot_widen_role)
+	ts.Run(S3IAMSession_session_policy_explicit_deny_overrides_role)
+	ts.Run(S3IAMSession_role_policy_deny_overrides_session_allow)
+	ts.Run(S3IAMSession_session_policy_without_role_policy_denied)
+	ts.Run(S3IAMSession_bucket_policy_allows_without_role_policy)
+	ts.Run(S3IAMSession_session_policy_filters_bucket_policy_grant)
+	ts.Run(S3IAMSession_bucket_policy_deny_overrides_role_allow)
+	ts.Run(S3IAMSession_missing_and_wrong_security_token)
+	ts.Run(S3IAMSession_presigned_url_with_session_credentials)
+	ts.Run(S3IAMSession_deleted_role_denies)
+	ts.Run(S3IAMSession_create_bucket_via_role_policy)
+	ts.Run(S3IAMSession_governance_bypass_via_role_policy)
+	ts.Run(S3IAMSession_delete_objects_authorizes_each_key)
+	ts.Run(S3IAMSession_condition_identity_keys)
+	ts.Run(S3IAMSession_get_caller_identity_matches_s3_principal)
+}
+
 func TestIAM(ts *TestState) {
 	TestIAMAuth(ts)
 	TestIAMQueryAuth(ts)
@@ -1609,6 +1679,18 @@ func TestAccessControl(ts *TestState) {
 	if !ts.conf.azureTests {
 		ts.Run(AccessControl_policy_normalizes_object_key_for_get_put_delete)
 	}
+	ts.Run(AccessControl_bucket_policy_condition_ip_allow)
+	ts.Run(AccessControl_bucket_policy_condition_ip_deny_no_match)
+	ts.Run(AccessControl_bucket_policy_condition_not_ip_address_allow)
+	ts.Run(AccessControl_bucket_policy_condition_not_ip_address_deny)
+	ts.Run(AccessControl_bucket_policy_condition_explicit_deny_overrides_allow)
+	ts.Run(AccessControl_bucket_policy_condition_s3_prefix)
+	ts.Run(AccessControl_bucket_policy_condition_string_operators)
+	ts.Run(AccessControl_bucket_policy_condition_numeric_operators)
+	ts.Run(AccessControl_bucket_policy_condition_date_operators)
+	ts.Run(AccessControl_bucket_policy_condition_bool_operator)
+	ts.Run(AccessControl_bucket_policy_condition_binary_operator)
+	ts.Run(AccessControl_bucket_policy_condition_null_operator)
 }
 
 func TestPublicBuckets(ts *TestState) {
@@ -1864,6 +1946,58 @@ type IntTests map[string]IntTest
 
 func GetIntTests() IntTests {
 	return IntTests{
+		"S3IAMAccessControl_retention_shortening_needs_bypass":                             S3IAMAccessControl_retention_shortening_needs_bypass,
+		"S3IAMSession_get_caller_identity_matches_s3_principal":                            S3IAMSession_get_caller_identity_matches_s3_principal,
+		"S3IAMSession_condition_identity_keys":                                             S3IAMSession_condition_identity_keys,
+		"S3IAMSession_delete_objects_authorizes_each_key":                                  S3IAMSession_delete_objects_authorizes_each_key,
+		"S3IAMSession_governance_bypass_via_role_policy":                                   S3IAMSession_governance_bypass_via_role_policy,
+		"S3IAMSession_create_bucket_via_role_policy":                                       S3IAMSession_create_bucket_via_role_policy,
+		"S3IAMSession_deleted_role_denies":                                                 S3IAMSession_deleted_role_denies,
+		"S3IAMSession_presigned_url_with_session_credentials":                              S3IAMSession_presigned_url_with_session_credentials,
+		"S3IAMSession_missing_and_wrong_security_token":                                    S3IAMSession_missing_and_wrong_security_token,
+		"S3IAMSession_bucket_policy_deny_overrides_role_allow":                             S3IAMSession_bucket_policy_deny_overrides_role_allow,
+		"S3IAMSession_session_policy_filters_bucket_policy_grant":                          S3IAMSession_session_policy_filters_bucket_policy_grant,
+		"S3IAMSession_bucket_policy_allows_without_role_policy":                            S3IAMSession_bucket_policy_allows_without_role_policy,
+		"S3IAMSession_session_policy_without_role_policy_denied":                           S3IAMSession_session_policy_without_role_policy_denied,
+		"S3IAMSession_role_policy_deny_overrides_session_allow":                            S3IAMSession_role_policy_deny_overrides_session_allow,
+		"S3IAMSession_session_policy_explicit_deny_overrides_role":                         S3IAMSession_session_policy_explicit_deny_overrides_role,
+		"S3IAMSession_session_policy_cannot_widen_role":                                    S3IAMSession_session_policy_cannot_widen_role,
+		"S3IAMSession_session_policy_narrows_role":                                         S3IAMSession_session_policy_narrows_role,
+		"S3IAMSession_role_policy_resource_scoped":                                         S3IAMSession_role_policy_resource_scoped,
+		"S3IAMSession_role_policy_explicit_deny_wins":                                      S3IAMSession_role_policy_explicit_deny_wins,
+		"S3IAMSession_role_without_policy_denied":                                          S3IAMSession_role_without_policy_denied,
+		"S3IAMSession_role_policy_allows":                                                  S3IAMSession_role_policy_allows,
+		"S3IAMAccessControl_retention_extension_needs_no_bypass":                           S3IAMAccessControl_retention_extension_needs_no_bypass,
+		"S3IAMAccessControl_delete_objects_authorizes_each_key":                            S3IAMAccessControl_delete_objects_authorizes_each_key,
+		"S3IAMAccessControl_delete_objects_version_needs_separate_permission":              S3IAMAccessControl_delete_objects_version_needs_separate_permission,
+		"S3IAMAccessControl_no_policy_denies":                                              S3IAMAccessControl_no_policy_denies,
+		"S3IAMAccessControl_root_bypasses_policies":                                        S3IAMAccessControl_root_bypasses_policies,
+		"S3IAMAccessControl_identity_policy_allows_without_bucket_policy":                  S3IAMAccessControl_identity_policy_allows_without_bucket_policy,
+		"S3IAMAccessControl_identity_policy_action_wildcards":                              S3IAMAccessControl_identity_policy_action_wildcards,
+		"S3IAMAccessControl_identity_policy_resource_scoping":                              S3IAMAccessControl_identity_policy_resource_scoping,
+		"S3IAMAccessControl_identity_policy_bucket_vs_object_arn":                          S3IAMAccessControl_identity_policy_bucket_vs_object_arn,
+		"S3IAMAccessControl_identity_policy_not_action_and_not_resource":                   S3IAMAccessControl_identity_policy_not_action_and_not_resource,
+		"S3IAMAccessControl_identity_policy_explicit_deny_wins":                            S3IAMAccessControl_identity_policy_explicit_deny_wins,
+		"S3IAMAccessControl_multiple_inline_policies_combine":                              S3IAMAccessControl_multiple_inline_policies_combine,
+		"S3IAMAccessControl_bucket_policy_allows_without_identity_policy":                  S3IAMAccessControl_bucket_policy_allows_without_identity_policy,
+		"S3IAMAccessControl_bucket_policy_explicit_deny":                                   S3IAMAccessControl_bucket_policy_explicit_deny,
+		"S3IAMAccessControl_policy_combinations":                                           S3IAMAccessControl_policy_combinations,
+		"S3IAMAccessControl_copy_object_requires_both_sides":                               S3IAMAccessControl_copy_object_requires_both_sides,
+		"S3IAMAccessControl_create_bucket":                                                 S3IAMAccessControl_create_bucket,
+		"S3IAMAccessControl_governance_bypass_sources":                                     S3IAMAccessControl_governance_bypass_sources,
+		"S3IAMAccessControl_governance_without_bypass_header":                              S3IAMAccessControl_governance_without_bypass_header,
+		"S3IAMAccessControl_compliance_mode_not_bypassable":                                S3IAMAccessControl_compliance_mode_not_bypassable,
+		"S3IAMAccessControl_governance_bypass_delete_objects":                              S3IAMAccessControl_governance_bypass_delete_objects,
+		"S3IAMAccessControl_governance_bypass_put_object_retention":                        S3IAMAccessControl_governance_bypass_put_object_retention,
+		"S3IAMAccessControl_condition_source_ip":                                           S3IAMAccessControl_condition_source_ip,
+		"S3IAMAccessControl_condition_negated_operator_needs_context":                      S3IAMAccessControl_condition_negated_operator_needs_context,
+		"S3IAMAccessControl_condition_request_keys":                                        S3IAMAccessControl_condition_request_keys,
+		"S3IAMAccessControl_condition_identity_keys":                                       S3IAMAccessControl_condition_identity_keys,
+		"S3IAMAccessControl_condition_principal_tag":                                       S3IAMAccessControl_condition_principal_tag,
+		"S3IAMAccessControl_condition_on_deny_statement":                                   S3IAMAccessControl_condition_on_deny_statement,
+		"S3IAMAccessControl_condition_multiple_keys_anded":                                 S3IAMAccessControl_condition_multiple_keys_anded,
+		"S3IAMAccessControl_inactive_and_deleted_credentials":                              S3IAMAccessControl_inactive_and_deleted_credentials,
+		"S3IAMAccessControl_bucket_policy_unknown_principal_rejected":                      S3IAMAccessControl_bucket_policy_unknown_principal_rejected,
 		"Authentication_invalid_auth_header":                                               Authentication_invalid_auth_header,
 		"Authentication_unsupported_signature_version":                                     Authentication_unsupported_signature_version,
 		"Authentication_missing_components":                                                Authentication_missing_components,
@@ -2256,7 +2390,7 @@ func GetIntTests() IntTests {
 		"IAMAccessControl_RoleTrustDenialIndependentOfPermissionPolicy":                    IAMAccessControl_RoleTrustDenialIndependentOfPermissionPolicy,
 		"IAMAccessControl_CrossIdentity_UnrelatedRoleCannotBeAssumedViaWrongIssuer":        IAMAccessControl_CrossIdentity_UnrelatedRoleCannotBeAssumedViaWrongIssuer,
 		"IAMAccessControl_CrossIdentity_AssumeRoleWithWebIdentityHasNoCallerIdentityCheck": IAMAccessControl_CrossIdentity_AssumeRoleWithWebIdentityHasNoCallerIdentityCheck,
-		"PresignedAuth_security_token_not_supported":                                       PresignedAuth_security_token_not_supported,
+		"PresignedAuth_security_token_with_permanent_credentials":                          PresignedAuth_security_token_with_permanent_credentials,
 		"PresignedAuth_unsupported_algorithm":                                              PresignedAuth_unsupported_algorithm,
 		"PresignedAuth_ECDSA_not_supported":                                                PresignedAuth_ECDSA_not_supported,
 		"PresignedAuth_missing_signature_query_param":                                      PresignedAuth_missing_signature_query_param,
@@ -2484,6 +2618,9 @@ func GetIntTests() IntTests {
 		"DeleteObjects_empty_input":                                                        DeleteObjects_empty_input,
 		"DeleteObjects_non_existing_objects":                                               DeleteObjects_non_existing_objects,
 		"DeleteObjects_success":                                                            DeleteObjects_success,
+		"DeleteObjects_iam_mixed_denials_and_success":                                      DeleteObjects_iam_mixed_denials_and_success,
+		"DeleteObjects_iam_all_access_denied":                                              DeleteObjects_iam_all_access_denied,
+		"DeleteObjects_iam_all_locked":                                                     DeleteObjects_iam_all_locked,
 		"CopyObject_non_existing_dst_bucket":                                               CopyObject_non_existing_dst_bucket,
 		"CopyObject_not_owned_source_bucket":                                               CopyObject_not_owned_source_bucket,
 		"CopyObject_copy_to_itself":                                                        CopyObject_copy_to_itself,
@@ -2686,6 +2823,10 @@ func GetIntTests() IntTests {
 		"PutBucketPolicy_version":                                                          PutBucketPolicy_version,
 		"PutBucketPolicy_success":                                                          PutBucketPolicy_success,
 		"PutBucketPolicy_status":                                                           PutBucketPolicy_status,
+		"PutBucketPolicy_condition_invalid_operator":                                       PutBucketPolicy_condition_invalid_operator,
+		"PutBucketPolicy_condition_invalid_key":                                            PutBucketPolicy_condition_invalid_key,
+		"PutBucketPolicy_condition_action_mismatch":                                        PutBucketPolicy_condition_action_mismatch,
+		"PutBucketPolicy_condition_invalid_ip":                                             PutBucketPolicy_condition_invalid_ip,
 		"GetBucketPolicy_non_existing_bucket":                                              GetBucketPolicy_non_existing_bucket,
 		"GetBucketPolicy_not_set":                                                          GetBucketPolicy_not_set,
 		"GetBucketPolicy_success":                                                          GetBucketPolicy_success,
@@ -2780,6 +2921,10 @@ func GetIntTests() IntTests {
 		"PutObjectRetention_overwrite_governance_with_governance":                          PutObjectRetention_overwrite_governance_with_governance,
 		"PutObjectRetention_overwrite_governance_without_bypass_specified":                 PutObjectRetention_overwrite_governance_without_bypass_specified,
 		"PutObjectRetention_overwrite_governance_with_permission":                          PutObjectRetention_overwrite_governance_with_permission,
+		"PutObjectRetention_shorten_governance_without_bypass":                             PutObjectRetention_shorten_governance_without_bypass,
+		"PutObjectRetention_shorten_governance_with_bypass":                                PutObjectRetention_shorten_governance_with_bypass,
+		"PutObjectRetention_shorten_compliance_denied":                                     PutObjectRetention_shorten_compliance_denied,
+		"PutObjectRetention_rewrite_same_date":                                             PutObjectRetention_rewrite_same_date,
 		"PutObjectRetention_success":                                                       PutObjectRetention_success,
 		"GetObjectRetention_non_existing_bucket":                                           GetObjectRetention_non_existing_bucket,
 		"GetObjectRetention_non_existing_object":                                           GetObjectRetention_non_existing_object,
@@ -2839,6 +2984,7 @@ func GetIntTests() IntTests {
 		"WORMProtection_bucket_object_lock_configuration_governance_mode":                  WORMProtection_bucket_object_lock_configuration_governance_mode,
 		"WORMProtection_bucket_object_lock_governance_bypass_delete":                       WORMProtection_bucket_object_lock_governance_bypass_delete,
 		"WORMProtection_bucket_object_lock_governance_bypass_delete_multiple":              WORMProtection_bucket_object_lock_governance_bypass_delete_multiple,
+		"WORMProtection_delete_objects_locked_object_partial_success":                      WORMProtection_delete_objects_locked_object_partial_success,
 		"WORMProtection_object_lock_retention_compliance_locked":                           WORMProtection_object_lock_retention_compliance_locked,
 		"WORMProtection_object_lock_retention_governance_locked":                           WORMProtection_object_lock_retention_governance_locked,
 		"WORMProtection_object_lock_retention_governance_bypass_overwrite_put":             WORMProtection_object_lock_retention_governance_bypass_overwrite_put,
@@ -2888,6 +3034,18 @@ func GetIntTests() IntTests {
 		"AccessControl_CopyObject_with_legal_hold_policy":                                  AccessControl_CopyObject_with_legal_hold_policy,
 		"AccessControl_CopyObject_with_retention_policy":                                   AccessControl_CopyObject_with_retention_policy,
 		"AccessControl_policy_normalizes_object_key_for_get_put_delete":                    AccessControl_policy_normalizes_object_key_for_get_put_delete,
+		"AccessControl_bucket_policy_condition_ip_allow":                                   AccessControl_bucket_policy_condition_ip_allow,
+		"AccessControl_bucket_policy_condition_ip_deny_no_match":                           AccessControl_bucket_policy_condition_ip_deny_no_match,
+		"AccessControl_bucket_policy_condition_not_ip_address_allow":                       AccessControl_bucket_policy_condition_not_ip_address_allow,
+		"AccessControl_bucket_policy_condition_not_ip_address_deny":                        AccessControl_bucket_policy_condition_not_ip_address_deny,
+		"AccessControl_bucket_policy_condition_explicit_deny_overrides_allow":              AccessControl_bucket_policy_condition_explicit_deny_overrides_allow,
+		"AccessControl_bucket_policy_condition_s3_prefix":                                  AccessControl_bucket_policy_condition_s3_prefix,
+		"AccessControl_bucket_policy_condition_string_operators":                           AccessControl_bucket_policy_condition_string_operators,
+		"AccessControl_bucket_policy_condition_numeric_operators":                          AccessControl_bucket_policy_condition_numeric_operators,
+		"AccessControl_bucket_policy_condition_date_operators":                             AccessControl_bucket_policy_condition_date_operators,
+		"AccessControl_bucket_policy_condition_bool_operator":                              AccessControl_bucket_policy_condition_bool_operator,
+		"AccessControl_bucket_policy_condition_binary_operator":                            AccessControl_bucket_policy_condition_binary_operator,
+		"AccessControl_bucket_policy_condition_null_operator":                              AccessControl_bucket_policy_condition_null_operator,
 		"PublicBucket_default_private_bucket":                                              PublicBucket_default_private_bucket,
 		"PublicBucket_public_bucket_policy":                                                PublicBucket_public_bucket_policy,
 		"PublicBucket_public_object_policy":                                                PublicBucket_public_object_policy,

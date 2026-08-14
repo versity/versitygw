@@ -14,19 +14,12 @@
 package sigv4auth
 
 import (
-	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/smithy-go/logging"
 	"github.com/gofiber/fiber/v3"
-	"github.com/versity/versitygw/aws/signer/v4"
 	"github.com/versity/versitygw/debuglogger"
 )
 
@@ -125,6 +118,15 @@ func ParseQueryAuthorization(ctx fiber.Ctx, opts QueryAuthOptions) (AuthData, Qu
 	creds, err := ParseCredentials(credsQuery, opts.Service)
 	if err != nil {
 		return a, details, err
+	}
+
+	// A security token in the query string is only ever legitimate alongside
+	// a temporary (ASIA…) access key. Reject it outright for root or any
+	// long-term (AKIA…) credential before any signature work, rather than
+	// letting it fall through to a signature mismatch once the tampered or
+	// unsigned token parameter invalidates the canonical query string.
+	if ctx.Request().URI().QueryArgs().Has(QuerySecurityToken) && !IsTempAccessKeyID(creds.Access) {
+		return a, details, &QueryError{Kind: ErrQuerySecurityToken}
 	}
 
 	if opts.Region != "" && creds.Region != opts.Region {
@@ -255,62 +257,59 @@ func missingQueryParameterError(parameter string) *QueryError {
 	return &QueryError{Kind: ErrQueryMissingRequiredParams, Value: parameter}
 }
 
-// CheckQuerySignature rebuilds a SigV4 query-auth request and compares the
-// generated query signature to the signature presented by the client.
-func CheckQuerySignature(ctx fiber.Ctx, auth AuthData, secret, payloadHash string, tdate time.Time, contentLen int64, opts CheckOptions) (*CheckResult, error) {
+// CheckQuerySignature rebuilds a SigV4 query-auth request — reading
+// everything it needs straight from ctx, with no intermediate
+// *http.Request — and compares the generated query signature to the
+// signature presented by the client. derivedKey is the request's kSigning
+// value — either computed locally via DeriveKey from a known secret, or
+// obtained from a standalone IAM service that never reveals the secret
+// itself.
+func CheckQuerySignature(ctx fiber.Ctx, auth AuthData, derivedKey []byte, payloadHash string, tdate time.Time, contentLen int64, opts CheckOptions) (*CheckResult, error) {
 	service := opts.Service
 	if service == "" {
 		service = auth.Service
 	}
 	signedHdrs := strings.Split(auth.SignedHeaders, ";")
 
-	req, err := createPresignedHTTPRequestFromCtx(ctx, signedHdrs, contentLen, opts.RequiredSignedHeaders)
+	in, err := signingInputFromCtx(ctx, signedHdrs, contentLen, opts.RequiredSignedHeaders, true)
 	if err != nil {
 		return nil, err
 	}
+	in.AccessKeyID = auth.Access
+	in.CredentialScope = BuildCredentialScope(tdate.Format(YYYYMMDD), auth.Region, service)
+	in.SignedHdrs = signedHdrs
+	in.PayloadHash = payloadHash
+	in.SigningTime = tdate
+	in.DisableURIPathEscaping = opts.DisableURIPathEscaping
 
-	signer := v4.NewSigner()
-	uri, _, signMeta, err := signer.PresignHTTP(ctx.RequestCtx(),
-		aws.Credentials{
-			AccessKeyID:     auth.Access,
-			SecretAccessKey: secret,
-		},
-		req, payloadHash, service, auth.Region, tdate, signedHdrs,
-		func(options *v4.SignerOptions) {
-			options.DisableURIPathEscaping = opts.DisableURIPathEscaping
-			// See the identical comment in verify.go's CheckSignature: this
-			// logger dumps a complete, replayable signed URL (including
-			// X-Amz-Signature and any session token) unredacted, so it may
-			// only run at LevelUnsafe.
-			if debuglogger.IsUnsafeEnabled() {
-				options.LogSigning = true
-				options.Logger = logging.NewStandardLogger(os.Stderr)
-			}
-		})
-	if err != nil {
-		return nil, fmt.Errorf("presign generated http request: %w", err)
+	result := BuildAndSign(derivedKey, in)
+
+	// See the identical comment in verify.go's CheckSignature: this dumps a
+	// complete, replayable signed query string unredacted, so it may only
+	// run at LevelUnsafe.
+	if debuglogger.IsUnsafeEnabled() {
+		debuglogger.Logf("Request Signature:\n"+
+			"---[ CANONICAL STRING  ]-----------------------------\n%s\n"+
+			"---[ STRING TO SIGN ]--------------------------------\n%s\n"+
+			"---[ SIGNED QUERY ]-----------------------------------\n%s\n"+
+			"-----------------------------------------------------",
+			result.CanonicalString, result.StringToSign, result.RawQuery)
 	}
 
-	urlParts, err := url.Parse(uri)
-	if err != nil {
-		return nil, fmt.Errorf("parse presigned url: %w", err)
-	}
-
-	signature := urlParts.Query().Get(QuerySignature)
-	if !SecureCompare(signature, auth.Signature) {
+	if !SecureCompare(result.Signature, auth.Signature) {
 		return nil, &SignatureMismatchError{
 			AccessKeyID:           auth.Access,
-			StringToSign:          signMeta.StringToSign,
+			StringToSign:          result.StringToSign,
 			SignatureProvided:     auth.Signature,
-			StringToSignBytes:     HexBytes(signMeta.StringToSign),
-			CanonicalRequest:      signMeta.CanonicalString,
-			CanonicalRequestBytes: HexBytes(signMeta.CanonicalString),
+			StringToSignBytes:     HexBytes(result.StringToSign),
+			CanonicalRequest:      result.CanonicalString,
+			CanonicalRequestBytes: HexBytes(result.CanonicalString),
 		}
 	}
 
 	return &CheckResult{
-		CanonicalString: signMeta.CanonicalString,
-		StringToSign:    signMeta.StringToSign,
+		CanonicalString: result.CanonicalString,
+		StringToSign:    result.StringToSign,
 	}, nil
 }
 
@@ -320,52 +319,6 @@ var generatedQueryAuthParams = map[string]struct{}{
 	QueryDate:          {},
 	QuerySignedHeaders: {},
 	QuerySignature:     {},
-}
-
-func createPresignedHTTPRequestFromCtx(ctx fiber.Ctx, signedHdrs []string, contentLength int64, requiredSignedHdrs []string) (*http.Request, error) {
-	req := ctx.Request()
-	if err := validateRequiredSignedHeaders(signedHdrs, requiredSignedHdrs); err != nil {
-		return nil, err
-	}
-
-	uri, _, _ := strings.Cut(ctx.OriginalURL(), "?")
-	query := strings.Builder{}
-
-	for key, value := range ctx.Request().URI().QueryArgs().All() {
-		keyStr := string(key)
-		if _, ok := generatedQueryAuthParams[keyStr]; ok {
-			continue
-		}
-
-		if query.Len() > 0 {
-			query.WriteByte('&')
-		}
-		query.WriteString(url.QueryEscape(keyStr))
-		query.WriteByte('=')
-		query.WriteString(url.QueryEscape(string(value)))
-	}
-
-	if query.Len() > 0 {
-		uri += "?" + query.String()
-	}
-
-	httpReq, err := http.NewRequest(string(req.Header.Method()), uri, nil)
-	if err != nil {
-		return nil, errors.New("error in creating an http request")
-	}
-	if err := addRequestHeadersFromCtx(ctx, httpReq, signedHdrs, requiredSignedHdrs); err != nil {
-		return nil, err
-	}
-
-	if !includeHeader("Content-Length", signedHdrs) {
-		httpReq.ContentLength = 0
-	} else {
-		httpReq.ContentLength = contentLength
-	}
-
-	httpReq.Host = string(req.Header.Host())
-
-	return httpReq, nil
 }
 
 // IsQueryAuth determines if a request uses SigV4 query-string auth.

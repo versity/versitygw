@@ -17,8 +17,11 @@ package integration
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -287,7 +290,9 @@ func AccessControl_multi_statement_policy(s *S3Conf) error {
 			Bucket: &bucket,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+		if err := checkApiErr(err, s3err.GetExplicitDenyAccessErr(
+			testuser.access, "s3:DeleteBucket", fmt.Sprintf("arn:aws:s3:::%s", bucket), "a resource-based policy",
+		)); err != nil {
 			return err
 		}
 
@@ -1109,4 +1114,566 @@ func AccessControl_CopyObject_with_retention_policy(s *S3Conf) error {
 
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: dstObj}})
 	}, withLock())
+}
+
+// AccessControl_bucket_policy_condition_ip_allow covers a bucket-policy
+// Allow statement scoped by an IpAddress Condition matching the caller's
+// real source IP: 0.0.0.0/0 matches any IPv4 address, so this exercises
+// the Condition machinery without depending on the test runner's actual
+// address.
+func AccessControl_bucket_policy_condition_ip_allow(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_ip_allow"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+			Condition: json.RawMessage(`{"IpAddress":{"aws:SourceIp":"0.0.0.0/0"}}`),
+		}); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		_, err := putObjects(userClient, []string{"my-obj"}, bucket)
+		return err
+	})
+}
+
+// AccessControl_bucket_policy_condition_ip_deny_no_match covers the same
+// shape as AccessControl_bucket_policy_condition_ip_allow with a CIDR
+// (TEST-NET-3, RFC 5737) that can never match a real caller, so the Allow
+// statement never applies and the request falls through to an implicit
+// deny.
+func AccessControl_bucket_policy_condition_ip_deny_no_match(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_ip_deny_no_match"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+			Condition: json.RawMessage(`{"IpAddress":{"aws:SourceIp":"203.0.113.0/24"}}`),
+		}); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		_, err := putObjects(userClient, []string{"my-obj"}, bucket)
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}
+
+// AccessControl_bucket_policy_condition_explicit_deny_overrides_allow
+// covers a Deny statement scoped by a matching IpAddress Condition
+// overriding a broader, unconditional Allow — the same explicit-deny-wins
+// precedence bucket policies already have for unconditional statements,
+// now confirmed to hold once one side's match depends on Condition
+// evaluation too.
+func AccessControl_bucket_policy_condition_explicit_deny_overrides_allow(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_explicit_deny_overrides_allow"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket,
+			bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:PutObject",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+			},
+			bucketStatement{
+				Effect:    "Deny",
+				Principal: testuser.access,
+				Action:    "s3:PutObject",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+				Condition: json.RawMessage(`{"IpAddress":{"aws:SourceIp":"0.0.0.0/0"}}`),
+			},
+		); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		_, err := putObjects(userClient, []string{"my-obj"}, bucket)
+		return checkApiErr(err, s3err.GetExplicitDenyAccessErr(testuser.access, "s3:PutObject",
+			fmt.Sprintf("arn:aws:s3:::%s/my-obj", bucket), "a resource-based policy"))
+	})
+}
+
+// AccessControl_bucket_policy_condition_s3_prefix covers the s3:prefix
+// condition key, populated from a ListObjectsV2 request's own Prefix
+// parameter: an Allow scoped to a specific prefix grants a request naming
+// that exact prefix and denies one that doesn't.
+func AccessControl_bucket_policy_condition_s3_prefix(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_s3_prefix"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:ListBucket",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s", bucket),
+			Condition: json.RawMessage(`{"StringEquals":{"s3:prefix":"photos/"}}`),
+		}); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+			Prefix: getPtr("photos/"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+			Prefix: getPtr("videos/"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}
+
+// The tests below cover every Condition operator family bucket policies
+// support with at least one Allow and one Deny case each, each scoped to a
+// real condition-context key the S3 gateway actually populates from the
+// request, so the whole round trip - PutBucketPolicy, the live request,
+// and the resulting Allow/Deny - is exercised end to end, not just the
+// shared evaluator in isolation (already covered exhaustively by
+// internal/condition's own unit tests).
+//
+// ArnEquals/ArnLike/ArnNotEquals/ArnNotLike are deliberately not covered
+// here: they'd need aws:PrincipalArn, which bucket-policy Condition doesn't
+// populate today (only identity-policy Condition does - see
+// project_s3_bucket_policy_condition memory for why). The operator logic
+// itself is still covered by internal/condition's unit tests
+// (TestEvaluateConditionArn); what's untested is only the wiring, because
+// there's nothing to wire yet.
+
+// AccessControl_bucket_policy_condition_string_operators covers the full
+// String family (Equals/NotEquals/Like/NotLike, both plain and IgnoreCase)
+// against s3:prefix, populated from a ListObjectsV2 request's own Prefix
+// parameter.
+func AccessControl_bucket_policy_condition_string_operators(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_string_operators"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		for _, tc := range []struct {
+			name      string
+			condition string
+			prefix    string
+			wantAllow bool
+		}{
+			{"StringEquals matches", `{"StringEquals":{"s3:prefix":"photos/"}}`, "photos/", true},
+			{"StringEquals mismatches", `{"StringEquals":{"s3:prefix":"photos/"}}`, "videos/", false},
+			{"StringNotEquals passes on a different value", `{"StringNotEquals":{"s3:prefix":"photos/"}}`, "videos/", true},
+			{"StringNotEquals fails on the same value", `{"StringNotEquals":{"s3:prefix":"photos/"}}`, "photos/", false},
+			{"StringLike wildcard matches", `{"StringLike":{"s3:prefix":"photos/*"}}`, "photos/vacation", true},
+			{"StringLike wildcard mismatches", `{"StringLike":{"s3:prefix":"photos/*"}}`, "videos/vacation", false},
+			{"StringNotLike passes when the pattern doesn't match", `{"StringNotLike":{"s3:prefix":"photos/*"}}`, "videos/vacation", true},
+			{"StringNotLike fails when the pattern matches", `{"StringNotLike":{"s3:prefix":"photos/*"}}`, "photos/vacation", false},
+			{"StringEqualsIgnoreCase matches regardless of case", `{"StringEqualsIgnoreCase":{"s3:prefix":"Photos/"}}`, "photos/", true},
+			{"StringNotEqualsIgnoreCase fails when equal regardless of case", `{"StringNotEqualsIgnoreCase":{"s3:prefix":"Photos/"}}`, "photos/", false},
+		} {
+			if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:ListBucket",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s", bucket),
+				Condition: json.RawMessage(tc.condition),
+			}); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+				Bucket: &bucket,
+				Prefix: getPtr(tc.prefix),
+			})
+			cancel()
+
+			if tc.wantAllow {
+				if err != nil {
+					return fmt.Errorf("%s: expected success, got %w", tc.name, err)
+				}
+				continue
+			}
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// AccessControl_bucket_policy_condition_numeric_operators covers the full
+// Numeric family against s3:max-keys, populated from a ListObjectsV2
+// request's own MaxKeys parameter, binding to the request's actual
+// MaxKeys value, not some default.
+func AccessControl_bucket_policy_condition_numeric_operators(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_numeric_operators"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		for _, tc := range []struct {
+			name      string
+			condition string
+			maxKeys   int32
+			wantAllow bool
+		}{
+			{"NumericEquals matches", `{"NumericEquals":{"s3:max-keys":"5"}}`, 5, true},
+			{"NumericEquals mismatches", `{"NumericEquals":{"s3:max-keys":"5"}}`, 6, false},
+			{"NumericNotEquals passes on a different value", `{"NumericNotEquals":{"s3:max-keys":"5"}}`, 6, true},
+			{"NumericNotEquals fails on the same value", `{"NumericNotEquals":{"s3:max-keys":"5"}}`, 5, false},
+			{"NumericLessThan matches", `{"NumericLessThan":{"s3:max-keys":"10"}}`, 5, true},
+			{"NumericLessThan boundary does not match", `{"NumericLessThan":{"s3:max-keys":"10"}}`, 10, false},
+			{"NumericLessThanEquals boundary matches", `{"NumericLessThanEquals":{"s3:max-keys":"10"}}`, 10, true},
+			{"NumericGreaterThan matches", `{"NumericGreaterThan":{"s3:max-keys":"5"}}`, 10, true},
+			{"NumericGreaterThan boundary does not match", `{"NumericGreaterThan":{"s3:max-keys":"5"}}`, 5, false},
+			{"NumericGreaterThanEquals boundary matches", `{"NumericGreaterThanEquals":{"s3:max-keys":"5"}}`, 5, true},
+		} {
+			if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:ListBucket",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s", bucket),
+				Condition: json.RawMessage(tc.condition),
+			}); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+				Bucket:  &bucket,
+				MaxKeys: getPtr(tc.maxKeys),
+			})
+			cancel()
+
+			if tc.wantAllow {
+				if err != nil {
+					return fmt.Errorf("%s: expected success, got %w", tc.name, err)
+				}
+				continue
+			}
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// AccessControl_bucket_policy_condition_date_operators covers the
+// Less/Greater halves of the Date family against aws:CurrentTime, using
+// dates 48 hours in the past/future so the outcome is never flaky
+// regardless of test-runner clock skew or how long the request takes.
+// DateEquals/DateNotEquals aren't covered here - matching an exact instant
+// against a live "now" is inherently flaky at this layer - but are
+// exercised at internal/condition's unit-test layer
+// (TestEvaluateConditionDate), which is what actually implements the
+// comparison; only the request-to-context wiring is new here.
+func AccessControl_bucket_policy_condition_date_operators(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_date_operators"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		past := time.Now().Add(-48 * time.Hour).UTC().Format(time.RFC3339)
+		future := time.Now().Add(48 * time.Hour).UTC().Format(time.RFC3339)
+
+		for _, tc := range []struct {
+			name      string
+			condition string
+			wantAllow bool
+		}{
+			{"DateLessThan a future date matches", fmt.Sprintf(`{"DateLessThan":{"aws:CurrentTime":%q}}`, future), true},
+			{"DateLessThan a past date does not match", fmt.Sprintf(`{"DateLessThan":{"aws:CurrentTime":%q}}`, past), false},
+			{"DateLessThanEquals a future date matches", fmt.Sprintf(`{"DateLessThanEquals":{"aws:CurrentTime":%q}}`, future), true},
+			{"DateGreaterThan a past date matches", fmt.Sprintf(`{"DateGreaterThan":{"aws:CurrentTime":%q}}`, past), true},
+			{"DateGreaterThan a future date does not match", fmt.Sprintf(`{"DateGreaterThan":{"aws:CurrentTime":%q}}`, future), false},
+			{"DateGreaterThanEquals a past date matches", fmt.Sprintf(`{"DateGreaterThanEquals":{"aws:CurrentTime":%q}}`, past), true},
+		} {
+			if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:ListBucket",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s", bucket),
+				Condition: json.RawMessage(tc.condition),
+			}); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
+			cancel()
+
+			if tc.wantAllow {
+				if err != nil {
+					return fmt.Errorf("%s: expected success, got %w", tc.name, err)
+				}
+				continue
+			}
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// AccessControl_bucket_policy_condition_bool_operator covers Bool against
+// aws:SecureTransport, comparing it to whether s's own endpoint is actually
+// using TLS - so this passes the same way against either an HTTP or HTTPS
+// test target.
+func AccessControl_bucket_policy_condition_bool_operator(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_bool_operator"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		secure := strings.HasPrefix(s.endpoint, "https://")
+
+		for _, tc := range []struct {
+			name      string
+			condition string
+			wantAllow bool
+		}{
+			{"Bool matches the request's actual transport", fmt.Sprintf(`{"Bool":{"aws:SecureTransport":"%t"}}`, secure), true},
+			{"Bool mismatches the request's actual transport", fmt.Sprintf(`{"Bool":{"aws:SecureTransport":"%t"}}`, !secure), false},
+		} {
+			if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:ListBucket",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s", bucket),
+				Condition: json.RawMessage(tc.condition),
+			}); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
+			cancel()
+
+			if tc.wantAllow {
+				if err != nil {
+					return fmt.Errorf("%s: expected success, got %w", tc.name, err)
+				}
+				continue
+			}
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// AccessControl_bucket_policy_condition_binary_operator covers BinaryEquals
+// against s3:prefix: AWS's own condition-operator reference documents the
+// match as a literal string comparison between the policy's base64 text and
+// the request context value
+func AccessControl_bucket_policy_condition_binary_operator(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_binary_operator"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		encoded := base64.StdEncoding.EncodeToString([]byte("photos/"))
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:ListBucket",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s", bucket),
+			Condition: json.RawMessage(fmt.Sprintf(`{"BinaryEquals":{"s3:prefix":%q}}`, encoded)),
+		}); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+			Prefix: getPtr(encoded),
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("matching prefix: expected success, got %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+			Prefix: getPtr("photos/"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}
+
+// AccessControl_bucket_policy_condition_null_operator covers Null against
+// s3:prefix's presence/absence: Null:"true" requires the key be absent (no
+// Prefix parameter on the request at all), Null:"false" requires it be
+// present.
+func AccessControl_bucket_policy_condition_null_operator(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_null_operator"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:ListBucket",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s", bucket),
+			Condition: json.RawMessage(`{"Null":{"s3:prefix":"true"}}`),
+		}); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("null:true, no prefix param: expected success, got %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+			Prefix: getPtr("photos/"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("null:true, prefix param present: %w", err)
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:ListBucket",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s", bucket),
+			Condition: json.RawMessage(`{"Null":{"s3:prefix":"false"}}`),
+		}); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+			Prefix: getPtr("photos/"),
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("null:false, prefix param present: expected success, got %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("null:false, no prefix param: %w", err)
+		}
+		return nil
+	})
+}
+
+// AccessControl_bucket_policy_condition_not_ip_address_allow and
+// ..._deny cover NotIpAddress, the negated counterpart of the IpAddress
+// coverage above (AccessControl_bucket_policy_condition_ip_allow/
+// ..._ip_deny_no_match): it grants access when the caller's address falls
+// OUTSIDE the given range.
+func AccessControl_bucket_policy_condition_not_ip_address_allow(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_not_ip_address_allow"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		// TEST-NET-3 (RFC 5737) can never match a real caller, so
+		// NotIpAddress against it is always true.
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+			Condition: json.RawMessage(`{"NotIpAddress":{"aws:SourceIp":"203.0.113.0/24"}}`),
+		}); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		_, err := putObjects(userClient, []string{"my-obj"}, bucket)
+		return err
+	})
+}
+
+func AccessControl_bucket_policy_condition_not_ip_address_deny(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_not_ip_address_deny"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		// 0.0.0.0/0 matches any IPv4 address, so NotIpAddress against it is
+		// always false.
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+			Condition: json.RawMessage(`{"NotIpAddress":{"aws:SourceIp":"0.0.0.0/0"}}`),
+		}); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		_, err := putObjects(userClient, []string{"my-obj"}, bucket)
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
 }

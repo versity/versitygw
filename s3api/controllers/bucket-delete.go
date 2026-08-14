@@ -29,9 +29,8 @@ func (c S3ApiController) DeleteBucketTagging(ctx fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
 			IsRoot:          isRoot,
@@ -39,7 +38,6 @@ func (c S3ApiController) DeleteBucketTagging(ctx fiber.Ctx) (*Response, error) {
 			Bucket:          bucket,
 			Actions:         []auth.Action{auth.PutBucketTaggingAction},
 			IsPublicRequest: IsBucketPublic,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -64,16 +62,14 @@ func (c S3ApiController) DeleteBucketOwnershipControls(ctx fiber.Ctx) (*Response
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: auth.PermissionWrite,
 			IsRoot:        isRoot,
 			Acc:           acct,
 			Bucket:        bucket,
 			Actions:       []auth.Action{auth.PutBucketOwnershipControlsAction},
-			DisableACL:    c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -98,16 +94,14 @@ func (c S3ApiController) DeleteBucketPolicy(ctx fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: auth.PermissionWrite,
 			IsRoot:        isRoot,
 			Acc:           acct,
 			Bucket:        bucket,
 			Actions:       []auth.Action{auth.DeleteBucketPolicyAction},
-			DisableACL:    c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -133,9 +127,8 @@ func (c S3ApiController) DeleteBucketCors(ctx fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
 			IsRoot:          isRoot,
@@ -143,7 +136,6 @@ func (c S3ApiController) DeleteBucketCors(ctx fiber.Ctx) (*Response, error) {
 			Bucket:          bucket,
 			Actions:         []auth.Action{auth.PutBucketCorsAction},
 			IsPublicRequest: IsBucketPublic,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -169,9 +161,8 @@ func (c S3ApiController) DeleteBucketWebsite(ctx fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
 			IsRoot:          isRoot,
@@ -179,7 +170,6 @@ func (c S3ApiController) DeleteBucketWebsite(ctx fiber.Ctx) (*Response, error) {
 			Bucket:          bucket,
 			Actions:         []auth.Action{auth.DeleteBucketWebsiteAction},
 			IsPublicRequest: IsBucketPublic,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -205,9 +195,8 @@ func (c S3ApiController) DeleteBucket(ctx fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
 			IsRoot:          isRoot,
@@ -215,7 +204,6 @@ func (c S3ApiController) DeleteBucket(ctx fiber.Ctx) (*Response, error) {
 			Bucket:          bucket,
 			Actions:         []auth.Action{auth.DeleteBucketAction},
 			IsPublicRequest: IsBucketPublic,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{

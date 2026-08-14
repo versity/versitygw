@@ -117,6 +117,11 @@ func (s *IAMServiceInternal) GetUserAccount(access string) (Account, error) {
 	return acct, nil
 }
 
+// ResolveAccounts returns the subset of accessKeyIDs that do not exist.
+func (s *IAMServiceInternal) ResolveAccounts(accessKeyIDs []string) ([]string, error) {
+	return resolveAccountsByLookup(accessKeyIDs, s.GetUserAccount)
+}
+
 // UpdateUserAccount updates the specified user account fields. Returns
 // ErrNoSuchUser if the account does not exist.
 func (s *IAMServiceInternal) UpdateUserAccount(access string, props MutableProps) error {

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/condition"
 )
 
 // AssumeRoleWithWebIdentityAction is the sts action name role trust
@@ -182,7 +183,7 @@ func EvaluateWebIdentityTrust(document string, lookup ProviderLookup, wctx WebId
 			}
 			anyIssuerMatch = true
 
-			matched, condOk := evaluateCondition(stmt.Condition, ctxVars, doc.Version)
+			matched, condOk := condition.Evaluate(stmt.Condition, ctxVars, doc.Version)
 			if !condOk {
 				debuglogger.Logf("web identity trust evaluation: statement condition could not be evaluated, denying")
 				denied = true
@@ -260,7 +261,7 @@ func matchAny(patterns []string, action string) bool {
 // IAM-style glob ('*' any run of characters, '?' any single character) —
 // e.g. "sts:*" or "sts:AssumeRole*" both match "sts:AssumeRoleWithWebIdentity".
 func matchActionPattern(pattern, action string) bool {
-	return globMatch(toLowerASCII(pattern), toLowerASCII(action))
+	return condition.GlobMatch(toLowerASCII(pattern), toLowerASCII(action))
 }
 
 func toLowerASCII(s string) string {
@@ -271,33 +272,4 @@ func toLowerASCII(s string) string {
 		}
 	}
 	return string(b)
-}
-
-// globMatch implements the small wildcard grammar IAM Action/Resource
-// patterns use: '*' matches any run of characters (including none), '?'
-// matches exactly one character, everything else matches literally.
-func globMatch(pattern, s string) bool {
-	var pi, si, star, match int
-	star = -1
-	for si < len(s) {
-		switch {
-		case pi < len(pattern) && (pattern[pi] == '?' || pattern[pi] == s[si]):
-			pi++
-			si++
-		case pi < len(pattern) && pattern[pi] == '*':
-			star = pi
-			match = si
-			pi++
-		case star != -1:
-			pi = star + 1
-			match++
-			si = match
-		default:
-			return false
-		}
-	}
-	for pi < len(pattern) && pattern[pi] == '*' {
-		pi++
-	}
-	return pi == len(pattern)
 }

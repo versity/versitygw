@@ -170,6 +170,13 @@ func (c *IAMCache) GetUserAccount(access string) (Account, error) {
 	return a, nil
 }
 
+// ResolveAccounts returns the subset of accessKeyIDs that do not exist. It
+// loops over the cache's own GetUserAccount so lookups benefit from caching
+// the same way a single-account check would.
+func (c *IAMCache) ResolveAccounts(accessKeyIDs []string) ([]string, error) {
+	return resolveAccountsByLookup(accessKeyIDs, c.GetUserAccount)
+}
+
 // DeleteUserAccount deletes account from IAM service and cache
 func (c *IAMCache) DeleteUserAccount(access string) error {
 	err := c.service.DeleteUserAccount(access)

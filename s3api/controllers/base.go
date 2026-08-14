@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
@@ -74,6 +75,34 @@ func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs 
 		virtualDomain: virtualDomain,
 		mpMaxParts:    mpMaxParts,
 	}
+}
+
+// verifyAccess wraps auth.VerifyAccess, always injecting the controller's
+// own configured IAM backend, readonly mode, and disableACL setting into opts
+func (c S3ApiController) verifyAccess(ctx fiber.Ctx, opts auth.AccessOptions) error {
+	opts.Iam = c.iam
+	opts.Readonly = c.readonly
+	opts.DisableACL = c.disableACL
+	return auth.VerifyAccess(ctx, c.be, opts)
+}
+
+// verifyObjectsAccess wraps auth.VerifyObjectsAccess, for the one request
+// shape (DeleteObjects) that names several objects at once. The returned
+// slice has one entry per object (nil where it may proceed); the error
+// return is a whole-request failure, not about any one object.
+func (c S3ApiController) verifyObjectsAccess(ctx fiber.Ctx, opts auth.AccessOptions, objects []types.ObjectIdentifier, bypass auth.BypassMode) ([]error, error) {
+	opts.Iam = c.iam
+	opts.Readonly = c.readonly
+	opts.DisableACL = c.disableACL
+	return auth.VerifyObjectsAccess(ctx, c.be, opts, objects, bypass)
+}
+
+// verifyObjectCopyAccess wraps auth.VerifyObjectCopyAccess
+func (c S3ApiController) verifyObjectCopyAccess(ctx fiber.Ctx, copySource string, opts auth.AccessOptions) error {
+	opts.Iam = c.iam
+	opts.Readonly = c.readonly
+	opts.DisableACL = c.disableACL
+	return auth.VerifyObjectCopyAccess(ctx, c.be, copySource, opts)
 }
 
 func (c S3ApiController) getAclHeaderValue(ctx fiber.Ctx, key string, defaultValues ...string) string {
