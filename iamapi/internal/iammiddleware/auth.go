@@ -14,7 +14,6 @@
 package iammiddleware
 
 import (
-	"context"
 	"errors"
 	"strconv"
 	"time"
@@ -43,10 +42,10 @@ const (
 // canonical request and left unbound to the signature.
 //
 // This only applies to header auth. Query-string (presigned) auth carries
-// the token as a query parameter instead, which createPresignedHTTPRequestFromCtx
-// already includes in the signed canonical query string regardless of
-// SignedHeaders, so requiredSignedHeaders (unconditionally "host") is used
-// for both root/permanent and session query-auth requests.
+// the token as a query parameter instead, which sigv4auth's presign query
+// extraction already includes in the signed canonical query string
+// regardless of SignedHeaders, so requiredSignedHeaders (unconditionally
+// "host") is used for both root/permanent and session query-auth requests.
 var (
 	requiredSignedHeaders     = []string{"host"}
 	requiredTempSignedHeaders = []string{"host", sigv4auth.HeaderSecurityToken}
@@ -67,18 +66,6 @@ type RootCredentials struct {
 	Secret string
 }
 
-// IdentityStore resolves an access key id to the session or long-term user
-// that owns it, and resolves named resources for policy evaluation.
-// storage.Storer satisfies this directly.
-type IdentityStore interface {
-	GetSession(ctx context.Context, accessKeyID string) (*types.Session, error)
-	GetRole(ctx context.Context, roleName string) (*types.Role, error)
-	GetUserByAccessKeyID(ctx context.Context, accessKeyID string) (*types.User, error)
-	GetUser(ctx context.Context, username string) (*types.User, error)
-	GetOIDCProvider(ctx context.Context, arn string) (*types.OIDCProvider, error)
-	RecordAccessKeyUsage(ctx context.Context, accessKeyID, service, region string, when time.Time) error
-}
-
 // VerifyIAMAuth authenticates a request against service (sigv4auth.ServiceIAM
 // or sigv4auth.ServiceSTS).
 //
@@ -88,21 +75,21 @@ type IdentityStore interface {
 // identity (and, for a user/session, its policy documents) is stored via
 // httpctx.ContextKeyCallerIdentity for the policy middleware and controllers
 // to read back. Root bypasses the policy middleware entirely
-func VerifyIAMAuth(service string, root *RootCredentials, store IdentityStore) fiber.Handler {
+func VerifyIAMAuth(service string, root *RootCredentials, store iamutil.IdentityStore) fiber.Handler {
 	return func(ctx fiber.Ctx) error {
 		authData, tdate, queryAuth, err := parseIAMAuth(ctx, service)
 		if err != nil {
 			return err
 		}
 
-		// A security token in the query string is only ever legitimate
-		// alongside a temporary (ASIA…) access key — reject it outright for
-		// root or any long-term (AKIA…) credential before any signature
-		// work, the same way for both, rather than letting it fall through
-		// to a signature-mismatch error once a tampered/unsigned token
-		// param invalidates the canonical query string.
-		if queryAuth && !iamutil.IsTempAccessKeyID(authData.Access) &&
-			ctx.Request().URI().QueryArgs().Has(sigv4auth.QuerySecurityToken) {
+		// A security token paired with root or any long-term (AKIA…)
+		// credential is rejected inside sigv4auth.ParseQueryAuthorization
+		// for query auth, and just below for header auth — before any
+		// signature work either way, rather than letting it fall through to
+		// a signature-mismatch error once a tampered/unsigned token
+		// invalidates the canonical request.
+		if !queryAuth && !sigv4auth.IsTempAccessKeyID(authData.Access) &&
+			ctx.Get(sigv4auth.HeaderSecurityToken) != "" {
 			return iamerr.GetAPIError(iamerr.ErrInvalidClientTokenID)
 		}
 
@@ -124,24 +111,42 @@ func VerifyIAMAuth(service string, root *RootCredentials, store IdentityStore) f
 		}
 		httpctx.ContextKeyCallerIdentity.Set(ctx, *identity)
 
+		// Best-effort update of a permanent access key's GetAccessKeyLastUsed
+		// metadata, matching real IAM's behavior. A failure is only logged,
+		// never returned: this is purely informational, and a lost update
+		// under concurrent use is immaterial. Called synchronously: a Storer
+		// implementation for which this is network-bound (e.g. Vault) is
+		// expected to make it non-blocking itself.
 		if identity.User != nil {
-			recordAccessKeyUsage(ctx.Context(), store, authData.Access, service)
+			if err := store.RecordAccessKeyUsage(ctx.Context(), authData.Access, service, SigningRegion, time.Now().UTC()); err != nil {
+				debuglogger.Logf("failed to record access key last-used metadata for %q: %v", authData.Access, err)
+			}
 		}
 		return nil
 	}
 }
 
-// recordAccessKeyUsage best-effort-updates a permanent access key's
-// GetAccessKeyLastUsed metadata (service, region, and timestamp) after it
-// successfully authenticates a request, matching real IAM's behavior. A
-// failure is only logged, never returned, since this is purely
-// informational metadata and a lost update under concurrent use is
-// immaterial. Called synchronously: a Storer implementation for which this
-// update is network-bound (e.g. Vault) is expected to make it non-blocking
-// itself rather than adding that latency to every authenticated request
-func recordAccessKeyUsage(reqCtx context.Context, store IdentityStore, accessKeyID, service string) {
-	if err := store.RecordAccessKeyUsage(reqCtx, accessKeyID, service, SigningRegion, time.Now().UTC()); err != nil {
-		debuglogger.Logf("failed to record access key last-used metadata for %q: %v", accessKeyID, err)
+// VerifyRootOnlySigV4 authenticates a request as strictly the configured
+// root credential — used by the standalone IAM service's private
+// endpoints, which only the S3 gateway itself ever calls, signing as its
+// own configured IAM-client identity (root, or a dedicated IAM-access
+// credential that defaults to root). Unlike VerifyIAMAuth, any
+// other access key — valid IAM user, session, or unknown — is rejected
+// outright before any signature work: there is no identity to resolve on
+// behalf of here, and these two endpoints exist specifically so no identity
+// other than the gateway's own ever needs to reach them.
+func VerifyRootOnlySigV4(service string, root *RootCredentials) fiber.Handler {
+	return func(ctx fiber.Ctx) error {
+		authData, tdate, queryAuth, err := parseIAMAuth(ctx, service)
+		if err != nil {
+			return err
+		}
+
+		if authData.Access != root.Access {
+			return iamerr.GetAPIError(iamerr.ErrInvalidClientTokenID)
+		}
+
+		return checkSignature(ctx, authData, root.Secret, tdate, queryAuth, service)
 	}
 }
 
@@ -154,12 +159,10 @@ func recordAccessKeyUsage(reqCtx context.Context, store IdentityStore, accessKey
 //
 // A temporary session can be used via query-string (presigned URL)
 // authentication — real AWS accepts X-Amz-Security-Token as a query
-// parameter for exactly this (confirmed live: a genuine presigned
-// sts:GetCallerIdentity request signed with temporary/session credentials,
-// carrying X-Amz-Security-Token in the query string, succeeds against real
-// AWS). VerifyIAMAuth already rejects a security token paired with any
-// non-temporary credential (root included) before this is ever reached.
-func resolveIdentity(ctx fiber.Ctx, store IdentityStore, authData sigv4auth.AuthData, queryAuth bool) (*types.Identity, string, error) {
+// parameter for exactly this. VerifyIAMAuth already rejects a security
+// token paired with any non-temporary credential (root included) before
+// this is ever reached.
+func resolveIdentity(ctx fiber.Ctx, store iamutil.IdentityStore, authData sigv4auth.AuthData, queryAuth bool) (*types.Identity, string, error) {
 	if store == nil {
 		return nil, "", iamerr.GetAPIError(iamerr.ErrInvalidClientTokenID)
 	}
@@ -167,73 +170,30 @@ func resolveIdentity(ctx fiber.Ctx, store IdentityStore, authData sigv4auth.Auth
 	if iamutil.IsTempAccessKeyID(authData.Access) {
 		return resolveSessionIdentity(ctx, store, authData, queryAuth)
 	}
-	return resolveUserIdentity(ctx, store, authData)
-}
 
-func resolveSessionIdentity(ctx fiber.Ctx, store IdentityStore, authData sigv4auth.AuthData, queryAuth bool) (*types.Identity, string, error) {
-	session, err := store.GetSession(ctx.Context(), authData.Access)
+	identity, secret, err := iamutil.ResolveUserIdentity(ctx, store, authData.Access)
 	if err != nil {
 		return nil, "", iamerr.GetAPIError(iamerr.ErrInvalidClientTokenID)
 	}
+	return identity, secret, nil
+}
 
+// resolveSessionIdentity extracts the security token from wherever this
+// request carries it and delegates to iamutil.ResolveSessionByToken, mapping
+// its sentinel errors onto the control plane's single public-facing error —
+// which deliberately does not distinguish "no such session" from "wrong
+// token" for an unauthenticated caller.
+func resolveSessionIdentity(ctx fiber.Ctx, store iamutil.IdentityStore, authData sigv4auth.AuthData, queryAuth bool) (*types.Identity, string, error) {
 	token := ctx.Get(sigv4auth.HeaderSecurityToken)
 	if queryAuth {
 		token = ctx.Query(sigv4auth.QuerySecurityToken)
 	}
-	if token == "" || !sigv4auth.SecureCompare(token, session.SessionToken) {
-		return nil, "", iamerr.GetAPIError(iamerr.ErrInvalidClientTokenID)
-	}
 
-	// A signature-valid, unexpired session still authenticates even if its
-	// role has since been deleted — real STS credentials are self-contained
-	// and don't re-check role existence on every call. What such a session
-	// can no longer do is get any IAM action past the policy middleware:
-	// with Role/IdentityPolicies left unset, EvaluateIdentityPolicies denies
-	// by default, same effective outcome as an explicit rejection here would
-	// have had for every pipeline except GetCallerIdentity, which needs
-	// none of this and must keep working regardless.
-	//
-	// The reloaded role must also still be the *same* role the session was
-	// originally minted against — RoleID and Arn, both captured in the
-	// session at AssumeRoleWithWebIdentity time, must match the freshly
-	// loaded role's own values. Without this check, deleting a role and
-	// recreating one of the same name (necessarily getting a new RoleID)
-	// would let every pre-existing session for the old role silently
-	// inherit whatever policies the new role happens to carry.
-	identity := &types.Identity{
-		Session:       session,
-		SessionPolicy: session.Policy,
-	}
-	if role, err := store.GetRole(ctx.Context(), session.RoleName); err == nil &&
-		role.RoleID == session.RoleID && role.Arn == session.RoleArn {
-		identity.Role = role
-		identity.IdentityPolicies = role.Policies.Inline
-	}
-	return identity, session.SecretAccessKey, nil
-}
-
-func resolveUserIdentity(ctx fiber.Ctx, store IdentityStore, authData sigv4auth.AuthData) (*types.Identity, string, error) {
-	user, err := store.GetUserByAccessKeyID(ctx.Context(), authData.Access)
+	identity, secret, err := iamutil.ResolveSessionByToken(ctx.Context(), store, authData.Access, token)
 	if err != nil {
 		return nil, "", iamerr.GetAPIError(iamerr.ErrInvalidClientTokenID)
 	}
-
-	var keyEntry *types.AccessKeyEntry
-	for i := range user.AccessKeys {
-		if user.AccessKeys[i].AccessKeyId == authData.Access {
-			keyEntry = &user.AccessKeys[i]
-			break
-		}
-	}
-	if keyEntry == nil || keyEntry.Status != iamutil.AccessKeyStatusActive {
-		return nil, "", iamerr.GetAPIError(iamerr.ErrInvalidClientTokenID)
-	}
-
-	identity := &types.Identity{
-		User:             user,
-		IdentityPolicies: user.Policies.Inline,
-	}
-	return identity, keyEntry.SecretAccessKey, nil
+	return identity, secret, nil
 }
 
 func checkSignature(ctx fiber.Ctx, authData sigv4auth.AuthData, secret string, tdate time.Time, queryAuth bool, service string) error {
@@ -242,14 +202,16 @@ func checkSignature(ctx fiber.Ctx, authData sigv4auth.AuthData, secret string, t
 		return err
 	}
 
+	derivedKey := sigv4auth.DeriveKey(secret, tdate.Format(sigv4auth.YYYYMMDD), authData.Region, service)
+
 	payloadHash := sigv4auth.PayloadSHA256Hex(ctx.BodyRaw())
 	if queryAuth {
-		_, err = sigv4auth.CheckQuerySignature(ctx, authData, secret, payloadHash, tdate, contentLength, sigv4auth.CheckOptions{
+		_, err = sigv4auth.CheckQuerySignature(ctx, authData, derivedKey, payloadHash, tdate, contentLength, sigv4auth.CheckOptions{
 			Service:               service,
 			RequiredSignedHeaders: requiredSignedHeaders,
 		})
 	} else {
-		_, err = sigv4auth.CheckSignature(ctx, authData, secret, payloadHash, tdate, contentLength, sigv4auth.CheckOptions{
+		_, err = sigv4auth.CheckSignature(ctx, authData, derivedKey, payloadHash, tdate, contentLength, sigv4auth.CheckOptions{
 			Service:               service,
 			RequiredSignedHeaders: requiredHeaderAuthSignedHeaders(authData.Access),
 		})
@@ -311,12 +273,10 @@ func parseIAMHeaderAuth(ctx fiber.Ctx, expectedService string) (sigv4auth.AuthDa
 }
 
 // parseIAMQueryAuth parses SigV4 query-string (presigned URL) authentication
-// parameters. Unlike S3 (see s3api/utils/presign-auth-reader.go), IAM/STS
-// query-auth does not use X-Amz-Expires at all: confirmed live (niksis02
-// profile) against real IAM's ListUsers — a presigned request with
-// X-Amz-Expires omitted, non-numeric ("abc"), negative ("-5"), or far
-// beyond the 604800-second S3 maximum ("9999999") is accepted every time,
-// while a request merely signed too long ago is rejected with
+// parameters. Unlike S3, IAM/STS query-auth does not use X-Amz-Expires at
+// all: a presigned request with X-Amz-Expires omitted, non-numeric,
+// negative, or far beyond S3's 604800-second maximum is accepted every
+// time, while a request merely signed too long ago is rejected with
 // SignatureDoesNotMatch ("Signature expired: ... is now earlier than ...
 // (... - 15 min.)") — byte-for-byte the same message this codebase's own
 // SignatureDoesNotMatchExpired already produces. So X-Amz-Expires is

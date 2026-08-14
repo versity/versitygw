@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go"
 )
 
 const (
@@ -142,14 +144,29 @@ func IAMAssumeRoleWithWebIdentity_github_oidc_live(s *S3Conf) error {
 // trust policy would grant every workflow run in the repo, on any branch,
 // the same trust, which is far too broad outside this throwaway context.
 func createGitHubOIDCTrust(client *iam.Client, repo string) (roleName, roleArn string, cleanup func(), err error) {
+	// The provider is keyed by URL alone — a second CreateOpenIDConnectProvider
+	// for the same githubOIDCIssuerURL fails with EntityAlreadyExists, same as
+	// real AWS. Some tests mint more than one session (and so call this more
+	// than once) within a single run, so a provider left by an earlier call
+	// that hasn't been cleaned up yet is expected, not a leak: reuse it rather
+	// than failing, and only this call's cleanup deletes it if this call is
+	// the one that actually created it.
+	ownsProvider := true
 	out, err := createOIDCProvider(client, &iam.CreateOpenIDConnectProviderInput{
 		Url:          aws.String(githubOIDCIssuerURL),
 		ClientIDList: []string{githubOIDCTestAudience},
 	})
+	var providerArn string
 	if err != nil {
-		return "", "", nil, fmt.Errorf("create GitHub OIDC provider: %w", err)
+		var ae smithy.APIError
+		if !errors.As(err, &ae) || ae.ErrorCode() != "EntityAlreadyExists" {
+			return "", "", nil, fmt.Errorf("create GitHub OIDC provider: %w", err)
+		}
+		ownsProvider = false
+		providerArn = oidcProviderArn(githubOIDCIssuerURL)
+	} else {
+		providerArn = aws.ToString(out.OpenIDConnectProviderArn)
 	}
-	providerArn := aws.ToString(out.OpenIDConnectProviderArn)
 
 	host := trimProviderScheme(githubOIDCIssuerURL)
 	roleName = "github-oidc-" + genRandString(12)
@@ -157,14 +174,18 @@ func createGitHubOIDCTrust(client *iam.Client, repo string) (roleName, roleArn s
 		`"Condition":{"StringEquals":{"%s:aud":%q},"StringLike":{"%s:sub":%q}}}]}`,
 		providerArn, host, githubOIDCTestAudience, host, "repo:"+repo+":*")
 	if _, err := createIAMRole(client, &iam.CreateRoleInput{RoleName: &roleName, AssumeRolePolicyDocument: &trust}); err != nil {
-		deleteOIDCProvider(client, providerArn)
+		if ownsProvider {
+			deleteOIDCProvider(client, providerArn)
+		}
 		return "", "", nil, fmt.Errorf("create GitHub OIDC trust role: %w", err)
 	}
 
 	roleArn = "arn:aws:iam::000000000000:role/" + roleName
 	cleanup = func() {
 		deleteIAMRole(client, roleName)
-		deleteOIDCProvider(client, providerArn)
+		if ownsProvider {
+			deleteOIDCProvider(client, providerArn)
+		}
 	}
 	return roleName, roleArn, cleanup, nil
 }
@@ -233,7 +254,7 @@ func fetchGitHubIDToken(requestURL, requestToken, audience string) (string, erro
 func getCallerIdentityWithSessionCreds(cfg S3Conf, access, secret, token string) (*sts.GetCallerIdentityOutput, error) {
 	cfg.awsID = access
 	cfg.awsSecret = secret
-	stsCfg := cfg.Config()
+	stsCfg := cfg.iamConfig()
 	stsCfg.Credentials = credentials.NewStaticCredentialsProvider(access, secret, token)
 
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)

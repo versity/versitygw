@@ -18,8 +18,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/s3err"
 )
 
 func DeleteObjects_empty_input(s *S3Conf) error {
@@ -155,4 +157,195 @@ func DeleteObjects_success(s *S3Conf) error {
 
 		return nil
 	})
+}
+
+// DeleteObjects_iam_mixed_denials_and_success covers a single batch mixing
+// every DeleteObjects outcome at once: a key the identity policy denies, a
+// governance-locked key with no bypass, and keys the caller may freely
+// delete. All three outcomes land in one response — no top-level error —
+// with Deleted and Errors each preserving the order the keys were
+// requested in.
+func DeleteObjects_iam_mixed_denials_and_success(s *S3Conf) error {
+	testName := "DeleteObjects_iam_mixed_denials_and_success"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		for _, key := range []string{"allowed/one", "allowed/two", "denied/one"} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: &key})
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+		if err := putGovernanceLockedObject(s, bucket, "locked/one"); err != nil {
+			return err
+		}
+
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3DeleteObject,
+				Resource: []string{objectArn(bucket, "allowed/*"), objectArn(bucket, "locked/*")},
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		delObjects := []types.ObjectIdentifier{
+			{Key: getPtr("allowed/one")},
+			{Key: getPtr("denied/one")},
+			{Key: getPtr("locked/one")},
+			{Key: getPtr("allowed/two")},
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := user.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{Objects: delObjects},
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected DeleteObjects to succeed with per-object denials, not fail outright: %w", err)
+		}
+
+		if err := checkDeletedKeysInOrder(out.Deleted, []string{"allowed/one", "allowed/two"}); err != nil {
+			return err
+		}
+		return checkDeleteObjectsErrsInOrder(out.Errors, []struct {
+			key string
+			err s3err.S3Error
+		}{
+			{"denied/one", wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, "denied/one"))},
+			{"locked/one", s3err.GetAPIError(s3err.ErrObjectLocked)},
+		})
+	}, withLock())
+}
+
+// DeleteObjects_iam_all_access_denied covers a batch where the identity
+// policy grants nothing at all: the call itself still succeeds — no
+// top-level error — with every object reported denied in Errors, in
+// request order, and nothing in Deleted.
+func DeleteObjects_iam_all_access_denied(s *S3Conf) error {
+	testName := "DeleteObjects_iam_all_access_denied"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		for _, key := range []string{"one", "two", "three"} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: &key})
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+
+		user, cleanup, err := newS3IAMUser(root, s, nil)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		delObjects := []types.ObjectIdentifier{
+			{Key: getPtr("one")}, {Key: getPtr("two")}, {Key: getPtr("three")},
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := user.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{Objects: delObjects},
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected DeleteObjects to succeed with per-object denials, not fail outright: %w", err)
+		}
+
+		if len(out.Deleted) != 0 {
+			return fmt.Errorf("expected nothing deleted, got %+v", out.Deleted)
+		}
+		return checkDeleteObjectsErrsInOrder(out.Errors, []struct {
+			key string
+			err s3err.S3Error
+		}{
+			{"one", wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, "one"))},
+			{"two", wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, "two"))},
+			{"three", wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, "three"))},
+		})
+	})
+}
+
+// DeleteObjects_iam_all_locked covers a batch where every object is
+// governance-locked and none is deleted: the call still succeeds — no
+// top-level error — with every object reported denied in Errors, in
+// request order, and nothing in Deleted. Omitting the bypass header
+// entirely reports the generic object-lock message; sending the header
+// without s3:BypassGovernanceRetention reports the specific AccessDenied
+// naming that action instead — the same distinction the single-object
+// DELETE path makes, now confirmed for the batch path too.
+func DeleteObjects_iam_all_locked(s *S3Conf) error {
+	testName := "DeleteObjects_iam_all_locked"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		for _, key := range []string{"locked/one", "locked/two"} {
+			if err := putGovernanceLockedObject(s, bucket, key); err != nil {
+				return err
+			}
+		}
+
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3DeleteObject, Resource: objectsArn(bucket),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		delObjects := []types.ObjectIdentifier{{Key: getPtr("locked/one")}, {Key: getPtr("locked/two")}}
+
+		// No bypass header at all: the generic object-lock message.
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := user.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{Objects: delObjects},
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected DeleteObjects to succeed with per-object denials, not fail outright: %w", err)
+		}
+		if len(out.Deleted) != 0 {
+			return fmt.Errorf("expected nothing deleted, got %+v", out.Deleted)
+		}
+		if err := checkDeleteObjectsErrsInOrder(out.Errors, []struct {
+			key string
+			err s3err.S3Error
+		}{
+			{"locked/one", s3err.GetAPIError(s3err.ErrObjectLocked)},
+			{"locked/two", s3err.GetAPIError(s3err.ErrObjectLocked)},
+		}); err != nil {
+			return fmt.Errorf("without bypass header: %w", err)
+		}
+
+		// Bypass header sent, but the identity policy doesn't grant
+		// s3:BypassGovernanceRetention: a specific AccessDenied naming that
+		// action, not the generic object-lock message.
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = user.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket:                    &bucket,
+			Delete:                    &types.Delete{Objects: delObjects},
+			BypassGovernanceRetention: getPtr(true),
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected DeleteObjects to succeed with per-object denials, not fail outright: %w", err)
+		}
+		if len(out.Deleted) != 0 {
+			return fmt.Errorf("expected nothing deleted, got %+v", out.Deleted)
+		}
+		if err := checkDeleteObjectsErrsInOrder(out.Errors, []struct {
+			key string
+			err s3err.S3Error
+		}{
+			{"locked/one", wantImplicitDeny(user.arn, actS3BypassGovernance, objectArn(bucket, "locked/one"))},
+			{"locked/two", wantImplicitDeny(user.arn, actS3BypassGovernance, objectArn(bucket, "locked/two"))},
+		}); err != nil {
+			return fmt.Errorf("with bypass header, no permission: %w", err)
+		}
+		return nil
+	}, withLock())
 }

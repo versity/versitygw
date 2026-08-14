@@ -15,6 +15,7 @@ package iammiddleware
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/debuglogger"
@@ -31,6 +32,13 @@ func GlobalErrorHandler(ctx fiber.Ctx, er error) error {
 	var apiErr iamerr.APIError
 	if errors.As(er, &apiErr) {
 		return ctx.Status(apiErr.StatusCode()).Send(apiErr.XMLBody(requestID))
+	}
+
+	var fiberErr *fiber.Error
+	if errors.As(er, &fiberErr) && strings.Contains(strings.ToLower(fiberErr.Message), "cannot parse content-length") {
+		debuglogger.Logf("failed to parse Content-Length")
+		ctx.Status(fiber.StatusBadRequest)
+		return nil
 	}
 
 	if httpctx.ContextKeyStack.IsSet(ctx) {

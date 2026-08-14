@@ -63,13 +63,14 @@ type IAMApiServer struct {
 	oidcThumbprintAutoFetchDisabled bool
 }
 
-func New(store storage.Storer, opts ...Option) (*IAMApiServer, error) {
+func New(store storage.Storer, root RootCredentials, opts ...Option) (*IAMApiServer, error) {
 	if store == nil {
 		return nil, fmt.Errorf("iamapi: storer is required")
 	}
 
 	server := &IAMApiServer{
-		store: store,
+		store:     store,
+		rootCreds: &root,
 		Router: &IAMApiRouter{
 			store: store,
 		},
@@ -160,12 +161,6 @@ func WithSocketPerm(perm os.FileMode) Option {
 
 func WithOnListen(fn func()) Option {
 	return func(s *IAMApiServer) { s.onListen = fn }
-}
-
-func WithRootUserCreds(root RootCredentials) Option {
-	return func(s *IAMApiServer) {
-		s.rootCreds = &root
-	}
 }
 
 // WithOIDCThumbprintAutoFetchDisabled disables CreateOpenIDConnectProvider's

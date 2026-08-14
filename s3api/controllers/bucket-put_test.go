@@ -716,6 +716,10 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 		Access: "user",
 		Role:   auth.RoleUser,
 	}
+	userPlusAcc := auth.Account{
+		Access: "userplus",
+		Role:   auth.RoleUserPlus,
+	}
 
 	invLocConstBody, err := xml.Marshal(s3response.CreateBucketConfiguration{
 		LocationConstraint: utils.GetStringPtr("us-west-1"),
@@ -732,6 +736,7 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 			input: testInput{
 				locals: map[utils.ContextKey]any{
 					utils.ContextKeyAccount: userAcc,
+					utils.ContextKeyIsRoot:  false,
 				},
 			},
 			output: testOutput{
@@ -908,6 +913,47 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 				response: &Response{
 					MetaOpts: &MetaOptions{
 						BucketOwner: adminAcc.Access,
+					},
+					Headers: map[string]*string{
+						"Location":         utils.GetStringPtr("/my-bucket"),
+						"x-amz-bucket-arn": utils.GetStringPtr("arn:aws:s3:::my-bucket"),
+					},
+				},
+			},
+		},
+		{
+			name: "userplus role can create bucket",
+			input: testInput{
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyAccount: userPlusAcc,
+				},
+				bucket: "my-bucket",
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: userPlusAcc.Access,
+					},
+					Headers: map[string]*string{
+						"Location":         utils.GetStringPtr("/my-bucket"),
+						"x-amz-bucket-arn": utils.GetStringPtr("arn:aws:s3:::my-bucket"),
+					},
+				},
+			},
+		},
+		{
+			name: "root bypasses role check",
+			input: testInput{
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyAccount: userAcc,
+					utils.ContextKeyIsRoot:  true,
+				},
+				bucket: "my-bucket",
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: userAcc.Access,
 					},
 					Headers: map[string]*string{
 						"Location":         utils.GetStringPtr("/my-bucket"),

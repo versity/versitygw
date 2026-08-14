@@ -2120,7 +2120,7 @@ func checkWORMProtection(client *s3.Client, bucket, object string) error {
 	}
 
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-	_, err = client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+	out, err := client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 		Bucket: &bucket,
 		Delete: &types.Delete{
 			Objects: []types.ObjectIdentifier{
@@ -2131,7 +2131,13 @@ func checkWORMProtection(client *s3.Client, bucket, object string) error {
 		},
 	})
 	cancel()
-	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+	if err != nil {
+		return fmt.Errorf("expected DeleteObjects to succeed with a per-object denial, not fail outright: %w", err)
+	}
+	if len(out.Errors) != 1 {
+		return fmt.Errorf("expected exactly 1 per-object error, got %+v", out.Errors)
+	}
+	if err := checkDeleteObjectsErr(out.Errors[0], object, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 		return err
 	}
 
@@ -2841,6 +2847,18 @@ const (
 	maxDelObjWorkers int64         = 20              // Maximum number of concurrent delete workers
 	maxRetryAttempts int           = 3               // Maximum retries for object deletion
 	lockWaitTime     time.Duration = time.Second * 3 // Wait time for lock expiration before retrying delete
+
+	// complianceTestRetention is how far out a test should set a COMPLIANCE
+	// retention it means to clean up afterwards. A COMPLIANCE retention can
+	// never be shortened or removed — by anyone, with any permission, which
+	// is the whole point of the mode — so the only way to release the object
+	// is to outlast it, which cleanupLockedObjects does. Long enough for the
+	// test body to run against a genuinely locked object, short enough to
+	// wait out.
+	complianceTestRetention time.Duration = time.Second * 10
+	// maxComplianceCleanupWait bounds that wait, so a test that locks an
+	// object for hours fails quickly and clearly instead of hanging.
+	maxComplianceCleanupWait time.Duration = time.Second * 30
 )
 
 // cleanupLockedObjects removes objects from a bucket that may be protected by
@@ -2889,21 +2907,28 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 				}
 			}
 
-			// Apply temporary retention policy to allow deletion
-			// RetainUntilDate is set a few seconds in the future to handle network delays
-			retDate := time.Now().Add(lockWaitTime)
-			mode := types.ObjectLockRetentionModeGovernance
+			// A COMPLIANCE retention can only be waited out — it cannot be
+			// shortened or removed by anyone. Tests that mean to clean up
+			// therefore lock for complianceTestRetention, and this sleeps
+			// until that has passed.
 			if obj.isCompliance {
-				mode = types.ObjectLockRetentionModeCompliance
+				return waitOutComplianceRetention(client, bucket, obj)
 			}
+
+			// A GOVERNANCE retention can be weakened with the bypass
+			// permission and header, so shorten it to a few seconds out
+			// rather than waiting for the original date. The margin absorbs
+			// network delay.
+			retDate := time.Now().Add(lockWaitTime)
 
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-				Bucket:    &bucket,
-				Key:       &obj.key,
-				VersionId: getPtr(obj.versionId),
+				Bucket:                    &bucket,
+				Key:                       &obj.key,
+				VersionId:                 getPtr(obj.versionId),
+				BypassGovernanceRetention: getBoolPtr(true),
 				Retention: &types.ObjectLockRetention{
-					Mode:            mode,
+					Mode:            types.ObjectLockRetentionModeGovernance,
 					RetainUntilDate: &retDate,
 				},
 			})
@@ -2928,6 +2953,71 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 
 	// Wait for all goroutines to finish, return any error encountered
 	return eg.Wait()
+}
+
+// waitOutComplianceRetention blocks until obj's retention has passed, the
+// only way to release a COMPLIANCE-locked object. A retention further out
+// than maxComplianceCleanupWait is reported as an error rather than waited
+// on: such an object cannot be cleaned up within a test run at all, and the
+// test that locked it should either use complianceTestRetention or skip
+// teardown.
+func waitOutComplianceRetention(client *s3.Client, bucket string, obj objToDelete) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	out, err := client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+		Bucket:    &bucket,
+		Key:       &obj.key,
+		VersionId: getPtr(obj.versionId),
+	})
+	cancel()
+
+	// Already deleted: nothing to wait for.
+	if err != nil && checkSdkApiErr(err, "NoSuchKey") == nil {
+		return nil
+	}
+
+	// No retention of its own means the object is protected only by the
+	// bucket's default retention. Nothing forbids giving it a short one of
+	// its own — an object-level retention supersedes the bucket default, and
+	// there is no existing retention here to weaken — so that is how such an
+	// object gets released.
+	noRetention := err != nil && checkSdkApiErr(err, "NoSuchObjectLockConfiguration") == nil
+	if err != nil && !noRetention {
+		return err
+	}
+	if !noRetention && (out.Retention == nil || out.Retention.RetainUntilDate == nil) {
+		noRetention = true
+	}
+	if noRetention {
+		retDate := time.Now().Add(lockWaitTime)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket:    &bucket,
+			Key:       &obj.key,
+			VersionId: getPtr(obj.versionId),
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeCompliance,
+				RetainUntilDate: &retDate,
+			},
+		})
+		cancel()
+		if err != nil && checkSdkApiErr(err, "NoSuchKey") != nil {
+			return err
+		}
+		time.Sleep(lockWaitTime)
+		return nil
+	}
+
+	// The extra second absorbs clock skew between this process and the
+	// gateway, which compares the retention against its own clock.
+	wait := time.Until(*out.Retention.RetainUntilDate) + time.Second
+	if wait > maxComplianceCleanupWait {
+		return fmt.Errorf("object %q is under COMPLIANCE retention until %v, too far out to wait for: use complianceTestRetention, or skip teardown",
+			obj.key, out.Retention.RetainUntilDate)
+	}
+	if wait > 0 {
+		time.Sleep(wait)
+	}
+	return nil
 }
 
 type objectLockMode string
@@ -3734,4 +3824,22 @@ func hexBytes(s string) string {
 		parts[i] = fmt.Sprintf("%02x", b)
 	}
 	return strings.Join(parts, " ")
+}
+
+// checkDeleteObjectsErrsInOrder checks that got names exactly the (key,
+// error) pairs in want, in that order — DeleteObjects preserves the order
+// objects were requested in across both the Deleted and Error lists.
+func checkDeleteObjectsErrsInOrder(got []types.Error, want []struct {
+	key string
+	err s3err.S3Error
+}) error {
+	if len(got) != len(want) {
+		return fmt.Errorf("expected %d per-object errors, got %d: %+v", len(want), len(got), got)
+	}
+	for i, w := range want {
+		if err := checkDeleteObjectsErr(got[i], w.key, w.err); err != nil {
+			return fmt.Errorf("error %d: %w", i, err)
+		}
+	}
+	return nil
 }

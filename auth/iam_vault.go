@@ -261,6 +261,11 @@ func (vt *VaultIAMService) GetUserAccount(access string) (Account, error) {
 	return acc, nil
 }
 
+// ResolveAccounts returns the subset of accessKeyIDs that do not exist.
+func (vt *VaultIAMService) ResolveAccounts(accessKeyIDs []string) ([]string, error) {
+	return resolveAccountsByLookup(accessKeyIDs, vt.GetUserAccount)
+}
+
 func (vt *VaultIAMService) UpdateUserAccount(access string, props MutableProps) error {
 	acc, err := vt.GetUserAccount(access)
 	if err != nil {

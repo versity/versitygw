@@ -16,14 +16,14 @@ package utils
 
 import (
 	"net"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/gofiber/fiber/v3"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttputil"
-	v4 "github.com/versity/versitygw/aws/signer/v4"
+	"github.com/versity/versitygw/internal/sigv4auth"
 )
 
 func TestAuthParse(t *testing.T) {
@@ -93,36 +93,19 @@ func Test_Client_UserAgent(t *testing.T) {
 	}
 
 	app.Get("/", func(c fiber.Ctx) error {
-		req, err := createHttpRequestFromCtx(c, signedHdrs, int64(c.Request().Header.ContentLength()))
-		if err != nil {
-			t.Fatal(err)
+		auth := sigv4auth.AuthData{
+			Access:        access,
+			Region:        region,
+			Service:       service,
+			SignedHeaders: strings.Join(signedHdrs, ";"),
+			Signature:     expectedSig,
 		}
+		derivedKey := sigv4auth.DeriveKey(secret, dateStr[:8], region, service)
+		opts := sigv4auth.CheckOptions{DisableURIPathEscaping: true}
+		contentLen := int64(c.Request().Header.ContentLength())
 
-		req.Host = host
-		req.Header.Set("X-Amz-Content-Sha256", zeroLenSig)
-
-		signer := v4.NewSigner()
-
-		_, signErr := signer.SignHTTP(req.Context(),
-			aws.Credentials{
-				AccessKeyID:     access,
-				SecretAccessKey: secret,
-			},
-			req, zeroLenSig, service, region, tdate, signedHdrs,
-			func(options *v4.SignerOptions) {
-				options.DisableURIPathEscaping = true
-			})
-		if signErr != nil {
-			t.Fatalf("sign generated http request: %v", err)
-		}
-
-		genAuth, err := ParseAuthorization(req.Header.Get("Authorization"))
-		if err != nil {
-			return err
-		}
-
-		if genAuth.Signature != expectedSig {
-			t.Errorf("SIG: %v\nexpected: %v\n", genAuth.Signature, expectedSig)
+		if _, err := sigv4auth.CheckSignature(c, auth, derivedKey, zeroLenSig, tdate, contentLen, opts); err != nil {
+			t.Errorf("CheckSignature: %v", err)
 		}
 
 		return c.Send(c.Request().Header.UserAgent())
@@ -145,9 +128,19 @@ func Test_Client_UserAgent(t *testing.T) {
 	defer fasthttp.ReleaseRequest(req)
 	defer fasthttp.ReleaseResponse(resp)
 
-	req.SetRequestURI("http://example.com")
+	// Host/User-Agent/X-Amz-Content-Sha256/X-Amz-Date are sent as real
+	// headers, reproducing the captured request verbatim, so CheckSignature
+	// extracts them straight off the live fiber.Ctx like it does for any
+	// real request.
+	req.SetRequestURI("http://" + host + "/")
 	req.Header.SetUserAgent(agent)
+	req.Header.Set("X-Amz-Content-Sha256", zeroLenSig)
+	req.Header.Set("X-Amz-Date", dateStr)
 	if err := client.Do(req, resp); err != nil {
 		t.Fatal(err)
+	}
+
+	if got := string(resp.Body()); got != agent {
+		t.Errorf("user-agent got %q, expected %q", got, agent)
 	}
 }

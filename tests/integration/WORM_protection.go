@@ -210,6 +210,58 @@ func WORMProtection_bucket_object_lock_governance_bypass_delete_multiple(s *S3Co
 	}, withLock())
 }
 
+func WORMProtection_delete_objects_locked_object_partial_success(s *S3Conf) error {
+	testName := "WORMProtection_delete_objects_locked_object_partial_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		locked, unlocked := "locked-obj", "unlocked-obj"
+		if _, err := putObjects(s3client, []string{locked, unlocked}, bucket); err != nil {
+			return err
+		}
+
+		date := time.Now().Add(time.Hour)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &locked,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: &date,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{
+				Objects: []types.ObjectIdentifier{
+					{Key: &locked},
+					{Key: &unlocked},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected DeleteObjects to succeed with a per-object denial, not fail outright: %w", err)
+		}
+
+		if len(out.Errors) != 1 {
+			return fmt.Errorf("expected exactly 1 per-object error, got %+v", out.Errors)
+		}
+		if err := checkDeleteObjectsErr(out.Errors[0], locked, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+			return err
+		}
+		if err := checkDeletedKeysInOrder(out.Deleted, []string{unlocked}); err != nil {
+			return err
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: locked, isCompliance: false}})
+	}, withLock())
+}
+
 func WORMProtection_object_lock_retention_compliance_locked(s *S3Conf) error {
 	testName := "WORMProtection_object_lock_retention_compliance_locked"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -220,7 +272,7 @@ func WORMProtection_object_lock_retention_compliance_locked(s *S3Conf) error {
 			return err
 		}
 
-		date := time.Now().Add(time.Hour * 3)
+		date := time.Now().Add(2 * complianceTestRetention)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,

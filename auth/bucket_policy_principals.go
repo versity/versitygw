@@ -100,7 +100,7 @@ func (p Principals) Validate(iam IAMService) error {
 		return policyErrInvalidPrincipal
 	}
 
-	accs, err := CheckIfAccountsExist(p.ToSlice(), iam)
+	accs, err := iam.ResolveAccounts(p.ToSlice())
 	if err != nil {
 		return err
 	}

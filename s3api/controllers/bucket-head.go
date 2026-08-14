@@ -32,9 +32,8 @@ func (c S3ApiController) HeadBucket(ctx fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionRead,
 			IsRoot:          isRoot,
@@ -42,7 +41,6 @@ func (c S3ApiController) HeadBucket(ctx fiber.Ctx) (*Response, error) {
 			Bucket:          bucket,
 			Actions:         []auth.Action{auth.ListBucketAction},
 			IsPublicRequest: isPublicBucket,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{

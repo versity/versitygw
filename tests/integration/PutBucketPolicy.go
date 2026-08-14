@@ -523,7 +523,9 @@ func PutBucketPolicy_explicit_deny(s *S3Conf) error {
 			Key:    getPtr("someprefix/hello"),
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+		if err := checkApiErr(err, s3err.GetExplicitDenyAccessErr(
+			testuser2.access, "s3:PutObject", fmt.Sprintf("%v/someprefix/hello", resource), "a resource-based policy",
+		)); err != nil {
 			return err
 		}
 
@@ -714,6 +716,144 @@ func PutBucketPolicy_status(s *S3Conf) error {
 			return fmt.Errorf("expected the response status code to be %v, instead got %v", http.StatusNoContent, resp.StatusCode)
 		}
 
+		return nil
+	})
+}
+
+func PutBucketPolicy_condition_invalid_operator(s *S3Conf) error {
+	testName := "PutBucketPolicy_condition_invalid_operator"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, tc := range []struct {
+			condition string
+			// operatorName is the exact, as-written operator name AWS's
+			// "Invalid Condition type : <Name>" message echoes back.
+			operatorName string
+		}{
+			// completely unrecognized operator
+			{`{"NotARealOperator":{"aws:SourceIp":"1.2.3.4/32"}}`, "NotARealOperator"},
+			// operator names are case-sensitive - lowercase is unrecognized
+			{`{"stringequals":{"aws:UserAgent":"foo"}}`, "stringequals"},
+			// IfExists suffix on an operator that doesn't take one
+			{`{"NullIfExists":{"aws:UserAgent":"true"}}`, "NullIfExists"},
+			// unrecognized ForAllValues/ForAnyValue qualifier prefix
+			{`{"ForSomeValues:StringEquals":{"aws:UserAgent":"foo"}}`, "ForSomeValues:StringEquals"},
+		} {
+			doc := fmt.Sprintf(`{"Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:GetObject",
+				"Resource":"arn:aws:s3:::%s/*","Condition":%s}]}`, bucket, tc.condition)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &doc,
+			})
+			cancel()
+
+			if err := checkApiErr(err, getMalformedPolicyError(fmt.Sprintf("Invalid Condition type : %s", tc.operatorName))); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_condition_invalid_key(s *S3Conf) error {
+	testName := "PutBucketPolicy_condition_invalid_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, condition := range []string{
+			// unrecognized key under a String operator
+			`{"StringEquals":{"s3:FakeKeyDoesNotExist":"foo"}}`,
+			// unrecognized key under a Numeric operator
+			`{"NumericEquals":{"s3:NotARealKey":"5"}}`,
+			// unrecognized key under IpAddress
+			`{"IpAddress":{"aws:NotARealIpKey":"10.0.0.0/8"}}`,
+			// a plausible-looking but non-existent aws: global key
+			`{"StringEquals":{"aws:NotARealGlobalKey":"foo"}}`,
+		} {
+			doc := fmt.Sprintf(`{"Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:GetObject",
+				"Resource":"arn:aws:s3:::%s/*","Condition":%s}]}`, bucket, condition)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &doc,
+			})
+			cancel()
+
+			if err := checkApiErr(err, getMalformedPolicyError("Policy has an invalid condition key")); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_condition_action_mismatch(s *S3Conf) error {
+	testName := "PutBucketPolicy_condition_action_mismatch"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, tc := range []struct {
+			action    string
+			condition string
+		}{
+			// s3:prefix only applies to s3:ListBucket/s3:ListBucketVersions,
+			// not s3:GetObject.
+			{`"s3:GetObject"`, `{"StringEquals":{"s3:prefix":"foo"}}`},
+			// ... and notably not s3:ListBucketMultipartUploads either,
+			// despite also being a List-shaped action.
+			{`"s3:ListBucketMultipartUploads"`, `{"StringEquals":{"s3:prefix":"foo"}}`},
+			// s3:x-amz-acl only applies to s3:PutObject/PutBucketAcl/PutObjectAcl.
+			{`"s3:GetObject"`, `{"StringEquals":{"s3:x-amz-acl":"public-read"}}`},
+			// s3:VersionId only applies to the *Version* action family.
+			{`"s3:GetObject"`, `{"StringEquals":{"s3:VersionId":"abc123"}}`},
+			// an explicit multi-action list requires every action to
+			// support the key, even though s3:PutObject alone would.
+			{`["s3:GetObject","s3:PutObject"]`, `{"StringEquals":{"s3:x-amz-acl":"public-read"}}`},
+		} {
+			doc := fmt.Sprintf(`{"Statement":[{"Effect":"Allow","Principal":"*","Action":%s,
+				"Resource":"arn:aws:s3:::%s/*","Condition":%s}]}`, tc.action, bucket, tc.condition)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &doc,
+			})
+			cancel()
+
+			if err := checkApiErr(err, getMalformedPolicyError("Conditions do not apply to combination of actions and resources in statement")); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_condition_invalid_ip(s *S3Conf) error {
+	testName := "PutBucketPolicy_condition_invalid_ip"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, condition := range []string{
+			// not an IP address at all
+			`{"IpAddress":{"aws:SourceIp":"not-an-ip"}}`,
+			// malformed CIDR notation (octet out of range, bad prefix length)
+			`{"IpAddress":{"aws:SourceIp":"300.1.1.1/40"}}`,
+			// the same bad value under NotIpAddress
+			`{"NotIpAddress":{"aws:SourceIp":"not-an-ip"}}`,
+			// the IP-format check fires regardless of which operator wraps
+			// the key - even Null, which has nothing to do with IP syntax.
+			`{"Null":{"aws:SourceIp":"true"}}`,
+		} {
+			doc := fmt.Sprintf(`{"Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:GetObject",
+				"Resource":"arn:aws:s3:::%s/*","Condition":%s}]}`, bucket, condition)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &doc,
+			})
+			cancel()
+
+			if err := checkApiErr(err, getMalformedPolicyError("Invalid IP address in Conditions")); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 }

@@ -14,7 +14,9 @@
 
 package httpctx
 
-import "github.com/gofiber/fiber/v3"
+import (
+	"github.com/gofiber/fiber/v3"
+)
 
 // ContextKey names a request-local value stored in fiber.Ctx locals.
 type ContextKey string
@@ -38,6 +40,7 @@ const (
 	ContextKeyHostID           ContextKey = "host-id"
 	ContextKeyWebsiteConfig    ContextKey = "website-config"
 	ContextKeyCallerIdentity   ContextKey = "iam-caller-identity"
+	ContextKeyOriginalURIPath  ContextKey = "original-uri-path"
 )
 
 func (ck ContextKey) Set(ctx fiber.Ctx, val any) {

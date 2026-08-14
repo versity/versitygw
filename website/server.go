@@ -24,14 +24,14 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/s3api/middlewares"
-	"github.com/versity/versitygw/s3api/utils"
 )
 
 // Server is the static website hosting endpoint.
 type Server struct {
 	app         *fiber.App
-	CertStorage *utils.CertStorage
+	CertStorage *netutil.CertStorage
 	domain      string
 	quiet       bool
 	socketPerm  os.FileMode
@@ -46,7 +46,7 @@ func WithQuiet() Option {
 }
 
 // WithTLS sets TLS credentials.
-func WithTLS(cs *utils.CertStorage) Option {
+func WithTLS(cs *netutil.CertStorage) Option {
 	return func(s *Server) { s.CertStorage = cs }
 }
 
@@ -116,9 +116,9 @@ func (s *Server) ServeMultiPort(ports []string) error {
 		var err error
 
 		if s.CertStorage != nil {
-			ln, err = utils.NewMultiAddrTLSListener(fiber.NetworkTCP, addrSpec, s.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: s.socketPerm})
+			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, addrSpec, s.CertStorage.GetCertificate, netutil.ListenerOptions{SocketPerm: s.socketPerm})
 		} else {
-			ln, err = utils.NewMultiAddrListener(fiber.NetworkTCP, addrSpec, utils.ListenerOptions{SocketPerm: s.socketPerm})
+			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, addrSpec, netutil.ListenerOptions{SocketPerm: s.socketPerm})
 		}
 
 		if err != nil {
@@ -132,7 +132,7 @@ func (s *Server) ServeMultiPort(ports []string) error {
 		return fmt.Errorf("failed to create any website listeners")
 	}
 
-	finalListener := utils.NewMultiListener(listeners...)
+	finalListener := netutil.NewMultiListener(listeners...)
 
 	return s.app.Listener(finalListener, fiber.ListenConfig{
 		DisableStartupMessage: true,

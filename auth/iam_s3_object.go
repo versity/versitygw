@@ -149,6 +149,11 @@ func (s *IAMServiceS3) GetUserAccount(access string) (Account, error) {
 	return acct, nil
 }
 
+// ResolveAccounts returns the subset of accessKeyIDs that do not exist.
+func (s *IAMServiceS3) ResolveAccounts(accessKeyIDs []string) ([]string, error) {
+	return resolveAccountsByLookup(accessKeyIDs, s.GetUserAccount)
+}
+
 func (s *IAMServiceS3) UpdateUserAccount(access string, props MutableProps) error {
 	s.Lock()
 	defer s.Unlock()

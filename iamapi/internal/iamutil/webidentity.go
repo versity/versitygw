@@ -382,11 +382,11 @@ func VerifyWebIdentityExpiration(claims jwt.MapClaims, now time.Time) error {
 // web identity token claims beyond exp (already checked separately by
 // VerifyWebIdentityExpiration): iat and sub must both be present, and nbf
 // (if present) must not be in the future beyond webIdentityExpLeeway of
-// clock skew. Confirmed against real AWS (niksis02 profile): a token with
-// exp but no iat, or with iat but no sub, is rejected with
-// InvalidIdentityToken "Missing a required claim: <iat|sub>." — without
-// this check, such a token would otherwise obtain credentials whenever the
-// role's trust policy doesn't itself require sub via Condition.
+// clock skew. A token with exp but no iat, or with iat but no sub, is
+// rejected with InvalidIdentityToken "Missing a required claim:
+// <iat|sub>." — without this check, such a token would otherwise obtain
+// credentials whenever the role's trust policy doesn't itself require sub
+// via Condition.
 func VerifyWebIdentityRequiredClaims(claims jwt.MapClaims, now time.Time) error {
 	if _, ok := claims["iat"].(float64); !ok {
 		debuglogger.Logf("web identity token has no iat claim")
@@ -580,8 +580,8 @@ type jwksCacheEntry struct {
 	keys      *jwkSet
 	expiresAt time.Time
 	// lastForcedRefresh is when an unknown-kid lookup last bypassed
-	// expiresAt to force a fetch for this issuer, gating
-	// jwksMinForcedRefreshInterval (see forceRefreshJWKSCache).
+	// expiresAt to force a fetch for this issuer, gated by
+	// jwksMinForcedRefreshInterval.
 	lastForcedRefresh time.Time
 }
 

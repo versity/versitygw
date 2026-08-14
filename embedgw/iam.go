@@ -26,8 +26,9 @@ import (
 
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/iamapi"
+	"github.com/versity/versitygw/iamapi/private"
 	"github.com/versity/versitygw/iamapi/storage"
-	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/internal/netutil"
 )
 
 const iamTitle = "VersityGW IAM API"
@@ -78,6 +79,28 @@ type IAMConfig struct {
 	// socket permissions. It has no effect on TCP/IP addresses or Linux
 	// abstract namespace sockets.
 	SocketPerm string
+
+	// PrivatePorts is the list of listening addresses for the standalone
+	// IAM service's private endpoints (derive-signing-key, evaluate-policy, resolve-identity)
+	// — see private.PrivateAPI. Each address must be a unix socket, or a TCP
+	// address with PrivateCertFile/PrivateKeyFile/PrivateClientCAFile all
+	// set (mTLS with mandatory client-certificate verification); anything
+	// else fails startup rather than serving these endpoints in the clear.
+	// Empty disables the private endpoints entirely.
+	PrivatePorts []string
+	// PrivateCertFile/PrivateKeyFile are the private listener's own TLS
+	// server certificate, distinct from CertFile/KeyFile (the public
+	// control-plane listener's certificate) since the two listeners have
+	// different security requirements.
+	PrivateCertFile string
+	PrivateKeyFile  string
+	// PrivateClientCAFile verifies the S3 gateway's client certificate on
+	// the private listener. Required, together with PrivateCertFile/
+	// PrivateKeyFile, for any non-unix-socket PrivatePorts address.
+	PrivateClientCAFile string
+	// PrivateSocketPerm is the octal file-mode string for a file-backed
+	// unix-socket PrivatePorts address.
+	PrivateSocketPerm string
 
 	// IAMDir enables local file-backed IAM API storage. Set to the directory
 	// path where the IAM API user database is stored.
@@ -130,6 +153,56 @@ type IAMConfig struct {
 	// outbound TLS connection to the caller-supplied URL — for restricted
 	// or air-gapped deployments.
 	DisableOIDCThumbprintAutoFetch bool
+}
+
+// newPrivateAPI builds the standalone IAM service's private endpoint set
+// and the TLS options ServeMultiPort will enforce (mTLS, or nothing at all
+// for a unix-socket-only deployment — see netutil.RequireSecureTransport).
+func newPrivateAPI(store storage.Storer, cfg *IAMConfig) (*private.PrivateAPI, netutil.TLSOptions, error) {
+	allSet := cfg.PrivateCertFile != "" && cfg.PrivateKeyFile != "" && cfg.PrivateClientCAFile != ""
+	noneSet := cfg.PrivateCertFile == "" && cfg.PrivateKeyFile == "" && cfg.PrivateClientCAFile == ""
+	if !allSet && !noneSet {
+		return nil, netutil.TLSOptions{}, fmt.Errorf("--private-cert, --private-cert-key, and --private-client-ca must all be set together, or all left empty for a unix-socket-only private listener")
+	}
+
+	var tlsOpts netutil.TLSOptions
+	if allSet {
+		cs := netutil.NewCertStorage()
+		if err := cs.SetCertificate(cfg.PrivateCertFile, cfg.PrivateKeyFile); err != nil {
+			return nil, netutil.TLSOptions{}, fmt.Errorf("private listener: load certs: %w", err)
+		}
+		pool, err := netutil.LoadCACertPool(cfg.PrivateClientCAFile)
+		if err != nil {
+			return nil, netutil.TLSOptions{}, fmt.Errorf("private listener: %w", err)
+		}
+		tlsOpts = netutil.TLSOptions{
+			GetCertificate:    cs.GetCertificate,
+			ClientCAs:         pool,
+			RequireClientCert: true,
+		}
+	}
+
+	var privOpts []private.PrivateAPIOption
+	if cfg.PrivateSocketPerm != "" {
+		perm, err := strconv.ParseUint(cfg.PrivateSocketPerm, 8, 32)
+		if err != nil {
+			return nil, netutil.TLSOptions{}, fmt.Errorf("invalid PrivateSocketPerm value %q: must be an octal integer (e.g. '0660'): %w", cfg.PrivateSocketPerm, err)
+		}
+		privOpts = append(privOpts, private.WithPrivateSocketPerm(os.FileMode(perm)))
+	}
+	if cfg.Quiet {
+		privOpts = append(privOpts, private.WithPrivateQuiet())
+	}
+
+	p, err := private.New(store, iamapi.RootCredentials{
+		Access: cfg.RootUserAccess,
+		Secret: cfg.RootUserSecret,
+	}, privOpts...)
+	if err != nil {
+		return nil, netutil.TLSOptions{}, fmt.Errorf("init private IAM API: %w", err)
+	}
+
+	return p, tlsOpts, nil
 }
 
 var iamAPIRunning atomic.Bool
@@ -194,10 +267,6 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 
 	opts := []iamapi.Option{
 		iamapi.WithConcurrencyLimiter(cfg.MaxConnections, cfg.MaxRequests),
-		iamapi.WithRootUserCreds(iamapi.RootCredentials{
-			Access: cfg.RootUserAccess,
-			Secret: cfg.RootUserSecret,
-		}),
 	}
 	if cfg.HealthPath != "" {
 		opts = append(opts, iamapi.WithHealth(cfg.HealthPath))
@@ -233,19 +302,37 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 		opts = append(opts, iamapi.WithTLS(cs))
 	}
 
-	server, err := iamapi.New(store, opts...)
+	server, err := iamapi.New(store, iamapi.RootCredentials{
+		Access: cfg.RootUserAccess,
+		Secret: cfg.RootUserSecret,
+	}, opts...)
 	if err != nil {
 		return fmt.Errorf("init IAM API server: %w", err)
+	}
+
+	var privateAPI *private.PrivateAPI
+	var privateTLSOpts netutil.TLSOptions
+	if len(cfg.PrivatePorts) > 0 {
+		privateAPI, privateTLSOpts, err = newPrivateAPI(store, cfg)
+		if err != nil {
+			return err
+		}
 	}
 
 	if !cfg.Quiet {
 		cfg.printBanner()
 	}
 
-	errCh := make(chan error, 1)
+	errCh := make(chan error, 2)
 	go func() {
 		errCh <- server.ServeMultiPort(cfg.Ports)
 	}()
+
+	if privateAPI != nil {
+		go func() {
+			errCh <- privateAPI.ServeMultiPort(cfg.PrivatePorts, privateTLSOpts)
+		}()
+	}
 
 	var sigHup <-chan struct{}
 	if cfg.SigHup != nil {
@@ -276,6 +363,11 @@ Loop:
 
 	if err := server.Shutdown(); err != nil {
 		fmt.Fprintf(os.Stderr, "shutdown IAM API server: %v\n", err)
+	}
+	if privateAPI != nil {
+		if err := privateAPI.Shutdown(); err != nil {
+			fmt.Fprintf(os.Stderr, "shutdown private IAM API server: %v\n", err)
+		}
 	}
 
 	return saveErr
@@ -310,6 +402,16 @@ func (cfg IAMConfig) printBanner() {
 		lines = append(lines, leftText("  "+u))
 	}
 
+	if len(cfg.PrivatePorts) > 0 {
+		privateInterfaces, _ := resolveIAMBannerInterfaces(cfg.PrivatePorts)
+		if len(privateInterfaces) > 0 {
+			lines = append(lines, centerText(""), leftText("IAM private service listening on:"))
+			for _, u := range buildIAMBannerURLs(privateInterfaces, cfg.PrivateCertFile != "" || cfg.PrivateKeyFile != "") {
+				lines = append(lines, leftText("  "+u))
+			}
+		}
+	}
+
 	fmt.Println("┌" + strings.Repeat("─", columnWidth-2) + "┐")
 	for _, line := range lines {
 		fmt.Printf("│%-*s│\n", columnWidth-2, line)
@@ -323,7 +425,7 @@ func resolveIAMBannerInterfaces(ports []string) ([]string, []string) {
 	interfaceMap := make(map[string]bool)
 
 	for _, portSpec := range ports {
-		if utils.IsUnixSocketPath(portSpec) {
+		if netutil.IsUnixSocketPath(portSpec) {
 			allPorts = append(allPorts, portSpec)
 			if !interfaceMap[portSpec] {
 				interfaceMap[portSpec] = true
@@ -358,7 +460,7 @@ func resolveIAMBannerInterfaces(ports []string) ([]string, []string) {
 
 func formatIAMBannerBoundHost(ports, allPorts []string) string {
 	if len(ports) == 1 {
-		if utils.IsUnixSocketPath(ports[0]) {
+		if netutil.IsUnixSocketPath(ports[0]) {
 			return fmt.Sprintf("(unix socket: %s)", ports[0])
 		}
 		hst, prt, _ := net.SplitHostPort(ports[0])
@@ -379,7 +481,7 @@ func buildIAMBannerURLs(interfaces []string, tls bool) []string {
 	}
 
 	for _, addrPort := range interfaces {
-		if utils.IsUnixSocketPath(addrPort) {
+		if netutil.IsUnixSocketPath(addrPort) {
 			urls = append(urls, "unix:"+addrPort)
 			continue
 		}

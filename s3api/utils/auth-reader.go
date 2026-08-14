@@ -39,11 +39,13 @@ const (
 	service = sigv4auth.ServiceS3
 )
 
-// CheckValidSignature validates the ctx v4 auth signature
-func CheckValidSignature(ctx fiber.Ctx, auth AuthData, secret, checksum string, tdate time.Time, contentLen int64) (string, error) {
-	result, err := sigv4auth.CheckSignature(ctx, auth, secret, checksum, tdate, contentLen, sigv4auth.CheckOptions{
-		Service:                service,
-		DisableURIPathEscaping: true,
+// CheckValidSignature validates the ctx v4 auth signature against
+// derivedKey — the request's kSigning value, either derived locally from a
+// known secret or obtained from a standalone IAM service that never reveals
+// the secret itself.
+func CheckValidSignature(ctx fiber.Ctx, auth AuthData, derivedKey []byte, checksum string, tdate time.Time, contentLen int64) (string, error) {
+	result, err := sigv4auth.CheckSignature(ctx, auth, derivedKey, checksum, tdate, contentLen, sigv4auth.CheckOptions{
+		Service: service,
 	})
 	if err != nil {
 		return "", mapSigV4Error(err)
@@ -86,24 +88,11 @@ func ParseCredentials(input string, errHandler CredsError) (*CredentialsScope, e
 	return creds, nil
 }
 
-func SignPostPolicy(base64Policy, yyyymmdd, region, secretKey string) (string, error) {
-	signingKey := deriveSigningKey(secretKey, yyyymmdd, region)
-	sig := hmacSHA256(signingKey, []byte(base64Policy))
-	return hex.EncodeToString(sig), nil
-}
-
-func deriveSigningKey(secretKey, yyyymmdd, region string) []byte {
-	kDate := hmacSHA256([]byte("AWS4"+secretKey), []byte(yyyymmdd))
-	kRegion := hmacSHA256(kDate, []byte(region))
-	kService := hmacSHA256(kRegion, []byte(service))
-	kSigning := hmacSHA256(kService, []byte("aws4_request"))
-	return kSigning
-}
-
-func hmacSHA256(key, data []byte) []byte {
-	h := hmac.New(sha256.New, key)
-	h.Write(data)
-	return h.Sum(nil)
+// SignPostPolicy signs a POST-policy document with derivedKey
+func SignPostPolicy(base64Policy string, derivedKey []byte) (string, error) {
+	h := hmac.New(sha256.New, derivedKey)
+	h.Write([]byte(base64Policy))
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func mapSigV4Error(err error) error {

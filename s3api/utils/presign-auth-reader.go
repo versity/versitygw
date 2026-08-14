@@ -28,8 +28,9 @@ const (
 	unsignedPayload string = "UNSIGNED-PAYLOAD"
 )
 
-// CheckPresignedSignature validates presigned request signature
-func CheckPresignedSignature(ctx fiber.Ctx, auth AuthData, secret string) error {
+// CheckPresignedSignature validates a presigned request's signature against
+// derivedKey
+func CheckPresignedSignature(ctx fiber.Ctx, auth AuthData, derivedKey []byte) error {
 	var contentLength int64
 	var err error
 	contentLengthStr := ctx.Get("Content-Length")
@@ -42,9 +43,8 @@ func CheckPresignedSignature(ctx fiber.Ctx, auth AuthData, secret string) error 
 
 	date, _ := time.Parse(iso8601Format, auth.Date)
 
-	_, err = sigv4auth.CheckQuerySignature(ctx, auth, secret, unsignedPayload, date, contentLength, sigv4auth.CheckOptions{
-		Service:                service,
-		DisableURIPathEscaping: true,
+	_, err = sigv4auth.CheckQuerySignature(ctx, auth, derivedKey, unsignedPayload, date, contentLength, sigv4auth.CheckOptions{
+		Service: service,
 	})
 	if err != nil {
 		return mapSigV4Error(err)
@@ -133,7 +133,7 @@ func mapQueryAuthError(err error) error {
 				queryErr.ServerTime.Format(time.RFC3339),
 			)
 		case sigv4auth.ErrQuerySecurityToken:
-			return s3err.QueryAuthErrors.SecurityTokenNotSupported()
+			return s3err.GetAPIError(s3err.ErrInvalidToken)
 		}
 	}
 
