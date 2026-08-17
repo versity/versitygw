@@ -15,3 +15,23 @@ jobs:
 
       - name: Lint chart
         run: helm lint chart/ --strict --set auth.accessKey=dummy --set auth.secretKey=dummy
+
+      - name: Lint standalone IAM configurations
+        run: |
+          scenarios=(
+            # existingSecret-based mTLS for both sides, plus NetworkPolicy
+            "--set iam.enabled=true --set iam.type=standalone --set iam.standalone.certificate.existingSecret=iam-client-tls --set iamServer.enabled=true --set iamServer.private.certificate.existingSecret=iam-server-tls --set networkPolicy.enabled=true"
+            # cert-manager-issued mTLS, plus TLS on the public control-plane API
+            "--set iam.enabled=true --set iam.type=standalone --set iam.standalone.certificate.create=true --set iam.standalone.certificate.issuerRef.name=internal-ca --set iamServer.enabled=true --set iamServer.private.certificate.create=true --set iamServer.private.certificate.issuerRef.name=internal-ca --set iamServer.tls.enabled=true --set iamServer.tls.secretName=iam-public-tls"
+            # Vault storage with multiple iamServer replicas
+            "--set iamServer.enabled=true --set iamServer.replicaCount=2 --set iamServer.storage.type=vault --set iamServer.storage.vault.endpointUrl=https://vault.example.test --set iamServer.storage.vault.existingSecret=vault-auth --set iamServer.storage.vault.tlsExistingSecret=vault-tls --set iamServer.private.certificate.existingSecret=iam-server-tls"
+            # externally managed standalone IAM service (no in-chart iamServer)
+            "--set iam.enabled=true --set iam.type=standalone --set iam.standalone.endpoint=iam.example.test:7443 --set iam.standalone.certificate.existingSecret=iam-client-tls"
+          )
+
+          for scenario in "${scenarios[@]}"; do
+            echo "::group::helm lint --set ${scenario}"
+            # shellcheck disable=SC2086
+            helm lint chart/ --strict --set auth.existingSecret=root-credentials ${scenario}
+            echo "::endgroup::"
+          done
