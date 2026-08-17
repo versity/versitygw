@@ -1,7 +1,19 @@
+{{- $gatewayLogLevel := default "silent" .Values.gateway.logLevel -}}
+{{- $iamServer := .Values.iamServer | default dict -}}
+{{- $iamServerEnabled := $iamServer.enabled | default false -}}
+{{- $iamServerPrivate := $iamServer.private | default dict -}}
+{{- $iamServerPrivateEnabled := $iamServerPrivate.enabled | default false -}}
+{{- $iamServerAuth := $iamServer.auth | default dict -}}
+{{- $iamStandalone := .Values.iam.standalone | default dict -}}
+{{- $iamStandaloneEndpoint := $iamStandalone.endpoint | default "" -}}
+{{- $iamStandaloneCredentials := $iamStandalone.credentials | default dict -}}
 {{- /* Safety check: multiple replicas with local state must have persistence enabled */}}
+{{- if and (gt (int .Values.replicaCount) 1) .Values.iam.enabled (eq .Values.iam.type "internal") }}
+  {{- fail "replicaCount > 1 cannot use iam.type=internal because the file store does not coordinate concurrent writers; use standalone or another external IAM backend" }}
+{{- end }}
 {{- if and (gt (int .Values.replicaCount) 1) (not .Values.persistence.enabled) }}
-  {{- if or (eq .Values.gateway.backend.type "posix") (and .Values.iam.enabled (eq .Values.iam.type "internal")) }}
-    {{- fail "Multiple replicas with POSIX backend or Internal IAM require persistence.enabled=true to prevent data loss and inconsistency across pods. If using a stateless backend (e.g. S3, Azure) and external IAM, set persistence.enabled=false." }}
+  {{- if eq .Values.gateway.backend.type "posix" }}
+    {{- fail "Multiple replicas with a POSIX backend require persistence.enabled=true. If using a stateless backend (e.g. S3 or Azure) and external IAM, persistence can be disabled." }}
   {{- end }}
 {{- end }}
 {{- if and .Values.persistence.enabled (not .Values.persistence.create) (not .Values.persistence.claimName) (not .Values.persistence.hostPath) }}
@@ -19,12 +31,46 @@
 {{- if and .Values.gateway.backend.versioningDir (not (or (eq .Values.gateway.backend.type "posix") (eq .Values.gateway.backend.type "scoutfs"))) }}
   {{- fail "gateway.backend.versioningDir is only supported with the posix and scoutfs backends" }}
 {{- end }}
+{{- if not (or (eq $gatewayLogLevel "silent") (eq $gatewayLogLevel "debug") (eq $gatewayLogLevel "unsafe")) }}
+  {{- fail "gateway.logLevel must be one of silent, debug, or unsafe" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (not .Values.iam.standalone.endpoint) (not $iamServerEnabled) }}
+  {{- fail "iam.type=standalone requires either iam.standalone.endpoint or iamServer.enabled=true" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (not .Values.iam.standalone.endpoint) $iamServerEnabled (not $iamServerPrivateEnabled) }}
+  {{- fail "in-chart standalone IAM requires iamServer.private.enabled=true; otherwise set iam.standalone.endpoint explicitly" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") $iamStandaloneEndpoint (not (regexMatch "^(\\[[0-9A-Fa-f:]+\\]|[^/:[:space:]]+):[0-9]+$" $iamStandaloneEndpoint)) }}
+  {{- fail "iam.standalone.endpoint must be a host:port TCP address; the chart does not provide a shared volume for Unix sockets" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (not (or .Values.iam.standalone.certificate.create .Values.iam.standalone.certificate.existingSecret)) }}
+  {{- fail "a standalone IAM TCP endpoint requires iam.standalone.certificate.create=true or iam.standalone.certificate.existingSecret" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") .Values.iam.standalone.certificate.create (not .Values.iam.standalone.certificate.existingSecret) (not .Values.iam.standalone.certificate.issuerRef.name) }}
+  {{- fail "iam.standalone.certificate.issuerRef.name is required when creating the IAM client certificate" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (or (and .Values.iam.standalone.access (not .Values.iam.standalone.secret)) (and .Values.iam.standalone.secret (not .Values.iam.standalone.access))) }}
+  {{- fail "iam.standalone.access and iam.standalone.secret must be set together, or both left empty to use the root credentials" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") $iamStandaloneCredentials.existingSecret (or .Values.iam.standalone.access .Values.iam.standalone.secret) }}
+  {{- fail "iam.standalone.credentials.existingSecret cannot be combined with literal iam.standalone.access/secret values" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") $iamStandaloneCredentials.existingSecret (or (not $iamStandaloneCredentials.accessKeyKey) (not $iamStandaloneCredentials.secretKeyKey)) }}
+  {{- fail "iam.standalone.credentials.accessKeyKey and secretKeyKey are required when credentials.existingSecret is set" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (not .Values.iam.standalone.endpoint) $iamServerAuth.existingSecret (not $iamStandaloneCredentials.existingSecret) (not .Values.iam.standalone.access) }}
+  {{- fail "in-chart IAM with iamServer.auth.existingSecret requires iam.standalone.credentials.existingSecret (normally the same Secret)" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "versitygw.fullname" . }}
   labels:
     {{- include "versitygw.labels" . | nindent 4 }}
+  {{- with .Values.deploymentAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -105,7 +151,10 @@ spec:
             - name: VGW_QUIET
               value: "true"
             {{- end }}
-            {{- if .Values.gateway.debug }}
+            {{- if ne $gatewayLogLevel "silent" }}
+            - name: VGW_LOG_LEVEL
+              value: {{ $gatewayLogLevel | quote }}
+            {{- else if .Values.gateway.debug }}
             - name: VGW_LOG_LEVEL
               value: "debug"
             {{- end }}
@@ -163,6 +212,44 @@ spec:
             {{- if eq .Values.iam.type "internal" }}
             - name: VGW_IAM_DIR
               value: "/mnt/iam"
+            {{- else if eq .Values.iam.type "standalone" }}
+            - name: VGW_IAM_STANDALONE_ENDPOINT
+              value: {{ include "versitygw.standaloneIAMEndpoint" . | quote }}
+            {{- if $iamStandaloneCredentials.existingSecret }}
+            - name: VGW_IAM_STANDALONE_ACCESS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $iamStandaloneCredentials.existingSecret }}
+                  key: {{ $iamStandaloneCredentials.accessKeyKey }}
+            - name: VGW_IAM_STANDALONE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $iamStandaloneCredentials.existingSecret }}
+                  key: {{ $iamStandaloneCredentials.secretKeyKey }}
+            {{- else }}
+            {{- if .Values.iam.standalone.access }}
+            - name: VGW_IAM_STANDALONE_ACCESS
+              value: {{ .Values.iam.standalone.access | quote }}
+            {{- end }}
+            {{- if .Values.iam.standalone.secret }}
+            - name: VGW_IAM_STANDALONE_SECRET
+              value: {{ .Values.iam.standalone.secret | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if or .Values.iam.standalone.certificate.create .Values.iam.standalone.certificate.existingSecret }}
+            - name: VGW_IAM_STANDALONE_CLIENT_CERT
+              value: /iam-client-certs/tls.crt
+            - name: VGW_IAM_STANDALONE_CLIENT_CERT_KEY
+              value: /iam-client-certs/tls.key
+            - name: VGW_IAM_STANDALONE_SERVER_CA
+              value: /iam-client-certs/ca.crt
+            {{- end }}
+            - name: VGW_IAM_STANDALONE_DEFAULT_UID
+              value: {{ .Values.iam.standalone.defaultUid | quote }}
+            - name: VGW_IAM_STANDALONE_DEFAULT_GID
+              value: {{ .Values.iam.standalone.defaultGid | quote }}
+            - name: VGW_IAM_STANDALONE_DEFAULT_PROJECT_ID
+              value: {{ .Values.iam.standalone.defaultProjectId | quote }}
             {{- end }}
             {{- if .Values.iam.cacheDisable }}
             - name: VGW_IAM_CACHE_DISABLE
@@ -235,10 +322,17 @@ spec:
               subPath: versioning
               readOnly: false
             {{- end }}
+            {{- if or (not .Values.iam.enabled) (eq .Values.iam.type "internal") }}
             - name: data
               mountPath: /mnt/iam
               subPath: iam
               readOnly: false
+            {{- end }}
+            {{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (or .Values.iam.standalone.certificate.create .Values.iam.standalone.certificate.existingSecret) }}
+            - name: iam-client-certs
+              mountPath: /iam-client-certs
+              readOnly: true
+            {{- end }}
             {{- if .Values.tls.enabled }}
             - name: certificates
               mountPath: /certs
@@ -262,6 +356,12 @@ spec:
         - name: certificates
           secret:
             secretName: {{ include "versitygw.certificateSecretName" . }}
+        {{- end }}
+        {{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (or .Values.iam.standalone.certificate.create .Values.iam.standalone.certificate.existingSecret) }}
+        - name: iam-client-certs
+          secret:
+            secretName: {{ include "versitygw.iamClientCertSecretName" . }}
+            defaultMode: 0440
         {{- end }}
 
       {{- with .Values.nodeSelector }}

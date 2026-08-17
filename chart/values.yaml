@@ -34,6 +34,9 @@ serviceAccount:
 
 # Additional annotations for the pod
 podAnnotations: {}
+# Additional annotations for the Deployment object (for example, a Secret
+# reloader controller that restarts pods after credential/certificate rotation).
+deploymentAnnotations: {}
 # Additional labels for the pod
 podLabels: {}
 
@@ -42,8 +45,11 @@ podLabels: {}
 # For more details refer to https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
 podSecurityContext:
   fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
 
 securityContext:
+  allowPrivilegeEscalation: false
   capabilities:
     drop:
     - ALL
@@ -159,7 +165,14 @@ gateway:
   readOnly: false
   # Silence stdout request logging (useful when using a dedicated access log).
   quiet: false
-  # Enable verbose debug output.
+  # Debug logger verbosity: "silent" (default, no debug output), "debug" (full
+  # request/response logging with secrets and tokens masked), or "unsafe"
+  # (full logging with NO masking -- prints access keys, secrets, session
+  # tokens, and signatures in the clear; only use for local troubleshooting,
+  # never in production).
+  logLevel: silent
+  # Deprecated: use logLevel: debug instead. Kept for backwards compatibility;
+  # only takes effect when logLevel is left at "silent".
   debug: false
   # Access log file path for S3 requests (AWS log format). Empty = disabled.
   accessLog: ""
@@ -287,11 +300,17 @@ website:
   # Disable TLS for the website endpoint even when gateway TLS is enabled.
   noTls: false
 
-# --- IAM (Identity and Access Management) ---
+# --- IAM (Identity and Access Management) client, consumed by the S3 gateway ---
 iam:
   enabled: false
-  # TODO: implement other IAM backend
-  # Internal flat-file IAM is the default. For production, consider LDAP or Vault.
+  # TODO: implement other IAM backend (LDAP, Vault-direct, FreeIPA)
+  # - internal: flat-file IAM stored alongside backend data, inside the gateway pod.
+  # - standalone: delegate to a separate standalone IAM API service (an
+  #   AWS-compatible IAM Query API server), reached over its private mTLS
+  #   endpoint. See `iamServer` below to optionally deploy that service from
+  #   this same chart, or point `iam.standalone.endpoint` at an externally
+  #   managed one.
+  # Other values remain available for IAM backends configured through extraEnv.
   type: internal
   # Disable IAM result caching.
   cacheDisable: false
@@ -299,8 +318,174 @@ iam:
   cacheTtl: 120
   # IAM cache cleanup interval in seconds.
   cachePrune: 3600
-  # Enable debug output for IAM operations.
+  # Enable IAM-specific debug output (independent of gateway.logLevel).
   debug: false
+
+  # --- standalone (iam.type: standalone) ---
+  standalone:
+    # Private endpoint of the standalone IAM service: a "host:port" TCP
+    # address (mTLS required -- see `certificate` below). Leave empty to
+    # auto-target the in-chart private `iamServer` Service
+    # (requires iamServer.enabled=true and iamServer.private.enabled=true).
+    endpoint: ""
+    # Identity this gateway signs its private-endpoint calls with. Both
+    # default to auth.accessKey/secretKey (root) when left empty. Literal
+    # values are retained for compatibility but are stored in Helm release
+    # history; prefer credentials.existingSecret for production.
+    access: ""
+    secret: ""
+    credentials:
+      # Optional Secret containing a distinct IAM client identity. Point this
+      # at iamServer.auth.existingSecret to use that server's root identity.
+      existingSecret: ""
+      accessKeyKey: rootAccessKeyId
+      secretKeyKey: rootSecretAccessKey
+    # POSIX uid/gid/project-id assigned to every account resolved through
+    # this backend (the standalone IAM service has no per-user POSIX
+    # identity concept of its own).
+    defaultUid: 0
+    defaultGid: 0
+    defaultProjectId: 0
+    # mTLS client identity presented to the standalone IAM service's private
+    # endpoint. Required together with the peer trusting this certificate.
+    certificate:
+      # Auto-provision this client certificate via cert-manager. issuerRef
+      # must be a CA-type issuer (Issuer/ClusterIssuer of kind CA, or Vault) --
+      # one that populates ca.crt in the resulting Secret -- and MUST be the
+      # same issuer used for iamServer.private.certificate, so each side's
+      # ca.crt can verify the other's certificate.
+      create: false
+      # Use an existing Secret instead (or as well as -- existingSecret wins
+      # when both are set). Must contain tls.crt, tls.key, and ca.crt (the CA
+      # that signed iamServer's private-listener server certificate).
+      existingSecret: ""
+      issuerRef: {}
+      #   group: cert-manager.io
+      #   kind: ClusterIssuer
+      #   name: internal-ca
+
+# --- Standalone IAM API Server ---
+# Deploys a separate `versitygw iam` server as its own Deployment and public/
+# private Services --
+# an AWS-compatible IAM Query API, independently scalable and centralized
+# (unlike iam.type: internal, which runs file-backed IAM inside each gateway
+# pod). Manage users/roles/policies against its public control-plane API
+# (reusing the gateway root Secret by default, or `iamServer.auth`); point
+# gateways at it via iam.type: standalone.
+iamServer:
+  enabled: false
+  replicaCount: 1
+  # Deployment strategy override for Vault storage. Internal file storage
+  # always uses Recreate to prevent concurrent writers and ReadWriteOnce
+  # multi-attach failures. Empty uses Kubernetes' default RollingUpdate for Vault.
+  strategy: {}
+  auth:
+    # Optional Secret containing rootAccessKeyId and rootSecretAccessKey.
+    # Empty reuses the top-level auth Secret for backward compatibility.
+    existingSecret: ""
+  # Optional image override; defaults to the top-level `image` values when unset.
+  image:
+    repository: ""
+    tag: ""
+    pullPolicy: ""
+  # Public control-plane API port (aws iam create-user, list-roles, etc.).
+  port: 7070
+  maxConnections: 250000
+  maxRequests: 100000
+  # Silence stdout request logging.
+  quiet: false
+  # Debug logger verbosity: "silent" (default), "debug", or "unsafe" -- see
+  # gateway.logLevel for details.
+  logLevel: silent
+  # Reject CreateOpenIDConnectProvider requests that omit ThumbprintList
+  # instead of auto-fetching it over an outbound TLS connection to the
+  # caller-supplied URL. Recommended for restricted/air-gapped clusters.
+  disableOidcThumbprintAutofetch: false
+  # Optional TLS for the public control-plane API. No cert-manager automation
+  # here -- bring your own Secret (must contain tls.crt / tls.key).
+  tls:
+    enabled: false
+    secretName: ""
+
+  # -- Storage backend --
+  storage:
+    # internal (file-backed, requires persistence below) | vault
+    type: internal
+    vault:
+      endpointUrl: ""
+      namespace: ""
+      secretStoragePath: ""
+      secretStorageNamespace: ""
+      authMethod: ""
+      authNamespace: ""
+      mountPath: ""
+      roleId: ""
+      # Secret containing sensitive Vault auth material. Recognized keys
+      # (provide whichever your vault-auth-method needs):
+      #   roleSecret -- AppRole secret ID (VGW_IAM_VAULT_ROLE_SECRET)
+      #   rootToken  -- Vault root token   (VGW_IAM_VAULT_ROOT_TOKEN)
+      existingSecret: ""
+      # Separate Secret for Vault's TLS material -- kept distinct from
+      # `existingSecret` above (auth credentials) since these are a different
+      # security concern (transport trust vs. identity). Recognized keys
+      # (provide whichever your vault-endpoint-url/mTLS setup needs):
+      #   serverCert    -- CA cert verifying Vault's server certificate (VGW_IAM_VAULT_SERVER_CERT)
+      #   clientCert    -- client cert for mTLS to Vault               (VGW_IAM_VAULT_CLIENT_CERT)
+      #   clientCertKey -- private key for clientCert                  (VGW_IAM_VAULT_CLIENT_CERT_KEY)
+      # Ignored for any of the three that has a literal value below.
+      tlsExistingSecret: ""
+      # PEM-encoded certificate content (literal text, not a file path).
+      # Prefer tlsExistingSecret above for production; these are stored in
+      # Helm release history in plaintext.
+      serverCert: ""
+      clientCert: ""
+      clientCertKey: ""
+
+  # -- Private mTLS endpoint --
+  # Serves the derive-signing-key/evaluate-policy/resolve-identity calls that
+  # gateways configured with iam.type: standalone use internally. Required
+  # for any such gateway to reach this service over TCP.
+  private:
+    enabled: true
+    port: 7443
+    certificate:
+      # Auto-provision the server certificate for this listener via
+      # cert-manager. issuerRef must be a CA-type issuer -- see
+      # iam.standalone.certificate for the matching client-side requirement.
+      create: false
+      # Use an existing Secret instead (or as well as -- existingSecret wins
+      # when both are set). Must contain tls.crt, tls.key, and ca.crt (the CA
+      # that signs gateway client certificates).
+      existingSecret: ""
+      issuerRef: {}
+      #   group: cert-manager.io
+      #   kind: ClusterIssuer
+      #   name: internal-ca
+      # DNS names for the certificate. Defaults to the in-chart Service's
+      # names when left empty.
+      dnsNames: []
+
+  service:
+    # Type of the public control-plane Service. The private Service is always
+    # ClusterIP and is not exposed when this is NodePort or LoadBalancer.
+    type: ClusterIP
+
+  # Storage for the standalone IAM service's own file-backed data (storage.type: internal).
+  persistence:
+    enabled: true
+    create: true
+    claimName: ""
+    size: 1Gi
+    storageClassName: ""
+    accessMode: ReadWriteOnce
+
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  deploymentAnnotations: {}
+  podAnnotations: {}
+  podLabels: {}
 
 # Extra environment variables to pass to the container.
 # Use this to configure advanced options not covered above (e.g. event notifications,
@@ -389,9 +574,11 @@ topologySpreadConstraints: []
 
 networkPolicy:
   enabled: false
-  # allowIngressFromNamespaces:
-  #   matchLabels:
-  #     kubernetes.io/metadata.name: kube-system
-  # allowIngressFromPods:
-  #   matchLabels:
-  #     svccontroller.k3s.cattle.io/svcname: versitygw
+  # Label maps used as matchLabels selectors. When both are set, a source pod
+  # must match both selectors. A pod-only selector applies to this release's
+  # namespace; an empty pair denies ingress to the gateway. The IAM policy
+  # always permits this release's gateway pods to reach its private mTLS port.
+  allowIngressFromNamespaces: {}
+  #   kubernetes.io/metadata.name: kube-system
+  allowIngressFromPods: {}
+  #   svccontroller.k3s.cattle.io/svcname: versitygw
