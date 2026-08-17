@@ -12,7 +12,7 @@ Versity is an S3-compatible storage gateway that proxies S3 API requests to a va
 
 - Kubernetes **1.19+**
 - Helm **3.8+** (OCI registry support)
-- optional: [cert-manager](https://cert-manager.io/) (only required if `certificate.create=true`)
+- optional: [cert-manager](https://cert-manager.io/) (required when any of `certificate.create`, `iam.standalone.certificate.create`, or `iamServer.private.certificate.create` is enabled)
 
 ## Installation
 
@@ -104,10 +104,49 @@ gateway:
 | **Admin API** | `admin.enabled=true` — exposes a separate management API on `admin.port` (default `7071`) |
 | **WebUI** | `webui.enabled=true` — browser-based management UI on `webui.port` (default `8080`); set `webui.apiGateways` and `webui.adminGateways` to your externally reachable endpoints |
 | **Website Hosting** | `website.enabled=true` — static website hosting endpoint on `website.port` (default `8090`); optionally set `website.domain` for virtual-host routing (e.g. `example.com`), or omit it for catch-all mode where the full hostname is the bucket name |
-| **IAM** | `iam.enabled=true` — flat-file identity and access management stored alongside backend data |
+| **IAM** | `iam.enabled=true` — identity and access management. `iam.type=internal` (default) stores accounts in a flat file alongside backend data; `iam.type=standalone` delegates to a separate standalone IAM API service — see [Standalone IAM Service](#standalone-iam-service) below |
 | **Persistence** | `persistence.enabled=true` — provisions a PVC for backend data and IAM storage; defaults to `10Gi`, or uses a hostPath volume specified by `persistence.hostPath` |
 | **NetworkPolicy** | `networkPolicy.enabled=true` — restricts ingress to selected pods/namespaces; allows all egress |
+| **Debug logging** | `gateway.logLevel` — `silent` (default), `debug` (request/response logging, secrets masked), or `unsafe` (unmasked, local troubleshooting only) |
 | **Scheduling** | `nodeSelector`, `affinity`, `tolerations`, and `topologySpreadConstraints` — control pod placement and spread replicas across nodes/zones for high availability |
+
+## Standalone IAM Service
+
+In addition to `iam.type=internal` (flat-file IAM stored inside the gateway pod), the chart can deploy the standalone IAM API server — an AWS-compatible IAM Query API — as its own Deployment with separate public and private Services, and configure one or more gateways to use it via `iam.type=standalone`.
+
+```yaml
+iam:
+  enabled: true
+  type: standalone
+  standalone:
+    # Left empty here: auto-targets the in-chart private IAM Service below.
+    certificate:
+      create: true
+      issuerRef:
+        kind: ClusterIssuer
+        name: internal-ca
+
+iamServer:
+  enabled: true
+  storage:
+    type: internal   # or vault
+  private:
+    certificate:
+      create: true
+      issuerRef:
+        kind: ClusterIssuer
+        name: internal-ca
+```
+
+Key points:
+
+- **Independent scaling**: `iamServer` is a separate Deployment (`iamServer.replicaCount`), so it can be centralized and scaled independently of the gateway. Manage users/roles/policies against its public control-plane API (`iamServer.port`, default `7070`) using the AWS CLI/SDK. It reuses the gateway root Secret by default; set `iamServer.auth.existingSecret` to separate the control-plane identity, and point `iam.standalone.credentials.existingSecret` at the corresponding client identity.
+- **Storage**: `iamServer.storage.type` is `internal` (file-backed, needs `iamServer.persistence`, is limited to one replica, and always uses a `Recreate` rollout) or `vault` (`iamServer.storage.vault.*`, centralized and required if `iamServer.replicaCount > 1`).
+- **Separate Services**: `iamServer.service.type` applies only to the public control-plane Service. The private listener is exposed by a separate, always-`ClusterIP` Service, so selecting `NodePort` or `LoadBalancer` does not publish the private port. Enable `iamServer.tls` before exposing the public API outside a trusted network.
+- **Private mTLS endpoint**: gateways reach the standalone IAM service over a private endpoint (`iamServer.private.port`, default `7443`) that always requires mutual TLS on TCP. Provide certificates either via `existingSecret` (bring your own `tls.crt`/`tls.key`/`ca.crt`) or `certificate.create=true` to auto-provision via cert-manager.
+- **Shared CA requirement**: when using cert-manager auto-provisioning, `iamServer.private.certificate.issuerRef` and `iam.standalone.certificate.issuerRef` **must reference the same CA-type issuer** (an `Issuer`/`ClusterIssuer` of kind `CA`, or a Vault issuer) — one that populates `ca.crt` in the resulting Secret. Both sides verify their peer using their own certificate's `ca.crt`, which only works when both certificates share the same issuing CA.
+- **External IAM service**: to point a gateway at a standalone IAM service deployed outside this chart (or by a separate chart release), set `iam.standalone.endpoint` to its `host:port` and provide the mTLS material via `iam.standalone.certificate.existingSecret`.
+- **Secret rotation**: the processes load mTLS material and environment-based credentials at startup. After a referenced Secret rotates, restart both Deployments or configure a Secret-reloader controller through `deploymentAnnotations` and `iamServer.deploymentAnnotations`.
 
 ## Scaling and Persistence
 
@@ -121,9 +160,10 @@ Special care must be taken particularly when using multiple replicas with such a
 
 When scaling `versitygw` horizontally by setting `replicaCount` greater than 1, special care must be taken regarding the storage backend:
 
-- **POSIX or Internal IAM**: These backends store state locally on the filesystem.
+- **POSIX**: This backend stores state on the filesystem.
     - Using **ReadWriteOnce (RWO)**: All replicas must be scheduled on the **same Kubernetes node** to share the same volume. This is useful for process-level concurrency (e.g., when using high-performance local block storage) but limits high availability across nodes.
     - Using **ReadWriteMany (RWX)**: Replicas can be distributed across **multiple nodes** in the cluster. This is the recommended approach for true horizontal scaling and high availability. When using RWX, it is also recommended to use pod anti-affinity (via `affinity` in `values.yaml`) or topology spread constraints (via `topologySpreadConstraints` in `values.yaml`) to ensure pods are distributed across nodes/zones.
+- **IAM**: `iam.type=internal` is limited to a single gateway replica because its file store does not coordinate concurrent writers. Use standalone IAM with Vault storage, LDAP, Vault-direct, or another external IAM backend before scaling the gateway above one replica.
 - **Stateless Backends (S3, Azure)**: If you are using a stateless storage backend (e.g. proxying to another S3 store) **and** you are either not using IAM or using an external IAM provider (e.g. LDAP, Vault), persistence can be safely disabled by setting `persistence.enabled=false`.
 
 ### Deployment Strategy

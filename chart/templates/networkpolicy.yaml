@@ -1,20 +1,98 @@
+{{- $allowedNamespaces := .Values.networkPolicy.allowIngressFromNamespaces | default dict -}}
+{{- $allowedPods := .Values.networkPolicy.allowIngressFromPods | default dict -}}
+{{- $iamServer := .Values.iamServer | default dict -}}
 {{- if .Values.networkPolicy.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "versitygw.fullname" . }}
+  labels:
+    {{- include "versitygw.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
       {{- include "versitygw.selectorLabels" . | nindent 6 }}
   # Permit ingress traffic only from the specified namespaces and pods
   ingress:
+    {{- if and $allowedNamespaces $allowedPods }}
     - from:
-        namespaceSelector:
-          matchLabels: {{- toYaml .Values.networkPolicy.allowIngressFromNamespaces | nindent 10 }}
-        podSelector: {{- toYaml .Values.networkPolicy.allowIngressFromPods | nindent 10 }}
-      # By omitting the ports specification we apply this NetworkPolicy to all ports
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $allowedNamespaces | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $allowedPods | nindent 14 }}
       ports: []
+    {{- else if $allowedNamespaces }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $allowedNamespaces | nindent 14 }}
+      ports: []
+    {{- else if $allowedPods }}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $allowedPods | nindent 14 }}
+      ports: []
+    {{- else }}
+    []
+    {{- end }}
+  # All egress traffic is allowed
+  egress:
+    - {}
+  policyTypes:
+    - Ingress
+    - Egress
+{{- end }}
+{{- if and .Values.networkPolicy.enabled ($iamServer.enabled | default false) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "versitygw.iamServerFullname" . }}
+  labels:
+    {{- include "versitygw.iamServerLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "versitygw.iamServerSelectorLabels" . | nindent 6 }}
+  # The in-chart gateway must always be able to reach the private IAM port.
+  # The configured peer selectors additionally control access to all IAM ports.
+  ingress:
+    {{- if .Values.iamServer.private.enabled }}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "versitygw.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: iam-private
+    {{- end }}
+    {{- if and $allowedNamespaces $allowedPods }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $allowedNamespaces | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $allowedPods | nindent 14 }}
+      ports: []
+    {{- else if $allowedNamespaces }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $allowedNamespaces | nindent 14 }}
+      ports: []
+    {{- else if $allowedPods }}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $allowedPods | nindent 14 }}
+      ports: []
+    {{- else if not .Values.iamServer.private.enabled }}
+    []
+    {{- end }}
   # All egress traffic is allowed
   egress:
     - {}
