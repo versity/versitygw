@@ -19,6 +19,7 @@ load ./bats-assert/load
 
 source ./tests/commands/put_public_access_block.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/get_bucket_website/get_bucket_website_rest.sh
 source ./tests/drivers/put_bucket_website/put_bucket_website_rest.sh
 source ./tests/drivers/cloudfront.sh
 source ./tests/drivers/string.sh
@@ -103,7 +104,7 @@ source ./tests/setup.sh
 
   run create_website_with_random_string "$bucket_name"
   assert_success
-  random_string="$output"
+  read -r _ random_string <<< "$output"
 
   if [ "$DIRECT" == "true" ]; then
     run put_public_access_block "$bucket_name" "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"
@@ -120,4 +121,30 @@ source ./tests/setup.sh
   run curl -ks "https://${bucket_name}.${WEBSITE_DOMAIN}${WEBSITE}"
   assert_success
   assert_output "$random_string"
+}
+
+@test "REST - GetBucketWebsite - IndexDocument Suffix, DeleteBucketWebsite" {
+  local bucket_name test_file random_string
+
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run create_website_with_random_string "$bucket_name"
+  assert_success
+  read -r test_file random_string <<< "$output"
+
+  run check_index_document_suffix "$bucket_name" "$test_file"
+  assert_success
+
+  run send_rest_go_command "204" "-method" "DELETE" "-query" "website" "-bucketName" "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_expect_error_with_specific_arg_name_value "404" "NoSuchWebsiteConfiguration" \
+    "does not have a website configuration" "BucketName" "$bucket_name" "-query" "website" "-bucketName" "$bucket_name"
+  assert_success
+}
+
+@test "REST - GetBucketWebsite - no HTTPS" {
+
 }

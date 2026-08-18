@@ -525,3 +525,31 @@ put_objects() {
   done
   return 0
 }
+
+put_object_with_random_alnum_string() {
+  if ! check_param_count_v2 "bucket name" 1 $#; then
+    return 1
+  fi
+  local bucket_name="$1"
+  local response file_name test_string
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  file_name="$response"
+
+  if ! response=$(generate_random_string 8 10 2>&1); then
+    log 2 "error generating random string: $response"
+    return 1
+  fi
+  test_string="$response"
+  echo "$test_string" > "$TEST_FILE_FOLDER/$file_name"
+
+  if ! response=$(put_object_rest "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name" 2>&1); then
+    log 2 "error putting random string file: $response"
+    return 1
+  fi
+  echo "$file_name" "$test_string"
+  return 0
+}
