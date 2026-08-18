@@ -86,7 +86,13 @@ func ListObjectsV2_both_start_after_and_continuation_token(s *S3Conf) error {
 				maxKeys, out.MaxKeys)
 		}
 
-		if getString(out.NextContinuationToken) != "bar" {
+		// the azure backend returns an opaque token, as it has to carry the
+		// azure blob listing marker along with the last key
+		if s.azureTests {
+			if getString(out.NextContinuationToken) == "" {
+				return fmt.Errorf("expected non-empty NextContinuationToken")
+			}
+		} else if getString(out.NextContinuationToken) != "bar" {
 			return fmt.Errorf("expected next-marker to be baz, instead got %v",
 				getString(out.NextContinuationToken))
 		}
@@ -853,6 +859,164 @@ func ListObjectsV2_mp_masking_delimiter(s *S3Conf) error {
 		if !comparePrefixes([]string{"dir1/", "dir2/"}, out.CommonPrefixes) {
 			return fmt.Errorf("expected common prefixes [dir1/ dir2/], instead got %v",
 				sprintPrefixes(out.CommonPrefixes))
+		}
+
+		return nil
+	})
+}
+
+// ListObjectsV2_full_pagination walks a listing that spans many pages and
+// checks that every object is returned exactly once, in order, with the
+// continuation token driving the walk. This exercises backends whose
+// continuation token is opaque (e.g. azure) rather than the last key.
+func ListObjectsV2_full_pagination(s *S3Conf) error {
+	testName := "ListObjectsV2_full_pagination"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		const objectCount = 25
+		keys := make([]string, 0, objectCount)
+		for i := 0; i < objectCount; i++ {
+			keys = append(keys, fmt.Sprintf("obj-%03d", i))
+		}
+		contents, err := putObjects(s3client, keys, bucket)
+		if err != nil {
+			return err
+		}
+
+		maxKeys := int32(4)
+		var continuationToken *string
+		var allObjects []types.Object
+		seen := map[string]bool{}
+
+		for pages := 0; ; pages++ {
+			if pages > objectCount+1 {
+				return fmt.Errorf("pagination did not terminate after %v pages", pages)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+				Bucket:            &bucket,
+				MaxKeys:           &maxKeys,
+				ContinuationToken: continuationToken,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if int32(len(out.Contents)) > maxKeys {
+				return fmt.Errorf("page returned %v objects, exceeding max-keys %v",
+					len(out.Contents), maxKeys)
+			}
+
+			for _, obj := range out.Contents {
+				key := getString(obj.Key)
+				if seen[key] {
+					return fmt.Errorf("object %q returned on more than one page", key)
+				}
+				seen[key] = true
+			}
+			allObjects = append(allObjects, out.Contents...)
+
+			if out.IsTruncated != nil && *out.IsTruncated {
+				if getString(out.NextContinuationToken) == "" {
+					return fmt.Errorf("truncated page returned an empty NextContinuationToken")
+				}
+				continuationToken = out.NextContinuationToken
+				continue
+			}
+
+			// the final page must not advertise a continuation token
+			if getString(out.NextContinuationToken) != "" {
+				return fmt.Errorf("non-truncated page returned a NextContinuationToken %q",
+					getString(out.NextContinuationToken))
+			}
+			break
+		}
+
+		if !compareObjects(contents, allObjects) {
+			return fmt.Errorf("expected the paginated contents to be %v, instead got %v",
+				contents, allObjects)
+		}
+
+		return nil
+	})
+}
+
+// ListObjectsV2_pagination_with_delimiter walks a delimited listing across
+// several pages and checks that common prefixes and objects are each returned
+// once and in order, with no prefix repeated across page boundaries.
+func ListObjectsV2_pagination_with_delimiter(s *S3Conf) error {
+	testName := "ListObjectsV2_pagination_with_delimiter"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{
+			"a/1", "a/2", "b/1", "c/1", "d/1", "e/1", "root1", "root2",
+		}, bucket)
+		if err != nil {
+			return err
+		}
+
+		delim, maxKeys := "/", int32(2)
+		var continuationToken *string
+		var gotObjects []string
+		var gotPrefixes []types.CommonPrefix
+		seenPrefix := map[string]bool{}
+
+		for pages := 0; ; pages++ {
+			if pages > 10 {
+				return fmt.Errorf("pagination did not terminate after %v pages", pages)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+				Bucket:            &bucket,
+				Delimiter:         &delim,
+				MaxKeys:           &maxKeys,
+				ContinuationToken: continuationToken,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if kc := int32(len(out.Contents) + len(out.CommonPrefixes)); kc > maxKeys {
+				return fmt.Errorf("page returned %v keys, exceeding max-keys %v", kc, maxKeys)
+			}
+
+			for _, obj := range out.Contents {
+				gotObjects = append(gotObjects, getString(obj.Key))
+			}
+			for _, cp := range out.CommonPrefixes {
+				prefix := getString(cp.Prefix)
+				if seenPrefix[prefix] {
+					return fmt.Errorf("common prefix %q returned on more than one page", prefix)
+				}
+				seenPrefix[prefix] = true
+				gotPrefixes = append(gotPrefixes, cp)
+			}
+
+			if out.IsTruncated == nil || !*out.IsTruncated {
+				break
+			}
+			if getString(out.NextContinuationToken) == "" {
+				return fmt.Errorf("truncated page returned an empty NextContinuationToken")
+			}
+			continuationToken = out.NextContinuationToken
+		}
+
+		wantPrefixes := []string{"a/", "b/", "c/", "d/", "e/"}
+		if !comparePrefixes(wantPrefixes, gotPrefixes) {
+			return fmt.Errorf("expected common prefixes %v, instead got %v",
+				wantPrefixes, sprintPrefixes(gotPrefixes))
+		}
+
+		wantObjects := []string{"root1", "root2"}
+		if len(gotObjects) != len(wantObjects) {
+			return fmt.Errorf("expected objects %v, instead got %v", wantObjects, gotObjects)
+		}
+		for i, key := range wantObjects {
+			if gotObjects[i] != key {
+				return fmt.Errorf("expected objects %v, instead got %v", wantObjects, gotObjects)
+			}
 		}
 
 		return nil
