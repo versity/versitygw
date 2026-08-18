@@ -14,6 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/create_bucket.sh
 source ./tests/drivers/delete_bucket/delete_bucket_rest.sh
 source ./tests/drivers/get_bucket_acl/get_bucket_acl_rest.sh
 source ./tests/drivers/get_object/get_object_rest.sh

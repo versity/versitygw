@@ -1,0 +1,191 @@
+#!/usr/bin/env bats
+
+# Copyright 2026 Versity Software
+# This file is licensed under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http:#www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+source ./tests/env.sh
+source ./tests/drivers/delete_bucket/delete_bucket_rest.sh
+
+setup_env() {
+  TEST_ID=$(date +"%Y%m%d-%H%M%S")
+  if [ -n "$BATS_TEST_FILENAME" ]; then
+    TEST_ID+=".$(basename "$BATS_TEST_FILENAME").${BATS_TEST_NAME//[^a-zA-Z0-9_]/_}"
+  fi
+  export TEST_ID
+
+  source_config_file
+
+  if ! setup_test_log_file; then
+    log 1 "error creating test log file"
+    return 1
+  fi
+
+  if [ -n "$TEST_LOG_FILE" ]; then
+    printf "\n%s\n\n" "**** $TEST_ID ****" >> "${TEST_LOG_FILE}.${TEST_ID}"
+  fi
+
+  if [ -n "$BATS_TEST_NAME" ]; then
+    log 4 "Running test $BATS_TEST_NAME"
+  fi
+  if [[ $LOG_LEVEL -ge 5 ]] || [[ -n "$TIME_LOG" ]]; then
+    START_TIME=$(date +%s)
+    export START_TIME
+  fi
+
+  if ! check_env_vars; then
+    log 1 "error checking env vars"
+    return 1
+  fi
+
+  export AWS_PROFILE
+  log 4 "********** END ENV SETUP **********"
+  return 0
+}
+
+setup_versitygw() {
+  local params=("$@")
+  local response pid
+
+  if [ "$RUN_VERSITYGW" == "true" ] && [ "$UNIT_TEST" != "true" ]; then
+    if ! run_versity_app "${params[@]}"; then
+      log 1 "error running versitygw app"
+      return 1
+    fi
+  fi
+
+  if [ "$RUN_USERS" == "true" ] && [ "$SKIP_USERS_TESTS" != "true" ]; then
+    if ! static_user_v1_cleanup; then
+      log 2 "error cleaning up v1 static users"
+      return 1
+    fi
+    if [ "$DIRECT" != "true" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" == "true" ] && [ "$AUTOGENERATE_USERS" == "false" ]; then
+      if ! static_user_versitygw_setup; then
+        log 2 "error setting up static versitygw users"
+        return 1
+      fi
+    fi
+  fi
+  log 4 "********** END VERSITYGW SETUP **********"
+
+  return 0
+}
+
+setup_env_and_versitygw() {
+  local response
+
+  if ! setup_env; then
+    log 1 "error setting up env"
+    return 1
+  fi
+  if ! setup_versitygw "$@"; then
+    log 2 "error setting up versitygw"
+    return 1
+  fi
+  return 0
+}
+
+setup_clients() {
+  if [[ $RUN_S3CMD == true ]]; then
+    S3CMD_OPTS=()
+    S3CMD_OPTS+=(-c "$S3CMD_CONFIG")
+    S3CMD_OPTS+=(--access_key="$AWS_ACCESS_KEY_ID")
+    S3CMD_OPTS+=(--secret_key="$AWS_SECRET_ACCESS_KEY")
+    S3CMD_OPTS+=(--region="$AWS_REGION")
+    export S3CMD_CONFIG S3CMD_OPTS
+  fi
+
+  if [[ $RUN_MC == true ]] && ! check_add_mc_alias; then
+    log 1 "error checking for or adding mc alias"
+    return 1
+  fi
+  log 4 "********** END CLIENT SETUP **********"
+  return 0
+}
+
+teardown_common() {
+  local response proc_status_one proc_status_two
+
+  response=$(check_versity_process_status)
+  read -r proc_status_one proc_status_two <<< "$response"
+
+  log 5 "proc status one: '$proc_status_one'"
+  log 5 "proc status two: '$proc_status_two'"
+  if [ "$proc_status_one" == "none" ] || [[ ( "$proc_status_one" == "running" ) && (( "$proc_status_two" == "none") || ( "$proc_status_two" == "running")) ]]; then
+    if ! bucket_and_user_cleanup; then
+      log 3 "bucket and user cleanup not properly done"
+    fi
+  fi
+  if [ "$proc_status_one" == "running" ]; then
+    if ! stop_versity_process "$VERSITYGW_PID_1"; then
+      log 3 "unable to properly stop versitygw process"
+    fi
+  fi
+  if [ "$proc_status_two" == "running" ]; then
+    if ! stop_versity_process "$VERSITYGW_PID_2"; then
+      log 3 "unable to properly stop second versity process"
+    fi
+  fi
+  if ! remove_test_file_folder_if_desired; then
+    log 3 "test file folder cleanup error"
+  fi
+  if ! teardown_logs; then
+    log 3 "log file teardown error"
+  fi
+  return 0
+}
+
+static_user_v1_cleanup() {
+  if [ -n "$USERNAME_ONE" ]; then
+    if user_exists "$USERNAME_ONE" && ! delete_user "$USERNAME_ONE"; then
+      log 2 "error deleting user '$USERNAME_ONE'"
+    else
+      one_deleted="true"
+    fi
+  fi
+  if [ -n "$USERNAME_TWO" ]; then
+    if user_exists "$USERNAME_TWO" && ! delete_user "$USERNAME_TWO"; then
+      log 2 "error deleting user '$USERNAME_TWO'"
+    else
+      two_deleted="true"
+    fi
+  fi
+  if [ -n "$USERNAME_ONE" ] && [ "$one_deleted" == "false" ]; then
+    return 1
+  elif [ -n "$USERNAME_TWO" ] && [ "$two_deleted" == "false" ]; then
+    return 1
+  fi
+  return 0
+}
+
+bucket_and_user_cleanup() {
+  log 4 "********** BEGIN TEARDOWN **********"
+  if [ "$DELETE_BUCKETS_AFTER_TEST" != "false" ] && ! cleanup_buckets; then
+    log 3 "error cleaning up buckets after test"
+  fi
+  if [ "$SKIP_USERS_TESTS" != "true" ] && [ "$RUN_USERS" == "true" ]; then
+    if ! static_user_v1_cleanup; then
+      log 3 "error cleaning up v1 static users"
+      return 1
+    fi
+    if [ "$AUTOGENERATE_USERS" == "true" ] && ! delete_autogenerated_users; then
+      log 3 "error deleting autocreated users"
+    fi
+  fi
+  if [ "$DIRECT" == "true" ] && [ -n "$distribution_created" ] && [ "$distribution_created" == "true" ]; then
+    if ! delete_tester_created_distributions "$USER_ID_USER_1"; then
+      log 3 "error deleting test-created S3 distributions"
+    fi
+  fi
+  return 0
+}

@@ -123,7 +123,7 @@ source_config_file() {
     if [ -r tests/.env ]; then
       source tests/.env
     else
-      echo "Warning: no .env file found in tests folder" > /dev/stderr
+      echo "Warning: no .env file found in tests folder" >&2
     fi
   else
     # shellcheck source=./tests/.env.default

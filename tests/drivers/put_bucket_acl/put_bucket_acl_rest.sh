@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/get_bucket_ownership_controls.sh
+
 put_bucket_acl_success_or_access_denied() {
   if ! check_param_count_v2 "bucket, acl file, username, password, expect success" 5 $#; then
     return 1

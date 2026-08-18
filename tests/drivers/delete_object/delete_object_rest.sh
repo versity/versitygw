@@ -14,10 +14,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/list_object_versions.sh
+source ./tests/commands/list_objects.sh
 source ./tests/commands/list_objects_v2.sh
 source ./tests/drivers/list_object_versions/list_object_versions_rest.sh
 source ./tests/drivers/xml.sh
 source ./tests/drivers/get_object_legal_hold/get_object_legal_hold_rest.sh
+source ./tests/util/util_object.sh
 
 list_and_delete_objects() {
   if ! check_param_count_v2 "bucket, lock config exists" 2 $#; then
