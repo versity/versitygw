@@ -1622,6 +1622,105 @@ func CopyObject_success(s *S3Conf) error {
 	})
 }
 
+// CopyObject_cross_bucket_server_side_copy exercises a cross-bucket copy where
+// source and destination live in different buckets. On the Azure backend this
+// drives the server-side StartCopyFromURL path (added in copy.go), verifying that
+// object data, user metadata, content-type and tags all survive the copy and that
+// an ETag is returned. It also runs on the other backends as a plain copy.
+func CopyObject_cross_bucket_server_side_copy(s *S3Conf) error {
+	testName := "CopyObject_cross_bucket_server_side_copy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "dest-object"
+		dstBucket := getBucketName()
+		if err := setup(s, dstBucket); err != nil {
+			return err
+		}
+
+		dataLength := int64(1234567)
+		cType := "application/json"
+		meta := map[string]string{
+			"foo": "bar",
+			"baz": "quxx",
+		}
+		tagging := "foo=bar&baz=quxx"
+
+		r, err := putObjectWithData(dataLength, &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         &srcObj,
+			ContentType: &cType,
+			Metadata:    meta,
+			Tagging:     &tagging,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		copyOut, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &dstBucket,
+			Key:        &dstObj,
+			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if copyOut.CopyObjectResult == nil || getString(copyOut.CopyObjectResult.ETag) == "" {
+			return fmt.Errorf("expected non-empty ETag in copy result")
+		}
+
+		// Object data must be byte-for-byte identical.
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &dstBucket,
+			Key:    &dstObj,
+		})
+		if err != nil {
+			cancel()
+			return err
+		}
+		bdy, err := io.ReadAll(out.Body)
+		out.Body.Close()
+		cancel()
+		if err != nil {
+			return err
+		}
+		if sha256.Sum256(bdy) != r.csum {
+			return fmt.Errorf("invalid object data after copy")
+		}
+
+		// Content-type and user metadata must be preserved (MetadataDirective COPY).
+		if err := checkObjectMetaProps(s3client, dstBucket, dstObj, ObjectMetaProps{
+			ContentLength: dataLength,
+			ContentType:   cType,
+			Metadata:      meta,
+		}); err != nil {
+			return err
+		}
+
+		// Tags must be preserved (TaggingDirective COPY).
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		tagRes, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &dstBucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		expectedTagSet := []types.Tag{
+			{Key: getPtr("foo"), Value: getPtr("bar")},
+			{Key: getPtr("baz"), Value: getPtr("quxx")},
+		}
+		if !areTagsSame(tagRes.TagSet, expectedTagSet) {
+			return fmt.Errorf("expected the tag set to be %v, instead got %v",
+				expectedTagSet, tagRes.TagSet)
+		}
+
+		return teardown(s, dstBucket)
+	})
+}
+
 func CopyObject_with_special_characters(s *S3Conf) error {
 	testName := "CopyObject_with_special_characters"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

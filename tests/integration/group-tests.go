@@ -392,6 +392,7 @@ func TestCopyObject(ts *TestState) {
 	}
 	ts.Run(CopyObject_with_special_characters)
 	ts.Run(CopyObject_success)
+	ts.Run(CopyObject_cross_bucket_server_side_copy)
 	ts.Run(CopyObject_incorrect_source_bucket_expected_owner)
 }
 
@@ -2672,6 +2673,7 @@ func GetIntTests() IntTests {
 		"CopyObject_to_itself_by_replacing_the_checksum":                                   CopyObject_to_itself_by_replacing_the_checksum,
 		"CopyObject_with_special_characters":                                               CopyObject_with_special_characters,
 		"CopyObject_success":                                                               CopyObject_success,
+		"CopyObject_cross_bucket_server_side_copy":                                         CopyObject_cross_bucket_server_side_copy,
 		"CopyObject_incorrect_source_bucket_expected_owner":                                CopyObject_incorrect_source_bucket_expected_owner,
 		"PutObjectTagging_non_existing_object":                                             PutObjectTagging_non_existing_object,
 		"PutObjectTagging_long_tags":                                                       PutObjectTagging_long_tags,

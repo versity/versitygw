@@ -22,7 +22,7 @@ import (
 )
 
 var (
-	azAccount, azKey, azServiceURL, azSASToken string
+	azAccount, azKey, azServiceURL, azSASToken, azCopySASVersion string
 )
 
 // AzureCommand returns the "azure" subcommand, common to all versitygw
@@ -62,12 +62,18 @@ func AzureCommand() *cli.Command {
 				Aliases:     []string{"u"},
 				Destination: &azServiceURL,
 			},
+			&cli.StringFlag{
+				Name:        "copy-sas-version",
+				Usage:       "service version used to sign the copy-source SAS for server-side copy (defaults to the SDK version; set this for endpoints that lag the SDK, e.g. Azurite)",
+				EnvVars:     []string{"AZ_COPY_SAS_VERSION"},
+				Destination: &azCopySASVersion,
+			},
 		},
 	}
 }
 
 func runAzure(ctx *cli.Context) error {
-	be, err := azure.New(azAccount, azKey, azServiceURL, azSASToken, CopyObjectThreshold)
+	be, err := azure.New(azAccount, azKey, azServiceURL, azSASToken, CopyObjectThreshold, azCopySASVersion)
 	if err != nil {
 		return fmt.Errorf("init azure: %w", err)
 	}
