@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v3"
+	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
@@ -44,6 +45,7 @@ type websiteTestBackend struct {
 	objectErrors    map[string]error
 	public          bool
 	calls           []string
+	objectKeys      []string
 }
 
 func (b *websiteTestBackend) record(call string) {
@@ -96,6 +98,7 @@ func (b *websiteTestBackend) HeadObject(_ context.Context, input *s3.HeadObjectI
 	if input == nil || input.Key == nil {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	b.objectKeys = append(b.objectKeys, *input.Key)
 	if err, ok := b.objectErrors[*input.Key]; ok {
 		return nil, err
 	}
@@ -119,6 +122,7 @@ func (b *websiteTestBackend) GetObject(_ context.Context, input *s3.GetObjectInp
 	if input == nil || input.Key == nil {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	b.objectKeys = append(b.objectKeys, *input.Key)
 	if err, ok := b.objectErrors[*input.Key]; ok {
 		return nil, err
 	}
@@ -967,6 +971,165 @@ func TestWebsiteHandlerMethodNotAllowed(t *testing.T) {
 	}
 	if containsCall(be.calls, "GetBucketWebsite") {
 		t.Fatalf("unmatched method should not load website config: %v", be.calls)
+	}
+}
+
+func TestWebsiteHandlerDecodesURLEncodedPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		method  string
+		path    string
+		wantKey string
+	}{
+		{
+			name:    "space in the object key",
+			method:  http.MethodGet,
+			path:    "/my%20file.html",
+			wantKey: "my file.html",
+		},
+		{
+			name:    "space in the directory prefix resolves the index document",
+			method:  http.MethodGet,
+			path:    "/my%20dir/",
+			wantKey: "my dir/index.html",
+		},
+		{
+			name:    "utf8 multibyte characters",
+			method:  http.MethodHead,
+			path:    "/caf%C3%A9.html",
+			wantKey: "café.html",
+		},
+		{
+			name:    "literal plus sign is not turned into a space",
+			method:  http.MethodGet,
+			path:    "/c++notes.html",
+			wantKey: "c++notes.html",
+		},
+		{
+			name:    "percent in the object name is decoded only once",
+			method:  http.MethodGet,
+			path:    "/a%2520b.txt",
+			wantKey: "a%20b.txt",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := "content of " + tt.wantKey
+			be := newWebsiteTestBackend(t, s3response.WebsiteConfiguration{
+				IndexDocument: &s3response.IndexDocument{Suffix: "index.html"},
+			}, map[string]string{tt.wantKey: body}, true)
+
+			resp := websiteRequestWithMethod(t, be, tt.method, tt.path)
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want %d (requested keys: %v)",
+					resp.StatusCode, http.StatusOK, be.objectKeys)
+			}
+			if len(be.objectKeys) != 1 || be.objectKeys[0] != tt.wantKey {
+				t.Fatalf("requested keys = %v, want [%q]", be.objectKeys, tt.wantKey)
+			}
+			if tt.method != http.MethodGet {
+				return
+			}
+			if got := readBody(t, resp); got != body {
+				t.Fatalf("body = %q, want %q", got, body)
+			}
+		})
+	}
+}
+
+// TestWebsiteHandlerEncodedPathTraversalIsRejected covers the validation
+// hardening the path decoding brings: before decoding, the literal "%2E%2E%2F"
+// contained no "..", so it passed the object name validation.
+func TestWebsiteHandlerEncodedPathTraversalIsRejected(t *testing.T) {
+	be := newWebsiteTestBackend(t, s3response.WebsiteConfiguration{
+		IndexDocument: &s3response.IndexDocument{Suffix: "index.html"},
+	}, nil, true)
+
+	resp := websiteRequest(t, be, "/%2E%2E%2Fprivate.html")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+	if len(be.objectKeys) != 0 {
+		t.Fatalf("traversal should not reach the backend, got keys: %v", be.objectKeys)
+	}
+}
+
+// TestWebsiteHandlerInvalidPercentEncoding exercises the decodeURL middleware
+// directly: net/http refuses to build a request with a malformed escape, so
+// such a path can only come from a raw client.
+func TestWebsiteHandlerInvalidPercentEncoding(t *testing.T) {
+	fctx := &fasthttp.RequestCtx{}
+	fctx.Request.SetRequestURI("/%zz")
+	ctx := fiber.New().AcquireCtx(fctx)
+
+	if err := decodeURL(ctx); err != nil {
+		t.Fatalf("decodeURL returned an error: %v", err)
+	}
+	if got := ctx.Response().StatusCode(); got != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", got, http.StatusBadRequest)
+	}
+	if got := string(ctx.Response().Header.Peek("x-amz-error-code")); got != "InvalidURI" {
+		t.Fatalf("x-amz-error-code = %q, want %q", got, "InvalidURI")
+	}
+}
+
+func TestWebsiteHandlerRedirectLocationIsEncoded(t *testing.T) {
+	tests := []struct {
+		name         string
+		config       s3response.WebsiteConfiguration
+		path         string
+		wantLocation string
+	}{
+		{
+			name: "RedirectAllRequestsTo keeps the key encoded",
+			config: s3response.WebsiteConfiguration{
+				RedirectAllRequestsTo: &s3response.RedirectAllRequestsTo{
+					HostName: "target.test",
+					Protocol: "https",
+				},
+			},
+			path:         "/my%20file.html",
+			wantLocation: "https://target.test/my%20file.html",
+		},
+		{
+			name: "routing rule prefix replacement keeps the suffix encoded",
+			config: s3response.WebsiteConfiguration{
+				IndexDocument: &s3response.IndexDocument{Suffix: "index.html"},
+				RoutingRules: []s3response.RoutingRule{
+					{
+						Condition: &s3response.RoutingRuleCondition{
+							KeyPrefixEquals: "old dir/",
+						},
+						Redirect: &s3response.Redirect{
+							ReplaceKeyPrefixWith: "new dir/",
+						},
+					},
+				},
+			},
+			path:         "/old%20dir/my%20file.html",
+			wantLocation: "http://site.test/new%20dir/my%20file.html",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			be := newWebsiteTestBackend(t, tt.config, nil, true)
+
+			resp := websiteRequest(t, be, tt.path)
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusMovedPermanently {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusMovedPermanently)
+			}
+			if got := resp.Header.Get("Location"); got != tt.wantLocation {
+				t.Fatalf("Location = %q, want %q", got, tt.wantLocation)
+			}
+		})
 	}
 }
 
