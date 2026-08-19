@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -361,7 +360,7 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error
 		}
 
 		// Check if the specified accounts exist
-		accList, err := CheckIfAccountsExist(accs, iam)
+		accList, err := iam.ResolveAccounts(accs)
 		if err != nil {
 			return nil, err
 		}
@@ -377,25 +376,6 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error
 		return nil, err
 	}
 
-	return result, nil
-}
-
-func CheckIfAccountsExist(accs []string, iam IAMService) ([]string, error) {
-	result := []string{}
-
-	for _, acc := range accs {
-		_, err := iam.GetUserAccount(acc)
-		if err != nil {
-			if err == ErrNoSuchUser || err == s3err.GetAPIError(s3err.ErrAdminUserNotFound) {
-				result = append(result, acc)
-				continue
-			}
-			if errors.Is(err, s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)) {
-				return nil, err
-			}
-			return nil, fmt.Errorf("check user account: %w", err)
-		}
-	}
 	return result, nil
 }
 

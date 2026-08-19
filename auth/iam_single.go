@@ -45,6 +45,11 @@ func (s IAMServiceSingle) GetUserAccount(access string) (Account, error) {
 	return Account{}, s3err.GetAPIError(s3err.ErrAdminUserNotFound)
 }
 
+// ResolveAccounts returns the subset of accessKeyIDs that do not exist.
+func (s IAMServiceSingle) ResolveAccounts(accessKeyIDs []string) ([]string, error) {
+	return resolveAccountsByLookup(accessKeyIDs, s.GetUserAccount)
+}
+
 // UpdateUserAccount no accounts in single tenant mode
 func (IAMServiceSingle) UpdateUserAccount(access string, props MutableProps) error {
 	return s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)

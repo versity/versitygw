@@ -28,6 +28,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
+	"github.com/versity/versitygw/internal/sigv4auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 )
@@ -186,7 +187,8 @@ func TestAuthorizePostObject_SignedRequest(t *testing.T) {
 		map[string]string{"bucket": "mybucket"},
 		[]any{"starts-with", "$key", "uploads/"},
 	})
-	sig, err := utils.SignPostPolicy(policyB64, dateShort, region, secretKey)
+	derivedKey := sigv4auth.DeriveKey(secretKey, dateShort, region, sigv4auth.ServiceS3)
+	sig, err := utils.SignPostPolicy(policyB64, derivedKey)
 	assert.NoError(t, err)
 
 	var gotAuthenticated bool

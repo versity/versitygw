@@ -39,9 +39,8 @@ func (c S3ApiController) RestoreObject(ctx fiber.Ctx) (*Response, error) {
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
 			IsRoot:          isRoot,
@@ -50,7 +49,6 @@ func (c S3ApiController) RestoreObject(ctx fiber.Ctx) (*Response, error) {
 			Object:          key,
 			Actions:         []auth.Action{auth.RestoreObjectAction},
 			IsPublicRequest: isBucketPublic,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -91,9 +89,8 @@ func (c S3ApiController) SelectObjectContent(ctx fiber.Ctx) (*Response, error) {
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionRead,
 			IsRoot:          isRoot,
@@ -102,7 +99,6 @@ func (c S3ApiController) SelectObjectContent(ctx fiber.Ctx) (*Response, error) {
 			Object:          key,
 			Actions:         []auth.Action{auth.GetObjectAction},
 			IsPublicRequest: isBucketPublic,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -175,9 +171,8 @@ func (c S3ApiController) CreateMultipartUpload(ctx fiber.Ctx) (*Response, error)
 		actions = append(actions, auth.PutObjectRetentionAction)
 	}
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: auth.PermissionWrite,
 			IsRoot:        isRoot,
@@ -185,7 +180,6 @@ func (c S3ApiController) CreateMultipartUpload(ctx fiber.Ctx) (*Response, error)
 			Bucket:        bucket,
 			Object:        key,
 			Actions:       actions,
-			DisableACL:    c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -278,9 +272,8 @@ func (c S3ApiController) CompleteMultipartUpload(ctx fiber.Ctx) (*Response, erro
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
 			IsRoot:          isRoot,
@@ -289,7 +282,6 @@ func (c S3ApiController) CompleteMultipartUpload(ctx fiber.Ctx) (*Response, erro
 			Object:          key,
 			Actions:         []auth.Action{auth.PutObjectAction},
 			IsPublicRequest: isBucketPublic,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -363,7 +355,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx fiber.Ctx) (*Response, erro
 
 	ifMatch, ifNoneMatch := utils.ParsePreconditionMatchHeaders(ctx)
 
-	err = auth.CheckObjectAccess(ctx.RequestCtx(), bucket, acct.Access, []types.ObjectIdentifier{{Key: &key}}, true, isBucketPublic, c.be, true)
+	err = auth.CheckObjectAccess(ctx, bucket, acct, []types.ObjectIdentifier{{Key: &key}}, auth.BypassOverwrite, isBucketPublic, c.be, c.iam, true)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{

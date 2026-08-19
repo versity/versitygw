@@ -211,6 +211,11 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 	return account, nil
 }
 
+// ResolveAccounts returns the subset of accessKeyIDs that do not exist.
+func (ipa *IpaIAMService) ResolveAccounts(accessKeyIDs []string) ([]string, error) {
+	return resolveAccountsByLookup(accessKeyIDs, ipa.GetUserAccount)
+}
+
 func (ipa *IpaIAMService) UpdateUserAccount(access string, props MutableProps) error {
 	return fmt.Errorf("not implemented")
 }

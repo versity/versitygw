@@ -25,9 +25,9 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/middlewares"
-	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3log"
 )
 
@@ -35,7 +35,7 @@ type S3AdminServer struct {
 	app             *fiber.App
 	backend         backend.Backend
 	router          *S3AdminRouter
-	CertStorage     *utils.CertStorage
+	CertStorage     *netutil.CertStorage
 	quiet           bool
 	debug           bool
 	corsAllowOrigin string
@@ -75,6 +75,9 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 	if !server.quiet {
 		app.Use("*", logger.New(logger.Config{
 			Format: "${time} | adm | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
+			CustomTags: map[string]logger.LogFunc{
+				logger.TagQueryStringParams: debuglogger.RedactedQueryParamsTag,
+			},
 		}))
 	}
 	// initialize requestId middleware
@@ -97,7 +100,7 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 
 type AdminOpt func(s *S3AdminServer)
 
-func WithAdminSrvTLS(cs *utils.CertStorage) AdminOpt {
+func WithAdminSrvTLS(cs *netutil.CertStorage) AdminOpt {
 	return func(s *S3AdminServer) { s.CertStorage = cs }
 }
 
@@ -149,9 +152,9 @@ func (sa *S3AdminServer) ServeMultiPort(ports []string) error {
 		var err error
 
 		if sa.CertStorage != nil {
-			ln, err = utils.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, sa.CertStorage.GetCertificate, utils.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, sa.CertStorage.GetCertificate, netutil.ListenerOptions{SocketPerm: sa.socketPerm})
 		} else {
-			ln, err = utils.NewMultiAddrListener(fiber.NetworkTCP, portSpec, utils.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, portSpec, netutil.ListenerOptions{SocketPerm: sa.socketPerm})
 		}
 
 		if err != nil {
@@ -166,7 +169,7 @@ func (sa *S3AdminServer) ServeMultiPort(ports []string) error {
 	}
 
 	// Combine all listeners
-	finalListener := utils.NewMultiListener(listeners...)
+	finalListener := netutil.NewMultiListener(listeners...)
 
 	return sa.app.Listener(finalListener, fiber.ListenConfig{
 		DisableStartupMessage: true,

@@ -46,19 +46,36 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 
 	validRes := s3response.DeleteResult{
 		Deleted: []types.DeletedObject{
-			{Key: utils.GetStringPtr("key")},
+			{Key: utils.GetStringPtr("obj")},
 		},
 	}
 
+	partialSuccessBody, err := xml.Marshal(s3response.DeleteObjects{
+		Objects: []types.ObjectIdentifier{
+			{Key: utils.GetStringPtr("locked")},
+			{Key: utils.GetStringPtr("ok")},
+		},
+	})
+	assert.NoError(t, err)
+
+	lockConfig, err := json.Marshal(auth.BucketLockConfig{Enabled: true})
+	assert.NoError(t, err)
+
+	legalHoldOn, legalHoldOff := true, false
+	lockedObjectCode := "AccessDenied"
+	lockedObjectMessage := "Access Denied because object protected by object lock."
+
 	tests := []struct {
-		name   string
-		input  testInput
-		output testOutput
+		name          string
+		input         testInput
+		output        testOutput
+		configureMock func(be *BackendMock)
 	}{
 		{
 			name: "verify access fails",
 			input: testInput{
 				locals: accessDeniedLocals,
+				body:   validBody,
 			},
 			output: testOutput{
 				response: &Response{
@@ -140,6 +157,56 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "partial success: one object locked, one succeeds",
+			input: testInput{
+				locals: defaultLocals,
+				body:   partialSuccessBody,
+			},
+			output: testOutput{
+				response: &Response{
+					Data: s3response.DeleteResult{
+						Deleted: []types.DeletedObject{
+							{Key: utils.GetStringPtr("ok")},
+						},
+						Error: []types.Error{
+							{Key: utils.GetStringPtr("locked"), Code: &lockedObjectCode, Message: &lockedObjectMessage},
+						},
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+						EventName:   s3event.EventObjectRemovedDeleteObjects,
+						ObjectCount: 2,
+					},
+				},
+			},
+			configureMock: func(be *BackendMock) {
+				be.GetObjectLockConfigurationFunc = func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+					return lockConfig, nil
+				}
+				be.GetBucketVersioningFunc = func(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
+					return s3response.GetBucketVersioningOutput{}, nil
+				}
+				be.GetObjectRetentionFunc = func(contextMoqParam context.Context, bucket, object, versionId string) ([]byte, error) {
+					return []byte("{}"), nil
+				}
+				be.GetObjectLegalHoldFunc = func(contextMoqParam context.Context, bucket, object, versionId string) (*bool, error) {
+					if object == "locked" {
+						return &legalHoldOn, nil
+					}
+					return &legalHoldOff, nil
+				}
+				be.DeleteObjectsFunc = func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
+					// Only the object that cleared the lock check should
+					// ever reach the backend.
+					assert.Len(t, deleteObjectsInput.Delete.Objects, 1)
+					assert.Equal(t, "ok", *deleteObjectsInput.Delete.Objects[0].Key)
+					return s3response.DeleteResult{
+						Deleted: []types.DeletedObject{{Key: utils.GetStringPtr("ok")}},
+					}, nil
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -153,6 +220,9 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 				GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
 					return nil, tt.input.extraMockErr
 				},
+			}
+			if tt.configureMock != nil {
+				tt.configureMock(be)
 			}
 
 			ctrl := S3ApiController{

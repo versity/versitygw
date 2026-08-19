@@ -26,6 +26,7 @@ var (
 	awsID             string
 	awsSecret         string
 	endpoint          string
+	iamEndpoint       string
 	websiteSchemeTest string
 	websiteDomainTest string
 	websitePortTest   string
@@ -42,6 +43,7 @@ var (
 	checksumDisable   bool
 	versioningEnabled bool
 	azureTests        bool
+	testDebug         bool
 	tlsStatus         bool
 	parallel          bool
 	windowsTests      bool
@@ -81,6 +83,12 @@ func initTestFlags() []cli.Flag {
 			Destination: &endpoint,
 			Aliases:     []string{"e"},
 		},
+		&cli.StringFlag{
+			Name:        "iam-endpoint",
+			Usage:       "standalone IAM/STS service endpoint, when it is a separate process from the s3 endpoint (defaults to --endpoint)",
+			Destination: &iamEndpoint,
+			Aliases:     []string{"ie"},
+		},
 		&cli.BoolFlag{
 			Name:        "host-style",
 			Usage:       "Use host-style bucket addressing",
@@ -91,7 +99,7 @@ func initTestFlags() []cli.Flag {
 			Name:        "debug",
 			Usage:       "enable debug mode",
 			Aliases:     []string{"d"},
-			Destination: &debug,
+			Destination: &testDebug,
 		},
 		&cli.BoolFlag{
 			Name:        "allow-insecure",
@@ -197,14 +205,37 @@ func initTestCommands() []*cli.Command {
 			Action: getAction(integration.TestScoutfs),
 		},
 		{
+			Name:   "gw-iam",
+			Usage:  "Tests gateway IAM service integration",
+			Action: getAction(integration.TestGatewayIAM),
+		},
+		{
 			Name:   "iam",
-			Usage:  "Tests iam service",
+			Usage:  "Tests standalone IAM API integration",
 			Action: getAction(integration.TestIAM),
 		},
 		{
 			Name:   "access-control",
 			Usage:  "Tests gateway access control with bucket ACLs and Policies",
 			Action: getAction(integration.TestAccessControl),
+		},
+		{
+			Name:  "s3-iam",
+			Usage: "Tests s3 gateway access control backed by the standalone IAM service",
+			Description: `Runs the access-control tests for an s3 gateway configured with --iam-standalone-endpoint:
+			IAM user identity policies, their interaction with bucket policies, governance-retention
+			bypass, and bucket creation. Requires --iam-endpoint pointing at the IAM service's
+			control-plane API, since the tests create the users and policies they then exercise.`,
+			Action: getAction(integration.TestS3IAMAccessControl),
+		},
+		{
+			Name:  "s3-iam-session",
+			Usage: "Tests s3 gateway access control for assumed-role session credentials",
+			Description: `Runs the role/session access-control tests against an s3 gateway backed by the
+			standalone IAM service. Every test mints real temporary credentials via
+			AssumeRoleWithWebIdentity against GitHub Actions' OIDC issuer, so the whole group skips
+			itself outside a GitHub Actions job holding id-token: write permission.`,
+			Action: getAction(integration.TestS3IAMSessionAccessControl),
 		},
 		{
 			Name:   "noacl",
@@ -296,7 +327,7 @@ func initTestCommands() []*cli.Command {
 					integration.WithPartSize(partSize),
 					integration.WithTLSStatus(tlsStatus),
 				}
-				if debug {
+				if testDebug {
 					opts = append(opts, integration.WithDebug())
 				}
 				if hostStyle {
@@ -357,7 +388,7 @@ func initTestCommands() []*cli.Command {
 					integration.WithConcurrency(concurrency),
 					integration.WithTLSStatus(tlsStatus),
 				}
-				if debug {
+				if testDebug {
 					opts = append(opts, integration.WithDebug())
 				}
 				if checksumDisable {
@@ -404,7 +435,7 @@ func websiteHostingAction(ctx *cli.Context) error {
 	if websitePortTest != "" {
 		opts = append(opts, integration.WithWebsitePort(websitePortTest))
 	}
-	if debug {
+	if testDebug {
 		opts = append(opts, integration.WithDebug())
 	}
 
@@ -414,7 +445,7 @@ func websiteHostingAction(ctx *cli.Context) error {
 	ts.Wait()
 
 	fmt.Println()
-	fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load())
+	fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load(), "SKIP:", integration.SkipCount.Load())
 	if integration.FailCount.Load() > 0 {
 		return fmt.Errorf("test failed with %v errors", integration.FailCount.Load())
 	}
@@ -428,9 +459,10 @@ func getAction(tf testFunc) func(ctx *cli.Context) error {
 			integration.WithSecret(awsSecret),
 			integration.WithRegion(region),
 			integration.WithEndpoint(endpoint),
+			integration.WithIAMEndpoint(iamEndpoint),
 			integration.WithTLSStatus(tlsStatus),
 		}
-		if debug {
+		if testDebug {
 			opts = append(opts, integration.WithDebug())
 		}
 		if versioningEnabled {
@@ -456,7 +488,7 @@ func getAction(tf testFunc) func(ctx *cli.Context) error {
 		ts.Wait()
 
 		fmt.Println()
-		fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load())
+		fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load(), "SKIP:", integration.SkipCount.Load())
 		if integration.FailCount.Load() > 0 {
 			return fmt.Errorf("test failed with %v errors", integration.FailCount.Load())
 		}
@@ -478,9 +510,10 @@ func extractIntTests() (commands []*cli.Command) {
 					integration.WithSecret(awsSecret),
 					integration.WithRegion(region),
 					integration.WithEndpoint(endpoint),
+					integration.WithIAMEndpoint(iamEndpoint),
 					integration.WithTLSStatus(tlsStatus),
 				}
-				if debug {
+				if testDebug {
 					opts = append(opts, integration.WithDebug())
 				}
 				if versioningEnabled {

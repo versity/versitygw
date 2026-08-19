@@ -76,6 +76,8 @@ type testInput struct {
 	beErr         error
 	extraMockErr  error
 	extraMockResp any
+	readonly      bool
+	disableACL    bool
 }
 
 type testOutput struct {

@@ -17,12 +17,14 @@ package middlewares
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/internal/sigv4auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 )
@@ -39,7 +41,7 @@ type RootUserConfig struct {
 }
 
 func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, streamBody, requireContentSha256, allowDefaultRegion bool) fiber.Handler {
-	acct := accounts{root: root, iam: iam}
+	rootAccount := auth.Account{Access: root.Access, Secret: root.Secret, Role: auth.RoleAdmin}
 
 	return func(ctx fiber.Ctx) error {
 		// The bucket is public, no need to check this signature
@@ -89,9 +91,14 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 
 		utils.ContextKeyIsRoot.Set(ctx, authData.Access == root.Access)
 
-		account, err := acct.getAccount(authData.Access)
+		sessionToken := ctx.Get(sigv4auth.HeaderSecurityToken)
+
+		derivedKey, account, err := auth.ResolveDerivedKey(iam, rootAccount, authData.Access, sessionToken, authData.Date, authData.Region, sigv4auth.ServiceS3)
 		if err == auth.ErrNoSuchUser {
 			return s3err.GetInvalidAccessKeyIdErr(authData.Access)
+		}
+		if errors.Is(err, auth.ErrInvalidSessionToken) {
+			return s3err.GetAPIError(s3err.ErrInvalidToken)
 		}
 		if err != nil {
 			return err
@@ -126,7 +133,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 			return s3err.GetAPIError(s3err.ErrInvalidSHA256PayloadUsage)
 		}
 
-		canonicalString, err := utils.CheckValidSignature(ctx, authData, account.Secret, hashPayload, tdate, contentLength)
+		canonicalString, err := utils.CheckValidSignature(ctx, authData, derivedKey, hashPayload, tdate, contentLength)
 		if err != nil {
 			return err
 		}
@@ -153,7 +160,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 			if utils.IsStreamingPayload(hashPayload) {
 				wrapBodyReader(ctx, func(r io.Reader) io.Reader {
 					var cr io.Reader
-					cr, err = utils.NewChunkReader(ctx, r, authData, canonicalString, account.Secret, tdate)
+					cr, err = utils.NewChunkReader(ctx, r, authData, canonicalString, derivedKey, tdate)
 					return cr
 				})
 				if err != nil {
@@ -189,21 +196,4 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 
 		return nil
 	}
-}
-
-type accounts struct {
-	root RootUserConfig
-	iam  auth.IAMService
-}
-
-func (a accounts) getAccount(access string) (auth.Account, error) {
-	if access == a.root.Access {
-		return auth.Account{
-			Access: a.root.Access,
-			Secret: a.root.Secret,
-			Role:   auth.RoleAdmin,
-		}, nil
-	}
-
-	return a.iam.GetUserAccount(access)
 }
