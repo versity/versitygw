@@ -34,6 +34,9 @@ type ScoutfsOpts struct {
 	VersioningDir string
 	// NewDirPerm specifies the permission to set on newly created directories
 	NewDirPerm fs.FileMode
+	// NewFilePerm specifies the permission to set on newly created object
+	// files. Defaults to 0644 when unset.
+	NewFilePerm fs.FileMode
 	// GlacierMode enables glacier emulation for offline files
 	GlacierMode bool
 	// DisableNoArchive prevents setting noarchive on temporary files

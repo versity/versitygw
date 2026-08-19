@@ -40,14 +40,15 @@ type tmpfile struct {
 	bucket  string
 	objname string
 	// Retained for compatibility with shared tmpfile methods in otmpfile_common.
-	isOTmp     bool
-	procFDName string
-	useODirect bool
-	size       int64
-	newDirPerm fs.FileMode
-	uid        int
-	gid        int
-	doChown    bool
+	isOTmp      bool
+	procFDName  string
+	useODirect  bool
+	size        int64
+	newDirPerm  fs.FileMode
+	newFilePerm fs.FileMode
+	uid         int
+	gid         int
+	doChown     bool
 }
 
 func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, _ bool, _ bool, allowODirect odirectPolicy) (*tmpfile, error) {
@@ -85,24 +86,20 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	}
 
 	return &tmpfile{
-		f:          f,
-		bucket:     bucket,
-		objname:    obj,
-		isOTmp:     false,
-		procFDName: "",
-		useODirect: false,
-		size:       size,
-		newDirPerm: p.newDirPerm,
-		uid:        uid,
-		gid:        gid,
-		doChown:    doChown,
+		f:           f,
+		bucket:      bucket,
+		objname:     obj,
+		isOTmp:      false,
+		procFDName:  "",
+		useODirect:  false,
+		size:        size,
+		newDirPerm:  p.newDirPerm,
+		newFilePerm: p.newFilePerm,
+		uid:         uid,
+		gid:         gid,
+		doChown:     doChown,
 	}, nil
 }
-
-var (
-	// TODO: make this configurable
-	defaultFilePerm fs.FileMode = 0644
-)
 
 func (tmp *tmpfile) link() error {
 	tempname := tmp.f.Name()
@@ -110,7 +107,7 @@ func (tmp *tmpfile) link() error {
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
 
 	// reset default file mode because CreateTemp uses 0600
-	tmp.f.Chmod(defaultFilePerm)
+	tmp.f.Chmod(tmp.newFilePerm)
 
 	err := tmp.f.Close()
 	if err != nil {
@@ -119,7 +116,7 @@ func (tmp *tmpfile) link() error {
 
 	backoffMs := initialBackoffMs
 	for {
-		err = backend.MoveFile(tempname, objPath, defaultFilePerm)
+		err = backend.MoveFile(tempname, objPath, tmp.newFilePerm)
 		if !os.IsNotExist(err) {
 			break
 		}
