@@ -717,6 +717,7 @@ func TestWebsiteHosting(ts *TestState) {
 	ts.Run(WebsiteHosting_options_preflight_access_granted)
 	ts.Run(WebsiteHosting_options_preflight_access_forbidden)
 	ts.Run(WebsiteHosting_options_preflight_missing_origin)
+	ts.Run(WebsiteHosting_url_encoded_object_key)
 }
 
 func TestPreflightOPTIONSEndpoint(ts *TestState) {
@@ -1892,6 +1893,7 @@ func GetIntTests() IntTests {
 		"WebsiteHosting_options_preflight_access_granted":                          WebsiteHosting_options_preflight_access_granted,
 		"WebsiteHosting_options_preflight_access_forbidden":                        WebsiteHosting_options_preflight_access_forbidden,
 		"WebsiteHosting_options_preflight_missing_origin":                          WebsiteHosting_options_preflight_missing_origin,
+		"WebsiteHosting_url_encoded_object_key":                                    WebsiteHosting_url_encoded_object_key,
 		"PreflightOPTIONS_non_existing_bucket":                                     PreflightOPTIONS_non_existing_bucket,
 		"PreflightOPTIONS_missing_origin":                                          PreflightOPTIONS_missing_origin,
 		"PreflightOPTIONS_invalid_request_method":                                  PreflightOPTIONS_invalid_request_method,

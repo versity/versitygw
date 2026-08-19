@@ -862,3 +862,55 @@ func WebsiteHosting_options_preflight_missing_origin(s *S3Conf) error {
 		return checkWebsiteErrorResponse(resp, s3err.GetAPIError(s3err.ErrMissingCORSOrigin))
 	})
 }
+
+// WebsiteHosting_url_encoded_object_key tests that object keys containing
+// characters requiring percent-encoding are served, and that a key holding a
+// literal percent sign is not decoded twice.
+func WebsiteHosting_url_encoded_object_key(s *S3Conf) error {
+	testName := "WebsiteHosting_url_encoded_object_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketWebsiteConfig(s3client, bucket, &types.WebsiteConfiguration{
+			IndexDocument: &types.IndexDocument{
+				Suffix: getPtr("index.html"),
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := grantPublicBucketPolicy(s3client, bucket, policyTypeObject); err != nil {
+			return err
+		}
+
+		for _, test := range []struct {
+			key  string
+			path string
+		}{
+			{"my file.html", "/my%20file.html"},
+			{"my dir/index.html", "/my%20dir/"},
+			{"café.html", "/caf%C3%A9.html"},
+			{"a%20b.html", "/a%2520b.html"},
+		} {
+			content := "<html><body>" + test.key + "</body></html>"
+			_, err = putObjectWithData(int64(len(content)), &s3.PutObjectInput{
+				Bucket:      &bucket,
+				Key:         &test.key,
+				Body:        strings.NewReader(content),
+				ContentType: getPtr("text/html"),
+			}, s3client)
+			if err != nil {
+				return err
+			}
+
+			resp, err := websiteGet(s, bucket, test.path, nil)
+			if err != nil {
+				return err
+			}
+
+			if err := checkWebsiteResponse(resp, http.StatusOK, []byte(content)); err != nil {
+				return fmt.Errorf("%s: %w", test.path, err)
+			}
+		}
+
+		return nil
+	})
+}

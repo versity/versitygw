@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -125,10 +126,26 @@ func (c *websiteController) Options(ctx fiber.Ctx) error {
 func registerWebsiteRoutes(app *fiber.App, be backend.Backend, domain string) {
 	controller := newWebsiteController(be, domain)
 
+	// percent-decode the request path, so object keys containing special
+	// characters resolve to the actual key. The s3 api and admin servers
+	// mount the same middleware.
+	app.Use("*", decodeURL)
+
 	app.Head("*", controller.Head)
 	app.Get("*", controller.Get)
 	app.Options("*", controller.Options)
 	app.All("*", controller.MethodNotAllowed)
+}
+
+// decodeURL wraps the shared DecodeURL middleware to continue the chain and to
+// report malformed percent-encoding as an html error page.
+func decodeURL(ctx fiber.Ctx) error {
+	if err := middlewares.DecodeURL(ctx); err != nil {
+		debuglogger.Logf("failed to unescape the request path: %v", err)
+		return sendError(ctx, s3err.GetAPIError(s3err.ErrInvalidURI))
+	}
+
+	return ctx.Next()
 }
 
 func setCORSPreflightHeaders(ctx fiber.Ctx, allowConfig *auth.CORSAllowanceConfig) {
@@ -194,8 +211,6 @@ func (c *websiteController) resolveRequest(ctx fiber.Ctx) (*websiteRequestInfo, 
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println(bucket)
 
 	key := strings.TrimPrefix(ctx.Path(), "/")
 	if err := validateWebsiteNames(bucket, key); err != nil {
@@ -411,10 +426,8 @@ func handleRedirectAll(ctx fiber.Ctx, redirect *s3response.RedirectAllRequestsTo
 		protocol = ctx.Scheme()
 	}
 
-	location := fmt.Sprintf("%s://%s/%s", protocol, redirect.HostName, key)
-	if query := string(ctx.Request().URI().QueryString()); query != "" {
-		location += "?" + query
-	}
+	location := websiteLocation(protocol, redirect.HostName, key,
+		string(ctx.Request().URI().QueryString()))
 	return sendRedirect(ctx, http.StatusMovedPermanently, location)
 }
 
@@ -444,11 +457,22 @@ func applyRedirect(ctx fiber.Ctx, redirect *s3response.Redirect, condition *s3re
 		}
 	}
 
-	location := fmt.Sprintf("%s://%s/%s", protocol, host, key)
-	if query := string(ctx.Request().URI().QueryString()); query != "" {
-		location += "?" + query
-	}
+	location := websiteLocation(protocol, host, key,
+		string(ctx.Request().URI().QueryString()))
 	return sendRedirect(ctx, httpCode, location)
+}
+
+// websiteLocation builds a redirect target url. The object key is
+// percent-encoded, as the keys reaching this point are decoded.
+func websiteLocation(protocol, host, key, query string) string {
+	location := url.URL{
+		Scheme:   protocol,
+		Host:     host,
+		Path:     "/" + key,
+		RawQuery: query,
+	}
+
+	return location.String()
 }
 
 func sendRedirect(ctx fiber.Ctx, statusCode int, location string) error {
