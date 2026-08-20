@@ -76,6 +76,7 @@ jobs:
           AWS_REGION: ${{ matrix.AWS_REGION }}
           COVERAGE_LOG: /home/tester/test-files/coverage.log
           TEMPLATE_MATRIX_FILE: ${{ github.workspace }}/tests/templates/matrix.yaml
+          VERSITY_LOG_FILE: /home/tester/test-files/versity.log
         run: |
           cat > /home/tester/test-files/.env <<EOF
           IAM_TYPE=$IAM_TYPE
