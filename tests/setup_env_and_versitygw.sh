@@ -49,16 +49,31 @@ setup_env() {
 
 setup_versitygw() {
   local params=("$@")
-  local response
+  local response pid
 
   if [ "$RUN_VERSITYGW" == "true" ] && [ "$UNIT_TEST" != "true" ]; then
     if ! response=$(run_versity_app "${params[@]}" 2>&1); then
       log 1 "error running versitygw app: $response"
       return 1
     fi
-    printf '%s\n' "$response"
+    pid="$response"
+  fi
+
+  if [ "$RUN_USERS" == "true" ] && [ "$SKIP_USERS_TESTS" != "true" ]; then
+    if ! static_user_v1_cleanup; then
+      log 2 "error cleaning up v1 static users"
+      return 1
+    fi
+    if [ "$DIRECT" != "true" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" == "true" ] && [ "$AUTOGENERATE_USERS" == "false" ]; then
+      if ! static_user_versitygw_setup; then
+        log 2 "error setting up static versitygw users"
+        return 1
+      fi
+    fi
   fi
   log 4 "********** END VERSITYGW SETUP **********"
+
+  printf '%s\n' "$pid"
   return 0
 }
 
