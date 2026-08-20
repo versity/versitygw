@@ -119,6 +119,7 @@ jobs:
           GENERATE_COMMAND_EXECUTABLE=/home/tester/test-files/generateCommand
           WEBSITE_DOMAIN=localhost
           WEBSITE=:7071
+          VERSITY_LOG_FILE=$VERSITY_LOG_FILE
           EOF
           sudo chown tester:tester /home/tester/test-files/.env
           sudo chmod 600 /home/tester/test-files/.env
