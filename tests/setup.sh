@@ -65,14 +65,19 @@ static_user_versitygw_setup() {
 
 # bats setup function
 setup() {
+  local response
+
   if ! setup_env; then
     log 1 "error setting up env"
     return 1
   fi
-  if ! setup_versitygw; then
-    log 1 "error starting versitygw app"
+
+  if ! response=$(setup_versitygw 2>&1); then
+    log 1 "error starting versitygw app: $response"
     return 1
   fi
+  export VERSITYGW_PID_1="$response"
+
   if ! setup_clients; then
     log 1 "error setting up clients"
     return 1
