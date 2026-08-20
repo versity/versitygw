@@ -65,62 +65,74 @@ static_user_versitygw_setup() {
 
 # bats setup function
 setup() {
-  TEST_ID=$(date +"%Y%m%d-%H%M%S").$(basename "$BATS_TEST_FILENAME").$BATS_TEST_NAME
-  export TEST_ID
-
-  source_config_file
-
-  if ! setup_test_log_file; then
-    log 1 "error creating test log file"
+  if ! setup_env; then
+    log 1 "error setting up env"
     return 1
   fi
-
-  if [ -n "$TEST_LOG_FILE" ]; then
-    printf "\n%s\n\n" "**** $TEST_ID ****" >> "${TEST_LOG_FILE}.${TEST_ID}"
-  fi
-
-  if ! base_setup; then
-    log 2 "error checking env vars or running versitygw"
+  if ! setup_versitygw; then
+    log 1 "error starting versitygw app"
     return 1
   fi
-
-  if [ "$RUN_USERS" == "true" ] && [ "$SKIP_USERS_TESTS" != "true" ]; then
-    if ! static_user_v1_cleanup; then
-      log 2 "error cleaning up v1 static users"
-      return 1
-    fi
-    if [ "$DIRECT" != "true" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" == "true" ] && [ "$AUTOGENERATE_USERS" == "false" ]; then
-      if ! static_user_versitygw_setup; then
-        log 2 "error setting up static versitygw users"
-        return 1
-      fi
-    fi
-  fi
-
-  log 4 "Running test $BATS_TEST_NAME"
-  if [[ $LOG_LEVEL -ge 5 ]] || [[ -n "$TIME_LOG" ]]; then
-    START_TIME=$(date +%s)
-    export START_TIME
-  fi
-
-  if [[ $RUN_S3CMD == true ]]; then
-    S3CMD_OPTS=()
-    S3CMD_OPTS+=(-c "$S3CMD_CONFIG")
-    S3CMD_OPTS+=(--access_key="$AWS_ACCESS_KEY_ID")
-    S3CMD_OPTS+=(--secret_key="$AWS_SECRET_ACCESS_KEY")
-    S3CMD_OPTS+=(--region="$AWS_REGION")
-    export S3CMD_CONFIG S3CMD_OPTS
-  fi
-
-  if [[ $RUN_MC == true ]] && ! check_add_mc_alias; then
-    log 1 "error checking for or adding mc alias"
+  if ! setup_clients; then
+    log 1 "error setting up clients"
     return 1
   fi
-
-  export AWS_PROFILE
-
-  log 4 "********** END SETUP **********"
-  return 0
+#  TEST_ID=$(date +"%Y%m%d-%H%M%S").$(basename "$BATS_TEST_FILENAME").$BATS_TEST_NAME
+#  export TEST_ID
+#
+#  source_config_file
+#
+#  if ! setup_test_log_file; then
+#    log 1 "error creating test log file"
+#    return 1
+#  fi
+#
+#  if [ -n "$TEST_LOG_FILE" ]; then
+#    printf "\n%s\n\n" "**** $TEST_ID ****" >> "${TEST_LOG_FILE}.${TEST_ID}"
+#  fi
+#
+#  if ! base_setup; then
+#    log 2 "error checking env vars or running versitygw"
+#    return 1
+#  fi
+#
+#  if [ "$RUN_USERS" == "true" ] && [ "$SKIP_USERS_TESTS" != "true" ]; then
+#    if ! static_user_v1_cleanup; then
+#      log 2 "error cleaning up v1 static users"
+#      return 1
+#    fi
+#    if [ "$DIRECT" != "true" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" == "true" ] && [ "$AUTOGENERATE_USERS" == "false" ]; then
+#      if ! static_user_versitygw_setup; then
+#        log 2 "error setting up static versitygw users"
+#        return 1
+#      fi
+#    fi
+#  fi
+#
+#  log 4 "Running test $BATS_TEST_NAME"
+#  if [[ $LOG_LEVEL -ge 5 ]] || [[ -n "$TIME_LOG" ]]; then
+#    START_TIME=$(date +%s)
+#    export START_TIME
+#  fi
+#
+#  if [[ $RUN_S3CMD == true ]]; then
+#    S3CMD_OPTS=()
+#    S3CMD_OPTS+=(-c "$S3CMD_CONFIG")
+#    S3CMD_OPTS+=(--access_key="$AWS_ACCESS_KEY_ID")
+#    S3CMD_OPTS+=(--secret_key="$AWS_SECRET_ACCESS_KEY")
+#    S3CMD_OPTS+=(--region="$AWS_REGION")
+#    export S3CMD_CONFIG S3CMD_OPTS
+#  fi
+#
+#  if [[ $RUN_MC == true ]] && ! check_add_mc_alias; then
+#    log 1 "error checking for or adding mc alias"
+#    return 1
+#  fi
+#
+#  export AWS_PROFILE
+#
+#  log 4 "********** END SETUP **********"
+#  return 0
 }
 
 # bats teardown function
