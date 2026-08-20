@@ -29,8 +29,10 @@ start_versity_process() {
   process_id="$response"
 
   printf -v "VERSITYGW_PID_$1" '%s' "$process_id"
+  log 4 "versitygw PID for $1:  $process_id"
   export VERSITYGW_PID_"$1"
 
+  printf '%s\n' "$process_id"
   return 0
 }
 
@@ -52,7 +54,7 @@ build_run_and_log_command() {
   fi
   if [ -n "$VERSITY_LOG_FILE" ]; then
     versitygw_log_file_name="$VERSITY_LOG_FILE.$TEST_ID".$1
-    echo "****************************** VERSITYGW $1 LOG ***********************************" >> "$versitygw_log_file_name"
+    printf '****************************** VERSITYGW %s LOG \***********************************\n' "$1" >> "$versitygw_log_file_name"
     "${full_command[@]}" >> "$versitygw_log_file_name" 2>&1 &
   else
     "${full_command[@]}" >/dev/null 2>&1 &
@@ -100,10 +102,14 @@ verify_process_started() {
 }
 
 run_versity_app_posix() {
-  if ! check_param_count "run_versity_app_posix" "access ID, secret key, versityid app index" 3 $#; then
+  if ! check_param_count_gt "access ID, secret key, versitygw app index, optional params" 3 $#; then
     return 1
   fi
-  base_command=("$VERSITY_EXE" --access="$1" --secret="$2" --region="$AWS_REGION")
+  local access_id="$1" secret_key="$2" versitygw_app_index="$3" optional_params=("${@:4}")
+  local -a base_command
+  local response process_id
+
+  base_command=("$VERSITY_EXE" --access="$access_id" --secret="$secret_key" --region="$AWS_REGION")
   if [ -n "$RUN_USERS" ]; then
     # shellcheck disable=SC2153
     IFS=' ' read -r -a iam_array <<< "$IAM_PARAMS"
@@ -121,16 +127,21 @@ run_versity_app_posix() {
   if [ -n "$WEBSITE_DOMAIN" ]; then
     base_command+=(--website-domain "$WEBSITE_DOMAIN")
   fi
+  base_command+=("${optional_params[@]}")
   base_command+=(posix)
   if [ -n "$VERSIONING_DIR" ]; then
     base_command+=(--versioning-dir "$VERSIONING_DIR")
   fi
   base_command+=("$LOCAL_FOLDER")
+  log 5 "base command: ${base_command[*]}"
 
-  if ! start_versity_process "$3" "${base_command[@]}"; then
-    log 1 "error starting versity process"
+  if ! response=$(start_versity_process "$versitygw_app_index" "${base_command[@]}" 2>&1); then
+    log 1 "error starting versity process: $response"
     return 1
   fi
+  process_id="$response"
+  log 5 "pid here: $process_id"
+  printf '%s\n' "$process_id"
   return 0
 }
 
@@ -177,10 +188,15 @@ run_versity_app_s3() {
 }
 
 run_versity_app() {
+  local additional_params=("$@")
+  local response process_id
+
   if [[ $BACKEND == 'posix' ]]; then
-    if ! run_versity_app_posix "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "1"; then
+    if ! response=$(run_versity_app_posix "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "1" "${additional_params[@]}" 2>&1); then
+      log 2 "error running POSIX versity app: $response"
       return 1
     fi
+    process_id="$response"
   elif [[ $BACKEND == 'scoutfs' ]]; then
     if ! run_versity_app_scoutfs "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "1"; then
       return 1
@@ -196,6 +212,8 @@ run_versity_app() {
     log 1 "unrecognized backend type $BACKEND"
     return 1
   fi
+  log 5 "and here: $process_id"
+  printf '%s\n' "$process_id"
   if [[ $IAM_TYPE != "s3" ]]; then
     return 0
   fi

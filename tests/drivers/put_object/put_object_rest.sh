@@ -14,6 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/put_object.sh
 source ./tests/drivers/rest.sh
 source ./tests/drivers/openssl.sh
 
