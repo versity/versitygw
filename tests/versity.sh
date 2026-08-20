@@ -40,9 +40,10 @@ build_run_and_log_command() {
   if ! check_param_count_gt "versitygw process number (1 or 2), command array" 2 $#; then
     return 1
   fi
+  local process_number="$1" command_array=("${@:2}")
   local response full_command versitygw_log_file_name="" pid check_result
 
-  IFS=' ' read -r -a full_command <<< "${@:2}"
+  IFS=' ' read -r -a full_command <<< "${command_array[@]}"
   log 5 "versity command: ${full_command[*]}"
   if [ -n "$COMMAND_LOG" ]; then
     if ! response=$(mask_args "${full_command[*]}" 2>&1); then
@@ -53,7 +54,7 @@ build_run_and_log_command() {
     echo "$response" >> "$COMMAND_LOG"
   fi
   if [ -n "$VERSITY_LOG_FILE" ]; then
-    versitygw_log_file_name="$VERSITY_LOG_FILE.$TEST_ID".$1
+    versitygw_log_file_name="$VERSITY_LOG_FILE.$TEST_ID".$process_number
     printf '****************************** VERSITYGW %s LOG \***********************************\n' "$1" >> "$versitygw_log_file_name"
     "${full_command[@]}" >> "$versitygw_log_file_name" 2>&1 &
   else

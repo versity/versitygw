@@ -14,7 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/env.sh
+source ./tests/logger.sh
+source ./tests/setup_env_and_versitygw.sh
 source ./tests/util/util_object.sh
 source ./tests/commands/create_bucket.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
@@ -40,7 +41,11 @@ create_bucket_if_not_exists() {
   return 0
 }
 
-base_setup
+if ! setup_env_and_versitygw; then
+  log 1 "error setting up env and/or versitygw"
+  exit 1
+fi
+
 if ! create_bucket_if_not_exists "$BUCKET_ONE_NAME"; then
   log 2 "error creating static bucket one"
 elif ! create_bucket_if_not_exists "$BUCKET_TWO_NAME"; then
@@ -49,6 +54,6 @@ fi
 
 # shellcheck disable=SC2034
 RECREATE_BUCKETS=false
-if ! stop_versity_process "$VERSITYGW_PID_1"; then
-  log 2 "error stopping versity"
+if ! teardown_common; then
+  log 2 "teardown error"
 fi

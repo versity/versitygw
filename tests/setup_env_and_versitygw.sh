@@ -15,9 +15,13 @@
 # under the License.
 
 source ./tests/env.sh
+source ./tests/drivers/delete_bucket/delete_bucket_rest.sh
 
 setup_env() {
-  TEST_ID=$(date +"%Y%m%d-%H%M%S").$(basename "$BATS_TEST_FILENAME").$BATS_TEST_NAME
+  TEST_ID=$(date +"%Y%m%d-%H%M%S")
+  if [ -n "$BATS_TEST_FILENAME" ]; then
+    TEST_ID+=".$(basename "$BATS_TEST_FILENAME").$BATS_TEST_NAME"
+  fi
   export TEST_ID
 
   source_config_file
@@ -31,7 +35,9 @@ setup_env() {
     printf "\n%s\n\n" "**** $TEST_ID ****" >> "${TEST_LOG_FILE}.${TEST_ID}"
   fi
 
-  log 4 "Running test $BATS_TEST_NAME"
+  if [ -n "$BATS_TEST_NAME" ]; then
+    log 4 "Running test $BATS_TEST_NAME"
+  fi
   if [[ $LOG_LEVEL -ge 5 ]] || [[ -n "$TIME_LOG" ]]; then
     START_TIME=$(date +%s)
     export START_TIME
@@ -77,6 +83,21 @@ setup_versitygw() {
   return 0
 }
 
+setup_env_and_versitygw() {
+  local response
+
+  if ! setup_env; then
+    log 1 "error setting up env"
+    return 1
+  fi
+  if ! response=$(setup_versitygw "$@" 2>&1); then
+    log 2 "error setting up versitygw: $response"
+    return 1
+  fi
+  export VERSITYGW_PID_1="$response"
+  return 0
+}
+
 setup_clients() {
   if [[ $RUN_S3CMD == true ]]; then
     S3CMD_OPTS=()
@@ -103,16 +124,27 @@ teardown_common() {
 
   log 5 "proc status one: '$proc_status_one'"
   if [ "$proc_status_one" == "none" ] || [[ ( "$proc_status_one" == "running" ) && (( "$proc_status_two" == "none") || ( "$proc_status_two" == "running")) ]]; then
-    bucket_and_user_cleanup
+    if ! bucket_and_user_cleanup; then
+      log 3 "bucket and user cleanup not properly done"
+    fi
   fi
   if [ "$proc_status_one" == "running" ]; then
-    stop_versity_process "$VERSITYGW_PID_1"
+    if ! stop_versity_process "$VERSITYGW_PID_1"; then
+      log 3 "unable to properly stop versitygw process"
+    fi
   fi
   if [ "$proc_status_two" == "running" ]; then
-    stop_versity_process "$VERSITYGW_PID_2"
+    if ! stop_versity_process "$VERSITYGW_PID_2"; then
+      log 3 "unable to properly stop second versity process"
+    fi
   fi
-  remove_test_file_folder_if_desired
-  teardown_logs
+  if ! remove_test_file_folder_if_desired; then
+    log 3 "test file folder cleanup error"
+  fi
+  if ! teardown_logs; then
+    log 3 "log file teardown error"
+  fi
+  return 0
 }
 
 static_user_v1_cleanup() {
