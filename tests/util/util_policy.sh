@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/get_bucket_policy.sh
+
 check_for_empty_policy() {
   if ! check_param_count "check_for_empty_policy" "command type, bucket name" 2 $#; then
     return 1

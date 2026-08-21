@@ -14,6 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/put_bucket_policy.sh
 source ./tests/drivers/params.sh
 
 # params:  bucket name

@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/get_object_lock_configuration.sh
+
 check_object_lock_config() {
   if ! check_param_count_v2 "bucket" 1 $#; then
     return 1

@@ -90,3 +90,37 @@ put_bucket_policy_rest_200_or_204() {
   fi
   return 0
 }
+
+create_website_with_random_string_and_add_permissions() {
+  if ! check_param_count_v2 "bucket name" 1 $#; then
+    return 1
+  fi
+  local bucket_name="$1"
+  local response random_string policy_file
+
+  if ! response=$(create_website_with_random_string "$bucket_name" 2>&1); then
+    log 2 "error creating website: $response"
+    return 1
+  fi
+  read -r _ random_string <<< "$response"
+
+  if [ "$DIRECT" == "true" ]; then
+    if ! put_public_access_block "$bucket_name" "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"; then
+      log 2 "error putting public access block"
+      return 1
+    fi
+  fi
+
+  if ! response=$(setup_policy_with_single_statement_v2 "2012-10-17" "Allow" "*" "s3:GetObject" "arn:aws:s3:::$bucket_name/*" 2>&1); then
+    log 2 "error setting up policy: $response"
+    return 1
+  fi
+  policy_file="$response"
+
+  if ! put_bucket_policy "rest" "$bucket_name" "$TEST_FILE_FOLDER"/"$policy_file"; then
+    log 2 '"error putting bucket policy'
+    return 1
+  fi
+  printf '%s\n' "$random_string"
+  return 0
+}
