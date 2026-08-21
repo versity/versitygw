@@ -370,6 +370,7 @@ func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_invalid_copy_source)
 	ts.Run(CopyObject_non_existing_dir_object)
 	ts.Run(CopyObject_should_copy_meta_props)
+	ts.Run(CopyObject_should_not_copy_website_redirect_without_user_metadata)
 	ts.Run(CopyObject_should_replace_meta_props)
 	ts.Run(CopyObject_invalid_website_redirect_location)
 	ts.Run(CopyObject_default_content_type_with_replace_metadata)
@@ -1639,6 +1640,7 @@ func GetIntTests() IntTests {
 		"CopyObject_invalid_copy_source":                                           CopyObject_invalid_copy_source,
 		"CopyObject_non_existing_dir_object":                                       CopyObject_non_existing_dir_object,
 		"CopyObject_should_copy_meta_props":                                        CopyObject_should_copy_meta_props,
+		"CopyObject_should_not_copy_website_redirect_without_user_metadata":        CopyObject_should_not_copy_website_redirect_without_user_metadata,
 		"CopyObject_should_replace_meta_props":                                     CopyObject_should_replace_meta_props,
 		"CopyObject_invalid_website_redirect_location":                             CopyObject_invalid_website_redirect_location,
 		"CopyObject_default_content_type_with_replace_metadata":                    CopyObject_default_content_type_with_replace_metadata,

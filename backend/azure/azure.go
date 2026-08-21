@@ -47,6 +47,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -1290,11 +1291,16 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		return s3response.CopyObjectOutput{}, s3err.GetCopySourceObjectTooLargeErr(az.copyObjectThreshold)
 	}
 
-	if out, err := az.serverSideCopyObject(ctx, input, srcBucket, srcObj, dstClient, srcClient); err == nil {
+	out, err := az.serverSideCopyObject(ctx, input, srcBucket, srcObj, dstClient, srcClient, &srcProps)
+	if err == nil {
 		return out, nil
-	} else if !errors.Is(err, errServerSideCopyFallback) {
+	}
+	if !errors.Is(err, errServerSideCopyFallback) {
 		return s3response.CopyObjectOutput{}, err
 	}
+
+	debuglogger.Logf("falling back to download+reupload (%q/%q -> %q/%q): %v",
+		srcBucket, srcObj, *input.Bucket, *input.Key, err)
 
 	// Fallback: download and re-upload through the gateway.
 	downloadResp, err := az.client.DownloadStream(ctx, srcBucket, srcObj, nil)
