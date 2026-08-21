@@ -23,12 +23,24 @@ source ./tests/drivers/get_bucket_website/get_bucket_website_rest.sh
 source ./tests/drivers/put_bucket_website/put_bucket_website_rest.sh
 source ./tests/drivers/cloudfront.sh
 source ./tests/drivers/string.sh
-source ./tests/setup_env_and_versitygw.sh
+source ./tests/setup_common.sh
 
 setup() {
   if ! setup_env; then
     log 1 "error setting up env"
     return 1
+  fi
+}
+
+setup_versitygw_for_website() {
+  optional_params=("$@")
+
+  run setup_versitygw "${optional_params[@]}"
+  assert_success
+  read -r process_id process_id_two <<< "$output"
+  export VERSITYGW_PID_1="$process_id"
+  if [ -n "$process_id_two" ]; then
+    export VERSITYGW_PID_2="$process_id_two"
   fi
 }
 
@@ -39,10 +51,7 @@ teardown() {
 @test "PutBucketWebsite - empty payload" {
   local bucket_name
 
-  run setup_versitygw
-  assert_success
-  process_id="$output"
-  export VERSITYGW_PID_1="$process_id"
+  setup_versitygw_for_website
 
   run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -58,10 +67,7 @@ teardown() {
   fi
   local bucket_name
 
-  run setup_versitygw
-  assert_success
-  process_id="$output"
-  export VERSITYGW_PID_1="$process_id"
+  setup_versitygw_for_website
 
   run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -78,32 +84,17 @@ teardown() {
   fi
   distribution_created=false
 
-  run setup_versitygw
-  assert_success
-  process_id="$output"
-  export VERSITYGW_PID_1="$process_id"
+  setup_versitygw_for_website
 
-  local bucket_name policy_file distribution_domain http_domain
+  local bucket_name distribution_domain http_domain
 
   run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
 
-  run create_website_with_random_string "$bucket_name"
+  run create_website_with_random_string_and_add_permissions "$bucket_name"
   assert_success
-  random_string="$output"
-
-  if [ "$DIRECT" == "true" ]; then
-    run put_public_access_block "$bucket_name" "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"
-    assert_success
-  fi
-
-  run setup_policy_with_single_statement_v2 "2012-10-17" "Allow" "*" "s3:GetObject" "arn:aws:s3:::$bucket_name/*"
-  assert_success
-  policy_file="$output"
-
-  run put_bucket_policy "rest" "$bucket_name" "$TEST_FILE_FOLDER"/"$policy_file"
-  assert_success
+  read -r random_string <<< "$output"
 
   if [ "$DIRECT" == "true" ]; then
     run create_cloudfront_distribution "$bucket_name" "index.html" "${bucket_name}.s3-website.us-east-1.amazonaws.com"
@@ -122,12 +113,9 @@ teardown() {
 }
 
 @test "PutBucketWebsite - IndexDocument suffix" {
-  local bucket_name policy_file random_string
+  local bucket_name random_string
 
-  run setup_versitygw
-  assert_success
-  process_id="$output"
-  export VERSITYGW_PID_1="$process_id"
+  setup_versitygw_for_website
 
   run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -145,10 +133,7 @@ teardown() {
 @test "REST - GetBucketWebsite - IndexDocument Suffix, DeleteBucketWebsite" {
   local bucket_name test_file random_string
 
-  run setup_versitygw
-  assert_success
-  process_id="$output"
-  export VERSITYGW_PID_1="$process_id"
+  setup_versitygw_for_website
 
   run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -170,11 +155,9 @@ teardown() {
 }
 
 @test "REST - GetBucketWebsite - no HTTPS" {
-  run setup_versitygw "--website-no-tls"
-  assert_success
-  process_id="$output"
-  log 5 "process ID: $process_id"
-  export VERSITYGW_PID_1="$process_id"
+  local bucket_name random_string
+
+  setup_versitygw_for_website "--website-no-tls"
 
   run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success

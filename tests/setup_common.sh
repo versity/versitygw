@@ -58,11 +58,10 @@ setup_versitygw() {
   local response pid
 
   if [ "$RUN_VERSITYGW" == "true" ] && [ "$UNIT_TEST" != "true" ]; then
-    if ! response=$(run_versity_app "${params[@]}" 2>&1); then
-      log 1 "error running versitygw app: $response"
+    if ! run_versity_app "${params[@]}"; then
+      log 1 "error running versitygw app"
       return 1
     fi
-    pid="$response"
   fi
 
   if [ "$RUN_USERS" == "true" ] && [ "$SKIP_USERS_TESTS" != "true" ]; then
@@ -79,7 +78,6 @@ setup_versitygw() {
   fi
   log 4 "********** END VERSITYGW SETUP **********"
 
-  printf '%s\n' "$pid"
   return 0
 }
 
@@ -90,11 +88,10 @@ setup_env_and_versitygw() {
     log 1 "error setting up env"
     return 1
   fi
-  if ! response=$(setup_versitygw "$@" 2>&1); then
-    log 2 "error setting up versitygw: $response"
+  if ! setup_versitygw "$@"; then
+    log 2 "error setting up versitygw"
     return 1
   fi
-  export VERSITYGW_PID_1="$response"
   return 0
 }
 

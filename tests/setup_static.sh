@@ -15,7 +15,7 @@
 # under the License.
 
 source ./tests/logger.sh
-source ./tests/setup_env_and_versitygw.sh
+source ./tests/setup_common.sh
 source ./tests/util/util_object.sh
 source ./tests/commands/create_bucket.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
