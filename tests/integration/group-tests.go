@@ -370,6 +370,7 @@ func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_invalid_copy_source)
 	ts.Run(CopyObject_non_existing_dir_object)
 	ts.Run(CopyObject_should_copy_meta_props)
+	ts.Run(CopyObject_should_not_copy_website_redirect_without_user_metadata)
 	ts.Run(CopyObject_should_replace_meta_props)
 	ts.Run(CopyObject_invalid_website_redirect_location)
 	ts.Run(CopyObject_default_content_type_with_replace_metadata)
@@ -392,6 +393,7 @@ func TestCopyObject(ts *TestState) {
 	}
 	ts.Run(CopyObject_with_special_characters)
 	ts.Run(CopyObject_success)
+	ts.Run(CopyObject_cross_bucket_server_side_copy)
 	ts.Run(CopyObject_incorrect_source_bucket_expected_owner)
 }
 
@@ -1639,6 +1641,7 @@ func GetIntTests() IntTests {
 		"CopyObject_invalid_copy_source":                                           CopyObject_invalid_copy_source,
 		"CopyObject_non_existing_dir_object":                                       CopyObject_non_existing_dir_object,
 		"CopyObject_should_copy_meta_props":                                        CopyObject_should_copy_meta_props,
+		"CopyObject_should_not_copy_website_redirect_without_user_metadata":        CopyObject_should_not_copy_website_redirect_without_user_metadata,
 		"CopyObject_should_replace_meta_props":                                     CopyObject_should_replace_meta_props,
 		"CopyObject_invalid_website_redirect_location":                             CopyObject_invalid_website_redirect_location,
 		"CopyObject_default_content_type_with_replace_metadata":                    CopyObject_default_content_type_with_replace_metadata,
@@ -1657,6 +1660,7 @@ func GetIntTests() IntTests {
 		"CopyObject_to_itself_by_replacing_the_checksum":                           CopyObject_to_itself_by_replacing_the_checksum,
 		"CopyObject_with_special_characters":                                       CopyObject_with_special_characters,
 		"CopyObject_success":                                                       CopyObject_success,
+		"CopyObject_cross_bucket_server_side_copy":                                 CopyObject_cross_bucket_server_side_copy,
 		"CopyObject_incorrect_source_bucket_expected_owner":                        CopyObject_incorrect_source_bucket_expected_owner,
 		"PutObjectTagging_non_existing_object":                                     PutObjectTagging_non_existing_object,
 		"PutObjectTagging_long_tags":                                               PutObjectTagging_long_tags,

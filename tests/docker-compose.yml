@@ -28,6 +28,10 @@ services:
       - "10002:10002"
     restart: always
     hostname: azurite
+    # Server-side copy makes Azurite fetch the copy source from its own HTTPS
+    # endpoint; trust the self-signed test cert so that TLS validation succeeds.
+    environment:
+      NODE_EXTRA_CA_CERTS: /tests/certs/azurite.pem
     command: "azurite --oauth basic --cert /tests/certs/azurite.pem --key /tests/certs/azurite-key.pem --blobHost 0.0.0.0 --skipApiVersionCheck"
     volumes:
       - ./tests/certs:/tests/certs
@@ -39,4 +43,9 @@ services:
       - ./:/app
     ports:
       - 7070:7070
+    # Azurite lags the SDK's SAS version and can't verify a copy-source SAS signed
+    # with it, so pin the copy-source SAS to a version Azurite supports. Production
+    # leaves this unset and uses the SDK default.
+    environment:
+      AZ_COPY_SAS_VERSION: "2025-11-05"
     command: ["sh", "-c", CompileDaemon -build="go build -C ./cmd/versitygw -buildvcs=false -o versitygw" -command="./cmd/versitygw/versitygw -a $ACCESS_KEY_ID -s $SECRET_ACCESS_KEY --iam-dir $IAM_DIR azure -a $AZ_ACCOUNT_NAME -k $AZ_ACCOUNT_KEY --url https://azurite:10000/$AZ_ACCOUNT_NAME"]
