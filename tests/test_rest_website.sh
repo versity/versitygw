@@ -24,7 +24,6 @@ source ./tests/drivers/put_bucket_website/put_bucket_website_rest.sh
 source ./tests/drivers/cloudfront.sh
 source ./tests/drivers/string.sh
 source ./tests/setup_env_and_versitygw.sh
-#source ./tests/setup.sh
 
 setup() {
   if ! setup_env; then
@@ -42,6 +41,8 @@ teardown() {
 
   run setup_versitygw
   assert_success
+  process_id="$output"
+  export VERSITYGW_PID_1="$process_id"
 
   run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -59,6 +60,8 @@ teardown() {
 
   run setup_versitygw
   assert_success
+  process_id="$output"
+  export VERSITYGW_PID_1="$process_id"
 
   run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
@@ -77,6 +80,8 @@ teardown() {
 
   run setup_versitygw
   assert_success
+  process_id="$output"
+  export VERSITYGW_PID_1="$process_id"
 
   local bucket_name policy_file distribution_domain http_domain
 
