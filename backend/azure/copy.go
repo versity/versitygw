@@ -33,7 +33,10 @@ import (
 const copyPollInterval = 500 * time.Millisecond
 
 // errServerSideCopyFallback signals that server-side copy could not be started
-// and the caller should fall back to download+reupload.
+// and the caller should fall back to download+reupload. Failures before the
+// copy is started are wrapped in this sentinel; once StartCopyFromURL has
+// succeeded the destination blob has been written, so later failures are
+// returned as-is rather than silently re-copying through the gateway.
 var errServerSideCopyFallback = errors.New("server-side copy unavailable")
 
 func (az *Azure) copySourceURL(ctx context.Context, srcBucket, srcObj string) (string, error) {
@@ -93,7 +96,7 @@ func (az *Azure) copySourceURL(ctx context.Context, srcBucket, srcObj string) (s
 		return az.getBlobURL(srcBucket, srcObj) + "?" + sasQueryParams.Encode(), nil
 	}
 
-	return "", fmt.Errorf("%w: no credentials available", errServerSideCopyFallback)
+	return "", errors.New("no credentials available")
 }
 
 func (az *Azure) serverSideCopyObject(
@@ -101,13 +104,25 @@ func (az *Azure) serverSideCopyObject(
 	input s3response.CopyObjectInput,
 	srcBucket, srcObj string,
 	dstClient, srcClient *blob.Client,
+	srcProps *blob.GetPropertiesResponse,
 ) (s3response.CopyObjectOutput, error) {
 	srcURL, err := az.copySourceURL(ctx, srcBucket, srcObj)
 	if err != nil {
-		return s3response.CopyObjectOutput{}, err
+		// Any failure to build a signed source URL means server-side copy can't
+		// be started at all, so fall back instead of failing the request. This
+		// notably covers GetUserDelegationCredential, which fails if the gateway
+		// identity lacks the Storage Blob Delegator role or the endpoint doesn't
+		// implement the delegation key API.
+		return s3response.CopyObjectOutput{}, fmt.Errorf("%w: %v", errServerSideCopyFallback, err)
 	}
 
 	opts := &blob.StartCopyFromURLOptions{}
+
+	// Copy Blob reads absent x-ms-meta-* headers as "inherit the source
+	// metadata", so an empty opts.Metadata cannot express "no metadata". When
+	// filtering empties the set, the destination metadata has to be cleared
+	// after the copy instead.
+	clearMetadata := false
 
 	if input.MetadataDirective == types.MetadataDirectiveReplace {
 		meta := input.Metadata
@@ -126,13 +141,14 @@ func (az *Azure) serverSideCopyObject(
 		// source blob's metadata verbatim, including the internal website-redirect
 		// key. Set the metadata explicitly so that key is dropped from the
 		// destination, matching the download+reupload fallback.
-		srcProps, err := srcClient.GetProperties(ctx, nil)
-		if err != nil {
-			return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
+		if srcProps == nil {
+			return s3response.CopyObjectOutput{}, fmt.Errorf(
+				"%w: source properties required to filter metadata", errServerSideCopyFallback)
 		}
 		if meta := parseAzMetadata(srcProps.Metadata); meta != nil {
 			delete(meta, string(keyWebsiteRedirect))
 			opts.Metadata = parseMetadata(meta)
+			clearMetadata = len(meta) == 0
 		}
 	}
 
@@ -152,6 +168,19 @@ func (az *Azure) serverSideCopyObject(
 	finalProps, err := az.waitForCopy(ctx, dstClient, startResp.CopyStatus)
 	if err != nil {
 		return s3response.CopyObjectOutput{}, err
+	}
+
+	if clearMetadata {
+		res, err := dstClient.SetMetadata(ctx, nil, nil)
+		if err != nil {
+			return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
+		}
+		if res.LastModified != nil {
+			finalProps.LastModified = res.LastModified
+		}
+		if res.ETag != nil {
+			finalProps.ETag = res.ETag
+		}
 	}
 
 	if input.MetadataDirective == types.MetadataDirectiveReplace {

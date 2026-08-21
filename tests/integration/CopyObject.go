@@ -729,6 +729,57 @@ func CopyObject_should_copy_meta_props(s *S3Conf) error {
 	})
 }
 
+func CopyObject_should_not_copy_website_redirect_without_user_metadata(s *S3Conf) error {
+	testName := "CopyObject_should_not_copy_website_redirect_without_user_metadata"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "dest-object"
+		redirectLocation := "/source-redirect"
+
+		// The redirect location is the only thing set on the source: no user
+		// metadata and no Expires. Backends that keep it alongside user metadata
+		// have to drop it on copy, and the filtered set is empty here, so a
+		// backend whose copy treats "empty metadata" the same as "metadata not
+		// specified" will silently inherit the source's redirect instead.
+		_, err := putObjectWithData(int64(100), &s3.PutObjectInput{
+			Bucket:                  &bucket,
+			Key:                     &srcObj,
+			WebsiteRedirectLocation: &redirectLocation,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			CopySource: getPtr(bucket + "/" + srcObj),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if got := getString(out.WebsiteRedirectLocation); got != "" {
+			return fmt.Errorf("expected WebsiteRedirectLocation not to be copied, got %v", got)
+		}
+		if len(out.Metadata) != 0 {
+			return fmt.Errorf("expected no user metadata on the destination, instead got %v", out.Metadata)
+		}
+
+		return nil
+	})
+}
+
 func CopyObject_should_replace_meta_props(s *S3Conf) error {
 	testName := "CopyObject_should_replace_meta_props"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
