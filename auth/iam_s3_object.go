@@ -226,6 +226,7 @@ func (s *IAMServiceS3) getConfig() (aws.Config, error) {
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: s.sslSkipVerify},
+		Proxy:           http.ProxyFromEnvironment,
 	}
 	client := &http.Client{Transport: tr}
 
