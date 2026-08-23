@@ -250,10 +250,43 @@ func TestRCTokenSchemeBoundaryPassesThrough(t *testing.T) {
 func TestRCTokenSchemeMalformedStill400(t *testing.T) {
 	// A >16-char first field that is not hex is not an RC token scheme; it
 	// falls through to the cuObject parser, which rejects it as malformed.
+	// The expectation below holds for the standalone test app used here;
+	// in a production server the fiber error handler currently maps this
+	// to a 500 (pre-existing behavior, out of scope for this change).
 	app, _ := newTestApp(t)
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	req.Header.Set(HeaderRDMAToken, "zzzzzzzzzzzzzzzzzzzz:00000001")
 	resp, err := app.Test(req)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestRCTokenScheme16HexNoColonStill400(t *testing.T) {
+	// A 16-hex-char token with no colon at all is a malformed cuObject
+	// token ("missing base address field"), not an RC scheme; the exact
+	// fixture pins that boundary.
+	app, _ := newTestApp(t)
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set(HeaderRDMAToken, "ffffffffffffffff")
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestLegacyDescriptorTakesPrecedenceOverRCToken(t *testing.T) {
+	// When both the legacy descriptor header and an RC-shaped combined
+	// token are present, the legacy path handles the request and the RC
+	// gate must not fire.
+	app, reached := newTestApp(t)
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set(HeaderRDMADescr, "legacy-descriptor")
+	req.Header.Set(HeaderRDMAToken, rcToken(""))
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	select {
+	case <-reached:
+	default:
+		t.Fatal("handler should have been reached via the legacy path")
+	}
 }
