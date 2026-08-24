@@ -1,0 +1,998 @@
+<!--
+Copyright 2026 Versity Software
+This file is licensed under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VersityGW Admin - IAM Users</title>
+  <script src="assets/js/crypto-js.min.js"></script>
+  <script src="assets/js/tailwind.js"></script>
+  <script src="assets/css/tailwind-config.js"></script>
+  <link rel="stylesheet" href="assets/css/fonts.css">
+  <link rel="stylesheet" href="assets/css/theme.css">
+  <link rel="icon" type="image/png" href="assets/images/favicon.png">
+</head>
+<body class="min-h-screen bg-surface">
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/iam-ui.js"></script>
+
+  <div class="relative flex h-screen overflow-hidden">
+    <input id="sidebar-toggle" type="checkbox" class="peer hidden"/>
+    <label for="sidebar-toggle" aria-label="Toggle navigation" class="
+      sm:hidden rotate-180 peer-checked:rotate-0 absolute z-20 top-[14px] left-6
+      flex justify-center items-center p-2 rounded-lg transition-all
+      text-charcoal-300 hover:text-charcoal hover:bg-gray-100
+      peer-checked:text-white/70 peer-checked:hover:text-white peer-checked:hover:bg-white/10
+    ">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="-0.5 0 25 25">
+        <path stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M7.6728 22L16.1434 13.0294C16.4081 12.75 16.4081 12.3088 16.1434 12.0147L7.65808 3" />
+      </svg>
+    </label>
+    <!-- Sidebar -->
+    <aside class="absolute z-10 sm:static -translate-x-60 peer-checked:translate-x-0 sm:!translate-x-0 w-60 h-screen bg-charcoal flex flex-col overflow-auto transition-all">
+      <div class="ml-12 sm:ml-0 h-16 flex-shrink-0 flex items-center px-6 border-b border-white/10">
+        <a href="https://www.versity.com" target="_blank" rel="noopener noreferrer">
+          <img src="assets/images/Versity-logo-white-horizontal.png" alt="Versity" class="h-10 hover:opacity-80 transition-opacity">
+        </a>
+      </div>
+      <nav class="flex-1 py-4">
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-management-only>
+          Management
+        </div>
+        <a href="dashboard.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-management-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+          </svg>
+          <span class="font-medium">Dashboard</span>
+        </a>
+        <a href="users.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only data-admin-users-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+          <span class="font-medium">Users</span>
+        </a>
+        <a href="buckets.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-management-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+          </svg>
+          <span class="font-medium">Buckets</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-management-only></div>
+        <a href="explorer.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-s3-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>
+          <span class="font-medium">Explorer</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-s3-only></div>
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-iam-only>
+          Identity &amp; Access
+        </div>
+        <a href="iam.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-iam-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+          </svg>
+          <span class="font-medium">IAM</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-iam-only></div>
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase">
+          Resources
+        </div>
+        <a href="https://github.com/versity/versitygw/wiki" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+          </svg>
+          <span class="font-medium">Documentation</span>
+        </a>
+        <a href="https://github.com/versity/versitygw" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+          </svg>
+          <span class="font-medium">GitHub</span>
+        </a>
+      </nav>
+      <div class="p-4 border-t border-white/10">
+        <div id="user-info" class="flex items-center gap-3 mb-3"></div>
+        <button onclick="api.logout(); window.location.href='index.html';" class="w-full flex items-center gap-2 px-3 py-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Sign Out
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 flex-shrink-0">
+        <h1 class="ml-12 sm:ml-0 text-xl font-semibold text-charcoal">VersityGW IAM Users</h1>
+        <button onclick="loadUsers()" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors" title="Refresh">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </button>
+      </header>
+
+      <main class="flex-1 overflow-auto p-6">
+        <div class="max-w-7xl mx-auto">
+          <!-- Page Header -->
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h1 class="text-2xl font-semibold text-charcoal">IAM Users</h1>
+              <p class="text-charcoal-300 mt-1">Manage IAM users, access keys, and inline policies</p>
+            </div>
+            <button onclick="openCreateUserModal()" class="flex items-center gap-2 bg-primary hover:bg-primary-600 text-white font-medium py-2.5 px-4 rounded-lg transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+              </svg>
+              Create IAM User
+            </button>
+          </div>
+
+          <!-- Filters & Search -->
+          <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-6">
+            <div class="flex flex-wrap items-center gap-4">
+              <div class="relative flex-1 min-w-64">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <input type="text" id="search-input" placeholder="Search by user name..." oninput="filterUsers()" class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-charcoal placeholder:text-charcoal-300 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+              </div>
+              <div class="relative min-w-56">
+                <input type="text" id="path-prefix-input" placeholder="Filter by path prefix..." class="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-mono text-sm placeholder:font-sans placeholder:text-charcoal-300 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+              </div>
+              <button onclick="loadUsers()" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Apply</button>
+            </div>
+          </div>
+
+          <!-- Users Table -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full">
+                <thead class="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">Path</th>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">User Name</th>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">ARN</th>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">Created</th>
+                    <th class="text-right py-4 px-6 text-sm font-semibold text-charcoal">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="users-table-body"></tbody>
+              </table>
+            </div>
+            <div id="load-more-row" class="hidden border-t border-gray-100 p-4 text-center">
+              <button id="load-more-btn" onclick="loadMoreUsers()" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Load More</button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Create User Modal -->
+  <div id="create-user-modal" class="modal hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('create-user-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg relative max-h-[90vh] flex flex-col">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100 flex-shrink-0">
+          <h2 class="text-xl font-semibold text-charcoal">Create IAM User</h2>
+          <button onclick="closeModal('create-user-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="flex-1 overflow-auto">
+          <form id="create-user-form" class="p-6 space-y-5">
+            <div>
+              <label class="block text-sm font-medium text-charcoal mb-2">User Name <span class="text-red-500">*</span></label>
+              <input type="text" id="create-user-name" maxlength="64" placeholder="e.g., alice" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal font-mono text-sm placeholder:font-sans placeholder:text-charcoal-300 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+              <p class="mt-2 text-xs text-charcoal-300">Up to 64 characters. Letters, numbers and + = , . @ _ - only.</p>
+            </div>
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <label class="block text-sm font-medium text-charcoal">Tags</label>
+                <button type="button" onclick="iamAddTagRow('create-user-tags')" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Add Tag</button>
+              </div>
+              <div id="create-user-tags" class="space-y-2"></div>
+              <p class="mt-2 text-xs text-charcoal-300">Tags are set at creation only. This API has no tag-update action, so they are read-only afterwards.</p>
+            </div>
+            <details class="group">
+              <summary class="flex items-center gap-2 cursor-pointer text-sm font-medium text-charcoal-400 hover:text-charcoal transition-colors list-none">
+                <svg class="w-4 h-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+                Advanced Options
+              </summary>
+              <div class="mt-4 space-y-4 pl-6">
+                <div>
+                  <label class="block text-sm font-medium text-charcoal mb-2">Path</label>
+                  <input type="text" id="create-user-path" maxlength="512" placeholder="/" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal font-mono text-sm placeholder:font-sans placeholder:text-charcoal-300 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+                  <p class="mt-2 text-xs text-charcoal-300">Defaults to /. Must start and end with /.</p>
+                </div>
+              </div>
+            </details>
+          </form>
+        </div>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100 flex-shrink-0">
+          <button onclick="closeModal('create-user-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+          <button id="create-user-btn" onclick="submitCreateUser()" class="px-4 py-2.5 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">Create User</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manage User Modal -->
+  <div id="manage-user-modal" class="modal hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('manage-user-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl relative max-h-[90vh] flex flex-col">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 id="manage-user-title" class="text-xl font-semibold text-charcoal">User</h2>
+            <p id="manage-user-subtitle" class="text-sm text-charcoal-300 mt-1"></p>
+          </div>
+          <button onclick="closeModal('manage-user-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="flex-1 overflow-auto">
+          <div class="p-6 space-y-6">
+            <!-- Details -->
+            <div class="bg-surface border border-gray-100 rounded-lg p-4">
+              <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <dt class="text-charcoal-300">ARN</dt>
+                  <dd id="detail-arn" class="mt-1">-</dd>
+                </div>
+                <div>
+                  <dt class="text-charcoal-300">User ID</dt>
+                  <dd id="detail-userid" class="mt-1 font-mono text-xs text-charcoal">-</dd>
+                </div>
+                <div>
+                  <dt class="text-charcoal-300">Path</dt>
+                  <dd id="detail-path" class="mt-1 font-mono text-xs text-charcoal">-</dd>
+                </div>
+                <div>
+                  <dt class="text-charcoal-300">Created</dt>
+                  <dd id="detail-created" class="mt-1 text-charcoal">-</dd>
+                </div>
+                <div class="sm:col-span-2">
+                  <dt class="text-charcoal-300">Tags</dt>
+                  <dd id="detail-tags" class="mt-1 flex flex-wrap gap-2">-</dd>
+                </div>
+              </dl>
+            </div>
+
+            <!-- Access Keys -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <h3 class="text-sm font-semibold text-charcoal">Access Keys</h3>
+                  <p class="text-xs text-charcoal-300 mt-1">A user can hold 2 access keys. The server generates both halves of the pair.</p>
+                </div>
+                <button id="create-key-btn" onclick="createAccessKey()" class="px-3 py-1.5 text-xs bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">Create Access Key</button>
+              </div>
+              <div class="border border-gray-100 rounded-lg overflow-hidden">
+                <table class="w-full">
+                  <thead class="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th class="text-left py-3 px-4 text-xs font-semibold text-charcoal">Access Key ID</th>
+                      <th class="text-left py-3 px-4 text-xs font-semibold text-charcoal">Status</th>
+                      <th class="text-left py-3 px-4 text-xs font-semibold text-charcoal">Created</th>
+                      <th class="text-left py-3 px-4 text-xs font-semibold text-charcoal">Last Used</th>
+                      <th class="text-right py-3 px-4 text-xs font-semibold text-charcoal">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="keys-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Inline Policies -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <h3 class="text-sm font-semibold text-charcoal">Inline Policies</h3>
+                  <p id="policy-quota-note" class="text-xs text-charcoal-300 mt-1">0 / 2048 bytes used</p>
+                </div>
+                <button onclick="openUserPolicyEditor()" class="px-3 py-1.5 text-xs border border-accent text-accent hover:bg-accent-50 font-medium rounded-lg transition-colors">Add Policy</button>
+              </div>
+              <div class="border border-gray-100 rounded-lg overflow-hidden">
+                <table class="w-full">
+                  <thead class="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th class="text-left py-3 px-4 text-xs font-semibold text-charcoal">Policy Name</th>
+                      <th class="text-left py-3 px-4 text-xs font-semibold text-charcoal">Size</th>
+                      <th class="text-right py-3 px-4 text-xs font-semibold text-charcoal">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="policies-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center justify-between p-6 border-t border-gray-100 flex-shrink-0">
+          <button onclick="openEditUserModal()" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Rename or Move</button>
+          <button onclick="closeModal('manage-user-modal')" class="px-4 py-2.5 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- One-time Secret Modal -->
+  <div id="secret-modal" class="modal hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg relative">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100">
+          <h2 class="text-xl font-semibold text-charcoal">Access Key Created</h2>
+        </div>
+        <div class="p-6 space-y-5">
+          <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+              <p class="text-sm text-yellow-800">This is the only time this secret will be shown. Copy it now — it cannot be retrieved later.</p>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Access Key ID</label>
+            <div class="flex gap-2">
+              <input type="text" id="new-key-id" readonly class="flex-1 px-4 py-2.5 border-2 border-gray-200 rounded-lg bg-gray-50 text-charcoal font-mono text-sm focus:outline-none">
+              <button type="button" onclick="iamCopy(document.getElementById('new-key-id').value, 'Access key ID')" class="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-charcoal font-medium rounded-lg transition-colors text-sm">Copy</button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Secret Access Key</label>
+            <div class="flex gap-2">
+              <div class="relative flex-1">
+                <input type="password" id="new-key-secret" readonly class="w-full px-4 py-2.5 pr-12 border-2 border-gray-200 rounded-lg bg-gray-50 text-charcoal font-mono text-sm focus:outline-none">
+                <button type="button" onclick="toggleSecretVisibility()" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  <svg id="secret-eye-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                  </svg>
+                  <svg id="secret-eye-off-icon" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                  </svg>
+                </button>
+              </div>
+              <button type="button" onclick="copyNewSecret()" class="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-charcoal font-medium rounded-lg transition-colors text-sm">Copy</button>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+          <button onclick="closeSecretModal()" class="px-4 py-2.5 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">I Have Copied the Secret</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rename / Move Modal -->
+  <div id="edit-user-modal" class="modal hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('edit-user-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg relative">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100">
+          <h2 class="text-xl font-semibold text-charcoal">Rename or Move User</h2>
+          <button onclick="closeModal('edit-user-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="p-6 space-y-5">
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">New User Name</label>
+            <input type="text" id="edit-user-name" maxlength="64" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal font-mono text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">New Path</label>
+            <input type="text" id="edit-user-path" maxlength="512" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal font-mono text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+          </div>
+          <p class="text-xs text-charcoal-300">Only changed fields are sent. Renaming or moving a user requires policy on both the old and the new ARN.</p>
+        </div>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+          <button onclick="closeModal('edit-user-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+          <button id="edit-user-btn" onclick="submitEditUser()" class="px-4 py-2.5 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">Save Changes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="delete-user-modal" class="modal hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('delete-user-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
+        <div class="p-6">
+          <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold text-charcoal text-center mb-2">Delete IAM User</h3>
+          <p class="text-charcoal-300 text-center mb-4">
+            Are you sure you want to delete <span id="delete-user-name" class="font-mono text-charcoal"></span>? This action cannot be undone.
+          </p>
+          <p class="text-charcoal-300 text-center text-sm mb-6">Access keys and inline policies must be removed first. There is no cascade delete.</p>
+          <div class="flex items-center justify-center gap-3">
+            <button onclick="closeModal('delete-user-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+            <button id="confirm-delete-user-btn" onclick="confirmDeleteUser()" class="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors">Delete User</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allUsers = [];
+    let nextMarker = null;
+    let currentUser = null;      // the user open in the manage modal
+    let policySizes = {};        // policyName -> byte length, for the aggregate quota
+    let activeKeyCount = 0;
+    let userToDelete = null;
+    // The generated secret lives here and nowhere else: never sessionStorage,
+    // never a data-* attribute. Discarded when the reveal panel closes.
+    let revealedSecret = null;
+
+    if (!requireIAM()) {
+      // Redirected
+    } else {
+      initSidebarWithRole();
+      updateUserInfo();
+      loadUsers();
+      openRequestedUser();
+    }
+
+    /**
+     * Open one user's manage view straight from ?user=<name>. A caller scoped
+     * to their own ARN cannot list users, so this is their only route to
+     * their own record; everything behind it is per-action authorized anyway.
+     */
+    function openRequestedUser() {
+      const requested = new URLSearchParams(window.location.search).get('user');
+      if (requested) openManageUserModal(requested);
+    }
+
+    // ============================================
+    // List
+    // ============================================
+
+    async function loadUsers() {
+      showTableLoading('users-table-body', 5);
+      allUsers = [];
+      nextMarker = null;
+      await fetchUserPage();
+    }
+
+    async function loadMoreUsers() {
+      const btn = document.getElementById('load-more-btn');
+      setLoading(btn, true);
+      try {
+        await fetchUserPage();
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    async function fetchUserPage() {
+      const pathPrefix = document.getElementById('path-prefix-input').value.trim();
+      try {
+        const result = await api.iamListUsers({
+          pathPrefix: pathPrefix || undefined,
+          marker: nextMarker || undefined,
+          maxItems: IAM_LIMITS.listPageSize
+        });
+        allUsers = allUsers.concat(result.users);
+        nextMarker = result.isTruncated ? result.marker : null;
+        document.getElementById('load-more-row').classList.toggle('hidden', !nextMarker);
+        filterUsers();
+      } catch (error) {
+        console.error('Error loading IAM users:', error);
+        document.getElementById('load-more-row').classList.add('hidden');
+        if (iamIsAccessDenied(error)) {
+          iamShowAccessDenied('users-table-body', 5, 'You don\u2019t have permission to list IAM users');
+          offerOpenUserByName();
+        } else {
+          showToast(iamErrorText(error, 'loading IAM users'), 'error');
+          showEmptyState('users-table-body', 5, 'Error loading IAM users');
+        }
+      }
+    }
+
+    /**
+     * Append a name box to the access-denied state: listing users and acting
+     * on one are separate permissions, so a denied list says nothing about
+     * whether this caller can manage the user they came for.
+     */
+    function offerOpenUserByName() {
+      const tbody = document.getElementById('users-table-body');
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td colspan="5" class="pb-12 px-6 text-center">
+          <div class="inline-flex items-center gap-2">
+            <input id="open-user-name" type="text" placeholder="User name" maxlength="${IAM_LIMITS.nameChars}"
+              class="px-3 py-2 border-2 border-gray-200 rounded-lg text-sm text-charcoal focus:outline-none focus:border-accent">
+            <button onclick="openUserByName()" class="px-3 py-2 text-sm bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">Open user</button>
+          </div>
+          <p class="mt-3 text-xs text-charcoal-300">Open a user you can manage without listing them all.</p>
+        </td>`;
+      tbody.appendChild(row);
+      document.getElementById('open-user-name').addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); openUserByName(); }
+      });
+    }
+
+    function openUserByName() {
+      const name = document.getElementById('open-user-name').value.trim();
+      if (!name) return;
+      openManageUserModal(name);
+    }
+
+    function filterUsers() {
+      const term = document.getElementById('search-input').value.toLowerCase();
+      const filtered = term
+        ? allUsers.filter(u => (u.UserName || '').toLowerCase().includes(term))
+        : allUsers;
+      renderUsers(filtered);
+    }
+
+    function renderUsers(users) {
+      const tbody = document.getElementById('users-table-body');
+      tbody.innerHTML = '';
+
+      if (users.length === 0) {
+        showEmptyState('users-table-body', 5, 'No IAM users found');
+        return;
+      }
+
+      users.forEach(user => {
+        const name = user.UserName || '';
+        const row = document.createElement('tr');
+        row.className = 'border-b border-gray-50 hover:bg-gray-50 transition-colors';
+        row.innerHTML = `
+          <td class="py-4 px-6"><span class="font-mono text-sm text-charcoal">${escapeHtml(user.Path || '/')}</span></td>
+          <td class="py-4 px-6"><span class="font-mono text-sm text-charcoal">${escapeHtml(name)}</span></td>
+          <td class="py-4 px-6">${iamArnCell(user.Arn)}</td>
+          <td class="py-4 px-6 text-sm text-charcoal">${escapeHtml(iamFormatDate(user.CreateDate))}</td>
+          <td class="py-4 px-6 text-right">
+            <div class="flex items-center justify-end gap-2">
+              <button onclick="openManageUserModal('${escapeHtml(name)}')" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal font-medium rounded-lg transition-colors">Manage</button>
+              <button onclick="openDeleteUserModal('${escapeHtml(name)}')" class="p-2 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              </button>
+            </div>
+          </td>`;
+        tbody.appendChild(row);
+      });
+    }
+
+    // ============================================
+    // Create
+    // ============================================
+
+    function openCreateUserModal() {
+      document.getElementById('create-user-name').value = '';
+      document.getElementById('create-user-path').value = '';
+      document.getElementById('create-user-tags').innerHTML = '';
+      openModal('create-user-modal');
+    }
+
+    async function submitCreateUser() {
+      const userName = document.getElementById('create-user-name').value.trim();
+      const path = document.getElementById('create-user-path').value.trim();
+      const tags = iamCollectTags('create-user-tags');
+
+      const nameError = iamValidateName(userName, 'User name');
+      if (nameError) { showToast(nameError, 'error'); return; }
+      const pathError = iamValidatePath(path);
+      if (pathError) { showToast(pathError, 'error'); return; }
+
+      const btn = document.getElementById('create-user-btn');
+      setLoading(btn, true);
+      try {
+        await api.iamCreateUser(userName, path || undefined, tags);
+        showToast('IAM user created successfully', 'success');
+        closeModal('create-user-modal');
+        loadUsers();
+      } catch (error) {
+        console.error('Error creating IAM user:', error);
+        showToast(iamErrorText(error, 'creating IAM user'), 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    // ============================================
+    // Manage: details, access keys, inline policies
+    // ============================================
+
+    async function openManageUserModal(userName) {
+      currentUser = allUsers.find(u => u.UserName === userName);
+      if (!currentUser) {
+        // Reached by deep link or by name, so there is no cached record. GetUser
+        // is its own permission: a denial just leaves the detail fields blank,
+        // it does not stop the access-key and policy panels from loading.
+        try {
+          currentUser = await api.iamGetUser(userName);
+        } catch (error) {
+          currentUser = { UserName: userName };
+        }
+      }
+      policySizes = {};
+      activeKeyCount = 0;
+
+      document.getElementById('manage-user-title').textContent = userName;
+      document.getElementById('manage-user-subtitle').textContent = 'IAM user';
+      document.getElementById('detail-arn').innerHTML = iamArnCell(currentUser.Arn);
+      document.getElementById('detail-userid').textContent = currentUser.UserId || '-';
+      document.getElementById('detail-path').textContent = currentUser.Path || '/';
+      document.getElementById('detail-created').textContent = iamFormatDate(currentUser.CreateDate);
+      renderTags(currentUser.Tags);
+
+      openModal('manage-user-modal');
+      loadAccessKeys();
+      loadUserPolicies();
+    }
+
+    function renderTags(tags) {
+      const el = document.getElementById('detail-tags');
+      const list = Array.isArray(tags) ? tags : (tags ? [tags] : []);
+      if (list.length === 0) {
+        el.innerHTML = '<span class="text-charcoal-300">-</span>';
+        return;
+      }
+      el.innerHTML = list.map(tag =>
+        `<span class="px-2 py-0.5 bg-gray-100 text-charcoal text-xs font-mono rounded">${escapeHtml(tag.Key)}=${escapeHtml(tag.Value || '')}</span>`
+      ).join('');
+    }
+
+    async function loadAccessKeys() {
+      const tbody = document.getElementById('keys-table-body');
+      showTableLoading('keys-table-body', 5);
+      try {
+        const { keys } = await api.iamListAccessKeys(currentUser.UserName);
+        activeKeyCount = keys.length;
+        updateCreateKeyButton();
+        if (keys.length === 0) {
+          showEmptyState('keys-table-body', 5, 'No access keys');
+          return;
+        }
+        tbody.innerHTML = '';
+        keys.forEach(key => {
+          const id = key.AccessKeyId || '';
+          const nextStatus = key.Status === 'Active' ? 'Inactive' : 'Active';
+          const row = document.createElement('tr');
+          row.className = 'border-b border-gray-50';
+          row.innerHTML = `
+            <td class="py-3 px-4"><span class="font-mono text-xs text-charcoal">${escapeHtml(id)}</span></td>
+            <td class="py-3 px-4">${iamStatusBadge(key.Status)}</td>
+            <td class="py-3 px-4 text-xs text-charcoal">${escapeHtml(iamFormatDate(key.CreateDate))}</td>
+            <td class="py-3 px-4 text-xs text-charcoal" id="last-used-${escapeHtml(id)}">
+              <button onclick="fetchLastUsed('${escapeHtml(id)}')" class="text-accent hover:underline">Check</button>
+            </td>
+            <td class="py-3 px-4 text-right">
+              <div class="flex items-center justify-end gap-2">
+                <button onclick="setKeyStatus('${escapeHtml(id)}', '${nextStatus}')" class="px-2.5 py-1 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Make ${nextStatus}</button>
+                <button onclick="deleteAccessKey('${escapeHtml(id)}')" class="p-1.5 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                </button>
+              </div>
+            </td>`;
+          tbody.appendChild(row);
+        });
+      } catch (error) {
+        console.error('Error loading access keys:', error);
+        if (iamIsAccessDenied(error)) {
+          iamShowAccessDenied('keys-table-body', 5, 'You don\u2019t have permission to list this user\u2019s access keys');
+        } else {
+          showEmptyState('keys-table-body', 5, 'Error loading access keys: ' + iamShortError(error));
+        }
+      }
+    }
+
+    function updateCreateKeyButton() {
+      const btn = document.getElementById('create-key-btn');
+      const atQuota = activeKeyCount >= IAM_LIMITS.accessKeysPerUser;
+      btn.disabled = atQuota;
+      btn.className = atQuota
+        ? 'px-3 py-1.5 text-xs bg-accent text-white font-medium rounded-lg opacity-50 cursor-not-allowed'
+        : 'px-3 py-1.5 text-xs bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors';
+      btn.title = atQuota ? `A user can hold ${IAM_LIMITS.accessKeysPerUser} access keys. Delete one first.` : '';
+    }
+
+    async function fetchLastUsed(accessKeyId) {
+      const cell = document.getElementById('last-used-' + accessKeyId);
+      cell.textContent = 'Loading...';
+      try {
+        const { lastUsed } = await api.iamGetAccessKeyLastUsed(accessKeyId);
+        const never = !lastUsed.LastUsedDate || lastUsed.ServiceName === 'N/A';
+        cell.textContent = never
+          ? 'Never used'
+          : `${iamFormatDate(lastUsed.LastUsedDate)} (${lastUsed.ServiceName})`;
+      } catch (error) {
+        cell.textContent = iamIsAccessDenied(error) ? 'No permission' : 'Unavailable';
+      }
+    }
+
+    async function setKeyStatus(accessKeyId, status) {
+      try {
+        await api.iamUpdateAccessKey(currentUser.UserName, accessKeyId, status);
+        showToast('Access key updated successfully', 'success');
+        loadAccessKeys();
+      } catch (error) {
+        showToast(iamErrorText(error, 'updating access key'), 'error');
+      }
+    }
+
+    function deleteAccessKey(accessKeyId) {
+      confirm(`Delete access key ${accessKeyId}? This action cannot be undone.`, async () => {
+        try {
+          await api.iamDeleteAccessKey(currentUser.UserName, accessKeyId);
+          showToast('Access key deleted successfully', 'success');
+          loadAccessKeys();
+        } catch (error) {
+          showToast(iamErrorText(error, 'deleting access key'), 'error');
+        }
+      });
+    }
+
+    async function createAccessKey() {
+      const btn = document.getElementById('create-key-btn');
+      setLoading(btn, true);
+      try {
+        const key = await api.iamCreateAccessKey(currentUser.UserName);
+        revealedSecret = key.SecretAccessKey || '';
+        document.getElementById('new-key-id').value = key.AccessKeyId || '';
+        const secretInput = document.getElementById('new-key-secret');
+        secretInput.type = 'password';
+        secretInput.value = revealedSecret;
+        document.getElementById('secret-eye-icon').classList.remove('hidden');
+        document.getElementById('secret-eye-off-icon').classList.add('hidden');
+        openModal('secret-modal');
+        loadAccessKeys();
+      } catch (error) {
+        console.error('Error creating access key:', error);
+        showToast(iamErrorText(error, 'creating access key'), 'error');
+      } finally {
+        setLoading(btn, false);
+        updateCreateKeyButton();
+      }
+    }
+
+    function toggleSecretVisibility() {
+      const input = document.getElementById('new-key-secret');
+      const eye = document.getElementById('secret-eye-icon');
+      const eyeOff = document.getElementById('secret-eye-off-icon');
+      if (input.type === 'password') {
+        input.type = 'text';
+        eye.classList.add('hidden');
+        eyeOff.classList.remove('hidden');
+      } else {
+        input.type = 'password';
+        eye.classList.remove('hidden');
+        eyeOff.classList.add('hidden');
+      }
+    }
+
+    function copyNewSecret() {
+      if (!revealedSecret) return;
+      iamCopy(revealedSecret, 'Secret access key');
+    }
+
+    function closeSecretModal() {
+      // Discard the secret so the panel cannot be reopened with the same value
+      revealedSecret = null;
+      document.getElementById('new-key-secret').value = '';
+      document.getElementById('new-key-id').value = '';
+      closeModal('secret-modal');
+    }
+
+    async function loadUserPolicies() {
+      const tbody = document.getElementById('policies-table-body');
+      showTableLoading('policies-table-body', 3);
+      policySizes = {};
+      try {
+        const { policyNames } = await api.iamListUserPolicies(currentUser.UserName);
+        if (policyNames.length === 0) {
+          showEmptyState('policies-table-body', 3, 'No inline policies');
+          updatePolicyQuotaNote();
+          return;
+        }
+        // Fetch each document so the aggregate byte counter is accurate
+        await Promise.all(policyNames.map(async name => {
+          try {
+            const policy = await api.iamGetUserPolicy(currentUser.UserName, name);
+            policySizes[name] = iamByteLength(policy.policyDocument);
+          } catch (error) {
+            policySizes[name] = null;
+          }
+        }));
+        tbody.innerHTML = '';
+        policyNames.forEach(name => {
+          const size = policySizes[name];
+          const row = document.createElement('tr');
+          row.className = 'border-b border-gray-50';
+          row.innerHTML = `
+            <td class="py-3 px-4"><span class="font-mono text-xs text-charcoal">${escapeHtml(name)}</span></td>
+            <td class="py-3 px-4 text-xs text-charcoal">${size === null ? '-' : size + ' bytes'}</td>
+            <td class="py-3 px-4 text-right">
+              <div class="flex items-center justify-end gap-2">
+                <button onclick="openUserPolicyEditor('${escapeHtml(name)}')" class="px-2.5 py-1 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Edit</button>
+                <button onclick="deleteUserPolicy('${escapeHtml(name)}')" class="p-1.5 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                </button>
+              </div>
+            </td>`;
+          tbody.appendChild(row);
+        });
+        updatePolicyQuotaNote();
+      } catch (error) {
+        console.error('Error loading inline policies:', error);
+        if (iamIsAccessDenied(error)) {
+          iamShowAccessDenied('policies-table-body', 3, 'You don\u2019t have permission to list this user\u2019s inline policies');
+        } else {
+          showEmptyState('policies-table-body', 3, 'Error loading inline policies: ' + iamShortError(error));
+        }
+      }
+    }
+
+    function totalPolicyBytes(excludeName) {
+      return Object.entries(policySizes).reduce((sum, [name, size]) => {
+        if (name === excludeName || size === null) return sum;
+        return sum + size;
+      }, 0);
+    }
+
+    function updatePolicyQuotaNote() {
+      const used = totalPolicyBytes();
+      const note = document.getElementById('policy-quota-note');
+      note.textContent = `${used} / ${IAM_LIMITS.userPolicyBytes} bytes used across this user's inline policies`;
+      note.className = used > IAM_LIMITS.userPolicyBytes ? 'text-xs text-red-600 font-medium mt-1' : 'text-xs text-charcoal-300 mt-1';
+    }
+
+    async function openUserPolicyEditor(policyName) {
+      const isNew = !policyName;
+      let documentText = '';
+      if (!isNew) {
+        try {
+          const policy = await api.iamGetUserPolicy(currentUser.UserName, policyName);
+          documentText = policy.policyDocument;
+          try {
+            documentText = JSON.stringify(JSON.parse(documentText), null, 2);
+          } catch (e) {
+            // Leave the server's text as-is if it is not valid JSON
+          }
+        } catch (error) {
+          showToast(iamErrorText(error, 'loading policy'), 'error');
+          return;
+        }
+      }
+
+      iamPolicyEditor.open({
+        variant: 'identity',
+        title: isNew ? 'Add Inline Policy' : 'Inline Policy',
+        subtitle: `User ${currentUser.UserName}${isNew ? '' : ' \u2014 ' + policyName}`,
+        policyName: policyName || '',
+        nameEditable: isNew,
+        document: documentText,
+        quota: { otherBytes: totalPolicyBytes(policyName), max: IAM_LIMITS.userPolicyBytes },
+        maxBytes: IAM_LIMITS.policyDocumentBytes,
+        showDelete: !isNew,
+        onSave: async ({ policyName: name, document: doc }) => {
+          await api.iamPutUserPolicy(currentUser.UserName, name, doc);
+          showToast('Policy saved successfully', 'success');
+          loadUserPolicies();
+        },
+        onDelete: async () => {
+          await api.iamDeleteUserPolicy(currentUser.UserName, policyName);
+          showToast('Policy deleted successfully', 'success');
+          loadUserPolicies();
+        }
+      });
+    }
+
+    function deleteUserPolicy(policyName) {
+      confirm(`Delete inline policy ${policyName}? This action cannot be undone.`, async () => {
+        try {
+          await api.iamDeleteUserPolicy(currentUser.UserName, policyName);
+          showToast('Policy deleted successfully', 'success');
+          loadUserPolicies();
+        } catch (error) {
+          showToast(iamErrorText(error, 'deleting policy'), 'error');
+        }
+      });
+    }
+
+    // ============================================
+    // Rename / move and delete
+    // ============================================
+
+    function openEditUserModal() {
+      if (!currentUser) return;
+      document.getElementById('edit-user-name').value = currentUser.UserName || '';
+      document.getElementById('edit-user-path').value = currentUser.Path || '/';
+      openModal('edit-user-modal');
+    }
+
+    async function submitEditUser() {
+      const newName = document.getElementById('edit-user-name').value.trim();
+      const newPath = document.getElementById('edit-user-path').value.trim();
+
+      if (newName && newName !== currentUser.UserName) {
+        const nameError = iamValidateName(newName, 'User name');
+        if (nameError) { showToast(nameError, 'error'); return; }
+      }
+      const pathError = iamValidatePath(newPath);
+      if (pathError) { showToast(pathError, 'error'); return; }
+
+      const changedName = newName && newName !== currentUser.UserName ? newName : undefined;
+      const changedPath = newPath && newPath !== (currentUser.Path || '/') ? newPath : undefined;
+      if (!changedName && !changedPath) {
+        showToast('Nothing to update', 'info');
+        return;
+      }
+
+      const btn = document.getElementById('edit-user-btn');
+      setLoading(btn, true);
+      try {
+        await api.iamUpdateUser(currentUser.UserName, changedName, changedPath);
+        showToast('IAM user updated successfully', 'success');
+        closeModal('edit-user-modal');
+        closeModal('manage-user-modal');
+        loadUsers();
+      } catch (error) {
+        showToast(iamErrorText(error, 'updating IAM user'), 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    function openDeleteUserModal(userName) {
+      userToDelete = userName;
+      document.getElementById('delete-user-name').textContent = userName;
+      openModal('delete-user-modal');
+    }
+
+    async function confirmDeleteUser() {
+      if (!userToDelete) return;
+      const btn = document.getElementById('confirm-delete-user-btn');
+      setLoading(btn, true);
+      try {
+        await api.iamDeleteUser(userToDelete);
+        showToast('IAM user deleted successfully', 'success');
+        closeModal('delete-user-modal');
+        userToDelete = null;
+        loadUsers();
+      } catch (error) {
+        console.error('Error deleting IAM user:', error);
+        showToast(iamErrorText(error, 'deleting IAM user'), 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -34,9 +34,21 @@ function requireAuth() {
 }
 
 /**
- * Require admin role, redirect non-admins to explorer
- * Call this on admin-only pages (dashboard, users, buckets, settings)
- * Also loads user context (user type and accessible gateways)
+ * The page a session belongs on when it has no business being where it is.
+ * Three deployments share this UI - S3 only, IAM only, and both - so there is
+ * no single fixed landing page.
+ */
+function defaultLandingPage() {
+  if (api.hasManagement()) return 'dashboard.html';
+  if (api.hasS3()) return 'explorer.html';
+  if (api.hasIAM()) return 'iam.html';
+  return 'index.html';
+}
+
+/**
+ * Require admin role, redirect non-admins to where they do belong.
+ * Call this on Admin-API-only pages, whose every action is gated by the admin
+ * role server-side. Also loads user context.
  */
 function requireAdmin() {
   if (!api.loadCredentials()) {
@@ -45,7 +57,82 @@ function requireAdmin() {
   }
   api.loadUserContext();
   if (!api.isAdmin()) {
-    window.location.href = 'explorer.html';
+    window.location.href = defaultLandingPage();
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Require management-page access (dashboard, buckets): a classic admin
+ * session, or any S3 session in a standalone-IAM deployment, where the pages
+ * run on the S3 and IAM APIs alone and surface each denial per action rather
+ * than redirecting.
+ */
+function requireManagement() {
+  if (!api.loadCredentials()) {
+    window.location.href = 'index.html';
+    return false;
+  }
+  api.loadUserContext();
+  if (!api.hasManagement()) {
+    window.location.href = defaultLandingPage();
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Require the gateway's own account store to be this deployment's user
+ * directory. Call this on users.html, which manages that store through the
+ * Admin API; a configured standalone IAM service takes that job over instead.
+ *
+ * The IAM check runs first because a standalone-IAM session is never an admin,
+ * so testing admin first would bounce it to the landing page rather than to
+ * this page's IAM counterpart.
+ */
+function requireGatewayUsers() {
+  if (!api.loadCredentials()) {
+    window.location.href = 'index.html';
+    return false;
+  }
+  api.loadUserContext();
+  if (api.hasIAM()) {
+    window.location.href = 'iam-users.html';
+    return false;
+  }
+  return requireAdmin();
+}
+
+/**
+ * Require IAM service access, redirect sessions without it away.
+ * Call this on the IAM pages (iam, iam-users, iam-roles, iam-oidc).
+ */
+function requireIAM() {
+  if (!api.loadCredentials()) {
+    window.location.href = 'index.html';
+    return false;
+  }
+  api.loadUserContext();
+  if (!api.hasIAM()) {
+    window.location.href = defaultLandingPage();
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Require S3 data-plane access, redirect sessions without it away.
+ * Call this on the S3-backed pages (explorer).
+ */
+function requireS3() {
+  if (!api.loadCredentials()) {
+    window.location.href = 'index.html';
+    return false;
+  }
+  api.loadUserContext();
+  if (!api.hasS3()) {
+    window.location.href = defaultLandingPage();
     return false;
   }
   return true;
@@ -53,15 +140,10 @@ function requireAdmin() {
 
 /**
  * Redirect to appropriate page if already authenticated
- * Admin users go to dashboard, regular users go to explorer
  */
 function redirectIfAuthenticated() {
   if (api.loadCredentials()) {
-    if (api.isAdmin()) {
-      window.location.href = 'dashboard.html';
-    } else {
-      window.location.href = 'explorer.html';
-    }
+    window.location.href = defaultLandingPage();
     return true;
   }
   return false;
@@ -277,9 +359,11 @@ function debounce(func, wait) {
 
 function initSidebar() {
   const currentPage = window.location.pathname.split('/').pop() || 'index.html';
+  // The IAM nav item covers the whole iam-* page family
+  const onIamPage = currentPage.startsWith('iam');
   document.querySelectorAll('.nav-item').forEach(item => {
     const href = item.getAttribute('href');
-    if (href === currentPage) {
+    if (href === currentPage || (onIamPage && href === 'iam.html')) {
       item.classList.add('active');
       item.classList.remove('text-white/70');
       item.classList.add('text-white');
@@ -293,6 +377,19 @@ function initSidebar() {
 // Update User Info in Sidebar
 // ============================================
 
+/**
+ * What this session actually reaches, for the sidebar badge. "User" still
+ * means an S3-only session, so a deployment without IAM is unchanged.
+ */
+function sessionRoleLabel() {
+  if (api.isAdmin()) return 'Admin';
+  if (api.hasS3() && api.hasIAM()) return 'User + IAM';
+  // Not "IAM user": the session may be root, which only GetCallerIdentity
+  // can tell, and the IAM landing page does show that.
+  if (api.hasIAM()) return 'IAM';
+  return 'User';
+}
+
 function updateUserInfo() {
   const info = api.getCredentialsInfo();
   if (!info) return;
@@ -301,7 +398,7 @@ function updateUserInfo() {
     ? info.accessKey.substring(0, 12) + '...'
     : info.accessKey;
 
-  const roleLabel = info.isAdmin ? 'Admin' : 'User';
+  const roleLabel = sessionRoleLabel();
 
   const userInfoEl = document.getElementById('user-info');
   if (userInfoEl) {
@@ -315,18 +412,44 @@ function updateUserInfo() {
 }
 
 /**
- * Initialize sidebar with role-based navigation
- * Hides admin-only nav items for non-admin users
+ * Initialize sidebar with capability-based navigation. What a session can
+ * reach is five separate questions rather than one role, so five gates:
+ *   data-admin-only       the Admin API answered for these credentials
+ *   data-management-only  the management pages (Dashboard, Buckets) apply:
+ *                         a classic admin, or any S3 session in a
+ *                         standalone-IAM deployment
+ *   data-s3-only          the S3 data plane answered for these credentials
+ *   data-iam-only         the standalone IAM service answered for them
+ *   data-admin-users-only the inverse of data-iam-only: the gateway's own
+ *                         account store is still the user directory, rather
+ *                         than a configured standalone IAM service
  */
 function initSidebarWithRole() {
   initSidebar();
 
-  // Hide admin-only nav items for non-admin users
-  if (!api.isAdmin()) {
-    document.querySelectorAll('[data-admin-only]').forEach(item => {
-      item.style.display = 'none';
-    });
-  }
+  const hide = (selector) => document.querySelectorAll(selector).forEach(item => {
+    item.style.display = 'none';
+  });
+
+  if (!api.isAdmin()) hide('[data-admin-only]');
+  if (!api.hasManagement()) hide('[data-management-only]');
+  if (!api.hasS3()) hide('[data-s3-only]');
+  if (!api.hasIAM()) hide('[data-iam-only]');
+  if (api.hasIAM()) hide('[data-admin-users-only]');
+
+  reportIAMProbeFailure();
+}
+
+/**
+ * Report once, on whatever page the session landed on, that a configured IAM
+ * endpoint did not answer. The only other symptom is IAM navigation that
+ * silently never appears, usually for want of --cors-allow-origin.
+ */
+function reportIAMProbeFailure() {
+  const message = sessionStorage.getItem('vgw_iam_probe_error');
+  if (!message) return;
+  sessionStorage.removeItem('vgw_iam_probe_error');
+  showToast('IAM service unavailable, IAM management is hidden for this session. ' + message, 'error');
 }
 
 // ============================================

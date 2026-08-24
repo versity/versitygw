@@ -565,10 +565,18 @@ func (c S3ApiController) CreateBucket(ctx fiber.Ctx) (*Response, error) {
 	}
 
 	creator := utils.ContextKeyAccount.Get(ctx).(auth.Account)
-	if !utils.ContextKeyBucketOwner.IsSet(ctx) {
-		utils.ContextKeyBucketOwner.Set(ctx, creator)
+	// A backend that fixes bucket ownership picks the owner itself; otherwise
+	// it is whoever the admin API named, defaulting to the creator. The
+	// context is set either way: the storage backend reads the owner back out
+	// of it to chown the new bucket.
+	bucketOwner, fixedOwner := auth.ResolveFixedBucketOwner(c.iam)
+	if !fixedOwner {
+		bucketOwner = creator
+		if utils.ContextKeyBucketOwner.IsSet(ctx) {
+			bucketOwner = utils.ContextKeyBucketOwner.Get(ctx).(auth.Account)
+		}
 	}
-	bucketOwner := utils.ContextKeyBucketOwner.Get(ctx).(auth.Account)
+	utils.ContextKeyBucketOwner.Set(ctx, bucketOwner)
 	isRoot, _ := utils.ContextKeyIsRoot.Get(ctx).(bool)
 
 	if err := auth.VerifyCreateBucketAccess(ctx, c.iam, isRoot, creator, bucket); err != nil {

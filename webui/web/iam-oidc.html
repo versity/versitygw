@@ -1,0 +1,667 @@
+<!--
+Copyright 2026 Versity Software
+This file is licensed under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VersityGW Admin - OIDC Providers</title>
+  <script src="assets/js/crypto-js.min.js"></script>
+  <script src="assets/js/tailwind.js"></script>
+  <script src="assets/css/tailwind-config.js"></script>
+  <link rel="stylesheet" href="assets/css/fonts.css">
+  <link rel="stylesheet" href="assets/css/theme.css">
+  <link rel="icon" type="image/png" href="assets/images/favicon.png">
+</head>
+<body class="min-h-screen bg-surface">
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/iam-ui.js"></script>
+
+  <div class="relative flex h-screen overflow-hidden">
+    <input id="sidebar-toggle" type="checkbox" class="peer hidden"/>
+    <label for="sidebar-toggle" aria-label="Toggle navigation" class="
+      sm:hidden rotate-180 peer-checked:rotate-0 absolute z-20 top-[14px] left-6
+      flex justify-center items-center p-2 rounded-lg transition-all
+      text-charcoal-300 hover:text-charcoal hover:bg-gray-100
+      peer-checked:text-white/70 peer-checked:hover:text-white peer-checked:hover:bg-white/10
+    ">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="-0.5 0 25 25">
+        <path stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M7.6728 22L16.1434 13.0294C16.4081 12.75 16.4081 12.3088 16.1434 12.0147L7.65808 3" />
+      </svg>
+    </label>
+    <!-- Sidebar -->
+    <aside class="absolute z-10 sm:static -translate-x-60 peer-checked:translate-x-0 sm:!translate-x-0 w-60 h-screen bg-charcoal flex flex-col overflow-auto transition-all">
+      <div class="ml-12 sm:ml-0 h-16 flex-shrink-0 flex items-center px-6 border-b border-white/10">
+        <a href="https://www.versity.com" target="_blank" rel="noopener noreferrer">
+          <img src="assets/images/Versity-logo-white-horizontal.png" alt="Versity" class="h-10 hover:opacity-80 transition-opacity">
+        </a>
+      </div>
+      <nav class="flex-1 py-4">
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-management-only>
+          Management
+        </div>
+        <a href="dashboard.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-management-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+          </svg>
+          <span class="font-medium">Dashboard</span>
+        </a>
+        <a href="users.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only data-admin-users-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+          <span class="font-medium">Users</span>
+        </a>
+        <a href="buckets.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-management-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+          </svg>
+          <span class="font-medium">Buckets</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-management-only></div>
+        <a href="explorer.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-s3-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>
+          <span class="font-medium">Explorer</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-s3-only></div>
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-iam-only>
+          Identity &amp; Access
+        </div>
+        <a href="iam.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-iam-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+          </svg>
+          <span class="font-medium">IAM</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-iam-only></div>
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase">
+          Resources
+        </div>
+        <a href="https://github.com/versity/versitygw/wiki" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+          </svg>
+          <span class="font-medium">Documentation</span>
+        </a>
+        <a href="https://github.com/versity/versitygw" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+          </svg>
+          <span class="font-medium">GitHub</span>
+        </a>
+      </nav>
+      <div class="p-4 border-t border-white/10">
+        <div id="user-info" class="flex items-center gap-3 mb-3"></div>
+        <button onclick="api.logout(); window.location.href='index.html';" class="w-full flex items-center gap-2 px-3 py-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Sign Out
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 flex-shrink-0">
+        <h1 class="ml-12 sm:ml-0 text-xl font-semibold text-charcoal">VersityGW OIDC Providers</h1>
+        <button onclick="loadProviders()" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors" title="Refresh">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </button>
+      </header>
+
+      <main class="flex-1 overflow-auto p-6">
+        <div class="max-w-7xl mx-auto">
+          <!-- Page Header -->
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h1 class="text-2xl font-semibold text-charcoal">OIDC Providers</h1>
+              <p class="text-charcoal-300 mt-1">Manage OpenID Connect identity providers</p>
+            </div>
+            <button onclick="openCreateProviderModal()" class="flex items-center gap-2 bg-primary hover:bg-primary-600 text-white font-medium py-2.5 px-4 rounded-lg transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+              </svg>
+              Create Provider
+            </button>
+          </div>
+
+          <!-- Search -->
+          <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-6">
+            <div class="relative">
+              <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+              </svg>
+              <input type="text" id="search-input" placeholder="Search providers..." oninput="filterProviders()" class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-charcoal placeholder:text-charcoal-300 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+            </div>
+          </div>
+
+          <!-- Providers Table -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full">
+                <thead class="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">Provider</th>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">ARN</th>
+                    <th class="text-right py-4 px-6 text-sm font-semibold text-charcoal">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="providers-table-body"></tbody>
+              </table>
+            </div>
+            <div class="border-t border-gray-100 px-6 py-3">
+              <p class="text-xs text-charcoal-300">This list returns provider ARNs only and is not paginated. URL, client IDs and thumbprints load when you open a provider.</p>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Create Provider Modal -->
+  <div id="create-provider-modal" class="modal hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('create-provider-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg relative max-h-[90vh] flex flex-col">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100 flex-shrink-0">
+          <h2 class="text-xl font-semibold text-charcoal">Create OIDC Provider</h2>
+          <button onclick="closeModal('create-provider-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="flex-1 overflow-auto">
+          <form id="create-provider-form" class="p-6 space-y-5">
+            <div>
+              <label class="block text-sm font-medium text-charcoal mb-2">Provider URL <span class="text-red-500">*</span></label>
+              <input type="text" id="create-provider-url" maxlength="255" placeholder="https://token.example.com" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal font-mono text-sm placeholder:font-sans placeholder:text-charcoal-300 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+              <p class="mt-2 text-xs text-charcoal-300">Must start with https://. No port, user info, query string or fragment. The URL cannot be changed after creation.</p>
+            </div>
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <label class="block text-sm font-medium text-charcoal">Audience(s) / Client ID(s)</label>
+                <button type="button" onclick="iamAddTextRow('create-provider-clients', '', 'sts.versity.local', 255)" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Add Client ID</button>
+              </div>
+              <div id="create-provider-clients" class="space-y-2"></div>
+              <p class="mt-2 text-xs text-charcoal-300">Up to 100 entries, each 255 characters or fewer. Client IDs are added and removed one at a time after creation.</p>
+            </div>
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <label class="block text-sm font-medium text-charcoal">Thumbprints</label>
+                <button type="button" onclick="iamAddTextRow('create-provider-thumbprints', '', '40-character SHA-1 thumbprint', 40)" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Add Thumbprint</button>
+              </div>
+              <div id="create-provider-thumbprints" class="space-y-2"></div>
+              <p class="mt-2 text-xs text-charcoal-300">Leave blank and the server fetches the thumbprint over a live TLS connection to the URL. If the operator started the service with --disable-oidc-thumbprint-autofetch, a blank list will error. Up to 5 entries, each exactly 40 characters.</p>
+            </div>
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <label class="block text-sm font-medium text-charcoal">Tags</label>
+                <button type="button" onclick="iamAddTagRow('create-provider-tags')" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Add Tag</button>
+              </div>
+              <div id="create-provider-tags" class="space-y-2"></div>
+              <p class="mt-2 text-xs text-charcoal-300">Tags are set at creation only.</p>
+            </div>
+          </form>
+        </div>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100 flex-shrink-0">
+          <button onclick="closeModal('create-provider-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+          <button id="create-provider-btn" onclick="submitCreateProvider()" class="px-4 py-2.5 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">Create Provider</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manage Provider Modal -->
+  <div id="manage-provider-modal" class="modal hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('manage-provider-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl relative max-h-[90vh] flex flex-col">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 id="manage-provider-title" class="text-xl font-semibold text-charcoal">Provider</h2>
+            <p class="text-sm text-charcoal-300 mt-1">URL and tags are fixed at creation. Client IDs change one at a time; thumbprints are replaced as a whole list.</p>
+          </div>
+          <button onclick="closeModal('manage-provider-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="flex-1 overflow-auto">
+          <div class="p-6 space-y-6">
+            <div class="bg-surface border border-gray-100 rounded-lg p-4">
+              <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <div class="sm:col-span-2">
+                  <dt class="text-charcoal-300">ARN</dt>
+                  <dd id="provider-detail-arn" class="mt-1">-</dd>
+                </div>
+                <div>
+                  <dt class="text-charcoal-300">URL</dt>
+                  <dd id="provider-detail-url" class="mt-1 font-mono text-xs text-charcoal">-</dd>
+                </div>
+                <div>
+                  <dt class="text-charcoal-300">Created</dt>
+                  <dd id="provider-detail-created" class="mt-1 text-charcoal">-</dd>
+                </div>
+                <div class="sm:col-span-2">
+                  <dt class="text-charcoal-300">Tags</dt>
+                  <dd id="provider-detail-tags" class="mt-1 flex flex-wrap gap-2">-</dd>
+                </div>
+              </dl>
+            </div>
+
+            <!-- Client IDs -->
+            <div>
+              <h3 class="text-sm font-semibold text-charcoal mb-1">Audiences / Client IDs</h3>
+              <p class="text-xs text-charcoal-300 mb-3">Each addition and removal is a separate call. Up to 100 entries.</p>
+              <div id="provider-clients" class="flex flex-wrap gap-2 mb-3"></div>
+              <div class="flex gap-2">
+                <input type="text" id="add-client-id" maxlength="255" placeholder="Add a client ID" class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono text-charcoal placeholder:font-sans placeholder:text-charcoal-300 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+                <button id="add-client-btn" onclick="addClientId()" class="px-4 py-2 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors text-sm">Add</button>
+              </div>
+            </div>
+
+            <!-- Thumbprints -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <h3 class="text-sm font-semibold text-charcoal">Thumbprints</h3>
+                  <p class="text-xs text-charcoal-300 mt-1">Saving replaces all thumbprints for this provider.</p>
+                </div>
+                <button onclick="openThumbprintsModal()" class="px-3 py-1.5 text-xs border border-accent text-accent hover:bg-accent-50 font-medium rounded-lg transition-colors">Replace Thumbprints</button>
+              </div>
+              <div id="provider-thumbprints" class="space-y-2"></div>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100 flex-shrink-0">
+          <button onclick="closeModal('manage-provider-modal')" class="px-4 py-2.5 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Replace Thumbprints Modal -->
+  <div id="thumbprints-modal" class="modal hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('thumbprints-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg relative">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100">
+          <h2 class="text-xl font-semibold text-charcoal">Replace Thumbprints</h2>
+          <button onclick="closeModal('thumbprints-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="p-6 space-y-4">
+          <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <p class="text-sm text-yellow-800">Saving will replace all thumbprints for this provider. Entries not listed here are removed.</p>
+          </div>
+          <div class="flex items-center justify-between">
+            <label class="block text-sm font-medium text-charcoal">Thumbprints</label>
+            <button type="button" onclick="iamAddTextRow('edit-thumbprints', '', '40-character SHA-1 thumbprint', 40)" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Add Thumbprint</button>
+          </div>
+          <div id="edit-thumbprints" class="space-y-2"></div>
+          <p class="text-xs text-charcoal-300">At least one entry is required. Up to 5 entries, each exactly 40 characters.</p>
+        </div>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+          <button onclick="closeModal('thumbprints-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+          <button id="save-thumbprints-btn" onclick="saveThumbprints()" class="px-4 py-2.5 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">Replace Thumbprints</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="delete-provider-modal" class="modal hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('delete-provider-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
+        <div class="p-6">
+          <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold text-charcoal text-center mb-2">Delete OIDC Provider</h3>
+          <p class="text-charcoal-300 text-center mb-6">
+            Are you sure you want to delete <span id="delete-provider-name" class="font-mono text-charcoal"></span>? Roles trusting this provider will stop accepting its tokens. This action cannot be undone.
+          </p>
+          <div class="flex items-center justify-center gap-3">
+            <button onclick="closeModal('delete-provider-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+            <button id="confirm-delete-provider-btn" onclick="confirmDeleteProvider()" class="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors">Delete Provider</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allProviders = [];       // ARNs
+    let currentProvider = null;  // { arn, url, clientIDList, thumbprintList, createDate, tags }
+    let providerToDelete = null;
+
+    if (!requireIAM()) {
+      // Redirected
+    } else {
+      initSidebarWithRole();
+      updateUserInfo();
+      loadProviders();
+    }
+
+    // ============================================
+    // List
+    // ============================================
+
+    /**
+     * The provider host is encoded in the ARN, so each row can be named
+     * without a GetOpenIDConnectProvider call of its own.
+     */
+    function providerNameFromArn(arn) {
+      const index = arn.indexOf('oidc-provider/');
+      return index === -1 ? arn : arn.slice(index + 'oidc-provider/'.length);
+    }
+
+    async function loadProviders() {
+      showTableLoading('providers-table-body', 3);
+      try {
+        allProviders = await api.iamListOIDCProviders();
+        filterProviders();
+      } catch (error) {
+        console.error('Error loading OIDC providers:', error);
+        if (iamIsAccessDenied(error)) {
+          iamShowAccessDenied('providers-table-body', 3, 'You don\u2019t have permission to list identity providers');
+        } else {
+          showToast(iamErrorText(error, 'loading identity providers'), 'error');
+          showEmptyState('providers-table-body', 3, 'Error loading identity providers');
+        }
+      }
+    }
+
+    function filterProviders() {
+      const term = document.getElementById('search-input').value.toLowerCase();
+      const filtered = term ? allProviders.filter(arn => arn.toLowerCase().includes(term)) : allProviders;
+      renderProviders(filtered);
+    }
+
+    function renderProviders(providers) {
+      const tbody = document.getElementById('providers-table-body');
+      tbody.innerHTML = '';
+
+      if (providers.length === 0) {
+        showEmptyState('providers-table-body', 3, 'No identity providers found');
+        return;
+      }
+
+      providers.forEach(arn => {
+        const row = document.createElement('tr');
+        row.className = 'border-b border-gray-50 hover:bg-gray-50 transition-colors';
+        row.innerHTML = `
+          <td class="py-4 px-6"><span class="font-mono text-sm text-charcoal">${escapeHtml(providerNameFromArn(arn))}</span></td>
+          <td class="py-4 px-6">${iamArnCell(arn)}</td>
+          <td class="py-4 px-6 text-right">
+            <div class="flex items-center justify-end gap-2">
+              <button onclick="openManageProviderModal('${escapeHtml(arn)}')" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal font-medium rounded-lg transition-colors">Manage</button>
+              <button onclick="openDeleteProviderModal('${escapeHtml(arn)}')" class="p-2 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              </button>
+            </div>
+          </td>`;
+        tbody.appendChild(row);
+      });
+    }
+
+    // ============================================
+    // Create
+    // ============================================
+
+    function openCreateProviderModal() {
+      document.getElementById('create-provider-url').value = '';
+      document.getElementById('create-provider-clients').innerHTML = '';
+      document.getElementById('create-provider-thumbprints').innerHTML = '';
+      document.getElementById('create-provider-tags').innerHTML = '';
+      iamAddTextRow('create-provider-clients', '', 'sts.versity.local', 255);
+      openModal('create-provider-modal');
+    }
+
+    function validateProviderUrl(url) {
+      if (!url) return 'Provider URL is required.';
+      if (!url.startsWith('https://')) return 'Provider URL must start with https://.';
+      if (url.length > IAM_LIMITS.oidcUrlChars) return `Provider URL must be ${IAM_LIMITS.oidcUrlChars} characters or fewer.`;
+      let parsed;
+      try {
+        parsed = new URL(url);
+      } catch (e) {
+        return 'Provider URL is not a valid URL.';
+      }
+      if (parsed.port) return 'Provider URL must not include a port.';
+      if (parsed.username || parsed.password) return 'Provider URL must not include user info.';
+      if (parsed.search) return 'Provider URL must not include a query string.';
+      if (parsed.hash) return 'Provider URL must not include a fragment.';
+      return null;
+    }
+
+    function validateThumbprints(list, requireOne) {
+      if (list.length === 0) return requireOne ? 'At least one thumbprint is required.' : null;
+      if (list.length > IAM_LIMITS.oidcThumbprints) return `Up to ${IAM_LIMITS.oidcThumbprints} thumbprints are allowed.`;
+      const bad = list.find(t => t.length !== IAM_LIMITS.oidcThumbprintChars);
+      if (bad) return `Thumbprints must be exactly ${IAM_LIMITS.oidcThumbprintChars} characters. "${bad}" is ${bad.length}.`;
+      return null;
+    }
+
+    async function submitCreateProvider() {
+      const url = document.getElementById('create-provider-url').value.trim();
+      const clients = iamCollectTextRows('create-provider-clients');
+      const thumbprints = iamCollectTextRows('create-provider-thumbprints');
+      const tags = iamCollectTags('create-provider-tags');
+
+      const urlError = validateProviderUrl(url);
+      if (urlError) { showToast(urlError, 'error'); return; }
+      if (clients.length > IAM_LIMITS.oidcClientIds) {
+        showToast(`Up to ${IAM_LIMITS.oidcClientIds} client IDs are allowed.`, 'error');
+        return;
+      }
+      const thumbprintError = validateThumbprints(thumbprints, false);
+      if (thumbprintError) { showToast(thumbprintError, 'error'); return; }
+
+      const btn = document.getElementById('create-provider-btn');
+      setLoading(btn, true);
+      try {
+        await api.iamCreateOIDCProvider(url, clients, thumbprints, tags);
+        showToast('Identity provider created successfully', 'success');
+        closeModal('create-provider-modal');
+        loadProviders();
+      } catch (error) {
+        console.error('Error creating identity provider:', error);
+        showToast(iamErrorText(error, 'creating identity provider'), 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    // ============================================
+    // Manage
+    // ============================================
+
+    async function openManageProviderModal(arn) {
+      currentProvider = { arn };
+      document.getElementById('manage-provider-title').textContent = providerNameFromArn(arn);
+      document.getElementById('provider-detail-arn').innerHTML = iamArnCell(arn);
+      document.getElementById('provider-detail-url').textContent = 'Loading...';
+      document.getElementById('provider-detail-created').textContent = '-';
+      document.getElementById('provider-detail-tags').innerHTML = '<span class="text-charcoal-300">-</span>';
+      document.getElementById('provider-clients').innerHTML = '';
+      document.getElementById('provider-thumbprints').innerHTML = '';
+      openModal('manage-provider-modal');
+      await loadProviderDetail();
+    }
+
+    async function loadProviderDetail() {
+      try {
+        const detail = await api.iamGetOIDCProvider(currentProvider.arn);
+        currentProvider = Object.assign({ arn: currentProvider.arn }, detail);
+        document.getElementById('provider-detail-url').textContent = detail.url || '-';
+        document.getElementById('provider-detail-created').textContent = iamFormatDate(detail.createDate);
+
+        const tagsEl = document.getElementById('provider-detail-tags');
+        tagsEl.innerHTML = detail.tags.length === 0
+          ? '<span class="text-charcoal-300">-</span>'
+          : detail.tags.map(tag => `<span class="px-2 py-0.5 bg-gray-100 text-charcoal text-xs font-mono rounded">${escapeHtml(tag.Key)}=${escapeHtml(tag.Value || '')}</span>`).join('');
+
+        renderClientIds(detail.clientIDList);
+        renderThumbprints(detail.thumbprintList);
+      } catch (error) {
+        console.error('Error loading provider:', error);
+        document.getElementById('provider-detail-url').textContent = iamIsAccessDenied(error)
+          ? 'No permission to read this provider'
+          : 'Unavailable';
+        if (!iamIsAccessDenied(error)) showToast(iamErrorText(error, 'loading provider'), 'error');
+      }
+    }
+
+    function renderClientIds(clients) {
+      const el = document.getElementById('provider-clients');
+      if (!clients || clients.length === 0) {
+        el.innerHTML = '<span class="text-sm text-charcoal-300">No client IDs</span>';
+        return;
+      }
+      el.innerHTML = clients.map(id => `
+        <span class="inline-flex items-center gap-2 pl-3 pr-2 py-1.5 bg-gray-100 rounded-lg">
+          <span class="font-mono text-xs text-charcoal">${escapeHtml(id)}</span>
+          <button onclick="removeClientId('${escapeHtml(id)}')" class="p-0.5 text-charcoal-300 hover:text-red-600 rounded transition-colors" title="Remove">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </span>`).join('');
+    }
+
+    function renderThumbprints(thumbprints) {
+      const el = document.getElementById('provider-thumbprints');
+      if (!thumbprints || thumbprints.length === 0) {
+        el.innerHTML = '<span class="text-sm text-charcoal-300">No thumbprints</span>';
+        return;
+      }
+      el.innerHTML = thumbprints.map(tp => `
+        <div class="flex items-center gap-2 border border-gray-100 rounded-lg px-3 py-2">
+          <span class="font-mono text-xs text-charcoal break-all">${escapeHtml(tp)}</span>
+          <button onclick="iamCopy('${escapeHtml(tp)}', 'Thumbprint')" class="ml-auto p-1 text-charcoal-300 hover:text-accent hover:bg-accent-50 rounded transition-colors flex-shrink-0" title="Copy">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          </button>
+        </div>`).join('');
+    }
+
+    async function addClientId() {
+      const input = document.getElementById('add-client-id');
+      const clientId = input.value.trim();
+      if (!clientId) return;
+      if (clientId.length > IAM_LIMITS.oidcClientIdChars) {
+        showToast(`Client IDs must be ${IAM_LIMITS.oidcClientIdChars} characters or fewer.`, 'error');
+        return;
+      }
+      const btn = document.getElementById('add-client-btn');
+      setLoading(btn, true);
+      try {
+        await api.iamAddClientIDToOIDCProvider(currentProvider.arn, clientId);
+        showToast('Client ID added successfully', 'success');
+        input.value = '';
+        await loadProviderDetail();
+      } catch (error) {
+        showToast(iamErrorText(error, 'adding client ID'), 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    function removeClientId(clientId) {
+      confirm(`Remove client ID ${clientId} from this provider?`, async () => {
+        try {
+          await api.iamRemoveClientIDFromOIDCProvider(currentProvider.arn, clientId);
+          showToast('Client ID removed successfully', 'success');
+          await loadProviderDetail();
+        } catch (error) {
+          showToast(iamErrorText(error, 'removing client ID'), 'error');
+        }
+      });
+    }
+
+    function openThumbprintsModal() {
+      const container = document.getElementById('edit-thumbprints');
+      container.innerHTML = '';
+      const current = (currentProvider && currentProvider.thumbprintList) || [];
+      if (current.length === 0) {
+        iamAddTextRow('edit-thumbprints', '', '40-character SHA-1 thumbprint', 40);
+      } else {
+        current.forEach(tp => iamAddTextRow('edit-thumbprints', tp, '40-character SHA-1 thumbprint', 40));
+      }
+      openModal('thumbprints-modal');
+    }
+
+    async function saveThumbprints() {
+      const thumbprints = iamCollectTextRows('edit-thumbprints');
+      const error = validateThumbprints(thumbprints, true);
+      if (error) { showToast(error, 'error'); return; }
+
+      const btn = document.getElementById('save-thumbprints-btn');
+      setLoading(btn, true);
+      try {
+        await api.iamUpdateOIDCProviderThumbprint(currentProvider.arn, thumbprints);
+        showToast('Thumbprints replaced successfully', 'success');
+        closeModal('thumbprints-modal');
+        await loadProviderDetail();
+      } catch (err) {
+        showToast(iamErrorText(err, 'replacing thumbprints'), 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    // ============================================
+    // Delete
+    // ============================================
+
+    function openDeleteProviderModal(arn) {
+      providerToDelete = arn;
+      document.getElementById('delete-provider-name').textContent = providerNameFromArn(arn);
+      openModal('delete-provider-modal');
+    }
+
+    async function confirmDeleteProvider() {
+      if (!providerToDelete) return;
+      const btn = document.getElementById('confirm-delete-provider-btn');
+      setLoading(btn, true);
+      try {
+        await api.iamDeleteOIDCProvider(providerToDelete);
+        showToast('Identity provider deleted successfully', 'success');
+        closeModal('delete-provider-modal');
+        providerToDelete = null;
+        loadProviders();
+      } catch (error) {
+        console.error('Error deleting identity provider:', error);
+        showToast(iamErrorText(error, 'deleting identity provider'), 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -454,6 +454,13 @@ type Config struct {
 	// WebUI. By default the gateway auto-detects URLs from AdminPorts, or
 	// reuses WebuiGateways when AdminPorts is empty.
 	WebuiAdminGateways []string
+	// WebuiIAMGateways are the standalone IAM service (versitygw iam) URLs
+	// offered to the WebUI's optional IAM endpoint field. There is no
+	// auto-detected fallback, since the IAM service is a separate process;
+	// empty hides the IAM navigation unless the operator types an endpoint on
+	// the login page. Once an IAM endpoint is in play the WebUI ignores the
+	// admin API entirely.
+	WebuiIAMGateways []string
 	// WebuiPathPrefix is the URL path prefix under which the WebUI and its
 	// API endpoints are served (e.g. "/ui"). Must start with "/" and be a
 	// single path segment with no trailing slash. Leave empty to serve from
@@ -606,6 +613,14 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	var validatedWebuiAdminGateways []string
 	if len(cfg.WebuiAdminGateways) > 0 {
 		validatedWebuiAdminGateways, err = validateGatewayURLs(cfg.WebuiAdminGateways, "WebuiAdminGateways")
+		if err != nil {
+			return err
+		}
+	}
+
+	var validatedWebuiIAMGateways []string
+	if len(cfg.WebuiIAMGateways) > 0 {
+		validatedWebuiIAMGateways, err = validateGatewayURLs(cfg.WebuiIAMGateways, "WebuiIAMGateways")
 		if err != nil {
 			return err
 		}
@@ -808,6 +823,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		opts = append(opts, s3api.WithWebUI(cfg.WebuiS3Prefix, &webui.ServerConfig{
 			Gateways:      s3WebGateways,
 			AdminGateways: s3WebAdminGateways,
+			IAMGateways:   validatedWebuiIAMGateways,
 			Region:        cfg.Region,
 		}))
 	}
@@ -960,6 +976,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		webSrv, err = webui.NewServer(&webui.ServerConfig{
 			Gateways:      gateways,
 			AdminGateways: adminGateways,
+			IAMGateways:   validatedWebuiIAMGateways,
 			Region:        cfg.Region,
 		}, webOpts...)
 		if err != nil {

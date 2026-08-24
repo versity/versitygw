@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/etag"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/static"
@@ -33,8 +34,13 @@ import (
 type ServerConfig struct {
 	Gateways      []string // S3 API gateways
 	AdminGateways []string // Admin API gateways (defaults to Gateways if empty)
-	Region        string
-	CORSOrigin    string
+	// IAMGateways are standalone IAM service (versitygw iam) endpoints, used
+	// to seed the WebUI's optional IAM endpoint field. Unlike AdminGateways
+	// there is no fallback to Gateways: the IAM service is a separate
+	// process, so empty means "no IAM endpoint to offer".
+	IAMGateways []string
+	Region      string
+	CORSOrigin  string
 }
 
 // Server is the main GUI server
@@ -115,6 +121,11 @@ func (s *Server) setupMiddleware() {
 func (s *Server) setupRoutes() error {
 	prefix := s.pathPrefix
 
+	// Must come before the routes it applies to: a Use() registered after a
+	// matching route never runs, since those handlers don't call Next().
+	s.app.Use(prefix+"/", s.revalidateAssets)
+	s.app.Use(prefix+"/", etag.New())
+
 	// Serve index.html with server-side config injection
 	s.app.Get(prefix+"/", s.handleIndexHTML)
 	s.app.Get(prefix+"/index.html", s.handleIndexHTML)
@@ -138,6 +149,26 @@ func (s *Server) setupRoutes() error {
 	return nil
 }
 
+// revalidateAssets makes browsers check back with the gateway before reusing a
+// cached copy of the web UI.
+//
+// The UI is embedded in the binary, so its files go out stamped with the zero
+// modification time. With no Cache-Control to go on, a browser's heuristic
+// freshness rule turns that apparent age into a centuries-long expiry, and an
+// upgraded gateway ends up serving new HTML against stale cached assets.
+// no-cache keeps the copy but forces revalidation, which the ETag middleware
+// answers with a 304 when the file has not changed.
+func (s *Server) revalidateAssets(c fiber.Ctx) error {
+	if err := c.Next(); err != nil {
+		return err
+	}
+
+	c.Response().Header.Del(fiber.HeaderLastModified)
+	c.Set(fiber.HeaderCacheControl, "no-cache")
+
+	return nil
+}
+
 // handleIndexHTML serves index.html with server config injected as an inline script.
 func (s *Server) handleIndexHTML(c fiber.Ctx) error {
 	data, err := webFiles.ReadFile("web/index.html")
@@ -153,6 +184,7 @@ func (s *Server) handleIndexHTML(c fiber.Ctx) error {
 	configJSON, err := json.Marshal(map[string]any{
 		"gateways":      s.config.Gateways,
 		"adminGateways": adminGateways,
+		"iamGateways":   s.config.IAMGateways,
 		"defaultRegion": s.config.Region,
 	})
 	if err != nil {

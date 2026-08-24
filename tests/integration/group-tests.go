@@ -1578,6 +1578,7 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_policy_combinations)
 	ts.Run(S3IAMAccessControl_copy_object_requires_both_sides)
 	ts.Run(S3IAMAccessControl_create_bucket)
+	ts.Run(S3IAMAccessControl_list_buckets)
 	ts.Run(S3IAMAccessControl_governance_bypass_sources)
 	ts.Run(S3IAMAccessControl_governance_without_bypass_header)
 	ts.Run(S3IAMAccessControl_compliance_mode_not_bypassable)
@@ -2001,6 +2002,7 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_policy_combinations":                                           S3IAMAccessControl_policy_combinations,
 		"S3IAMAccessControl_copy_object_requires_both_sides":                               S3IAMAccessControl_copy_object_requires_both_sides,
 		"S3IAMAccessControl_create_bucket":                                                 S3IAMAccessControl_create_bucket,
+		"S3IAMAccessControl_list_buckets":                                                  S3IAMAccessControl_list_buckets,
 		"S3IAMAccessControl_governance_bypass_sources":                                     S3IAMAccessControl_governance_bypass_sources,
 		"S3IAMAccessControl_governance_without_bypass_header":                              S3IAMAccessControl_governance_without_bypass_header,
 		"S3IAMAccessControl_compliance_mode_not_bypassable":                                S3IAMAccessControl_compliance_mode_not_bypassable,
