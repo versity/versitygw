@@ -21,6 +21,7 @@ package cumiddleware
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -179,4 +180,113 @@ func TestSetRDMAReplyHeaderNoopForNonFasthttpContext(t *testing.T) {
 	// HTTP layer.
 	ctx := InjectRDMAContext(t.Context(), "descr", 10, 0)
 	SetRDMAReplyHeader(ctx, http.StatusOK, 10)
+}
+
+// rcToken builds a fixed-width hex RC token of the hipObject shape:
+// 88 lowercase hex chars, optionally suffixed with ":addr:size".
+func rcToken(suffix string) string {
+	tok := ""
+	for i := 0; i < 88; i++ {
+		tok += string(rune('0' + i%10))
+	}
+	return tok + suffix
+}
+
+func TestRCTokenSchemeRejectedWith501(t *testing.T) {
+	cases := []struct {
+		name  string
+		token string
+	}{
+		{"88 hex chars, no colon", rcToken("")},
+		{"88 hex chars with addr:size suffix", rcToken(":1234abcd:1000")},
+		{"88 hex chars uppercase", func() string {
+			tok := ""
+			for i := 0; i < 88; i++ {
+				tok += string(rune('A' + i%6))
+			}
+			return tok
+		}()},
+		{"17-char leading-zero hex first field", "0ffffffffffffffff:00000001"},
+		{"suffix contents are not inspected", rcToken(":not-hex!:not-hex2")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app, reached := newTestApp(t)
+			req := httptest.NewRequest(http.MethodPost, "/", nil)
+			req.Header.Set(HeaderRDMAToken, tc.token)
+			resp, err := app.Test(req)
+			assert.NoError(t, err)
+			assert.Equal(t, http.StatusNotImplemented, resp.StatusCode)
+			assert.Equal(t, fiber.MIMEApplicationXML,
+				resp.Header.Get("Content-Type"))
+			assert.Empty(t, resp.Header.Get(HeaderRDMAReply))
+			body, _ := io.ReadAll(resp.Body)
+			assert.Contains(t, string(body), "<Code>NotImplemented</Code>")
+			select {
+			case <-reached:
+				t.Fatal("handler should not have been reached for an RC token")
+			default:
+			}
+		})
+	}
+}
+
+func TestRCTokenSchemeBoundaryPassesThrough(t *testing.T) {
+	// A 16-hex-char first field is a legal cuObject base address; with a
+	// valid second field the request must reach the downstream handler.
+	app, reached := newTestApp(t)
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set(HeaderRDMAToken, "ffffffffffffffff:00000001:01020304:0102:010203:1:0102030405060708090a0b0c0d0e0f10")
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	select {
+	case <-reached:
+	default:
+		t.Fatal("handler should have been reached for a cuObject token")
+	}
+}
+
+func TestRCTokenSchemeMalformedStill400(t *testing.T) {
+	// A >16-char first field that is not hex is not an RC token scheme; it
+	// falls through to the cuObject parser, which rejects it as malformed.
+	// The expectation below holds for the standalone test app used here;
+	// in a production server the fiber error handler currently maps this
+	// to a 500 (pre-existing behavior, out of scope for this change).
+	app, _ := newTestApp(t)
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set(HeaderRDMAToken, "zzzzzzzzzzzzzzzzzzzz:00000001")
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestRCTokenScheme16HexNoColonStill400(t *testing.T) {
+	// A 16-hex-char token with no colon at all is a malformed cuObject
+	// token ("missing base address field"), not an RC scheme; the exact
+	// fixture pins that boundary.
+	app, _ := newTestApp(t)
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set(HeaderRDMAToken, "ffffffffffffffff")
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestLegacyDescriptorTakesPrecedenceOverRCToken(t *testing.T) {
+	// When both the legacy descriptor header and an RC-shaped combined
+	// token are present, the legacy path handles the request and the RC
+	// gate must not fire.
+	app, reached := newTestApp(t)
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set(HeaderRDMADescr, "legacy-descriptor")
+	req.Header.Set(HeaderRDMAToken, rcToken(""))
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	select {
+	case <-reached:
+	default:
+		t.Fatal("handler should have been reached via the legacy path")
+	}
 }

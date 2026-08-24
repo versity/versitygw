@@ -33,6 +33,9 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/valyala/fasthttp"
+
+	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 )
 
 // String keys used for fasthttp user-value storage.
@@ -147,6 +150,23 @@ func CuObjMiddleware(ctx fiber.Ctx) error {
 	// which case Content-Length is 0/absent; fall back to the token's own
 	// registered-buffer-size field (already part of the documented wire
 	// format) rather than leaving the backend with no usable size.
+	//
+	// Fixed-width binary RC token schemes (e.g. AMD hipObject's 88-hex-char
+	// token) are structurally incompatible with this gateway's DC transport.
+	// Reject them with 501 instead of a 400 parse error so such clients can
+	// fall back to the HTTP data path: they treat a response without
+	// x-amz-rdma-reply as "RDMA not supported", so the reply header is
+	// deliberately left unset. The error is serialized and sent directly
+	// (terminal response) because the global error handler collapses
+	// non-fiber errors into 500.
+	if isRCTokenScheme(token) {
+		requestID, hostID := utils.EnsureRequestIDs(ctx)
+		err := s3err.GetNotImplementedErr(HeaderRDMAToken, "")
+		ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
+		ctx.Status(err.HTTPStatusCode)
+		return ctx.Send(err.XMLBody(requestID, hostID))
+	}
+
 	rctx.SetUserValue(localKeyRDMADescr, token)
 
 	remoteStart, err := parseRDMATokenBaseAddr(token)
@@ -162,6 +182,39 @@ func CuObjMiddleware(ctx fiber.Ctx) error {
 	}
 
 	return ctx.Next()
+}
+
+// isHexDigit reports whether c is an ASCII hexadecimal digit.
+func isHexDigit(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+		(c >= 'A' && c <= 'F')
+}
+
+// isRCTokenScheme reports whether the token's first colon-delimited field
+// is longer than any cuObject base address can be: a cuObject base address
+// is a hex-encoded uint64 (at most 16 hex chars, see the token layout
+// comment above), while fixed-width binary RC token schemes such as AMD
+// hipObject's (44-byte payload hex-encoded to 88 chars, optionally
+// suffixed ":addr:size") always exceed it. Non-hex first fields are left
+// to the regular cuObject parsing, which reports them as malformed.
+// Note this deliberately reclassifies 17+-char non-canonical hex values
+// (e.g. leading zeros) as unsupported; well-formed cuObject tokens are
+// unaffected.
+func isRCTokenScheme(token string) bool {
+	i := strings.IndexByte(token, ':')
+	first := token
+	if i >= 0 {
+		first = token[:i]
+	}
+	if len(first) <= 16 {
+		return false
+	}
+	for j := 0; j < len(first); j++ {
+		if !isHexDigit(first[j]) {
+			return false
+		}
+	}
+	return true
 }
 
 // parseRDMATokenBaseAddr extracts the remote base address — the first
