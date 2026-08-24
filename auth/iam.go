@@ -220,6 +220,7 @@ func New(o *Opts) (IAMService, error) {
 
 	switch {
 	case o.StandaloneIAMEndpoint != "":
+		fmt.Printf("initializing standalone IAM with %q\n", o.StandaloneIAMEndpoint)
 		svc, err = NewIAMServiceStandalone(o.RootAccount, IAMServiceStandaloneConfig{
 			Endpoint:         o.StandaloneIAMEndpoint,
 			Access:           o.StandaloneIAMAccess,
@@ -231,7 +232,6 @@ func New(o *Opts) (IAMService, error) {
 			DefaultGroupID:   o.StandaloneDefaultGroupID,
 			DefaultProjectID: o.StandaloneDefaultProjectID,
 		})
-		fmt.Printf("initializing standalone IAM with %q\n", o.StandaloneIAMEndpoint)
 		if err != nil {
 			return nil, err
 		}

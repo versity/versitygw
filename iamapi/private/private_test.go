@@ -20,6 +20,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,10 +117,33 @@ func doPrivateRequest(t *testing.T, p *PrivateAPI, method, target, access, secre
 
 	req := httptest.NewRequest(method, target, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ProtocolHeader, strconv.Itoa(ProtocolVersion))
 	req.ContentLength = int64(len(body))
 
 	hash := sigv4auth.PayloadSHA256Hex(body)
 	signPrivateRequest(t, req, access, secret, hash)
+
+	resp, err := p.app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	return resp
+}
+
+// doPrivateRequestWithProtocol is doPrivateRequest with the protocol header
+// set to an arbitrary value — including "" for a gateway build that predates
+// versioning and sends none at all.
+func doPrivateRequestWithProtocol(t *testing.T, p *PrivateAPI, target, protocol string, body []byte) *http.Response {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodPost, target, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if protocol != "" {
+		req.Header.Set(ProtocolHeader, protocol)
+	}
+	req.ContentLength = int64(len(body))
+
+	signPrivateRequest(t, req, testRoot.Access, testRoot.Secret, sigv4auth.PayloadSHA256Hex(body))
 
 	resp, err := p.app.Test(req)
 	if err != nil {
@@ -633,6 +658,157 @@ func TestPrivateAPIRejectsUnsignedRequest(t *testing.T) {
 	}
 	if resp.StatusCode == http.StatusOK {
 		t.Errorf("expected an unsigned request to be rejected, got 200")
+	}
+}
+
+func TestPrivateAPIVersion(t *testing.T) {
+	store, err := storage.New(storage.Config{Dir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	p, err := New(store, testRoot, WithPrivateServerVersion("v1.2.3"))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp := doPrivateRequest(t, p, http.MethodPost, VersionPath, testRoot.Access, testRoot.Secret, []byte("{}"))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, readBody(t, resp))
+	}
+
+	var got VersionResponse
+	if err := json.Unmarshal([]byte(readBody(t, resp)), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Protocol != ProtocolVersion || got.MinClient != MinClientProtocol {
+		t.Errorf("VersionResponse = %+v, want protocol %d minClient %d", got, ProtocolVersion, MinClientProtocol)
+	}
+	if got.ServerVersion != "v1.2.3" {
+		t.Errorf("ServerVersion = %q, want %q", got.ServerVersion, "v1.2.3")
+	}
+}
+
+// TestPrivateAPIVersionRequiresRootCredential confirms the version endpoint is
+// authenticated like every other one here — that is what lets the gateway's
+// startup probe verify its own credential in the same round trip.
+func TestPrivateAPIVersionRequiresRootCredential(t *testing.T) {
+	p, store := newTestServer(t)
+	createTestUser(t, store, "alice", "AKIAALICE", "alicesecret", "")
+
+	resp := doPrivateRequest(t, p, http.MethodPost, VersionPath, "AKIAALICE", "alicesecret", []byte("{}"))
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("version endpoint served a non-root credential: %s", readBody(t, resp))
+	}
+}
+
+// TestPrivateAPIProtocolHeaderOnEveryResponse covers the success path, an
+// application error, and an unknown route. The last two go through
+// errorHandler, which must not drop the header — a mismatch response that
+// carries no version is the one response an operator most needs it on.
+func TestPrivateAPIProtocolHeaderOnEveryResponse(t *testing.T) {
+	p, store := newTestServer(t)
+	createTestUser(t, store, "alice", "AKIAALICE", "alicesecret", "")
+
+	for _, tc := range []struct {
+		name string
+		path string
+		body string
+	}{
+		{"success", ResolveIdentityPath, `{"accessKeyIds":["AKIAALICE"]}`},
+		{"application error", DerivePath, "not json"},
+		{"unknown route", "/private/nope", "{}"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := doPrivateRequest(t, p, http.MethodPost, tc.path, testRoot.Access, testRoot.Secret, []byte(tc.body))
+			if got := resp.Header.Get(ProtocolHeader); got != strconv.Itoa(ProtocolVersion) {
+				t.Errorf("%s = %q, want %q", ProtocolHeader, got, strconv.Itoa(ProtocolVersion))
+			}
+		})
+	}
+}
+
+// TestPrivateAPIRejectsIncompatibleClientProtocol covers every request-header
+// value this build refuses. A gateway too old to be served safely, and one
+// whose version cannot be read at all, are both refused with a code the
+// gateway dispatches on — never served on an assumed version.
+func TestPrivateAPIRejectsIncompatibleClientProtocol(t *testing.T) {
+	p, store := newTestServer(t)
+	createTestUser(t, store, "alice", "AKIAALICE", "alicesecret", "")
+
+	for _, tc := range []struct {
+		name     string
+		protocol string
+	}{
+		{"absent", ""},
+		{"empty", " "},
+		{"not a number", "one"},
+		{"signed", "+1"},
+		{"zero", "0"},
+		{"absurdly long", "11111111111111111111"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := doPrivateRequestWithProtocol(t, p, ResolveIdentityPath, tc.protocol, []byte(`{"accessKeyIds":["AKIAALICE"]}`))
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body = %s", resp.StatusCode, http.StatusBadRequest, readBody(t, resp))
+			}
+			body := readBody(t, resp)
+			if !strings.Contains(body, CodeProtocolMismatch) {
+				t.Errorf("body = %s, want code %s", body, CodeProtocolMismatch)
+			}
+			if got := resp.Header.Get(ProtocolHeader); got != strconv.Itoa(ProtocolVersion) {
+				t.Errorf("%s = %q, want the refusing build's own version", ProtocolHeader, got)
+			}
+		})
+	}
+}
+
+// TestPrivateAPIVersionExemptFromClientProtocolCheck confirms the version
+// endpoint answers a gateway this build would otherwise refuse. Without it, a
+// future service that raised MinClientProtocol could not tell an older gateway
+// why it was being turned away.
+func TestPrivateAPIVersionExemptFromClientProtocolCheck(t *testing.T) {
+	p, _ := newTestServer(t)
+
+	resp := doPrivateRequestWithProtocol(t, p, VersionPath, "", []byte("{}"))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", resp.StatusCode, readBody(t, resp))
+	}
+	if got := resp.Header.Get(ProtocolHeader); got != strconv.Itoa(ProtocolVersion) {
+		t.Errorf("%s = %q, want %q", ProtocolHeader, got, strconv.Itoa(ProtocolVersion))
+	}
+}
+
+func TestParseProtocolVersion(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  int
+	}{
+		{"1", 1},
+		{"2", 2},
+		{"1000", 1000},
+		{"", 0},
+		{" 1", 0},
+		{"1 ", 0},
+		{"+1", 0},
+		{"-1", 0},
+		{"0", 0},
+		{"1.0", 0},
+		{"v1", 0},
+		{"99999", 0},
+	} {
+		got, err := ParseProtocolVersion(tc.value)
+		if tc.want == 0 {
+			if err == nil {
+				t.Errorf("ParseProtocolVersion(%q) = %d, want an error", tc.value, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("ParseProtocolVersion(%q): %v", tc.value, err)
+		}
+		if got != tc.want {
+			t.Errorf("ParseProtocolVersion(%q) = %d, want %d", tc.value, got, tc.want)
+		}
 	}
 }
 

@@ -18,10 +18,14 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/versity/versitygw/iamapi/private"
@@ -39,6 +43,34 @@ const (
 	standaloneRequestTimeout = 10 * time.Second
 )
 
+// standaloneProbeWindow bounds how long NewIAMServiceStandalone waits for the
+// IAM service to answer compatibly before it gives up, and
+// standaloneProbeInterval how often it retries within that window. Both
+// failures are retried, for different reasons: an unreachable service is the
+// ordinary case of the two processes starting in parallel, and an
+// incompatible one is what a gateway sees while the IAM service it is paired
+// with is still rolling. Failing immediately on either would turn a routine
+// deployment into a crash loop whose backoff long outlives the condition.
+//
+// Variables rather than constants so tests can shorten the window; nothing
+// else writes them.
+var (
+	standaloneProbeWindow   = 30 * time.Second
+	standaloneProbeInterval = 2 * time.Second
+)
+
+// protocolMismatchError reports that whatever answered the private endpoints
+// is not a standalone IAM service this gateway can use. It is a distinct type
+// so the startup probe can tell an incompatible peer, which is fatal, from an
+// unreachable one, which is not.
+type protocolMismatchError struct {
+	detail string
+}
+
+func (e *protocolMismatchError) Error() string {
+	return "iam standalone: " + e.detail
+}
+
 // IAMServiceStandaloneConfig configures IAMServiceStandalone.
 type IAMServiceStandaloneConfig struct {
 	// Endpoint is either a "host:port" TCP address (mTLS required -
@@ -46,8 +78,8 @@ type IAMServiceStandaloneConfig struct {
 	// the standalone IAM service's own --private-ports address shape.
 	Endpoint string
 	// Access/Secret are this client's own SigV4 identity — the credential
-	// it signs its private requests with. Defaults both to the
-	// gateway's root account when unset.
+	// it signs its private requests with. Both must be set together, or
+	// both left empty to sign with the gateway's root account.
 	Access string
 	Secret string
 	// ClientCert/ClientCertKey/ServerCA configure outbound mTLS. Required
@@ -96,13 +128,13 @@ func NewIAMServiceStandalone(rootAcc Account, cfg IAMServiceStandaloneConfig) (*
 		return nil, fmt.Errorf("iam standalone: endpoint is required")
 	}
 
-	access := cfg.Access
-	if access == "" {
-		access = rootAcc.Access
+	if (cfg.Access == "") != (cfg.Secret == "") {
+		return nil, fmt.Errorf("iam standalone: access and secret must both be set, or both left empty to sign with the root account")
 	}
-	secret := cfg.Secret
-	if secret == "" {
-		secret = rootAcc.Secret
+
+	access, secret := cfg.Access, cfg.Secret
+	if access == "" {
+		access, secret = rootAcc.Access, rootAcc.Secret
 	}
 
 	client, baseURL, err := newStandaloneHTTPClient(cfg)
@@ -110,14 +142,93 @@ func NewIAMServiceStandalone(rootAcc Account, cfg IAMServiceStandaloneConfig) (*
 		return nil, err
 	}
 
-	return &IAMServiceStandalone{
+	svc := &IAMServiceStandalone{
 		client:  client,
 		baseURL: baseURL,
 		access:  access,
 		secret:  secret,
 		rootAcc: rootAcc,
 		cfg:     cfg,
-	}, nil
+	}
+
+	if err := svc.probeProtocol(); err != nil {
+		return nil, err
+	}
+
+	return svc, nil
+}
+
+// probeProtocol verifies at startup what every request verifies anyway, so a
+// version skew is diagnosed once, here, instead of once per S3 request as an
+// opaque 500. Because it is a signed request to a root-authenticated
+// endpoint, reaching a compatible answer also proves the transport, the mTLS
+// material, and this gateway's own IAM credential.
+//
+// An incompatible service is fatal: a gateway that cannot authorize a single
+// request is more useful refusing to start, with the reason in its log, than
+// running and serving errors. An unreachable one is only a warning — the two
+// processes legitimately start in parallel, and every request checks the
+// version regardless.
+func (s *IAMServiceStandalone) probeProtocol() error {
+	deadline := time.Now().Add(standaloneProbeWindow)
+
+	for {
+		var resp private.VersionResponse
+		// The endpoint takes no arguments; an empty object is the request.
+		err := s.doPrivateRequest(private.VersionPath, struct{}{}, &resp)
+
+		// The version endpoint answers even a gateway the service will not
+		// serve — that is the whole point of exempting it from the service's
+		// own check — so the probe has to draw that conclusion itself from
+		// the minimum the service reports. Without this the one direction a
+		// gateway cannot detect from a response header would pass startup and
+		// fail on every request afterwards.
+		if err == nil && private.ProtocolVersion < resp.MinClient {
+			err = &protocolMismatchError{fmt.Sprintf(
+				"IAM service at %q serves private protocol %d and newer, this gateway speaks %d: upgrade the gateway",
+				s.cfg.Endpoint, resp.MinClient, private.ProtocolVersion)}
+		}
+
+		if err == nil {
+			serverVersion := resp.ServerVersion
+			if serverVersion == "" {
+				serverVersion = "unknown"
+			}
+			fmt.Printf("standalone IAM service %q: version %s, private protocol %d\n",
+				s.cfg.Endpoint, serverVersion, resp.Protocol)
+			return nil
+		}
+
+		if probeRetryable(err) && time.Now().Before(deadline) {
+			time.Sleep(standaloneProbeInterval)
+			continue
+		}
+
+		var mismatch *protocolMismatchError
+		if errors.As(err, &mismatch) {
+			return fmt.Errorf("%w (still incompatible after %v, so this is a version skew rather than a rollout in progress)",
+				err, standaloneProbeWindow)
+		}
+
+		log.Printf("WARNING: iam standalone: could not verify the IAM service at %q: %v; "+
+			"the private protocol version is still checked on every request",
+			s.cfg.Endpoint, err)
+		return nil
+	}
+}
+
+// probeRetryable reports whether a failed probe could resolve on its own.
+// Only two can: the service not being up yet, and it being mid-rollout at an
+// incompatible version. Anything it answered definitively — a rejected
+// gateway credential above all — will answer the same way in thirty seconds,
+// so retrying only delays the warning that says so.
+func probeRetryable(err error) bool {
+	var mismatch *protocolMismatchError
+	if errors.As(err, &mismatch) {
+		return true
+	}
+	var transport *url.Error
+	return errors.As(err, &transport)
 }
 
 func newStandaloneHTTPClient(cfg IAMServiceStandaloneConfig) (*http.Client, string, error) {
@@ -180,6 +291,11 @@ func (s *IAMServiceStandalone) doPrivateRequest(path string, reqBody, respBody a
 		return fmt.Errorf("iam standalone: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Set before signing, so it is covered by the signature: SigningInput
+	// FromRequest leaves SignedHeaders nil, and sigv4auth's default policy
+	// excludes only Authorization, User-Agent, X-Amzn-Trace-Id, Expect and
+	// Transfer-Encoding.
+	req.Header.Set(private.ProtocolHeader, strconv.Itoa(private.ProtocolVersion))
 
 	payloadHash := sigv4auth.PayloadSHA256Hex(bodyBytes)
 	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
@@ -202,6 +318,12 @@ func (s *IAMServiceStandalone) doPrivateRequest(path string, reqBody, respBody a
 		return fmt.Errorf("iam standalone: request to %s failed: %w", path, err)
 	}
 	defer resp.Body.Close()
+
+	// Checked before the status and before the body: a peer whose protocol
+	// this gateway cannot read is not one whose response it should interpret.
+	if err := s.checkServerProtocol(path, resp); err != nil {
+		return err
+	}
 
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -240,9 +362,45 @@ func standaloneResponseError(path string, status int, body []byte) error {
 		return ErrNoSuchUser
 	case private.CodeInvalidToken:
 		return ErrInvalidSessionToken
+	case private.CodeProtocolMismatch:
+		// The other direction of the same check: this gateway is too old for
+		// the IAM service to serve safely, which only that service can know.
+		return &protocolMismatchError{fmt.Sprintf(
+			"IAM service refused this gateway's private protocol version %d at %s: %s",
+			private.ProtocolVersion, path, errBody.Error)}
 	}
 
 	return fmt.Errorf("iam standalone: %s returned %d: %s", path, status, string(body))
+}
+
+// checkServerProtocol verifies the private protocol version the IAM service
+// declared on a response.
+//
+// A missing version fails just as hard as an incompatible one. No build of
+// this protocol omits the header, so a response without one did not come from
+// a compatible IAM service — it came from something else answering on that
+// address, such as a proxy returning its own error page. The message says
+// what was observed rather than naming a cause, since both look identical from here.
+func (s *IAMServiceStandalone) checkServerProtocol(path string, resp *http.Response) error {
+	value := resp.Header.Get(private.ProtocolHeader)
+	if value == "" {
+		return &protocolMismatchError{fmt.Sprintf(
+			"no %s header on the %d response from %s at %q: not a versioned IAM service",
+			private.ProtocolHeader, resp.StatusCode, path, s.cfg.Endpoint)}
+	}
+
+	server, err := private.ParseProtocolVersion(value)
+	if err != nil {
+		return &protocolMismatchError{fmt.Sprintf("response from %s at %q: %v", path, s.cfg.Endpoint, err)}
+	}
+
+	if server < private.ProtocolVersion {
+		return &protocolMismatchError{fmt.Sprintf(
+			"IAM service at %q speaks private protocol %d, this gateway requires %d or newer: upgrade the IAM service before the gateway",
+			s.cfg.Endpoint, server, private.ProtocolVersion)}
+	}
+
+	return nil
 }
 
 // DeriveSigningKey implements SigningKeyProvider. Root is special-cased

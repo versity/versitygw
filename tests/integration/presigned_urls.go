@@ -825,6 +825,8 @@ func PresignedAuth_Put_GetObject_with_data(s *S3Conf) error {
 			return err
 		}
 
+		req.Header = v4GetReq.SignedHeader
+
 		resp, err = s.httpClient.Do(req)
 		if err != nil {
 			return err
@@ -891,6 +893,8 @@ func PresignedAuth_Put_GetObject_with_UTF8_chars(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
+
+		req.Header = v4GetReq.SignedHeader
 
 		resp, err = s.httpClient.Do(req)
 		if err != nil {

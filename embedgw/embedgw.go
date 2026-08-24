@@ -298,8 +298,8 @@ type Config struct {
 	StandaloneIAMEndpoint string
 	// StandaloneIAMAccess/StandaloneIAMSecret are this gateway's own
 	// signing identity for its calls to the private endpoints — not a
-	// fetched account. Both default to RootUserAccess/RootUserSecret when
-	// unset.
+	// fetched account. Both must be set together, or both left empty to
+	// default to RootUserAccess/RootUserSecret.
 	StandaloneIAMAccess string
 	StandaloneIAMSecret string
 	// StandaloneClientCert/ClientCertKey are this gateway's client

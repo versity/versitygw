@@ -112,3 +112,17 @@ type EvaluatePolicyResponse struct {
 	HasSessionPolicy bool       `json:"hasSessionPolicy,omitempty"`
 	PrincipalArn     string     `json:"principalArn,omitempty"`
 }
+
+// VersionResponse is the version endpoint's body.
+//
+// MinClient is load-bearing, and this is the only place it appears: the
+// version endpoint is exempt from the service's own client-version check so
+// that it can answer a gateway the service will not serve, which leaves the
+// gateway to draw that conclusion itself from this field. Protocol duplicates
+// the ProtocolHeader every response carries, and ServerVersion is the build
+// tag — what maps a protocol number back to an image during a rollout.
+type VersionResponse struct {
+	Protocol      int    `json:"protocol"`
+	MinClient     int    `json:"minClient"`
+	ServerVersion string `json:"serverVersion,omitempty"`
+}

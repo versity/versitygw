@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -497,7 +498,13 @@ func S3IAMSession_presigned_url_with_session_credentials(s *S3Conf) error {
 			return fmt.Errorf("expected the presigned URL to carry X-Amz-Security-Token")
 		}
 
-		resp, err := s.httpClient.Get(presigned.URL)
+		req, err := http.NewRequest(presigned.Method, presigned.URL, nil)
+		if err != nil {
+			return err
+		}
+		req.Header = presigned.SignedHeader
+
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}

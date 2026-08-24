@@ -188,6 +188,7 @@ func (s *IAMApiServer) ServeMultiPort(ports []string) error {
 			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, portSpec, netutil.ListenerOptions{SocketPerm: s.socketPerm})
 		}
 		if err != nil {
+			closeListeners(listeners)
 			return fmt.Errorf("failed to bind iam listener %s: %w", portSpec, err)
 		}
 
@@ -211,6 +212,17 @@ func (s *IAMApiServer) ServeMultiPort(ports []string) error {
 	return s.app.Listener(finalListener, fiber.ListenConfig{
 		DisableStartupMessage: true,
 	})
+}
+
+// closeListeners closes already bound listeners so a failed bind part way
+// through ServeMultiPort does not leave the earlier ports (and unix socket
+// files) held open.
+func closeListeners(listeners []net.Listener) {
+	for _, ln := range listeners {
+		if err := ln.Close(); err != nil {
+			debuglogger.InternalError(fmt.Errorf("close iam listener %v: %w", ln.Addr(), err))
+		}
+	}
 }
 
 func (s *IAMApiServer) Shutdown() error {

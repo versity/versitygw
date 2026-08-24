@@ -812,13 +812,13 @@ func initFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "iam-standalone-access",
-			Usage:       "access key this gateway signs its own calls to the standalone IAM service with (defaults to --access/root)",
+			Usage:       "access key this gateway signs its own calls to the standalone IAM service with (must be set together with --iam-standalone-secret; both default to --access/--secret root)",
 			EnvVars:     []string{"VGW_IAM_STANDALONE_ACCESS"},
 			Destination: &standaloneIAMAccess,
 		},
 		&cli.StringFlag{
 			Name:        "iam-standalone-secret",
-			Usage:       "secret key this gateway signs its own calls to the standalone IAM service with (defaults to --secret/root)",
+			Usage:       "secret key this gateway signs its own calls to the standalone IAM service with (must be set together with --iam-standalone-access; both default to --access/--secret root)",
 			EnvVars:     []string{"VGW_IAM_STANDALONE_SECRET"},
 			Destination: &standaloneIAMSecret,
 		},

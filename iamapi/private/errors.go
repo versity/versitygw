@@ -30,9 +30,10 @@ import (
 // credential was rotated would tell the *user* their access key doesn't
 // exist.
 const (
-	CodeNoSuchIdentity = "NoSuchIdentity"
-	CodeInvalidToken   = "InvalidToken"
-	CodeBadRequest     = "BadRequest"
+	CodeNoSuchIdentity   = "NoSuchIdentity"
+	CodeInvalidToken     = "InvalidToken"
+	CodeBadRequest       = "BadRequest"
+	CodeProtocolMismatch = "ProtocolMismatch"
 )
 
 // privateAPIError is a minimal local error for failures (like a malformed
@@ -67,6 +68,18 @@ var (
 		message: "the given session token is missing, invalid, or does not belong to the given access key id",
 	}
 )
+
+// errProtocolMismatch reports that the calling gateway speaks a private
+// protocol this build will not serve. Unlike the sentinels above it carries
+// a message built at the call site, since which versions disagreed is the
+// whole diagnosis.
+func errProtocolMismatch(message string) *privateAPIError {
+	return &privateAPIError{
+		status:  http.StatusBadRequest,
+		code:    CodeProtocolMismatch,
+		message: message,
+	}
+}
 
 // mapResolveError translates iamutil's identity-resolution sentinels into
 // the wire errors this protocol reports. Anything unrecognized falls through

@@ -155,28 +155,39 @@ type IAMConfig struct {
 	DisableOIDCThumbprintAutoFetch bool
 }
 
+// privateAPIServer is the standalone IAM service's private endpoint set
+// together with everything RunIAMAPI needs to serve and maintain it: the
+// TLS options ServeMultiPort will enforce, and the cert storage backing
+// them so a SIGHUP can swap in a rotated certificate.
+type privateAPIServer struct {
+	api         *private.PrivateAPI
+	tlsOpts     netutil.TLSOptions
+	certStorage *netutil.CertStorage
+}
+
 // newPrivateAPI builds the standalone IAM service's private endpoint set
 // and the TLS options ServeMultiPort will enforce (mTLS, or nothing at all
 // for a unix-socket-only deployment — see netutil.RequireSecureTransport).
-func newPrivateAPI(store storage.Storer, cfg *IAMConfig) (*private.PrivateAPI, netutil.TLSOptions, error) {
+func newPrivateAPI(store storage.Storer, cfg *IAMConfig) (*privateAPIServer, error) {
 	allSet := cfg.PrivateCertFile != "" && cfg.PrivateKeyFile != "" && cfg.PrivateClientCAFile != ""
 	noneSet := cfg.PrivateCertFile == "" && cfg.PrivateKeyFile == "" && cfg.PrivateClientCAFile == ""
 	if !allSet && !noneSet {
-		return nil, netutil.TLSOptions{}, fmt.Errorf("--private-cert, --private-cert-key, and --private-client-ca must all be set together, or all left empty for a unix-socket-only private listener")
+		return nil, fmt.Errorf("--private-cert, --private-cert-key, and --private-client-ca must all be set together, or all left empty for a unix-socket-only private listener")
 	}
 
 	var tlsOpts netutil.TLSOptions
+	var certStorage *netutil.CertStorage
 	if allSet {
-		cs := netutil.NewCertStorage()
-		if err := cs.SetCertificate(cfg.PrivateCertFile, cfg.PrivateKeyFile); err != nil {
-			return nil, netutil.TLSOptions{}, fmt.Errorf("private listener: load certs: %w", err)
+		certStorage = netutil.NewCertStorage()
+		if err := certStorage.SetCertificate(cfg.PrivateCertFile, cfg.PrivateKeyFile); err != nil {
+			return nil, fmt.Errorf("private listener: load certs: %w", err)
 		}
 		pool, err := netutil.LoadCACertPool(cfg.PrivateClientCAFile)
 		if err != nil {
-			return nil, netutil.TLSOptions{}, fmt.Errorf("private listener: %w", err)
+			return nil, fmt.Errorf("private listener: %w", err)
 		}
 		tlsOpts = netutil.TLSOptions{
-			GetCertificate:    cs.GetCertificate,
+			GetCertificate:    certStorage.GetCertificate,
 			ClientCAs:         pool,
 			RequireClientCert: true,
 		}
@@ -186,12 +197,15 @@ func newPrivateAPI(store storage.Storer, cfg *IAMConfig) (*private.PrivateAPI, n
 	if cfg.PrivateSocketPerm != "" {
 		perm, err := strconv.ParseUint(cfg.PrivateSocketPerm, 8, 32)
 		if err != nil {
-			return nil, netutil.TLSOptions{}, fmt.Errorf("invalid PrivateSocketPerm value %q: must be an octal integer (e.g. '0660'): %w", cfg.PrivateSocketPerm, err)
+			return nil, fmt.Errorf("invalid PrivateSocketPerm value %q: must be an octal integer (e.g. '0660'): %w", cfg.PrivateSocketPerm, err)
 		}
 		privOpts = append(privOpts, private.WithPrivateSocketPerm(os.FileMode(perm)))
 	}
 	if cfg.Quiet {
 		privOpts = append(privOpts, private.WithPrivateQuiet())
+	}
+	if cfg.Version != "" {
+		privOpts = append(privOpts, private.WithPrivateServerVersion(cfg.Version))
 	}
 
 	p, err := private.New(store, iamapi.RootCredentials{
@@ -199,10 +213,10 @@ func newPrivateAPI(store storage.Storer, cfg *IAMConfig) (*private.PrivateAPI, n
 		Secret: cfg.RootUserSecret,
 	}, privOpts...)
 	if err != nil {
-		return nil, netutil.TLSOptions{}, fmt.Errorf("init private IAM API: %w", err)
+		return nil, fmt.Errorf("init private IAM API: %w", err)
 	}
 
-	return p, tlsOpts, nil
+	return &privateAPIServer{api: p, tlsOpts: tlsOpts, certStorage: certStorage}, nil
 }
 
 var iamAPIRunning atomic.Bool
@@ -310,10 +324,9 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 		return fmt.Errorf("init IAM API server: %w", err)
 	}
 
-	var privateAPI *private.PrivateAPI
-	var privateTLSOpts netutil.TLSOptions
+	var privateAPI *privateAPIServer
 	if len(cfg.PrivatePorts) > 0 {
-		privateAPI, privateTLSOpts, err = newPrivateAPI(store, cfg)
+		privateAPI, err = newPrivateAPI(store, cfg)
 		if err != nil {
 			return err
 		}
@@ -330,7 +343,7 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 
 	if privateAPI != nil {
 		go func() {
-			errCh <- privateAPI.ServeMultiPort(cfg.PrivatePorts, privateTLSOpts)
+			errCh <- privateAPI.api.ServeMultiPort(cfg.PrivatePorts, privateAPI.tlsOpts)
 		}()
 	}
 
@@ -357,6 +370,18 @@ Loop:
 					fmt.Printf("iam api cert reloaded (cert: %s, key: %s)\n", cfg.CertFile, cfg.KeyFile)
 				}
 			}
+			// the private listener has its own certificate, so it needs
+			// its own reload: without this, new gateway-to-IAM TLS
+			// connections would keep getting the pre-rotation cert until
+			// the IAM service restarts.
+			if privateAPI != nil && privateAPI.certStorage != nil {
+				reloadErr := privateAPI.certStorage.SetCertificate(cfg.PrivateCertFile, cfg.PrivateKeyFile)
+				if reloadErr != nil {
+					debuglogger.InternalError(fmt.Errorf("private iam api cert reload failed: %w", reloadErr))
+				} else {
+					fmt.Printf("private iam api cert reloaded (cert: %s, key: %s)\n", cfg.PrivateCertFile, cfg.PrivateKeyFile)
+				}
+			}
 		}
 	}
 	saveErr := err
@@ -365,7 +390,7 @@ Loop:
 		fmt.Fprintf(os.Stderr, "shutdown IAM API server: %v\n", err)
 	}
 	if privateAPI != nil {
-		if err := privateAPI.Shutdown(); err != nil {
+		if err := privateAPI.api.Shutdown(); err != nil {
 			fmt.Fprintf(os.Stderr, "shutdown private IAM API server: %v\n", err)
 		}
 	}

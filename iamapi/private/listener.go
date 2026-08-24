@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/internal/netutil"
 )
 
@@ -53,6 +54,7 @@ func (p *PrivateAPI) ServeMultiPort(addrs []string, tlsOpts netutil.TLSOptions) 
 			ln, err = netutil.NewMultiAddrTLSListenerWithOptions(fiber.NetworkTCP, addr, tlsOpts, netutil.ListenerOptions{SocketPerm: p.socketPerm})
 		}
 		if err != nil {
+			closeListeners(listeners)
 			return fmt.Errorf("failed to bind private iam listener %s: %w", addr, err)
 		}
 		listeners = append(listeners, ln)
@@ -60,6 +62,17 @@ func (p *PrivateAPI) ServeMultiPort(addrs []string, tlsOpts netutil.TLSOptions) 
 
 	finalListener := netutil.NewMultiListener(listeners...)
 	return p.app.Listener(finalListener, fiber.ListenConfig{DisableStartupMessage: true})
+}
+
+// closeListeners closes already bound listeners so a failed bind part way
+// through ServeMultiPort does not leave the earlier addresses (and unix
+// socket files) held open.
+func closeListeners(listeners []net.Listener) {
+	for _, ln := range listeners {
+		if err := ln.Close(); err != nil {
+			debuglogger.InternalError(fmt.Errorf("close private iam listener %v: %w", ln.Addr(), err))
+		}
+	}
 }
 
 // Shutdown gracefully stops the private endpoint listeners.

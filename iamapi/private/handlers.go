@@ -25,6 +25,20 @@ import (
 	"github.com/versity/versitygw/internal/sigv4auth"
 )
 
+// handleVersion reports what this build speaks. It is root-signed like every
+// other endpoint here, which is what lets the gateway's startup probe verify
+// its own credential and its mTLS transport in the same round trip that
+// verifies the protocol — a rotated gateway credential is a far more common
+// misconfiguration than a version skew, and an unauthenticated probe would
+// report success right through one.
+func (p *PrivateAPI) handleVersion(ctx fiber.Ctx) error {
+	return ctx.JSON(VersionResponse{
+		Protocol:      ProtocolVersion,
+		MinClient:     MinClientProtocol,
+		ServerVersion: p.serverVersion,
+	})
+}
+
 func (p *PrivateAPI) handleDeriveSigningKey(ctx fiber.Ctx) error {
 	var req DeriveSigningKeyRequest
 	if err := json.Unmarshal(ctx.Body(), &req); err != nil {

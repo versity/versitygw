@@ -16,9 +16,12 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -353,4 +356,266 @@ func TestNewIAMServiceStandaloneRespectsExplicitCredentials(t *testing.T) {
 	if client.secret != "CUSTOMSECRET" {
 		t.Errorf("secret = %q, want %q", client.secret, "CUSTOMSECRET")
 	}
+}
+
+// TestNewIAMServiceStandalonePartialCredentialsRejected covers a half
+// configured signing identity: pairing one supplied key with the other half
+// of the root credential would silently sign with a mismatched identity, so
+// it must fail at construction instead.
+func TestNewIAMServiceStandalonePartialCredentialsRejected(t *testing.T) {
+	rootAcc := Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret}
+	_, sock := standaloneTestServer(t)
+
+	for _, tc := range []struct {
+		name   string
+		access string
+		secret string
+	}{
+		{name: "access only", access: "AKIDCUSTOM"},
+		{name: "secret only", secret: "CUSTOMSECRET"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewIAMServiceStandalone(rootAcc, IAMServiceStandaloneConfig{
+				Endpoint: sock,
+				Access:   tc.access,
+				Secret:   tc.secret,
+			})
+			if err == nil {
+				t.Fatal("expected an error when only one of access/secret is configured")
+			}
+		})
+	}
+}
+
+// TestIAMServiceStandaloneRejectsIncompatibleService covers every response a
+// peer can give that this gateway must not interpret: no protocol header at
+// all (a pre-versioning build, or something else answering on the address),
+// one it cannot read, and one older than the protocol this gateway speaks.
+// None of them may yield a working client.
+func TestIAMServiceStandaloneRejectsIncompatibleService(t *testing.T) {
+	shortenProbeWindow(t)
+
+	for _, tc := range []struct {
+		name     string
+		protocol string
+	}{
+		{"no header", ""},
+		{"unreadable", "one"},
+		{"older service", strconv.Itoa(private.ProtocolVersion - 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sock := serveFakePrivate(t, tc.protocol, http.StatusOK, `{"protocol":0}`)
+
+			rootAcc := Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret}
+			_, err := NewIAMServiceStandalone(rootAcc, IAMServiceStandaloneConfig{Endpoint: sock})
+			if err == nil {
+				t.Fatal("expected the gateway to refuse to start against an incompatible IAM service")
+			}
+			var mismatch *protocolMismatchError
+			if !errors.As(err, &mismatch) {
+				t.Fatalf("error = %v, want a protocolMismatchError", err)
+			}
+		})
+	}
+}
+
+// TestIAMServiceStandaloneAcceptsNewerService confirms the rule is
+// "not older", not "equal": an IAM service upgraded ahead of its gateways is
+// the supported deployment order, so it must keep serving them.
+func TestIAMServiceStandaloneAcceptsNewerService(t *testing.T) {
+	shortenProbeWindow(t)
+
+	newer := strconv.Itoa(private.ProtocolVersion + 1)
+	sock := serveFakePrivate(t, newer, http.StatusOK,
+		`{"protocol":`+newer+`,"minClient":1,"serverVersion":"v9.9.9"}`)
+
+	rootAcc := Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret}
+	client, err := NewIAMServiceStandalone(rootAcc, IAMServiceStandaloneConfig{Endpoint: sock})
+	if err != nil {
+		t.Fatalf("NewIAMServiceStandalone against a newer IAM service: %v", err)
+	}
+	defer client.Shutdown()
+}
+
+// TestIAMServiceStandaloneRefusedByNewerService is the other direction of the
+// same check: an IAM service that has raised its minimum turns this gateway
+// away, and the gateway must recognise that as a version problem rather than
+// as a generic server error.
+func TestIAMServiceStandaloneRefusedByNewerService(t *testing.T) {
+	shortenProbeWindow(t)
+
+	sock := serveFakePrivate(t, strconv.Itoa(private.ProtocolVersion+1), http.StatusBadRequest,
+		`{"error":"gateway speaks private protocol 1, this IAM service requires 2 or newer","code":"`+private.CodeProtocolMismatch+`"}`)
+
+	rootAcc := Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret}
+	_, err := NewIAMServiceStandalone(rootAcc, IAMServiceStandaloneConfig{Endpoint: sock})
+	if err == nil {
+		t.Fatal("expected the gateway to refuse to start when the IAM service refuses it")
+	}
+	var mismatch *protocolMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("error = %v, want a protocolMismatchError", err)
+	}
+}
+
+// TestIAMServiceStandaloneRefusedByServiceMinimum covers the one direction a
+// response header cannot express. The version endpoint is exempt from the
+// service's own client-version check, so it answers 200 even to a gateway the
+// service will not serve; the gateway has to reach that conclusion from the
+// minimum the endpoint reports, or it would start cleanly and then fail every
+// real request.
+func TestIAMServiceStandaloneRefusedByServiceMinimum(t *testing.T) {
+	shortenProbeWindow(t)
+
+	current := strconv.Itoa(private.ProtocolVersion)
+	sock := serveFakePrivate(t, current, http.StatusOK,
+		`{"protocol":`+current+`,"minClient":`+strconv.Itoa(private.ProtocolVersion+1)+`}`)
+
+	rootAcc := Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret}
+	_, err := NewIAMServiceStandalone(rootAcc, IAMServiceStandaloneConfig{Endpoint: sock})
+	if err == nil {
+		t.Fatal("expected the gateway to refuse to start below the IAM service's minimum")
+	}
+	var mismatch *protocolMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("error = %v, want a protocolMismatchError", err)
+	}
+}
+
+// TestIAMServiceStandaloneUnreachableIsNotFatal confirms an unreachable IAM
+// service only warns. The two processes legitimately start in parallel, and
+// every request checks the version anyway, so refusing to start here would
+// invent an ordering dependency without buying any safety.
+func TestIAMServiceStandaloneUnreachableIsNotFatal(t *testing.T) {
+	shortenProbeWindow(t)
+
+	sockDir, err := os.MkdirTemp("", "vgw-priv")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(sockDir) })
+
+	rootAcc := Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret}
+	client, err := NewIAMServiceStandalone(rootAcc, IAMServiceStandaloneConfig{
+		Endpoint: filepath.Join(sockDir, "nothing-here.sock"),
+	})
+	if err != nil {
+		t.Fatalf("an unreachable IAM service must not be fatal, got: %v", err)
+	}
+	defer client.Shutdown()
+}
+
+// TestIAMServiceStandaloneDoesNotRetryDefinitiveRejection confirms the probe's
+// retry window applies only to failures that can resolve on their own. A
+// rejected gateway credential is answered by a service that is up and
+// compatible, so it must warn at once rather than hold startup for the full
+// window. Deliberately run against the real, unshortened window.
+func TestIAMServiceStandaloneDoesNotRetryDefinitiveRejection(t *testing.T) {
+	sock := serveFakePrivate(t, strconv.Itoa(private.ProtocolVersion), http.StatusForbidden,
+		`{"error":"The security token included in the request is invalid","code":"InvalidClientTokenId"}`)
+
+	rootAcc := Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret}
+
+	start := time.Now()
+	client, err := NewIAMServiceStandalone(rootAcc, IAMServiceStandaloneConfig{Endpoint: sock})
+	if err != nil {
+		t.Fatalf("a rejected credential must warn, not fail startup: %v", err)
+	}
+	defer client.Shutdown()
+
+	if elapsed := time.Since(start); elapsed > standaloneProbeInterval {
+		t.Errorf("probe took %v; a definitive rejection must not be retried", elapsed)
+	}
+}
+
+// TestIAMServiceStandaloneSendsProtocolHeader confirms the gateway advertises
+// its own version, and that it does so inside the signature: the real server
+// verifies the signature over that header, so an unsigned or absent one would
+// fail before reaching a handler.
+func TestIAMServiceStandaloneSendsProtocolHeader(t *testing.T) {
+	store, sock := standaloneTestServer(t)
+	createStandaloneTestUser(t, store, "alice", "AKIAALICE", "alicesecret", "")
+
+	rootAcc := Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret}
+	client, err := NewIAMServiceStandalone(rootAcc, IAMServiceStandaloneConfig{Endpoint: sock})
+	if err != nil {
+		t.Fatalf("NewIAMServiceStandalone: %v", err)
+	}
+	defer client.Shutdown()
+
+	if _, err := client.GetUserAccount("AKIAALICE"); err != nil {
+		t.Fatalf("GetUserAccount: %v", err)
+	}
+}
+
+// TestIAMServiceStandaloneShapeChecksSurviveMatchingProtocol confirms the
+// version header did not replace the response-shape checks. A peer can declare
+// a compatible version and still send a matrix that disagrees — a forgotten
+// bump, a locally patched build — and that must still fail closed.
+func TestIAMServiceStandaloneShapeChecksSurviveMatchingProtocol(t *testing.T) {
+	shortenProbeWindow(t)
+
+	// Compatible on the wire version, but one action decision short of the two
+	// actions asked for below.
+	current := strconv.Itoa(private.ProtocolVersion)
+	sock := serveFakePrivate(t, current, http.StatusOK,
+		`{"protocol":`+current+`,"decisions":[["allow"]]}`)
+
+	rootAcc := Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret}
+	client, err := NewIAMServiceStandalone(rootAcc, IAMServiceStandaloneConfig{Endpoint: sock})
+	if err != nil {
+		t.Fatalf("NewIAMServiceStandalone: %v", err)
+	}
+	defer client.Shutdown()
+
+	_, err = client.EvaluatePolicy("AKIAALICE", "", []Action{GetObjectAction, PutObjectAction}, []string{"arn:aws:s3:::b/o"}, nil)
+	if err == nil {
+		t.Fatal("expected a short decision row to fail closed even at a matching protocol version")
+	}
+}
+
+// shortenProbeWindow collapses the startup probe's retry window for tests that
+// deliberately point the client at an incompatible or absent service, which
+// would otherwise sit through the full production window.
+func shortenProbeWindow(t *testing.T) {
+	t.Helper()
+
+	window, interval := standaloneProbeWindow, standaloneProbeInterval
+	standaloneProbeWindow, standaloneProbeInterval = 0, time.Millisecond
+	t.Cleanup(func() { standaloneProbeWindow, standaloneProbeInterval = window, interval })
+}
+
+// serveFakePrivate serves a stand-in for the standalone IAM service on a unix
+// socket, answering every request with the given protocol header (omitted when
+// empty), status, and body. It exists because the cases worth testing — a
+// build older or newer than this one, or one predating versioning altogether —
+// cannot be produced by the real server, which only ever speaks its own
+// version.
+func serveFakePrivate(t *testing.T, protocol string, status int, body string) string {
+	t.Helper()
+
+	sockDir, err := os.MkdirTemp("", "vgw-priv")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(sockDir) })
+	sockPath := filepath.Join(sockDir, "p.sock")
+
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if protocol != "" {
+			w.Header().Set(private.ProtocolHeader, protocol)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		fmt.Fprint(w, body)
+	})}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+
+	return sockPath
 }
