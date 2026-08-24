@@ -488,14 +488,14 @@ func (c S3ApiController) PutBucketAcl(ctx fiber.Ctx) (*Response, error) {
 		if *accessControlPolicy.Owner.ID != parsedAcl.Owner {
 			debuglogger.Logf("invalid access control policy owner id: %v, expected %v", *accessControlPolicy.Owner.ID, parsedAcl.Owner)
 			return &Response{
-					MetaOpts: &MetaOptions{
-						BucketOwner: parsedAcl.Owner,
-					},
-				}, s3err.APIError{
-					Code:           "InvalidArgument",
-					Description:    "Invalid id",
-					HTTPStatusCode: http.StatusBadRequest,
-				}
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, s3err.APIError{
+				Code:           "InvalidArgument",
+				Description:    "Invalid id",
+				HTTPStatusCode: http.StatusBadRequest,
+			}
 		}
 
 		if grants+string(acl) != "" {
