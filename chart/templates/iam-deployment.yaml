@@ -115,6 +115,10 @@ spec:
             - name: VGW_IAM_DISABLE_OIDC_THUMBPRINT_AUTOFETCH
               value: "true"
             {{- end }}
+            {{- if .Values.iamServer.corsAllowOrigin }}
+            - name: VGW_CORS_ALLOW_ORIGIN
+              value: {{ .Values.iamServer.corsAllowOrigin | quote }}
+            {{- end }}
             {{- if .Values.iamServer.tls.enabled }}
             - name: VGW_CERT
               value: /certs/tls.crt

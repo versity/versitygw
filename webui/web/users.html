@@ -50,35 +50,45 @@ under the License.
         </a>
       </div>
       <nav class="flex-1 py-4">
-        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-admin-only>
-          Admin
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-management-only>
+          Management
         </div>
-        <a href="dashboard.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+        <a href="dashboard.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-management-only>
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
           </svg>
           <span class="font-medium">Dashboard</span>
         </a>
-        <a href="users.html" class="nav-item active flex items-center gap-3 px-6 py-3 text-white" data-admin-only>
+        <a href="users.html" class="nav-item active flex items-center gap-3 px-6 py-3 text-white" data-admin-only data-admin-users-only>
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
           </svg>
           <span class="font-medium">Users</span>
         </a>
-        <a href="buckets.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+        <a href="buckets.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-management-only>
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
           </svg>
           <span class="font-medium">Buckets</span>
         </a>
-        <div class="mx-6 my-2 border-t border-white/10" data-admin-only></div>
-        <a href="explorer.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+        <div class="mx-6 my-2 border-t border-white/10" data-management-only></div>
+        <a href="explorer.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-s3-only>
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
           </svg>
           <span class="font-medium">Explorer</span>
         </a>
-        <div class="mx-6 my-2 border-t border-white/10"></div>
+        <div class="mx-6 my-2 border-t border-white/10" data-s3-only></div>
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-iam-only>
+          Identity &amp; Access
+        </div>
+        <a href="iam.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-iam-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+          </svg>
+          <span class="font-medium">IAM</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-iam-only></div>
         <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase">
           Resources
         </div>
@@ -88,13 +98,13 @@ under the License.
           </svg>
           <span class="font-medium">Documentation</span>
         </a>
-        <a href="https://github.com/versity/versitygw/issues" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+        <a href="https://github.com/versity/versitygw/issues" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-management-only>
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
           </svg>
           <span class="font-medium">Bug Reports</span>
         </a>
-        <a href="https://github.com/versity/versitygw/releases" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+        <a href="https://github.com/versity/versitygw/releases" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-management-only>
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
           </svg>
@@ -390,7 +400,7 @@ under the License.
       dropdown.classList.remove('show');
     }
 
-    if (!requireAdmin()) {
+    if (!requireGatewayUsers()) {
       // Redirected
     } else {
       initSidebarWithRole();

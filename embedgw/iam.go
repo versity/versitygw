@@ -29,6 +29,7 @@ import (
 	"github.com/versity/versitygw/iamapi/private"
 	"github.com/versity/versitygw/iamapi/storage"
 	"github.com/versity/versitygw/internal/netutil"
+	"github.com/versity/versitygw/webui"
 )
 
 const iamTitle = "VersityGW IAM API"
@@ -137,6 +138,45 @@ type IAMConfig struct {
 	// VaultClientCertKey is the PEM-encoded private key for VaultClientCert.
 	VaultClientCertKey string
 
+	// CORSAllowOrigin is the Access-Control-Allow-Origin value the IAM API
+	// returns to browsers, and the switch that enables preflight handling.
+	// No browser can reach this API without it, so leaving it empty while
+	// WebuiPorts is set logs a warning and falls back to "*".
+	CORSAllowOrigin string
+
+	// The Webui* fields host the WebUI from the IAM service process, for
+	// deployments with no S3 gateway behind it. They mirror Config's Webui*
+	// fields, except that here the IAM gateway URLs are the auto-detected
+	// ones (from Ports) and the S3/admin URLs can only come from a flag.
+	//
+	// WebuiPorts is the list of listening addresses for the WebUI server.
+	// Empty disables the WebUI entirely.
+	WebuiPorts []string
+	// WebuiCertFile/WebuiKeyFile are the WebUI server's TLS certificate. When
+	// both are empty and WebuiNoTLS is not set, the WebUI inherits
+	// CertFile/KeyFile.
+	WebuiCertFile string
+	WebuiKeyFile  string
+	// WebuiNoTLS forces the WebUI to plain HTTP even when TLS is configured
+	// for the IAM API.
+	WebuiNoTLS bool
+	// WebuiPathPrefix mounts the WebUI under a single-segment path prefix
+	// (e.g. "/ui").
+	WebuiPathPrefix string
+	// WebuiIAMGateways overrides the IAM service URLs auto-detected from
+	// Ports, for when the browser reaches the IAM API through a name this
+	// process cannot see, such as an ingress hostname.
+	WebuiIAMGateways []string
+	// WebuiGateways and WebuiAdminGateways are the S3 and admin gateway URLs
+	// offered on the login page. Neither is auto-detected here, so leaving
+	// both empty produces an IAM-only dashboard.
+	WebuiGateways      []string
+	WebuiAdminGateways []string
+	// Region seeds the WebUI's default region selector. IAM's own signing
+	// region is fixed, so this only matters when WebuiGateways points the
+	// dashboard at an S3 gateway as well.
+	Region string
+
 	// SigHup is an optional channel that signals the IAM API to reload TLS
 	// certificates. When nil, this feature is disabled.
 	SigHup <-chan struct{}
@@ -219,6 +259,92 @@ func newPrivateAPI(store storage.Storer, cfg *IAMConfig) (*privateAPIServer, err
 	return &privateAPIServer{api: p, tlsOpts: tlsOpts, certStorage: certStorage}, nil
 }
 
+// iamWebUIGateways resolves the IAM service URLs the WebUI login page offers.
+// This process is the IAM service, so its own listening addresses are the
+// auto-detected answer unless the operator overrode them.
+func iamWebUIGateways(cfg *IAMConfig) ([]string, error) {
+	if len(cfg.WebuiIAMGateways) > 0 {
+		return validateGatewayURLs(cfg.WebuiIAMGateways, "WebuiIAMGateways")
+	}
+
+	var gateways []string
+	for _, p := range cfg.Ports {
+		urls, err := buildServiceURLs(p, cfg.CertFile != "")
+		if err != nil {
+			return nil, fmt.Errorf("webui: build IAM gateway URLs: %w", err)
+		}
+		gateways = append(gateways, urls...)
+	}
+	sortGatewayURLs(gateways)
+	return gateways, nil
+}
+
+// newIAMWebUI builds the WebUI server hosted by the IAM service process. It
+// returns nil when no WebuiPorts are configured.
+func newIAMWebUI(cfg *IAMConfig) (*webui.Server, error) {
+	if len(cfg.WebuiPorts) == 0 {
+		return nil, nil
+	}
+
+	if err := validateWebUIPathPrefix("WebuiPathPrefix", cfg.WebuiPathPrefix); err != nil {
+		return nil, err
+	}
+
+	iamGateways, err := iamWebUIGateways(cfg)
+	if err != nil {
+		return nil, err
+	}
+	gateways, err := validateGatewayURLs(cfg.WebuiGateways, "WebuiGateways")
+	if err != nil {
+		return nil, err
+	}
+	adminGateways, err := validateGatewayURLs(cfg.WebuiAdminGateways, "WebuiAdminGateways")
+	if err != nil {
+		return nil, err
+	}
+
+	var webOpts []webui.Option
+	if !cfg.WebuiNoTLS {
+		webTLSCert, webTLSKey := cfg.WebuiCertFile, cfg.WebuiKeyFile
+		if webTLSCert == "" && webTLSKey == "" {
+			webTLSCert, webTLSKey = cfg.CertFile, cfg.KeyFile
+		}
+		if webTLSCert != "" || webTLSKey != "" {
+			if webTLSCert == "" {
+				return nil, fmt.Errorf("webui TLS key specified without cert file")
+			}
+			if webTLSKey == "" {
+				return nil, fmt.Errorf("webui TLS cert specified without key file")
+			}
+			cs := netutil.NewCertStorage()
+			if err := cs.SetCertificate(webTLSCert, webTLSKey); err != nil {
+				return nil, fmt.Errorf("tls: load certs: %v", err)
+			}
+			webOpts = append(webOpts, webui.WithTLS(cs))
+		}
+	}
+	if cfg.Quiet {
+		webOpts = append(webOpts, webui.WithQuiet())
+	}
+	if cfg.WebuiPathPrefix != "" {
+		webOpts = append(webOpts, webui.WithPathPrefix(cfg.WebuiPathPrefix))
+	}
+	if cfg.SocketPerm != "" {
+		perm, err := strconv.ParseUint(cfg.SocketPerm, 8, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid SocketPerm value %q: must be an octal integer (e.g. '0660'): %w", cfg.SocketPerm, err)
+		}
+		webOpts = append(webOpts, webui.WithSocketPerm(os.FileMode(perm)))
+	}
+
+	return webui.NewServer(&webui.ServerConfig{
+		Gateways:      gateways,
+		AdminGateways: adminGateways,
+		IAMGateways:   iamGateways,
+		Region:        cfg.Region,
+	}, webOpts...)
+}
+
 var iamAPIRunning atomic.Bool
 
 // RunIAMAPI starts the VersityGW IAM API with the supplied configuration. It
@@ -294,6 +420,16 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 	if cfg.DisableOIDCThumbprintAutoFetch {
 		opts = append(opts, iamapi.WithOIDCThumbprintAutoFetchDisabled())
 	}
+	corsAllowOrigin := strings.TrimSpace(cfg.CORSAllowOrigin)
+	if len(cfg.WebuiPorts) > 0 && corsAllowOrigin == "" {
+		// Every WebUI call to this API is cross-origin, so without an allowed
+		// origin the dashboard this process serves cannot talk to it at all.
+		corsAllowOrigin = "*"
+		fmt.Fprintf(os.Stderr, "WARNING: WebuiPorts is set but CORSAllowOrigin is not; defaulting to '*'; consider setting it to the WebUI's own origin\n")
+	}
+	if corsAllowOrigin != "" {
+		opts = append(opts, iamapi.WithCORSAllowOrigin(corsAllowOrigin))
+	}
 	debuglogger.SetLevel(cfg.LogLevel)
 	if cfg.SocketPerm != "" {
 		perm, err := strconv.ParseUint(cfg.SocketPerm, 8, 32)
@@ -332,11 +468,16 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 		}
 	}
 
+	webSrv, err := newIAMWebUI(cfg)
+	if err != nil {
+		return fmt.Errorf("init webui: %w", err)
+	}
+
 	if !cfg.Quiet {
 		cfg.printBanner()
 	}
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	go func() {
 		errCh <- server.ServeMultiPort(cfg.Ports)
 	}()
@@ -344,6 +485,12 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 	if privateAPI != nil {
 		go func() {
 			errCh <- privateAPI.api.ServeMultiPort(cfg.PrivatePorts, privateAPI.tlsOpts)
+		}()
+	}
+
+	if webSrv != nil {
+		go func() {
+			errCh <- webSrv.ServeMultiPort(cfg.WebuiPorts)
 		}()
 	}
 
@@ -394,6 +541,11 @@ Loop:
 			fmt.Fprintf(os.Stderr, "shutdown private IAM API server: %v\n", err)
 		}
 	}
+	if webSrv != nil {
+		if err := webSrv.Shutdown(); err != nil {
+			fmt.Fprintf(os.Stderr, "shutdown webui server: %v\n", err)
+		}
+	}
 
 	return saveErr
 }
@@ -433,6 +585,18 @@ func (cfg IAMConfig) printBanner() {
 			lines = append(lines, centerText(""), leftText("IAM private service listening on:"))
 			for _, u := range buildIAMBannerURLs(privateInterfaces, cfg.PrivateCertFile != "" || cfg.PrivateKeyFile != "") {
 				lines = append(lines, leftText("  "+u))
+			}
+		}
+	}
+
+	if len(cfg.WebuiPorts) > 0 {
+		webuiInterfaces, _ := resolveIAMBannerInterfaces(cfg.WebuiPorts)
+		if len(webuiInterfaces) > 0 {
+			webuiTLS := !cfg.WebuiNoTLS &&
+				(cfg.WebuiCertFile != "" || cfg.WebuiKeyFile != "" || cfg.CertFile != "" || cfg.KeyFile != "")
+			lines = append(lines, centerText(""), leftText("Web dashboard listening on:"))
+			for _, u := range buildIAMBannerURLs(webuiInterfaces, webuiTLS) {
+				lines = append(lines, leftText("  "+u+cfg.WebuiPathPrefix))
 			}
 		}
 	}

@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -61,6 +62,8 @@ type IAMApiServer struct {
 	// oidcThumbprintAutoFetchDisabled disables CreateOpenIDConnectProvider's
 	// TLS auto-fetch fallback; see WithOIDCThumbprintAutoFetchDisabled.
 	oidcThumbprintAutoFetchDisabled bool
+	// corsAllowOrigin is the single origin browsers may call this API from
+	corsAllowOrigin string
 }
 
 func New(store storage.Storer, root RootCredentials, opts ...Option) (*IAMApiServer, error) {
@@ -107,6 +110,10 @@ func New(store storage.Storer, root RootCredentials, opts ...Option) (*IAMApiSer
 				logger.TagQueryStringParams: debuglogger.RedactedQueryParamsTag,
 			},
 		}))
+	}
+
+	if server.corsAllowOrigin != "" {
+		app.Use("*", iammiddleware.CORS(server.corsAllowOrigin))
 	}
 
 	app.Use("*", iammiddleware.RequestIDs())
@@ -157,6 +164,14 @@ func WithConcurrencyLimiter(maxConnections, maxRequests int) Option {
 
 func WithSocketPerm(perm os.FileMode) Option {
 	return func(s *IAMApiServer) { s.socketPerm = perm }
+}
+
+// WithCORSAllowOrigin sets the Access-Control-Allow-Origin value returned to
+// browsers, and enables preflight handling. Required for the WebUI, which
+// never shares a port with the IAM API. Empty (the default) skips the CORS
+// middleware, leaving the API usable by CLI and SDK clients only.
+func WithCORSAllowOrigin(origin string) Option {
+	return func(s *IAMApiServer) { s.corsAllowOrigin = strings.TrimSpace(origin) }
 }
 
 func WithOnListen(fn func()) Option {

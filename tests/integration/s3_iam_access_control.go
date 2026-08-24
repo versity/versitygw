@@ -696,6 +696,104 @@ func S3IAMAccessControl_create_bucket(s *S3Conf) error {
 	})
 }
 
+// S3IAMAccessControl_list_buckets verifies ListBuckets is gated by
+// s3:ListAllMyBuckets under the standalone IAM service: root always lists,
+// an ordinary user needs an identity-policy Allow for the action.
+func S3IAMAccessControl_list_buckets(s *S3Conf) error {
+	testName := "S3IAMAccessControl_list_buckets"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		allBuckets := "arn:aws:s3:::*"
+
+		cases := []struct {
+			name    string
+			policy  string
+			wantErr func(user *s3IAMPrincipal) s3err.S3Error
+		}{
+			{
+				name: "no policy denies",
+				wantErr: func(u *s3IAMPrincipal) s3err.S3Error {
+					return wantImplicitDeny(u.arn, actS3ListAllMyBuckets, allBuckets)
+				},
+			},
+			{
+				name:   "another action's grant doesn't allow",
+				policy: policyDoc(accessStatement{Effect: "Allow", Action: actS3ListBucket, Resource: bucketArn(bucket)}),
+				wantErr: func(u *s3IAMPrincipal) s3err.S3Error {
+					return wantImplicitDeny(u.arn, actS3ListAllMyBuckets, allBuckets)
+				},
+			},
+			{
+				name:   "explicit deny",
+				policy: policyDoc(accessStatement{Effect: "Deny", Action: actS3ListAllMyBuckets, Resource: "*"}),
+				wantErr: func(u *s3IAMPrincipal) s3err.S3Error {
+					return wantExplicitIdentityDeny(u.arn, actS3ListAllMyBuckets, allBuckets)
+				},
+			},
+			{
+				name:   "grant on the bucket wildcard arn allows",
+				policy: policyDoc(accessStatement{Effect: "Allow", Action: actS3ListAllMyBuckets, Resource: allBuckets}),
+			},
+			{
+				name:   "grant on a bare wildcard resource allows",
+				policy: policyDoc(accessStatement{Effect: "Allow", Action: actS3ListAllMyBuckets, Resource: "*"}),
+			},
+			{
+				name:   "grant scoped to one bucket doesn't allow",
+				policy: policyDoc(accessStatement{Effect: "Allow", Action: actS3ListAllMyBuckets, Resource: bucketArn(bucket)}),
+				wantErr: func(u *s3IAMPrincipal) s3err.S3Error {
+					return wantImplicitDeny(u.arn, actS3ListAllMyBuckets, allBuckets)
+				},
+			},
+		}
+
+		for _, tc := range cases {
+			if err := func() error {
+				policies := map[string]string{}
+				if tc.policy != "" {
+					policies["p"] = tc.policy
+				}
+				user, cleanup, err := newS3IAMUser(root, s, policies)
+				if err != nil {
+					return err
+				}
+				defer cleanup()
+
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				out, err := user.client.ListBuckets(ctx, &s3.ListBucketsInput{})
+				cancel()
+
+				if tc.wantErr != nil {
+					return checkApiErr(err, tc.wantErr(user))
+				}
+				if err != nil {
+					return fmt.Errorf("expected ListBuckets to be allowed: %w", err)
+				}
+				// Ownership is fixed to root here, so an allowed user sees
+				// every bucket, including the one this test created.
+				if !containsBucket(out.Buckets, bucket) {
+					return fmt.Errorf("expected the listing to contain %q, got %v", bucket, out.Buckets)
+				}
+				return nil
+			}(); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+
+		// Root lists with no policy of its own, and is never subject to one.
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s.GetClient().ListBuckets(ctx, &s3.ListBucketsInput{})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("root ListBuckets: %w", err)
+		}
+		if !containsBucket(out.Buckets, bucket) {
+			return fmt.Errorf("root: expected the listing to contain %q, got %v", bucket, out.Buckets)
+		}
+
+		return nil
+	})
+}
+
 // S3IAMAccessControl_governance_bypass_sources verifies s3:BypassGovernance
 // Retention follows the same precedence as any other action: an Allow from
 // either the identity policy or the bucket policy is enough on its own, and
@@ -1802,4 +1900,15 @@ func S3IAMAccessControl_bucket_policy_unknown_principal_rejected(s *S3Conf) erro
 			HTTPStatusCode: 400,
 		})
 	})
+}
+
+// containsBucket reports whether buckets names bucket, so a listing can be
+// asserted without depending on what else other tests left behind.
+func containsBucket(buckets []types.Bucket, bucket string) bool {
+	for _, b := range buckets {
+		if b.Name != nil && *b.Name == bucket {
+			return true
+		}
+	}
+	return false
 }

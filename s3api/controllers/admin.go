@@ -132,6 +132,14 @@ func (c AdminController) ListUsers(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c AdminController) ChangeBucketOwner(ctx fiber.Ctx) (*Response, error) {
+	// Nothing to move when the backend fixes ownership: every bucket already
+	// belongs to root, and there is no other account to hand it to.
+	if _, fixedOwner := auth.ResolveFixedBucketOwner(c.iam); fixedOwner {
+		return &Response{
+			MetaOpts: &MetaOptions{},
+		}, s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)
+	}
+
 	owner := ctx.Query("owner")
 	bucket := ctx.Query("bucket")
 
@@ -164,28 +172,32 @@ func (c AdminController) ListBuckets(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c AdminController) CreateBucket(ctx fiber.Ctx) (*Response, error) {
-	owner := ctx.Get("x-vgw-owner")
-	if owner == "" {
-		return &Response{
-			MetaOpts: &MetaOptions{},
-		}, s3err.GetAPIError(s3err.ErrAdminEmptyBucketOwnerHeader)
-	}
-
-	acc, err := c.iam.GetUserAccount(owner)
-	if err != nil {
-		if err == auth.ErrNoSuchUser {
-			err = s3err.GetAPIError(s3err.ErrAdminUserNotFound)
+	// A backend that fixes bucket ownership picks the owner itself, so there
+	// is no owner to name or resolve.
+	if _, fixedOwner := auth.ResolveFixedBucketOwner(c.iam); !fixedOwner {
+		owner := ctx.Get("x-vgw-owner")
+		if owner == "" {
+			return &Response{
+				MetaOpts: &MetaOptions{},
+			}, s3err.GetAPIError(s3err.ErrAdminEmptyBucketOwnerHeader)
 		}
 
-		return &Response{
-			MetaOpts: &MetaOptions{},
-		}, err
+		acc, err := c.iam.GetUserAccount(owner)
+		if err != nil {
+			if err == auth.ErrNoSuchUser {
+				err = s3err.GetAPIError(s3err.ErrAdminUserNotFound)
+			}
+
+			return &Response{
+				MetaOpts: &MetaOptions{},
+			}, err
+		}
+
+		// store the owner access key id in context
+		ctx.RequestCtx().SetUserValue("bucket-owner", acc)
 	}
 
-	// store the owner access key id in context
-	ctx.RequestCtx().SetUserValue("bucket-owner", acc)
-
-	_, err = c.s3api.CreateBucket(ctx)
+	_, err := c.s3api.CreateBucket(ctx)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{},

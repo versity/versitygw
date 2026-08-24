@@ -39,6 +39,7 @@ const (
 	actS3DeleteObjectVersion = "s3:DeleteObjectVersion"
 	actS3ListBucket          = "s3:ListBucket"
 	actS3CreateBucket        = "s3:CreateBucket"
+	actS3ListAllMyBuckets    = "s3:ListAllMyBuckets"
 	actS3BypassGovernance    = "s3:BypassGovernanceRetention"
 )
 

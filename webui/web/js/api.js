@@ -119,7 +119,11 @@ class VersityAPI {
     this.s3Endpoint = null;     // S3 API endpoint (always required)
     this.region = 'us-east-1';
     this.addressingStyle = 'path'; // 'path' or 'virtual-host'
+    this.iamEndpoint = null;    // Standalone IAM service endpoint (optional)
     this._isAdmin = false;      // Role flag
+    this._hasIAM = false;       // Credentials validate against the IAM service
+    this._hasS3 = false;        // Credentials validate against the S3 data plane
+    this._canListBuckets = false; // hasS3 is true and s3:ListAllMyBuckets is allowed
   }
 
   /**
@@ -194,10 +198,12 @@ class VersityAPI {
   }
 
   /**
-   * Set credentials for API requests (initial login - assumes same endpoint)
+   * Set credentials for API requests (initial login - assumes same endpoint).
+   * An empty endpoint is valid: an IAM-only sign-in has no S3 gateway behind
+   * it, and gets its only endpoint from setIAMEndpoint().
    */
   setCredentials(endpoint, accessKey, secretKey, region = 'us-east-1') {
-    endpoint = endpoint.replace(/\/$/, ''); // Remove trailing slash
+    endpoint = (endpoint || '').trim().replace(/\/$/, '') || null;
     this.adminEndpoint = endpoint;
     this.s3Endpoint = endpoint;
     this.credentials = { accessKey, secretKey };
@@ -205,8 +211,8 @@ class VersityAPI {
     this._isAdmin = false; // Will be set by detectRole()
 
     // Store in sessionStorage for persistence across page loads
-    sessionStorage.setItem('vgw_admin_endpoint', this.adminEndpoint);
-    sessionStorage.setItem('vgw_s3_endpoint', this.s3Endpoint);
+    this._storeEndpoint('vgw_admin_endpoint', this.adminEndpoint);
+    this._storeEndpoint('vgw_s3_endpoint', this.s3Endpoint);
     sessionStorage.setItem('vgw_access_key', accessKey);
     sessionStorage.setItem('vgw_secret_key', secretKey);
     sessionStorage.setItem('vgw_region', region);
@@ -217,8 +223,34 @@ class VersityAPI {
    * Set the S3 endpoint separately (when different from admin)
    */
   setS3Endpoint(s3Endpoint) {
-    this.s3Endpoint = s3Endpoint.replace(/\/$/, '');
-    sessionStorage.setItem('vgw_s3_endpoint', this.s3Endpoint);
+    this.s3Endpoint = (s3Endpoint || '').trim().replace(/\/$/, '') || null;
+    this._storeEndpoint('vgw_s3_endpoint', this.s3Endpoint);
+  }
+
+  /**
+   * Persist an endpoint, or clear the key when there isn't one, so that
+   * "is this endpoint configured?" is a plain presence check.
+   */
+  _storeEndpoint(key, value) {
+    if (value) {
+      sessionStorage.setItem(key, value);
+    } else {
+      sessionStorage.removeItem(key);
+    }
+  }
+
+  /**
+   * Set the standalone IAM service endpoint (versitygw iam). Optional:
+   * without one the IAM navigation and pages stay hidden for the session.
+   */
+  setIAMEndpoint(iamEndpoint) {
+    const normalized = (iamEndpoint || '').trim().replace(/\/$/, '');
+    this.iamEndpoint = normalized || null;
+    if (this.iamEndpoint) {
+      sessionStorage.setItem('vgw_iam_endpoint', this.iamEndpoint);
+    } else {
+      sessionStorage.removeItem('vgw_iam_endpoint');
+    }
   }
 
   /**
@@ -238,6 +270,32 @@ class VersityAPI {
   }
 
   /**
+   * Set IAM service access flag (independent of the admin flag)
+   */
+  setHasIAM(hasIAM) {
+    this._hasIAM = !!hasIAM;
+    sessionStorage.setItem('vgw_has_iam', this._hasIAM ? 'true' : 'false');
+  }
+
+  /**
+   * Set S3 data-plane access flag (used to route IAM-only sessions)
+   */
+  setHasS3(hasS3) {
+    this._hasS3 = !!hasS3;
+    sessionStorage.setItem('vgw_has_s3', this._hasS3 ? 'true' : 'false');
+  }
+
+  /**
+   * Set whether the session may enumerate all buckets (s3:ListAllMyBuckets),
+   * which is separate from having valid S3 credentials: a policy can grant
+   * named buckets without the account-wide listing.
+   */
+  setCanListBuckets(canListBuckets) {
+    this._canListBuckets = !!canListBuckets;
+    sessionStorage.setItem('vgw_can_list_buckets', this._canListBuckets ? 'true' : 'false');
+  }
+
+  /**
    * Load credentials from sessionStorage
    */
   loadCredentials() {
@@ -248,17 +306,25 @@ class VersityAPI {
     const region = sessionStorage.getItem('vgw_region') || 'us-east-1';
     const addressingStyle = sessionStorage.getItem('vgw_addressing_style') || 'path';
     const isAdmin = sessionStorage.getItem('vgw_is_admin') === 'true';
+    const iamEndpoint = sessionStorage.getItem('vgw_iam_endpoint');
+    const hasIAM = sessionStorage.getItem('vgw_has_iam') === 'true';
+    const hasS3 = sessionStorage.getItem('vgw_has_s3') === 'true';
+    const canListBuckets = sessionStorage.getItem('vgw_can_list_buckets') === 'true';
 
     // Support legacy single endpoint storage
     const legacyEndpoint = sessionStorage.getItem('vgw_endpoint');
 
-    if ((s3Endpoint || legacyEndpoint) && accessKey && secretKey) {
-      this.adminEndpoint = adminEndpoint || legacyEndpoint;
-      this.s3Endpoint = s3Endpoint || legacyEndpoint;
+    if ((s3Endpoint || legacyEndpoint || iamEndpoint) && accessKey && secretKey) {
+      this.adminEndpoint = adminEndpoint || legacyEndpoint || null;
+      this.s3Endpoint = s3Endpoint || legacyEndpoint || null;
       this.credentials = { accessKey, secretKey };
       this.region = region;
       this.addressingStyle = addressingStyle;
       this._isAdmin = isAdmin;
+      this.iamEndpoint = iamEndpoint || null;
+      this._hasIAM = hasIAM;
+      this._hasS3 = hasS3;
+      this._canListBuckets = canListBuckets;
       return true;
     }
     return false;
@@ -272,7 +338,11 @@ class VersityAPI {
     this.adminEndpoint = null;
     this.s3Endpoint = null;
     this.addressingStyle = 'path';
+    this.iamEndpoint = null;
     this._isAdmin = false;
+    this._hasIAM = false;
+    this._hasS3 = false;
+    this._canListBuckets = false;
     this._userType = 'user';
     this._accessibleGateways = [];
     sessionStorage.removeItem('vgw_admin_endpoint');
@@ -283,6 +353,11 @@ class VersityAPI {
     sessionStorage.removeItem('vgw_region');
     sessionStorage.removeItem('vgw_addressing_style');
     sessionStorage.removeItem('vgw_is_admin');
+    sessionStorage.removeItem('vgw_iam_endpoint');
+    sessionStorage.removeItem('vgw_has_iam');
+    sessionStorage.removeItem('vgw_has_s3');
+    sessionStorage.removeItem('vgw_can_list_buckets');
+    sessionStorage.removeItem('vgw_iam_probe_error');
     sessionStorage.removeItem('vgw_user_type');
     sessionStorage.removeItem('vgw_accessible_gateways');
   }
@@ -317,6 +392,38 @@ class VersityAPI {
   }
 
   /**
+   * Check whether the session's credentials reach the standalone IAM service
+   */
+  hasIAM() {
+    return this._hasIAM;
+  }
+
+  /**
+   * Check whether the session's credentials reach the S3 data plane
+   */
+  hasS3() {
+    return this._hasS3;
+  }
+
+  /**
+   * Check whether the session belongs on the management pages (Dashboard,
+   * Buckets): a classic admin session, or any S3 session in a standalone-IAM
+   * deployment, where those pages run on the S3 and IAM APIs alone and each
+   * denial is surfaced in place rather than hiding the page.
+   */
+  hasManagement() {
+    return this._isAdmin || (this._hasS3 && this._hasIAM);
+  }
+
+  /**
+   * Check whether the session may enumerate all buckets
+   * (s3:ListAllMyBuckets). hasS3() can be true while this is false.
+   */
+  canListBuckets() {
+    return this._canListBuckets;
+  }
+
+  /**
    * Get current credentials info (without secret)
    */
   getCredentialsInfo() {
@@ -327,7 +434,9 @@ class VersityAPI {
       endpoint: this.s3Endpoint, // Legacy compatibility
       accessKey: this.credentials.accessKey,
       region: this.region,
-      isAdmin: this._isAdmin
+      isAdmin: this._isAdmin,
+      iamEndpoint: this.iamEndpoint,
+      hasIAM: this._hasIAM
     };
   }
 
@@ -503,8 +612,11 @@ class VersityAPI {
    * @param {Object} queryParams - Query parameters
    * @param {string} body - Request body
    * @param {boolean} useAdminEndpoint - Use admin endpoint instead of S3
+   * @param {string} contentType - Content type (signed for methods with a body)
+   * @param {Object} extraSignedHeaders - Headers to include in the signature
+   *   as well as the request, required for every x-amz-* header
    */
-  async signRequest(method, path, queryParams = {}, body = '', useAdminEndpoint = false, contentType = 'application/xml') {
+  async signRequest(method, path, queryParams = {}, body = '', useAdminEndpoint = false, contentType = 'application/xml', extraSignedHeaders = {}) {
     if (!this.credentials) {
       throw new Error('Not authenticated');
     }
@@ -546,6 +658,10 @@ class VersityAPI {
     if (hasBody && contentType) {
       headers['content-type'] = contentType;
     }
+
+    Object.entries(extraSignedHeaders).forEach(([key, value]) => {
+      headers[key.toLowerCase()] = String(value).trim();
+    });
 
     const signedHeadersList = Object.keys(headers).sort();
     const signedHeaders = signedHeadersList.join(';');
@@ -590,6 +706,10 @@ class VersityAPI {
     if (hasBody && contentType) {
       responseHeaders['Content-Type'] = contentType;
     }
+
+    Object.entries(extraSignedHeaders).forEach(([key, value]) => {
+      responseHeaders[key] = String(value).trim();
+    });
 
     return {
       url: url.toString(),
@@ -704,9 +824,18 @@ class VersityAPI {
 
     // Always sign and send directly to the configured endpoint.
     // CORS must be configured on the S3 endpoint.
-    const signed = await this.signRequest(method, path, queryParams, body, useAdminEndpoint, contentType);
+    //
+    // x-amz-* headers must be covered by the signature or the gateway
+    // rejects the request; anything else rides along unsigned.
+    const amzHeaders = {};
+    const plainHeaders = {};
+    Object.entries(additionalHeaders).forEach(([key, value]) => {
+      (key.toLowerCase().startsWith('x-amz-') ? amzHeaders : plainHeaders)[key] = value;
+    });
+
+    const signed = await this.signRequest(method, path, queryParams, body, useAdminEndpoint, contentType, amzHeaders);
     const fetchUrl = signed.url;
-    const headers = { ...signed.headers, ...additionalHeaders };
+    const headers = { ...signed.headers, ...plainHeaders };
 
     let response;
     try {
@@ -728,18 +857,7 @@ class VersityAPI {
     const responseText = await response.text();
 
     if (!response.ok) {
-      // Try to parse error from XML
-      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-      try {
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(responseText, 'text/xml');
-        const code = xmlDoc.querySelector('Code')?.textContent;
-        const message = xmlDoc.querySelector('Message')?.textContent;
-        if (code) errorMessage = `${code}: ${message || 'Unknown error'}`;
-      } catch (e) {
-        // Ignore parsing errors
-      }
-      throw new Error(errorMessage);
+      throw new Error(parseXmlErrorMessage(responseText, `HTTP ${response.status}: ${response.statusText}`));
     }
 
     return responseText;
@@ -779,32 +897,100 @@ class VersityAPI {
   }
 
   /**
-   * Detect user role by trying admin API first, then S3 API
-   * Returns: 'admin' | 's3' | 'none'
+   * Detect what the credentials can reach across all three configured
+   * endpoints: S3 data plane, Admin API, and the standalone IAM service.
+   * Every applicable probe runs, so one success does not mask another.
+   *
+   * Returns: 'admin' | 's3' | 'iam' | 'none'
    */
   async detectRole() {
-    // Validate S3 credentials first.
-    // This avoids blocking non-admin users on an expected admin-API failure.
-    try {
-      await this.listBucketsS3();
-      this.setAdminRole(false);
-    } catch (s3Error) {
-      // If the request failed at the network level (CORS, TLS, or unreachable),
-      // surface that error so the UI can show a useful diagnostic message.
-      if (s3Error && typeof s3Error.message === 'string' && s3Error.message.startsWith('Network error:')) {
-        throw s3Error;
+    let hasS3 = false;
+    let canListBuckets = false;
+    let isAdmin = false;
+    let hasIAM = false;
+    let networkError = null;
+
+    const isNetworkError = (e) =>
+      e && typeof e.message === 'string' && e.message.startsWith('Network error:');
+
+    // 1. S3 data plane. An unconfigured endpoint is an IAM-only sign-in, not
+    // a failure, so skip the probe rather than rejecting the credentials.
+    //
+    // ListBuckets needs s3:ListAllMyBuckets, which a user scoped to named
+    // buckets may lack while still being able to use the Explorer. Only
+    // AccessDenied draws that line: it comes back after the signature and
+    // account checks pass, unlike the other HTTP 403s
+    // (InvalidAccessKeyId/SignatureDoesNotMatch/ExpiredToken), which mean the
+    // credentials themselves were rejected.
+    if (this.s3Endpoint) {
+      try {
+        await this.listBucketsS3();
+        hasS3 = true;
+        canListBuckets = true;
+      } catch (s3Error) {
+        if (isNetworkError(s3Error)) {
+          networkError = s3Error;
+        } else if (s3Error.code === 'AccessDenied') {
+          hasS3 = true;
+          canListBuckets = false;
+        }
       }
+    }
+
+    // 2. Admin API — only meaningful once S3 access is established. All admin
+    // routes share the same role gate, so probe with list-buckets: list-users
+    // also needs an IAM backend that can enumerate accounts, which the
+    // standalone IAM backend cannot.
+    if (hasS3 && this.adminEndpoint) {
+      try {
+        await this.listBuckets();
+        isAdmin = true;
+        // Admin/root always bypasses the ListAllMyBuckets policy check.
+        canListBuckets = true;
+      } catch (adminError) {
+        // Expected for non-admin accounts
+      }
+    }
+
+    // 3. Standalone IAM service. GetCallerIdentity needs no policy grant, so
+    // it is the only action any valid credential is sure to be allowed.
+    let iamProbeError = null;
+    if (this.iamEndpoint) {
+      try {
+        await this.iamGetCallerIdentity();
+        hasIAM = true;
+      } catch (iamError) {
+        iamProbeError = iamError;
+        if (isNetworkError(iamError) && !networkError) networkError = iamError;
+      }
+    }
+
+    if (!hasS3 && !hasIAM) {
+      // Surface a network-level diagnostic instead of a plain auth failure.
+      if (networkError) throw networkError;
       return 'none';
     }
 
-    // S3 works, now test admin API access.
-    try {
-      const users = await this.listUsers();
-      this.setAdminRole(true);
-      return 'admin';
-    } catch (adminError) {
-      return 's3';
+    // At least one source accepted the credentials, so a network failure on
+    // another is logged rather than failing an otherwise valid session.
+    if (networkError) console.warn(networkError.message);
+
+    this.setAdminRole(isAdmin);
+    this.setHasIAM(hasIAM);
+    this.setHasS3(hasS3);
+    this.setCanListBuckets(canListBuckets);
+
+    // A configured IAM endpoint that did not answer is worth saying out loud:
+    // the usual cause is a missing --cors-allow-origin, whose only other
+    // symptom is an IAM tab that never appears.
+    sessionStorage.removeItem('vgw_iam_probe_error');
+    if (iamProbeError && !hasIAM) {
+      sessionStorage.setItem('vgw_iam_probe_error', iamProbeError.message);
     }
+
+    if (isAdmin) return 'admin';
+    if (hasS3) return 's3';
+    return 'iam';
   }
 
   // ============================================
@@ -944,16 +1130,22 @@ class VersityAPI {
     if (!httpResponse.ok) {
       // Try to parse error from XML
       let errorMessage = `HTTP ${httpResponse.status}: ${httpResponse.statusText}`;
+      let code = null;
       try {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(response, 'text/xml');
-        const code = xmlDoc.querySelector('Code')?.textContent;
+        code = xmlDoc.querySelector('Code')?.textContent || null;
         const message = xmlDoc.querySelector('Message')?.textContent;
         if (code) errorMessage = `${code}: ${message || 'Unknown error'}`;
       } catch (e) {
         // Ignore parsing errors
       }
-      throw new Error(errorMessage);
+      const err = new Error(errorMessage);
+      // Both are HTTP 403, so the code is what tells "credentials rejected"
+      // apart from "credentials valid, action forbidden" (AccessDenied).
+      err.status = httpResponse.status;
+      err.code = code;
+      throw err;
     }
 
     const parser = new DOMParser();
@@ -1018,16 +1210,27 @@ class VersityAPI {
   /**
    * Create a new bucket with bucket name(s3api)
    * @param {string} bucketName - The name of the bucket to create
+   * @param {boolean} enableObjectLock - Whether to enable object lock
+   *   (which enables versioning as well)
    */
-  async createBucket(bucketName) {
+  async createBucket(bucketName, enableObjectLock = false) {
     if (!bucketName) {
       throw new Error('Bucket name is required');
+    }
+
+    const headers = {};
+    if (enableObjectLock) {
+      headers['x-amz-bucket-object-lock-enabled'] = 'true';
     }
 
     await this.request(
       'PUT',
       `/${bucketName}`,
       {},
+      '',
+      false,
+      'application/xml',
+      headers
     );
   }
 
@@ -2061,6 +2264,454 @@ ${tagsXml}
     }
     return result;
   }
+
+  // ============================================
+  // Standalone IAM Service (AWS Query protocol)
+  // ============================================
+
+  /**
+   * Sign a request against the standalone IAM service: signRequest()'s
+   * POST/body-hashing branch with a parameterized SigV4 service. Two
+   * deliberate differences from the S3/Admin path:
+   *   - the signing region is fixed to us-east-1 (iammiddleware.SigningRegion);
+   *     the login page's region yields InvalidRegion.
+   *   - the body is form-encoded (Action/Version/params), not XML.
+   *
+   * @param {string} action - IAM or STS action name
+   * @param {Object} params - Additional query-protocol parameters
+   * @param {string} sigService - 'iam' or 'sts'
+   * @returns {Object} - { url, headers, body }
+   */
+  async signIamRequest(action, params = {}, sigService = 'iam') {
+    if (!this.credentials) {
+      throw new Error('Not authenticated');
+    }
+    if (!this.iamEndpoint) {
+      throw new Error('IAM API endpoint is not configured');
+    }
+
+    const url = new URL(this.iamEndpoint + '/');
+    const host = url.host;
+    const amzDate = this.getAmzDate();
+    const dateStamp = this.getDateStamp();
+    const region = IAM_SIGNING_REGION;
+
+    const form = new URLSearchParams();
+    form.set('Action', action);
+    form.set('Version', sigService === 'sts' ? STS_API_VERSION : IAM_API_VERSION);
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) form.set(key, String(value));
+    });
+    const body = form.toString();
+
+    const contentType = 'application/x-www-form-urlencoded';
+    const payloadHash = await this.sha256(body);
+
+    const headers = {
+      'content-type': contentType,
+      'host': host,
+      'x-amz-content-sha256': payloadHash,
+      'x-amz-date': amzDate,
+    };
+
+    const signedHeadersList = Object.keys(headers).sort();
+    const signedHeaders = signedHeadersList.join(';');
+    const canonicalHeaders = signedHeadersList.map(h => `${h}:${headers[h]}\n`).join('');
+
+    const canonicalRequest = [
+      'POST',
+      url.pathname,
+      '',
+      canonicalHeaders,
+      signedHeaders,
+      payloadHash
+    ].join('\n');
+
+    const algorithm = 'AWS4-HMAC-SHA256';
+    const credentialScope = `${dateStamp}/${region}/${sigService}/aws4_request`;
+    const canonicalRequestHash = await this.sha256(canonicalRequest);
+    const stringToSign = [algorithm, amzDate, credentialScope, canonicalRequestHash].join('\n');
+
+    const signingKey = await this.getSigningKey(this.credentials.secretKey, dateStamp, region, sigService);
+    const signatureBuffer = await this.hmacSha256(signingKey, stringToSign);
+    const signature = this.bufferToHex(signatureBuffer);
+
+    return {
+      url: url.toString(),
+      headers: {
+        'Authorization': `${algorithm} Credential=${this.credentials.accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+        'X-Amz-Date': amzDate,
+        'X-Amz-Content-Sha256': payloadHash,
+        'Content-Type': contentType,
+      },
+      body
+    };
+  }
+
+  /**
+   * Make a signed IAM/STS request and parse the XML response
+   */
+  async iamRequest(action, params = {}, sigService = 'iam') {
+    const signed = await this.signIamRequest(action, params, sigService);
+
+    let response;
+    try {
+      response = await fetch(signed.url, {
+        method: 'POST',
+        headers: signed.headers,
+        body: signed.body,
+      });
+    } catch (e) {
+      if (e instanceof TypeError) {
+        throw new Error(`Network error: cannot reach the IAM service. Common causes: CORS policy (the IAM endpoint must allow origin ${window.location.origin}), TLS/certificate error (untrusted or self-signed certificate rejected by the browser), or the service is unreachable.`);
+      }
+      throw e;
+    }
+
+    const responseText = await response.text();
+
+    if (!response.ok) {
+      throw new Error(parseXmlErrorMessage(responseText, `HTTP ${response.status}: ${response.statusText}`));
+    }
+
+    return this.parseIamResponse(responseText);
+  }
+
+  /**
+   * Parse an <ActionResponse><ActionResult> envelope into plain JS
+   */
+  parseIamResponse(xmlString) {
+    if (!xmlString || !xmlString.trim()) return {};
+
+    const xmlDoc = new DOMParser().parseFromString(xmlString, 'text/xml');
+    if (xmlDoc.querySelector('parsererror')) {
+      throw new Error('Invalid XML response from the IAM service');
+    }
+
+    const root = xmlDoc.documentElement;
+    const result = Array.from(root.children).find(c => /Result$/.test(c.tagName));
+    const parsed = this.iamXmlToJs(result || root);
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  }
+
+  /**
+   * Generic XML -> JS conversion. Any element whose children are all <member>
+   * collapses into an array, which is the one list convention this API uses.
+   */
+  iamXmlToJs(el) {
+    const children = Array.from(el.children);
+    if (children.length === 0) return el.textContent;
+    if (children.every(c => c.tagName === 'member')) {
+      return children.map(c => this.iamXmlToJs(c));
+    }
+    const out = {};
+    children.forEach(child => {
+      const value = this.iamXmlToJs(child);
+      if (child.tagName in out) {
+        out[child.tagName] = [].concat(out[child.tagName], value);
+      } else {
+        out[child.tagName] = value;
+      }
+    });
+    return out;
+  }
+
+  /**
+   * Decode a percent-encoded policy document (iamutil.EncodePolicyDocument)
+   */
+  decodePolicyDocument(document) {
+    if (typeof document !== 'string' || !document) return document;
+    try {
+      return decodeURIComponent(document);
+    } catch (e) {
+      return document;
+    }
+  }
+
+  /**
+   * Write Tags.member.N.Key / Tags.member.N.Value params
+   */
+  flattenTags(params, tags) {
+    (tags || []).forEach((tag, i) => {
+      if (!tag || !tag.Key) return;
+      params[`Tags.member.${i + 1}.Key`] = tag.Key;
+      params[`Tags.member.${i + 1}.Value`] = tag.Value || '';
+    });
+    return params;
+  }
+
+  /**
+   * Write <name>.member.N params
+   */
+  flattenMemberList(params, name, values) {
+    (values || []).forEach((value, i) => {
+      if (value === undefined || value === null || value === '') return;
+      params[`${name}.member.${i + 1}`] = value;
+    });
+    return params;
+  }
+
+  // ---- IAM users ----
+
+  async iamCreateUser(userName, path, tags) {
+    const params = { UserName: userName };
+    if (path) params.Path = path;
+    this.flattenTags(params, tags);
+    const result = await this.iamRequest('CreateUser', params);
+    return result.User || {};
+  }
+
+  async iamGetUser(userName) {
+    const params = {};
+    if (userName) params.UserName = userName;
+    const result = await this.iamRequest('GetUser', params);
+    return result.User || {};
+  }
+
+  async iamListUsers(options = {}) {
+    const params = {};
+    if (options.pathPrefix) params.PathPrefix = options.pathPrefix;
+    if (options.marker) params.Marker = options.marker;
+    if (options.maxItems) params.MaxItems = options.maxItems;
+    const result = await this.iamRequest('ListUsers', params);
+    return {
+      users: iamAsArray(result.Users),
+      isTruncated: result.IsTruncated === 'true',
+      marker: result.Marker || null
+    };
+  }
+
+  async iamUpdateUser(userName, newUserName, newPath) {
+    const params = { UserName: userName };
+    if (newUserName) params.NewUserName = newUserName;
+    if (newPath) params.NewPath = newPath;
+    const result = await this.iamRequest('UpdateUser', params);
+    return result.User || {};
+  }
+
+  async iamDeleteUser(userName) {
+    await this.iamRequest('DeleteUser', { UserName: userName });
+  }
+
+  // ---- Access keys ----
+
+  /**
+   * Create an access key. The server generates both halves of the key pair;
+   * the secret is returned here and nowhere else, ever again.
+   */
+  async iamCreateAccessKey(userName) {
+    const result = await this.iamRequest('CreateAccessKey', { UserName: userName });
+    return result.AccessKey || {};
+  }
+
+  async iamUpdateAccessKey(userName, accessKeyId, status) {
+    await this.iamRequest('UpdateAccessKey', { UserName: userName, AccessKeyId: accessKeyId, Status: status });
+  }
+
+  async iamDeleteAccessKey(userName, accessKeyId) {
+    await this.iamRequest('DeleteAccessKey', { UserName: userName, AccessKeyId: accessKeyId });
+  }
+
+  async iamListAccessKeys(userName, options = {}) {
+    const params = { UserName: userName };
+    if (options.marker) params.Marker = options.marker;
+    if (options.maxItems) params.MaxItems = options.maxItems;
+    const result = await this.iamRequest('ListAccessKeys', params);
+    return {
+      keys: iamAsArray(result.AccessKeyMetadata),
+      isTruncated: result.IsTruncated === 'true',
+      marker: result.Marker || null
+    };
+  }
+
+  async iamGetAccessKeyLastUsed(accessKeyId) {
+    const result = await this.iamRequest('GetAccessKeyLastUsed', { AccessKeyId: accessKeyId });
+    return {
+      userName: result.UserName || '',
+      lastUsed: result.AccessKeyLastUsed || {}
+    };
+  }
+
+  // ---- User inline policies ----
+
+  async iamPutUserPolicy(userName, policyName, policyDocument) {
+    await this.iamRequest('PutUserPolicy', { UserName: userName, PolicyName: policyName, PolicyDocument: policyDocument });
+  }
+
+  async iamGetUserPolicy(userName, policyName) {
+    const result = await this.iamRequest('GetUserPolicy', { UserName: userName, PolicyName: policyName });
+    return {
+      userName: result.UserName || userName,
+      policyName: result.PolicyName || policyName,
+      policyDocument: this.decodePolicyDocument(result.PolicyDocument || '')
+    };
+  }
+
+  async iamDeleteUserPolicy(userName, policyName) {
+    await this.iamRequest('DeleteUserPolicy', { UserName: userName, PolicyName: policyName });
+  }
+
+  async iamListUserPolicies(userName, options = {}) {
+    const params = { UserName: userName };
+    if (options.marker) params.Marker = options.marker;
+    if (options.maxItems) params.MaxItems = options.maxItems;
+    const result = await this.iamRequest('ListUserPolicies', params);
+    return {
+      policyNames: iamAsArray(result.PolicyNames),
+      isTruncated: result.IsTruncated === 'true',
+      marker: result.Marker || null
+    };
+  }
+
+  // ---- Roles ----
+
+  async iamCreateRole(roleName, assumeRolePolicyDocument, options = {}) {
+    const params = { RoleName: roleName, AssumeRolePolicyDocument: assumeRolePolicyDocument };
+    if (options.path) params.Path = options.path;
+    if (options.description) params.Description = options.description;
+    if (options.maxSessionDuration) params.MaxSessionDuration = options.maxSessionDuration;
+    this.flattenTags(params, options.tags);
+    const result = await this.iamRequest('CreateRole', params);
+    return this.decodeRoleTrustPolicy(result.Role || {});
+  }
+
+  async iamGetRole(roleName) {
+    const result = await this.iamRequest('GetRole', { RoleName: roleName });
+    return this.decodeRoleTrustPolicy(result.Role || {});
+  }
+
+  async iamListRoles(options = {}) {
+    const params = {};
+    if (options.pathPrefix) params.PathPrefix = options.pathPrefix;
+    if (options.marker) params.Marker = options.marker;
+    if (options.maxItems) params.MaxItems = options.maxItems;
+    const result = await this.iamRequest('ListRoles', params);
+    return {
+      roles: iamAsArray(result.Roles).map(role => this.decodeRoleTrustPolicy(role)),
+      isTruncated: result.IsTruncated === 'true',
+      marker: result.Marker || null
+    };
+  }
+
+  async iamDeleteRole(roleName) {
+    await this.iamRequest('DeleteRole', { RoleName: roleName });
+  }
+
+  async iamUpdateAssumeRolePolicy(roleName, policyDocument) {
+    await this.iamRequest('UpdateAssumeRolePolicy', { RoleName: roleName, PolicyDocument: policyDocument });
+  }
+
+  /**
+   * Roles echo their trust policy percent-encoded on create/get/list
+   */
+  decodeRoleTrustPolicy(role) {
+    if (role && role.AssumeRolePolicyDocument) {
+      role.AssumeRolePolicyDocument = this.decodePolicyDocument(role.AssumeRolePolicyDocument);
+    }
+    return role || {};
+  }
+
+  // ---- Role inline policies ----
+
+  async iamPutRolePolicy(roleName, policyName, policyDocument) {
+    await this.iamRequest('PutRolePolicy', { RoleName: roleName, PolicyName: policyName, PolicyDocument: policyDocument });
+  }
+
+  async iamGetRolePolicy(roleName, policyName) {
+    const result = await this.iamRequest('GetRolePolicy', { RoleName: roleName, PolicyName: policyName });
+    return {
+      roleName: result.RoleName || roleName,
+      policyName: result.PolicyName || policyName,
+      policyDocument: this.decodePolicyDocument(result.PolicyDocument || '')
+    };
+  }
+
+  async iamDeleteRolePolicy(roleName, policyName) {
+    await this.iamRequest('DeleteRolePolicy', { RoleName: roleName, PolicyName: policyName });
+  }
+
+  async iamListRolePolicies(roleName, options = {}) {
+    const params = { RoleName: roleName };
+    if (options.marker) params.Marker = options.marker;
+    if (options.maxItems) params.MaxItems = options.maxItems;
+    const result = await this.iamRequest('ListRolePolicies', params);
+    return {
+      policyNames: iamAsArray(result.PolicyNames),
+      isTruncated: result.IsTruncated === 'true',
+      marker: result.Marker || null
+    };
+  }
+
+  // ---- OIDC identity providers ----
+
+  async iamCreateOIDCProvider(url, clientIDList, thumbprintList, tags) {
+    const params = { Url: url };
+    this.flattenMemberList(params, 'ClientIDList', clientIDList);
+    this.flattenMemberList(params, 'ThumbprintList', thumbprintList);
+    this.flattenTags(params, tags);
+    const result = await this.iamRequest('CreateOpenIDConnectProvider', params);
+    return {
+      arn: result.OpenIDConnectProviderArn || '',
+      tags: iamAsArray(result.Tags)
+    };
+  }
+
+  async iamGetOIDCProvider(arn) {
+    const result = await this.iamRequest('GetOpenIDConnectProvider', { OpenIDConnectProviderArn: arn });
+    return {
+      url: result.Url || '',
+      clientIDList: iamAsArray(result.ClientIDList),
+      thumbprintList: iamAsArray(result.ThumbprintList),
+      createDate: result.CreateDate || '',
+      tags: iamAsArray(result.Tags)
+    };
+  }
+
+  /**
+   * List OIDC providers. This action returns ARNs only and has no pagination.
+   */
+  async iamListOIDCProviders() {
+    const result = await this.iamRequest('ListOpenIDConnectProviders', {});
+    return iamAsArray(result.OpenIDConnectProviderList)
+      .map(entry => (typeof entry === 'string' ? entry : entry.Arn))
+      .filter(Boolean);
+  }
+
+  async iamDeleteOIDCProvider(arn) {
+    await this.iamRequest('DeleteOpenIDConnectProvider', { OpenIDConnectProviderArn: arn });
+  }
+
+  async iamAddClientIDToOIDCProvider(arn, clientID) {
+    await this.iamRequest('AddClientIDToOpenIDConnectProvider', { OpenIDConnectProviderArn: arn, ClientID: clientID });
+  }
+
+  async iamRemoveClientIDFromOIDCProvider(arn, clientID) {
+    await this.iamRequest('RemoveClientIDFromOpenIDConnectProvider', { OpenIDConnectProviderArn: arn, ClientID: clientID });
+  }
+
+  /**
+   * Replace the provider's entire thumbprint list
+   */
+  async iamUpdateOIDCProviderThumbprint(arn, thumbprintList) {
+    const params = { OpenIDConnectProviderArn: arn };
+    this.flattenMemberList(params, 'ThumbprintList', thumbprintList);
+    await this.iamRequest('UpdateOpenIDConnectProviderThumbprint', params);
+  }
+
+  // ---- Self identity (STS) ----
+
+  /**
+   * GetCallerIdentity requires no policy grant for any authenticated identity,
+   * which makes it both the login-time IAM probe and the "My Identity" source.
+   */
+  async iamGetCallerIdentity() {
+    const result = await this.iamRequest('GetCallerIdentity', {}, 'sts');
+    return {
+      arn: result.Arn || '',
+      userId: result.UserId || '',
+      account: result.Account || ''
+    };
+  }
 }
 
 /**
@@ -2077,6 +2728,43 @@ ${tagsXml}
       /['()*!]/g,
       (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
     );
+}
+
+/**
+ * IAM query-protocol constants. The signing region is fixed server-side by
+ * iammiddleware.SigningRegion and is deliberately independent of the region
+ * chosen on the login page.
+ */
+const IAM_API_VERSION = '2010-05-08';
+const STS_API_VERSION = '2011-06-15';
+const IAM_SIGNING_REGION = 'us-east-1';
+
+/**
+ * Pull <Code>/<Message> out of an S3, Admin or IAM error body: all three
+ * error shapes carry the same two elements.
+ *
+ * @param {string} responseText - Raw response body
+ * @param {string} fallback - Message to use when nothing parses
+ * @returns {string} A human-readable error message
+ */
+function parseXmlErrorMessage(responseText, fallback) {
+  try {
+    const xmlDoc = new DOMParser().parseFromString(responseText, 'text/xml');
+    const code = xmlDoc.querySelector('Code')?.textContent;
+    const message = xmlDoc.querySelector('Message')?.textContent;
+    if (code) return `${code}: ${message || 'Unknown error'}`;
+  } catch (e) {
+    // Ignore parsing errors and fall through
+  }
+  return fallback;
+}
+
+/**
+ * Normalize a parsed member-list field to an array
+ */
+function iamAsArray(value) {
+  if (value === undefined || value === null || value === '') return [];
+  return Array.isArray(value) ? value : [value];
 }
 
 // Create global API instance

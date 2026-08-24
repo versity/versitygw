@@ -556,11 +556,37 @@ func VerifyCreateBucketAccess(ctx fiber.Ctx, iam IAMService, isRoot bool, acc Ac
 		return s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 
-	resourceArn := ResourceArnPrefix + bucket
+	return verifyIdentityOnlyAccess(ctx, pe, acc, CreateBucketAction, bucket)
+}
+
+// VerifyListAllMyBucketsAccess decides whether acc may list buckets. The
+// request names no bucket, so only identity policies apply: an Allow for
+// s3:ListAllMyBuckets on "arn:aws:s3:::*", the ARN AWS's own bucket-listing
+// policy names. Backends with no identity-policy layer already narrow the
+// listing to the caller's own buckets, so they need no permission of their own.
+func VerifyListAllMyBucketsAccess(ctx fiber.Ctx, iam IAMService, isRoot bool, acc Account) error {
+	if isRoot || acc.Role == RoleAdmin {
+		return nil
+	}
+
+	pe, hasPolicyEvaluator := iam.(PolicyEvaluator)
+	if !hasPolicyEvaluator {
+		return nil
+	}
+
+	return verifyIdentityOnlyAccess(ctx, pe, acc, ListAllMyBucketsAction, "*")
+}
+
+// verifyIdentityOnlyAccess decides one action from the caller's identity
+// policies alone, for requests naming no existing bucket and therefore no
+// resource-based policy. resource is the ARN part after "arn:aws:s3:::": a
+// bucket name for CreateBucket, "*" for an account-level action.
+func verifyIdentityOnlyAccess(ctx fiber.Ctx, pe PolicyEvaluator, acc Account, action Action, resource string) error {
+	resourceArn := ResourceArnPrefix + resource
 	identity, err := identityPolicyDecisions(pe, AccessOptions{
 		Acc:     acc,
-		Bucket:  bucket,
-		Actions: []Action{CreateBucketAction},
+		Bucket:  resource,
+		Actions: []Action{action},
 	}, []string{""}, nil, requestConditionContext(ctx))
 	if err != nil {
 		return err
@@ -572,8 +598,7 @@ func VerifyCreateBucketAccess(ctx fiber.Ctx, iam IAMService, isRoot bool, acc Ac
 	}
 
 	// A session policy narrows what the session may do; there is no resource
-	// policy for a bucket that does not exist yet, so the two decisions
-	// simply intersect here.
+	// policy to combine with here, so the two decisions simply intersect.
 	decision := identity.Decisions[0].Decision
 	if identity.HasSessionPolicy {
 		switch sd := identity.SessionDecisions[0].Decision; {
@@ -586,11 +611,11 @@ func VerifyCreateBucketAccess(ctx fiber.Ctx, iam IAMService, isRoot bool, acc Ac
 
 	switch decision {
 	case policyDecisionDeny:
-		return s3err.GetExplicitDenyAccessErr(principal, string(CreateBucketAction), resourceArn, "an identity-based policy")
+		return s3err.GetExplicitDenyAccessErr(principal, string(action), resourceArn, "an identity-based policy")
 	case policyDecisionAllow:
 		return nil
 	}
-	return s3err.GetImplicitDenyAccessErr(principal, string(CreateBucketAction), resourceArn)
+	return s3err.GetImplicitDenyAccessErr(principal, string(action), resourceArn)
 }
 
 func IsAdminOrOwner(acct Account, isRoot bool, acl ACL) error {
