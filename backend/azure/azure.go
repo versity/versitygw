@@ -752,9 +752,10 @@ func (az *Azure) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAtt
 // where it stopped, and the last key filters out the entries of that Azure page
 // which were already returned.
 type azMarkerToken struct {
-	Prefix  string `json:"p,omitempty"`
-	Marker  string `json:"m,omitempty"`
-	LastKey string `json:"k,omitempty"`
+	Prefix    string `json:"p,omitempty"`
+	Delimiter string `json:"d,omitempty"`
+	Marker    string `json:"m,omitempty"`
+	LastKey   string `json:"k,omitempty"`
 }
 
 // azTokenPrefix marks continuation tokens minted by this backend. Anything
@@ -773,8 +774,10 @@ func encodeAzMarkerToken(t azMarkerToken) string {
 
 // decodeAzMarkerToken returns the Azure marker and the last key encoded in the
 // continuation token. The Azure marker is only returned for a token minted for
-// the same prefix, as markers are tied to the listing that produced them.
-func decodeAzMarkerToken(token, prefix string) (azureMarker, lastKey string) {
+// the same prefix and delimiter, as the marker resumes the underlying blob
+// listing and the last key was computed under that request's delimiter; reusing
+// either across a different prefix or delimiter would skip the wrong entries.
+func decodeAzMarkerToken(token, prefix, delimiter string) (azureMarker, lastKey string) {
 	if !strings.HasPrefix(token, azTokenPrefix) {
 		return "", token
 	}
@@ -788,7 +791,7 @@ func decodeAzMarkerToken(token, prefix string) (azureMarker, lastKey string) {
 	if err := json.Unmarshal(data, &t); err != nil {
 		return "", token
 	}
-	if t.Prefix != prefix {
+	if t.Prefix != prefix || t.Delimiter != delimiter {
 		return "", t.LastKey
 	}
 
@@ -1013,7 +1016,7 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 	startAfterVal := backend.GetStringFromPtr(input.StartAfter)
 	continuationTokenVal := backend.GetStringFromPtr(input.ContinuationToken)
 
-	azureMarker, tokenKey := decodeAzMarkerToken(continuationTokenVal, prefix)
+	azureMarker, tokenKey := decodeAzMarkerToken(continuationTokenVal, prefix, delimiter)
 
 	// Take the lexicographically larger of startAfter and the continuation
 	// token key so listing starts strictly after both constraints.
@@ -1054,9 +1057,10 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 	var nextToken string
 	if page.isTruncated {
 		nextToken = encodeAzMarkerToken(azMarkerToken{
-			Prefix:  prefix,
-			Marker:  page.resumeMarker,
-			LastKey: page.lastKey,
+			Prefix:    prefix,
+			Delimiter: delimiter,
+			Marker:    page.resumeMarker,
+			LastKey:   page.lastKey,
 		})
 	}
 

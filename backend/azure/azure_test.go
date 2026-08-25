@@ -32,13 +32,15 @@ func TestDecodeAzMarkerToken(t *testing.T) {
 		name       string
 		token      string
 		prefix     string
+		delimiter  string
 		wantMarker string
 		wantKey    string
 	}{
 		{
 			name:       "round trip",
-			token:      encodeAzMarkerToken(azMarkerToken{Prefix: "test/", Marker: "2!68!MDAwMDI4", LastKey: "test/a.js"}),
+			token:      encodeAzMarkerToken(azMarkerToken{Prefix: "test/", Delimiter: "/", Marker: "2!68!MDAwMDI4", LastKey: "test/a.js"}),
 			prefix:     "test/",
+			delimiter:  "/",
 			wantMarker: "2!68!MDAwMDI4",
 			wantKey:    "test/a.js",
 		},
@@ -57,6 +59,15 @@ func TestDecodeAzMarkerToken(t *testing.T) {
 			wantKey: "test/a.js",
 		},
 		{
+			// the last key was collapsed under the token's delimiter, so a
+			// delimiter change drops the azure marker and restarts the listing
+			name:      "delimiter mismatch drops the azure marker",
+			token:     encodeAzMarkerToken(azMarkerToken{Prefix: "test/", Delimiter: "/", Marker: "2!68!MDAwMDI4", LastKey: "test/a.js"}),
+			prefix:    "test/",
+			delimiter: "",
+			wantKey:   "test/a.js",
+		},
+		{
 			name:    "corrupt token",
 			token:   azTokenPrefix + "!!!not base64!!!",
 			prefix:  "test/",
@@ -69,7 +80,7 @@ func TestDecodeAzMarkerToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			marker, key := decodeAzMarkerToken(tt.token, tt.prefix)
+			marker, key := decodeAzMarkerToken(tt.token, tt.prefix, tt.delimiter)
 			if marker != tt.wantMarker {
 				t.Errorf("azure marker: got %q, want %q", marker, tt.wantMarker)
 			}
