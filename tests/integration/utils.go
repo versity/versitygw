@@ -49,12 +49,15 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/cespare/xxhash/v2"
+	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/s3err"
 	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/errgroup"
@@ -297,6 +300,19 @@ func actionHandlerNoSetup(s *S3Conf, testName string, handler func(s3client *s3.
 	return handlerErr
 }
 
+func iamActionHandler(s *S3Conf, testName string, handler func(client *iam.Client) error) error {
+	runF(testName)
+
+	err := handler(s.GetIAMClient())
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	passF(testName)
+	return nil
+}
+
 type authConfig struct {
 	testName       string
 	path           string
@@ -304,13 +320,26 @@ type authConfig struct {
 	overrideSha256 string
 	body           []byte
 	service        string
+	access         string
+	secret         string
+	region         string
 	date           time.Time
 	headers        map[string]string
 }
 
 func authHandler(s *S3Conf, cfg *authConfig, handler func(req *http.Request) error) error {
 	runF(cfg.testName)
-	req, err := createSignedReq(cfg.method, s.endpoint, cfg.path, s.awsID, s.awsSecret, cfg.service, s.awsRegion, cfg.overrideSha256, cfg.body, cfg.date, cfg.headers)
+	access, secret, region := s.awsID, s.awsSecret, s.awsRegion
+	if cfg.access != "" {
+		access = cfg.access
+	}
+	if cfg.secret != "" {
+		secret = cfg.secret
+	}
+	if cfg.region != "" {
+		region = cfg.region
+	}
+	req, err := createSignedReq(cfg.method, s.endpoint, cfg.path, access, secret, cfg.service, region, cfg.overrideSha256, cfg.body, cfg.date, cfg.headers)
 	if err != nil {
 		failF("%v: %v", cfg.testName, err)
 		return fmt.Errorf("%v: %w", cfg.testName, err)
@@ -365,7 +394,12 @@ func createSignedReq(method, endpoint, path, access, secret, service, region, ov
 		hexPayload = hex.EncodeToString(hashedPayload[:])
 	}
 
-	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+	// x-amz-content-sha256 is an S3 signing header. Other services still use
+	// hexPayload in the canonical request, but should not send or sign this
+	// header unless the caller explicitly supplies it.
+	if service == "s3" {
+		req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+	}
 	for key, val := range headers {
 		req.Header.Add(key, val)
 	}
@@ -431,6 +465,16 @@ type APIErrorResponse struct {
 	HostID                      string                     `xml:"HostId,omitempty"`
 }
 
+type IAMErrorResponse struct {
+	XMLName xml.Name `xml:"ErrorResponse"`
+	Error   struct {
+		Type    string
+		Code    string
+		Message string
+	}
+	RequestID string `xml:"RequestId"`
+}
+
 func checkHTTPResponseApiErr(resp *http.Response, expected s3err.S3Error) error {
 	apiErr := expected.BaseError()
 	body, err := io.ReadAll(resp.Body)
@@ -450,6 +494,62 @@ func checkHTTPResponseApiErr(resp *http.Response, expected s3err.S3Error) error 
 		return fmt.Errorf("expected response status code to be %v, instead got %v", apiErr.HTTPStatusCode, resp.StatusCode)
 	}
 	return compareS3ApiError(expected, &errResp)
+}
+
+func checkIAMAuthRequest(s *S3Conf, req *http.Request, expected iamerr.APIError) error {
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	return checkHTTPResponseIAMErr(resp, expected)
+}
+
+func checkHTTPResponseIAMErr(resp *http.Response, expected iamerr.APIError) error {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	resp.Body.Close()
+
+	var errResp IAMErrorResponse
+	err = xml.Unmarshal(body, &errResp)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != expected.StatusCode() {
+		return fmt.Errorf("expected response status code to be %v, instead got %v", expected.StatusCode(), resp.StatusCode)
+	}
+	if errResp.XMLName.Space != iamerr.Namespace {
+		return fmt.Errorf("expected IAM error namespace, instead got %q", errResp.XMLName.Space)
+	}
+	if errResp.RequestID == "" {
+		return fmt.Errorf("expected IAM error response request id")
+	}
+
+	expectedBody := expected.XMLBody(errResp.RequestID)
+	if string(body) != string(expectedBody) {
+		return fmt.Errorf("expected IAM error response body to be %q, instead got %q", expectedBody, body)
+	}
+
+	return nil
+}
+
+// isSuccessStatus returns true for 2xx HTTP status codes.
+func isSuccessStatus(statusCode int) bool {
+	return statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices
+}
+
+func checkIAMSuccess(resp *http.Response) error {
+	defer resp.Body.Close()
+	if !isSuccessStatus(resp.StatusCode) {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("expected response status code to be %v, instead got %v: %s", http.StatusOK, resp.StatusCode, body)
+	}
+
+	return nil
 }
 
 // websiteGet issues a plain HTTP GET to the dedicated website endpoint.
@@ -797,6 +897,95 @@ func checkSdkApiErr(err error, code string) error {
 		return nil
 	}
 	return err
+}
+
+func checkIAMApiErr(err error, expected iamerr.APIError) error {
+	if err == nil {
+		return fmt.Errorf("expected IAM API error, instead got nil")
+	}
+
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) {
+		return fmt.Errorf("expected IAM API error, instead got: %w", err)
+	}
+
+	expectedErr, ok := expected.(iamerr.Error)
+	if !ok {
+		return fmt.Errorf("expected concrete IAM error, got %T", expected)
+	}
+	if apiErr.ErrorCode() != expectedErr.Code {
+		return fmt.Errorf("expected IAM error code to be %q, instead got %q", expectedErr.Code, apiErr.ErrorCode())
+	}
+	if apiErr.ErrorMessage() != expectedErr.Message {
+		return fmt.Errorf("expected IAM error message to be %q, instead got %q", expectedErr.Message, apiErr.ErrorMessage())
+	}
+
+	var responseErr *awshttp.ResponseError
+	if !errors.As(err, &responseErr) {
+		return fmt.Errorf("expected IAM HTTP response error, instead got: %w", err)
+	}
+	if responseErr.HTTPStatusCode() != expected.StatusCode() {
+		return fmt.Errorf("expected IAM response status code to be %v, instead got %v", expected.StatusCode(), responseErr.HTTPStatusCode())
+	}
+	if responseErr.ServiceRequestID() == "" {
+		return fmt.Errorf("expected IAM error response request id")
+	}
+
+	return nil
+}
+
+type trustPolicyGrammarCase struct {
+	name    string
+	doc     string
+	wantErr iamerr.APIError // nil means the document must be accepted
+}
+
+// trustPolicyGrammarCases covers the role trust-policy grammar
+var trustPolicyGrammarCases = []trustPolicyGrammarCase{
+	{"valid AWS principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::123456789012:root"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid without version", `{"Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid Service principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"s3.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid multiple principal type keys together", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*","Service":"sts.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid Federated non-cognito provider (looks suspicious, is valid)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"bogus.example.com"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid non-AssumeRole sts action", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:TagSession"}]}`, nil},
+	{"valid NotAction with sts prefix", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Principal":{"AWS":"*"},"NotAction":"sts:AssumeRole"}]}`, nil},
+	{"valid action array all sts prefixed", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","sts:TagSession"]}]}`, nil},
+	{"valid multiple unique sids", `{"Version":"2012-10-17","Statement":[{"Sid":"A","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"},{"Sid":"B","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"cognito federated with condition", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"cognito-identity.amazonaws.com"},"Action":"sts:AssumeRole","Condition":{"StringEquals":{"cognito-identity.amazonaws.com:aud":"us-east-1:abc"}}}]}`, nil},
+	{"unrelated condition block ignored (looks suspicious, is valid)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","Condition":{"StringEquals":{"aws:SourceAccount":"123456789012"}}}]}`, nil},
+
+	{"invalid json syntax", `{invalid json`, iamerr.MalformedPolicyDocument("This policy contains invalid Json")},
+	{"invalid version", `{"Version":"2020-01-01","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("The policy must contain a valid version string")},
+	{"empty statement array", `{"Version":"2012-10-17","Statement":[]}`, iamerr.MalformedPolicyDocument("Could not parse the policy: Statement is empty!")},
+	{"missing statement", `{"Version":"2012-10-17"}`, iamerr.MalformedPolicyDocument("Could not parse the policy: Statement is empty!")},
+
+	{"invalid effect value", `{"Version":"2012-10-17","Statement":[{"Effect":"Maybe","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Invalid effect: Maybe")},
+	{"missing effect field", `{"Version":"2012-10-17","Statement":[{"Principal":{"Service":"s3.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Missing required field Effect")},
+
+	{"missing principal (opposite of an identity policy, which forbids it)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Missing required field Principal")},
+	{"empty principal object", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Missing required field Principal cannot be empty!")},
+	{"principal as bare string", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Principal must be a JSON object.")},
+	{"principal as array", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":["a"],"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Syntax error in policy.")},
+	{"principal has invalid key", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"CanonicalUser":"abc"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument(`Invalid principal in policy: "CanonicalUser"`)},
+	{"principal key wrong case (looks like it should work, key match is case-sensitive)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"service":"s3.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument(`Invalid principal in policy: "service"`)},
+	{"principal has unrecognized service", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"invalid.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument(`Invalid principal in policy: "SERVICE":"invalid.amazonaws.com"`)},
+	{"principal has ec2 service (valid on real AWS, unsupported by this gateway)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument(`Invalid principal in policy: "SERVICE":"ec2.amazonaws.com"`)},
+
+	{"allow with notprincipal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","NotPrincipal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("Allow with NotPrincipal is not allowed.")},
+	{"deny with notprincipal", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","NotPrincipal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy must not contain NotPrincipal field.")},
+
+	{"missing action and notaction", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"}}]}`, iamerr.MalformedPolicyDocument("Missing required field Action")},
+	{"bare wildcard action rejected (legal in an identity policy, not here)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"non-sts vendor action rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"s3:GetObject"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"non-sts notaction rejected even on deny", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Principal":{"AWS":"*"},"NotAction":"s3:GetObject"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"one non-sts action in an otherwise-valid array rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","s3:GetObject"]}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+
+	{"resource forbidden", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","Resource":"*"}]}`, iamerr.MalformedPolicyDocument("Has prohibited field Resource")},
+	{"notresource forbidden", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","NotResource":"*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy must not contain resources.")},
+
+	{"duplicate sid across statements", `{"Version":"2012-10-17","Statement":[{"Sid":"Dup","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"},{"Sid":"Dup","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("The Statement Ids in the policy are not unique")},
+
+	{"cognito federated without condition (looks valid, Cognito needs a Condition)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"cognito-identity.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("A condition block must be present for the Cognito provider")},
 }
 
 func putObjects(client *s3.Client, objs []string, bucket string) ([]types.Object, error) {
@@ -1931,7 +2120,7 @@ func checkWORMProtection(client *s3.Client, bucket, object string) error {
 	}
 
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-	_, err = client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+	out, err := client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 		Bucket: &bucket,
 		Delete: &types.Delete{
 			Objects: []types.ObjectIdentifier{
@@ -1942,7 +2131,13 @@ func checkWORMProtection(client *s3.Client, bucket, object string) error {
 		},
 	})
 	cancel()
-	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+	if err != nil {
+		return fmt.Errorf("expected DeleteObjects to succeed with a per-object denial, not fail outright: %w", err)
+	}
+	if len(out.Errors) != 1 {
+		return fmt.Errorf("expected exactly 1 per-object error, got %+v", out.Errors)
+	}
+	if err := checkDeleteObjectsErr(out.Errors[0], object, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 		return err
 	}
 
@@ -2652,6 +2847,18 @@ const (
 	maxDelObjWorkers int64         = 20              // Maximum number of concurrent delete workers
 	maxRetryAttempts int           = 3               // Maximum retries for object deletion
 	lockWaitTime     time.Duration = time.Second * 3 // Wait time for lock expiration before retrying delete
+
+	// complianceTestRetention is how far out a test should set a COMPLIANCE
+	// retention it means to clean up afterwards. A COMPLIANCE retention can
+	// never be shortened or removed — by anyone, with any permission, which
+	// is the whole point of the mode — so the only way to release the object
+	// is to outlast it, which cleanupLockedObjects does. Long enough for the
+	// test body to run against a genuinely locked object, short enough to
+	// wait out.
+	complianceTestRetention time.Duration = time.Second * 10
+	// maxComplianceCleanupWait bounds that wait, so a test that locks an
+	// object for hours fails quickly and clearly instead of hanging.
+	maxComplianceCleanupWait time.Duration = time.Second * 30
 )
 
 // cleanupLockedObjects removes objects from a bucket that may be protected by
@@ -2700,21 +2907,28 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 				}
 			}
 
-			// Apply temporary retention policy to allow deletion
-			// RetainUntilDate is set a few seconds in the future to handle network delays
-			retDate := time.Now().Add(lockWaitTime)
-			mode := types.ObjectLockRetentionModeGovernance
+			// A COMPLIANCE retention can only be waited out — it cannot be
+			// shortened or removed by anyone. Tests that mean to clean up
+			// therefore lock for complianceTestRetention, and this sleeps
+			// until that has passed.
 			if obj.isCompliance {
-				mode = types.ObjectLockRetentionModeCompliance
+				return waitOutComplianceRetention(client, bucket, obj)
 			}
+
+			// A GOVERNANCE retention can be weakened with the bypass
+			// permission and header, so shorten it to a few seconds out
+			// rather than waiting for the original date. The margin absorbs
+			// network delay.
+			retDate := time.Now().Add(lockWaitTime)
 
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-				Bucket:    &bucket,
-				Key:       &obj.key,
-				VersionId: getPtr(obj.versionId),
+				Bucket:                    &bucket,
+				Key:                       &obj.key,
+				VersionId:                 getPtr(obj.versionId),
+				BypassGovernanceRetention: getBoolPtr(true),
 				Retention: &types.ObjectLockRetention{
-					Mode:            mode,
+					Mode:            types.ObjectLockRetentionModeGovernance,
 					RetainUntilDate: &retDate,
 				},
 			})
@@ -2739,6 +2953,71 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 
 	// Wait for all goroutines to finish, return any error encountered
 	return eg.Wait()
+}
+
+// waitOutComplianceRetention blocks until obj's retention has passed, the
+// only way to release a COMPLIANCE-locked object. A retention further out
+// than maxComplianceCleanupWait is reported as an error rather than waited
+// on: such an object cannot be cleaned up within a test run at all, and the
+// test that locked it should either use complianceTestRetention or skip
+// teardown.
+func waitOutComplianceRetention(client *s3.Client, bucket string, obj objToDelete) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	out, err := client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+		Bucket:    &bucket,
+		Key:       &obj.key,
+		VersionId: getPtr(obj.versionId),
+	})
+	cancel()
+
+	// Already deleted: nothing to wait for.
+	if err != nil && checkSdkApiErr(err, "NoSuchKey") == nil {
+		return nil
+	}
+
+	// No retention of its own means the object is protected only by the
+	// bucket's default retention. Nothing forbids giving it a short one of
+	// its own — an object-level retention supersedes the bucket default, and
+	// there is no existing retention here to weaken — so that is how such an
+	// object gets released.
+	noRetention := err != nil && checkSdkApiErr(err, "NoSuchObjectLockConfiguration") == nil
+	if err != nil && !noRetention {
+		return err
+	}
+	if !noRetention && (out.Retention == nil || out.Retention.RetainUntilDate == nil) {
+		noRetention = true
+	}
+	if noRetention {
+		retDate := time.Now().Add(lockWaitTime)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket:    &bucket,
+			Key:       &obj.key,
+			VersionId: getPtr(obj.versionId),
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeCompliance,
+				RetainUntilDate: &retDate,
+			},
+		})
+		cancel()
+		if err != nil && checkSdkApiErr(err, "NoSuchKey") != nil {
+			return err
+		}
+		time.Sleep(lockWaitTime)
+		return nil
+	}
+
+	// The extra second absorbs clock skew between this process and the
+	// gateway, which compares the retention against its own clock.
+	wait := time.Until(*out.Retention.RetainUntilDate) + time.Second
+	if wait > maxComplianceCleanupWait {
+		return fmt.Errorf("object %q is under COMPLIANCE retention until %v, too far out to wait for: use complianceTestRetention, or skip teardown",
+			obj.key, out.Retention.RetainUntilDate)
+	}
+	if wait > 0 {
+		time.Sleep(wait)
+	}
+	return nil
 }
 
 type objectLockMode string
@@ -3545,4 +3824,22 @@ func hexBytes(s string) string {
 		parts[i] = fmt.Sprintf("%02x", b)
 	}
 	return strings.Join(parts, " ")
+}
+
+// checkDeleteObjectsErrsInOrder checks that got names exactly the (key,
+// error) pairs in want, in that order — DeleteObjects preserves the order
+// objects were requested in across both the Deleted and Error lists.
+func checkDeleteObjectsErrsInOrder(got []types.Error, want []struct {
+	key string
+	err s3err.S3Error
+}) error {
+	if len(got) != len(want) {
+		return fmt.Errorf("expected %d per-object errors, got %d: %+v", len(want), len(got), got)
+	}
+	for i, w := range want {
+		if err := checkDeleteObjectsErr(got[i], w.key, w.err); err != nil {
+			return fmt.Errorf("error %d: %w", i, err)
+		}
+	}
+	return nil
 }

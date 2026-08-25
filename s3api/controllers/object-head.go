@@ -76,9 +76,8 @@ func (c S3ApiController) HeadObject(ctx fiber.Ctx) (*Response, error) {
 		action = auth.GetObjectVersionAction
 	}
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionRead,
 			IsRoot:          isRoot,
@@ -87,7 +86,6 @@ func (c S3ApiController) HeadObject(ctx fiber.Ctx) (*Response, error) {
 			Object:          key,
 			Actions:         []auth.Action{action},
 			IsPublicRequest: isPublicBucket,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{

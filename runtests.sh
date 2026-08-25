@@ -70,9 +70,9 @@ if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 posix; then
 	kill $GW_PID
 	exit 1
 fi
-# iam tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 iam; then
-	echo "iam tests failed"
+# gateway iam tests
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 gw-iam; then
+	echo "gateway iam tests failed"
 	kill $GW_PID
 	exit 1
 fi
@@ -107,9 +107,9 @@ if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071
 	kill $GW_HTTPS_PID
 	exit 1
 fi
-# iam tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 iam; then
-	echo "iam tests failed"
+# gateway iam tests
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 gw-iam; then
+	echo "gateway iam tests failed"
 	kill $GW_HTTPS_PID
 	exit 1
 fi
@@ -229,6 +229,60 @@ fi
 # kill off server
 kill $GW_NO_ACL_PID
 
+ECHO "Running the s3 + standalone IAM access control tests"
+# This stage is the only one that runs two versitygw processes at once: a
+# standalone IAM service holding every user, policy and secret, and an s3
+# gateway that reaches it over mTLS for signing keys and policy decisions.
+# ports: 7080 IAM control plane, 7081 IAM private endpoint, 7082 s3 gateway
+rm -rf /tmp/s3iam /tmp/s3iamgw /tmp/s3iamcerts /tmp/s3iam.covdata /tmp/s3iamgw.covdata
+mkdir -p /tmp/s3iam /tmp/s3iamgw /tmp/s3iam.covdata /tmp/s3iamgw.covdata
+
+# The gateway verifies the IAM service's certificate normally, with no
+# hostname override, so the server certificate needs an IP SAN matching the
+# --iam-standalone-endpoint host.
+./genmtlscerts.sh /tmp/s3iamcerts 127.0.0.1
+
+GOCOVERDIR=/tmp/s3iam.covdata ./versitygw --health /healthz -p :7080 -a user -s pass iam \
+	--dir /tmp/s3iam \
+	--private-ports 127.0.0.1:7081 \
+	--private-cert /tmp/s3iamcerts/iam-server.pem \
+	--private-cert-key /tmp/s3iamcerts/iam-server.key \
+	--private-client-ca /tmp/s3iamcerts/ca.pem &
+IAM_PID=$!
+
+sleep 2
+
+if ! kill -0 $IAM_PID; then
+	echo "standalone IAM service no longer running"
+	exit 1
+fi
+
+GOCOVERDIR=/tmp/s3iamgw.covdata ./versitygw -p :7082 -a user -s pass \
+	--iam-standalone-endpoint 127.0.0.1:7081 \
+	--iam-standalone-client-cert /tmp/s3iamcerts/gw-client.pem \
+	--iam-standalone-client-cert-key /tmp/s3iamcerts/gw-client.key \
+	--iam-standalone-server-ca /tmp/s3iamcerts/ca.pem \
+	posix $SIDECAR_FLAG /tmp/s3iamgw &
+GW_S3IAM_PID=$!
+
+sleep 2
+
+if ! kill -0 $GW_S3IAM_PID; then
+	echo "s3 gateway backed by standalone IAM no longer running"
+	kill $IAM_PID
+	exit 1
+fi
+
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7082 --iam-endpoint http://127.0.0.1:7080 s3-iam; then
+	echo "s3 + standalone IAM access control tests failed"
+	kill $GW_S3IAM_PID
+	kill $IAM_PID
+	exit 1
+fi
+
+kill $GW_S3IAM_PID
+kill $IAM_PID
+
 exit 0
 
 # -----------------------------------------------------------------------------
@@ -256,6 +310,8 @@ exit 0
 #   /tmp/versioning.covdata
 #   /tmp/versioning.https.covdata
 #   /tmp/noacl.covdata
+#   /tmp/s3iam.covdata      (standalone IAM service)
+#   /tmp/s3iamgw.covdata    (s3 gateway backed by it)
 #
 # This gives you coverage metrics isolated per test suite / server mode.
 #
@@ -265,7 +321,7 @@ exit 0
 # If you want a unified report combining all environments:
 #
 #   go tool covdata merge \
-#     -i=/tmp/covdata,/tmp/https.covdata,/tmp/versioning.covdata,/tmp/versioning.https.covdata,/tmp/noacl.covdata \
+#     -i=/tmp/covdata,/tmp/https.covdata,/tmp/versioning.covdata,/tmp/versioning.https.covdata,/tmp/noacl.covdata,/tmp/s3iam.covdata,/tmp/s3iamgw.covdata \
 #     -o /tmp/allcovdata
 #
 #   go tool covdata percent -i=/tmp/allcovdata

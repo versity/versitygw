@@ -25,77 +25,86 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/cmd/internal/gwcli"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/embedgw"
-	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/internal/netutil"
 )
 
 var (
-	ports                                  []string
-	admPorts                               []string
-	region                                 string
-	maxConnections, maxRequests            int
-	adminMaxConnections, adminMaxRequests  int
-	corsAllowOrigin                        string
-	admCertFile, admKeyFile                string
-	certFile, keyFile                      string
-	kafkaURL, kafkaTopic, kafkaKey         string
-	natsURL, natsTopic                     string
-	rabbitmqURL, rabbitmqExchange          string
-	rabbitmqRoutingKey                     string
-	eventWebhookURL                        string
-	eventConfigFilePath                    string
-	logWebhookURL, accessLog               string
-	adminLogFile                           string
-	healthPath                             string
-	virtualDomain                          string
-	debug                                  bool
-	keepAlive                              bool
-	pprof                                  string
-	quiet                                  bool
-	readonly                               bool
-	iamDir                                 string
-	ldapURL, ldapBindDN, ldapPassword      string
-	ldapQueryBase, ldapObjClasses          string
-	ldapAccessAtr, ldapSecAtr, ldapRoleAtr string
-	ldapUserIdAtr, ldapGroupIdAtr          string
-	ldapProjectIdAtr                       string
-	ldapTLSSkipVerify                      bool
-	vaultEndpointURL, vaultNamespace       string
-	vaultSecretStoragePath                 string
-	vaultSecretStorageNamespace            string
-	vaultAuthMethod, vaultAuthNamespace    string
-	vaultMountPath                         string
-	vaultRootToken, vaultRoleId            string
-	vaultRoleSecret, vaultServerCert       string
-	vaultClientCert, vaultClientCertKey    string
-	s3IamAccess, s3IamSecret               string
-	s3IamRegion, s3IamBucket               string
-	s3IamEndpoint                          string
-	s3IamSslNoVerify                       bool
-	iamCacheDisable                        bool
-	iamCacheTTL                            int
-	iamCachePrune                          int
-	metricsService                         string
-	statsdServers                          string
-	dogstatsServers                        string
-	ipaHost, ipaVaultName                  string
-	ipaUser, ipaPassword                   string
-	ipaInsecure                            bool
-	iamDebug                               bool
-	webuiPorts                             []string
-	webuiCertFile, webuiKeyFile            string
-	webuiNoTLS                             bool
-	webuiGateways                          []string
-	webuiAdminGateways                     []string
-	webuiPathPrefix                        string
-	webuiS3Prefix                          string
-	websitePorts                           []string
-	websiteDomain                          string
-	websiteCertFile, websiteKeyFile        string
-	websiteNoTLS                           bool
-	disableACLs                            bool
-	mpMaxParts                             int
-	socketPerm                             string
+	ports                                         []string
+	admPorts                                      []string
+	region                                        string
+	maxConnections, maxRequests                   int
+	adminMaxConnections, adminMaxRequests         int
+	corsAllowOrigin                               string
+	admCertFile, admKeyFile                       string
+	certFile, keyFile                             string
+	kafkaURL, kafkaTopic, kafkaKey                string
+	natsURL, natsTopic                            string
+	rabbitmqURL, rabbitmqExchange                 string
+	rabbitmqRoutingKey                            string
+	eventWebhookURL                               string
+	eventConfigFilePath                           string
+	logWebhookURL, accessLog                      string
+	adminLogFile                                  string
+	healthPath                                    string
+	virtualDomain                                 string
+	logLevel                                      string
+	debug                                         bool
+	keepAlive                                     bool
+	pprof                                         string
+	quiet                                         bool
+	readonly                                      bool
+	iamDir                                        string
+	ldapURL, ldapBindDN, ldapPassword             string
+	ldapQueryBase, ldapObjClasses                 string
+	ldapAccessAtr, ldapSecAtr, ldapRoleAtr        string
+	ldapUserIdAtr, ldapGroupIdAtr                 string
+	ldapProjectIdAtr                              string
+	ldapTLSSkipVerify                             bool
+	vaultEndpointURL, vaultNamespace              string
+	vaultSecretStoragePath                        string
+	vaultSecretStorageNamespace                   string
+	vaultAuthMethod, vaultAuthNamespace           string
+	vaultMountPath                                string
+	vaultRootToken, vaultRoleId                   string
+	vaultRoleSecret, vaultServerCert              string
+	vaultClientCert, vaultClientCertKey           string
+	s3IamAccess, s3IamSecret                      string
+	s3IamRegion, s3IamBucket                      string
+	s3IamEndpoint                                 string
+	s3IamSslNoVerify                              bool
+	iamCacheDisable                               bool
+	iamCacheTTL                                   int
+	iamCachePrune                                 int
+	metricsService                                string
+	statsdServers                                 string
+	dogstatsServers                               string
+	ipaHost, ipaVaultName                         string
+	ipaUser, ipaPassword                          string
+	ipaInsecure                                   bool
+	standaloneIAMEndpoint                         string
+	standaloneIAMAccess, standaloneIAMSecret      string
+	standaloneClientCert, standaloneClientCertKey string
+	standaloneServerCA                            string
+	standaloneDefaultUserID                       int
+	standaloneDefaultGroupID                      int
+	standaloneDefaultProjectID                    int
+	iamDebug                                      bool
+	webuiPorts                                    []string
+	webuiCertFile, webuiKeyFile                   string
+	webuiNoTLS                                    bool
+	webuiGateways                                 []string
+	webuiAdminGateways                            []string
+	webuiPathPrefix                               string
+	webuiS3Prefix                                 string
+	websitePorts                                  []string
+	websiteDomain                                 string
+	websiteCertFile, websiteKeyFile               string
+	websiteNoTLS                                  bool
+	disableACLs                                   bool
+	mpMaxParts                                    int
+	socketPerm                                    string
 )
 
 var (
@@ -110,6 +119,7 @@ var (
 func main() {
 	gwcli.SetupSignalHandler()
 	gwcli.RunGateway = runGateway
+	gwcli.RunIAM = runIAM
 
 	app := initApp()
 
@@ -119,6 +129,7 @@ func main() {
 		gwcli.S3Command(),
 		gwcli.AzureCommand(),
 		gwcli.PluginCommand(),
+		gwcli.IAMCommand(),
 		gwcli.AdminCommand(),
 		testCommand(),
 		gwcli.UtilsCommand(),
@@ -159,16 +170,16 @@ documentation can be found in the GitHub wiki.`,
 			// Resolve relative UNIX socket paths to absolute before any backend
 			// (e.g. posix) can change the working directory via os.Chdir.
 			var err error
-			if ports, err = utils.AbsSocketPaths(ports); err != nil {
+			if ports, err = netutil.AbsSocketPaths(ports); err != nil {
 				return err
 			}
-			if admPorts, err = utils.AbsSocketPaths(admPorts); err != nil {
+			if admPorts, err = netutil.AbsSocketPaths(admPorts); err != nil {
 				return err
 			}
-			if webuiPorts, err = utils.AbsSocketPaths(webuiPorts); err != nil {
+			if webuiPorts, err = netutil.AbsSocketPaths(webuiPorts); err != nil {
 				return err
 			}
-			if websitePorts, err = utils.AbsSocketPaths(websitePorts); err != nil {
+			if websitePorts, err = netutil.AbsSocketPaths(websitePorts); err != nil {
 				return err
 			}
 			return nil
@@ -365,9 +376,19 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_ADMIN_CERT_KEY"},
 			Destination: &admKeyFile,
 		},
+		&cli.StringFlag{
+			Name: "log-level",
+			Usage: `debug logger verbosity: "silent" (default, no debug output), ` +
+				`"debug" (full request/response logging with secrets and tokens masked), or ` +
+				`"unsafe" (full logging with NO masking -- prints access keys, secrets, session ` +
+				`tokens, and signatures in the clear; only use for local troubleshooting, never in production)`,
+			Value:       "silent",
+			EnvVars:     []string{"VGW_LOG_LEVEL"},
+			Destination: &logLevel,
+		},
 		&cli.BoolFlag{
 			Name:        "debug",
-			Usage:       "enable debug output",
+			Usage:       "enable debug output (deprecated: use --log-level=debug for finer-grained control)",
 			Value:       false,
 			EnvVars:     []string{"VGW_DEBUG"},
 			Destination: &debug,
@@ -783,6 +804,60 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_IPA_INSECURE"},
 			Destination: &ipaInsecure,
 		},
+		&cli.StringFlag{
+			Name:        "iam-standalone-endpoint",
+			Usage:       "standalone IAM service private-endpoint address: a unix socket path, or <host>:<port> when mTLS (--iam-standalone-client-cert/-key/--iam-standalone-server-ca) is also configured",
+			EnvVars:     []string{"VGW_IAM_STANDALONE_ENDPOINT"},
+			Destination: &standaloneIAMEndpoint,
+		},
+		&cli.StringFlag{
+			Name:        "iam-standalone-access",
+			Usage:       "access key this gateway signs its own calls to the standalone IAM service with (must be set together with --iam-standalone-secret; both default to --access/--secret root)",
+			EnvVars:     []string{"VGW_IAM_STANDALONE_ACCESS"},
+			Destination: &standaloneIAMAccess,
+		},
+		&cli.StringFlag{
+			Name:        "iam-standalone-secret",
+			Usage:       "secret key this gateway signs its own calls to the standalone IAM service with (must be set together with --iam-standalone-access; both default to --access/--secret root)",
+			EnvVars:     []string{"VGW_IAM_STANDALONE_SECRET"},
+			Destination: &standaloneIAMSecret,
+		},
+		&cli.StringFlag{
+			Name:        "iam-standalone-client-cert",
+			Usage:       "client TLS certificate this gateway presents to the standalone IAM service (required for a non-unix-socket --iam-standalone-endpoint)",
+			EnvVars:     []string{"VGW_IAM_STANDALONE_CLIENT_CERT"},
+			Destination: &standaloneClientCert,
+		},
+		&cli.StringFlag{
+			Name:        "iam-standalone-client-cert-key",
+			Usage:       "private key for --iam-standalone-client-cert",
+			EnvVars:     []string{"VGW_IAM_STANDALONE_CLIENT_CERT_KEY"},
+			Destination: &standaloneClientCertKey,
+		},
+		&cli.StringFlag{
+			Name:        "iam-standalone-server-ca",
+			Usage:       "PEM-encoded CA bundle used to verify the standalone IAM service's server certificate (required for a non-unix-socket --iam-standalone-endpoint)",
+			EnvVars:     []string{"VGW_IAM_STANDALONE_SERVER_CA"},
+			Destination: &standaloneServerCA,
+		},
+		&cli.IntFlag{
+			Name:        "iam-standalone-default-uid",
+			Usage:       "POSIX uid assigned to every account resolved through the standalone IAM backend (it has no per-user POSIX identity of its own)",
+			EnvVars:     []string{"VGW_IAM_STANDALONE_DEFAULT_UID"},
+			Destination: &standaloneDefaultUserID,
+		},
+		&cli.IntFlag{
+			Name:        "iam-standalone-default-gid",
+			Usage:       "POSIX gid assigned to every account resolved through the standalone IAM backend",
+			EnvVars:     []string{"VGW_IAM_STANDALONE_DEFAULT_GID"},
+			Destination: &standaloneDefaultGroupID,
+		},
+		&cli.IntFlag{
+			Name:        "iam-standalone-default-project-id",
+			Usage:       "project id assigned to every account resolved through the standalone IAM backend",
+			EnvVars:     []string{"VGW_IAM_STANDALONE_DEFAULT_PROJECT_ID"},
+			Destination: &standaloneDefaultProjectID,
+		},
 		&cli.IntFlag{
 			Name:        "mp-max-parts",
 			Usage:       "maximum number of parts allowed in a multipart upload",
@@ -806,6 +881,19 @@ func initFlags() []cli.Flag {
 	}
 }
 
+// parseLogLevel parses the --log-level flag value shared by the gateway and
+// standalone IAM API commands. --debug is a deprecated alias for
+// --log-level=debug, kept for backward compatibility.
+func parseLogLevel() (debuglogger.Level, error) {
+	if debug {
+		fmt.Fprintf(os.Stderr, "WARNING: --debug is deprecated; use --log-level=debug for finer-grained control over debug logging\n")
+		if logLevel == "silent" {
+			return debuglogger.LevelDebug, nil
+		}
+	}
+	return debuglogger.ParseLevel(logLevel)
+}
+
 func runGateway(ctx context.Context, be backend.Backend) error {
 	if pprof != "" {
 		// Listen on the specified address for pprof debug endpoints.
@@ -820,6 +908,11 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 
 	if gwcli.CopyObjectThreshold < 1 {
 		return fmt.Errorf("copy-object-threshold must be positive")
+	}
+
+	logLvl, err := parseLogLevel()
+	if err != nil {
+		return err
 	}
 
 	return embedgw.RunVersityGW(ctx, be, &embedgw.Config{
@@ -838,7 +931,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		AdminCertFile:               admCertFile,
 		AdminKeyFile:                admKeyFile,
 		CORSAllowOrigin:             corsAllowOrigin,
-		Debug:                       debug,
+		LogLevel:                    logLvl,
 		IAMDebug:                    iamDebug,
 		Quiet:                       quiet,
 		Readonly:                    readonly,
@@ -888,6 +981,15 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		IpaUser:                     ipaUser,
 		IpaPassword:                 ipaPassword,
 		IpaInsecure:                 ipaInsecure,
+		StandaloneIAMEndpoint:       standaloneIAMEndpoint,
+		StandaloneIAMAccess:         standaloneIAMAccess,
+		StandaloneIAMSecret:         standaloneIAMSecret,
+		StandaloneClientCert:        standaloneClientCert,
+		StandaloneClientCertKey:     standaloneClientCertKey,
+		StandaloneServerCA:          standaloneServerCA,
+		StandaloneDefaultUserID:     standaloneDefaultUserID,
+		StandaloneDefaultGroupID:    standaloneDefaultGroupID,
+		StandaloneDefaultProjectID:  standaloneDefaultProjectID,
 		AccessLog:                   accessLog,
 		LogWebhookURL:               logWebhookURL,
 		AdminLogFile:                adminLogFile,

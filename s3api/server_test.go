@@ -25,8 +25,8 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/s3api/middlewares"
-	"github.com/versity/versitygw/s3api/utils"
 )
 
 func newTestS3ApiServer(opts ...Option) (*S3ApiServer, error) {
@@ -69,7 +69,7 @@ func TestS3ApiServer_Serve(t *testing.T) {
 				app:         fiber.New(),
 				backend:     backend.BackendUnsupported{},
 				Router:      &S3ApiRouter{},
-				CertStorage: &utils.CertStorage{},
+				CertStorage: &netutil.CertStorage{},
 			},
 			port: "localhost:notaport",
 		},

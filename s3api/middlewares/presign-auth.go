@@ -15,17 +15,19 @@
 package middlewares
 
 import (
+	"errors"
 	"io"
 	"strconv"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/internal/sigv4auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 )
 
 func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region string, streamBody bool) fiber.Handler {
-	acct := accounts{root: root, iam: iam}
+	rootAccount := auth.Account{Access: root.Access, Secret: root.Secret, Role: auth.RoleAdmin}
 
 	return func(ctx fiber.Ctx) error {
 		// The bucket is public, no need to check this signature
@@ -40,11 +42,6 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 			return s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationMechanism)
 		}
 
-		if ctx.Request().URI().QueryArgs().Has("X-Amz-Security-Token") {
-			// OIDC Authorization with X-Amz-Security-Token is not supported
-			return s3err.QueryAuthErrors.SecurityTokenNotSupported()
-		}
-
 		// Set in the context the "authenticated" key, in case the authentication succeeds,
 		// otherwise the middleware will return the caucht error
 		utils.ContextKeyAuthenticated.Set(ctx, true)
@@ -56,9 +53,14 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 
 		utils.ContextKeyIsRoot.Set(ctx, authData.Access == root.Access)
 
-		account, err := acct.getAccount(authData.Access)
+		sessionToken := ctx.Query(sigv4auth.QuerySecurityToken)
+
+		derivedKey, account, err := auth.ResolveDerivedKey(iam, rootAccount, authData.Access, sessionToken, authData.Date[:8], authData.Region, sigv4auth.ServiceS3)
 		if err == auth.ErrNoSuchUser {
 			return s3err.GetInvalidAccessKeyIdErr(authData.Access)
+		}
+		if errors.Is(err, auth.ErrInvalidSessionToken) {
+			return s3err.GetAPIError(s3err.ErrInvalidToken)
 		}
 		if err != nil {
 			return err
@@ -75,7 +77,7 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 			}
 		}
 
-		err = utils.CheckPresignedSignature(ctx, authData, account.Secret)
+		err = utils.CheckPresignedSignature(ctx, authData, derivedKey)
 		if err != nil {
 			return err
 		}

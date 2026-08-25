@@ -28,8 +28,8 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-func PresignedAuth_security_token_not_supported(s *S3Conf) error {
-	testName := "PresignedAuth_security_token_not_supported"
+func PresignedAuth_security_token_with_permanent_credentials(s *S3Conf) error {
+	testName := "PresignedAuth_security_token_with_permanent_credentials"
 	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
@@ -50,7 +50,7 @@ func PresignedAuth_security_token_not_supported(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.SecurityTokenNotSupported())
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidToken))
 	})
 }
 
@@ -825,6 +825,8 @@ func PresignedAuth_Put_GetObject_with_data(s *S3Conf) error {
 			return err
 		}
 
+		req.Header = v4GetReq.SignedHeader
+
 		resp, err = s.httpClient.Do(req)
 		if err != nil {
 			return err
@@ -891,6 +893,8 @@ func PresignedAuth_Put_GetObject_with_UTF8_chars(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
+
+		req.Header = v4GetReq.SignedHeader
 
 		resp, err = s.httpClient.Do(req)
 		if err != nil {

@@ -126,6 +126,7 @@ const (
 	ErrMissingContentLength
 	ErrContentLengthMismatch
 	ErrInvalidAccessKeyID
+	ErrInvalidToken
 	ErrRequestNotReadyYet
 	ErrMissingDateHeader
 	ErrGetUploadsWithKey
@@ -396,6 +397,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "InvalidAccessKeyId",
 		Description:    "The AWS Access Key Id you provided does not exist in our records.",
 		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrInvalidToken: {
+		Code:           "InvalidToken",
+		Description:    "The provided token is malformed or otherwise invalid.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrRequestNotReadyYet: {
 		Code:           "AccessDenied",
@@ -1002,6 +1008,28 @@ func GetWebsiteRoutingRulesLimitedErr(rules int) APIError {
 	}
 }
 
+func GetExplicitDenyAccessErr(principal, action, resourceArn, source string) APIError {
+	return APIError{
+		Code: "AccessDenied",
+		Description: fmt.Sprintf(
+			"User: %s is not authorized to perform: %s on resource: %q with an explicit deny in %s",
+			principal, action, resourceArn, source,
+		),
+		HTTPStatusCode: http.StatusForbidden,
+	}
+}
+
+func GetImplicitDenyAccessErr(principal, action, resourceArn string) APIError {
+	return APIError{
+		Code: "AccessDenied",
+		Description: fmt.Sprintf(
+			"User: %s is not authorized to perform: %s on resource: %q because no identity-based policy allows the %s action",
+			principal, action, resourceArn, action,
+		),
+		HTTPStatusCode: http.StatusForbidden,
+	}
+}
+
 type ResourceType string
 
 const (
@@ -1011,3 +1039,23 @@ const (
 	ResourceTypeBucketPolicy ResourceType = "BUCKETPOLICY"
 	ResourceTypeUpload       ResourceType = "UPLOAD"
 )
+
+func ObjectDeleteError(key, versionId *string, err error) types.Error {
+	if serr, ok := err.(S3Error); ok {
+		base := serr.BaseError()
+		return types.Error{
+			Key:       key,
+			VersionId: versionId,
+			Code:      &base.Code,
+			Message:   &base.Description,
+		}
+	}
+	message := err.Error()
+	code := "InternalError"
+	return types.Error{
+		Key:       key,
+		VersionId: versionId,
+		Code:      &code,
+		Message:   &message,
+	}
+}

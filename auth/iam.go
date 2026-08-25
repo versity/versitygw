@@ -22,6 +22,27 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
+// resolveAccountsByLookup implements ResolveAccounts for backends that have
+// no batch endpoint, by calling getUserAccount once per access key and
+// collecting the ones that don't exist.
+func resolveAccountsByLookup(accessKeyIDs []string, getUserAccount func(string) (Account, error)) ([]string, error) {
+	missing := []string{}
+	for _, access := range accessKeyIDs {
+		_, err := getUserAccount(access)
+		if err != nil {
+			if err == ErrNoSuchUser || err == s3err.GetAPIError(s3err.ErrAdminUserNotFound) {
+				missing = append(missing, access)
+				continue
+			}
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)) {
+				return nil, err
+			}
+			return nil, fmt.Errorf("check user account: %w", err)
+		}
+	}
+	return missing, nil
+}
+
 type Role string
 
 const (
@@ -51,6 +72,27 @@ type Account struct {
 	UserID    int    `json:"userID"`
 	GroupID   int    `json:"groupID"`
 	ProjectID int    `json:"projectID"`
+
+	// SessionToken and IsSession describe a temporary credential minted by
+	// AssumeRoleWithWebIdentity, and are set only by the S3 auth
+	// middlewares for the duration of one request. They ride on Account
+	// rather than on auth.AccessOptions so the ~55 controller sites that
+	// already forward the request's Account into an authorization check
+	// carry them without a single edit.
+	//
+	// Both are json:"-": a session is request state, never persisted by an
+	// IAM backend nor echoed by the admin API.
+	SessionToken string `json:"-"`
+	IsSession    bool   `json:"-"`
+}
+
+// String elides the two credential-bearing fields so an Account can't leak
+// them into a log line through a %v/%+v verb. debuglogger redacts the
+// X-Amz-Security-Token *header*, which does nothing for a struct printed
+// after the token has been parsed out of it.
+func (a Account) String() string {
+	return fmt.Sprintf("Account{Access:%s, Secret:REDACTED, Role:%s, UserID:%d, GroupID:%d, ProjectID:%d, SessionToken:REDACTED, IsSession:%t}",
+		a.Access, a.Role, a.UserID, a.GroupID, a.ProjectID, a.IsSession)
 }
 
 type ListUserAccountsResult struct {
@@ -98,6 +140,7 @@ func updateAcc(acc *Account, props MutableProps) {
 type IAMService interface {
 	CreateAccount(account Account) error
 	GetUserAccount(access string) (Account, error)
+	ResolveAccounts(accessKeyIDs []string) ([]string, error)
 	UpdateUserAccount(access string, props MutableProps) error
 	DeleteUserAccount(access string) error
 	ListUserAccounts() ([]Account, error)
@@ -109,6 +152,13 @@ var (
 	ErrUserExists = errors.New("user already exists")
 	// ErrNoSuchUser is returned when the user does not exist
 	ErrNoSuchUser = errors.New("user not found")
+	// ErrInvalidSessionToken is returned when a request's
+	// X-Amz-Security-Token is missing for a temporary (ASIA…) access key,
+	// doesn't match the session that key belongs to, or is present
+	// alongside a permanent credential. Callers render it as S3's
+	// InvalidToken, distinct from the InvalidAccessKeyId that ErrNoSuchUser
+	// produces — matching real S3, which reports the two separately.
+	ErrInvalidSessionToken = errors.New("invalid session token")
 )
 
 type Opts struct {
@@ -153,6 +203,15 @@ type Opts struct {
 	IpaUser                     string
 	IpaPassword                 string
 	IpaInsecure                 bool
+	StandaloneIAMEndpoint       string
+	StandaloneIAMAccess         string
+	StandaloneIAMSecret         string
+	StandaloneClientCert        string
+	StandaloneClientCertKey     string
+	StandaloneServerCA          string
+	StandaloneDefaultUserID     int
+	StandaloneDefaultGroupID    int
+	StandaloneDefaultProjectID  int
 }
 
 func New(o *Opts) (IAMService, error) {
@@ -160,6 +219,31 @@ func New(o *Opts) (IAMService, error) {
 	var err error
 
 	switch {
+	case o.StandaloneIAMEndpoint != "":
+		fmt.Printf("initializing standalone IAM with %q\n", o.StandaloneIAMEndpoint)
+		svc, err = NewIAMServiceStandalone(o.RootAccount, IAMServiceStandaloneConfig{
+			Endpoint:         o.StandaloneIAMEndpoint,
+			Access:           o.StandaloneIAMAccess,
+			Secret:           o.StandaloneIAMSecret,
+			ClientCert:       o.StandaloneClientCert,
+			ClientCertKey:    o.StandaloneClientCertKey,
+			ServerCA:         o.StandaloneServerCA,
+			DefaultUserID:    o.StandaloneDefaultUserID,
+			DefaultGroupID:   o.StandaloneDefaultGroupID,
+			DefaultProjectID: o.StandaloneDefaultProjectID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		// Never cache-wrapped, unlike every other backend below: IAMCache
+		// only implements the base IAMService methods, so wrapping this
+		// backend in it would silently strip the SigningKeyProvider/
+		// PolicyEvaluator interfaces signature verification and policy
+		// enforcement depend on — not just skip a performance
+		// optimization, but break both outright.
+		//
+		// TODO: Do we need to implement cache for this ?
+		return svc, nil
 	case o.Dir != "":
 		svc, err = NewInternal(o.RootAccount, o.Dir)
 		fmt.Printf("initializing internal IAM with %q\n", o.Dir)

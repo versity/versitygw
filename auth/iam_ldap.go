@@ -239,6 +239,11 @@ func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
 	}, nil
 }
 
+// ResolveAccounts returns the subset of accessKeyIDs that do not exist.
+func (ld *LdapIAMService) ResolveAccounts(accessKeyIDs []string) ([]string, error) {
+	return resolveAccountsByLookup(accessKeyIDs, ld.GetUserAccount)
+}
+
 func (ld *LdapIAMService) UpdateUserAccount(access string, props MutableProps) error {
 	req := ldap.NewModifyRequest(ld.buildUserDN(access), nil)
 	if props.Secret != nil {

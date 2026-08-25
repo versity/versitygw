@@ -30,6 +30,9 @@ var _ auth.IAMService = &IAMServiceMock{}
 //			ListUserAccountsFunc: func() ([]auth.Account, error) {
 //				panic("mock out the ListUserAccounts method")
 //			},
+//			ResolveAccountsFunc: func(accessKeyIDs []string) ([]string, error) {
+//				panic("mock out the ResolveAccounts method")
+//			},
 //			ShutdownFunc: func() error {
 //				panic("mock out the Shutdown method")
 //			},
@@ -54,6 +57,9 @@ type IAMServiceMock struct {
 
 	// ListUserAccountsFunc mocks the ListUserAccounts method.
 	ListUserAccountsFunc func() ([]auth.Account, error)
+
+	// ResolveAccountsFunc mocks the ResolveAccounts method.
+	ResolveAccountsFunc func(accessKeyIDs []string) ([]string, error)
 
 	// ShutdownFunc mocks the Shutdown method.
 	ShutdownFunc func() error
@@ -81,6 +87,11 @@ type IAMServiceMock struct {
 		// ListUserAccounts holds details about calls to the ListUserAccounts method.
 		ListUserAccounts []struct {
 		}
+		// ResolveAccounts holds details about calls to the ResolveAccounts method.
+		ResolveAccounts []struct {
+			// AccessKeyIDs is the accessKeyIDs argument value.
+			AccessKeyIDs []string
+		}
 		// Shutdown holds details about calls to the Shutdown method.
 		Shutdown []struct {
 		}
@@ -96,6 +107,7 @@ type IAMServiceMock struct {
 	lockDeleteUserAccount sync.RWMutex
 	lockGetUserAccount    sync.RWMutex
 	lockListUserAccounts  sync.RWMutex
+	lockResolveAccounts   sync.RWMutex
 	lockShutdown          sync.RWMutex
 	lockUpdateUserAccount sync.RWMutex
 }
@@ -220,6 +232,38 @@ func (mock *IAMServiceMock) ListUserAccountsCalls() []struct {
 	mock.lockListUserAccounts.RLock()
 	calls = mock.calls.ListUserAccounts
 	mock.lockListUserAccounts.RUnlock()
+	return calls
+}
+
+// ResolveAccounts calls ResolveAccountsFunc.
+func (mock *IAMServiceMock) ResolveAccounts(accessKeyIDs []string) ([]string, error) {
+	if mock.ResolveAccountsFunc == nil {
+		panic("IAMServiceMock.ResolveAccountsFunc: method is nil but IAMService.ResolveAccounts was just called")
+	}
+	callInfo := struct {
+		AccessKeyIDs []string
+	}{
+		AccessKeyIDs: accessKeyIDs,
+	}
+	mock.lockResolveAccounts.Lock()
+	mock.calls.ResolveAccounts = append(mock.calls.ResolveAccounts, callInfo)
+	mock.lockResolveAccounts.Unlock()
+	return mock.ResolveAccountsFunc(accessKeyIDs)
+}
+
+// ResolveAccountsCalls gets all the calls that were made to ResolveAccounts.
+// Check the length with:
+//
+//	len(mockedIAMService.ResolveAccountsCalls())
+func (mock *IAMServiceMock) ResolveAccountsCalls() []struct {
+	AccessKeyIDs []string
+} {
+	var calls []struct {
+		AccessKeyIDs []string
+	}
+	mock.lockResolveAccounts.RLock()
+	calls = mock.calls.ResolveAccounts
+	mock.lockResolveAccounts.RUnlock()
 	return calls
 }
 

@@ -16,6 +16,7 @@ package middlewares
 
 import (
 	"bytes"
+	"errors"
 	"mime"
 	"strconv"
 	"time"
@@ -23,16 +24,18 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/sigv4auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 )
 
 const (
-	formFieldPolicy     = "policy"
-	formFieldAlgorithm  = "x-amz-algorithm"
-	formFieldCredential = "x-amz-credential"
-	formFieldDate       = "x-amz-date"
-	formFieldSignature  = "x-amz-signature"
+	formFieldPolicy        = "policy"
+	formFieldAlgorithm     = "x-amz-algorithm"
+	formFieldCredential    = "x-amz-credential"
+	formFieldDate          = "x-amz-date"
+	formFieldSignature     = "x-amz-signature"
+	formFieldSecurityToken = "x-amz-security-token"
 
 	aws4HMACSHA256 = "AWS4-HMAC-SHA256"
 	hourSeconds    = 60 * 60
@@ -47,7 +50,7 @@ type PostObjectResult struct {
 }
 
 func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string) fiber.Handler {
-	acct := accounts{root: root, iam: iam}
+	rootAccount := auth.Account{Access: root.Access, Secret: root.Secret, Role: auth.RoleAdmin}
 
 	return func(ctx fiber.Ctx) error {
 		contentLengthStr := ctx.Get("Content-Length")
@@ -164,10 +167,14 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 				return s3err.PostAuth.IncorrectRegion(credentialStr, region, creds.Region)
 			}
 
-			account, err := acct.getAccount(creds.Access)
+			derivedKey, account, err := auth.ResolveDerivedKey(iam, rootAccount, creds.Access, fields[formFieldSecurityToken], creds.Date, creds.Region, sigv4auth.ServiceS3)
 			if err == auth.ErrNoSuchUser {
 				debuglogger.Logf("POST object access key not found: %s", creds.Access)
 				return s3err.GetInvalidAccessKeyIdErr(creds.Access)
+			}
+			if errors.Is(err, auth.ErrInvalidSessionToken) {
+				debuglogger.Logf("invalid POST object security token for access key %s", creds.Access)
+				return s3err.GetAPIError(s3err.ErrInvalidToken)
 			}
 			if err != nil {
 				debuglogger.Logf("failed to resolve POST object account %q: %v", creds.Access, err)
@@ -177,7 +184,7 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 			utils.ContextKeyAccount.Set(ctx, account)
 			utils.ContextKeyIsRoot.Set(ctx, account.Access == root.Access)
 
-			expectedSig, err := utils.SignPostPolicy(policyB64, creds.Date, region, account.Secret)
+			expectedSig, err := utils.SignPostPolicy(policyB64, derivedKey)
 			if err != nil {
 				return err
 			}

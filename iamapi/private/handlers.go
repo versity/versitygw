@@ -1,0 +1,188 @@
+// Copyright 2026 Versity Software
+// This file is licensed under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package private
+
+import (
+	"encoding/json"
+	"maps"
+	"strings"
+
+	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/iamapi/internal/iammiddleware"
+	"github.com/versity/versitygw/iamapi/policy"
+	"github.com/versity/versitygw/iamapi/types"
+	"github.com/versity/versitygw/internal/sigv4auth"
+)
+
+// handleVersion reports what this build speaks. It is root-signed like every
+// other endpoint here, which is what lets the gateway's startup probe verify
+// its own credential and its mTLS transport in the same round trip that
+// verifies the protocol — a rotated gateway credential is a far more common
+// misconfiguration than a version skew, and an unauthenticated probe would
+// report success right through one.
+func (p *PrivateAPI) handleVersion(ctx fiber.Ctx) error {
+	return ctx.JSON(VersionResponse{
+		Protocol:      ProtocolVersion,
+		MinClient:     MinClientProtocol,
+		ServerVersion: p.serverVersion,
+	})
+}
+
+func (p *PrivateAPI) handleDeriveSigningKey(ctx fiber.Ctx) error {
+	var req DeriveSigningKeyRequest
+	if err := json.Unmarshal(ctx.Body(), &req); err != nil {
+		return errMalformedRequestBody
+	}
+
+	_, secret, err := resolvePrivateIdentity(ctx.Context(), p.store, req.AccessKeyID, req.SessionToken)
+	if err != nil {
+		return mapResolveError(err)
+	}
+
+	derivedKey := sigv4auth.DeriveKey(secret, req.Date, req.Region, req.Service)
+
+	return ctx.JSON(DeriveSigningKeyResponse{DerivedKey: derivedKey})
+}
+
+// handleResolveIdentity answers "does this access key exist, and what
+// principal is it" for a batch of access key ids, returning no credential
+// material at all — see ResolveIdentityResponse for why that is what makes
+// answering for a session, with no session token, safe.
+func (p *PrivateAPI) handleResolveIdentity(ctx fiber.Ctx) error {
+	var req ResolveIdentityRequest
+	if err := json.Unmarshal(ctx.Body(), &req); err != nil {
+		return errMalformedRequestBody
+	}
+
+	resolved := resolveIdentityMetadata(ctx.Context(), p.store, req.AccessKeyIDs)
+
+	identities := make([]ResolvedIdentity, len(resolved))
+	for i, r := range resolved {
+		if !r.Found {
+			continue
+		}
+		identities[i] = ResolvedIdentity{
+			Found:        true,
+			Kind:         identityKindWireValue(r.Kind),
+			PrincipalArn: r.PrincipalArn,
+		}
+	}
+
+	return ctx.JSON(ResolveIdentityResponse{Identities: identities})
+}
+
+// identityKindWireValue converts identityKind to its wire representation.
+func identityKindWireValue(k identityKind) string {
+	if k == identityKindSession {
+		return KindSession
+	}
+	return KindUser
+}
+
+func (p *PrivateAPI) handleEvaluatePolicy(ctx fiber.Ctx) error {
+	var req EvaluatePolicyRequest
+	if err := json.Unmarshal(ctx.Body(), &req); err != nil {
+		return errMalformedRequestBody
+	}
+
+	identity, _, err := resolvePrivateIdentity(ctx.Context(), p.store, req.AccessKeyID, req.SessionToken)
+	if err != nil {
+		return mapResolveError(err)
+	}
+
+	condition := conditionContextFor(*identity, req.Condition)
+
+	decisions := make([][]string, len(req.Resources))
+	sessionDecisions := make([][]string, len(req.Resources))
+	hasSessionPolicy := false
+
+	for i, resource := range req.Resources {
+		perAction := make([]string, len(req.Actions))
+		perActionSession := make([]string, len(req.Actions))
+		for j, action := range req.Actions {
+			identityDecision, sessionDecision, hasSession := iammiddleware.AuthorizeSplit(*identity, policy.RequestContext{
+				Action:    action,
+				Resource:  resource,
+				Condition: condition,
+			})
+			perAction[j] = decisionWireValue(identityDecision)
+			perActionSession[j] = decisionWireValue(sessionDecision)
+			hasSessionPolicy = hasSession
+		}
+		decisions[i] = perAction
+		sessionDecisions[i] = perActionSession
+	}
+
+	resp := EvaluatePolicyResponse{
+		Decisions:    decisions,
+		PrincipalArn: iammiddleware.CallerArn(*identity),
+	}
+	if hasSessionPolicy {
+		resp.HasSessionPolicy = true
+		resp.SessionDecisions = sessionDecisions
+	}
+
+	return ctx.JSON(resp)
+}
+
+// conditionContextFor combines the request-derived condition keys the S3
+// gateway observed (source IP, time, transport) with the identity-derived
+// keys only this service can know (aws:PrincipalArn, aws:username, …).
+//
+// Every key in an identity or resource namespace is dropped from the
+// gateway's contribution first, then this side's own values are laid over
+// the remainder. Filtering rather than merging matters: an
+// override-on-collision merge would leave any key this service happens
+// *not* to set — aws:PrincipalTag/x for an untagged role, say — under the
+// gateway's control, which is precisely what a StringNotEquals-guarded
+// Allow keys off. The gateway authenticates as root, so this is defense in
+// depth rather than a trust boundary, but the layering costs nothing.
+func conditionContextFor(identity types.Identity, requestKeys map[string][]string) map[string][]string {
+	condition := make(map[string][]string, len(requestKeys))
+	for k, v := range requestKeys {
+		if isIdentityConditionKey(k) {
+			continue
+		}
+		condition[k] = v
+	}
+	maps.Copy(condition, iammiddleware.IdentityConditionContext(identity))
+	return condition
+}
+
+// isIdentityConditionKey reports whether key names the caller or the
+// resource, and so may only be set by this service. Matching is
+// case-insensitive because policy condition-key lookup is
+// (iamapi/policy.lookupContextValues) — a caller must not be able to smuggle
+// "AWS:PrincipalArn" past a case-sensitive filter.
+func isIdentityConditionKey(key string) bool {
+	for _, prefix := range iammiddleware.IdentityConditionKeyPrefixes {
+		if strings.EqualFold(key, prefix) ||
+			(strings.HasSuffix(prefix, "/") && len(key) > len(prefix) && strings.EqualFold(key[:len(prefix)], prefix)) {
+			return true
+		}
+	}
+	return false
+}
+
+// decisionWireValue converts policy.Decision to its wire representation.
+func decisionWireValue(d policy.Decision) string {
+	switch d {
+	case policy.DecisionAllow:
+		return DecisionAllow
+	case policy.DecisionDeny:
+		return DecisionDeny
+	default:
+		return DecisionNoMatch
+	}
+}

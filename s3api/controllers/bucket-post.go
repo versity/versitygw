@@ -34,34 +34,19 @@ import (
 
 func (c S3ApiController) DeleteObjects(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
-	bypass := strings.EqualFold(ctx.Get("X-Amz-Bypass-Governance-Retention"), "true")
+	bypass := auth.BypassModeForRequest(strings.EqualFold(ctx.Get("X-Amz-Bypass-Governance-Retention"), "true"))
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
-		auth.AccessOptions{
-			Readonly:        c.readonly,
-			Acl:             parsedAcl,
-			AclPermission:   auth.PermissionWrite,
-			IsRoot:          isRoot,
-			Acc:             acct,
-			Bucket:          bucket,
-			Actions:         []auth.Action{auth.DeleteObjectAction},
-			IsPublicRequest: IsBucketPublic,
-			DisableACL:      c.disableACL,
-		})
-	if err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
-	}
-
+	// The body has to be parsed before authorization, not after: real AWS
+	// authorizes s3:DeleteObject against each object's own ARN, so the keys
+	// are part of what is being authorized. The parsed objects go straight
+	// to VerifyObjectsAccess, which checks policy and object locks for all
+	// of them in one pass.
 	var dObj s3response.DeleteObjects
-	err = xml.Unmarshal(ctx.BodyRaw(), &dObj)
+	err := xml.Unmarshal(ctx.BodyRaw(), &dObj)
 	if err != nil {
 		debuglogger.Logf("error unmarshalling delete objects: %v", err)
 		return &Response{
@@ -71,7 +56,23 @@ func (c S3ApiController) DeleteObjects(ctx fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
-	err = auth.CheckObjectAccess(ctx.RequestCtx(), bucket, acct.Access, dObj.Objects, bypass, IsBucketPublic, c.be, false)
+	// checkErrs holds one entry per requested object — nil where it may
+	// proceed to the backend, an AWS-shaped denial otherwise. DeleteObjects
+	// supports partial success, so a denial on one object (policy or object
+	// lock) must not fail any other: only the objects that clear this check
+	// are sent to the backend, and the rest are reported as per-object
+	// errors directly from checkErrs. err here is a whole-request failure
+	// (readonly mode, or an error resolving policy/lock state), not about
+	// any one object.
+	checkErrs, err := c.verifyObjectsAccess(ctx,
+		auth.AccessOptions{
+			Acl:             parsedAcl,
+			AclPermission:   auth.PermissionWrite,
+			IsRoot:          isRoot,
+			Acc:             acct,
+			Bucket:          bucket,
+			IsPublicRequest: IsBucketPublic,
+		}, dObj.Objects, bypass)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -80,15 +81,26 @@ func (c S3ApiController) DeleteObjects(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	res, err := c.be.DeleteObjects(ctx.RequestCtx(),
-		&s3.DeleteObjectsInput{
-			Bucket: &bucket,
-			Delete: &types.Delete{
-				Objects: dObj.Objects,
-			},
-		})
+	toDelete := make([]types.ObjectIdentifier, 0, len(dObj.Objects))
+	for i, obj := range dObj.Objects {
+		if checkErrs[i] == nil {
+			toDelete = append(toDelete, obj)
+		}
+	}
+
+	var backendResult s3response.DeleteResult
+	if len(toDelete) > 0 {
+		backendResult, err = c.be.DeleteObjects(ctx.RequestCtx(),
+			&s3.DeleteObjectsInput{
+				Bucket: &bucket,
+				Delete: &types.Delete{
+					Objects: toDelete,
+				},
+			})
+	}
+
 	return &Response{
-		Data: res,
+		Data: utils.MergeDeleteObjectsResult(dObj.Objects, checkErrs, backendResult),
 		MetaOpts: &MetaOptions{
 			ObjectCount: int64(len(dObj.Objects)),
 			BucketOwner: parsedAcl.Owner,
@@ -115,9 +127,8 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 
 	key := parsed.Fields["key"]
 
-	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
+	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
-			Readonly:        c.readonly,
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
 			IsRoot:          isRoot,
@@ -125,7 +136,6 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 			Bucket:          bucket,
 			Actions:         []auth.Action{auth.PutObjectAction},
 			IsPublicRequest: IsBucketPublic,
-			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{

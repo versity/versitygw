@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -487,8 +488,15 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			iam := &IAMServiceMock{
-				GetUserAccountFunc: func(access string) (auth.Account, error) {
-					return auth.Account{}, tt.input.extraMockErr
+				ResolveAccountsFunc: func(accessKeyIDs []string) ([]string, error) {
+					switch tt.input.extraMockErr {
+					case nil:
+						return []string{}, nil
+					case auth.ErrNoSuchUser:
+						return accessKeyIDs, nil
+					default:
+						return nil, fmt.Errorf("check user account: %w", tt.input.extraMockErr)
+					}
 				},
 			}
 			be := &BackendMock{
@@ -673,6 +681,9 @@ func TestAdminController_CreateBucket(t *testing.T) {
 			iam := &IAMServiceMock{
 				GetUserAccountFunc: func(access string) (auth.Account, error) {
 					return auth.Account{}, tt.input.extraMockErr
+				},
+				ResolveAccountsFunc: func(accessKeyIDs []string) ([]string, error) {
+					return []string{}, nil
 				},
 			}
 			be := &BackendMock{
