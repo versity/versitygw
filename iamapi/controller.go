@@ -235,6 +235,88 @@ func (c IAMApiController) UpdateUser(ctx fiber.Ctx) (*Response, error) {
 	}}, nil
 }
 
+// TagUser adds or replaces tags on an existing user. AWS validates the
+// request in full before it ever looks the user up, so a malformed tag on a
+// non-existent user reports the tag error, not NoSuchEntity.
+func (c IAMApiController) TagUser(ctx fiber.Ctx) (*Response, error) {
+	userName, err := iamutil.GetUserName(ctx, "TagUser", iamutil.MaxUserLookupLen, iamerr.MissingValue("userName"))
+	if err != nil {
+		return nil, err
+	}
+
+	tags, err := iamutil.ParseTags(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(tags) == 0 {
+		debuglogger.Logf("missing required TagUser parameter: Tags")
+		return nil, iamerr.MissingValue("tags")
+	}
+
+	if err := c.store.TagUser(ctx.Context(), userName, tags); err != nil {
+		debuglogger.Logf("failed to tag IAM user %q: %v", userName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.TagUserResponse{}}, nil
+}
+
+// UntagUser removes the named tags from an existing user. Removal is
+// idempotent: a key naming no current tag is not an error.
+func (c IAMApiController) UntagUser(ctx fiber.Ctx) (*Response, error) {
+	userName, err := iamutil.GetUserName(ctx, "UntagUser", iamutil.MaxUserLookupLen, iamerr.MissingValue("userName"))
+	if err != nil {
+		return nil, err
+	}
+
+	tagKeys, err := iamutil.ParseTagKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(tagKeys) == 0 {
+		debuglogger.Logf("missing required UntagUser parameter: TagKeys")
+		return nil, iamerr.MissingValue("tagKeys")
+	}
+
+	if err := c.store.UntagUser(ctx.Context(), userName, tagKeys); err != nil {
+		debuglogger.Logf("failed to untag IAM user %q: %v", userName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.UntagUserResponse{}}, nil
+}
+
+func (c IAMApiController) ListUserTags(ctx fiber.Ctx) (*Response, error) {
+	userName, err := iamutil.GetUserName(ctx, "ListUserTags", iamutil.MaxUserLookupLen, iamerr.MissingValue("userName"))
+	if err != nil {
+		return nil, err
+	}
+
+	maxItems, err := iamutil.ParseMaxItems(ctx, "ListUserTags")
+	if err != nil {
+		return nil, err
+	}
+
+	marker, _ := iamutil.RequestParam(ctx, "Marker")
+	out, err := c.store.ListUserTags(ctx.Context(), storage.ListUserTagsInput{
+		UserName: userName,
+		Marker:   marker,
+		MaxItems: maxItems,
+	})
+	if err != nil {
+		debuglogger.Logf("failed to list IAM user %q tags: %v", userName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.ListUserTagsResponse{
+		Result: types.ListUserTagsResult{
+			Tags:        types.Tags{Members: out.Tags},
+			IsTruncated: out.IsTruncated,
+			Marker:      out.Marker,
+		},
+	}}, nil
+}
+
 func (c IAMApiController) CreateAccessKey(ctx fiber.Ctx) (*Response, error) {
 	userName, err := iamutil.GetUserName(ctx, "CreateAccessKey", iamutil.MaxUserLookupLen, iamerr.MissingParameter("UserName"))
 	if err != nil {

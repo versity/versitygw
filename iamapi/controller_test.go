@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -364,8 +365,8 @@ func TestIAMApiControllerCreateUserValidationErrors(t *testing.T) {
 				"Tags.member.1.Value": {"test"},
 			},
 			status:  http.StatusBadRequest,
-			code:    "MissingParameter",
-			message: "The request must contain the parameter Tags.member.1.Key.",
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'tags.1.member.key' failed to satisfy constraint: Member must not be null",
 		},
 		{
 			name: "missing tag value",
@@ -375,8 +376,8 @@ func TestIAMApiControllerCreateUserValidationErrors(t *testing.T) {
 				"Tags.member.1.Key": {"env"},
 			},
 			status:  http.StatusBadRequest,
-			code:    "MissingParameter",
-			message: "The request must contain the parameter Tags.member.1.Value.",
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'tags.1.member.value' failed to satisfy constraint: Member must not be null",
 		},
 	}
 
@@ -531,6 +532,435 @@ func TestIAMApiControllerUpdateUserAlreadyExists(t *testing.T) {
 		"NewUserName": {"zoe"},
 	})
 	requireIAMError(t, resp, http.StatusConflict, "Sender", "EntityAlreadyExists", "User with name zoe already exists.")
+}
+
+func TestIAMApiControllerUserTagLifecycle(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+
+	create := doIAMAction(t, server, url.Values{"Action": {"CreateUser"}, "UserName": {"alice"}})
+	if create.StatusCode != http.StatusOK {
+		t.Fatalf("CreateUser status = %d, body=%s", create.StatusCode, readBody(t, create))
+	}
+
+	if got := listUserTags(t, server, "alice"); len(got.Tags.Members) != 0 || got.IsTruncated {
+		t.Fatalf("ListUserTags on a fresh user = %#v, want no tags", got)
+	}
+
+	tagUser(t, server, "alice", map[string]string{"env": "prod", "team": "storage", "empty": ""})
+
+	got := listUserTags(t, server, "alice")
+	// Sorted by key, regardless of the order they were added in.
+	want := []iamtypes.Tag{{Key: "empty", Value: ""}, {Key: "env", Value: "prod"}, {Key: "team", Value: "storage"}}
+	if !slices.Equal(got.Tags.Members, want) {
+		t.Fatalf("Tags = %#v, want %#v", got.Tags.Members, want)
+	}
+
+	// A repeated key replaces its value in place; a differently-cased key
+	// is the same tag, and the new casing wins.
+	tagUser(t, server, "alice", map[string]string{"env": "staging"})
+	tagUser(t, server, "alice", map[string]string{"TEAM": "compute"})
+
+	got = listUserTags(t, server, "alice")
+	want = []iamtypes.Tag{{Key: "TEAM", Value: "compute"}, {Key: "empty", Value: ""}, {Key: "env", Value: "staging"}}
+	if !slices.Equal(got.Tags.Members, want) {
+		t.Fatalf("Tags after overwrite = %#v, want %#v", got.Tags.Members, want)
+	}
+
+	// GetUser reports the same tags the tag actions maintain.
+	getUser := doIAMAction(t, server, url.Values{"Action": {"GetUser"}, "UserName": {"alice"}})
+	var getResp struct {
+		Result struct{ User iamtypes.User } `xml:"GetUserResult"`
+	}
+	unmarshalXML(t, readBody(t, getUser), &getResp)
+	if len(getResp.Result.User.Tags) != 3 {
+		t.Fatalf("GetUser Tags = %#v, want 3 tags", getResp.Result.User.Tags)
+	}
+
+	// Removal is case-insensitive, and a key naming no tag is not an error.
+	untag := doIAMAction(t, server, url.Values{
+		"Action":           {"UntagUser"},
+		"UserName":         {"alice"},
+		"TagKeys.member.1": {"EnV"},
+		"TagKeys.member.2": {"never-existed"},
+	})
+	if untag.StatusCode != http.StatusOK {
+		t.Fatalf("UntagUser status = %d, body=%s", untag.StatusCode, readBody(t, untag))
+	}
+
+	got = listUserTags(t, server, "alice")
+	want = []iamtypes.Tag{{Key: "TEAM", Value: "compute"}, {Key: "empty", Value: ""}}
+	if !slices.Equal(got.Tags.Members, want) {
+		t.Fatalf("Tags after untag = %#v, want %#v", got.Tags.Members, want)
+	}
+}
+
+func TestIAMApiControllerListUserTagsPagination(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+
+	create := doIAMAction(t, server, url.Values{"Action": {"CreateUser"}, "UserName": {"alice"}})
+	if create.StatusCode != http.StatusOK {
+		t.Fatalf("CreateUser status = %d, body=%s", create.StatusCode, readBody(t, create))
+	}
+	tagUser(t, server, "alice", map[string]string{"a": "1", "b": "2", "c": "3"})
+
+	var seen []iamtypes.Tag
+	marker := ""
+	for page := 1; ; page++ {
+		params := url.Values{"Action": {"ListUserTags"}, "UserName": {"alice"}, "MaxItems": {"1"}}
+		if marker != "" {
+			params.Set("Marker", marker)
+		}
+		resp := doIAMAction(t, server, params)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("ListUserTags status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+		}
+		var out struct {
+			Result iamtypes.ListUserTagsResult `xml:"ListUserTagsResult"`
+		}
+		unmarshalXML(t, readBody(t, resp), &out)
+
+		if len(out.Result.Tags.Members) != 1 {
+			t.Fatalf("page %d holds %d tags, want 1", page, len(out.Result.Tags.Members))
+		}
+		seen = append(seen, out.Result.Tags.Members...)
+		if !out.Result.IsTruncated {
+			if out.Result.Marker != "" {
+				t.Fatalf("final page Marker = %q, want empty", out.Result.Marker)
+			}
+			break
+		}
+		marker = out.Result.Marker
+	}
+
+	want := []iamtypes.Tag{{Key: "a", Value: "1"}, {Key: "b", Value: "2"}, {Key: "c", Value: "3"}}
+	if !slices.Equal(seen, want) {
+		t.Fatalf("paged tags = %#v, want %#v", seen, want)
+	}
+}
+
+func TestIAMApiControllerTagUserExceedsQuota(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+
+	create := doIAMAction(t, server, url.Values{"Action": {"CreateUser"}, "UserName": {"alice"}})
+	if create.StatusCode != http.StatusOK {
+		t.Fatalf("CreateUser status = %d, body=%s", create.StatusCode, readBody(t, create))
+	}
+
+	atQuota := url.Values{"Action": {"TagUser"}, "UserName": {"alice"}}
+	for i := 1; i <= storage.MaxTagsPerUser; i++ {
+		atQuota.Set(fmt.Sprintf("Tags.member.%d.Key", i), fmt.Sprintf("k%d", i))
+		atQuota.Set(fmt.Sprintf("Tags.member.%d.Value", i), fmt.Sprintf("v%d", i))
+	}
+	if resp := doIAMAction(t, server, atQuota); resp.StatusCode != http.StatusOK {
+		t.Fatalf("TagUser with %d tags status = %d, body=%s", storage.MaxTagsPerUser, resp.StatusCode, readBody(t, resp))
+	}
+
+	// Replacing an existing key at the quota is fine: the total doesn't grow.
+	replace := doIAMAction(t, server, url.Values{
+		"Action": {"TagUser"}, "UserName": {"alice"},
+		"Tags.member.1.Key": {"k1"}, "Tags.member.1.Value": {"replaced"},
+	})
+	if replace.StatusCode != http.StatusOK {
+		t.Fatalf("TagUser replacing at quota status = %d, body=%s", replace.StatusCode, readBody(t, replace))
+	}
+
+	// One more distinct key does not fit.
+	overflow := doIAMAction(t, server, url.Values{
+		"Action": {"TagUser"}, "UserName": {"alice"},
+		"Tags.member.1.Key": {"overflow"}, "Tags.member.1.Value": {"x"},
+	})
+	requireIAMError(t, overflow, http.StatusConflict, "Sender", "LimitExceeded",
+		"The number of tags has reached the maximum limit.")
+}
+
+func TestIAMApiControllerUserTagValidationErrors(t *testing.T) {
+	tooManyTags := url.Values{"Action": {"TagUser"}, "UserName": {"alice"}}
+	for i := 1; i <= iamutil.MaxTagMembersPerRequest+1; i++ {
+		tooManyTags.Set(fmt.Sprintf("Tags.member.%d.Key", i), fmt.Sprintf("k%d", i))
+		tooManyTags.Set(fmt.Sprintf("Tags.member.%d.Value", i), fmt.Sprintf("v%d", i))
+	}
+	tooManyTagKeys := url.Values{"Action": {"UntagUser"}, "UserName": {"alice"}}
+	for i := 1; i <= iamutil.MaxTagMembersPerRequest+1; i++ {
+		tooManyTagKeys.Set(fmt.Sprintf("TagKeys.member.%d", i), fmt.Sprintf("k%d", i))
+	}
+
+	tests := []struct {
+		name      string
+		setupUser bool
+		params    url.Values
+		status    int
+		code      string
+		message   string
+	}{
+		{
+			name:    "tag missing user name",
+			params:  url.Values{"Action": {"TagUser"}, "Tags.member.1.Key": {"env"}, "Tags.member.1.Value": {"prod"}},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'userName' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:      "tag missing tags",
+			setupUser: true,
+			params:    url.Values{"Action": {"TagUser"}, "UserName": {"alice"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'tags' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:      "tag missing key",
+			setupUser: true,
+			params:    url.Values{"Action": {"TagUser"}, "UserName": {"alice"}, "Tags.member.1.Value": {"prod"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'tags.1.member.key' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:      "tag missing value",
+			setupUser: true,
+			params:    url.Values{"Action": {"TagUser"}, "UserName": {"alice"}, "Tags.member.1.Key": {"env"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'tags.1.member.value' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:      "tag empty key",
+			setupUser: true,
+			params:    url.Values{"Action": {"TagUser"}, "UserName": {"alice"}, "Tags.member.1.Key": {""}, "Tags.member.1.Value": {"prod"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'tags.1.member.key' failed to satisfy constraint: Member must have length greater than or equal to 1",
+		},
+		{
+			name:      "tag key too long",
+			setupUser: true,
+			params:    url.Values{"Action": {"TagUser"}, "UserName": {"alice"}, "Tags.member.1.Key": {strings.Repeat("k", 129)}, "Tags.member.1.Value": {"v"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'tags.1.member.key' failed to satisfy constraint: Member must have length less than or equal to 128",
+		},
+		{
+			name:      "tag invalid key characters",
+			setupUser: true,
+			params:    url.Values{"Action": {"TagUser"}, "UserName": {"alice"}, "Tags.member.1.Key": {"bad*key"}, "Tags.member.1.Value": {"v"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   `1 validation error detected: Value at 'tags.1.member.key' failed to satisfy constraint: Member must satisfy regular expression pattern: [\p{L}\p{Z}\p{N}_.:/=+\-@]+`,
+		},
+		{
+			name:      "tag value too long",
+			setupUser: true,
+			params:    url.Values{"Action": {"TagUser"}, "UserName": {"alice"}, "Tags.member.1.Key": {"k"}, "Tags.member.1.Value": {strings.Repeat("v", 257)}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'tags.1.member.value' failed to satisfy constraint: Member must have length less than or equal to 256",
+		},
+		{
+			name:      "tag invalid value characters",
+			setupUser: true,
+			params:    url.Values{"Action": {"TagUser"}, "UserName": {"alice"}, "Tags.member.1.Key": {"k"}, "Tags.member.1.Value": {"bad*value"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   `1 validation error detected: Value at 'tags.1.member.value' failed to satisfy constraint: Member must satisfy regular expression pattern: [\p{L}\p{Z}\p{N}_.:/=+\-@]*`,
+		},
+		{
+			name:      "tag duplicate keys",
+			setupUser: true,
+			params: url.Values{
+				"Action": {"TagUser"}, "UserName": {"alice"},
+				"Tags.member.1.Key": {"env"}, "Tags.member.1.Value": {"a"},
+				"Tags.member.2.Key": {"ENV"}, "Tags.member.2.Value": {"b"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "InvalidInput",
+			message: "Duplicate tag keys found. Please note that Tag keys are case insensitive.",
+		},
+		{
+			name:      "tag too many tags",
+			setupUser: true,
+			params:    tooManyTags,
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'tags' failed to satisfy constraint: Member must have length less than or equal to 50",
+		},
+		{
+			name:      "tag invalid user name characters",
+			setupUser: true,
+			params:    url.Values{"Action": {"TagUser"}, "UserName": {"bad!name"}, "Tags.member.1.Key": {"k"}, "Tags.member.1.Value": {"v"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "The specified value for userName is invalid. It must contain only alphanumeric characters and/or the following: +=,.@_-",
+		},
+		{
+			name:      "tag user name too long",
+			setupUser: true,
+			params:    url.Values{"Action": {"TagUser"}, "UserName": {strings.Repeat("u", 129)}, "Tags.member.1.Key": {"k"}, "Tags.member.1.Value": {"v"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'userName' failed to satisfy constraint: Member must have length less than or equal to 128",
+		},
+		{
+			// A malformed tag is reported before the user is looked up.
+			name:      "tag non existing user with invalid tag",
+			setupUser: true,
+			params:    url.Values{"Action": {"TagUser"}, "UserName": {"nosuchuser"}, "Tags.member.1.Key": {"bad*key"}, "Tags.member.1.Value": {"v"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   `1 validation error detected: Value at 'tags.1.member.key' failed to satisfy constraint: Member must satisfy regular expression pattern: [\p{L}\p{Z}\p{N}_.:/=+\-@]+`,
+		},
+		{
+			name:      "tag non existing user",
+			setupUser: true,
+			params:    url.Values{"Action": {"TagUser"}, "UserName": {"nosuchuser"}, "Tags.member.1.Key": {"k"}, "Tags.member.1.Value": {"v"}},
+			status:    http.StatusNotFound,
+			code:      "NoSuchEntity",
+			message:   "The user with name nosuchuser cannot be found.",
+		},
+		{
+			name:    "untag missing user name",
+			params:  url.Values{"Action": {"UntagUser"}, "TagKeys.member.1": {"env"}},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'userName' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:      "untag missing tag keys",
+			setupUser: true,
+			params:    url.Values{"Action": {"UntagUser"}, "UserName": {"alice"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'tagKeys' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:      "untag empty key",
+			setupUser: true,
+			params:    url.Values{"Action": {"UntagUser"}, "UserName": {"alice"}, "TagKeys.member.1": {""}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   invalidTagKeysMessage,
+		},
+		{
+			name:      "untag key too long",
+			setupUser: true,
+			params:    url.Values{"Action": {"UntagUser"}, "UserName": {"alice"}, "TagKeys.member.1": {strings.Repeat("k", 129)}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   invalidTagKeysMessage,
+		},
+		{
+			name:      "untag invalid key characters",
+			setupUser: true,
+			params:    url.Values{"Action": {"UntagUser"}, "UserName": {"alice"}, "TagKeys.member.1": {"bad*key"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   invalidTagKeysMessage,
+		},
+		{
+			name:      "untag too many tag keys",
+			setupUser: true,
+			params:    tooManyTagKeys,
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'tagKeys' failed to satisfy constraint: Member must have length less than or equal to 50",
+		},
+		{
+			name:      "untag non existing user",
+			setupUser: true,
+			params:    url.Values{"Action": {"UntagUser"}, "UserName": {"nosuchuser"}, "TagKeys.member.1": {"env"}},
+			status:    http.StatusNotFound,
+			code:      "NoSuchEntity",
+			message:   "The user with name nosuchuser cannot be found.",
+		},
+		{
+			name:    "list missing user name",
+			params:  url.Values{"Action": {"ListUserTags"}},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'userName' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:      "list max items too small",
+			setupUser: true,
+			params:    url.Values{"Action": {"ListUserTags"}, "UserName": {"alice"}, "MaxItems": {"0"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'maxItems' failed to satisfy constraint: Member must have value greater than or equal to 1",
+		},
+		{
+			name:      "list max items too large",
+			setupUser: true,
+			params:    url.Values{"Action": {"ListUserTags"}, "UserName": {"alice"}, "MaxItems": {"1001"}},
+			status:    http.StatusBadRequest,
+			code:      "ValidationError",
+			message:   "1 validation error detected: Value at 'maxItems' failed to satisfy constraint: Member must have value less than or equal to 1000",
+		},
+		{
+			name:      "list max items not a number",
+			setupUser: true,
+			params:    url.Values{"Action": {"ListUserTags"}, "UserName": {"alice"}, "MaxItems": {"abc"}},
+			status:    http.StatusBadRequest,
+			code:      "MalformedInput",
+			message:   "",
+		},
+		{
+			name:      "list non existing user",
+			setupUser: true,
+			params:    url.Values{"Action": {"ListUserTags"}, "UserName": {"nosuchuser"}},
+			status:    http.StatusNotFound,
+			code:      "NoSuchEntity",
+			message:   "The user with name nosuchuser cannot be found.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newIAMControllerTestServer(t)
+			if tt.setupUser {
+				resp := doIAMAction(t, server, url.Values{"Action": {"CreateUser"}, "UserName": {"alice"}})
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("CreateUser status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+				}
+			}
+			resp := doIAMAction(t, server, tt.params)
+			requireIAMError(t, resp, tt.status, "Sender", tt.code, tt.message)
+		})
+	}
+}
+
+// invalidTagKeysMessage is UntagUser's single response to every malformed
+// TagKeys member, whatever the specific constraint that failed.
+const invalidTagKeysMessage = `1 validation error detected: Value at 'tagKeys' failed to satisfy constraint: Member must satisfy constraint: [Member must have length less than or equal to 128, Member must have length greater than or equal to 1, Member must satisfy regular expression pattern: [\p{L}\p{Z}\p{N}_.:/=+\-@]+, Member must not be null]`
+
+func tagUser(t *testing.T, server *IAMApiServer, userName string, tags map[string]string) {
+	t.Helper()
+
+	params := url.Values{"Action": {"TagUser"}, "UserName": {userName}}
+	i := 1
+	for key, value := range tags {
+		params.Set(fmt.Sprintf("Tags.member.%d.Key", i), key)
+		params.Set(fmt.Sprintf("Tags.member.%d.Value", i), value)
+		i++
+	}
+
+	resp := doIAMAction(t, server, params)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("TagUser status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+}
+
+func listUserTags(t *testing.T, server *IAMApiServer, userName string) iamtypes.ListUserTagsResult {
+	t.Helper()
+
+	resp := doIAMAction(t, server, url.Values{"Action": {"ListUserTags"}, "UserName": {userName}})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("ListUserTags status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+
+	var out struct {
+		Result iamtypes.ListUserTagsResult `xml:"ListUserTagsResult"`
+	}
+	unmarshalXML(t, readBody(t, resp), &out)
+	return out.Result
 }
 
 func TestIAMApiControllerUserPolicyLifecycle(t *testing.T) {
@@ -803,7 +1233,7 @@ func TestIAMApiControllerUserPolicyValidationErrors(t *testing.T) {
 			params:    url.Values{"Action": {"ListUserPolicies"}, "UserName": {"alice"}, "MaxItems": {"1001"}},
 			status:    http.StatusBadRequest,
 			code:      "ValidationError",
-			message:   "1 validation error detected: Value '1001' at 'maxItems' failed to satisfy constraint: Member must have value between 1 and 1000",
+			message:   "1 validation error detected: Value at 'maxItems' failed to satisfy constraint: Member must have value less than or equal to 1000",
 		},
 	}
 
@@ -1616,7 +2046,7 @@ func TestIAMApiControllerRolePolicyValidationErrors(t *testing.T) {
 			params:    url.Values{"Action": {"ListRolePolicies"}, "RoleName": {"my-role"}, "MaxItems": {"1001"}},
 			status:    http.StatusBadRequest,
 			code:      "ValidationError",
-			message:   "1 validation error detected: Value '1001' at 'maxItems' failed to satisfy constraint: Member must have value between 1 and 1000",
+			message:   "1 validation error detected: Value at 'maxItems' failed to satisfy constraint: Member must have value less than or equal to 1000",
 		},
 	}
 

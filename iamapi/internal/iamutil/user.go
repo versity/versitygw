@@ -29,18 +29,19 @@ import (
 )
 
 const (
-	DefaultAccountID = "000000000000"
-	DefaultUserPath  = "/"
-	DefaultMaxItems  = 100
-	MaxListItems     = 1000
-	MaxUserNameLen   = 64
-	MaxUserLookupLen = 128
-	MaxPathLen       = 512
-	userIDPrefix     = "AIDA"
-	userIDRandomLen  = 17
-	userIDAlphabet   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-	maxTagKeyLen     = 128
-	maxTagValLen     = 256
+	DefaultAccountID        = "000000000000"
+	DefaultUserPath         = "/"
+	DefaultMaxItems         = 100
+	MaxListItems            = 1000
+	MaxUserNameLen          = 64
+	MaxUserLookupLen        = 128
+	MaxPathLen              = 512
+	userIDPrefix            = "AIDA"
+	userIDRandomLen         = 17
+	userIDAlphabet          = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+	maxTagKeyLen            = 128
+	maxTagValLen            = 256
+	MaxTagMembersPerRequest = 50
 
 	roleIDPrefix    = "AROA"
 	roleIDRandomLen = 17
@@ -184,15 +185,25 @@ func ParseMaxItems(ctx fiber.Ctx, operation string) (int32, error) {
 	}
 
 	parsed, err := strconv.ParseInt(rawMaxItems, 10, 32)
-	if err != nil || parsed < 1 || parsed > MaxListItems {
-		debuglogger.Logf("invalid %s MaxItems value %q: parse_error=%v", operation, rawMaxItems, err)
-		return 0, iamerr.InvalidMaxItems(rawMaxItems)
+	if err != nil {
+		debuglogger.Logf("malformed %s MaxItems value %q: %v", operation, rawMaxItems, err)
+		return 0, iamerr.MalformedInput()
+	}
+	if parsed < 1 {
+		debuglogger.Logf("invalid %s MaxItems value %q", operation, rawMaxItems)
+		return 0, iamerr.GetAPIError(iamerr.ErrMaxItemsTooLow)
+	}
+	if parsed > MaxListItems {
+		debuglogger.Logf("invalid %s MaxItems value %q", operation, rawMaxItems)
+		return 0, iamerr.GetAPIError(iamerr.ErrMaxItemsTooHigh)
 	}
 
 	return int32(parsed), nil
 }
 
-// ParseTags reads IAM tag members from the request (up to 50), validates each, and returns the list.
+// ParseTags reads IAM tag members from the request (up to
+// MaxTagMembersPerRequest), validates each, and returns the list. Tag keys
+// are compared case-insensitively for duplicate detection, matching AWS.
 func ParseTags(ctx fiber.Ctx) ([]types.Tag, error) {
 	var tags []types.Tag
 	seen := map[string]struct{}{}
@@ -206,17 +217,17 @@ func ParseTags(ctx fiber.Ctx) ([]types.Tag, error) {
 		if !hasKey && !hasValue {
 			break
 		}
-		if len(tags) >= 50 {
-			debuglogger.Logf("IAM user tag count exceeds maximum: max=%d", 50)
+		if len(tags) >= MaxTagMembersPerRequest {
+			debuglogger.Logf("IAM tag count exceeds maximum: max=%d", MaxTagMembersPerRequest)
 			return nil, iamerr.GetAPIError(iamerr.ErrTooManyTags)
 		}
 		if !hasKey {
 			debuglogger.Logf("missing required IAM tag parameter: %s", keyName)
-			return nil, iamerr.MissingParameter(keyName)
+			return nil, iamerr.MissingTagKey(i)
 		}
 		if !hasValue {
 			debuglogger.Logf("missing required IAM tag parameter: %s", valueName)
-			return nil, iamerr.MissingParameter(valueName)
+			return nil, iamerr.MissingTagValue(i)
 		}
 		if err := validateTag(i, key, value); err != nil {
 			return nil, err
@@ -233,6 +244,33 @@ func ParseTags(ctx fiber.Ctx) ([]types.Tag, error) {
 	}
 
 	return tags, nil
+}
+
+// ParseTagKeys reads UntagUser's TagKeys members from the request (up to
+// MaxTagMembersPerRequest), validates each, and returns the list. Unlike
+// ParseTags, duplicate keys are accepted: removing the same key twice is a
+// no-op, so AWS has no reason to reject it.
+func ParseTagKeys(ctx fiber.Ctx) ([]string, error) {
+	var keys []string
+
+	for i := 1; ; i++ {
+		key, ok := RequestParam(ctx, fmt.Sprintf("TagKeys.member.%d", i))
+		if !ok {
+			break
+		}
+		if len(keys) >= MaxTagMembersPerRequest {
+			debuglogger.Logf("IAM tag key count exceeds maximum: max=%d", MaxTagMembersPerRequest)
+			return nil, iamerr.GetAPIError(iamerr.ErrTooManyTagKeys)
+		}
+		if key == "" || len(key) > maxTagKeyLen || !tagKeyPattern.MatchString(key) {
+			debuglogger.Logf("invalid IAM tag key: index=%d value=%q", i, key)
+			return nil, iamerr.GetAPIError(iamerr.ErrInvalidTagKeys)
+		}
+
+		keys = append(keys, key)
+	}
+
+	return keys, nil
 }
 
 // ValidateName checks that name (an IAM identity or policy name, e.g.
@@ -329,7 +367,11 @@ func validateTag(index int, key, value string) error {
 		debuglogger.Logf("IAM tag key exceeds maximum length: index=%d length=%d max=%d", index, len(key), maxTagKeyLen)
 		return iamerr.TagKeyTooLong(index)
 	}
-	if key == "" || !tagKeyPattern.MatchString(key) {
+	if key == "" {
+		debuglogger.Logf("empty IAM tag key: index=%d", index)
+		return iamerr.TagKeyTooShort(index)
+	}
+	if !tagKeyPattern.MatchString(key) {
 		debuglogger.Logf("invalid IAM tag key: index=%d value=%q", index, key)
 		return iamerr.InvalidTagKey(index)
 	}

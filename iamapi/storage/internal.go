@@ -347,6 +347,67 @@ func (s *InternalStore) UpdateUser(_ context.Context, input UpdateUserInput) (*t
 	return cloneUser(updated), nil
 }
 
+func (s *InternalStore) TagUser(_ context.Context, userName string, tags []types.Tag) error {
+	return s.updateUserTags(userName, func(user *types.User) error {
+		merged, err := mergeTags(user.Tags, tags)
+		if err != nil {
+			return err
+		}
+		user.Tags = merged
+		return nil
+	})
+}
+
+func (s *InternalStore) UntagUser(_ context.Context, userName string, tagKeys []string) error {
+	return s.updateUserTags(userName, func(user *types.User) error {
+		user.Tags = removeTags(user.Tags, tagKeys)
+		return nil
+	})
+}
+
+// updateUserTags applies mutate to userName's stored record and writes it
+// back under the store lock.
+func (s *InternalStore) updateUserTags(userName string, mutate func(*types.User) error) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		canonical, user, ok := lookupUser(conf, userName)
+		if !ok {
+			return nil, iamerr.NoSuchEntityUser(userName)
+		}
+		if err := mutate(&user); err != nil {
+			return nil, err
+		}
+
+		conf.Users[canonical] = user
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) ListUserTags(_ context.Context, input ListUserTagsInput) (*ListUserTagsOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	_, user, ok := lookupUser(conf, input.UserName)
+	if !ok {
+		return nil, iamerr.NoSuchEntityUser(input.UserName)
+	}
+
+	return paginateTags(user.Tags, input), nil
+}
+
 func (s *InternalStore) CreateAccessKey(_ context.Context, input CreateAccessKeyInput) (*types.AccessKey, error) {
 	s.Lock()
 	defer s.Unlock()

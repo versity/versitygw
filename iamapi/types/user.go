@@ -113,3 +113,44 @@ type Tag struct {
 	Key   string
 	Value string
 }
+
+// Tags is the XML wrapper for a tag list, rendering as
+// <Tags><member>…</member></Tags> — and, when empty, as <Tags/> rather
+// than being omitted, matching AWS's response for an untagged user.
+type Tags struct {
+	Members []Tag `xml:"member"`
+}
+
+type TagUserResponse struct {
+	XMLName          xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ TagUserResponse"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *TagUserResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type UntagUserResponse struct {
+	XMLName          xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ UntagUserResponse"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *UntagUserResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type ListUserTagsResponse struct {
+	XMLName          xml.Name           `xml:"https://iam.amazonaws.com/doc/2010-05-08/ ListUserTagsResponse"`
+	Result           ListUserTagsResult `xml:"ListUserTagsResult"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *ListUserTagsResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type ListUserTagsResult struct {
+	Tags        Tags
+	IsTruncated bool
+	Marker      string `xml:",omitempty"`
+}

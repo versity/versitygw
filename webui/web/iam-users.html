@@ -211,7 +211,7 @@ under the License.
                 <button type="button" onclick="iamAddTagRow('create-user-tags')" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Add Tag</button>
               </div>
               <div id="create-user-tags" class="space-y-2"></div>
-              <p class="mt-2 text-xs text-charcoal-300">Tags are set at creation only. This API has no tag-update action, so they are read-only afterwards.</p>
+              <p class="mt-2 text-xs text-charcoal-300">Optional. Tags can also be added, changed and removed later from the user’s Manage view.</p>
             </div>
             <details class="group">
               <summary class="flex items-center gap-2 cursor-pointer text-sm font-medium text-charcoal-400 hover:text-charcoal transition-colors list-none">
@@ -275,11 +275,19 @@ under the License.
                   <dt class="text-charcoal-300">Created</dt>
                   <dd id="detail-created" class="mt-1 text-charcoal">-</dd>
                 </div>
-                <div class="sm:col-span-2">
-                  <dt class="text-charcoal-300">Tags</dt>
-                  <dd id="detail-tags" class="mt-1 flex flex-wrap gap-2">-</dd>
-                </div>
               </dl>
+            </div>
+
+            <!-- Tags -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <h3 class="text-sm font-semibold text-charcoal">Tags</h3>
+                  <p id="tag-quota-note" class="text-xs text-charcoal-300 mt-1">Key/value labels, also readable from policy conditions.</p>
+                </div>
+                <button id="edit-tags-btn" onclick="openUserTagEditor()" class="px-3 py-1.5 text-xs border border-accent text-accent hover:bg-accent-50 font-medium rounded-lg transition-colors">Edit Tags</button>
+              </div>
+              <div id="user-tags" class="border border-gray-100 rounded-lg p-4 flex flex-wrap gap-2"></div>
             </div>
 
             <!-- Access Keys -->
@@ -451,6 +459,7 @@ under the License.
     let nextMarker = null;
     let currentUser = null;      // the user open in the manage modal
     let policySizes = {};        // policyName -> byte length, for the aggregate quota
+    let currentTags = [];        // the open user's tags, as [{Key, Value}]
     let activeKeyCount = 0;
     let userToDelete = null;
     // The generated secret lives here and nowhere else: never sessionStorage,
@@ -642,6 +651,7 @@ under the License.
         }
       }
       policySizes = {};
+      currentTags = [];
       activeKeyCount = 0;
 
       document.getElementById('manage-user-title').textContent = userName;
@@ -650,23 +660,73 @@ under the License.
       document.getElementById('detail-userid').textContent = currentUser.UserId || '-';
       document.getElementById('detail-path').textContent = currentUser.Path || '/';
       document.getElementById('detail-created').textContent = iamFormatDate(currentUser.CreateDate);
-      renderTags(currentUser.Tags);
 
       openModal('manage-user-modal');
+      loadUserTags();
       loadAccessKeys();
       loadUserPolicies();
     }
 
-    function renderTags(tags) {
-      const el = document.getElementById('detail-tags');
-      const list = Array.isArray(tags) ? tags : (tags ? [tags] : []);
-      if (list.length === 0) {
-        el.innerHTML = '<span class="text-charcoal-300">-</span>';
-        return;
+    // ============================================
+    // Manage: tags
+    // ============================================
+
+    /**
+     * ListUserTags is its own permission, so this loads the tags rather than
+     * reusing whatever GetUser happened to return — and a denial disables
+     * editing in place instead of failing the whole modal.
+     */
+    async function loadUserTags() {
+      const el = document.getElementById('user-tags');
+      el.innerHTML = '<span class="text-sm text-charcoal-300">Loading...</span>';
+      try {
+        currentTags = [];
+        let marker = null;
+        do {
+          const page = await api.iamListUserTags(currentUser.UserName, { marker: marker || undefined });
+          currentTags = currentTags.concat(page.tags);
+          marker = page.isTruncated ? page.marker : null;
+        } while (marker);
+
+        el.innerHTML = iamTagChips(currentTags);
+        setEditTagsEnabled(true);
+        updateTagQuotaNote();
+      } catch (error) {
+        console.error('Error loading tags:', error);
+        setEditTagsEnabled(false);
+        el.innerHTML = iamIsAccessDenied(error)
+          ? '<span class="text-sm text-charcoal-300">You don\u2019t have permission to list this user\u2019s tags</span>'
+          : `<span class="text-sm text-charcoal-300">Error loading tags: ${escapeHtml(iamShortError(error))}</span>`;
       }
-      el.innerHTML = list.map(tag =>
-        `<span class="px-2 py-0.5 bg-gray-100 text-charcoal text-xs font-mono rounded">${escapeHtml(tag.Key)}=${escapeHtml(tag.Value || '')}</span>`
-      ).join('');
+    }
+
+    function setEditTagsEnabled(enabled) {
+      const button = document.getElementById('edit-tags-btn');
+      button.disabled = !enabled;
+      button.className = enabled
+        ? 'px-3 py-1.5 text-xs border border-accent text-accent hover:bg-accent-50 font-medium rounded-lg transition-colors'
+        : 'px-3 py-1.5 text-xs border border-gray-200 text-charcoal-300 rounded-lg opacity-50 cursor-not-allowed';
+    }
+
+    function updateTagQuotaNote() {
+      document.getElementById('tag-quota-note').textContent =
+        `${currentTags.length} / ${IAM_LIMITS.tagsPerResource} tags. Also readable from policy conditions.`;
+    }
+
+    function openUserTagEditor() {
+      iamTagEditor.open({
+        title: 'Edit Tags',
+        subtitle: `User ${currentUser.UserName}`,
+        tags: currentTags,
+        onSave: async ({ set, remove }) => {
+          // Removals first: they free room under the 50-tag cap for whatever
+          // this same edit is adding.
+          if (remove.length) await api.iamUntagUser(currentUser.UserName, remove);
+          if (set.length) await api.iamTagUser(currentUser.UserName, set);
+          showToast('Tags updated successfully', 'success');
+          loadUserTags();
+        }
+      });
     }
 
     async function loadAccessKeys() {

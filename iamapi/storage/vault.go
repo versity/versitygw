@@ -643,6 +643,35 @@ func (s *VaultStore) withUserCAS(ctx context.Context, username string, mutate fu
 	return nil, iamerr.ConcurrentModification()
 }
 
+func (s *VaultStore) TagUser(ctx context.Context, userName string, tags []types.Tag) error {
+	_, err := s.withUserCAS(ctx, userName, func(user *types.User) error {
+		merged, err := mergeTags(user.Tags, tags)
+		if err != nil {
+			return err
+		}
+		user.Tags = merged
+		return nil
+	})
+	return err
+}
+
+func (s *VaultStore) UntagUser(ctx context.Context, userName string, tagKeys []string) error {
+	_, err := s.withUserCAS(ctx, userName, func(user *types.User) error {
+		user.Tags = removeTags(user.Tags, tagKeys)
+		return nil
+	})
+	return err
+}
+
+func (s *VaultStore) ListUserTags(ctx context.Context, input ListUserTagsInput) (*ListUserTagsOutput, error) {
+	user, err := s.GetUser(ctx, input.UserName)
+	if err != nil {
+		return nil, err
+	}
+
+	return paginateTags(user.Tags, input), nil
+}
+
 func (s *VaultStore) CreateAccessKey(ctx context.Context, input CreateAccessKeyInput) (*types.AccessKey, error) {
 	var created types.AccessKey
 	if _, err := s.withUserCAS(ctx, input.UserName, func(user *types.User) error {

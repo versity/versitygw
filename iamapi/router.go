@@ -65,6 +65,10 @@ func (r *IAMApiRouter) Init() {
 		"GetUser":    r.Ctrl.GetUser,
 		"ListUsers":  r.Ctrl.ListUsers,
 		"UpdateUser": r.Ctrl.UpdateUser,
+		// User Tagging
+		"TagUser":      r.Ctrl.TagUser,
+		"UntagUser":    r.Ctrl.UntagUser,
+		"ListUserTags": r.Ctrl.ListUserTags,
 		// User Access Key CRUD
 		"CreateAccessKey":      r.Ctrl.CreateAccessKey,
 		"UpdateAccessKey":      r.Ctrl.UpdateAccessKey,
