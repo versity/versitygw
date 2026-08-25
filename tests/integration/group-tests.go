@@ -1192,6 +1192,51 @@ func TestIAMUpdateUser(ts *TestState) {
 	ts.Run(IAMUpdateUser_success)
 }
 
+func TestIAMTagUser(ts *TestState) {
+	ts.Run(IAMTagUser_missing_user_name)
+	ts.Run(IAMTagUser_invalid_user_name)
+	ts.Run(IAMTagUser_user_name_too_long)
+	ts.Run(IAMTagUser_missing_tags)
+	ts.Run(IAMTagUser_missing_tag_key)
+	ts.Run(IAMTagUser_missing_tag_value)
+	ts.Run(IAMTagUser_empty_tag_key)
+	ts.Run(IAMTagUser_tag_key_too_long)
+	ts.Run(IAMTagUser_invalid_tag_key)
+	ts.Run(IAMTagUser_tag_value_too_long)
+	ts.Run(IAMTagUser_invalid_tag_value)
+	ts.Run(IAMTagUser_duplicate_tag_keys)
+	ts.Run(IAMTagUser_too_many_tags)
+	ts.Run(IAMTagUser_non_existing_user)
+	ts.Run(IAMTagUser_tag_limit_exceeded)
+	ts.Run(IAMTagUser_success)
+	ts.Run(IAMTagUser_overwrites_existing_tag)
+}
+
+func TestIAMUntagUser(ts *TestState) {
+	ts.Run(IAMUntagUser_missing_user_name)
+	ts.Run(IAMUntagUser_invalid_user_name)
+	ts.Run(IAMUntagUser_user_name_too_long)
+	ts.Run(IAMUntagUser_missing_tag_keys)
+	ts.Run(IAMUntagUser_invalid_tag_key)
+	ts.Run(IAMUntagUser_too_many_tag_keys)
+	ts.Run(IAMUntagUser_non_existing_user)
+	ts.Run(IAMUntagUser_success)
+	ts.Run(IAMUntagUser_removal_is_idempotent)
+	ts.Run(IAMUntagUser_case_insensitive_key)
+}
+
+func TestIAMListUserTags(ts *TestState) {
+	ts.Run(IAMListUserTags_missing_user_name)
+	ts.Run(IAMListUserTags_invalid_user_name)
+	ts.Run(IAMListUserTags_user_name_too_long)
+	ts.Run(IAMListUserTags_invalid_max_items)
+	ts.Run(IAMListUserTags_invalid_max_items_format)
+	ts.Run(IAMListUserTags_non_existing_user)
+	ts.Run(IAMListUserTags_empty_result)
+	ts.Run(IAMListUserTags_success)
+	ts.Run(IAMListUserTags_pagination)
+}
+
 func TestIAMCreateAccessKey(ts *TestState) {
 	ts.Run(IAMCreateAccessKey_missing_user_name)
 	ts.Run(IAMCreateAccessKey_invalid_user_name)
@@ -1633,6 +1678,9 @@ func TestIAM(ts *TestState) {
 	TestIAMListUsers(ts)
 	TestIAMDeleteUser(ts)
 	TestIAMUpdateUser(ts)
+	TestIAMTagUser(ts)
+	TestIAMUntagUser(ts)
+	TestIAMListUserTags(ts)
 	TestIAMCreateAccessKey(ts)
 	TestIAMUpdateAccessKey(ts)
 	TestIAMDeleteAccessKey(ts)
@@ -2122,6 +2170,42 @@ func GetIntTests() IntTests {
 		"IAMUpdateUser_long_new_path":                                                      IAMUpdateUser_long_new_path,
 		"IAMUpdateUser_new_user_name_already_exists":                                       IAMUpdateUser_new_user_name_already_exists,
 		"IAMUpdateUser_success":                                                            IAMUpdateUser_success,
+		"IAMTagUser_missing_user_name":                                                     IAMTagUser_missing_user_name,
+		"IAMTagUser_invalid_user_name":                                                     IAMTagUser_invalid_user_name,
+		"IAMTagUser_user_name_too_long":                                                    IAMTagUser_user_name_too_long,
+		"IAMTagUser_missing_tags":                                                          IAMTagUser_missing_tags,
+		"IAMTagUser_missing_tag_key":                                                       IAMTagUser_missing_tag_key,
+		"IAMTagUser_missing_tag_value":                                                     IAMTagUser_missing_tag_value,
+		"IAMTagUser_empty_tag_key":                                                         IAMTagUser_empty_tag_key,
+		"IAMTagUser_tag_key_too_long":                                                      IAMTagUser_tag_key_too_long,
+		"IAMTagUser_invalid_tag_key":                                                       IAMTagUser_invalid_tag_key,
+		"IAMTagUser_tag_value_too_long":                                                    IAMTagUser_tag_value_too_long,
+		"IAMTagUser_invalid_tag_value":                                                     IAMTagUser_invalid_tag_value,
+		"IAMTagUser_duplicate_tag_keys":                                                    IAMTagUser_duplicate_tag_keys,
+		"IAMTagUser_too_many_tags":                                                         IAMTagUser_too_many_tags,
+		"IAMTagUser_non_existing_user":                                                     IAMTagUser_non_existing_user,
+		"IAMTagUser_tag_limit_exceeded":                                                    IAMTagUser_tag_limit_exceeded,
+		"IAMTagUser_success":                                                               IAMTagUser_success,
+		"IAMTagUser_overwrites_existing_tag":                                               IAMTagUser_overwrites_existing_tag,
+		"IAMUntagUser_missing_user_name":                                                   IAMUntagUser_missing_user_name,
+		"IAMUntagUser_invalid_user_name":                                                   IAMUntagUser_invalid_user_name,
+		"IAMUntagUser_user_name_too_long":                                                  IAMUntagUser_user_name_too_long,
+		"IAMUntagUser_missing_tag_keys":                                                    IAMUntagUser_missing_tag_keys,
+		"IAMUntagUser_invalid_tag_key":                                                     IAMUntagUser_invalid_tag_key,
+		"IAMUntagUser_too_many_tag_keys":                                                   IAMUntagUser_too_many_tag_keys,
+		"IAMUntagUser_non_existing_user":                                                   IAMUntagUser_non_existing_user,
+		"IAMUntagUser_success":                                                             IAMUntagUser_success,
+		"IAMUntagUser_removal_is_idempotent":                                               IAMUntagUser_removal_is_idempotent,
+		"IAMUntagUser_case_insensitive_key":                                                IAMUntagUser_case_insensitive_key,
+		"IAMListUserTags_missing_user_name":                                                IAMListUserTags_missing_user_name,
+		"IAMListUserTags_invalid_user_name":                                                IAMListUserTags_invalid_user_name,
+		"IAMListUserTags_user_name_too_long":                                               IAMListUserTags_user_name_too_long,
+		"IAMListUserTags_invalid_max_items":                                                IAMListUserTags_invalid_max_items,
+		"IAMListUserTags_invalid_max_items_format":                                         IAMListUserTags_invalid_max_items_format,
+		"IAMListUserTags_non_existing_user":                                                IAMListUserTags_non_existing_user,
+		"IAMListUserTags_empty_result":                                                     IAMListUserTags_empty_result,
+		"IAMListUserTags_success":                                                          IAMListUserTags_success,
+		"IAMListUserTags_pagination":                                                       IAMListUserTags_pagination,
 		"IAMCreateAccessKey_missing_user_name":                                             IAMCreateAccessKey_missing_user_name,
 		"IAMCreateAccessKey_invalid_user_name":                                             IAMCreateAccessKey_invalid_user_name,
 		"IAMCreateAccessKey_long_user_name":                                                IAMCreateAccessKey_long_user_name,

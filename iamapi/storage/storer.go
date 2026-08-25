@@ -16,166 +16,12 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/iamapi/types"
 )
-
-// MaxAccessKeysPerUser is the maximum number of access keys a single IAM
-// user may hold at once, matching the AWS IAM quota.
-const MaxAccessKeysPerUser = 2
-
-// MaxInlinePolicyBytesPerUser is the maximum aggregate size, in bytes, of
-// all of a single IAM user's inline policy documents combined
-const MaxInlinePolicyBytesPerUser = 2048
-
-// MaxInlinePolicyBytesPerRole is the maximum aggregate size, in bytes, of
-// all of a single IAM role's inline policy documents combined
-const MaxInlinePolicyBytesPerRole = 10240
-
-// MaxClientIDsPerOIDCProvider is the maximum number of client IDs a single
-// OIDC provider may hold at once
-const MaxClientIDsPerOIDCProvider = 100
-
-// MaxOIDCProvidersPerAccount is the maximum number of OIDC providers a
-// single account may hold
-const MaxOIDCProvidersPerAccount = 100
-
-// MaxActiveSessionsPerRole bounds how many currently-unexpired
-// AssumeRoleWithWebIdentity sessions a single role may have at once.
-// AWS manages and rate-limits STS as a hosted service with no
-// customer-visible equivalent quota to match for fidelity; this exists
-// purely as local resource protection, since without it a single valid
-// federated token can be replayed indefinitely to grow the session
-// store — every InternalStore rewrite, or Vault KV path/metadata entry —
-// without bound. Chosen generously enough to not constrain any legitimate
-// workload's concurrent session count.
-//
-// A var, not a const, so tests can temporarily lower it rather than paying
-// the cost of actually creating 1000 sessions to exercise the cap.
-var MaxActiveSessionsPerRole = 1000
-
-var (
-	ErrUserIDAlreadyExists      = errors.New("iamapi: user id already exists")
-	ErrAccessKeyIDAlreadyExists = errors.New("iamapi: access key id already exists")
-	ErrRoleIDAlreadyExists      = errors.New("iamapi: role id already exists")
-	// ErrSessionNotFound is returned by GetSession when accessKeyID names no
-	// session, or names one whose Expiration has already passed.
-	ErrSessionNotFound = errors.New("iamapi: session not found")
-)
-
-type ListUsersInput struct {
-	PathPrefix string
-	Marker     string
-	MaxItems   int32
-}
-
-type ListUsersOutput struct {
-	Users       []types.User
-	IsTruncated bool
-	Marker      string
-}
-
-type UpdateUserInput struct {
-	UserName    string
-	NewPath     string
-	NewUserName string
-	NewArn      string
-}
-
-type CreateAccessKeyInput struct {
-	UserName        string
-	AccessKeyID     string
-	SecretAccessKey string
-	Status          string
-	CreateDate      time.Time
-}
-
-type UpdateAccessKeyInput struct {
-	UserName    string
-	AccessKeyID string
-	Status      string
-}
-
-type ListAccessKeysInput struct {
-	UserName string
-	Marker   string
-	MaxItems int32
-}
-
-type ListAccessKeysOutput struct {
-	AccessKeys  []types.AccessKeyMetadata
-	IsTruncated bool
-	Marker      string
-}
-
-type GetAccessKeyLastUsedOutput struct {
-	UserName     string
-	LastUsedDate time.Time
-	ServiceName  string
-	Region       string
-}
-
-type PutUserPolicyInput struct {
-	UserName       string
-	PolicyName     string
-	PolicyDocument string
-}
-
-type ListUserPoliciesInput struct {
-	UserName string
-	Marker   string
-	MaxItems int32
-}
-
-type ListUserPoliciesOutput struct {
-	PolicyNames []string
-	IsTruncated bool
-	Marker      string
-}
-
-type ListRolesInput struct {
-	PathPrefix string
-	Marker     string
-	MaxItems   int32
-}
-
-type ListRolesOutput struct {
-	Roles       []types.Role
-	IsTruncated bool
-	Marker      string
-}
-
-type UpdateAssumeRolePolicyInput struct {
-	RoleName       string
-	PolicyDocument string
-}
-
-type PutRolePolicyInput struct {
-	RoleName       string
-	PolicyName     string
-	PolicyDocument string
-}
-
-type ListRolePoliciesInput struct {
-	RoleName string
-	Marker   string
-	MaxItems int32
-}
-
-type ListRolePoliciesOutput struct {
-	PolicyNames []string
-	IsTruncated bool
-	Marker      string
-}
-
-type ListOIDCProvidersOutput struct {
-	Providers []types.OpenIDConnectProviderListEntry
-}
 
 // Storer is the IAM API storage backend contract.
 type Storer interface {
@@ -185,6 +31,10 @@ type Storer interface {
 	GetUserByAccessKeyID(ctx context.Context, accessKeyID string) (*types.User, error)
 	ListUsers(ctx context.Context, input ListUsersInput) (*ListUsersOutput, error)
 	UpdateUser(ctx context.Context, input UpdateUserInput) (*types.User, error)
+
+	TagUser(ctx context.Context, userName string, tags []types.Tag) error
+	UntagUser(ctx context.Context, userName string, tagKeys []string) error
+	ListUserTags(ctx context.Context, input ListUserTagsInput) (*ListUserTagsOutput, error)
 
 	CreateAccessKey(ctx context.Context, input CreateAccessKeyInput) (*types.AccessKey, error)
 	UpdateAccessKey(ctx context.Context, input UpdateAccessKeyInput) error
@@ -225,15 +75,6 @@ type Storer interface {
 
 	CreateSession(ctx context.Context, session types.Session) (*types.Session, error)
 	GetSession(ctx context.Context, accessKeyID string) (*types.Session, error)
-}
-
-func unwrapAPIError(err error) error {
-	var apiErr iamerr.APIError
-	if errors.As(err, &apiErr) {
-		return apiErr
-	}
-
-	return err
 }
 
 type Config struct {

@@ -67,7 +67,7 @@ func IAMListUserPolicies_invalid_max_items(s *S3Conf) error {
 				_, err := listIAMUserPolicies(client, &iam.ListUserPoliciesInput{UserName: &userName, MaxItems: aws.Int32(1001)})
 				return err
 			}(),
-			iamerr.InvalidMaxItems("1001"),
+			iamerr.GetAPIError(iamerr.ErrMaxItemsTooHigh),
 		)
 
 		deleteErr := deleteIAMUser(client, userName)

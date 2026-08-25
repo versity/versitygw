@@ -2493,6 +2493,36 @@ ${tagsXml}
     await this.iamRequest('DeleteUser', { UserName: userName });
   }
 
+  // ---- User tags ----
+
+  /**
+   * Add or replace tags on a user. A key already present is overwritten
+   * rather than duplicated, so this doubles as the edit path.
+   */
+  async iamTagUser(userName, tags) {
+    const params = { UserName: userName };
+    this.flattenTags(params, tags);
+    await this.iamRequest('TagUser', params);
+  }
+
+  async iamUntagUser(userName, tagKeys) {
+    const params = { UserName: userName };
+    this.flattenMemberList(params, 'TagKeys', tagKeys);
+    await this.iamRequest('UntagUser', params);
+  }
+
+  async iamListUserTags(userName, options = {}) {
+    const params = { UserName: userName };
+    if (options.marker) params.Marker = options.marker;
+    if (options.maxItems) params.MaxItems = options.maxItems;
+    const result = await this.iamRequest('ListUserTags', params);
+    return {
+      tags: iamAsArray(result.Tags),
+      isTruncated: result.IsTruncated === 'true',
+      marker: result.Marker || null
+    };
+  }
+
   // ---- Access keys ----
 
   /**
