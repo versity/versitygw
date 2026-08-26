@@ -1,0 +1,18 @@
+{{- $iamServer := .Values.iamServer | default dict -}}
+{{- if and ($iamServer.enabled | default false) (eq .Values.iamServer.storage.type "internal") .Values.iamServer.persistence.enabled .Values.iamServer.persistence.create -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "versitygw.iamServerPvcName" . }}
+  labels:
+    {{- include "versitygw.iamServerLabels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.iamServer.persistence.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.iamServer.persistence.size }}
+  {{- if .Values.iamServer.persistence.storageClassName }}
+  storageClassName: {{ .Values.iamServer.persistence.storageClassName | quote }}
+  {{- end }}
+{{- end }}

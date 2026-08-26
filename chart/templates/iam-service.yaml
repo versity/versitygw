@@ -1,0 +1,36 @@
+{{- $iamServer := .Values.iamServer | default dict -}}
+{{- if ($iamServer.enabled | default false) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "versitygw.iamServerFullname" . }}
+  labels:
+    {{- include "versitygw.iamServerLabels" . | nindent 4 }}
+spec:
+  type: {{ .Values.iamServer.service.type }}
+  ports:
+    - port: {{ .Values.iamServer.port }}
+      targetPort: iam-api
+      protocol: TCP
+      name: iam-api
+  selector:
+    {{- include "versitygw.iamServerSelectorLabels" . | nindent 4 }}
+{{- if .Values.iamServer.private.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "versitygw.iamServerPrivateServiceFullname" . }}
+  labels:
+    {{- include "versitygw.iamServerLabels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.iamServer.private.port }}
+      targetPort: iam-private
+      protocol: TCP
+      name: iam-private
+  selector:
+    {{- include "versitygw.iamServerSelectorLabels" . | nindent 4 }}
+{{- end }}
+{{- end }}

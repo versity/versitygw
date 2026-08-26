@@ -1,0 +1,300 @@
+{{- $iamServer := .Values.iamServer | default dict -}}
+{{- if ($iamServer.enabled | default false) }}
+{{- $iamServerAuth := .Values.iamServer.auth | default dict -}}
+{{- if not (or (eq .Values.iamServer.storage.type "internal") (eq .Values.iamServer.storage.type "vault")) }}
+  {{- fail "iamServer.storage.type must be either internal or vault" }}
+{{- end }}
+{{- if and (gt (int .Values.iamServer.replicaCount) 1) (eq .Values.iamServer.storage.type "internal") }}
+  {{- fail "iamServer.replicaCount > 1 requires iamServer.storage.type=vault; the internal file store does not coordinate concurrent writers" }}
+{{- end }}
+{{- if and (eq .Values.iamServer.storage.type "internal") .Values.iamServer.persistence.enabled (not .Values.iamServer.persistence.create) (not .Values.iamServer.persistence.claimName) }}
+  {{- fail "iamServer.persistence.claimName is required when iamServer.persistence.create is false" }}
+{{- end }}
+{{- if and (eq .Values.iamServer.storage.type "vault") (not .Values.iamServer.storage.vault.endpointUrl) }}
+  {{- fail "iamServer.storage.vault.endpointUrl is required when iamServer.storage.type=vault" }}
+{{- end }}
+{{- if and .Values.iamServer.private.enabled (not .Values.iamServer.private.certificate.create) (not .Values.iamServer.private.certificate.existingSecret) }}
+  {{- fail "iamServer.private.enabled requires either iamServer.private.certificate.create=true or iamServer.private.certificate.existingSecret" }}
+{{- end }}
+{{- if and .Values.iamServer.private.enabled .Values.iamServer.private.certificate.create (not .Values.iamServer.private.certificate.existingSecret) (not .Values.iamServer.private.certificate.issuerRef.name) }}
+  {{- fail "iamServer.private.certificate.issuerRef.name is required when creating the IAM server certificate" }}
+{{- end }}
+{{- if and .Values.iamServer.private.enabled (eq (int .Values.iamServer.private.port) (int .Values.iamServer.port)) }}
+  {{- fail "iamServer.private.port must differ from iamServer.port" }}
+{{- end }}
+{{- if and .Values.iamServer.tls.enabled (not .Values.iamServer.tls.secretName) }}
+  {{- fail "iamServer.tls.secretName is required when iamServer.tls.enabled=true" }}
+{{- end }}
+{{- if not (or (eq .Values.iamServer.logLevel "silent") (eq .Values.iamServer.logLevel "debug") (eq .Values.iamServer.logLevel "unsafe")) }}
+  {{- fail "iamServer.logLevel must be one of silent, debug, or unsafe" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "versitygw.iamServerFullname" . }}
+  labels:
+    {{- include "versitygw.iamServerLabels" . | nindent 4 }}
+  {{- with .Values.iamServer.deploymentAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.iamServer.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "versitygw.iamServerSelectorLabels" . | nindent 6 }}
+  {{- if eq .Values.iamServer.storage.type "internal" }}
+  # Avoid overlapping file-store writers and ReadWriteOnce multi-attach errors
+  # while a new ReplicaSet replaces the old one.
+  strategy:
+    type: Recreate
+  {{- else }}
+  {{- with .Values.iamServer.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  template:
+    metadata:
+      annotations:
+        {{- if and (not $iamServerAuth.existingSecret) (not .Values.auth.existingSecret) }}
+        checksum/credentials: {{ cat .Release.Name .Values.auth.accessKey .Values.auth.secretKey | sha256sum | trunc 12 }}
+        {{- end }}
+      {{- with .Values.iamServer.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "versitygw.iamServerSelectorLabels" . | nindent 8 }}
+        {{- with .Values.iamServer.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "versitygw.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: iam-server
+          image: "{{ .Values.iamServer.image.repository | default .Values.image.repository }}:{{ .Values.iamServer.image.tag | default .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.iamServer.image.pullPolicy | default .Values.image.pullPolicy }}
+          env:
+            - name: VGW_BACKEND
+              value: "iam"
+            # Root credentials -- sourced from the same Kubernetes Secret as the gateway
+            - name: ROOT_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "versitygw.iamServerCredentialsSecretName" . }}
+                  key: rootAccessKeyId
+            - name: ROOT_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "versitygw.iamServerCredentialsSecretName" . }}
+                  key: rootSecretAccessKey
+            - name: VGW_PORT
+              value: ":{{ .Values.iamServer.port }}"
+            - name: VGW_HEALTH
+              value: "/_/health"
+            - name: VGW_MAX_CONNECTIONS
+              value: {{ .Values.iamServer.maxConnections | quote }}
+            - name: VGW_MAX_REQUESTS
+              value: {{ .Values.iamServer.maxRequests | quote }}
+            {{- if .Values.iamServer.quiet }}
+            - name: VGW_QUIET
+              value: "true"
+            {{- end }}
+            {{- if ne .Values.iamServer.logLevel "silent" }}
+            - name: VGW_LOG_LEVEL
+              value: {{ .Values.iamServer.logLevel | quote }}
+            {{- end }}
+            {{- if .Values.iamServer.disableOidcThumbprintAutofetch }}
+            - name: VGW_IAM_DISABLE_OIDC_THUMBPRINT_AUTOFETCH
+              value: "true"
+            {{- end }}
+            {{- if .Values.iamServer.tls.enabled }}
+            - name: VGW_CERT
+              value: /certs/tls.crt
+            - name: VGW_KEY
+              value: /certs/tls.key
+            {{- end }}
+            # Storage backend
+            {{- if eq .Values.iamServer.storage.type "internal" }}
+            - name: VGW_IAM_DIR
+              value: "/mnt/iam"
+            {{- else if eq .Values.iamServer.storage.type "vault" }}
+            - name: VGW_IAM_VAULT_ENDPOINT_URL
+              value: {{ .Values.iamServer.storage.vault.endpointUrl | quote }}
+            {{- if .Values.iamServer.storage.vault.namespace }}
+            - name: VGW_IAM_VAULT_NAMESPACE
+              value: {{ .Values.iamServer.storage.vault.namespace | quote }}
+            {{- end }}
+            {{- if .Values.iamServer.storage.vault.secretStoragePath }}
+            - name: VGW_IAM_VAULT_SECRET_STORAGE_PATH
+              value: {{ .Values.iamServer.storage.vault.secretStoragePath | quote }}
+            {{- end }}
+            {{- if .Values.iamServer.storage.vault.secretStorageNamespace }}
+            - name: VGW_IAM_VAULT_SECRET_STORAGE_NAMESPACE
+              value: {{ .Values.iamServer.storage.vault.secretStorageNamespace | quote }}
+            {{- end }}
+            {{- if .Values.iamServer.storage.vault.authMethod }}
+            - name: VGW_IAM_VAULT_AUTH_METHOD
+              value: {{ .Values.iamServer.storage.vault.authMethod | quote }}
+            {{- end }}
+            {{- if .Values.iamServer.storage.vault.authNamespace }}
+            - name: VGW_IAM_VAULT_AUTH_NAMESPACE
+              value: {{ .Values.iamServer.storage.vault.authNamespace | quote }}
+            {{- end }}
+            {{- if .Values.iamServer.storage.vault.mountPath }}
+            - name: VGW_IAM_VAULT_MOUNT_PATH
+              value: {{ .Values.iamServer.storage.vault.mountPath | quote }}
+            {{- end }}
+            {{- if .Values.iamServer.storage.vault.roleId }}
+            - name: VGW_IAM_VAULT_ROLE_ID
+              value: {{ .Values.iamServer.storage.vault.roleId | quote }}
+            {{- end }}
+            {{- if .Values.iamServer.storage.vault.existingSecret }}
+            - name: VGW_IAM_VAULT_ROLE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.iamServer.storage.vault.existingSecret }}
+                  key: roleSecret
+                  optional: true
+            - name: VGW_IAM_VAULT_ROOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.iamServer.storage.vault.existingSecret }}
+                  key: rootToken
+                  optional: true
+            {{- end }}
+            {{- if .Values.iamServer.storage.vault.tlsExistingSecret }}
+            {{- if not .Values.iamServer.storage.vault.serverCert }}
+            - name: VGW_IAM_VAULT_SERVER_CERT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.iamServer.storage.vault.tlsExistingSecret }}
+                  key: serverCert
+                  optional: true
+            {{- end }}
+            {{- if not .Values.iamServer.storage.vault.clientCert }}
+            - name: VGW_IAM_VAULT_CLIENT_CERT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.iamServer.storage.vault.tlsExistingSecret }}
+                  key: clientCert
+                  optional: true
+            {{- end }}
+            {{- if not .Values.iamServer.storage.vault.clientCertKey }}
+            - name: VGW_IAM_VAULT_CLIENT_CERT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.iamServer.storage.vault.tlsExistingSecret }}
+                  key: clientCertKey
+                  optional: true
+            {{- end }}
+            {{- end }}
+            {{- if .Values.iamServer.storage.vault.serverCert }}
+            - name: VGW_IAM_VAULT_SERVER_CERT
+              value: |
+                {{- .Values.iamServer.storage.vault.serverCert | nindent 16 }}
+            {{- end }}
+            {{- if .Values.iamServer.storage.vault.clientCert }}
+            - name: VGW_IAM_VAULT_CLIENT_CERT
+              value: |
+                {{- .Values.iamServer.storage.vault.clientCert | nindent 16 }}
+            {{- end }}
+            {{- if .Values.iamServer.storage.vault.clientCertKey }}
+            - name: VGW_IAM_VAULT_CLIENT_CERT_KEY
+              value: |
+                {{- .Values.iamServer.storage.vault.clientCertKey | nindent 16 }}
+            {{- end }}
+            {{- end }}
+            # Private mTLS endpoint
+            {{- if .Values.iamServer.private.enabled }}
+            - name: VGW_IAM_PRIVATE_PORTS
+              value: ":{{ .Values.iamServer.private.port }}"
+            - name: VGW_IAM_PRIVATE_CERT
+              value: /iam-private-certs/tls.crt
+            - name: VGW_IAM_PRIVATE_CERT_KEY
+              value: /iam-private-certs/tls.key
+            - name: VGW_IAM_PRIVATE_CLIENT_CA
+              value: /iam-private-certs/ca.crt
+            {{- end }}
+          ports:
+            - name: iam-api
+              containerPort: {{ .Values.iamServer.port }}
+              protocol: TCP
+            {{- if .Values.iamServer.private.enabled }}
+            - name: iam-private
+              containerPort: {{ .Values.iamServer.private.port }}
+              protocol: TCP
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: "/_/health"
+              port: iam-api
+              {{- if .Values.iamServer.tls.enabled }}
+              scheme: HTTPS
+              {{- end }}
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.iamServer.resources | nindent 12 }}
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+            {{- if eq .Values.iamServer.storage.type "internal" }}
+            - name: data
+              mountPath: /mnt/iam
+              readOnly: false
+            {{- end }}
+            {{- if .Values.iamServer.private.enabled }}
+            - name: private-certs
+              mountPath: /iam-private-certs
+              readOnly: true
+            {{- end }}
+            {{- if .Values.iamServer.tls.enabled }}
+            - name: certificates
+              mountPath: /certs
+              readOnly: true
+            {{- end }}
+      volumes:
+        {{- if eq .Values.iamServer.storage.type "internal" }}
+        - name: data
+          {{- if .Values.iamServer.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "versitygw.iamServerPvcName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        {{- if .Values.iamServer.private.enabled }}
+        - name: private-certs
+          secret:
+            secretName: {{ include "versitygw.iamServerPrivateCertSecretName" . }}
+            defaultMode: 0440
+        {{- end }}
+        {{- if .Values.iamServer.tls.enabled }}
+        - name: certificates
+          secret:
+            secretName: {{ .Values.iamServer.tls.secretName }}
+            defaultMode: 0440
+        {{- end }}
+
+      {{- with .Values.iamServer.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.iamServer.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.iamServer.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,45 @@
+{{- $iamServer := .Values.iamServer | default dict -}}
+{{- if and ($iamServer.enabled | default false) .Values.iamServer.private.enabled .Values.iamServer.private.certificate.create (not .Values.iamServer.private.certificate.existingSecret) }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "versitygw.iamServerPrivateCertSecretName" . }}
+  labels:
+    {{- include "versitygw.iamServerLabels" . | nindent 4 }}
+spec:
+  dnsNames:
+    {{- if .Values.iamServer.private.certificate.dnsNames }}
+    {{- toYaml .Values.iamServer.private.certificate.dnsNames | nindent 4 }}
+    {{- else }}
+    - {{ include "versitygw.iamServerPrivateServiceFullname" . }}
+    - {{ printf "%s.%s.svc" (include "versitygw.iamServerPrivateServiceFullname" .) .Release.Namespace }}
+    - {{ printf "%s.%s.svc.cluster.local" (include "versitygw.iamServerPrivateServiceFullname" .) .Release.Namespace }}
+    {{- end }}
+  issuerRef:
+    {{- toYaml .Values.iamServer.private.certificate.issuerRef | nindent 4 }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  secretName: {{ include "versitygw.iamServerPrivateCertSecretName" . }}
+  usages:
+    - server auth
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") .Values.iam.standalone.certificate.create (not .Values.iam.standalone.certificate.existingSecret) }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "versitygw.iamClientCertSecretName" . }}
+  labels:
+    {{- include "versitygw.labels" . | nindent 4 }}
+spec:
+  commonName: {{ include "versitygw.fullname" . }}
+  issuerRef:
+    {{- toYaml .Values.iam.standalone.certificate.issuerRef | nindent 4 }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  secretName: {{ include "versitygw.iamClientCertSecretName" . }}
+  usages:
+    - client auth
+{{- end }}
