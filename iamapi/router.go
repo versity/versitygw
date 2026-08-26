@@ -86,6 +86,10 @@ func (r *IAMApiRouter) Init() {
 		"ListRoles":              r.Ctrl.ListRoles,
 		"DeleteRole":             r.Ctrl.DeleteRole,
 		"UpdateAssumeRolePolicy": r.Ctrl.UpdateAssumeRolePolicy,
+		// Role Tagging
+		"TagRole":      r.Ctrl.TagRole,
+		"UntagRole":    r.Ctrl.UntagRole,
+		"ListRoleTags": r.Ctrl.ListRoleTags,
 		// Role Inline Policy CRUD
 		"PutRolePolicy":    r.Ctrl.PutRolePolicy,
 		"GetRolePolicy":    r.Ctrl.GetRolePolicy,

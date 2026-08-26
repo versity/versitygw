@@ -391,7 +391,7 @@ func (s *InternalStore) updateUserTags(userName string, mutate func(*types.User)
 	return unwrapAPIError(err)
 }
 
-func (s *InternalStore) ListUserTags(_ context.Context, input ListUserTagsInput) (*ListUserTagsOutput, error) {
+func (s *InternalStore) ListUserTags(_ context.Context, input ListUserTagsInput) (*ListTagsOutput, error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -405,7 +405,7 @@ func (s *InternalStore) ListUserTags(_ context.Context, input ListUserTagsInput)
 		return nil, iamerr.NoSuchEntityUser(input.UserName)
 	}
 
-	return paginateTags(user.Tags, input), nil
+	return paginateTags(user.Tags, input.Marker, input.MaxItems), nil
 }
 
 func (s *InternalStore) CreateAccessKey(_ context.Context, input CreateAccessKeyInput) (*types.AccessKey, error) {
@@ -955,6 +955,67 @@ func (s *InternalStore) UpdateAssumeRolePolicy(_ context.Context, input UpdateAs
 	}
 
 	return cloneRole(updated), nil
+}
+
+func (s *InternalStore) TagRole(_ context.Context, roleName string, tags []types.Tag) error {
+	return s.updateRoleTags(roleName, func(role *types.Role) error {
+		merged, err := mergeTags(role.Tags, tags)
+		if err != nil {
+			return err
+		}
+		role.Tags = merged
+		return nil
+	})
+}
+
+func (s *InternalStore) UntagRole(_ context.Context, roleName string, tagKeys []string) error {
+	return s.updateRoleTags(roleName, func(role *types.Role) error {
+		role.Tags = removeTags(role.Tags, tagKeys)
+		return nil
+	})
+}
+
+// updateRoleTags applies mutate to roleName's stored record and writes it
+// back under the store lock.
+func (s *InternalStore) updateRoleTags(roleName string, mutate func(*types.Role) error) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		canonical, role, ok := lookupRole(conf, roleName)
+		if !ok {
+			return nil, iamerr.NoSuchEntityRole(roleName)
+		}
+		if err := mutate(&role); err != nil {
+			return nil, err
+		}
+
+		conf.Roles[canonical] = role
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) ListRoleTags(_ context.Context, input ListRoleTagsInput) (*ListTagsOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	_, role, ok := lookupRole(conf, input.RoleName)
+	if !ok {
+		return nil, iamerr.NoSuchEntityRole(input.RoleName)
+	}
+
+	return paginateTags(role.Tags, input.Marker, input.MaxItems), nil
 }
 
 func (s *InternalStore) PutRolePolicy(_ context.Context, input PutRolePolicyInput) error {

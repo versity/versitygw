@@ -624,7 +624,7 @@ func (c IAMApiController) ListUserPolicies(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c IAMApiController) CreateRole(ctx fiber.Ctx) (*Response, error) {
-	roleName, err := iamutil.GetRoleName(ctx, "CreateRole", iamutil.MaxUserNameLen, iamerr.MissingValue("roleName"))
+	roleName, err := iamutil.GetRoleName(ctx, "CreateRole", iamutil.MaxRoleNameLen, iamerr.MissingValue("roleName"))
 	if err != nil {
 		return nil, err
 	}
@@ -708,7 +708,7 @@ func (c IAMApiController) CreateRole(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c IAMApiController) GetRole(ctx fiber.Ctx) (*Response, error) {
-	roleName, err := iamutil.GetRoleName(ctx, "GetRole", iamutil.MaxUserLookupLen, iamerr.MissingParameter("RoleName"))
+	roleName, err := iamutil.GetRoleName(ctx, "GetRole", iamutil.MaxRoleNameLen, iamerr.MissingParameter("RoleName"))
 	if err != nil {
 		return nil, err
 	}
@@ -767,7 +767,7 @@ func (c IAMApiController) ListRoles(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c IAMApiController) DeleteRole(ctx fiber.Ctx) (*Response, error) {
-	roleName, err := iamutil.GetRoleName(ctx, "DeleteRole", iamutil.MaxUserLookupLen, iamerr.MissingParameter("RoleName"))
+	roleName, err := iamutil.GetRoleName(ctx, "DeleteRole", iamutil.MaxRoleNameLen, iamerr.MissingParameter("RoleName"))
 	if err != nil {
 		return nil, err
 	}
@@ -790,7 +790,7 @@ func (c IAMApiController) UpdateAssumeRolePolicy(ctx fiber.Ctx) (*Response, erro
 		return nil, err
 	}
 
-	roleName, err := iamutil.GetRoleName(ctx, "UpdateAssumeRolePolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	roleName, err := iamutil.GetRoleName(ctx, "UpdateAssumeRolePolicy", iamutil.MaxRoleNameLen, iamerr.MissingValue("roleName"))
 	if err != nil {
 		return nil, err
 	}
@@ -819,6 +819,86 @@ func (c IAMApiController) UpdateAssumeRolePolicy(ctx fiber.Ctx) (*Response, erro
 	return &Response{Data: &types.UpdateAssumeRolePolicyResponse{}}, nil
 }
 
+// TagRole adds or replaces tags on an existing role.
+func (c IAMApiController) TagRole(ctx fiber.Ctx) (*Response, error) {
+	roleName, err := iamutil.GetRoleName(ctx, "TagRole", iamutil.MaxRoleNameLen, iamerr.MissingValue("roleName"))
+	if err != nil {
+		return nil, err
+	}
+
+	tags, err := iamutil.ParseTags(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(tags) == 0 {
+		debuglogger.Logf("missing required TagRole parameter: Tags")
+		return nil, iamerr.MissingValue("tags")
+	}
+
+	if err := c.store.TagRole(ctx.Context(), roleName, tags); err != nil {
+		debuglogger.Logf("failed to tag IAM role %q: %v", roleName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.TagRoleResponse{}}, nil
+}
+
+// UntagRole removes the named tags from an existing role. Removal is
+// idempotent: a key naming no current tag is not an error.
+func (c IAMApiController) UntagRole(ctx fiber.Ctx) (*Response, error) {
+	roleName, err := iamutil.GetRoleName(ctx, "UntagRole", iamutil.MaxRoleNameLen, iamerr.MissingValue("roleName"))
+	if err != nil {
+		return nil, err
+	}
+
+	tagKeys, err := iamutil.ParseTagKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(tagKeys) == 0 {
+		debuglogger.Logf("missing required UntagRole parameter: TagKeys")
+		return nil, iamerr.MissingValue("tagKeys")
+	}
+
+	if err := c.store.UntagRole(ctx.Context(), roleName, tagKeys); err != nil {
+		debuglogger.Logf("failed to untag IAM role %q: %v", roleName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.UntagRoleResponse{}}, nil
+}
+
+func (c IAMApiController) ListRoleTags(ctx fiber.Ctx) (*Response, error) {
+	roleName, err := iamutil.GetRoleName(ctx, "ListRoleTags", iamutil.MaxRoleNameLen, iamerr.MissingValue("roleName"))
+	if err != nil {
+		return nil, err
+	}
+
+	maxItems, err := iamutil.ParseMaxItems(ctx, "ListRoleTags")
+	if err != nil {
+		return nil, err
+	}
+
+	marker, _ := iamutil.RequestParam(ctx, "Marker")
+	out, err := c.store.ListRoleTags(ctx.Context(), storage.ListRoleTagsInput{
+		RoleName: roleName,
+		Marker:   marker,
+		MaxItems: maxItems,
+	})
+	if err != nil {
+		debuglogger.Logf("failed to list IAM role %q tags: %v", roleName, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.ListRoleTagsResponse{
+		Result: types.ListRoleTagsResult{
+			Tags:        types.Tags{Members: out.Tags},
+			IsTruncated: out.IsTruncated,
+			Marker:      out.Marker,
+		},
+	}}, nil
+}
+
 func (c IAMApiController) PutRolePolicy(ctx fiber.Ctx) (*Response, error) {
 	policyDocument, ok := iamutil.RequestParam(ctx, "PolicyDocument")
 	if !ok {
@@ -838,7 +918,7 @@ func (c IAMApiController) PutRolePolicy(ctx fiber.Ctx) (*Response, error) {
 		return nil, err
 	}
 
-	roleName, err := iamutil.GetRoleName(ctx, "PutRolePolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	roleName, err := iamutil.GetRoleName(ctx, "PutRolePolicy", iamutil.MaxRoleNameLen, iamerr.MissingValue("roleName"))
 	if err != nil {
 		return nil, err
 	}
@@ -875,7 +955,7 @@ func (c IAMApiController) GetRolePolicy(ctx fiber.Ctx) (*Response, error) {
 		return nil, err
 	}
 
-	roleName, err := iamutil.GetRoleName(ctx, "GetRolePolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	roleName, err := iamutil.GetRoleName(ctx, "GetRolePolicy", iamutil.MaxRoleNameLen, iamerr.MissingValue("roleName"))
 	if err != nil {
 		return nil, err
 	}
@@ -905,7 +985,7 @@ func (c IAMApiController) DeleteRolePolicy(ctx fiber.Ctx) (*Response, error) {
 		return nil, err
 	}
 
-	roleName, err := iamutil.GetRoleName(ctx, "DeleteRolePolicy", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	roleName, err := iamutil.GetRoleName(ctx, "DeleteRolePolicy", iamutil.MaxRoleNameLen, iamerr.MissingValue("roleName"))
 	if err != nil {
 		return nil, err
 	}
@@ -919,7 +999,7 @@ func (c IAMApiController) DeleteRolePolicy(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c IAMApiController) ListRolePolicies(ctx fiber.Ctx) (*Response, error) {
-	roleName, err := iamutil.GetRoleName(ctx, "ListRolePolicies", iamutil.MaxUserLookupLen, iamerr.MissingValue("roleName"))
+	roleName, err := iamutil.GetRoleName(ctx, "ListRolePolicies", iamutil.MaxRoleNameLen, iamerr.MissingValue("roleName"))
 	if err != nil {
 		return nil, err
 	}

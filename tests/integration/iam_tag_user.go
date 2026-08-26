@@ -246,7 +246,7 @@ func IAMTagUser_tag_limit_exceeded(s *S3Conf) error {
 		checkErr := func() error {
 			if _, err := tagIAMUser(client, &iam.TagUserInput{
 				UserName: &userName,
-				Tags:     numberedIAMTags(1, storage.MaxTagsPerUser),
+				Tags:     numberedIAMTags(1, storage.MaxTagsPerResource),
 			}); err != nil {
 				return err
 			}
