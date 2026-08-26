@@ -28,9 +28,9 @@ import (
 // user may hold at once, matching the AWS IAM quota.
 const MaxAccessKeysPerUser = 2
 
-// MaxTagsPerUser is the maximum number of tags a single IAM user may carry
-// at once, matching the AWS IAM quota.
-const MaxTagsPerUser = 50
+// MaxTagsPerResource is the maximum number of tags a single IAM user or
+// role may carry at once, matching the AWS IAM quota.
+const MaxTagsPerResource = 50
 
 // MaxInlinePolicyBytesPerUser is the maximum aggregate size, in bytes, of
 // all of a single IAM user's inline policy documents combined
@@ -89,7 +89,9 @@ type ListUserTagsInput struct {
 	MaxItems int32
 }
 
-type ListUserTagsOutput struct {
+// ListTagsOutput is the paginated tag window ListUserTags and ListRoleTags
+// both return.
+type ListTagsOutput struct {
 	Tags        []types.Tag
 	IsTruncated bool
 	Marker      string
@@ -188,15 +190,22 @@ type ListRolePoliciesOutput struct {
 	Marker      string
 }
 
+type ListRoleTagsInput struct {
+	RoleName string
+	Marker   string
+	MaxItems int32
+}
+
 type ListOIDCProvidersOutput struct {
 	Providers []types.OpenIDConnectProviderListEntry
 }
 
-// mergeTags applies TagUser's merge semantics to existing: an incoming tag
-// replaces the existing tag whose key matches case-insensitively — taking
-// over its position and its key's casing — and any remaining incoming tag
-// is appended in the order supplied. AWS caps the merged total, not the
-// request, so replacing a tag on a user already at the cap is allowed.
+// mergeTags applies the tag actions' merge semantics to existing: an
+// incoming tag replaces the existing tag whose key matches
+// case-insensitively — taking over its position and its key's casing — and
+// any remaining incoming tag is appended in the order supplied. AWS caps
+// the merged total, not the request, so replacing a tag on a resource
+// already at the cap is allowed.
 func mergeTags(existing, incoming []types.Tag) ([]types.Tag, error) {
 	merged := slices.Clone(existing)
 	for _, tag := range incoming {
@@ -204,7 +213,7 @@ func mergeTags(existing, incoming []types.Tag) ([]types.Tag, error) {
 			merged[idx] = tag
 			continue
 		}
-		if len(merged) >= MaxTagsPerUser {
+		if len(merged) >= MaxTagsPerResource {
 			return nil, iamerr.GetAPIError(iamerr.ErrTagLimitExceeded)
 		}
 		merged = append(merged, tag)
@@ -212,9 +221,9 @@ func mergeTags(existing, incoming []types.Tag) ([]types.Tag, error) {
 	return merged, nil
 }
 
-// removeTags applies UntagUser's removal semantics to existing: every tag
-// whose key case-insensitively matches one of tagKeys is dropped, and a key
-// naming no existing tag is ignored rather than reported.
+// removeTags applies the untag actions' removal semantics to existing:
+// every tag whose key case-insensitively matches one of tagKeys is dropped,
+// and a key naming no existing tag is ignored rather than reported.
 func removeTags(existing []types.Tag, tagKeys []string) []types.Tag {
 	return slices.DeleteFunc(slices.Clone(existing), func(tag types.Tag) bool {
 		return slices.ContainsFunc(tagKeys, func(key string) bool {
@@ -229,31 +238,31 @@ func indexOfTagKey(tags []types.Tag, key string) int {
 	})
 }
 
-// paginateTags sorts tags by key and applies input's Marker/MaxItems window.
-// AWS's own ListUserTags returns tags in an unspecified order (its docs
+// paginateTags sorts tags by key and applies the marker/maxItems window.
+// AWS's own tag listings return tags in an unspecified order (its docs
 // claim sorted by key; live responses are not), so this sorts by key: a
 // stable order is what makes a Marker meaningful, and it's the order the
 // documentation promises.
-func paginateTags(tags []types.Tag, input ListUserTagsInput) *ListUserTagsOutput {
+func paginateTags(tags []types.Tag, marker string, maxItems int32) *ListTagsOutput {
 	sorted := slices.Clone(tags)
 	slices.SortFunc(sorted, func(a, b types.Tag) int {
 		return strings.Compare(a.Key, b.Key)
 	})
 
-	if input.Marker != "" {
+	if marker != "" {
 		start := len(sorted)
-		if idx := indexOfTagKey(sorted, input.Marker); idx >= 0 {
+		if idx := indexOfTagKey(sorted, marker); idx >= 0 {
 			start = idx + 1
 		}
 		sorted = sorted[start:]
 	}
 
 	limit := len(sorted)
-	if input.MaxItems > 0 && int(input.MaxItems) < limit {
-		limit = int(input.MaxItems)
+	if maxItems > 0 && int(maxItems) < limit {
+		limit = int(maxItems)
 	}
 
-	out := &ListUserTagsOutput{Tags: sorted[:limit]}
+	out := &ListTagsOutput{Tags: sorted[:limit]}
 	if limit < len(sorted) {
 		out.IsTruncated = true
 		out.Marker = out.Tags[limit-1].Key

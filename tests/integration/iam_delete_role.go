@@ -53,8 +53,8 @@ func IAMDeleteRole_invalid_role_name(s *S3Conf) error {
 func IAMDeleteRole_long_role_name(s *S3Conf) error {
 	testName := "IAMDeleteRole_long_role_name"
 	return iamActionHandler(s, testName, func(client *iam.Client) error {
-		err := deleteIAMRole(client, strings.Repeat("a", 129))
-		return checkIAMApiErr(err, iamerr.UserNameTooLong("roleName", 128))
+		err := deleteIAMRole(client, strings.Repeat("a", 65))
+		return checkIAMApiErr(err, iamerr.UserNameTooLong("roleName", 64))
 	})
 }
 

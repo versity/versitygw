@@ -2631,6 +2631,36 @@ ${tagsXml}
     await this.iamRequest('UpdateAssumeRolePolicy', { RoleName: roleName, PolicyDocument: policyDocument });
   }
 
+  // ---- Role tags ----
+
+  /**
+   * Add or replace tags on a role. A key already present is overwritten
+   * rather than duplicated, so this doubles as the edit path.
+   */
+  async iamTagRole(roleName, tags) {
+    const params = { RoleName: roleName };
+    this.flattenTags(params, tags);
+    await this.iamRequest('TagRole', params);
+  }
+
+  async iamUntagRole(roleName, tagKeys) {
+    const params = { RoleName: roleName };
+    this.flattenMemberList(params, 'TagKeys', tagKeys);
+    await this.iamRequest('UntagRole', params);
+  }
+
+  async iamListRoleTags(roleName, options = {}) {
+    const params = { RoleName: roleName };
+    if (options.marker) params.Marker = options.marker;
+    if (options.maxItems) params.MaxItems = options.maxItems;
+    const result = await this.iamRequest('ListRoleTags', params);
+    return {
+      tags: iamAsArray(result.Tags),
+      isTruncated: result.IsTruncated === 'true',
+      marker: result.Marker || null
+    };
+  }
+
   /**
    * Roles echo their trust policy percent-encoded on create/get/list
    */

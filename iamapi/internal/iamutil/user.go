@@ -43,6 +43,7 @@ const (
 	maxTagValLen            = 256
 	MaxTagMembersPerRequest = 50
 
+	MaxRoleNameLen  = 64
 	roleIDPrefix    = "AROA"
 	roleIDRandomLen = 17
 

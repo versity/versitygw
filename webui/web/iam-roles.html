@@ -230,7 +230,7 @@ under the License.
                 <button type="button" onclick="iamAddTagRow('create-role-tags')" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Add Tag</button>
               </div>
               <div id="create-role-tags" class="space-y-2"></div>
-              <p class="mt-2 text-xs text-charcoal-300">Tags are set at creation only.</p>
+              <p class="mt-2 text-xs text-charcoal-300">Optional. Tags can also be added, changed and removed later from the role’s Manage view.</p>
             </div>
             <details class="group">
               <summary class="flex items-center gap-2 cursor-pointer text-sm font-medium text-charcoal-400 hover:text-charcoal transition-colors list-none">
@@ -302,11 +302,19 @@ under the License.
                   <dt class="text-charcoal-300" title="Set at creation, not editable">Description</dt>
                   <dd id="role-detail-description" class="mt-1 text-charcoal">-</dd>
                 </div>
-                <div class="sm:col-span-2">
-                  <dt class="text-charcoal-300">Tags</dt>
-                  <dd id="role-detail-tags" class="mt-1 flex flex-wrap gap-2">-</dd>
-                </div>
               </dl>
+            </div>
+
+            <!-- Tags -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <h3 class="text-sm font-semibold text-charcoal">Tags</h3>
+                  <p id="role-tag-quota-note" class="text-xs text-charcoal-300 mt-1">Key/value labels, also readable from policy conditions.</p>
+                </div>
+                <button id="edit-role-tags-btn" onclick="openRoleTagEditor()" class="px-3 py-1.5 text-xs border border-accent text-accent hover:bg-accent-50 font-medium rounded-lg transition-colors">Edit Tags</button>
+              </div>
+              <div id="role-tags" class="border border-gray-100 rounded-lg p-4 flex flex-wrap gap-2"></div>
             </div>
 
             <!-- Trust policy -->
@@ -382,6 +390,7 @@ under the License.
     let nextMarker = null;
     let currentRole = null;
     let rolePolicySizes = {};
+    let currentRoleTags = [];    // the open role's tags, as [{Key, Value}]
     let roleToDelete = null;
     let pendingRoleDetails = null;   // step 1 of the create wizard
 
@@ -559,10 +568,12 @@ under the License.
     async function openManageRoleModal(roleName) {
       currentRole = allRoles.find(r => r.RoleName === roleName) || { RoleName: roleName };
       rolePolicySizes = {};
+      currentRoleTags = [];
 
       document.getElementById('manage-role-title').textContent = roleName;
       renderRoleDetails(currentRole);
       openModal('manage-role-modal');
+      loadRoleTags();
 
       // Refresh from the server so the trust document is current
       try {
@@ -586,12 +597,6 @@ under the License.
         : '-';
       document.getElementById('role-detail-description').textContent = role.Description || '-';
 
-      const tagsEl = document.getElementById('role-detail-tags');
-      const tags = Array.isArray(role.Tags) ? role.Tags : (role.Tags ? [role.Tags] : []);
-      tagsEl.innerHTML = tags.length === 0
-        ? '<span class="text-charcoal-300">-</span>'
-        : tags.map(tag => `<span class="px-2 py-0.5 bg-gray-100 text-charcoal text-xs font-mono rounded">${escapeHtml(tag.Key)}=${escapeHtml(tag.Value || '')}</span>`).join('');
-
       const preview = document.getElementById('role-trust-preview');
       const trust = role.AssumeRolePolicyDocument || '';
       if (!trust) {
@@ -603,6 +608,68 @@ under the License.
           preview.textContent = trust;
         }
       }
+    }
+
+    // ============================================
+    // Manage: tags
+    // ============================================
+
+    /**
+     * ListRoleTags is its own permission, so this loads the tags rather than
+     * reusing whatever GetRole happened to return — and a denial disables
+     * editing in place instead of failing the whole modal.
+     */
+    async function loadRoleTags() {
+      const el = document.getElementById('role-tags');
+      el.innerHTML = '<span class="text-sm text-charcoal-300">Loading...</span>';
+      try {
+        currentRoleTags = [];
+        let marker = null;
+        do {
+          const page = await api.iamListRoleTags(currentRole.RoleName, { marker: marker || undefined });
+          currentRoleTags = currentRoleTags.concat(page.tags);
+          marker = page.isTruncated ? page.marker : null;
+        } while (marker);
+
+        el.innerHTML = iamTagChips(currentRoleTags);
+        setEditRoleTagsEnabled(true);
+        updateRoleTagQuotaNote();
+      } catch (error) {
+        console.error('Error loading tags:', error);
+        setEditRoleTagsEnabled(false);
+        el.innerHTML = iamIsAccessDenied(error)
+          ? '<span class="text-sm text-charcoal-300">You don\u2019t have permission to list this role\u2019s tags</span>'
+          : `<span class="text-sm text-charcoal-300">Error loading tags: ${escapeHtml(iamShortError(error))}</span>`;
+      }
+    }
+
+    function setEditRoleTagsEnabled(enabled) {
+      const button = document.getElementById('edit-role-tags-btn');
+      button.disabled = !enabled;
+      button.className = enabled
+        ? 'px-3 py-1.5 text-xs border border-accent text-accent hover:bg-accent-50 font-medium rounded-lg transition-colors'
+        : 'px-3 py-1.5 text-xs border border-gray-200 text-charcoal-300 rounded-lg opacity-50 cursor-not-allowed';
+    }
+
+    function updateRoleTagQuotaNote() {
+      document.getElementById('role-tag-quota-note').textContent =
+        `${currentRoleTags.length} / ${IAM_LIMITS.tagsPerResource} tags. Also readable from policy conditions.`;
+    }
+
+    function openRoleTagEditor() {
+      iamTagEditor.open({
+        title: 'Edit Tags',
+        subtitle: `Role ${currentRole.RoleName}`,
+        tags: currentRoleTags,
+        onSave: async ({ set, remove }) => {
+          // Removals first: they free room under the 50-tag cap for whatever
+          // this same edit is adding.
+          if (remove.length) await api.iamUntagRole(currentRole.RoleName, remove);
+          if (set.length) await api.iamTagRole(currentRole.RoleName, set);
+          showToast('Tags updated successfully', 'success');
+          loadRoleTags();
+        }
+      });
     }
 
     function openTrustPolicyEditor() {

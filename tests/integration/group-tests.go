@@ -1399,6 +1399,53 @@ func TestIAMUpdateAssumeRolePolicy(ts *TestState) {
 	ts.Run(IAMUpdateAssumeRolePolicy_trust_policy_document_grammar)
 }
 
+func TestIAMTagRole(ts *TestState) {
+	ts.Run(IAMTagRole_missing_role_name)
+	ts.Run(IAMTagRole_invalid_role_name)
+	ts.Run(IAMTagRole_role_name_too_long)
+	ts.Run(IAMTagRole_missing_tags)
+	ts.Run(IAMTagRole_missing_tag_key)
+	ts.Run(IAMTagRole_missing_tag_value)
+	ts.Run(IAMTagRole_empty_tag_key)
+	ts.Run(IAMTagRole_tag_key_too_long)
+	ts.Run(IAMTagRole_invalid_tag_key)
+	ts.Run(IAMTagRole_tag_value_too_long)
+	ts.Run(IAMTagRole_invalid_tag_value)
+	ts.Run(IAMTagRole_duplicate_tag_keys)
+	ts.Run(IAMTagRole_too_many_tags)
+	ts.Run(IAMTagRole_non_existing_role)
+	ts.Run(IAMTagRole_tag_limit_exceeded)
+	ts.Run(IAMTagRole_success)
+	ts.Run(IAMTagRole_overwrites_existing_tag)
+	ts.Run(IAMTagRole_isolated_from_same_named_user)
+}
+
+func TestIAMUntagRole(ts *TestState) {
+	ts.Run(IAMUntagRole_missing_role_name)
+	ts.Run(IAMUntagRole_invalid_role_name)
+	ts.Run(IAMUntagRole_role_name_too_long)
+	ts.Run(IAMUntagRole_missing_tag_keys)
+	ts.Run(IAMUntagRole_invalid_tag_key)
+	ts.Run(IAMUntagRole_too_many_tag_keys)
+	ts.Run(IAMUntagRole_non_existing_role)
+	ts.Run(IAMUntagRole_success)
+	ts.Run(IAMUntagRole_removal_is_idempotent)
+	ts.Run(IAMUntagRole_case_insensitive_key)
+	ts.Run(IAMUntagRole_removes_only_named_keys)
+}
+
+func TestIAMListRoleTags(ts *TestState) {
+	ts.Run(IAMListRoleTags_missing_role_name)
+	ts.Run(IAMListRoleTags_invalid_role_name)
+	ts.Run(IAMListRoleTags_role_name_too_long)
+	ts.Run(IAMListRoleTags_invalid_max_items)
+	ts.Run(IAMListRoleTags_invalid_max_items_format)
+	ts.Run(IAMListRoleTags_non_existing_role)
+	ts.Run(IAMListRoleTags_empty_result)
+	ts.Run(IAMListRoleTags_success)
+	ts.Run(IAMListRoleTags_pagination)
+}
+
 func TestIAMPutRolePolicy(ts *TestState) {
 	ts.Run(IAMPutRolePolicy_missing_role_name)
 	ts.Run(IAMPutRolePolicy_missing_policy_name)
@@ -1695,6 +1742,9 @@ func TestIAM(ts *TestState) {
 	TestIAMListRoles(ts)
 	TestIAMDeleteRole(ts)
 	TestIAMUpdateAssumeRolePolicy(ts)
+	TestIAMTagRole(ts)
+	TestIAMUntagRole(ts)
+	TestIAMListRoleTags(ts)
 	TestIAMPutRolePolicy(ts)
 	TestIAMGetRolePolicy(ts)
 	TestIAMDeleteRolePolicy(ts)
@@ -2327,6 +2377,44 @@ func GetIntTests() IntTests {
 		"IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded":                       IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded,
 		"IAMUpdateAssumeRolePolicy_success":                                                IAMUpdateAssumeRolePolicy_success,
 		"IAMUpdateAssumeRolePolicy_trust_policy_document_grammar":                          IAMUpdateAssumeRolePolicy_trust_policy_document_grammar,
+		"IAMTagRole_missing_role_name":                                                     IAMTagRole_missing_role_name,
+		"IAMTagRole_invalid_role_name":                                                     IAMTagRole_invalid_role_name,
+		"IAMTagRole_role_name_too_long":                                                    IAMTagRole_role_name_too_long,
+		"IAMTagRole_missing_tags":                                                          IAMTagRole_missing_tags,
+		"IAMTagRole_missing_tag_key":                                                       IAMTagRole_missing_tag_key,
+		"IAMTagRole_missing_tag_value":                                                     IAMTagRole_missing_tag_value,
+		"IAMTagRole_empty_tag_key":                                                         IAMTagRole_empty_tag_key,
+		"IAMTagRole_tag_key_too_long":                                                      IAMTagRole_tag_key_too_long,
+		"IAMTagRole_invalid_tag_key":                                                       IAMTagRole_invalid_tag_key,
+		"IAMTagRole_tag_value_too_long":                                                    IAMTagRole_tag_value_too_long,
+		"IAMTagRole_invalid_tag_value":                                                     IAMTagRole_invalid_tag_value,
+		"IAMTagRole_duplicate_tag_keys":                                                    IAMTagRole_duplicate_tag_keys,
+		"IAMTagRole_too_many_tags":                                                         IAMTagRole_too_many_tags,
+		"IAMTagRole_non_existing_role":                                                     IAMTagRole_non_existing_role,
+		"IAMTagRole_tag_limit_exceeded":                                                    IAMTagRole_tag_limit_exceeded,
+		"IAMTagRole_success":                                                               IAMTagRole_success,
+		"IAMTagRole_overwrites_existing_tag":                                               IAMTagRole_overwrites_existing_tag,
+		"IAMTagRole_isolated_from_same_named_user":                                         IAMTagRole_isolated_from_same_named_user,
+		"IAMUntagRole_missing_role_name":                                                   IAMUntagRole_missing_role_name,
+		"IAMUntagRole_invalid_role_name":                                                   IAMUntagRole_invalid_role_name,
+		"IAMUntagRole_role_name_too_long":                                                  IAMUntagRole_role_name_too_long,
+		"IAMUntagRole_missing_tag_keys":                                                    IAMUntagRole_missing_tag_keys,
+		"IAMUntagRole_invalid_tag_key":                                                     IAMUntagRole_invalid_tag_key,
+		"IAMUntagRole_too_many_tag_keys":                                                   IAMUntagRole_too_many_tag_keys,
+		"IAMUntagRole_non_existing_role":                                                   IAMUntagRole_non_existing_role,
+		"IAMUntagRole_success":                                                             IAMUntagRole_success,
+		"IAMUntagRole_removal_is_idempotent":                                               IAMUntagRole_removal_is_idempotent,
+		"IAMUntagRole_case_insensitive_key":                                                IAMUntagRole_case_insensitive_key,
+		"IAMUntagRole_removes_only_named_keys":                                             IAMUntagRole_removes_only_named_keys,
+		"IAMListRoleTags_missing_role_name":                                                IAMListRoleTags_missing_role_name,
+		"IAMListRoleTags_invalid_role_name":                                                IAMListRoleTags_invalid_role_name,
+		"IAMListRoleTags_role_name_too_long":                                               IAMListRoleTags_role_name_too_long,
+		"IAMListRoleTags_invalid_max_items":                                                IAMListRoleTags_invalid_max_items,
+		"IAMListRoleTags_invalid_max_items_format":                                         IAMListRoleTags_invalid_max_items_format,
+		"IAMListRoleTags_non_existing_role":                                                IAMListRoleTags_non_existing_role,
+		"IAMListRoleTags_empty_result":                                                     IAMListRoleTags_empty_result,
+		"IAMListRoleTags_success":                                                          IAMListRoleTags_success,
+		"IAMListRoleTags_pagination":                                                       IAMListRoleTags_pagination,
 		"IAMPutRolePolicy_missing_role_name":                                               IAMPutRolePolicy_missing_role_name,
 		"IAMPutRolePolicy_missing_policy_name":                                             IAMPutRolePolicy_missing_policy_name,
 		"IAMPutRolePolicy_missing_policy_document":                                         IAMPutRolePolicy_missing_policy_document,

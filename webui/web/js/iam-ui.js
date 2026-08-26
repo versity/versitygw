@@ -173,7 +173,7 @@ function iamValidatePath(path) {
  */
 function iamValidateTags(tags) {
   if (tags.length > IAM_LIMITS.tagsPerResource) {
-    return `A user can carry ${IAM_LIMITS.tagsPerResource} tags at most.`;
+    return `A single resource can carry ${IAM_LIMITS.tagsPerResource} tags at most.`;
   }
 
   const seen = new Set();
@@ -697,8 +697,8 @@ const iamPolicyEditor = {
 // ============================================
 
 /**
- * Edit a user's whole tag set at once, then apply it as the minimal pair of
- * API calls: one UntagUser for the keys that disappeared, one TagUser for
+ * Edit an identity's whole tag set at once, then apply it as the minimal
+ * pair of API calls: one untag for the keys that disappeared, one tag for
  * the ones added or changed. Editing the set as a whole — rather than a
  * tag at a time — is what lets a rename, a couple of additions and a couple
  * of removals be one reviewable Save.
@@ -730,7 +730,7 @@ const iamTagEditor = {
                   <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                   <div class="text-sm text-blue-800">
                     <p class="font-medium">About Tags</p>
-                    <p class="mt-1">Key/value labels for grouping and search. They are also readable from policy conditions as <code class="font-mono">aws:PrincipalTag/&lt;key&gt;</code> for the tagged user and <code class="font-mono">aws:ResourceTag/&lt;key&gt;</code> for the user being acted on. Keys are case insensitive; values may be empty.</p>
+                    <p class="mt-1">Key/value labels for grouping and search. They are also readable from policy conditions as <code class="font-mono">aws:PrincipalTag/&lt;key&gt;</code> for the tagged identity and <code class="font-mono">aws:ResourceTag/&lt;key&gt;</code> for the identity being acted on. Keys are case insensitive; values may be empty.</p>
                   </div>
                 </div>
               </div>
@@ -820,8 +820,8 @@ const iamTagEditor = {
 
   /**
    * Diff the edited rows against the tags the modal opened with. A key whose
-   * only change is its casing still lands in set: TagUser overwrites the
-   * stored tag in place, taking the new casing with it.
+   * only change is its casing still lands in set: the tag action overwrites
+   * the stored tag in place, taking the new casing with it.
    */
   _diff(current) {
     const original = this._state.tags || [];

@@ -663,13 +663,13 @@ func (s *VaultStore) UntagUser(ctx context.Context, userName string, tagKeys []s
 	return err
 }
 
-func (s *VaultStore) ListUserTags(ctx context.Context, input ListUserTagsInput) (*ListUserTagsOutput, error) {
+func (s *VaultStore) ListUserTags(ctx context.Context, input ListUserTagsInput) (*ListTagsOutput, error) {
 	user, err := s.GetUser(ctx, input.UserName)
 	if err != nil {
 		return nil, err
 	}
 
-	return paginateTags(user.Tags, input), nil
+	return paginateTags(user.Tags, input.Marker, input.MaxItems), nil
 }
 
 func (s *VaultStore) CreateAccessKey(ctx context.Context, input CreateAccessKeyInput) (*types.AccessKey, error) {
@@ -1200,6 +1200,35 @@ func (s *VaultStore) UpdateAssumeRolePolicy(ctx context.Context, input UpdateAss
 		role.AssumeRolePolicyDocument = input.PolicyDocument
 		return nil
 	})
+}
+
+func (s *VaultStore) TagRole(ctx context.Context, roleName string, tags []types.Tag) error {
+	_, err := s.withRoleCAS(ctx, roleName, func(role *types.Role) error {
+		merged, err := mergeTags(role.Tags, tags)
+		if err != nil {
+			return err
+		}
+		role.Tags = merged
+		return nil
+	})
+	return err
+}
+
+func (s *VaultStore) UntagRole(ctx context.Context, roleName string, tagKeys []string) error {
+	_, err := s.withRoleCAS(ctx, roleName, func(role *types.Role) error {
+		role.Tags = removeTags(role.Tags, tagKeys)
+		return nil
+	})
+	return err
+}
+
+func (s *VaultStore) ListRoleTags(ctx context.Context, input ListRoleTagsInput) (*ListTagsOutput, error) {
+	role, err := s.GetRole(ctx, input.RoleName)
+	if err != nil {
+		return nil, err
+	}
+
+	return paginateTags(role.Tags, input.Marker, input.MaxItems), nil
 }
 
 func (s *VaultStore) PutRolePolicy(ctx context.Context, input PutRolePolicyInput) error {

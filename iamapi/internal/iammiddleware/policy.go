@@ -180,7 +180,8 @@ func resourceForAction(ctx fiber.Ctx, store iamutil.IdentityStore, action string
 		return accessKeyOwnerResource(ctx, store)
 	case "CreateRole":
 		return newRoleResource(ctx), nil
-	case "GetRole", "DeleteRole", "UpdateAssumeRolePolicy", "PutRolePolicy", "GetRolePolicy", "DeleteRolePolicy", "ListRolePolicies":
+	case "GetRole", "DeleteRole", "UpdateAssumeRolePolicy", "PutRolePolicy", "GetRolePolicy", "DeleteRolePolicy", "ListRolePolicies",
+		"TagRole", "UntagRole", "ListRoleTags":
 		return existingRoleResource(ctx, store)
 	case "CreateOpenIDConnectProvider":
 		return newOIDCProviderResource(ctx), nil
@@ -381,9 +382,9 @@ func requestConditionContext(ctx fiber.Ctx, identity types.Identity, action stri
 	}
 
 	switch action {
-	case "CreateUser", "CreateRole", "CreateOpenIDConnectProvider", "TagUser":
+	case "CreateUser", "CreateRole", "CreateOpenIDConnectProvider", "TagUser", "TagRole":
 		addRequestTagContext(condCtx, ctx)
-	case "UntagUser":
+	case "UntagUser", "UntagRole":
 		addTagKeysContext(condCtx, ctx)
 	}
 
@@ -471,9 +472,9 @@ func addRequestTagContext(condCtx map[string][]string, ctx fiber.Ctx) {
 	condCtx["aws:TagKeys"] = keys
 }
 
-// addTagKeysContext populates aws:TagKeys from UntagUser's TagKeys
-// parameter. UntagUser supplies keys without values, so aws:TagKeys is the
-// only tag key it can be scoped by
+// addTagKeysContext populates aws:TagKeys from the request's TagKeys
+// parameter. The untag actions supply keys without values, so aws:TagKeys
+// is the only tag key they can be scoped by
 func addTagKeysContext(condCtx map[string][]string, ctx fiber.Ctx) {
 	keys, err := iamutil.ParseTagKeys(ctx)
 	if err != nil || len(keys) == 0 {

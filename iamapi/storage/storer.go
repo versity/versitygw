@@ -34,7 +34,7 @@ type Storer interface {
 
 	TagUser(ctx context.Context, userName string, tags []types.Tag) error
 	UntagUser(ctx context.Context, userName string, tagKeys []string) error
-	ListUserTags(ctx context.Context, input ListUserTagsInput) (*ListUserTagsOutput, error)
+	ListUserTags(ctx context.Context, input ListUserTagsInput) (*ListTagsOutput, error)
 
 	CreateAccessKey(ctx context.Context, input CreateAccessKeyInput) (*types.AccessKey, error)
 	UpdateAccessKey(ctx context.Context, input UpdateAccessKeyInput) error
@@ -58,6 +58,10 @@ type Storer interface {
 	ListRoles(ctx context.Context, input ListRolesInput) (*ListRolesOutput, error)
 	DeleteRole(ctx context.Context, roleName string) error
 	UpdateAssumeRolePolicy(ctx context.Context, input UpdateAssumeRolePolicyInput) (*types.Role, error)
+
+	TagRole(ctx context.Context, roleName string, tags []types.Tag) error
+	UntagRole(ctx context.Context, roleName string, tagKeys []string) error
+	ListRoleTags(ctx context.Context, input ListRoleTagsInput) (*ListTagsOutput, error)
 
 	PutRolePolicy(ctx context.Context, input PutRolePolicyInput) error
 	GetRolePolicy(ctx context.Context, roleName, policyName string) (*types.PolicyEntry, error)
