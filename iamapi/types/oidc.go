@@ -127,3 +127,37 @@ type UpdateOpenIDConnectProviderThumbprintResponse struct {
 func (r *UpdateOpenIDConnectProviderThumbprintResponse) SetRequestID(requestID string) {
 	r.ResponseMetadata.RequestID = requestID
 }
+
+type TagOpenIDConnectProviderResponse struct {
+	XMLName          xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ TagOpenIDConnectProviderResponse"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *TagOpenIDConnectProviderResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type UntagOpenIDConnectProviderResponse struct {
+	XMLName          xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ UntagOpenIDConnectProviderResponse"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *UntagOpenIDConnectProviderResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type ListOpenIDConnectProviderTagsResponse struct {
+	XMLName          xml.Name                            `xml:"https://iam.amazonaws.com/doc/2010-05-08/ ListOpenIDConnectProviderTagsResponse"`
+	Result           ListOpenIDConnectProviderTagsResult `xml:"ListOpenIDConnectProviderTagsResult"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *ListOpenIDConnectProviderTagsResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type ListOpenIDConnectProviderTagsResult struct {
+	Tags        Tags
+	IsTruncated bool
+	Marker      string `xml:",omitempty"`
+}

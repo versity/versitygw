@@ -219,7 +219,7 @@ under the License.
                 <button type="button" onclick="iamAddTagRow('create-provider-tags')" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Add Tag</button>
               </div>
               <div id="create-provider-tags" class="space-y-2"></div>
-              <p class="mt-2 text-xs text-charcoal-300">Tags are set at creation only.</p>
+              <p class="mt-2 text-xs text-charcoal-300">Optional. Tags can also be added, changed and removed later from the provider’s Manage view.</p>
             </div>
           </form>
         </div>
@@ -239,7 +239,7 @@ under the License.
         <div class="flex items-center justify-between p-6 border-b border-gray-100 flex-shrink-0">
           <div>
             <h2 id="manage-provider-title" class="text-xl font-semibold text-charcoal">Provider</h2>
-            <p class="text-sm text-charcoal-300 mt-1">URL and tags are fixed at creation. Client IDs change one at a time; thumbprints are replaced as a whole list.</p>
+            <p class="text-sm text-charcoal-300 mt-1">The URL is fixed at creation. Client IDs change one at a time; thumbprints are replaced as a whole list.</p>
           </div>
           <button onclick="closeModal('manage-provider-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -263,11 +263,19 @@ under the License.
                   <dt class="text-charcoal-300">Created</dt>
                   <dd id="provider-detail-created" class="mt-1 text-charcoal">-</dd>
                 </div>
-                <div class="sm:col-span-2">
-                  <dt class="text-charcoal-300">Tags</dt>
-                  <dd id="provider-detail-tags" class="mt-1 flex flex-wrap gap-2">-</dd>
-                </div>
               </dl>
+            </div>
+
+            <!-- Tags -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <h3 class="text-sm font-semibold text-charcoal">Tags</h3>
+                  <p id="provider-tag-quota-note" class="text-xs text-charcoal-300 mt-1">Key/value labels, also readable from policy conditions.</p>
+                </div>
+                <button id="edit-provider-tags-btn" onclick="openProviderTagEditor()" class="px-3 py-1.5 text-xs border border-accent text-accent hover:bg-accent-50 font-medium rounded-lg transition-colors">Edit Tags</button>
+              </div>
+              <div id="provider-tags" class="border border-gray-100 rounded-lg p-4 flex flex-wrap gap-2"></div>
             </div>
 
             <!-- Client IDs -->
@@ -360,6 +368,7 @@ under the License.
   <script>
     let allProviders = [];       // ARNs
     let currentProvider = null;  // { arn, url, clientIDList, thumbprintList, createDate, tags }
+    let currentProviderTags = [];    // the open provider's tags, as [{Key, Value}]
     let providerToDelete = null;
 
     if (!requireIAM()) {
@@ -506,14 +515,15 @@ under the License.
 
     async function openManageProviderModal(arn) {
       currentProvider = { arn };
+      currentProviderTags = [];
       document.getElementById('manage-provider-title').textContent = providerNameFromArn(arn);
       document.getElementById('provider-detail-arn').innerHTML = iamArnCell(arn);
       document.getElementById('provider-detail-url').textContent = 'Loading...';
       document.getElementById('provider-detail-created').textContent = '-';
-      document.getElementById('provider-detail-tags').innerHTML = '<span class="text-charcoal-300">-</span>';
       document.getElementById('provider-clients').innerHTML = '';
       document.getElementById('provider-thumbprints').innerHTML = '';
       openModal('manage-provider-modal');
+      loadProviderTags();
       await loadProviderDetail();
     }
 
@@ -524,11 +534,6 @@ under the License.
         document.getElementById('provider-detail-url').textContent = detail.url || '-';
         document.getElementById('provider-detail-created').textContent = iamFormatDate(detail.createDate);
 
-        const tagsEl = document.getElementById('provider-detail-tags');
-        tagsEl.innerHTML = detail.tags.length === 0
-          ? '<span class="text-charcoal-300">-</span>'
-          : detail.tags.map(tag => `<span class="px-2 py-0.5 bg-gray-100 text-charcoal text-xs font-mono rounded">${escapeHtml(tag.Key)}=${escapeHtml(tag.Value || '')}</span>`).join('');
-
         renderClientIds(detail.clientIDList);
         renderThumbprints(detail.thumbprintList);
       } catch (error) {
@@ -538,6 +543,70 @@ under the License.
           : 'Unavailable';
         if (!iamIsAccessDenied(error)) showToast(iamErrorText(error, 'loading provider'), 'error');
       }
+    }
+
+    // ============================================
+    // Manage: tags
+    // ============================================
+
+    /**
+     * ListOpenIDConnectProviderTags is its own permission, so this loads the
+     * tags rather than reusing whatever GetOpenIDConnectProvider happened to
+     * return — and a denial disables editing in place instead of failing the
+     * whole modal.
+     */
+    async function loadProviderTags() {
+      const el = document.getElementById('provider-tags');
+      el.innerHTML = '<span class="text-sm text-charcoal-300">Loading...</span>';
+      try {
+        currentProviderTags = [];
+        let marker = null;
+        do {
+          const page = await api.iamListOIDCProviderTags(currentProvider.arn, { marker: marker || undefined });
+          currentProviderTags = currentProviderTags.concat(page.tags);
+          marker = page.isTruncated ? page.marker : null;
+        } while (marker);
+
+        el.innerHTML = iamTagChips(currentProviderTags);
+        setEditProviderTagsEnabled(true);
+        updateProviderTagQuotaNote();
+      } catch (error) {
+        console.error('Error loading tags:', error);
+        setEditProviderTagsEnabled(false);
+        el.innerHTML = iamIsAccessDenied(error)
+          ? '<span class="text-sm text-charcoal-300">You don\u2019t have permission to list this provider\u2019s tags</span>'
+          : `<span class="text-sm text-charcoal-300">Error loading tags: ${escapeHtml(iamShortError(error))}</span>`;
+      }
+    }
+
+    function setEditProviderTagsEnabled(enabled) {
+      const button = document.getElementById('edit-provider-tags-btn');
+      button.disabled = !enabled;
+      button.className = enabled
+        ? 'px-3 py-1.5 text-xs border border-accent text-accent hover:bg-accent-50 font-medium rounded-lg transition-colors'
+        : 'px-3 py-1.5 text-xs border border-gray-200 text-charcoal-300 rounded-lg opacity-50 cursor-not-allowed';
+    }
+
+    function updateProviderTagQuotaNote() {
+      document.getElementById('provider-tag-quota-note').textContent =
+        `${currentProviderTags.length} / ${IAM_LIMITS.tagsPerResource} tags. Keys are case sensitive.`;
+    }
+
+    function openProviderTagEditor() {
+      iamTagEditor.open({
+        title: 'Edit Tags',
+        subtitle: `Provider ${providerNameFromArn(currentProvider.arn)}`,
+        tags: currentProviderTags,
+        caseSensitiveKeys: true,
+        onSave: async ({ set, remove }) => {
+          // Removals first: they free room under the 50-tag cap for whatever
+          // this same edit is adding.
+          if (remove.length) await api.iamUntagOIDCProvider(currentProvider.arn, remove);
+          if (set.length) await api.iamTagOIDCProvider(currentProvider.arn, set);
+          showToast('Tags updated successfully', 'success');
+          loadProviderTags();
+        }
+      });
     }
 
     function renderClientIds(clients) {

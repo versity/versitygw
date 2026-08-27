@@ -133,6 +133,9 @@ func IAMCreateOpenIDConnectProvider_invalid_thumbprint(s *S3Conf) error {
 	})
 }
 
+// IAMCreateOpenIDConnectProvider_duplicate_tag_keys covers the provider
+// actions' exact tag-key comparison: only a byte-identical repeat is a
+// duplicate, so a differently-cased repeat creates two distinct tags.
 func IAMCreateOpenIDConnectProvider_duplicate_tag_keys(s *S3Conf) error {
 	testName := "IAMCreateOpenIDConnectProvider_duplicate_tag_keys"
 	return iamActionHandler(s, testName, func(client *iam.Client) error {
@@ -141,10 +144,27 @@ func IAMCreateOpenIDConnectProvider_duplicate_tag_keys(s *S3Conf) error {
 			ThumbprintList: []string{validOIDCThumbprint},
 			Tags: []iamtypes.Tag{
 				{Key: aws.String("key"), Value: aws.String("one")},
-				{Key: aws.String("KEY"), Value: aws.String("two")},
+				{Key: aws.String("key"), Value: aws.String("two")},
 			},
 		})
-		return checkIAMApiErr(err, iamerr.InvalidInput("Duplicate tag keys found. Please note that Tag keys are case insensitive."))
+		if err := checkIAMApiErr(err, iamerr.GetAPIError(iamerr.ErrDuplicateExactTagKeys)); err != nil {
+			return err
+		}
+
+		arn, err := createOIDCProviderReturningArnWithTags(client, []iamtypes.Tag{
+			{Key: aws.String("key"), Value: aws.String("one")},
+			{Key: aws.String("KEY"), Value: aws.String("two")},
+		})
+		if err != nil {
+			return fmt.Errorf("differently-cased keys: %w", err)
+		}
+
+		checkErr := checkIAMOIDCProviderTags(client, arn, map[string]string{"key": "one", "KEY": "two"})
+		deleteErr := deleteOIDCProvider(client, arn)
+		if checkErr != nil {
+			return checkErr
+		}
+		return deleteErr
 	})
 }
 
@@ -467,6 +487,20 @@ func deleteOIDCProvider(client *iam.Client, arn string) error {
 // internal package from this external test tree.
 func oidcProviderArn(providerURL string) string {
 	return "arn:aws:iam::000000000000:oidc-provider/" + strings.TrimPrefix(providerURL, "https://")
+}
+
+// createOIDCProviderReturningArnWithTags creates a provider at a fresh
+// random URL carrying tags and returns its ARN.
+func createOIDCProviderReturningArnWithTags(client *iam.Client, tags []iamtypes.Tag) (string, error) {
+	out, err := createOIDCProvider(client, &iam.CreateOpenIDConnectProviderInput{
+		Url:            aws.String(newIAMOIDCProviderURL()),
+		ThumbprintList: []string{validOIDCThumbprint},
+		Tags:           tags,
+	})
+	if err != nil {
+		return "", err
+	}
+	return aws.ToString(out.OpenIDConnectProviderArn), nil
 }
 
 func createOIDCProviderReturningArn(client *iam.Client, thumbprints []string) (string, error) {

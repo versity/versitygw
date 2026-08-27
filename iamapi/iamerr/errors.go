@@ -62,6 +62,7 @@ const (
 	ErrTagLimitExceeded
 	ErrInvalidPathPrefix
 	ErrDuplicateTagKeys
+	ErrDuplicateExactTagKeys
 	ErrInvalidAccessKeyIDChars
 	ErrDeleteConflict
 	ErrDeleteConflictPolicies
@@ -260,6 +261,12 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Type:           TypeSender,
 		Code:           "InvalidInput",
 		Message:        "Duplicate tag keys found. Please note that Tag keys are case insensitive.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrDuplicateExactTagKeys: {
+		Type:           TypeSender,
+		Code:           "InvalidInput",
+		Message:        "Duplicate tag keys found.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidAccessKeyIDChars: {
@@ -540,6 +547,9 @@ func NoSuchEntityOIDCProviderGet(arn string) Error {
 	return newSenderError("NoSuchEntity", fmt.Sprintf("OpenIDConnect Provider not found for arn %s", arn), http.StatusNotFound)
 }
 
+// NoSuchEntityOIDCProviderDelete is the wording DeleteOpenIDConnectProvider
+// and the provider tagging actions use, distinct from the one
+// NoSuchEntityOIDCProviderGet reports.
 func NoSuchEntityOIDCProviderDelete(arn string) Error {
 	return newSenderError("NoSuchEntity", fmt.Sprintf("OpenId connect Provider %s cannot be found.", arn), http.StatusNotFound)
 }

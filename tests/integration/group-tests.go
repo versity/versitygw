@@ -1551,6 +1551,47 @@ func TestIAMUpdateOpenIDConnectProviderThumbprint(ts *TestState) {
 	ts.Run(IAMUpdateOpenIDConnectProviderThumbprint_boundary_max_thumbprints)
 }
 
+func TestIAMTagOpenIDConnectProvider(ts *TestState) {
+	ts.Run(IAMTagOpenIDConnectProvider_missing_arn)
+	ts.Run(IAMTagOpenIDConnectProvider_invalid_arn)
+	ts.Run(IAMTagOpenIDConnectProvider_missing_tags)
+	ts.Run(IAMTagOpenIDConnectProvider_missing_tag_key)
+	ts.Run(IAMTagOpenIDConnectProvider_missing_tag_value)
+	ts.Run(IAMTagOpenIDConnectProvider_invalid_tags)
+	ts.Run(IAMTagOpenIDConnectProvider_duplicate_tag_keys)
+	ts.Run(IAMTagOpenIDConnectProvider_too_many_tags)
+	ts.Run(IAMTagOpenIDConnectProvider_non_existing_provider)
+	ts.Run(IAMTagOpenIDConnectProvider_invalid_tags_precede_lookup)
+	ts.Run(IAMTagOpenIDConnectProvider_tag_limit_exceeded)
+	ts.Run(IAMTagOpenIDConnectProvider_success)
+	ts.Run(IAMTagOpenIDConnectProvider_overwrites_existing_tag)
+	ts.Run(IAMTagOpenIDConnectProvider_isolated_per_provider)
+}
+
+func TestIAMUntagOpenIDConnectProvider(ts *TestState) {
+	ts.Run(IAMUntagOpenIDConnectProvider_missing_arn)
+	ts.Run(IAMUntagOpenIDConnectProvider_invalid_arn)
+	ts.Run(IAMUntagOpenIDConnectProvider_missing_tag_keys)
+	ts.Run(IAMUntagOpenIDConnectProvider_invalid_tag_key)
+	ts.Run(IAMUntagOpenIDConnectProvider_too_many_tag_keys)
+	ts.Run(IAMUntagOpenIDConnectProvider_non_existing_provider)
+	ts.Run(IAMUntagOpenIDConnectProvider_success)
+	ts.Run(IAMUntagOpenIDConnectProvider_removal_is_idempotent)
+	ts.Run(IAMUntagOpenIDConnectProvider_case_sensitive_key)
+	ts.Run(IAMUntagOpenIDConnectProvider_removes_only_named_keys)
+}
+
+func TestIAMListOpenIDConnectProviderTags(ts *TestState) {
+	ts.Run(IAMListOpenIDConnectProviderTags_missing_arn)
+	ts.Run(IAMListOpenIDConnectProviderTags_invalid_arn)
+	ts.Run(IAMListOpenIDConnectProviderTags_invalid_max_items)
+	ts.Run(IAMListOpenIDConnectProviderTags_invalid_max_items_format)
+	ts.Run(IAMListOpenIDConnectProviderTags_non_existing_provider)
+	ts.Run(IAMListOpenIDConnectProviderTags_empty_result)
+	ts.Run(IAMListOpenIDConnectProviderTags_success)
+	ts.Run(IAMListOpenIDConnectProviderTags_pagination)
+}
+
 func TestIAMAssumeRoleWithWebIdentity(ts *TestState) {
 	ts.Run(IAMAssumeRoleWithWebIdentity_missing_role_arn)
 	ts.Run(IAMAssumeRoleWithWebIdentity_role_arn_too_short)
@@ -1756,6 +1797,9 @@ func TestIAM(ts *TestState) {
 	TestIAMAddClientIDToOpenIDConnectProvider(ts)
 	TestIAMRemoveClientIDFromOpenIDConnectProvider(ts)
 	TestIAMUpdateOpenIDConnectProviderThumbprint(ts)
+	TestIAMTagOpenIDConnectProvider(ts)
+	TestIAMUntagOpenIDConnectProvider(ts)
+	TestIAMListOpenIDConnectProviderTags(ts)
 	TestIAMAssumeRoleWithWebIdentity(ts)
 	TestIAMGetCallerIdentity(ts)
 	TestIAMAccessControl(ts)
@@ -2486,6 +2530,38 @@ func GetIntTests() IntTests {
 		"IAMUpdateOpenIDConnectProviderThumbprint_non_existing_provider":                   IAMUpdateOpenIDConnectProviderThumbprint_non_existing_provider,
 		"IAMUpdateOpenIDConnectProviderThumbprint_success":                                 IAMUpdateOpenIDConnectProviderThumbprint_success,
 		"IAMUpdateOpenIDConnectProviderThumbprint_boundary_max_thumbprints":                IAMUpdateOpenIDConnectProviderThumbprint_boundary_max_thumbprints,
+		"IAMTagOpenIDConnectProvider_missing_arn":                                          IAMTagOpenIDConnectProvider_missing_arn,
+		"IAMTagOpenIDConnectProvider_invalid_arn":                                          IAMTagOpenIDConnectProvider_invalid_arn,
+		"IAMTagOpenIDConnectProvider_missing_tags":                                         IAMTagOpenIDConnectProvider_missing_tags,
+		"IAMTagOpenIDConnectProvider_missing_tag_key":                                      IAMTagOpenIDConnectProvider_missing_tag_key,
+		"IAMTagOpenIDConnectProvider_missing_tag_value":                                    IAMTagOpenIDConnectProvider_missing_tag_value,
+		"IAMTagOpenIDConnectProvider_invalid_tags":                                         IAMTagOpenIDConnectProvider_invalid_tags,
+		"IAMTagOpenIDConnectProvider_duplicate_tag_keys":                                   IAMTagOpenIDConnectProvider_duplicate_tag_keys,
+		"IAMTagOpenIDConnectProvider_too_many_tags":                                        IAMTagOpenIDConnectProvider_too_many_tags,
+		"IAMTagOpenIDConnectProvider_non_existing_provider":                                IAMTagOpenIDConnectProvider_non_existing_provider,
+		"IAMTagOpenIDConnectProvider_invalid_tags_precede_lookup":                          IAMTagOpenIDConnectProvider_invalid_tags_precede_lookup,
+		"IAMTagOpenIDConnectProvider_tag_limit_exceeded":                                   IAMTagOpenIDConnectProvider_tag_limit_exceeded,
+		"IAMTagOpenIDConnectProvider_success":                                              IAMTagOpenIDConnectProvider_success,
+		"IAMTagOpenIDConnectProvider_overwrites_existing_tag":                              IAMTagOpenIDConnectProvider_overwrites_existing_tag,
+		"IAMTagOpenIDConnectProvider_isolated_per_provider":                                IAMTagOpenIDConnectProvider_isolated_per_provider,
+		"IAMUntagOpenIDConnectProvider_missing_arn":                                        IAMUntagOpenIDConnectProvider_missing_arn,
+		"IAMUntagOpenIDConnectProvider_invalid_arn":                                        IAMUntagOpenIDConnectProvider_invalid_arn,
+		"IAMUntagOpenIDConnectProvider_missing_tag_keys":                                   IAMUntagOpenIDConnectProvider_missing_tag_keys,
+		"IAMUntagOpenIDConnectProvider_invalid_tag_key":                                    IAMUntagOpenIDConnectProvider_invalid_tag_key,
+		"IAMUntagOpenIDConnectProvider_too_many_tag_keys":                                  IAMUntagOpenIDConnectProvider_too_many_tag_keys,
+		"IAMUntagOpenIDConnectProvider_non_existing_provider":                              IAMUntagOpenIDConnectProvider_non_existing_provider,
+		"IAMUntagOpenIDConnectProvider_success":                                            IAMUntagOpenIDConnectProvider_success,
+		"IAMUntagOpenIDConnectProvider_removal_is_idempotent":                              IAMUntagOpenIDConnectProvider_removal_is_idempotent,
+		"IAMUntagOpenIDConnectProvider_case_sensitive_key":                                 IAMUntagOpenIDConnectProvider_case_sensitive_key,
+		"IAMUntagOpenIDConnectProvider_removes_only_named_keys":                            IAMUntagOpenIDConnectProvider_removes_only_named_keys,
+		"IAMListOpenIDConnectProviderTags_missing_arn":                                     IAMListOpenIDConnectProviderTags_missing_arn,
+		"IAMListOpenIDConnectProviderTags_invalid_arn":                                     IAMListOpenIDConnectProviderTags_invalid_arn,
+		"IAMListOpenIDConnectProviderTags_invalid_max_items":                               IAMListOpenIDConnectProviderTags_invalid_max_items,
+		"IAMListOpenIDConnectProviderTags_invalid_max_items_format":                        IAMListOpenIDConnectProviderTags_invalid_max_items_format,
+		"IAMListOpenIDConnectProviderTags_non_existing_provider":                           IAMListOpenIDConnectProviderTags_non_existing_provider,
+		"IAMListOpenIDConnectProviderTags_empty_result":                                    IAMListOpenIDConnectProviderTags_empty_result,
+		"IAMListOpenIDConnectProviderTags_success":                                         IAMListOpenIDConnectProviderTags_success,
+		"IAMListOpenIDConnectProviderTags_pagination":                                      IAMListOpenIDConnectProviderTags_pagination,
 		"IAMAssumeRoleWithWebIdentity_missing_role_arn":                                    IAMAssumeRoleWithWebIdentity_missing_role_arn,
 		"IAMAssumeRoleWithWebIdentity_role_arn_too_short":                                  IAMAssumeRoleWithWebIdentity_role_arn_too_short,
 		"IAMAssumeRoleWithWebIdentity_malformed_duration":                                  IAMAssumeRoleWithWebIdentity_malformed_duration,

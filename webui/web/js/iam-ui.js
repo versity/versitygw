@@ -168,10 +168,12 @@ function iamValidatePath(path) {
 
 /**
  * Validate a collected tag list against the same rules the server applies,
- * so an obvious mistake is caught before a round trip. Returns an error
- * string, or null when the list is acceptable.
+ * so an obvious mistake is caught before a round trip. caseSensitiveKeys
+ * selects the resource's key-comparison rule: users and roles fold key
+ * case, OIDC providers compare keys exactly. Returns an error string, or
+ * null when the list is acceptable.
  */
-function iamValidateTags(tags) {
+function iamValidateTags(tags, caseSensitiveKeys = false) {
   if (tags.length > IAM_LIMITS.tagsPerResource) {
     return `A single resource can carry ${IAM_LIMITS.tagsPerResource} tags at most.`;
   }
@@ -191,11 +193,13 @@ function iamValidateTags(tags) {
     if (!IAM_LIMITS.tagValuePattern.test(tag.Value || '')) {
       return `Tag value for "${tag.Key}" may contain letters, numbers, spaces and _ . : / = + - @ only.`;
     }
-    // Tag keys are compared case-insensitively, so "env" and "ENV" are the
-    // same key twice — which the service rejects outright.
-    const folded = tag.Key.toLowerCase();
-    if (seen.has(folded)) return `Tag key "${tag.Key}" is listed twice. Keys are case insensitive.`;
-    seen.add(folded);
+    const normalized = caseSensitiveKeys ? tag.Key : tag.Key.toLowerCase();
+    if (seen.has(normalized)) {
+      return caseSensitiveKeys
+        ? `Tag key "${tag.Key}" is listed twice.`
+        : `Tag key "${tag.Key}" is listed twice. Keys are case insensitive.`;
+    }
+    seen.add(normalized);
   }
 
   return null;
@@ -730,7 +734,7 @@ const iamTagEditor = {
                   <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                   <div class="text-sm text-blue-800">
                     <p class="font-medium">About Tags</p>
-                    <p class="mt-1">Key/value labels for grouping and search. They are also readable from policy conditions as <code class="font-mono">aws:PrincipalTag/&lt;key&gt;</code> for the tagged identity and <code class="font-mono">aws:ResourceTag/&lt;key&gt;</code> for the identity being acted on. Keys are case insensitive; values may be empty.</p>
+                    <p id="iam-tag-about" class="mt-1"></p>
                   </div>
                 </div>
               </div>
@@ -762,11 +766,13 @@ const iamTagEditor = {
 
   /**
    * @param {Object} opts
-   *   title     modal heading
-   *   subtitle  the identity these tags belong to
-   *   tags      current tags, as [{Key, Value}]
-   *   onSave    async ({ set, remove }) => void, where set holds the tags to
-   *             add or overwrite and remove holds the keys to drop
+   *   title             modal heading
+   *   subtitle          the resource these tags belong to
+   *   tags              current tags, as [{Key, Value}]
+   *   caseSensitiveKeys compare keys exactly instead of folding their case
+   *   onSave            async ({ set, remove }) => void, where set holds the
+   *                     tags to add or overwrite and remove holds the keys to
+   *                     drop
    */
   open(opts) {
     this._ensureModal();
@@ -774,6 +780,13 @@ const iamTagEditor = {
 
     document.getElementById('iam-tag-title').textContent = opts.title || 'Tags';
     document.getElementById('iam-tag-subtitle').textContent = opts.subtitle || '';
+    document.getElementById('iam-tag-about').innerHTML =
+      'Key/value labels for grouping and search. They are also readable from policy conditions as ' +
+      '<code class="font-mono">aws:PrincipalTag/&lt;key&gt;</code> for the tagged identity and ' +
+      '<code class="font-mono">aws:ResourceTag/&lt;key&gt;</code> for the resource being acted on. ' +
+      (opts.caseSensitiveKeys
+        ? 'Keys are case sensitive, so "env" and "ENV" are separate tags; values may be empty.'
+        : 'Keys are case insensitive; values may be empty.');
 
     const rows = document.getElementById('iam-tag-rows');
     rows.innerHTML = '';
@@ -819,21 +832,23 @@ const iamTagEditor = {
   },
 
   /**
-   * Diff the edited rows against the tags the modal opened with. A key whose
-   * only change is its casing still lands in set: the tag action overwrites
-   * the stored tag in place, taking the new casing with it.
+   * Diff the edited rows against the tags the modal opened with. Where keys
+   * fold, a key whose only change is its casing still lands in set: the tag
+   * action overwrites the stored tag in place, taking the new casing with
+   * it. Where keys are exact, that same edit is a removal plus an addition.
    */
   _diff(current) {
     const original = this._state.tags || [];
-    const originalByKey = new Map(original.map(tag => [tag.Key.toLowerCase(), tag]));
-    const currentKeys = new Set(current.map(tag => tag.Key.toLowerCase()));
+    const key = tag => (this._state.caseSensitiveKeys ? tag.Key : tag.Key.toLowerCase());
+    const originalByKey = new Map(original.map(tag => [key(tag), tag]));
+    const currentKeys = new Set(current.map(key));
 
     const set = current.filter(tag => {
-      const before = originalByKey.get(tag.Key.toLowerCase());
+      const before = originalByKey.get(key(tag));
       return !before || before.Key !== tag.Key || (before.Value || '') !== (tag.Value || '');
     });
     const remove = original
-      .filter(tag => !currentKeys.has(tag.Key.toLowerCase()))
+      .filter(tag => !currentKeys.has(key(tag)))
       .map(tag => tag.Key);
 
     return { set, remove };
@@ -851,7 +866,7 @@ const iamTagEditor = {
     if (orphanValue) { this._setStatus('Every tag needs a key.'); return; }
 
     const current = iamCollectTags('iam-tag-rows');
-    const error = iamValidateTags(current);
+    const error = iamValidateTags(current, state.caseSensitiveKeys);
     if (error) { this._setStatus(error); return; }
 
     const { set, remove } = this._diff(current);

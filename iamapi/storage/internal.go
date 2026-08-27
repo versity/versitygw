@@ -349,7 +349,7 @@ func (s *InternalStore) UpdateUser(_ context.Context, input UpdateUserInput) (*t
 
 func (s *InternalStore) TagUser(_ context.Context, userName string, tags []types.Tag) error {
 	return s.updateUserTags(userName, func(user *types.User) error {
-		merged, err := mergeTags(user.Tags, tags)
+		merged, err := mergeTags(user.Tags, tags, iamutil.TagKeysFolded)
 		if err != nil {
 			return err
 		}
@@ -360,7 +360,7 @@ func (s *InternalStore) TagUser(_ context.Context, userName string, tags []types
 
 func (s *InternalStore) UntagUser(_ context.Context, userName string, tagKeys []string) error {
 	return s.updateUserTags(userName, func(user *types.User) error {
-		user.Tags = removeTags(user.Tags, tagKeys)
+		user.Tags = removeTags(user.Tags, tagKeys, iamutil.TagKeysFolded)
 		return nil
 	})
 }
@@ -405,7 +405,7 @@ func (s *InternalStore) ListUserTags(_ context.Context, input ListUserTagsInput)
 		return nil, iamerr.NoSuchEntityUser(input.UserName)
 	}
 
-	return paginateTags(user.Tags, input.Marker, input.MaxItems), nil
+	return paginateTags(user.Tags, input.Marker, input.MaxItems, iamutil.TagKeysFolded), nil
 }
 
 func (s *InternalStore) CreateAccessKey(_ context.Context, input CreateAccessKeyInput) (*types.AccessKey, error) {
@@ -959,7 +959,7 @@ func (s *InternalStore) UpdateAssumeRolePolicy(_ context.Context, input UpdateAs
 
 func (s *InternalStore) TagRole(_ context.Context, roleName string, tags []types.Tag) error {
 	return s.updateRoleTags(roleName, func(role *types.Role) error {
-		merged, err := mergeTags(role.Tags, tags)
+		merged, err := mergeTags(role.Tags, tags, iamutil.TagKeysFolded)
 		if err != nil {
 			return err
 		}
@@ -970,7 +970,7 @@ func (s *InternalStore) TagRole(_ context.Context, roleName string, tags []types
 
 func (s *InternalStore) UntagRole(_ context.Context, roleName string, tagKeys []string) error {
 	return s.updateRoleTags(roleName, func(role *types.Role) error {
-		role.Tags = removeTags(role.Tags, tagKeys)
+		role.Tags = removeTags(role.Tags, tagKeys, iamutil.TagKeysFolded)
 		return nil
 	})
 }
@@ -1015,7 +1015,7 @@ func (s *InternalStore) ListRoleTags(_ context.Context, input ListRoleTagsInput)
 		return nil, iamerr.NoSuchEntityRole(input.RoleName)
 	}
 
-	return paginateTags(role.Tags, input.Marker, input.MaxItems), nil
+	return paginateTags(role.Tags, input.Marker, input.MaxItems, iamutil.TagKeysFolded), nil
 }
 
 func (s *InternalStore) PutRolePolicy(_ context.Context, input PutRolePolicyInput) error {
@@ -1355,6 +1355,74 @@ func (s *InternalStore) UpdateOIDCProviderThumbprint(_ context.Context, arn stri
 		return json.Marshal(conf)
 	})
 	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) TagOIDCProvider(_ context.Context, arn string, tags []types.Tag) error {
+	return s.updateOIDCProviderTags(arn, func(provider *types.OIDCProvider) error {
+		merged, err := mergeTags(provider.Tags, tags, iamutil.TagKeysExact)
+		if err != nil {
+			return err
+		}
+		provider.Tags = merged
+		return nil
+	})
+}
+
+func (s *InternalStore) UntagOIDCProvider(_ context.Context, arn string, tagKeys []string) error {
+	return s.updateOIDCProviderTags(arn, func(provider *types.OIDCProvider) error {
+		provider.Tags = removeTags(provider.Tags, tagKeys, iamutil.TagKeysExact)
+		return nil
+	})
+}
+
+// updateOIDCProviderTags applies mutate to arn's stored record and writes
+// it back under the store lock.
+func (s *InternalStore) updateOIDCProviderTags(arn string, mutate func(*types.OIDCProvider) error) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+		url, err := iamutil.ParseOIDCProviderArn(arn)
+		if err != nil {
+			return nil, err
+		}
+		provider, ok := conf.OIDCProviders[url]
+		if !ok {
+			return nil, iamerr.NoSuchEntityOIDCProviderDelete(arn)
+		}
+		if err := mutate(&provider); err != nil {
+			return nil, err
+		}
+
+		conf.OIDCProviders[url] = provider
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) ListOIDCProviderTags(_ context.Context, input ListOIDCProviderTagsInput) (*ListTagsOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	url, err := iamutil.ParseOIDCProviderArn(input.Arn)
+	if err != nil {
+		return nil, err
+	}
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	provider, ok := conf.OIDCProviders[url]
+	if !ok {
+		return nil, iamerr.NoSuchEntityOIDCProviderDelete(input.Arn)
+	}
+
+	return paginateTags(provider.Tags, input.Marker, input.MaxItems, iamutil.TagKeysExact), nil
 }
 
 func (s *InternalStore) CreateSession(_ context.Context, session types.Session) (*types.Session, error) {
