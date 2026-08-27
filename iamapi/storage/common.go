@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/versity/versitygw/iamapi/iamerr"
+	"github.com/versity/versitygw/iamapi/internal/iamutil"
 	"github.com/versity/versitygw/iamapi/types"
 )
 
@@ -28,8 +29,8 @@ import (
 // user may hold at once, matching the AWS IAM quota.
 const MaxAccessKeysPerUser = 2
 
-// MaxTagsPerResource is the maximum number of tags a single IAM user or
-// role may carry at once, matching the AWS IAM quota.
+// MaxTagsPerResource is the maximum number of tags a single IAM user, role
+// or OIDC provider may carry at once, matching the AWS IAM quota.
 const MaxTagsPerResource = 50
 
 // MaxInlinePolicyBytesPerUser is the maximum aggregate size, in bytes, of
@@ -200,16 +201,22 @@ type ListOIDCProvidersOutput struct {
 	Providers []types.OpenIDConnectProviderListEntry
 }
 
+type ListOIDCProviderTagsInput struct {
+	Arn      string
+	Marker   string
+	MaxItems int32
+}
+
 // mergeTags applies the tag actions' merge semantics to existing: an
-// incoming tag replaces the existing tag whose key matches
-// case-insensitively — taking over its position and its key's casing — and
-// any remaining incoming tag is appended in the order supplied. AWS caps
-// the merged total, not the request, so replacing a tag on a resource
-// already at the cap is allowed.
-func mergeTags(existing, incoming []types.Tag) ([]types.Tag, error) {
+// incoming tag replaces the existing tag whose key matches under keyCase —
+// taking over its position and its key's casing — and any remaining
+// incoming tag is appended in the order supplied. AWS caps the merged
+// total, not the request, so replacing a tag on a resource already at the
+// cap is allowed.
+func mergeTags(existing, incoming []types.Tag, keyCase iamutil.TagKeyCase) ([]types.Tag, error) {
 	merged := slices.Clone(existing)
 	for _, tag := range incoming {
-		if idx := indexOfTagKey(merged, tag.Key); idx >= 0 {
+		if idx := indexOfTagKey(merged, tag.Key, keyCase); idx >= 0 {
 			merged[idx] = tag
 			continue
 		}
@@ -222,19 +229,19 @@ func mergeTags(existing, incoming []types.Tag) ([]types.Tag, error) {
 }
 
 // removeTags applies the untag actions' removal semantics to existing:
-// every tag whose key case-insensitively matches one of tagKeys is dropped,
-// and a key naming no existing tag is ignored rather than reported.
-func removeTags(existing []types.Tag, tagKeys []string) []types.Tag {
+// every tag whose key matches one of tagKeys under keyCase is dropped, and
+// a key naming no existing tag is ignored rather than reported.
+func removeTags(existing []types.Tag, tagKeys []string, keyCase iamutil.TagKeyCase) []types.Tag {
 	return slices.DeleteFunc(slices.Clone(existing), func(tag types.Tag) bool {
 		return slices.ContainsFunc(tagKeys, func(key string) bool {
-			return strings.EqualFold(key, tag.Key)
+			return keyCase.Equal(key, tag.Key)
 		})
 	})
 }
 
-func indexOfTagKey(tags []types.Tag, key string) int {
+func indexOfTagKey(tags []types.Tag, key string, keyCase iamutil.TagKeyCase) int {
 	return slices.IndexFunc(tags, func(tag types.Tag) bool {
-		return strings.EqualFold(tag.Key, key)
+		return keyCase.Equal(tag.Key, key)
 	})
 }
 
@@ -243,7 +250,7 @@ func indexOfTagKey(tags []types.Tag, key string) int {
 // claim sorted by key; live responses are not), so this sorts by key: a
 // stable order is what makes a Marker meaningful, and it's the order the
 // documentation promises.
-func paginateTags(tags []types.Tag, marker string, maxItems int32) *ListTagsOutput {
+func paginateTags(tags []types.Tag, marker string, maxItems int32, keyCase iamutil.TagKeyCase) *ListTagsOutput {
 	sorted := slices.Clone(tags)
 	slices.SortFunc(sorted, func(a, b types.Tag) int {
 		return strings.Compare(a.Key, b.Key)
@@ -251,7 +258,7 @@ func paginateTags(tags []types.Tag, marker string, maxItems int32) *ListTagsOutp
 
 	if marker != "" {
 		start := len(sorted)
-		if idx := indexOfTagKey(sorted, marker); idx >= 0 {
+		if idx := indexOfTagKey(sorted, marker, keyCase); idx >= 0 {
 			start = idx + 1
 		}
 		sorted = sorted[start:]

@@ -77,6 +77,10 @@ type Storer interface {
 	RemoveClientIDFromOIDCProvider(ctx context.Context, arn, clientID string) error
 	UpdateOIDCProviderThumbprint(ctx context.Context, arn string, thumbprints []string) error
 
+	TagOIDCProvider(ctx context.Context, arn string, tags []types.Tag) error
+	UntagOIDCProvider(ctx context.Context, arn string, tagKeys []string) error
+	ListOIDCProviderTags(ctx context.Context, input ListOIDCProviderTagsInput) (*ListTagsOutput, error)
+
 	CreateSession(ctx context.Context, session types.Session) (*types.Session, error)
 	GetSession(ctx context.Context, accessKeyID string) (*types.Session, error)
 }

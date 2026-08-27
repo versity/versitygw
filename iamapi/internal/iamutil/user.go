@@ -202,10 +202,47 @@ func ParseMaxItems(ctx fiber.Ctx, operation string) (int32, error) {
 	return int32(parsed), nil
 }
 
+// TagKeyCase selects how a resource's tag keys are compared. IAM users and
+// roles fold key case, so "env" and "ENV" name the same tag; OIDC providers
+// compare keys exactly, so both can be carried at once.
+type TagKeyCase int
+
+const (
+	TagKeysFolded TagKeyCase = iota
+	TagKeysExact
+)
+
+// Equal reports whether a and b name the same tag key under c.
+func (c TagKeyCase) Equal(a, b string) bool {
+	if c == TagKeysExact {
+		return a == b
+	}
+	return strings.EqualFold(a, b)
+}
+
+// normalize maps key to the form that identifies its tag under c, for use
+// as a map key.
+func (c TagKeyCase) normalize(key string) string {
+	if c == TagKeysExact {
+		return key
+	}
+	return strings.ToLower(key)
+}
+
+// duplicateErr is the error reported when one request supplies the same tag
+// key twice under c.
+func (c TagKeyCase) duplicateErr() iamerr.Error {
+	if c == TagKeysExact {
+		return iamerr.GetAPIError(iamerr.ErrDuplicateExactTagKeys)
+	}
+	return iamerr.GetAPIError(iamerr.ErrDuplicateTagKeys)
+}
+
 // ParseTags reads IAM tag members from the request (up to
-// MaxTagMembersPerRequest), validates each, and returns the list. Tag keys
-// are compared case-insensitively for duplicate detection, matching AWS.
-func ParseTags(ctx fiber.Ctx) ([]types.Tag, error) {
+// MaxTagMembersPerRequest), validates each, and returns the list.
+// Duplicate keys are detected under keyCase, the tagged resource's own
+// key-comparison rule.
+func ParseTags(ctx fiber.Ctx, keyCase TagKeyCase) ([]types.Tag, error) {
 	var tags []types.Tag
 	seen := map[string]struct{}{}
 
@@ -234,10 +271,10 @@ func ParseTags(ctx fiber.Ctx) ([]types.Tag, error) {
 			return nil, err
 		}
 
-		normalizedKey := strings.ToLower(key)
+		normalizedKey := keyCase.normalize(key)
 		if _, ok := seen[normalizedKey]; ok {
 			debuglogger.Logf("duplicate IAM tag key: %q", key)
-			return nil, iamerr.GetAPIError(iamerr.ErrDuplicateTagKeys)
+			return nil, keyCase.duplicateErr()
 		}
 		seen[normalizedKey] = struct{}{}
 
@@ -247,7 +284,7 @@ func ParseTags(ctx fiber.Ctx) ([]types.Tag, error) {
 	return tags, nil
 }
 
-// ParseTagKeys reads UntagUser's TagKeys members from the request (up to
+// ParseTagKeys reads the request's TagKeys members (up to
 // MaxTagMembersPerRequest), validates each, and returns the list. Unlike
 // ParseTags, duplicate keys are accepted: removing the same key twice is a
 // no-op, so AWS has no reason to reject it.
