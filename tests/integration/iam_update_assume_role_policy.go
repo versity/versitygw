@@ -88,10 +88,10 @@ func IAMUpdateAssumeRolePolicy_long_role_name(s *S3Conf) error {
 	testName := "IAMUpdateAssumeRolePolicy_long_role_name"
 	return iamActionHandler(s, testName, func(client *iam.Client) error {
 		_, err := updateIAMAssumeRolePolicy(client, &iam.UpdateAssumeRolePolicyInput{
-			RoleName:       aws.String(strings.Repeat("a", 129)),
+			RoleName:       aws.String(strings.Repeat("a", 65)),
 			PolicyDocument: aws.String(validTrustPolicyDocument),
 		})
-		return checkIAMApiErr(err, iamerr.UserNameTooLong("roleName", 128))
+		return checkIAMApiErr(err, iamerr.UserNameTooLong("roleName", 64))
 	})
 }
 

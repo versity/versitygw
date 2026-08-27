@@ -173,18 +173,21 @@ func resourceForAction(ctx fiber.Ctx, store iamutil.IdentityStore, action string
 	case "GetUser":
 		return getUserResource(ctx, store)
 	case "DeleteUser", "UpdateUser", "CreateAccessKey", "UpdateAccessKey", "DeleteAccessKey",
-		"ListAccessKeys", "PutUserPolicy", "GetUserPolicy", "DeleteUserPolicy", "ListUserPolicies":
+		"ListAccessKeys", "PutUserPolicy", "GetUserPolicy", "DeleteUserPolicy", "ListUserPolicies",
+		"TagUser", "UntagUser", "ListUserTags":
 		return existingUserResource(ctx, store)
 	case "GetAccessKeyLastUsed":
 		return accessKeyOwnerResource(ctx, store)
 	case "CreateRole":
 		return newRoleResource(ctx), nil
-	case "GetRole", "DeleteRole", "UpdateAssumeRolePolicy", "PutRolePolicy", "GetRolePolicy", "DeleteRolePolicy", "ListRolePolicies":
+	case "GetRole", "DeleteRole", "UpdateAssumeRolePolicy", "PutRolePolicy", "GetRolePolicy", "DeleteRolePolicy", "ListRolePolicies",
+		"TagRole", "UntagRole", "ListRoleTags":
 		return existingRoleResource(ctx, store)
 	case "CreateOpenIDConnectProvider":
 		return newOIDCProviderResource(ctx), nil
 	case "GetOpenIDConnectProvider", "DeleteOpenIDConnectProvider", "AddClientIDToOpenIDConnectProvider",
-		"RemoveClientIDFromOpenIDConnectProvider", "UpdateOpenIDConnectProviderThumbprint":
+		"RemoveClientIDFromOpenIDConnectProvider", "UpdateOpenIDConnectProviderThumbprint",
+		"TagOpenIDConnectProvider", "UntagOpenIDConnectProvider", "ListOpenIDConnectProviderTags":
 		arn, _ := iamutil.RequestParam(ctx, "OpenIDConnectProviderArn")
 		if arn == "" {
 			return "", nil
@@ -380,8 +383,12 @@ func requestConditionContext(ctx fiber.Ctx, identity types.Identity, action stri
 	}
 
 	switch action {
-	case "CreateUser", "CreateRole", "CreateOpenIDConnectProvider":
-		addRequestTagContext(condCtx, ctx)
+	case "CreateUser", "CreateRole", "TagUser", "TagRole":
+		addRequestTagContext(condCtx, ctx, iamutil.TagKeysFolded)
+	case "CreateOpenIDConnectProvider", "TagOpenIDConnectProvider":
+		addRequestTagContext(condCtx, ctx, iamutil.TagKeysExact)
+	case "UntagUser", "UntagRole", "UntagOpenIDConnectProvider":
+		addTagKeysContext(condCtx, ctx)
 	}
 
 	return condCtx
@@ -450,13 +457,13 @@ func addPrincipalTagContext(condCtx map[string][]string, tags []types.Tag) {
 
 // addRequestTagContext populates aws:RequestTag/<key> and aws:TagKeys from
 // the request's Tags parameter, parsed the same way the controller parses it
-// for the actual create call. A parse failure (e.g. a malformed tag) is left
-// unpopulated rather than surfaced here — the controller performs the same
-// parse independently and will reject the request with the specific
-// tag-validation error afterward, so no create can succeed with tags that
-// silently evaded a tag-scoped Condition.
-func addRequestTagContext(condCtx map[string][]string, ctx fiber.Ctx) {
-	tags, err := iamutil.ParseTags(ctx)
+// for the actual create or tag call. A parse failure (e.g. a malformed tag)
+// is left unpopulated rather than surfaced here — the controller performs
+// the same parse independently and will reject the request with the
+// specific tag-validation error afterward, so no write can succeed with
+// tags that silently evaded a tag-scoped Condition.
+func addRequestTagContext(condCtx map[string][]string, ctx fiber.Ctx, keyCase iamutil.TagKeyCase) {
+	tags, err := iamutil.ParseTags(ctx, keyCase)
 	if err != nil || len(tags) == 0 {
 		return
 	}
@@ -464,6 +471,17 @@ func addRequestTagContext(condCtx map[string][]string, ctx fiber.Ctx) {
 	for _, tag := range tags {
 		condCtx["aws:RequestTag/"+tag.Key] = []string{tag.Value}
 		keys = append(keys, tag.Key)
+	}
+	condCtx["aws:TagKeys"] = keys
+}
+
+// addTagKeysContext populates aws:TagKeys from the request's TagKeys
+// parameter. The untag actions supply keys without values, so aws:TagKeys
+// is the only tag key they can be scoped by
+func addTagKeysContext(condCtx map[string][]string, ctx fiber.Ctx) {
+	keys, err := iamutil.ParseTagKeys(ctx)
+	if err != nil || len(keys) == 0 {
+		return
 	}
 	condCtx["aws:TagKeys"] = keys
 }

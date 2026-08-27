@@ -479,23 +479,8 @@ func PutObjectRetention_shorten_governance_with_bypass(s *S3Conf) error {
 func PutObjectRetention_shorten_compliance_denied(s *S3Conf) error {
 	testName := "PutObjectRetention_shorten_compliance_denied"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		date := time.Now().Add(complianceTestRetention)
 		obj := "my-obj"
 		_, err := putObjects(s3client, []string{obj}, bucket)
-		if err != nil {
-			return err
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-			Bucket: &bucket,
-			Key:    &obj,
-			Retention: &types.ObjectLockRetention{
-				Mode:            types.ObjectLockRetentionModeCompliance,
-				RetainUntilDate: &date,
-			},
-		})
-		cancel()
 		if err != nil {
 			return err
 		}
@@ -503,10 +488,31 @@ func PutObjectRetention_shorten_compliance_denied(s *S3Conf) error {
 		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%v"`, s.awsID), `["s3:BypassGovernanceRetention"]`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket))
 		bypass := true
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
 			Bucket: &bucket,
 			Policy: &policy,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// The COMPLIANCE lock goes on last, after the slow setup above rather
+		// than before it, so the whole complianceTestRetention budget is left
+		// for the two attempts below. Started any earlier, a slow object upload
+		// can consume the entire window and leave an already expired retention
+		// with nothing to shorten.
+		date := time.Now().Add(complianceTestRetention)
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeCompliance,
+				RetainUntilDate: &date,
+			},
 		})
 		cancel()
 		if err != nil {

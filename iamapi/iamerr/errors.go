@@ -57,11 +57,17 @@ const (
 	ErrInvalidContentLength
 	ErrThrottling
 	ErrTooManyTags
+	ErrTooManyTagKeys
+	ErrInvalidTagKeys
+	ErrTagLimitExceeded
 	ErrInvalidPathPrefix
 	ErrDuplicateTagKeys
+	ErrDuplicateExactTagKeys
 	ErrInvalidAccessKeyIDChars
 	ErrDeleteConflict
 	ErrDeleteConflictPolicies
+	ErrMaxItemsTooLow
+	ErrMaxItemsTooHigh
 )
 
 type APIError interface {
@@ -221,10 +227,46 @@ var errorCodeResponse = map[ErrorCode]Error{
 		Message:        "1 validation error detected: Value at 'tags' failed to satisfy constraint: Member must have length less than or equal to 50",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
+	ErrTooManyTagKeys: {
+		Type:           TypeSender,
+		Code:           "ValidationError",
+		Message:        "1 validation error detected: Value at 'tagKeys' failed to satisfy constraint: Member must have length less than or equal to 50",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidTagKeys: {
+		Type:           TypeSender,
+		Code:           "ValidationError",
+		Message:        "1 validation error detected: Value at 'tagKeys' failed to satisfy constraint: Member must satisfy constraint: [Member must have length less than or equal to 128, Member must have length greater than or equal to 1, Member must satisfy regular expression pattern: [\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]+, Member must not be null]",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrTagLimitExceeded: {
+		Type:           TypeSender,
+		Code:           "LimitExceeded",
+		Message:        "The number of tags has reached the maximum limit.",
+		HTTPStatusCode: http.StatusConflict,
+	},
+	ErrMaxItemsTooLow: {
+		Type:           TypeSender,
+		Code:           "ValidationError",
+		Message:        "1 validation error detected: Value at 'maxItems' failed to satisfy constraint: Member must have value greater than or equal to 1",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMaxItemsTooHigh: {
+		Type:           TypeSender,
+		Code:           "ValidationError",
+		Message:        "1 validation error detected: Value at 'maxItems' failed to satisfy constraint: Member must have value less than or equal to 1000",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
 	ErrDuplicateTagKeys: {
 		Type:           TypeSender,
 		Code:           "InvalidInput",
 		Message:        "Duplicate tag keys found. Please note that Tag keys are case insensitive.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrDuplicateExactTagKeys: {
+		Type:           TypeSender,
+		Code:           "InvalidInput",
+		Message:        "Duplicate tag keys found.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidAccessKeyIDChars: {
@@ -405,10 +447,6 @@ func PathTooLong(field string, maxLength int) Error {
 	return ValidationError(fmt.Sprintf("1 validation error detected: Value at '%s' failed to satisfy constraint: Member must have length less than or equal to %d", field, maxLength))
 }
 
-func InvalidMaxItems(value string) Error {
-	return ValidationError(fmt.Sprintf("1 validation error detected: Value '%s' at 'maxItems' failed to satisfy constraint: Member must have value between 1 and 1000", value))
-}
-
 func AccessKeyIDTooShort(minLength int) Error {
 	return ValidationError(fmt.Sprintf("1 validation error detected: Value at 'accessKeyId' failed to satisfy constraint: Member must have length greater than or equal to %d", minLength))
 }
@@ -427,6 +465,22 @@ func TagKeyTooLong(index int) Error {
 
 func InvalidTagKey(index int) Error {
 	return ValidationError(fmt.Sprintf("1 validation error detected: Value at 'tags.%d.member.key' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]+", index))
+}
+
+// MissingTagKey reports a Tags member supplying a Value with no Key.
+func MissingTagKey(index int) Error {
+	return MissingValue(fmt.Sprintf("tags.%d.member.key", index))
+}
+
+// MissingTagValue reports a Tags member supplying a Key with no Value. A
+// tag value may be empty, but the parameter itself must be present.
+func MissingTagValue(index int) Error {
+	return MissingValue(fmt.Sprintf("tags.%d.member.value", index))
+}
+
+// TagKeyTooShort reports an empty tag key
+func TagKeyTooShort(index int) Error {
+	return ValueTooShort(fmt.Sprintf("tags.%d.member.key", index), 1)
 }
 
 func TagValueTooLong(index int) Error {
@@ -493,6 +547,9 @@ func NoSuchEntityOIDCProviderGet(arn string) Error {
 	return newSenderError("NoSuchEntity", fmt.Sprintf("OpenIDConnect Provider not found for arn %s", arn), http.StatusNotFound)
 }
 
+// NoSuchEntityOIDCProviderDelete is the wording DeleteOpenIDConnectProvider
+// and the provider tagging actions use, distinct from the one
+// NoSuchEntityOIDCProviderGet reports.
 func NoSuchEntityOIDCProviderDelete(arn string) Error {
 	return newSenderError("NoSuchEntity", fmt.Sprintf("OpenId connect Provider %s cannot be found.", arn), http.StatusNotFound)
 }

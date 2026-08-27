@@ -65,6 +65,10 @@ func (r *IAMApiRouter) Init() {
 		"GetUser":    r.Ctrl.GetUser,
 		"ListUsers":  r.Ctrl.ListUsers,
 		"UpdateUser": r.Ctrl.UpdateUser,
+		// User Tagging
+		"TagUser":      r.Ctrl.TagUser,
+		"UntagUser":    r.Ctrl.UntagUser,
+		"ListUserTags": r.Ctrl.ListUserTags,
 		// User Access Key CRUD
 		"CreateAccessKey":      r.Ctrl.CreateAccessKey,
 		"UpdateAccessKey":      r.Ctrl.UpdateAccessKey,
@@ -82,6 +86,10 @@ func (r *IAMApiRouter) Init() {
 		"ListRoles":              r.Ctrl.ListRoles,
 		"DeleteRole":             r.Ctrl.DeleteRole,
 		"UpdateAssumeRolePolicy": r.Ctrl.UpdateAssumeRolePolicy,
+		// Role Tagging
+		"TagRole":      r.Ctrl.TagRole,
+		"UntagRole":    r.Ctrl.UntagRole,
+		"ListRoleTags": r.Ctrl.ListRoleTags,
 		// Role Inline Policy CRUD
 		"PutRolePolicy":    r.Ctrl.PutRolePolicy,
 		"GetRolePolicy":    r.Ctrl.GetRolePolicy,
@@ -95,6 +103,10 @@ func (r *IAMApiRouter) Init() {
 		"AddClientIDToOpenIDConnectProvider":      r.Ctrl.AddClientIDToOpenIDConnectProvider,
 		"RemoveClientIDFromOpenIDConnectProvider": r.Ctrl.RemoveClientIDFromOpenIDConnectProvider,
 		"UpdateOpenIDConnectProviderThumbprint":   r.Ctrl.UpdateOpenIDConnectProviderThumbprint,
+		// OIDC Provider Tagging
+		"TagOpenIDConnectProvider":      r.Ctrl.TagOpenIDConnectProvider,
+		"UntagOpenIDConnectProvider":    r.Ctrl.UntagOpenIDConnectProvider,
+		"ListOpenIDConnectProviderTags": r.Ctrl.ListOpenIDConnectProviderTags,
 		// STS actions (routed through this same endpoint; see stsActions)
 		"AssumeRoleWithWebIdentity": r.Ctrl.AssumeRoleWithWebIdentity,
 		"GetCallerIdentity":         r.Ctrl.GetCallerIdentity,

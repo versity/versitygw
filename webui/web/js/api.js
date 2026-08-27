@@ -2493,6 +2493,36 @@ ${tagsXml}
     await this.iamRequest('DeleteUser', { UserName: userName });
   }
 
+  // ---- User tags ----
+
+  /**
+   * Add or replace tags on a user. A key already present is overwritten
+   * rather than duplicated, so this doubles as the edit path.
+   */
+  async iamTagUser(userName, tags) {
+    const params = { UserName: userName };
+    this.flattenTags(params, tags);
+    await this.iamRequest('TagUser', params);
+  }
+
+  async iamUntagUser(userName, tagKeys) {
+    const params = { UserName: userName };
+    this.flattenMemberList(params, 'TagKeys', tagKeys);
+    await this.iamRequest('UntagUser', params);
+  }
+
+  async iamListUserTags(userName, options = {}) {
+    const params = { UserName: userName };
+    if (options.marker) params.Marker = options.marker;
+    if (options.maxItems) params.MaxItems = options.maxItems;
+    const result = await this.iamRequest('ListUserTags', params);
+    return {
+      tags: iamAsArray(result.Tags),
+      isTruncated: result.IsTruncated === 'true',
+      marker: result.Marker || null
+    };
+  }
+
   // ---- Access keys ----
 
   /**
@@ -2601,6 +2631,36 @@ ${tagsXml}
     await this.iamRequest('UpdateAssumeRolePolicy', { RoleName: roleName, PolicyDocument: policyDocument });
   }
 
+  // ---- Role tags ----
+
+  /**
+   * Add or replace tags on a role. A key already present is overwritten
+   * rather than duplicated, so this doubles as the edit path.
+   */
+  async iamTagRole(roleName, tags) {
+    const params = { RoleName: roleName };
+    this.flattenTags(params, tags);
+    await this.iamRequest('TagRole', params);
+  }
+
+  async iamUntagRole(roleName, tagKeys) {
+    const params = { RoleName: roleName };
+    this.flattenMemberList(params, 'TagKeys', tagKeys);
+    await this.iamRequest('UntagRole', params);
+  }
+
+  async iamListRoleTags(roleName, options = {}) {
+    const params = { RoleName: roleName };
+    if (options.marker) params.Marker = options.marker;
+    if (options.maxItems) params.MaxItems = options.maxItems;
+    const result = await this.iamRequest('ListRoleTags', params);
+    return {
+      tags: iamAsArray(result.Tags),
+      isTruncated: result.IsTruncated === 'true',
+      marker: result.Marker || null
+    };
+  }
+
   /**
    * Roles echo their trust policy percent-encoded on create/get/list
    */
@@ -2696,6 +2756,38 @@ ${tagsXml}
     const params = { OpenIDConnectProviderArn: arn };
     this.flattenMemberList(params, 'ThumbprintList', thumbprintList);
     await this.iamRequest('UpdateOpenIDConnectProviderThumbprint', params);
+  }
+
+  // ---- OIDC provider tags ----
+
+  /**
+   * Add or replace tags on an OIDC provider. A key already present is
+   * overwritten rather than duplicated, so this doubles as the edit path.
+   * Provider tag keys are compared exactly, so a key differing only in case
+   * is a separate tag.
+   */
+  async iamTagOIDCProvider(arn, tags) {
+    const params = { OpenIDConnectProviderArn: arn };
+    this.flattenTags(params, tags);
+    await this.iamRequest('TagOpenIDConnectProvider', params);
+  }
+
+  async iamUntagOIDCProvider(arn, tagKeys) {
+    const params = { OpenIDConnectProviderArn: arn };
+    this.flattenMemberList(params, 'TagKeys', tagKeys);
+    await this.iamRequest('UntagOpenIDConnectProvider', params);
+  }
+
+  async iamListOIDCProviderTags(arn, options = {}) {
+    const params = { OpenIDConnectProviderArn: arn };
+    if (options.marker) params.Marker = options.marker;
+    if (options.maxItems) params.MaxItems = options.maxItems;
+    const result = await this.iamRequest('ListOpenIDConnectProviderTags', params);
+    return {
+      tags: iamAsArray(result.Tags),
+      isTruncated: result.IsTruncated === 'true',
+      marker: result.Marker || null
+    };
   }
 
   // ---- Self identity (STS) ----

@@ -347,6 +347,67 @@ func (s *InternalStore) UpdateUser(_ context.Context, input UpdateUserInput) (*t
 	return cloneUser(updated), nil
 }
 
+func (s *InternalStore) TagUser(_ context.Context, userName string, tags []types.Tag) error {
+	return s.updateUserTags(userName, func(user *types.User) error {
+		merged, err := mergeTags(user.Tags, tags, iamutil.TagKeysFolded)
+		if err != nil {
+			return err
+		}
+		user.Tags = merged
+		return nil
+	})
+}
+
+func (s *InternalStore) UntagUser(_ context.Context, userName string, tagKeys []string) error {
+	return s.updateUserTags(userName, func(user *types.User) error {
+		user.Tags = removeTags(user.Tags, tagKeys, iamutil.TagKeysFolded)
+		return nil
+	})
+}
+
+// updateUserTags applies mutate to userName's stored record and writes it
+// back under the store lock.
+func (s *InternalStore) updateUserTags(userName string, mutate func(*types.User) error) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		canonical, user, ok := lookupUser(conf, userName)
+		if !ok {
+			return nil, iamerr.NoSuchEntityUser(userName)
+		}
+		if err := mutate(&user); err != nil {
+			return nil, err
+		}
+
+		conf.Users[canonical] = user
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) ListUserTags(_ context.Context, input ListUserTagsInput) (*ListTagsOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	_, user, ok := lookupUser(conf, input.UserName)
+	if !ok {
+		return nil, iamerr.NoSuchEntityUser(input.UserName)
+	}
+
+	return paginateTags(user.Tags, input.Marker, input.MaxItems, iamutil.TagKeysFolded), nil
+}
+
 func (s *InternalStore) CreateAccessKey(_ context.Context, input CreateAccessKeyInput) (*types.AccessKey, error) {
 	s.Lock()
 	defer s.Unlock()
@@ -896,6 +957,67 @@ func (s *InternalStore) UpdateAssumeRolePolicy(_ context.Context, input UpdateAs
 	return cloneRole(updated), nil
 }
 
+func (s *InternalStore) TagRole(_ context.Context, roleName string, tags []types.Tag) error {
+	return s.updateRoleTags(roleName, func(role *types.Role) error {
+		merged, err := mergeTags(role.Tags, tags, iamutil.TagKeysFolded)
+		if err != nil {
+			return err
+		}
+		role.Tags = merged
+		return nil
+	})
+}
+
+func (s *InternalStore) UntagRole(_ context.Context, roleName string, tagKeys []string) error {
+	return s.updateRoleTags(roleName, func(role *types.Role) error {
+		role.Tags = removeTags(role.Tags, tagKeys, iamutil.TagKeysFolded)
+		return nil
+	})
+}
+
+// updateRoleTags applies mutate to roleName's stored record and writes it
+// back under the store lock.
+func (s *InternalStore) updateRoleTags(roleName string, mutate func(*types.Role) error) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		canonical, role, ok := lookupRole(conf, roleName)
+		if !ok {
+			return nil, iamerr.NoSuchEntityRole(roleName)
+		}
+		if err := mutate(&role); err != nil {
+			return nil, err
+		}
+
+		conf.Roles[canonical] = role
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) ListRoleTags(_ context.Context, input ListRoleTagsInput) (*ListTagsOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	_, role, ok := lookupRole(conf, input.RoleName)
+	if !ok {
+		return nil, iamerr.NoSuchEntityRole(input.RoleName)
+	}
+
+	return paginateTags(role.Tags, input.Marker, input.MaxItems, iamutil.TagKeysFolded), nil
+}
+
 func (s *InternalStore) PutRolePolicy(_ context.Context, input PutRolePolicyInput) error {
 	s.Lock()
 	defer s.Unlock()
@@ -1233,6 +1355,74 @@ func (s *InternalStore) UpdateOIDCProviderThumbprint(_ context.Context, arn stri
 		return json.Marshal(conf)
 	})
 	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) TagOIDCProvider(_ context.Context, arn string, tags []types.Tag) error {
+	return s.updateOIDCProviderTags(arn, func(provider *types.OIDCProvider) error {
+		merged, err := mergeTags(provider.Tags, tags, iamutil.TagKeysExact)
+		if err != nil {
+			return err
+		}
+		provider.Tags = merged
+		return nil
+	})
+}
+
+func (s *InternalStore) UntagOIDCProvider(_ context.Context, arn string, tagKeys []string) error {
+	return s.updateOIDCProviderTags(arn, func(provider *types.OIDCProvider) error {
+		provider.Tags = removeTags(provider.Tags, tagKeys, iamutil.TagKeysExact)
+		return nil
+	})
+}
+
+// updateOIDCProviderTags applies mutate to arn's stored record and writes
+// it back under the store lock.
+func (s *InternalStore) updateOIDCProviderTags(arn string, mutate func(*types.OIDCProvider) error) error {
+	s.Lock()
+	defer s.Unlock()
+
+	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+		url, err := iamutil.ParseOIDCProviderArn(arn)
+		if err != nil {
+			return nil, err
+		}
+		provider, ok := conf.OIDCProviders[url]
+		if !ok {
+			return nil, iamerr.NoSuchEntityOIDCProviderDelete(arn)
+		}
+		if err := mutate(&provider); err != nil {
+			return nil, err
+		}
+
+		conf.OIDCProviders[url] = provider
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
+func (s *InternalStore) ListOIDCProviderTags(_ context.Context, input ListOIDCProviderTagsInput) (*ListTagsOutput, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	url, err := iamutil.ParseOIDCProviderArn(input.Arn)
+	if err != nil {
+		return nil, err
+	}
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return nil, err
+	}
+
+	provider, ok := conf.OIDCProviders[url]
+	if !ok {
+		return nil, iamerr.NoSuchEntityOIDCProviderDelete(input.Arn)
+	}
+
+	return paginateTags(provider.Tags, input.Marker, input.MaxItems, iamutil.TagKeysExact), nil
 }
 
 func (s *InternalStore) CreateSession(_ context.Context, session types.Session) (*types.Session, error) {

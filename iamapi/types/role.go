@@ -111,3 +111,37 @@ type UpdateAssumeRolePolicyResponse struct {
 func (r *UpdateAssumeRolePolicyResponse) SetRequestID(requestID string) {
 	r.ResponseMetadata.RequestID = requestID
 }
+
+type TagRoleResponse struct {
+	XMLName          xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ TagRoleResponse"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *TagRoleResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type UntagRoleResponse struct {
+	XMLName          xml.Name `xml:"https://iam.amazonaws.com/doc/2010-05-08/ UntagRoleResponse"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *UntagRoleResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type ListRoleTagsResponse struct {
+	XMLName          xml.Name           `xml:"https://iam.amazonaws.com/doc/2010-05-08/ ListRoleTagsResponse"`
+	Result           ListRoleTagsResult `xml:"ListRoleTagsResult"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *ListRoleTagsResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type ListRoleTagsResult struct {
+	Tags        Tags
+	IsTruncated bool
+	Marker      string `xml:",omitempty"`
+}

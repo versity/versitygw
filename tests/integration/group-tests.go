@@ -1196,6 +1196,51 @@ func TestIAMUpdateUser(ts *TestState) {
 	ts.Run(IAMUpdateUser_success)
 }
 
+func TestIAMTagUser(ts *TestState) {
+	ts.Run(IAMTagUser_missing_user_name)
+	ts.Run(IAMTagUser_invalid_user_name)
+	ts.Run(IAMTagUser_user_name_too_long)
+	ts.Run(IAMTagUser_missing_tags)
+	ts.Run(IAMTagUser_missing_tag_key)
+	ts.Run(IAMTagUser_missing_tag_value)
+	ts.Run(IAMTagUser_empty_tag_key)
+	ts.Run(IAMTagUser_tag_key_too_long)
+	ts.Run(IAMTagUser_invalid_tag_key)
+	ts.Run(IAMTagUser_tag_value_too_long)
+	ts.Run(IAMTagUser_invalid_tag_value)
+	ts.Run(IAMTagUser_duplicate_tag_keys)
+	ts.Run(IAMTagUser_too_many_tags)
+	ts.Run(IAMTagUser_non_existing_user)
+	ts.Run(IAMTagUser_tag_limit_exceeded)
+	ts.Run(IAMTagUser_success)
+	ts.Run(IAMTagUser_overwrites_existing_tag)
+}
+
+func TestIAMUntagUser(ts *TestState) {
+	ts.Run(IAMUntagUser_missing_user_name)
+	ts.Run(IAMUntagUser_invalid_user_name)
+	ts.Run(IAMUntagUser_user_name_too_long)
+	ts.Run(IAMUntagUser_missing_tag_keys)
+	ts.Run(IAMUntagUser_invalid_tag_key)
+	ts.Run(IAMUntagUser_too_many_tag_keys)
+	ts.Run(IAMUntagUser_non_existing_user)
+	ts.Run(IAMUntagUser_success)
+	ts.Run(IAMUntagUser_removal_is_idempotent)
+	ts.Run(IAMUntagUser_case_insensitive_key)
+}
+
+func TestIAMListUserTags(ts *TestState) {
+	ts.Run(IAMListUserTags_missing_user_name)
+	ts.Run(IAMListUserTags_invalid_user_name)
+	ts.Run(IAMListUserTags_user_name_too_long)
+	ts.Run(IAMListUserTags_invalid_max_items)
+	ts.Run(IAMListUserTags_invalid_max_items_format)
+	ts.Run(IAMListUserTags_non_existing_user)
+	ts.Run(IAMListUserTags_empty_result)
+	ts.Run(IAMListUserTags_success)
+	ts.Run(IAMListUserTags_pagination)
+}
+
 func TestIAMCreateAccessKey(ts *TestState) {
 	ts.Run(IAMCreateAccessKey_missing_user_name)
 	ts.Run(IAMCreateAccessKey_invalid_user_name)
@@ -1358,6 +1403,53 @@ func TestIAMUpdateAssumeRolePolicy(ts *TestState) {
 	ts.Run(IAMUpdateAssumeRolePolicy_trust_policy_document_grammar)
 }
 
+func TestIAMTagRole(ts *TestState) {
+	ts.Run(IAMTagRole_missing_role_name)
+	ts.Run(IAMTagRole_invalid_role_name)
+	ts.Run(IAMTagRole_role_name_too_long)
+	ts.Run(IAMTagRole_missing_tags)
+	ts.Run(IAMTagRole_missing_tag_key)
+	ts.Run(IAMTagRole_missing_tag_value)
+	ts.Run(IAMTagRole_empty_tag_key)
+	ts.Run(IAMTagRole_tag_key_too_long)
+	ts.Run(IAMTagRole_invalid_tag_key)
+	ts.Run(IAMTagRole_tag_value_too_long)
+	ts.Run(IAMTagRole_invalid_tag_value)
+	ts.Run(IAMTagRole_duplicate_tag_keys)
+	ts.Run(IAMTagRole_too_many_tags)
+	ts.Run(IAMTagRole_non_existing_role)
+	ts.Run(IAMTagRole_tag_limit_exceeded)
+	ts.Run(IAMTagRole_success)
+	ts.Run(IAMTagRole_overwrites_existing_tag)
+	ts.Run(IAMTagRole_isolated_from_same_named_user)
+}
+
+func TestIAMUntagRole(ts *TestState) {
+	ts.Run(IAMUntagRole_missing_role_name)
+	ts.Run(IAMUntagRole_invalid_role_name)
+	ts.Run(IAMUntagRole_role_name_too_long)
+	ts.Run(IAMUntagRole_missing_tag_keys)
+	ts.Run(IAMUntagRole_invalid_tag_key)
+	ts.Run(IAMUntagRole_too_many_tag_keys)
+	ts.Run(IAMUntagRole_non_existing_role)
+	ts.Run(IAMUntagRole_success)
+	ts.Run(IAMUntagRole_removal_is_idempotent)
+	ts.Run(IAMUntagRole_case_insensitive_key)
+	ts.Run(IAMUntagRole_removes_only_named_keys)
+}
+
+func TestIAMListRoleTags(ts *TestState) {
+	ts.Run(IAMListRoleTags_missing_role_name)
+	ts.Run(IAMListRoleTags_invalid_role_name)
+	ts.Run(IAMListRoleTags_role_name_too_long)
+	ts.Run(IAMListRoleTags_invalid_max_items)
+	ts.Run(IAMListRoleTags_invalid_max_items_format)
+	ts.Run(IAMListRoleTags_non_existing_role)
+	ts.Run(IAMListRoleTags_empty_result)
+	ts.Run(IAMListRoleTags_success)
+	ts.Run(IAMListRoleTags_pagination)
+}
+
 func TestIAMPutRolePolicy(ts *TestState) {
 	ts.Run(IAMPutRolePolicy_missing_role_name)
 	ts.Run(IAMPutRolePolicy_missing_policy_name)
@@ -1461,6 +1553,47 @@ func TestIAMUpdateOpenIDConnectProviderThumbprint(ts *TestState) {
 	ts.Run(IAMUpdateOpenIDConnectProviderThumbprint_non_existing_provider)
 	ts.Run(IAMUpdateOpenIDConnectProviderThumbprint_success)
 	ts.Run(IAMUpdateOpenIDConnectProviderThumbprint_boundary_max_thumbprints)
+}
+
+func TestIAMTagOpenIDConnectProvider(ts *TestState) {
+	ts.Run(IAMTagOpenIDConnectProvider_missing_arn)
+	ts.Run(IAMTagOpenIDConnectProvider_invalid_arn)
+	ts.Run(IAMTagOpenIDConnectProvider_missing_tags)
+	ts.Run(IAMTagOpenIDConnectProvider_missing_tag_key)
+	ts.Run(IAMTagOpenIDConnectProvider_missing_tag_value)
+	ts.Run(IAMTagOpenIDConnectProvider_invalid_tags)
+	ts.Run(IAMTagOpenIDConnectProvider_duplicate_tag_keys)
+	ts.Run(IAMTagOpenIDConnectProvider_too_many_tags)
+	ts.Run(IAMTagOpenIDConnectProvider_non_existing_provider)
+	ts.Run(IAMTagOpenIDConnectProvider_invalid_tags_precede_lookup)
+	ts.Run(IAMTagOpenIDConnectProvider_tag_limit_exceeded)
+	ts.Run(IAMTagOpenIDConnectProvider_success)
+	ts.Run(IAMTagOpenIDConnectProvider_overwrites_existing_tag)
+	ts.Run(IAMTagOpenIDConnectProvider_isolated_per_provider)
+}
+
+func TestIAMUntagOpenIDConnectProvider(ts *TestState) {
+	ts.Run(IAMUntagOpenIDConnectProvider_missing_arn)
+	ts.Run(IAMUntagOpenIDConnectProvider_invalid_arn)
+	ts.Run(IAMUntagOpenIDConnectProvider_missing_tag_keys)
+	ts.Run(IAMUntagOpenIDConnectProvider_invalid_tag_key)
+	ts.Run(IAMUntagOpenIDConnectProvider_too_many_tag_keys)
+	ts.Run(IAMUntagOpenIDConnectProvider_non_existing_provider)
+	ts.Run(IAMUntagOpenIDConnectProvider_success)
+	ts.Run(IAMUntagOpenIDConnectProvider_removal_is_idempotent)
+	ts.Run(IAMUntagOpenIDConnectProvider_case_sensitive_key)
+	ts.Run(IAMUntagOpenIDConnectProvider_removes_only_named_keys)
+}
+
+func TestIAMListOpenIDConnectProviderTags(ts *TestState) {
+	ts.Run(IAMListOpenIDConnectProviderTags_missing_arn)
+	ts.Run(IAMListOpenIDConnectProviderTags_invalid_arn)
+	ts.Run(IAMListOpenIDConnectProviderTags_invalid_max_items)
+	ts.Run(IAMListOpenIDConnectProviderTags_invalid_max_items_format)
+	ts.Run(IAMListOpenIDConnectProviderTags_non_existing_provider)
+	ts.Run(IAMListOpenIDConnectProviderTags_empty_result)
+	ts.Run(IAMListOpenIDConnectProviderTags_success)
+	ts.Run(IAMListOpenIDConnectProviderTags_pagination)
 }
 
 func TestIAMAssumeRoleWithWebIdentity(ts *TestState) {
@@ -1637,6 +1770,9 @@ func TestIAM(ts *TestState) {
 	TestIAMListUsers(ts)
 	TestIAMDeleteUser(ts)
 	TestIAMUpdateUser(ts)
+	TestIAMTagUser(ts)
+	TestIAMUntagUser(ts)
+	TestIAMListUserTags(ts)
 	TestIAMCreateAccessKey(ts)
 	TestIAMUpdateAccessKey(ts)
 	TestIAMDeleteAccessKey(ts)
@@ -1651,6 +1787,9 @@ func TestIAM(ts *TestState) {
 	TestIAMListRoles(ts)
 	TestIAMDeleteRole(ts)
 	TestIAMUpdateAssumeRolePolicy(ts)
+	TestIAMTagRole(ts)
+	TestIAMUntagRole(ts)
+	TestIAMListRoleTags(ts)
 	TestIAMPutRolePolicy(ts)
 	TestIAMGetRolePolicy(ts)
 	TestIAMDeleteRolePolicy(ts)
@@ -1662,6 +1801,9 @@ func TestIAM(ts *TestState) {
 	TestIAMAddClientIDToOpenIDConnectProvider(ts)
 	TestIAMRemoveClientIDFromOpenIDConnectProvider(ts)
 	TestIAMUpdateOpenIDConnectProviderThumbprint(ts)
+	TestIAMTagOpenIDConnectProvider(ts)
+	TestIAMUntagOpenIDConnectProvider(ts)
+	TestIAMListOpenIDConnectProviderTags(ts)
 	TestIAMAssumeRoleWithWebIdentity(ts)
 	TestIAMGetCallerIdentity(ts)
 	TestIAMAccessControl(ts)
@@ -2127,6 +2269,42 @@ func GetIntTests() IntTests {
 		"IAMUpdateUser_long_new_path":                                                      IAMUpdateUser_long_new_path,
 		"IAMUpdateUser_new_user_name_already_exists":                                       IAMUpdateUser_new_user_name_already_exists,
 		"IAMUpdateUser_success":                                                            IAMUpdateUser_success,
+		"IAMTagUser_missing_user_name":                                                     IAMTagUser_missing_user_name,
+		"IAMTagUser_invalid_user_name":                                                     IAMTagUser_invalid_user_name,
+		"IAMTagUser_user_name_too_long":                                                    IAMTagUser_user_name_too_long,
+		"IAMTagUser_missing_tags":                                                          IAMTagUser_missing_tags,
+		"IAMTagUser_missing_tag_key":                                                       IAMTagUser_missing_tag_key,
+		"IAMTagUser_missing_tag_value":                                                     IAMTagUser_missing_tag_value,
+		"IAMTagUser_empty_tag_key":                                                         IAMTagUser_empty_tag_key,
+		"IAMTagUser_tag_key_too_long":                                                      IAMTagUser_tag_key_too_long,
+		"IAMTagUser_invalid_tag_key":                                                       IAMTagUser_invalid_tag_key,
+		"IAMTagUser_tag_value_too_long":                                                    IAMTagUser_tag_value_too_long,
+		"IAMTagUser_invalid_tag_value":                                                     IAMTagUser_invalid_tag_value,
+		"IAMTagUser_duplicate_tag_keys":                                                    IAMTagUser_duplicate_tag_keys,
+		"IAMTagUser_too_many_tags":                                                         IAMTagUser_too_many_tags,
+		"IAMTagUser_non_existing_user":                                                     IAMTagUser_non_existing_user,
+		"IAMTagUser_tag_limit_exceeded":                                                    IAMTagUser_tag_limit_exceeded,
+		"IAMTagUser_success":                                                               IAMTagUser_success,
+		"IAMTagUser_overwrites_existing_tag":                                               IAMTagUser_overwrites_existing_tag,
+		"IAMUntagUser_missing_user_name":                                                   IAMUntagUser_missing_user_name,
+		"IAMUntagUser_invalid_user_name":                                                   IAMUntagUser_invalid_user_name,
+		"IAMUntagUser_user_name_too_long":                                                  IAMUntagUser_user_name_too_long,
+		"IAMUntagUser_missing_tag_keys":                                                    IAMUntagUser_missing_tag_keys,
+		"IAMUntagUser_invalid_tag_key":                                                     IAMUntagUser_invalid_tag_key,
+		"IAMUntagUser_too_many_tag_keys":                                                   IAMUntagUser_too_many_tag_keys,
+		"IAMUntagUser_non_existing_user":                                                   IAMUntagUser_non_existing_user,
+		"IAMUntagUser_success":                                                             IAMUntagUser_success,
+		"IAMUntagUser_removal_is_idempotent":                                               IAMUntagUser_removal_is_idempotent,
+		"IAMUntagUser_case_insensitive_key":                                                IAMUntagUser_case_insensitive_key,
+		"IAMListUserTags_missing_user_name":                                                IAMListUserTags_missing_user_name,
+		"IAMListUserTags_invalid_user_name":                                                IAMListUserTags_invalid_user_name,
+		"IAMListUserTags_user_name_too_long":                                               IAMListUserTags_user_name_too_long,
+		"IAMListUserTags_invalid_max_items":                                                IAMListUserTags_invalid_max_items,
+		"IAMListUserTags_invalid_max_items_format":                                         IAMListUserTags_invalid_max_items_format,
+		"IAMListUserTags_non_existing_user":                                                IAMListUserTags_non_existing_user,
+		"IAMListUserTags_empty_result":                                                     IAMListUserTags_empty_result,
+		"IAMListUserTags_success":                                                          IAMListUserTags_success,
+		"IAMListUserTags_pagination":                                                       IAMListUserTags_pagination,
 		"IAMCreateAccessKey_missing_user_name":                                             IAMCreateAccessKey_missing_user_name,
 		"IAMCreateAccessKey_invalid_user_name":                                             IAMCreateAccessKey_invalid_user_name,
 		"IAMCreateAccessKey_long_user_name":                                                IAMCreateAccessKey_long_user_name,
@@ -2247,6 +2425,44 @@ func GetIntTests() IntTests {
 		"IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded":                       IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded,
 		"IAMUpdateAssumeRolePolicy_success":                                                IAMUpdateAssumeRolePolicy_success,
 		"IAMUpdateAssumeRolePolicy_trust_policy_document_grammar":                          IAMUpdateAssumeRolePolicy_trust_policy_document_grammar,
+		"IAMTagRole_missing_role_name":                                                     IAMTagRole_missing_role_name,
+		"IAMTagRole_invalid_role_name":                                                     IAMTagRole_invalid_role_name,
+		"IAMTagRole_role_name_too_long":                                                    IAMTagRole_role_name_too_long,
+		"IAMTagRole_missing_tags":                                                          IAMTagRole_missing_tags,
+		"IAMTagRole_missing_tag_key":                                                       IAMTagRole_missing_tag_key,
+		"IAMTagRole_missing_tag_value":                                                     IAMTagRole_missing_tag_value,
+		"IAMTagRole_empty_tag_key":                                                         IAMTagRole_empty_tag_key,
+		"IAMTagRole_tag_key_too_long":                                                      IAMTagRole_tag_key_too_long,
+		"IAMTagRole_invalid_tag_key":                                                       IAMTagRole_invalid_tag_key,
+		"IAMTagRole_tag_value_too_long":                                                    IAMTagRole_tag_value_too_long,
+		"IAMTagRole_invalid_tag_value":                                                     IAMTagRole_invalid_tag_value,
+		"IAMTagRole_duplicate_tag_keys":                                                    IAMTagRole_duplicate_tag_keys,
+		"IAMTagRole_too_many_tags":                                                         IAMTagRole_too_many_tags,
+		"IAMTagRole_non_existing_role":                                                     IAMTagRole_non_existing_role,
+		"IAMTagRole_tag_limit_exceeded":                                                    IAMTagRole_tag_limit_exceeded,
+		"IAMTagRole_success":                                                               IAMTagRole_success,
+		"IAMTagRole_overwrites_existing_tag":                                               IAMTagRole_overwrites_existing_tag,
+		"IAMTagRole_isolated_from_same_named_user":                                         IAMTagRole_isolated_from_same_named_user,
+		"IAMUntagRole_missing_role_name":                                                   IAMUntagRole_missing_role_name,
+		"IAMUntagRole_invalid_role_name":                                                   IAMUntagRole_invalid_role_name,
+		"IAMUntagRole_role_name_too_long":                                                  IAMUntagRole_role_name_too_long,
+		"IAMUntagRole_missing_tag_keys":                                                    IAMUntagRole_missing_tag_keys,
+		"IAMUntagRole_invalid_tag_key":                                                     IAMUntagRole_invalid_tag_key,
+		"IAMUntagRole_too_many_tag_keys":                                                   IAMUntagRole_too_many_tag_keys,
+		"IAMUntagRole_non_existing_role":                                                   IAMUntagRole_non_existing_role,
+		"IAMUntagRole_success":                                                             IAMUntagRole_success,
+		"IAMUntagRole_removal_is_idempotent":                                               IAMUntagRole_removal_is_idempotent,
+		"IAMUntagRole_case_insensitive_key":                                                IAMUntagRole_case_insensitive_key,
+		"IAMUntagRole_removes_only_named_keys":                                             IAMUntagRole_removes_only_named_keys,
+		"IAMListRoleTags_missing_role_name":                                                IAMListRoleTags_missing_role_name,
+		"IAMListRoleTags_invalid_role_name":                                                IAMListRoleTags_invalid_role_name,
+		"IAMListRoleTags_role_name_too_long":                                               IAMListRoleTags_role_name_too_long,
+		"IAMListRoleTags_invalid_max_items":                                                IAMListRoleTags_invalid_max_items,
+		"IAMListRoleTags_invalid_max_items_format":                                         IAMListRoleTags_invalid_max_items_format,
+		"IAMListRoleTags_non_existing_role":                                                IAMListRoleTags_non_existing_role,
+		"IAMListRoleTags_empty_result":                                                     IAMListRoleTags_empty_result,
+		"IAMListRoleTags_success":                                                          IAMListRoleTags_success,
+		"IAMListRoleTags_pagination":                                                       IAMListRoleTags_pagination,
 		"IAMPutRolePolicy_missing_role_name":                                               IAMPutRolePolicy_missing_role_name,
 		"IAMPutRolePolicy_missing_policy_name":                                             IAMPutRolePolicy_missing_policy_name,
 		"IAMPutRolePolicy_missing_policy_document":                                         IAMPutRolePolicy_missing_policy_document,
@@ -2319,6 +2535,38 @@ func GetIntTests() IntTests {
 		"IAMUpdateOpenIDConnectProviderThumbprint_non_existing_provider":                   IAMUpdateOpenIDConnectProviderThumbprint_non_existing_provider,
 		"IAMUpdateOpenIDConnectProviderThumbprint_success":                                 IAMUpdateOpenIDConnectProviderThumbprint_success,
 		"IAMUpdateOpenIDConnectProviderThumbprint_boundary_max_thumbprints":                IAMUpdateOpenIDConnectProviderThumbprint_boundary_max_thumbprints,
+		"IAMTagOpenIDConnectProvider_missing_arn":                                          IAMTagOpenIDConnectProvider_missing_arn,
+		"IAMTagOpenIDConnectProvider_invalid_arn":                                          IAMTagOpenIDConnectProvider_invalid_arn,
+		"IAMTagOpenIDConnectProvider_missing_tags":                                         IAMTagOpenIDConnectProvider_missing_tags,
+		"IAMTagOpenIDConnectProvider_missing_tag_key":                                      IAMTagOpenIDConnectProvider_missing_tag_key,
+		"IAMTagOpenIDConnectProvider_missing_tag_value":                                    IAMTagOpenIDConnectProvider_missing_tag_value,
+		"IAMTagOpenIDConnectProvider_invalid_tags":                                         IAMTagOpenIDConnectProvider_invalid_tags,
+		"IAMTagOpenIDConnectProvider_duplicate_tag_keys":                                   IAMTagOpenIDConnectProvider_duplicate_tag_keys,
+		"IAMTagOpenIDConnectProvider_too_many_tags":                                        IAMTagOpenIDConnectProvider_too_many_tags,
+		"IAMTagOpenIDConnectProvider_non_existing_provider":                                IAMTagOpenIDConnectProvider_non_existing_provider,
+		"IAMTagOpenIDConnectProvider_invalid_tags_precede_lookup":                          IAMTagOpenIDConnectProvider_invalid_tags_precede_lookup,
+		"IAMTagOpenIDConnectProvider_tag_limit_exceeded":                                   IAMTagOpenIDConnectProvider_tag_limit_exceeded,
+		"IAMTagOpenIDConnectProvider_success":                                              IAMTagOpenIDConnectProvider_success,
+		"IAMTagOpenIDConnectProvider_overwrites_existing_tag":                              IAMTagOpenIDConnectProvider_overwrites_existing_tag,
+		"IAMTagOpenIDConnectProvider_isolated_per_provider":                                IAMTagOpenIDConnectProvider_isolated_per_provider,
+		"IAMUntagOpenIDConnectProvider_missing_arn":                                        IAMUntagOpenIDConnectProvider_missing_arn,
+		"IAMUntagOpenIDConnectProvider_invalid_arn":                                        IAMUntagOpenIDConnectProvider_invalid_arn,
+		"IAMUntagOpenIDConnectProvider_missing_tag_keys":                                   IAMUntagOpenIDConnectProvider_missing_tag_keys,
+		"IAMUntagOpenIDConnectProvider_invalid_tag_key":                                    IAMUntagOpenIDConnectProvider_invalid_tag_key,
+		"IAMUntagOpenIDConnectProvider_too_many_tag_keys":                                  IAMUntagOpenIDConnectProvider_too_many_tag_keys,
+		"IAMUntagOpenIDConnectProvider_non_existing_provider":                              IAMUntagOpenIDConnectProvider_non_existing_provider,
+		"IAMUntagOpenIDConnectProvider_success":                                            IAMUntagOpenIDConnectProvider_success,
+		"IAMUntagOpenIDConnectProvider_removal_is_idempotent":                              IAMUntagOpenIDConnectProvider_removal_is_idempotent,
+		"IAMUntagOpenIDConnectProvider_case_sensitive_key":                                 IAMUntagOpenIDConnectProvider_case_sensitive_key,
+		"IAMUntagOpenIDConnectProvider_removes_only_named_keys":                            IAMUntagOpenIDConnectProvider_removes_only_named_keys,
+		"IAMListOpenIDConnectProviderTags_missing_arn":                                     IAMListOpenIDConnectProviderTags_missing_arn,
+		"IAMListOpenIDConnectProviderTags_invalid_arn":                                     IAMListOpenIDConnectProviderTags_invalid_arn,
+		"IAMListOpenIDConnectProviderTags_invalid_max_items":                               IAMListOpenIDConnectProviderTags_invalid_max_items,
+		"IAMListOpenIDConnectProviderTags_invalid_max_items_format":                        IAMListOpenIDConnectProviderTags_invalid_max_items_format,
+		"IAMListOpenIDConnectProviderTags_non_existing_provider":                           IAMListOpenIDConnectProviderTags_non_existing_provider,
+		"IAMListOpenIDConnectProviderTags_empty_result":                                    IAMListOpenIDConnectProviderTags_empty_result,
+		"IAMListOpenIDConnectProviderTags_success":                                         IAMListOpenIDConnectProviderTags_success,
+		"IAMListOpenIDConnectProviderTags_pagination":                                      IAMListOpenIDConnectProviderTags_pagination,
 		"IAMAssumeRoleWithWebIdentity_missing_role_arn":                                    IAMAssumeRoleWithWebIdentity_missing_role_arn,
 		"IAMAssumeRoleWithWebIdentity_role_arn_too_short":                                  IAMAssumeRoleWithWebIdentity_role_arn_too_short,
 		"IAMAssumeRoleWithWebIdentity_malformed_duration":                                  IAMAssumeRoleWithWebIdentity_malformed_duration,

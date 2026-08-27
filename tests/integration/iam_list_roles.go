@@ -58,9 +58,12 @@ func IAMListRoles_long_path_prefix(s *S3Conf) error {
 func IAMListRoles_invalid_max_items(s *S3Conf) error {
 	testName := "IAMListRoles_invalid_max_items"
 	return iamActionHandler(s, testName, func(client *iam.Client) error {
-		for _, maxItems := range []int32{-1, 0, 1001} {
+		for maxItems, expected := range map[int32]iamerr.Error{
+			-1:   iamerr.GetAPIError(iamerr.ErrMaxItemsTooLow),
+			0:    iamerr.GetAPIError(iamerr.ErrMaxItemsTooLow),
+			1001: iamerr.GetAPIError(iamerr.ErrMaxItemsTooHigh),
+		} {
 			_, err := listIAMRoles(client, &iam.ListRolesInput{MaxItems: aws.Int32(maxItems)})
-			expected := iamerr.ValidationError(fmt.Sprintf("1 validation error detected: Value '%d' at 'maxItems' failed to satisfy constraint: Member must have value between 1 and 1000", maxItems))
 			if checkErr := checkIAMApiErr(err, expected); checkErr != nil {
 				return fmt.Errorf("MaxItems %d: %w", maxItems, checkErr)
 			}
@@ -85,8 +88,7 @@ func IAMListRoles_invalid_max_items_format(s *S3Conf) error {
 		date:     time.Now().UTC(),
 		headers:  map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
 	}, func(req *http.Request) error {
-		expected := iamerr.ValidationError("1 validation error detected: Value 'not-a-number' at 'maxItems' failed to satisfy constraint: Member must have value between 1 and 1000")
-		return checkIAMAuthRequest(s, req, expected)
+		return checkIAMAuthRequest(s, req, iamerr.MalformedInput())
 	})
 }
 

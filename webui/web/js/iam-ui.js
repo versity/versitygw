@@ -38,6 +38,8 @@ const IAM_LIMITS = {
   tagsPerResource: 50,
   tagKeyChars: 128,
   tagValueChars: 256,
+  tagKeyPattern: /^[\p{L}\p{Z}\p{N}_.:/=+\-@]+$/u,
+  tagValuePattern: /^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$/u,
   minSessionDuration: 3600,
   maxSessionDuration: 43200,
   oidcClientIds: 100,
@@ -162,6 +164,60 @@ function iamValidatePath(path) {
   if (path.length > IAM_LIMITS.pathChars) return `Path must be ${IAM_LIMITS.pathChars} characters or fewer.`;
   if (!path.startsWith('/') || !path.endsWith('/')) return 'Path must start and end with /.';
   return null;
+}
+
+/**
+ * Validate a collected tag list against the same rules the server applies,
+ * so an obvious mistake is caught before a round trip. caseSensitiveKeys
+ * selects the resource's key-comparison rule: users and roles fold key
+ * case, OIDC providers compare keys exactly. Returns an error string, or
+ * null when the list is acceptable.
+ */
+function iamValidateTags(tags, caseSensitiveKeys = false) {
+  if (tags.length > IAM_LIMITS.tagsPerResource) {
+    return `A single resource can carry ${IAM_LIMITS.tagsPerResource} tags at most.`;
+  }
+
+  const seen = new Set();
+  for (const tag of tags) {
+    if (!tag.Key) return 'Every tag needs a key.';
+    if (tag.Key.length > IAM_LIMITS.tagKeyChars) {
+      return `Tag key "${tag.Key}" must be ${IAM_LIMITS.tagKeyChars} characters or fewer.`;
+    }
+    if (!IAM_LIMITS.tagKeyPattern.test(tag.Key)) {
+      return `Tag key "${tag.Key}" may contain letters, numbers, spaces and _ . : / = + - @ only.`;
+    }
+    if ((tag.Value || '').length > IAM_LIMITS.tagValueChars) {
+      return `Tag value for "${tag.Key}" must be ${IAM_LIMITS.tagValueChars} characters or fewer.`;
+    }
+    if (!IAM_LIMITS.tagValuePattern.test(tag.Value || '')) {
+      return `Tag value for "${tag.Key}" may contain letters, numbers, spaces and _ . : / = + - @ only.`;
+    }
+    const normalized = caseSensitiveKeys ? tag.Key : tag.Key.toLowerCase();
+    if (seen.has(normalized)) {
+      return caseSensitiveKeys
+        ? `Tag key "${tag.Key}" is listed twice.`
+        : `Tag key "${tag.Key}" is listed twice. Keys are case insensitive.`;
+    }
+    seen.add(normalized);
+  }
+
+  return null;
+}
+
+/**
+ * Render a tag list as read-only two-tone chips, key alongside value.
+ */
+function iamTagChips(tags) {
+  if (!tags.length) return '<span class="text-sm text-charcoal-300">No tags</span>';
+  return tags.map(tag => {
+    const value = tag.Value
+      ? `<span class="px-2 py-1 bg-white border-l border-gray-200 text-charcoal-400">${escapeHtml(tag.Value)}</span>`
+      : '<span class="px-2 py-1 bg-white border-l border-gray-200 text-charcoal-300 italic">empty</span>';
+    return `<span class="inline-flex items-center overflow-hidden rounded-md border border-gray-200 bg-gray-50 text-xs font-mono">
+      <span class="px-2 py-1 font-medium text-charcoal">${escapeHtml(tag.Key)}</span>${value}
+    </span>`;
+  }).join('');
 }
 
 // ============================================
@@ -634,6 +690,200 @@ const iamPolicyEditor = {
     } catch (error) {
       console.error('Error deleting policy:', error);
       this._setStatus(iamErrorText(error));
+    } finally {
+      setLoading(btn, false);
+    }
+  }
+};
+
+// ============================================
+// Tag editor
+// ============================================
+
+/**
+ * Edit an identity's whole tag set at once, then apply it as the minimal
+ * pair of API calls: one untag for the keys that disappeared, one tag for
+ * the ones added or changed. Editing the set as a whole — rather than a
+ * tag at a time — is what lets a rename, a couple of additions and a couple
+ * of removals be one reviewable Save.
+ */
+const iamTagEditor = {
+  _state: null,
+
+  _ensureModal() {
+    if (document.getElementById('iam-tag-modal')) return;
+    const wrapper = document.createElement('div');
+    wrapper.id = 'iam-tag-modal';
+    wrapper.className = 'modal hidden fixed inset-0 z-50';
+    wrapper.innerHTML = `<div class="modal-backdrop absolute inset-0" onclick="iamTagEditor.close()"></div>
+      <div class="absolute inset-0 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl relative max-h-[90vh] flex flex-col">
+          <div class="flex items-center justify-between p-6 border-b border-gray-100 flex-shrink-0">
+            <div>
+              <h2 id="iam-tag-title" class="text-xl font-semibold text-charcoal">Tags</h2>
+              <p id="iam-tag-subtitle" class="text-sm text-charcoal-300 mt-1"></p>
+            </div>
+            <button onclick="iamTagEditor.close()" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div class="flex-1 overflow-auto">
+            <div class="p-6 space-y-5">
+              <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div class="flex items-start gap-3">
+                  <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  <div class="text-sm text-blue-800">
+                    <p class="font-medium">About Tags</p>
+                    <p id="iam-tag-about" class="mt-1"></p>
+                  </div>
+                </div>
+              </div>
+              <div id="iam-tag-status" class="hidden"></div>
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <label class="block text-sm font-medium text-charcoal">Tags</label>
+                  <button type="button" onclick="iamTagEditor.addRow()" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Add Tag</button>
+                </div>
+                <div id="iam-tag-rows" class="space-y-2"></div>
+                <p id="iam-tag-empty" class="hidden py-6 text-center text-sm text-charcoal-300">No tags yet. Use <span class="font-medium">Add Tag</span> to create one.</p>
+                <p id="iam-tag-counter" class="mt-3 text-xs text-charcoal-300"></p>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100 flex-shrink-0">
+            <button onclick="iamTagEditor.close()" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+            <button id="iam-tag-save-btn" onclick="iamTagEditor.save()" class="px-4 py-2.5 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">Save Tags</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(wrapper);
+
+    // iamAddTagRow and iamRemoveRow are shared with the create forms and
+    // report nothing back, so watch the container instead of hooking them.
+    new MutationObserver(() => this.updateCounter())
+      .observe(document.getElementById('iam-tag-rows'), { childList: true });
+  },
+
+  /**
+   * @param {Object} opts
+   *   title             modal heading
+   *   subtitle          the resource these tags belong to
+   *   tags              current tags, as [{Key, Value}]
+   *   caseSensitiveKeys compare keys exactly instead of folding their case
+   *   onSave            async ({ set, remove }) => void, where set holds the
+   *                     tags to add or overwrite and remove holds the keys to
+   *                     drop
+   */
+  open(opts) {
+    this._ensureModal();
+    this._state = Object.assign({}, opts);
+
+    document.getElementById('iam-tag-title').textContent = opts.title || 'Tags';
+    document.getElementById('iam-tag-subtitle').textContent = opts.subtitle || '';
+    document.getElementById('iam-tag-about').innerHTML =
+      'Key/value labels for grouping and search. They are also readable from policy conditions as ' +
+      '<code class="font-mono">aws:PrincipalTag/&lt;key&gt;</code> for the tagged identity and ' +
+      '<code class="font-mono">aws:ResourceTag/&lt;key&gt;</code> for the resource being acted on. ' +
+      (opts.caseSensitiveKeys
+        ? 'Keys are case sensitive, so "env" and "ENV" are separate tags; values may be empty.'
+        : 'Keys are case insensitive; values may be empty.');
+
+    const rows = document.getElementById('iam-tag-rows');
+    rows.innerHTML = '';
+    (opts.tags || []).forEach(tag => iamAddTagRow('iam-tag-rows', tag.Key, tag.Value || ''));
+
+    this._setStatus(null);
+    this.updateCounter();
+    openModal('iam-tag-modal');
+  },
+
+  close() {
+    this._state = null;
+    closeModal('iam-tag-modal');
+  },
+
+  addRow() {
+    iamAddTagRow('iam-tag-rows');
+    const rows = document.querySelectorAll('#iam-tag-rows [data-iam-row="tag"]');
+    const last = rows[rows.length - 1];
+    if (last) last.querySelector('[data-tag-key]').focus();
+  },
+
+  updateCounter() {
+    const rows = document.querySelectorAll('#iam-tag-rows [data-iam-row="tag"]').length;
+    document.getElementById('iam-tag-empty').classList.toggle('hidden', rows > 0);
+
+    const counter = document.getElementById('iam-tag-counter');
+    const over = rows > IAM_LIMITS.tagsPerResource;
+    counter.className = 'mt-3 text-xs ' + (over ? 'text-red-600 font-medium' : 'text-charcoal-300');
+    counter.textContent = `${rows} / ${IAM_LIMITS.tagsPerResource} tags`;
+  },
+
+  _setStatus(message) {
+    const el = document.getElementById('iam-tag-status');
+    if (!message) {
+      el.classList.add('hidden');
+      el.textContent = '';
+      return;
+    }
+    el.className = 'border rounded-lg px-4 py-3 text-sm bg-red-50 border-red-200 text-red-800';
+    el.textContent = message;
+    el.classList.remove('hidden');
+  },
+
+  /**
+   * Diff the edited rows against the tags the modal opened with. Where keys
+   * fold, a key whose only change is its casing still lands in set: the tag
+   * action overwrites the stored tag in place, taking the new casing with
+   * it. Where keys are exact, that same edit is a removal plus an addition.
+   */
+  _diff(current) {
+    const original = this._state.tags || [];
+    const key = tag => (this._state.caseSensitiveKeys ? tag.Key : tag.Key.toLowerCase());
+    const originalByKey = new Map(original.map(tag => [key(tag), tag]));
+    const currentKeys = new Set(current.map(key));
+
+    const set = current.filter(tag => {
+      const before = originalByKey.get(key(tag));
+      return !before || before.Key !== tag.Key || (before.Value || '') !== (tag.Value || '');
+    });
+    const remove = original
+      .filter(tag => !currentKeys.has(key(tag)))
+      .map(tag => tag.Key);
+
+    return { set, remove };
+  },
+
+  async save() {
+    const state = this._state;
+    if (!state) return;
+
+    // iamCollectTags drops keyless rows, so a value typed without a key
+    // would silently vanish. Catch that before it does.
+    const orphanValue = Array.from(document.querySelectorAll('#iam-tag-rows [data-iam-row="tag"]'))
+      .some(row => !row.querySelector('[data-tag-key]').value.trim() &&
+        row.querySelector('[data-tag-value]').value.trim());
+    if (orphanValue) { this._setStatus('Every tag needs a key.'); return; }
+
+    const current = iamCollectTags('iam-tag-rows');
+    const error = iamValidateTags(current, state.caseSensitiveKeys);
+    if (error) { this._setStatus(error); return; }
+
+    const { set, remove } = this._diff(current);
+    if (!set.length && !remove.length) {
+      showToast('No tag changes to save', 'info');
+      this.close();
+      return;
+    }
+
+    const btn = document.getElementById('iam-tag-save-btn');
+    setLoading(btn, true);
+    try {
+      await state.onSave({ set, remove });
+      this.close();
+    } catch (err) {
+      console.error('Error saving tags:', err);
+      this._setStatus(iamErrorText(err));
     } finally {
       setLoading(btn, false);
     }
