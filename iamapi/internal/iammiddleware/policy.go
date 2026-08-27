@@ -186,7 +186,8 @@ func resourceForAction(ctx fiber.Ctx, store iamutil.IdentityStore, action string
 	case "CreateOpenIDConnectProvider":
 		return newOIDCProviderResource(ctx), nil
 	case "GetOpenIDConnectProvider", "DeleteOpenIDConnectProvider", "AddClientIDToOpenIDConnectProvider",
-		"RemoveClientIDFromOpenIDConnectProvider", "UpdateOpenIDConnectProviderThumbprint":
+		"RemoveClientIDFromOpenIDConnectProvider", "UpdateOpenIDConnectProviderThumbprint",
+		"TagOpenIDConnectProvider", "UntagOpenIDConnectProvider", "ListOpenIDConnectProviderTags":
 		arn, _ := iamutil.RequestParam(ctx, "OpenIDConnectProviderArn")
 		if arn == "" {
 			return "", nil
@@ -382,9 +383,11 @@ func requestConditionContext(ctx fiber.Ctx, identity types.Identity, action stri
 	}
 
 	switch action {
-	case "CreateUser", "CreateRole", "CreateOpenIDConnectProvider", "TagUser", "TagRole":
-		addRequestTagContext(condCtx, ctx)
-	case "UntagUser", "UntagRole":
+	case "CreateUser", "CreateRole", "TagUser", "TagRole":
+		addRequestTagContext(condCtx, ctx, iamutil.TagKeysFolded)
+	case "CreateOpenIDConnectProvider", "TagOpenIDConnectProvider":
+		addRequestTagContext(condCtx, ctx, iamutil.TagKeysExact)
+	case "UntagUser", "UntagRole", "UntagOpenIDConnectProvider":
 		addTagKeysContext(condCtx, ctx)
 	}
 
@@ -459,8 +462,8 @@ func addPrincipalTagContext(condCtx map[string][]string, tags []types.Tag) {
 // the same parse independently and will reject the request with the
 // specific tag-validation error afterward, so no write can succeed with
 // tags that silently evaded a tag-scoped Condition.
-func addRequestTagContext(condCtx map[string][]string, ctx fiber.Ctx) {
-	tags, err := iamutil.ParseTags(ctx)
+func addRequestTagContext(condCtx map[string][]string, ctx fiber.Ctx, keyCase iamutil.TagKeyCase) {
+	tags, err := iamutil.ParseTags(ctx, keyCase)
 	if err != nil || len(tags) == 0 {
 		return
 	}

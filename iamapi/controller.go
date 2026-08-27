@@ -61,7 +61,7 @@ func (c IAMApiController) CreateUser(ctx fiber.Ctx) (*Response, error) {
 		return nil, err
 	}
 
-	tags, err := iamutil.ParseTags(ctx)
+	tags, err := iamutil.ParseTags(ctx, iamutil.TagKeysFolded)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +244,7 @@ func (c IAMApiController) TagUser(ctx fiber.Ctx) (*Response, error) {
 		return nil, err
 	}
 
-	tags, err := iamutil.ParseTags(ctx)
+	tags, err := iamutil.ParseTags(ctx, iamutil.TagKeysFolded)
 	if err != nil {
 		return nil, err
 	}
@@ -662,7 +662,7 @@ func (c IAMApiController) CreateRole(ctx fiber.Ctx) (*Response, error) {
 		return nil, err
 	}
 
-	tags, err := iamutil.ParseTags(ctx)
+	tags, err := iamutil.ParseTags(ctx, iamutil.TagKeysFolded)
 	if err != nil {
 		return nil, err
 	}
@@ -826,7 +826,7 @@ func (c IAMApiController) TagRole(ctx fiber.Ctx) (*Response, error) {
 		return nil, err
 	}
 
-	tags, err := iamutil.ParseTags(ctx)
+	tags, err := iamutil.ParseTags(ctx, iamutil.TagKeysFolded)
 	if err != nil {
 		return nil, err
 	}
@@ -1069,7 +1069,7 @@ func (c IAMApiController) CreateOpenIDConnectProvider(ctx fiber.Ctx) (*Response,
 		thumbprints = iamutil.NormalizeThumbprintList(thumbprints)
 	}
 
-	tags, err := iamutil.ParseTags(ctx)
+	tags, err := iamutil.ParseTags(ctx, iamutil.TagKeysExact)
 	if err != nil {
 		return nil, err
 	}
@@ -1212,6 +1212,89 @@ func (c IAMApiController) UpdateOpenIDConnectProviderThumbprint(ctx fiber.Ctx) (
 	}
 
 	return &Response{Data: &types.UpdateOpenIDConnectProviderThumbprintResponse{}}, nil
+}
+
+// TagOpenIDConnectProvider adds or replaces tags on an existing OIDC
+// provider. Unlike the user and role tag actions, provider tag keys are
+// compared exactly, so "env" and "ENV" are two distinct tags.
+func (c IAMApiController) TagOpenIDConnectProvider(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "TagOpenIDConnectProvider")
+	if err != nil {
+		return nil, err
+	}
+
+	tags, err := iamutil.ParseTags(ctx, iamutil.TagKeysExact)
+	if err != nil {
+		return nil, err
+	}
+	if len(tags) == 0 {
+		debuglogger.Logf("missing required TagOpenIDConnectProvider parameter: Tags")
+		return nil, iamerr.MissingValue("tags")
+	}
+
+	if err := c.store.TagOIDCProvider(ctx.Context(), arn, tags); err != nil {
+		debuglogger.Logf("failed to tag IAM OIDC provider %q: %v", arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.TagOpenIDConnectProviderResponse{}}, nil
+}
+
+// UntagOpenIDConnectProvider removes the named tags from an existing OIDC
+// provider. Removal is idempotent: a key naming no current tag is not an
+// error.
+func (c IAMApiController) UntagOpenIDConnectProvider(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "UntagOpenIDConnectProvider")
+	if err != nil {
+		return nil, err
+	}
+
+	tagKeys, err := iamutil.ParseTagKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(tagKeys) == 0 {
+		debuglogger.Logf("missing required UntagOpenIDConnectProvider parameter: TagKeys")
+		return nil, iamerr.MissingValue("tagKeys")
+	}
+
+	if err := c.store.UntagOIDCProvider(ctx.Context(), arn, tagKeys); err != nil {
+		debuglogger.Logf("failed to untag IAM OIDC provider %q: %v", arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.UntagOpenIDConnectProviderResponse{}}, nil
+}
+
+func (c IAMApiController) ListOpenIDConnectProviderTags(ctx fiber.Ctx) (*Response, error) {
+	arn, err := iamutil.GetOIDCProviderArn(ctx, "ListOpenIDConnectProviderTags")
+	if err != nil {
+		return nil, err
+	}
+
+	maxItems, err := iamutil.ParseMaxItems(ctx, "ListOpenIDConnectProviderTags")
+	if err != nil {
+		return nil, err
+	}
+
+	marker, _ := iamutil.RequestParam(ctx, "Marker")
+	out, err := c.store.ListOIDCProviderTags(ctx.Context(), storage.ListOIDCProviderTagsInput{
+		Arn:      arn,
+		Marker:   marker,
+		MaxItems: maxItems,
+	})
+	if err != nil {
+		debuglogger.Logf("failed to list IAM OIDC provider %q tags: %v", arn, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.ListOpenIDConnectProviderTagsResponse{
+		Result: types.ListOpenIDConnectProviderTagsResult{
+			Tags:        types.Tags{Members: out.Tags},
+			IsTruncated: out.IsTruncated,
+			Marker:      out.Marker,
+		},
+	}}, nil
 }
 
 func (c IAMApiController) AssumeRoleWithWebIdentity(ctx fiber.Ctx) (*Response, error) {

@@ -2868,6 +2868,8 @@ func TestIAMApiControllerCreateOIDCProviderValidationErrors(t *testing.T) {
 			message: "Thumbprint list must contain fewer than 5 entries.",
 		},
 		{
+			// Provider tag keys are compared exactly, so only a
+			// byte-identical repeat is a duplicate.
 			name: "duplicate tag keys",
 			params: url.Values{
 				"Action":                  {"CreateOpenIDConnectProvider"},
@@ -2875,12 +2877,12 @@ func TestIAMApiControllerCreateOIDCProviderValidationErrors(t *testing.T) {
 				"ThumbprintList.member.1": {strings.Repeat("a", 40)},
 				"Tags.member.1.Key":       {"key"},
 				"Tags.member.1.Value":     {"one"},
-				"Tags.member.2.Key":       {"KEY"},
+				"Tags.member.2.Key":       {"key"},
 				"Tags.member.2.Value":     {"two"},
 			},
 			status:  http.StatusBadRequest,
 			code:    "InvalidInput",
-			message: "Duplicate tag keys found. Please note that Tag keys are case insensitive.",
+			message: "Duplicate tag keys found.",
 		},
 	}
 
@@ -2891,6 +2893,456 @@ func TestIAMApiControllerCreateOIDCProviderValidationErrors(t *testing.T) {
 			requireIAMError(t, resp, tt.status, "Sender", tt.code, tt.message)
 		})
 	}
+}
+
+// TestIAMApiControllerOIDCProviderTagLifecycle covers the provider tagging
+// actions' distinguishing trait: tag keys are compared exactly, so "env"
+// and "ENV" are two independent tags rather than one.
+func TestIAMApiControllerOIDCProviderTagLifecycle(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+	arn := createTestOIDCProviderForTrust(t, server, "https://tags.example.com", "")
+
+	if got := listOIDCProviderTags(t, server, arn); len(got.Tags.Members) != 0 || got.IsTruncated {
+		t.Fatalf("ListOpenIDConnectProviderTags on a fresh provider = %#v, want no tags", got)
+	}
+
+	tagOIDCProvider(t, server, arn, map[string]string{"env": "prod", "team": "storage", "empty": ""})
+
+	got := listOIDCProviderTags(t, server, arn)
+	// Sorted by key, regardless of the order they were added in.
+	want := []iamtypes.Tag{{Key: "empty", Value: ""}, {Key: "env", Value: "prod"}, {Key: "team", Value: "storage"}}
+	if !slices.Equal(got.Tags.Members, want) {
+		t.Fatalf("Tags = %#v, want %#v", got.Tags.Members, want)
+	}
+
+	// A repeated key replaces its value in place; a differently-cased key
+	// is a different tag and is added alongside.
+	tagOIDCProvider(t, server, arn, map[string]string{"env": "staging"})
+	tagOIDCProvider(t, server, arn, map[string]string{"TEAM": "compute"})
+
+	got = listOIDCProviderTags(t, server, arn)
+	want = []iamtypes.Tag{
+		{Key: "TEAM", Value: "compute"},
+		{Key: "empty", Value: ""},
+		{Key: "env", Value: "staging"},
+		{Key: "team", Value: "storage"},
+	}
+	if !slices.Equal(got.Tags.Members, want) {
+		t.Fatalf("Tags after overwrite = %#v, want %#v", got.Tags.Members, want)
+	}
+
+	// GetOpenIDConnectProvider reports the same tags the tag actions maintain.
+	get := doIAMAction(t, server, url.Values{"Action": {"GetOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}})
+	var getOut iamtypes.GetOpenIDConnectProviderResponse
+	unmarshalXML(t, readBody(t, get), &getOut)
+	if len(getOut.Result.Tags) != 4 {
+		t.Fatalf("GetOpenIDConnectProvider Tags = %#v, want 4 tags", getOut.Result.Tags)
+	}
+
+	// Removal matches keys exactly, and a key naming no tag is not an error.
+	untag := doIAMAction(t, server, url.Values{
+		"Action":                   {"UntagOpenIDConnectProvider"},
+		"OpenIDConnectProviderArn": {arn},
+		"TagKeys.member.1":         {"team"},
+		"TagKeys.member.2":         {"EnV"},
+		"TagKeys.member.3":         {"never-existed"},
+	})
+	if untag.StatusCode != http.StatusOK {
+		t.Fatalf("UntagOpenIDConnectProvider status = %d, body=%s", untag.StatusCode, readBody(t, untag))
+	}
+
+	got = listOIDCProviderTags(t, server, arn)
+	want = []iamtypes.Tag{{Key: "TEAM", Value: "compute"}, {Key: "empty", Value: ""}, {Key: "env", Value: "staging"}}
+	if !slices.Equal(got.Tags.Members, want) {
+		t.Fatalf("Tags after untag = %#v, want %#v", got.Tags.Members, want)
+	}
+}
+
+// TestIAMApiControllerOIDCProviderTagsIndependentPerProvider covers two
+// providers carrying the same tag keys: each set is its own.
+func TestIAMApiControllerOIDCProviderTagsIndependentPerProvider(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+	first := createTestOIDCProviderForTrust(t, server, "https://first.example.com", "")
+	second := createTestOIDCProviderForTrust(t, server, "https://second.example.com", "")
+
+	tagOIDCProvider(t, server, first, map[string]string{"owner": "first"})
+	tagOIDCProvider(t, server, second, map[string]string{"owner": "second"})
+
+	untag := doIAMAction(t, server, url.Values{
+		"Action": {"UntagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {first}, "TagKeys.member.1": {"owner"},
+	})
+	if untag.StatusCode != http.StatusOK {
+		t.Fatalf("UntagOpenIDConnectProvider status = %d, body=%s", untag.StatusCode, readBody(t, untag))
+	}
+
+	if got := listOIDCProviderTags(t, server, first).Tags.Members; len(got) != 0 {
+		t.Fatalf("first provider tags after untag = %#v, want none", got)
+	}
+	if got := listOIDCProviderTags(t, server, second).Tags.Members; !slices.Equal(got, []iamtypes.Tag{{Key: "owner", Value: "second"}}) {
+		t.Fatalf("second provider tags = %#v", got)
+	}
+}
+
+func TestIAMApiControllerListOIDCProviderTagsPagination(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+	arn := createTestOIDCProviderForTrust(t, server, "https://paged.example.com", "")
+	tagOIDCProvider(t, server, arn, map[string]string{"a": "1", "b": "2", "c": "3"})
+
+	var seen []iamtypes.Tag
+	marker := ""
+	for page := 1; ; page++ {
+		params := url.Values{
+			"Action":                   {"ListOpenIDConnectProviderTags"},
+			"OpenIDConnectProviderArn": {arn},
+			"MaxItems":                 {"1"},
+		}
+		if marker != "" {
+			params.Set("Marker", marker)
+		}
+		resp := doIAMAction(t, server, params)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("ListOpenIDConnectProviderTags status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+		}
+		var out struct {
+			Result iamtypes.ListOpenIDConnectProviderTagsResult `xml:"ListOpenIDConnectProviderTagsResult"`
+		}
+		unmarshalXML(t, readBody(t, resp), &out)
+
+		if len(out.Result.Tags.Members) != 1 {
+			t.Fatalf("page %d holds %d tags, want 1", page, len(out.Result.Tags.Members))
+		}
+		seen = append(seen, out.Result.Tags.Members...)
+		if !out.Result.IsTruncated {
+			if out.Result.Marker != "" {
+				t.Fatalf("final page Marker = %q, want empty", out.Result.Marker)
+			}
+			break
+		}
+		marker = out.Result.Marker
+	}
+
+	want := []iamtypes.Tag{{Key: "a", Value: "1"}, {Key: "b", Value: "2"}, {Key: "c", Value: "3"}}
+	if !slices.Equal(seen, want) {
+		t.Fatalf("paged tags = %#v, want %#v", seen, want)
+	}
+}
+
+func TestIAMApiControllerTagOIDCProviderExceedsQuota(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+	arn := createTestOIDCProviderForTrust(t, server, "https://quota.example.com", "")
+
+	atQuota := url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}}
+	for i := 1; i <= storage.MaxTagsPerResource; i++ {
+		atQuota.Set(fmt.Sprintf("Tags.member.%d.Key", i), fmt.Sprintf("k%d", i))
+		atQuota.Set(fmt.Sprintf("Tags.member.%d.Value", i), fmt.Sprintf("v%d", i))
+	}
+	if resp := doIAMAction(t, server, atQuota); resp.StatusCode != http.StatusOK {
+		t.Fatalf("TagOpenIDConnectProvider with %d tags status = %d, body=%s", storage.MaxTagsPerResource, resp.StatusCode, readBody(t, resp))
+	}
+
+	// Replacing an existing key at the quota is fine: the total doesn't grow.
+	replace := doIAMAction(t, server, url.Values{
+		"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn},
+		"Tags.member.1.Key": {"k1"}, "Tags.member.1.Value": {"replaced"},
+	})
+	if replace.StatusCode != http.StatusOK {
+		t.Fatalf("TagOpenIDConnectProvider replacing at quota status = %d, body=%s", replace.StatusCode, readBody(t, replace))
+	}
+
+	// A differently-cased key is a new tag, so it overflows the quota.
+	overflow := doIAMAction(t, server, url.Values{
+		"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn},
+		"Tags.member.1.Key": {"K1"}, "Tags.member.1.Value": {"x"},
+	})
+	requireIAMError(t, overflow, http.StatusConflict, "Sender", "LimitExceeded", "The number of tags has reached the maximum limit.")
+}
+
+func TestIAMApiControllerOIDCProviderTagValidationErrors(t *testing.T) {
+	const arn = "arn:aws:iam::000000000000:oidc-provider/tags.example.com"
+
+	tooManyTags := url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}}
+	for i := 1; i <= iamutil.MaxTagMembersPerRequest+1; i++ {
+		tooManyTags.Set(fmt.Sprintf("Tags.member.%d.Key", i), fmt.Sprintf("k%d", i))
+		tooManyTags.Set(fmt.Sprintf("Tags.member.%d.Value", i), fmt.Sprintf("v%d", i))
+	}
+	tooManyTagKeys := url.Values{"Action": {"UntagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}}
+	for i := 1; i <= iamutil.MaxTagMembersPerRequest+1; i++ {
+		tooManyTagKeys.Set(fmt.Sprintf("TagKeys.member.%d", i), fmt.Sprintf("k%d", i))
+	}
+
+	const missingArn = "arn:aws:iam::000000000000:oidc-provider/nosuch.example.com"
+	const notFoundMessage = "OpenId connect Provider " + missingArn + " cannot be found."
+
+	tests := []struct {
+		name          string
+		setupProvider bool
+		params        url.Values
+		status        int
+		code          string
+		message       string
+	}{
+		{
+			name:    "tag missing arn",
+			params:  url.Values{"Action": {"TagOpenIDConnectProvider"}, "Tags.member.1.Key": {"env"}, "Tags.member.1.Value": {"prod"}},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'openIDConnectProviderArn' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:    "tag arn too short",
+			params:  url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {"arn:aws:iam::1"}, "Tags.member.1.Key": {"env"}, "Tags.member.1.Value": {"prod"}},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'openIDConnectProviderArn' failed to satisfy constraint: Member must have length greater than or equal to 20",
+		},
+		{
+			name:    "tag wrong resource type in arn",
+			params:  url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {"arn:aws:iam::000000000000:user/alice"}, "Tags.member.1.Key": {"env"}, "Tags.member.1.Value": {"prod"}},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "Invalid resource type in ARN",
+		},
+		{
+			name:          "tag missing tags",
+			setupProvider: true,
+			params:        url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'tags' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:          "tag missing key",
+			setupProvider: true,
+			params:        url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}, "Tags.member.1.Value": {"prod"}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'tags.1.member.key' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:          "tag missing value",
+			setupProvider: true,
+			params:        url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}, "Tags.member.1.Key": {"env"}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'tags.1.member.value' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:          "tag empty key",
+			setupProvider: true,
+			params:        url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}, "Tags.member.1.Key": {""}, "Tags.member.1.Value": {"prod"}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'tags.1.member.key' failed to satisfy constraint: Member must have length greater than or equal to 1",
+		},
+		{
+			name:          "tag key too long",
+			setupProvider: true,
+			params:        url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}, "Tags.member.1.Key": {strings.Repeat("k", 129)}, "Tags.member.1.Value": {"v"}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'tags.1.member.key' failed to satisfy constraint: Member must have length less than or equal to 128",
+		},
+		{
+			name:          "tag invalid key characters",
+			setupProvider: true,
+			params:        url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}, "Tags.member.1.Key": {"bad*key"}, "Tags.member.1.Value": {"v"}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'tags.1.member.key' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]+",
+		},
+		{
+			name:          "tag value too long",
+			setupProvider: true,
+			params:        url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}, "Tags.member.1.Key": {"k"}, "Tags.member.1.Value": {strings.Repeat("v", 257)}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'tags.1.member.value' failed to satisfy constraint: Member must have length less than or equal to 256",
+		},
+		{
+			name:          "tag invalid value characters",
+			setupProvider: true,
+			params:        url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}, "Tags.member.1.Key": {"k"}, "Tags.member.1.Value": {"bad*value"}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'tags.1.member.value' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*",
+		},
+		{
+			name:          "tag duplicate keys",
+			setupProvider: true,
+			params: url.Values{
+				"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn},
+				"Tags.member.1.Key": {"env"}, "Tags.member.1.Value": {"prod"},
+				"Tags.member.2.Key": {"env"}, "Tags.member.2.Value": {"staging"},
+			},
+			status:  http.StatusBadRequest,
+			code:    "InvalidInput",
+			message: "Duplicate tag keys found.",
+		},
+		{
+			name:          "tag too many tags",
+			setupProvider: true,
+			params:        tooManyTags,
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'tags' failed to satisfy constraint: Member must have length less than or equal to 50",
+		},
+		{
+			name:          "tag invalid tag on non existing provider",
+			setupProvider: true,
+			params:        url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {missingArn}, "Tags.member.1.Key": {"bad*key"}, "Tags.member.1.Value": {"v"}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'tags.1.member.key' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]+",
+		},
+		{
+			name:          "tag non existing provider",
+			setupProvider: true,
+			params:        url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {missingArn}, "Tags.member.1.Key": {"k"}, "Tags.member.1.Value": {"v"}},
+			status:        http.StatusNotFound,
+			code:          "NoSuchEntity",
+			message:       notFoundMessage,
+		},
+		{
+			name:    "untag missing arn",
+			params:  url.Values{"Action": {"UntagOpenIDConnectProvider"}, "TagKeys.member.1": {"env"}},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'openIDConnectProviderArn' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:          "untag missing tag keys",
+			setupProvider: true,
+			params:        url.Values{"Action": {"UntagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'tagKeys' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:          "untag empty tag key",
+			setupProvider: true,
+			params:        url.Values{"Action": {"UntagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}, "TagKeys.member.1": {""}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       invalidTagKeysMessage,
+		},
+		{
+			name:          "untag tag key too long",
+			setupProvider: true,
+			params:        url.Values{"Action": {"UntagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}, "TagKeys.member.1": {strings.Repeat("k", 129)}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       invalidTagKeysMessage,
+		},
+		{
+			name:          "untag invalid tag key",
+			setupProvider: true,
+			params:        url.Values{"Action": {"UntagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}, "TagKeys.member.1": {"bad*key"}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       invalidTagKeysMessage,
+		},
+		{
+			name:          "untag too many tag keys",
+			setupProvider: true,
+			params:        tooManyTagKeys,
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'tagKeys' failed to satisfy constraint: Member must have length less than or equal to 50",
+		},
+		{
+			name:          "untag non existing provider",
+			setupProvider: true,
+			params:        url.Values{"Action": {"UntagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {missingArn}, "TagKeys.member.1": {"env"}},
+			status:        http.StatusNotFound,
+			code:          "NoSuchEntity",
+			message:       notFoundMessage,
+		},
+		{
+			name:    "list missing arn",
+			params:  url.Values{"Action": {"ListOpenIDConnectProviderTags"}},
+			status:  http.StatusBadRequest,
+			code:    "ValidationError",
+			message: "1 validation error detected: Value at 'openIDConnectProviderArn' failed to satisfy constraint: Member must not be null",
+		},
+		{
+			name:          "list max items too low",
+			setupProvider: true,
+			params:        url.Values{"Action": {"ListOpenIDConnectProviderTags"}, "OpenIDConnectProviderArn": {arn}, "MaxItems": {"0"}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'maxItems' failed to satisfy constraint: Member must have value greater than or equal to 1",
+		},
+		{
+			name:          "list max items too high",
+			setupProvider: true,
+			params:        url.Values{"Action": {"ListOpenIDConnectProviderTags"}, "OpenIDConnectProviderArn": {arn}, "MaxItems": {"1001"}},
+			status:        http.StatusBadRequest,
+			code:          "ValidationError",
+			message:       "1 validation error detected: Value at 'maxItems' failed to satisfy constraint: Member must have value less than or equal to 1000",
+		},
+		{
+			name:          "list max items not a number",
+			setupProvider: true,
+			params:        url.Values{"Action": {"ListOpenIDConnectProviderTags"}, "OpenIDConnectProviderArn": {arn}, "MaxItems": {"abc"}},
+			status:        http.StatusBadRequest,
+			code:          "MalformedInput",
+			message:       "",
+		},
+		{
+			name:          "list non existing provider",
+			setupProvider: true,
+			params:        url.Values{"Action": {"ListOpenIDConnectProviderTags"}, "OpenIDConnectProviderArn": {missingArn}},
+			status:        http.StatusNotFound,
+			code:          "NoSuchEntity",
+			message:       notFoundMessage,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newIAMControllerTestServer(t)
+			if tt.setupProvider {
+				createTestOIDCProviderForTrust(t, server, "https://tags.example.com", "")
+			}
+			resp := doIAMAction(t, server, tt.params)
+			requireIAMError(t, resp, tt.status, "Sender", tt.code, tt.message)
+		})
+	}
+}
+
+func tagOIDCProvider(t *testing.T, server *IAMApiServer, arn string, tags map[string]string) {
+	t.Helper()
+
+	params := url.Values{"Action": {"TagOpenIDConnectProvider"}, "OpenIDConnectProviderArn": {arn}}
+	i := 1
+	for key, value := range tags {
+		params.Set(fmt.Sprintf("Tags.member.%d.Key", i), key)
+		params.Set(fmt.Sprintf("Tags.member.%d.Value", i), value)
+		i++
+	}
+
+	resp := doIAMAction(t, server, params)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("TagOpenIDConnectProvider status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+}
+
+func listOIDCProviderTags(t *testing.T, server *IAMApiServer, arn string) iamtypes.ListOpenIDConnectProviderTagsResult {
+	t.Helper()
+
+	resp := doIAMAction(t, server, url.Values{
+		"Action":                   {"ListOpenIDConnectProviderTags"},
+		"OpenIDConnectProviderArn": {arn},
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("ListOpenIDConnectProviderTags status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+
+	var out struct {
+		Result iamtypes.ListOpenIDConnectProviderTagsResult `xml:"ListOpenIDConnectProviderTagsResult"`
+	}
+	unmarshalXML(t, readBody(t, resp), &out)
+	return out.Result
 }
 
 func TestIAMApiControllerOIDCThumbprintAutoFetchDisabled(t *testing.T) {

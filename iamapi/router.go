@@ -103,6 +103,10 @@ func (r *IAMApiRouter) Init() {
 		"AddClientIDToOpenIDConnectProvider":      r.Ctrl.AddClientIDToOpenIDConnectProvider,
 		"RemoveClientIDFromOpenIDConnectProvider": r.Ctrl.RemoveClientIDFromOpenIDConnectProvider,
 		"UpdateOpenIDConnectProviderThumbprint":   r.Ctrl.UpdateOpenIDConnectProviderThumbprint,
+		// OIDC Provider Tagging
+		"TagOpenIDConnectProvider":      r.Ctrl.TagOpenIDConnectProvider,
+		"UntagOpenIDConnectProvider":    r.Ctrl.UntagOpenIDConnectProvider,
+		"ListOpenIDConnectProviderTags": r.Ctrl.ListOpenIDConnectProviderTags,
 		// STS actions (routed through this same endpoint; see stsActions)
 		"AssumeRoleWithWebIdentity": r.Ctrl.AssumeRoleWithWebIdentity,
 		"GetCallerIdentity":         r.Ctrl.GetCallerIdentity,

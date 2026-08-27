@@ -645,7 +645,7 @@ func (s *VaultStore) withUserCAS(ctx context.Context, username string, mutate fu
 
 func (s *VaultStore) TagUser(ctx context.Context, userName string, tags []types.Tag) error {
 	_, err := s.withUserCAS(ctx, userName, func(user *types.User) error {
-		merged, err := mergeTags(user.Tags, tags)
+		merged, err := mergeTags(user.Tags, tags, iamutil.TagKeysFolded)
 		if err != nil {
 			return err
 		}
@@ -657,7 +657,7 @@ func (s *VaultStore) TagUser(ctx context.Context, userName string, tags []types.
 
 func (s *VaultStore) UntagUser(ctx context.Context, userName string, tagKeys []string) error {
 	_, err := s.withUserCAS(ctx, userName, func(user *types.User) error {
-		user.Tags = removeTags(user.Tags, tagKeys)
+		user.Tags = removeTags(user.Tags, tagKeys, iamutil.TagKeysFolded)
 		return nil
 	})
 	return err
@@ -669,7 +669,7 @@ func (s *VaultStore) ListUserTags(ctx context.Context, input ListUserTagsInput) 
 		return nil, err
 	}
 
-	return paginateTags(user.Tags, input.Marker, input.MaxItems), nil
+	return paginateTags(user.Tags, input.Marker, input.MaxItems, iamutil.TagKeysFolded), nil
 }
 
 func (s *VaultStore) CreateAccessKey(ctx context.Context, input CreateAccessKeyInput) (*types.AccessKey, error) {
@@ -1204,7 +1204,7 @@ func (s *VaultStore) UpdateAssumeRolePolicy(ctx context.Context, input UpdateAss
 
 func (s *VaultStore) TagRole(ctx context.Context, roleName string, tags []types.Tag) error {
 	_, err := s.withRoleCAS(ctx, roleName, func(role *types.Role) error {
-		merged, err := mergeTags(role.Tags, tags)
+		merged, err := mergeTags(role.Tags, tags, iamutil.TagKeysFolded)
 		if err != nil {
 			return err
 		}
@@ -1216,7 +1216,7 @@ func (s *VaultStore) TagRole(ctx context.Context, roleName string, tags []types.
 
 func (s *VaultStore) UntagRole(ctx context.Context, roleName string, tagKeys []string) error {
 	_, err := s.withRoleCAS(ctx, roleName, func(role *types.Role) error {
-		role.Tags = removeTags(role.Tags, tagKeys)
+		role.Tags = removeTags(role.Tags, tagKeys, iamutil.TagKeysFolded)
 		return nil
 	})
 	return err
@@ -1228,7 +1228,7 @@ func (s *VaultStore) ListRoleTags(ctx context.Context, input ListRoleTagsInput) 
 		return nil, err
 	}
 
-	return paginateTags(role.Tags, input.Marker, input.MaxItems), nil
+	return paginateTags(role.Tags, input.Marker, input.MaxItems, iamutil.TagKeysFolded), nil
 }
 
 func (s *VaultStore) PutRolePolicy(ctx context.Context, input PutRolePolicyInput) error {
@@ -1527,7 +1527,7 @@ func (s *VaultStore) CreateOIDCProvider(_ context.Context, provider types.OIDCPr
 }
 
 func (s *VaultStore) GetOIDCProvider(_ context.Context, arn string) (*types.OIDCProvider, error) {
-	provider, _, err := s.readOIDCProviderVersion(arn)
+	provider, _, err := s.readOIDCProviderVersion(arn, iamerr.NoSuchEntityOIDCProviderGet)
 	return provider, err
 }
 
@@ -1535,8 +1535,10 @@ func (s *VaultStore) GetOIDCProvider(_ context.Context, arn string) (*types.OIDC
 // readUserVersion/readRoleVersion: it additionally returns the KV version
 // the record was read at, so a mutation can write back with a matching CAS
 // value instead of racing on a blind delete-then-recreate (see
-// replaceOIDCProvider).
-func (s *VaultStore) readOIDCProviderVersion(arn string) (*types.OIDCProvider, int32, error) {
+// replaceOIDCProvider). notFound supplies the NoSuchEntity error the
+// calling action reports, which the tagging actions word differently from
+// the rest.
+func (s *VaultStore) readOIDCProviderVersion(arn string, notFound func(string) iamerr.Error) (*types.OIDCProvider, int32, error) {
 	url, err := iamutil.ParseOIDCProviderArn(arn)
 	if err != nil {
 		return nil, 0, err
@@ -1547,7 +1549,7 @@ func (s *VaultStore) readOIDCProviderVersion(arn string) (*types.OIDCProvider, i
 	resp, err := s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...)
 	if err != nil {
 		if vault.IsErrorStatus(err, http.StatusNotFound) {
-			return nil, 0, iamerr.NoSuchEntityOIDCProviderGet(arn)
+			return nil, 0, notFound(arn)
 		}
 		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
 			return nil, 0, reauthErr
@@ -1555,7 +1557,7 @@ func (s *VaultStore) readOIDCProviderVersion(arn string) (*types.OIDCProvider, i
 		resp, err = s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...)
 		if err != nil {
 			if vault.IsErrorStatus(err, http.StatusNotFound) {
-				return nil, 0, iamerr.NoSuchEntityOIDCProviderGet(arn)
+				return nil, 0, notFound(arn)
 			}
 			return nil, 0, err
 		}
@@ -1657,7 +1659,7 @@ func (s *VaultStore) deleteOIDCProviderByURL(url string) error {
 }
 
 func (s *VaultStore) AddClientIDToOIDCProvider(ctx context.Context, arn, clientID string) error {
-	return s.withOIDCProviderCAS(ctx, arn, func(provider *types.OIDCProvider) error {
+	return s.withOIDCProviderCAS(ctx, arn, iamerr.NoSuchEntityOIDCProviderGet, func(provider *types.OIDCProvider) error {
 		if slices.Contains(provider.ClientIDList, clientID) {
 			return nil
 		}
@@ -1670,7 +1672,7 @@ func (s *VaultStore) AddClientIDToOIDCProvider(ctx context.Context, arn, clientI
 }
 
 func (s *VaultStore) RemoveClientIDFromOIDCProvider(ctx context.Context, arn, clientID string) error {
-	return s.withOIDCProviderCAS(ctx, arn, func(provider *types.OIDCProvider) error {
+	return s.withOIDCProviderCAS(ctx, arn, iamerr.NoSuchEntityOIDCProviderGet, func(provider *types.OIDCProvider) error {
 		idx := slices.Index(provider.ClientIDList, clientID)
 		if idx == -1 {
 			return nil
@@ -1681,10 +1683,37 @@ func (s *VaultStore) RemoveClientIDFromOIDCProvider(ctx context.Context, arn, cl
 }
 
 func (s *VaultStore) UpdateOIDCProviderThumbprint(ctx context.Context, arn string, thumbprints []string) error {
-	return s.withOIDCProviderCAS(ctx, arn, func(provider *types.OIDCProvider) error {
+	return s.withOIDCProviderCAS(ctx, arn, iamerr.NoSuchEntityOIDCProviderGet, func(provider *types.OIDCProvider) error {
 		provider.ThumbprintList = thumbprints
 		return nil
 	})
+}
+
+func (s *VaultStore) TagOIDCProvider(ctx context.Context, arn string, tags []types.Tag) error {
+	return s.withOIDCProviderCAS(ctx, arn, iamerr.NoSuchEntityOIDCProviderDelete, func(provider *types.OIDCProvider) error {
+		merged, err := mergeTags(provider.Tags, tags, iamutil.TagKeysExact)
+		if err != nil {
+			return err
+		}
+		provider.Tags = merged
+		return nil
+	})
+}
+
+func (s *VaultStore) UntagOIDCProvider(ctx context.Context, arn string, tagKeys []string) error {
+	return s.withOIDCProviderCAS(ctx, arn, iamerr.NoSuchEntityOIDCProviderDelete, func(provider *types.OIDCProvider) error {
+		provider.Tags = removeTags(provider.Tags, tagKeys, iamutil.TagKeysExact)
+		return nil
+	})
+}
+
+func (s *VaultStore) ListOIDCProviderTags(_ context.Context, input ListOIDCProviderTagsInput) (*ListTagsOutput, error) {
+	provider, _, err := s.readOIDCProviderVersion(input.Arn, iamerr.NoSuchEntityOIDCProviderDelete)
+	if err != nil {
+		return nil, err
+	}
+
+	return paginateTags(provider.Tags, input.Marker, input.MaxItems, iamutil.TagKeysExact), nil
 }
 
 // replaceOIDCProvider overwrites the stored document for provider.Url using
@@ -1723,9 +1752,9 @@ func (s *VaultStore) replaceOIDCProvider(ctx context.Context, provider types.OID
 }
 
 // withOIDCProviderCAS is withUserCAS's counterpart for OIDC providers.
-func (s *VaultStore) withOIDCProviderCAS(ctx context.Context, arn string, mutate func(*types.OIDCProvider) error) error {
+func (s *VaultStore) withOIDCProviderCAS(ctx context.Context, arn string, notFound func(string) iamerr.Error, mutate func(*types.OIDCProvider) error) error {
 	for range maxCASRetries {
-		provider, version, err := s.readOIDCProviderVersion(arn)
+		provider, version, err := s.readOIDCProviderVersion(arn, notFound)
 		if err != nil {
 			return err
 		}
