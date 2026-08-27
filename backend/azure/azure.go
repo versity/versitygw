@@ -47,6 +47,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -110,11 +111,16 @@ type Azure struct {
 	serviceURL          string
 	sasToken            string
 	copyObjectThreshold int64
+	// copySASVersion overrides the service version used to sign the copy-source
+	// SAS for server-side copy. Empty means use the SDK default. This exists so
+	// endpoints that lag the SDK's SAS version (e.g. Azurite) can verify the
+	// signature; production leaves it unset.
+	copySASVersion string
 }
 
 var _ backend.Backend = &Azure{}
 
-func New(accountName, accountKey, serviceURL, sasToken string, copyObjectThreshold int64) (*Azure, error) {
+func New(accountName, accountKey, serviceURL, sasToken string, copyObjectThreshold int64, copySASVersion string) (*Azure, error) {
 	url := serviceURL
 	if serviceURL == "" && accountName != "" {
 		// if not otherwise specified, use the typical form:
@@ -132,6 +138,7 @@ func New(accountName, accountKey, serviceURL, sasToken string, copyObjectThresho
 			serviceURL:          serviceURL,
 			sasToken:            sasToken,
 			copyObjectThreshold: copyObjectThreshold,
+			copySASVersion:      copySASVersion,
 		}, nil
 	}
 
@@ -154,6 +161,7 @@ func New(accountName, accountKey, serviceURL, sasToken string, copyObjectThresho
 			serviceURL:          url,
 			defaultCreds:        cred,
 			copyObjectThreshold: copyObjectThreshold,
+			copySASVersion:      copySASVersion,
 		}, nil
 	}
 
@@ -172,6 +180,7 @@ func New(accountName, accountKey, serviceURL, sasToken string, copyObjectThresho
 		serviceURL:          url,
 		sharedkeyCreds:      cred,
 		copyObjectThreshold: copyObjectThreshold,
+		copySASVersion:      copySASVersion,
 	}, nil
 }
 
@@ -1252,7 +1261,33 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		}, nil
 	}
 
-	// Get the source object
+	// Cross-object copy: try server-side copy first, fall back to download+reupload.
+	srcClient, err := az.getBlobClient(srcBucket, srcObj)
+	if err != nil {
+		return s3response.CopyObjectOutput{}, err
+	}
+
+	srcProps, err := srcClient.GetProperties(ctx, nil)
+	if err != nil {
+		return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
+	}
+
+	if srcProps.ContentLength != nil && *srcProps.ContentLength > az.copyObjectThreshold {
+		return s3response.CopyObjectOutput{}, s3err.GetCopySourceObjectTooLargeErr(az.copyObjectThreshold)
+	}
+
+	out, err := az.serverSideCopyObject(ctx, input, srcBucket, srcObj, dstClient, srcClient, &srcProps)
+	if err == nil {
+		return out, nil
+	}
+	if !errors.Is(err, errServerSideCopyFallback) {
+		return s3response.CopyObjectOutput{}, err
+	}
+
+	debuglogger.Logf("falling back to download+reupload (%q/%q -> %q/%q): %v",
+		srcBucket, srcObj, *input.Bucket, *input.Key, err)
+
+	// Fallback: download and re-upload through the gateway.
 	downloadResp, err := az.client.DownloadStream(ctx, srcBucket, srcObj, nil)
 	if err != nil {
 		return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
