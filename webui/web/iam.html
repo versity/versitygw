@@ -1,0 +1,384 @@
+<!--
+Copyright 2026 Versity Software
+This file is licensed under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VersityGW Admin - IAM</title>
+  <script src="assets/js/crypto-js.min.js"></script>
+  <script src="assets/js/tailwind.js"></script>
+  <script src="assets/css/tailwind-config.js"></script>
+  <link rel="stylesheet" href="assets/css/fonts.css">
+  <link rel="stylesheet" href="assets/css/theme.css">
+  <link rel="icon" type="image/png" href="assets/images/favicon.png">
+</head>
+<body class="min-h-screen bg-surface">
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/iam-ui.js"></script>
+
+  <div class="relative flex h-screen overflow-hidden">
+    <input id="sidebar-toggle" type="checkbox" class="peer hidden"/>
+    <label for="sidebar-toggle" aria-label="Toggle navigation" class="
+      sm:hidden rotate-180 peer-checked:rotate-0 absolute z-20 top-[14px] left-6
+      flex justify-center items-center p-2 rounded-lg transition-all
+      text-charcoal-300 hover:text-charcoal hover:bg-gray-100
+      peer-checked:text-white/70 peer-checked:hover:text-white peer-checked:hover:bg-white/10
+    ">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="-0.5 0 25 25">
+        <path stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M7.6728 22L16.1434 13.0294C16.4081 12.75 16.4081 12.3088 16.1434 12.0147L7.65808 3" />
+      </svg>
+    </label>
+    <!-- Sidebar -->
+    <aside class="absolute z-10 sm:static -translate-x-60 peer-checked:translate-x-0 sm:!translate-x-0 w-60 h-screen bg-charcoal flex flex-col overflow-auto transition-all">
+      <div class="ml-12 sm:ml-0 h-16 flex-shrink-0 flex items-center px-6 border-b border-white/10">
+        <a href="https://www.versity.com" target="_blank" rel="noopener noreferrer">
+          <img src="assets/images/Versity-logo-white-horizontal.png" alt="Versity" class="h-10 hover:opacity-80 transition-opacity">
+        </a>
+      </div>
+      <nav class="flex-1 py-4">
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-management-only>
+          Management
+        </div>
+        <a href="dashboard.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-management-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+          </svg>
+          <span class="font-medium">Dashboard</span>
+        </a>
+        <a href="users.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only data-admin-users-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+          <span class="font-medium">Users</span>
+        </a>
+        <a href="buckets.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-management-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+          </svg>
+          <span class="font-medium">Buckets</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-management-only></div>
+        <a href="explorer.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-s3-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>
+          <span class="font-medium">Explorer</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-s3-only></div>
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-iam-only>
+          Identity &amp; Access
+        </div>
+        <a href="iam.html" class="nav-item active flex items-center gap-3 px-6 py-3 text-white" data-iam-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+          </svg>
+          <span class="font-medium">IAM</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-iam-only></div>
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase">
+          Resources
+        </div>
+        <a href="https://github.com/versity/versitygw/wiki" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+          </svg>
+          <span class="font-medium">Documentation</span>
+        </a>
+        <a href="https://github.com/versity/versitygw" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+          </svg>
+          <span class="font-medium">GitHub</span>
+        </a>
+      </nav>
+      <div class="p-4 border-t border-white/10">
+        <div id="user-info" class="flex items-center gap-3 mb-3"></div>
+        <button onclick="api.logout(); window.location.href='index.html';" class="w-full flex items-center gap-2 px-3 py-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Sign Out
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 flex-shrink-0">
+        <h1 class="ml-12 sm:ml-0 text-xl font-semibold text-charcoal">VersityGW IAM</h1>
+        <button onclick="loadIamOverview()" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors" title="Refresh">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </button>
+      </header>
+
+      <main class="flex-1 overflow-auto p-6">
+        <div class="max-w-7xl mx-auto">
+          <!-- Page Header -->
+          <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
+            <div>
+              <h1 class="text-2xl font-semibold text-charcoal">Identity &amp; Access</h1>
+              <p class="text-charcoal-300 mt-1">Manage IAM users, roles, and identity providers</p>
+            </div>
+            <div class="text-right">
+              <p class="text-xs font-semibold tracking-wider text-charcoal-300 uppercase">IAM API Endpoint</p>
+              <p id="iam-endpoint-display" class="font-mono text-sm text-charcoal mt-1">-</p>
+            </div>
+          </div>
+
+          <!-- Stat Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <div class="flex items-start justify-between">
+                <div>
+                  <p class="text-sm text-charcoal-300">IAM Users</p>
+                  <p id="stat-users" class="text-3xl font-bold text-charcoal mt-2">-</p>
+                  <p id="stat-users-note" class="text-xs text-charcoal-300 mt-2"></p>
+                </div>
+                <div class="w-12 h-12 bg-primary-50 rounded-lg flex items-center justify-center">
+                  <svg class="w-7 h-7 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <div class="flex items-start justify-between">
+                <div>
+                  <p class="text-sm text-charcoal-300">Roles</p>
+                  <p id="stat-roles" class="text-3xl font-bold text-charcoal mt-2">-</p>
+                  <p id="stat-roles-note" class="text-xs text-charcoal-300 mt-2"></p>
+                </div>
+                <div class="w-12 h-12 bg-accent-50 rounded-lg flex items-center justify-center">
+                  <svg class="w-7 h-7 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <div class="flex items-start justify-between">
+                <div>
+                  <p class="text-sm text-charcoal-300">OIDC Providers</p>
+                  <p id="stat-oidc" class="text-3xl font-bold text-charcoal mt-2">-</p>
+                  <p id="stat-oidc-note" class="text-xs text-charcoal-300 mt-2"></p>
+                </div>
+                <div class="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                  <svg class="w-7 h-7 text-charcoal" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m0 0a9 9 0 019 9"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Two Column Layout -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- My Identity -->
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-charcoal">My Identity</h3>
+                <span id="identity-type-badge" class="px-2.5 py-1 bg-gray-100 text-charcoal text-xs font-medium rounded-md">-</span>
+              </div>
+              <div class="space-y-4">
+                <div class="flex items-start justify-between gap-4 py-3 border-b border-gray-100">
+                  <span class="text-charcoal-300 flex-shrink-0">ARN</span>
+                  <div id="identity-arn" class="min-w-0">-</div>
+                </div>
+                <div class="flex items-center justify-between gap-4 py-3 border-b border-gray-100">
+                  <span class="text-charcoal-300">User ID</span>
+                  <span id="identity-userid" class="text-charcoal font-mono text-sm truncate">-</span>
+                </div>
+                <div class="flex items-center justify-between gap-4 py-3 border-b border-gray-100">
+                  <span class="text-charcoal-300">Account</span>
+                  <span id="identity-account" class="text-charcoal font-mono text-sm">-</span>
+                </div>
+                <div id="identity-user-row" class="hidden flex items-center justify-between gap-4 py-3 border-b border-gray-100">
+                  <span class="text-charcoal-300">Path</span>
+                  <span id="identity-path" class="text-charcoal font-mono text-sm">-</span>
+                </div>
+                <div id="identity-created-row" class="hidden flex items-center justify-between gap-4 py-3 border-b border-gray-100">
+                  <span class="text-charcoal-300">Created</span>
+                  <span id="identity-created" class="text-charcoal text-sm">-</span>
+                </div>
+                <div id="identity-keys-row" class="hidden flex items-center justify-between gap-4 py-3">
+                  <span class="text-charcoal-300">Access Keys</span>
+                  <span id="identity-keys" class="text-charcoal text-sm">-</span>
+                </div>
+              </div>
+              <a id="identity-manage-link" href="#" class="hidden mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:text-accent-600 transition-colors">
+                Manage my access keys and policies
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+              </a>
+              <p id="identity-note" class="text-xs text-charcoal-300 mt-4"></p>
+            </div>
+
+            <!-- Manage -->
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <h3 class="text-lg font-semibold text-charcoal mb-4">Manage</h3>
+              <div class="space-y-3">
+                <a href="iam-users.html" class="flex items-center gap-4 p-4 bg-surface rounded-lg hover:bg-gray-100 transition-colors group">
+                  <div class="w-10 h-10 bg-primary-50 rounded-lg flex items-center justify-center group-hover:bg-primary-100 transition-colors">
+                    <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p class="font-medium text-charcoal">IAM Users</p>
+                    <p class="text-sm text-charcoal-300">Users, access keys, and inline policies</p>
+                  </div>
+                  <svg class="w-5 h-5 text-charcoal-300 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                  </svg>
+                </a>
+                <a href="iam-roles.html" class="flex items-center gap-4 p-4 bg-surface rounded-lg hover:bg-gray-100 transition-colors group">
+                  <div class="w-10 h-10 bg-accent-50 rounded-lg flex items-center justify-center group-hover:bg-accent-100 transition-colors">
+                    <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p class="font-medium text-charcoal">Roles</p>
+                    <p class="text-sm text-charcoal-300">Trust policies and inline policies</p>
+                  </div>
+                  <svg class="w-5 h-5 text-charcoal-300 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                  </svg>
+                </a>
+                <a href="iam-oidc.html" class="flex items-center gap-4 p-4 bg-surface rounded-lg hover:bg-gray-100 transition-colors group">
+                  <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-hover:bg-gray-200 transition-colors">
+                    <svg class="w-5 h-5 text-charcoal" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m0 0a9 9 0 019 9"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p class="font-medium text-charcoal">OIDC Providers</p>
+                    <p class="text-sm text-charcoal-300">Identity providers, client IDs, thumbprints</p>
+                  </div>
+                  <svg class="w-5 h-5 text-charcoal-300 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                  </svg>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    if (!requireIAM()) {
+      // Redirected
+    } else {
+      initSidebarWithRole();
+      updateUserInfo();
+      loadIamOverview();
+    }
+
+    function loadIamOverview() {
+      const info = api.getCredentialsInfo();
+      document.getElementById('iam-endpoint-display').textContent = (info && info.iamEndpoint) || '-';
+      // Every call below is attempted independently: a denied List* reports in
+      // its own card instead of failing the page.
+      loadCallerIdentity();
+      loadStat('users', () => api.iamListUsers({ maxItems: IAM_LIMITS.listPageSize }), r => ({ count: r.users.length, truncated: r.isTruncated }), 'list users');
+      loadStat('roles', () => api.iamListRoles({ maxItems: IAM_LIMITS.listPageSize }), r => ({ count: r.roles.length, truncated: r.isTruncated }), 'list roles');
+      loadStat('oidc', () => api.iamListOIDCProviders(), r => ({ count: r.length, truncated: false }), 'list identity providers');
+    }
+
+    async function loadStat(key, call, extract, action) {
+      const value = document.getElementById('stat-' + key);
+      const note = document.getElementById('stat-' + key + '-note');
+      value.textContent = '-';
+      note.textContent = '';
+      try {
+        const { count, truncated } = extract(await call());
+        value.textContent = truncated ? count + '+' : String(count);
+        if (truncated) note.textContent = 'First page only';
+      } catch (error) {
+        value.textContent = '-';
+        note.textContent = iamIsAccessDenied(error)
+          ? 'You don\u2019t have permission to ' + action
+          : iamShortError(error);
+      }
+    }
+
+    async function loadCallerIdentity() {
+      const badge = document.getElementById('identity-type-badge');
+      const note = document.getElementById('identity-note');
+      note.textContent = '';
+
+      let identity;
+      try {
+        identity = await api.iamGetCallerIdentity();
+      } catch (error) {
+        badge.textContent = 'Unknown';
+        document.getElementById('identity-arn').innerHTML = '<span class="text-charcoal-300">-</span>';
+        note.textContent = 'Error loading identity: ' + iamShortError(error);
+        return;
+      }
+
+      const isRoot = identity.arn.endsWith(':root');
+      badge.textContent = isRoot ? 'Root' : 'IAM User';
+      badge.className = 'px-2.5 py-1 text-xs font-medium rounded-md ' + (isRoot ? 'bg-primary-50 text-primary' : 'bg-accent-50 text-accent');
+      document.getElementById('identity-arn').innerHTML = iamArnCell(identity.arn);
+      document.getElementById('identity-userid').textContent = identity.userId || '-';
+      document.getElementById('identity-account').textContent = identity.account || IAM_ACCOUNT_ID;
+
+      if (isRoot) {
+        note.textContent = 'The root credential bypasses IAM policy checks entirely.';
+        return;
+      }
+
+      // Route to this caller's own record by name. Listing users is a separate
+      // permission a self-service-only identity will not hold, so the IAM Users
+      // table may never render for them - this link does not go through it.
+      const manageLink = document.getElementById('identity-manage-link');
+      manageLink.href = 'iam-users.html?user=' + encodeURIComponent(identity.arn.split('/').pop());
+      manageLink.classList.remove('hidden');
+
+      // Opportunistic enrichment: both calls need policy grants, so a denial
+      // just hides that part of the card.
+      let userName = identity.arn.split('/').pop();
+      try {
+        const user = await api.iamGetUser();
+        userName = user.UserName || userName;
+        document.getElementById('identity-path').textContent = user.Path || '/';
+        document.getElementById('identity-user-row').classList.remove('hidden');
+        document.getElementById('identity-created').textContent = iamFormatDate(user.CreateDate);
+        document.getElementById('identity-created-row').classList.remove('hidden');
+      } catch (error) {
+        note.textContent = 'Add iam:GetUser on your own ARN to see your user record here.';
+      }
+
+      try {
+        const { keys } = await api.iamListAccessKeys(userName);
+        const active = keys.filter(k => k.Status === 'Active').length;
+        document.getElementById('identity-keys').textContent = `${keys.length} of ${IAM_LIMITS.accessKeysPerUser} (${active} active)`;
+        document.getElementById('identity-keys-row').classList.remove('hidden');
+      } catch (error) {
+        // Denied or unknown user name: leave the row hidden
+      }
+    }
+  </script>
+</body>
+</html>

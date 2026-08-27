@@ -642,6 +642,65 @@ func TestVerifyCreateBucketAccess_PolicyEvaluatorIgnoresUserPlus(t *testing.T) {
 	assert.Len(t, pe.calls, 1, "EvaluatePolicy must be consulted even for a userplus account once a PolicyEvaluator is configured")
 }
 
+// Root and admin always list buckets, with no iam backend consulted.
+func TestVerifyListAllMyBucketsAccess_RootAndAdminBypass(t *testing.T) {
+	pe := newMockPolicyEvaluator(policyDecisionDeny)
+
+	err := VerifyListAllMyBucketsAccess(testFiberCtx(t), pe, true, Account{Access: "testuser", Role: RoleUser})
+	assert.NoError(t, err)
+
+	err = VerifyListAllMyBucketsAccess(testFiberCtx(t), pe, false, Account{Access: "testuser", Role: RoleAdmin})
+	assert.NoError(t, err)
+
+	assert.Empty(t, pe.calls, "root/admin bypass before any policy evaluation")
+}
+
+// Backends without an identity-policy layer keep listing buckets as before:
+// the listing is already narrowed to the caller's own buckets.
+func TestVerifyListAllMyBucketsAccess_NoPolicyEvaluatorIsUnrestricted(t *testing.T) {
+	err := VerifyListAllMyBucketsAccess(testFiberCtx(t), NewIAMServiceSingle(Account{}), false, Account{Access: "testuser", Role: RoleUser})
+
+	assert.NoError(t, err)
+}
+
+// A policy granting s3:ListAllMyBuckets allows the listing, evaluated
+// against "arn:aws:s3:::*".
+func TestVerifyListAllMyBucketsAccess_PolicyEvaluatorAllow(t *testing.T) {
+	pe := newMockPolicyEvaluator(policyDecisionAllow)
+
+	err := VerifyListAllMyBucketsAccess(testFiberCtx(t), pe, false, Account{Access: "testuser", Role: RoleUser})
+
+	assert.NoError(t, err)
+	assert.Len(t, pe.calls, 1)
+	assert.Equal(t, "testuser", pe.calls[0].access)
+	assert.Equal(t, []string{"arn:aws:s3:::*"}, pe.calls[0].resources)
+	assert.Equal(t, []Action{ListAllMyBucketsAction}, pe.calls[0].actions)
+}
+
+// No matching policy denies with the AWS-shaped implicit-deny message.
+func TestVerifyListAllMyBucketsAccess_PolicyEvaluatorNoMatchDenies(t *testing.T) {
+	pe := newMockPolicyEvaluator(policyDecisionNoMatch)
+	pe.principalArn = "arn:aws:iam::000000000000:user/testuser"
+
+	err := VerifyListAllMyBucketsAccess(testFiberCtx(t), pe, false, Account{Access: "testuser", Role: RoleUser})
+
+	apiErr := requireAccessDeniedAPIError(t, err)
+	assert.Contains(t, apiErr.Description, "arn:aws:iam::000000000000:user/testuser")
+	assert.Contains(t, apiErr.Description, "because no identity-based policy allows the s3:ListAllMyBuckets action")
+}
+
+// An explicit Deny is reported with the AWS-shaped explicit-deny message.
+func TestVerifyListAllMyBucketsAccess_PolicyEvaluatorExplicitDenyWins(t *testing.T) {
+	pe := newMockPolicyEvaluator(policyDecisionDeny)
+	pe.principalArn = "arn:aws:iam::000000000000:user/testuser"
+
+	err := VerifyListAllMyBucketsAccess(testFiberCtx(t), pe, false, Account{Access: "testuser", Role: RoleUser})
+
+	apiErr := requireAccessDeniedAPIError(t, err)
+	assert.Contains(t, apiErr.Description, "s3:ListAllMyBuckets")
+	assert.Contains(t, apiErr.Description, "with an explicit deny in an identity-based policy")
+}
+
 // noObjectLockBackend answers "no lock configuration" for
 // GetObjectLockConfiguration, so VerifyObjectsAccess's lock check is a no-op
 // and only the policy/ACL half of the result is under test — matching what

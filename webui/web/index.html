@@ -107,13 +107,12 @@ under the License.
         <!-- Advanced Options Section -->
         <div id="advanced-options-section" class="advanced-options space-y-5">
           <!-- S3 Endpoint URL -->
-          <div>
+          <div id="s3-endpoint-field">
             <label class="block text-sm font-medium text-charcoal-400 mb-2">S3 API Endpoint</label>
             <div class="relative" id="endpoint-container">
               <input
                 type="url"
                 id="endpoint-select"
-                required
                 placeholder="http://localhost:7070"
                 autocomplete="off"
                 class="w-full px-4 py-3 pr-10 border-2 border-gray-200 rounded-lg text-charcoal placeholder:text-gray-400 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
@@ -130,13 +129,12 @@ under the License.
           </div>
 
           <!-- Admin Endpoint URL -->
-          <div>
+          <div id="admin-endpoint-field">
             <label class="block text-sm font-medium text-charcoal-400 mb-2">Admin API Endpoint</label>
             <div class="relative" id="admin-endpoint-container">
               <input
                 type="url"
                 id="admin-endpoint-select"
-                required
                 placeholder="http://localhost:7070"
                 autocomplete="off"
                 class="w-full px-4 py-3 pr-10 border-2 border-gray-200 rounded-lg text-charcoal placeholder:text-gray-400 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
@@ -152,8 +150,31 @@ under the License.
             </div>
           </div>
 
+          <!-- IAM Endpoint URL (optional) -->
+          <div id="iam-endpoint-field">
+            <label class="block text-sm font-medium text-charcoal-400 mb-2">IAM API Endpoint</label>
+            <div class="relative" id="iam-endpoint-container">
+              <input
+                type="url"
+                id="iam-endpoint-select"
+                placeholder="http://localhost:7076"
+                autocomplete="off"
+                class="w-full px-4 py-3 pr-10 border-2 border-gray-200 rounded-lg text-charcoal placeholder:text-gray-400 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
+              >
+              <button type="button" onclick="toggleDropdown('iam-endpoint')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </button>
+              <div id="iam-endpoint-dropdown" class="custom-dropdown">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+            <p class="mt-2 text-xs text-charcoal-300">Optional. Set this to the standalone IAM service to manage IAM users, roles and identity providers. When set, the IAM service is the user-management system and the Admin API is not used. Leave the S3 endpoint blank to sign in to IAM alone.</p>
+          </div>
+
           <!-- Region Selector -->
-          <div>
+          <div id="region-field">
             <label class="block text-sm font-medium text-charcoal-400 mb-2">Region</label>
             <div class="relative" id="region-container">
               <input
@@ -178,7 +199,7 @@ under the License.
           </div>
 
           <!-- Bucket Addressing Style -->
-          <div>
+          <div id="addressing-style-field">
             <label class="block text-sm font-medium text-charcoal-400 mb-2">Bucket Addressing Style</label>
             <div class="flex items-center justify-between">
               <span class="toggle-label">Path Style</span>
@@ -216,12 +237,41 @@ under the License.
     // ============================================
     // Advanced Options Toggle
     // ============================================
+    let advancedOptionsTimer = null;
+
     function toggleAdvancedOptions() {
       const toggle = document.getElementById('advanced-options-toggle');
       const section = document.getElementById('advanced-options-section');
-      
-      toggle.classList.toggle('expanded');
-      section.classList.toggle('show');
+      const opening = !toggle.classList.contains('expanded');
+
+      toggle.classList.toggle('expanded', opening);
+      clearTimeout(advancedOptionsTimer);
+
+      // Both directions animate between 0 and a height measured here rather
+      // than a number named in the stylesheet, which clipped the last field
+      // once the fields outgrew it. Opening measures the content, closing
+      // measures what is on screen (possibly a part-grown section), and
+      // pinning the height gives a close somewhere to animate from.
+      const pinned = opening ? section.scrollHeight : section.getBoundingClientRect().height;
+      section.style.maxHeight = pinned + 'px';
+      section.style.overflow = '';
+
+      if (!opening) {
+        // Force the pinned height to take effect, so releasing it below is a
+        // change the browser can animate rather than one it never sees.
+        void section.offsetHeight;
+        section.style.maxHeight = '';
+        return;
+      }
+
+      advancedOptionsTimer = setTimeout(() => {
+        // A finished section keeps no cap, so it resizes with whichever
+        // fields are shown and lets dropdowns hang past its bottom edge.
+        // Inline rather than a class, so a browser holding a stale stylesheet
+        // cannot leave the section stuck shut.
+        section.style.maxHeight = 'none';
+        section.style.overflow = 'visible';
+      }, parseFloat(getComputedStyle(section).transitionDuration) * 1000);
     }
 
     // ============================================
@@ -229,6 +279,7 @@ under the License.
     // ============================================
     let configuredGateways = [];
     let configuredAdminGateways = [];
+    let configuredIamGateways = [];
     let configuredDefaultRegion = null;
 
     function normalizeEndpoint(value) {
@@ -256,10 +307,15 @@ under the License.
 
     function loadConfiguredGateways() {
       const cfg = window.__VGWCONFIG__ || {};
-      if (!Array.isArray(cfg.gateways)) return { gateways: [], adminGateways: [], defaultRegion: null };
+      // Each list is read on its own. The IAM service serves this page with no
+      // S3 gateways at all, so an absent gateways list is a real configuration
+      // and must not discard the IAM list injected alongside it.
+      const list = (value) => (Array.isArray(value) ? value : []);
+      const gateways = list(cfg.gateways);
       return {
-        gateways: cfg.gateways,
-        adminGateways: cfg.adminGateways || cfg.gateways || [],
+        gateways,
+        adminGateways: list(cfg.adminGateways).length > 0 ? list(cfg.adminGateways) : gateways,
+        iamGateways: list(cfg.iamGateways),
         defaultRegion: normalizeRegion(typeof cfg.defaultRegion === 'string' ? cfg.defaultRegion : null),
       };
     }
@@ -268,6 +324,7 @@ under the License.
       const cfg = loadConfiguredGateways();
       configuredGateways = uniqNonEmpty(cfg.gateways);
       configuredAdminGateways = uniqNonEmpty(cfg.adminGateways);
+      configuredIamGateways = uniqNonEmpty(cfg.iamGateways);
       configuredDefaultRegion = cfg.defaultRegion;
 
       // Apply default region from server only if user hasn't changed it yet
@@ -298,6 +355,17 @@ under the License.
         adminEndpointInput.value = configuredAdminGateways[0];
         onAdminEndpointInput(configuredAdminGateways[0]);
       }
+
+      // Default the iam-endpoint input to the first configured IAM gateway (if any).
+      // There is no fallback to the S3/admin gateways: the IAM service runs as a
+      // separate process, so an unset flag means "no IAM endpoint", not "same host".
+      const iamEndpointInput = document.getElementById('iam-endpoint-select');
+      if (configuredIamGateways.length > 0 && iamEndpointInput && !iamEndpointInput.value.trim()) {
+        iamEndpointInput.value = configuredIamGateways[0];
+        onIamEndpointInput(configuredIamGateways[0]);
+      }
+
+      applyEndpointVisibility();
     }
 
     // ============================================
@@ -362,11 +430,15 @@ under the License.
       if (name === 'admin-endpoint' && dropdown.classList.contains('show')) {
         populateAdminEndpointDropdown();
       }
+      // If opening iam-endpoint dropdown, populate it
+      if (name === 'iam-endpoint' && dropdown.classList.contains('show')) {
+        populateIamEndpointDropdown();
+      }
     }
 
     // Close all dropdowns when clicking outside
     document.addEventListener('click', (e) => {
-      if (!e.target.closest('#endpoint-container') && !e.target.closest('#admin-endpoint-container') && !e.target.closest('#region-container')) {
+      if (!e.target.closest('#endpoint-container') && !e.target.closest('#admin-endpoint-container') && !e.target.closest('#iam-endpoint-container') && !e.target.closest('#region-container')) {
         document.querySelectorAll('.custom-dropdown').forEach(d => d.classList.remove('show'));
       }
     });
@@ -435,6 +507,34 @@ under the License.
       onAdminEndpointInput(endpoint);
     }
 
+    // Populate iam-endpoint dropdown (with configured IAM gateways)
+    function populateIamEndpointDropdown() {
+      const dropdown = document.getElementById('iam-endpoint-dropdown');
+      const configured = uniqNonEmpty(configuredIamGateways);
+
+      dropdown.innerHTML = '';
+
+      if (configured.length === 0) {
+        dropdown.innerHTML = '<div class="px-4 py-3 text-gray-400 text-sm italic">No IAM gateways configured</div>';
+        return;
+      }
+
+      configured.forEach(endpoint => {
+        const item = document.createElement('div');
+        item.className = 'custom-dropdown-item';
+        item.textContent = endpoint;
+        item.addEventListener('click', () => selectIamEndpoint(endpoint));
+        dropdown.appendChild(item);
+      });
+    }
+
+    // Select an IAM endpoint from dropdown
+    function selectIamEndpoint(endpoint) {
+      document.getElementById('iam-endpoint-select').value = endpoint;
+      document.getElementById('iam-endpoint-dropdown').classList.remove('show');
+      onIamEndpointInput(endpoint);
+    }
+
     // Select a region from dropdown
     function selectRegion(value) {
       const display = document.getElementById('region-display');
@@ -488,13 +588,45 @@ under the License.
       // For now, just acknowledge the change. Can be extended with admin-specific logic.
     }
 
+    // Handle IAM endpoint input. An empty value is valid and simply means the
+    // IAM tab never lights up for this session.
+    function onIamEndpointInput(endpoint) {
+      // No auto-fill: IAM endpoints are not part of the recent-gateways history.
+      applyEndpointVisibility();
+    }
+
+    // Region and addressing style only describe how to talk to an S3
+    // gateway, so an IAM-only sign-in has nothing to configure there.
+    //
+    // The Admin API endpoint hides whenever an IAM endpoint is in play at all,
+    // S3 or not: the IAM service manages users and bucket ownership is fixed,
+    // leaving the admin API no job.
+    function applyEndpointVisibility() {
+      const s3Endpoint = document.getElementById('endpoint-select').value.trim();
+      const iamEndpoint = document.getElementById('iam-endpoint-select').value.trim();
+      const showS3Options = !!s3Endpoint || !iamEndpoint;
+
+      const adminField = document.getElementById('admin-endpoint-field');
+      if (adminField) adminField.style.display = iamEndpoint ? 'none' : '';
+
+      ['region-field', 'addressing-style-field'].forEach(id => {
+        const field = document.getElementById(id);
+        if (field) field.style.display = showS3Options ? '' : 'none';
+      });
+    }
+
     // Keep behavior consistent if user types an endpoint manually
     document.getElementById('endpoint-select').addEventListener('input', (e) => {
       onEndpointInput(e.target.value);
+      applyEndpointVisibility();
     });
 
     document.getElementById('admin-endpoint-select').addEventListener('input', (e) => {
       onAdminEndpointInput(e.target.value);
+    });
+
+    document.getElementById('iam-endpoint-select').addEventListener('input', (e) => {
+      onIamEndpointInput(e.target.value);
     });
 
     // Helper to set region (works with custom dropdown)
@@ -559,18 +691,16 @@ under the License.
 
       const s3Endpoint = document.getElementById('endpoint-select').value.trim();
       const adminEndpoint = document.getElementById('admin-endpoint-select').value.trim();
+      const iamEndpoint = document.getElementById('iam-endpoint-select').value.trim();
       const accessKey = document.getElementById('access-key').value.trim();
       const secretKey = document.getElementById('secret-key').value;
       const region = getSelectedRegion();
       const addressingStyle = document.getElementById('addressing-style').value;
 
-      // Validate inputs
-      if (!s3Endpoint) {
-        showError('Please enter an S3 API endpoint.');
-        return;
-      }
-      if (!adminEndpoint) {
-        showError('Please enter an Admin API endpoint.');
+      // Validate inputs. Either endpoint alone is a complete sign-in: this UI
+      // serves an S3-only deployment, an IAM-only one, and one running both.
+      if (!s3Endpoint && !iamEndpoint) {
+        showError('Please enter an S3 API endpoint, an IAM API endpoint, or both.');
         return;
       }
       if (!accessKey || !secretKey) {
@@ -579,7 +709,7 @@ under the License.
       }
 
       // Validate that virtual host style is not used with IP addresses
-      if (addressingStyle === 'virtual-host') {
+      if (s3Endpoint && addressingStyle === 'virtual-host') {
         try {
           const url = new URL(s3Endpoint);
           const hostname = url.hostname;
@@ -600,10 +730,21 @@ under the License.
       setLoading(submitBtn, true);
 
       try {
-        // Set credentials with admin endpoint, then configure s3 endpoint separately
-        api.setCredentials(adminEndpoint, accessKey, secretKey, region);
+        // An empty field means "same place", not "no admin API": the Admin
+        // API shares the S3 gateway's port unless given one of its own, which
+        // is what the server assumes when --admin-port is unset.
+        //
+        // With an IAM endpoint in play the admin API is ignored outright, so
+        // the session gets no admin endpoint at all - which is what keeps
+        // every admin-only surface off screen. Its field is hidden but may
+        // still hold a server-prefilled value.
+        api.setCredentials(iamEndpoint ? '' : (adminEndpoint || s3Endpoint), accessKey, secretKey, region);
         api.setS3Endpoint(s3Endpoint);
         api.setAddressingStyle(addressingStyle);
+        // Optional third endpoint: only configured when the field is filled in
+        if (iamEndpoint) {
+          api.setIAMEndpoint(iamEndpoint);
+        }
         const role = await api.detectRole();
 
         if (role === 'none') {
@@ -617,18 +758,15 @@ under the License.
         let userType = role === 'admin' ? 'admin' : 'user';
         api.setUserContext(userType, []);
 
-        // Save gateway to recent list
-        const rememberKey = document.getElementById('remember-access-key').checked;
-        saveRecentGateway(s3Endpoint, region, accessKey, rememberKey);
+        // Save gateway to recent list. The history is keyed by S3 endpoint, so
+        // an IAM-only sign-in has nothing to record.
+        if (s3Endpoint) {
+          const rememberKey = document.getElementById('remember-access-key').checked;
+          saveRecentGateway(s3Endpoint, region, accessKey, rememberKey);
+        }
 
         // Navigate based on role
-        if (role === 'admin') {
-          // Admin user - redirect to dashboard
-          window.location.href = 'dashboard.html';
-        } else {
-          // Regular user with S3 access - redirect to explorer
-          window.location.href = 'explorer.html';
-        }
+        window.location.href = defaultLandingPage();
       } catch (error) {
         api.logout();
         console.error('Login error:', error);

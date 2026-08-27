@@ -195,6 +195,10 @@ spec:
             - name: VGW_WEBUI_ADMIN_GATEWAYS
               value: {{ .Values.webui.adminGateways | join "," | quote }}
             {{- end }}
+            {{- if .Values.webui.iamGateways }}
+            - name: VGW_WEBUI_IAM_GATEWAYS
+              value: {{ .Values.webui.iamGateways | join "," | quote }}
+            {{- end }}
             {{- end }}
             # Website Hosting
             {{- if .Values.website.enabled }}

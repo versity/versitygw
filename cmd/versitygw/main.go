@@ -96,6 +96,7 @@ var (
 	webuiNoTLS                                    bool
 	webuiGateways                                 []string
 	webuiAdminGateways                            []string
+	webuiIAMGateways                              []string
 	webuiPathPrefix                               string
 	webuiS3Prefix                                 string
 	websitePorts                                  []string
@@ -164,6 +165,7 @@ documentation can be found in the GitHub wiki.`,
 			admPorts = ctx.StringSlice("admin-port")
 			webuiGateways = ctx.StringSlice("webui-gateways")
 			webuiAdminGateways = ctx.StringSlice("webui-admin-gateways")
+			webuiIAMGateways = ctx.StringSlice("webui-iam-gateways")
 			webuiPathPrefix = ctx.String("webui-path-prefix")
 			websitePorts = ctx.StringSlice("website")
 
@@ -244,6 +246,11 @@ func initFlags() []cli.Flag {
 			Name:    "webui-admin-gateways",
 			Usage:   "override auto-detected admin gateway URLs for WebUI (e.g. 'http://localhost:7080', 'https://admin.example.com'; can be specified multiple times)",
 			EnvVars: []string{"VGW_WEBUI_ADMIN_GATEWAYS"},
+		},
+		&cli.StringSliceFlag{
+			Name:    "webui-iam-gateways",
+			Usage:   "standalone IAM service URLs offered to the WebUI login page (e.g. 'http://localhost:7076', 'https://iam.example.com'; can be specified multiple times). Not auto-detected from an S3 gateway: the IAM service is a separate process. Setting this also tells the WebUI that the standalone IAM service, not the admin API, manages this deployment: the admin endpoint is ignored entirely (hidden from the login page along with every admin-API surface), and the management pages run on the S3 and IAM APIs alone",
+			EnvVars: []string{"VGW_WEBUI_IAM_GATEWAYS"},
 		},
 		&cli.StringFlag{
 			Name:        "webui-path-prefix",
@@ -326,7 +333,7 @@ func initFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "cors-allow-origin",
-			Usage:       "default CORS Access-Control-Allow-Origin value (applied when no bucket CORS configuration exists, and for admin APIs)",
+			Usage:       "default CORS Access-Control-Allow-Origin value (applied when no bucket CORS configuration exists, for admin APIs, and for the standalone IAM API); required on the 'iam' command before a browser-based WebUI on another origin can reach it",
 			EnvVars:     []string{"VGW_CORS_ALLOW_ORIGIN"},
 			Destination: &corsAllowOrigin,
 		},
@@ -1012,6 +1019,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		WebuiNoTLS:                  webuiNoTLS,
 		WebuiGateways:               webuiGateways,
 		WebuiAdminGateways:          webuiAdminGateways,
+		WebuiIAMGateways:            webuiIAMGateways,
 		WebuiPathPrefix:             webuiPathPrefix,
 		WebuiS3Prefix:               webuiS3Prefix,
 		WebsitePorts:                websitePorts,

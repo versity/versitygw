@@ -118,6 +118,7 @@ var (
 	_ IAMService         = (*IAMServiceStandalone)(nil)
 	_ SigningKeyProvider = (*IAMServiceStandalone)(nil)
 	_ PolicyEvaluator    = (*IAMServiceStandalone)(nil)
+	_ FixedBucketOwner   = (*IAMServiceStandalone)(nil)
 )
 
 // NewIAMServiceStandalone constructs the standalone IAM service client.
@@ -635,6 +636,12 @@ func (s *IAMServiceStandalone) ResolveAccounts(accessKeyIDs []string) ([]string,
 		}
 	}
 	return missing, nil
+}
+
+// BucketOwner implements FixedBucketOwner: every bucket is owned by the
+// gateway's root account, the only account this process knows locally.
+func (s *IAMServiceStandalone) BucketOwner() Account {
+	return s.rootAcc
 }
 
 // CreateAccount is not supported

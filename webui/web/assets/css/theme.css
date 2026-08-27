@@ -185,9 +185,6 @@ input:checked + .toggle-slider:before {
   overflow: hidden;
   transition: max-height 0.3s ease-out;
 }
-.advanced-options.show {
-  max-height: 500px;
-}
 
 /* Explorer */
 .drop-zone-active { background: rgba(0, 118, 205, 0.1); border-color: #0076CD; }

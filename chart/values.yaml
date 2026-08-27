@@ -246,6 +246,16 @@ webui:
   # Kubernetes because it uses the internal pod IP addresses.
   adminGateways: []
   # - s3-admin.example.com
+  # List of standalone IAM service endpoints offered on the WebUI login page.
+  # Unlike the two lists above there is nothing to auto-generate: the IAM
+  # service is a separate process, so the gateway cannot discover its address.
+  # Setting this also tells the WebUI that the standalone IAM service, not the
+  # admin API, manages this deployment: the admin endpoint is ignored entirely
+  # (hidden from the login page along with the Users tab and every other
+  # admin-API surface), and bucket management runs over the S3 API instead.
+  # Point it at iamServer.service (see the iamServer section) or its ingress.
+  iamGateways: []
+  # - https://iam.example.com
   # --- Ingress ---
   # Expose the WebUI via a Kubernetes Ingress resource.
   # Requires an ingress controller (e.g. nginx, traefik) to be installed in the cluster.
@@ -401,6 +411,12 @@ iamServer:
   # instead of auto-fetching it over an outbound TLS connection to the
   # caller-supplied URL. Recommended for restricted/air-gapped clusters.
   disableOidcThumbprintAutofetch: false
+  # Access-Control-Allow-Origin for the control-plane API. Required before a
+  # browser can reach this service: the WebUI is served from another origin, so
+  # every call it makes is cross-origin and is blocked without this. Set it to
+  # the WebUI's own origin (see webui.ingress) when webui.iamGateways points
+  # here. Empty leaves the API usable by CLI and SDK clients only.
+  corsAllowOrigin: ""
   # Optional TLS for the public control-plane API. No cert-manager automation
   # here -- bring your own Secret (must contain tls.crt / tls.key).
   tls:

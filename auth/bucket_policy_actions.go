@@ -94,6 +94,10 @@ const (
 	DeleteBucketWebsiteAction                Action = "s3:DeleteBucketWebsite"
 	GetBucketPolicyStatusAction              Action = "s3:GetBucketPolicyStatus"
 	GetBucketLocationAction                  Action = "s3:GetBucketLocation"
+	// s3:ListAllMyBuckets may appear only in iam user/role
+	// policies, so it doesn't appear in supportedActionList and
+	// it can never be used in bucket policy documents
+	ListAllMyBucketsAction Action = "s3:ListAllMyBuckets"
 
 	AllActions Action = "s3:*"
 )
