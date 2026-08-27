@@ -1846,6 +1846,7 @@ func TestVersioning(ts *TestState) {
 
 func TestVersioningDisabled(ts *TestState) {
 	ts.Run(VersioningDisabled_GetBucketVersioning_not_configured)
+	ts.Run(VersioningDisabled_GetBucketVersioning_no_such_bucket)
 	ts.Run(VersioningDisabled_PutBucketVersioning_not_configured)
 }
 
