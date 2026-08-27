@@ -319,6 +319,8 @@ func TestListObjectsV2(ts *TestState) {
 	ts.Run(ListObjectsV2_all_objs_max_keys)
 	ts.Run(ListObjectsV2_exceeding_max_keys)
 	ts.Run(ListObjectsV2_list_all_objs)
+	ts.Run(ListObjectsV2_full_pagination)
+	ts.Run(ListObjectsV2_pagination_with_delimiter)
 	ts.Run(ListObjectsV2_with_owner)
 	ts.Run(ListObjectsV2_non_truncated_common_prefixes)
 	//TODO: remove the condition after implementing checksums in azure
@@ -2623,6 +2625,8 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_truncated_common_prefixes":                                          ListObjectsV2_truncated_common_prefixes,
 		"ListObjectsV2_all_objs_max_keys":                                                  ListObjectsV2_all_objs_max_keys,
 		"ListObjectsV2_list_all_objs":                                                      ListObjectsV2_list_all_objs,
+		"ListObjectsV2_full_pagination":                                                    ListObjectsV2_full_pagination,
+		"ListObjectsV2_pagination_with_delimiter":                                          ListObjectsV2_pagination_with_delimiter,
 		"ListObjectsV2_with_owner":                                                         ListObjectsV2_with_owner,
 		"ListObjectsV2_with_checksum":                                                      ListObjectsV2_with_checksum,
 		"ListObjectVersions_VD_success":                                                    ListObjectVersions_VD_success,
