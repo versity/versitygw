@@ -621,6 +621,47 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 			},
 		},
 		{
+			name: "default content type when field is omitted",
+			input: testInput{
+				beRes: s3response.PutObjectOutput{
+					ETag: "etag-123",
+				},
+				locals: postObjectLocalsForTest(middlewares.PostObjectResult{
+					Fields:        baseFields,
+					FileRdr:       newMockFileReader("payload"),
+					ContentLength: int64(len("payload")),
+				}),
+			},
+			output: testOutput{
+				response: &Response{
+					Headers: map[string]*string{
+						"Etag":                     utils.GetStringPtr("etag-123"),
+						"Location":                 &location,
+						"x-amz-checksum-crc32":     nil,
+						"x-amz-checksum-crc32c":    nil,
+						"x-amz-checksum-crc64nvme": nil,
+						"x-amz-checksum-sha1":      nil,
+						"x-amz-checksum-sha256":    nil,
+						"x-amz-checksum-sha512":    nil,
+						"x-amz-checksum-md5":       nil,
+						"x-amz-checksum-xxhash64":  nil,
+						"x-amz-checksum-xxhash3":   nil,
+						"x-amz-checksum-xxhash128": nil,
+						"x-amz-checksum-type":      nil,
+						"x-amz-version-id":         nil,
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner:   "root",
+						ContentLength: int64(len("payload")),
+						ObjectETag:    utils.GetStringPtr("etag-123"),
+						ObjectSize:    int64(len("payload")),
+						EventName:     s3event.EventObjectCreatedPost,
+						Status:        http.StatusNoContent,
+					},
+				},
+			},
+		},
+		{
 			name: "anonymous upload with policy is evaluated",
 			input: testInput{
 				locals: postObjectLocalsForTest(middlewares.PostObjectResult{
@@ -663,6 +704,10 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 					if tt.name == "anonymous upload succeeds without policy" {
 						assert.Equal(t, "uploads/anon.bin", *putObjectInput.Key)
 						assert.Equal(t, "anon-payload", string(body))
+					}
+
+					if tt.name == "default content type when field is omitted" {
+						assert.Equal(t, defaultContentType, *putObjectInput.ContentType)
 					}
 
 					if tt.name == "successful created response" {
