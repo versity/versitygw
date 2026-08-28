@@ -131,6 +131,15 @@ type Posix struct {
 	//   multipart CRC64NVME: "CRC64NVME-<whole-file-checksum>"
 	//   multipart composite: "ALGO-<composite-checksum>-<part-count>"
 	dataIntegrityEtag bool
+
+	// objLockMus are process-local striped mutexes taken alongside the
+	// shared per-bucket lock files by lockObjectPublish so that in-process
+	// contention on an object's publish lock is resolved without filesystem
+	// lock thrash. See objlock.go.
+	objLockMus [objLockShards]sync.Mutex
+	// objLockWarn ensures the advisory-locking-unavailable warning is
+	// logged at most once
+	objLockWarn sync.Once
 }
 
 func (o *PosixOpts) SetNewDirPerm(perm fs.FileMode) {
@@ -2117,12 +2126,12 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	defer os.Rename(uploadIDInProgress, uploadIDDir)
 	defer p.meta.RenameObject(bucket, newMetaObj, oldMetaObj)
 
-	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
-	if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, meta.ErrNoSuchKey) {
-		err = backend.EvaluateObjectPutPreconditions(string(b), input.IfMatch, input.IfNoneMatch, err == nil)
-		if err != nil {
-			return res, "", err
-		}
+	// Fast-fail precondition check before the parts are assembled. This is
+	// only advisory: the authoritative check is repeated while holding the
+	// object publish lock just before the final link.
+	err = p.checkPutPreconditions(bucket, object, input.IfMatch, input.IfNoneMatch)
+	if err != nil {
+		return res, "", err
 	}
 
 	checksums, err := p.retrieveChecksums(nil, bucket, filepath.Join(objdir, activeUploadName))
@@ -2409,6 +2418,21 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			}
 			return res, "", fmt.Errorf("copy part %v: %v", part.PartNumber, err)
 		}
+	}
+
+	// The parts are fully assembled into the staging file; serialize the
+	// commit phase (condition evaluation, metadata stores, and final link)
+	// with competing writers to the same key.
+	unlock, err := p.lockObjectPublish(ctx, bucket, object)
+	if err != nil {
+		return res, "", err
+	}
+	defer unlock()
+
+	// authoritative precondition check under the publish lock
+	err = p.checkPutPreconditions(bucket, object, input.IfMatch, input.IfNoneMatch)
+	if err != nil {
+		return res, "", err
 	}
 
 	upiddir := filepath.Join(objdir, activeUploadName)
@@ -3883,6 +3907,62 @@ func getEmptyChecksumValue(algo types.ChecksumAlgorithm) string {
 	}
 }
 
+// checkPutPreconditions evaluates the conditional write headers against the
+// object's current etag. Callers that publish an object must repeat this
+// check while holding the object publish lock (lockObjectPublish) so that
+// evaluation and publication are atomic per bucket/key.
+func (p *Posix) checkPutPreconditions(bucket, object string, ifMatch, ifNoneMatch *string) error {
+	if ifMatch == nil && ifNoneMatch == nil {
+		return nil
+	}
+
+	etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+	if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, meta.ErrNoSuchKey) {
+		return backend.EvaluateObjectPutPreconditions(string(etagBytes), ifMatch, ifNoneMatch, err == nil)
+	}
+
+	return nil
+}
+
+// snapshotObjVersion copies the current object at bucket/key into the
+// versioning directory before the object is replaced, if versioning is
+// configured for the bucket and there is an object to snapshot.
+func (p *Posix) snapshotObjVersion(bucket, key string, vStatus types.BucketVersioningStatus, acct auth.Account) error {
+	if !p.versioningEnabled() || vStatus == "" {
+		return nil
+	}
+
+	d, err := os.Stat(filepath.Join(bucket, key))
+	if err != nil || d.IsDir() {
+		// nothing to snapshot
+		return nil
+	}
+
+	var isVersionIdMissing bool
+	if p.isBucketVersioningSuspended(vStatus) {
+		vIdBytes, err := p.meta.RetrieveAttribute(nil, bucket, key, versionIdKey)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return fmt.Errorf("get object versionId: %w", err)
+		}
+		isVersionIdMissing = len(vIdBytes) == 0
+	}
+	if !isVersionIdMissing {
+		_, err := p.createObjVersion(bucket, key, d.Size(), acct, false)
+		if err != nil {
+			return fmt.Errorf("create object version: %w", err)
+		}
+		// With path-based metadata backends (e.g. sidecar), object-lock
+		// attributes written on the previous version persist at this path
+		// after createObjVersion because metadata is not replaced atomically
+		// the way xattrs are on file rename.  Delete them so they do not
+		// bleed into the new version.
+		_ = p.meta.DeleteAttribute(bucket, key, objectLegalHoldKey)
+		_ = p.meta.DeleteAttribute(bucket, key, objectRetentionKey)
+	}
+
+	return nil
+}
+
 func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
@@ -3920,13 +4000,13 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 
 	name := filepath.Join(*po.Bucket, *po.Key)
 
-	// evaluate preconditions
-	etagBytes, err := p.meta.RetrieveAttribute(nil, *po.Bucket, *po.Key, etagkey)
-	if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, meta.ErrNoSuchKey) {
-		err = backend.EvaluateObjectPutPreconditions(string(etagBytes), po.IfMatch, po.IfNoneMatch, err == nil)
-		if err != nil {
-			return s3response.PutObjectOutput{}, err
-		}
+	// Fast-fail precondition check before the request body is staged. This
+	// is only advisory: the authoritative check is repeated while holding
+	// the object publish lock at commit time so that evaluation and
+	// publication are atomic under concurrent writers.
+	err = p.checkPutPreconditions(*po.Bucket, *po.Key, po.IfMatch, po.IfNoneMatch)
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
 	}
 
 	uid, gid, doChown := p.getChownIDs(acct)
@@ -3980,6 +4060,19 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			// if reuests has a data payload associated with a
 			// directory object
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
+		}
+
+		// serialize with competing writers to the same key and repeat the
+		// precondition check authoritatively under the publish lock
+		unlock, err := p.lockObjectPublish(ctx, *po.Bucket, *po.Key)
+		if err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
+		defer unlock()
+
+		err = p.checkPutPreconditions(*po.Bucket, *po.Key, po.IfMatch, po.IfNoneMatch)
+		if err != nil {
+			return s3response.PutObjectOutput{}, err
 		}
 
 		err = backend.MkdirAll(name, uid, gid, doChown, p.newDirPerm)
@@ -4082,28 +4175,15 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 	}
 
-	// if the versioning is enabled first create the file object version
-	if p.versioningEnabled() && vStatus != "" && err == nil {
-		var isVersionIdMissing bool
-		if p.isBucketVersioningSuspended(vStatus) {
-			vIdBytes, err := p.meta.RetrieveAttribute(nil, *po.Bucket, *po.Key, versionIdKey)
-			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-				return s3response.PutObjectOutput{}, fmt.Errorf("get object versionId: %w", err)
-			}
-			isVersionIdMissing = len(vIdBytes) == 0
-		}
-		if !isVersionIdMissing {
-			_, err := p.createObjVersion(*po.Bucket, *po.Key, d.Size(), acct, false)
-			if err != nil {
-				return s3response.PutObjectOutput{}, fmt.Errorf("create object version: %w", err)
-			}
-			// With path-based metadata backends (e.g. sidecar), object-lock
-			// attributes written on the previous version persist at this path
-			// after createObjVersion because metadata is not replaced atomically
-			// the way xattrs are on file rename.  Delete them so they do not
-			// bleed into the new version.
-			_ = p.meta.DeleteAttribute(*po.Bucket, *po.Key, objectLegalHoldKey)
-			_ = p.meta.DeleteAttribute(*po.Bucket, *po.Key, objectRetentionKey)
+	// If versioning is enabled, first create the file object version.
+	// Conditional writes defer the snapshot until the precondition has been
+	// confirmed under the object publish lock, so that a losing conditional
+	// write does not create a spurious version snapshot.
+	conditional := po.IfMatch != nil || po.IfNoneMatch != nil
+	if err == nil && !conditional {
+		verr := p.snapshotObjVersion(*po.Bucket, *po.Key, vStatus, acct)
+		if verr != nil {
+			return s3response.PutObjectOutput{}, verr
 		}
 	}
 	if isErrNameTooLong(err) {
@@ -4202,6 +4282,40 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		versionID = ulid.Make().String()
 	}
 
+	// Run the backend post-process hook on the staged file before taking
+	// the publish lock and before any path-based metadata is written, so
+	// that a failing hook neither holds up other writers nor leaves
+	// partial metadata behind.
+	err = postprocess(f.File())
+	if err != nil {
+		return s3response.PutObjectOutput{},
+			fmt.Errorf("put object post process failed: %w", err)
+	}
+
+	// The body is fully staged; serialize the commit phase (condition
+	// evaluation, metadata stores, and final link) with competing writers
+	// to the same key.
+	unlock, err := p.lockObjectPublish(ctx, *po.Bucket, *po.Key)
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
+	}
+	defer unlock()
+
+	if conditional {
+		// authoritative precondition check under the publish lock
+		err = p.checkPutPreconditions(*po.Bucket, *po.Key, po.IfMatch, po.IfNoneMatch)
+		if err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
+
+		// snapshot the object version that is about to be replaced, now
+		// that this writer is known to win the conditional race
+		verr := p.snapshotObjVersion(*po.Bucket, *po.Key, vStatus, acct)
+		if verr != nil {
+			return s3response.PutObjectOutput{}, verr
+		}
+	}
+
 	// Before finalizing the object creation remove
 	// null versionId object from versioning directory
 	// if it exists and the versioning status is Suspended
@@ -4280,12 +4394,6 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	// suspended, but S3 omits the version ID from the PutObject response.
 	if versionID == nullVersionId {
 		versionID = ""
-	}
-
-	err = postprocess(f.File())
-	if err != nil {
-		return s3response.PutObjectOutput{},
-			fmt.Errorf("put object post process failed: %w", err)
 	}
 
 	err = f.link()
