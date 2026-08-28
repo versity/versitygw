@@ -123,9 +123,16 @@ func main() {
 	gwcli.RunIAM = runIAM
 
 	app := initApp()
+	posixCommand := gwcli.PosixCommand()
+	posixCommand.Before = func(ctx *cli.Context) error {
+		if ctx.Bool("disable-object-lock-file") {
+			fmt.Println("Warning: shared object publish locking disabled; conditional write atomicity is limited to this gateway process")
+		}
+		return nil
+	}
 
 	app.Commands = []*cli.Command{
-		gwcli.PosixCommand(),
+		posixCommand,
 		gwcli.ScoutfsCommand(),
 		gwcli.S3Command(),
 		gwcli.AzureCommand(),

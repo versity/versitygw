@@ -84,6 +84,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 		CopyObjectThreshold: opts.CopyObjectThreshold,
 		DefaultEtag:         opts.DefaultEtag,
 		DataIntegrityEtag:   opts.DataIntegrityEtag,
+		ForceNoObjLockFile:  true, // scoutfs flock not cluster consistent
 	}
 	if opts.newDirPermSet {
 		posixOpts.SetNewDirPerm(opts.NewDirPerm)

@@ -50,3 +50,8 @@ func lockFileExclusive(ctx context.Context, f *os.File) error {
 		backoff = min(backoff*2, objLockMaxBackoff)
 	}
 }
+
+func isAdvisoryLockUnsupported(err error) bool {
+	return errors.Is(err, windows.ERROR_INVALID_FUNCTION) ||
+		errors.Is(err, windows.ERROR_NOT_SUPPORTED)
+}

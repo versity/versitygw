@@ -92,6 +92,10 @@ type Posix struct {
 	// support copy_file_range is mounted over NFSv4.2.
 	forceNoCopyFileRange bool
 
+	// forceNoObjLockFile disables the shared advisory lock file used for
+	// conditional object publishes. Process-local serialization remains active.
+	forceNoObjLockFile bool
+
 	// enableODirect is a flag to open object data files with O_DIRECT.
 	// This is best-effort and falls back to buffered I/O when unsupported.
 	enableODirect bool
@@ -132,11 +136,10 @@ type Posix struct {
 	//   multipart composite: "ALGO-<composite-checksum>-<part-count>"
 	dataIntegrityEtag bool
 
-	// objLockMus are process-local striped mutexes taken alongside the
-	// shared per-bucket lock files by lockObjectPublish so that in-process
-	// contention on an object's publish lock is resolved without filesystem
-	// lock thrash. See objlock.go.
-	objLockMus [objLockShards]sync.Mutex
+	// objLockSlots are process-local striped slots taken alongside the shared
+	// per-bucket lock files by lockObjectPublish. Channels make local lock
+	// acquisition cancelable while avoiding filesystem lock thrash.
+	objLockSlots [objLockShards]chan struct{}
 	// objLockWarn ensures the advisory-locking-unavailable warning is
 	// logged at most once
 	objLockWarn sync.Once
@@ -234,6 +237,10 @@ type PosixOpts struct {
 	ForceNoTmpFile bool
 	// ForceNoCopyFileRange disables the use of io.Copy for multipart uploads parts
 	ForceNoCopyFileRange bool
+	// ForceNoObjLockFile disables the shared advisory lock file used for
+	// conditional object publishes. Conditional writes are only atomic within a
+	// single gateway process when enabled.
+	ForceNoObjLockFile bool
 	// EnableODirect enables best-effort O_DIRECT for object data reads/writes.
 	// Disabled by default.
 	EnableODirect bool
@@ -273,24 +280,23 @@ type PosixOpts struct {
 
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
 	ioBufferSize := ioBufferSizeOrDefault(opts.IOBufferSize)
+	rootdirAbs, err := filepath.Abs(rootdir)
+	if err != nil {
+		return nil, fmt.Errorf("get absolute path of %v: %w", rootdir, err)
+	}
 
 	if opts.SideCarDir != "" && strings.HasPrefix(opts.SideCarDir, rootdir) {
 		return nil, fmt.Errorf("sidecar directory cannot be inside the gateway root directory")
 	}
 
-	err := os.Chdir(rootdir)
+	err = os.Chdir(rootdirAbs)
 	if err != nil {
 		return nil, fmt.Errorf("chdir %v: %w", rootdir, err)
 	}
 
-	f, err := os.Open(rootdir)
+	f, err := os.Open(rootdirAbs)
 	if err != nil {
 		return nil, fmt.Errorf("open %v: %w", rootdir, err)
-	}
-
-	rootdirAbs, err := filepath.Abs(rootdir)
-	if err != nil {
-		return nil, fmt.Errorf("get absolute path of %v: %w", rootdir, err)
 	}
 
 	var versioningdirAbs string
@@ -345,7 +351,7 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 	return &Posix{
 		meta:                 meta,
 		rootfd:               f,
-		rootdir:              rootdir,
+		rootdir:              rootdirAbs,
 		euid:                 euid,
 		egid:                 egid,
 		chownuid:             opts.ChownUID,
@@ -356,6 +362,7 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		newFilePerm:          newFilePerm,
 		forceNoTmpFile:       opts.ForceNoTmpFile,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
+		forceNoObjLockFile:   opts.ForceNoObjLockFile,
 		enableODirect:        opts.EnableODirect,
 		validateBucketName:   opts.ValidateBucketNames,
 		actionLimiter:        semaphore.NewWeighted(int64(concurrencyOrDefault(opts.Concurrency))),
@@ -367,6 +374,7 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 			return &b
 		}},
 		dataIntegrityEtag: opts.DataIntegrityEtag,
+		objLockSlots:      newObjLockSlots(),
 	}, nil
 }
 
@@ -602,6 +610,10 @@ func (p *Posix) ListBuckets(ctx context.Context, input s3response.ListBucketsInp
 }
 
 func (p *Posix) isBucketValid(bucket string) bool {
+	if bucket == objLockDir {
+		return false
+	}
+
 	if !p.validateBucketName {
 		return true
 	}
@@ -4253,17 +4265,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 	}
 
-	// If versioning is enabled, first create the file object version.
-	// Conditional writes defer the snapshot until the precondition has been
-	// confirmed under the object publish lock, so that a losing conditional
-	// write does not create a spurious version snapshot.
+	// Version snapshots are taken under the object publish lock below. This
+	// keeps concurrent versioned overwrites ordered with their publications.
 	conditional := po.IfMatch != nil || po.IfNoneMatch != nil
-	if err == nil && !conditional {
-		verr := p.snapshotObjVersion(*po.Bucket, *po.Key, vStatus, acct)
-		if verr != nil {
-			return s3response.PutObjectOutput{}, verr
-		}
-	}
 	if isErrNameTooLong(err) {
 		return s3response.PutObjectOutput{}, s3err.GetKeyTooLongErr(int64(len(*po.Key)), 1024)
 	}
@@ -4386,12 +4390,13 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			return s3response.PutObjectOutput{}, err
 		}
 
-		// snapshot the object version that is about to be replaced, now
-		// that this writer is known to win the conditional race
-		verr := p.snapshotObjVersion(*po.Bucket, *po.Key, vStatus, acct)
-		if verr != nil {
-			return s3response.PutObjectOutput{}, verr
-		}
+	}
+
+	// Snapshot the object that is about to be replaced only after the
+	// conditional check has succeeded and while holding the publish lock.
+	verr := p.snapshotObjVersion(*po.Bucket, *po.Key, vStatus, acct)
+	if verr != nil {
+		return s3response.PutObjectOutput{}, verr
 	}
 
 	// Before finalizing the object creation remove
@@ -7201,6 +7206,10 @@ func listBucketFileInfos(bucketlinks bool) ([]fs.FileInfo, error) {
 
 	var fis []fs.FileInfo
 	for _, entry := range entries {
+		if entry.Name() == objLockDir {
+			continue
+		}
+
 		fi, err := entry.Info()
 		if err != nil {
 			continue
