@@ -122,7 +122,7 @@ func (p *Posix) lockObjectPublish(ctx context.Context, bucket, object string) (f
 func (p *Posix) openObjLockFile(bucket string, shard uint8) (*os.File, error) {
 	name := filepath.Join(bucket, objLockDir, fmt.Sprintf("%02x", shard))
 
-	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, os.FileMode(defaultFilePerm))
+	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, os.FileMode(defaultNewFilePerm))
 	if err == nil {
 		return f, nil
 	}
@@ -135,7 +135,7 @@ func (p *Posix) openObjLockFile(bucket string, shard uint8) (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("make object lock dir: %w", err)
 	}
-	f, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE, os.FileMode(defaultFilePerm))
+	f, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE, os.FileMode(defaultNewFilePerm))
 	if err != nil {
 		return nil, fmt.Errorf("open object lock file: %w", err)
 	}
