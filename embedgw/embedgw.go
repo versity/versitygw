@@ -524,6 +524,69 @@ type Config struct {
 // validation, debug logging) are eliminated and concurrent calls are safe.
 var gatewayRunning atomic.Bool
 
+// IamOpts translates the Config's IAM backend trigger fields into
+// auth.Opts. Split out so embedders can build the same IAM service
+// the gateway itself would construct (e.g. to mount routes that
+// authenticate against it before the gateway starts).
+func (c *Config) IamOpts() *auth.Opts {
+	return &auth.Opts{
+		RootAccount: auth.Account{
+			Access: c.RootUserAccess,
+			Secret: c.RootUserSecret,
+			Role:   auth.RoleAdmin,
+		},
+		Dir:                         c.IAMDir,
+		LDAPServerURL:               c.LDAPServerURL,
+		LDAPBindDN:                  c.LDAPBindDN,
+		LDAPPassword:                c.LDAPPassword,
+		LDAPQueryBase:               c.LDAPQueryBase,
+		LDAPObjClasses:              c.LDAPObjClasses,
+		LDAPAccessAtr:               c.LDAPAccessAttr,
+		LDAPSecretAtr:               c.LDAPSecretAttr,
+		LDAPRoleAtr:                 c.LDAPRoleAttr,
+		LDAPUserIdAtr:               c.LDAPUserIDAttr,
+		LDAPGroupIdAtr:              c.LDAPGroupIDAttr,
+		LDAPProjectIdAtr:            c.LDAPProjectIDAttr,
+		LDAPTLSSkipVerify:           c.LDAPTLSSkipVerify,
+		VaultEndpointURL:            c.VaultEndpointURL,
+		VaultNamespace:              c.VaultNamespace,
+		VaultSecretStoragePath:      c.VaultSecretStoragePath,
+		VaultSecretStorageNamespace: c.VaultSecretStorageNamespace,
+		VaultAuthMethod:             c.VaultAuthMethod,
+		VaultAuthNamespace:          c.VaultAuthNamespace,
+		VaultMountPath:              c.VaultMountPath,
+		VaultRootToken:              c.VaultRootToken,
+		VaultRoleId:                 c.VaultRoleID,
+		VaultRoleSecret:             c.VaultRoleSecret,
+		VaultServerCert:             c.VaultServerCert,
+		VaultClientCert:             c.VaultClientCert,
+		VaultClientCertKey:          c.VaultClientCertKey,
+		S3Access:                    c.S3IAMAccess,
+		S3Secret:                    c.S3IAMSecret,
+		S3Region:                    c.S3IAMRegion,
+		S3Bucket:                    c.S3IAMBucket,
+		S3Endpoint:                  c.S3IAMEndpoint,
+		S3DisableSSlVerfiy:          c.S3IAMDisableSSLVerify,
+		CacheDisable:                c.IAMCacheDisable,
+		CacheTTL:                    c.IAMCacheTTL,
+		CachePrune:                  c.IAMCachePrune,
+		IpaHost:                     c.IpaHost,
+		IpaVaultName:                c.IpaVaultName,
+		IpaUser:                     c.IpaUser,
+		IpaPassword:                 c.IpaPassword,
+		IpaInsecure:                 c.IpaInsecure,
+		StandaloneIAMEndpoint:       c.StandaloneIAMEndpoint,
+		StandaloneIAMAccess:         c.StandaloneIAMAccess,
+		StandaloneIAMSecret:         c.StandaloneIAMSecret,
+		StandaloneClientCert:        c.StandaloneClientCert,
+		StandaloneClientCertKey:     c.StandaloneClientCertKey,
+		StandaloneServerCA:          c.StandaloneServerCA,
+		StandaloneDefaultUserID:     c.StandaloneDefaultUserID,
+		StandaloneDefaultGroupID:    c.StandaloneDefaultGroupID,
+		StandaloneDefaultProjectID:  c.StandaloneDefaultProjectID,
+	}
+}
+
 // RunVersityGW starts the VersityGW gateway with the supplied backend and
 // configuration. It blocks until ctx is cancelled, or an error occurs. All
 // subsystems are gracefully shut down before the function returns.
@@ -698,63 +761,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 
 	iam := cfg.IAMService
 	if iam == nil {
-		iam, err = auth.New(&auth.Opts{
-			RootAccount: auth.Account{
-				Access: cfg.RootUserAccess,
-				Secret: cfg.RootUserSecret,
-				Role:   auth.RoleAdmin,
-			},
-			Dir:                         cfg.IAMDir,
-			LDAPServerURL:               cfg.LDAPServerURL,
-			LDAPBindDN:                  cfg.LDAPBindDN,
-			LDAPPassword:                cfg.LDAPPassword,
-			LDAPQueryBase:               cfg.LDAPQueryBase,
-			LDAPObjClasses:              cfg.LDAPObjClasses,
-			LDAPAccessAtr:               cfg.LDAPAccessAttr,
-			LDAPSecretAtr:               cfg.LDAPSecretAttr,
-			LDAPRoleAtr:                 cfg.LDAPRoleAttr,
-			LDAPUserIdAtr:               cfg.LDAPUserIDAttr,
-			LDAPGroupIdAtr:              cfg.LDAPGroupIDAttr,
-			LDAPProjectIdAtr:            cfg.LDAPProjectIDAttr,
-			LDAPTLSSkipVerify:           cfg.LDAPTLSSkipVerify,
-			VaultEndpointURL:            cfg.VaultEndpointURL,
-			VaultNamespace:              cfg.VaultNamespace,
-			VaultSecretStoragePath:      cfg.VaultSecretStoragePath,
-			VaultSecretStorageNamespace: cfg.VaultSecretStorageNamespace,
-			VaultAuthMethod:             cfg.VaultAuthMethod,
-			VaultAuthNamespace:          cfg.VaultAuthNamespace,
-			VaultMountPath:              cfg.VaultMountPath,
-			VaultRootToken:              cfg.VaultRootToken,
-			VaultRoleId:                 cfg.VaultRoleID,
-			VaultRoleSecret:             cfg.VaultRoleSecret,
-			VaultServerCert:             cfg.VaultServerCert,
-			VaultClientCert:             cfg.VaultClientCert,
-			VaultClientCertKey:          cfg.VaultClientCertKey,
-			S3Access:                    cfg.S3IAMAccess,
-			S3Secret:                    cfg.S3IAMSecret,
-			S3Region:                    cfg.S3IAMRegion,
-			S3Bucket:                    cfg.S3IAMBucket,
-			S3Endpoint:                  cfg.S3IAMEndpoint,
-			S3DisableSSlVerfiy:          cfg.S3IAMDisableSSLVerify,
-			CacheDisable:                cfg.IAMCacheDisable,
-			CacheTTL:                    cfg.IAMCacheTTL,
-			CachePrune:                  cfg.IAMCachePrune,
-			IpaHost:                     cfg.IpaHost,
-			IpaVaultName:                cfg.IpaVaultName,
-			IpaUser:                     cfg.IpaUser,
-			IpaPassword:                 cfg.IpaPassword,
-			IpaInsecure:                 cfg.IpaInsecure,
-			StandaloneIAMEndpoint:       cfg.StandaloneIAMEndpoint,
-			StandaloneIAMAccess:         cfg.StandaloneIAMAccess,
-			StandaloneIAMSecret:         cfg.StandaloneIAMSecret,
-			StandaloneClientCert:        cfg.StandaloneClientCert,
-			StandaloneClientCertKey:     cfg.StandaloneClientCertKey,
-			StandaloneServerCA:          cfg.StandaloneServerCA,
-			StandaloneDefaultUserID:     cfg.StandaloneDefaultUserID,
-			StandaloneDefaultGroupID:    cfg.StandaloneDefaultGroupID,
-			StandaloneDefaultProjectID:  cfg.StandaloneDefaultProjectID,
-			StandaloneRegion:            cfg.Region,
-		})
+		iam, err = auth.New(cfg.IamOpts())
 		if err != nil {
 			return fmt.Errorf("setup iam: %w", err)
 		}

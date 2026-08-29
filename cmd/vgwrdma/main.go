@@ -24,7 +24,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/urfave/cli/v2"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/cmd/internal/gwcli"
 	"github.com/versity/versitygw/cubackend"
@@ -33,7 +35,10 @@ import (
 	"github.com/versity/versitygw/embedgw"
 	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/rdma"
+	"github.com/versity/versitygw/rdma/rcroutes"
+	"github.com/versity/versitygw/rdma/rcserver"
 	"github.com/versity/versitygw/s3api"
+	"github.com/versity/versitygw/s3api/middlewares"
 )
 
 var (
@@ -104,6 +109,7 @@ var (
 	mpMaxParts                             int
 	socketPerm                             string
 	rdmaIP                                 string
+	rcGidHint                              string
 	rdmaPort                               uint
 	poolBufSize                            int
 	poolBufCount                           int
@@ -840,6 +846,12 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_RDMA_IP"},
 			Destination: &rdmaIP,
 		},
+		&cli.StringFlag{
+			Name:        "rc-gid-hint",
+			Usage:       "dotted GID prefix selecting the verbs device for the hipobj-rc-v2 RC data plane (default: first device)",
+			EnvVars:     []string{"VGW_RC_GID_HINT"},
+			Destination: &rcGidHint,
+		},
 		&cli.UintFlag{
 			Name:        "rdma-port",
 			Usage:       "port for RDMA listener",
@@ -941,6 +953,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	var s3Opts []s3api.Option
+	// iamOwned tracks whether the RC IAM service is still ours to
+	// shut down; it is cleared only after RunVersityGW returns.
+	iamOwned := false
 	if rdmaIP != "" {
 		rdma.ConfigureTelemetry(debug)
 
@@ -969,7 +984,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		s3Opts = append(s3Opts, s3api.WithMiddleware("/", cumiddleware.CuObjMiddleware))
 	}
 
-	return embedgw.RunVersityGW(ctx, be, &embedgw.Config{
+	cfg := &embedgw.Config{
 		RootUserAccess:              gwcli.RootUserAccess,
 		RootUserSecret:              gwcli.RootUserSecret,
 		Region:                      region,
@@ -1065,9 +1080,83 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		WebsiteKeyFile:              websiteKeyFile,
 		WebsiteNoTLS:                websiteNoTLS,
 		SigHup:                      gwcli.SigHup,
-		S3Options:                   s3Opts,
 		Version:                     Version,
 		Build:                       Build,
 		BuildTime:                   BuildTime,
-	})
+	}
+
+	if rdmaIP != "" {
+		// RC data plane: build the IAM service the gateway will
+		// use so the control routes authenticate against the
+		// same account store, then start the session server and
+		// mount the hipobj-rc-v2 routes on the S3 port.
+		iamSvc, err := auth.New(cfg.IamOpts())
+		if err != nil {
+			return fmt.Errorf("setup iam for rdma routes: %w", err)
+		}
+		cfg.IAMService = iamSvc
+		// The RC routes share this IAM service with the gateway.
+		// If a later step fails before RunVersityGW takes over,
+		// shut it down here so background workers do not leak;
+		// iamOwned is cleared after RunVersityGW returns.
+		iamOwned = true
+		defer func() {
+			if iamOwned {
+				_ = iamSvc.Shutdown()
+			}
+		}()
+
+		rcSvc, err := rcserver.Init(rcserver.DeviceOpts{
+			GidHint:             rcGidHint,
+			Port:                1,
+			MaxSessions:         1024,
+			MaxUserSessions:     64,
+			MaxStagingBytes:     4 << 30,
+			MaxUserStagingBytes: 1 << 30,
+			MaxQPs:              1024,
+			MaxUserQPs:          16,
+			TPrepMs:             100000,
+			TExecMs:             30000,
+		})
+		if err != nil {
+			return err
+		}
+		defer rcSvc.Close()
+
+		rcVerify := middlewares.VerifyV4Signature(
+			middlewares.RootUserConfig{
+				Access: gwcli.RootUserAccess,
+				Secret: gwcli.RootUserSecret,
+			}, iamSvc, region, false, true, false)
+		// Fiber only runs the next handler in the chain when the
+		// previous one calls ctx.Next; VerifyV4Signature returns
+		// nil on success without doing so. Wrap it so a verified
+		// request reaches the route handler, while errors end the
+		// chain as usual.
+		rcAuth := func(ctx fiber.Ctx) error {
+			if err := rcVerify(ctx); err != nil {
+				return err
+			}
+			return ctx.Next()
+		}
+		rcH := rcroutes.New(rcSvc, be, iamSvc, readonly, disableACLs)
+		cfg.S3Options = append(s3Opts,
+			s3api.WithRoute("POST", "/.hipobj-rc/prepare", rcAuth, rcH.Prepare),
+			s3api.WithRoute("POST", "/.hipobj-rc/ready", rcAuth, rcH.Ready),
+			s3api.WithRoute("POST", "/.hipobj-rc/cancel", rcAuth, rcH.Cancel),
+		)
+	} else {
+		cfg.S3Options = s3Opts
+	}
+
+	// Transfer IAM ownership only when RunVersityGW accepted it:
+	// on any returned error (including early validation failures
+	// inside RunVersityGW) the deferred shutdown still cleans the
+	// service up. On success RunVersityGW shut the IAM service
+	// down itself as part of its normal shutdown sequence.
+	if runErr := embedgw.RunVersityGW(ctx, be, cfg); runErr != nil {
+		return runErr
+	}
+	iamOwned = false
+	return nil
 }
