@@ -161,16 +161,18 @@ type Config struct {
 
 	// IAM Backends
 	//
-	// The gateway supports six external IAM backends. At most one may be
-	// active at a time. When the fields for more than one backend are
-	// populated, the first match in the following priority order wins:
+	// The gateway supports an externally supplied IAMService or the
+	// built-in external IAM backends. At most one may be active at a time.
+	// When the fields for more than one are populated, the first match in
+	// the following priority order wins:
 	//
-	//   1. StandaloneIAMEndpoint -- standalone IAM service
-	//   2. IAMDir          -- local directory
-	//   3. LDAPServerURL   -- LDAP
-	//   4. S3IAMEndpoint   -- S3-backed
-	//   5. VaultEndpointURL -- HashiCorp Vault
-	//   6. IpaHost         -- FreeIPA
+	//   IAMService            -- externally supplied auth.IAMService
+	//   StandaloneIAMEndpoint -- standalone IAM service
+	//   IAMDir                -- local directory
+	//   LDAPServerURL         -- LDAP
+	//   S3IAMEndpoint         -- S3-backed
+	//   VaultEndpointURL      -- HashiCorp Vault
+	//   IpaHost               -- FreeIPA
 	//
 	// Configuring an IAM backend is optional. When none of the trigger fields
 	// above are set, the gateway runs in single-account mode: only the root
@@ -178,7 +180,11 @@ type Config struct {
 	// API is unavailable.
 	//
 	// The IAMCache fields below apply to all backends except single-account
-	// mode.
+	// mode and IAMService.
+
+	// IAMService, when non-nil, is used directly as the gateway's IAM
+	// backend, bypassing all other IAM Backend fields below.
+	IAMService auth.IAMService
 
 	// IAMDir enables the local file-based IAM backend. Set to the directory
 	// path where account files are stored. Account data is plain text
@@ -690,64 +696,67 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		debuglogger.SetIAMDebugEnabled()
 	}
 
-	iam, err := auth.New(&auth.Opts{
-		RootAccount: auth.Account{
-			Access: cfg.RootUserAccess,
-			Secret: cfg.RootUserSecret,
-			Role:   auth.RoleAdmin,
-		},
-		Dir:                         cfg.IAMDir,
-		LDAPServerURL:               cfg.LDAPServerURL,
-		LDAPBindDN:                  cfg.LDAPBindDN,
-		LDAPPassword:                cfg.LDAPPassword,
-		LDAPQueryBase:               cfg.LDAPQueryBase,
-		LDAPObjClasses:              cfg.LDAPObjClasses,
-		LDAPAccessAtr:               cfg.LDAPAccessAttr,
-		LDAPSecretAtr:               cfg.LDAPSecretAttr,
-		LDAPRoleAtr:                 cfg.LDAPRoleAttr,
-		LDAPUserIdAtr:               cfg.LDAPUserIDAttr,
-		LDAPGroupIdAtr:              cfg.LDAPGroupIDAttr,
-		LDAPProjectIdAtr:            cfg.LDAPProjectIDAttr,
-		LDAPTLSSkipVerify:           cfg.LDAPTLSSkipVerify,
-		VaultEndpointURL:            cfg.VaultEndpointURL,
-		VaultNamespace:              cfg.VaultNamespace,
-		VaultSecretStoragePath:      cfg.VaultSecretStoragePath,
-		VaultSecretStorageNamespace: cfg.VaultSecretStorageNamespace,
-		VaultAuthMethod:             cfg.VaultAuthMethod,
-		VaultAuthNamespace:          cfg.VaultAuthNamespace,
-		VaultMountPath:              cfg.VaultMountPath,
-		VaultRootToken:              cfg.VaultRootToken,
-		VaultRoleId:                 cfg.VaultRoleID,
-		VaultRoleSecret:             cfg.VaultRoleSecret,
-		VaultServerCert:             cfg.VaultServerCert,
-		VaultClientCert:             cfg.VaultClientCert,
-		VaultClientCertKey:          cfg.VaultClientCertKey,
-		S3Access:                    cfg.S3IAMAccess,
-		S3Secret:                    cfg.S3IAMSecret,
-		S3Region:                    cfg.S3IAMRegion,
-		S3Bucket:                    cfg.S3IAMBucket,
-		S3Endpoint:                  cfg.S3IAMEndpoint,
-		S3DisableSSlVerfiy:          cfg.S3IAMDisableSSLVerify,
-		CacheDisable:                cfg.IAMCacheDisable,
-		CacheTTL:                    cfg.IAMCacheTTL,
-		CachePrune:                  cfg.IAMCachePrune,
-		IpaHost:                     cfg.IpaHost,
-		IpaVaultName:                cfg.IpaVaultName,
-		IpaUser:                     cfg.IpaUser,
-		IpaPassword:                 cfg.IpaPassword,
-		IpaInsecure:                 cfg.IpaInsecure,
-		StandaloneIAMEndpoint:       cfg.StandaloneIAMEndpoint,
-		StandaloneIAMAccess:         cfg.StandaloneIAMAccess,
-		StandaloneIAMSecret:         cfg.StandaloneIAMSecret,
-		StandaloneClientCert:        cfg.StandaloneClientCert,
-		StandaloneClientCertKey:     cfg.StandaloneClientCertKey,
-		StandaloneServerCA:          cfg.StandaloneServerCA,
-		StandaloneDefaultUserID:     cfg.StandaloneDefaultUserID,
-		StandaloneDefaultGroupID:    cfg.StandaloneDefaultGroupID,
-		StandaloneDefaultProjectID:  cfg.StandaloneDefaultProjectID,
-	})
-	if err != nil {
-		return fmt.Errorf("setup iam: %w", err)
+	iam := cfg.IAMService
+	if iam == nil {
+		iam, err = auth.New(&auth.Opts{
+			RootAccount: auth.Account{
+				Access: cfg.RootUserAccess,
+				Secret: cfg.RootUserSecret,
+				Role:   auth.RoleAdmin,
+			},
+			Dir:                         cfg.IAMDir,
+			LDAPServerURL:               cfg.LDAPServerURL,
+			LDAPBindDN:                  cfg.LDAPBindDN,
+			LDAPPassword:                cfg.LDAPPassword,
+			LDAPQueryBase:               cfg.LDAPQueryBase,
+			LDAPObjClasses:              cfg.LDAPObjClasses,
+			LDAPAccessAtr:               cfg.LDAPAccessAttr,
+			LDAPSecretAtr:               cfg.LDAPSecretAttr,
+			LDAPRoleAtr:                 cfg.LDAPRoleAttr,
+			LDAPUserIdAtr:               cfg.LDAPUserIDAttr,
+			LDAPGroupIdAtr:              cfg.LDAPGroupIDAttr,
+			LDAPProjectIdAtr:            cfg.LDAPProjectIDAttr,
+			LDAPTLSSkipVerify:           cfg.LDAPTLSSkipVerify,
+			VaultEndpointURL:            cfg.VaultEndpointURL,
+			VaultNamespace:              cfg.VaultNamespace,
+			VaultSecretStoragePath:      cfg.VaultSecretStoragePath,
+			VaultSecretStorageNamespace: cfg.VaultSecretStorageNamespace,
+			VaultAuthMethod:             cfg.VaultAuthMethod,
+			VaultAuthNamespace:          cfg.VaultAuthNamespace,
+			VaultMountPath:              cfg.VaultMountPath,
+			VaultRootToken:              cfg.VaultRootToken,
+			VaultRoleId:                 cfg.VaultRoleID,
+			VaultRoleSecret:             cfg.VaultRoleSecret,
+			VaultServerCert:             cfg.VaultServerCert,
+			VaultClientCert:             cfg.VaultClientCert,
+			VaultClientCertKey:          cfg.VaultClientCertKey,
+			S3Access:                    cfg.S3IAMAccess,
+			S3Secret:                    cfg.S3IAMSecret,
+			S3Region:                    cfg.S3IAMRegion,
+			S3Bucket:                    cfg.S3IAMBucket,
+			S3Endpoint:                  cfg.S3IAMEndpoint,
+			S3DisableSSlVerfiy:          cfg.S3IAMDisableSSLVerify,
+			CacheDisable:                cfg.IAMCacheDisable,
+			CacheTTL:                    cfg.IAMCacheTTL,
+			CachePrune:                  cfg.IAMCachePrune,
+			IpaHost:                     cfg.IpaHost,
+			IpaVaultName:                cfg.IpaVaultName,
+			IpaUser:                     cfg.IpaUser,
+			IpaPassword:                 cfg.IpaPassword,
+			IpaInsecure:                 cfg.IpaInsecure,
+			StandaloneIAMEndpoint:       cfg.StandaloneIAMEndpoint,
+			StandaloneIAMAccess:         cfg.StandaloneIAMAccess,
+			StandaloneIAMSecret:         cfg.StandaloneIAMSecret,
+			StandaloneClientCert:        cfg.StandaloneClientCert,
+			StandaloneClientCertKey:     cfg.StandaloneClientCertKey,
+			StandaloneServerCA:          cfg.StandaloneServerCA,
+			StandaloneDefaultUserID:     cfg.StandaloneDefaultUserID,
+			StandaloneDefaultGroupID:    cfg.StandaloneDefaultGroupID,
+			StandaloneDefaultProjectID:  cfg.StandaloneDefaultProjectID,
+		})
+		if err != nil {
+			return fmt.Errorf("setup iam: %w", err)
+		}
 	}
 
 	loggers, err := s3log.InitLogger(&s3log.LogConfig{
