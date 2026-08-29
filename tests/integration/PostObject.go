@@ -976,6 +976,64 @@ func PostObject_success_with_meta_properties(s *S3Conf) error {
 	})
 }
 
+func PostObject_default_content_type(s *S3Conf) error {
+	testName := "PostObject_default_content_type"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, tt := range []struct {
+			key              string
+			policyConditions []any
+			extraFields      map[string]string
+		}{
+			{
+				key: "omitted-content-type",
+			},
+			{
+				key: "empty-content-type",
+				policyConditions: []any{
+					[]any{"starts-with", "$Content-Type", ""},
+				},
+				extraFields: map[string]string{
+					"Content-Type": "",
+				},
+			},
+		} {
+			resp, err := sendPostObject(PostRequestConfig{
+				bucket:           bucket,
+				key:              tt.key,
+				s3Conf:           s,
+				fileContent:      []byte("dummy data"),
+				policyConditions: tt.policyConditions,
+				extraFields:      tt.extraFields,
+			})
+			if err != nil {
+				return err
+			}
+
+			if resp.StatusCode != http.StatusNoContent {
+				return fmt.Errorf("%s: expected status code to be 204, instead got %d",
+					tt.key, resp.StatusCode)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &tt.key,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if getString(out.ContentType) != defaultContentType {
+				return fmt.Errorf("%s: expected default %s Content-Type, instead got %s",
+					tt.key, defaultContentType, getString(out.ContentType))
+			}
+		}
+
+		return nil
+	})
+}
+
 func PostObject_invalid_website_redirect_location(s *S3Conf) error {
 	testName := "PostObject_invalid_website_redirect_location"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

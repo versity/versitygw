@@ -2033,6 +2033,7 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_success_status_201)
 	ts.Run(PostObject_should_ignore_anything_after_file)
 	ts.Run(PostObject_success_with_meta_properties)
+	ts.Run(PostObject_default_content_type)
 	ts.Run(PostObject_invalid_website_redirect_location)
 	ts.Run(PostObject_invalid_tagging)
 	ts.Run(PostObject_success_with_tagging)
@@ -3494,6 +3495,7 @@ func GetIntTests() IntTests {
 		"PostObject_success_status_201":                                                    PostObject_success_status_201,
 		"PostObject_should_ignore_anything_after_file":                                     PostObject_should_ignore_anything_after_file,
 		"PostObject_success_with_meta_properties":                                          PostObject_success_with_meta_properties,
+		"PostObject_default_content_type":                                                  PostObject_default_content_type,
 		"PostObject_invalid_website_redirect_location":                                     PostObject_invalid_website_redirect_location,
 		"PostObject_invalid_tagging":                                                       PostObject_invalid_tagging,
 		"PostObject_success_with_tagging":                                                  PostObject_success_with_tagging,
