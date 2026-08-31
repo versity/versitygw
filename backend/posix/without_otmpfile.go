@@ -60,7 +60,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 
 	// Create a temp file for upload while in progress (see link comments below).
 	var err error
-	err = backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)
+	err = p.mkdirAll(dir, uid, gid, doChown)
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
 			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
@@ -81,7 +81,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		if err != nil {
 			f.Close()
 			os.Remove(f.Name())
-			return nil, fmt.Errorf("set temp file ownership: %w", err)
+			return nil, fmt.Errorf("set temp file ownership: %w", p.chownErr(filepath.Join(bucket, obj), uid, gid, err))
 		}
 	}
 

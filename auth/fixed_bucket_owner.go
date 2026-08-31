@@ -34,3 +34,27 @@ func ResolveFixedBucketOwner(iam IAMService) (Account, bool) {
 
 	return fbo.BucketOwner(), true
 }
+
+// rootIdentity returns the account a storage backend should see for a request
+// signed with the gateway's root credentials. The S3 request path knows root
+// only by its access key and secret, so root would otherwise reach the
+// backend with the zero uid/gid — which the posix backend's --chuid/--chgid
+// then tries to chown to, an operation an unprivileged gateway can never
+// perform.
+//
+// An IAM backend that fixes bucket ownership to root also defines the POSIX
+// identity root owns those buckets with, so take it from there: root's own
+// object writes then land with the same ownership as the buckets root owns.
+// Backends that do not fix ownership resolve a real per-account uid/gid for
+// every other account and keep root exactly as it was.
+func rootIdentity(iam IAMService, root Account) Account {
+	owner, fixed := ResolveFixedBucketOwner(iam)
+	if !fixed || owner.Access != root.Access {
+		return root
+	}
+
+	root.UserID = owner.UserID
+	root.GroupID = owner.GroupID
+	root.ProjectID = owner.ProjectID
+	return root
+}

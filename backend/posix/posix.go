@@ -319,6 +319,20 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		fmt.Println("Using sidecar directory for metadata:", sidecardirAbs)
 	}
 
+	// A gateway that is not root can only chown a file to an account whose
+	// uid/gid it already has, so --chuid/--chgid either do nothing or fail
+	// every write for every other account. That is a configuration mistake
+	// worth naming at startup rather than one InternalError per request, but
+	// it is not fatal: the process may hold CAP_CHOWN without being root, and
+	// a setup where every account shares the gateway's own uid/gid is a
+	// legitimate no-op.
+	euid, egid := os.Geteuid(), os.Getegid()
+	if (opts.ChownUID || opts.ChownGID) && euid != 0 {
+		fmt.Printf("Warning: --chuid/--chgid requested, but the gateway runs as euid %v/egid %v: "+
+			"writes for any account with a different uid/gid will fail unless this process can chown\n",
+			euid, egid)
+	}
+
 	newDirPerm := defaultNewDirPerm
 	if opts.newDirPermSet {
 		newDirPerm = opts.NewDirPerm.Perm()
@@ -332,8 +346,8 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		meta:                 meta,
 		rootfd:               f,
 		rootdir:              rootdir,
-		euid:                 os.Geteuid(),
-		egid:                 os.Getegid(),
+		euid:                 euid,
+		egid:                 egid,
 		chownuid:             opts.ChownUID,
 		chowngid:             opts.ChownGID,
 		bucketlinks:          opts.BucketLinks,
@@ -615,7 +629,7 @@ func (p *Posix) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3.
 	return &s3.HeadBucketOutput{}, nil
 }
 
-func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
+func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) (err error) {
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -664,10 +678,23 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 		return fmt.Errorf("mkdir bucket: %w", err)
 	}
 
+	// The directory now exists but is not yet a usable bucket: until the acl
+	// xattr below is stored, every request for this name — a retry of this
+	// same CreateBucket included — fails with "get bucket acl: no such key",
+	// and the name stays poisoned until someone removes the directory by
+	// hand. Undo the mkdir on any failure from here on so the name stays
+	// retryable.
+	defer func() {
+		if err == nil {
+			return
+		}
+		p.removePartialBucket(bucket)
+	}()
+
 	if doChown {
-		err := os.Chown(bucket, uid, gid)
+		err = os.Chown(bucket, uid, gid)
 		if err != nil {
-			return fmt.Errorf("chown bucket: %w", err)
+			return p.chownErr(bucket, uid, gid, err)
 		}
 	}
 
@@ -718,6 +745,57 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 	}
 
 	return nil
+}
+
+// removePartialBucket undoes a partially completed CreateBucket: the bucket
+// directory, any metadata stored for it (which may live in a sidecar
+// directory outside the bucket) and its versioning directory. Failures here
+// are logged rather than returned — the caller is already failing with the
+// error that matters, and reporting a cleanup failure instead would hide it.
+func (p *Posix) removePartialBucket(bucket string) {
+	if err := os.RemoveAll(bucket); err != nil {
+		debuglogger.Logf("failed to remove partially created bucket (%q): %v", bucket, err)
+	}
+	if err := p.meta.DeleteAttributes(bucket, ""); err != nil {
+		debuglogger.Logf("failed to delete partially created bucket sidecar attributes (%q): %v", bucket, err)
+	}
+	if p.versioningEnabled() {
+		err := os.RemoveAll(filepath.Join(p.versioningDir, bucket))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			debuglogger.Logf("failed to remove partially created bucket version directory (%q): %v", bucket, err)
+		}
+	}
+}
+
+// mkdirAll is backend.MkdirAll with this backend's directory permissions and
+// the same chown annotation CreateBucket uses: an EPERM here is the
+// --chuid/--chgid misconfiguration, not a filesystem problem. Only EPERM is
+// rewritten, so callers matching on EROFS or ErrObjectParentIsFile are
+// unaffected.
+func (p *Posix) mkdirAll(path string, uid, gid int, doChown bool) error {
+	err := backend.MkdirAll(path, uid, gid, doChown, p.newDirPerm)
+	if doChown && errors.Is(err, syscall.EPERM) {
+		return p.chownErr(path, uid, gid, err)
+	}
+	return err
+}
+
+// chownErr annotates a chown failure with the configuration that asked for
+// it. EPERM is not transient here: an unprivileged gateway can never give a
+// file away to another uid or to a group it is not in, so every write for
+// that account fails the same way until the configuration changes. Name the
+// flags and the process identity that make the request impossible rather
+// than leaving a bare "operation not permitted" in the log.
+func (p *Posix) chownErr(name string, uid, gid int, err error) error {
+	// The errno is wrapped rather than the *fs.PathError it arrived in: the
+	// PathError repeats a path this message already names, and errors.Is
+	// still matches EPERM either way.
+	var errno syscall.Errno
+	if errors.As(err, &errno) && errno == syscall.EPERM {
+		return fmt.Errorf("chown %v to %v:%v: %w: --chuid/--chgid need a privileged gateway, but this one runs as euid %v/egid %v",
+			name, uid, gid, errno, p.euid, p.egid)
+	}
+	return fmt.Errorf("chown %v: %w", name, err)
 }
 
 func (p *Posix) isBucketEmpty(bucket string) error {
@@ -2447,7 +2525,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	dir := filepath.Dir(objname)
 	if dir != "" {
 		uid, gid, doChown := p.getChownIDs(acct)
-		err = backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)
+		err = p.mkdirAll(dir, uid, gid, doChown)
 		if err != nil {
 			return res, "", err
 		}
@@ -4075,7 +4153,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			return s3response.PutObjectOutput{}, err
 		}
 
-		err = backend.MkdirAll(name, uid, gid, doChown, p.newDirPerm)
+		err = p.mkdirAll(name, uid, gid, doChown)
 		if err != nil {
 			if errors.Is(err, syscall.EDQUOT) {
 				return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -4270,7 +4348,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 
 	dir := filepath.Dir(name)
 	if dir != "" {
-		err = backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)
+		err = p.mkdirAll(dir, uid, gid, doChown)
 		if err != nil {
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 		}

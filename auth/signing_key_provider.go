@@ -103,7 +103,7 @@ func ResolveDerivedKey(iam IAMService, root Account, access, sessionToken, date,
 		if sessionToken != "" {
 			return nil, Account{}, ErrInvalidSessionToken
 		}
-		return sigv4auth.DeriveKey(root.Secret, date, region, service), root, nil
+		return sigv4auth.DeriveKey(root.Secret, date, region, service), rootIdentity(iam, root), nil
 	}
 	if skp, ok := iam.(SigningKeyProvider); ok {
 		return skp.DeriveSigningKey(access, sessionToken, date, region, service)
