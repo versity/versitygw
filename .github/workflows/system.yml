@@ -69,6 +69,7 @@ jobs:
           REMOVE_TEST_FILE_FOLDER: true
           VERSIONING_DIR: /home/tester/test-files/versioning
           COMMAND_LOG: /home/tester/test-files/command.log
+          TEST_LOG_FILE: /home/tester/test-files/test.log
           TIME_LOG: /home/tester/test-files/time.log
           PYTHON_ENV_FOLDER: /home/tester/test-files/env
           AUTOGENERATE_USERS: true
@@ -76,6 +77,11 @@ jobs:
           AWS_REGION: ${{ matrix.AWS_REGION }}
           COVERAGE_LOG: /home/tester/test-files/coverage.log
           TEMPLATE_MATRIX_FILE: ${{ github.workspace }}/tests/templates/matrix.yaml
+          QUICK_COMPARE_SIZE: 1048576
+          GENERATE_COMMAND_EXECUTABLE: /home/tester/test-files/generateCommand
+          WEBSITE_DOMAIN: localhost
+          WEBSITE: :8071
+          VERSITY_LOG_FILE: /home/tester/test-files/versity.log
         run: |
           cat > /home/tester/test-files/.env <<EOF
           IAM_TYPE=$IAM_TYPE
@@ -107,6 +113,7 @@ jobs:
           REMOVE_TEST_FILE_FOLDER=$REMOVE_TEST_FILE_FOLDER
           VERSIONING_DIR=$VERSIONING_DIR
           COMMAND_LOG=$COMMAND_LOG
+          TEST_LOG_FILE=$TEST_LOG_FILE
           TIME_LOG=$TIME_LOG
           PYTHON_ENV_FOLDER=$PYTHON_ENV_FOLDER
           AUTOGENERATE_USERS=$AUTOGENERATE_USERS
@@ -114,10 +121,11 @@ jobs:
           AWS_REGION=$AWS_REGION
           COVERAGE_LOG=$COVERAGE_LOG
           TEMPLATE_MATRIX_FILE=$TEMPLATE_MATRIX_FILE
-          QUICK_COMPARE_SIZE=1048576
-          GENERATE_COMMAND_EXECUTABLE=/home/tester/test-files/generateCommand
-          WEBSITE_DOMAIN=localhost
-          WEBSITE=:7071
+          QUICK_COMPARE_SIZE=$QUICK_COMPARE_SIZE
+          GENERATE_COMMAND_EXECUTABLE=$GENERATE_COMMAND_EXECUTABLE
+          WEBSITE_DOMAIN=$WEBSITE_DOMAIN
+          WEBSITE=$WEBSITE
+          VERSITY_LOG_FILE=$VERSITY_LOG_FILE
           EOF
           sudo chown tester:tester /home/tester/test-files/.env
           sudo chmod 600 /home/tester/test-files/.env

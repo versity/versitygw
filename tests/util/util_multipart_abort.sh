@@ -14,6 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/list_multipart_uploads.sh
 source ./tests/util/util_multipart_before_completion.sh
 
 check_abort_access_denied() {

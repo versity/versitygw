@@ -64,7 +64,7 @@ head_bucket_rest() {
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/$result_file" ./tests/rest_scripts/head_bucket.sh 2>&1); then
-    log 2 "error getting head bucket: $result"
+    log 2 "error with HeadBucket command: $result"
     return 2
   fi
   local callback_code=0
