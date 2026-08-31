@@ -1,5 +1,56 @@
 #!/usr/bin/env bash
 
+source ./tests/download_dependencies.sh
+
+export AWS_ARCHIVE_NAME="awscliv2.zip"
+
+DOWNLOAD_ONLY_FOLDER=""
+INSTALL_ONLY_FOLDER=""
+
+show_help() {
+  echo "Usage: $0 [--download-only <folder>] [--install-only <folder>]"
+  echo "  --download-only <folder>  Download dependency artifacts into <folder>"
+  echo "  --install-only <folder>   Install dependency artifacts from <folder>"
+}
+
+parse_args() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -h|--help)
+        show_help
+        exit 0
+        ;;
+      --download-only)
+        if [ -z "$2" ]; then
+          echo "error: --download-only requires a folder argument" >&2
+          return 1
+        fi
+        DOWNLOAD_ONLY_FOLDER="$2"
+        shift 2
+        ;;
+      --install-only)
+        if [ -z "$2" ]; then
+          echo "error: --install-only requires a folder argument" >&2
+          return 1
+        fi
+        INSTALL_ONLY_FOLDER="$2"
+        shift 2
+        ;;
+      *)
+        echo "error: unknown argument '$1'" >&2
+        show_help >&2
+        return 1
+        ;;
+    esac
+  done
+
+  if [ -n "$DOWNLOAD_ONLY_FOLDER" ] && [ -n "$INSTALL_ONLY_FOLDER" ]; then
+    echo "error: --download-only and --install-only cannot be used together" >&2
+    return 1
+  fi
+  return 0
+}
+
 pre_install_report() {
   local os arch cwd detected_pkg_manager xcode_clt cmd
 
@@ -17,6 +68,8 @@ pre_install_report() {
   printf "CI: %s\n" "${CI:-false}"
   printf "PATH: %s\n" "$PATH"
   printf "Home: %s\n" "$HOME"
+  printf "Download-only folder: %s\n" "${DOWNLOAD_ONLY_FOLDER:-unset}"
+  printf "Install-only folder: %s\n" "${INSTALL_ONLY_FOLDER:-unset}"
 
   if [ "$os" = "Linux" ]; then
     printf "Detected Linux package manager: %s\n" "$detected_pkg_manager"
@@ -220,6 +273,17 @@ detect_linux_package_manager() {
   return 0
 }
 
+run_apt_update_and_install() {
+  if [ $# -le 0 ]; then
+    echo "run_apt_update_and_install requires libraries" >&2
+    return 1
+  fi
+  local libraries=("$@")
+
+  run_as_root env DEBIAN_FRONTEND=noninteractive apt-get update || return 1
+  run_as_root env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y "${libraries[@]}" || return 1
+}
+
 install_apt_libraries() {
   local libraries=(git
                    make \
@@ -245,8 +309,24 @@ install_apt_libraries() {
   else
     libraries+=(golang-go)
   fi
-  run_as_root env DEBIAN_FRONTEND=noninteractive apt-get update || return 1
-  run_as_root env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y "${libraries[@]}"
+  if [ -z "$DOWNLOAD_ONLY_FOLDER" ]; then
+    if [ -z "$INSTALL_ONLY_FOLDER" ]; then
+      run_apt_update_and_install "${libraries[@]}" || return 1
+    else
+      local install_result=0
+      run_as_root env DEBIAN_FRONTEND=noninteractive apt install -y "$(realpath -m "$INSTALL_ONLY_FOLDER")"/apt/*.deb || install_result=$?
+      # if install from packages fails, fall back
+      if [ "$install_result" -ne 0 ]; then
+        run_apt_update_and_install "${libraries[@]}" || return 1
+      fi
+    fi
+  else
+    if ! download_apt_packages "$DOWNLOAD_ONLY_FOLDER" "${libraries[@]}"; then
+      echo "error downloading apt packages" >&2
+      return 1
+    fi
+  fi
+  return 0
 }
 
 install_dnf_libraries() {
@@ -401,25 +481,19 @@ upgrade_bash_on_mac() {
   return 1
 }
 
-install_aws_from_url() {
-  if [ "$#" -ne 2 ]; then
-    echo "install_aws_from_url requires download url, archive name" >&2
+install_aws_cli() {
+  if [ "$#" -ne 1 ]; then
+    echo "install_aws requires archive location" >&2
     return 1
   fi
-  local download_url="$1" archive_name="$2"
+  local archive_location="$1"
   local tmp_dir install_dir bin_dir
 
-  tmp_dir=$(mktemp -d) || return 1
+  tmp_dir=$(mktemp -d)
   install_dir="/usr/local/aws-cli"
   bin_dir="/usr/local/bin"
 
-  echo "Downloading AWS CLI from $download_url..."
-  if ! curl -fsSL "$download_url" -o "$tmp_dir/$archive_name"; then
-    echo "error: failed to download AWS CLI" >&2
-    rm -rf "$tmp_dir"
-    return 1
-  fi
-  if ! unzip -q "$tmp_dir/$archive_name" -d "$tmp_dir"; then
+  if ! unzip -q "$archive_location" -d "$tmp_dir"; then
     echo "error: failed to unzip AWS CLI archive" >&2
     rm -rf "$tmp_dir"
     return 1
@@ -430,134 +504,80 @@ install_aws_from_url() {
     return 1
   fi
   rm -rf "$tmp_dir"
+  return 0
 }
 
-install_linux_aws_command_line_tools() {
+download_and_install_aws_cli() {
+  local response package_location
+
   if command -v aws >/dev/null 2>&1; then
     printf "AWS CLI already installed: %s\n" "$(aws --version 2>&1)"
     return 0
   fi
-  local response tmp_dir archive_name download_url
-
-  archive_name="awscliv2.zip"
-  case "$(uname -m)" in
-    x86_64|amd64)
-      download_url="https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
-      ;;
-    aarch64|arm64)
-      download_url="https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip"
-      ;;
-    *)
-      echo "error: unsupported Linux architecture for AWS CLI: $(uname -m)" >&2
-      rm -rf "$tmp_dir"
+  if [ -z "$INSTALL_ONLY_FOLDER" ]; then
+    if ! response=$(download_aws "$DOWNLOAD_ONLY_FOLDER" 2>&1); then
+      echo "error downloading aws package: $response" >&2
       return 1
-      ;;
-  esac
-  if ! install_aws_from_url "$download_url" "$archive_name"; then
-    echo "error installing AWS from download url '$download_url'"
-    return 1
+    fi
+    package_location="$response"
+  else
+    package_location="$INSTALL_ONLY_FOLDER/aws/$AWS_ARCHIVE_NAME"
   fi
-
-  if ! command -v aws >/dev/null 2>&1; then
-    echo "error: AWS CLI still not found after installation" >&2
-    return 1
+  printf '%s\n' "aws package location: $package_location"
+  if [ -z "$DOWNLOAD_ONLY_FOLDER" ]; then
+    if ! install_aws_cli "$package_location"; then
+      echo "error installing aws cli" >&2
+      return 1
+    fi
   fi
-
-  if ! response=$(aws --version 2>&1); then
-    echo "error: failed to run installed AWS CLI" >&2
-    return 1
-  fi
-  printf "Installed AWS CLI: %s\n" "$response"
   return 0
 }
 
-get_mc_download_link() {
+download_and_install_mc() {
   if [ $# -ne 1 ]; then
-    echo "get_mc_download_link requires os" >&2
+    echo "download_and_install_mc requires os" >&2
     return 1
   fi
   local os="$1"
-  local arch download_url
-
-  arch=$(uname -m)
-  case "$os" in
-    Darwin)
-      case "$arch" in
-        x86_64|amd64)
-          download_url="https://dl.min.io/client/mc/release/darwin-amd64/mc"
-          ;;
-        arm64|aarch64)
-          download_url="https://dl.min.io/client/mc/release/darwin-arm64/mc"
-          ;;
-        *)
-          echo "error: unsupported macOS architecture for mc: $arch" >&2
-          return 1
-          ;;
-      esac
-      ;;
-    Linux)
-      case "$arch" in
-        x86_64|amd64)
-          download_url="https://dl.min.io/client/mc/release/linux-amd64/mc"
-          ;;
-        arm64|aarch64)
-          download_url="https://dl.min.io/client/mc/release/linux-arm64/mc"
-          ;;
-        *)
-          echo "error: unsupported Linux architecture for mc: $arch" >&2
-          return 1
-          ;;
-      esac
-      ;;
-    *)
-      echo "error: unsupported OS type for installing mc: $os" >&2
-      return 1
-      ;;
-  esac
-  printf '%s\n' "$download_url"
-  return 0
-}
-
-install_mc() {
-  if [ "$#" -ne 1 ]; then
-    echo "install_mc requires os" >&2
-    return 1
-  fi
-  local os="$1"
-  local download_url tmp_dir target_path response
+  local response package_location
 
   if command -v mc >/dev/null 2>&1; then
     printf "MinIO mc already installed: %s\n" "$(mc --version 2>&1 | head -n 1)"
     return 0
   fi
+  if [ -z "$INSTALL_ONLY_FOLDER" ]; then
+    if ! response=$(download_mc "$os" "$DOWNLOAD_ONLY_FOLDER" 2>&1); then
+      echo "error downloading mc package: $response" >&2
+      return 1
+    fi
+    package_location="$response"
+  else
+    package_location="$INSTALL_ONLY_FOLDER/mc/mc"
+  fi
+  printf 'mc package location: %s\n' "$package_location"
+  if [ -z "$DOWNLOAD_ONLY_FOLDER" ]; then
+    if ! install_mc "$package_location"; then
+      echo "error installing mc" >&2
+      return 1
+    fi
+  fi
+  return 0
+}
 
-  if ! response=$(get_mc_download_link "$os" 2>&1); then
-    echo "error getting mc download link: $response" >&2
+install_mc() {
+  if [ "$#" -ne 1 ]; then
+    echo "install_aws requires mc install script location" >&2
     return 1
   fi
-  download_url="$response"
+  local mc_location="$1"
+  local target_path="/usr/local/bin/mc" response
 
-  tmp_dir=$(mktemp -d) || return 1
-  target_path="/usr/local/bin/mc"
-  echo "Downloading mc from $download_url..."
-  if ! curl -fsSL "$download_url" -o "$tmp_dir/mc"; then
-    echo "error: failed to download mc" >&2
-    rm -rf "$tmp_dir"
-    return 1
-  fi
-
-  if ! chmod 755 "$tmp_dir/mc"; then
-    echo "error: failed to mark mc executable" >&2
-    rm -rf "$tmp_dir"
-    return 1
-  fi
-
-  if ! run_as_root install "$tmp_dir/mc" "$target_path"; then
+  if ! run_as_root install "$mc_location" "$target_path"; then
     echo "error: failed to install mc to $target_path" >&2
-    rm -rf "$tmp_dir"
+    rm -rf "$mc_location"
     return 1
   fi
-  rm -rf "$tmp_dir"
+  rm -rf "$mc_location"
 
   if ! command -v mc >/dev/null 2>&1; then
     echo "error: mc still not found after installation" >&2
@@ -572,52 +592,80 @@ install_mc() {
   return 0
 }
 
+download_and_install_bats_helpers() {
+  local download_folder
+
+  if [ -z "$INSTALL_ONLY_FOLDER" ]; then
+    if [ -n "$DOWNLOAD_ONLY_FOLDER" ]; then
+      download_folder="$DOWNLOAD_ONLY_FOLDER/bats-helpers"
+    else
+      download_folder="$(dirname "${BASH_SOURCE[0]}")"
+    fi
+    if ! download_bats_helpers "$download_folder"; then
+      echo "error downloading bats helpers" >&2
+      return 1
+    fi
+  fi
+  if [ -z "$DOWNLOAD_ONLY_FOLDER" ]; then
+    destination_folder="$(dirname "${BASH_SOURCE[0]}")"
+    if [ -d "${destination_folder}/bats-support" ]; then
+      echo "bats-support already installed"
+    else
+      if ! mv "$INSTALL_ONLY_FOLDER/bats-helpers/bats-support" "${destination_folder}/bats-support"; then
+        echo "error installing bats-support"
+        return 1
+      fi
+    fi
+    if [ -d "${destination_folder}/bats-assert" ]; then
+      echo "bats-assert already installed"
+    else
+      if ! mv "$INSTALL_ONLY_FOLDER/bats-helpers/bats-assert" "${destination_folder}/bats-assert"; then
+        echo "error installing bats-assert"
+        return 1
+      fi
+    fi
+  fi
+  return 0
+}
+
 os=$(uname -s)
 
-pre_install_report
+if ! parse_args "$@"; then
+  exit 1
+fi
+
+if [ -z "$DOWNLOAD_ONLY_FOLDER" ]; then
+  pre_install_report
+fi
 
 if ! install_managed_libraries "$os"; then
   echo "error installing package-managed libraries" >&2
   exit 1
 fi
 
-if ! response=$(go get -v -t -d ./... 2>&1); then
-  printf "error installing go dependencies: %s\n" "$response"
-  exit 1
-fi
-
-if [ "$os" == "Linux" ] && ! install_linux_aws_command_line_tools; then
-  exit 1
-fi
-
-if [ "${INSTALL_MC:-false}" = "true" ]; then
-  if ! install_mc "$os"; then
-    exit 1
-  fi
-else
-  echo "Skipping mc installation (set INSTALL_MC=true to enable)"
-fi
-
-tests_folder="$(dirname "${BASH_SOURCE[0]}")"
-if [ -d "${tests_folder}/bats-support" ]; then
-  echo "bats-support already installed"
-else
-  if ! git clone https://github.com/bats-core/bats-support.git "${tests_folder}/bats-support"; then
-    echo "error getting bats-support library" >&2
-    exit 1
-  fi
-fi
-if [ -d "${tests_folder}/bats-assert" ]; then
-  echo "bats-assert already installed"
-else
-  if ! git clone https://github.com/ztombol/bats-assert.git "${tests_folder}/bats-assert"; then
-    echo "error getting bats-assert library" >&2
+if [ -z "$DOWNLOAD_ONLY_FOLDER" ]; then
+  if ! response=$(go get -v -t -d ./... 2>&1); then
+    printf "error installing go dependencies: %s\n" "$response"
     exit 1
   fi
 fi
 
-if ! check_required_commands; then
+if [ "$os" == "Linux" ] && ! download_and_install_aws_cli; then
   exit 1
+fi
+
+if ! download_and_install_mc "$os"; then
+  exit 1
+fi
+
+if ! download_and_install_bats_helpers; then
+  exit 1
+fi
+
+if [ -z "$DOWNLOAD_ONLY_FOLDER" ]; then
+  if ! check_required_commands; then
+    exit 1
+  fi
 fi
 
 echo "Install complete"

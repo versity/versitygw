@@ -19,7 +19,7 @@ USER tester
 COPY --chown=tester:tester . /home/tester
 
 USER root
-RUN INSTALL_MC=true /home/tester/tests/install_base_dependencies.sh
+RUN INSTALL_MC=true /home/tester/tests/install_test.sh
 
 WORKDIR /tmp
 RUN update-ca-certificates && rm -rf /var/lib/apt/lists/*

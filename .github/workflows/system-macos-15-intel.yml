@@ -11,7 +11,7 @@ jobs:
 
       - name: Install base dependencies
         run: |
-          ./tests/install_base_dependencies.sh
+          ./tests/install_test.sh
 
       - name: Create test user
         run: |

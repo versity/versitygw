@@ -17,9 +17,39 @@ jobs:
           MATRIX_JSON=$(echo -n "$matrix_output" | jq -c . )
           echo "matrix=$MATRIX_JSON" >> "$GITHUB_OUTPUT"
 
+  download:
+    name: Download
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Download go dependencies
+        run: |
+          go mod download
+
+      - name: Download dependencies
+        run: |
+          mkdir -p download
+          ./tests/install_test.sh --download-only download
+
+      - name: Archive Go module cache
+        run: |
+          tar -czf download/go-mod-cache.tar.gz \
+            -C "$(go env GOPATH)" pkg/mod
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: download
+          path: download/
+
   build:
     name: RunTests
-    needs: generate
+    needs: [generate, download]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -28,9 +58,20 @@ jobs:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v7
 
+      - uses: actions/download-artifact@v6
+        with:
+          name: download
+          path: download
+
+      - name: Restore Go dependencies
+        run: |
+          mkdir -p "$(go env GOPATH)"
+          tar -xzf download/go-mod-cache.tar.gz \
+            -C "$(go env GOPATH)"
+
       - name: Install base dependencies
         run: |
-          ./tests/install_base_dependencies.sh
+          ./tests/install_test.sh --install-only download
 
       - name: Create test user
         run: |

@@ -55,7 +55,7 @@ setup_env() {
 
 setup_versitygw() {
   local params=("$@")
-  local response pid
+  local response
 
   if [ "$RUN_VERSITYGW" == "true" ] && [ "$UNIT_TEST" != "true" ]; then
     if ! run_versity_app "${params[@]}"; then
