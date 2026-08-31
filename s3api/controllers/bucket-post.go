@@ -118,6 +118,9 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 	parsed := utils.ContextKeyObjectPostResult.Get(ctx).(middlewares.PostObjectResult)
 	bucket := ctx.Params("bucket")
 	contentType := parsed.Fields["content-type"]
+	if contentType == "" {
+		contentType = defaultContentType
+	}
 	contentEncoding := parsed.Fields["content-encoding"]
 	contentDisposition := parsed.Fields["content-disposition"]
 	contentLanguage := parsed.Fields["content-language"]
