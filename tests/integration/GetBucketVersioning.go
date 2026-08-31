@@ -83,3 +83,116 @@ func GetBucketVersioning_success(s *S3Conf) error {
 		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
+
+func GetBucketVersioning_non_owner_access_denied(s *S3Conf) error {
+	testName := "GetBucketVersioning_non_owner_access_denied"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func GetBucketVersioning_with_policy_access(s *S3Conf) error {
+	testName := "GetBucketVersioning_with_policy_access"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		bucketResource := fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)
+		principal := fmt.Sprintf(`"%v"`, testuser.access)
+		userClient := s.getUserClient(testuser)
+
+		// Error path: the policy grants the user another bucket action,
+		// but not s3:GetBucketVersioning.
+		policy := genPolicyDoc("Allow", principal, `"s3:GetBucketTagging"`, bucketResource)
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		// Happy path: the policy grants s3:GetBucketVersioning to a user
+		// who neither owns the bucket nor is an admin.
+		policy = genPolicyDoc("Allow", principal, `"s3:GetBucketVersioning"`, bucketResource)
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := userClient.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.Status != types.BucketVersioningStatusEnabled {
+			return fmt.Errorf("expected bucket versioning status to be %v, instead got %v",
+				types.BucketVersioningStatusEnabled, res.Status)
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func GetBucketVersioning_with_acl_access(s *S3Conf) error {
+	testName := "GetBucketVersioning_with_acl_access"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket:    &bucket,
+			GrantRead: &testuser.access,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := userClient.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.Status != types.BucketVersioningStatusEnabled {
+			return fmt.Errorf("expected bucket versioning status to be %v, instead got %v",
+				types.BucketVersioningStatusEnabled, res.Status)
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled),
+		withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}

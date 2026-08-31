@@ -138,14 +138,6 @@ func (c S3ApiController) GetBucketVersioning(ctx fiber.Ctx) (*Response, error) {
 			},
 		}, err
 	}
-	// Only admin users and the bucket owner are allowed to get the versioning state of a bucket.
-	if err := auth.IsAdminOrOwner(acct, isRoot, parsedAcl); err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
-	}
 
 	data, err := c.be.GetBucketVersioning(ctx.RequestCtx(), bucket)
 	return &Response{

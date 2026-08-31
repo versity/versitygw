@@ -1874,6 +1874,9 @@ func TestVersioning(ts *TestState) {
 	ts.Run(GetBucketVersioning_non_existing_bucket)
 	ts.Run(GetBucketVersioning_empty_response)
 	ts.Run(GetBucketVersioning_success)
+	ts.Run(GetBucketVersioning_non_owner_access_denied)
+	ts.Run(GetBucketVersioning_with_policy_access)
+	ts.Run(GetBucketVersioning_with_acl_access)
 	// DeleteBucket action
 	ts.Run(Versioning_DeleteBucket_not_empty)
 	// PutObject action
@@ -3344,6 +3347,9 @@ func GetIntTests() IntTests {
 		"GetBucketVersioning_non_existing_bucket":                                          GetBucketVersioning_non_existing_bucket,
 		"GetBucketVersioning_empty_response":                                               GetBucketVersioning_empty_response,
 		"GetBucketVersioning_success":                                                      GetBucketVersioning_success,
+		"GetBucketVersioning_non_owner_access_denied":                                      GetBucketVersioning_non_owner_access_denied,
+		"GetBucketVersioning_with_policy_access":                                           GetBucketVersioning_with_policy_access,
+		"GetBucketVersioning_with_acl_access":                                              GetBucketVersioning_with_acl_access,
 		"Versioning_DeleteBucket_not_empty":                                                Versioning_DeleteBucket_not_empty,
 		"Versioning_PutObject_suspended_null_versionId_obj":                                Versioning_PutObject_suspended_null_versionId_obj,
 		"Versioning_PutObject_null_versionId_obj":                                          Versioning_PutObject_null_versionId_obj,
