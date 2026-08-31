@@ -54,6 +54,10 @@ CUOBJCLIENT_WRAPPER_LIB=rdma/libcuobjclientwrapper.a
 CUOBJCLIENT_CGO_CFLAGS=-I$(CUOBJ_CLIENT_INC_DIR) -I$(CUOBJ_CUDA_INC_DIR)
 CUOBJCLIENT_CGO_LDFLAGS=-L$(CUOBJ_LIB_DIR) -Wl,-rpath,$(CUOBJ_LIB_DIR)
 HOSTCLIENT_WRAPPER_LIB=rdma/libhostclientwrapper.a
+RCSERVER_LIB=rdma/librcserver.a
+RCSERVER_SRCS=$(wildcard cuwrapper/rc/*.cpp)
+RCSERVER_OBJS=$(RCSERVER_SRCS:.cpp=.o)
+RCSERVER_CXXFLAGS=-fPIC -std=c++17 -Icuwrapper/rc
 
 VERSION := $(shell if test -e VERSION; then cat VERSION; else git describe --abbrev=0 --tags HEAD; fi)
 BUILD := $(shell git rev-parse --short HEAD || echo release-rpm)
@@ -92,6 +96,15 @@ $(HOSTCLIENT_WRAPPER_LIB): cuwrapper/rdma_host_client_wrapper.cpp cuwrapper/rdma
 		cuwrapper/rdma_host_client_wrapper.cpp
 	$(AR) rcs $(HOSTCLIENT_WRAPPER_LIB) cuwrapper/rdma_host_client_wrapper.o
 	rm -f cuwrapper/rdma_host_client_wrapper.o
+
+$(RCSERVER_LIB): $(RCSERVER_OBJS)
+	$(AR) rcs $@ $^
+	rm -f $(RCSERVER_OBJS)
+
+cuwrapper/rc/%.o: cuwrapper/rc/%.cpp
+	$(CXX) $(RCSERVER_CXXFLAGS) -c -o $@ $<
+
+.INTERMEDIATE: $(RCSERVER_OBJS)
 
 .PHONY: vgwrdma
 vgwrdma: $(VGWRDMA_WRAPPER_LIB)
@@ -171,6 +184,7 @@ cleanall: clean
 	rm -f $(VGWRDMA_WRAPPER_LIB)
 	rm -f $(CUOBJCLIENT_WRAPPER_LIB)
 	rm -f $(HOSTCLIENT_WRAPPER_LIB)
+	rm -f $(RCSERVER_LIB)
 	rm -f versitygw-*.tar
 	rm -f versitygw-*.tar.gz
 
