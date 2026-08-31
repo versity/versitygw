@@ -35,14 +35,24 @@ func New(svc any, be backend.Backend, iam auth.IAMService,
 	return &Handler{}
 }
 
+func notImplemented() error {
+	return fiber.NewError(fiber.StatusNotImplemented,
+		"RDMA not supported on this platform")
+}
+
+// Prepare is a stub handler that answers 501 Not Implemented.
+func (h *Handler) Prepare(ctx fiber.Ctx) error { return notImplemented() }
+
+// Ready is a stub handler that answers 501 Not Implemented.
+func (h *Handler) Ready(ctx fiber.Ctx) error { return notImplemented() }
+
+// Cancel is a stub handler that answers 501 Not Implemented.
+func (h *Handler) Cancel(ctx fiber.Ctx) error { return notImplemented() }
+
 // Register mounts stub routes answering 501 Not Implemented.
 func (h *Handler) Register(app *fiber.App, root middlewares.RootUserConfig,
 	region string) {
-	notImplemented := func(ctx fiber.Ctx) error {
-		return fiber.NewError(fiber.StatusNotImplemented,
-			"RDMA not supported on this platform")
-	}
-	app.Post("/.hipobj-rc/prepare", notImplemented)
-	app.Post("/.hipobj-rc/ready", notImplemented)
-	app.Post("/.hipobj-rc/cancel", notImplemented)
+	app.Post("/.hipobj-rc/prepare", h.Prepare)
+	app.Post("/.hipobj-rc/ready", h.Ready)
+	app.Post("/.hipobj-rc/cancel", h.Cancel)
 }
