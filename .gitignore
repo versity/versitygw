@@ -16,6 +16,7 @@ cmd/versitygw/versitygw
 /rdma/libcuobjwrapper.a
 /rdma/libcuobjclientwrapper.a
 /rdma/libhostclientwrapper.a
+/rdma/librcserver.a
 
 # Test binary, built with `go test -c`
 *.test
