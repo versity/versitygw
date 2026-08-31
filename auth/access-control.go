@@ -618,26 +618,6 @@ func verifyIdentityOnlyAccess(ctx fiber.Ctx, pe PolicyEvaluator, acc Account, ac
 	return s3err.GetImplicitDenyAccessErr(principal, string(action), resourceArn)
 }
 
-func IsAdminOrOwner(acct Account, isRoot bool, acl ACL) error {
-	// Owner check
-	if acct.Access == acl.Owner {
-		return nil
-	}
-
-	// Root user has access over almost everything
-	if isRoot {
-		return nil
-	}
-
-	// Admin user case
-	if acct.Role == RoleAdmin {
-		return nil
-	}
-
-	// Return access denied in all other cases
-	return s3err.GetAPIError(s3err.ErrAccessDenied)
-}
-
 type PublicACLAllowedActions map[Action]struct{}
 
 var publicACLAllowedActions PublicACLAllowedActions = PublicACLAllowedActions{

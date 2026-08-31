@@ -231,7 +231,7 @@ func TestS3ApiController_GetBucketVersioning(t *testing.T) {
 			},
 		},
 		{
-			name: "not admin or root",
+			name: "non owner user with verified access",
 			input: testInput{
 				locals: map[utils.ContextKey]any{
 					utils.ContextKeyIsRoot: false,
@@ -244,14 +244,15 @@ func TestS3ApiController_GetBucketVersioning(t *testing.T) {
 					},
 					utils.ContextKeyPublicBucket: true,
 				},
+				beRes: validRes,
 			},
 			output: testOutput{
 				response: &Response{
+					Data: validRes,
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrAccessDenied),
 			},
 		},
 		{
