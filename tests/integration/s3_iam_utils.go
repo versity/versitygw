@@ -326,18 +326,33 @@ func runS3ConditionCases(root *iam.Client, s *S3Conf, bucket, key string, cases 
 }
 
 func deleteObjectsWithBypass(client *s3.Client, bucket string, keys ...string) (*s3.DeleteObjectsOutput, error) {
-	objects := make([]types.ObjectIdentifier, len(keys))
-	for i, key := range keys {
-		objects[i] = types.ObjectIdentifier{Key: aws.String(key)}
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	defer cancel()
 	return client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 		Bucket:                    &bucket,
-		Delete:                    &types.Delete{Objects: objects},
+		Delete:                    &types.Delete{Objects: objectIdentifiers(keys...)},
 		BypassGovernanceRetention: aws.Bool(true),
 	})
+}
+
+// deleteObjectsBatch deletes keys in one DeleteObjects request, with no
+// governance-bypass header, for the tests measuring authorization alone.
+func deleteObjectsBatch(client *s3.Client, bucket string, keys ...string) (*s3.DeleteObjectsOutput, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+	return client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+		Bucket: &bucket,
+		Delete: &types.Delete{Objects: objectIdentifiers(keys...)},
+	})
+}
+
+// objectIdentifiers names keys as unversioned DeleteObjects entries.
+func objectIdentifiers(keys ...string) []types.ObjectIdentifier {
+	objects := make([]types.ObjectIdentifier, len(keys))
+	for i, key := range keys {
+		objects[i] = types.ObjectIdentifier{Key: aws.String(key)}
+	}
+	return objects
 }
 
 // checkDeleteObjectsErr checks one DeleteObjects response entry against the
@@ -360,12 +375,18 @@ func checkDeleteObjectsErr(got types.Error, wantKey string, wantErr s3err.S3Erro
 // list names exactly wantKeys, in that order — DeleteObjects preserves the
 // order objects were requested in across both the Deleted and Error lists.
 func checkDeletedKeysInOrder(got []types.DeletedObject, wantKeys []string) error {
-	if len(got) != len(wantKeys) {
-		return fmt.Errorf("expected %d deleted objects %v, got %+v", len(wantKeys), wantKeys, got)
+	gotKeys := make([]string, len(got))
+	for i, obj := range got {
+		if obj.Key != nil {
+			gotKeys[i] = *obj.Key
+		}
+	}
+	if len(gotKeys) != len(wantKeys) {
+		return fmt.Errorf("expected %d deleted objects %q, got %d: %q", len(wantKeys), wantKeys, len(gotKeys), gotKeys)
 	}
 	for i, want := range wantKeys {
-		if got[i].Key == nil || *got[i].Key != want {
-			return fmt.Errorf("expected deleted object %d to be %q, got %+v", i, want, got)
+		if gotKeys[i] != want {
+			return fmt.Errorf("expected deleted object %d to be %q, got %q", i, want, gotKeys)
 		}
 	}
 	return nil

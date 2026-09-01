@@ -1721,6 +1721,8 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_compliance_mode_not_bypassable)
 	ts.Run(S3IAMAccessControl_delete_objects_authorizes_each_key)
 	ts.Run(S3IAMAccessControl_delete_objects_version_needs_separate_permission)
+	ts.Run(S3IAMAccessControl_delete_objects_bucket_policy_deny_per_key)
+	ts.Run(S3IAMAccessControl_delete_objects_deny_across_versioned_split)
 	ts.Run(S3IAMAccessControl_governance_bypass_delete_objects)
 	ts.Run(DeleteObjects_iam_mixed_denials_and_success)
 	ts.Run(DeleteObjects_iam_all_access_denied)
@@ -2139,6 +2141,8 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_retention_extension_needs_no_bypass":                           S3IAMAccessControl_retention_extension_needs_no_bypass,
 		"S3IAMAccessControl_delete_objects_authorizes_each_key":                            S3IAMAccessControl_delete_objects_authorizes_each_key,
 		"S3IAMAccessControl_delete_objects_version_needs_separate_permission":              S3IAMAccessControl_delete_objects_version_needs_separate_permission,
+		"S3IAMAccessControl_delete_objects_bucket_policy_deny_per_key":                     S3IAMAccessControl_delete_objects_bucket_policy_deny_per_key,
+		"S3IAMAccessControl_delete_objects_deny_across_versioned_split":                    S3IAMAccessControl_delete_objects_deny_across_versioned_split,
 		"S3IAMAccessControl_no_policy_denies":                                              S3IAMAccessControl_no_policy_denies,
 		"S3IAMAccessControl_root_bypasses_policies":                                        S3IAMAccessControl_root_bypasses_policies,
 		"S3IAMAccessControl_identity_policy_allows_without_bucket_policy":                  S3IAMAccessControl_identity_policy_allows_without_bucket_policy,

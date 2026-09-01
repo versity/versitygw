@@ -984,8 +984,7 @@ func S3IAMAccessControl_compliance_mode_not_bypassable(s *S3Conf) error {
 // S3IAMAccessControl_delete_objects_authorizes_each_key verifies the batch
 // DeleteObjects path authorizes s3:DeleteObject against each object's own
 // ARN, the way real AWS does — a policy naming only "bucket/*" is
-// sufficient — and that it supports partial success: verified live against
-// real AWS (niksis02, account 792168558830), a key outside the granted
+// sufficient — and that it supports partial success: a key outside the granted
 // prefix denies only that key, reported in the response's Errors list, while
 // every other key in the same batch is still deleted and reported in
 // Deleted. Both lists preserve the order the keys were requested in.
@@ -1046,18 +1045,10 @@ func S3IAMAccessControl_delete_objects_authorizes_each_key(s *S3Conf) error {
 // S3IAMAccessControl_delete_objects_version_needs_separate_permission
 // verifies that naming a VersionId in a DeleteObjects entry is authorized
 // against s3:DeleteObjectVersion, a distinct permission from the
-// s3:DeleteObject a keyed (unversioned) delete needs — verified live against
-// real AWS (niksis02, account 792168558830): a policy granting only
+// s3:DeleteObject a keyed (unversioned) delete needs - a policy granting only
 // s3:DeleteObject denies the versioned deletes in a batch while its keyed
 // deletes in the same batch still succeed, each independently, matching the
 // single-object DELETE path's existing behavior for the same distinction.
-//
-// The denial happens at authorization, before the backend ever resolves the
-// named version, so this doesn't need a real object version (and the
-// gateway this test group runs against has no --versioning-dir configured
-// to produce one): an arbitrary VersionId is enough to exercise the
-// s3:DeleteObjectVersion check and prove the batch still partially
-// succeeds.
 func S3IAMAccessControl_delete_objects_version_needs_separate_permission(s *S3Conf) error {
 	testName := "S3IAMAccessControl_delete_objects_version_needs_separate_permission"
 	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
@@ -1105,6 +1096,181 @@ func S3IAMAccessControl_delete_objects_version_needs_separate_permission(s *S3Co
 			return fmt.Errorf("expected the keyed delete to succeed, got %+v", out.Deleted)
 		}
 		return nil
+	})
+}
+
+// S3IAMAccessControl_delete_objects_bucket_policy_deny_per_key verifies a
+// bucket-policy Deny settles only the key it names. DeleteObjects is a
+// partial-success API, so every key is authorized on its own: a Deny on one
+// key is reported against that key and leaves every other key to be
+// evaluated on its own merits — an explicitly denied key never lets the
+// keys after it through unauthorized.
+func S3IAMAccessControl_delete_objects_bucket_policy_deny_per_key(s *S3Conf) error {
+	testName := "S3IAMAccessControl_delete_objects_bucket_policy_deny_per_key"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3DeleteObject,
+				Resource: objectArn(bucket, "allowed/*"),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		// Two Deny statements, so a batch can carry two explicitly denied
+		// keys — the second one proves the first didn't end the evaluation.
+		if err := putBucketPolicyDoc(s, bucket,
+			bucketStatement{
+				Effect: "Deny", Principal: user.conf.awsID,
+				Action: actS3DeleteObject, Resource: objectArn(bucket, "protected/*"),
+			},
+			bucketStatement{
+				Effect: "Deny", Principal: user.conf.awsID,
+				Action: actS3DeleteObject, Resource: objectArn(bucket, "vault/*"),
+			},
+		); err != nil {
+			return err
+		}
+
+		// The three denial shapes this group's keys produce: "protected/"
+		// and "vault/" are explicitly denied by the bucket policy, "secret/"
+		// is denied for want of any grant, and "allowed/" is the only prefix
+		// the identity policy permits.
+		resourceDeny := func(key string) keyDenial {
+			return keyDenial{key, wantExplicitResourceDeny(user.conf.awsID, actS3DeleteObject, objectArn(bucket, key))}
+		}
+		implicitDeny := func(key string) keyDenial {
+			return keyDenial{key, wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, key))}
+		}
+
+		for _, tc := range []struct {
+			name        string
+			keys        []string
+			wantErrs    []keyDenial
+			wantDeleted []string
+		}{
+			{
+				name:     "a bucket-policy deny and an unauthorized key",
+				keys:     []string{"protected/x", "secret/z"},
+				wantErrs: []keyDenial{resourceDeny("protected/x"), implicitDeny("secret/z")},
+			},
+			{
+				name:        "a bucket-policy deny and an authorized key",
+				keys:        []string{"protected/x", "allowed/w"},
+				wantErrs:    []keyDenial{resourceDeny("protected/x")},
+				wantDeleted: []string{"allowed/w"},
+			},
+			{
+				name:     "two bucket-policy denies",
+				keys:     []string{"protected/x", "vault/y"},
+				wantErrs: []keyDenial{resourceDeny("protected/x"), resourceDeny("vault/y")},
+			},
+			// The same batches with the keys reversed: the outcome depends
+			// on each key, never on where in the batch a denial first
+			// appeared.
+			{
+				name:     "an unauthorized key before a bucket-policy deny",
+				keys:     []string{"secret/z", "protected/x"},
+				wantErrs: []keyDenial{implicitDeny("secret/z"), resourceDeny("protected/x")},
+			},
+			{
+				name:        "an authorized key before a bucket-policy deny",
+				keys:        []string{"allowed/w", "protected/x"},
+				wantErrs:    []keyDenial{resourceDeny("protected/x")},
+				wantDeleted: []string{"allowed/w"},
+			},
+			{
+				name:     "two bucket-policy denies, reversed",
+				keys:     []string{"vault/y", "protected/x"},
+				wantErrs: []keyDenial{resourceDeny("vault/y"), resourceDeny("protected/x")},
+			},
+		} {
+			if err := func() error {
+				// Root rewrites every key before each case: a case that
+				// deletes one must not change what the next one sees.
+				if _, err := putObjects(s.GetClient(), []string{"protected/x", "vault/y", "secret/z", "allowed/w"}, bucket); err != nil {
+					return err
+				}
+
+				out, err := deleteObjectsBatch(user.client, bucket, tc.keys...)
+				if err != nil {
+					return fmt.Errorf("expected DeleteObjects to succeed with per-object denials, not fail outright: %w", err)
+				}
+				if err := checkDeletedKeysInOrder(out.Deleted, tc.wantDeleted); err != nil {
+					return err
+				}
+				return checkDeleteObjectsErrsInOrder(out.Errors, tc.wantErrs)
+			}(); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// S3IAMAccessControl_delete_objects_deny_across_versioned_split verifies a
+// denial in one half of a batch doesn't authorize the other half. A batch is
+// split by action — keyed entries are authorized against s3:DeleteObject,
+// entries naming a VersionId against s3:DeleteObjectVersion — and each half
+// is evaluated separately, so a denial has to settle its own key in its own
+// half and nothing else: not the keys after it, and not the keys in the
+// other half.
+func S3IAMAccessControl_delete_objects_deny_across_versioned_split(s *S3Conf) error {
+	testName := "S3IAMAccessControl_delete_objects_deny_across_versioned_split"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		if _, err := putObjects(s.GetClient(), []string{"protected/x", "secret/z", "allowed/w"}, bucket); err != nil {
+			return err
+		}
+
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3DeleteObject,
+				Resource: objectArn(bucket, "allowed/*"),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect: "Deny", Principal: user.conf.awsID,
+			Action:   []string{actS3DeleteObject, actS3DeleteObjectVersion},
+			Resource: objectArn(bucket, "protected/*"),
+		}); err != nil {
+			return err
+		}
+
+		// Both halves interleaved, each led by its explicitly denied key, so
+		// that a leak in either half shows up as a key deleted or missing
+		// from Errors.
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := user.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{Objects: []types.ObjectIdentifier{
+				{Key: aws.String("protected/x")},
+				{Key: aws.String("protected/v"), VersionId: aws.String("some-version-id")},
+				{Key: aws.String("secret/z")},
+				{Key: aws.String("other/v"), VersionId: aws.String("some-version-id")},
+				{Key: aws.String("allowed/w")},
+			}},
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected DeleteObjects to succeed with per-object denials, not fail outright: %w", err)
+		}
+
+		if err := checkDeletedKeysInOrder(out.Deleted, []string{"allowed/w"}); err != nil {
+			return err
+		}
+		return checkDeleteObjectsErrsInOrder(out.Errors, []keyDenial{
+			{"protected/x", wantExplicitResourceDeny(user.conf.awsID, actS3DeleteObject, objectArn(bucket, "protected/x"))},
+			{"protected/v", wantExplicitResourceDeny(user.conf.awsID, actS3DeleteObjectVersion, objectArn(bucket, "protected/v"))},
+			{"secret/z", wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, "secret/z"))},
+			{"other/v", wantImplicitDeny(user.arn, actS3DeleteObjectVersion, objectArn(bucket, "other/v"))},
+		})
 	})
 }
 

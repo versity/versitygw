@@ -3826,13 +3826,17 @@ func hexBytes(s string) string {
 	return strings.Join(parts, " ")
 }
 
+// keyDenial pairs a DeleteObjects key with the error its response entry is
+// expected to carry.
+type keyDenial struct {
+	key string
+	err s3err.S3Error
+}
+
 // checkDeleteObjectsErrsInOrder checks that got names exactly the (key,
 // error) pairs in want, in that order — DeleteObjects preserves the order
 // objects were requested in across both the Deleted and Error lists.
-func checkDeleteObjectsErrsInOrder(got []types.Error, want []struct {
-	key string
-	err s3err.S3Error
-}) error {
+func checkDeleteObjectsErrsInOrder(got []types.Error, want []keyDenial) error {
 	if len(got) != len(want) {
 		return fmt.Errorf("expected %d per-object errors, got %d: %+v", len(want), len(got), got)
 	}

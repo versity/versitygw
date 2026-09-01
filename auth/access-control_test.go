@@ -779,4 +779,142 @@ func TestVerifyObjectsAccess_VersionedDeleteNeedsSeparatePermission(t *testing.T
 	}
 }
 
+// bucketPolicyNoLockBackend serves a fixed bucket policy and answers "no
+// lock configuration", so VerifyObjectsAccess' lock check is a no-op and
+// only the policy half of the per-object result is under test.
+type bucketPolicyNoLockBackend struct {
+	backend.BackendUnsupported
+	policy []byte
+}
+
+func (b bucketPolicyNoLockBackend) GetBucketPolicy(_ context.Context, _ string) ([]byte, error) {
+	return b.policy, nil
+}
+
+func (b bucketPolicyNoLockBackend) GetObjectLockConfiguration(_ context.Context, _ string) ([]byte, error) {
+	return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+}
+
+// denyProtectedPrefixBackend is a bucket policy denying s3:DeleteObject on
+// one prefix and saying nothing about anything else, so a batch can mix
+// explicitly denied keys with keys the bucket policy leaves undecided.
+func denyProtectedPrefixBackend() bucketPolicyNoLockBackend {
+	return bucketPolicyNoLockBackend{policy: []byte(`{
+		"Statement": [{
+			"Effect": "Deny",
+			"Principal": "testuser",
+			"Action": "s3:DeleteObject",
+			"Resource": "arn:aws:s3:::bucket/protected/*"
+		}]
+	}`)}
+}
+
+func deleteObjectIdentifiers(keys ...string) []types.ObjectIdentifier {
+	objects := make([]types.ObjectIdentifier, len(keys))
+	for i, key := range keys {
+		objects[i] = types.ObjectIdentifier{Key: strPtr(key)}
+	}
+	return objects
+}
+
+// TestVerifyObjectsAccess_ResourceDenyDoesNotAuthorizeLaterKeys is the
+// authorization-bypass regression: a bucket-policy Deny used to end the
+// whole batch's evaluation at the first denied key, leaving every later key
+// with a nil result — which VerifyObjectsAccess' caller reads as
+// "authorized" and sends straight to the backend. Every key must be settled
+// on its own instead: the denied one explicitly, the rest by the identity
+// policy, which here allows neither.
+func TestVerifyObjectsAccess_ResourceDenyDoesNotAuthorizeLaterKeys(t *testing.T) {
+	pe := newMockPolicyEvaluator(policyDecisionNoMatch)
+	pe.principalArn = "arn:aws:iam::000000000000:user/testuser"
+
+	errs, err := VerifyObjectsAccess(testFiberCtx(t), denyProtectedPrefixBackend(), AccessOptions{
+		Acc:           Account{Access: "testuser", Role: RoleUser},
+		Bucket:        "bucket",
+		AclPermission: PermissionWrite,
+		Iam:           pe,
+	}, deleteObjectIdentifiers("protected/x", "secret/y"), BypassNone)
+
+	assert.NoError(t, err)
+	if assert.Len(t, errs, 2) {
+		denied := requireAccessDeniedAPIError(t, errs[0])
+		assert.Contains(t, denied.Description, "with an explicit deny in a resource-based policy")
+
+		later := requireAccessDeniedAPIError(t, errs[1])
+		assert.Contains(t, later.Description, "because no identity-based policy allows the s3:DeleteObject action")
+	}
+	assert.Len(t, pe.calls, 1, "a key the bucket policy left undecided still needs the identity policy consulted for it")
+}
+
+// TestVerifyObjectsAccess_ResourceDenyKeptOverIdentityAllow confirms an
+// explicit deny still wins per key once every key is evaluated: the denied
+// key keeps its resource-based denial even though the identity policy
+// allows it, while the key the bucket policy said nothing about is
+// authorized by that same identity Allow.
+func TestVerifyObjectsAccess_ResourceDenyKeptOverIdentityAllow(t *testing.T) {
+	pe := newMockPolicyEvaluator(policyDecisionAllow)
+
+	errs, err := VerifyObjectsAccess(testFiberCtx(t), denyProtectedPrefixBackend(), AccessOptions{
+		Acc:           Account{Access: "testuser", Role: RoleUser},
+		Bucket:        "bucket",
+		AclPermission: PermissionWrite,
+		Iam:           pe,
+	}, deleteObjectIdentifiers("protected/x", "allowed/y"), BypassNone)
+
+	assert.NoError(t, err)
+	if assert.Len(t, errs, 2) {
+		denied := requireAccessDeniedAPIError(t, errs[0])
+		assert.Contains(t, denied.Description, "with an explicit deny in a resource-based policy")
+		assert.NoError(t, errs[1], "the identity policy's Allow stands for the key the bucket policy didn't deny")
+	}
+}
+
+// TestVerifyObjectsAccess_AllKeysResourceDeniedSkipsIdentityPolicy covers
+// the round trip the short-circuit was there to save: it is still skipped,
+// but only when the bucket policy denied every key in the batch, since then
+// no identity-policy answer could change any result.
+func TestVerifyObjectsAccess_AllKeysResourceDeniedSkipsIdentityPolicy(t *testing.T) {
+	pe := newMockPolicyEvaluator(policyDecisionAllow)
+
+	errs, err := VerifyObjectsAccess(testFiberCtx(t), denyProtectedPrefixBackend(), AccessOptions{
+		Acc:           Account{Access: "testuser", Role: RoleUser},
+		Bucket:        "bucket",
+		AclPermission: PermissionWrite,
+		Iam:           pe,
+	}, deleteObjectIdentifiers("protected/x", "protected/y"), BypassNone)
+
+	assert.NoError(t, err)
+	if assert.Len(t, errs, 2) {
+		for i, e := range errs {
+			denied := requireAccessDeniedAPIError(t, e)
+			assert.Containsf(t, denied.Description, "with an explicit deny in a resource-based policy", "key %d", i)
+		}
+	}
+	assert.Empty(t, pe.calls, "with every key already explicitly denied there is nothing left for the identity policy to decide")
+}
+
+// TestVerifyObjectsAccess_ResourceDenyNoPolicyEvaluator covers the same
+// bypass for the IAM backends with no identity-policy layer at all
+// (internal, LDAP, Vault, IPA): the denied key keeps its specific message
+// and every other key falls to the generic AccessDenied those backends have
+// always returned — none of them silently authorized.
+func TestVerifyObjectsAccess_ResourceDenyNoPolicyEvaluator(t *testing.T) {
+	errs, err := VerifyObjectsAccess(testFiberCtx(t), denyProtectedPrefixBackend(), AccessOptions{
+		Acc:           Account{Access: "testuser", Role: RoleUser},
+		Bucket:        "bucket",
+		AclPermission: PermissionWrite,
+		Iam:           NewIAMServiceSingle(Account{}),
+	}, deleteObjectIdentifiers("protected/x", "secret/y"), BypassNone)
+
+	assert.NoError(t, err)
+	if assert.Len(t, errs, 2) {
+		denied := requireAccessDeniedAPIError(t, errs[0])
+		assert.Contains(t, denied.Description, "with an explicit deny in a resource-based policy")
+
+		later := requireAccessDeniedAPIError(t, errs[1])
+		assert.Equal(t, s3err.GetAPIError(s3err.ErrAccessDenied).Description, later.Description,
+			"backends with no identity-policy layer keep their generic message")
+	}
+}
+
 func strPtr(s string) *string { return &s }
