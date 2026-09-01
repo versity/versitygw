@@ -177,21 +177,6 @@ func (c *IAMCache) ResolveAccounts(accessKeyIDs []string) ([]string, error) {
 	return resolveAccountsByLookup(accessKeyIDs, c.GetUserAccount)
 }
 
-// GetUserAccountFresh bypasses the in-memory cache and fetches the
-// account directly from the underlying IAM service, then refreshes
-// the cached entry with the result. This gives callers that need
-// revocation to take effect immediately (rather than after the
-// cache TTL) a way to observe the backing store state.
-func (c *IAMCache) GetUserAccountFresh(access string) (Account, error) {
-	a, err := c.service.GetUserAccount(access)
-	if err != nil {
-		return Account{}, err
-	}
-
-	c.iamcache.set(access, a)
-	return a, nil
-}
-
 // DeleteUserAccount deletes account from IAM service and cache
 func (c *IAMCache) DeleteUserAccount(access string) error {
 	err := c.service.DeleteUserAccount(access)
