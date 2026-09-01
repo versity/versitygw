@@ -160,8 +160,17 @@ func (h *Handler) revalidateFresh(acct auth.Account) (auth.Account, error) {
 		select {
 		case r := <-done:
 			if r.err != nil {
-				return auth.Account{}, fiber.NewError(fiber.StatusForbidden,
-					"account no longer valid")
+				// Only a confirmed missing account means the
+				// account is gone; any other IAM failure is
+				// transient (LDAP timeout, network error) and
+				// the client should retry rather than treat
+				// the account as revoked.
+				if errors.Is(r.err, auth.ErrNoSuchUser) {
+					return auth.Account{}, fiber.NewError(fiber.StatusForbidden,
+						"account no longer valid")
+				}
+				return auth.Account{}, fiber.NewError(fiber.StatusServiceUnavailable,
+					"account lookup failed")
 			}
 			// A rotated secret changes the principal digest,
 			// so the session owner check below rejects the
