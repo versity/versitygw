@@ -87,8 +87,11 @@ type IAMServiceStandaloneConfig struct {
 	ClientCert    string
 	ClientCertKey string
 	ServerCA      string
-	// DefaultUserID/GroupID/ProjectID are assigned to every resolved
-	// (non-root) account. The standalone IAM service's user model
+	// DefaultUserID/GroupID/ProjectID are assigned to every account this
+	// client resolves, the locally-held root account included: bucket
+	// ownership is fixed to root here, so root must carry the same POSIX
+	// identity as everyone else or a backend chowning to it would target
+	// uid/gid 0. The standalone IAM service's user model
 	// (iamapi/types.User, mirroring real AWS IAM) has no POSIX uid/gid/
 	// project-id concept, so there is no per-user value to fetch instead —
 	// every standalone-backed account shares one POSIX identity for
@@ -412,7 +415,7 @@ func (s *IAMServiceStandalone) DeriveSigningKey(access, sessionToken, date, regi
 		if sessionToken != "" {
 			return nil, Account{}, ErrInvalidSessionToken
 		}
-		return sigv4auth.DeriveKey(s.rootAcc.Secret, date, region, service), s.rootAcc, nil
+		return sigv4auth.DeriveKey(s.rootAcc.Secret, date, region, service), s.rootAccount(), nil
 	}
 
 	var resp private.DeriveSigningKeyResponse
@@ -541,7 +544,7 @@ func decisionFromWireValue(v string) policyDecision {
 // one per key.
 func (s *IAMServiceStandalone) GetUserAccount(access string) (Account, error) {
 	if access == s.rootAcc.Access {
-		return s.rootAcc, nil
+		return s.rootAccount(), nil
 	}
 
 	accounts, err := s.resolveAccountDetails([]string{access})
@@ -581,7 +584,7 @@ func (s *IAMServiceStandalone) resolveAccountDetails(accesses []string) ([]resol
 	remoteIdx := make([]int, 0, len(accesses))
 	for i, access := range accesses {
 		if access == s.rootAcc.Access {
-			out[i] = resolvedAccount{Found: true, Account: s.rootAcc}
+			out[i] = resolvedAccount{Found: true, Account: s.rootAccount()}
 			continue
 		}
 		remote = append(remote, access)
@@ -641,7 +644,18 @@ func (s *IAMServiceStandalone) ResolveAccounts(accessKeyIDs []string) ([]string,
 // BucketOwner implements FixedBucketOwner: every bucket is owned by the
 // gateway's root account, the only account this process knows locally.
 func (s *IAMServiceStandalone) BucketOwner() Account {
-	return s.rootAcc
+	return s.rootAccount()
+}
+
+// rootAccount returns the root account as an identity: a copy of the locally
+// held root credentials carrying the same POSIX identity every other
+// standalone-backed account gets.
+func (s *IAMServiceStandalone) rootAccount() Account {
+	acc := s.rootAcc
+	acc.UserID = s.cfg.DefaultUserID
+	acc.GroupID = s.cfg.DefaultGroupID
+	acc.ProjectID = s.cfg.DefaultProjectID
+	return acc
 }
 
 // CreateAccount is not supported

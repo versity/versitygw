@@ -619,3 +619,73 @@ func serveFakePrivate(t *testing.T, protocol string, status int, body string) st
 
 	return sockPath
 }
+
+// TestIAMServiceStandaloneRootCarriesPosixIdentity covers the identity a
+// storage backend chowns to. Bucket ownership is fixed to root here, so a
+// root account left at uid/gid 0 makes the posix backend's --chuid/--chgid
+// target root for every bucket and for root's own object writes — which an
+// unprivileged gateway can never do.
+func TestIAMServiceStandaloneRootCarriesPosixIdentity(t *testing.T) {
+	_, sock := standaloneTestServer(t)
+
+	rootAcc := Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret, Role: RoleAdmin}
+	client, err := NewIAMServiceStandalone(rootAcc, IAMServiceStandaloneConfig{
+		Endpoint:         sock,
+		DefaultUserID:    1001,
+		DefaultGroupID:   1002,
+		DefaultProjectID: 1003,
+	})
+	if err != nil {
+		t.Fatalf("NewIAMServiceStandalone: %v", err)
+	}
+	defer client.Shutdown()
+
+	checkIDs := func(what string, acc Account) {
+		t.Helper()
+		if acc.UserID != 1001 || acc.GroupID != 1002 || acc.ProjectID != 1003 {
+			t.Errorf("%s posix ids = %v/%v/%v, want 1001/1002/1003",
+				what, acc.UserID, acc.GroupID, acc.ProjectID)
+		}
+	}
+
+	owner, fixed := ResolveFixedBucketOwner(client)
+	if !fixed {
+		t.Fatal("ResolveFixedBucketOwner: standalone client must fix bucket ownership")
+	}
+	if owner.Access != standaloneTestRootAccess {
+		t.Errorf("bucket owner = %q, want the root account %q", owner.Access, standaloneTestRootAccess)
+	}
+	checkIDs("BucketOwner()", owner)
+
+	// The same identity must come back wherever root is resolved, so that a
+	// bucket root owns and an object root writes get the same ownership.
+	acc, err := client.GetUserAccount(standaloneTestRootAccess)
+	if err != nil {
+		t.Fatalf("GetUserAccount(root): %v", err)
+	}
+	checkIDs("GetUserAccount(root)", acc)
+
+	yyyymmdd := time.Now().UTC().Format(sigv4auth.YYYYMMDD)
+	_, acc, err = client.DeriveSigningKey(standaloneTestRootAccess, "", yyyymmdd, "us-east-1", "s3")
+	if err != nil {
+		t.Fatalf("DeriveSigningKey(root): %v", err)
+	}
+	checkIDs("DeriveSigningKey(root)", acc)
+
+	missing, err := client.ResolveAccounts([]string{standaloneTestRootAccess})
+	if err != nil {
+		t.Fatalf("ResolveAccounts(root): %v", err)
+	}
+	if len(missing) != 0 {
+		t.Errorf("ResolveAccounts(root) = %v, want the root account to resolve", missing)
+	}
+
+	// The stored root account is compared against by credential, and must
+	// keep the credentials it was constructed with.
+	if client.rootAcc != rootAcc {
+		t.Errorf("stored root account was mutated: %+v, want %+v", client.rootAcc, rootAcc)
+	}
+	if acc.Secret != standaloneTestRootSecret || acc.Role != RoleAdmin {
+		t.Errorf("root identity lost its credentials or role: %+v", acc)
+	}
+}
