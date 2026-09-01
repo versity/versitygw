@@ -23,6 +23,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/urfave/cli/v2"
@@ -128,6 +129,62 @@ var (
 	// BuildTime is the date/time of build (set within Makefile)
 	BuildTime = "none"
 )
+
+type freshAccountReader interface {
+	GetUserAccountFresh(access string) (auth.Account, error)
+}
+
+type standaloneIAMExtensions interface {
+	auth.SigningKeyProvider
+	auth.PolicyEvaluator
+	auth.FixedBucketOwner
+}
+
+type shutdownOnceService struct {
+	auth.IAMService
+	once sync.Once
+	err  error
+}
+
+func (s *shutdownOnceService) Shutdown() error {
+	s.once.Do(func() {
+		s.err = s.IAMService.Shutdown()
+	})
+	return s.err
+}
+
+type shutdownOnceFreshService struct {
+	*shutdownOnceService
+	freshAccountReader
+}
+
+type shutdownOnceStandaloneService struct {
+	*shutdownOnceService
+	standaloneIAMExtensions
+}
+
+type shutdownOnceFreshStandaloneService struct {
+	*shutdownOnceService
+	freshAccountReader
+	standaloneIAMExtensions
+}
+
+func wrapIAMShutdownOnce(iam auth.IAMService) auth.IAMService {
+	wrapped := &shutdownOnceService{IAMService: iam}
+	fresh, hasFresh := iam.(freshAccountReader)
+	standalone, hasStandalone := iam.(standaloneIAMExtensions)
+
+	switch {
+	case hasFresh && hasStandalone:
+		return &shutdownOnceFreshStandaloneService{wrapped, fresh, standalone}
+	case hasFresh:
+		return &shutdownOnceFreshService{wrapped, fresh}
+	case hasStandalone:
+		return &shutdownOnceStandaloneService{wrapped, standalone}
+	default:
+		return wrapped
+	}
+}
 
 // gatewayCommands are the subcommands that call gwcli.RunGateway (and
 // therefore need --rdma-ip); admin, utils, help, and version do not.
@@ -953,9 +1010,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	var s3Opts []s3api.Option
-	// iamOwned tracks whether the RC IAM service is still ours to
-	// shut down; it is cleared only after RunVersityGW returns.
-	iamOwned := false
 	if rdmaIP != "" {
 		rdma.ConfigureTelemetry(debug)
 
@@ -1094,16 +1148,12 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		if err != nil {
 			return fmt.Errorf("setup iam for rdma routes: %w", err)
 		}
+		iamSvc = wrapIAMShutdownOnce(iamSvc)
 		cfg.IAMService = iamSvc
-		// The RC routes share this IAM service with the gateway.
-		// If a later step fails before RunVersityGW takes over,
-		// shut it down here so background workers do not leak;
-		// iamOwned is cleared after RunVersityGW returns.
-		iamOwned = true
+		// RunVersityGW may shut IAM down before returning. This defer
+		// also covers errors before and during gateway startup.
 		defer func() {
-			if iamOwned {
-				_ = iamSvc.Shutdown()
-			}
+			_ = iamSvc.Shutdown()
 		}()
 
 		rcSvc, err := rcserver.Init(rcserver.DeviceOpts{
@@ -1149,14 +1199,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		cfg.S3Options = s3Opts
 	}
 
-	// Transfer IAM ownership only when RunVersityGW reached its
-	// runtime loop: it shuts the IAM service down itself at the
-	// end of its shutdown sequence, but its early failure paths
-	// (validation, logger, metrics, webui setup) return before
-	// that, so the deferred shutdown must keep covering those.
 	runErr := embedgw.RunVersityGW(ctx, be, cfg)
-	if runErr == nil {
-		iamOwned = false
-	}
-	return nil
+	return runErr
 }
