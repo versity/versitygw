@@ -13,6 +13,15 @@ download_apt_packages() {
     return 1
   fi
 
+  if ! env DEBIAN_FRONTEND=noninteractive sudo rm -rf /var/lib/apt/lists/*; then
+    echo "error removing old apt lists" >&2
+    return 1
+  fi
+  if ! env DEBIAN_FRONTEND=noninteractive sudo apt-get clean; then
+    echo "error with apt clean" >&2
+    return 1
+  fi
+
   if ! env DEBIAN_FRONTEND=noninteractive sudo apt-get update; then
     echo "error with apt update" >&2
     return 1

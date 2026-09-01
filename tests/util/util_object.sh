@@ -14,7 +14,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util/util_multipart.sh
 source ./tests/util/util_versioning.sh
 source ./tests/logger.sh
 source ./tests/commands/abort_multipart_upload.sh

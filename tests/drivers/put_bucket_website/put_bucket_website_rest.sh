@@ -15,6 +15,7 @@
 # under the License.
 
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/put_bucket_policy/put_bucket_policy_rest.sh
 source ./tests/drivers/string.sh
 
 create_website_with_random_string() {
@@ -36,5 +37,26 @@ create_website_with_random_string() {
     return 1
   fi
   printf '%s\n' "$file_name $test_string"
+  return 0
+}
+
+put_redirect() {
+  if ! check_param_count_ge_le "bucket name, redirect URL, protocol (optional)" 2 3 $#; then
+    return 1
+  fi
+  local bucket_name="$1" redirect_url="$2" protocol="$3"
+  local json_payload
+
+  if [[ "$protocol" == "https" ]] || [[ "$protocol" == "http" ]]; then
+    json_payload="{\"RedirectAllRequestsTo\":{\"HostName\":\"$redirect_url\",\"Protocol\":\"$protocol\"}}"
+  else
+    json_payload="{\"RedirectAllRequestsTo\":{\"HostName\":\"$redirect_url\"}}"
+  fi
+
+  if ! response=$(send_rest_go_command "200" "-commandType" "putBucketWebsiteConfiguration" "-bucketName" "$bucket_name" \
+      "-websiteConfiguration" "$json_payload" 2>&1); then
+    log 2 "error putting website configuration: $response"
+    return 1
+  fi
   return 0
 }
