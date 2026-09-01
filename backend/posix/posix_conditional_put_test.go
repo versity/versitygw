@@ -27,6 +27,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -76,6 +77,129 @@ func createTestBucket(t *testing.T, p *Posix, bucket string) {
 	}, []byte{})
 	if err != nil {
 		t.Fatalf("create bucket: %v", err)
+	}
+}
+
+func TestObjectPublishLockHonorsContextWhileWaiting(t *testing.T) {
+	p := newTestPosix(t, metaModes(t)["xattr"])
+	bucket := "testbucket"
+	createTestBucket(t, p, bucket)
+
+	shard := objLockShard("cancel-wait")
+	<-p.objLockSlots[shard]
+	defer func() { p.objLockSlots[shard] <- struct{}{} }()
+	if _, err := os.Stat(filepath.Join(bucket, objLockDir)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("bucket contains publish lock directory: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		unlock, err := p.lockObjectPublish(ctx, bucket, "cancel-wait")
+		if unlock != nil {
+			unlock()
+		}
+		result <- err
+	}()
+
+	select {
+	case err := <-result:
+		t.Fatalf("lockObjectPublish returned before cancellation: %v", err)
+	case <-time.After(10 * time.Millisecond):
+	}
+	cancel()
+
+	var err error
+	select {
+	case err = <-result:
+	case <-time.After(time.Second):
+		t.Fatal("lockObjectPublish did not honor cancellation")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("lockObjectPublish error = %v, want context.Canceled", err)
+	}
+}
+
+func TestObjectPublishLockHonorsCancellationAfterSlotAcquired(t *testing.T) {
+	p := newTestPosix(t, metaModes(t)["xattr"])
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	unlock, err := p.lockObjectPublish(ctx, "testbucket", "cancel-ready-slot")
+	if unlock != nil {
+		unlock()
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("lockObjectPublish error = %v, want context.Canceled", err)
+	}
+}
+
+func TestObjectPublishLockCanDisableSharedLockFile(t *testing.T) {
+	root := t.TempDir()
+	p, err := New(root, meta.XattrMeta{}, PosixOpts{
+		NewDirPerm:         0755,
+		ForceNoObjLockFile: true,
+	})
+	if err != nil {
+		t.Fatalf("new posix: %v", err)
+	}
+	defer p.Shutdown()
+
+	unlock, err := p.lockObjectPublish(context.Background(), "testbucket", "object")
+	if err != nil {
+		t.Fatalf("lock object publish: %v", err)
+	}
+	unlock()
+
+	if _, err := os.Stat(filepath.Join(root, objLockDir)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("shared lock directory exists or stat failed: %v", err)
+	}
+}
+
+func TestObjectPublishLockUsesRootForRelativeBackendPath(t *testing.T) {
+	parent := t.TempDir()
+	rootName := "gateway-root"
+	root := filepath.Join(parent, rootName)
+	if err := os.Mkdir(root, 0755); err != nil {
+		t.Fatalf("make root: %v", err)
+	}
+	t.Chdir(parent)
+
+	p, err := New(rootName, meta.XattrMeta{}, PosixOpts{NewDirPerm: 0755})
+	if err != nil {
+		t.Fatalf("new posix: %v", err)
+	}
+	defer p.Shutdown()
+
+	unlock, err := p.lockObjectPublish(context.Background(), "testbucket", "relative-root")
+	if err != nil {
+		t.Fatalf("lock object publish: %v", err)
+	}
+	unlock()
+
+	if _, err := os.Stat(filepath.Join(root, objLockDir)); err != nil {
+		t.Fatalf("root lock directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, rootName, objLockDir)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("nested lock directory exists or stat failed: %v", err)
+	}
+}
+
+func TestListBucketsAndOwnersExcludesObjectLockDirectory(t *testing.T) {
+	p := newTestPosix(t, metaModes(t)["xattr"])
+
+	unlock, err := p.lockObjectPublish(context.Background(), "testbucket", "object")
+	if err != nil {
+		t.Fatalf("lock object publish: %v", err)
+	}
+	unlock()
+
+	buckets, err := p.ListBucketsAndOwners(context.Background())
+	if err != nil {
+		t.Fatalf("list buckets and owners: %v", err)
+	}
+	if len(buckets) != 0 {
+		t.Fatalf("buckets = %#v, want no internal lock directory", buckets)
 	}
 }
 

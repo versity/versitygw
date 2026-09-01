@@ -49,3 +49,8 @@ func lockFileExclusive(ctx context.Context, f *os.File) error {
 		backoff = min(backoff*2, objLockMaxBackoff)
 	}
 }
+
+func isAdvisoryLockUnsupported(err error) bool {
+	return errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.EOPNOTSUPP) ||
+		errors.Is(err, unix.ENOSYS)
+}

@@ -39,6 +39,7 @@ var (
 	nometa               bool
 	forceNoTmpFile       bool
 	forceNoCopyFileRange bool
+	forceNoObjLockFile   bool
 	enableODirect        bool
 	actionsConcurrency   int
 	ioBufferSize         int
@@ -143,6 +144,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				Destination: &forceNoCopyFileRange,
 			},
 			&cli.BoolFlag{
+				Name:        "disable-object-lock-file",
+				Usage:       "disable shared advisory lock files for conditional object publishes (unsafe with multiple gateway processes)",
+				EnvVars:     []string{"VGW_DISABLE_OBJECT_LOCK_FILE"},
+				Destination: &forceNoObjLockFile,
+			},
+			&cli.BoolFlag{
 				Name:        "enable-odirect",
 				Usage:       "enable best-effort O_DIRECT for object data reads/writes",
 				EnvVars:     []string{"VGW_ENABLE_O_DIRECT"},
@@ -194,6 +201,7 @@ func runPosix(ctx *cli.Context) error {
 		VersioningDir:        versioningDir,
 		ForceNoTmpFile:       forceNoTmpFile,
 		ForceNoCopyFileRange: forceNoCopyFileRange,
+		ForceNoObjLockFile:   forceNoObjLockFile,
 		EnableODirect:        enableODirect,
 		ValidateBucketNames:  DisableStrictBucketNames,
 		Concurrency:          actionsConcurrency,

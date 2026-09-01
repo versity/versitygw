@@ -38,13 +38,15 @@ import (
 // contention within one process is resolved cheaply and each process presents
 // at most one waiter to the filesystem lock.
 //
-// Lock identity: bucket/.sgwtmp/objlock/<shard>, where shard is the first
-// byte of sha256(object key) rendered as two hex characters. Hashing the key
-// gives a stable, traversal-safe, fixed-length name; sharding (256 slots per
-// bucket) keeps the number of lock files bounded while still letting writes
-// to unrelated keys proceed concurrently in the common case. Lock files are
-// empty, created on demand, and never unlinked: unlinking an flock file opens
-// a classic race where a waiter holds a lock on an unlinked inode while a new
+// Lock identity: <root>/.vgwlocks/<bucket-hash>/<shard>, where shard is the
+// first byte of sha256(object key) rendered as two hex characters. Hashing the
+// bucket and key gives stable, traversal-safe, fixed-length names; sharding
+// (256 slots per bucket) keeps the number of lock files bounded while still
+// letting writes to unrelated keys proceed concurrently in the common case.
+// Lock files are outside the bucket tree so Windows bucket deletion cannot
+// fail merely because an active request has the lock file open. They are empty,
+// created on demand, and never unlinked: unlinking an flock file opens a
+// classic race where a waiter holds a lock on an unlinked inode while a new
 // file takes its place, which is unsafe to detect reliably on NFS due to
 // attribute caching.
 //
@@ -63,8 +65,8 @@ import (
 // process-local exclusion and logs a warning once.
 
 const (
-	// objLockDir is the per-bucket directory holding object publish lock files
-	objLockDir = MetaTmpDir + "/objlock"
+	// objLockDir is the root directory holding object publish lock files.
+	objLockDir = ".vgwlocks"
 	// objLockShards is the number of lock shards per bucket
 	objLockShards = 256
 )
@@ -83,12 +85,24 @@ func objLockShard(object string) uint8 {
 func (p *Posix) lockObjectPublish(ctx context.Context, bucket, object string) (func(), error) {
 	shard := objLockShard(object)
 
-	mu := &p.objLockMus[shard]
-	mu.Lock()
+	slot := p.objLockSlots[shard]
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-slot:
+	}
+	releaseLocal := func() { slot <- struct{}{} }
+	if err := ctx.Err(); err != nil {
+		releaseLocal()
+		return nil, err
+	}
+	if p.forceNoObjLockFile {
+		return releaseLocal, nil
+	}
 
 	f, err := p.openObjLockFile(bucket, shard)
 	if err != nil {
-		mu.Unlock()
+		releaseLocal()
 		return nil, err
 	}
 
@@ -96,33 +110,47 @@ func (p *Posix) lockObjectPublish(ctx context.Context, bucket, object string) (f
 	if err != nil {
 		f.Close()
 		if ctx.Err() != nil {
-			mu.Unlock()
+			releaseLocal()
 			return nil, ctx.Err()
 		}
-		// The filesystem does not support advisory locking (e.g. NFS
-		// mounted with -o nolock). Fall back to process-local exclusion
-		// and warn once: conditional writes are then only atomic within
-		// this gateway process.
+		if !isAdvisoryLockUnsupported(err) {
+			releaseLocal()
+			return nil, fmt.Errorf("lock object publish: %w", err)
+		}
+		// The filesystem does not support advisory locking (e.g. NFS mounted
+		// with -o nolock). Fall back to process-local exclusion and warn once:
+		// conditional writes are then only atomic within this gateway process.
 		p.objLockWarn.Do(func() {
 			debuglogger.Logf("object lock file locking unavailable (%v): "+
 				"conditional write atomicity limited to this process", err)
 		})
-		return mu.Unlock, nil
+		return releaseLocal, nil
 	}
 
 	return func() {
 		// closing the file releases the advisory lock
 		f.Close()
-		mu.Unlock()
+		releaseLocal()
 	}, nil
+}
+
+func newObjLockSlots() [objLockShards]chan struct{} {
+	var slots [objLockShards]chan struct{}
+	for i := range slots {
+		slots[i] = make(chan struct{}, 1)
+		slots[i] <- struct{}{}
+	}
+	return slots
 }
 
 // openObjLockFile opens (creating as needed) the lock file for the shard in
 // the given bucket.
 func (p *Posix) openObjLockFile(bucket string, shard uint8) (*os.File, error) {
-	name := filepath.Join(bucket, objLockDir, fmt.Sprintf("%02x", shard))
+	bucketHash := sha256.Sum256([]byte(bucket))
+	lockDir := filepath.Join(p.rootdir, objLockDir, fmt.Sprintf("%x", bucketHash))
+	name := filepath.Join(lockDir, fmt.Sprintf("%02x", shard))
 
-	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, os.FileMode(defaultNewFilePerm))
+	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, defaultNewFilePerm)
 	if err == nil {
 		return f, nil
 	}
@@ -131,11 +159,11 @@ func (p *Posix) openObjLockFile(bucket string, shard uint8) (*os.File, error) {
 	}
 
 	// lock dir not created yet
-	err = backend.MkdirAll(filepath.Join(bucket, objLockDir), 0, 0, false, p.newDirPerm)
+	err = backend.MkdirAll(lockDir, 0, 0, false, p.newDirPerm)
 	if err != nil {
 		return nil, fmt.Errorf("make object lock dir: %w", err)
 	}
-	f, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE, os.FileMode(defaultNewFilePerm))
+	f, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE, defaultNewFilePerm)
 	if err != nil {
 		return nil, fmt.Errorf("open object lock file: %w", err)
 	}
