@@ -210,10 +210,7 @@ func DeleteObjects_iam_mixed_denials_and_success(s *S3Conf) error {
 		if err := checkDeletedKeysInOrder(out.Deleted, []string{"allowed/one", "allowed/two"}); err != nil {
 			return err
 		}
-		return checkDeleteObjectsErrsInOrder(out.Errors, []struct {
-			key string
-			err s3err.S3Error
-		}{
+		return checkDeleteObjectsErrsInOrder(out.Errors, []keyDenial{
 			{"denied/one", wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, "denied/one"))},
 			{"locked/one", s3err.GetAPIError(s3err.ErrObjectLocked)},
 		})
@@ -258,10 +255,7 @@ func DeleteObjects_iam_all_access_denied(s *S3Conf) error {
 		if len(out.Deleted) != 0 {
 			return fmt.Errorf("expected nothing deleted, got %+v", out.Deleted)
 		}
-		return checkDeleteObjectsErrsInOrder(out.Errors, []struct {
-			key string
-			err s3err.S3Error
-		}{
+		return checkDeleteObjectsErrsInOrder(out.Errors, []keyDenial{
 			{"one", wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, "one"))},
 			{"two", wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, "two"))},
 			{"three", wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, "three"))},
@@ -311,10 +305,7 @@ func DeleteObjects_iam_all_locked(s *S3Conf) error {
 		if len(out.Deleted) != 0 {
 			return fmt.Errorf("expected nothing deleted, got %+v", out.Deleted)
 		}
-		if err := checkDeleteObjectsErrsInOrder(out.Errors, []struct {
-			key string
-			err s3err.S3Error
-		}{
+		if err := checkDeleteObjectsErrsInOrder(out.Errors, []keyDenial{
 			{"locked/one", s3err.GetAPIError(s3err.ErrObjectLocked)},
 			{"locked/two", s3err.GetAPIError(s3err.ErrObjectLocked)},
 		}); err != nil {
@@ -337,10 +328,7 @@ func DeleteObjects_iam_all_locked(s *S3Conf) error {
 		if len(out.Deleted) != 0 {
 			return fmt.Errorf("expected nothing deleted, got %+v", out.Deleted)
 		}
-		if err := checkDeleteObjectsErrsInOrder(out.Errors, []struct {
-			key string
-			err s3err.S3Error
-		}{
+		if err := checkDeleteObjectsErrsInOrder(out.Errors, []keyDenial{
 			{"locked/one", wantImplicitDeny(user.arn, actS3BypassGovernance, objectArn(bucket, "locked/one"))},
 			{"locked/two", wantImplicitDeny(user.arn, actS3BypassGovernance, objectArn(bucket, "locked/two"))},
 		}); err != nil {

@@ -283,15 +283,25 @@ func objectsAccessErrors(ctx context.Context, be backend.Backend, opts AccessOpt
 	errs := make([]error, len(keys))
 
 	// An explicit deny from the bucket policy wins outright, whatever the
-	// IAM backend is, so a request carrying one needs no identity policy at
-	// all — which also saves the standalone IAM service round trip. Only the
-	// first denied key is recorded: the request fails there regardless of
-	// what the rest would have evaluated to.
+	// IAM backend is and whatever an identity policy would have said, so
+	// every denied key is settled here and never revisited below. Each key
+	// is settled on its own: this is a partial-success API, so a deny on one
+	// key says nothing about the next one, which still has to be evaluated
+	// on its own merits.
+	allDenied := true
 	for i, rd := range resourceDecisions {
 		if rd.Decision == policyDecisionDeny {
 			errs[i] = s3err.GetExplicitDenyAccessErr(opts.Acc.Access, string(rd.Action), objectPolicyArn(opts.Bucket, keys[i], be.NormalizeObjectKey), "a resource-based policy")
-			return errs, nil
+			continue
 		}
+		allDenied = false
+	}
+	// Nothing is left to decide, so skip the identity policy entirely —
+	// which also saves the standalone IAM service round trip. That shortcut
+	// only holds when the bucket policy denied every key; a single
+	// undecided key still needs the identity policy consulted for it.
+	if allDenied {
+		return errs, nil
 	}
 
 	pe, hasPolicyEvaluator := opts.Iam.(PolicyEvaluator)
@@ -300,6 +310,11 @@ func objectsAccessErrors(ctx context.Context, be backend.Backend, opts AccessOpt
 		// today's exact behavior and generic message, unconditionally, for
 		// every internal/LDAP/Vault/IPA/S3-IAM deployment.
 		for i, rd := range resourceDecisions {
+			if errs[i] != nil {
+				// Explicitly denied above — keep that specific message
+				// rather than flattening it to the generic one.
+				continue
+			}
 			if rd.Decision != policyDecisionAllow {
 				errs[i] = s3err.GetAPIError(s3err.ErrAccessDenied)
 			}
@@ -318,6 +333,13 @@ func objectsAccessErrors(ctx context.Context, be backend.Backend, opts AccessOpt
 	}
 
 	for i := range keys {
+		if errs[i] != nil {
+			// Explicitly denied by the bucket policy. An explicit deny is
+			// final, so no identity-policy result can clear it, and the
+			// resource-based message is the one AWS reports for it.
+			continue
+		}
+
 		resourceArn := objectPolicyArn(opts.Bucket, keys[i], be.NormalizeObjectKey)
 
 		if identity.Decisions[i].Decision == policyDecisionDeny {
