@@ -38,3 +38,16 @@ create_website_with_random_string() {
   printf '%s\n' "$file_name $test_string"
   return 0
 }
+
+put_redirect() {
+  if ! check_param_count_v2 "bucket name, redirect URL" 2 $#; then
+    return 1
+  fi
+  local bucket_name="$1" redirect_url="$2"
+
+  if ! response=$(send_rest_go_command "200" "-commandType" "putBucketWebsiteConfiguration" "-bucketName" "$bucket_name" \
+        "-websiteConfiguration" "{\"RedirectAllRequestsTo\":{\"HostName\":\"$redirect_url\"}}" 2>&1); then
+      log 2 "error putting website configuration: $response"
+      return 1
+    fi
+}

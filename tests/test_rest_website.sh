@@ -155,19 +155,21 @@ teardown() {
 }
 
 @test "REST - GetBucketWebsite - no HTTPS" {
-  local bucket_name random_string
+  local bucket_one_name bucket_two_name random_string
 
   setup_versitygw_for_website "--website-no-tls"
 
-  run setup_bucket_v3 "$BUCKET_ONE_NAME"
+  run setup_buckets_v3 "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
   assert_success
-  bucket_name="$output"
+  read -r bucket_one_name bucket_two_name <<< "$output"
 
-  run create_website_with_random_string_and_add_permissions "$bucket_name"
+  run create_website_with_random_string_and_add_permissions "$bucket_one_name"
   assert_success
   read -r random_string <<< "$output"
 
-  run curl -ks "http://${bucket_name}.${WEBSITE_DOMAIN}${WEBSITE}"
+  run curl -ks "http://${bucket_one_name}.${WEBSITE_DOMAIN}${WEBSITE}"
   assert_success
   assert_output "$random_string"
+
+
 }
