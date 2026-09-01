@@ -1368,6 +1368,7 @@ func TestIAMGetRole(ts *TestState) {
 	ts.Run(IAMGetRole_long_role_name)
 	ts.Run(IAMGetRole_non_existing_role)
 	ts.Run(IAMGetRole_success)
+	ts.Run(IAMGetRole_role_last_used_never_used)
 }
 
 func TestIAMListRoles(ts *TestState) {
@@ -1620,7 +1621,6 @@ func TestIAMAssumeRoleWithWebIdentity(ts *TestState) {
 	ts.Run(IAMAssumeRoleWithWebIdentity_oaud_condition_mismatch)
 	ts.Run(IAMAssumeRoleWithWebIdentity_issuer_trailing_slash_mismatch)
 	ts.Run(IAMAssumeRoleWithWebIdentity_issuer_scheme_mismatch)
-	ts.Run(IAMAssumeRoleWithWebIdentity_github_oidc_live)
 }
 
 func TestIAMGetCallerIdentity(ts *TestState) {
@@ -1739,8 +1739,14 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_condition_multiple_keys_anded)
 	ts.Run(S3IAMAccessControl_inactive_and_deleted_credentials)
 	ts.Run(S3IAMAccessControl_bucket_policy_unknown_principal_rejected)
+	ts.Run(S3IAMAccessControl_access_key_last_used_records_s3)
 }
 
+// TestS3IAMSessionAccessControl is the one group the OIDC workflow runs, so
+// it carries every test that needs a real, signed ID token — including the
+// IAM/STS-endpoint ones below, which are not S3 access-control tests but
+// have the same GitHub-OIDC prerequisite. Every test here skips itself
+// outside a job that can mint a token.
 func TestS3IAMSessionAccessControl(ts *TestState) {
 	ts.Run(S3IAMSession_role_policy_allows)
 	ts.Run(S3IAMSession_role_without_policy_denied)
@@ -1762,6 +1768,9 @@ func TestS3IAMSessionAccessControl(ts *TestState) {
 	ts.Run(S3IAMSession_delete_objects_authorizes_each_key)
 	ts.Run(S3IAMSession_condition_identity_keys)
 	ts.Run(S3IAMSession_get_caller_identity_matches_s3_principal)
+	ts.Run(S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live)
+	ts.Run(S3IAMSession_GetRole_role_last_used_recorded)
+	ts.Run(S3IAMSession_role_last_used_records_s3)
 }
 
 func TestIAM(ts *TestState) {
@@ -2138,6 +2147,9 @@ func GetIntTests() IntTests {
 		"S3IAMSession_role_policy_explicit_deny_wins":                                      S3IAMSession_role_policy_explicit_deny_wins,
 		"S3IAMSession_role_without_policy_denied":                                          S3IAMSession_role_without_policy_denied,
 		"S3IAMSession_role_policy_allows":                                                  S3IAMSession_role_policy_allows,
+		"S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live":                          S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live,
+		"S3IAMSession_GetRole_role_last_used_recorded":                                     S3IAMSession_GetRole_role_last_used_recorded,
+		"S3IAMSession_role_last_used_records_s3":                                           S3IAMSession_role_last_used_records_s3,
 		"S3IAMAccessControl_retention_extension_needs_no_bypass":                           S3IAMAccessControl_retention_extension_needs_no_bypass,
 		"S3IAMAccessControl_delete_objects_authorizes_each_key":                            S3IAMAccessControl_delete_objects_authorizes_each_key,
 		"S3IAMAccessControl_delete_objects_version_needs_separate_permission":              S3IAMAccessControl_delete_objects_version_needs_separate_permission,
@@ -2172,6 +2184,7 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_condition_multiple_keys_anded":                                 S3IAMAccessControl_condition_multiple_keys_anded,
 		"S3IAMAccessControl_inactive_and_deleted_credentials":                              S3IAMAccessControl_inactive_and_deleted_credentials,
 		"S3IAMAccessControl_bucket_policy_unknown_principal_rejected":                      S3IAMAccessControl_bucket_policy_unknown_principal_rejected,
+		"S3IAMAccessControl_access_key_last_used_records_s3":                               S3IAMAccessControl_access_key_last_used_records_s3,
 		"Authentication_invalid_auth_header":                                               Authentication_invalid_auth_header,
 		"Authentication_unsupported_signature_version":                                     Authentication_unsupported_signature_version,
 		"Authentication_missing_components":                                                Authentication_missing_components,
@@ -2409,6 +2422,7 @@ func GetIntTests() IntTests {
 		"IAMGetRole_long_role_name":                                                        IAMGetRole_long_role_name,
 		"IAMGetRole_non_existing_role":                                                     IAMGetRole_non_existing_role,
 		"IAMGetRole_success":                                                               IAMGetRole_success,
+		"IAMGetRole_role_last_used_never_used":                                             IAMGetRole_role_last_used_never_used,
 		"IAMListRoles_invalid_path_prefix":                                                 IAMListRoles_invalid_path_prefix,
 		"IAMListRoles_long_path_prefix":                                                    IAMListRoles_long_path_prefix,
 		"IAMListRoles_invalid_max_items":                                                   IAMListRoles_invalid_max_items,
@@ -2598,7 +2612,6 @@ func GetIntTests() IntTests {
 		"IAMAssumeRoleWithWebIdentity_oaud_condition_mismatch":                             IAMAssumeRoleWithWebIdentity_oaud_condition_mismatch,
 		"IAMAssumeRoleWithWebIdentity_issuer_trailing_slash_mismatch":                      IAMAssumeRoleWithWebIdentity_issuer_trailing_slash_mismatch,
 		"IAMAssumeRoleWithWebIdentity_issuer_scheme_mismatch":                              IAMAssumeRoleWithWebIdentity_issuer_scheme_mismatch,
-		"IAMAssumeRoleWithWebIdentity_github_oidc_live":                                    IAMAssumeRoleWithWebIdentity_github_oidc_live,
 		"IAMGetCallerIdentity_root_success":                                                IAMGetCallerIdentity_root_success,
 		"IAMGetCallerIdentity_user_success":                                                IAMGetCallerIdentity_user_success,
 		"IAMGetCallerIdentity_unknown_access_key":                                          IAMGetCallerIdentity_unknown_access_key,

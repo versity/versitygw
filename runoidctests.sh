@@ -95,11 +95,7 @@ echo "Starting the s3 gateway backed by it"
 GW_PID=$!
 wait_for_server "s3 gateway" "http://127.0.0.1:$GW_PORT/healthz" "$GW_PID"
 
-echo "Running the live GitHub OIDC web-identity test"
-./versitygw test -a user -s pass -e "http://127.0.0.1:$IAM_PORT" \
-	IAMAssumeRoleWithWebIdentity_github_oidc_live
-
-echo "Running the s3 assumed-role session access control tests"
+echo "Running the tests that need a real OIDC identity provider"
 ./versitygw test -a user -s pass \
 	-e "http://127.0.0.1:$GW_PORT" \
 	--iam-endpoint "http://127.0.0.1:$IAM_PORT" \

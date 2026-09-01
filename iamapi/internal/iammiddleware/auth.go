@@ -122,6 +122,16 @@ func VerifyIAMAuth(service string, root *RootCredentials, store iamutil.Identity
 				debuglogger.Logf("failed to record access key last-used metadata for %q: %v", authData.Access, err)
 			}
 		}
+		// The same, for the role a session credential authenticated as: this
+		// is what GetRole reports as RoleLastUsed. identity.Role is set only
+		// when the session's role still exists *and* is still the same role
+		// the session was minted against, so a session outliving its role
+		// records nothing rather than attributing its use to a same-named replacement.
+		if identity.Role != nil {
+			if err := store.RecordRoleUsage(ctx.Context(), identity.Role.RoleName, SigningRegion, time.Now().UTC()); err != nil {
+				debuglogger.Logf("failed to record role last-used metadata for %q: %v", identity.Role.RoleName, err)
+			}
+		}
 		return nil
 	}
 }

@@ -17,8 +17,10 @@ import (
 	"encoding/json"
 	"maps"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/iamapi/internal/iammiddleware"
 	"github.com/versity/versitygw/iamapi/policy"
 	"github.com/versity/versitygw/iamapi/types"
@@ -53,6 +55,42 @@ func (p *PrivateAPI) handleDeriveSigningKey(ctx fiber.Ctx) error {
 	derivedKey := sigv4auth.DeriveKey(secret, req.Date, req.Region, req.Service)
 
 	return ctx.JSON(DeriveSigningKeyResponse{DerivedKey: derivedKey})
+}
+
+// recordDataPlaneUsage records this S3 request as a use of the credential
+// that made it — an access key's GetAccessKeyLastUsed metadata, a session's
+// role's RoleLastUsed, or both for a session (its role is what AWS reports,
+// and a session has no long-term key of its own). It is the data-plane
+// counterpart of what iammiddleware.VerifyIAMAuth records for the IAM/STS
+// control plane, and is deliberately here rather than on derive-signing-key:
+// this endpoint is only reached once the gateway has verified the request's
+// signature, so an unauthenticated caller who merely knows an access key id
+// cannot refresh — or, since it would supply the credential scope, poison —
+// another identity's last-used record.
+//
+// Everything about it is best-effort: failures are logged and dropped, and a
+// gateway too old to send Region/Service records nothing at all rather than
+// storing a blank service or region.
+func (p *PrivateAPI) recordDataPlaneUsage(ctx fiber.Ctx, identity types.Identity, req EvaluatePolicyRequest) {
+	if req.Region == "" || req.Service == "" {
+		return
+	}
+
+	now := time.Now().UTC()
+	if identity.User != nil {
+		if err := p.store.RecordAccessKeyUsage(ctx.Context(), req.AccessKeyID, req.Service, req.Region, now); err != nil {
+			debuglogger.Logf("failed to record access key last-used metadata for %q: %v", req.AccessKeyID, err)
+		}
+	}
+	// identity.Role is set only when the session's role still exists and is
+	// still the one the session was minted against, so a session outliving
+	// its role records nothing rather than attributing its use to a
+	// same-named replacement — same rule as the control plane.
+	if identity.Role != nil {
+		if err := p.store.RecordRoleUsage(ctx.Context(), identity.Role.RoleName, req.Region, now); err != nil {
+			debuglogger.Logf("failed to record role last-used metadata for %q: %v", identity.Role.RoleName, err)
+		}
+	}
 }
 
 // handleResolveIdentity answers "does this access key exist, and what
@@ -100,6 +138,8 @@ func (p *PrivateAPI) handleEvaluatePolicy(ctx fiber.Ctx) error {
 	if err != nil {
 		return mapResolveError(err)
 	}
+
+	p.recordDataPlaneUsage(ctx, *identity, req)
 
 	condition := conditionContextFor(*identity, req.Condition)
 

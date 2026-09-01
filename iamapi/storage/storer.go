@@ -58,6 +58,11 @@ type Storer interface {
 	ListRoles(ctx context.Context, input ListRolesInput) (*ListRolesOutput, error)
 	DeleteRole(ctx context.Context, roleName string) error
 	UpdateAssumeRolePolicy(ctx context.Context, input UpdateAssumeRolePolicyInput) (*types.Role, error)
+	// RecordRoleUsage updates roleName's RoleLastUsed metadata (region and
+	// timestamp) to reflect a use of the role at when — GetRole's
+	// counterpart to RecordAccessKeyUsage, and best-effort in exactly the
+	// same way.
+	RecordRoleUsage(ctx context.Context, roleName, region string, when time.Time) error
 
 	TagRole(ctx context.Context, roleName string, tags []types.Tag) error
 	UntagRole(ctx context.Context, roleName string, tagKeys []string) error

@@ -812,6 +812,158 @@ func TestParseProtocolVersion(t *testing.T) {
 	}
 }
 
+// TestEvaluatePolicyRecordsDataPlaneUsage covers the S3 side of last-used
+// tracking: authorizing a data-plane request records it against the
+// credential that made it — a user's access key (with the "s3" service name
+// its control-plane counterpart could never produce) and, for a session, the
+// role it assumed.
+func TestEvaluatePolicyRecordsDataPlaneUsage(t *testing.T) {
+	p, store := newTestServer(t)
+	ctx := context.Background()
+	const allowGet = `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`
+
+	createTestUser(t, store, "nina", "AKIDNINA", "ninasecret", allowGet)
+	role := createTestRole(t, store, "reader", allowGet)
+	session := createTestSessionForRole(t, store, role, "ASIASESSION1", "sessionsecret", "sessiontoken", "")
+
+	before := time.Now().UTC().Add(-time.Second)
+
+	evaluateAs(t, p, EvaluatePolicyRequest{
+		AccessKeyID: "AKIDNINA",
+		Actions:     []string{"s3:GetObject"},
+		Resources:   []string{"arn:aws:s3:::bucket/key"},
+		Region:      "us-west-2",
+		Service:     "s3",
+	})
+
+	lastUsed, err := store.GetAccessKeyLastUsed(ctx, "AKIDNINA")
+	if err != nil {
+		t.Fatalf("GetAccessKeyLastUsed: %v", err)
+	}
+	if lastUsed.ServiceName != "s3" || lastUsed.Region != "us-west-2" {
+		t.Fatalf("access key last used = %s/%s, want s3/us-west-2", lastUsed.ServiceName, lastUsed.Region)
+	}
+	if lastUsed.LastUsedDate.Before(before) {
+		t.Fatalf("access key LastUsedDate = %v, want at or after %v", lastUsed.LastUsedDate, before)
+	}
+
+	evaluateAs(t, p, EvaluatePolicyRequest{
+		AccessKeyID:  session.AccessKeyId,
+		SessionToken: session.SessionToken,
+		Actions:      []string{"s3:GetObject"},
+		Resources:    []string{"arn:aws:s3:::bucket/key"},
+		Region:       "us-west-2",
+		Service:      "s3",
+	})
+
+	stored, err := store.GetRole(ctx, "reader")
+	if err != nil {
+		t.Fatalf("GetRole: %v", err)
+	}
+	if stored.RoleLastUsed == nil || stored.RoleLastUsed.LastUsedDate == nil {
+		t.Fatalf("RoleLastUsed = %#v, want a recorded date", stored.RoleLastUsed)
+	}
+	if stored.RoleLastUsed.Region != "us-west-2" {
+		t.Fatalf("RoleLastUsed.Region = %q, want us-west-2", stored.RoleLastUsed.Region)
+	}
+	if stored.RoleLastUsed.LastUsedDate.Before(before) {
+		t.Fatalf("RoleLastUsed.LastUsedDate = %v, want at or after %v", stored.RoleLastUsed.LastUsedDate, before)
+	}
+}
+
+// TestEvaluatePolicyWithoutRegionRecordsNothing covers a gateway too old to
+// send Region/Service: the request must still authorize normally, and must
+// not store a blank service or region as if it were real data.
+func TestEvaluatePolicyWithoutRegionRecordsNothing(t *testing.T) {
+	p, store := newTestServer(t)
+	createTestUser(t, store, "nina", "AKIDNINA", "ninasecret",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`)
+
+	out := evaluateAs(t, p, EvaluatePolicyRequest{
+		AccessKeyID: "AKIDNINA",
+		Actions:     []string{"s3:GetObject"},
+		Resources:   []string{"arn:aws:s3:::bucket/key"},
+	})
+	if len(out.Decisions) != 1 || out.Decisions[0][0] != DecisionAllow {
+		t.Fatalf("Decisions = %v, want [[allow]] — authorization must not depend on the reporting fields", out.Decisions)
+	}
+
+	lastUsed, err := store.GetAccessKeyLastUsed(context.Background(), "AKIDNINA")
+	if err != nil {
+		t.Fatalf("GetAccessKeyLastUsed: %v", err)
+	}
+	if !lastUsed.LastUsedDate.IsZero() || lastUsed.ServiceName != "" || lastUsed.Region != "" {
+		t.Fatalf("last used = %#v, want nothing recorded", lastUsed)
+	}
+}
+
+// TestEvaluatePolicyCoalescesRepeatedUsage confirms the write-coalescing
+// that makes per-request recording affordable: a second request in the same
+// region and service leaves the stored timestamp alone, while a request from
+// a different region is written through immediately, since that is the part
+// an operator reads to see what a credential is being used for.
+func TestEvaluatePolicyCoalescesRepeatedUsage(t *testing.T) {
+	p, store := newTestServer(t)
+	ctx := context.Background()
+	createTestUser(t, store, "nina", "AKIDNINA", "ninasecret",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`)
+
+	req := EvaluatePolicyRequest{
+		AccessKeyID: "AKIDNINA",
+		Actions:     []string{"s3:GetObject"},
+		Resources:   []string{"arn:aws:s3:::bucket/key"},
+		Region:      "us-west-2",
+		Service:     "s3",
+	}
+
+	evaluateAs(t, p, req)
+	first, err := store.GetAccessKeyLastUsed(ctx, "AKIDNINA")
+	if err != nil {
+		t.Fatalf("GetAccessKeyLastUsed: %v", err)
+	}
+
+	evaluateAs(t, p, req)
+	second, err := store.GetAccessKeyLastUsed(ctx, "AKIDNINA")
+	if err != nil {
+		t.Fatalf("GetAccessKeyLastUsed: %v", err)
+	}
+	if !second.LastUsedDate.Equal(first.LastUsedDate) {
+		t.Fatalf("LastUsedDate = %v after a repeat request, want it coalesced to %v", second.LastUsedDate, first.LastUsedDate)
+	}
+
+	req.Region = "eu-west-1"
+	evaluateAs(t, p, req)
+	moved, err := store.GetAccessKeyLastUsed(ctx, "AKIDNINA")
+	if err != nil {
+		t.Fatalf("GetAccessKeyLastUsed: %v", err)
+	}
+	if moved.Region != "eu-west-1" || !moved.LastUsedDate.After(first.LastUsedDate) {
+		t.Fatalf("last used = %s at %v, want eu-west-1 written through after %v", moved.Region, moved.LastUsedDate, first.LastUsedDate)
+	}
+}
+
+// evaluateAs posts one evaluate-policy request as root and returns the
+// decoded response, failing the test on any non-200.
+func evaluateAs(t *testing.T, p *PrivateAPI, req EvaluatePolicyRequest) EvaluatePolicyResponse {
+	t.Helper()
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	resp := doPrivateRequest(t, p, http.MethodPost, EvaluatePath, testRoot.Access, testRoot.Secret, body)
+	raw := readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("evaluate-policy status = %d, body=%s", resp.StatusCode, raw)
+	}
+
+	var out EvaluatePolicyResponse
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("unmarshal %s: %v", raw, err)
+	}
+	return out
+}
+
 // createTestRole creates a role with an optional inline permission policy
 // directly against store, the same way createTestUser bypasses the
 // control-plane API. Arn and RoleID are set explicitly because

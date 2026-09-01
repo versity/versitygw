@@ -35,13 +35,24 @@ type DeriveSigningKeyResponse struct {
 	DerivedKey []byte `json:"derivedKey"`
 }
 
-// EvaluatePolicyRequest is the evaluate-policy request body
+// EvaluatePolicyRequest is the evaluate-policy request body.
+//
+// Region and Service describe the data-plane request being authorized, and
+// exist only so the identity's last-used metadata (GetAccessKeyLastUsed,
+// GetRole's RoleLastUsed) can record S3 use. They are recorded rather than
+// evaluated — nothing about the authorization decision depends on them —
+// and they are the gateway's own configured region and a fixed "s3", never
+// anything a client supplied: the credential scope in a request's
+// Authorization header is attacker-controlled until the signature is
+// verified, and this endpoint is the first one reached after that.
 type EvaluatePolicyRequest struct {
 	AccessKeyID  string              `json:"accessKeyId"`
 	SessionToken string              `json:"sessionToken,omitempty"`
 	Actions      []string            `json:"actions"`
 	Resources    []string            `json:"resources"`
 	Condition    map[string][]string `json:"condition,omitempty"`
+	Region       string              `json:"region,omitempty"`
+	Service      string              `json:"service,omitempty"`
 }
 
 // ResolveIdentityRequest asks whether each access key id exists and what

@@ -212,6 +212,7 @@ type Opts struct {
 	StandaloneDefaultUserID     int
 	StandaloneDefaultGroupID    int
 	StandaloneDefaultProjectID  int
+	StandaloneRegion            string
 }
 
 func New(o *Opts) (IAMService, error) {
@@ -231,6 +232,7 @@ func New(o *Opts) (IAMService, error) {
 			DefaultUserID:    o.StandaloneDefaultUserID,
 			DefaultGroupID:   o.StandaloneDefaultGroupID,
 			DefaultProjectID: o.StandaloneDefaultProjectID,
+			Region:           o.StandaloneRegion,
 		})
 		if err != nil {
 			return nil, err

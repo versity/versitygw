@@ -17,7 +17,11 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -29,6 +33,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -41,6 +46,22 @@ const (
 	actS3CreateBucket        = "s3:CreateBucket"
 	actS3ListAllMyBuckets    = "s3:ListAllMyBuckets"
 	actS3BypassGovernance    = "s3:BypassGovernanceRetention"
+)
+
+const (
+	// githubOIDCIssuerURL is GitHub Actions' own OIDC token issuer: a real,
+	// publicly reachable HTTPS endpoint with a CA-issued certificate.
+	githubOIDCIssuerURL = "https://token.actions.githubusercontent.com"
+
+	// githubOIDCTestAudience is deliberately distinct from GitHub's default
+	// audience (which is the caller's own server URL). If this org ever
+	// configures a real cloud-provider role trusting
+	// token.actions.githubusercontent.com for this repo (e.g. for
+	// publishing/deploys), a leaked test token must not be replayable
+	// against that unrelated trust relationship - binding the throwaway
+	// role's trust policy to this audience (instead of GitHub's default)
+	// is what prevents that.
+	githubOIDCTestAudience = "versitygw-integration-tests"
 )
 
 // s3IAMPrincipal is an identity that can make S3 requests: an IAM user with
@@ -569,4 +590,144 @@ func deleteObjectBypassingGovernance(client *s3.Client, bucket, key string) erro
 		BypassGovernanceRetention: aws.Bool(true),
 	})
 	return err
+}
+
+// createGitHubOIDCTrust registers a throwaway OIDC provider for GitHub
+// Actions' own issuer (ThumbprintList omitted, exercising
+// CreateOpenIDConnectProvider's autofetch-and-CA-verify path against a real
+// publicly reachable HTTPS endpoint instead of thumbprint pinning) and a
+// throwaway role trusting it, returning the role's name, its ARN, and a
+// cleanup func that removes both unconditionally.
+//
+// The trust policy's Condition requires both:
+//   - the effective audience to equal githubOIDCTestAudience (not GitHub's
+//     default audience - see that constant's doc comment), and
+//   - the sub claim to match "repo:<repo>:*".
+//
+// The sub match is a repo-wide wildcard rather than pinning an exact
+// ref/event suffix: GitHub's sub claim differs by trigger and branch (e.g.
+// "repo:o/r:pull_request" for a pull_request event vs.
+// "repo:o/r:ref:refs/heads/main" for a push to main), and pinning one exact
+// form would make this test fail depending on how it was triggered. That
+// tradeoff only holds because this role is created and deleted within a
+// single test run - the same repo-wide wildcard left in a real production
+// trust policy would grant every workflow run in the repo, on any branch,
+// the same trust, which is far too broad outside this throwaway context.
+func createGitHubOIDCTrust(client *iam.Client, repo string) (roleName, roleArn string, cleanup func(), err error) {
+	// The provider is keyed by URL alone — a second CreateOpenIDConnectProvider
+	// for the same githubOIDCIssuerURL fails with EntityAlreadyExists, same as
+	// real AWS. Some tests mint more than one session (and so call this more
+	// than once) within a single run, so a provider left by an earlier call
+	// that hasn't been cleaned up yet is expected, not a leak: reuse it rather
+	// than failing, and only this call's cleanup deletes it if this call is
+	// the one that actually created it.
+	ownsProvider := true
+	out, err := createOIDCProvider(client, &iam.CreateOpenIDConnectProviderInput{
+		Url:          aws.String(githubOIDCIssuerURL),
+		ClientIDList: []string{githubOIDCTestAudience},
+	})
+	var providerArn string
+	if err != nil {
+		var ae smithy.APIError
+		if !errors.As(err, &ae) || ae.ErrorCode() != "EntityAlreadyExists" {
+			return "", "", nil, fmt.Errorf("create GitHub OIDC provider: %w", err)
+		}
+		ownsProvider = false
+		providerArn = oidcProviderArn(githubOIDCIssuerURL)
+	} else {
+		providerArn = aws.ToString(out.OpenIDConnectProviderArn)
+	}
+
+	host := trimProviderScheme(githubOIDCIssuerURL)
+	roleName = "github-oidc-" + genRandString(12)
+	trust := fmt.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":%q},"Action":"sts:AssumeRoleWithWebIdentity",`+
+		`"Condition":{"StringEquals":{"%s:aud":%q},"StringLike":{"%s:sub":%q}}}]}`,
+		providerArn, host, githubOIDCTestAudience, host, "repo:"+repo+":*")
+	if _, err := createIAMRole(client, &iam.CreateRoleInput{RoleName: &roleName, AssumeRolePolicyDocument: &trust}); err != nil {
+		if ownsProvider {
+			deleteOIDCProvider(client, providerArn)
+		}
+		return "", "", nil, fmt.Errorf("create GitHub OIDC trust role: %w", err)
+	}
+
+	roleArn = "arn:aws:iam::000000000000:role/" + roleName
+	cleanup = func() {
+		deleteIAMRole(client, roleName)
+		if ownsProvider {
+			deleteOIDCProvider(client, providerArn)
+		}
+	}
+	return roleName, roleArn, cleanup, nil
+}
+
+// githubIDTokenResponse is the JSON body GitHub's runtime ID-token endpoint
+// returns: {"value": "<jwt>", "count": <n>}. Only value is needed here.
+type githubIDTokenResponse struct {
+	Value string `json:"value"`
+}
+
+// fetchGitHubIDToken fetches a real, signed OIDC ID token for audience from
+// GitHub Actions' runtime token endpoint (requestURL/requestToken are
+// ACTIONS_ID_TOKEN_REQUEST_URL/ACTIONS_ID_TOKEN_REQUEST_TOKEN, only present
+// inside a GitHub Actions job with id-token: write permission).
+//
+// The returned token is a real, unmasked bearer credential - unlike a
+// secrets.* value, GitHub does not scrub it from logs automatically since it
+// never appears in the workflow YAML. Every error path here is deliberately
+// built from fixed strings and status codes only, never from the response
+// body or the request's Authorization header, so a failure here can never
+// leak the token into CI output.
+func fetchGitHubIDToken(requestURL, requestToken, audience string) (string, error) {
+	parsed, err := url.Parse(requestURL)
+	if err != nil {
+		return "", fmt.Errorf("parse ACTIONS_ID_TOKEN_REQUEST_URL: invalid URL")
+	}
+	q := parsed.Query()
+	q.Set("audience", audience)
+	parsed.RawQuery = q.Encode()
+
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return "", fmt.Errorf("build GitHub OIDC token request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+requestToken)
+	req.Header.Set("Accept", "application/json; api-version=2.0")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetch GitHub OIDC token: request failed")
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", fmt.Errorf("read GitHub OIDC token response: failed after status %d", resp.StatusCode)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub OIDC token endpoint returned status %d", resp.StatusCode)
+	}
+
+	var out githubIDTokenResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return "", fmt.Errorf("parse GitHub OIDC token response: malformed JSON")
+	}
+	if out.Value == "" {
+		return "", fmt.Errorf("GitHub OIDC token endpoint returned an empty token value")
+	}
+	return out.Value, nil
+}
+
+// getCallerIdentityWithSessionCreds calls GetCallerIdentity authenticated
+// with a full access/secret/session-token triple.
+func getCallerIdentityWithSessionCreds(cfg S3Conf, access, secret, token string) (*sts.GetCallerIdentityOutput, error) {
+	cfg.awsID = access
+	cfg.awsSecret = secret
+	stsCfg := cfg.iamConfig()
+	stsCfg.Credentials = credentials.NewStaticCredentialsProvider(access, secret, token)
+
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+	return sts.NewFromConfig(stsCfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 }

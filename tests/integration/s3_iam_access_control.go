@@ -2068,6 +2068,62 @@ func S3IAMAccessControl_bucket_policy_unknown_principal_rejected(s *S3Conf) erro
 	})
 }
 
+// S3IAMAccessControl_access_key_last_used_records_s3 covers last-used
+// tracking for the S3 data plane: an IAM user's S3 request is recorded
+// against the access key that signed it, with the "s3" service name and the
+// gateway's region — neither of which the IAM control plane can produce.
+func S3IAMAccessControl_access_key_last_used_records_s3(s *S3Conf) error {
+	testName := "S3IAMAccessControl_access_key_last_used_records_s3"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3ListBucket, Resource: []string{bucketArn(bucket)},
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		accessKeyID := user.conf.awsID
+		before, err := getIAMAccessKeyLastUsed(root, accessKeyID)
+		if err != nil {
+			return err
+		}
+		if before.AccessKeyLastUsed.LastUsedDate != nil {
+			return fmt.Errorf("expected a freshly created access key to be unused, instead got %v", before.AccessKeyLastUsed.LastUsedDate)
+		}
+
+		start := time.Now().UTC().Add(-time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected ListObjects to be allowed by the identity policy: %w", err)
+		}
+
+		after, err := getIAMAccessKeyLastUsed(root, accessKeyID)
+		if err != nil {
+			return err
+		}
+		lastUsed := after.AccessKeyLastUsed
+		if lastUsed.LastUsedDate == nil {
+			return fmt.Errorf("expected the s3 request to record an access key last used date")
+		}
+		if lastUsed.LastUsedDate.Before(start) {
+			return fmt.Errorf("expected access key last used date to be at or after %v, instead got %v", start, *lastUsed.LastUsedDate)
+		}
+		if aws.ToString(lastUsed.ServiceName) != "s3" {
+			return fmt.Errorf("expected access key last used service name to be %q, instead got %q", "s3", aws.ToString(lastUsed.ServiceName))
+		}
+		if aws.ToString(lastUsed.Region) != s.awsRegion {
+			return fmt.Errorf("expected access key last used region to be %q, instead got %q", s.awsRegion, aws.ToString(lastUsed.Region))
+		}
+
+		return nil
+	})
+}
+
 // containsBucket reports whether buckets names bucket, so a listing can be
 // asserted without depending on what else other tests left behind.
 func containsBucket(buckets []types.Bucket, bucket string) bool {

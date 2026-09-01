@@ -820,8 +820,17 @@ func (s *VaultStore) recordAccessKeyUsage(ctx context.Context, accessKeyID, serv
 		if err != nil {
 			continue
 		}
-		if !slices.ContainsFunc(user.AccessKeys, func(k types.AccessKeyEntry) bool { return k.AccessKeyId == accessKeyID }) {
+		idx := slices.IndexFunc(user.AccessKeys, func(k types.AccessKeyEntry) bool { return k.AccessKeyId == accessKeyID })
+		if idx == -1 {
 			continue
+		}
+
+		// The user was just read, so the redundant-update check costs
+		// nothing here and saves the read-modify-write below on every
+		// request after the first within the coalescing window.
+		key := user.AccessKeys[idx]
+		if !shouldRecordUsage(key.LastUsedDate, key.LastUsedService, key.LastUsedRegion, service, region, when) {
+			return nil
 		}
 
 		_, err = s.withUserCAS(ctx, username, func(u *types.User) error {
@@ -1200,6 +1209,51 @@ func (s *VaultStore) UpdateAssumeRolePolicy(ctx context.Context, input UpdateAss
 		role.AssumeRolePolicyDocument = input.PolicyDocument
 		return nil
 	})
+}
+
+// recordRoleUsageTimeout bounds RecordRoleUsage's detached background
+// update, the way recordAccessKeyUsageTimeout does for access keys.
+const recordRoleUsageTimeout = 5 * time.Second
+
+// RecordRoleUsage updates roleName's RoleLastUsed metadata in its own
+// background goroutine, detached from ctx, and always returns nil
+// immediately — for the same reasons RecordAccessKeyUsage does: it runs on
+// the hot path of every request authenticated with a session credential,
+// and the metadata is purely informational, so a Vault round trip (plus a
+// CAS retry loop) must not be charged to the request, and a lost or failed
+// update is only logged.
+func (s *VaultStore) RecordRoleUsage(_ context.Context, roleName, region string, when time.Time) error {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), recordRoleUsageTimeout)
+		defer cancel()
+		if err := s.recordRoleUsage(ctx, roleName, region, when); err != nil {
+			debuglogger.Logf("failed to record Vault role last-used metadata for %q: %v", roleName, err)
+		}
+	}()
+	return nil
+}
+
+func (s *VaultStore) recordRoleUsage(ctx context.Context, roleName, region string, when time.Time) error {
+	role, _, err := s.readRoleVersion(roleName)
+	if err != nil {
+		return err
+	}
+
+	// A redundant update is dropped after the read, before the far more
+	// expensive read-modify-write — see shouldRecordUsage.
+	prev, prevRegion := roleLastUsedRecord(*role)
+	if !shouldRecordUsage(prev, "", prevRegion, "", region, when) {
+		return nil
+	}
+
+	_, err = s.withRoleCAS(ctx, roleName, func(role *types.Role) error {
+		role.RoleLastUsed = &types.RoleLastUsed{
+			LastUsedDate: &when,
+			Region:       region,
+		}
+		return nil
+	})
+	return err
 }
 
 func (s *VaultStore) TagRole(ctx context.Context, roleName string, tags []types.Tag) error {

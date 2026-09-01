@@ -18,7 +18,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -789,5 +791,243 @@ func S3IAMSession_get_caller_identity_matches_s3_principal(s *S3Conf) error {
 		_, err = session.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
 		return checkApiErr(err, wantImplicitDeny(session.arn, actS3GetObject, objectArn(bucket, "obj")))
+	})
+}
+
+// S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live exercises
+// AssumeRoleWithWebIdentity against a REAL external OIDC identity provider —
+// GitHub Actions' own OIDC issuer — end-to-end: discovery-document fetch,
+// JWKS fetch, real RS256 signature verification, claims mapping, and
+// session credential issuance. It's the only web-identity test that does
+// this; every other one in this package uses a fake token that never
+// reaches real signature verification.
+func S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live(s *S3Conf) error {
+	testName := "S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live"
+
+	reqURL := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL")
+	reqToken := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+	if reqURL == "" || reqToken == "" {
+		skipF("%v: ACTIONS_ID_TOKEN_REQUEST_URL/ACTIONS_ID_TOKEN_REQUEST_TOKEN not set "+
+			"(expected outside a GitHub Actions job with id-token: write permission)", testName)
+		return nil
+	}
+
+	return iamActionHandler(s, testName, func(client *iam.Client) error {
+		repo := os.Getenv("GITHUB_REPOSITORY")
+		if repo == "" {
+			return fmt.Errorf("GITHUB_REPOSITORY is not set, but ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN are - unexpected environment")
+		}
+
+		roleName, roleArn, cleanup, err := createGitHubOIDCTrust(client, repo)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		token, err := fetchGitHubIDToken(reqURL, reqToken, githubOIDCTestAudience)
+		if err != nil {
+			return err
+		}
+
+		const sessionName = "github-oidc-live"
+		assumeOut, err := assumeRoleWithWebIdentity(s, roleArn, sessionName, token, 0)
+		if err != nil {
+			// checkIAMApiErr-style wrapping isn't used here since a live
+			// AssumeRoleWithWebIdentity SDK error carries no token material
+			// of its own to guard against - it's the request we build
+			// (never printed) and GitHub's response (never printed either,
+			// see fetchGitHubIDToken) that could leak the token.
+			return fmt.Errorf("AssumeRoleWithWebIdentity: %w", err)
+		}
+		if assumeOut.Credentials == nil {
+			return fmt.Errorf("expected Credentials in AssumeRoleWithWebIdentity response")
+		}
+		accessKeyID := aws.ToString(assumeOut.Credentials.AccessKeyId)
+		secretAccessKey := aws.ToString(assumeOut.Credentials.SecretAccessKey)
+		sessionToken := aws.ToString(assumeOut.Credentials.SessionToken)
+		if accessKeyID == "" || secretAccessKey == "" || sessionToken == "" {
+			return fmt.Errorf("expected a full AccessKeyId/SecretAccessKey/SessionToken triple in AssumeRoleWithWebIdentity response")
+		}
+
+		wantArn := fmt.Sprintf("arn:aws:sts::000000000000:assumed-role/%s/%s", roleName, sessionName)
+		if aws.ToString(assumeOut.AssumedRoleUser.Arn) != wantArn {
+			return fmt.Errorf("expected AssumedRoleUser.Arn %q, instead got %q", wantArn, aws.ToString(assumeOut.AssumedRoleUser.Arn))
+		}
+
+		// A follow-up call authenticated with the session credentials
+		// AssumeRoleWithWebIdentity just issued proves the whole chain -
+		// discovery, JWKS, signature verification, claims mapping, and
+		// session creds - actually works, not just that a 200 came back.
+		callerOut, err := getCallerIdentityWithSessionCreds(*s, accessKeyID, secretAccessKey, sessionToken)
+		if err != nil {
+			return fmt.Errorf("GetCallerIdentity with assumed-role session credentials: %w", err)
+		}
+		if aws.ToString(callerOut.Arn) != wantArn {
+			return fmt.Errorf("GetCallerIdentity: expected Arn %q, instead got %q", wantArn, aws.ToString(callerOut.Arn))
+		}
+		return nil
+	})
+}
+
+// S3IAMSession_GetRole_role_last_used_recorded exercises role last-used tracking
+// end-to-end: a role assumed with a real GitHub Actions OIDC token, then
+// used — a request authenticated with the session credentials that assume
+// issued — records that use as GetRole's RoleLastUsed.
+//
+// Like every other session test, it needs a genuine ID token, so it runs
+// only inside the workflow that can mint one and skips itself everywhere
+// else.
+func S3IAMSession_GetRole_role_last_used_recorded(s *S3Conf) error {
+	testName := "S3IAMSession_GetRole_role_last_used_recorded"
+	token, ok := gitHubOIDCToken()
+	if !ok {
+		skipF("%v: %v", testName, gitHubOIDCSkipReason)
+		return nil
+	}
+
+	return iamActionHandler(s, testName, func(client *iam.Client) error {
+		repo := os.Getenv("GITHUB_REPOSITORY")
+		if repo == "" {
+			return fmt.Errorf("GITHUB_REPOSITORY is not set, but the OIDC token request variables are - unexpected environment")
+		}
+
+		roleName, roleArn, cleanup, err := createGitHubOIDCTrust(client, repo)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		assumeOut, err := assumeRoleWithWebIdentity(s, roleArn, "role-last-used", token, 0)
+		if err != nil {
+			// The error is not wrapped with the request or response, either
+			// of which could carry the ID token - see the same reasoning in
+			// IAMAssumeRoleWithWebIdentity_github_oidc_live.
+			return fmt.Errorf("AssumeRoleWithWebIdentity: %w", err)
+		}
+		if assumeOut.Credentials == nil {
+			return fmt.Errorf("expected Credentials in AssumeRoleWithWebIdentity response")
+		}
+
+		// Assuming a role is not itself a use of it: the role stays
+		// never-used until a request actually authenticates as the session.
+		out, err := getIAMRole(client, roleName)
+		if err != nil {
+			return err
+		}
+		if out.Role == nil {
+			return fmt.Errorf("expected GetRole to return a role")
+		}
+		if err := checkRoleNeverUsed(out.Role.RoleLastUsed); err != nil {
+			return fmt.Errorf("after AssumeRoleWithWebIdentity, before any use: %w", err)
+		}
+
+		before := time.Now().UTC().Add(-time.Second)
+		if _, err := getCallerIdentityWithSessionCreds(*s,
+			aws.ToString(assumeOut.Credentials.AccessKeyId),
+			aws.ToString(assumeOut.Credentials.SecretAccessKey),
+			aws.ToString(assumeOut.Credentials.SessionToken)); err != nil {
+			return fmt.Errorf("GetCallerIdentity with assumed-role session credentials: %w", err)
+		}
+
+		out, err = getIAMRole(client, roleName)
+		if err != nil {
+			return err
+		}
+		if out.Role == nil || out.Role.RoleLastUsed == nil {
+			return fmt.Errorf("expected GetRole to return a role with a RoleLastUsed element")
+		}
+		lastUsed := out.Role.RoleLastUsed
+		if lastUsed.LastUsedDate == nil {
+			return fmt.Errorf("expected a role last used date after a session-authenticated request")
+		}
+		if lastUsed.LastUsedDate.Before(before) {
+			return fmt.Errorf("expected role last used date to be at or after %v, instead got %v", before, *lastUsed.LastUsedDate)
+		}
+		if aws.ToString(lastUsed.Region) != iamAuthRegion {
+			return fmt.Errorf("expected role last used region to be %q, instead got %q", iamAuthRegion, aws.ToString(lastUsed.Region))
+		}
+
+		// ListRoles omits RoleLastUsed from every entry — the list/get
+		// asymmetry other tests only ever see on never-used roles, where a
+		// leaked element would be empty anyway.
+		list, err := listIAMRoles(client, &iam.ListRolesInput{MaxItems: aws.Int32(1000)})
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, role := range list.Roles {
+			if aws.ToString(role.RoleName) != roleName {
+				continue
+			}
+			found = true
+			if role.RoleLastUsed != nil {
+				return fmt.Errorf("expected ListRoles RoleLastUsed to be nil for a used role, instead got %#v", role.RoleLastUsed)
+			}
+		}
+		if !found {
+			return fmt.Errorf("expected ListRoles to return the used role %q", roleName)
+		}
+
+		return nil
+	})
+}
+
+// S3IAMSession_role_last_used_records_s3 is the same for an assumed-role
+// session: the role's RoleLastUsed reports the S3 request its temporary
+// credentials made, which — unlike an access key — is the only place that
+// use is visible at all.
+func S3IAMSession_role_last_used_records_s3(s *S3Conf) error {
+	testName := "S3IAMSession_role_last_used_records_s3"
+	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3ListBucket, Resource: []string{bucketArn(bucket)},
+			}),
+		}, "")
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		// The role was just assumed, and assuming is not using: nothing is
+		// recorded until a request authenticates as the session.
+		before, err := getIAMRole(root, session.name)
+		if err != nil {
+			return err
+		}
+		if before.Role == nil {
+			return fmt.Errorf("expected GetRole to return a role")
+		}
+		if err := checkRoleNeverUsed(before.Role.RoleLastUsed); err != nil {
+			return fmt.Errorf("after AssumeRoleWithWebIdentity, before any s3 request: %w", err)
+		}
+
+		start := time.Now().UTC().Add(-time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = session.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected ListObjects to be allowed by the role policy: %w", err)
+		}
+
+		after, err := getIAMRole(root, session.name)
+		if err != nil {
+			return err
+		}
+		if after.Role == nil || after.Role.RoleLastUsed == nil {
+			return fmt.Errorf("expected GetRole to return a role with a RoleLastUsed element")
+		}
+		lastUsed := after.Role.RoleLastUsed
+		if lastUsed.LastUsedDate == nil {
+			return fmt.Errorf("expected the s3 request to record a role last used date")
+		}
+		if lastUsed.LastUsedDate.Before(start) {
+			return fmt.Errorf("expected role last used date to be at or after %v, instead got %v", start, *lastUsed.LastUsedDate)
+		}
+		if aws.ToString(lastUsed.Region) != s.awsRegion {
+			return fmt.Errorf("expected role last used region to be %q, instead got %q", s.awsRegion, aws.ToString(lastUsed.Region))
+		}
+
+		return nil
 	})
 }
