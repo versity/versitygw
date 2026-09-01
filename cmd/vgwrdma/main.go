@@ -1149,14 +1149,14 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		cfg.S3Options = s3Opts
 	}
 
-	// Transfer IAM ownership only when RunVersityGW accepted it:
-	// on any returned error (including early validation failures
-	// inside RunVersityGW) the deferred shutdown still cleans the
-	// service up. On success RunVersityGW shut the IAM service
-	// down itself as part of its normal shutdown sequence.
-	if runErr := embedgw.RunVersityGW(ctx, be, cfg); runErr != nil {
-		return runErr
+	// Transfer IAM ownership only when RunVersityGW reached its
+	// runtime loop: it shuts the IAM service down itself at the
+	// end of its shutdown sequence, but its early failure paths
+	// (validation, logger, metrics, webui setup) return before
+	// that, so the deferred shutdown must keep covering those.
+	runErr := embedgw.RunVersityGW(ctx, be, cfg)
+	if runErr == nil {
+		iamOwned = false
 	}
-	iamOwned = false
 	return nil
 }

@@ -23,7 +23,6 @@ import (
 
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/s3api/middlewares"
 )
 
 // Handler serves the three control routes (stub).
@@ -48,11 +47,3 @@ func (h *Handler) Ready(ctx fiber.Ctx) error { return notImplemented() }
 
 // Cancel is a stub handler that answers 501 Not Implemented.
 func (h *Handler) Cancel(ctx fiber.Ctx) error { return notImplemented() }
-
-// Register mounts stub routes answering 501 Not Implemented.
-func (h *Handler) Register(app *fiber.App, root middlewares.RootUserConfig,
-	region string) {
-	app.Post("/.hipobj-rc/prepare", h.Prepare)
-	app.Post("/.hipobj-rc/ready", h.Ready)
-	app.Post("/.hipobj-rc/cancel", h.Cancel)
-}

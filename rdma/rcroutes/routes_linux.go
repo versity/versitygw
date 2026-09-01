@@ -40,7 +40,6 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/rdma/rcserver"
-	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3response"
 )
@@ -174,23 +173,6 @@ func (h *Handler) revalidateFresh(acct auth.Account) (auth.Account, error) {
 		}
 	}
 	return acct, nil
-}
-
-// Register mounts the three routes with the SigV4 middleware in
-// front of each handler. The middleware chain form (verify then
-// handler in one app.Post call) lets the verifier yield to the
-// handler with ctx.Next on success.
-func (h *Handler) Register(app *fiber.App, root middlewares.RootUserConfig,
-	region string) {
-	verify := middlewares.VerifyV4Signature(root, h.iam, region, false, true, false)
-	pass := func(ctx fiber.Ctx) error {
-		// Authentication succeeded; continue down the chain to
-		// the actual route handler.
-		return ctx.Next()
-	}
-	app.Post("/.hipobj-rc/prepare", verify, pass, h.Prepare)
-	app.Post("/.hipobj-rc/ready", verify, pass, h.Ready)
-	app.Post("/.hipobj-rc/cancel", verify, pass, h.Cancel)
 }
 
 func errNotAdmitted() error {
@@ -459,7 +441,7 @@ func (h *Handler) Ready(ctx fiber.Ctx) error {
 		// finalizer retires exactly at that point; a failure
 		// *before* the borrow still falls back to the
 		// finalizer path below.
-		put, gd, err := h.commitPut(ctx, sessionID, bucket, key, sizeOf(info, resp))
+		put, gd, err := h.commitPut(ctx, sessionID, bucket, key, sizeOf(resp))
 		if gd {
 			finalized = true
 		}
@@ -490,7 +472,7 @@ func (h *Handler) Ready(ctx fiber.Ctx) error {
 	return ctx.SendStatus(fiber.StatusOK)
 }
 
-func sizeOf(_ *rcserver.SessionInfo, resp *rcserver.ReadyResponse) uint64 {
+func sizeOf(resp *rcserver.ReadyResponse) uint64 {
 	if resp == nil {
 		return 0
 	}
