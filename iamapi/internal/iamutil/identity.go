@@ -46,6 +46,7 @@ type IdentityStore interface {
 	GetUser(ctx context.Context, username string) (*types.User, error)
 	GetOIDCProvider(ctx context.Context, arn string) (*types.OIDCProvider, error)
 	RecordAccessKeyUsage(ctx context.Context, accessKeyID, service, region string, when time.Time) error
+	RecordRoleUsage(ctx context.Context, roleName, region string, when time.Time) error
 }
 
 // ResolveSessionByToken resolves a temporary (ASIA…) access key to the

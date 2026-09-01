@@ -1469,6 +1469,108 @@ func TestIAMApiControllerRoleLifecycle(t *testing.T) {
 	requireIAMError(t, missing, http.StatusNotFound, "Sender", "NoSuchEntity", "The role with name my-role cannot be found.")
 }
 
+// TestIAMApiControllerRoleLastUsed covers the RoleLastUsed lifecycle GetRole
+// reports: a role nobody has assumed carries the empty element, and a
+// request authenticated with one of the role's session credentials records
+// that use — the role's counterpart to an access key's GetAccessKeyLastUsed
+// tracking. GetCallerIdentity is the request here because it needs no
+// policy of its own, so this exercises the auth middleware's recording
+// independently of what the role is allowed to do.
+func TestIAMApiControllerRoleLastUsed(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+	session := createTestSession(t, server, "tracked-role",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:GetUser","Resource":"*"}]}`, "")
+
+	if lastUsed := getRoleLastUsed(t, server, "tracked-role"); lastUsed == nil || lastUsed.LastUsedDate != nil || lastUsed.Region != "" {
+		t.Fatalf("RoleLastUsed before any use = %#v, want the empty element", lastUsed)
+	}
+
+	before := time.Now().UTC().Add(-time.Second)
+	resp := doSignedSTSAction(t, server, session.AccessKeyId, session.SecretAccessKey, session.SessionToken,
+		url.Values{"Action": {"GetCallerIdentity"}})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GetCallerIdentity status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+
+	lastUsed := getRoleLastUsed(t, server, "tracked-role")
+	if lastUsed == nil || lastUsed.LastUsedDate == nil {
+		t.Fatalf("RoleLastUsed after a session-authenticated request = %#v, want a recorded date", lastUsed)
+	}
+	if lastUsed.LastUsedDate.Before(before) {
+		t.Fatalf("RoleLastUsed.LastUsedDate = %v, want at or after %v", lastUsed.LastUsedDate, before)
+	}
+	if lastUsed.Region != iammiddleware.SigningRegion {
+		t.Fatalf("RoleLastUsed.Region = %q, want %q", lastUsed.Region, iammiddleware.SigningRegion)
+	}
+
+	// ListRoles omits RoleLastUsed entirely, used or not.
+	list := doIAMAction(t, server, url.Values{"Action": {"ListRoles"}})
+	var listOut iamtypes.ListRolesResponse
+	unmarshalXML(t, readBody(t, list), &listOut)
+	if len(listOut.Result.Roles.Members) != 1 || listOut.Result.Roles.Members[0].RoleLastUsed != nil {
+		t.Fatalf("ListRoles members = %#v, want the used role with no RoleLastUsed", listOut.Result.Roles.Members)
+	}
+}
+
+// TestIAMApiControllerRoleLastUsedNotRecordedForReplacedRole confirms a
+// session that outlived its role does not attribute its own use to a
+// same-named replacement role: the session still authenticates (STS
+// credentials are self-contained), but the new role — which it was never
+// minted against — must still report as never used.
+func TestIAMApiControllerRoleLastUsedNotRecordedForReplacedRole(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+	createTestRoleForTrust(t, server, "recreated-role", validTrustPolicy)
+
+	get := doIAMAction(t, server, url.Values{"Action": {"GetRole"}, "RoleName": {"recreated-role"}})
+	var getOut iamtypes.GetRoleResponse
+	unmarshalXML(t, readBody(t, get), &getOut)
+
+	now := time.Now().UTC()
+	session := iamtypes.Session{
+		AccessKeyId:     "ASIAtESTREPLACEDROLE1",
+		SecretAccessKey: "sessionsecret",
+		SessionToken:    "sessiontoken",
+		RoleArn:         getOut.Result.Role.Arn,
+		RoleName:        getOut.Result.Role.RoleName,
+		RoleID:          getOut.Result.Role.RoleID,
+		RoleSessionName: "my-session",
+		CreateDate:      now,
+		Expiration:      now.Add(time.Hour),
+	}
+	if _, err := server.store.CreateSession(context.Background(), session); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	if resp := doIAMAction(t, server, url.Values{"Action": {"DeleteRole"}, "RoleName": {"recreated-role"}}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("DeleteRole status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	createTestRoleForTrust(t, server, "recreated-role", validTrustPolicy)
+
+	resp := doSignedSTSAction(t, server, session.AccessKeyId, session.SecretAccessKey, session.SessionToken,
+		url.Values{"Action": {"GetCallerIdentity"}})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GetCallerIdentity status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+
+	if lastUsed := getRoleLastUsed(t, server, "recreated-role"); lastUsed == nil || lastUsed.LastUsedDate != nil {
+		t.Fatalf("replacement role RoleLastUsed = %#v, want the empty element", lastUsed)
+	}
+}
+
+func getRoleLastUsed(t *testing.T, server *IAMApiServer, roleName string) *iamtypes.RoleLastUsed {
+	t.Helper()
+	resp := doIAMAction(t, server, url.Values{"Action": {"GetRole"}, "RoleName": {roleName}})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GetRole status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var out iamtypes.GetRoleResponse
+	unmarshalXML(t, readBody(t, resp), &out)
+	if out.Result.Role == nil {
+		t.Fatal("GetRole returned no role")
+	}
+	return out.Result.Role.RoleLastUsed
+}
+
 func TestIAMApiControllerRoleTagLifecycle(t *testing.T) {
 	server := newIAMControllerTestServer(t)
 	createTestRoleForTrust(t, server, "my-role", validTrustPolicy)

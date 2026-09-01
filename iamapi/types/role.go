@@ -33,16 +33,26 @@ type Role struct {
 	Policies                 Policies `xml:"-"` // unused until role inline-policy CRUD exists; see DeleteRole conflict check
 }
 
+// RoleLastUsed reports when, and in which region, a role was last used.
+// LastUsedDate is a pointer so a never-used role renders as the empty
+// <RoleLastUsed></RoleLastUsed> element AWS returns, rather than as a role
+// used at the zero time.
 type RoleLastUsed struct {
-	LastUsedDate time.Time `xml:",omitempty"`
-	Region       string    `xml:",omitempty"`
+	LastUsedDate *time.Time `xml:",omitempty"`
+	Region       string     `xml:",omitempty"`
 }
 
-// EnsureRoleLastUsed defaults RoleLastUsed to a zero value if unset,
-// without clobbering an already-set value.
+// EnsureRoleLastUsed defaults RoleLastUsed to a never-used value if unset,
+// without clobbering an already-set one. A zero LastUsedDate is normalized
+// away to nil: a role stored before last-used tracking existed persists the
+// zero time, which must still report as never used.
 func (r *Role) EnsureRoleLastUsed() {
 	if r.RoleLastUsed == nil {
 		r.RoleLastUsed = &RoleLastUsed{}
+		return
+	}
+	if r.RoleLastUsed.LastUsedDate != nil && r.RoleLastUsed.LastUsedDate.IsZero() {
+		r.RoleLastUsed.LastUsedDate = nil
 	}
 }
 

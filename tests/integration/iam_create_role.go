@@ -415,8 +415,8 @@ func checkRoleFields(operation string, role *iamtypes.Role, roleName, path, desc
 	if gotDocument != wantDocument {
 		return fmt.Errorf("expected assume role policy document %q, instead got %q", wantDocument, gotDocument)
 	}
-	if role.RoleLastUsed == nil {
-		return fmt.Errorf("expected role RoleLastUsed to be non-nil (empty element)")
+	if err := checkRoleNeverUsed(role.RoleLastUsed); err != nil {
+		return fmt.Errorf("%s: %w", operation, err)
 	}
 	if expectTags {
 		if len(role.Tags) != 1 || aws.ToString(role.Tags[0].Key) != "env" || aws.ToString(role.Tags[0].Value) != "test" {

@@ -753,6 +753,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			StandaloneDefaultUserID:     cfg.StandaloneDefaultUserID,
 			StandaloneDefaultGroupID:    cfg.StandaloneDefaultGroupID,
 			StandaloneDefaultProjectID:  cfg.StandaloneDefaultProjectID,
+			StandaloneRegion:            cfg.Region,
 		})
 		if err != nil {
 			return fmt.Errorf("setup iam: %w", err)

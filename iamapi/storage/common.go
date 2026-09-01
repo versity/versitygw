@@ -278,6 +278,47 @@ func paginateTags(tags []types.Tag, marker string, maxItems int32, keyCase iamut
 	return out
 }
 
+// UsageRecordCoalesceWindow is how long a last-used record is left alone
+// after a write that already reported the same service and region. Every
+// authenticated S3 data-plane request records a use, so without this the
+// internal storer would rewrite the whole IAM file (twice — it keeps a
+// backup) on every GET, and the Vault storer would issue a read-modify-write
+// per request. Real IAM's own last-used data is coarse for the same reason,
+// so nothing observable is lost.
+//
+// A change of service or region is never coalesced: that is the part of the
+// record an operator reads to answer "what is this credential being used
+// for", and it must be able to change the moment the answer does.
+const UsageRecordCoalesceWindow = time.Minute
+
+// shouldRecordUsage reports whether a last-used update is worth the write.
+// prev/prevService/prevRegion describe what is already stored — a zero prev
+// meaning nothing is — and service/region/when the use being recorded. Roles
+// have no service dimension and pass "" for both service arguments.
+func shouldRecordUsage(prev time.Time, prevService, prevRegion, service, region string, when time.Time) bool {
+	if prev.IsZero() || prevService != service || prevRegion != region {
+		return true
+	}
+	// A clock that moved backwards (or a racing writer that already stored a
+	// later use) leaves prev in the future: keep the newer record rather
+	// than replacing it with this older one.
+	return when.Sub(prev) >= UsageRecordCoalesceWindow
+}
+
+// roleLastUsedRecord unpacks role's stored last-used values for
+// shouldRecordUsage, reading a missing element or a missing date as never
+// used.
+func roleLastUsedRecord(role types.Role) (time.Time, string) {
+	if role.RoleLastUsed == nil {
+		return time.Time{}, ""
+	}
+	var when time.Time
+	if role.RoleLastUsed.LastUsedDate != nil {
+		when = *role.RoleLastUsed.LastUsedDate
+	}
+	return when, role.RoleLastUsed.Region
+}
+
 func unwrapAPIError(err error) error {
 	var apiErr iamerr.APIError
 	if errors.As(err, &apiErr) {

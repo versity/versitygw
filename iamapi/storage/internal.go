@@ -523,6 +523,28 @@ func (s *InternalStore) DeleteAccessKey(_ context.Context, username, accessKeyID
 	return unwrapAPIError(err)
 }
 
+// lookupAccessKey resolves accessKeyID to its stored entry and owning user
+// name through the access key index, reporting NoSuchEntity for a key that
+// resolves to nothing at any step.
+func lookupAccessKey(conf iamConfig, accessKeyID string) (types.AccessKeyEntry, string, error) {
+	username, ok := conf.AccessKeyIndex[accessKeyID]
+	if !ok {
+		return types.AccessKeyEntry{}, "", iamerr.NoSuchEntityAccessKey(accessKeyID)
+	}
+	user, ok := conf.Users[username]
+	if !ok {
+		return types.AccessKeyEntry{}, "", iamerr.NoSuchEntityAccessKey(accessKeyID)
+	}
+
+	for _, key := range user.AccessKeys {
+		if key.AccessKeyId == accessKeyID {
+			return key, username, nil
+		}
+	}
+
+	return types.AccessKeyEntry{}, "", iamerr.NoSuchEntityAccessKey(accessKeyID)
+}
+
 func (s *InternalStore) GetAccessKeyLastUsed(_ context.Context, accessKeyID string) (*GetAccessKeyLastUsedOutput, error) {
 	s.RLock()
 	defer s.RUnlock()
@@ -532,63 +554,61 @@ func (s *InternalStore) GetAccessKeyLastUsed(_ context.Context, accessKeyID stri
 		return nil, err
 	}
 
-	username, ok := conf.AccessKeyIndex[accessKeyID]
-	if !ok {
-		return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
-	}
-	user, ok := conf.Users[username]
-	if !ok {
-		return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+	key, username, err := lookupAccessKey(conf, accessKeyID)
+	if err != nil {
+		return nil, err
 	}
 
-	for _, key := range user.AccessKeys {
-		if key.AccessKeyId == accessKeyID {
-			return &GetAccessKeyLastUsedOutput{
-				UserName:     username,
-				LastUsedDate: key.LastUsedDate,
-				ServiceName:  key.LastUsedService,
-				Region:       key.LastUsedRegion,
-			}, nil
-		}
-	}
-
-	return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+	return &GetAccessKeyLastUsedOutput{
+		UserName:     username,
+		LastUsedDate: key.LastUsedDate,
+		ServiceName:  key.LastUsedService,
+		Region:       key.LastUsedRegion,
+	}, nil
 }
 
+// RecordAccessKeyUsage rewrites the whole IAM file, so it first reads the
+// stored record and returns without writing anything when the update would
+// be redundant — a read per request instead of a file rewrite per request,
+// which is what makes recording every S3 data-plane request affordable here.
 func (s *InternalStore) RecordAccessKeyUsage(_ context.Context, accessKeyID, service, region string, when time.Time) error {
 	s.Lock()
 	defer s.Unlock()
 
-	err := s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return err
+	}
+	key, _, err := lookupAccessKey(conf, accessKeyID)
+	if err != nil {
+		return err
+	}
+	if !shouldRecordUsage(key.LastUsedDate, key.LastUsedService, key.LastUsedRegion, service, region, when) {
+		return nil
+	}
+
+	err = s.engine.StoreIAM(func(data []byte) ([]byte, error) {
 		conf, err := s.engine.ParseIAM(data)
 		if err != nil {
 			return nil, err
 		}
 
-		username, ok := conf.AccessKeyIndex[accessKeyID]
-		if !ok {
-			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
-		}
-		user, ok := conf.Users[username]
-		if !ok {
-			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+		_, username, err := lookupAccessKey(conf, accessKeyID)
+		if err != nil {
+			return nil, err
 		}
 
-		found := false
+		user := conf.Users[username]
 		for i, key := range user.AccessKeys {
 			if key.AccessKeyId == accessKeyID {
 				user.AccessKeys[i].LastUsedDate = when
 				user.AccessKeys[i].LastUsedService = service
 				user.AccessKeys[i].LastUsedRegion = region
-				found = true
 				break
 			}
 		}
-		if !found {
-			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
-		}
-
 		conf.Users[username] = user
+
 		return json.Marshal(conf)
 	})
 	return unwrapAPIError(err)
@@ -957,6 +977,48 @@ func (s *InternalStore) UpdateAssumeRolePolicy(_ context.Context, input UpdateAs
 	return cloneRole(updated), nil
 }
 
+// RecordRoleUsage is RecordAccessKeyUsage's role counterpart, including its
+// read-first check: a redundant update writes nothing at all, and an update
+// worth keeping rewrites the whole IAM file.
+func (s *InternalStore) RecordRoleUsage(_ context.Context, roleName, region string, when time.Time) error {
+	s.Lock()
+	defer s.Unlock()
+
+	conf, err := s.engine.GetIAM()
+	if err != nil {
+		return err
+	}
+	_, role, ok := lookupRole(conf, roleName)
+	if !ok {
+		return iamerr.NoSuchEntityRole(roleName)
+	}
+	prev, prevRegion := roleLastUsedRecord(role)
+	if !shouldRecordUsage(prev, "", prevRegion, "", region, when) {
+		return nil
+	}
+
+	err = s.engine.StoreIAM(func(data []byte) ([]byte, error) {
+		conf, err := s.engine.ParseIAM(data)
+		if err != nil {
+			return nil, err
+		}
+
+		canonical, role, ok := lookupRole(conf, roleName)
+		if !ok {
+			return nil, iamerr.NoSuchEntityRole(roleName)
+		}
+
+		role.RoleLastUsed = &types.RoleLastUsed{
+			LastUsedDate: &when,
+			Region:       region,
+		}
+		conf.Roles[canonical] = role
+
+		return json.Marshal(conf)
+	})
+	return unwrapAPIError(err)
+}
+
 func (s *InternalStore) TagRole(_ context.Context, roleName string, tags []types.Tag) error {
 	return s.updateRoleTags(roleName, func(role *types.Role) error {
 		merged, err := mergeTags(role.Tags, tags, iamutil.TagKeysFolded)
@@ -1183,6 +1245,11 @@ func cloneRole(role types.Role) *types.Role {
 	cloned := role
 	cloned.Tags = slices.Clone(role.Tags)
 	cloned.Policies.Inline = slices.Clone(role.Policies.Inline)
+	if role.RoleLastUsed != nil {
+		lastUsed := *role.RoleLastUsed
+		cloned.RoleLastUsed = &lastUsed
+	}
+	cloned.EnsureRoleLastUsed()
 	return &cloned
 }
 

@@ -419,6 +419,172 @@ func TestInternalStoreRoleCRUDAndPagination(t *testing.T) {
 	}
 }
 
+func TestInternalStoreRecordRoleUsage(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := NewInternal(dir)
+	if err != nil {
+		t.Fatalf("NewInternal: %v", err)
+	}
+
+	role := types.Role{
+		Path:                     "/",
+		RoleName:                 "used-role",
+		RoleID:                   "AROAx5555555555555555",
+		Arn:                      "arn:aws:iam::000000000000:role/used-role",
+		CreateDate:               time.Date(2026, 7, 11, 18, 0, 0, 0, time.UTC),
+		AssumeRolePolicyDocument: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`,
+	}
+	created, err := store.CreateRole(ctx, role)
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+	if created.RoleLastUsed.LastUsedDate != nil {
+		t.Fatalf("CreateRole RoleLastUsed = %#v, want the never-used empty element", created.RoleLastUsed)
+	}
+
+	when := time.Date(2026, 8, 2, 9, 30, 0, 0, time.UTC)
+	if err := store.RecordRoleUsage(ctx, "USED-ROLE", "us-east-1", when); err != nil {
+		t.Fatalf("RecordRoleUsage: %v", err)
+	}
+
+	// Reopened from disk, so this also covers the record surviving the
+	// JSON round trip rather than only living in the returned copy.
+	reopened, err := NewInternal(dir)
+	if err != nil {
+		t.Fatalf("reopen NewInternal: %v", err)
+	}
+	got, err := reopened.GetRole(ctx, "used-role")
+	if err != nil {
+		t.Fatalf("GetRole: %v", err)
+	}
+	if got.RoleLastUsed == nil || got.RoleLastUsed.LastUsedDate == nil || !got.RoleLastUsed.LastUsedDate.Equal(when) {
+		t.Fatalf("RoleLastUsed = %#v, want LastUsedDate %v", got.RoleLastUsed, when)
+	}
+	if got.RoleLastUsed.Region != "us-east-1" {
+		t.Fatalf("RoleLastUsed.Region = %q, want us-east-1", got.RoleLastUsed.Region)
+	}
+
+	listed, err := reopened.ListRoles(ctx, ListRolesInput{})
+	if err != nil {
+		t.Fatalf("ListRoles: %v", err)
+	}
+	if len(listed.Roles) != 1 || listed.Roles[0].RoleLastUsed != nil {
+		t.Fatalf("ListRoles = %#v, want the used role with no RoleLastUsed", listed.Roles)
+	}
+
+	if err := store.RecordRoleUsage(ctx, "missing-role", "us-east-1", when); !errors.Is(err, iamerr.NoSuchEntityRole("missing-role")) {
+		t.Fatalf("RecordRoleUsage missing role err = %v, want NoSuchEntity", err)
+	}
+}
+
+func TestShouldRecordUsage(t *testing.T) {
+	base := time.Date(2026, 8, 2, 9, 30, 0, 0, time.UTC)
+
+	for _, tt := range []struct {
+		name                    string
+		prev                    time.Time
+		prevService, prevRegion string
+		service, region         string
+		when                    time.Time
+		want                    bool
+	}{
+		{
+			name: "nothing recorded yet",
+			when: base, service: "s3", region: "us-east-1",
+			want: true,
+		},
+		{
+			name: "same service and region inside the window",
+			prev: base, prevService: "s3", prevRegion: "us-east-1",
+			service: "s3", region: "us-east-1", when: base.Add(UsageRecordCoalesceWindow - time.Second),
+			want: false,
+		},
+		{
+			name: "same service and region past the window",
+			prev: base, prevService: "s3", prevRegion: "us-east-1",
+			service: "s3", region: "us-east-1", when: base.Add(UsageRecordCoalesceWindow),
+			want: true,
+		},
+		{
+			name: "a different service is never coalesced",
+			prev: base, prevService: "iam", prevRegion: "us-east-1",
+			service: "s3", region: "us-east-1", when: base.Add(time.Second),
+			want: true,
+		},
+		{
+			name: "a different region is never coalesced",
+			prev: base, prevService: "s3", prevRegion: "us-east-1",
+			service: "s3", region: "eu-west-1", when: base.Add(time.Second),
+			want: true,
+		},
+		{
+			name: "an older use never replaces a newer record",
+			prev: base, prevService: "s3", prevRegion: "us-east-1",
+			service: "s3", region: "us-east-1", when: base.Add(-time.Hour),
+			want: false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldRecordUsage(tt.prev, tt.prevService, tt.prevRegion, tt.service, tt.region, tt.when)
+			if got != tt.want {
+				t.Errorf("shouldRecordUsage = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestInternalStoreRecordAccessKeyUsageCoalesces confirms the storer applies
+// shouldRecordUsage rather than rewriting the IAM file on every recorded
+// use, and that a service change still lands immediately.
+func TestInternalStoreRecordAccessKeyUsageCoalesces(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewInternal(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewInternal: %v", err)
+	}
+
+	if _, err := store.CreateUser(ctx, types.User{UserName: "nina", Path: "/"}); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if _, err := store.CreateAccessKey(ctx, CreateAccessKeyInput{
+		UserName: "nina", AccessKeyID: "AKIDNINA", SecretAccessKey: "s", Status: "Active", CreateDate: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("CreateAccessKey: %v", err)
+	}
+
+	first := time.Date(2026, 8, 2, 9, 30, 0, 0, time.UTC)
+	if err := store.RecordAccessKeyUsage(ctx, "AKIDNINA", "s3", "us-east-1", first); err != nil {
+		t.Fatalf("RecordAccessKeyUsage: %v", err)
+	}
+	if err := store.RecordAccessKeyUsage(ctx, "AKIDNINA", "s3", "us-east-1", first.Add(time.Second)); err != nil {
+		t.Fatalf("RecordAccessKeyUsage (repeat): %v", err)
+	}
+
+	got, err := store.GetAccessKeyLastUsed(ctx, "AKIDNINA")
+	if err != nil {
+		t.Fatalf("GetAccessKeyLastUsed: %v", err)
+	}
+	if !got.LastUsedDate.Equal(first) {
+		t.Fatalf("LastUsedDate = %v after a coalesced repeat, want %v", got.LastUsedDate, first)
+	}
+
+	if err := store.RecordAccessKeyUsage(ctx, "AKIDNINA", "iam", "us-east-1", first.Add(time.Second)); err != nil {
+		t.Fatalf("RecordAccessKeyUsage (service change): %v", err)
+	}
+	got, err = store.GetAccessKeyLastUsed(ctx, "AKIDNINA")
+	if err != nil {
+		t.Fatalf("GetAccessKeyLastUsed: %v", err)
+	}
+	if got.ServiceName != "iam" || !got.LastUsedDate.Equal(first.Add(time.Second)) {
+		t.Fatalf("last used = %s at %v, want iam at %v", got.ServiceName, got.LastUsedDate, first.Add(time.Second))
+	}
+
+	if err := store.RecordAccessKeyUsage(ctx, "missing", "s3", "us-east-1", first); !errors.Is(err, iamerr.NoSuchEntityAccessKey("missing")) {
+		t.Fatalf("RecordAccessKeyUsage missing key err = %v, want NoSuchEntity", err)
+	}
+}
+
 func TestInternalStoreRolePolicyCRUD(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

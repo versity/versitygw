@@ -106,6 +106,39 @@ func IAMGetRole_success(s *S3Conf) error {
 	})
 }
 
+// IAMGetRole_role_last_used_never_used confirms a role nobody has assumed
+// reports the empty RoleLastUsed element — present, but carrying neither a
+// date nor a region, exactly as real IAM answers for a never-used role.
+func IAMGetRole_role_last_used_never_used(s *S3Conf) error {
+	testName := "IAMGetRole_role_last_used_never_used"
+	return iamActionHandler(s, testName, func(client *iam.Client) error {
+		roleName := newIAMRoleName()
+		if _, err := createIAMRole(client, &iam.CreateRoleInput{
+			RoleName:                 &roleName,
+			AssumeRolePolicyDocument: aws.String(validTrustPolicyDocument),
+		}); err != nil {
+			return err
+		}
+
+		out, err := getIAMRole(client, roleName)
+		checkErr := func() error {
+			if err != nil {
+				return err
+			}
+			if out.Role == nil {
+				return fmt.Errorf("expected GetRole to return a role")
+			}
+			return checkRoleNeverUsed(out.Role.RoleLastUsed)
+		}()
+
+		deleteErr := deleteIAMRole(client, roleName)
+		if checkErr != nil {
+			return checkErr
+		}
+		return deleteErr
+	})
+}
+
 func getIAMRole(client *iam.Client, roleName string) (*iam.GetRoleOutput, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	defer cancel()
@@ -119,4 +152,20 @@ func checkGetRoleOutput(out *iam.GetRoleOutput, roleName, path, description stri
 	}
 	requestID, hasRequestID := awsmiddleware.GetRequestIDMetadata(out.ResultMetadata)
 	return checkRoleFields("GetRole", out.Role, roleName, path, description, maxSessionDuration, wantDocument, expectTags, requestID, hasRequestID)
+}
+
+// checkRoleNeverUsed asserts lastUsed is the empty element real IAM returns
+// for a role that has never been used: present, but carrying neither a date
+// nor a region.
+func checkRoleNeverUsed(lastUsed *iamtypes.RoleLastUsed) error {
+	if lastUsed == nil {
+		return fmt.Errorf("expected role RoleLastUsed to be non-nil (empty element)")
+	}
+	if lastUsed.LastUsedDate != nil {
+		return fmt.Errorf("expected no role last used date, instead got %v", *lastUsed.LastUsedDate)
+	}
+	if aws.ToString(lastUsed.Region) != "" {
+		return fmt.Errorf("expected no role last used region, instead got %q", aws.ToString(lastUsed.Region))
+	}
+	return nil
 }

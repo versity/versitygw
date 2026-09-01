@@ -99,6 +99,13 @@ type IAMServiceStandaloneConfig struct {
 	DefaultUserID    int
 	DefaultGroupID   int
 	DefaultProjectID int
+	// Region is the gateway's own configured region, reported to the IAM
+	// service as the region an S3 request was made in when it records the
+	// caller's last-used metadata. It is taken from configuration rather
+	// than from the request's credential scope on purpose: the scope is
+	// attacker-controlled until the signature is verified. Empty disables
+	// the reporting rather than storing a blank region.
+	Region string
 }
 
 // IAMServiceStandalone is the S3 gateway's client for a standalone IAM
@@ -463,6 +470,9 @@ func (s *IAMServiceStandalone) EvaluatePolicy(access, sessionToken string, actio
 		Actions:      actionStrs,
 		Resources:    resources,
 		Condition:    condition,
+		// Reported for last-used metadata only; see EvaluatePolicyRequest.
+		Region:  s.cfg.Region,
+		Service: sigv4auth.ServiceS3,
 	}, &resp)
 	if err != nil {
 		return PolicyEvaluation{}, err
