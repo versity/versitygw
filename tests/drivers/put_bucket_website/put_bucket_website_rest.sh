@@ -15,6 +15,7 @@
 # under the License.
 
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/put_bucket_policy/put_bucket_policy_rest.sh
 source ./tests/drivers/string.sh
 
 create_website_with_random_string() {
@@ -46,8 +47,9 @@ put_redirect() {
   local bucket_name="$1" redirect_url="$2"
 
   if ! response=$(send_rest_go_command "200" "-commandType" "putBucketWebsiteConfiguration" "-bucketName" "$bucket_name" \
-        "-websiteConfiguration" "{\"RedirectAllRequestsTo\":{\"HostName\":\"$redirect_url\"}}" 2>&1); then
-      log 2 "error putting website configuration: $response"
-      return 1
-    fi
+      "-websiteConfiguration" "{\"RedirectAllRequestsTo\":{\"HostName\":\"$redirect_url\"}}" 2>&1); then
+    log 2 "error putting website configuration: $response"
+    return 1
+  fi
+  return 0
 }

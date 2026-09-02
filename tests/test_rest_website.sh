@@ -22,6 +22,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_bucket_website/get_bucket_website_rest.sh
 source ./tests/drivers/put_bucket_website/put_bucket_website_rest.sh
 source ./tests/drivers/cloudfront.sh
+source ./tests/drivers/http.sh
 source ./tests/drivers/string.sh
 source ./tests/setup_common.sh
 
@@ -35,6 +36,10 @@ setup() {
 setup_versitygw_for_website() {
   optional_params=("$@")
 
+  if [ "$DIRECT" == "true" ]; then
+    return 0
+  fi
+
   run setup_versitygw "${optional_params[@]}"
   assert_success
   read -r process_id process_id_two <<< "$output"
@@ -42,6 +47,7 @@ setup_versitygw_for_website() {
   if [ -n "$process_id_two" ]; then
     export VERSITYGW_PID_2="$process_id_two"
   fi
+  return 0
 }
 
 teardown() {
@@ -154,7 +160,7 @@ teardown() {
   assert_success
 }
 
-@test "REST - GetBucketWebsite - no HTTPS" {
+@test "REST - GetBucketWebsite - redirect" {
   local bucket_one_name bucket_two_name random_string
 
   setup_versitygw_for_website "--website-no-tls"
@@ -166,10 +172,27 @@ teardown() {
   run create_website_with_random_string_and_add_permissions "$bucket_one_name"
   assert_success
   read -r random_string <<< "$output"
+  log 5 "random string after output: $random_string"
 
-  run curl -ks "http://${bucket_one_name}.${WEBSITE_DOMAIN}${WEBSITE}"
+  if [ "$DIRECT" == "true" ]; then
+    domain_name="${bucket_one_name}.s3-website.${AWS_REGION}.amazonaws.com"
+  else
+    domain_name="${bucket_one_name}.${WEBSITE_DOMAIN}${WEBSITE}"
+  fi
+
+  run put_redirect "$bucket_two_name" "${domain_name}"
+  assert_success
+
+  if [ "$DIRECT" == "true" ]; then
+    domain_two_name="${bucket_two_name}.s3-website.${AWS_REGION}.amazonaws.com"
+  else
+    domain_two_name="${bucket_two_name}.${WEBSITE_DOMAIN}${WEBSITE}"
+  fi
+
+  run check_redirect_response "$domain_two_name" "$domain_name"
+  assert_success
+
+  run curl -ksL "http://${domain_two_name}"
   assert_success
   assert_output "$random_string"
-
-
 }
