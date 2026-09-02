@@ -18,11 +18,11 @@
 
 ### Posix Backend
 
-> **Note**:  many of the required libraries, and a good rundown of the installation procedure, can be found in the `Dockerfile_test_bats` dockerfile in the root folder.
+> **Note**:  many of the required libraries, and a good rundown of the installation procedure, can be found in the `Dockerfile_test_bats` dockerfile in the root folder, as well as `system.yml` in the `.github/workflows` folder.
 
 #### Automatic
 
-Run `tests/install_base_dependencies.sh` to automatically run steps 1 through 5 below.  Then proceed with manual setup.
+Run `tests/install_test.sh` to automatically run steps 1 through 5 below.  Then proceed with manual setup.
 
 #### Manual
 
