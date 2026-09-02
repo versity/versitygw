@@ -59,6 +59,7 @@ func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Con
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: s.sslSkipVerify},
+		Proxy:           http.ProxyFromEnvironment,
 	}
 	client := &http.Client{Transport: tr}
 
