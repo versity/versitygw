@@ -1744,7 +1744,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 	tmppath := filepath.Join(bucket, objdir)
 	// the unique upload id is a directory for all of the parts
 	// associated with this specific multipart upload
-	err = os.MkdirAll(filepath.Join(tmppath, uploadID), 0755)
+	err = os.MkdirAll(filepath.Join(tmppath, uploadID), p.newDirPerm)
 	if err != nil {
 		return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("create upload temp dir: %w", err)
 	}
