@@ -116,6 +116,10 @@ nfpms:
       - src: extra/example.conf
         dst: /etc/versitygw.d/example.conf
         type: config
+
+      - src: extra/example-iam.conf
+        dst: /etc/versitygw.d/example-iam.conf
+        type: config
   
       - dst: /etc/versitygw.d
         type: dir
