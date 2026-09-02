@@ -126,6 +126,11 @@ func New(
 			StackTraceHandler: stackTraceHandler,
 		}))
 
+	// initialize the request body drainer. it goes right after the panic
+	// recovery and before every route, so it wraps all of them and a panic in
+	// the drain itself is still recovered
+	app.Use("*", middlewares.DrainRequestBody())
+
 	// Logging middlewares
 	if !server.quiet {
 		app.Use("*", logger.New(logger.Config{
