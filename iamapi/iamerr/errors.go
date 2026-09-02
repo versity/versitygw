@@ -435,6 +435,10 @@ func InvalidUserName(field string) Error {
 	return ValidationError(fmt.Sprintf("The specified value for %s is invalid. It must contain only alphanumeric characters and/or the following: +=,.@_-", field))
 }
 
+func MustSpecifyUserName() Error {
+	return ValidationError("Must specify userName when calling with non-User credentials")
+}
+
 func UserNameTooLong(field string, maxLength int) Error {
 	return ValidationError(fmt.Sprintf("1 validation error detected: Value at '%s' failed to satisfy constraint: Member must have length less than or equal to %d", field, maxLength))
 }

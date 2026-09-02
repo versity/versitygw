@@ -26,6 +26,7 @@ import (
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/iamapi/types"
+	"github.com/versity/versitygw/internal/httpctx"
 )
 
 const (
@@ -106,6 +107,33 @@ func GetUserName(ctx fiber.Ctx, operation string, maxLen int, missingErr error) 
 	if !ok || userName == "" {
 		debuglogger.Logf("missing required %s parameter: UserName", operation)
 		return "", missingErr
+	}
+	if err := ValidateName("userName", userName, maxLen); err != nil {
+		return "", err
+	}
+
+	return userName, nil
+}
+
+// GetUserNameOrCaller resolves the UserName request parameter like
+// GetUserName, except that an omitted parameter resolves to the calling
+// user's own name instead of being an error — matching real IAM, which
+// infers the user from the access key signing the request when UserName is
+// left out.
+//
+// Only an entirely absent parameter is inferred. A UserName that is present
+// but empty stays a ValidateName rejection, as on real IAM, so a client that
+// sends the parameter with no value is told the value is invalid rather than
+// silently acting on a different user than it named.
+func GetUserNameOrCaller(ctx fiber.Ctx, operation string, maxLen int) (string, error) {
+	userName, ok := RequestParam(ctx, "UserName")
+	if !ok {
+		identity, _ := httpctx.ContextKeyCallerIdentity.Get(ctx).(types.Identity)
+		if identity.User == nil {
+			debuglogger.Logf("%s omitted UserName with credentials that have no IAM user", operation)
+			return "", iamerr.MustSpecifyUserName()
+		}
+		return identity.User.UserName, nil
 	}
 	if err := ValidateName("userName", userName, maxLen); err != nil {
 		return "", err

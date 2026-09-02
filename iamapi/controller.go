@@ -133,7 +133,7 @@ func (c IAMApiController) GetUser(ctx fiber.Ctx) (*Response, error) {
 				Result: types.GetUserResult{User: *identity.User},
 			}}, nil
 		default:
-			return nil, iamerr.ValidationError("Must specify userName when calling with non-User credentials")
+			return nil, iamerr.MustSpecifyUserName()
 		}
 	}
 	if err := iamutil.ValidateName("userName", username, iamutil.MaxUserLookupLen); err != nil {
@@ -318,7 +318,7 @@ func (c IAMApiController) ListUserTags(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c IAMApiController) CreateAccessKey(ctx fiber.Ctx) (*Response, error) {
-	userName, err := iamutil.GetUserName(ctx, "CreateAccessKey", iamutil.MaxUserLookupLen, iamerr.MissingParameter("UserName"))
+	userName, err := iamutil.GetUserNameOrCaller(ctx, "CreateAccessKey", iamutil.MaxUserLookupLen)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +362,7 @@ func (c IAMApiController) CreateAccessKey(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c IAMApiController) UpdateAccessKey(ctx fiber.Ctx) (*Response, error) {
-	userName, err := iamutil.GetUserName(ctx, "UpdateAccessKey", iamutil.MaxUserLookupLen, iamerr.MissingParameter("UserName"))
+	userName, err := iamutil.GetUserNameOrCaller(ctx, "UpdateAccessKey", iamutil.MaxUserLookupLen)
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +398,7 @@ func (c IAMApiController) UpdateAccessKey(ctx fiber.Ctx) (*Response, error) {
 }
 
 func (c IAMApiController) DeleteAccessKey(ctx fiber.Ctx) (*Response, error) {
-	userName, err := iamutil.GetUserName(ctx, "DeleteAccessKey", iamutil.MaxUserLookupLen, iamerr.MissingParameter("UserName"))
+	userName, err := iamutil.GetUserNameOrCaller(ctx, "DeleteAccessKey", iamutil.MaxUserLookupLen)
 	if err != nil {
 		return nil, err
 	}
@@ -463,7 +463,7 @@ func (c IAMApiController) GetAccessKeyLastUsed(ctx fiber.Ctx) (*Response, error)
 }
 
 func (c IAMApiController) ListAccessKeys(ctx fiber.Ctx) (*Response, error) {
-	userName, err := iamutil.GetUserName(ctx, "ListAccessKeys", iamutil.MaxUserLookupLen, iamerr.MissingParameter("UserName"))
+	userName, err := iamutil.GetUserNameOrCaller(ctx, "ListAccessKeys", iamutil.MaxUserLookupLen)
 	if err != nil {
 		return nil, err
 	}

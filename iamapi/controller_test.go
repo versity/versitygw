@@ -236,6 +236,157 @@ func TestIAMApiControllerGetUserSelfLookupSessionRejected(t *testing.T) {
 		"Must specify userName when calling with non-User credentials")
 }
 
+// TestIAMApiControllerAccessKeyImplicitUserName walks a user through the
+// whole access-key lifecycle without ever naming itself: real IAM resolves
+// the UserName from the access key signing the request.
+func TestIAMApiControllerAccessKeyImplicitUserName(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+	accessKeyID, secret := createTestUserWithAccessKey(t, server, "kate",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:*","Resource":"*"}]}`)
+
+	resp := doSignedIAMActionAs(t, server, accessKeyID, secret, "", url.Values{"Action": {"CreateAccessKey"}})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("CreateAccessKey status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var createOut iamtypes.CreateAccessKeyResponse
+	unmarshalXML(t, readBody(t, resp), &createOut)
+	created := createOut.Result.AccessKey
+	if created.UserName != "kate" {
+		t.Fatalf("CreateAccessKey UserName = %q, want the calling user %q", created.UserName, "kate")
+	}
+
+	resp = doSignedIAMActionAs(t, server, accessKeyID, secret, "", url.Values{
+		"Action":      {"UpdateAccessKey"},
+		"AccessKeyId": {created.AccessKeyId},
+		"Status":      {"Inactive"},
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("UpdateAccessKey status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+
+	resp = doSignedIAMActionAs(t, server, accessKeyID, secret, "", url.Values{"Action": {"ListAccessKeys"}})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("ListAccessKeys status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var listOut iamtypes.ListAccessKeysResponse
+	unmarshalXML(t, readBody(t, resp), &listOut)
+	keys := listOut.Result.AccessKeyMetadata.Members
+	if len(keys) != 2 {
+		t.Fatalf("ListAccessKeys returned %d keys, want the caller's own 2", len(keys))
+	}
+	for _, key := range keys {
+		if key.UserName != "kate" {
+			t.Fatalf("ListAccessKeys returned a key owned by %q, want only %q's", key.UserName, "kate")
+		}
+		if key.AccessKeyId == created.AccessKeyId && key.Status != iamutil.AccessKeyStatusInactive {
+			t.Fatalf("UpdateAccessKey left key %s Status = %q, want %q", key.AccessKeyId, key.Status, iamutil.AccessKeyStatusInactive)
+		}
+	}
+
+	resp = doSignedIAMActionAs(t, server, accessKeyID, secret, "", url.Values{
+		"Action":      {"DeleteAccessKey"},
+		"AccessKeyId": {created.AccessKeyId},
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("DeleteAccessKey status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+
+	resp = doIAMAction(t, server, url.Values{"Action": {"ListAccessKeys"}, "UserName": {"kate"}})
+	var remainingOut iamtypes.ListAccessKeysResponse
+	unmarshalXML(t, readBody(t, resp), &remainingOut)
+	remaining := remainingOut.Result.AccessKeyMetadata.Members
+	if len(remaining) != 1 || remaining[0].AccessKeyId == created.AccessKeyId {
+		t.Fatalf("after implicit DeleteAccessKey kate has %#v, want only her original key", remaining)
+	}
+}
+
+// TestIAMApiControllerAccessKeyImplicitUserNameScopedToCaller confirms the
+// inferred UserName is the caller's own and nothing else: another user's
+// access key is simply not found, rather than being updated or deleted.
+func TestIAMApiControllerAccessKeyImplicitUserNameScopedToCaller(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+	accessKeyID, secret := createTestUserWithAccessKey(t, server, "liam",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:*","Resource":"*"}]}`)
+	otherAccessKeyID, _ := createTestUserWithAccessKey(t, server, "mona", "")
+
+	resp := doSignedIAMActionAs(t, server, accessKeyID, secret, "", url.Values{
+		"Action":      {"UpdateAccessKey"},
+		"AccessKeyId": {otherAccessKeyID},
+		"Status":      {"Inactive"},
+	})
+	requireIAMError(t, resp, http.StatusNotFound, "Sender", "NoSuchEntity",
+		"The Access Key with id "+otherAccessKeyID+" cannot be found")
+
+	resp = doSignedIAMActionAs(t, server, accessKeyID, secret, "", url.Values{
+		"Action":      {"DeleteAccessKey"},
+		"AccessKeyId": {otherAccessKeyID},
+	})
+	requireIAMError(t, resp, http.StatusNotFound, "Sender", "NoSuchEntity",
+		"The Access Key with id "+otherAccessKeyID+" cannot be found")
+
+	resp = doIAMAction(t, server, url.Values{"Action": {"ListAccessKeys"}, "UserName": {"mona"}})
+	var listOut iamtypes.ListAccessKeysResponse
+	unmarshalXML(t, readBody(t, resp), &listOut)
+	if len(listOut.Result.AccessKeyMetadata.Members) != 1 ||
+		listOut.Result.AccessKeyMetadata.Members[0].Status != iamutil.AccessKeyStatusActive {
+		t.Fatalf("mona's keys = %#v, want her single key left Active", listOut.Result.AccessKeyMetadata.Members)
+	}
+}
+
+// TestIAMApiControllerAccessKeyImplicitUserNameSessionRejected confirms an
+// assumed-role session — which has no IAM user of its own to infer — gets
+// IAM's own ValidationError rather than having the action attributed to
+// some arbitrary user.
+func TestIAMApiControllerAccessKeyImplicitUserNameSessionRejected(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+	session := createTestSession(t, server, "role-accesskey",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:*","Resource":"*"}]}`, "")
+
+	for _, action := range accessKeyImplicitUserNameActions {
+		t.Run(action, func(t *testing.T) {
+			resp := doSignedIAMActionAs(t, server, session.AccessKeyId, session.SecretAccessKey, session.SessionToken,
+				accessKeyActionParams(action))
+			requireIAMError(t, resp, http.StatusBadRequest, "Sender", "ValidationError",
+				"Must specify userName when calling with non-User credentials")
+		})
+	}
+}
+
+// TestIAMApiControllerAccessKeyImplicitUserNameRootRejected covers the
+// gateway's root credential, which is a configured key rather than a stored
+// IAM user and so owns no access keys the IAM API could manage: there is
+// nothing to infer, so UserName stays required.
+func TestIAMApiControllerAccessKeyImplicitUserNameRootRejected(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+
+	for _, action := range accessKeyImplicitUserNameActions {
+		t.Run(action, func(t *testing.T) {
+			resp := doIAMAction(t, server, accessKeyActionParams(action))
+			requireIAMError(t, resp, http.StatusBadRequest, "Sender", "ValidationError",
+				"Must specify userName when calling with non-User credentials")
+		})
+	}
+}
+
+// TestIAMApiControllerAccessKeyEmptyUserNameRejected confirms only an
+// entirely absent UserName is inferred: sending the parameter with an empty
+// value is a validation failure, not a request to act on the caller.
+func TestIAMApiControllerAccessKeyEmptyUserNameRejected(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+	accessKeyID, secret := createTestUserWithAccessKey(t, server, "nate",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:*","Resource":"*"}]}`)
+
+	for _, action := range accessKeyImplicitUserNameActions {
+		t.Run(action, func(t *testing.T) {
+			params := accessKeyActionParams(action)
+			params.Set("UserName", "")
+			resp := doSignedIAMActionAs(t, server, accessKeyID, secret, "", params)
+			requireIAMError(t, resp, http.StatusBadRequest, "Sender", "ValidationError",
+				"The specified value for userName is invalid. It must contain only alphanumeric characters and/or the following: +=,.@_-")
+		})
+	}
+}
+
 func TestIAMApiControllerCreateUserValidationErrors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -3479,6 +3630,25 @@ func TestIAMApiControllerCreateOIDCProviderAutoFetchSSRFGuard(t *testing.T) {
 	})
 	requireIAMError(t, resp, http.StatusBadRequest, "Sender", "OpenIdIdpCommunicationError",
 		"Could not connect to https://127.0.0.1")
+}
+
+// accessKeyImplicitUserNameActions are the four access-key actions that
+// accept an omitted UserName and infer it from the calling access key.
+var accessKeyImplicitUserNameActions = []string{"CreateAccessKey", "UpdateAccessKey", "DeleteAccessKey", "ListAccessKeys"}
+
+// accessKeyActionParams builds a request for action carrying every
+// parameter but UserName, so a test can exercise the omitted-UserName path
+// without each case repeating the action's other required parameters.
+func accessKeyActionParams(action string) url.Values {
+	params := url.Values{"Action": {action}}
+	switch action {
+	case "UpdateAccessKey":
+		params.Set("AccessKeyId", "AKIAIOSFODNN7EXAMPLE")
+		params.Set("Status", "Inactive")
+	case "DeleteAccessKey":
+		params.Set("AccessKeyId", "AKIAIOSFODNN7EXAMPLE")
+	}
+	return params
 }
 
 func newIAMControllerTestServer(t *testing.T) *IAMApiServer {
