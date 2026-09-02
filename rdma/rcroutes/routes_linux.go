@@ -298,8 +298,9 @@ func (h *Handler) Ready(ctx fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "no such RDMA session")
 	}
 
-	// Re-run the authorization against the session's target so a
-	// revocation inside the session window takes effect here.
+	// Re-run authorization for the session's stored target and
+	// operation using the account authenticated for this READY
+	// request.
 	bucket, key, ok := splitTarget(info.Target)
 	if !ok {
 		return fiber.NewError(fiber.StatusInternalServerError, "session target")
