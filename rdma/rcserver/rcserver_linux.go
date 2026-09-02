@@ -231,15 +231,12 @@ func (s *RCSvc) Leave() {
 // Convergence: every blocking call an RC handler makes after
 // TryEnter is bounded - GET staging, PUT commit, and the
 // bucket-ACL lookup run under the service context and unblock on
-// the cancel below; the fresh IAM revalidation selects on the
-// same context and its lookup goroutines are capped (a stalled
-// context-less IAM backend can strand at most a fixed number of
-// them; further requests fail fast); and the remaining
-// authorization helpers (VerifyAccess, CheckObjectAccess)
-// consume the fiber request context, which the gateway shuts
-// down before RunVersityGW returns - and Close runs after
-// RunVersityGW returns in every current caller - so those calls
-// are cancelled by the fiber shutdown that precedes Close.
+// the cancel below; and the authorization helpers (VerifyAccess,
+// CheckObjectAccess) consume the fiber request context, which the
+// gateway shuts down before RunVersityGW returns - and Close
+// runs after RunVersityGW returns in every current caller - so
+// those calls are cancelled by the fiber shutdown that precedes
+// Close.
 func (s *RCSvc) Close() {
 	s.once.Do(func() {
 		s.closing.Store(true)

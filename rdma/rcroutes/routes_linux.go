@@ -76,25 +76,13 @@ type Handler struct {
 	iam        auth.IAMService
 	readonly   bool
 	disableACL bool
-	// freshSem bounds concurrent fresh IAM lookups. The IAM
-	// interface carries no context, so a stalled backend (an
-	// IAM with no client timeout) would otherwise leave one
-	// stuck lookup goroutine per request during an outage.
-	// Bounding the concurrent lookups bounds the residue: at
-	// most maxFreshLookups goroutines can be stuck at once,
-	// and later requests fail fast instead of piling up.
-	freshSem chan struct{}
 }
-
-// maxFreshLookups caps concurrent fresh IAM lookups per handler.
-const maxFreshLookups = 8
 
 // New builds the route handler around a started RC service.
 func New(svc *rcserver.RCSvc, be backend.Backend, iam auth.IAMService,
 	readonly, disableACL bool) *Handler {
 	return &Handler{svc: svc, be: be, iam: iam,
-		readonly: readonly, disableACL: disableACL,
-		freshSem: make(chan struct{}, maxFreshLookups)}
+		readonly: readonly, disableACL: disableACL}
 }
 
 // principalID derives the session identity digest from the
@@ -106,82 +94,6 @@ func principalID(acct auth.Account) rcserver.PrincipalID {
 	var p rcserver.PrincipalID
 	copy(p[:], h[:])
 	return p
-}
-
-// freshAccountReader is implemented by cache-wrapping IAM services
-// that can bypass their own cache. The RDMA control routes use it
-// between the protocol phases so account deletions and credential
-// rotations take effect immediately instead of after the cache
-// TTL. Backends without a cache do not implement it; their regular
-// lookup is already fresh.
-type freshAccountReader interface {
-	GetUserAccountFresh(access string) (auth.Account, error)
-}
-
-// revalidateFresh re-reads the authenticated account, bypassing
-// the IAM cache when the service supports it. A missing account
-// (deleted mid-flow) fails the request with 403.
-//
-// The lookup runs bounded by the RC service context: the IAM
-// interface carries no context (its backends are shared with the
-// rest of the gateway), so an external IAM that stalls could
-// otherwise hold this handler - and through it the RCSvc.Close
-// ops drain - forever. When the service shuts down mid-lookup
-// the request fails instead of blocking the drain. The semaphore
-// caps how many lookup goroutines a stalled IAM can leave
-// behind: past the cap, further requests fail fast with 503.
-func (h *Handler) revalidateFresh(acct auth.Account) (auth.Account, error) {
-	if fr, implements := h.iam.(freshAccountReader); implements {
-		select {
-		case h.freshSem <- struct{}{}:
-		case <-h.svc.Context().Done():
-			return auth.Account{}, fiber.NewError(fiber.StatusServiceUnavailable,
-				"gateway shutting down")
-		default:
-			return auth.Account{}, fiber.NewError(fiber.StatusServiceUnavailable,
-				"IAM lookups saturated")
-		}
-		type result struct {
-			acct auth.Account
-			err  error
-		}
-		done := make(chan result, 1)
-		go func() {
-			// The slot is released here, only when the IAM
-			// call itself has returned: the bound counts
-			// stranded lookup goroutines, not returned
-			// handlers, so a shutdown that abandons this
-			// waiter still keeps the slot held for as long
-			// as the call can stall.
-			defer func() { <-h.freshSem }()
-			a, err := fr.GetUserAccountFresh(acct.Access)
-			done <- result{a, err}
-		}()
-		select {
-		case r := <-done:
-			if r.err != nil {
-				// Only a confirmed missing account means the
-				// account is gone; any other IAM failure is
-				// transient (LDAP timeout, network error) and
-				// the client should retry rather than treat
-				// the account as revoked.
-				if errors.Is(r.err, auth.ErrNoSuchUser) {
-					return auth.Account{}, fiber.NewError(fiber.StatusForbidden,
-						"account no longer valid")
-				}
-				return auth.Account{}, fiber.NewError(fiber.StatusServiceUnavailable,
-					"account lookup failed")
-			}
-			// A rotated secret changes the principal digest,
-			// so the session owner check below rejects the
-			// reused credential.
-			return r.acct, nil
-		case <-h.svc.Context().Done():
-			return auth.Account{}, fiber.NewError(fiber.StatusServiceUnavailable,
-				"gateway shutting down")
-		}
-	}
-	return acct, nil
 }
 
 func errNotAdmitted() error {
@@ -356,13 +268,6 @@ func (h *Handler) Ready(ctx fiber.Ctx) error {
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 
-	// READY is the second phase of a two-step flow: re-read the
-	// account fresh so a deletion or revocation since PREPARE
-	// takes effect here, not after the IAM cache TTL.
-	acct, err := h.revalidateFresh(acct)
-	if err != nil {
-		return err
-	}
 	principal := principalID(acct)
 
 	sessionID := ctx.Get(hdrSession)
@@ -543,13 +448,6 @@ func (h *Handler) Cancel(ctx fiber.Ctx) error {
 	}
 
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
-	// CANCEL is also a post-PREPARE phase: apply the same fresh
-	// account re-read so deleted accounts cannot tear sessions
-	// down.
-	acct, err := h.revalidateFresh(acct)
-	if err != nil {
-		return err
-	}
 	sessionID := ctx.Get(hdrSession)
 	if sessionID == "" {
 		return invalidHeader(hdrSession, "")

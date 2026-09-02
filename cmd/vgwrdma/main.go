@@ -130,10 +130,6 @@ var (
 	BuildTime = "none"
 )
 
-type freshAccountReader interface {
-	GetUserAccountFresh(access string) (auth.Account, error)
-}
-
 type standaloneIAMExtensions interface {
 	auth.SigningKeyProvider
 	auth.PolicyEvaluator
@@ -153,37 +149,17 @@ func (s *shutdownOnceService) Shutdown() error {
 	return s.err
 }
 
-type shutdownOnceFreshService struct {
-	*shutdownOnceService
-	freshAccountReader
-}
-
 type shutdownOnceStandaloneService struct {
 	*shutdownOnceService
 	standaloneIAMExtensions
 }
 
-type shutdownOnceFreshStandaloneService struct {
-	*shutdownOnceService
-	freshAccountReader
-	standaloneIAMExtensions
-}
-
 func wrapIAMShutdownOnce(iam auth.IAMService) auth.IAMService {
 	wrapped := &shutdownOnceService{IAMService: iam}
-	fresh, hasFresh := iam.(freshAccountReader)
-	standalone, hasStandalone := iam.(standaloneIAMExtensions)
-
-	switch {
-	case hasFresh && hasStandalone:
-		return &shutdownOnceFreshStandaloneService{wrapped, fresh, standalone}
-	case hasFresh:
-		return &shutdownOnceFreshService{wrapped, fresh}
-	case hasStandalone:
+	if standalone, ok := iam.(standaloneIAMExtensions); ok {
 		return &shutdownOnceStandaloneService{wrapped, standalone}
-	default:
-		return wrapped
 	}
+	return wrapped
 }
 
 // gatewayCommands are the subcommands that call gwcli.RunGateway (and
