@@ -31,11 +31,64 @@ import (
 	"github.com/versity/versitygw/iamapi/iamerr"
 )
 
+// IAMListAccessKeys_missing_user_name calls as root, which is a configured
+// credential rather than a stored IAM user and so has no user name to infer
+// — unlike a caller signing with an IAM user's own access key, covered by
+// IAMListAccessKeys_infers_caller_user_name.
 func IAMListAccessKeys_missing_user_name(s *S3Conf) error {
 	testName := "IAMListAccessKeys_missing_user_name"
 	return iamActionHandler(s, testName, func(client *iam.Client) error {
 		_, err := listIAMAccessKeys(client, &iam.ListAccessKeysInput{})
-		return checkIAMApiErr(err, iamerr.MissingParameter("UserName"))
+		return checkIAMApiErr(err, iamerr.MustSpecifyUserName())
+	})
+}
+
+// IAMListAccessKeys_infers_caller_user_name also covers the scoping the
+// other inferred-user-name tests assert through a NoSuchEntity: a listing
+// with no UserName returns the caller's own keys and only those, so a
+// second user's key must not appear in it.
+func IAMListAccessKeys_infers_caller_user_name(s *S3Conf) error {
+	testName := "IAMListAccessKeys_infers_caller_user_name"
+	return iamActionHandler(s, testName, func(root *iam.Client) error {
+		caller, cleanup, err := newAccessKeyCaller(root, s, "iam:ListAccessKeys")
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		if _, err := createIAMAccessKey(root, &iam.CreateAccessKeyInput{UserName: &caller.userName}); err != nil {
+			return err
+		}
+
+		otherName := newIAMUserName()
+		if _, err := createIAMUser(root, &iam.CreateUserInput{UserName: &otherName}); err != nil {
+			return err
+		}
+		defer deleteIAMUserAndAccessKeys(root, otherName)
+		if _, err := createIAMAccessKey(root, &iam.CreateAccessKeyInput{UserName: &otherName}); err != nil {
+			return err
+		}
+
+		callerKeys, err := listIAMAccessKeys(root, &iam.ListAccessKeysInput{UserName: &caller.userName})
+		if err != nil {
+			return err
+		}
+		if len(callerKeys.AccessKeyMetadata) != 2 {
+			return fmt.Errorf("expected the caller to own 2 access keys, instead got %d", len(callerKeys.AccessKeyMetadata))
+		}
+		expected := make(map[string]iamtypes.StatusType, len(callerKeys.AccessKeyMetadata))
+		for _, key := range callerKeys.AccessKeyMetadata {
+			expected[aws.ToString(key.AccessKeyId)] = key.Status
+		}
+
+		out, err := listIAMAccessKeys(caller.client, &iam.ListAccessKeysInput{})
+		if err != nil {
+			return err
+		}
+		if out.IsTruncated {
+			return fmt.Errorf("expected ListAccessKeys not to be truncated")
+		}
+		return checkIAMListAccessKeys(out.AccessKeyMetadata, caller.userName, expected)
 	})
 }
 

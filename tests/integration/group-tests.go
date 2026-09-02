@@ -1243,6 +1243,8 @@ func TestIAMListUserTags(ts *TestState) {
 
 func TestIAMCreateAccessKey(ts *TestState) {
 	ts.Run(IAMCreateAccessKey_missing_user_name)
+	ts.Run(IAMCreateAccessKey_empty_user_name)
+	ts.Run(IAMCreateAccessKey_infers_caller_user_name)
 	ts.Run(IAMCreateAccessKey_invalid_user_name)
 	ts.Run(IAMCreateAccessKey_long_user_name)
 	ts.Run(IAMCreateAccessKey_non_existing_user)
@@ -1252,6 +1254,8 @@ func TestIAMCreateAccessKey(ts *TestState) {
 
 func TestIAMUpdateAccessKey(ts *TestState) {
 	ts.Run(IAMUpdateAccessKey_missing_user_name)
+	ts.Run(IAMUpdateAccessKey_infers_caller_user_name)
+	ts.Run(IAMUpdateAccessKey_inferred_user_name_scoped_to_caller)
 	ts.Run(IAMUpdateAccessKey_invalid_user_name)
 	ts.Run(IAMUpdateAccessKey_long_user_name)
 	ts.Run(IAMUpdateAccessKey_missing_access_key_id)
@@ -1267,6 +1271,8 @@ func TestIAMUpdateAccessKey(ts *TestState) {
 
 func TestIAMDeleteAccessKey(ts *TestState) {
 	ts.Run(IAMDeleteAccessKey_missing_user_name)
+	ts.Run(IAMDeleteAccessKey_infers_caller_user_name)
+	ts.Run(IAMDeleteAccessKey_inferred_user_name_scoped_to_caller)
 	ts.Run(IAMDeleteAccessKey_invalid_user_name)
 	ts.Run(IAMDeleteAccessKey_long_user_name)
 	ts.Run(IAMDeleteAccessKey_missing_access_key_id)
@@ -1289,6 +1295,7 @@ func TestIAMGetAccessKeyLastUsed(ts *TestState) {
 
 func TestIAMListAccessKeys(ts *TestState) {
 	ts.Run(IAMListAccessKeys_missing_user_name)
+	ts.Run(IAMListAccessKeys_infers_caller_user_name)
 	ts.Run(IAMListAccessKeys_invalid_user_name)
 	ts.Run(IAMListAccessKeys_long_user_name)
 	ts.Run(IAMListAccessKeys_invalid_max_items)
@@ -2327,12 +2334,16 @@ func GetIntTests() IntTests {
 		"IAMListUserTags_success":                                                          IAMListUserTags_success,
 		"IAMListUserTags_pagination":                                                       IAMListUserTags_pagination,
 		"IAMCreateAccessKey_missing_user_name":                                             IAMCreateAccessKey_missing_user_name,
+		"IAMCreateAccessKey_empty_user_name":                                               IAMCreateAccessKey_empty_user_name,
+		"IAMCreateAccessKey_infers_caller_user_name":                                       IAMCreateAccessKey_infers_caller_user_name,
 		"IAMCreateAccessKey_invalid_user_name":                                             IAMCreateAccessKey_invalid_user_name,
 		"IAMCreateAccessKey_long_user_name":                                                IAMCreateAccessKey_long_user_name,
 		"IAMCreateAccessKey_non_existing_user":                                             IAMCreateAccessKey_non_existing_user,
 		"IAMCreateAccessKey_limit_exceeded":                                                IAMCreateAccessKey_limit_exceeded,
 		"IAMCreateAccessKey_success":                                                       IAMCreateAccessKey_success,
 		"IAMUpdateAccessKey_missing_user_name":                                             IAMUpdateAccessKey_missing_user_name,
+		"IAMUpdateAccessKey_infers_caller_user_name":                                       IAMUpdateAccessKey_infers_caller_user_name,
+		"IAMUpdateAccessKey_inferred_user_name_scoped_to_caller":                           IAMUpdateAccessKey_inferred_user_name_scoped_to_caller,
 		"IAMUpdateAccessKey_invalid_user_name":                                             IAMUpdateAccessKey_invalid_user_name,
 		"IAMUpdateAccessKey_long_user_name":                                                IAMUpdateAccessKey_long_user_name,
 		"IAMUpdateAccessKey_missing_access_key_id":                                         IAMUpdateAccessKey_missing_access_key_id,
@@ -2345,6 +2356,8 @@ func GetIntTests() IntTests {
 		"IAMUpdateAccessKey_non_existing_access_key":                                       IAMUpdateAccessKey_non_existing_access_key,
 		"IAMUpdateAccessKey_success":                                                       IAMUpdateAccessKey_success,
 		"IAMDeleteAccessKey_missing_user_name":                                             IAMDeleteAccessKey_missing_user_name,
+		"IAMDeleteAccessKey_infers_caller_user_name":                                       IAMDeleteAccessKey_infers_caller_user_name,
+		"IAMDeleteAccessKey_inferred_user_name_scoped_to_caller":                           IAMDeleteAccessKey_inferred_user_name_scoped_to_caller,
 		"IAMDeleteAccessKey_invalid_user_name":                                             IAMDeleteAccessKey_invalid_user_name,
 		"IAMDeleteAccessKey_long_user_name":                                                IAMDeleteAccessKey_long_user_name,
 		"IAMDeleteAccessKey_missing_access_key_id":                                         IAMDeleteAccessKey_missing_access_key_id,
@@ -2361,6 +2374,7 @@ func GetIntTests() IntTests {
 		"IAMGetAccessKeyLastUsed_non_existing_access_key":                                  IAMGetAccessKeyLastUsed_non_existing_access_key,
 		"IAMGetAccessKeyLastUsed_success":                                                  IAMGetAccessKeyLastUsed_success,
 		"IAMListAccessKeys_missing_user_name":                                              IAMListAccessKeys_missing_user_name,
+		"IAMListAccessKeys_infers_caller_user_name":                                        IAMListAccessKeys_infers_caller_user_name,
 		"IAMListAccessKeys_invalid_user_name":                                              IAMListAccessKeys_invalid_user_name,
 		"IAMListAccessKeys_long_user_name":                                                 IAMListAccessKeys_long_user_name,
 		"IAMListAccessKeys_invalid_max_items":                                              IAMListAccessKeys_invalid_max_items,

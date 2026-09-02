@@ -17,8 +17,11 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
@@ -29,11 +32,57 @@ import (
 
 var integrationIAMAccessKeyIDPattern = regexp.MustCompile(`^AKIA[A-Z2-7]{17}$`)
 
+// IAMCreateAccessKey_missing_user_name calls as root, which is a configured
+// credential rather than a stored IAM user and so has no user name to infer
+// — unlike a caller signing with an IAM user's own access key, covered by
+// IAMCreateAccessKey_infers_caller_user_name.
 func IAMCreateAccessKey_missing_user_name(s *S3Conf) error {
 	testName := "IAMCreateAccessKey_missing_user_name"
 	return iamActionHandler(s, testName, func(client *iam.Client) error {
 		_, err := createIAMAccessKey(client, &iam.CreateAccessKeyInput{})
-		return checkIAMApiErr(err, iamerr.MissingParameter("UserName"))
+		return checkIAMApiErr(err, iamerr.MustSpecifyUserName())
+	})
+}
+
+// IAMCreateAccessKey_empty_user_name confirms only an entirely absent
+// UserName is inferred: sending the parameter with an empty value stays a
+// validation failure rather than silently creating a key for the caller.
+func IAMCreateAccessKey_empty_user_name(s *S3Conf) error {
+	testName := "IAMCreateAccessKey_empty_user_name"
+	body := []byte(url.Values{
+		"Action":   {"CreateAccessKey"},
+		"Version":  {"2010-05-08"},
+		"UserName": {""},
+	}.Encode())
+	return authHandler(s, &authConfig{
+		testName: testName,
+		method:   http.MethodPost,
+		service:  "iam",
+		region:   iamAuthRegion,
+		body:     body,
+		date:     time.Now().UTC(),
+		headers: map[string]string{
+			"Content-Type": "application/x-www-form-urlencoded",
+		},
+	}, func(req *http.Request) error {
+		return checkIAMAuthRequest(s, req, iamerr.InvalidUserName("userName"))
+	})
+}
+
+func IAMCreateAccessKey_infers_caller_user_name(s *S3Conf) error {
+	testName := "IAMCreateAccessKey_infers_caller_user_name"
+	return iamActionHandler(s, testName, func(root *iam.Client) error {
+		caller, cleanup, err := newAccessKeyCaller(root, s, "iam:CreateAccessKey")
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		out, err := createIAMAccessKey(caller.client, &iam.CreateAccessKeyInput{})
+		if err != nil {
+			return err
+		}
+		return checkCreateAccessKeyOutput(out, caller.userName)
 	})
 }
 
@@ -148,4 +197,21 @@ func checkCreateAccessKeyOutput(out *iam.CreateAccessKeyOutput, userName string)
 	}
 
 	return nil
+}
+
+// newAccessKeyCaller creates an IAM user with one access key and an inline
+// policy granting actions on its own user ARN, plus an *iam.Client signing
+// as that user — the fixture every "UserName inferred from the calling
+// access key" test in the access-key files needs. Scoping the grant to the
+// caller's own ARN (rather than "*") means a passing test also proves the
+// inferred name reaches the resource-level authorization check, not just
+// the controller.
+func newAccessKeyCaller(root *iam.Client, s *S3Conf, actions ...string) (*accessControlCaller, func(), error) {
+	userName := newIAMUserName()
+	grant := policyDoc(accessStatement{
+		Effect:   "Allow",
+		Action:   actions,
+		Resource: "arn:aws:iam::" + testAccountID + ":user/" + userName,
+	})
+	return newAccessControlCaller(root, s, userName, map[string]string{"self-access-keys": grant})
 }

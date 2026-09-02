@@ -170,11 +170,10 @@ func resourceForAction(ctx fiber.Ctx, store iamutil.IdentityStore, action string
 	switch action {
 	case "CreateUser":
 		return newUserResource(ctx), nil
-	case "GetUser":
-		return getUserResource(ctx, store)
-	case "DeleteUser", "UpdateUser", "CreateAccessKey", "UpdateAccessKey", "DeleteAccessKey",
-		"ListAccessKeys", "PutUserPolicy", "GetUserPolicy", "DeleteUserPolicy", "ListUserPolicies",
-		"TagUser", "UntagUser", "ListUserTags":
+	case "GetUser", "CreateAccessKey", "UpdateAccessKey", "DeleteAccessKey", "ListAccessKeys":
+		return callerOrNamedUserResource(ctx, store)
+	case "DeleteUser", "UpdateUser", "PutUserPolicy", "GetUserPolicy", "DeleteUserPolicy",
+		"ListUserPolicies", "TagUser", "UntagUser", "ListUserTags":
 		return existingUserResource(ctx, store)
 	case "GetAccessKeyLastUsed":
 		return accessKeyOwnerResource(ctx, store)
@@ -231,13 +230,14 @@ func existingUserResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, [
 	return user.Arn, user.Tags
 }
 
-// getUserResource resolves GetUser's target: the named user's stored Arn and
-// Tags, or — when UserName is omitted, matching the controller's (and real
-// IAM's) "look up the caller's own identity" behavior — the calling user's
-// own Arn and Tags. A session (assumed role) has no self IAM user to
-// resolve, so it falls back to ("", nil), the same lookup-failure fallback
-// used elsewhere.
-func getUserResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag) {
+// callerOrNamedUserResource resolves the target of the actions that accept
+// an omitted UserName — GetUser and the four access-key APIs: the named
+// user's stored Arn and Tags, or, when UserName is left out, the calling
+// user's own Arn and Tags, matching the controllers' (and real IAM's)
+// "operate on the caller's own identity" behavior. A caller with no IAM
+// user of its own (a session, or root) has nothing to resolve, so it falls
+// back to ("", nil), the same lookup-failure fallback used elsewhere.
+func callerOrNamedUserResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag) {
 	userName, ok := iamutil.RequestParam(ctx, "UserName")
 	if !ok || userName == "" {
 		identity, _ := httpctx.ContextKeyCallerIdentity.Get(ctx).(types.Identity)

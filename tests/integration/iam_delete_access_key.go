@@ -16,6 +16,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,14 +24,89 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/versity/versitygw/iamapi/iamerr"
 )
 
+// IAMDeleteAccessKey_missing_user_name calls as root, which is a configured
+// credential rather than a stored IAM user and so has no user name to infer
+// — unlike a caller signing with an IAM user's own access key, covered by
+// IAMDeleteAccessKey_infers_caller_user_name.
 func IAMDeleteAccessKey_missing_user_name(s *S3Conf) error {
 	testName := "IAMDeleteAccessKey_missing_user_name"
 	return iamActionHandler(s, testName, func(client *iam.Client) error {
 		err := deleteIAMAccessKey(client, "", genRandString(20))
-		return checkIAMApiErr(err, iamerr.MissingParameter("UserName"))
+		return checkIAMApiErr(err, iamerr.MustSpecifyUserName())
+	})
+}
+
+func IAMDeleteAccessKey_infers_caller_user_name(s *S3Conf) error {
+	testName := "IAMDeleteAccessKey_infers_caller_user_name"
+	return iamActionHandler(s, testName, func(root *iam.Client) error {
+		caller, cleanup, err := newAccessKeyCaller(root, s, "iam:DeleteAccessKey")
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		created, err := createIAMAccessKey(root, &iam.CreateAccessKeyInput{UserName: &caller.userName})
+		if err != nil {
+			return err
+		}
+		accessKeyID := aws.ToString(created.AccessKey.AccessKeyId)
+
+		if err := deleteIAMAccessKey(caller.client, "", accessKeyID); err != nil {
+			return err
+		}
+
+		listOut, err := listIAMAccessKeys(root, &iam.ListAccessKeysInput{UserName: &caller.userName})
+		if err != nil {
+			return err
+		}
+		for _, key := range listOut.AccessKeyMetadata {
+			if aws.ToString(key.AccessKeyId) == accessKeyID {
+				return fmt.Errorf("expected access key %q to be deleted", accessKeyID)
+			}
+		}
+		return nil
+	})
+}
+
+// IAMDeleteAccessKey_inferred_user_name_scoped_to_caller confirms the
+// inferred user name is the caller's own and nothing else: another user's
+// access key is simply not found, rather than being deleted.
+func IAMDeleteAccessKey_inferred_user_name_scoped_to_caller(s *S3Conf) error {
+	testName := "IAMDeleteAccessKey_inferred_user_name_scoped_to_caller"
+	return iamActionHandler(s, testName, func(root *iam.Client) error {
+		caller, cleanup, err := newAccessKeyCaller(root, s, "iam:DeleteAccessKey")
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		otherName := newIAMUserName()
+		if _, err := createIAMUser(root, &iam.CreateUserInput{UserName: &otherName}); err != nil {
+			return err
+		}
+		defer deleteIAMUserAndAccessKeys(root, otherName)
+
+		otherKey, err := createIAMAccessKey(root, &iam.CreateAccessKeyInput{UserName: &otherName})
+		if err != nil {
+			return err
+		}
+		otherKeyID := aws.ToString(otherKey.AccessKey.AccessKeyId)
+
+		err = deleteIAMAccessKey(caller.client, "", otherKeyID)
+		if err := checkIAMApiErr(err, iamerr.NoSuchEntityAccessKey(otherKeyID)); err != nil {
+			return err
+		}
+
+		listOut, err := listIAMAccessKeys(root, &iam.ListAccessKeysInput{UserName: &otherName})
+		if err != nil {
+			return err
+		}
+		return checkIAMListAccessKeys(listOut.AccessKeyMetadata, otherName,
+			map[string]iamtypes.StatusType{otherKeyID: iamtypes.StatusTypeActive})
 	})
 }
 

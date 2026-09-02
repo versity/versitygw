@@ -398,6 +398,30 @@ func TestVerifyIAMPolicyGetUserSelfLookupResourceScoped(t *testing.T) {
 		"User: arn:aws:iam::000000000000:user/ivy is not authorized to perform: iam:GetUser because no identity-based policy allows the iam:GetUser action")
 }
 
+// TestVerifyIAMPolicyAccessKeyImplicitUserNameResourceScoped covers the
+// resource-level check for the access-key actions in their omitted-UserName
+// form: with no UserName to resolve, the target must still be the caller's
+// own user ARN, so a policy scoped to that ARN authorizes the call and one
+// scoped to somebody else's does not.
+func TestVerifyIAMPolicyAccessKeyImplicitUserNameResourceScoped(t *testing.T) {
+	server := newIAMControllerTestServer(t)
+
+	rosaAccessKeyID, rosaSecret := createTestUserWithAccessKey(t, server, "rosa",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListAccessKeys","Resource":"arn:aws:iam::000000000000:user/rosa"}]}`)
+
+	resp := doSignedIAMActionAs(t, server, rosaAccessKeyID, rosaSecret, "", url.Values{"Action": {"ListAccessKeys"}})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("ListAccessKeys(self) status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+	}
+
+	samAccessKeyID, samSecret := createTestUserWithAccessKey(t, server, "sam",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"iam:ListAccessKeys","Resource":"arn:aws:iam::000000000000:user/rosa"}]}`)
+
+	resp = doSignedIAMActionAs(t, server, samAccessKeyID, samSecret, "", url.Values{"Action": {"ListAccessKeys"}})
+	requireIAMError(t, resp, http.StatusForbidden, "Sender", "AccessDenied",
+		"User: arn:aws:iam::000000000000:user/sam is not authorized to perform: iam:ListAccessKeys because no identity-based policy allows the iam:ListAccessKeys action")
+}
+
 // TestVerifyIAMPolicyGetAccessKeyLastUsedResourceScoped guards against
 // GetAccessKeyLastUsed (which carries only AccessKeyId, never UserName)
 // falling back to "*" instead of resolving the queried key's owning user:
