@@ -584,6 +584,7 @@ func (c *Config) IamOpts() *auth.Opts {
 		StandaloneDefaultUserID:     c.StandaloneDefaultUserID,
 		StandaloneDefaultGroupID:    c.StandaloneDefaultGroupID,
 		StandaloneDefaultProjectID:  c.StandaloneDefaultProjectID,
+		StandaloneRegion:            c.Region,
 	}
 }
 

@@ -170,11 +170,18 @@ func (c *IAMCache) GetUserAccount(access string) (Account, error) {
 	return a, nil
 }
 
-// GetUserAccountFresh reads the account straight from the backing
-// service, skipping this cache, and refreshes the cached entry.
-// Long-lived flows that need a revocation to take effect
-// immediately, rather than after the cache TTL, can use it to
-// observe the backing store state.
+// ResolveAccounts returns the subset of accessKeyIDs that do not exist. It
+// loops over the cache's own GetUserAccount so lookups benefit from caching
+// the same way a single-account check would.
+func (c *IAMCache) ResolveAccounts(accessKeyIDs []string) ([]string, error) {
+	return resolveAccountsByLookup(accessKeyIDs, c.GetUserAccount)
+}
+
+// GetUserAccountFresh bypasses the in-memory cache and fetches the
+// account directly from the underlying IAM service, then refreshes
+// the cached entry with the result. This gives callers that need
+// revocation to take effect immediately (rather than after the
+// cache TTL) a way to observe the backing store state.
 func (c *IAMCache) GetUserAccountFresh(access string) (Account, error) {
 	a, err := c.service.GetUserAccount(access)
 	if err != nil {
@@ -183,13 +190,6 @@ func (c *IAMCache) GetUserAccountFresh(access string) (Account, error) {
 
 	c.iamcache.set(access, a)
 	return a, nil
-}
-
-// ResolveAccounts returns the subset of accessKeyIDs that do not exist. It
-// loops over the cache's own GetUserAccount so lookups benefit from caching
-// the same way a single-account check would.
-func (c *IAMCache) ResolveAccounts(accessKeyIDs []string) ([]string, error) {
-	return resolveAccountsByLookup(accessKeyIDs, c.GetUserAccount)
 }
 
 // DeleteUserAccount deletes account from IAM service and cache
