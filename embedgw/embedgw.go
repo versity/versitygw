@@ -347,14 +347,16 @@ type Config struct {
 	// are independent and can be enabled simultaneously in any combination.
 	// All are optional; omit or leave empty to disable that output.
 
-	// AccessLog is the file path for S3 request access logs in the AWS S3
+	// AccessLog is the file path or stream name (stdout, stderr, or - for
+	// stdout) for S3 request access logs in the AWS S3
 	// access log format. Use absolute paths; relative paths may break if the
 	// server changes its working directory. Empty disables file logging.
 	AccessLog string
 	// LogWebhookURL is an HTTP(S) URL that receives S3 access log entries as
 	// JSON-encoded POST requests. Can be set alongside AccessLog.
 	LogWebhookURL string
-	// AdminLogFile is the file path for admin API request logs.
+	// AdminLogFile is the file path or stream name (stdout, stderr, or - for
+	// stdout) for admin API request logs.
 	AdminLogFile string
 
 	// Metrics

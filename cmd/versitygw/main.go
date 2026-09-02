@@ -442,13 +442,13 @@ func initFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "access-log",
-			Usage:       "enable server access logging to specified file",
+			Usage:       "enable server access logging to specified file, stdout, stderr, or - for stdout",
 			EnvVars:     []string{"LOGFILE", "VGW_ACCESS_LOG"},
 			Destination: &accessLog,
 		},
 		&cli.StringFlag{
 			Name:        "admin-access-log",
-			Usage:       "enable admin server access logging to specified file",
+			Usage:       "enable admin server access logging to specified file, stdout, stderr, or - for stdout",
 			EnvVars:     []string{"LOGFILE", "VGW_ADMIN_ACCESS_LOG"},
 			Destination: &adminLogFile,
 		},
