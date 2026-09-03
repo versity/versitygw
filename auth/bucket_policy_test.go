@@ -98,7 +98,7 @@ func TestBucketPolicyDecision_Condition(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			decision, _, err := verifyBucketPolicy([]byte(tt.policy), "someaccess", "mybucket", tt.object, tt.condCtx, nil, tt.action)
+			decision, _, err := verifyBucketPolicy([]byte(tt.policy), Account{Access: "someaccess"}, "mybucket", tt.object, tt.condCtx, nil, tt.action)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, decision)
 		})
@@ -115,7 +115,7 @@ func TestBucketPolicyDecision_UnevaluableConditionFailsClosed(t *testing.T) {
 		"Action":"s3:GetObject","Resource":"arn:aws:s3:::mybucket/*",
 		"Condition":{"SomeFutureOperator":{"aws:UserAgent":"good-agent"}}}]}`
 
-	decision, _, err := verifyBucketPolicy([]byte(policy), "someaccess", "mybucket", "key", nil, nil, GetObjectAction)
+	decision, _, err := verifyBucketPolicy([]byte(policy), Account{Access: "someaccess"}, "mybucket", "key", nil, nil, GetObjectAction)
 	assert.NoError(t, err)
 	assert.Equal(t, policyDecisionDeny, decision)
 }

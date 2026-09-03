@@ -22,6 +22,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/iamapi/internal/iammiddleware"
+	"github.com/versity/versitygw/iamapi/internal/iamutil"
 	"github.com/versity/versitygw/iamapi/policy"
 	"github.com/versity/versitygw/iamapi/types"
 	"github.com/versity/versitygw/internal/sigv4auth"
@@ -38,6 +39,7 @@ func (p *PrivateAPI) handleVersion(ctx fiber.Ctx) error {
 		Protocol:      ProtocolVersion,
 		MinClient:     MinClientProtocol,
 		ServerVersion: p.serverVersion,
+		AccountID:     iamutil.DefaultAccountID,
 	})
 }
 
@@ -47,14 +49,25 @@ func (p *PrivateAPI) handleDeriveSigningKey(ctx fiber.Ctx) error {
 		return errMalformedRequestBody
 	}
 
-	_, secret, err := resolvePrivateIdentity(ctx.Context(), p.store, req.AccessKeyID, req.SessionToken)
+	identity, secret, err := resolvePrivateIdentity(ctx.Context(), p.store, req.AccessKeyID, req.SessionToken)
 	if err != nil {
 		return mapResolveError(err)
 	}
 
 	derivedKey := sigv4auth.DeriveKey(secret, req.Date, req.Region, req.Service)
 
-	return ctx.JSON(DeriveSigningKeyResponse{DerivedKey: derivedKey})
+	resp := DeriveSigningKeyResponse{
+		DerivedKey:   derivedKey,
+		PrincipalArn: iammiddleware.CallerArn(*identity),
+	}
+	// The role ARN comes from the session rather than from the role the
+	// store holds now: a session outliving its role keeps authenticating,
+	// and it still belongs to the role it was minted against.
+	if identity.Session != nil {
+		resp.RoleArn = identity.Session.RoleArn
+	}
+
+	return ctx.JSON(resp)
 }
 
 // recordDataPlaneUsage records this S3 request as a use of the credential
@@ -118,6 +131,32 @@ func (p *PrivateAPI) handleResolveIdentity(ctx fiber.Ctx) error {
 	}
 
 	return ctx.JSON(ResolveIdentityResponse{Identities: identities})
+}
+
+// handleResolvePrincipals answers, for each string a bucket policy names as
+// a Principal, whether it resolves to something that exists — reporting only
+// the ones that do not, so a valid policy's principals disclose nothing.
+func (p *PrivateAPI) handleResolvePrincipals(ctx fiber.Ctx) error {
+	var req ResolvePrincipalsRequest
+	if err := json.Unmarshal(ctx.Body(), &req); err != nil {
+		return errMalformedRequestBody
+	}
+
+	invalid := []string{}
+	for _, principal := range req.Principals {
+		resolves, err := principalResolves(ctx.Context(), p.store, iamutil.DefaultAccountID, principal)
+		if err != nil {
+			// A store fault, not a verdict on the principal — errorHandler
+			// renders it as a 500 so the gateway reports the service as
+			// broken rather than the policy as malformed.
+			return err
+		}
+		if !resolves {
+			invalid = append(invalid, principal)
+		}
+	}
+
+	return ctx.JSON(ResolvePrincipalsResponse{Invalid: invalid})
 }
 
 // identityKindWireValue converts identityKind to its wire representation.

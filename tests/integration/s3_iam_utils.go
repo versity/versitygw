@@ -227,14 +227,14 @@ func putBucketPolicyDoc(s *S3Conf, bucket string, statements ...bucketStatement)
 // the difference is Principal, which bucket policies require and identity
 // policies forbid.
 //
-// Principal is matched against the caller's raw access key by this gateway
-// (auth.Principals.Contains) — deliberately not against an ARN, for
-// compatibility with the non-IAM backends that have no ARNs at all. A
-// long-term user is therefore named by its AKIA… access key. An assumed-role
-// session cannot be named at all: its ASIA… key is ephemeral, so
-// auth.IAMService.ResolveAccounts rejects it outright rather than let a bucket
-// policy come to reference a principal that stops existing. Session tests
-// use "*" for that reason.
+// Under the standalone IAM service — the only backend these groups run
+// against — Principal names an AWS-style ARN, the way real S3 does
+// (auth.Principals.matchFor): a user by its own ARN, a role by its role ARN,
+// which covers every session of it, and one session by its
+// arn:aws:sts::…:assumed-role/<role>/<session> ARN. The account root ARN and
+// the bare account id name the account, which delegates rather than grants.
+// The gateway's other IAM backends have no ARNs at all and keep naming
+// principals by access key id; those are the Access_Control tests, not these.
 type bucketStatement struct {
 	Sid       string          `json:"Sid,omitempty"`
 	Effect    string          `json:"Effect"`
@@ -545,6 +545,39 @@ func newGitHubSession(root *iam.Client, s *S3Conf, rolePolicies map[string]strin
 	return principal, cleanup, nil
 }
 
+// anotherSessionOfRole mints a second, independent session of a role a test
+// already holds one of — the fixture for the difference between a bucket
+// policy naming a role, which covers every session of it, and one naming a
+// single session, which covers only that one.
+func anotherSessionOfRole(s *S3Conf, roleName string) (*s3IAMPrincipal, error) {
+	token, ok := gitHubOIDCToken()
+	if !ok {
+		return nil, fmt.Errorf("no GitHub OIDC token available")
+	}
+
+	sessionName := "s3-sess-" + genRandString(8)
+	out, err := assumeRoleWithWebIdentitySessionPolicy(s, roleArnFor(roleName), sessionName, token, "")
+	if err != nil {
+		return nil, fmt.Errorf("AssumeRoleWithWebIdentity: %w", err)
+	}
+
+	access := aws.ToString(out.Credentials.AccessKeyId)
+	secret := aws.ToString(out.Credentials.SecretAccessKey)
+	sessionToken := aws.ToString(out.Credentials.SessionToken)
+
+	conf := *s
+	conf.awsID = access
+	conf.awsSecret = secret
+
+	return &s3IAMPrincipal{
+		name:         roleName,
+		arn:          aws.ToString(out.AssumedRoleUser.Arn),
+		conf:         conf,
+		client:       s3ClientWithSessionCreds(s, access, secret, sessionToken),
+		sessionToken: sessionToken,
+	}, nil
+}
+
 // assumeRoleWithWebIdentitySessionPolicy is assumeRoleWithWebIdentity with
 // the optional inline session-policy parameter, which no other test in this
 // package needs.
@@ -567,6 +600,24 @@ func assumeRoleWithWebIdentitySessionPolicy(s *S3Conf, roleArn, sessionName, tok
 // account.
 func roleArnFor(roleName string) string {
 	return "arn:aws:iam::" + testAccountID + ":role/" + roleName
+}
+
+// userArnFor and assumedRoleArnFor build the remaining principal ARNs a
+// bucket policy can name in this gateway's single fixed account.
+// assumedRoleArnFor deliberately takes the role's plain name: unlike a role's
+// own ARN, an assumed-role ARN never carries the role's IAM path.
+func userArnFor(userName string) string {
+	return "arn:aws:iam::" + testAccountID + ":user/" + userName
+}
+
+func assumedRoleArnFor(roleName, sessionName string) string {
+	return "arn:aws:sts::" + testAccountID + ":assumed-role/" + roleName + "/" + sessionName
+}
+
+// accountArn is the principal naming the account itself — the delegating
+// form, which grants nothing on its own but denies everything under Deny.
+func accountArn() string {
+	return "arn:aws:iam::" + testAccountID + ":root"
 }
 
 // sessionNameFor recovers the session name from an assumed-role ARN, whose

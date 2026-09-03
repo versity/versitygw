@@ -1745,8 +1745,16 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_condition_on_deny_statement)
 	ts.Run(S3IAMAccessControl_condition_multiple_keys_anded)
 	ts.Run(S3IAMAccessControl_inactive_and_deleted_credentials)
-	ts.Run(S3IAMAccessControl_bucket_policy_unknown_principal_rejected)
 	ts.Run(S3IAMAccessControl_access_key_last_used_records_s3)
+	ts.Run(S3IAMPrincipal_accepted_forms)
+	ts.Run(S3IAMPrincipal_rejected_forms)
+	ts.Run(S3IAMPrincipal_empty_forms)
+	ts.Run(S3IAMPrincipal_user_arn_names_only_that_user)
+	ts.Run(S3IAMPrincipal_pathed_user_arn)
+	ts.Run(S3IAMPrincipal_account_delegates_but_does_not_grant)
+	ts.Run(S3IAMPrincipal_role_arn_does_not_match_a_user)
+	ts.Run(S3IAMPrincipal_deleted_user_arn_rejected)
+	ts.Run(S3IAMPrincipal_wildcard_grants_everyone)
 }
 
 // TestS3IAMSessionAccessControl is the one group the OIDC workflow runs, so
@@ -1765,6 +1773,10 @@ func TestS3IAMSessionAccessControl(ts *TestState) {
 	ts.Run(S3IAMSession_role_policy_deny_overrides_session_allow)
 	ts.Run(S3IAMSession_session_policy_without_role_policy_denied)
 	ts.Run(S3IAMSession_bucket_policy_allows_without_role_policy)
+	ts.Run(S3IAMSession_bucket_policy_role_arn_covers_every_session)
+	ts.Run(S3IAMSession_bucket_policy_names_one_session)
+	ts.Run(S3IAMSession_bucket_policy_account_delegates)
+	ts.Run(S3IAMSession_bucket_policy_session_principal_forms)
 	ts.Run(S3IAMSession_session_policy_filters_bucket_policy_grant)
 	ts.Run(S3IAMSession_bucket_policy_deny_overrides_role_allow)
 	ts.Run(S3IAMSession_missing_and_wrong_security_token)
@@ -2190,7 +2202,19 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_condition_on_deny_statement":                                   S3IAMAccessControl_condition_on_deny_statement,
 		"S3IAMAccessControl_condition_multiple_keys_anded":                                 S3IAMAccessControl_condition_multiple_keys_anded,
 		"S3IAMAccessControl_inactive_and_deleted_credentials":                              S3IAMAccessControl_inactive_and_deleted_credentials,
-		"S3IAMAccessControl_bucket_policy_unknown_principal_rejected":                      S3IAMAccessControl_bucket_policy_unknown_principal_rejected,
+		"S3IAMSession_bucket_policy_role_arn_covers_every_session":                         S3IAMSession_bucket_policy_role_arn_covers_every_session,
+		"S3IAMSession_bucket_policy_names_one_session":                                     S3IAMSession_bucket_policy_names_one_session,
+		"S3IAMSession_bucket_policy_account_delegates":                                     S3IAMSession_bucket_policy_account_delegates,
+		"S3IAMSession_bucket_policy_session_principal_forms":                               S3IAMSession_bucket_policy_session_principal_forms,
+		"S3IAMPrincipal_accepted_forms":                                                    S3IAMPrincipal_accepted_forms,
+		"S3IAMPrincipal_rejected_forms":                                                    S3IAMPrincipal_rejected_forms,
+		"S3IAMPrincipal_empty_forms":                                                       S3IAMPrincipal_empty_forms,
+		"S3IAMPrincipal_user_arn_names_only_that_user":                                     S3IAMPrincipal_user_arn_names_only_that_user,
+		"S3IAMPrincipal_pathed_user_arn":                                                   S3IAMPrincipal_pathed_user_arn,
+		"S3IAMPrincipal_account_delegates_but_does_not_grant":                              S3IAMPrincipal_account_delegates_but_does_not_grant,
+		"S3IAMPrincipal_role_arn_does_not_match_a_user":                                    S3IAMPrincipal_role_arn_does_not_match_a_user,
+		"S3IAMPrincipal_deleted_user_arn_rejected":                                         S3IAMPrincipal_deleted_user_arn_rejected,
+		"S3IAMPrincipal_wildcard_grants_everyone":                                          S3IAMPrincipal_wildcard_grants_everyone,
 		"S3IAMAccessControl_access_key_last_used_records_s3":                               S3IAMAccessControl_access_key_last_used_records_s3,
 		"Authentication_invalid_auth_header":                                               Authentication_invalid_auth_header,
 		"Authentication_unsupported_signature_version":                                     Authentication_unsupported_signature_version,

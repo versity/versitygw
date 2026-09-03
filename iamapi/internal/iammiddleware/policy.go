@@ -406,17 +406,23 @@ func requestConditionContext(ctx fiber.Ctx, identity types.Identity, action stri
 // though it authenticates as root.
 func IdentityConditionContext(identity types.Identity) map[string][]string {
 	condCtx := map[string][]string{}
-	if arn := CallerArn(identity); arn != "" {
+	if arn := PrincipalConditionArn(identity); arn != "" {
 		condCtx["aws:PrincipalArn"] = []string{arn}
-		condCtx["aws:PrincipalAccount"] = []string{iamutil.DefaultAccountID}
 	}
+	// aws:PrincipalAccount describes the caller's account rather than the
+	// caller, so it is set for any non-root identity — deliberately not
+	// keyed off aws:PrincipalArn above, which answers a different question
+	// and could in principle come back empty for an identity that still has
+	// an account.
 	switch {
 	case identity.User != nil:
+		condCtx["aws:PrincipalAccount"] = []string{iamutil.DefaultAccountID}
 		condCtx["aws:PrincipalType"] = []string{"User"}
 		condCtx["aws:username"] = []string{identity.User.UserName}
 		condCtx["aws:userid"] = []string{identity.User.UserID}
 		addPrincipalTagContext(condCtx, identity.User.Tags)
 	case identity.Session != nil:
+		condCtx["aws:PrincipalAccount"] = []string{iamutil.DefaultAccountID}
 		condCtx["aws:PrincipalType"] = []string{"AssumedRole"}
 		condCtx["aws:userid"] = []string{identity.Session.RoleID + ":" + identity.Session.RoleSessionName}
 		if identity.Role != nil {
@@ -491,6 +497,22 @@ func addTagKeysContext(condCtx map[string][]string, ctx fiber.Ctx) {
 func CallerArn(identity types.Identity) string {
 	if identity.Session != nil {
 		return iamutil.BuildAssumedRoleArn(iamutil.DefaultAccountID, identity.Session.RoleName, identity.Session.RoleSessionName)
+	}
+	if identity.User != nil {
+		return identity.User.Arn
+	}
+	return ""
+}
+
+// PrincipalConditionArn identifies identity the way the aws:PrincipalArn
+// condition key does, which is not the way an error message does: for a
+// session it is the assumed *role's* ARN, not the session's own. A
+// Condition on aws:PrincipalArn therefore applies to every session of a
+// role and can never single one out — aws:userid, which carries
+// <role id>:<session name>, is the key that can.
+func PrincipalConditionArn(identity types.Identity) string {
+	if identity.Session != nil {
+		return identity.Session.RoleArn
 	}
 	if identity.User != nil {
 		return identity.User.Arn

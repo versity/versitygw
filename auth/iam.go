@@ -84,6 +84,21 @@ type Account struct {
 	// IAM backend nor echoed by the admin API.
 	SessionToken string `json:"-"`
 	IsSession    bool   `json:"-"`
+
+	// Arn and RoleArn name this account the way a bucket policy's Principal
+	// element does, and are set only by IAM backends whose identities have
+	// ARNs at all — currently just the standalone IAM service client. Arn is
+	// the caller's own ARN (an IAM user's, or a session's
+	// arn:aws:sts::…:assumed-role/<role>/<session>); RoleArn is the ARN of
+	// the role a session assumed, and is empty for everything else.
+	//
+	// Both are needed to match a session, because a Principal naming a role
+	// matches every session of that role while one naming a session matches
+	// only that session. When Arn is empty the gateway matches principals by
+	// access key id instead, which is what every other backend has always
+	// done — see Principals.matchFor.
+	Arn     string `json:"-"`
+	RoleArn string `json:"-"`
 }
 
 // String elides the two credential-bearing fields so an Account can't leak
@@ -91,8 +106,8 @@ type Account struct {
 // X-Amz-Security-Token *header*, which does nothing for a struct printed
 // after the token has been parsed out of it.
 func (a Account) String() string {
-	return fmt.Sprintf("Account{Access:%s, Secret:REDACTED, Role:%s, UserID:%d, GroupID:%d, ProjectID:%d, SessionToken:REDACTED, IsSession:%t}",
-		a.Access, a.Role, a.UserID, a.GroupID, a.ProjectID, a.IsSession)
+	return fmt.Sprintf("Account{Access:%s, Secret:REDACTED, Role:%s, UserID:%d, GroupID:%d, ProjectID:%d, SessionToken:REDACTED, IsSession:%t, Arn:%s, RoleArn:%s}",
+		a.Access, a.Role, a.UserID, a.GroupID, a.ProjectID, a.IsSession, a.Arn, a.RoleArn)
 }
 
 type ListUserAccountsResult struct {

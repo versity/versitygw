@@ -42,10 +42,11 @@ const (
 	// These are exported so auth.IAMServiceStandalone (the S3-side client)
 	// shares one source of truth for the routes rather than duplicating the
 	// literal path strings.
-	DerivePath          = "/private/derive-signing-key"
-	EvaluatePath        = "/private/evaluate-policy"
-	ResolveIdentityPath = "/private/resolve-identity"
-	VersionPath         = "/private/version"
+	DerivePath            = "/private/derive-signing-key"
+	EvaluatePath          = "/private/evaluate-policy"
+	ResolveIdentityPath   = "/private/resolve-identity"
+	ResolvePrincipalsPath = "/private/resolve-principals"
+	VersionPath           = "/private/version"
 
 	// ProtocolHeader carries the private protocol version each peer speaks.
 	// Both send it: the S3 gateway on every request, this service on every
@@ -152,6 +153,7 @@ func New(store storage.Storer, root iammiddleware.RootCredentials, opts ...Priva
 	app.Post(DerivePath, chainHandlers(rootAuth, p.handleDeriveSigningKey))
 	app.Post(EvaluatePath, chainHandlers(rootAuth, p.handleEvaluatePolicy))
 	app.Post(ResolveIdentityPath, chainHandlers(rootAuth, p.handleResolveIdentity))
+	app.Post(ResolvePrincipalsPath, chainHandlers(rootAuth, p.handleResolvePrincipals))
 
 	return p, nil
 }

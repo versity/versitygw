@@ -291,7 +291,7 @@ func verifyBypassGovernancePermission(ctx context.Context, be backend.Backend, i
 	case err != nil:
 		return err
 	default:
-		resourceDecision, _, err = verifyBucketPolicy(policy, acc.Access, bucket, key, condCtx, be.NormalizeObjectKey, BypassGovernanceRetentionAction)
+		resourceDecision, _, err = verifyBucketPolicy(policy, acc, bucket, key, condCtx, be.NormalizeObjectKey, BypassGovernanceRetentionAction)
 		if err != nil {
 			return err
 		}
@@ -300,7 +300,7 @@ func verifyBypassGovernancePermission(ctx context.Context, be backend.Backend, i
 	resourceArn := objectPolicyArn(bucket, key, be.NormalizeObjectKey)
 
 	if resourceDecision == policyDecisionDeny {
-		return s3err.GetExplicitDenyAccessErr(acc.Access, string(BypassGovernanceRetentionAction), resourceArn, "a resource-based policy")
+		return s3err.GetExplicitDenyAccessErr(principalName(acc), string(BypassGovernanceRetentionAction), resourceArn, "a resource-based policy")
 	}
 
 	pe, hasPolicyEvaluator := iam.(PolicyEvaluator)
@@ -340,7 +340,7 @@ func verifyBypassGovernancePermission(ctx context.Context, be backend.Backend, i
 	if identityDecision == policyDecisionDeny || sessionDenies {
 		principal := identity.PrincipalArn
 		if principal == "" {
-			principal = acc.Access
+			principal = principalName(acc)
 		}
 		return s3err.GetExplicitDenyAccessErr(principal, string(BypassGovernanceRetentionAction), resourceArn, "an identity-based policy")
 	}
@@ -351,7 +351,7 @@ func verifyBypassGovernancePermission(ctx context.Context, be backend.Backend, i
 
 	principal := identity.PrincipalArn
 	if principal == "" {
-		principal = acc.Access
+		principal = principalName(acc)
 	}
 	return s3err.GetImplicitDenyAccessErr(principal, string(BypassGovernanceRetentionAction), resourceArn)
 }

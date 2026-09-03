@@ -636,6 +636,24 @@ func TestPrivateAPIRejectsNonRootCredential(t *testing.T) {
 	}
 }
 
+// TestPrivateAPIEveryRouteRequiresRootCredential walks the whole route
+// table rather than one route: every endpoint here is root-signed by
+// construction, and the way that breaks is a new route registered without
+// the auth middleware wrapped around it.
+func TestPrivateAPIEveryRouteRequiresRootCredential(t *testing.T) {
+	p, store := newTestServer(t)
+	createTestUser(t, store, "alice", "AKIAALICE", "alicesecret", "")
+
+	for _, path := range []string{VersionPath, DerivePath, EvaluatePath, ResolveIdentityPath, ResolvePrincipalsPath} {
+		t.Run(path, func(t *testing.T) {
+			resp := doPrivateRequest(t, p, http.MethodPost, path, "AKIAALICE", "alicesecret", []byte("{}"))
+			if resp.StatusCode != http.StatusForbidden {
+				t.Errorf("status = %d, want %d; body=%s", resp.StatusCode, http.StatusForbidden, readBody(t, resp))
+			}
+		})
+	}
+}
+
 func TestPrivateAPIRejectsMalformedBody(t *testing.T) {
 	p, _ := newTestServer(t)
 
@@ -1019,4 +1037,198 @@ func createTestSessionForRole(t *testing.T, store storage.Storer, role *types.Ro
 		t.Fatalf("CreateSession: %v", err)
 	}
 	return session
+}
+
+// TestPrivateAPIDeriveSigningKeyPrincipalArn covers the identity a derived
+// key belongs to, which the S3 gateway matches bucket-policy principals
+// against: a user carries only its own ARN, while a session carries both its
+// assumed-role ARN and the role's, since a policy naming either matches it.
+func TestPrivateAPIDeriveSigningKeyPrincipalArn(t *testing.T) {
+	p, store := newTestServer(t)
+	createTestUser(t, store, "alice", "AKIAALICE", "alicesecret", "")
+	role := createTestRole(t, store, "testrole", "")
+	session := createTestSessionForRole(t, store, role, "ASIASESSION", "sessionsecret", "tok", "")
+
+	yyyymmdd := time.Now().UTC().Format(sigv4auth.YYYYMMDD)
+
+	for _, tc := range []struct {
+		name         string
+		req          DeriveSigningKeyRequest
+		principalArn string
+		roleArn      string
+	}{
+		{
+			name:         "user",
+			req:          DeriveSigningKeyRequest{AccessKeyID: "AKIAALICE"},
+			principalArn: iamutil.BuildUserArn(iamutil.DefaultAccountID, "/", "alice"),
+		},
+		{
+			name:         "session",
+			req:          DeriveSigningKeyRequest{AccessKeyID: session.AccessKeyId, SessionToken: "tok"},
+			principalArn: iamutil.BuildAssumedRoleArn(iamutil.DefaultAccountID, role.RoleName, session.RoleSessionName),
+			roleArn:      role.Arn,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.req.Date, tc.req.Region, tc.req.Service = yyyymmdd, "us-east-1", "s3"
+			body, _ := json.Marshal(tc.req)
+
+			resp := doPrivateRequest(t, p, http.MethodPost, DerivePath, testRoot.Access, testRoot.Secret, body)
+			raw := readBody(t, resp)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, body=%s", resp.StatusCode, raw)
+			}
+
+			var out DeriveSigningKeyResponse
+			if err := json.Unmarshal([]byte(raw), &out); err != nil {
+				t.Fatalf("unmarshal %s: %v", raw, err)
+			}
+			if len(out.DerivedKey) == 0 {
+				t.Error("DerivedKey is empty")
+			}
+			if out.PrincipalArn != tc.principalArn {
+				t.Errorf("PrincipalArn = %q, want %q", out.PrincipalArn, tc.principalArn)
+			}
+			if out.RoleArn != tc.roleArn {
+				t.Errorf("RoleArn = %q, want %q", out.RoleArn, tc.roleArn)
+			}
+		})
+	}
+}
+
+// TestPrivateAPIResolvePrincipals covers the write-time principal check
+// behind PutBucketPolicy across every form a bucket policy may name, and the
+// forms it may not. Only the unresolvable ones come back.
+func TestPrivateAPIResolvePrincipals(t *testing.T) {
+	p, store := newTestServer(t)
+	createTestUser(t, store, "alice", "AKIAALICE", "alicesecret", "")
+	createTestRole(t, store, "testrole", "")
+
+	acct := iamutil.DefaultAccountID
+	valid := []string{
+		acct,
+		"arn:aws:iam::" + acct + ":root",
+		"arn:aws:iam::" + acct + ":user/alice",
+		"arn:aws:iam::" + acct + ":role/testrole",
+		// The session name is not checked against anything: it names a
+		// session that need not exist when the policy is written.
+		"arn:aws:sts::" + acct + ":assumed-role/testrole/never-assumed",
+	}
+	// A session name must be one that could exist — the same grammar
+	// AssumeRoleWithWebIdentity enforces — or the statement could never
+	// match anything.
+	invalidSessions := []string{
+		"arn:aws:sts::" + acct + ":assumed-role/testrole/*",
+		"arn:aws:sts::" + acct + ":assumed-role/testrole/s",
+		"arn:aws:sts::" + acct + ":assumed-role/testrole/sess with spaces",
+		"arn:aws:sts::" + acct + ":assumed-role/testrole/" + strings.Repeat("s", 65),
+		// Role lookup is case-insensitive, so a wrong-case role name would
+		// otherwise resolve and then match no session.
+		"arn:aws:sts::" + acct + ":assumed-role/TESTROLE/sess",
+	}
+	invalid := []string{
+		"AKIAALICE",
+		"alice",
+		"arn:aws:iam::" + acct + ":user/bob",
+		"arn:aws:iam::" + acct + ":role/norole",
+		"arn:aws:iam::" + acct + ":user/ALICE",
+		"arn:aws:iam::" + acct + ":user/*",
+		"arn:aws:iam::" + acct + ":user/team/alice",
+		"arn:aws:iam::" + acct + ":group/admins",
+		"arn:aws:iam::" + acct + ":user/alice ",
+		"arn:aws:iam::111111111111:root",
+		"arn:aws:iam:us-east-1:" + acct + ":root",
+		"arn:aws-cn:iam::" + acct + ":root",
+		"arn:aws:sts::" + acct + ":assumed-role/norole/sess",
+		"arn:aws:sts::" + acct + ":assumed-role/testrole",
+		"arn:aws:sts::" + acct + ":assumed-role/testrole/a/b",
+		"arn:aws:sts::" + acct + ":federated-user/alice",
+		"arn:aws:s3:::mybucket",
+		"",
+	}
+	invalid = append(invalid, invalidSessions...)
+
+	body, _ := json.Marshal(ResolvePrincipalsRequest{Principals: append(append([]string{}, valid...), invalid...)})
+	resp := doPrivateRequest(t, p, http.MethodPost, ResolvePrincipalsPath, testRoot.Access, testRoot.Secret, body)
+	raw := readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", resp.StatusCode, raw)
+	}
+
+	var out ResolvePrincipalsResponse
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("unmarshal %s: %v", raw, err)
+	}
+
+	got := map[string]bool{}
+	for _, p := range out.Invalid {
+		got[p] = true
+	}
+	for _, p := range valid {
+		if got[p] {
+			t.Errorf("principal %q reported invalid, want it to resolve", p)
+		}
+	}
+	for _, p := range invalid {
+		if !got[p] {
+			t.Errorf("principal %q reported valid, want it rejected", p)
+		}
+	}
+}
+
+// TestPrivateAPIResolvePrincipalsPathedIdentity pins that a user's or role's
+// IAM path is part of the ARN naming it: the path-less form of a path-bearing
+// identity resolves to nothing, and the full form resolves.
+func TestPrivateAPIResolvePrincipalsPathedIdentity(t *testing.T) {
+	p, store := newTestServer(t)
+
+	acct := iamutil.DefaultAccountID
+	if _, err := store.CreateUser(context.Background(), types.User{
+		UserName:   "pathed",
+		Path:       "/team/sub/",
+		Arn:        iamutil.BuildUserArn(acct, "/team/sub/", "pathed"),
+		CreateDate: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	body, _ := json.Marshal(ResolvePrincipalsRequest{Principals: []string{
+		"arn:aws:iam::" + acct + ":user/team/sub/pathed",
+		"arn:aws:iam::" + acct + ":user/pathed",
+	}})
+	resp := doPrivateRequest(t, p, http.MethodPost, ResolvePrincipalsPath, testRoot.Access, testRoot.Secret, body)
+	raw := readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", resp.StatusCode, raw)
+	}
+
+	var out ResolvePrincipalsResponse
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("unmarshal %s: %v", raw, err)
+	}
+	want := []string{"arn:aws:iam::" + acct + ":user/pathed"}
+	if len(out.Invalid) != 1 || out.Invalid[0] != want[0] {
+		t.Errorf("Invalid = %v, want %v", out.Invalid, want)
+	}
+}
+
+// TestPrivateAPIVersionReportsAccountID pins that the version endpoint
+// carries the account id every ARN this service mints belongs to — the
+// gateway names its own root account with it, having no other source for it.
+func TestPrivateAPIVersionReportsAccountID(t *testing.T) {
+	p, _ := newTestServer(t)
+
+	resp := doPrivateRequest(t, p, http.MethodPost, VersionPath, testRoot.Access, testRoot.Secret, []byte("{}"))
+	raw := readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", resp.StatusCode, raw)
+	}
+
+	var out VersionResponse
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("unmarshal %s: %v", raw, err)
+	}
+	if out.AccountID != iamutil.DefaultAccountID {
+		t.Errorf("AccountID = %q, want %q", out.AccountID, iamutil.DefaultAccountID)
+	}
 }

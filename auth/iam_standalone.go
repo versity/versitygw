@@ -122,6 +122,12 @@ type IAMServiceStandalone struct {
 	secret  string
 	rootAcc Account
 	cfg     IAMServiceStandaloneConfig
+	// accountID is the AWS account id the IAM service reported at startup,
+	// the one every ARN it mints belongs to. It is only used to name the
+	// gateway's own root account, which the service has no record of and so
+	// cannot name itself. Written once by probeProtocol before this client
+	// serves anything, and read-only afterwards.
+	accountID string
 }
 
 var (
@@ -129,6 +135,7 @@ var (
 	_ SigningKeyProvider = (*IAMServiceStandalone)(nil)
 	_ PolicyEvaluator    = (*IAMServiceStandalone)(nil)
 	_ FixedBucketOwner   = (*IAMServiceStandalone)(nil)
+	_ PrincipalResolver  = (*IAMServiceStandalone)(nil)
 )
 
 // NewIAMServiceStandalone constructs the standalone IAM service client.
@@ -201,6 +208,7 @@ func (s *IAMServiceStandalone) probeProtocol() error {
 		}
 
 		if err == nil {
+			s.accountID = resp.AccountID
 			serverVersion := resp.ServerVersion
 			if serverVersion == "" {
 				serverVersion = "unknown"
@@ -437,11 +445,16 @@ func (s *IAMServiceStandalone) DeriveSigningKey(access, sessionToken, date, regi
 		return nil, Account{}, err
 	}
 
-	return resp.DerivedKey, s.accountFor(access, sessionToken), nil
+	acc := s.accountFor(access, sessionToken)
+	acc.Arn = resp.PrincipalArn
+	acc.RoleArn = resp.RoleArn
+
+	return resp.DerivedKey, acc, nil
 }
 
 // accountFor builds the Account metadata DeriveSigningKey/GetUserAccount
-// return for a resolved non-root identity
+// return for a resolved non-root identity. Arn/RoleArn are left to the
+// caller: only the endpoints that resolved the identity know them.
 func (s *IAMServiceStandalone) accountFor(access, sessionToken string) Account {
 	return Account{
 		Access:       access,
@@ -452,6 +465,25 @@ func (s *IAMServiceStandalone) accountFor(access, sessionToken string) Account {
 		SessionToken: sessionToken,
 		IsSession:    sigv4auth.IsTempAccessKeyID(access),
 	}
+}
+
+// ResolvePrincipals implements PrincipalResolver, validating a bucket
+// policy's principals in a single round trip regardless of how many it
+// names.
+func (s *IAMServiceStandalone) ResolvePrincipals(principals []string) ([]string, error) {
+	if len(principals) == 0 {
+		return nil, nil
+	}
+
+	var resp private.ResolvePrincipalsResponse
+	err := s.doPrivateRequest(private.ResolvePrincipalsPath, private.ResolvePrincipalsRequest{
+		Principals: principals,
+	}, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("resolve policy principals: %w", err)
+	}
+
+	return resp.Invalid, nil
 }
 
 // EvaluatePolicy implements PolicyEvaluator, evaluating every action in
@@ -622,13 +654,15 @@ func (s *IAMServiceStandalone) resolveAccountDetails(accesses []string) ([]resol
 		if !identity.Found {
 			continue
 		}
+		acc := s.accountFor(remote[i], "")
+		acc.Arn = identity.PrincipalArn
 		out[remoteIdx[i]] = resolvedAccount{
 			Found:     true,
 			IsSession: identity.Kind == private.KindSession,
 			// No session token is known here, and none is needed: this
 			// Account answers "who is this" for validation, never
 			// authenticates a request.
-			Account: s.accountFor(remote[i], ""),
+			Account: acc,
 		}
 	}
 	return out, nil
@@ -665,6 +699,9 @@ func (s *IAMServiceStandalone) rootAccount() Account {
 	acc.UserID = s.cfg.DefaultUserID
 	acc.GroupID = s.cfg.DefaultGroupID
 	acc.ProjectID = s.cfg.DefaultProjectID
+	if s.accountID != "" {
+		acc.Arn = accountRootArn(s.accountID)
+	}
 	return acc
 }
 
