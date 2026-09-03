@@ -189,7 +189,7 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 				return err
 			}
 
-			if expectedSig != signatureHex {
+			if !sigv4auth.SecureCompare(expectedSig, signatureHex) {
 				debuglogger.Logf("POST object signature mismatch: expected %s got %s", expectedSig, signatureHex)
 				// The String to sign for POST request is the base64 encoded policy
 				// For POST incorrect signature no canonical request and canonical request bytes are returned
