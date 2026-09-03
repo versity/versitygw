@@ -1162,7 +1162,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		// chain as usual.
 		rcAuth := func(ctx fiber.Ctx) error {
 			if err := rcVerify(ctx); err != nil {
-				return err
+				return rcroutes.WriteRouteError(ctx, err)
 			}
 			return ctx.Next()
 		}
