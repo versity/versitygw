@@ -204,6 +204,15 @@ func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 		}
 	}
 
+	// drop an empty CreateBucketConfiguration: strict backends (Ceph RGW) reject the empty element
+	if input.CreateBucketConfiguration != nil &&
+		len(input.CreateBucketConfiguration.Tags) == 0 &&
+		input.CreateBucketConfiguration.LocationConstraint == "" &&
+		input.CreateBucketConfiguration.Location == nil &&
+		input.CreateBucketConfiguration.Bucket == nil {
+		input.CreateBucketConfiguration = nil
+	}
+
 	_, err := s.client.CreateBucket(ctx, input)
 	if err != nil {
 		return handleError(err)
