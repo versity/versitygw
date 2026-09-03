@@ -918,3 +918,186 @@ func TestVerifyObjectsAccess_ResourceDenyNoPolicyEvaluator(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// arnPolicyBackend serves one bucket policy, for the ARN-principal tests
+// below. It is publicBucketPolicyBackend without the ACL half, which none of
+// them reach.
+type arnPolicyBackend struct {
+	backend.BackendUnsupported
+	policy string
+}
+
+func (b arnPolicyBackend) GetBucketPolicy(_ context.Context, _ string) ([]byte, error) {
+	return []byte(b.policy), nil
+}
+
+// arnPolicy builds a one-statement bucket policy granting or denying
+// s3:GetObject on the test bucket to principal.
+func arnPolicy(effect, principal string) string {
+	return `{"Version":"2012-10-17","Statement":[{"Effect":"` + effect + `","Principal":{"AWS":` +
+		principal + `},"Action":"s3:GetObject","Resource":"arn:aws:s3:::bucket/*"}]}`
+}
+
+const (
+	acPolicyUserArn    = `"arn:aws:iam::000000000000:user/alice"`
+	acPolicyRoleArn    = `"arn:aws:iam::000000000000:role/reader"`
+	acPolicySessionArn = `"arn:aws:sts::000000000000:assumed-role/reader/sess1"`
+	acPolicyRootArn    = `"arn:aws:iam::000000000000:root"`
+)
+
+func acUser() Account {
+	return Account{Access: "AKIAALICE", Role: RoleUser, Arn: "arn:aws:iam::000000000000:user/alice"}
+}
+
+func acSession() Account {
+	return Account{
+		Access:    "ASIASESSION",
+		Role:      RoleUser,
+		IsSession: true,
+		Arn:       "arn:aws:sts::000000000000:assumed-role/reader/sess1",
+		RoleArn:   "arn:aws:iam::000000000000:role/reader",
+	}
+}
+
+// TestVerifyAccess_ArnPrincipalMatching walks every combination of principal
+// form and caller that a bucket policy can express under an IAM backend
+// whose identities have ARNs, with the identity policy silent throughout so
+// that what each case measures is the Principal element alone.
+func TestVerifyAccess_ArnPrincipalMatching(t *testing.T) {
+	tests := []struct {
+		name       string
+		effect     string
+		principal  string
+		acc        Account
+		wantAllow  bool
+		wantDenyBy string
+	}{
+		{
+			name: "user named by its own arn", effect: "Allow", principal: acPolicyUserArn,
+			acc: acUser(), wantAllow: true,
+		},
+		{
+			name: "user not named", effect: "Allow", principal: acPolicyRoleArn,
+			acc: acUser(), wantDenyBy: "because no identity-based policy allows",
+		},
+		{
+			name: "access key id is no longer a principal", effect: "Allow", principal: `"AKIAALICE"`,
+			acc: acUser(), wantDenyBy: "because no identity-based policy allows",
+		},
+		{
+			name: "session named by its role arn", effect: "Allow", principal: acPolicyRoleArn,
+			acc: acSession(), wantAllow: true,
+		},
+		{
+			name: "session named by its own arn", effect: "Allow", principal: acPolicySessionArn,
+			acc: acSession(), wantAllow: true,
+		},
+		{
+			name: "another session of the same role", effect: "Allow",
+			principal: `"arn:aws:sts::000000000000:assumed-role/reader/sess2"`,
+			acc:       acSession(), wantDenyBy: "because no identity-based policy allows",
+		},
+		{
+			name: "a user is not covered by a role arn", effect: "Allow", principal: acPolicyRoleArn,
+			acc: acUser(), wantDenyBy: "because no identity-based policy allows",
+		},
+		{
+			// The account principal delegates to the account's own IAM
+			// rather than granting, and the identity policy is silent here.
+			name: "account root arn allows nothing on its own", effect: "Allow", principal: acPolicyRootArn,
+			acc: acUser(), wantDenyBy: "because no identity-based policy allows",
+		},
+		{
+			name: "bare account id allows nothing on its own", effect: "Allow", principal: `"000000000000"`,
+			acc: acUser(), wantDenyBy: "because no identity-based policy allows",
+		},
+		{
+			name: "wildcard allows everyone", effect: "Allow", principal: `"*"`,
+			acc: acUser(), wantAllow: true,
+		},
+		{
+			name: "deny naming the user", effect: "Deny", principal: acPolicyUserArn,
+			acc: acUser(), wantDenyBy: "with an explicit deny in a resource-based policy",
+		},
+		{
+			// Deny is not a delegation: naming the account denies every
+			// principal in it outright.
+			name: "deny naming the account", effect: "Deny", principal: acPolicyRootArn,
+			acc: acUser(), wantDenyBy: "with an explicit deny in a resource-based policy",
+		},
+		{
+			name: "deny naming the account hits a session too", effect: "Deny", principal: acPolicyRootArn,
+			acc: acSession(), wantDenyBy: "with an explicit deny in a resource-based policy",
+		},
+		{
+			name: "deny naming the role hits its session", effect: "Deny", principal: acPolicyRoleArn,
+			acc: acSession(), wantDenyBy: "with an explicit deny in a resource-based policy",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			be := arnPolicyBackend{policy: arnPolicy(tt.effect, tt.principal)}
+			pe := newMockPolicyEvaluator(policyDecisionNoMatch)
+			pe.principalArn = tt.acc.Arn
+
+			err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
+				Acc:     tt.acc,
+				Bucket:  "bucket",
+				Object:  "key.txt",
+				Actions: []Action{GetObjectAction},
+				Iam:     pe,
+			})
+
+			if tt.wantAllow {
+				assert.NoError(t, err)
+				return
+			}
+			apiErr := requireAccessDeniedAPIError(t, err)
+			assert.Contains(t, apiErr.Description, tt.wantDenyBy)
+			assert.Contains(t, apiErr.Description, tt.acc.Arn,
+				"a denial names the caller by its ARN once the IAM backend gives it one")
+		})
+	}
+}
+
+// TestVerifyAccess_AccountPrincipalDelegatesToIdentityPolicy is the other
+// half of the account-principal rule: what it delegates to is the identity
+// policy, so the same policy that granted nothing above grants once the
+// identity policy allows.
+func TestVerifyAccess_AccountPrincipalDelegatesToIdentityPolicy(t *testing.T) {
+	be := arnPolicyBackend{policy: arnPolicy("Allow", acPolicyRootArn)}
+	pe := newMockPolicyEvaluator(policyDecisionAllow)
+
+	err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
+		Acc:     acUser(),
+		Bucket:  "bucket",
+		Object:  "key.txt",
+		Actions: []Action{GetObjectAction},
+		Iam:     pe,
+	})
+
+	assert.NoError(t, err)
+}
+
+// TestVerifyAccess_AccessKeyPrincipalsStillWorkWithoutArns pins the
+// backward-compatible half: an account with no ARN — every IAM backend but
+// the standalone service — is still matched by its access key id, and an ARN
+// principal means nothing to it.
+func TestVerifyAccess_AccessKeyPrincipalsStillWorkWithoutArns(t *testing.T) {
+	acc := Account{Access: "testuser", Role: RoleUser}
+
+	allowed := arnPolicyBackend{policy: arnPolicy("Allow", `"testuser"`)}
+	err := VerifyAccess(testFiberCtx(t), allowed, AccessOptions{
+		Acc: acc, Bucket: "bucket", Object: "key.txt",
+		Actions: []Action{GetObjectAction}, Iam: NewIAMServiceSingle(Account{}),
+	})
+	assert.NoError(t, err)
+
+	denied := arnPolicyBackend{policy: arnPolicy("Allow", acPolicyUserArn)}
+	err = VerifyAccess(testFiberCtx(t), denied, AccessOptions{
+		Acc: acc, Bucket: "bucket", Object: "key.txt",
+		Actions: []Action{GetObjectAction}, Iam: NewIAMServiceSingle(Account{}),
+	})
+	assert.Equal(t, s3err.GetAPIError(s3err.ErrAccessDenied), err)
+}

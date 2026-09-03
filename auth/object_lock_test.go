@@ -316,3 +316,66 @@ func (b *objectRetentionBackend) GetObjectRetention(_ context.Context, _, _, _ s
 func (b *objectRetentionBackend) GetBucketPolicy(_ context.Context, _ string) ([]byte, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
 }
+
+// TestVerifyBypassGovernancePermission_ArnPrincipals covers the
+// governance-bypass path's own bucket-policy evaluation under an IAM backend
+// whose identities have ARNs. It is a separate evaluation from VerifyAccess's
+// and has to agree with it: the same principal forms match, the account
+// principal delegates under Allow but not under Deny, and a denial names the
+// caller by its ARN.
+func TestVerifyBypassGovernancePermission_ArnPrincipals(t *testing.T) {
+	const (
+		userArn = "arn:aws:iam::000000000000:user/alice"
+		rootArn = "arn:aws:iam::000000000000:root"
+	)
+	user := Account{Access: "AKIAALICE", Role: RoleUser, Arn: userArn}
+
+	bypassPolicy := func(effect, principal string) []byte {
+		return []byte(`{"Statement":[{"Effect":"` + effect + `","Principal":{"AWS":"` + principal +
+			`"},"Action":"s3:BypassGovernanceRetention","Resource":"arn:aws:s3:::bucket/*"}]}`)
+	}
+
+	t.Run("user arn allows the bypass", func(t *testing.T) {
+		be := &publicBucketPolicyBackend{policy: bypassPolicy("Allow", userArn)}
+		err := verifyBypassGovernancePermission(context.Background(), be,
+			newMockPolicyEvaluator(policyDecisionNoMatch), user, "bucket", "key.txt", BypassRequested, false, nil)
+		assert.NoError(t, err)
+	})
+
+	t.Run("account arn delegates and so allows nothing", func(t *testing.T) {
+		be := &publicBucketPolicyBackend{policy: bypassPolicy("Allow", rootArn)}
+		err := verifyBypassGovernancePermission(context.Background(), be,
+			newMockPolicyEvaluator(policyDecisionNoMatch), user, "bucket", "key.txt", BypassRequested, false, nil)
+
+		apiErr, ok := err.(s3err.APIError)
+		assert.True(t, ok, "err = %#v, want s3err.APIError", err)
+		assert.Contains(t, apiErr.Description, "because no identity-based policy allows")
+	})
+
+	t.Run("account arn deny names the caller by arn", func(t *testing.T) {
+		be := &publicBucketPolicyBackend{policy: bypassPolicy("Deny", rootArn)}
+		err := verifyBypassGovernancePermission(context.Background(), be,
+			newMockPolicyEvaluator(policyDecisionAllow), user, "bucket", "key.txt", BypassRequested, false, nil)
+
+		apiErr, ok := err.(s3err.APIError)
+		assert.True(t, ok, "err = %#v, want s3err.APIError", err)
+		assert.Contains(t, apiErr.Description, userArn)
+		assert.Contains(t, apiErr.Description, "with an explicit deny in a resource-based policy")
+	})
+
+	t.Run("root is named by the account arn it carries", func(t *testing.T) {
+		// Root reaches here only for BypassOverwrite; a requested bypass
+		// returns earlier. rootIdentity gives it the account root ARN, which
+		// is how a Deny naming the account reaches it at all.
+		root := Account{Access: "root", Role: RoleAdmin, Arn: rootArn}
+		be := &publicBucketPolicyBackend{policy: bypassPolicy("Deny", rootArn)}
+
+		err := verifyBypassGovernancePermission(context.Background(), be,
+			newMockPolicyEvaluator(policyDecisionAllow), root, "bucket", "key.txt", BypassOverwrite, false, nil)
+
+		apiErr, ok := err.(s3err.APIError)
+		assert.True(t, ok, "err = %#v, want s3err.APIError", err)
+		assert.Contains(t, apiErr.Description, rootArn)
+		assert.Contains(t, apiErr.Description, "with an explicit deny in a resource-based policy")
+	})
+}

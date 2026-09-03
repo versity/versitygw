@@ -291,7 +291,7 @@ func objectsAccessErrors(ctx context.Context, be backend.Backend, opts AccessOpt
 	allDenied := true
 	for i, rd := range resourceDecisions {
 		if rd.Decision == policyDecisionDeny {
-			errs[i] = s3err.GetExplicitDenyAccessErr(opts.Acc.Access, string(rd.Action), objectPolicyArn(opts.Bucket, keys[i], be.NormalizeObjectKey), "a resource-based policy")
+			errs[i] = s3err.GetExplicitDenyAccessErr(principalName(opts.Acc), string(rd.Action), objectPolicyArn(opts.Bucket, keys[i], be.NormalizeObjectKey), "a resource-based policy")
 			continue
 		}
 		allDenied = false
@@ -329,7 +329,7 @@ func objectsAccessErrors(ctx context.Context, be backend.Backend, opts AccessOpt
 
 	principal := identity.PrincipalArn
 	if principal == "" {
-		principal = opts.Acc.Access
+		principal = principalName(opts.Acc)
 	}
 
 	for i := range keys {
@@ -380,6 +380,16 @@ func objectsAccessErrors(ctx context.Context, be backend.Backend, opts AccessOpt
 	return errs, nil
 }
 
+// principalName is how a denial message names acc: by its principal ARN
+// where the IAM backend gives it one, and by its access key id otherwise —
+// the only name the other backends have for it.
+func principalName(acc Account) string {
+	if acc.Arn != "" {
+		return acc.Arn
+	}
+	return acc.Access
+}
+
 // decisionForResource is one resource's tri-state decision plus, for
 // Deny/NoMatch, the specific action responsible — so the caller can build an
 // AWS-shaped message naming it.
@@ -413,7 +423,7 @@ func verifyResourceAccess(ctx context.Context, be backend.Backend, opts AccessOp
 	}
 
 	for i, object := range objects {
-		decision, action, err := verifyBucketPolicy(policy, opts.Acc.Access, opts.Bucket, object, condCtx, be.NormalizeObjectKey, opts.Actions...)
+		decision, action, err := verifyBucketPolicy(policy, opts.Acc, opts.Bucket, object, condCtx, be.NormalizeObjectKey, opts.Actions...)
 		if err != nil {
 			return nil, err
 		}
@@ -616,7 +626,7 @@ func verifyIdentityOnlyAccess(ctx fiber.Ctx, pe PolicyEvaluator, acc Account, ac
 
 	principal := identity.PrincipalArn
 	if principal == "" {
-		principal = acc.Access
+		principal = principalName(acc)
 	}
 
 	// A session policy narrows what the session may do; there is no resource

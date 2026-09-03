@@ -878,7 +878,9 @@ under the License.
                 </svg>
                 <div class="text-sm text-blue-800">
                   <p class="font-medium">About Bucket Policies</p>
-                  <p class="mt-1">Bucket policies define who can access your bucket and what actions they can perform. The <strong>Principal</strong> is the access key of the user account, and the <strong>Resource</strong> uses standard bucket ARN format.</p>
+                  <p class="mt-1">Bucket policies define who can access your bucket and what actions they can perform. The <strong>Resource</strong> uses standard bucket ARN format.</p>
+                  <p class="mt-1" data-iam-only>The <strong>Principal</strong> is a principal ARN &mdash; a user (<code>arn:aws:iam::000000000000:user/alice</code>), a role, which covers every session of it (<code>arn:aws:iam::000000000000:role/reader</code>), one assumed-role session (<code>arn:aws:sts::000000000000:assumed-role/reader/session</code>), or the account itself (<code>arn:aws:iam::000000000000:root</code>), which delegates to the account&rsquo;s IAM rather than granting on its own. <code>"*"</code> names everyone. Wildcards are not allowed inside an ARN.</p>
+                  <p class="mt-1" data-admin-users-only>The <strong>Principal</strong> is the access key of the user account.</p>
                 </div>
               </div>
             </div>
@@ -976,7 +978,8 @@ under the License.
                   <ul class="list-disc list-inside space-y-1 text-charcoal-400 ml-2">
                     <li><strong>Sid:</strong> Statement identifier (optional, but recommended)</li>
                     <li><strong>Effect:</strong> "Allow" or "Deny"</li>
-                    <li><strong>Principal:</strong> Array of access keys (e.g., ["user001", "user002"])</li>
+                    <li data-iam-only><strong>Principal:</strong> Array of principal ARNs (e.g., ["arn:aws:iam::000000000000:user/alice"]), or "*"</li>
+                    <li data-admin-users-only><strong>Principal:</strong> Array of access keys (e.g., ["user001", "user002"])</li>
                     <li><strong>Action:</strong> Array of S3 actions (e.g., ["s3:GetObject", "s3:PutObject"])</li>
                     <li><strong>Resource:</strong> Array of ARNs (e.g., ["arn:aws:s3:::bucket/*"])</li>
                   </ul>
@@ -4205,16 +4208,20 @@ under the License.
     function loadExamplePolicy() {
       if (!currentPolicyBucket) return;
       
+      // The Principal form depends on the IAM backend behind the gateway: a
+      // standalone IAM service names principals by ARN, the gateway's own
+      // account store by access key.
+      const examplePrincipals = api.hasIAM()
+        ? ["arn:aws:iam::000000000000:user/user001", "arn:aws:iam::000000000000:user/user002"]
+        : ["user001", "user002"];
+
       const examplePolicy = {
         "Version": "2012-10-17",
         "Statement": [
           {
             "Sid": "FullS3Access",
             "Effect": "Allow",
-            "Principal": [
-              "user001",
-              "user002"
-            ],
+            "Principal": examplePrincipals,
             "Action": [
               "s3:AbortMultipartUpload",
               "s3:DeleteObject",

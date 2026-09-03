@@ -107,7 +107,15 @@ func createStandaloneTestUser(t *testing.T, store storage.Storer, userName, acce
 	t.Helper()
 	ctx := context.Background()
 
-	if _, err := store.CreateUser(ctx, types.User{UserName: userName, Path: "/", CreateDate: time.Now().UTC()}); err != nil {
+	// Arn is set explicitly, as the control-plane controller does before
+	// calling storage.CreateUser: it is what a bucket policy names the user
+	// by, and storage.CreateUser never populates it.
+	if _, err := store.CreateUser(ctx, types.User{
+		UserName:   userName,
+		Path:       "/",
+		Arn:        standaloneUserArn(userName),
+		CreateDate: time.Now().UTC(),
+	}); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	if _, err := store.CreateAccessKey(ctx, storage.CreateAccessKeyInput{
@@ -687,5 +695,264 @@ func TestIAMServiceStandaloneRootCarriesPosixIdentity(t *testing.T) {
 	}
 	if acc.Secret != standaloneTestRootSecret || acc.Role != RoleAdmin {
 		t.Errorf("root identity lost its credentials or role: %+v", acc)
+	}
+}
+
+// standaloneTestAccountID is the account every ARN the IAM service mints
+// belongs to, and the one it reports on the version endpoint.
+const standaloneTestAccountID = "000000000000"
+
+func standaloneUserArn(userName string) string {
+	return "arn:aws:iam::" + standaloneTestAccountID + ":user/" + userName
+}
+
+func standaloneRoleArn(roleName string) string {
+	return "arn:aws:iam::" + standaloneTestAccountID + ":role/" + roleName
+}
+
+// createStandaloneTestSession creates a role and a live session of it,
+// returning the session's credentials — the shape AssumeRoleWithWebIdentity
+// produces, built directly against the store the way
+// createStandaloneTestUser does.
+func createStandaloneTestSession(t *testing.T, store storage.Storer, roleName, accessKeyID, secret, token string) *types.Session {
+	t.Helper()
+	ctx := context.Background()
+
+	role, err := store.CreateRole(ctx, types.Role{
+		RoleName:   roleName,
+		Path:       "/",
+		RoleID:     "AROA" + roleName,
+		Arn:        standaloneRoleArn(roleName),
+		CreateDate: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+
+	session, err := store.CreateSession(ctx, types.Session{
+		AccessKeyId:     accessKeyID,
+		SecretAccessKey: secret,
+		SessionToken:    token,
+		RoleArn:         role.Arn,
+		RoleName:        role.RoleName,
+		RoleID:          role.RoleID,
+		RoleSessionName: "sess1",
+		CreateDate:      time.Now().UTC(),
+		Expiration:      time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	return session
+}
+
+func newStandaloneTestClient(t *testing.T, sock string) *IAMServiceStandalone {
+	t.Helper()
+
+	client, err := NewIAMServiceStandalone(
+		Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret, Role: RoleAdmin},
+		IAMServiceStandaloneConfig{Endpoint: sock})
+	if err != nil {
+		t.Fatalf("NewIAMServiceStandalone: %v", err)
+	}
+	t.Cleanup(func() { client.Shutdown() })
+	return client
+}
+
+// TestIAMServiceStandaloneAuthenticatedAccountsCarryArns covers what a
+// bucket policy's Principal element is matched against: a user is named by
+// its own ARN, and a session by both its assumed-role ARN and the ARN of the
+// role it assumed, since a policy naming either one matches it.
+func TestIAMServiceStandaloneAuthenticatedAccountsCarryArns(t *testing.T) {
+	store, sock := standaloneTestServer(t)
+	createStandaloneTestUser(t, store, "alice", "AKIAALICE", "alicesecret", "")
+	session := createStandaloneTestSession(t, store, "reader", "ASIASESSION", "sesssecret", "tok")
+
+	client := newStandaloneTestClient(t, sock)
+	yyyymmdd := time.Now().UTC().Format(sigv4auth.YYYYMMDD)
+
+	_, user, err := client.DeriveSigningKey("AKIAALICE", "", yyyymmdd, "us-east-1", "s3")
+	if err != nil {
+		t.Fatalf("DeriveSigningKey(user): %v", err)
+	}
+	if want := standaloneUserArn("alice"); user.Arn != want {
+		t.Errorf("user Arn = %q, want %q", user.Arn, want)
+	}
+	if user.RoleArn != "" {
+		t.Errorf("user RoleArn = %q, want it empty: a user assumed no role", user.RoleArn)
+	}
+
+	_, sess, err := client.DeriveSigningKey(session.AccessKeyId, "tok", yyyymmdd, "us-east-1", "s3")
+	if err != nil {
+		t.Fatalf("DeriveSigningKey(session): %v", err)
+	}
+	wantSessionArn := "arn:aws:sts::" + standaloneTestAccountID + ":assumed-role/reader/sess1"
+	if sess.Arn != wantSessionArn {
+		t.Errorf("session Arn = %q, want %q", sess.Arn, wantSessionArn)
+	}
+	if want := standaloneRoleArn("reader"); sess.RoleArn != want {
+		t.Errorf("session RoleArn = %q, want %q", sess.RoleArn, want)
+	}
+}
+
+// TestIAMServiceStandaloneRootCarriesAccountArn pins that the gateway's own
+// root account is named by the account root ARN. The IAM service holds no
+// record of root, so the account id comes from the startup probe.
+func TestIAMServiceStandaloneRootCarriesAccountArn(t *testing.T) {
+	_, sock := standaloneTestServer(t)
+	client := newStandaloneTestClient(t, sock)
+
+	want := "arn:aws:iam::" + standaloneTestAccountID + ":root"
+
+	owner, fixed := ResolveFixedBucketOwner(client)
+	if !fixed {
+		t.Fatal("ResolveFixedBucketOwner: standalone client must fix bucket ownership")
+	}
+	if owner.Arn != want {
+		t.Errorf("BucketOwner().Arn = %q, want %q", owner.Arn, want)
+	}
+
+	acc, err := client.GetUserAccount(standaloneTestRootAccess)
+	if err != nil {
+		t.Fatalf("GetUserAccount(root): %v", err)
+	}
+	if acc.Arn != want {
+		t.Errorf("GetUserAccount(root).Arn = %q, want %q", acc.Arn, want)
+	}
+}
+
+// TestIAMServiceStandaloneResolvePrincipals covers the write-time principal
+// check PutBucketPolicy makes, end to end against a real IAM service: every
+// form a bucket policy may name resolves, and an access key id — what this
+// gateway's other IAM backends name principals by — does not.
+func TestIAMServiceStandaloneResolvePrincipals(t *testing.T) {
+	store, sock := standaloneTestServer(t)
+	createStandaloneTestUser(t, store, "alice", "AKIAALICE", "alicesecret", "")
+	createStandaloneTestSession(t, store, "reader", "ASIASESSION", "sesssecret", "tok")
+
+	client := newStandaloneTestClient(t, sock)
+
+	valid := []string{
+		standaloneTestAccountID,
+		"arn:aws:iam::" + standaloneTestAccountID + ":root",
+		standaloneUserArn("alice"),
+		standaloneRoleArn("reader"),
+		"arn:aws:sts::" + standaloneTestAccountID + ":assumed-role/reader/sess1",
+		"arn:aws:sts::" + standaloneTestAccountID + ":assumed-role/reader/never-assumed",
+	}
+	invalid := []string{
+		"AKIAALICE",
+		"ASIASESSION",
+		"alice",
+		standaloneUserArn("bob"),
+		standaloneRoleArn("writer"),
+		standaloneUserArn("*"),
+		"arn:aws:iam::111111111111:root",
+	}
+
+	got, err := client.ResolvePrincipals(append(append([]string{}, valid...), invalid...))
+	if err != nil {
+		t.Fatalf("ResolvePrincipals: %v", err)
+	}
+
+	reported := map[string]bool{}
+	for _, p := range got {
+		reported[p] = true
+	}
+	for _, p := range valid {
+		if reported[p] {
+			t.Errorf("principal %q reported invalid, want it to resolve", p)
+		}
+	}
+	for _, p := range invalid {
+		if !reported[p] {
+			t.Errorf("principal %q reported valid, want it rejected", p)
+		}
+	}
+}
+
+// TestIAMServiceStandaloneResolvePrincipalsEmpty pins that validating a
+// policy whose only principal is the wildcard — which never reaches here —
+// costs no round trip.
+func TestIAMServiceStandaloneResolvePrincipalsEmpty(t *testing.T) {
+	_, sock := standaloneTestServer(t)
+	client := newStandaloneTestClient(t, sock)
+
+	invalid, err := client.ResolvePrincipals(nil)
+	if err != nil {
+		t.Fatalf("ResolvePrincipals(nil): %v", err)
+	}
+	if len(invalid) != 0 {
+		t.Errorf("ResolvePrincipals(nil) = %v, want none", invalid)
+	}
+}
+
+// TestIAMServiceStandalonePrincipalsValidate ties the two halves together:
+// a bucket policy validated against the standalone client names principals
+// by ARN, and the same document naming an access key id is rejected.
+func TestIAMServiceStandalonePrincipalsValidate(t *testing.T) {
+	store, sock := standaloneTestServer(t)
+	createStandaloneTestUser(t, store, "alice", "AKIAALICE", "alicesecret", "")
+
+	client := newStandaloneTestClient(t, sock)
+
+	if err := (Principals{standaloneUserArn("alice"): {}}).Validate(client); err != nil {
+		t.Errorf("Validate(user arn) = %v, want it accepted", err)
+	}
+	if err := (Principals{"AKIAALICE": {}}).Validate(client); err != policyErrInvalidPrincipal {
+		t.Errorf("Validate(access key id) = %v, want %v", err, policyErrInvalidPrincipal)
+	}
+	if err := (Principals{"*": {}}).Validate(client); err != nil {
+		t.Errorf("Validate(wildcard) = %v, want it accepted", err)
+	}
+}
+
+// TestIAMServiceStandaloneRootIdentityCarriesArn pins that root reaches the
+// S3 request path named. Root is the one identity resolved locally rather
+// than through the IAM service, so ResolveDerivedKey never sees an ARN for
+// it — rootIdentity has to carry the one the backend defines, or a bucket
+// policy naming the account root ARN would miss root entirely.
+func TestIAMServiceStandaloneRootIdentityCarriesArn(t *testing.T) {
+	_, sock := standaloneTestServer(t)
+	client := newStandaloneTestClient(t, sock)
+
+	rootAcc := Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret, Role: RoleAdmin}
+	yyyymmdd := time.Now().UTC().Format(sigv4auth.YYYYMMDD)
+
+	_, acc, err := ResolveDerivedKey(client, rootAcc, standaloneTestRootAccess, "", yyyymmdd, "us-east-1", "s3")
+	if err != nil {
+		t.Fatalf("ResolveDerivedKey(root): %v", err)
+	}
+
+	want := "arn:aws:iam::" + standaloneTestAccountID + ":root"
+	if acc.Arn != want {
+		t.Errorf("root Arn = %q, want %q", acc.Arn, want)
+	}
+	if acc.Secret != standaloneTestRootSecret || acc.Role != RoleAdmin {
+		t.Errorf("root identity lost its credentials or role: %+v", acc)
+	}
+}
+
+// TestIAMServiceStandaloneCapabilityInterfaces pins the full set of
+// capability interfaces the standalone client implements. Every one is
+// resolved by type assertion on the live IAMService, so anything that wraps
+// it (auth.IAMCache, cmd/vgwrdma's shutdown-once wrapper) has to re-expose
+// all of them — a capability silently dropped by a wrapper is a
+// capability switched off gateway-wide.
+func TestIAMServiceStandaloneCapabilityInterfaces(t *testing.T) {
+	_, sock := standaloneTestServer(t)
+	var iam IAMService = newStandaloneTestClient(t, sock)
+
+	if _, ok := iam.(SigningKeyProvider); !ok {
+		t.Error("standalone client must implement SigningKeyProvider")
+	}
+	if _, ok := iam.(PolicyEvaluator); !ok {
+		t.Error("standalone client must implement PolicyEvaluator")
+	}
+	if _, ok := iam.(FixedBucketOwner); !ok {
+		t.Error("standalone client must implement FixedBucketOwner")
+	}
+	if _, ok := iam.(PrincipalResolver); !ok {
+		t.Error("standalone client must implement PrincipalResolver")
 	}
 }

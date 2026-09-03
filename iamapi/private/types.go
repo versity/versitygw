@@ -30,9 +30,32 @@ type DeriveSigningKeyRequest struct {
 }
 
 // DeriveSigningKeyResponse carries the derived signing key (kSigning) —
-// never the underlying secret.
+// never the underlying secret — and the identity it belongs to, named the
+// way a bucket policy's Principal element names it.
+//
+// PrincipalArn is the caller's own ARN: an IAM user's, or an assumed-role
+// session's arn:aws:sts::…:assumed-role/<role>/<session>. RoleArn is that
+// session's role ARN and is set only for a session, because a bucket policy
+// Principal naming a role matches every session of it
 type DeriveSigningKeyResponse struct {
-	DerivedKey []byte `json:"derivedKey"`
+	DerivedKey   []byte `json:"derivedKey"`
+	PrincipalArn string `json:"principalArn,omitempty"`
+	RoleArn      string `json:"roleArn,omitempty"`
+}
+
+// ResolvePrincipalsRequest asks whether each string is a principal an S3
+// bucket policy may name — the write-time check behind PutBucketPolicy.
+type ResolvePrincipalsRequest struct {
+	Principals []string `json:"principals"`
+}
+
+// ResolvePrincipalsResponse answers with only the principals that do not
+// resolve, so an empty list means the whole policy's principals are valid.
+// It reports no detail about the ones that do: a principal's existence is
+// all PutBucketPolicy validation needs, and answering more would make this
+// endpoint an identity enumerator.
+type ResolvePrincipalsResponse struct {
+	Invalid []string `json:"invalid"`
 }
 
 // EvaluatePolicyRequest is the evaluate-policy request body.
@@ -132,8 +155,15 @@ type EvaluatePolicyResponse struct {
 // gateway to draw that conclusion itself from this field. Protocol duplicates
 // the ProtocolHeader every response carries, and ServerVersion is the build
 // tag — what maps a protocol number back to an image during a rollout.
+// AccountID is the single AWS account id every identity this service holds
+// belongs to. The gateway learns it here rather than assuming a compile-time
+// constant the two builds happen to share: it is what a bucket policy's
+// account-level Principal forms (the account root ARN, and the bare account
+// id) are matched against, and getting it from the service that mints the
+// ARNs keeps one source of truth for it.
 type VersionResponse struct {
 	Protocol      int    `json:"protocol"`
 	MinClient     int    `json:"minClient"`
 	ServerVersion string `json:"serverVersion,omitempty"`
+	AccountID     string `json:"accountId,omitempty"`
 }

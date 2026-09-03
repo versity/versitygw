@@ -134,6 +134,7 @@ type standaloneIAMExtensions interface {
 	auth.SigningKeyProvider
 	auth.PolicyEvaluator
 	auth.FixedBucketOwner
+	auth.PrincipalResolver
 }
 
 type shutdownOnceService struct {

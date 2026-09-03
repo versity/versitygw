@@ -374,7 +374,7 @@ func S3IAMAccessControl_multiple_inline_policies_combine(s *S3Conf) error {
 
 // S3IAMAccessControl_bucket_policy_allows_without_identity_policy verifies
 // the resource side is independently sufficient too: a bucket policy naming
-// the user's access key grants the request with no identity policy at all.
+// the user's ARN grants the request with no identity policy at all.
 func S3IAMAccessControl_bucket_policy_allows_without_identity_policy(s *S3Conf) error {
 	testName := "S3IAMAccessControl_bucket_policy_allows_without_identity_policy"
 	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
@@ -385,7 +385,7 @@ func S3IAMAccessControl_bucket_policy_allows_without_identity_policy(s *S3Conf) 
 		defer cleanup()
 
 		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
-			Effect: "Allow", Principal: user.conf.awsID, Action: actS3PutObject, Resource: objectsArn(bucket),
+			Effect: "Allow", Principal: user.arn, Action: actS3PutObject, Resource: objectsArn(bucket),
 		}); err != nil {
 			return err
 		}
@@ -416,7 +416,7 @@ func S3IAMAccessControl_bucket_policy_explicit_deny(s *S3Conf) error {
 		defer cleanup()
 
 		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
-			Effect: "Deny", Principal: user.conf.awsID, Action: actS3GetObject, Resource: objectsArn(bucket),
+			Effect: "Deny", Principal: user.arn, Action: actS3GetObject, Resource: objectsArn(bucket),
 		}); err != nil {
 			return err
 		}
@@ -424,10 +424,7 @@ func S3IAMAccessControl_bucket_policy_explicit_deny(s *S3Conf) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = user.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
-		// The resource-based denial names the access key, not the ARN:
-		// bucket-policy principals are access-key-based for every backend,
-		// so the gateway has no ARN in hand at that point.
-		return checkApiErr(err, wantExplicitResourceDeny(user.conf.awsID, actS3GetObject, objectArn(bucket, "obj")))
+		return checkApiErr(err, wantExplicitResourceDeny(user.arn, actS3GetObject, objectArn(bucket, "obj")))
 	})
 }
 
@@ -470,16 +467,16 @@ func S3IAMAccessControl_policy_combinations(s *S3Conf) error {
 				return wantExplicitIdentityDeny(u.arn, actS3GetObject, objectArn(bucket, "obj"))
 			}},
 			{identity: silent, resource: deny, wantErr: func(u *s3IAMPrincipal) s3err.S3Error {
-				return wantExplicitResourceDeny(u.conf.awsID, actS3GetObject, objectArn(bucket, "obj"))
+				return wantExplicitResourceDeny(u.arn, actS3GetObject, objectArn(bucket, "obj"))
 			}},
 			{identity: allow, resource: deny, wantErr: func(u *s3IAMPrincipal) s3err.S3Error {
-				return wantExplicitResourceDeny(u.conf.awsID, actS3GetObject, objectArn(bucket, "obj"))
+				return wantExplicitResourceDeny(u.arn, actS3GetObject, objectArn(bucket, "obj"))
 			}},
 			// A Deny on both sides is reported as the resource-based one:
 			// VerifyAccess evaluates the bucket policy first and returns
 			// immediately, which also saves an IAM round trip.
 			{identity: deny, resource: deny, wantErr: func(u *s3IAMPrincipal) s3err.S3Error {
-				return wantExplicitResourceDeny(u.conf.awsID, actS3GetObject, objectArn(bucket, "obj"))
+				return wantExplicitResourceDeny(u.arn, actS3GetObject, objectArn(bucket, "obj"))
 			}},
 		}
 
@@ -512,7 +509,7 @@ func S3IAMAccessControl_policy_combinations(s *S3Conf) error {
 						effect = "Deny"
 					}
 					if err := putBucketPolicyDoc(s, bucket, bucketStatement{
-						Effect: effect, Principal: user.conf.awsID, Action: actS3GetObject, Resource: objectsArn(bucket),
+						Effect: effect, Principal: user.arn, Action: actS3GetObject, Resource: objectsArn(bucket),
 					}); err != nil {
 						return err
 					}
@@ -857,7 +854,7 @@ func S3IAMAccessControl_governance_bypass_sources(s *S3Conf) error {
 						effect = "Deny"
 					}
 					if err := putBucketPolicyDoc(s, bucket, bucketStatement{
-						Effect: effect, Principal: user.conf.awsID,
+						Effect: effect, Principal: user.arn,
 						Action: actS3BypassGovernance, Resource: objectsArn(bucket),
 					}); err != nil {
 						return err
@@ -1123,11 +1120,11 @@ func S3IAMAccessControl_delete_objects_bucket_policy_deny_per_key(s *S3Conf) err
 		// keys — the second one proves the first didn't end the evaluation.
 		if err := putBucketPolicyDoc(s, bucket,
 			bucketStatement{
-				Effect: "Deny", Principal: user.conf.awsID,
+				Effect: "Deny", Principal: user.arn,
 				Action: actS3DeleteObject, Resource: objectArn(bucket, "protected/*"),
 			},
 			bucketStatement{
-				Effect: "Deny", Principal: user.conf.awsID,
+				Effect: "Deny", Principal: user.arn,
 				Action: actS3DeleteObject, Resource: objectArn(bucket, "vault/*"),
 			},
 		); err != nil {
@@ -1139,7 +1136,7 @@ func S3IAMAccessControl_delete_objects_bucket_policy_deny_per_key(s *S3Conf) err
 		// is denied for want of any grant, and "allowed/" is the only prefix
 		// the identity policy permits.
 		resourceDeny := func(key string) keyDenial {
-			return keyDenial{key, wantExplicitResourceDeny(user.conf.awsID, actS3DeleteObject, objectArn(bucket, key))}
+			return keyDenial{key, wantExplicitResourceDeny(user.arn, actS3DeleteObject, objectArn(bucket, key))}
 		}
 		implicitDeny := func(key string) keyDenial {
 			return keyDenial{key, wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, key))}
@@ -1236,7 +1233,7 @@ func S3IAMAccessControl_delete_objects_deny_across_versioned_split(s *S3Conf) er
 		defer cleanup()
 
 		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
-			Effect: "Deny", Principal: user.conf.awsID,
+			Effect: "Deny", Principal: user.arn,
 			Action:   []string{actS3DeleteObject, actS3DeleteObjectVersion},
 			Resource: objectArn(bucket, "protected/*"),
 		}); err != nil {
@@ -1266,8 +1263,8 @@ func S3IAMAccessControl_delete_objects_deny_across_versioned_split(s *S3Conf) er
 			return err
 		}
 		return checkDeleteObjectsErrsInOrder(out.Errors, []keyDenial{
-			{"protected/x", wantExplicitResourceDeny(user.conf.awsID, actS3DeleteObject, objectArn(bucket, "protected/x"))},
-			{"protected/v", wantExplicitResourceDeny(user.conf.awsID, actS3DeleteObjectVersion, objectArn(bucket, "protected/v"))},
+			{"protected/x", wantExplicitResourceDeny(user.arn, actS3DeleteObject, objectArn(bucket, "protected/x"))},
+			{"protected/v", wantExplicitResourceDeny(user.arn, actS3DeleteObjectVersion, objectArn(bucket, "protected/v"))},
 			{"secret/z", wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, "secret/z"))},
 			{"other/v", wantImplicitDeny(user.arn, actS3DeleteObjectVersion, objectArn(bucket, "other/v"))},
 		})
@@ -2047,24 +2044,6 @@ func S3IAMAccessControl_inactive_and_deleted_credentials(s *S3Conf) error {
 			}
 		}
 		return nil
-	})
-}
-
-// S3IAMAccessControl_bucket_policy_unknown_principal_rejected verifies
-// PutBucketPolicy validates its principals against the IAM service, so a
-// policy naming somebody who doesn't exist is rejected instead of being
-// stored as a statement that can never match.
-func S3IAMAccessControl_bucket_policy_unknown_principal_rejected(s *S3Conf) error {
-	testName := "S3IAMAccessControl_bucket_policy_unknown_principal_rejected"
-	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
-		err := putBucketPolicyDoc(s, bucket, bucketStatement{
-			Effect: "Allow", Principal: "AKIADOESNOTEXIST", Action: actS3GetObject, Resource: objectsArn(bucket),
-		})
-		return checkApiErr(err, s3err.APIError{
-			Code:           "MalformedPolicy",
-			Description:    "Invalid principal in policy",
-			HTTPStatusCode: 400,
-		})
 	})
 }
 

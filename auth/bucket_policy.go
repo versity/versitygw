@@ -110,7 +110,7 @@ func (bp *BucketPolicy) Validate(bucket string, iam IAMService) error {
 	return nil
 }
 
-// decisionFor evaluates a single action against bp for principal/resource,
+// decisionFor evaluates a single action against bp for acc/resource,
 // returning the tri-state policyDecision. A statement whose principal/action/resource
 // otherwise matches but whose Condition block can't be evaluated
 // denies the whole decision immediately, regardless of that statement's own
@@ -121,10 +121,10 @@ func (bp *BucketPolicy) Validate(bucket string, iam IAMService) error {
 // Condition write-time validation existed — it only guards a document
 // stored before that validation existed, or naming a future operator the
 // gateway doesn't yet recognize.
-func (bp *BucketPolicy) decisionFor(principal string, action Action, resource string, condCtx map[string][]string, normalizeObjectKey objectKeyNormalizer) policyDecision {
+func (bp *BucketPolicy) decisionFor(acc Account, action Action, resource string, condCtx map[string][]string, normalizeObjectKey objectKeyNormalizer) policyDecision {
 	var isAllowed bool
 	for _, statement := range bp.Statement {
-		matched, evaluable := statement.findMatch(principal, action, resource, condCtx, bp.Version, normalizeObjectKey)
+		matched, evaluable := statement.findMatch(acc, action, resource, condCtx, bp.Version, normalizeObjectKey)
 		if !evaluable {
 			return policyDecisionDeny
 		}
@@ -236,11 +236,36 @@ func (bpi *BucketPolicyItem) Validate(bucket string, iam IAMService) error {
 // this request, and — only when they do — whether its Condition block holds
 // against condCtx. matched is only meaningful when evaluable is true; see
 // condition.Evaluate and decisionFor's fail-closed handling of evaluable =false.
-func (bpi *BucketPolicyItem) findMatch(principal string, action Action, resource string, condCtx map[string][]string, version PolicyVersion, normalizeObjectKey objectKeyNormalizer) (matched bool, evaluable bool) {
-	if !(bpi.Principals.Contains(principal) && bpi.Actions.FindMatch(action) && bpi.Resources.FindMatch(resource, normalizeObjectKey)) {
+func (bpi *BucketPolicyItem) findMatch(acc Account, action Action, resource string, condCtx map[string][]string, version PolicyVersion, normalizeObjectKey objectKeyNormalizer) (matched bool, evaluable bool) {
+	if !(bpi.matchesPrincipal(acc) && bpi.Actions.FindMatch(action) && bpi.Resources.FindMatch(resource, normalizeObjectKey)) {
 		return false, true
 	}
 	return condition.Evaluate(bpi.Condition, condCtx, string(version))
+}
+
+// matchesPrincipal reports whether this statement's Principal element
+// covers acc, given what this statement's Effect makes of an account-level
+// match.
+//
+// A statement naming the account — its root ARN, or the bare account id —
+// only delegates to the account: it says the account's own IAM may grant
+// this, not that this is granted. So it allows nothing by itself, and a
+// caller under it is authorized only if an identity policy independently
+// allows the request, which VerifyAccess already covers by treating either
+// source's Allow as sufficient. Skipping the statement here is what makes
+// the account-level Allow contribute nothing.
+//
+// Deny is not symmetric with that: a statement denying the account denies
+// every principal in it outright, delegating nothing.
+func (bpi *BucketPolicyItem) matchesPrincipal(acc Account) bool {
+	switch bpi.Principals.matchFor(acc) {
+	case principalDirectMatch:
+		return true
+	case principalAccountMatch:
+		return bpi.Effect == BucketPolicyAccessTypeDeny
+	default:
+		return false
+	}
 }
 
 // isPublicFor checks if the bucket policy statement grants public access
@@ -297,6 +322,13 @@ func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) err
 	}
 
 	if err := policy.Validate(bucket, iam); err != nil {
+		var lookupErr principalLookupError
+		if errors.As(err, &lookupErr) {
+			// Not a defect in the document: the IAM service could not be
+			// asked whether its principals exist. Report that as itself
+			// rather than telling the caller their policy is malformed.
+			return lookupErr.err
+		}
 		return getMalformedPolicyError(err)
 	}
 
@@ -310,7 +342,7 @@ func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) err
 // Allow only if every action has a matching Allow; otherwise NoMatch,
 // paired with the first action that lacked one. Zero actions is
 // conservatively NoMatch, not vacuously Allow.
-func verifyBucketPolicy(policyBytes []byte, access, bucket, object string, condCtx map[string][]string, normalizeObjectKey objectKeyNormalizer, actions ...Action) (policyDecision, Action, error) {
+func verifyBucketPolicy(policyBytes []byte, acc Account, bucket, object string, condCtx map[string][]string, normalizeObjectKey objectKeyNormalizer, actions ...Action) (policyDecision, Action, error) {
 	if len(actions) == 0 {
 		return policyDecisionNoMatch, "", nil
 	}
@@ -325,7 +357,7 @@ func verifyBucketPolicy(policyBytes []byte, access, bucket, object string, condC
 	result := policyDecisionAllow
 	var blamed Action
 	for _, action := range actions {
-		switch d := bp.decisionFor(access, action, resource, condCtx, normalizeObjectKey); d {
+		switch d := bp.decisionFor(acc, action, resource, condCtx, normalizeObjectKey); d {
 		case policyDecisionDeny:
 			return policyDecisionDeny, action, nil
 		case policyDecisionNoMatch:

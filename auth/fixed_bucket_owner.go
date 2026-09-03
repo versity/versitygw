@@ -47,6 +47,12 @@ func ResolveFixedBucketOwner(iam IAMService) (Account, bool) {
 // object writes then land with the same ownership as the buckets root owns.
 // Backends that do not fix ownership resolve a real per-account uid/gid for
 // every other account and keep root exactly as it was.
+//
+// The same backend is also the one that knows root's principal ARN, which
+// the S3 request path likewise cannot derive: root is the only identity
+// resolved locally rather than through the IAM service, so without this it
+// would reach bucket-policy matching unnamed and a statement naming the
+// account root ARN would miss it.
 func rootIdentity(iam IAMService, root Account) Account {
 	owner, fixed := ResolveFixedBucketOwner(iam)
 	if !fixed || owner.Access != root.Access {
@@ -56,5 +62,6 @@ func rootIdentity(iam IAMService, root Account) Account {
 	root.UserID = owner.UserID
 	root.GroupID = owner.GroupID
 	root.ProjectID = owner.ProjectID
+	root.Arn = owner.Arn
 	return root
 }
