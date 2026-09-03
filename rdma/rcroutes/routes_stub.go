@@ -34,16 +34,17 @@ func New(svc any, be backend.Backend, iam auth.IAMService,
 	return &Handler{}
 }
 
-func notImplemented() error {
-	return fiber.NewError(fiber.StatusNotImplemented,
-		"RDMA not supported on this platform")
+// notImplemented answers 501 through the shared terminal error
+// serializer so the response shape matches the Linux routes.
+func notImplemented(ctx fiber.Ctx) error {
+	return writeRouteError(ctx, errRouteNotImplemented{})
 }
 
 // Prepare is a stub handler that answers 501 Not Implemented.
-func (h *Handler) Prepare(ctx fiber.Ctx) error { return notImplemented() }
+func (h *Handler) Prepare(ctx fiber.Ctx) error { return notImplemented(ctx) }
 
 // Ready is a stub handler that answers 501 Not Implemented.
-func (h *Handler) Ready(ctx fiber.Ctx) error { return notImplemented() }
+func (h *Handler) Ready(ctx fiber.Ctx) error { return notImplemented(ctx) }
 
 // Cancel is a stub handler that answers 501 Not Implemented.
-func (h *Handler) Cancel(ctx fiber.Ctx) error { return notImplemented() }
+func (h *Handler) Cancel(ctx fiber.Ctx) error { return notImplemented(ctx) }
