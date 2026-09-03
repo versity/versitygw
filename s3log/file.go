@@ -35,24 +35,37 @@ const (
 
 // FileLogger is a local file audit log
 type FileLogger struct {
-	logfile string
-	f       *os.File
-	gotErr  bool
-	mu      sync.Mutex
+	logfile        string
+	f              *os.File
+	standardStream bool
+	gotErr         bool
+	mu             sync.Mutex
 }
 
 var _ AuditLogger = &FileLogger{}
 
 // InitFileLogger initializes audit logs to local file
 func InitFileLogger(logname string) (AuditLogger, error) {
-	f, err := os.OpenFile(logname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, logFileMode)
+	f, standardStream, err := openLogDestination(logname)
 	if err != nil {
 		return nil, fmt.Errorf("open log: %w", err)
 	}
 
 	fmt.Fprintf(f, "log starts %v\n", time.Now())
 
-	return &FileLogger{logfile: logname, f: f}, nil
+	return &FileLogger{logfile: logname, f: f, standardStream: standardStream}, nil
+}
+
+func openLogDestination(logname string) (*os.File, bool, error) {
+	switch strings.ToLower(logname) {
+	case "stdout", "-":
+		return os.Stdout, true, nil
+	case "stderr":
+		return os.Stderr, true, nil
+	default:
+		f, err := os.OpenFile(logname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, logFileMode)
+		return f, false, err
+	}
 }
 
 // Log sends log message to file logger
@@ -222,6 +235,11 @@ func (f *FileLogger) writeLog(lf LogFields) {
 // HangUp closes current logfile handle and opens a new one
 // typically needed for log rotations
 func (f *FileLogger) HangUp() error {
+	if f.standardStream {
+		f.f.WriteString(fmt.Sprintf("log starts %v\n", time.Now()))
+		return nil
+	}
+
 	err := f.f.Close()
 	if err != nil {
 		return fmt.Errorf("close log: %w", err)
@@ -239,5 +257,9 @@ func (f *FileLogger) HangUp() error {
 
 // Shutdown closes logfile handle
 func (f *FileLogger) Shutdown() error {
+	if f.standardStream {
+		return nil
+	}
+
 	return f.f.Close()
 }

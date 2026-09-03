@@ -34,14 +34,14 @@ var _ AuditLogger = &AdminFileLogger{}
 
 // InitFileLogger initializes audit logs to local file
 func InitAdminFileLogger(logname string) (AuditLogger, error) {
-	f, err := os.OpenFile(logname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, standardStream, err := openLogDestination(logname)
 	if err != nil {
 		return nil, fmt.Errorf("open log: %w", err)
 	}
 
 	f.WriteString(fmt.Sprintf("log starts %v\n", time.Now()))
 
-	return &AdminFileLogger{FileLogger: FileLogger{logfile: logname, f: f}}, nil
+	return &AdminFileLogger{FileLogger: FileLogger{logfile: logname, f: f, standardStream: standardStream}}, nil
 }
 
 // Log sends log message to file logger
