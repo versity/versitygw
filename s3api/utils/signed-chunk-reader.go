@@ -32,6 +32,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/sigv4auth"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -235,7 +236,7 @@ func (cr *ChunkReader) verifyTrailerSignature() error {
 	strToSign := cr.getTrailerChunkStringToSign()
 	sig := hex.EncodeToString(hmac256(cr.signingKey, []byte(strToSign)))
 
-	if sig != cr.trailerSig {
+	if !sigv4auth.SecureCompare(sig, cr.trailerSig) {
 		debuglogger.Logf("incorrect trailing signature: (calculated): %v, (got): %v", sig, cr.trailerSig)
 		return s3err.GetSignatureDoesNotMatchErr(cr.accessKey, strToSign, cr.trailerSig, HexBytes(strToSign), cr.canonicalString, HexBytes(cr.canonicalString))
 	}
@@ -262,7 +263,7 @@ func (cr *ChunkReader) checkSignature() error {
 	cr.chunkHash.Reset()
 	cr.prevSig = hex.EncodeToString(hmac256(cr.signingKey, []byte(sigstr)))
 
-	if cr.prevSig != cr.parsedSig {
+	if !sigv4auth.SecureCompare(cr.prevSig, cr.parsedSig) {
 		debuglogger.Logf("incorrect signature: (calculated): %v, (got) %v", cr.prevSig, cr.parsedSig)
 		return s3err.GetSignatureDoesNotMatchErr(cr.accessKey, sigstr, cr.parsedSig, HexBytes(sigstr), cr.canonicalString, HexBytes(cr.canonicalString))
 	}
