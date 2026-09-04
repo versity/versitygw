@@ -25,6 +25,8 @@ source ./tests/commands/put_object.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/complete_multipart_upload/complete_multipart_upload_s3api.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/create_bucket/create_bucket_s3api.sh
+source ./tests/drivers/get_object/get_object_s3api.sh
 source ./tests/drivers/get_object_legal_hold/get_object_legal_hold.sh
 source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/drivers/head_object/head_object_s3api.sh
