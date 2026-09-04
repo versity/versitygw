@@ -30,6 +30,7 @@ source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/drivers/head_object/head_object_s3api.sh
 source ./tests/drivers/list_multipart_uploads/list_multipart_uploads_s3api.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
+source ./tests/drivers/put_object/put_object_s3api.sh
 source ./tests/util/util_multipart_abort.sh
 source ./tests/util/util_multipart_before_completion.sh
 
