@@ -97,18 +97,27 @@ func principalID(acct auth.Account) rcserver.PrincipalID {
 }
 
 func errNotAdmitted() error {
-	return fiber.NewError(fiber.StatusServiceUnavailable,
-		"RDMA service is shutting down")
+	return errRouteUnavailable{}
 }
 
 func invalidHeader(name, value string) error {
-	return fiber.NewError(fiber.StatusBadRequest,
-		fmt.Sprintf("invalid %s header: %q", name, value))
+	return fmt.Errorf("invalid %s header: %q: %w",
+		name, value, errRouteBadRequest{})
 }
 
 // Prepare handles PREPARE: authorize the object access, create the
 // session, and (GET) stage the object into the session buffer.
 func (h *Handler) Prepare(ctx fiber.Ctx) error {
+	// Serialize any error at the route boundary: the
+	// production S3 error handler turns ordinary Fiber
+	// errors into a generic 500 response.
+	if err := h.prepareCore(ctx); err != nil {
+		return WriteRouteError(ctx, err)
+	}
+	return nil
+}
+
+func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	if !h.svc.TryEnter() {
 		return errNotAdmitted()
 	}
@@ -256,6 +265,16 @@ func (h *Handler) stageGet(ctx fiber.Ctx, sessionID, bucket, key string,
 // the session's target, then run the transfer. PUT picks up the
 // received data and hands it to the object backend.
 func (h *Handler) Ready(ctx fiber.Ctx) error {
+	// Serialize any error at the route boundary: the
+	// production S3 error handler turns ordinary Fiber
+	// errors into a generic 500 response.
+	if err := h.readyCore(ctx); err != nil {
+		return WriteRouteError(ctx, err)
+	}
+	return nil
+}
+
+func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	if !h.svc.TryEnter() {
 		return errNotAdmitted()
 	}
@@ -295,7 +314,7 @@ func (h *Handler) Ready(ctx fiber.Ctx) error {
 	if err != nil {
 		// Owner mismatch and unknown session both answer 404 so
 		// the session id is not disclosed cross-principal.
-		return fiber.NewError(fiber.StatusNotFound, "no such RDMA session")
+		return mapRcError(err)
 	}
 
 	// Re-run authorization for the session's stored target and
@@ -303,7 +322,7 @@ func (h *Handler) Ready(ctx fiber.Ctx) error {
 	// request.
 	bucket, key, ok := splitTarget(info.Target)
 	if !ok {
-		return fiber.NewError(fiber.StatusInternalServerError, "session target")
+		return errors.New("invalid session target")
 	}
 	if err := h.authorize(ctx, acct, isRoot, bucket, key, info.Op == 1); err != nil {
 		// Permission revoked mid-session: cancel the session.
@@ -335,7 +354,7 @@ func (h *Handler) Ready(ctx fiber.Ctx) error {
 	// rolled the claim back (state Prepared, no completion ref),
 	// so answer 409 without any finalizer.
 	if resp.Outcome == rcserver.ReadyBusy {
-		return fiber.NewError(fiber.StatusConflict, "peer busy")
+		return fmt.Errorf("peer busy: %w", rcserver.ErrDouble)
 	}
 
 	// The claim succeeded: from here until the response commits,
@@ -439,6 +458,16 @@ func (h *Handler) commitPut(ctx fiber.Ctx, sessionID, bucket, key string,
 
 // Cancel handles CANCEL: authenticated owner tears the session down.
 func (h *Handler) Cancel(ctx fiber.Ctx) error {
+	// Serialize any error at the route boundary: the
+	// production S3 error handler turns ordinary Fiber
+	// errors into a generic 500 response.
+	if err := h.cancelCore(ctx); err != nil {
+		return WriteRouteError(ctx, err)
+	}
+	return nil
+}
+
+func (h *Handler) cancelCore(ctx fiber.Ctx) error {
 	if !h.svc.TryEnter() {
 		return errNotAdmitted()
 	}
@@ -583,30 +612,15 @@ func formatHex(v uint64) string {
 }
 
 // mapRcError translates ABI statuses into HTTP-shaped failures.
+// mapRcError wraps a session-server error so the shared terminal
+// serializer in errors.go can classify it. Owner mismatch answers
+// the same 404 as an unknown session so a session id is never
+// disclosed across principals.
 func mapRcError(err error) error {
-	var status int
-	var msg string
 	switch {
-	case errors.Is(err, rcserver.ErrNoSession):
-		status, msg = fiber.StatusNotFound, "no such RDMA session"
-	case errors.Is(err, rcserver.ErrStale):
-		status, msg = fiber.StatusConflict, "stale RDMA session handle"
 	case errors.Is(err, rcserver.ErrSession):
-		status, msg = fiber.StatusForbidden, "RDMA session owner mismatch"
-	case errors.Is(err, rcserver.ErrState), errors.Is(err, rcserver.ErrDouble):
-		status, msg = fiber.StatusConflict, "wrong RDMA session state"
-	case errors.Is(err, rcserver.ErrLimit):
-		status, msg = fiber.StatusTooManyRequests, "RDMA resource limit"
-	case errors.Is(err, rcserver.ErrWire):
-		status, msg = fiber.StatusBadGateway, "RDMA transfer failed"
-	case errors.Is(err, rcserver.ErrShort):
-		status, msg = fiber.StatusBadRequest, "short RDMA transfer"
-	case errors.Is(err, rcserver.ErrTrunc):
-		status, msg = fiber.StatusBadRequest, "RDMA value too long"
-	case errors.Is(err, rcserver.ErrArg):
-		status, msg = fiber.StatusBadRequest, "invalid RDMA argument"
-	default:
-		status, msg = fiber.StatusInternalServerError, "RDMA internal error"
+		return fmt.Errorf("session owner mismatch: %w",
+			rcserver.ErrNoSession)
 	}
-	return fiber.NewError(status, msg)
+	return err
 }

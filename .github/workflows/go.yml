@@ -24,6 +24,9 @@ jobs:
       run: |
         go get -v -t -d ./...
 
+    - name: Build RDMA session server archive
+      run: make rdma/librcserver.a
+
     - name: Test
       run: go test -coverprofile profile.txt -race -v -timeout 30s -tags=github ./...
 
