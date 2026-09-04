@@ -134,7 +134,44 @@ func TestObjectPublishLockHonorsCancellationAfterSlotAcquired(t *testing.T) {
 	}
 }
 
-func TestObjectPublishLockCanDisableSharedLockFile(t *testing.T) {
+func TestObjectPublishLockModes(t *testing.T) {
+	tests := []struct {
+		name  string
+		mode  ObjectLockMode
+		local bool
+	}{
+		{name: "flock", mode: ObjectLockModeFlock},
+		{name: "fcntl", mode: ObjectLockModeFcntl},
+		{name: "local", mode: ObjectLockModeLocal, local: true},
+		{name: "none", mode: ObjectLockModeNone, local: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateObjectLockMode(test.mode); err != nil {
+				t.Skip(err)
+			}
+			root := t.TempDir()
+			p, err := New(root, meta.XattrMeta{}, PosixOpts{
+				NewDirPerm:     0755,
+				ObjectLockMode: test.mode,
+			})
+			if err != nil {
+				t.Fatalf("new posix: %v", err)
+			}
+			defer p.Shutdown()
+
+			_, err = os.Stat(filepath.Join(root, objLockDir))
+			if test.local && !errors.Is(err, fs.ErrNotExist) {
+				t.Fatalf("shared lock directory exists or stat failed: %v", err)
+			}
+			if !test.local && err != nil {
+				t.Fatalf("startup did not create shared lock directory: %v", err)
+			}
+		})
+	}
+}
+
+func TestObjectPublishLockDisableFlagUsesLocalMode(t *testing.T) {
 	root := t.TempDir()
 	p, err := New(root, meta.XattrMeta{}, PosixOpts{
 		NewDirPerm:         0755,
@@ -153,6 +190,54 @@ func TestObjectPublishLockCanDisableSharedLockFile(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(root, objLockDir)); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("shared lock directory exists or stat failed: %v", err)
+	}
+}
+
+func TestObjectLockModeValidation(t *testing.T) {
+	_, err := New(t.TempDir(), meta.XattrMeta{}, PosixOpts{ObjectLockMode: "invalid"})
+	if err == nil {
+		t.Fatal("new posix with invalid object lock mode succeeded")
+	}
+
+	_, err = New(t.TempDir(), meta.XattrMeta{}, PosixOpts{
+		ForceNoObjLockFile: true,
+		ObjectLockMode:     ObjectLockModeFcntl,
+	})
+	if err == nil {
+		t.Fatal("new posix with conflicting object lock options succeeded")
+	}
+}
+
+func TestObjectLockModeNoneRejectsConditionalWrites(t *testing.T) {
+	p, err := New(t.TempDir(), meta.XattrMeta{}, PosixOpts{
+		NewDirPerm:     0755,
+		ObjectLockMode: ObjectLockModeNone,
+	})
+	if err != nil {
+		t.Fatalf("new posix: %v", err)
+	}
+	defer p.Shutdown()
+
+	bucket := "testbucket"
+	createTestBucket(t, p, bucket)
+	for _, condition := range []struct {
+		name        string
+		ifMatch     *string
+		ifNoneMatch *string
+	}{
+		{name: "if-match", ifMatch: aws.String("etag")},
+		{name: "if-none-match", ifNoneMatch: aws.String("*")},
+	} {
+		t.Run(condition.name, func(t *testing.T) {
+			_, err := testPut(p, bucket, "object", []byte("body"), condition.ifMatch, condition.ifNoneMatch)
+			if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotImplemented)) {
+				t.Fatalf("conditional put error = %v, want NotImplemented", err)
+			}
+		})
+	}
+
+	if _, err := testPut(p, bucket, "unconditional", []byte("body"), nil, nil); err != nil {
+		t.Fatalf("unconditional put: %v", err)
 	}
 }
 

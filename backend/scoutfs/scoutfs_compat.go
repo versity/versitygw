@@ -69,6 +69,10 @@ type ScoutFS struct {
 
 func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 	metastore := meta.XattrMeta{}
+	objectLockMode := opts.ObjectLockMode
+	if objectLockMode == "" {
+		objectLockMode = posix.ObjectLockModeNone
+	}
 
 	posixOpts := posix.PosixOpts{
 		ChownUID:            opts.ChownUID,
@@ -80,7 +84,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 		CopyObjectThreshold: opts.CopyObjectThreshold,
 		DefaultEtag:         opts.DefaultEtag,
 		DataIntegrityEtag:   opts.DataIntegrityEtag,
-		ForceNoObjLockFile:  true, // scoutfs flock not cluster consistent
+		ObjectLockMode:      objectLockMode,
 	}
 	if opts.newDirPermSet {
 		posixOpts.SetNewDirPerm(opts.NewDirPerm)

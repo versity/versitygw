@@ -20,6 +20,7 @@ import (
 	"math"
 
 	"github.com/urfave/cli/v2"
+	"github.com/versity/versitygw/backend/posix"
 	"github.com/versity/versitygw/backend/scoutfs"
 )
 
@@ -27,6 +28,7 @@ var (
 	glacier          bool
 	disableNoArchive bool
 	setProjectID     bool
+	scoutfsLockMode  string
 )
 
 // ScoutfsCommand returns the "scoutfs" subcommand, common to all versitygw
@@ -109,6 +111,14 @@ move interfaces as well as support for tiered filesystems.`,
 				EnvVars:     []string{"VGW_DISABLE_NOARCHIVE"},
 				Destination: &disableNoArchive,
 			},
+			&cli.StringFlag{
+				Name:        "object-lock-mode",
+				Usage:       "lock mode for conditional object publishes: local or none",
+				EnvVars:     []string{"VGW_OBJECT_LOCK_MODE"},
+				Value:       "none",
+				DefaultText: "none",
+				Destination: &scoutfsLockMode,
+			},
 			&cli.IntFlag{
 				Name:        "concurrency",
 				Usage:       "maximum concurrent actions allowed",
@@ -149,6 +159,10 @@ func runScoutfs(ctx *cli.Context) error {
 		return fmt.Errorf("concurrency must be positive, got %d", actionsConcurrency)
 	}
 
+	if scoutfsLockMode != string(posix.ObjectLockModeLocal) && scoutfsLockMode != string(posix.ObjectLockModeNone) {
+		return fmt.Errorf("invalid scoutfs object lock mode %q (want local or none)", scoutfsLockMode)
+	}
+
 	var opts scoutfs.ScoutfsOpts
 	opts.GlacierMode = glacier
 	opts.ChownUID = chownuid
@@ -160,6 +174,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.SetProjectID = setProjectID
 	opts.Concurrency = actionsConcurrency
 	opts.CopyObjectThreshold = CopyObjectThreshold
+	opts.ObjectLockMode = posix.ObjectLockMode(scoutfsLockMode)
 	opts.DefaultEtag = defaultEtag
 	opts.DataIntegrityEtag = dataIntegrityEtag
 	opts.SetNewDirPerm(fs.FileMode(dirPerms))
