@@ -40,6 +40,7 @@ var (
 	forceNoTmpFile       bool
 	forceNoCopyFileRange bool
 	forceNoObjLockFile   bool
+	objectLockMode       string
 	enableODirect        bool
 	actionsConcurrency   int
 	ioBufferSize         int
@@ -145,9 +146,16 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 			},
 			&cli.BoolFlag{
 				Name:        "disable-object-lock-file",
-				Usage:       "disable shared advisory lock files for conditional object publishes (unsafe with multiple gateway processes)",
+				Usage:       "deprecated alias for --object-lock-mode=local",
 				EnvVars:     []string{"VGW_DISABLE_OBJECT_LOCK_FILE"},
 				Destination: &forceNoObjLockFile,
+			},
+			&cli.StringFlag{
+				Name:        "object-lock-mode",
+				Usage:       "lock mode for conditional object publishes: flock, fcntl, local, or none",
+				EnvVars:     []string{"VGW_OBJECT_LOCK_MODE"},
+				DefaultText: "flock",
+				Destination: &objectLockMode,
 			},
 			&cli.BoolFlag{
 				Name:        "enable-odirect",
@@ -202,6 +210,7 @@ func runPosix(ctx *cli.Context) error {
 		ForceNoTmpFile:       forceNoTmpFile,
 		ForceNoCopyFileRange: forceNoCopyFileRange,
 		ForceNoObjLockFile:   forceNoObjLockFile,
+		ObjectLockMode:       posix.ObjectLockMode(objectLockMode),
 		EnableODirect:        enableODirect,
 		ValidateBucketNames:  DisableStrictBucketNames,
 		Concurrency:          actionsConcurrency,

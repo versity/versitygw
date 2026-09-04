@@ -19,6 +19,7 @@ package posix
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
@@ -28,7 +29,10 @@ import (
 // lockFileExclusive takes an exclusive lock on f via LockFileEx, polling with
 // backoff so that context cancellation is honored while waiting. The lock is
 // released when f is closed or the process exits.
-func lockFileExclusive(ctx context.Context, f *os.File) error {
+func lockFileExclusive(ctx context.Context, f *os.File, mode ObjectLockMode) error {
+	if mode != ObjectLockModeFlock {
+		return errors.New("object lock mode fcntl is not supported on Windows")
+	}
 	backoff := objLockInitialBackoff
 	for {
 		ol := new(windows.Overlapped)
@@ -51,7 +55,9 @@ func lockFileExclusive(ctx context.Context, f *os.File) error {
 	}
 }
 
-func isAdvisoryLockUnsupported(err error) bool {
-	return errors.Is(err, windows.ERROR_INVALID_FUNCTION) ||
-		errors.Is(err, windows.ERROR_NOT_SUPPORTED)
+func validateObjectLockMode(mode ObjectLockMode) error {
+	if mode == ObjectLockModeFcntl {
+		return fmt.Errorf("object lock mode %q is not supported on Windows; use flock, local, or none", mode)
+	}
+	return nil
 }
