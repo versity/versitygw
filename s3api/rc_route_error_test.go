@@ -14,8 +14,11 @@
 package s3api
 
 import (
+	"bytes"
 	"encoding/xml"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -71,8 +74,59 @@ func TestRCRouteErrorPreservesS3Error(t *testing.T) {
 	if er.RequestID == "" || er.HostID == "" {
 		t.Fatal("response missing RequestId or HostId")
 	}
+	if got := resp.Header.Get("x-amz-request-id"); got != er.RequestID {
+		t.Fatalf("body RequestId %q != header %q", er.RequestID, got)
+	}
+	if got := resp.Header.Get("x-amz-id-2"); got != er.HostID {
+		t.Fatalf("body HostId %q != header %q", er.HostID, got)
+	}
 	if ct := resp.Header.Get("Content-Type"); ct != fiber.MIMEApplicationXML {
 		t.Fatalf("content-type = %q, want %q", ct, fiber.MIMEApplicationXML)
+	}
+}
+
+func TestRCRouteErrorKeepsSubtypeDiagnostics(t *testing.T) {
+	// A wrapped per-type S3 error must keep both its status and
+	// its subtype-only XML fields; serializing only the base
+	// error would drop the diagnostics.
+	server, err := newTestS3ApiServer(
+		WithRoute(http.MethodPost, "/.hipobj-rc/op", func(ctx fiber.Ctx) error {
+			inner := s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)
+			wrapped := s3err.SignatureDoesNotMatchError{
+				AWSAccessKeyId: "AKIAEXAMPLE",
+				// The remaining diagnostic fields flow from the
+				// base through the subtype constructor in
+				// production; the wire contract under test is
+				// that the subtype body is used verbatim.
+				APIError:     inner,
+				StringToSign: "EXAMPLE-STRING-TO-SIGN",
+			}
+			return rcroutes.WriteRouteError(ctx,
+				fmt.Errorf("auth: %w", wrapped))
+		}),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	resp, err := server.app.Test(httptest.NewRequest(http.MethodPost, "/.hipobj-rc/op", nil))
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	for _, want := range []string{"SignatureDoesNotMatch", "AKIAEXAMPLE",
+		"EXAMPLE-STRING-TO-SIGN"} {
+		if !bytes.Contains(body, []byte(want)) {
+			t.Fatalf("body missing %q: %s", want, body)
+		}
 	}
 }
 

@@ -51,9 +51,6 @@ func WriteRouteError(ctx fiber.Ctx, err error) error {
 	requestID, hostID := utils.EnsureRequestIDs(ctx)
 
 	apiErr := routeError(err)
-	if apiErr.HTTPStatusCode == fiber.StatusInternalServerError {
-		logInternalRouteError(ctx, err)
-	}
 	if isRouteNotImplemented(err) {
 		apiErr = s3err.APIError{
 			Code:           "NotImplemented",
@@ -61,10 +58,23 @@ func WriteRouteError(ctx fiber.Ctx, err error) error {
 			HTTPStatusCode: fiber.StatusNotImplemented,
 		}
 	}
+	if apiErr.HTTPStatusCode == fiber.StatusInternalServerError {
+		logInternalRouteError(ctx, err)
+	}
+
+	// A full S3 error keeps its own richer XML body - per-type
+	// diagnostics such as signature details would be lost if
+	// only the base error were serialized.
+	var body []byte
+	var s3Err s3err.S3Error
+	if errors.As(err, &s3Err) {
+		body = s3Err.XMLBody(requestID, hostID)
+	} else {
+		body = apiErr.XMLBody(requestID, hostID)
+	}
 
 	ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
-	return ctx.Status(apiErr.HTTPStatusCode).
-		Send(apiErr.XMLBody(requestID, hostID))
+	return ctx.Status(apiErr.HTTPStatusCode).Send(body)
 }
 
 // routeError resolves err to its S3-style response. Errors that
