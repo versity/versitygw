@@ -94,7 +94,7 @@ calculate_composite_checksum() {
   elif [ "$1" == "crc32" ]; then
     composite="$(gzip -c -1 "$TEST_FILE_FOLDER/all_checksums.bin" | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
   elif [ "$1" == "crc32c" ]; then
-    if ! composite=$(CHECKSUM_TYPE="$1" DATA_FILE="$TEST_FILE_FOLDER/all_checksums.bin" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
+    if ! composite=$(CHECKSUM_TYPE="$1" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" DATA_FILE="$TEST_FILE_FOLDER/all_checksums.bin" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
       log 2 "error calculating crc32c checksum: $composite"
       return 1
     fi
@@ -409,12 +409,12 @@ create_upload_finish_wrong_etag() {
 
   etag="gibberish"
   part_number=1
-  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
+  if ! create_multipart_upload_rest "$bucket" "$key" "" "parse_upload_id"; then
     log 2 "error creating upload and getting ID"
     return 1
   fi
   parts_payload="<Part><ETag>$etag</ETag><PartNumber>$part_number</PartNumber></Part>"
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$upload_id" PARTS="$parts_payload" OUTPUT_FILE="$TEST_FILE_FOLDER/$result_file" ./tests/rest_scripts/complete_multipart_upload.sh); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$bucket" OBJECT_KEY="$key" UPLOAD_ID="$upload_id" PARTS="$parts_payload" OUTPUT_FILE="$TEST_FILE_FOLDER/$result_file" ./tests/rest_scripts/complete_multipart_upload.sh); then
     log 2 "error completing multipart upload: $result"
     return 1
   fi
