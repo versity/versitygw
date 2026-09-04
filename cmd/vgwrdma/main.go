@@ -16,13 +16,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/gofiber/fiber/v3"
@@ -35,6 +34,7 @@ import (
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/embedgw"
 	"github.com/versity/versitygw/internal/netutil"
+	"github.com/versity/versitygw/internal/rdmamode"
 	"github.com/versity/versitygw/rdma"
 	"github.com/versity/versitygw/rdma/rcroutes"
 	"github.com/versity/versitygw/rdma/rcserver"
@@ -111,6 +111,7 @@ var (
 	socketPerm                             string
 	rdmaIP                                 string
 	rcGidHint                              string
+	rdmaRCEnable                           bool
 	rdmaPort                               uint
 	poolBufSize                            int
 	poolBufCount                           int
@@ -242,11 +243,16 @@ documentation can be found in the GitHub wiki.`,
 				ctx.IsSet("rdma-cq-depth") ||
 				ctx.IsSet("rdma-retry-count")
 
-			// Only commands that actually start a gateway need --rdma-ip; admin,
-			// utils, help, and version subcommands print output and exit without
-			// ever calling runGateway.
-			if gatewayCommands[ctx.Args().First()] && strings.TrimSpace(rdmaIP) == "" {
-				return fmt.Errorf("rdma-ip is required")
+			// Only commands that actually start a gateway need an
+			// RDMA path; admin, utils, help, and version
+			// subcommands print output and exit without ever
+			// calling runGateway. Either the cuObject v1 address
+			// or the RC v2 flag enables one.
+			if gatewayCommands[ctx.Args().First()] {
+				v1On, v2On := rdmamode.Mode(rdmaIP, rdmaRCEnable)
+				if !v1On && !v2On {
+					return fmt.Errorf("either --rdma-ip or --rdma-rc-enable is required")
+				}
 			}
 			return nil
 		},
@@ -886,6 +892,12 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_RC_GID_HINT"},
 			Destination: &rcGidHint,
 		},
+		&cli.BoolFlag{
+			Name:        "rdma-rc-enable",
+			Usage:       "enable the hipobj-rc-v2 RC control routes and data plane (independent of --rdma-ip)",
+			EnvVars:     []string{"VGW_RDMA_RC_ENABLE"},
+			Destination: &rdmaRCEnable,
+		},
 		&cli.UintFlag{
 			Name:        "rdma-port",
 			Usage:       "port for RDMA listener",
@@ -967,27 +979,36 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	if gwcli.CopyObjectThreshold < 1 {
 		return fmt.Errorf("copy-object-threshold must be positive")
 	}
-	if rdmaPort > 65535 {
-		return fmt.Errorf("rdma-port %d is out of range (0-65535)", rdmaPort)
-	}
-	if rdmaRetryCount > 7 {
-		return fmt.Errorf("rdma-retry-count %d is out of range (0-7)", rdmaRetryCount)
-	}
-	if poolBufSize <= 0 {
-		return fmt.Errorf("pool-buf-size %d must be positive", poolBufSize)
-	}
-	if poolBufCount <= 0 {
-		return fmt.Errorf("pool-buf-count %d must be positive", poolBufCount)
-	}
-	if rdmaTunablesSet && rdmaNumDCIs <= 0 {
-		return fmt.Errorf("rdma-num-dcis %d must be positive", rdmaNumDCIs)
-	}
-	if rdmaTunablesSet && rdmaCQDepth > math.MaxUint32 {
-		return fmt.Errorf("rdma-cq-depth %d exceeds maximum %d", rdmaCQDepth, uint32(math.MaxUint32))
+	v1On, v2On := rdmamode.Mode(rdmaIP, rdmaRCEnable)
+	if v1On {
+		// v1-only settings are irrelevant when the cuObject
+		// backend is not running; stale environment values must
+		// not block v2-only startup.
+		v1s := rdmamode.V1Settings{
+			Port:        rdmaPort,
+			RetryCount:  rdmaRetryCount,
+			PoolBufSize: poolBufSize,
+			PoolBufCnt:  poolBufCount,
+			TunablesSet: rdmaTunablesSet,
+			NumDCIs:     rdmaNumDCIs,
+			CQDepth:     rdmaCQDepth,
+		}
+		if msg := rdmamode.V1ValidationError(v1s); msg != "" {
+			return errors.New(msg)
+		}
 	}
 
+	// The gateway command owns the input backend from here on:
+	// every later failure path must close the whole chain it has
+	// built so far, exactly once. The closure reads be at run
+	// time, so the rollback covers the v1 chain and the RC
+	// wrapper once those layers are added; the once guard keeps
+	// the shared close with the RunVersityGW lifecycle single.
+	be = rdmamode.WrapShutdownOnce(be)
+	defer func() { be.Shutdown() }()
+
 	var s3Opts []s3api.Option
-	if rdmaIP != "" {
+	if v1On {
 		rdma.ConfigureTelemetry(debug)
 
 		var tunables *rdma.RDMATunables
@@ -1010,7 +1031,11 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		if err != nil {
 			return err
 		}
-		be = cuserverBackend
+		// The v1 layer has no idempotent Shutdown of its own; put
+		// the once owner around the completed chain so the
+		// rollback closure and the RunVersityGW lifecycle both
+		// stop at the same single close.
+		be = rdmamode.WrapShutdownOnce(cuserverBackend)
 
 		s3Opts = append(s3Opts, s3api.WithMiddleware("/", cumiddleware.CuObjMiddleware))
 	}
@@ -1116,11 +1141,13 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		BuildTime:                   BuildTime,
 	}
 
-	if rdmaIP != "" {
+	if v2On {
 		// RC data plane: build the IAM service the gateway will
 		// use so the control routes authenticate against the
 		// same account store, then start the session server and
-		// mount the hipobj-rc-v2 routes on the S3 port.
+		// mount the hipobj-rc-v2 routes on the S3 port. Enabled
+		// by --rdma-rc-enable independently of the cuObject
+		// --rdma-ip flag.
 		iamSvc, err := auth.New(cfg.IamOpts())
 		if err != nil {
 			return fmt.Errorf("setup iam for rdma routes: %w", err)
@@ -1148,7 +1175,11 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		if err != nil {
 			return err
 		}
-		defer rcSvc.Close()
+		// Close the RC service before the backend chain so the
+		// control routes drain first; the wrapper also gives the
+		// rollback closure and the RunVersityGW lifecycle a
+		// single, ordered owner of both steps.
+		be = rdmamode.WrapBackendShutdownAfterRC(be, rcSvc)
 
 		rcVerify := middlewares.VerifyV4Signature(
 			middlewares.RootUserConfig{
