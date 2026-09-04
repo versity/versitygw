@@ -6268,7 +6268,7 @@ func (p *Posix) ListObjectsV2Parametrized(ctx context.Context, input *s3.ListObj
 		return s3response.ListObjectsV2Result{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
 
-	count := int32(len(results.Objects))
+	count := int32(len(results.Objects) + len(results.CommonPrefixes))
 
 	return s3response.ListObjectsV2Result{
 		CommonPrefixes:        results.CommonPrefixes,
