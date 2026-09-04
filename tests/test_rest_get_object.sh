@@ -20,6 +20,7 @@ load ./bats-assert/load
 source ./tests/commands/get_object.sh
 source ./tests/drivers/complete_multipart_upload/complete_multipart_upload_rest.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/create_multipart_upload/create_multipart_upload_rest.sh
 source ./tests/setup.sh
 
 # tags: curl,GetObject,HeadObject,range
