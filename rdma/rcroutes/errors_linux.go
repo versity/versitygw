@@ -40,10 +40,15 @@ func (errRouteUnavailable) Error() string {
 }
 
 // isRouteBadRequest reports whether err is a malformed-request
-// class error from the Linux route handlers.
+// class error: an invalid header value from the route handlers or
+// a rejected argument, short transfer, or oversized value from
+// the session server.
 func isRouteBadRequest(err error) bool {
 	var bad errRouteBadRequest
-	return errors.As(err, &bad)
+	return errors.As(err, &bad) ||
+		errors.Is(err, rcserver.ErrShort) ||
+		errors.Is(err, rcserver.ErrTrunc) ||
+		errors.Is(err, rcserver.ErrArg)
 }
 
 // isRouteNotFound reports whether err identifies an unknown or
