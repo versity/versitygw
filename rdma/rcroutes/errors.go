@@ -18,26 +18,41 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 )
 
-// writeRouteError renders err as the terminal S3-style XML response
+// ErrRouteNotImplemented is the platform-stub answer of the
+// control routes on builds without the RC data plane.
+type ErrRouteNotImplemented struct{}
+
+func (ErrRouteNotImplemented) Error() string {
+	return "RDMA not supported on this platform"
+}
+
+// isRouteNotImplemented reports whether err is the platform-stub
+// answer of the control routes. The marker type is shared, so
+// every build classifies it the same way.
+func isRouteNotImplemented(err error) bool {
+	var ni ErrRouteNotImplemented
+	return errors.As(err, &ni)
+}
+
+// WriteRouteError renders err as the terminal S3-style XML response
 // of an RC control route. The production S3 error handler converts
 // ordinary Fiber errors into a generic 500 response, so the route
 // must send its final status and body itself. Errors that already
 // carry S3 semantics (authentication, authorization, object
 // backend) keep their status and code; anything else is mapped to
-// a protocol error without exposing internal detail.
-func writeRouteError(ctx fiber.Ctx, err error) error {
+// a protocol error without exposing internal detail. The gateway
+// auth adapter uses it for the same reason.
+func WriteRouteError(ctx fiber.Ctx, err error) error {
 	requestID, hostID := utils.EnsureRequestIDs(ctx)
 
-	var apiErr s3err.APIError
-	switch e := classifyRouteError(err).(type) {
-	case s3err.S3Error:
-		apiErr = e.BaseError()
-	case s3err.APIError:
-		apiErr = e
+	apiErr := routeError(err)
+	if apiErr.HTTPStatusCode == fiber.StatusInternalServerError {
+		logInternalRouteError(ctx, err)
 	}
 	if isRouteNotImplemented(err) {
 		apiErr = s3err.APIError{
@@ -52,13 +67,14 @@ func writeRouteError(ctx fiber.Ctx, err error) error {
 		Send(apiErr.XMLBody(requestID, hostID))
 }
 
-// classifyRouteError resolves err to a value implementing
-// s3err.S3Error. S3-aware errors pass through unchanged; RC
-// transport errors are mapped to the closest protocol error.
-func classifyRouteError(err error) s3err.S3Error {
+// routeError resolves err to its S3-style response. Errors that
+// already carry S3 semantics (authentication, authorization,
+// object backend) keep their status and code; RC transport errors
+// map to the closest protocol error.
+func routeError(err error) s3err.APIError {
 	var s3Err s3err.S3Error
 	if errors.As(err, &s3Err) {
-		return s3Err
+		return s3Err.BaseError()
 	}
 
 	code, status, description := routeErrorDetails(err)
@@ -67,6 +83,14 @@ func classifyRouteError(err error) s3err.S3Error {
 		Description:    description,
 		HTTPStatusCode: status,
 	}
+}
+
+// logInternalRouteError keeps a server-side trace of unexpected
+// failures. The wire response stays generic; without this the
+// terminal serializer would hide the production diagnostics the
+// global error handler used to log.
+func logInternalRouteError(ctx fiber.Ctx, err error) {
+	debuglogger.InternalError(err)
 }
 
 // routeErrorDetails maps a non-S3 route error to its protocol

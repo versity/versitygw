@@ -15,23 +15,6 @@
 
 package rcroutes
 
-import "errors"
-
-// errRouteNotImplemented marks the platform-stub answer of the
-// control routes.
-type errRouteNotImplemented struct{}
-
-func (errRouteNotImplemented) Error() string {
-	return "RDMA not supported on this platform"
-}
-
-// isRouteNotImplemented reports whether the platform stub answered
-// the request.
-func isRouteNotImplemented(err error) bool {
-	var ni errRouteNotImplemented
-	return errors.As(err, &ni)
-}
-
 // isRouteBadRequest reports whether err is a malformed-request
 // class error. The stub never classifies request errors because it
 // answers before validation.

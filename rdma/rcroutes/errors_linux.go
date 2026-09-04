@@ -83,7 +83,3 @@ func isRouteUnavailable(err error) bool {
 	var unavail errRouteUnavailable
 	return errors.As(err, &unavail)
 }
-
-// isRouteNotImplemented reports whether the platform stub answered
-// the request; always false on Linux builds.
-func isRouteNotImplemented(err error) bool { return false }

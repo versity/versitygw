@@ -37,7 +37,7 @@ func New(svc any, be backend.Backend, iam auth.IAMService,
 // notImplemented answers 501 through the shared terminal error
 // serializer so the response shape matches the Linux routes.
 func notImplemented(ctx fiber.Ctx) error {
-	return writeRouteError(ctx, errRouteNotImplemented{})
+	return WriteRouteError(ctx, ErrRouteNotImplemented{})
 }
 
 // Prepare is a stub handler that answers 501 Not Implemented.

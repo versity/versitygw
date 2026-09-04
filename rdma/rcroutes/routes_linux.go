@@ -112,7 +112,7 @@ func (h *Handler) Prepare(ctx fiber.Ctx) error {
 	// production S3 error handler turns ordinary Fiber
 	// errors into a generic 500 response.
 	if err := h.prepareCore(ctx); err != nil {
-		return writeRouteError(ctx, err)
+		return WriteRouteError(ctx, err)
 	}
 	return nil
 }
@@ -269,7 +269,7 @@ func (h *Handler) Ready(ctx fiber.Ctx) error {
 	// production S3 error handler turns ordinary Fiber
 	// errors into a generic 500 response.
 	if err := h.readyCore(ctx); err != nil {
-		return writeRouteError(ctx, err)
+		return WriteRouteError(ctx, err)
 	}
 	return nil
 }
@@ -462,7 +462,7 @@ func (h *Handler) Cancel(ctx fiber.Ctx) error {
 	// production S3 error handler turns ordinary Fiber
 	// errors into a generic 500 response.
 	if err := h.cancelCore(ctx); err != nil {
-		return writeRouteError(ctx, err)
+		return WriteRouteError(ctx, err)
 	}
 	return nil
 }
