@@ -339,7 +339,6 @@ multipart_upload_before_completion_custom() {
     fi
   done
   parts+="]"
-
   export parts
 }
 
