@@ -339,7 +339,6 @@ multipart_upload_before_completion_custom() {
     fi
   done
   parts+="]"
-
   export parts
 }
 
@@ -347,14 +346,16 @@ multipart_upload_range_too_large() {
   if ! check_param_count_v2 "bucket, key, file location" 3 $#; then
     return 1
   fi
-  if multipart_upload_from_bucket_range "$1" "$2" "$3" 4 "bytes=0-1000000000"; then
-    log 2 "multipart upload succeeded despite overly large range"
+  local bucket="$1" key="$2" file_location="$3"
+  local response
+
+  if response=$(multipart_upload_from_bucket_range "$bucket" "$key" "$file_location" 4 "bytes=0-1000000000" 2>&1); then
+    log 2 "multipart upload succeeded despite overly large range: $response"
     return 1
   fi
   # shellcheck disable=SC2154
-  log 5 "error: $upload_part_copy_error"
-  if [[ $upload_part_copy_error != *"Range specified is not valid"* ]] && [[ $upload_part_copy_error != *"InvalidRange"* ]]; then
-    log 2 "unexpected error: $upload_part_copy_error"
+  if [[ "$response" != *"Range specified is not valid"* ]] && [[ "$response" != *"InvalidRange"* ]]; then
+    log 2 "unexpected error: $response"
     return 1
   fi
   return 0
