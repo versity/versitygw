@@ -19,25 +19,35 @@ package posix
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
 
-// lockFileExclusive takes an exclusive advisory flock on f, polling with
-// backoff so that context cancellation is honored while waiting. The lock is
-// released by closing f or on process exit, so no cleanup beyond Close is
-// required on any failure path.
-func lockFileExclusive(ctx context.Context, f *os.File) error {
+// lockFileExclusive takes the configured exclusive advisory lock on f,
+// polling with backoff so that context cancellation is honored while waiting.
+func lockFileExclusive(ctx context.Context, f *os.File, mode ObjectLockMode) error {
 	backoff := objLockInitialBackoff
 	for {
-		err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		var err error
+		switch mode {
+		case ObjectLockModeFlock:
+			err = unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		case ObjectLockModeFcntl:
+			err = unix.FcntlFlock(f.Fd(), unix.F_SETLK, &unix.Flock_t{
+				Type:   unix.F_WRLCK,
+				Whence: int16(io.SeekStart),
+			})
+		default:
+			return errors.New("unsupported object lock mode")
+		}
 		if err == nil {
 			return nil
 		}
 		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) &&
-			!errors.Is(err, unix.EINTR) {
+			!errors.Is(err, unix.EACCES) && !errors.Is(err, unix.EINTR) {
 			return err
 		}
 
@@ -50,7 +60,6 @@ func lockFileExclusive(ctx context.Context, f *os.File) error {
 	}
 }
 
-func isAdvisoryLockUnsupported(err error) bool {
-	return errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.EOPNOTSUPP) ||
-		errors.Is(err, unix.ENOSYS)
+func validateObjectLockMode(ObjectLockMode) error {
+	return nil
 }
