@@ -613,6 +613,10 @@ int rc_prepare(rc_server *srv, const rc_prepare_req *req,
       srv->opts.t_prep_ms
           ? hipObj::v2::clockSource().nowMs() + srv->opts.t_prep_ms
           : 0;
+  /* The session record carries its own id copy: reap logging and the
+   * terminal teardown record read core.id, while the map key is the
+   * only other place the id lives. */
+  rs.core.id = id;
   {
     std::lock_guard<std::mutex> g(srv->map_mtx);
     rs.staging_buf = reinterpret_cast<uint8_t *>(buf);
