@@ -76,7 +76,7 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 		TLSClientConfig: mTLSConfig,
 		Proxy:           http.ProxyFromEnvironment,
 	}
-	ipa.client = http.Client{Jar: jar, Transport: tr}
+	ipa.client = http.Client{Jar: jar, Transport: tr, Timeout: 30 * time.Second}
 
 	err = ipa.login()
 	if err != nil {
