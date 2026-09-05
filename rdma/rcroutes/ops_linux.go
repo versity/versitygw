@@ -18,7 +18,8 @@
 package rcroutes
 
 import (
-	"fmt"
+	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/rdma/rcserver"
 	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
 )
@@ -45,6 +47,9 @@ type OpsServices struct {
 // opsEmitter is the operational context captured at PREPARE and held
 // until the final outcome is known: enough to synthesize an access
 // record carrying the session's object rather than the wire path.
+// Every string field is owned storage: nothing may reference the
+// request's pooled buffers once PREPARE returns, because fasthttp
+// reuses them for the next request.
 type opsEmitter struct {
 	ops    OpsServices
 	app    *fiber.App
@@ -59,7 +64,9 @@ type opsEmitter struct {
 // synthesize builds a fiber context whose path and request locals
 // describe the session's logical object operation, so the standard
 // access-log and event pipelines observe GET/PUT of bucket/key
-// instead of the fixed RDMA control path.
+// instead of the fixed RDMA control path. The path string is the
+// emitter's own storage: event senders serialize asynchronously, so
+// the synthesized context must never hand them pooled buffers.
 func (e *opsEmitter) synthesize() (fiber.Ctx, func()) {
 	ctx := e.app.AcquireCtx(&fasthttp.RequestCtx{})
 	method := fiber.MethodGet
@@ -69,7 +76,9 @@ func (e *opsEmitter) synthesize() (fiber.Ctx, func()) {
 	ctx.Method(method)
 	// The access logger and the event schema both split this path
 	// into bucket/key, so the synthesized path must be the object
-	// path in canonical form.
+	// path in canonical form. fiber copies override strings it
+	// stores as the path original; the derived c.path below is
+	// a fresh allocation, which is what outlives the release.
 	ctx.Path("/" + e.bucket + "/" + e.key)
 	utils.ContextKeyAccount.Set(ctx, e.acct)
 	utils.ContextKeyRegion.Set(ctx, e.region)
@@ -84,9 +93,22 @@ func (e *opsEmitter) synthesize() (fiber.Ctx, func()) {
 // publish emits the final audit record, request metric, and (for a
 // committed PUT) the object-created event. Exactly-once delivery is
 // the tracker's job; this method just performs one emission.
+//
+// The operational sinks classify plain errors as 500 on their own,
+// which would disagree with the status the client saw. Before the
+// record reaches them, the error is rendered as its mapped S3 error,
+// so the audit log, the metric, and the wire response all carry the
+// same classification.
 func (e *opsEmitter) publish(err error, bytes int64) {
 	if e == nil || (e.ops.Logger == nil && e.ops.Metrics == nil && e.ops.Events == nil) {
 		return
+	}
+	sinkErr := err
+	if err != nil {
+		var s3Err s3err.S3Error
+		if !errors.As(err, &s3Err) {
+			sinkErr = routeError(err)
+		}
 	}
 	ctx, release := e.synthesize()
 	defer release()
@@ -95,13 +117,13 @@ func (e *opsEmitter) publish(err error, bytes int64) {
 	if e.isPut {
 		action = metrics.ActionPutObject
 	}
-	status := httpStatusFromError(err)
+	status := httpStatusFromError(sinkErr)
 
 	if e.ops.Metrics != nil {
-		e.ops.Metrics.Send(ctx, err, action, bytes, status)
+		e.ops.Metrics.Send(ctx, sinkErr, action, bytes, status)
 	}
 	if e.ops.Logger != nil {
-		e.ops.Logger.Log(ctx, err, nil, s3log.LogMeta{
+		e.ops.Logger.Log(ctx, sinkErr, nil, s3log.LogMeta{
 			Action: action,
 		})
 	}
@@ -116,9 +138,8 @@ func (e *opsEmitter) publish(err error, bytes int64) {
 }
 
 // httpStatusFromError maps an operation error to the HTTP status
-// the S3 surface would have answered with, using the same route
-// error mapping as the wire response so operational records never
-// disagree with what the client saw.
+// the S3 surface would have answered with. The callers pass mapped
+// S3 errors, so the status is simply the error's own.
 func httpStatusFromError(err error) int {
 	if err == nil {
 		return 200
@@ -128,81 +149,157 @@ func httpStatusFromError(err error) int {
 
 // sessionRecord is one tracked session with its captured context.
 type sessionRecord struct {
-	emit    *opsEmitter
-	done    bool
-	pending bool
+	emit *opsEmitter
+	// reserved marks a record the request path holds exclusively:
+	// it took ownership before invoking a native completion call
+	// that would fire the teardown callback synchronously, so the
+	// callback must not publish on its behalf.
+	reserved bool
 }
 
 // opsTracker owns terminal publication: each session (and each
 // pre-session request) is published exactly once, by whichever path
 // confirms the final outcome first. It carries its own throwaway
-// fiber app: the synthesized contexts only carry path and locals,
-// never route state, so they must not share the gateway app.
+// fiber.App for synthesizing publication contexts, independent of
+// the gateway's request routing.
 type opsTracker struct {
 	mu       sync.Mutex
-	sessions map[string]*sessionRecord
 	ops      OpsServices
-	app      *fiber.App
+	sessions map[string]*sessionRecord
+	// earlyTerminals parks teardown notifications that arrived
+	// before the session's registration; register consumes them.
+	earlyTerminals map[string]rcserver.TerminalEvent
+	app            *fiber.App
 }
 
 func newOpsTracker() *opsTracker {
 	return &opsTracker{
-		sessions: map[string]*sessionRecord{},
-		app:      fiber.New(),
+		sessions:       map[string]*sessionRecord{},
+		earlyTerminals: map[string]rcserver.TerminalEvent{},
+		app:            fiber.New(),
 	}
 }
 
 // SetOpsServices installs the operational service instances. The
 // gateway creates the logger, metrics manager, and event sender
 // after the RC routes exist, so the tracker starts empty and the
-// embedder injects them once RunVersityGW has built them. Sessions
-// registered before the injection publish nothing (there are none:
-// the server is not listening yet).
+// services arrive here. Sessions registered before the injection
+// publish nothing (there are none: the gateway wires this before
+// it starts serving).
 func (t *opsTracker) SetOpsServices(ops OpsServices) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.ops = ops
 }
 
-// opsSnapshot returns the current service set under the lock.
-func (t *opsTracker) opsSnapshot() OpsServices {
+// register captures the operational context of a successfully created
+// session so a later terminal path can publish its final outcome.
+// The strings are cloned: they originate from the request's pooled
+// header buffer, which does not survive the response.
+//
+// handleEarlyTerminal covers the FinishPrepare race: the native call
+// that finalizes PREPARE can reap an already-expired session and fire
+// the teardown callback before register runs. When the callback wins
+// that race it parks the event, and register consumes it instead of
+// leaving an entry whose only notification already happened.
+func (t *opsTracker) register(sessionID string, acct auth.Account,
+	region, bucket, key string, isPut bool, start time.Time) {
+	emit := &opsEmitter{
+		ops:    t.loadOps(),
+		app:    t.app,
+		acct:   acct,
+		region: region,
+		bucket: strings.Clone(bucket),
+		key:    strings.Clone(key),
+		isPut:  isPut,
+		start:  start,
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	// A teardown notification that arrived before this registration
+	// owns the publication: publish now and store nothing.
+	if _, parked := t.earlyTerminals[sessionID]; parked {
+		delete(t.earlyTerminals, sessionID)
+		go emit.publish(errSessionExpired, 0)
+		return
+	}
+	t.sessions[sessionID] = &sessionRecord{emit: emit}
+}
+
+// unregister drops a session entry whose PREPARE finalization
+// failed: the native side is gone, so the teardown callback has
+// either already published or will find nothing. A parked early
+// notification is dropped with it (the failure publication covers
+// the outcome).
+func (t *opsTracker) unregister(sessionID string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.sessions, sessionID)
+	delete(t.earlyTerminals, sessionID)
+}
+
+// reserve takes exclusive ownership of a session's publication
+// before the request path invokes a native completion call
+// (FinishFinal, FinishPut, or a reap-triggering mutation). Those
+// calls fire the teardown callback synchronously while the session
+// record is still live; reserving first keeps the callback from
+// publishing an expiry record for a transfer that is completing
+// right now.
+func (t *opsTracker) reserve(sessionID string) *opsEmitter {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	rec, ok := t.sessions[sessionID]
+	if !ok || rec.reserved {
+		return nil
+	}
+	rec.reserved = true
+	return rec.emit
+}
+
+// unreserve restores callback ownership when a reserved completion
+// call did not after all retire the session (the caller failed
+// before any state change). The record goes back to normal tracking
+// unless a teardown notification landed meanwhile.
+func (t *opsTracker) unreserve(sessionID string, emit *opsEmitter) {
+	if t == nil || emit == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	rec, ok := t.sessions[sessionID]
+	if !ok {
+		// The session is gone: the completion call retired it and
+		// the reserved emitter is the only remaining owner, so
+		// nothing to restore.
+		return
+	}
+	rec.reserved = false
+}
+
+func (t *opsTracker) loadOps() OpsServices {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.ops
 }
 
-// register captures the operational context of a successfully created
-// session so a later terminal path can publish its final outcome.
-func (t *opsTracker) register(sessionID string, acct auth.Account,
-	region, bucket, key string, isPut bool, start time.Time) {
-	emit := &opsEmitter{
-		ops:    t.opsSnapshot(),
-		app:    t.app,
-		acct:   acct,
-		region: region,
-		bucket: bucket,
-		key:    key,
-		isPut:  isPut,
-		start:  start,
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.sessions[sessionID] = &sessionRecord{emit: emit, pending: true}
-}
-
-// claim removes the session's publication slot and returns its
-// captured context; the second caller gets nil and publishes nothing.
-func (t *opsTracker) claim(sessionID string) *opsEmitter {
+// claim removes the session from the table and returns its emitter
+// to exactly one publisher. A reserved record is only claimable by
+// its reserving request path (the callback skips it).
+func (t *opsTracker) claim(sessionID string, byRequest bool) *opsEmitter {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	rec, ok := t.sessions[sessionID]
 	if !ok {
 		return nil
 	}
-	delete(t.sessions, sessionID)
-	if !rec.pending {
+	if rec.reserved && !byRequest {
 		return nil
 	}
+	delete(t.sessions, sessionID)
 	return rec.emit
 }
 
@@ -213,13 +310,22 @@ func (t *opsTracker) onTerminal(ev rcserver.TerminalEvent) {
 	if t == nil {
 		return
 	}
-	emit := t.claim(ev.SessionID)
-	if emit == nil {
+	emit := t.claim(ev.SessionID, false)
+	if emit != nil {
+		// An expired or abandoned session never reached a final
+		// object result; the bytes staged for it did not become
+		// a transfer.
+		emit.publish(errSessionExpired, 0)
 		return
 	}
-	// An expired or abandoned session never reached a final object
-	// result; the bytes staged for it did not become a transfer.
-	emit.publish(errSessionExpired, 0)
+	// A session tearing down before its registration ran: park the
+	// event so register can publish instead of orphaning a record
+	// whose only notification already happened.
+	t.mu.Lock()
+	if _, live := t.sessions[ev.SessionID]; !live {
+		t.earlyTerminals[ev.SessionID] = ev
+	}
+	t.mu.Unlock()
 }
 
 // publishClaimed publishes the terminal record from the request
@@ -230,7 +336,7 @@ func (t *opsTracker) publishClaimed(sessionID string, err error, bytes ...int64)
 	if t == nil {
 		return
 	}
-	emit := t.claim(sessionID)
+	emit := t.claim(sessionID, true)
 	if emit == nil {
 		return
 	}
@@ -250,12 +356,12 @@ func (t *opsTracker) publishRequest(ctx fiber.Ctx, acct auth.Account,
 		return
 	}
 	emit := &opsEmitter{
-		ops:    t.ops,
+		ops:    t.loadOps(),
 		app:    t.app,
 		acct:   acct,
 		region: regionFromCtx(ctx),
-		bucket: bucket,
-		key:    key,
+		bucket: strings.Clone(bucket),
+		key:    strings.Clone(key),
 		isPut:  isPut,
 		start:  time.Now(),
 	}
@@ -271,4 +377,16 @@ func regionFromCtx(ctx fiber.Ctx) string {
 	return ""
 }
 
-var errSessionExpired = fmt.Errorf("session expired")
+// expiredOutcomeError renders a parked teardown notification as the
+// error the publication carries: an internal S3 error whose code
+// names the expiry, so the audit log keeps the descriptive code the
+// plain error used to carry instead of the generic mapping.
+type sessionExpiredError struct {
+	s3err.APIError
+}
+
+var errSessionExpired = sessionExpiredError{APIError: s3err.APIError{
+	Code:           "SessionExpired",
+	Description:    "The RDMA transfer session expired before completion",
+	HTTPStatusCode: 500,
+}}

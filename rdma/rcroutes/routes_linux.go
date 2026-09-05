@@ -155,43 +155,43 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 
 	// Header parse failures end the request before authorization;
 	// publish them as request records too, with whatever object
-	// identity the malformed headers still carried.
-	publishHeaderErr := func(err error) error {
+	// identity and operation the malformed headers still carried.
+	publishHeaderErr := func(err error, isPut bool) error {
 		target := ctx.Get(hdrTarget)
 		bucket, key, _ := splitTarget(target)
-		h.ops.publishRequest(ctx, acct, err, bucket, key, false)
+		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
 		return err
 	}
 
 	if proto := ctx.Get(hdrProtocol); proto != protocolValue {
-		return publishHeaderErr(invalidHeader(hdrProtocol, proto))
+		return publishHeaderErr(invalidHeader(hdrProtocol, proto), false)
 	}
 
 	op := strings.ToUpper(ctx.Get(hdrOp))
 	if op != "GET" && op != "PUT" {
-		return publishHeaderErr(invalidHeader(hdrOp, ctx.Get(hdrOp)))
+		return publishHeaderErr(invalidHeader(hdrOp, ctx.Get(hdrOp)), false)
 	}
 	isPut := op == "PUT"
 	target := ctx.Get(hdrTarget)
 	bucket, key, ok := splitTarget(target)
 	if !ok {
-		return publishHeaderErr(invalidHeader(hdrTarget, target))
+		return publishHeaderErr(invalidHeader(hdrTarget, target), isPut)
 	}
 	size, err := parseUint(ctx.Get(hdrSize), 10, 64)
 	if err != nil || size == 0 {
-		return publishHeaderErr(invalidHeader(hdrSize, ctx.Get(hdrSize)))
+		return publishHeaderErr(invalidHeader(hdrSize, ctx.Get(hdrSize)), isPut)
 	}
 	offset, err := parseUint(ctx.Get(hdrOffset), 10, 64)
 	if err != nil {
-		return publishHeaderErr(invalidHeader(hdrOffset, ctx.Get(hdrOffset)))
+		return publishHeaderErr(invalidHeader(hdrOffset, ctx.Get(hdrOffset)), isPut)
 	}
 	psn, err := parseUint(ctx.Get(hdrPsn), 16, 32)
 	if err != nil || psn == 0 || psn > 0xffffff {
-		return publishHeaderErr(invalidHeader(hdrPsn, ctx.Get(hdrPsn)))
+		return publishHeaderErr(invalidHeader(hdrPsn, ctx.Get(hdrPsn)), isPut)
 	}
 	cookie, err := parseUint(ctx.Get(hdrCookie), 16, 32)
 	if err != nil || cookie == 0 {
-		return publishHeaderErr(invalidHeader(hdrCookie, ctx.Get(hdrCookie)))
+		return publishHeaderErr(invalidHeader(hdrCookie, ctx.Get(hdrCookie)), isPut)
 	}
 
 	// Authorize through the regular object-access chain.
@@ -224,7 +224,18 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 			return err
 		}
 	}
+
+	// Register before the finalizing call: FinishPrepare can reap
+	// an already-expired session and fire the teardown callback
+	// synchronously, and a registered record (or a parked early
+	// notification) keeps that publication from being lost.
+	h.ops.register(resp.SessionID, acct,
+		regionFromCtx(ctx), bucket, key, isPut, time.Now())
 	if err := h.svc.FinishPrepare(resp.SessionID, true); err != nil {
+		// The finalization failed: the session is gone and the
+		// teardown callback (or this call's own reap) published
+		// the terminal record; nothing may keep the entry.
+		h.ops.unregister(resp.SessionID)
 		h.ops.publishRequest(ctx, acct, mapRcError(err), bucket, key, isPut)
 		return mapRcError(err)
 	}
@@ -232,10 +243,6 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	// The session now owns the operation record: the terminal
 	// path (READY/FinishPut completion, CANCEL, or the expiry
 	// reaper) publishes the final outcome exactly once.
-	if h.ops != nil {
-		h.ops.register(resp.SessionID, acct,
-			regionFromCtx(ctx), bucket, key, isPut, time.Now())
-	}
 
 	// Wire reply per the hipobj-rc-v2 contract: protocol echo,
 	// the server endpoint as "200:<token>", session id, and PSN.
@@ -409,6 +416,19 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	// The claim succeeded: from here until the response commits,
 	// this handler owns the completion ref. A panic or early
 	// unwind must still release it so the session can be reaped.
+	//
+	// The publication ownership moves here as well: every native
+	// completion call below (FinishFinal, FinishPut) fires the
+	// teardown callback synchronously, and a reserved record is
+	// invisible to that callback, so the outcome is published by
+	// this handler exactly once.
+	emit := h.ops.reserve(sessionID)
+	publish := func(err error, bytes int64) {
+		if emit != nil {
+			emit.publish(err, bytes)
+			emit = nil
+		}
+	}
 	finalized := false
 	defer func() {
 		if !finalized {
@@ -429,7 +449,7 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 			finalized = true
 		}
 		if err != nil {
-			h.ops.publishClaimed(sessionID, err)
+			publish(mapRcError(err), 0)
 			return err
 		}
 		// The FINAL wire reply carries the stored object's
@@ -437,7 +457,7 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 		resp.Etag = put.ETag
 		resp.VersionID = put.VersionID
 	} else if err := h.svc.FinishFinal(sessionID); err != nil {
-		h.ops.publishClaimed(sessionID, mapRcError(err))
+		publish(mapRcError(err), 0)
 		return mapRcError(err)
 	} else {
 		finalized = true
@@ -445,7 +465,7 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 
 	// The transfer completed: publish the terminal record with
 	// the byte count the data plane reported.
-	h.ops.publishClaimed(sessionID, nil, int64(resp.BytesTransferred))
+	publish(nil, int64(resp.BytesTransferred))
 
 	// Wire reply per the hipobj-rc-v2 contract: protocol echo,
 	// cookie echo, transferred bytes, and object metadata.

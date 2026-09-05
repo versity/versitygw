@@ -78,6 +78,71 @@ func TestOpsTrackerRequestPathClaims(t *testing.T) {
 	}
 }
 
+func TestOpsTrackerReserveBlocksCallback(t *testing.T) {
+	tr := newOpsTracker()
+	tr.register("sess-3", auth.Account{Access: "ak"}, "us-east-1",
+		"bkt", "obj", true, time.Now())
+
+	// The request path reserves before invoking a native
+	// completion call.
+	emit := tr.reserve("sess-3")
+	if emit == nil {
+		t.Fatal("reserve returned nil for a live session")
+	}
+
+	// The synchronous teardown callback must not publish on a
+	// reserved record: the entry stays put.
+	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-3"})
+	if got := len(tr.sessions); got != 1 {
+		t.Fatalf("reserved session removed by callback: %d", got)
+	}
+
+	// A double reserve is refused.
+	if tr.reserve("sess-3") != nil {
+		t.Fatal("double reserve succeeded")
+	}
+
+	// The request path publishes through its reserved emitter.
+	tr.publishClaimed("sess-3", nil, 128)
+	if got := len(tr.sessions); got != 0 {
+		t.Fatalf("reserved session survived request publication: %d", got)
+	}
+}
+
+func TestOpsTrackerEarlyTerminal(t *testing.T) {
+	tr := newOpsTracker()
+
+	// Teardown notification for an unregistered session parks.
+	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-4"})
+	if got := len(tr.earlyTerminals); got != 1 {
+		t.Fatalf("early terminal not parked: %d", got)
+	}
+
+	// Registration consumes it: no live entry remains, so no
+	// orphan record can outlive the session.
+	tr.register("sess-4", auth.Account{Access: "ak"}, "us-east-1",
+		"bkt", "obj", false, time.Now())
+	if got := len(tr.earlyTerminals); got != 0 {
+		t.Fatalf("early terminal not consumed: %d", got)
+	}
+	if got := len(tr.sessions); got != 0 {
+		t.Fatalf("orphan session entry created: %d", got)
+	}
+}
+
+func TestOpsTrackerUnregister(t *testing.T) {
+	tr := newOpsTracker()
+	tr.register("sess-5", auth.Account{Access: "ak"}, "us-east-1",
+		"bkt", "obj", false, time.Now())
+	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-5"})
+	tr.register("sess-6", auth.Account{Access: "ak"}, "us-east-1",
+		"bkt", "obj", false, time.Now())
+	tr.unregister("sess-6")
+	if got := len(tr.sessions); got != 0 {
+		t.Fatalf("unregister left entries: %d", got)
+	}
+}
+
 func TestOpsTrackerUnknownSession(t *testing.T) {
 	tr := newOpsTracker()
 	// Unknown sessions and the nil tracker are silent no-ops.
@@ -100,5 +165,10 @@ func TestHttpStatusFromError(t *testing.T) {
 	}
 	if got := httpStatusFromError(s3err.GetAPIError(s3err.ErrAccessDenied)); got != 403 {
 		t.Fatalf("access denied => %d, want 403", got)
+	}
+	// A resource-limit rejection maps to the wire status, not a
+	// generic 500.
+	if got := httpStatusFromError(rcserver.ErrLimit); got != 429 {
+		t.Fatalf("limit error => %d, want 429", got)
 	}
 }
