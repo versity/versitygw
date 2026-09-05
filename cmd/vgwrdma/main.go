@@ -35,11 +35,14 @@ import (
 	"github.com/versity/versitygw/embedgw"
 	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/internal/rdmamode"
+	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/rdma"
 	"github.com/versity/versitygw/rdma/rcroutes"
 	"github.com/versity/versitygw/rdma/rcserver"
 	"github.com/versity/versitygw/s3api"
 	"github.com/versity/versitygw/s3api/middlewares"
+	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 )
 
 var (
@@ -1295,6 +1298,37 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			s3api.WithRoute("POST", "/.hipobj-rc/prepare", rcAuth, rcH.Prepare),
 			s3api.WithRoute("POST", "/.hipobj-rc/ready", rcAuth, rcH.Ready),
 			s3api.WithRoute("POST", "/.hipobj-rc/cancel", rcAuth, rcH.Cancel),
+		)
+		// The RC session snapshot rides the standalone admin server
+		// (started when --admin-port is given) behind the same
+		// signature verification and admin role check as the other
+		// admin endpoints.
+		rcAdminAuth := func(ctx fiber.Ctx) error {
+			if err := rcVerify(ctx); err != nil {
+				return err
+			}
+			if err := middlewares.IsAdmin(metrics.ActionAdminListBuckets)(ctx); err != nil {
+				return err
+			}
+			return nil
+		}
+		// Admin routes answer with the same XML error surface as the
+		// built-in admin endpoints; the default fiber error handler
+		// would turn auth failures into a bare 500.
+		rcAdminRoute := func(ctx fiber.Ctx) error {
+			err := rcAdminAuth(ctx)
+			if err == nil {
+				err = rcH.AdminSnapshot(ctx)
+			}
+			if serr, ok := err.(s3err.S3Error); ok {
+				requestID, hostID := utils.EnsureRequestIDs(ctx)
+				return ctx.Status(serr.StatusCode()).Send(
+					serr.XMLBody(requestID, hostID))
+			}
+			return err
+		}
+		cfg.AdminOptions = append(cfg.AdminOptions,
+			s3api.WithAdminRoute("GET", "/rc-sessions", rcAdminRoute, rcH.AdminSnapshot),
 		)
 	} else {
 		cfg.S3Options = s3Opts

@@ -75,6 +75,11 @@ type Config struct {
 	// control over the admin endpoint with optionally separate TLS certs.
 	AdminPorts []string
 
+	// AdminOptions carries extra standalone-admin-server options from
+	// the embedding binary (e.g. additional admin routes). Only used
+	// when AdminPorts is non-empty.
+	AdminOptions []s3api.AdminOpt
+
 	// MaxConnections is the maximum number of concurrent TCP connections
 	// accepted by the S3 API server.
 	MaxConnections int
@@ -873,6 +878,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		admOpts := []s3api.AdminOpt{
 			s3api.WithAdminConcurrencyLimiter(cfg.AdminMaxConnections, cfg.AdminMaxRequests),
 		}
+		admOpts = append(admOpts, cfg.AdminOptions...)
 
 		if corsAllowOrigin != "" {
 			admOpts = append(admOpts, s3api.WithAdminCORSAllowOrigin(corsAllowOrigin))

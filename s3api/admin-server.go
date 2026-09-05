@@ -42,6 +42,15 @@ type S3AdminServer struct {
 	maxConnections  int
 	maxRequests     int
 	socketPerm      os.FileMode
+	extraRoutes     []adminRouteMount
+}
+
+// adminRouteMount is a route registered on the admin app after the
+// built-in admin router ran.
+type adminRouteMount struct {
+	method   string
+	path     string
+	handlers []fiber.Handler
 }
 
 func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region string, iam auth.IAMService, l s3log.AuditLogger, ctrl controllers.S3ApiController, opts ...AdminOpt) *S3AdminServer {
@@ -95,6 +104,14 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 
 	server.router.Init(app, be, iam, l, root, region, server.debug, server.corsAllowOrigin)
 
+	for _, r := range server.extraRoutes {
+		args := make([]any, 0, len(r.handlers))
+		for _, h := range r.handlers {
+			args = append(args, h)
+		}
+		app.Add([]string{r.method}, r.path, args[0], args[1:]...)
+	}
+
 	return server
 }
 
@@ -134,6 +151,21 @@ func WithAdminConcurrencyLimiter(maxConnections, maxRequests int) AdminOpt {
 // namespace sockets.
 func WithAdminSocketPerm(perm os.FileMode) AdminOpt {
 	return func(s *S3AdminServer) { s.socketPerm = perm }
+}
+
+// WithAdminRoute registers a route on the standalone admin server,
+// after the built-in admin routes and their middleware chain. Use it
+// for admin-surface endpoints that do not fit the S3 admin controller
+// shape.
+func WithAdminRoute(method, path string, handlers ...fiber.Handler) AdminOpt {
+	return func(s *S3AdminServer) {
+		copied := append([]fiber.Handler(nil), handlers...)
+		s.extraRoutes = append(s.extraRoutes, adminRouteMount{
+			method:   method,
+			path:     path,
+			handlers: copied,
+		})
+	}
 }
 
 // ServeMultiPort creates listeners for multiple port specifications and serves

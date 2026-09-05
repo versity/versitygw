@@ -33,6 +33,7 @@ package rcserver
 // level/file/line/msg are marshalled through this fixed trampoline.
 extern void rcgo_log_sink(void *ctx, int level, char *msg,
                           char *file, int line);
+extern void rcgo_snapshot_cb(rc_session_snapshot *rec, void *ctx);
 */
 import "C"
 
@@ -515,6 +516,78 @@ func (s *RCSvc) SessionInfo(sessionID string, who PrincipalID) (*SessionInfo, er
 		Op:     uint8(out.op),
 		Target: cStr(&out.target[0], out.target_len),
 	}, nil
+}
+
+// SessionSnapshot describes a live RC session for observability.
+type SessionSnapshot struct {
+	SessionID    string
+	Op           string
+	Target       string
+	State        uint8 // SessState value, may be ORed with ReapPending
+	ReapPending  bool
+	AgeMs        uint64
+	StagingBytes uint64
+}
+
+// SnapshotState constants mirrored from the C ABI.
+const (
+	SnapshotStatePrepared     = 0
+	SnapshotStatePublishing   = 1
+	SnapshotStateTransferring = 2
+	SnapshotStateCompleting   = 3
+	SnapshotStateReaping      = 4
+	SnapshotReapPending       = 0x80
+)
+
+// snapshotReceiver is set by SessionsSnapshot for the duration of the
+// C call; the fixed trampoline copies each record into it. The mutex
+// covers the case of concurrent snapshot calls.
+var (
+	snapshotMu   sync.Mutex
+	snapshotSink *[]SessionSnapshot
+)
+
+//export rcgo_snapshot_cb
+func rcgo_snapshot_cb(rec *C.rc_session_snapshot, _ unsafe.Pointer) {
+	sink := snapshotSink
+	if sink == nil || rec == nil {
+		return
+	}
+	st := uint8(rec.state)
+	*sink = append(*sink, SessionSnapshot{
+		SessionID:    C.GoString(&rec.session_id[0]),
+		Op:           C.GoString(&rec.op[0]),
+		Target:       C.GoStringN(&rec.target[0], C.int(rec.target_len)),
+		State:        st &^ SnapshotReapPending,
+		ReapPending:  st&SnapshotReapPending != 0,
+		AgeMs:        uint64(rec.age_ms),
+		StagingBytes: uint64(rec.staging_bytes),
+	})
+}
+
+// SessionsSnapshot copies every live session into Go-owned records.
+// The C side snapshots under its map lock and delivers the copies
+// outside it, so the callback cannot block the data plane.
+func (s *RCSvc) SessionsSnapshot() ([]SessionSnapshot, error) {
+	if s.srv == nil {
+		return nil, errors.New("rcserver: service closed")
+	}
+	if !s.TryEnter() {
+		return nil, ErrInternal
+	}
+	defer s.Leave()
+
+	snapshotMu.Lock()
+	defer snapshotMu.Unlock()
+	var out []SessionSnapshot
+	snapshotSink = &out
+	defer func() { snapshotSink = nil }()
+	rc := C.rc_server_sessions_snapshot(s.srv,
+		(*[0]byte)(C.rcgo_snapshot_cb), nil)
+	if rc != C.RC_OK {
+		return nil, statusError(rc)
+	}
+	return out, nil
 }
 
 // ReadyTransfer runs the data phase (READY).
