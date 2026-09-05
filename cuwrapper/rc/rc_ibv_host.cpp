@@ -75,7 +75,33 @@ bool IBVWrapper::ensureLoaded() {
       struct ibv_send_wr *, struct ibv_send_wr **)>(load("ibv_post_send"));
   loaded = funcs_.get_device_list != nullptr && funcs_.open_device != nullptr &&
            funcs_.alloc_pd != nullptr && funcs_.create_qp != nullptr &&
-           funcs_.modify_qp != nullptr && funcs_.poll_cq != nullptr;
+           funcs_.modify_qp != nullptr;
+  if (loaded) {
+    /* poll_cq/post_send/post_recv are static inline wrappers in
+     * modern verbs.h (they dispatch through cq->context->ops), so
+     * dlsym cannot find them on rdma-core 61+. Resolve them from
+     * the ops table of the first successfully opened context
+     * instead; every context from the same device shares these
+     * providers. */
+    int n = 0;
+    struct ibv_device **devs = funcs_.get_device_list(&n);
+    struct ibv_context *probe = nullptr;
+    if (devs && n > 0) probe = funcs_.open_device(devs[0]);
+    if (devs) funcs_.free_device_list(devs);
+    if (!probe) {
+      fprintf(stderr, "rc: no RDMA device to resolve verbs ops\n");
+      loaded = false;
+    } else {
+      funcs_.poll_cq = probe->ops.poll_cq;
+      funcs_.post_recv = probe->ops.post_recv;
+      funcs_.post_send = probe->ops.post_send;
+      funcs_.close_device(probe);
+      if (!funcs_.poll_cq || !funcs_.post_recv || !funcs_.post_send) {
+        fprintf(stderr, "rc: provider ops table incomplete\n");
+        loaded = false;
+      }
+    }
+  }
   if (loaded) {
     /* Mirror into the member seam for direct ibv.x() calls. */
     get_device_list = funcs_.get_device_list;

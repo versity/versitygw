@@ -120,6 +120,15 @@ var (
 	rdmaCQDepth                            uint
 	rdmaRetryCount                         uint
 	rdmaTunablesSet                        bool
+	rcMaxSessions                          uint64
+	rcMaxUserSessions                      uint64
+	rcMaxStagingBytes                      uint64
+	rcMaxUserStagingBytes                  uint64
+	rcMaxQPs                               uint64
+	rcMaxUserQPs                           uint64
+	rcMaxReadySlots                        uint64
+	rcPrepTimeoutMs                        uint64
+	rcExecTimeoutMs                        uint64
 )
 
 var (
@@ -898,6 +907,69 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_RDMA_RC_ENABLE"},
 			Destination: &rdmaRCEnable,
 		},
+		&cli.Uint64Flag{
+			Name:        "rdma-rc-max-sessions",
+			Usage:       "maximum concurrent hipobj-rc-v2 sessions (default 1024)",
+			EnvVars:     []string{"VGW_RDMA_RC_MAX_SESSIONS"},
+			Value:       1024,
+			Destination: &rcMaxSessions,
+		},
+		&cli.Uint64Flag{
+			Name:        "rdma-rc-max-user-sessions",
+			Usage:       "per-principal session limit for the hipobj-rc-v2 data plane (default 64)",
+			EnvVars:     []string{"VGW_RDMA_RC_MAX_USER_SESSIONS"},
+			Value:       64,
+			Destination: &rcMaxUserSessions,
+		},
+		&cli.Uint64Flag{
+			Name:        "rdma-rc-max-staging-bytes",
+			Usage:       "total staging buffer budget for hipobj-rc-v2 sessions in bytes (default 4294967296)",
+			EnvVars:     []string{"VGW_RDMA_RC_MAX_STAGING_BYTES"},
+			Value:       4 << 30,
+			Destination: &rcMaxStagingBytes,
+		},
+		&cli.Uint64Flag{
+			Name:        "rdma-rc-max-user-staging-bytes",
+			Usage:       "per-principal staging buffer budget for the hipobj-rc-v2 data plane in bytes (default 1073741824)",
+			EnvVars:     []string{"VGW_RDMA_RC_MAX_USER_STAGING_BYTES"},
+			Value:       1 << 30,
+			Destination: &rcMaxUserStagingBytes,
+		},
+		&cli.Uint64Flag{
+			Name:        "rdma-rc-max-qps",
+			Usage:       "maximum queue pairs for the hipobj-rc-v2 data plane (default 1024)",
+			EnvVars:     []string{"VGW_RDMA_RC_MAX_QPS"},
+			Value:       1024,
+			Destination: &rcMaxQPs,
+		},
+		&cli.Uint64Flag{
+			Name:        "rdma-rc-max-user-qps",
+			Usage:       "per-principal queue pair limit for the hipobj-rc-v2 data plane (default 16)",
+			EnvVars:     []string{"VGW_RDMA_RC_MAX_USER_QPS"},
+			Value:       16,
+			Destination: &rcMaxUserQPs,
+		},
+		&cli.Uint64Flag{
+			Name:        "rdma-rc-max-ready-slots",
+			Usage:       "concurrent READY transfers admitted by the hipobj-rc-v2 data plane (default 64)",
+			EnvVars:     []string{"VGW_RDMA_RC_MAX_READY_SLOTS"},
+			Value:       64,
+			Destination: &rcMaxReadySlots,
+		},
+		&cli.Uint64Flag{
+			Name:        "rdma-rc-prep-timeout-ms",
+			Usage:       "milliseconds a hipobj-rc-v2 session may wait for READY after PREPARE (default 100000)",
+			EnvVars:     []string{"VGW_RDMA_RC_PREP_TIMEOUT_MS"},
+			Value:       100000,
+			Destination: &rcPrepTimeoutMs,
+		},
+		&cli.Uint64Flag{
+			Name:        "rdma-rc-exec-timeout-ms",
+			Usage:       "milliseconds a hipobj-rc-v2 READY transfer may run (default 30000)",
+			EnvVars:     []string{"VGW_RDMA_RC_EXEC_TIMEOUT_MS"},
+			Value:       30000,
+			Destination: &rcExecTimeoutMs,
+		},
 		&cli.UintFlag{
 			Name:        "rdma-port",
 			Usage:       "port for RDMA listener",
@@ -1003,6 +1075,25 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			CQDepth:     rdmaCQDepth,
 		}
 		if msg := rdmamode.V1ValidationError(v1s); msg != "" {
+			return errors.New(msg)
+		}
+	}
+	if v2On {
+		// RC-only settings are irrelevant when the hipobj-rc-v2
+		// data plane is not running; stale environment values
+		// must not block v1-only or plain-S3 startup.
+		v2s := rdmamode.V2Settings{
+			MaxSessions:         rcMaxSessions,
+			MaxUserSessions:     rcMaxUserSessions,
+			MaxStagingBytes:     rcMaxStagingBytes,
+			MaxUserStagingBytes: rcMaxUserStagingBytes,
+			MaxQPs:              rcMaxQPs,
+			MaxUserQPs:          rcMaxUserQPs,
+			MaxReadySlots:       rcMaxReadySlots,
+			TPrepMs:             rcPrepTimeoutMs,
+			TExecMs:             rcExecTimeoutMs,
+		}
+		if msg := rdmamode.V2ValidationError(v2s); msg != "" {
 			return errors.New(msg)
 		}
 	}
@@ -1163,14 +1254,16 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		rcSvc, err := rcserver.Init(rcserver.DeviceOpts{
 			GidHint:             rcGidHint,
 			Port:                1,
-			MaxSessions:         1024,
-			MaxUserSessions:     64,
-			MaxStagingBytes:     4 << 30,
-			MaxUserStagingBytes: 1 << 30,
-			MaxQPs:              1024,
-			MaxUserQPs:          16,
-			TPrepMs:             100000,
-			TExecMs:             30000,
+			MaxSessions:         uint32(rcMaxSessions),
+			MaxUserSessions:     uint32(rcMaxUserSessions),
+			MaxStagingBytes:     rcMaxStagingBytes,
+			MaxUserStagingBytes: rcMaxUserStagingBytes,
+			MaxQPs:              uint32(rcMaxQPs),
+			MaxUserQPs:          uint32(rcMaxUserQPs),
+			MaxReadySlots:       uint32(rcMaxReadySlots),
+			TPrepMs:             rcPrepTimeoutMs,
+			TExecMs:             rcExecTimeoutMs,
+			Debug:               debug,
 		})
 		if err != nil {
 			return err

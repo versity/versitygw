@@ -27,6 +27,12 @@ package rcserver
 #cgo LDFLAGS: -L${SRCDIR}/.. -l:librcserver.a -lstdc++ -ldl -lpthread
 #include "rc_server_abi.h"
 #include <stdlib.h>
+
+// Shim: a C function pointer that forwards into the exported Go
+// sink. Go closures cannot be stored as C callbacks, so the
+// level/file/line/msg are marshalled through this fixed trampoline.
+extern void rcgo_log_sink(void *ctx, int level, char *msg,
+                          char *file, int line);
 */
 import "C"
 
@@ -34,6 +40,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -76,6 +83,10 @@ type DeviceOpts struct {
 	// Concurrency slots (0 picks the C-side default 64/32).
 	MaxReadySlots uint32
 	MaxStageSlots uint32
+	// Debug enables level-2 (debug) RC diagnostics through the
+	// log sink; false keeps error-only reporting. Mirrors the
+	// gateway --debug flag.
+	Debug bool
 }
 
 // PrincipalID is the SHA-256 digest identifying the requester.
@@ -174,6 +185,52 @@ func (s *RCSvc) Context() context.Context {
 	return s.ctx
 }
 
+// rcLogSink receives every diagnostic line the C server emits.
+// It is stateless and process-global on purpose: the sink must be
+// valid from init through destroy, independent of any single
+// RCSvc instance. Lines are copied out immediately (the C msg
+// buffer is only valid for the duration of the callback) and
+// written to the standard error logger. rcLogMu serializes the
+// copy because log.Logger is safe for concurrent use but keeps
+// a single writer cheap.
+var (
+	rcLogMu    sync.Mutex
+	rcLogLevel atomic.Int32
+	rcLog      = log.New(log.Writer(), "vgwrdma rc: ", 0)
+)
+
+//export rcgo_log_sink
+func rcgo_log_sink(_ unsafe.Pointer, level C.int, msg *C.char,
+	file *C.char, line C.int) {
+	// Level gating mirrors the C contract: 0 (error) always
+	// arrives here; 2 (debug) only when the service opted in.
+	if int32(level) > rcLogLevel.Load() {
+		return
+	}
+	m := C.GoString(msg)
+	f := ""
+	if file != nil {
+		f = C.GoString(file)
+	}
+	rcLogMu.Lock()
+	rcLog.Printf("%s (%s:%d) level=%d", m, f, int(line), int(level))
+	rcLogMu.Unlock()
+}
+
+// installLogSink wires the C server's diagnostics into the Go
+// sink. debug selects level 2 (debug) versus level 0 (errors
+// only); the C side keeps stderr error reporting when the sink
+// is absent, so a nil install is a no-op by design.
+func installLogSink(srv *C.rc_server, debug bool) {
+	if debug {
+		rcLogLevel.Store(2)
+	} else {
+		rcLogLevel.Store(0)
+	}
+	C.rc_server_set_log_sink(srv,
+		(*[0]byte)(C.rcgo_log_sink), nil)
+}
+
 // Init opens the verbs device and returns a service.
 func Init(opts DeviceOpts) (*RCSvc, error) {
 	copts := C.rc_device_opts{
@@ -201,6 +258,7 @@ func Init(opts DeviceOpts) (*RCSvc, error) {
 	if rc := C.rc_server_init(&copts, &srv); rc != C.RC_OK {
 		return nil, fmt.Errorf("rcserver: init failed: status %d", int(rc))
 	}
+	installLogSink(srv, opts.Debug)
 	ctx, cancel := context.WithCancel(context.Background())
 	return &RCSvc{srv: srv, ctx: ctx, cancel: cancel}, nil
 }
@@ -313,16 +371,31 @@ func statusError(rc C.int) error {
 	}
 }
 
+// strIn borrows string bytes for a synchronous rc_str_in value argument.
+// For a string view embedded in a request struct passed by pointer, use
+// pinnedStrIn instead: the cgo pointer check rejects request structs that
+// contain unpinned Go string data. C must not retain or modify the borrowed
+// bytes.
 func strIn(s string) C.rc_str_in {
 	if s == "" {
 		return C.rc_str_in{ptr: nil, len: 0}
 	}
-	// The pointer must stay alive across the cgo call; every
-	// wrapper keeps the string referenced until after the call.
 	return C.rc_str_in{
 		ptr: (*C.char)(unsafe.Pointer(unsafe.StringData(s))),
 		len: C.uint32_t(len(s)),
 	}
+}
+
+// pinnedStrIn builds a strIn view and pins the string bytes for the
+// duration of the enclosing cgo call. The caller owns the Pinner and
+// must defer Unpin before the first pinnedStrIn call. Pinning an
+// interior pointer pins the whole backing allocation.
+func pinnedStrIn(s string, pins *runtime.Pinner) C.rc_str_in {
+	in := strIn(s)
+	if in.ptr != nil {
+		pins.Pin(unsafe.Pointer(in.ptr))
+	}
+	return in
 }
 
 // cStr reads a fixed C char array of length n into a Go string.
@@ -338,14 +411,13 @@ func (s *RCSvc) Prepare(req PrepareRequest) (*PrepareResponse, error) {
 	if s.srv == nil {
 		return nil, errors.New("rcserver: service closed")
 	}
+	var pins runtime.Pinner
+	defer pins.Unpin()
 	var principal C.rc_principal_id
 	copy((*[32]byte)(unsafe.Pointer(&principal.id[0]))[:], req.Principal[:])
 
-	var token C.rc_str_in
-	if req.ClientToken != "" {
-		token = strIn(req.ClientToken)
-	}
-	target := strIn(req.Target)
+	token := pinnedStrIn(req.ClientToken, &pins)
+	target := pinnedStrIn(req.Target, &pins)
 	creq := C.rc_prepare_req{
 		principal:    principal,
 		op:           C.uint8_t(req.Op),
@@ -357,8 +429,6 @@ func (s *RCSvc) Prepare(req PrepareRequest) (*PrepareResponse, error) {
 		client_token: token,
 	}
 	var cresp C.rc_prepare_resp
-	runtime.KeepAlive(req.ClientToken)
-	runtime.KeepAlive(req.Target)
 	rc := C.rc_prepare(s.srv, &creq, &cresp)
 	if rc != C.RC_OK {
 		return nil, statusError(rc)
@@ -452,9 +522,11 @@ func (s *RCSvc) ReadyTransfer(req ReadyRequest) (*ReadyResponse, error) {
 	if s.srv == nil {
 		return nil, errors.New("rcserver: service closed")
 	}
+	var pins runtime.Pinner
+	defer pins.Unpin()
 	var principal C.rc_principal_id
 	copy((*[32]byte)(unsafe.Pointer(&principal.id[0]))[:], req.Principal[:])
-	in := strIn(req.SessionID)
+	in := pinnedStrIn(req.SessionID, &pins)
 	creq := C.rc_ready_req{
 		principal:      principal,
 		session_id:     in,
@@ -465,7 +537,6 @@ func (s *RCSvc) ReadyTransfer(req ReadyRequest) (*ReadyResponse, error) {
 	}
 	var cresp C.rc_ready_resp
 	rc := C.rc_ready_transfer(s.srv, &creq, &cresp)
-	runtime.KeepAlive(req.SessionID)
 	if rc != C.RC_OK {
 		return nil, statusError(rc)
 	}
