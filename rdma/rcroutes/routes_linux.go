@@ -83,6 +83,14 @@ type Handler struct {
 	ops *opsTracker
 }
 
+// PublishAuthFailure emits an operation record for a request whose
+// authentication failed before any route logic ran. The gateway
+// auth adapter calls it so signature failures appear in the access
+// log like they do on the S3 surface.
+func (h *Handler) PublishAuthFailure(ctx fiber.Ctx, err error) {
+	h.ops.publishRequest(ctx, auth.Account{}, err, "", "", false)
+}
+
 // SetOpsServices injects the operational service instances once the
 // gateway has created them, and wires the native teardown callback
 // that publishes sessions no request path ever completed.
@@ -142,43 +150,53 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	}
 	defer h.svc.Leave()
 
-	if proto := ctx.Get(hdrProtocol); proto != protocolValue {
-		return invalidHeader(hdrProtocol, proto)
-	}
-
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 
+	// Header parse failures end the request before authorization;
+	// publish them as request records too, with whatever object
+	// identity the malformed headers still carried.
+	publishHeaderErr := func(err error) error {
+		target := ctx.Get(hdrTarget)
+		bucket, key, _ := splitTarget(target)
+		h.ops.publishRequest(ctx, acct, err, bucket, key, false)
+		return err
+	}
+
+	if proto := ctx.Get(hdrProtocol); proto != protocolValue {
+		return publishHeaderErr(invalidHeader(hdrProtocol, proto))
+	}
+
 	op := strings.ToUpper(ctx.Get(hdrOp))
 	if op != "GET" && op != "PUT" {
-		return invalidHeader(hdrOp, ctx.Get(hdrOp))
+		return publishHeaderErr(invalidHeader(hdrOp, ctx.Get(hdrOp)))
 	}
+	isPut := op == "PUT"
 	target := ctx.Get(hdrTarget)
 	bucket, key, ok := splitTarget(target)
 	if !ok {
-		return invalidHeader(hdrTarget, target)
+		return publishHeaderErr(invalidHeader(hdrTarget, target))
 	}
 	size, err := parseUint(ctx.Get(hdrSize), 10, 64)
 	if err != nil || size == 0 {
-		return invalidHeader(hdrSize, ctx.Get(hdrSize))
+		return publishHeaderErr(invalidHeader(hdrSize, ctx.Get(hdrSize)))
 	}
 	offset, err := parseUint(ctx.Get(hdrOffset), 10, 64)
 	if err != nil {
-		return invalidHeader(hdrOffset, ctx.Get(hdrOffset))
+		return publishHeaderErr(invalidHeader(hdrOffset, ctx.Get(hdrOffset)))
 	}
 	psn, err := parseUint(ctx.Get(hdrPsn), 16, 32)
 	if err != nil || psn == 0 || psn > 0xffffff {
-		return invalidHeader(hdrPsn, ctx.Get(hdrPsn))
+		return publishHeaderErr(invalidHeader(hdrPsn, ctx.Get(hdrPsn)))
 	}
 	cookie, err := parseUint(ctx.Get(hdrCookie), 16, 32)
 	if err != nil || cookie == 0 {
-		return invalidHeader(hdrCookie, ctx.Get(hdrCookie))
+		return publishHeaderErr(invalidHeader(hdrCookie, ctx.Get(hdrCookie)))
 	}
-	isPut := op == "PUT"
 
 	// Authorize through the regular object-access chain.
 	if err := h.authorize(ctx, acct, isRoot, bucket, key, isPut); err != nil {
-		h.ops.publishRequest(ctx, err, bucket, key, isPut)
+		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
 		return err
 	}
 
@@ -193,7 +211,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 		ClientToken: ctx.Get(hdrToken),
 	})
 	if err != nil {
-		h.ops.publishRequest(ctx, mapRcError(err), bucket, key, isPut)
+		h.ops.publishRequest(ctx, acct, mapRcError(err), bucket, key, isPut)
 		return mapRcError(err)
 	}
 
@@ -202,12 +220,12 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	if !isPut {
 		if err := h.stageGet(ctx, resp.SessionID, bucket, key, offset, size); err != nil {
 			_ = h.svc.FinishPrepare(resp.SessionID, false)
-			h.ops.publishRequest(ctx, err, bucket, key, isPut)
+			h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
 			return err
 		}
 	}
 	if err := h.svc.FinishPrepare(resp.SessionID, true); err != nil {
-		h.ops.publishRequest(ctx, mapRcError(err), bucket, key, isPut)
+		h.ops.publishRequest(ctx, acct, mapRcError(err), bucket, key, isPut)
 		return mapRcError(err)
 	}
 

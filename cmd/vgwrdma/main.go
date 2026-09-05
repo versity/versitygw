@@ -1287,13 +1287,19 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		// nil on success without doing so. Wrap it so a verified
 		// request reaches the route handler, while errors end the
 		// chain as usual.
+		rcH := rcroutes.New(rcSvc, be, iamSvc, readonly, disableACLs)
 		rcAuth := func(ctx fiber.Ctx) error {
+			// The RC routes run before the default-values
+			// middleware sets the request locals; the access
+			// logger and event schema read the region from
+			// there, so set it for every verified request.
+			utils.ContextKeyRegion.Set(ctx, region)
 			if err := rcVerify(ctx); err != nil {
+				rcH.PublishAuthFailure(ctx, err)
 				return rcroutes.WriteRouteError(ctx, err)
 			}
 			return ctx.Next()
 		}
-		rcH := rcroutes.New(rcSvc, be, iamSvc, readonly, disableACLs)
 		// The gateway builds the access logger, metrics manager,
 		// and event sender inside RunVersityGW; hand them to the
 		// RC routes as soon as they exist so finished transfers

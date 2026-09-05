@@ -18,7 +18,6 @@
 package rcroutes
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -30,7 +29,6 @@ import (
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/rdma/rcserver"
 	"github.com/versity/versitygw/s3api/utils"
-	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
 )
@@ -118,16 +116,14 @@ func (e *opsEmitter) publish(err error, bytes int64) {
 }
 
 // httpStatusFromError maps an operation error to the HTTP status
-// the S3 surface would have answered with.
+// the S3 surface would have answered with, using the same route
+// error mapping as the wire response so operational records never
+// disagree with what the client saw.
 func httpStatusFromError(err error) int {
 	if err == nil {
 		return 200
 	}
-	var serr s3err.S3Error
-	if errors.As(err, &serr) {
-		return serr.StatusCode()
-	}
-	return 500
+	return routeError(err).HTTPStatusCode
 }
 
 // sessionRecord is one tracked session with its captured context.
@@ -248,14 +244,15 @@ func (t *opsTracker) publishClaimed(sessionID string, err error, bytes ...int64)
 // publishRequest emits an operation record for a request that ended
 // before any session existed (authentication, authorization, or
 // header failures): no tracking table entry, single emission.
-func (t *opsTracker) publishRequest(ctx fiber.Ctx, err error,
-	bucket, key string, isPut bool) {
+func (t *opsTracker) publishRequest(ctx fiber.Ctx, acct auth.Account,
+	err error, bucket, key string, isPut bool) {
 	if t == nil {
 		return
 	}
 	emit := &opsEmitter{
 		ops:    t.ops,
 		app:    t.app,
+		acct:   acct,
 		region: regionFromCtx(ctx),
 		bucket: bucket,
 		key:    key,
