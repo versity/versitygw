@@ -37,6 +37,7 @@ type DeviceOpts struct {
 	TExecMs             uint64
 	MaxReadySlots       uint32
 	MaxStageSlots       uint32
+	Debug               bool
 }
 
 // PrincipalID is the SHA-256 digest identifying the requester.

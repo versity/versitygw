@@ -39,7 +39,18 @@ enum {
 
 typedef struct { const char *ptr; uint32_t len; } rc_str_in;
 
+/* Diagnostic log sink. Called from RC server threads (request
+ * goroutines via cgo and the expiry reaper) without any server
+ * lock held. `msg` and `file` are only valid for the duration of
+ * the call; the sink must copy them if it needs them longer.
+ * `level` is 0 (error) or 2 (debug). Passing a null sink (or
+ * installing it after init) keeps stderr-only error reporting. */
+typedef void (*rc_log_fn)(void *ctx, int level, const char *msg,
+                          const char *file, int line);
+
 typedef struct rc_server rc_server;
+
+void rc_server_set_log_sink(rc_server *srv, rc_log_fn fn, void *ctx);
 
 /* Device selection: matching GID prefix when gid_hint is set,
  * otherwise the first verbs device. */

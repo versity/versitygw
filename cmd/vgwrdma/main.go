@@ -1263,6 +1263,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			MaxReadySlots:       uint32(rcMaxReadySlots),
 			TPrepMs:             rcPrepTimeoutMs,
 			TExecMs:             rcExecTimeoutMs,
+			Debug:               debug,
 		})
 		if err != nil {
 			return err
