@@ -52,6 +52,21 @@ typedef struct rc_server rc_server;
 
 void rc_server_set_log_sink(rc_server *srv, rc_log_fn fn, void *ctx);
 
+/* Terminal session notification. Fired exactly once per session
+ * when the reaper destroys it (expiry, CANCEL, or destroy),
+ * carrying the last outcome observed for the session. `id` is
+ * only valid for the duration of the call. Called with no server
+ * lock held; the sink must return promptly and must not call back
+ * into the server. Sessions that end inside a READY/FinishPut
+ * handler still fire this notification after the handler's own
+ * terminal bookkeeping, so the sink can treat it as the single
+ * authoritative "the session is gone" signal. */
+typedef void (*rc_terminal_fn)(void *ctx, const char *id, int outcome,
+                               uint64_t bytes);
+
+void rc_server_set_terminal_notify(rc_server *srv, rc_terminal_fn fn,
+                                   void *ctx);
+
 /* Device selection: matching GID prefix when gid_hint is set,
  * otherwise the first verbs device. */
 typedef struct {
