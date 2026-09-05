@@ -371,16 +371,31 @@ func statusError(rc C.int) error {
 	}
 }
 
+// strIn borrows string bytes for a synchronous rc_str_in value argument.
+// For a string view embedded in a request struct passed by pointer, use
+// pinnedStrIn instead: the cgo pointer check rejects request structs that
+// contain unpinned Go string data. C must not retain or modify the borrowed
+// bytes.
 func strIn(s string) C.rc_str_in {
 	if s == "" {
 		return C.rc_str_in{ptr: nil, len: 0}
 	}
-	// The pointer must stay alive across the cgo call; every
-	// wrapper keeps the string referenced until after the call.
 	return C.rc_str_in{
 		ptr: (*C.char)(unsafe.Pointer(unsafe.StringData(s))),
 		len: C.uint32_t(len(s)),
 	}
+}
+
+// pinnedStrIn builds a strIn view and pins the string bytes for the
+// duration of the enclosing cgo call. The caller owns the Pinner and
+// must defer Unpin before the first pinnedStrIn call. Pinning an
+// interior pointer pins the whole backing allocation.
+func pinnedStrIn(s string, pins *runtime.Pinner) C.rc_str_in {
+	in := strIn(s)
+	if in.ptr != nil {
+		pins.Pin(unsafe.Pointer(in.ptr))
+	}
+	return in
 }
 
 // cStr reads a fixed C char array of length n into a Go string.
@@ -396,14 +411,13 @@ func (s *RCSvc) Prepare(req PrepareRequest) (*PrepareResponse, error) {
 	if s.srv == nil {
 		return nil, errors.New("rcserver: service closed")
 	}
+	var pins runtime.Pinner
+	defer pins.Unpin()
 	var principal C.rc_principal_id
 	copy((*[32]byte)(unsafe.Pointer(&principal.id[0]))[:], req.Principal[:])
 
-	var token C.rc_str_in
-	if req.ClientToken != "" {
-		token = strIn(req.ClientToken)
-	}
-	target := strIn(req.Target)
+	token := pinnedStrIn(req.ClientToken, &pins)
+	target := pinnedStrIn(req.Target, &pins)
 	creq := C.rc_prepare_req{
 		principal:    principal,
 		op:           C.uint8_t(req.Op),
@@ -415,8 +429,6 @@ func (s *RCSvc) Prepare(req PrepareRequest) (*PrepareResponse, error) {
 		client_token: token,
 	}
 	var cresp C.rc_prepare_resp
-	runtime.KeepAlive(req.ClientToken)
-	runtime.KeepAlive(req.Target)
 	rc := C.rc_prepare(s.srv, &creq, &cresp)
 	if rc != C.RC_OK {
 		return nil, statusError(rc)
@@ -510,9 +522,11 @@ func (s *RCSvc) ReadyTransfer(req ReadyRequest) (*ReadyResponse, error) {
 	if s.srv == nil {
 		return nil, errors.New("rcserver: service closed")
 	}
+	var pins runtime.Pinner
+	defer pins.Unpin()
 	var principal C.rc_principal_id
 	copy((*[32]byte)(unsafe.Pointer(&principal.id[0]))[:], req.Principal[:])
-	in := strIn(req.SessionID)
+	in := pinnedStrIn(req.SessionID, &pins)
 	creq := C.rc_ready_req{
 		principal:      principal,
 		session_id:     in,
@@ -523,7 +537,6 @@ func (s *RCSvc) ReadyTransfer(req ReadyRequest) (*ReadyResponse, error) {
 	}
 	var cresp C.rc_ready_resp
 	rc := C.rc_ready_transfer(s.srv, &creq, &cresp)
-	runtime.KeepAlive(req.SessionID)
 	if rc != C.RC_OK {
 		return nil, statusError(rc)
 	}
