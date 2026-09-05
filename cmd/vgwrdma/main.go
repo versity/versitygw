@@ -965,6 +965,15 @@ func debugLogLevel() debuglogger.Level {
 }
 
 func runGateway(ctx context.Context, be backend.Backend) error {
+	// The gateway command owns the input backend from here on:
+	// every failure path below must close the whole chain it
+	// has built so far, exactly once. The closure reads be at
+	// run time, so the rollback covers the v1 chain and the RC
+	// wrapper once those layers are added; the once guard keeps
+	// the shared close with the RunVersityGW lifecycle single.
+	be = rdmamode.WrapShutdownOnce(be)
+	defer func() { be.Shutdown() }()
+
 	if pprof != "" {
 		// Listen on the specified address for pprof debug endpoints.
 		// Point a browser to http://<host:port>/debug/pprof/
@@ -997,15 +1006,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			return errors.New(msg)
 		}
 	}
-
-	// The gateway command owns the input backend from here on:
-	// every later failure path must close the whole chain it has
-	// built so far, exactly once. The closure reads be at run
-	// time, so the rollback covers the v1 chain and the RC
-	// wrapper once those layers are added; the once guard keeps
-	// the shared close with the RunVersityGW lifecycle single.
-	be = rdmamode.WrapShutdownOnce(be)
-	defer func() { be.Shutdown() }()
 
 	var s3Opts []s3api.Option
 	if v1On {
