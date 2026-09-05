@@ -300,7 +300,10 @@ void rc_server_set_log_sink(rc_server *srv, rc_log_fn fn, void *ctx) {
 
 int rc_server_init(const rc_device_opts *opts, rc_server **out) {
   if (!opts || !out) return RC_E_ARG;
-  if (!hipObj::ibv.ensureLoaded()) return RC_E_INTERNAL;
+  if (!hipObj::ibv.ensureLoaded()) {
+    fprintf(stderr, "rc: cannot load libibverbs (dlopen/dlsym failed)\n");
+    return RC_E_INTERNAL;
+  }
   std::unique_ptr<rc_server> srv(new rc_server());
   srv->opts = *opts;
   /* ibv port numbers are 1-based; treat an unset (0) port as 1 so
@@ -316,7 +319,10 @@ int rc_server_init(const rc_device_opts *opts, rc_server **out) {
 
   int n = 0;
   struct ibv_device **devs = hipObj::ibv.get_device_list(&n);
-  if (!devs || n == 0) return RC_E_INTERNAL;
+  if (!devs || n == 0) {
+    fprintf(stderr, "rc: no RDMA devices found (ibv_get_device_list)\n");
+    return RC_E_INTERNAL;
+  }
   struct ibv_device *chosen = devs[0];
   /* GID hint: pick the first device/port whose GID starts with it.
    * Query with srv->opts.port, which the normalization above has
