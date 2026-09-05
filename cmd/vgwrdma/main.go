@@ -1294,6 +1294,17 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			return ctx.Next()
 		}
 		rcH := rcroutes.New(rcSvc, be, iamSvc, readonly, disableACLs)
+		// The gateway builds the access logger, metrics manager,
+		// and event sender inside RunVersityGW; hand them to the
+		// RC routes as soon as they exist so finished transfers
+		// publish into them.
+		cfg.OnServicesReady = func(s embedgw.OpsServices) {
+			rcH.SetOpsServices(rcroutes.OpsServices{
+				Logger:  s.Logger,
+				Metrics: s.Metrics,
+				Events:  s.Events,
+			})
+		}
 		cfg.S3Options = append(s3Opts,
 			s3api.WithRoute("POST", "/.hipobj-rc/prepare", rcAuth, rcH.Prepare),
 			s3api.WithRoute("POST", "/.hipobj-rc/ready", rcAuth, rcH.Ready),

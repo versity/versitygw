@@ -48,3 +48,16 @@ func (h *Handler) Ready(ctx fiber.Ctx) error { return notImplemented(ctx) }
 
 // Cancel is a stub handler that answers 501 Not Implemented.
 func (h *Handler) Cancel(ctx fiber.Ctx) error { return notImplemented(ctx) }
+
+// OpsServices carries the operational service instances (stub
+// mirror; the fields exist only to keep the embedding surface
+// platform-independent).
+type OpsServices struct {
+	Logger  any
+	Metrics any
+	Events  any
+}
+
+// SetOpsServices is a stub: without RDMA support there is nothing
+// to publish into.
+func (h *Handler) SetOpsServices(ops OpsServices) {}

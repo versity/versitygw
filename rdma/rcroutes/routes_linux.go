@@ -32,6 +32,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -76,13 +77,31 @@ type Handler struct {
 	iam        auth.IAMService
 	readonly   bool
 	disableACL bool
+	// ops owns terminal publication into the operational services
+	// (access log, request metrics, object events); nil keeps the
+	// routes uninstrumented.
+	ops *opsTracker
 }
 
-// New builds the route handler around a started RC service.
+// SetOpsServices injects the operational service instances once the
+// gateway has created them, and wires the native teardown callback
+// that publishes sessions no request path ever completed.
+func (h *Handler) SetOpsServices(ops OpsServices) {
+	if h.ops == nil {
+		return
+	}
+	h.ops.SetOpsServices(ops)
+	h.svc.SetTerminalNotify(h.ops.onTerminal)
+}
+
+// New builds the route handler around a started RC service. The
+// operational services arrive later through SetOpsServices, once
+// the gateway has created them.
 func New(svc *rcserver.RCSvc, be backend.Backend, iam auth.IAMService,
 	readonly, disableACL bool) *Handler {
 	return &Handler{svc: svc, be: be, iam: iam,
-		readonly: readonly, disableACL: disableACL}
+		readonly: readonly, disableACL: disableACL,
+		ops: newOpsTracker()}
 }
 
 // principalID derives the session identity digest from the
@@ -159,6 +178,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 
 	// Authorize through the regular object-access chain.
 	if err := h.authorize(ctx, acct, isRoot, bucket, key, isPut); err != nil {
+		h.ops.publishRequest(ctx, err, bucket, key, isPut)
 		return err
 	}
 
@@ -173,6 +193,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 		ClientToken: ctx.Get(hdrToken),
 	})
 	if err != nil {
+		h.ops.publishRequest(ctx, mapRcError(err), bucket, key, isPut)
 		return mapRcError(err)
 	}
 
@@ -181,11 +202,21 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	if !isPut {
 		if err := h.stageGet(ctx, resp.SessionID, bucket, key, offset, size); err != nil {
 			_ = h.svc.FinishPrepare(resp.SessionID, false)
+			h.ops.publishRequest(ctx, err, bucket, key, isPut)
 			return err
 		}
 	}
 	if err := h.svc.FinishPrepare(resp.SessionID, true); err != nil {
+		h.ops.publishRequest(ctx, mapRcError(err), bucket, key, isPut)
 		return mapRcError(err)
+	}
+
+	// The session now owns the operation record: the terminal
+	// path (READY/FinishPut completion, CANCEL, or the expiry
+	// reaper) publishes the final outcome exactly once.
+	if h.ops != nil {
+		h.ops.register(resp.SessionID, acct,
+			regionFromCtx(ctx), bucket, key, isPut, time.Now())
 	}
 
 	// Wire reply per the hipobj-rc-v2 contract: protocol echo,
@@ -380,6 +411,7 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 			finalized = true
 		}
 		if err != nil {
+			h.ops.publishClaimed(sessionID, err)
 			return err
 		}
 		// The FINAL wire reply carries the stored object's
@@ -387,10 +419,15 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 		resp.Etag = put.ETag
 		resp.VersionID = put.VersionID
 	} else if err := h.svc.FinishFinal(sessionID); err != nil {
+		h.ops.publishClaimed(sessionID, mapRcError(err))
 		return mapRcError(err)
 	} else {
 		finalized = true
 	}
+
+	// The transfer completed: publish the terminal record with
+	// the byte count the data plane reported.
+	h.ops.publishClaimed(sessionID, nil, int64(resp.BytesTransferred))
 
 	// Wire reply per the hipobj-rc-v2 contract: protocol echo,
 	// cookie echo, transferred bytes, and object metadata.

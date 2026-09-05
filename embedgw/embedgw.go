@@ -520,11 +520,26 @@ type Config struct {
 	// as request middleware.
 	S3Options []s3api.Option
 
+	// OnServicesReady runs after the operational services (access
+	// logger, metrics manager, event sender) are created and before
+	// the S3 server is built, so embedders can wire them into
+	// components constructed earlier (such as the RDMA control
+	// routes). A nil callback is skipped.
+	OnServicesReady func(OpsServices)
+
 	// Version, Build, and BuildTime are displayed in the startup banner.
 	// All three are optional; omit or leave empty to suppress the field.
 	Version   string
 	Build     string
 	BuildTime string
+}
+
+// OpsServices bundles the operational service instances handed to
+// the Config.OnServicesReady callback.
+type OpsServices struct {
+	Logger  s3log.AuditLogger
+	Metrics metrics.Manager
+	Events  s3event.S3EventSender
 }
 
 // TODO: remove gatewayRunning once package-level globals (bucket-name
@@ -851,6 +866,14 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			IAMGateways:   validatedWebuiIAMGateways,
 			Region:        cfg.Region,
 		}))
+	}
+
+	if cfg.OnServicesReady != nil {
+		cfg.OnServicesReady(OpsServices{
+			Logger:  loggers.S3Logger,
+			Metrics: metricsManager,
+			Events:  evSender,
+		})
 	}
 
 	srv, err := s3api.New(be, middlewares.RootUserConfig{
