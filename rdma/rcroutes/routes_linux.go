@@ -42,6 +42,7 @@ import (
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/rdma/rcserver"
 	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -232,11 +233,13 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	h.ops.register(resp.SessionID, acct,
 		regionFromCtx(ctx), bucket, key, isPut, time.Now())
 	if err := h.svc.FinishPrepare(resp.SessionID, true); err != nil {
-		// The finalization failed: the session is gone and the
-		// teardown callback (or this call's own reap) published
-		// the terminal record; nothing may keep the entry.
-		h.ops.unregister(resp.SessionID)
-		h.ops.publishRequest(ctx, acct, mapRcError(err), bucket, key, isPut)
+		// The finalization failed. Exactly one publication
+		// covers it: the finalizing call already reaped the
+		// session and its callback published the recorded
+		// outcome, or the native side rejected the call and no
+		// callback is coming, in which case the entry is
+		// published here.
+		h.ops.failOutcome(resp.SessionID, mapRcError(err))
 		return mapRcError(err)
 	}
 
@@ -417,21 +420,27 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	// this handler owns the completion ref. A panic or early
 	// unwind must still release it so the session can be reaped.
 	//
-	// The publication ownership moves here as well: every native
-	// completion call below (FinishFinal, FinishPut) fires the
-	// teardown callback synchronously, and a reserved record is
-	// invisible to that callback, so the outcome is published by
-	// this handler exactly once.
-	emit := h.ops.reserve(sessionID)
-	publish := func(err error, bytes int64) {
-		if emit != nil {
-			emit.publish(err, bytes)
-			emit = nil
+	// This handler only RECORDS the outcome; publication belongs
+	// to the teardown callback, which every native completion
+	// call below fires exactly once. The deferred recorder covers
+	// panic unwinds too, so every path through this handler
+	// leaves a final outcome behind.
+	recorded := false
+	record := func(err error, bytes int64) {
+		if !recorded {
+			recorded = true
+			h.ops.recordOutcome(sessionID, err, bytes)
 		}
 	}
 	finalized := false
 	defer func() {
 		if !finalized {
+			// The unwind finalizer retires the session, which
+			// fires the callback; make sure it carries an
+			// outcome even on a panic path.
+			if !recorded {
+				record(errPanicked(), 0)
+			}
 			_ = h.svc.FinishFinal(sessionID)
 		}
 	}()
@@ -449,7 +458,7 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 			finalized = true
 		}
 		if err != nil {
-			publish(mapRcError(err), 0)
+			record(mapRcError(err), 0)
 			return err
 		}
 		// The FINAL wire reply carries the stored object's
@@ -457,15 +466,19 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 		resp.Etag = put.ETag
 		resp.VersionID = put.VersionID
 	} else if err := h.svc.FinishFinal(sessionID); err != nil {
-		publish(mapRcError(err), 0)
+		record(mapRcError(err), 0)
 		return mapRcError(err)
 	} else {
 		finalized = true
 	}
 
-	// The transfer completed: publish the terminal record with
-	// the byte count the data plane reported.
-	publish(nil, int64(resp.BytesTransferred))
+	// The transfer completed: record the terminal outcome with
+	// the byte count the data plane reported. FinishPut (inside
+	// commitPut) or the FinishFinal above already fired the
+	// teardown callback, which publishes this outcome - or, on a
+	// timing edge where the callback ran first, the deferred
+	// finalizer's FinishFinal does.
+	record(nil, int64(resp.BytesTransferred))
 
 	// Wire reply per the hipobj-rc-v2 contract: protocol echo,
 	// cookie echo, transferred bytes, and object metadata.
@@ -698,4 +711,15 @@ func mapRcError(err error) error {
 			rcserver.ErrNoSession)
 	}
 	return err
+}
+
+// errPanicked is the outcome recorded when a panic unwinds the
+// READY handler after the completion ref was claimed: the record
+// keeps the failure even though the panic itself propagates.
+func errPanicked() error {
+	return s3err.APIError{
+		Code:           "InternalRDMAError",
+		Description:    "The RDMA transfer ended without a confirmed result",
+		HTTPStatusCode: 500,
+	}
 }

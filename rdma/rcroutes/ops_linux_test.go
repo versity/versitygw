@@ -34,12 +34,11 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-// The tests exercise the tracker's ownership semantics: the session
-// table is the single source of truth for who may publish, so the
-// assertions watch table membership rather than the emission itself
-// (emission is a no-op without operational services wired in).
+// The publication model: request paths only record outcomes; the
+// teardown callback is the single publisher. The tests exercise
+// the table semantics that guarantee exactly-once publication.
 
-func TestOpsTrackerExpiryPublication(t *testing.T) {
+func TestOpsTrackerCallbackPublishesExpiry(t *testing.T) {
 	tr := newOpsTracker()
 	tr.register("sess-1", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
@@ -47,7 +46,8 @@ func TestOpsTrackerExpiryPublication(t *testing.T) {
 		t.Fatalf("registered sessions = %d, want 1", got)
 	}
 
-	// The reaper path claims and removes the session.
+	// The reaper path publishes for a session no READY ever
+	// recorded and removes the entry.
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-1"})
 	if got := len(tr.sessions); got != 0 {
 		t.Fatalf("session survived terminal: %d", got)
@@ -60,86 +60,52 @@ func TestOpsTrackerExpiryPublication(t *testing.T) {
 	}
 }
 
-func TestOpsTrackerRequestPathClaims(t *testing.T) {
+func TestOpsTrackerRecordedOutcomeWins(t *testing.T) {
 	tr := newOpsTracker()
 	tr.register("sess-2", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", true, time.Now())
 
-	// READY completion claims the publication first.
-	tr.publishClaimed("sess-2", nil, 4096)
-	if got := len(tr.sessions); got != 0 {
-		t.Fatalf("request path left session: %d", got)
-	}
-
-	// The late reaper callback finds nothing left.
+	// The READY path records the real outcome; the callback then
+	// consumes it instead of publishing an expiry.
+	tr.recordOutcome("sess-2", nil, 4096)
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-2"})
 	if got := len(tr.sessions); got != 0 {
-		t.Fatalf("reaper re-added session: %d", got)
+		t.Fatalf("session survived terminal: %d", got)
 	}
+
+	// A late second record is a no-op (entry gone).
+	tr.recordOutcome("sess-2", nil, 1)
 }
 
-func TestOpsTrackerReserveBlocksCallback(t *testing.T) {
+func TestOpsTrackerFirstRecordWins(t *testing.T) {
 	tr := newOpsTracker()
 	tr.register("sess-3", auth.Account{Access: "ak"}, "us-east-1",
-		"bkt", "obj", true, time.Now())
-
-	// The request path reserves before invoking a native
-	// completion call.
-	emit := tr.reserve("sess-3")
-	if emit == nil {
-		t.Fatal("reserve returned nil for a live session")
-	}
-
-	// The synchronous teardown callback must not publish on a
-	// reserved record: the entry stays put.
-	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-3"})
-	if got := len(tr.sessions); got != 1 {
-		t.Fatalf("reserved session removed by callback: %d", got)
-	}
-
-	// A double reserve is refused.
-	if tr.reserve("sess-3") != nil {
-		t.Fatal("double reserve succeeded")
-	}
-
-	// The request path publishes through its reserved emitter.
-	tr.publishClaimed("sess-3", nil, 128)
-	if got := len(tr.sessions); got != 0 {
-		t.Fatalf("reserved session survived request publication: %d", got)
-	}
-}
-
-func TestOpsTrackerEarlyTerminal(t *testing.T) {
-	tr := newOpsTracker()
-
-	// Teardown notification for an unregistered session parks.
-	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-4"})
-	if got := len(tr.earlyTerminals); got != 1 {
-		t.Fatalf("early terminal not parked: %d", got)
-	}
-
-	// Registration consumes it: no live entry remains, so no
-	// orphan record can outlive the session.
-	tr.register("sess-4", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
-	if got := len(tr.earlyTerminals); got != 0 {
-		t.Fatalf("early terminal not consumed: %d", got)
-	}
-	if got := len(tr.sessions); got != 0 {
-		t.Fatalf("orphan session entry created: %d", got)
+
+	tr.recordOutcome("sess-3", nil, 100)
+	tr.recordOutcome("sess-3", errors.New("late"), 0)
+
+	tr.mu.Lock()
+	rec := tr.sessions["sess-3"]
+	tr.mu.Unlock()
+	if rec == nil || rec.out.err != nil || rec.out.byt != 100 {
+		t.Fatalf("second record overwrote the first: %+v", rec.out)
 	}
 }
 
 func TestOpsTrackerUnregister(t *testing.T) {
 	tr := newOpsTracker()
-	tr.register("sess-5", auth.Account{Access: "ak"}, "us-east-1",
+	tr.register("sess-4", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
-	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-5"})
-	tr.register("sess-6", auth.Account{Access: "ak"}, "us-east-1",
-		"bkt", "obj", false, time.Now())
-	tr.unregister("sess-6")
+	tr.unregister("sess-4")
 	if got := len(tr.sessions); got != 0 {
 		t.Fatalf("unregister left entries: %d", got)
+	}
+	// The teardown callback for the unregistered session is a
+	// silent no-op (native side already rejected or reaped it).
+	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-4"})
+	if got := len(tr.sessions); got != 0 {
+		t.Fatalf("terminal resurrected entry: %d", got)
 	}
 }
 
@@ -147,14 +113,38 @@ func TestOpsTrackerUnknownSession(t *testing.T) {
 	tr := newOpsTracker()
 	// Unknown sessions and the nil tracker are silent no-ops.
 	var nilTracker *opsTracker
-	nilTracker.publishClaimed("ghost", nil, 1)
+	nilTracker.recordOutcome("ghost", nil, 1)
 	nilTracker.onTerminal(rcserver.TerminalEvent{SessionID: "ghost"})
-	tr.publishClaimed("ghost", nil, 1)
+	tr.recordOutcome("ghost", nil, 1)
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "ghost"})
 	if got := len(tr.sessions); got != 0 {
 		t.Fatalf("ghost session materialized: %d", got)
 	}
 }
+
+func TestNormalizeSinkError(t *testing.T) {
+	if normalizeSinkError(nil) != nil {
+		t.Fatal("nil error should stay nil")
+	}
+	// Plain errors map through the route error mapping.
+	got := normalizeSinkError(errors.New("x"))
+	apiErr, ok := got.(s3err.APIError)
+	if !ok || apiErr.HTTPStatusCode != 500 {
+		t.Fatalf("plain error => %#v", got)
+	}
+	// Wrapped S3 errors are extracted to their base form so the
+	// audit loggers' direct assertion classifies them correctly.
+	wrapped := errWrapped{s3err.GetAPIError(s3err.ErrNoSuchBucket)}
+	got = normalizeSinkError(wrapped)
+	apiErr, ok = got.(s3err.APIError)
+	if !ok || apiErr.Code != "NoSuchBucket" || apiErr.HTTPStatusCode != 404 {
+		t.Fatalf("wrapped error => %#v", got)
+	}
+}
+
+type errWrapped struct{ s3err.S3Error }
+
+func (errWrapped) Error() string { return "wrapped" }
 
 func TestHttpStatusFromError(t *testing.T) {
 	if got := httpStatusFromError(nil); got != 200 {
@@ -170,5 +160,27 @@ func TestHttpStatusFromError(t *testing.T) {
 	// generic 500.
 	if got := httpStatusFromError(rcserver.ErrLimit); got != 429 {
 		t.Fatalf("limit error => %d, want 429", got)
+	}
+}
+
+func TestExpiredErrorClassification(t *testing.T) {
+	cases := []struct {
+		outcome int
+		code    string
+		status  int
+	}{
+		{int(rcserver.ReadyWireFail), "RdmaTransferFailed", 502},
+		{int(rcserver.ReadyVerifyFail), "RdmaTransferVerifyFailed", 502},
+		{int(rcserver.ReadyTimeout), "RdmaTransferTimeout", 504},
+		{int(rcserver.ReadyOK), "SessionExpired", 500},
+	}
+	for _, tc := range cases {
+		err := expiredError(rcserver.TerminalEvent{Outcome: tc.outcome})
+		apiErr := normalizeSinkError(err).(s3err.APIError)
+		if apiErr.Code != tc.code || apiErr.HTTPStatusCode != tc.status {
+			t.Fatalf("outcome %d => %s/%d, want %s/%d",
+				tc.outcome, apiErr.Code, apiErr.HTTPStatusCode,
+				tc.code, tc.status)
+		}
 	}
 }
