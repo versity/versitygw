@@ -43,6 +43,9 @@ struct RcSession {
   V2Session core;
   uint64_t epoch = 0;
   std::atomic<uint64_t> next_nonce{1};
+  /* Monotonic creation timestamp for session-age observability;
+   * deadlines cannot serve that role because READY moves them. */
+  uint64_t created_ms = 0;
   /* staged metadata from finish_staging (GET) or finish_put. */
   std::string etag;
   std::string version_id;
@@ -613,6 +616,7 @@ int rc_prepare(rc_server *srv, const rc_prepare_req *req,
       srv->opts.t_prep_ms
           ? hipObj::v2::clockSource().nowMs() + srv->opts.t_prep_ms
           : 0;
+  rs.created_ms = hipObj::v2::clockSource().nowMs();
   /* The session record carries its own id copy: reap logging and the
    * terminal teardown record read core.id, while the map key is the
    * only other place the id lives. */
@@ -754,6 +758,44 @@ int rc_session_info(rc_server *srv, rc_str_in session_id,
   memcpy(out->target, s->core.target.data(), n);
   out->target[n] = 0;
   out->target_len = (uint32_t)n;
+  return RC_OK;
+}
+
+int rc_server_sessions_snapshot(rc_server *srv, rc_snapshot_cb cb,
+                                void *ctx) {
+  if (!srv || !cb) return RC_E_ARG;
+  if (srv->closing.load()) return RC_E_INTERNAL;
+
+  /* Fixed records so the vector can move without invalidating the
+   * string pointers inside; the copies own everything the callback
+   * reads, so delivery happens outside the map lock and cannot race
+   * the reaper moving or erasing entries. */
+  std::vector<rc_session_snapshot> recs;
+  uint64_t now = hipObj::v2::clockSource().nowMs();
+  {
+    std::lock_guard<std::mutex> g(srv->map_mtx);
+    recs.reserve(srv->sessions_map.size());
+    for (const auto &kv : srv->sessions_map) {
+      const RcSession &s = *kv.second;
+      rc_session_snapshot r{};
+      if (s.core.id.size() != 32) continue; /* live ids are 32 hex */
+      if (s.core.op.size() >= sizeof(r.op)) continue;
+      if (s.core.target.size() > sizeof(r.target) - 1) continue;
+      memcpy(r.session_id, s.core.id.data(), 32);
+      r.session_id[32] = 0;
+      memcpy(r.op, s.core.op.data(), s.core.op.size());
+      r.op[s.core.op.size()] = 0;
+      memcpy(r.target, s.core.target.data(), s.core.target.size());
+      r.target[s.core.target.size()] = 0;
+      r.target_len = (uint32_t)s.core.target.size();
+      r.state = (uint8_t)s.core.state;
+      if (s.reap_pending) r.state |= RC_SNAPSHOT_REAP_PENDING;
+      r.age_ms = s.created_ms ? now - s.created_ms : 0;
+      r.staging_bytes = s.staging_len;
+      recs.push_back(r);
+    }
+  }
+  for (const auto &r : recs) cb(&r, ctx);
   return RC_OK;
 }
 

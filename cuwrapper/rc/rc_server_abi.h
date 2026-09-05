@@ -151,6 +151,30 @@ typedef struct {
   uint8_t op;
 } rc_session_info_resp;
 
+/* Session observability snapshot. The record is a point-in-time copy;
+ * the fields are valid only inside the callback invocation.
+ * state combines the session state machine value with the reap-pending
+ * marker (RC_SNAPSHOT_REAP_PENDING) because CANCEL and expiry only set
+ * that marker without moving the state. */
+enum { RC_SNAPSHOT_REAP_PENDING = 0x80 };
+
+typedef struct {
+  char session_id[33]; /* 32 hex + NUL */
+  char op[4];          /* "GET" or "PUT" */
+  char target[2048];
+  uint32_t target_len;
+  uint8_t state;       /* SessState value | RC_SNAPSHOT_REAP_PENDING */
+  uint64_t age_ms;     /* now - created_ms; 0 when the clock is absent */
+  uint64_t staging_bytes;
+} rc_session_snapshot;
+
+/* Copies every live session under the map lock into fixed records and
+ * invokes cb(rec, ctx) once per record outside the lock, in map order.
+ * A session whose op or target does not fit is skipped (record too
+ * small), not truncated. Returns RC_E_ARG for null arguments. */
+typedef void (*rc_snapshot_cb)(const rc_session_snapshot *rec, void *ctx);
+int rc_server_sessions_snapshot(rc_server *srv, rc_snapshot_cb cb, void *ctx);
+
 /* Lifecycle. destroy waits for active calls and the reaper. */
 int rc_server_init(const rc_device_opts *opts, rc_server **out);
 void rc_server_destroy(rc_server *srv);
