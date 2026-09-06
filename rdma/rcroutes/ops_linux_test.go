@@ -274,6 +274,43 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	tr.releaseReservation("s-rel", emit3)
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-rel"})
 
+	// M1 regression: a terminal arriving while reserved is stashed,
+	// and a later claim-rollback release consumes it and publishes the
+	// expiry - the record is not orphaned.
+	tr.register("s-stash", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	emitS := tr.reserve("s-stash")
+	if emitS == nil {
+		t.Fatal("reserve failed")
+	}
+	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-stash"})
+	tr.releaseReservation("s-stash", emitS)
+
+	// M2 regression: a second reservation of a live record is
+	// refused, so a duplicate READY cannot claim the transfer
+	// while another request owns the publication. The owner then
+	// completes normally.
+	tr.register("s-dbl", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	emitD := tr.reserve("s-dbl")
+	if emitD == nil {
+		t.Fatal("first reserve failed")
+	}
+	if tr.reserve("s-dbl") != nil {
+		t.Fatal("double reserve succeeded")
+	}
+	tr.publishReserved("s-dbl", emitD, nil, 64)
+
+	// Ownership: a stale emitter must not publish or consume the
+	// current record; the real owner still can, even after the
+	// callback fired (stashed) underneath it.
+	tr.register("s-own", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	emitO := tr.reserve("s-own")
+	if emitO == nil {
+		t.Fatal("reserve failed")
+	}
+	tr.publishReserved("s-own", &opsEmitter{}, nil, 999)
+	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-own"})
+	tr.publishReserved("s-own", emitO, nil, 32)
+
 	// Consume-or-noop denial of an unreserved session.
 	tr.register("s-fail", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
 	tr.failOutcome("s-fail", errors.New("x"))
@@ -284,8 +321,8 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	if len(rl.logs) != 5 {
-		t.Fatalf("published %d records, want 5: %+v", len(rl.logs), rl.logs)
+	if len(rl.logs) != 8 {
+		t.Fatalf("published %d records, want 8: %+v", len(rl.logs), rl.logs)
 	}
 	// The recording sink cannot see session IDs directly (they
 	// live in the synthesized context), so assert the observable

@@ -214,6 +214,11 @@ type sessionRecord struct {
 	// exactly once itself), so a completion call that fires the
 	// callback before returning cannot publish a placeholder.
 	reserved bool
+	// terminal marks a teardown that arrived while the record was
+	// reserved: the native session is gone and no second callback
+	// will come, so a later release of the reservation resolves
+	// the stashed outcome instead of leaving an orphan.
+	terminal bool
 }
 
 // opsTracker owns terminal publication: each session publishes
@@ -452,16 +457,28 @@ func (t *opsTracker) reserve(sessionID string) *opsEmitter {
 // without publishing: the transfer claim it was held for rolled
 // back, so the session lives on and the next claimant (another
 // READY, or the reaper) must still find an unreserved record.
+// If the native session already tore down while the record was
+// reserved (terminal stashed), the session is gone: consume the
+// record and publish the stashed outcome, since no second
+// callback will arrive.
 func (t *opsTracker) releaseReservation(sessionID string, emit *opsEmitter) {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
 	rec, ok := t.sessions[sessionID]
-	if ok && rec.reserved && rec.emit == emit {
-		rec.reserved = false
+	if !ok || !rec.reserved || rec.emit != emit {
+		t.mu.Unlock()
+		return
 	}
+	if !rec.terminal {
+		rec.reserved = false
+		t.mu.Unlock()
+		return
+	}
+	delete(t.sessions, sessionID)
 	t.mu.Unlock()
+	t.dispatch(pubJob{emit: rec.emit, err: rec.out.err, byt: rec.out.byt})
 }
 
 // publishReserved publishes through a reserved record and drops it:
@@ -471,6 +488,15 @@ func (t *opsTracker) publishReserved(sessionID string, emit *opsEmitter, err err
 		return
 	}
 	t.mu.Lock()
+	rec, ok := t.sessions[sessionID]
+	// Ownership check: only the reservation holder publishes. A
+	// stale holder (its reservation was released or the record
+	// was replaced) must not delete or publish the current
+	// owner's record.
+	if !ok || rec.emit != emit {
+		t.mu.Unlock()
+		return
+	}
 	delete(t.sessions, sessionID)
 	t.mu.Unlock()
 	if emit != nil {
@@ -502,8 +528,16 @@ func (t *opsTracker) onTerminal(ev rcserver.TerminalEvent) {
 	// A reserved record belongs to its request path, which
 	// publishes the real outcome itself: the callback (fired
 	// synchronously by a completion call, before the request
-	// path could confirm the result) must not touch it.
+	// path could confirm the result) must not touch it. But the
+	// terminal is still a fact: if the reservation is released
+	// later (claim rollback) and no second callback will ever
+	// come - the native session is gone - the stashed event
+	// resolves then, instead of being lost.
 	if rec.reserved {
+		if !rec.out.done {
+			rec.out = sessionOutcome{err: expiredError(ev), done: true}
+		}
+		rec.terminal = true
 		t.mu.Unlock()
 		return
 	}

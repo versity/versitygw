@@ -156,16 +156,18 @@ func (b *BackendShutdownAfterRC) SetOpsDrainer(d OpsDrainer) {
 	b.ops.Store(&d)
 }
 
-// Shutdown drains operational publications, closes the RC service,
-// then shuts the wrapped backend down, once. The publication drain
-// runs before the RC close: RC teardown itself queues publications,
-// so the queue must still be moving while the sessions drain.
+// Shutdown closes the RC service, drains operational publications,
+// then shuts the wrapped backend down, once. The drain runs AFTER
+// the RC close: closing RC quiesces the native reaper (every
+// teardown callback has returned by the time Close returns), so no
+// producer can enqueue behind the drain - enqueue-then-worker-exit
+// stranding is impossible by ordering rather than by locking.
 func (b *BackendShutdownAfterRC) Shutdown() {
 	b.closed.Do(func() {
+		b.rc.Close()
 		if d := b.ops.Load(); d != nil {
 			(*d).Shutdown()
 		}
-		b.rc.Close()
 		b.Backend.Shutdown()
 	})
 }

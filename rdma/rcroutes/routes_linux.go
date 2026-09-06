@@ -401,6 +401,15 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	// the record in the window between the claim and the
 	// reservation. A reserved record is invisible to both.
 	emit := h.ops.reserve(sessionID)
+	if emit == nil {
+		// Another READY holds the publication reservation for
+		// this session. Publication ownership must track native
+		// transfer ownership: proceeding without the reservation
+		// would let this request win the native claim while a
+		// different request owns the publication, losing the
+		// record on completion. Answer as a duplicate claim.
+		return fmt.Errorf("transfer in progress: %w", rcserver.ErrDouble)
+	}
 	publish := func(err error, bytes int64) {
 		h.ops.publishReserved(sessionID, emit, err, bytes)
 	}
@@ -494,7 +503,7 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 			finalized = true
 		}
 		if err != nil {
-			publish(mapRcError(err), 0)
+			doPublish(mapRcError(err), 0)
 			return err
 		}
 		// The FINAL wire reply carries the stored object's
@@ -505,7 +514,7 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 		// the same commit metadata.
 		emit.setCommitMeta(put.ETag, put.VersionID)
 	} else if err := h.svc.FinishFinal(sessionID); err != nil {
-		publish(mapRcError(err), 0)
+		doPublish(mapRcError(err), 0)
 		return mapRcError(err)
 	} else {
 		finalized = true
@@ -513,7 +522,7 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 
 	// The transfer completed: publish the terminal record with
 	// the byte count the data plane reported.
-	publish(nil, int64(resp.BytesTransferred))
+	doPublish(nil, int64(resp.BytesTransferred))
 
 	// Wire reply per the hipobj-rc-v2 contract: protocol echo,
 	// cookie echo, transferred bytes, and object metadata.
