@@ -1243,6 +1243,13 @@ Loop:
 	}
 
 	if metricsManager != nil {
+		// Cancel the metrics context first: the forwarder exits
+		// through it, draining the buffered datapoints, and
+		// Close then only waits for the forwarder and closes the
+		// publishers. The channel itself never closes, so late
+		// producers (a handler outliving the HTTP shutdown
+		// timeout) drop their datapoint instead of panicking.
+		metricsStop()
 		metricsManager.Close()
 	}
 

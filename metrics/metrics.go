@@ -245,15 +245,14 @@ func (m *manager) add(key string, value int64, tags ...Tag) {
 	}
 }
 
-// Close closes metrics channels, waits for data to complete, closes all plugins
+// Close stops the manager: producers drop new datapoints, the
+// forwarder drains the buffered ones and exits through the
+// canceled context, and the publishers flush and close. The
+// datapoint channel itself is never closed - a producer racing
+// the closure would panic - so the closed flag and the context
+// cancellation carry the shutdown instead.
 func (m *manager) Close() {
-	// Stop accepting new datapoints before closing the channel:
-	// producers check the flag and drop their update, so only a
-	// producer already between the check and the send can race,
-	// and that producer recovers instead of panicking.
 	m.closed.Store(true)
-	// drain the datapoint channels
-	close(m.addDataChan)
 	m.wg.Wait()
 
 	// close all publishers
@@ -269,12 +268,36 @@ type publisher interface {
 }
 
 func (m *manager) addForwarder(addChan <-chan datapoint) {
-	for data := range addChan {
-		for _, s := range m.publishers {
-			s.Add(data.key, data.value, data.tags...)
+	defer m.wg.Done()
+	for {
+		select {
+		case data, ok := <-addChan:
+			if !ok {
+				return
+			}
+			for _, s := range m.publishers {
+				s.Add(data.key, data.value, data.tags...)
+			}
+		case <-m.ctx.Done():
+			// The channel is never closed (producers race its
+			// closure otherwise); termination is the context.
+			// Drain whatever the buffer still holds so late
+			// datapoints are not lost, then exit.
+			for {
+				select {
+				case data, ok := <-addChan:
+					if !ok {
+						return
+					}
+					for _, s := range m.publishers {
+						s.Add(data.key, data.value, data.tags...)
+					}
+				default:
+					return
+				}
+			}
 		}
 	}
-	m.wg.Done()
 }
 
 type datapoint struct {

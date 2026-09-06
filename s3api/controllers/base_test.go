@@ -282,7 +282,9 @@ func (m *mockEvSender) Close() error                               { return nil 
 type mockMetricsManager struct{}
 
 func (m *mockMetricsManager) Send(_ fiber.Ctx, _ error, _ string, _ int64, _ int) {}
-func (m *mockMetricsManager) Close()                                              {}
+func (m *mockMetricsManager) SendWithBucket(_ fiber.Ctx, _ error, _ string, _ int64, _ int, _ string) {
+}
+func (m *mockMetricsManager) Close() {}
 
 func TestProcessController(t *testing.T) {
 	payload, err := xml.Marshal(s3response.Bucket{

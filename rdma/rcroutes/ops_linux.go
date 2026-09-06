@@ -323,29 +323,35 @@ func newOpsTracker() *opsTracker {
 					return
 				}
 				job.emit.publish(job.err, job.byt)
+				// Service the overflow list after every
+				// channel job: bursts that exceed the
+				// buffer publish as soon as the sink
+				// recovers instead of waiting for
+				// shutdown.
+				t.serviceOverflow()
 			case <-t.drain:
-				// Drain mode: empty the channel, then the
-				// overflow list, then exit. Producers past
-				// this point append to overflow; the final
-				// sweep below runs only what arrived before
-				// the drain signal, and a producer racing
-				// the sweep re-enqueues through dispatch's
-				// post-drain path.
+				// Drain mode, single critical section with
+				// dispatch: holding pubmu across the
+				// channel-and-list sweep closes the
+				// accept-vs-drain race - a dispatch that
+				// appended before this point is drained,
+				// one that runs after sees done and
+				// publishes inline.
+				t.pubmu.Lock()
 				for {
 					select {
 					case job, ok := <-t.pubq:
 						if !ok {
+							t.pubmu.Unlock()
 							return
 						}
 						job.emit.publish(job.err, job.byt)
 					default:
-						t.pubmu.Lock()
-						pending := t.overflow
-						t.overflow = nil
-						t.pubmu.Unlock()
-						for _, job := range pending {
+						for _, job := range t.overflow {
 							job.emit.publish(job.err, job.byt)
 						}
+						t.overflow = nil
+						t.pubmu.Unlock()
 						return
 					}
 				}
@@ -353,6 +359,17 @@ func newOpsTracker() *opsTracker {
 		}
 	}()
 	return t
+}
+
+// serviceOverflow publishes and clears the overflow list if the
+// worker can take it. Called by the worker only.
+func (t *opsTracker) serviceOverflow() {
+	t.pubmu.Lock()
+	defer t.pubmu.Unlock()
+	for _, job := range t.overflow {
+		job.emit.publish(job.err, job.byt)
+	}
+	t.overflow = nil
 }
 
 // Shutdown drains pending publications and stops the worker. The
@@ -383,16 +400,22 @@ func (t *opsTracker) Shutdown() {
 // publications are dropped by publishRequest before reaching
 // here.
 func (t *opsTracker) dispatch(job pubJob) {
+	// Fast path: the worker is alive. The pubmu critical section
+	// is the accept-vs-drain boundary: the drain sweep holds the
+	// same lock, so an append either lands before the sweep (and
+	// is drained) or after done closed (and runs inline).
+	t.pubmu.Lock()
 	select {
 	case <-t.done:
+		t.pubmu.Unlock()
 		job.emit.publish(job.err, job.byt)
 		return
 	default:
 	}
 	select {
 	case t.pubq <- job:
+		t.pubmu.Unlock()
 	default:
-		t.pubmu.Lock()
 		t.overflow = append(t.overflow, job)
 		t.pubmu.Unlock()
 	}
@@ -630,13 +653,6 @@ func (t *opsTracker) publishRequest(ctx fiber.Ctx, acct auth.Account,
 	if t == nil {
 		return
 	}
-	select {
-	case <-t.done:
-		// The worker already exited through the drain; sinks
-		// are closing. Drop the record.
-		return
-	default:
-	}
 	acct.Access = strings.Clone(acct.Access)
 	emit := &opsEmitter{
 		ops:    t.loadOps(),
@@ -648,7 +664,32 @@ func (t *opsTracker) publishRequest(ctx fiber.Ctx, acct auth.Account,
 		isPut:  isPut,
 		start:  time.Now(),
 	}
-	t.dispatch(pubJob{emit: emit, err: err})
+	// The accept-vs-drain boundary decides: a record accepted
+	// before the drain sweep is published by the worker; one
+	// that arrives after is dropped here (not published inline),
+	// because a request publication has no owner left to
+	// guarantee its sinks are still open.
+	t.dispatchOrDrop(pubJob{emit: emit, err: err})
+}
+
+// dispatchOrDrop is dispatch with request-publication semantics:
+// after the worker exited through the drain the job is dropped
+// instead of published inline.
+func (t *opsTracker) dispatchOrDrop(job pubJob) {
+	t.pubmu.Lock()
+	select {
+	case <-t.done:
+		t.pubmu.Unlock()
+		return
+	default:
+	}
+	select {
+	case t.pubq <- job:
+		t.pubmu.Unlock()
+	default:
+		t.overflow = append(t.overflow, job)
+		t.pubmu.Unlock()
+	}
 }
 
 // regionFromCtx reads the region the gateway middleware stored on
