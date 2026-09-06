@@ -56,8 +56,9 @@ type Manager interface {
 
 // manager is a manager of metrics plugins
 type manager struct {
-	wg  sync.WaitGroup
-	ctx context.Context
+	wg     sync.WaitGroup
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	config Config
 
@@ -93,9 +94,15 @@ func NewManager(ctx context.Context, conf Config) (Manager, error) {
 
 	addDataChan := make(chan datapoint, dataItemCount)
 
+	// Derive a cancellable child of the caller context: closing
+	// the manager cancels it itself (a standalone user of the
+	// API has no external cancellation to rely on), while the
+	// gateway shutdown path keeps its own context propagation.
+	mctx, mcancel := context.WithCancel(ctx)
 	mgr := &manager{
 		addDataChan: addDataChan,
-		ctx:         ctx,
+		ctx:         mctx,
+		cancel:      mcancel,
 		config:      conf,
 	}
 
@@ -253,6 +260,9 @@ func (m *manager) add(key string, value int64, tags ...Tag) {
 // cancellation carry the shutdown instead.
 func (m *manager) Close() {
 	m.closed.Store(true)
+	// Self-owned cancellation terminates the forwarder wherever
+	// it is waiting; the external context is only a second path.
+	m.cancel()
 	m.wg.Wait()
 
 	// close all publishers
