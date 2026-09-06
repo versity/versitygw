@@ -32,7 +32,7 @@ type Handler struct{}
 
 // New builds a stub route handler; the routes answer 501.
 func New(svc any, be backend.Backend, iam auth.IAMService,
-	readonly, disableACL bool) *Handler {
+	readonly, disableACL bool, sessionLimit int) *Handler {
 	return &Handler{}
 }
 

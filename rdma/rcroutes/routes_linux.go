@@ -118,10 +118,10 @@ func (h *Handler) Shutdown() {
 // operational services arrive later through SetOpsServices, once
 // the gateway has created them.
 func New(svc *rcserver.RCSvc, be backend.Backend, iam auth.IAMService,
-	readonly, disableACL bool) *Handler {
+	readonly, disableACL bool, sessionLimit int) *Handler {
 	return &Handler{svc: svc, be: be, iam: iam,
 		readonly: readonly, disableACL: disableACL,
-		ops: newOpsTracker()}
+		ops: newOpsTracker(sessionLimit)}
 }
 
 // principalID derives the session identity digest from the
@@ -249,8 +249,15 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	// an already-expired session and fire the teardown callback
 	// synchronously, and a registered record (or a parked early
 	// notification) keeps that publication from being lost.
-	h.ops.register(resp.SessionID, acct,
-		regionFromCtx(ctx), bucket, key, isPut, time.Now())
+	// Refusal here is admission control: earlier sessions still
+	// hold unpublished audit records, so the new session is
+	// rejected before the native side commits it.
+	if err := h.ops.register(resp.SessionID, acct,
+		regionFromCtx(ctx), bucket, key, isPut, time.Now()); err != nil {
+		_ = h.svc.FinishPrepare(resp.SessionID, false)
+		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
+		return s3err.GetAPIError(s3err.ErrSlowDown)
+	}
 	if err := h.svc.FinishPrepare(resp.SessionID, true); err != nil {
 		// The finalization failed. Exactly one publication
 		// covers it: the finalizing call already reaped the

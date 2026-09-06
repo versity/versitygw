@@ -286,10 +286,22 @@ type opsTracker struct {
 	overflow   []pubJob
 	reqBacklog atomic.Int64
 	reqDropped atomic.Int64
-	stopped    bool
-	done       chan struct{}
-	drain      chan struct{}
-	drainOnce  sync.Once
+	// pubPending counts queued-but-unpublished session records.
+	// The native side releases its session quota when it fires
+	// the teardown notification, not when the audit record lands,
+	// so successive sessions can queue more records than the
+	// live-session limit allows. Admission control closes that
+	// gap: a new session is refused while too many of its
+	// predecessors' records are still unpublished, so a stalled
+	// sink delays new sessions instead of accumulating memory.
+	pubPending atomic.Int64
+	// sessionLimit is the native concurrent-session quota; the
+	// admission budget scales with it.
+	sessionLimit int
+	stopped      bool
+	done         chan struct{}
+	drain        chan struct{}
+	drainOnce    sync.Once
 }
 
 // pubJob is one deferred publication handed to the worker.
@@ -327,15 +339,16 @@ const pubRequestBacklogCap = 4096
 // whatever the sinks cannot keep up with. Each job is a few
 // pointers; a stalled sink delays records, it does not lose
 // them.
-func newOpsTracker() *opsTracker {
+func newOpsTracker(sessionLimit int) *opsTracker {
 	t := &opsTracker{
 		sessions: map[string]*sessionRecord{},
 		app: fiber.New(fiber.Config{
 			Immutable: true,
 		}),
-		pubq:  make(chan pubJob, pubQueueSoftCap),
-		done:  make(chan struct{}),
-		drain: make(chan struct{}),
+		pubq:         make(chan pubJob, pubQueueSoftCap),
+		done:         make(chan struct{}),
+		drain:        make(chan struct{}),
+		sessionLimit: sessionLimit,
 	}
 	go func() {
 		defer close(t.done)
@@ -408,13 +421,16 @@ func (t *opsTracker) takeOverflow() []pubJob {
 	return pending
 }
 
-// run publishes one job and releases its request-backlog
-// reservation, if any.
+// run publishes one job and releases its reservations: the
+// request-backlog slot and the session admission credit the
+// record was holding.
 func (t *opsTracker) run(job pubJob) {
 	job.emit.publish(job.err, job.byt)
 	if job.isReq {
 		t.reqBacklog.Add(-1)
+		return
 	}
+	t.pubPending.Add(-1)
 }
 
 // Shutdown drains pending publications and stops the worker. The
@@ -490,8 +506,24 @@ func (t *opsTracker) SetOpsServices(ops OpsServices) {
 // The account is captured by value but its string fields still
 // reference request storage on some IAM paths, so the sink-relevant
 // identity is cloned as well.
+// errPubBacklog reports admission refusal: too many earlier
+// sessions still have unpublished audit records, so accepting
+// another would grow the publication backlog without bound while
+// a sink is stalled.
+var errPubBacklog = errors.New("publication backlog at capacity")
+
 func (t *opsTracker) register(sessionID string, acct auth.Account,
-	region, bucket, key string, isPut bool, start time.Time) {
+	region, bucket, key string, isPut bool, start time.Time) error {
+	// Admission control: the native quota counts live sessions,
+	// but teardown notifications fire before the audit records
+	// land, so session turnover can queue more records than the
+	// quota bounds. Refusing new sessions while the unpublished
+	// backlog exceeds the quota turns a stalled sink into
+	// latency (the client retries) instead of unbounded memory.
+	// Unbounded when sessionLimit is unset (tests).
+	if t.sessionLimit > 0 && t.pubPending.Load() >= int64(t.sessionLimit) {
+		return errPubBacklog
+	}
 	acct.Access = strings.Clone(acct.Access)
 	emit := &opsEmitter{
 		ops:    t.loadOps(),
@@ -506,7 +538,9 @@ func (t *opsTracker) register(sessionID string, acct auth.Account,
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.pubPending.Add(1)
 	t.sessions[sessionID] = &sessionRecord{emit: emit}
+	return nil
 }
 
 // unregister drops a session entry whose PREPARE finalization
@@ -733,10 +767,12 @@ func (t *opsTracker) dispatchOrDrop(job pubJob) {
 		return
 	}
 	if t.reqBacklog.Load() >= pubRequestBacklogCap {
-		t.pubmu.Unlock()
 		// Overload policy: drop and count. The record carries no
-		// session and no owner can reissue it.
+		// session and no owner can reissue it. Incremented under
+		// pubmu so Shutdown's report (also under pubmu via the
+		// drain's stopped transition) cannot miss it.
 		t.reqDropped.Add(1)
+		t.pubmu.Unlock()
 		return
 	}
 	job.isReq = true

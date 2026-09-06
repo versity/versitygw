@@ -1286,7 +1286,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		// nil on success without doing so. Wrap it so a verified
 		// request reaches the route handler, while errors end the
 		// chain as usual.
-		rcH := rcroutes.New(rcSvc, be, iamSvc, readonly, disableACLs)
+		rcH := rcroutes.New(rcSvc, be, iamSvc, readonly, disableACLs, int(rcMaxSessions))
 		// The RC shutdown wrapper drains queued operational
 		// publications before the sinks close; the drain hook is
 		// the route handler, which is built only now (it needs

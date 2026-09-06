@@ -38,7 +38,7 @@ import (
 // exactly once. Unreserved records are published by the callback.
 
 func TestOpsTrackerCallbackPublishesExpiry(t *testing.T) {
-	tr := newOpsTracker()
+	tr := newOpsTracker(0)
 	tr.register("sess-1", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 	if got := len(tr.sessions); got != 1 {
@@ -60,7 +60,7 @@ func TestOpsTrackerCallbackPublishesExpiry(t *testing.T) {
 }
 
 func TestOpsTrackerReserveBlocksCallback(t *testing.T) {
-	tr := newOpsTracker()
+	tr := newOpsTracker(0)
 	tr.register("sess-2", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", true, time.Now())
 
@@ -88,7 +88,7 @@ func TestOpsTrackerReserveBlocksCallback(t *testing.T) {
 }
 
 func TestOpsTrackerReserveIsExclusive(t *testing.T) {
-	tr := newOpsTracker()
+	tr := newOpsTracker(0)
 	tr.register("sess-3", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 
@@ -101,7 +101,7 @@ func TestOpsTrackerReserveIsExclusive(t *testing.T) {
 }
 
 func TestOpsTrackerFailOutcome(t *testing.T) {
-	tr := newOpsTracker()
+	tr := newOpsTracker(0)
 	tr.register("sess-4", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 
@@ -116,7 +116,7 @@ func TestOpsTrackerFailOutcome(t *testing.T) {
 }
 
 func TestOpsTrackerUnregister(t *testing.T) {
-	tr := newOpsTracker()
+	tr := newOpsTracker(0)
 	tr.register("sess-5", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 	tr.unregister("sess-5")
@@ -132,7 +132,7 @@ func TestOpsTrackerUnregister(t *testing.T) {
 }
 
 func TestOpsTrackerUnknownSession(t *testing.T) {
-	tr := newOpsTracker()
+	tr := newOpsTracker(0)
 	// Unknown sessions and the nil tracker are silent no-ops.
 	var nilTracker *opsTracker
 	nilTracker.reserve("ghost")
@@ -237,7 +237,7 @@ func (r *recordingLogger) Shutdown() error { return nil }
 // publishes exactly one record with its own outcome and bytes.
 func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	rl := &recordingLogger{}
-	tr := newOpsTracker()
+	tr := newOpsTracker(0)
 	tr.SetOpsServices(OpsServices{Logger: rl})
 
 	// Expiry path: callback publishes a zero-byte error record.
