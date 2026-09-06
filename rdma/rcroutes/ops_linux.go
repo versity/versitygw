@@ -518,11 +518,26 @@ func (t *opsTracker) register(sessionID string, acct auth.Account,
 	// but teardown notifications fire before the audit records
 	// land, so session turnover can queue more records than the
 	// quota bounds. Refusing new sessions while the unpublished
-	// backlog exceeds the quota turns a stalled sink into
+	// backlog reaches the quota turns a stalled sink into
 	// latency (the client retries) instead of unbounded memory.
-	// Unbounded when sessionLimit is unset (tests).
-	if t.sessionLimit > 0 && t.pubPending.Load() >= int64(t.sessionLimit) {
-		return errPubBacklog
+	// The check and the credit acquisition share the session
+	// mutex so concurrent registrations cannot each observe the
+	// same headroom and overshoot together. Unbounded when
+	// sessionLimit is unset (tests).
+	if t.sessionLimit > 0 {
+		t.mu.Lock()
+		full := t.pubPending.Load() >= int64(t.sessionLimit)
+		if !full {
+			t.pubPending.Add(1)
+		}
+		t.mu.Unlock()
+		if full {
+			return errPubBacklog
+		}
+	} else {
+		t.mu.Lock()
+		t.pubPending.Add(1)
+		t.mu.Unlock()
 	}
 	acct.Access = strings.Clone(acct.Access)
 	emit := &opsEmitter{
@@ -538,7 +553,6 @@ func (t *opsTracker) register(sessionID string, acct auth.Account,
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.pubPending.Add(1)
 	t.sessions[sessionID] = &sessionRecord{emit: emit}
 	return nil
 }
@@ -554,7 +568,14 @@ func (t *opsTracker) unregister(sessionID string) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	delete(t.sessions, sessionID)
+	if _, ok := t.sessions[sessionID]; ok {
+		delete(t.sessions, sessionID)
+		// Release the admission credit the registration took:
+		// no callback will ever publish for this entry, so
+		// leaving the credit held would permanently shrink the
+		// admission budget.
+		t.pubPending.Add(-1)
+	}
 }
 
 // failOutcome publishes a failed finalization exactly once: when
@@ -589,6 +610,7 @@ type reservation struct {
 	emit *opsEmitter
 	gen  uint64
 }
+
 // reserve marks a session record as owned by its request path: the
 // teardown callback skips a reserved record because the request
 // path publishes the real outcome itself. Returns the reservation

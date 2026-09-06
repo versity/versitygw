@@ -19,7 +19,9 @@ package rcroutes
 
 import (
 	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -363,5 +365,45 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 			t.Fatalf("record %d = (err=%v, bytes=%d), want (err=%v, bytes=%d)",
 				i, got.err, got.bytes, w.isErr, w.bytes)
 		}
+	}
+}
+
+func TestOpsTrackerAdmissionAtomicUnderConcurrency(t *testing.T) {
+	tr := newOpsTracker(8)
+	// One predecessor record is already pending.
+	if err := tr.register("s-seed", auth.Account{Access: "a"},
+		"r", "b", "k", false, time.Now()); err != nil {
+		t.Fatalf("seed registration: %v", err)
+	}
+
+	const rounds = 16
+	var wg sync.WaitGroup
+	var admitted atomic.Int64
+	var refused atomic.Int64
+	for i := 0; i < rounds; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			err := tr.register(fmt.Sprintf("s-%d", i), auth.Account{Access: "a"},
+				"r", "b", "k", false, time.Now())
+			if err == nil {
+				admitted.Add(1)
+			} else if errors.Is(err, errPubBacklog) {
+				refused.Add(1)
+			} else {
+				t.Errorf("registration %d: unexpected error %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if got := admitted.Load(); got != 7 {
+		t.Fatalf("admitted %d registrations, want exactly 7 (limit 8, 1 pending)", got)
+	}
+	if got := refused.Load(); got != rounds-7 {
+		t.Fatalf("refused %d registrations, want %d", got, rounds-7)
+	}
+	if got := tr.pubPending.Load(); got != 8 {
+		t.Fatalf("pending credits = %d, want 8", got)
 	}
 }

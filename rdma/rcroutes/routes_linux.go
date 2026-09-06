@@ -255,8 +255,12 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	if err := h.ops.register(resp.SessionID, acct,
 		regionFromCtx(ctx), bucket, key, isPut, time.Now()); err != nil {
 		_ = h.svc.FinishPrepare(resp.SessionID, false)
-		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
-		return s3err.GetAPIError(s3err.ErrSlowDown)
+		// The audit record carries the same SlowDown the wire
+		// shows, so operator-side accounting matches what the
+		// client saw.
+		apiErr := s3err.GetAPIError(s3err.ErrSlowDown)
+		h.ops.publishRequest(ctx, acct, apiErr, bucket, key, isPut)
+		return apiErr
 	}
 	if err := h.svc.FinishPrepare(resp.SessionID, true); err != nil {
 		// The finalization failed. Exactly one publication
