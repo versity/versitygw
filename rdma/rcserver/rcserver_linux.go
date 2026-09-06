@@ -174,18 +174,27 @@ type SessionInfo struct {
 // unblock), waits for every entered call to leave, then tears the
 // server down; it is idempotent and safe from any goroutine.
 type RCSvc struct {
-	srv     *C.rc_server
-	closing atomic.Bool
-	ops     atomic.Int64
-	once    sync.Once
-	ctx     context.Context
-	cancel  context.CancelFunc
+	srv         *C.rc_server
+	closing     atomic.Bool
+	ops         atomic.Int64
+	once        sync.Once
+	ctx         context.Context
+	cancel      context.CancelFunc
+	maxSessions uint32
 }
 
 // Context returns the service-lifetime context. Handlers bind
 // their backend calls to it so Close unblocks in-flight I/O.
 func (s *RCSvc) Context() context.Context {
 	return s.ctx
+}
+
+// MaxSessions reports the configured global session limit. The
+// operational publication pipeline sizes its queue against it:
+// each session publishes exactly one terminal record, so a queue
+// this deep can never fill.
+func (s *RCSvc) MaxSessions() uint32 {
+	return s.maxSessions
 }
 
 // rcLogSink receives every diagnostic line the C server emits.
@@ -263,7 +272,7 @@ func Init(opts DeviceOpts) (*RCSvc, error) {
 	}
 	installLogSink(srv, opts.Debug)
 	ctx, cancel := context.WithCancel(context.Background())
-	return &RCSvc{srv: srv, ctx: ctx, cancel: cancel}, nil
+	return &RCSvc{srv: srv, ctx: ctx, cancel: cancel, maxSessions: opts.MaxSessions}, nil
 }
 
 // TryEnter admits a request into the service. It returns false once

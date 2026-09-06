@@ -38,7 +38,7 @@ import (
 // exactly once. Unreserved records are published by the callback.
 
 func TestOpsTrackerCallbackPublishesExpiry(t *testing.T) {
-	tr := newOpsTracker()
+	tr := newOpsTracker(pubQueueCapacity(0))
 	tr.register("sess-1", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 	if got := len(tr.sessions); got != 1 {
@@ -60,14 +60,14 @@ func TestOpsTrackerCallbackPublishesExpiry(t *testing.T) {
 }
 
 func TestOpsTrackerReserveBlocksCallback(t *testing.T) {
-	tr := newOpsTracker()
+	tr := newOpsTracker(pubQueueCapacity(0))
 	tr.register("sess-2", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", true, time.Now())
 
 	// The READY path reserves before its completion call; the
 	// callback the call fires synchronously must skip the record.
-	emit := tr.reserve("sess-2")
-	if emit == nil {
+	rsv := tr.reserve("sess-2")
+	if rsv == nil {
 		t.Fatal("reserve returned nil for a live session")
 	}
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-2"})
@@ -76,7 +76,7 @@ func TestOpsTrackerReserveBlocksCallback(t *testing.T) {
 	}
 
 	// The request path then publishes and drops the entry.
-	tr.publishReserved("sess-2", emit, nil, 4096)
+	tr.publishReserved("sess-2", rsv, nil, 4096)
 	if got := len(tr.sessions); got != 0 {
 		t.Fatalf("publishReserved left residue: %d", got)
 	}
@@ -88,7 +88,7 @@ func TestOpsTrackerReserveBlocksCallback(t *testing.T) {
 }
 
 func TestOpsTrackerReserveIsExclusive(t *testing.T) {
-	tr := newOpsTracker()
+	tr := newOpsTracker(pubQueueCapacity(0))
 	tr.register("sess-3", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 
@@ -101,7 +101,7 @@ func TestOpsTrackerReserveIsExclusive(t *testing.T) {
 }
 
 func TestOpsTrackerFailOutcome(t *testing.T) {
-	tr := newOpsTracker()
+	tr := newOpsTracker(pubQueueCapacity(0))
 	tr.register("sess-4", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 
@@ -116,7 +116,7 @@ func TestOpsTrackerFailOutcome(t *testing.T) {
 }
 
 func TestOpsTrackerUnregister(t *testing.T) {
-	tr := newOpsTracker()
+	tr := newOpsTracker(pubQueueCapacity(0))
 	tr.register("sess-5", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 	tr.unregister("sess-5")
@@ -132,7 +132,7 @@ func TestOpsTrackerUnregister(t *testing.T) {
 }
 
 func TestOpsTrackerUnknownSession(t *testing.T) {
-	tr := newOpsTracker()
+	tr := newOpsTracker(pubQueueCapacity(0))
 	// Unknown sessions and the nil tracker are silent no-ops.
 	var nilTracker *opsTracker
 	nilTracker.reserve("ghost")
@@ -237,7 +237,7 @@ func (r *recordingLogger) Shutdown() error { return nil }
 // publishes exactly one record with its own outcome and bytes.
 func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	rl := &recordingLogger{}
-	tr := newOpsTracker()
+	tr := newOpsTracker(pubQueueCapacity(0))
 	tr.SetOpsServices(OpsServices{Logger: rl})
 
 	// Expiry path: callback publishes a zero-byte error record.
@@ -247,69 +247,79 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	// Reserved path: reserve, callback fires (skipped), the
 	// request path publishes success with bytes.
 	tr.register("s-res", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
-	emit := tr.reserve("s-res")
-	if emit == nil {
+	rsv := tr.reserve("s-res")
+	if rsv == nil {
 		t.Fatal("reserve failed")
 	}
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-res"})
-	tr.publishReserved("s-res", emit, nil, 128)
+	tr.publishReserved("s-res", rsv, nil, 128)
 
 	// Denial path while reserved: failOutcome must not steal the
 	// publication; the owner's success record is the only one.
 	tr.register("s-den", auth.Account{Access: "ak"}, "r", "b", "o", true, time.Now())
-	emit2 := tr.reserve("s-den")
-	if emit2 == nil {
+	rsv2 := tr.reserve("s-den")
+	if rsv2 == nil {
 		t.Fatal("reserve failed")
 	}
 	tr.failOutcome("s-den", errors.New("denied"))
-	tr.publishReserved("s-den", emit2, nil, 256)
+	tr.publishReserved("s-den", rsv2, nil, 256)
 
 	// Released reservation: the record returns to the pool and
 	// the reaper (or the next claimant) can still publish it.
 	tr.register("s-rel", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
-	emit3 := tr.reserve("s-rel")
-	if emit3 == nil {
+	rsv3 := tr.reserve("s-rel")
+	if rsv3 == nil {
 		t.Fatal("reserve failed")
 	}
-	tr.releaseReservation("s-rel", emit3)
+	tr.releaseReservation("s-rel", rsv3)
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-rel"})
 
 	// M1 regression: a terminal arriving while reserved is stashed,
 	// and a later claim-rollback release consumes it and publishes the
 	// expiry - the record is not orphaned.
 	tr.register("s-stash", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
-	emitS := tr.reserve("s-stash")
-	if emitS == nil {
+	rsvS := tr.reserve("s-stash")
+	if rsvS == nil {
 		t.Fatal("reserve failed")
 	}
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-stash"})
-	tr.releaseReservation("s-stash", emitS)
+	tr.releaseReservation("s-stash", rsvS)
 
 	// M2 regression: a second reservation of a live record is
 	// refused, so a duplicate READY cannot claim the transfer
 	// while another request owns the publication. The owner then
 	// completes normally.
 	tr.register("s-dbl", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
-	emitD := tr.reserve("s-dbl")
-	if emitD == nil {
+	rsvD := tr.reserve("s-dbl")
+	if rsvD == nil {
 		t.Fatal("first reserve failed")
 	}
 	if tr.reserve("s-dbl") != nil {
 		t.Fatal("double reserve succeeded")
 	}
-	tr.publishReserved("s-dbl", emitD, nil, 64)
+	tr.publishReserved("s-dbl", rsvD, nil, 64)
 
 	// Ownership: a stale emitter must not publish or consume the
 	// current record; the real owner still can, even after the
 	// callback fired (stashed) underneath it.
 	tr.register("s-own", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
-	emitO := tr.reserve("s-own")
-	if emitO == nil {
+	rsvO := tr.reserve("s-own")
+	if rsvO == nil {
 		t.Fatal("reserve failed")
 	}
-	tr.publishReserved("s-own", &opsEmitter{}, nil, 999)
+	// Stale reservation: released, re-reserved by another claim,
+	// then the stale token tries to publish. The generation check
+	// must reject the stale token while the current owner still
+	// publishes.
+	rsvO2 := tr.reserve("s-own")
+	tr.releaseReservation("s-own", rsvO)
+	rsvB := tr.reserve("s-own")
+	if rsvB == nil {
+		t.Fatal("re-reserve after release failed")
+	}
+	tr.publishReserved("s-own", rsvO2, nil, 999) // stale: no-op
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-own"})
-	tr.publishReserved("s-own", emitO, nil, 32)
+	tr.publishReserved("s-own", rsvB, nil, 32)
 
 	// Consume-or-noop denial of an unreserved session.
 	tr.register("s-fail", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
@@ -337,6 +347,9 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 		{false, 128}, // s-res success
 		{false, 256}, // s-den success (denial was skipped)
 		{true, 0},    // s-rel expiry after release
+		{true, 0},    // s-stash stashed terminal consumed by release
+		{false, 64},  // s-dbl owner publishes after refused double reserve
+		{false, 32},  // s-own current owner publishes; stale token no-op
 		{true, 0},    // s-fail denial
 	}
 	for i, w := range want {

@@ -799,7 +799,16 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		return fmt.Errorf("setup logger: %w", err)
 	}
 
-	metricsManager, err := metrics.NewManager(ctx, metrics.Config{
+	// The metrics manager must outlive the gateway context: RC
+	// teardown publications drain during backend shutdown, after
+	// this context is cancelled. A manager bound to ctx would
+	// silently discard those final datapoints, so it runs on its
+	// own context and closes with the other sinks below.
+	metricsCtx, metricsStop := context.WithCancel(context.Background())
+	// The cancel runs when this function returns - after the
+	// shutdown sequence below finishes draining every sink.
+	defer metricsStop()
+	metricsManager, err := metrics.NewManager(metricsCtx, metrics.Config{
 		ServiceName:      cfg.MetricsService,
 		StatsdServers:    cfg.StatsdServers,
 		DogStatsdServers: cfg.DogstatsServers,

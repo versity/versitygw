@@ -1300,6 +1300,16 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			// logger and event schema read the region from
 			// there, so set it for every verified request.
 			utils.ContextKeyRegion.Set(ctx, region)
+			// Admission barrier: verification can block on IAM
+			// lookups, and its failure publications must not
+			// outlive the RC shutdown sequence (sinks close
+			// right after the RC service drains). Requests that
+			// lose the race to shutdown are dropped - their
+			// audit record would land after the sinks closed.
+			if !rcSvc.TryEnter() {
+				return rcroutes.WriteRouteError(ctx, rcroutes.ErrNotAdmitted())
+			}
+			defer rcSvc.Leave()
 			if err := rcVerify(ctx); err != nil {
 				rcH.PublishAuthFailure(ctx, err)
 				return rcroutes.WriteRouteError(ctx, err)

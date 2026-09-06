@@ -19,6 +19,8 @@
 package rcroutes
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/versity/versitygw/auth"
@@ -64,6 +66,11 @@ func (h *Handler) SetOpsServices(ops OpsServices) {}
 
 // PublishAuthFailure is a stub mirror of the linux handler.
 func (h *Handler) PublishAuthFailure(ctx fiber.Ctx, err error) {}
+
+// ErrNotAdmitted is a stub mirror of the linux helper.
+func ErrNotAdmitted() error {
+	return errors.New("rc routes unavailable")
+}
 
 // Shutdown is a stub mirror of the linux handler.
 func (h *Handler) Shutdown() {}

@@ -44,6 +44,12 @@ type Tag struct {
 // Manager is the interface definition for metrics manager
 type Manager interface {
 	Send(ctx fiber.Ctx, err error, action string, count int64, status int)
+	// SendWithBucket is Send with the bucket dimension stated
+	// by the caller. The S3 middleware derives the bucket from
+	// the matched route, which synthesized contexts (RDMA
+	// operational records) cannot reproduce: they pass the
+	// captured bucket explicitly instead.
+	SendWithBucket(ctx fiber.Ctx, err error, action string, count int64, status int, bucket string)
 	Close()
 }
 
@@ -137,6 +143,28 @@ func (m *manager) Send(ctx fiber.Ctx, err error, action string, count int64, sta
 		reqTags = append(reqTags, Tag{Key: "bucket", Value: bucket})
 	}
 
+	m.send(ctx, err, action, count, status, reqTags)
+}
+
+// SendWithBucket reports with the bucket dimension supplied by the
+// caller; see the Manager interface.
+func (m *manager) SendWithBucket(ctx fiber.Ctx, err error, action string, count int64, status int, bucket string) {
+	if action == "" {
+		action = ActionUndetected
+	}
+	a := ActionMap[action]
+	reqTags := []Tag{
+		{Key: "method", Value: ctx.Method()},
+		{Key: "api", Value: a.Service},
+		{Key: "action", Value: a.Name},
+	}
+	if bucket != "" {
+		reqTags = append(reqTags, Tag{Key: "bucket", Value: bucket})
+	}
+	m.send(ctx, err, action, count, status, reqTags)
+}
+
+func (m *manager) send(ctx fiber.Ctx, err error, action string, count int64, status int, reqTags []Tag) {
 	reqStatus := status
 
 	if err != nil {

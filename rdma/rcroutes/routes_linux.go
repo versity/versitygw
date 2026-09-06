@@ -121,7 +121,7 @@ func New(svc *rcserver.RCSvc, be backend.Backend, iam auth.IAMService,
 	readonly, disableACL bool) *Handler {
 	return &Handler{svc: svc, be: be, iam: iam,
 		readonly: readonly, disableACL: disableACL,
-		ops: newOpsTracker()}
+		ops: newOpsTracker(pubQueueCapacity(svc.MaxSessions()))}
 }
 
 // principalID derives the session identity digest from the
@@ -137,6 +137,14 @@ func principalID(acct auth.Account) rcserver.PrincipalID {
 
 func errNotAdmitted() error {
 	return errRouteUnavailable{}
+}
+
+// ErrNotAdmitted is the route error for requests that lost the
+// race with shutdown: the RC service stopped admitting, so the
+// request cannot be served. Exposed for the admission barrier in
+// the route middleware, which runs before the handlers.
+func ErrNotAdmitted() error {
+	return errNotAdmitted()
 }
 
 func invalidHeader(name, value string) error {
@@ -400,8 +408,8 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	// READY's denial (or the reaper) must not be able to consume
 	// the record in the window between the claim and the
 	// reservation. A reserved record is invisible to both.
-	emit := h.ops.reserve(sessionID)
-	if emit == nil {
+	rsv := h.ops.reserve(sessionID)
+	if rsv == nil {
 		// Another READY holds the publication reservation for
 		// this session. Publication ownership must track native
 		// transfer ownership: proceeding without the reservation
@@ -410,8 +418,15 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 		// record on completion. Answer as a duplicate claim.
 		return fmt.Errorf("transfer in progress: %w", rcserver.ErrDouble)
 	}
+	// Panic safety starts at the reservation: an unwind anywhere
+	// below (authorization, backend I/O) must still retire the
+	// reservation so the record is not orphaned - the terminal
+	// callback can only stash under a reservation, and nobody
+	// else would ever release it. releaseReservation is a no-op
+	// once a later publish consumed the record.
+	defer h.ops.releaseReservation(sessionID, rsv)
 	publish := func(err error, bytes int64) {
-		h.ops.publishReserved(sessionID, emit, err, bytes)
+		h.ops.publishReserved(sessionID, rsv, err, bytes)
 	}
 	if err := h.authorize(ctx, acct, isRoot, bucket, key, info.Op == 1); err != nil {
 		// Permission revoked mid-session: publish the real
@@ -441,7 +456,7 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 		// the record for this claim; release it without
 		// publishing so the surviving path (the other READY,
 		// or the eventual reaper) still owns it.
-		h.ops.releaseReservation(sessionID, emit)
+		h.ops.releaseReservation(sessionID, rsv)
 		return mapRcError(err)
 	}
 
@@ -453,7 +468,7 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	// released the same way: the session stays with the record
 	// the next READY (or the reaper) will claim.
 	if resp.Outcome == rcserver.ReadyBusy {
-		h.ops.releaseReservation(sessionID, emit)
+		h.ops.releaseReservation(sessionID, rsv)
 		return fmt.Errorf("peer busy: %w", rcserver.ErrDouble)
 	}
 
@@ -498,21 +513,26 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 		// finalizer retires exactly at that point; a failure
 		// *before* the borrow still falls back to the
 		// finalizer path below.
-		put, gd, err := h.commitPut(ctx, sessionID, bucket, key, sizeOf(resp))
-		if gd {
+		put, viewDone, committed, err := h.commitPut(ctx, sessionID, bucket, key, sizeOf(resp))
+		if viewDone {
 			finalized = true
 		}
+		if put != nil {
+			// The backend committed the object. Record the
+			// fact before anything else can fail: the audit
+			// record and creation event must reflect the
+			// commit even when the native finalizer below
+			// errors out.
+			rsv.emit.markCommitted(put.ETag, put.VersionID)
+		}
 		if err != nil {
-			doPublish(mapRcError(err), 0)
+			doPublish(mapRcError(err), committed)
 			return err
 		}
 		// The FINAL wire reply carries the stored object's
 		// metadata, which the backend assigned at commit time.
 		resp.Etag = put.ETag
 		resp.VersionID = put.VersionID
-		// The success publication's object-created event carries
-		// the same commit metadata.
-		emit.setCommitMeta(put.ETag, put.VersionID)
 	} else if err := h.svc.FinishFinal(sessionID); err != nil {
 		doPublish(mapRcError(err), 0)
 		return mapRcError(err)
@@ -553,18 +573,18 @@ func sizeOf(resp *rcserver.ReadyResponse) uint64 {
 // panic-safe defer releases the view if the handler unwinds before
 // FinishPut runs.
 func (h *Handler) commitPut(ctx fiber.Ctx, sessionID, bucket, key string,
-	size uint64) (*s3response.PutObjectOutput, bool, error) {
+	size uint64) (put *s3response.PutObjectOutput, viewDone bool, committed int64, err error) {
 	view, err := h.svc.GetPutData(sessionID)
 	if err != nil {
-		return nil, false, mapRcError(err)
+		return nil, false, 0, mapRcError(err)
 	}
 	// Panic-safe ownership: if anything below unwinds, the view is
 	// still returned exactly once (the ABI consumes the handle a
 	// single time; a redundant FinishPut after a commit is a
 	// no-op STALE).
-	committed := false
+	putDone := false
 	defer func() {
-		if !committed {
+		if !putDone {
 			_ = h.svc.FinishPut(*view, false, "", "")
 		}
 	}()
@@ -579,13 +599,19 @@ func (h *Handler) commitPut(ctx fiber.Ctx, sessionID, bucket, key string,
 		Body:          bytes.NewReader(view.Buf),
 	})
 	if err != nil {
-		return nil, true, err
+		// The object was not created; the audit records zero
+		// transferred bytes. The view was consumed above.
+		return nil, true, 0, err
 	}
+	// The object exists from here on. The value below is the
+	// committed byte count, reported even when the native
+	// finalizer fails, so the audit record reflects the commit.
+	committed = contentLength
 	if err := h.svc.FinishPut(*view, true, res.ETag, res.VersionID); err != nil {
-		return nil, true, mapRcError(err)
+		return &res, true, committed, mapRcError(err)
 	}
-	committed = true
-	return &res, true, nil
+	putDone = true
+	return &res, true, committed, nil
 }
 
 // Cancel handles CANCEL: authenticated owner tears the session down.

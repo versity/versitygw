@@ -68,11 +68,23 @@ type opsEmitter struct {
 	version string
 	hasEtag bool
 	hasVer  bool
+	// committed records that the backend created the object.
+	// The creation event keys off this fact, not off the final
+	// publication's error status: a committed PUT whose native
+	// finalizer later failed still created the object, and its
+	// creation event must not be lost.
+	committed bool
+	// eventSent guards the creation event against a second
+	// publication path (stashed terminal consumed by a release).
+	eventSent bool
 }
 
-// setCommitMeta records the backend-assigned object metadata for
-// the success publication's event payload.
-func (e *opsEmitter) setCommitMeta(etag, version string) {
+// markCommitted records the backend commit fact together with the
+// backend-assigned object metadata. The creation event fires for
+// any publication after this, including an error publication from
+// a failed native finalizer: the object exists regardless of the
+// finalizer's fate.
+func (e *opsEmitter) markCommitted(etag, version string) {
 	if e == nil {
 		return
 	}
@@ -80,6 +92,7 @@ func (e *opsEmitter) setCommitMeta(etag, version string) {
 	e.hasEtag = true
 	e.version = version
 	e.hasVer = true
+	e.committed = true
 }
 
 // synthesize builds a fiber context whose path and request locals
@@ -141,7 +154,10 @@ func (e *opsEmitter) publish(err error, bytes int64) {
 	}
 
 	if e.ops.Metrics != nil {
-		e.ops.Metrics.Send(ctx, sinkErr, action, bytes, status)
+		// The bucket dimension comes from the captured session,
+		// not the route: the synthesized context has no matched
+		// route, so Params("bucket") would be empty here.
+		e.ops.Metrics.SendWithBucket(ctx, sinkErr, action, bytes, status, e.bucket)
 	}
 	if e.ops.Logger != nil {
 		e.ops.Logger.Log(ctx, sinkErr, nil, s3log.LogMeta{
@@ -152,9 +168,12 @@ func (e *opsEmitter) publish(err error, bytes int64) {
 			ObjectSize: bytes,
 		})
 	}
-	// The object-created event fires at commit time only; error
-	// publications never carry it.
-	if e.ops.Events != nil && err == nil && e.isPut {
+	// The object-created event keys off the backend commit fact,
+	// not the publication's error status: a committed PUT whose
+	// native finalizer failed still created the object, so its
+	// creation event must survive. Uncommitted PUTs (backend
+	// failure) never carry it.
+	if e.ops.Events != nil && e.committed && e.isPut && !e.eventSent {
 		meta := s3event.EventMeta{
 			EventName:  s3event.EventObjectCreatedPut,
 			ObjectSize: bytes,
@@ -167,6 +186,7 @@ func (e *opsEmitter) publish(err error, bytes int64) {
 			ver := e.version
 			meta.VersionId = &ver
 		}
+		e.eventSent = true
 		e.ops.Events.SendEvent(ctx, meta)
 	}
 }
@@ -219,6 +239,11 @@ type sessionRecord struct {
 	// will come, so a later release of the reservation resolves
 	// the stashed outcome instead of leaving an orphan.
 	terminal bool
+	// claimGen identifies the current reservation. Each reserve
+	// bumps it, so a release or publication from an earlier
+	// reservation is rejected even though the record's emitter
+	// pointer is reused across claims.
+	claimGen uint64
 }
 
 // opsTracker owns terminal publication: each session publishes
@@ -243,7 +268,6 @@ type opsTracker struct {
 	sessions  map[string]*sessionRecord
 	app       *fiber.App
 	pubq      chan pubJob
-	overflow  chan struct{}
 	done      chan struct{}
 	drain     chan struct{}
 	drainOnce sync.Once
@@ -256,25 +280,30 @@ type pubJob struct {
 	byt  int64
 }
 
-// pubQueueDepth bounds how many publications may wait in the
-// handoff queue before the caller falls back to inline execution.
-const pubQueueDepth = 256
+// pubQueueCapacity returns the publication queue depth for a
+// given session limit. Each session publishes exactly one
+// terminal record (enforced by the reservation protocol), and the
+// session count never exceeds the configured limit, so a queue
+// this deep can never fill - native callbacks always hand off
+// without waiting. A floor keeps tests and degenerate zero
+// configs sane.
+func pubQueueCapacity(maxSessions uint32) int {
+	n := int(maxSessions) + 1 // +1: shutdown drain may race one last dispatch
+	if n < 64 {
+		n = 64
+	}
+	return n
+}
 
-// pubOverflowSlots bounds how many callers may run overflow
-// publications inline at once; further callers block on the
-// semaphore until a slot frees.
-const pubOverflowSlots = 8
-
-func newOpsTracker() *opsTracker {
+func newOpsTracker(queueDepth int) *opsTracker {
 	t := &opsTracker{
 		sessions: map[string]*sessionRecord{},
 		app: fiber.New(fiber.Config{
 			Immutable: true,
 		}),
-		pubq:     make(chan pubJob, pubQueueDepth),
-		overflow: make(chan struct{}, pubOverflowSlots),
-		done:     make(chan struct{}),
-		drain:    make(chan struct{}),
+		pubq:  make(chan pubJob, queueDepth),
+		done:  make(chan struct{}),
+		drain: make(chan struct{}),
 	}
 	go func() {
 		defer close(t.done)
@@ -321,24 +350,14 @@ func (t *opsTracker) Shutdown() {
 	})
 }
 
-// dispatch hands a publication to the worker. It must never block
-// indefinitely: when the queue is full (the worker itself stuck in
-// a sink), the publication runs inline so the record is still
-// delivered and the caller - possibly the native reaper - returns.
-// dispatch hands a publication to the worker. It must never block
-// indefinitely: when the queue is full the caller runs the
-// publication itself under an overflow semaphore, which bounds how
-// many overflow publications may wait at once. Overflow callers
-// beyond the semaphore block - the alternative (one goroutine per
-// job) grows without bound under a stalled sink, and dropping the
-// record loses the publication entirely. The callers that reach
-// overflow are the native reaper or a request handler; waiting
-// there is bounded by the semaphore and by the worker draining,
-// and is the price of never losing a record.
+// dispatch hands a publication to the worker without ever
+// blocking the caller. The queue is sized to the session limit
+// and each session publishes exactly once, so the send below
+// always has room while the worker runs; after the worker exits
+// (shutdown drain) the publication runs inline, because the queue
+// no longer moves. Either way the native callback - which may be
+// the reaper - returns promptly and the record is never lost.
 func (t *opsTracker) dispatch(job pubJob) {
-	// After the worker exited (shutdown drain), the queue no
-	// longer moves: publish inline so the record is not
-	// stranded behind a send nobody will receive.
 	select {
 	case <-t.done:
 		job.emit.publish(job.err, job.byt)
@@ -347,14 +366,12 @@ func (t *opsTracker) dispatch(job pubJob) {
 	}
 	select {
 	case t.pubq <- job:
-		return
 	default:
+		// Unreachable while the capacity contract holds; kept
+		// as a safety net so a mis-sized queue degrades to
+		// inline publication instead of blocking the reaper.
+		job.emit.publish(job.err, job.byt)
 	}
-	// Queue full and worker alive. Run inline under the overflow
-	// semaphore.
-	t.overflow <- struct{}{}
-	defer func() { <-t.overflow }()
-	job.emit.publish(job.err, job.byt)
 }
 
 // SetOpsServices installs the operational service instances. The
@@ -435,11 +452,18 @@ func (t *opsTracker) failOutcome(sessionID string, err error) {
 	t.dispatch(pubJob{emit: rec.emit, err: err})
 }
 
+// reservation couples the emitter with the generation of the
+// claim that owns it: release and publication validate the
+// generation, so a stale claim cannot act on a newer one.
+type reservation struct {
+	emit *opsEmitter
+	gen  uint64
+}
 // reserve marks a session record as owned by its request path: the
 // teardown callback skips a reserved record because the request
-// path publishes the real outcome itself. Returns the emitter when
-// the record exists and was not reserved yet.
-func (t *opsTracker) reserve(sessionID string) *opsEmitter {
+// path publishes the real outcome itself. Returns the reservation
+// when the record exists and was not reserved yet.
+func (t *opsTracker) reserve(sessionID string) *reservation {
 	if t == nil {
 		return nil
 	}
@@ -450,7 +474,8 @@ func (t *opsTracker) reserve(sessionID string) *opsEmitter {
 		return nil
 	}
 	rec.reserved = true
-	return rec.emit
+	rec.claimGen++
+	return &reservation{emit: rec.emit, gen: rec.claimGen}
 }
 
 // releaseReservation returns a reserved record to the pool
@@ -461,13 +486,13 @@ func (t *opsTracker) reserve(sessionID string) *opsEmitter {
 // reserved (terminal stashed), the session is gone: consume the
 // record and publish the stashed outcome, since no second
 // callback will arrive.
-func (t *opsTracker) releaseReservation(sessionID string, emit *opsEmitter) {
+func (t *opsTracker) releaseReservation(sessionID string, rsv *reservation) {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
 	rec, ok := t.sessions[sessionID]
-	if !ok || !rec.reserved || rec.emit != emit {
+	if !ok || !rec.reserved || rsv == nil || rec.claimGen != rsv.gen {
 		t.mu.Unlock()
 		return
 	}
@@ -483,25 +508,23 @@ func (t *opsTracker) releaseReservation(sessionID string, emit *opsEmitter) {
 
 // publishReserved publishes through a reserved record and drops it:
 // the single publication of a request-owned session outcome.
-func (t *opsTracker) publishReserved(sessionID string, emit *opsEmitter, err error, bytes int64) {
+func (t *opsTracker) publishReserved(sessionID string, rsv *reservation, err error, bytes int64) {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
 	rec, ok := t.sessions[sessionID]
-	// Ownership check: only the reservation holder publishes. A
-	// stale holder (its reservation was released or the record
-	// was replaced) must not delete or publish the current
+	// Ownership check: only the current reservation generation
+	// publishes. A stale claim (its reservation was released or
+	// superseded) must not delete or publish the current
 	// owner's record.
-	if !ok || rec.emit != emit {
+	if !ok || rsv == nil || rec.claimGen != rsv.gen {
 		t.mu.Unlock()
 		return
 	}
 	delete(t.sessions, sessionID)
 	t.mu.Unlock()
-	if emit != nil {
-		t.dispatch(pubJob{emit: emit, err: err, byt: bytes})
-	}
+	t.dispatch(pubJob{emit: rsv.emit, err: err, byt: bytes})
 }
 
 func (t *opsTracker) loadOps() OpsServices {
