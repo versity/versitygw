@@ -121,7 +121,7 @@ func New(svc *rcserver.RCSvc, be backend.Backend, iam auth.IAMService,
 	readonly, disableACL bool) *Handler {
 	return &Handler{svc: svc, be: be, iam: iam,
 		readonly: readonly, disableACL: disableACL,
-		ops: newOpsTracker(pubQueueCapacity(svc.MaxSessions()))}
+		ops: newOpsTracker()}
 }
 
 // principalID derives the session identity digest from the

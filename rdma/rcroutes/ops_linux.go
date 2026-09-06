@@ -263,11 +263,18 @@ type sessionRecord struct {
 // guarantee that no record is silently dropped while still capping
 // how long a callback may wait.
 type opsTracker struct {
-	mu        sync.Mutex
-	ops       OpsServices
-	sessions  map[string]*sessionRecord
-	app       *fiber.App
-	pubq      chan pubJob
+	mu       sync.Mutex
+	ops      OpsServices
+	sessions map[string]*sessionRecord
+	app      *fiber.App
+	pubq     chan pubJob
+	// overflow holds publications that arrived while the queue
+	// buffer was full. A native callback must never wait on a
+	// slow sink, so dispatch appends here (under pubmu) instead
+	// of blocking or running the sink itself, and the worker
+	// drains this list after the channel empties.
+	pubmu     sync.Mutex
+	overflow  []pubJob
 	done      chan struct{}
 	drain     chan struct{}
 	drainOnce sync.Once
@@ -280,28 +287,30 @@ type pubJob struct {
 	byt  int64
 }
 
-// pubQueueCapacity returns the publication queue depth for a
-// given session limit. Each session publishes exactly one
-// terminal record (enforced by the reservation protocol), and the
-// session count never exceeds the configured limit, so a queue
-// this deep can never fill - native callbacks always hand off
-// without waiting. A floor keeps tests and degenerate zero
-// configs sane.
-func pubQueueCapacity(maxSessions uint32) int {
-	n := int(maxSessions) + 1 // +1: shutdown drain may race one last dispatch
-	if n < 64 {
-		n = 64
-	}
-	return n
-}
+// pubQueueSoftCap is the buffered pre-allocation of the
+// publication queue, not a bound: the overflow list in dispatch
+// holds whatever exceeds it, so a slow sink never blocks a
+// native callback.
+const pubQueueSoftCap = 256
 
-func newOpsTracker(queueDepth int) *opsTracker {
+// newOpsTracker builds the tracker. The publication queue is
+// conceptually unbounded: a callback thread must never run a
+// sink (a blocked sink would stall the native reaper and defer
+// RC shutdown), so dispatch always hands off without waiting,
+// whatever the backlog. Capacity accounting cannot bound the
+// backlog - queued records accumulate across successive sessions
+// and authentication failures consume no session at all - so the
+// worker is the only sink executor and the queue absorbs
+// whatever the sinks cannot keep up with. Each job is a few
+// pointers; a stalled sink delays records, it does not lose
+// them.
+func newOpsTracker() *opsTracker {
 	t := &opsTracker{
 		sessions: map[string]*sessionRecord{},
 		app: fiber.New(fiber.Config{
 			Immutable: true,
 		}),
-		pubq:  make(chan pubJob, queueDepth),
+		pubq:  make(chan pubJob, pubQueueSoftCap),
 		done:  make(chan struct{}),
 		drain: make(chan struct{}),
 	}
@@ -315,9 +324,13 @@ func newOpsTracker(queueDepth int) *opsTracker {
 				}
 				job.emit.publish(job.err, job.byt)
 			case <-t.drain:
-				// Drain mode: empty whatever is already
-				// queued, then exit. Producers past this
-				// point publish inline.
+				// Drain mode: empty the channel, then the
+				// overflow list, then exit. Producers past
+				// this point append to overflow; the final
+				// sweep below runs only what arrived before
+				// the drain signal, and a producer racing
+				// the sweep re-enqueues through dispatch's
+				// post-drain path.
 				for {
 					select {
 					case job, ok := <-t.pubq:
@@ -326,6 +339,13 @@ func newOpsTracker(queueDepth int) *opsTracker {
 						}
 						job.emit.publish(job.err, job.byt)
 					default:
+						t.pubmu.Lock()
+						pending := t.overflow
+						t.overflow = nil
+						t.pubmu.Unlock()
+						for _, job := range pending {
+							job.emit.publish(job.err, job.byt)
+						}
 						return
 					}
 				}
@@ -351,12 +371,17 @@ func (t *opsTracker) Shutdown() {
 }
 
 // dispatch hands a publication to the worker without ever
-// blocking the caller. The queue is sized to the session limit
-// and each session publishes exactly once, so the send below
-// always has room while the worker runs; after the worker exits
-// (shutdown drain) the publication runs inline, because the queue
-// no longer moves. Either way the native callback - which may be
-// the reaper - returns promptly and the record is never lost.
+// blocking the caller or running a sink on the calling thread:
+// the native reaper invokes terminal callbacks, and an
+// operational sink can block indefinitely, which must never
+// stall reaping or RC shutdown. The channel buffer absorbs the
+// common case; when it is full the job goes to the overflow
+// list, which the worker drains after the channel. After the
+// worker exits (shutdown drain), a session-terminal job is
+// published inline - its producer (Close, after quiescing
+// native producers) is not a native callback - while request
+// publications are dropped by publishRequest before reaching
+// here.
 func (t *opsTracker) dispatch(job pubJob) {
 	select {
 	case <-t.done:
@@ -367,10 +392,9 @@ func (t *opsTracker) dispatch(job pubJob) {
 	select {
 	case t.pubq <- job:
 	default:
-		// Unreachable while the capacity contract holds; kept
-		// as a safety net so a mis-sized queue degrades to
-		// inline publication instead of blocking the reaper.
-		job.emit.publish(job.err, job.byt)
+		t.pubmu.Lock()
+		t.overflow = append(t.overflow, job)
+		t.pubmu.Unlock()
 	}
 }
 
@@ -597,10 +621,21 @@ func expiredError(ev rcserver.TerminalEvent) error {
 // publishRequest emits an operation record for a request that ended
 // before any session existed (authentication, authorization, or
 // header failures): no tracking table entry, single emission.
+// These requests run outside the admission barrier (verification
+// may block on uncancellable IAM lookups), so a record produced
+// after the shutdown drain began is dropped rather than published
+// into closed sinks.
 func (t *opsTracker) publishRequest(ctx fiber.Ctx, acct auth.Account,
 	err error, bucket, key string, isPut bool) {
 	if t == nil {
 		return
+	}
+	select {
+	case <-t.done:
+		// The worker already exited through the drain; sinks
+		// are closing. Drop the record.
+		return
+	default:
 	}
 	acct.Access = strings.Clone(acct.Access)
 	emit := &opsEmitter{

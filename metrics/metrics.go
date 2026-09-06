@@ -22,6 +22,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/s3err"
@@ -62,6 +63,12 @@ type manager struct {
 
 	publishers  []publisher
 	addDataChan chan datapoint
+	// closed gates senders against Close: the datapoint channel
+	// is closed to drain the forwarder, and a send on a closed
+	// channel panics. Producers that lose this race (an S3
+	// handler still finishing after the shutdown timeout) drop
+	// their update instead of taking the process down.
+	closed atomic.Bool
 }
 
 type Config struct {
@@ -214,7 +221,7 @@ func (m *manager) increment(key string, tags ...Tag) {
 
 // add adds value to key
 func (m *manager) add(key string, value int64, tags ...Tag) {
-	if m.ctx.Err() != nil {
+	if m.ctx.Err() != nil || m.closed.Load() {
 		return
 	}
 
@@ -224,6 +231,13 @@ func (m *manager) add(key string, value int64, tags ...Tag) {
 		tags:  tags,
 	}
 
+	// The send races Close for last-producer position: the
+	// closed check above and the channel close in Close are not
+	// atomic, so the send below can still observe a closed
+	// channel. Recovering here turns that race into a dropped
+	// datapoint, which is the documented contract for late
+	// producers.
+	defer func() { _ = recover() }()
 	select {
 	case m.addDataChan <- d:
 	default:
@@ -233,6 +247,11 @@ func (m *manager) add(key string, value int64, tags ...Tag) {
 
 // Close closes metrics channels, waits for data to complete, closes all plugins
 func (m *manager) Close() {
+	// Stop accepting new datapoints before closing the channel:
+	// producers check the flag and drop their update, so only a
+	// producer already between the check and the send can race,
+	// and that producer recovers instead of panicking.
+	m.closed.Store(true)
 	// drain the datapoint channels
 	close(m.addDataChan)
 	m.wg.Wait()

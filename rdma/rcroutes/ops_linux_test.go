@@ -38,7 +38,7 @@ import (
 // exactly once. Unreserved records are published by the callback.
 
 func TestOpsTrackerCallbackPublishesExpiry(t *testing.T) {
-	tr := newOpsTracker(pubQueueCapacity(0))
+	tr := newOpsTracker()
 	tr.register("sess-1", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 	if got := len(tr.sessions); got != 1 {
@@ -60,7 +60,7 @@ func TestOpsTrackerCallbackPublishesExpiry(t *testing.T) {
 }
 
 func TestOpsTrackerReserveBlocksCallback(t *testing.T) {
-	tr := newOpsTracker(pubQueueCapacity(0))
+	tr := newOpsTracker()
 	tr.register("sess-2", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", true, time.Now())
 
@@ -88,7 +88,7 @@ func TestOpsTrackerReserveBlocksCallback(t *testing.T) {
 }
 
 func TestOpsTrackerReserveIsExclusive(t *testing.T) {
-	tr := newOpsTracker(pubQueueCapacity(0))
+	tr := newOpsTracker()
 	tr.register("sess-3", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 
@@ -101,7 +101,7 @@ func TestOpsTrackerReserveIsExclusive(t *testing.T) {
 }
 
 func TestOpsTrackerFailOutcome(t *testing.T) {
-	tr := newOpsTracker(pubQueueCapacity(0))
+	tr := newOpsTracker()
 	tr.register("sess-4", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 
@@ -116,7 +116,7 @@ func TestOpsTrackerFailOutcome(t *testing.T) {
 }
 
 func TestOpsTrackerUnregister(t *testing.T) {
-	tr := newOpsTracker(pubQueueCapacity(0))
+	tr := newOpsTracker()
 	tr.register("sess-5", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 	tr.unregister("sess-5")
@@ -132,7 +132,7 @@ func TestOpsTrackerUnregister(t *testing.T) {
 }
 
 func TestOpsTrackerUnknownSession(t *testing.T) {
-	tr := newOpsTracker(pubQueueCapacity(0))
+	tr := newOpsTracker()
 	// Unknown sessions and the nil tracker are silent no-ops.
 	var nilTracker *opsTracker
 	nilTracker.reserve("ghost")
@@ -237,7 +237,7 @@ func (r *recordingLogger) Shutdown() error { return nil }
 // publishes exactly one record with its own outcome and bytes.
 func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	rl := &recordingLogger{}
-	tr := newOpsTracker(pubQueueCapacity(0))
+	tr := newOpsTracker()
 	tr.SetOpsServices(OpsServices{Logger: rl})
 
 	// Expiry path: callback publishes a zero-byte error record.
@@ -307,18 +307,23 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	if rsvO == nil {
 		t.Fatal("reserve failed")
 	}
-	// Stale reservation: released, re-reserved by another claim,
-	// then the stale token tries to publish. The generation check
-	// must reject the stale token while the current owner still
+	// Stale generation: the original owner releases, another
+	// claim re-reserves, and then the ORIGINAL token tries both
+	// release and publish. The generation check must reject the
+	// stale token on both paths while the current owner still
 	// publishes.
-	rsvO2 := tr.reserve("s-own")
+	rsvO2 := tr.reserve("s-own") // refused: still reserved by rsvO
+	if rsvO2 != nil {
+		t.Fatal("double reserve succeeded")
+	}
 	tr.releaseReservation("s-own", rsvO)
 	rsvB := tr.reserve("s-own")
 	if rsvB == nil {
 		t.Fatal("re-reserve after release failed")
 	}
-	tr.publishReserved("s-own", rsvO2, nil, 999) // stale: no-op
-	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-own"})
+	tr.publishReserved("s-own", rsvO, nil, 999)               // stale: no-op
+	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-own"}) // stashes under rsvB
+	tr.releaseReservation("s-own", rsvO)                      // stale: no-op, keeps rsvB
 	tr.publishReserved("s-own", rsvB, nil, 32)
 
 	// Consume-or-noop denial of an unreserved session.
