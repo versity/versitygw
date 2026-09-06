@@ -113,6 +113,7 @@ func NewManager(ctx context.Context, conf Config) (Manager, error) {
 		for server := range statsdServers {
 			statsd, err := newStatsd(server, conf.ServiceName)
 			if err != nil {
+				mcancel()
 				return nil, err
 			}
 			mgr.publishers = append(mgr.publishers, statsd)
@@ -126,6 +127,10 @@ func NewManager(ctx context.Context, conf Config) (Manager, error) {
 		for server := range dogStatsdServers {
 			dogStatsd, err := newDogStatsd(server, conf.ServiceName)
 			if err != nil {
+				// The derived child context would otherwise stay
+				// attached to the parent until the parent is
+				// canceled.
+				mcancel()
 				return nil, err
 			}
 			mgr.publishers = append(mgr.publishers, dogStatsd)

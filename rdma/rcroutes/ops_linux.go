@@ -19,9 +19,12 @@ package rcroutes
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -279,19 +282,22 @@ type opsTracker struct {
 	// execute under pubmu - the worker detaches queued work and
 	// publishes outside the lock - so a slow sink delays records
 	// but never blocks a dispatcher.
-	pubmu     sync.Mutex
-	overflow  []pubJob
-	stopped   bool
-	done      chan struct{}
-	drain     chan struct{}
-	drainOnce sync.Once
+	pubmu      sync.Mutex
+	overflow   []pubJob
+	reqBacklog atomic.Int64
+	reqDropped atomic.Int64
+	stopped    bool
+	done       chan struct{}
+	drain      chan struct{}
+	drainOnce  sync.Once
 }
 
 // pubJob is one deferred publication handed to the worker.
 type pubJob struct {
-	emit *opsEmitter
-	err  error
-	byt  int64
+	emit  *opsEmitter
+	err   error
+	byt   int64
+	isReq bool
 }
 
 // pubQueueSoftCap is the buffered pre-allocation of the
@@ -299,6 +305,16 @@ type pubJob struct {
 // holds whatever exceeds it, so a slow sink never blocks a
 // native callback.
 const pubQueueSoftCap = 256
+
+// pubRequestBacklogCap bounds the queued records that carry no
+// session. Session publications are structurally bounded (each
+// session publishes exactly once and the session table has a
+// hard limit), but request publications - failed authentications
+// - arrive with no session at all, and a stalled sink would let
+// them accumulate without limit. Beyond this depth the record is
+// dropped and counted, trading a bounded window of lost
+// request-audit records for memory safety under overload.
+const pubRequestBacklogCap = 4096
 
 // newOpsTracker builds the tracker. The publication queue is
 // conceptually unbounded: a callback thread must never run a
@@ -329,7 +345,7 @@ func newOpsTracker() *opsTracker {
 				if !ok {
 					return
 				}
-				job.emit.publish(job.err, job.byt)
+				t.run(job)
 				// Service the overflow list after every
 				// channel job: bursts that exceed the
 				// buffer publish as soon as the sink
@@ -338,7 +354,7 @@ func newOpsTracker() *opsTracker {
 				// the lock and published outside it, so a
 				// slow sink never blocks a dispatcher.
 				for _, job := range t.takeOverflow() {
-					job.emit.publish(job.err, job.byt)
+					t.run(job)
 				}
 			case <-t.drain:
 				// Drain mode. The accept-vs-drain boundary:
@@ -360,7 +376,7 @@ func newOpsTracker() *opsTracker {
 						if !ok {
 							t.pubmu.Unlock()
 							for _, job := range pending {
-								job.emit.publish(job.err, job.byt)
+								t.run(job)
 							}
 							return
 						}
@@ -370,7 +386,7 @@ func newOpsTracker() *opsTracker {
 						t.overflow = nil
 						t.pubmu.Unlock()
 						for _, job := range pending {
-							job.emit.publish(job.err, job.byt)
+							t.run(job)
 						}
 						return
 					}
@@ -392,6 +408,15 @@ func (t *opsTracker) takeOverflow() []pubJob {
 	return pending
 }
 
+// run publishes one job and releases its request-backlog
+// reservation, if any.
+func (t *opsTracker) run(job pubJob) {
+	job.emit.publish(job.err, job.byt)
+	if job.isReq {
+		t.reqBacklog.Add(-1)
+	}
+}
+
 // Shutdown drains pending publications and stops the worker. The
 // gateway must call this BEFORE closing the operational sinks: a
 // queued publication that runs after its logger closed is lost.
@@ -404,6 +429,12 @@ func (t *opsTracker) Shutdown() {
 	t.drainOnce.Do(func() {
 		close(t.drain)
 		<-t.done
+		if n := t.reqDropped.Load(); n > 0 {
+			// Overload during shutdown: records without a session
+			// were dropped once the request backlog hit its cap.
+			// Surfaced once here rather than per record.
+			fmt.Fprintf(os.Stderr, "rdma-rc: dropped %d request audit records at the publication backlog cap\n", n)
+		}
 	})
 }
 
@@ -427,7 +458,7 @@ func (t *opsTracker) dispatch(job pubJob) {
 	t.pubmu.Lock()
 	if t.stopped {
 		t.pubmu.Unlock()
-		job.emit.publish(job.err, job.byt)
+		t.run(job)
 		return
 	}
 	select {
@@ -692,13 +723,24 @@ func (t *opsTracker) publishRequest(ctx fiber.Ctx, acct auth.Account,
 
 // dispatchOrDrop is dispatch with request-publication semantics:
 // after the worker stopped through the drain the job is dropped
-// instead of published inline.
+// instead of published inline, and the queued backlog of session-
+// less records is capped so a stalled sink cannot accumulate them
+// without bound.
 func (t *opsTracker) dispatchOrDrop(job pubJob) {
 	t.pubmu.Lock()
 	if t.stopped {
 		t.pubmu.Unlock()
 		return
 	}
+	if t.reqBacklog.Load() >= pubRequestBacklogCap {
+		t.pubmu.Unlock()
+		// Overload policy: drop and count. The record carries no
+		// session and no owner can reissue it.
+		t.reqDropped.Add(1)
+		return
+	}
+	job.isReq = true
+	t.reqBacklog.Add(1)
 	select {
 	case t.pubq <- job:
 		t.pubmu.Unlock()
