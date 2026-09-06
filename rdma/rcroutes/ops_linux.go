@@ -223,20 +223,75 @@ type sessionRecord struct {
 // single publisher. This removes every ownership race: a recorded
 // outcome cannot be double-published, and a record the callback
 // already consumed cannot be resurrected.
+//
+// Sink execution never runs on the caller's thread: the native
+// reaper invokes the callback, and an operational sink can block
+// (a synchronous file write on a stalled filesystem), which would
+// stall reaping for every other session. Publications hand off to
+// a dedicated worker through a bounded queue; when the queue is
+// full the publication runs inline as a last resort, keeping the
+// guarantee that no record is silently dropped while still capping
+// how long a callback may wait.
 type opsTracker struct {
 	mu       sync.Mutex
 	ops      OpsServices
 	sessions map[string]*sessionRecord
 	app      *fiber.App
+	pubq     chan pubJob
+	done     chan struct{}
 }
 
+// pubJob is one deferred publication handed to the worker.
+type pubJob struct {
+	emit *opsEmitter
+	err  error
+	byt  int64
+}
+
+// pubQueueDepth bounds how many publications may wait in the
+// handoff queue before the callback falls back to inline
+// execution.
+const pubQueueDepth = 256
+
 func newOpsTracker() *opsTracker {
-	return &opsTracker{
+	t := &opsTracker{
 		sessions: map[string]*sessionRecord{},
 		app: fiber.New(fiber.Config{
 			Immutable: true,
 		}),
+		pubq: make(chan pubJob, pubQueueDepth),
+		done: make(chan struct{}),
 	}
+	go func() {
+		defer close(t.done)
+		for job := range t.pubq {
+			job.emit.publish(job.err, job.byt)
+		}
+	}()
+	return t
+}
+
+// dispatch hands a publication to the worker. It must never block
+// indefinitely: when the queue is full (the worker itself stuck in
+// a sink), the publication runs inline so the record is still
+// delivered and the caller - possibly the native reaper - returns.
+func (t *opsTracker) dispatch(job pubJob) {
+	select {
+	case t.pubq <- job:
+		return
+	default:
+	}
+	select {
+	case <-t.done:
+		// Worker exited (shutdown path): publish inline.
+		job.emit.publish(job.err, job.byt)
+		return
+	default:
+	}
+	// Queue full and worker alive but stalled. Rather than block
+	// the caller, drop the job onto a goroutine: publication order
+	// is not part of the contract, and dropping is worse.
+	go job.emit.publish(job.err, job.byt)
 }
 
 // SetOpsServices installs the operational service instances. The
@@ -296,21 +351,25 @@ func (t *opsTracker) unregister(sessionID string) {
 // the finalizing call already reaped the session its callback
 // published (the entry is gone, this is a no-op); when no callback
 // will ever come (the native side rejected the call) the entry is
-// consumed and published here.
+// consumed and published here. A reserved record belongs to an
+// in-flight completion owner (a concurrent READY's denial must not
+// steal its publication), so it is left untouched.
 func (t *opsTracker) failOutcome(sessionID string, err error) {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
 	rec, ok := t.sessions[sessionID]
-	if ok {
+	if ok && !rec.reserved {
 		delete(t.sessions, sessionID)
+	} else {
+		ok = false
 	}
 	t.mu.Unlock()
 	if !ok {
 		return
 	}
-	rec.emit.publish(err, 0)
+	t.dispatch(pubJob{emit: rec.emit, err: err})
 }
 
 // reserve marks a session record as owned by its request path: the
@@ -341,7 +400,7 @@ func (t *opsTracker) publishReserved(sessionID string, emit *opsEmitter, err err
 	delete(t.sessions, sessionID)
 	t.mu.Unlock()
 	if emit != nil {
-		emit.publish(err, bytes)
+		t.dispatch(pubJob{emit: emit, err: err, byt: bytes})
 	}
 }
 
@@ -383,8 +442,7 @@ func (t *opsTracker) onTerminal(ev rcserver.TerminalEvent) {
 		// outcome carries the native reason.
 		rec.out = sessionOutcome{err: expiredError(ev), done: true}
 	}
-	emit := rec.emit
-	emit.publish(rec.out.err, rec.out.byt)
+	t.dispatch(pubJob{emit: rec.emit, err: rec.out.err, byt: rec.out.byt})
 }
 
 // expiredError renders an unclaimed teardown as the error the
@@ -424,7 +482,7 @@ func (t *opsTracker) publishRequest(ctx fiber.Ctx, acct auth.Account,
 		isPut:  isPut,
 		start:  time.Now(),
 	}
-	emit.publish(err, 0)
+	t.dispatch(pubJob{emit: emit, err: err})
 }
 
 // regionFromCtx reads the region the gateway middleware stored on

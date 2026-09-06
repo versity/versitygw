@@ -19,12 +19,16 @@ package rcroutes
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/rdma/rcserver"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3log"
 )
 
 // The publication model: the request path reserves a session
@@ -203,5 +207,79 @@ func TestExpiredErrorClassification(t *testing.T) {
 				tc.outcome, apiErr.Code, apiErr.HTTPStatusCode,
 				tc.code, tc.status)
 		}
+	}
+}
+
+// recordingLogger captures audit publications so tests can assert
+// what the sinks actually received.
+type recordingLogger struct {
+	mu   sync.Mutex
+	logs []recLog
+}
+
+type recLog struct {
+	err   error
+	bytes int64
+}
+
+func (r *recordingLogger) Log(ctx fiber.Ctx, err error, body []byte, meta s3log.LogMeta) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.logs = append(r.logs, recLog{err: err, bytes: meta.ObjectSize})
+}
+
+func (r *recordingLogger) HangUp() error   { return nil }
+func (r *recordingLogger) Shutdown() error { return nil }
+
+func (r *recordingLogger) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.logs)
+}
+
+// TestOpsTrackerPublishesExactlyOncePerSession drives the tracker
+// with a recording sink and asserts the published record count:
+// one per registered session no matter how the ownership played
+// out (callback expiry, reserved request path, denial).
+func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
+	rl := &recordingLogger{}
+	tr := newOpsTracker()
+	tr.SetOpsServices(OpsServices{Logger: rl})
+
+	// Expiry path: callback publishes.
+	tr.register("s-exp", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-exp"})
+
+	// Reserved path: reserve, callback fires (skipped), the
+	// request path publishes.
+	tr.register("s-res", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	emit := tr.reserve("s-res")
+	if emit == nil {
+		t.Fatal("reserve failed")
+	}
+	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-res"})
+	tr.publishReserved("s-res", emit, nil, 128)
+
+	// Denial path while reserved: failOutcome must not steal the
+	// publication; the request path still owns it.
+	tr.register("s-den", auth.Account{Access: "ak"}, "r", "b", "o", true, time.Now())
+	emit2 := tr.reserve("s-den")
+	if emit2 == nil {
+		t.Fatal("reserve failed")
+	}
+	tr.failOutcome("s-den", errors.New("denied"))
+	tr.publishReserved("s-den", emit2, nil, 256)
+
+	// Consume-or-noop denial of an unreserved session.
+	tr.register("s-fail", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	tr.failOutcome("s-fail", errors.New("x"))
+
+	// Let the publication worker drain.
+	deadline := time.Now().Add(2 * time.Second)
+	for rl.count() < 4 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := rl.count(); got != 4 {
+		t.Fatalf("published %d records, want 4", got)
 	}
 }
