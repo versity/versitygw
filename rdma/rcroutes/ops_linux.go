@@ -60,6 +60,26 @@ type opsEmitter struct {
 	key    string
 	isPut  bool
 	start  time.Time
+	// Commit metadata the PUT path fills in before publishing the
+	// success record, so the object-created event carries the
+	// backend-assigned ETag and version like the regular put
+	// pipeline's event does.
+	etag    string
+	version string
+	hasEtag bool
+	hasVer  bool
+}
+
+// setCommitMeta records the backend-assigned object metadata for
+// the success publication's event payload.
+func (e *opsEmitter) setCommitMeta(etag, version string) {
+	if e == nil {
+		return
+	}
+	e.etag = etag
+	e.hasEtag = true
+	e.version = version
+	e.hasVer = true
 }
 
 // synthesize builds a fiber context whose path and request locals
@@ -69,6 +89,11 @@ type opsEmitter struct {
 // Immutable: string accessors copy instead of exposing the pooled
 // context buffer, which matters because event senders serialize
 // asynchronously and would otherwise read a reused buffer.
+//
+// Route parameters cannot be populated this way (they come from
+// route matching, which a synthesized request never runs), so the
+// metrics bucket tag is absent on RC publications; the audit log
+// derives the bucket from the path instead and stays accurate.
 func (e *opsEmitter) synthesize() (fiber.Ctx, func()) {
 	ctx := e.app.AcquireCtx(&fasthttp.RequestCtx{})
 	method := fiber.MethodGet
@@ -121,15 +146,28 @@ func (e *opsEmitter) publish(err error, bytes int64) {
 	if e.ops.Logger != nil {
 		e.ops.Logger.Log(ctx, sinkErr, nil, s3log.LogMeta{
 			Action: action,
+			// The object size field reports the transferred
+			// byte count the record carries, so a successful
+			// GET/PUT shows real bytes instead of zero.
+			ObjectSize: bytes,
 		})
 	}
 	// The object-created event fires at commit time only; error
 	// publications never carry it.
 	if e.ops.Events != nil && err == nil && e.isPut {
-		e.ops.Events.SendEvent(ctx, s3event.EventMeta{
+		meta := s3event.EventMeta{
 			EventName:  s3event.EventObjectCreatedPut,
 			ObjectSize: bytes,
-		})
+		}
+		if e.hasEtag {
+			etag := e.etag
+			meta.ObjectETag = &etag
+		}
+		if e.hasVer {
+			ver := e.version
+			meta.VersionId = &ver
+		}
+		e.ops.Events.SendEvent(ctx, meta)
 	}
 }
 
@@ -160,10 +198,7 @@ func httpStatusFromError(err error) int {
 	return routeError(err).HTTPStatusCode
 }
 
-// sessionOutcome is the terminal outcome of a tracked session,
-// recorded by whichever path observes the final result first. A
-// recorded outcome is final: the teardown callback consumes it and
-// publishes, so exactly one publication happens per session.
+// sessionOutcome is the terminal outcome of a tracked session.
 type sessionOutcome struct {
 	err  error // nil on success
 	byt  int64 // bytes transferred on success
@@ -174,6 +209,11 @@ type sessionOutcome struct {
 type sessionRecord struct {
 	emit *opsEmitter
 	out  sessionOutcome
+	// reserved marks a record the request path owns: the native
+	// teardown callback skips it (the request path will publish
+	// exactly once itself), so a completion call that fires the
+	// callback before returning cannot publish a placeholder.
+	reserved bool
 }
 
 // opsTracker owns terminal publication: each session publishes
@@ -273,23 +313,36 @@ func (t *opsTracker) failOutcome(sessionID string, err error) {
 	rec.emit.publish(err, 0)
 }
 
-// recordOutcome stores the terminal outcome of a completing
-// transfer. It never publishes: publication belongs to the teardown
-// callback, which fires exactly once per session after the
-// completion call returns. Recording is idempotent - the first
-// outcome wins - so a panic-unwind path that records after the
-// normal path changed nothing.
-func (t *opsTracker) recordOutcome(sessionID string, err error, bytes int64) {
+// reserve marks a session record as owned by its request path: the
+// teardown callback skips a reserved record because the request
+// path publishes the real outcome itself. Returns the emitter when
+// the record exists and was not reserved yet.
+func (t *opsTracker) reserve(sessionID string) *opsEmitter {
 	if t == nil {
-		return
+		return nil
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	rec, ok := t.sessions[sessionID]
-	if !ok || rec.out.done {
+	if !ok || rec.reserved {
+		return nil
+	}
+	rec.reserved = true
+	return rec.emit
+}
+
+// publishReserved publishes through a reserved record and drops it:
+// the single publication of a request-owned session outcome.
+func (t *opsTracker) publishReserved(sessionID string, emit *opsEmitter, err error, bytes int64) {
+	if t == nil {
 		return
 	}
-	rec.out = sessionOutcome{err: err, byt: bytes, done: true}
+	t.mu.Lock()
+	delete(t.sessions, sessionID)
+	t.mu.Unlock()
+	if emit != nil {
+		emit.publish(err, bytes)
+	}
 }
 
 func (t *opsTracker) loadOps() OpsServices {
@@ -313,6 +366,14 @@ func (t *opsTracker) onTerminal(ev rcserver.TerminalEvent) {
 		t.mu.Unlock()
 		return
 	}
+	// A reserved record belongs to its request path, which
+	// publishes the real outcome itself: the callback (fired
+	// synchronously by a completion call, before the request
+	// path could confirm the result) must not touch it.
+	if rec.reserved {
+		t.mu.Unlock()
+		return
+	}
 	delete(t.sessions, ev.SessionID)
 	t.mu.Unlock()
 
@@ -328,15 +389,17 @@ func (t *opsTracker) onTerminal(ev rcserver.TerminalEvent) {
 
 // expiredError renders an unclaimed teardown as the error the
 // publication carries, derived from the native outcome so the
-// record names the real terminal reason instead of a generic one.
+// record names the real terminal reason. The classification stays
+// aligned with the wire mapping: every transfer-level failure the
+// READY call reports as RC_E_WIRE (wire, verify, or execution
+// timeout) publishes as the same 502 the client would have seen,
+// and only a session that expired without any transfer attempt
+// keeps the expiry code.
 func expiredError(ev rcserver.TerminalEvent) error {
 	switch ev.Outcome {
-	case int(rcserver.ReadyWireFail):
+	case int(rcserver.ReadyWireFail), int(rcserver.ReadyVerifyFail),
+		int(rcserver.ReadyTimeout):
 		return rcserver.ErrWire
-	case int(rcserver.ReadyTimeout):
-		return errTimeoutExpired
-	case int(rcserver.ReadyVerifyFail):
-		return errVerifyFailed
 	default:
 		return errSessionExpired
 	}
@@ -385,19 +448,3 @@ var errSessionExpired = sessionExpiredError{APIError: s3err.APIError{
 	Description:    "The RDMA transfer session expired before completion",
 	HTTPStatusCode: 500,
 }}
-
-// errTimeoutExpired and errVerifyFailed classify unclaimed teardowns
-// whose native outcome names a specific READY failure: the record
-// then matches what the wire response for that failure carries.
-var (
-	errTimeoutExpired = sessionExpiredError{APIError: s3err.APIError{
-		Code:           "RdmaTransferTimeout",
-		Description:    "The RDMA transfer timed out before completion",
-		HTTPStatusCode: 504,
-	}}
-	errVerifyFailed = sessionExpiredError{APIError: s3err.APIError{
-		Code:           "RdmaTransferVerifyFailed",
-		Description:    "The RDMA transfer failed verification before completion",
-		HTTPStatusCode: 502,
-	}}
-)

@@ -384,7 +384,13 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 		return errors.New("invalid session target")
 	}
 	if err := h.authorize(ctx, acct, isRoot, bucket, key, info.Op == 1); err != nil {
-		// Permission revoked mid-session: cancel the session.
+		// Permission revoked mid-session: cancel the session,
+		// and publish the real denial - not an expiry - as its
+		// outcome. The cancel tears the session down now; a
+		// plain publish (consume-or-noop) would race it, so
+		// the record is consumed here.
+		err = mapRcError(err)
+		h.ops.failOutcome(sessionID, err)
 		_ = h.svc.Cancel(sessionID, principal)
 		return err
 	}
@@ -420,26 +426,31 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	// this handler owns the completion ref. A panic or early
 	// unwind must still release it so the session can be reaped.
 	//
-	// This handler only RECORDS the outcome; publication belongs
-	// to the teardown callback, which every native completion
-	// call below fires exactly once. The deferred recorder covers
-	// panic unwinds too, so every path through this handler
-	// leaves a final outcome behind.
-	recorded := false
-	record := func(err error, bytes int64) {
-		if !recorded {
-			recorded = true
-			h.ops.recordOutcome(sessionID, err, bytes)
+	// Every native completion call below (FinishFinal, and
+	// FinishPut inside commitPut) fires the teardown callback
+	// synchronously, BEFORE the call returns - so the outcome
+	// cannot be recorded after the call. The handler reserves the
+	// publication instead: a reserved record is invisible to the
+	// callback, and this handler publishes exactly once after the
+	// result is known. The deferred safety net publishes on any
+	// unwind that bypassed the normal paths.
+	emit := h.ops.reserve(sessionID)
+	published := false
+	publish := func(err error, bytes int64) {
+		if !published {
+			published = true
+			h.ops.publishReserved(sessionID, emit, err, bytes)
 		}
 	}
 	finalized := false
 	defer func() {
 		if !finalized {
-			// The unwind finalizer retires the session, which
-			// fires the callback; make sure it carries an
-			// outcome even on a panic path.
-			if !recorded {
-				record(errPanicked(), 0)
+			// The unwind finalizer retires the session. The
+			// reservation keeps its callback a no-op, so the
+			// publication must come from here on a panic or
+			// early-unwind path.
+			if !published {
+				publish(errPanicked(), 0)
 			}
 			_ = h.svc.FinishFinal(sessionID)
 		}
@@ -458,27 +469,26 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 			finalized = true
 		}
 		if err != nil {
-			record(mapRcError(err), 0)
+			publish(mapRcError(err), 0)
 			return err
 		}
 		// The FINAL wire reply carries the stored object's
 		// metadata, which the backend assigned at commit time.
 		resp.Etag = put.ETag
 		resp.VersionID = put.VersionID
+		// The success publication's object-created event carries
+		// the same commit metadata.
+		emit.setCommitMeta(put.ETag, put.VersionID)
 	} else if err := h.svc.FinishFinal(sessionID); err != nil {
-		record(mapRcError(err), 0)
+		publish(mapRcError(err), 0)
 		return mapRcError(err)
 	} else {
 		finalized = true
 	}
 
-	// The transfer completed: record the terminal outcome with
-	// the byte count the data plane reported. FinishPut (inside
-	// commitPut) or the FinishFinal above already fired the
-	// teardown callback, which publishes this outcome - or, on a
-	// timing edge where the callback ran first, the deferred
-	// finalizer's FinishFinal does.
-	record(nil, int64(resp.BytesTransferred))
+	// The transfer completed: publish the terminal record with
+	// the byte count the data plane reported.
+	publish(nil, int64(resp.BytesTransferred))
 
 	// Wire reply per the hipobj-rc-v2 contract: protocol echo,
 	// cookie echo, transferred bytes, and object metadata.

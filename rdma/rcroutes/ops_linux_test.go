@@ -8,17 +8,10 @@
 //
 // Unless required by applicable law or agreed to in writing,
 // software distributed under the License is distributed on an
-<<<<<<< Updated upstream
-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-// either express or implied. See the License for the specific
-// language governing permissions and limitations under the
-// License.
-=======
 // "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
->>>>>>> Stashed changes
 
 //go:build linux && amd64 && cgo
 
@@ -34,9 +27,11 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-// The publication model: request paths only record outcomes; the
-// teardown callback is the single publisher. The tests exercise
-// the table semantics that guarantee exactly-once publication.
+// The publication model: the request path reserves a session
+// record before any native completion call (which fires the
+// teardown callback synchronously, before the call returns), the
+// callback skips reserved records, and the request path publishes
+// exactly once. Unreserved records are published by the callback.
 
 func TestOpsTrackerCallbackPublishesExpiry(t *testing.T) {
 	tr := newOpsTracker()
@@ -47,7 +42,7 @@ func TestOpsTrackerCallbackPublishesExpiry(t *testing.T) {
 	}
 
 	// The reaper path publishes for a session no READY ever
-	// recorded and removes the entry.
+	// reserved and removes the entry.
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-1"})
 	if got := len(tr.sessions); got != 0 {
 		t.Fatalf("session survived terminal: %d", got)
@@ -60,50 +55,73 @@ func TestOpsTrackerCallbackPublishesExpiry(t *testing.T) {
 	}
 }
 
-func TestOpsTrackerRecordedOutcomeWins(t *testing.T) {
+func TestOpsTrackerReserveBlocksCallback(t *testing.T) {
 	tr := newOpsTracker()
 	tr.register("sess-2", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", true, time.Now())
 
-	// The READY path records the real outcome; the callback then
-	// consumes it instead of publishing an expiry.
-	tr.recordOutcome("sess-2", nil, 4096)
+	// The READY path reserves before its completion call; the
+	// callback the call fires synchronously must skip the record.
+	emit := tr.reserve("sess-2")
+	if emit == nil {
+		t.Fatal("reserve returned nil for a live session")
+	}
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-2"})
-	if got := len(tr.sessions); got != 0 {
-		t.Fatalf("session survived terminal: %d", got)
+	if got := len(tr.sessions); got != 1 {
+		t.Fatalf("callback consumed a reserved record: %d", got)
 	}
 
-	// A late second record is a no-op (entry gone).
-	tr.recordOutcome("sess-2", nil, 1)
+	// The request path then publishes and drops the entry.
+	tr.publishReserved("sess-2", emit, nil, 4096)
+	if got := len(tr.sessions); got != 0 {
+		t.Fatalf("publishReserved left residue: %d", got)
+	}
+
+	// A second reserve of the consumed entry is nil.
+	if again := tr.reserve("sess-2"); again != nil {
+		t.Fatal("reserve succeeded for a consumed entry")
+	}
 }
 
-func TestOpsTrackerFirstRecordWins(t *testing.T) {
+func TestOpsTrackerReserveIsExclusive(t *testing.T) {
 	tr := newOpsTracker()
 	tr.register("sess-3", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
 
-	tr.recordOutcome("sess-3", nil, 100)
-	tr.recordOutcome("sess-3", errors.New("late"), 0)
-
-	tr.mu.Lock()
-	rec := tr.sessions["sess-3"]
-	tr.mu.Unlock()
-	if rec == nil || rec.out.err != nil || rec.out.byt != 100 {
-		t.Fatalf("second record overwrote the first: %+v", rec.out)
+	if first := tr.reserve("sess-3"); first == nil {
+		t.Fatal("first reserve failed")
 	}
+	if second := tr.reserve("sess-3"); second != nil {
+		t.Fatal("double reserve succeeded")
+	}
+}
+
+func TestOpsTrackerFailOutcome(t *testing.T) {
+	tr := newOpsTracker()
+	tr.register("sess-4", auth.Account{Access: "ak"}, "us-east-1",
+		"bkt", "obj", false, time.Now())
+
+	// Consume-or-noop: present entry is consumed.
+	tr.failOutcome("sess-4", errors.New("x"))
+	if got := len(tr.sessions); got != 0 {
+		t.Fatalf("failOutcome left residue: %d", got)
+	}
+	// A second call after the callback already consumed is a
+	// silent no-op, not a double publication.
+	tr.failOutcome("sess-4", errors.New("y"))
 }
 
 func TestOpsTrackerUnregister(t *testing.T) {
 	tr := newOpsTracker()
-	tr.register("sess-4", auth.Account{Access: "ak"}, "us-east-1",
+	tr.register("sess-5", auth.Account{Access: "ak"}, "us-east-1",
 		"bkt", "obj", false, time.Now())
-	tr.unregister("sess-4")
+	tr.unregister("sess-5")
 	if got := len(tr.sessions); got != 0 {
 		t.Fatalf("unregister left entries: %d", got)
 	}
 	// The teardown callback for the unregistered session is a
 	// silent no-op (native side already rejected or reaped it).
-	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-4"})
+	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-5"})
 	if got := len(tr.sessions); got != 0 {
 		t.Fatalf("terminal resurrected entry: %d", got)
 	}
@@ -113,9 +131,9 @@ func TestOpsTrackerUnknownSession(t *testing.T) {
 	tr := newOpsTracker()
 	// Unknown sessions and the nil tracker are silent no-ops.
 	var nilTracker *opsTracker
-	nilTracker.recordOutcome("ghost", nil, 1)
+	nilTracker.reserve("ghost")
 	nilTracker.onTerminal(rcserver.TerminalEvent{SessionID: "ghost"})
-	tr.recordOutcome("ghost", nil, 1)
+	tr.reserve("ghost")
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "ghost"})
 	if got := len(tr.sessions); got != 0 {
 		t.Fatalf("ghost session materialized: %d", got)
@@ -164,14 +182,17 @@ func TestHttpStatusFromError(t *testing.T) {
 }
 
 func TestExpiredErrorClassification(t *testing.T) {
+	// Every transfer-level failure the READY call reports as
+	// RC_E_WIRE publishes as the same 502 the wire response
+	// carries; only an unattempted session keeps the expiry code.
 	cases := []struct {
 		outcome int
 		code    string
 		status  int
 	}{
 		{int(rcserver.ReadyWireFail), "RdmaTransferFailed", 502},
-		{int(rcserver.ReadyVerifyFail), "RdmaTransferVerifyFailed", 502},
-		{int(rcserver.ReadyTimeout), "RdmaTransferTimeout", 504},
+		{int(rcserver.ReadyVerifyFail), "RdmaTransferFailed", 502},
+		{int(rcserver.ReadyTimeout), "RdmaTransferFailed", 502},
 		{int(rcserver.ReadyOK), "SessionExpired", 500},
 	}
 	for _, tc := range cases {

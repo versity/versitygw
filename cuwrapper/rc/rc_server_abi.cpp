@@ -879,6 +879,7 @@ int rc_ready_transfer(rc_server *srv, const rc_ready_req *req,
                                       /*destLid*/ 0, destGid,
                                       s->core.clientPsn) != 0) {
     g.lock();
+    s->last_outcome = RC_READY_WIRE_FAIL;
     s->reap_pending = true;
     s->active_ref = 0; /* roll the completion ref back: no data
                         * phase will run for this session */
@@ -887,6 +888,7 @@ int rc_ready_transfer(rc_server *srv, const rc_ready_req *req,
   if (hipObj::v2::transitionQpToRtsV2(conn, srv->device,
                                       s->core.serverPsn) != 0) {
     g.lock();
+    s->last_outcome = RC_READY_WIRE_FAIL;
     s->reap_pending = true;
     s->active_ref = 0;
     return RC_E_WIRE;
@@ -968,7 +970,9 @@ int rc_ready_transfer(rc_server *srv, const rc_ready_req *req,
           if (after->active_ref > 0) after->active_ref--;
         } else {
           /* Cannot re-arm the QP (or the session died mid-reset):
-           * not retryable. */
+           * not retryable. Record the wire failure so the
+           * teardown publication classifies it as one. */
+          after->last_outcome = RC_READY_WIRE_FAIL;
           after->reap_pending = true;
           if (after->active_ref > 0) after->active_ref--;
           return RC_E_WIRE;
@@ -981,6 +985,10 @@ int rc_ready_transfer(rc_server *srv, const rc_ready_req *req,
       after->active_ref = 0;
       return RC_E_WIRE;
     case hipObj::v2::DataPhaseResult::VerifyFail:
+      after->last_outcome = RC_READY_VERIFY_FAIL;
+      after->reap_pending = true;
+      after->active_ref = 0;
+      return RC_E_WIRE;
     case hipObj::v2::DataPhaseResult::WireFail:
       after->last_outcome = RC_READY_WIRE_FAIL;
       after->reap_pending = true;
