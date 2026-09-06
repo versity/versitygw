@@ -233,12 +233,15 @@ type sessionRecord struct {
 // guarantee that no record is silently dropped while still capping
 // how long a callback may wait.
 type opsTracker struct {
-	mu       sync.Mutex
-	ops      OpsServices
-	sessions map[string]*sessionRecord
-	app      *fiber.App
-	pubq     chan pubJob
-	done     chan struct{}
+	mu        sync.Mutex
+	ops       OpsServices
+	sessions  map[string]*sessionRecord
+	app       *fiber.App
+	pubq      chan pubJob
+	overflow  chan struct{}
+	done      chan struct{}
+	drain     chan struct{}
+	drainOnce sync.Once
 }
 
 // pubJob is one deferred publication handed to the worker.
@@ -249,9 +252,13 @@ type pubJob struct {
 }
 
 // pubQueueDepth bounds how many publications may wait in the
-// handoff queue before the callback falls back to inline
-// execution.
+// handoff queue before the caller falls back to inline execution.
 const pubQueueDepth = 256
+
+// pubOverflowSlots bounds how many callers may run overflow
+// publications inline at once; further callers block on the
+// semaphore until a slot frees.
+const pubOverflowSlots = 8
 
 func newOpsTracker() *opsTracker {
 	t := &opsTracker{
@@ -259,39 +266,90 @@ func newOpsTracker() *opsTracker {
 		app: fiber.New(fiber.Config{
 			Immutable: true,
 		}),
-		pubq: make(chan pubJob, pubQueueDepth),
-		done: make(chan struct{}),
+		pubq:     make(chan pubJob, pubQueueDepth),
+		overflow: make(chan struct{}, pubOverflowSlots),
+		done:     make(chan struct{}),
+		drain:    make(chan struct{}),
 	}
 	go func() {
 		defer close(t.done)
-		for job := range t.pubq {
-			job.emit.publish(job.err, job.byt)
+		for {
+			select {
+			case job, ok := <-t.pubq:
+				if !ok {
+					return
+				}
+				job.emit.publish(job.err, job.byt)
+			case <-t.drain:
+				// Drain mode: empty whatever is already
+				// queued, then exit. Producers past this
+				// point publish inline.
+				for {
+					select {
+					case job, ok := <-t.pubq:
+						if !ok {
+							return
+						}
+						job.emit.publish(job.err, job.byt)
+					default:
+						return
+					}
+				}
+			}
 		}
 	}()
 	return t
+}
+
+// Shutdown drains pending publications and stops the worker. The
+// gateway must call this BEFORE closing the operational sinks: a
+// queued publication that runs after its logger closed is lost.
+// After Shutdown, dispatch publishes inline (the queue no longer
+// moves), so late terminals still record instead of vanishing.
+func (t *opsTracker) Shutdown() {
+	if t == nil {
+		return
+	}
+	t.drainOnce.Do(func() {
+		close(t.drain)
+		<-t.done
+	})
 }
 
 // dispatch hands a publication to the worker. It must never block
 // indefinitely: when the queue is full (the worker itself stuck in
 // a sink), the publication runs inline so the record is still
 // delivered and the caller - possibly the native reaper - returns.
+// dispatch hands a publication to the worker. It must never block
+// indefinitely: when the queue is full the caller runs the
+// publication itself under an overflow semaphore, which bounds how
+// many overflow publications may wait at once. Overflow callers
+// beyond the semaphore block - the alternative (one goroutine per
+// job) grows without bound under a stalled sink, and dropping the
+// record loses the publication entirely. The callers that reach
+// overflow are the native reaper or a request handler; waiting
+// there is bounded by the semaphore and by the worker draining,
+// and is the price of never losing a record.
 func (t *opsTracker) dispatch(job pubJob) {
+	// After the worker exited (shutdown drain), the queue no
+	// longer moves: publish inline so the record is not
+	// stranded behind a send nobody will receive.
+	select {
+	case <-t.done:
+		job.emit.publish(job.err, job.byt)
+		return
+	default:
+	}
 	select {
 	case t.pubq <- job:
 		return
 	default:
 	}
-	select {
-	case <-t.done:
-		// Worker exited (shutdown path): publish inline.
-		job.emit.publish(job.err, job.byt)
-		return
-	default:
-	}
-	// Queue full and worker alive but stalled. Rather than block
-	// the caller, drop the job onto a goroutine: publication order
-	// is not part of the contract, and dropping is worse.
-	go job.emit.publish(job.err, job.byt)
+	// Queue full and worker alive. Run inline under the overflow
+	// semaphore.
+	t.overflow <- struct{}{}
+	defer func() { <-t.overflow }()
+	job.emit.publish(job.err, job.byt)
 }
 
 // SetOpsServices installs the operational service instances. The
@@ -388,6 +446,22 @@ func (t *opsTracker) reserve(sessionID string) *opsEmitter {
 	}
 	rec.reserved = true
 	return rec.emit
+}
+
+// releaseReservation returns a reserved record to the pool
+// without publishing: the transfer claim it was held for rolled
+// back, so the session lives on and the next claimant (another
+// READY, or the reaper) must still find an unreserved record.
+func (t *opsTracker) releaseReservation(sessionID string, emit *opsEmitter) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	rec, ok := t.sessions[sessionID]
+	if ok && rec.reserved && rec.emit == emit {
+		rec.reserved = false
+	}
+	t.mu.Unlock()
 }
 
 // publishReserved publishes through a reserved record and drops it:

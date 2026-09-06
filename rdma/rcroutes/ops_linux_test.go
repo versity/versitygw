@@ -231,27 +231,21 @@ func (r *recordingLogger) Log(ctx fiber.Ctx, err error, body []byte, meta s3log.
 func (r *recordingLogger) HangUp() error   { return nil }
 func (r *recordingLogger) Shutdown() error { return nil }
 
-func (r *recordingLogger) count() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return len(r.logs)
-}
-
 // TestOpsTrackerPublishesExactlyOncePerSession drives the tracker
-// with a recording sink and asserts the published record count:
-// one per registered session no matter how the ownership played
-// out (callback expiry, reserved request path, denial).
+// with a recording sink, joins the publication worker through
+// Shutdown, and asserts the per-session record: each session
+// publishes exactly one record with its own outcome and bytes.
 func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	rl := &recordingLogger{}
 	tr := newOpsTracker()
 	tr.SetOpsServices(OpsServices{Logger: rl})
 
-	// Expiry path: callback publishes.
+	// Expiry path: callback publishes a zero-byte error record.
 	tr.register("s-exp", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-exp"})
 
 	// Reserved path: reserve, callback fires (skipped), the
-	// request path publishes.
+	// request path publishes success with bytes.
 	tr.register("s-res", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
 	emit := tr.reserve("s-res")
 	if emit == nil {
@@ -261,7 +255,7 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	tr.publishReserved("s-res", emit, nil, 128)
 
 	// Denial path while reserved: failOutcome must not steal the
-	// publication; the request path still owns it.
+	// publication; the owner's success record is the only one.
 	tr.register("s-den", auth.Account{Access: "ak"}, "r", "b", "o", true, time.Now())
 	emit2 := tr.reserve("s-den")
 	if emit2 == nil {
@@ -270,16 +264,49 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	tr.failOutcome("s-den", errors.New("denied"))
 	tr.publishReserved("s-den", emit2, nil, 256)
 
+	// Released reservation: the record returns to the pool and
+	// the reaper (or the next claimant) can still publish it.
+	tr.register("s-rel", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	emit3 := tr.reserve("s-rel")
+	if emit3 == nil {
+		t.Fatal("reserve failed")
+	}
+	tr.releaseReservation("s-rel", emit3)
+	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-rel"})
+
 	// Consume-or-noop denial of an unreserved session.
 	tr.register("s-fail", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
 	tr.failOutcome("s-fail", errors.New("x"))
 
-	// Let the publication worker drain.
-	deadline := time.Now().Add(2 * time.Second)
-	for rl.count() < 4 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
+	// Join the worker: Shutdown drains everything queued and
+	// stops it, so counting after Shutdown sees the final state.
+	tr.Shutdown()
+
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	if len(rl.logs) != 5 {
+		t.Fatalf("published %d records, want 5: %+v", len(rl.logs), rl.logs)
 	}
-	if got := rl.count(); got != 4 {
-		t.Fatalf("published %d records, want 4", got)
+	// The recording sink cannot see session IDs directly (they
+	// live in the synthesized context), so assert the observable
+	// contract: error/bytes pairings, one per session, in the
+	// dispatch order above.
+	type outcome struct {
+		isErr bool
+		bytes int64
+	}
+	want := []outcome{
+		{true, 0},    // s-exp expiry
+		{false, 128}, // s-res success
+		{false, 256}, // s-den success (denial was skipped)
+		{true, 0},    // s-rel expiry after release
+		{true, 0},    // s-fail denial
+	}
+	for i, w := range want {
+		got := rl.logs[i]
+		if (got.err != nil) != w.isErr || got.bytes != w.bytes {
+			t.Fatalf("record %d = (err=%v, bytes=%d), want (err=%v, bytes=%d)",
+				i, got.err, got.bytes, w.isErr, w.bytes)
+		}
 	}
 }

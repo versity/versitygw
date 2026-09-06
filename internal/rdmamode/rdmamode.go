@@ -21,6 +21,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/versity/versitygw/backend"
@@ -124,6 +125,12 @@ func V2ValidationError(s V2Settings) string {
 // idempotent.
 type Closer interface{ Close() }
 
+// OpsDrainer drains operational publications (audit records,
+// events) that the RC teardown path queued before the RC service
+// closes, so nothing is left waiting on sinks that are about to
+// close. It is idempotent.
+type OpsDrainer interface{ Shutdown() }
+
 // BackendShutdownAfterRC forwards a backend and closes the RC
 // service before the wrapped backend shuts down. The RC handlers
 // reference the backend and IAM service, so the RC service must
@@ -136,12 +143,28 @@ type Closer interface{ Close() }
 type BackendShutdownAfterRC struct {
 	backend.Backend
 	rc     Closer
+	ops    atomic.Pointer[OpsDrainer]
 	closed sync.Once
 }
 
-// Shutdown closes the RC service, then the wrapped backend, once.
+// SetOpsDrainer installs the operational publication drainer. The
+// route handler that owns the publications is built after this
+// wrapper (it needs the wrapped backend), so the drainer arrives
+// via this setter; installs after Shutdown ran are dropped, since
+// the drain window has passed.
+func (b *BackendShutdownAfterRC) SetOpsDrainer(d OpsDrainer) {
+	b.ops.Store(&d)
+}
+
+// Shutdown drains operational publications, closes the RC service,
+// then shuts the wrapped backend down, once. The publication drain
+// runs before the RC close: RC teardown itself queues publications,
+// so the queue must still be moving while the sessions drain.
 func (b *BackendShutdownAfterRC) Shutdown() {
 	b.closed.Do(func() {
+		if d := b.ops.Load(); d != nil {
+			(*d).Shutdown()
+		}
 		b.rc.Close()
 		b.Backend.Shutdown()
 	})

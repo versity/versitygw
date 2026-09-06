@@ -64,3 +64,6 @@ func (h *Handler) SetOpsServices(ops OpsServices) {}
 
 // PublishAuthFailure is a stub mirror of the linux handler.
 func (h *Handler) PublishAuthFailure(ctx fiber.Ctx, err error) {}
+
+// Shutdown is a stub mirror of the linux handler.
+func (h *Handler) Shutdown() {}

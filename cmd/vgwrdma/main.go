@@ -1276,7 +1276,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		// rollback closure and the RunVersityGW lifecycle a
 		// single, ordered owner of both steps.
 		be = rdmamode.WrapBackendShutdownAfterRC(be, rcSvc)
-
 		rcVerify := middlewares.VerifyV4Signature(
 			middlewares.RootUserConfig{
 				Access: gwcli.RootUserAccess,
@@ -1288,6 +1287,13 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		// request reaches the route handler, while errors end the
 		// chain as usual.
 		rcH := rcroutes.New(rcSvc, be, iamSvc, readonly, disableACLs)
+		// The RC shutdown wrapper drains queued operational
+		// publications before the sinks close; the drain hook is
+		// the route handler, which is built only now (it needs
+		// the wrapped backend).
+		if w, ok := be.(*rdmamode.BackendShutdownAfterRC); ok {
+			w.SetOpsDrainer(rcH)
+		}
 		rcAuth := func(ctx fiber.Ctx) error {
 			// The RC routes run before the default-values
 			// middleware sets the request locals; the access

@@ -103,6 +103,17 @@ func (h *Handler) SetOpsServices(ops OpsServices) {
 	h.svc.SetTerminalNotify(h.ops.onTerminal)
 }
 
+// Shutdown drains pending operational publications and stops the
+// publication worker. Call before the operational sinks (audit
+// logger, metrics, events) close: a queued publication that runs
+// after its sink closed is lost.
+func (h *Handler) Shutdown() {
+	if h.ops == nil {
+		return
+	}
+	h.ops.Shutdown()
+}
+
 // New builds the route handler around a started RC service. The
 // operational services arrive later through SetOpsServices, once
 // the gateway has created them.
@@ -383,14 +394,22 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	if !ok {
 		return errors.New("invalid session target")
 	}
+	// Reserve the publication BEFORE the transfer claim and before
+	// re-authorization: once ReadyTransfer returns this handler
+	// holds the native completion reference, and a concurrent
+	// READY's denial (or the reaper) must not be able to consume
+	// the record in the window between the claim and the
+	// reservation. A reserved record is invisible to both.
+	emit := h.ops.reserve(sessionID)
+	publish := func(err error, bytes int64) {
+		h.ops.publishReserved(sessionID, emit, err, bytes)
+	}
 	if err := h.authorize(ctx, acct, isRoot, bucket, key, info.Op == 1); err != nil {
-		// Permission revoked mid-session: cancel the session,
-		// and publish the real denial - not an expiry - as its
-		// outcome. The cancel tears the session down now; a
-		// plain publish (consume-or-noop) would race it, so
-		// the record is consumed here.
+		// Permission revoked mid-session: publish the real
+		// denial - not an expiry - as the outcome, release the
+		// reservation, and cancel the session.
 		err = mapRcError(err)
-		h.ops.failOutcome(sessionID, err)
+		publish(err, 0)
 		_ = h.svc.Cancel(sessionID, principal)
 		return err
 	}
@@ -409,7 +428,11 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 		// completion ref, so no local finalizer may run
 		// either. A second concurrent READY must not be able
 		// to reap a session the first one is still
-		// transferring on.
+		// transferring on. The publication reservation held
+		// the record for this claim; release it without
+		// publishing so the surviving path (the other READY,
+		// or the eventual reaper) still owns it.
+		h.ops.releaseReservation(sessionID, emit)
 		return mapRcError(err)
 	}
 
@@ -417,8 +440,11 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	// the same response (atomic with the transfer result, so a
 	// concurrent READY cannot rewrite it); the server already
 	// rolled the claim back (state Prepared, no completion ref),
-	// so answer 409 without any finalizer.
+	// so answer 409 without any finalizer. The reservation is
+	// released the same way: the session stays with the record
+	// the next READY (or the reaper) will claim.
 	if resp.Outcome == rcserver.ReadyBusy {
+		h.ops.releaseReservation(sessionID, emit)
 		return fmt.Errorf("peer busy: %w", rcserver.ErrDouble)
 	}
 
@@ -429,17 +455,16 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	// Every native completion call below (FinishFinal, and
 	// FinishPut inside commitPut) fires the teardown callback
 	// synchronously, BEFORE the call returns - so the outcome
-	// cannot be recorded after the call. The handler reserves the
-	// publication instead: a reserved record is invisible to the
-	// callback, and this handler publishes exactly once after the
-	// result is known. The deferred safety net publishes on any
-	// unwind that bypassed the normal paths.
-	emit := h.ops.reserve(sessionID)
+	// cannot be recorded after the call. The reservation was made
+	// before the transfer claim (above), so the callback is a
+	// no-op for this session and this handler publishes exactly
+	// once after the result is known. The deferred safety net
+	// publishes on any unwind that bypassed the normal paths.
 	published := false
-	publish := func(err error, bytes int64) {
+	doPublish := func(err error, bytes int64) {
 		if !published {
 			published = true
-			h.ops.publishReserved(sessionID, emit, err, bytes)
+			publish(err, bytes)
 		}
 	}
 	finalized := false
@@ -450,7 +475,7 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 			// publication must come from here on a panic or
 			// early-unwind path.
 			if !published {
-				publish(errPanicked(), 0)
+				doPublish(errPanicked(), 0)
 			}
 			_ = h.svc.FinishFinal(sessionID)
 		}
