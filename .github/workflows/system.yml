@@ -42,7 +42,7 @@ jobs:
           tar -czf download/go-mod-cache.tar.gz \
             -C "$(go env GOPATH)" pkg/mod
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: download
           path: download/
