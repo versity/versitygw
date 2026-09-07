@@ -807,6 +807,19 @@ func PutBucketPolicy_condition_action_mismatch(s *S3Conf) error {
 			// an explicit multi-action list requires every action to
 			// support the key, even though s3:PutObject alone would.
 			{`["s3:GetObject","s3:PutObject"]`, `{"StringEquals":{"s3:x-amz-acl":"public-read"}}`},
+			// s3:if-match applies to the conditional-write actions only,
+			// so a read action is rejected...
+			{`"s3:GetObject"`, `{"StringEquals":{"s3:if-match":"abc123"}}`},
+			// ... and so is a versioned delete, which names the version to
+			// remove rather than taking an If-Match.
+			{`"s3:DeleteObjectVersion"`, `{"StringEquals":{"s3:if-match":"abc123"}}`},
+			// ... as is a bucket-level write, which reads no If-Match at
+			// all.
+			{`"s3:PutBucketVersioning"`, `{"StringEquals":{"s3:if-match":"abc123"}}`},
+			// s3:if-none-match is narrower still: only s3:PutObject can
+			// require that the object not already exist.
+			{`"s3:DeleteObject"`, `{"Null":{"s3:if-none-match":"false"}}`},
+			{`["s3:PutObject","s3:DeleteObject"]`, `{"Null":{"s3:if-none-match":"false"}}`},
 		} {
 			doc := fmt.Sprintf(`{"Statement":[{"Effect":"Allow","Principal":"*","Action":%s,
 				"Resource":"arn:aws:s3:::%s/*","Condition":%s}]}`, tc.action, bucket, tc.condition)
@@ -820,6 +833,43 @@ func PutBucketPolicy_condition_action_mismatch(s *S3Conf) error {
 
 			if err := checkApiErr(err, getMalformedPolicyError("Conditions do not apply to combination of actions and resources in statement")); err != nil {
 				return err
+			}
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_condition_conditional_write_keys(s *S3Conf) error {
+	testName := "PutBucketPolicy_condition_conditional_write_keys"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, tc := range []struct {
+			action    string
+			condition string
+		}{
+			{`"s3:PutObject"`, `{"StringEquals":{"s3:if-match":"abc123"}}`},
+			{`"s3:PutObject"`, `{"Null":{"s3:if-none-match":"false"}}`},
+			// s3:if-match also covers S3's conditional delete.
+			{`"s3:DeleteObject"`, `{"StringEquals":{"s3:if-match":"abc123"}}`},
+			{`["s3:PutObject","s3:DeleteObject"]`, `{"StringEquals":{"s3:if-match":"abc123"}}`},
+			// a wildcard action is exempt from the applicability check
+			{`"s3:*"`, `{"Null":{"s3:if-none-match":"true"}}`},
+			// key names are case-insensitive
+			{`"s3:PutObject"`, `{"StringEquals":{"S3:IF-MATCH":"abc123"}}`},
+			{`"s3:PutObject"`, `{"Null":{"s3:If-None-Match":"false"}}`},
+			// both keys in one statement
+			{`"s3:PutObject"`, `{"Null":{"s3:if-match":"true","s3:if-none-match":"false"}}`},
+		} {
+			doc := fmt.Sprintf(`{"Statement":[{"Effect":"Allow","Principal":"*","Action":%s,
+				"Resource":"arn:aws:s3:::%s/*","Condition":%s}]}`, tc.action, bucket, tc.condition)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &doc,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("action %s with condition %s: %w", tc.action, tc.condition, err)
 			}
 		}
 		return nil

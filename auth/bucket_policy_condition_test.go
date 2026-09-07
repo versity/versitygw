@@ -138,6 +138,70 @@ func TestValidateBucketPolicyCondition(t *testing.T) {
 			actions: actionSet(AllActions),
 		},
 		{
+			name:    "s3:if-match accepted for PutObject",
+			raw:     `{"StringEquals":{"s3:if-match":"abc123"}}`,
+			actions: actionSet(PutObjectAction),
+		},
+		{
+			// S3's conditional delete takes If-Match, so the key applies
+			// to DeleteObject as well as PutObject.
+			name:    "s3:if-match accepted for DeleteObject",
+			raw:     `{"StringEquals":{"s3:if-match":"abc123"}}`,
+			actions: actionSet(DeleteObjectAction),
+		},
+		{
+			name:    "s3:if-match accepted for PutObject and DeleteObject together",
+			raw:     `{"StringEquals":{"s3:if-match":"abc123"}}`,
+			actions: actionSet(PutObjectAction, DeleteObjectAction),
+		},
+		{
+			name:    "s3:if-match rejected for GetObject",
+			raw:     `{"StringEquals":{"s3:if-match":"abc123"}}`,
+			actions: actionSet(GetObjectAction),
+			wantErr: policyErrConditionActionMismatch,
+		},
+		{
+			// A versioned delete names the version to remove and takes no
+			// If-Match, so the key doesn't extend to it.
+			name:    "s3:if-match rejected for DeleteObjectVersion",
+			raw:     `{"StringEquals":{"s3:if-match":"abc123"}}`,
+			actions: actionSet(DeleteObjectVersionAction),
+			wantErr: policyErrConditionActionMismatch,
+		},
+		{
+			name:    "s3:if-none-match accepted for PutObject",
+			raw:     `{"Null":{"s3:if-none-match":"false"}}`,
+			actions: actionSet(PutObjectAction),
+		},
+		{
+			// If-None-Match asserts the object doesn't exist yet, which
+			// only an upload can require - unlike s3:if-match, DeleteObject
+			// doesn't take it.
+			name:    "s3:if-none-match rejected for DeleteObject",
+			raw:     `{"Null":{"s3:if-none-match":"false"}}`,
+			actions: actionSet(DeleteObjectAction),
+			wantErr: policyErrConditionActionMismatch,
+		},
+		{
+			name:    "s3:if-none-match rejected for PutObject and DeleteObject together",
+			raw:     `{"Null":{"s3:if-none-match":"false"}}`,
+			actions: actionSet(PutObjectAction, DeleteObjectAction),
+			wantErr: policyErrConditionActionMismatch,
+		},
+		{
+			name:    "conditional-write keys recognized case-insensitively",
+			raw:     `{"StringEquals":{"S3:IF-MATCH":"abc123"},"Null":{"s3:If-None-Match":"false"}}`,
+			actions: actionSet(PutObjectAction),
+		},
+		{
+			// The hyphens and the s3: prefix are part of the key name;
+			// dropping either names a key that doesn't exist.
+			name:    "s3:ifmatch is not a recognized key",
+			raw:     `{"StringEquals":{"s3:ifmatch":"abc123"}}`,
+			actions: actionSet(PutObjectAction),
+			wantErr: policyErrInvalidConditionKey,
+		},
+		{
 			name:    "aws:SourceIp with a valid CIDR",
 			raw:     `{"IpAddress":{"aws:SourceIp":"10.0.0.0/8"}}`,
 			actions: actionSet(GetObjectAction),

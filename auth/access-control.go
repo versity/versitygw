@@ -116,7 +116,7 @@ func VerifyAccess(ctx fiber.Ctx, be backend.Backend, opts AccessOptions) error {
 		return err
 	}
 
-	errs, err := objectsAccessErrors(ctx.RequestCtx(), be, opts, []string{opts.Object}, requestConditionContext(ctx))
+	errs, err := objectsAccessErrors(ctx.RequestCtx(), be, opts, []string{opts.Object}, requestConditionContext(ctx, opts.Actions))
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,9 @@ func VerifyObjectsAccess(ctx fiber.Ctx, be backend.Backend, opts AccessOptions, 
 	}
 
 	rctx := ctx.RequestCtx()
-	condCtx := requestConditionContext(ctx)
+	// A DeleteObjects batch reads no If-Match/If-None-Match, so no
+	// conditional-write key applies to any object in it.
+	condCtx := requestConditionContext(ctx, nil)
 
 	keys := make([]string, len(objects))
 	for i, obj := range objects {
@@ -528,7 +530,7 @@ func VerifyPublicAccess(ctx fiber.Ctx, be backend.Backend, action Action, permis
 		return err
 	}
 	if err == nil {
-		err = VerifyPublicBucketPolicy(policy, bucket, object, requestConditionContext(ctx), be.NormalizeObjectKey, action)
+		err = VerifyPublicBucketPolicy(policy, bucket, object, requestConditionContext(ctx, []Action{action}), be.NormalizeObjectKey, action)
 		if errors.Is(err, errExplicitDeny) {
 			// Explicit public-policy Deny has higher precedence than any
 			// public ACL grant, so do not continue to ACL fallback.
@@ -619,7 +621,7 @@ func verifyIdentityOnlyAccess(ctx fiber.Ctx, pe PolicyEvaluator, acc Account, ac
 		Acc:     acc,
 		Bucket:  resource,
 		Actions: []Action{action},
-	}, []string{""}, nil, requestConditionContext(ctx))
+	}, []string{""}, nil, requestConditionContext(ctx, []Action{action}))
 	if err != nil {
 		return err
 	}

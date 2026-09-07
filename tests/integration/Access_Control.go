@@ -1677,3 +1677,327 @@ func AccessControl_bucket_policy_condition_not_ip_address_deny(s *S3Conf) error 
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
 	})
 }
+
+// AccessControl_bucket_policy_condition_if_none_match_required is AWS's
+// documented "enforce conditional writes" pattern: an unconditional Allow
+// paired with a Deny that fires whenever the key is absent, forcing every
+// upload to carry If-None-Match.
+func AccessControl_bucket_policy_condition_if_none_match_required(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_if_none_match_required"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		if err := putBucketPolicyDoc(s, bucket,
+			bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:PutObject",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+			},
+			bucketStatement{
+				Effect:    "Deny",
+				Principal: testuser.access,
+				Action:    "s3:PutObject",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+				Condition: json.RawMessage(`{"Null":{"s3:if-none-match":"true"}}`),
+			},
+		); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("unconditional"),
+			Body:   bytes.NewReader([]byte("data")),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetExplicitDenyAccessErr(testuser.access, "s3:PutObject",
+			fmt.Sprintf("arn:aws:s3:::%s/unconditional", bucket), "a resource-based policy")); err != nil {
+			return fmt.Errorf("an upload without If-None-Match must be denied: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("conditional"),
+			Body:        bytes.NewReader([]byte("data")),
+			IfNoneMatch: getPtr("*"),
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("an upload carrying If-None-Match must be allowed: %w", err)
+		}
+
+		// The same request once the key exists is still authorized; it now
+		// fails on the precondition itself, which the policy has no say in.
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("conditional"),
+			Body:        bytes.NewReader([]byte("data")),
+			IfNoneMatch: getPtr("*"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrPreconditionFailed))
+	})
+}
+
+// AccessControl_bucket_policy_condition_if_none_match_value covers the
+// key's value rather than its presence: the only value S3 accepts in an
+// If-None-Match write is "*", and that is what the key carries verbatim -
+// under StringEquals "*" is a literal, not a wildcard.
+func AccessControl_bucket_policy_condition_if_none_match_value(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_if_none_match_value"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		for i, tc := range []struct {
+			name      string
+			condition string
+			wantAllow bool
+		}{
+			{"StringEquals on the literal wildcard matches", `{"StringEquals":{"s3:if-none-match":"*"}}`, true},
+			{"StringEquals on any other value does not", `{"StringEquals":{"s3:if-none-match":"abc123"}}`, false},
+			{"Null:false matches a present key", `{"Null":{"s3:if-none-match":"false"}}`, true},
+			{"Null:true does not match a present key", `{"Null":{"s3:if-none-match":"true"}}`, false},
+			{"StringLike wildcard matches", `{"StringLike":{"s3:if-none-match":"*"}}`, true},
+		} {
+			if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:PutObject",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+				Condition: json.RawMessage(tc.condition),
+			}); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.PutObject(ctx, &s3.PutObjectInput{
+				Bucket:      &bucket,
+				Key:         getPtr(fmt.Sprintf("obj-%v", i)),
+				Body:        bytes.NewReader([]byte("data")),
+				IfNoneMatch: getPtr("*"),
+			})
+			cancel()
+
+			if tc.wantAllow {
+				if err != nil {
+					return fmt.Errorf("%s: expected success, got %w", tc.name, err)
+				}
+				continue
+			}
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// AccessControl_bucket_policy_condition_if_match_value covers
+// s3:if-match's value shape: the key carries the ETag with the surrounding
+// quotes stripped, so a policy compares against the bare ETag whichever
+// form the client puts on the wire.
+func AccessControl_bucket_policy_condition_if_match_value(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_if_match_value"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		etag, err := putObjectAndGetETag(s3client, bucket, "obj")
+		if err != nil {
+			return err
+		}
+		bare := strings.Trim(etag, `"`)
+
+		for _, tc := range []struct {
+			name        string
+			condition   func() string
+			ifMatch     *string
+			wantAllow   bool
+			azureUnsupp bool
+		}{
+			{"quoted header matches a bare policy value",
+				func() string { return fmt.Sprintf(`{"StringEquals":{"s3:if-match":%q}}`, bare) }, &etag, true, false},
+			{"unquoted header matches the same bare policy value",
+				func() string { return fmt.Sprintf(`{"StringEquals":{"s3:if-match":%q}}`, bare) }, &bare, true, false},
+			{"a policy value carrying the quotes never matches",
+				func() string { return fmt.Sprintf(`{"StringEquals":{"s3:if-match":%q}}`, etag) }, &etag, false, true},
+			{"a different ETag does not match",
+				func() string { return `{"StringEquals":{"s3:if-match":"0123456789abcdef0123456789abcdef"}}` }, &etag, false, false},
+			{"StringLike wildcard matches",
+				func() string { return `{"StringLike":{"s3:if-match":"*"}}` }, &etag, true, false},
+			{"Null:false matches a present key",
+				func() string { return `{"Null":{"s3:if-match":"false"}}` }, &etag, true, false},
+		} {
+			if tc.azureUnsupp && s.azureTests {
+				continue
+			}
+			if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:PutObject",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+				Condition: json.RawMessage(tc.condition()),
+			}); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.PutObject(ctx, &s3.PutObjectInput{
+				Bucket:  &bucket,
+				Key:     getPtr("obj"),
+				Body:    bytes.NewReader([]byte("data")),
+				IfMatch: tc.ifMatch,
+			})
+			cancel()
+
+			if tc.wantAllow {
+				if err != nil {
+					return fmt.Errorf("%s: expected success, got %w", tc.name, err)
+				}
+				// The overwrite may have changed the ETag, so every
+				// subsequent case has to condition on the current one.
+				if etag, err = headObjectETag(s3client, bucket, "obj"); err != nil {
+					return err
+				}
+				bare = strings.Trim(etag, `"`)
+				continue
+			}
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// AccessControl_bucket_policy_condition_if_match_delete_object covers the
+// half of s3:if-match that isn't an upload: S3's conditional delete, which
+// is the only other action a bucket policy may name the key on.
+func AccessControl_bucket_policy_condition_if_match_delete_object(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_if_match_delete_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		etag, err := putObjectAndGetETag(s3client, bucket, "obj")
+		if err != nil {
+			return err
+		}
+
+		// A delete that doesn't name the object's ETag is not authorized
+		// at all, so it never reaches the precondition check.
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:DeleteObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+			Condition: json.RawMessage(fmt.Sprintf(`{"StringEquals":{"s3:if-match":%q}}`, strings.Trim(etag, `"`))),
+		}); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("obj"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("an unconditional delete must be denied: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:  &bucket,
+			Key:     getPtr("obj"),
+			IfMatch: &etag,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("a delete naming the object's ETag must be allowed: %w", err)
+		}
+		return nil
+	})
+}
+
+// AccessControl_bucket_policy_condition_if_match_versioned_delete pins the
+// edge of s3:if-match's action set. A delete naming a version removes that
+// version rather than overwriting the current one, so it is authorized as
+// s3:DeleteObjectVersion — an action the key doesn't apply to, which is why
+// PutBucketPolicy rejects a statement pairing the two. The key has to stay
+// absent from the request context to match, or a wildcard-action statement
+// would grant on a precondition the policy language can't name.
+func AccessControl_bucket_policy_condition_if_match_versioned_delete(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_if_match_versioned_delete"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		etag, err := putObjectAndGetETag(s3client, bucket, "obj")
+		if err != nil {
+			return err
+		}
+
+		// s3:* is the only action a bucket policy can name s3:if-match on
+		// and still reach a versioned delete: a wildcard is exempt from
+		// the applicability check an explicit s3:DeleteObjectVersion fails.
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:*",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+			Condition: json.RawMessage(`{"Null":{"s3:if-match":"false"}}`),
+		}); err != nil {
+			return err
+		}
+
+		// "null" is the version id every object carries until versioning is
+		// enabled, so this is a versioned delete on any backend.
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    &bucket,
+			Key:       getPtr("obj"),
+			VersionId: getPtr("null"),
+			IfMatch:   &etag,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("a versioned delete must leave s3:if-match absent: %w", err)
+		}
+
+		// The same header on the same object, minus the version, is a plain
+		// s3:DeleteObject and does populate the key.
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:  &bucket,
+			Key:     getPtr("obj"),
+			IfMatch: &etag,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("an unversioned delete carrying If-Match must be allowed: %w", err)
+		}
+		return nil
+	})
+}

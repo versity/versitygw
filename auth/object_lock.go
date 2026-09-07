@@ -234,7 +234,7 @@ func IsObjectLockRetentionPutAllowed(ctx fiber.Ctx, be backend.Backend, iam IAMS
 	// or switching it to COMPLIANCE — with the bypass header. That needs
 	// s3:BypassGovernanceRetention, via the bucket policy and/or (when
 	// configured) the IAM identity policy.
-	if err := verifyBypassGovernancePermission(ctx.RequestCtx(), be, iam, acc, bucket, object, BypassRequested, false, requestConditionContext(ctx)); err != nil {
+	if err := verifyBypassGovernancePermission(ctx.RequestCtx(), be, iam, acc, bucket, object, BypassRequested, false, requestConditionContext(ctx, []Action{BypassGovernanceRetentionAction})); err != nil {
 		debuglogger.Logf("the user is missing 's3:BypassGovernanceRetention' permission: %v", err)
 		return err
 	}
@@ -393,7 +393,7 @@ func CheckObjectAccess(ctx fiber.Ctx, bucket string, acc Account, objects []type
 		return err
 	}
 
-	condCtx := requestConditionContext(ctx)
+	condCtx := requestConditionContext(ctx, []Action{BypassGovernanceRetentionAction})
 	for _, obj := range objects {
 		if err := state.checkObject(rctx, be, iam, acc, bucket, obj, bypass, isBucketPublic, condCtx); err != nil {
 			return err

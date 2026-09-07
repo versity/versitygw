@@ -69,6 +69,28 @@ func isVersionedAction(a Action) bool {
 	}
 }
 
+// isConditionalWriteAction is s3:if-match's applicable-action set:
+// s3:PutObject — which also covers CompleteMultipartUpload, authorized as
+// s3:PutObject — and s3:DeleteObject, S3's conditional delete. Note that
+// s3:DeleteObjectVersion is not in the set: a versioned delete names the
+// version to remove rather than overwriting the current one.
+//
+// addConditionalWriteKeys gates the runtime key on the same predicate, so
+// narrowing or widening this set moves both ends at once.
+func isConditionalWriteAction(a Action) bool {
+	return a == PutObjectAction || a == DeleteObjectAction
+}
+
+// isConditionalCreateAction is s3:if-none-match's applicable-action set:
+// s3:PutObject alone. If-None-Match asserts the object doesn't exist yet,
+// which only an upload can require — S3 rejects the header on DeleteObject.
+//
+// addConditionalWriteKeys gates the runtime key on the same predicate, so
+// narrowing or widening this set moves both ends at once.
+func isConditionalCreateAction(a Action) bool {
+	return a == PutObjectAction
+}
+
 // bucketPolicyConditionKeys is the fixed catalogue of condition keys this
 // gateway's S3 bucket-policy Condition support recognizes, each mapped to
 // the actions it may be used with. Keys are looked up case-insensitively
@@ -81,10 +103,8 @@ func isVersionedAction(a Action) bool {
 // s3:RequestObjectTagKeys), object-lock keys, s3:x-amz-server-side-encryption
 // (the gateway never reads that header, so enforcing it would be
 // misleading), and aws:MultiFactorAuthAge (no MFA concept here) are out of
-// scope. A Condition naming one of those is still accepted at write time —
-// the key just never appears in the runtime context, so any Condition
-// depending on it simply never matches, the same as any other key this
-// package doesn't populate.
+// scope: a Condition naming one of those is rejected at write time, the
+// same as any other key absent from this catalogue.
 var bucketPolicyConditionKeys = map[string]conditionKeyRule{
 	// Generic keys: AWS accepts these with any action.
 	"aws:sourceip":           {appliesTo: anyAction, ipSemantic: true},
@@ -104,6 +124,11 @@ var bucketPolicyConditionKeys = map[string]conditionKeyRule{
 	"s3:max-keys":  {appliesTo: isListAction},
 	"s3:x-amz-acl": {appliesTo: isAclPutAction},
 	"s3:versionid": {appliesTo: isVersionedAction},
+
+	// Conditional-write keys, carrying the request's If-Match /
+	// If-None-Match header value.
+	"s3:if-match":      {appliesTo: isConditionalWriteAction},
+	"s3:if-none-match": {appliesTo: isConditionalCreateAction},
 }
 
 // lookupConditionKeyRule finds key's rule case-insensitively.

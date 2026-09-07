@@ -15,7 +15,9 @@
 package integration
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -2099,6 +2101,515 @@ func S3IAMAccessControl_access_key_last_used_records_s3(s *S3Conf) error {
 			return fmt.Errorf("expected access key last used region to be %q, instead got %q", s.awsRegion, aws.ToString(lastUsed.Region))
 		}
 
+		return nil
+	})
+}
+
+// S3IAMAccessControl_condition_if_none_match_required is AWS's documented
+// "enforce conditional writes" pattern expressed as an identity policy: an
+// unconditional Allow paired with a Deny that fires whenever the key is
+// absent.
+func S3IAMAccessControl_condition_if_none_match_required(s *S3Conf) error {
+	testName := "S3IAMAccessControl_condition_if_none_match_required"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(
+				accessStatement{Effect: "Allow", Action: actS3PutObject, Resource: objectsArn(bucket)},
+				accessStatement{
+					Effect: "Deny", Action: actS3PutObject, Resource: objectsArn(bucket),
+					Condition: cond("Null", "s3:if-none-match", "true"),
+				},
+			),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("unconditional"),
+			Body:   bytes.NewReader([]byte("data")),
+		})
+		cancel()
+		if err := checkApiErr(err, wantExplicitIdentityDeny(user.arn, actS3PutObject, objectArn(bucket, "unconditional"))); err != nil {
+			return fmt.Errorf("an upload without If-None-Match must be denied: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("conditional"),
+			Body:        bytes.NewReader([]byte("data")),
+			IfNoneMatch: getPtr("*"),
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("an upload carrying If-None-Match must be allowed: %w", err)
+		}
+
+		// Still authorized once the key exists; only the precondition
+		// itself fails now, which the policy has no say in.
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("conditional"),
+			Body:        bytes.NewReader([]byte("data")),
+			IfNoneMatch: getPtr("*"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrPreconditionFailed))
+	})
+}
+
+// S3IAMAccessControl_condition_conditional_write_values covers both keys'
+// values on an upload: s3:if-match carries the ETag with its surrounding
+// quotes stripped, and s3:if-none-match carries the only value S3 accepts
+// on a write, the literal "*".
+func S3IAMAccessControl_condition_conditional_write_values(s *S3Conf) error {
+	testName := "S3IAMAccessControl_condition_conditional_write_values"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		etag, err := putObjectAndGetETag(s.GetClient(), bucket, "obj")
+		if err != nil {
+			return err
+		}
+		bare := strings.Trim(etag, `"`)
+
+		user, cleanup, err := newS3IAMUser(root, s, nil)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		for i, tc := range []struct {
+			name      string
+			condition json.RawMessage
+			// ifMatch and ifNoneMatch are the headers the client sends;
+			// S3 rejects a request carrying both.
+			ifMatch     *string
+			ifNoneMatch *string
+			wantAllow   bool
+		}{
+			{
+				name:      "quoted If-Match header matches a bare policy value",
+				condition: cond("StringEquals", "s3:if-match", bare),
+				ifMatch:   &etag,
+				wantAllow: true,
+			},
+			{
+				name:      "unquoted If-Match header matches the same bare policy value",
+				condition: cond("StringEquals", "s3:if-match", bare),
+				ifMatch:   &bare,
+				wantAllow: true,
+			},
+			{
+				name:      "a policy value carrying the quotes never matches",
+				condition: cond("StringEquals", "s3:if-match", etag),
+				ifMatch:   &etag,
+			},
+			{
+				name:      "a different ETag does not match",
+				condition: cond("StringEquals", "s3:if-match", "0123456789abcdef0123456789abcdef"),
+				ifMatch:   &etag,
+			},
+			{
+				name:      "s3:if-match is absent without the header",
+				condition: cond("Null", "s3:if-match", "true"),
+				wantAllow: true,
+			},
+			{
+				name:      "an absent s3:if-match cannot satisfy StringEquals",
+				condition: cond("StringEquals", "s3:if-match", bare),
+			},
+			{
+				// Key names are case-insensitive, values are not.
+				name:      "key name case is ignored",
+				condition: cond("StringEquals", "S3:IF-MATCH", bare),
+				ifMatch:   &etag,
+				wantAllow: true,
+			},
+			{
+				name:        "s3:if-none-match carries the literal wildcard",
+				condition:   cond("StringEquals", "s3:if-none-match", "*"),
+				ifNoneMatch: getPtr("*"),
+				wantAllow:   true,
+			},
+			{
+				// "*" is a literal under StringEquals, so it cannot stand
+				// in for an arbitrary value.
+				name:      "s3:if-none-match is absent without the header",
+				condition: cond("StringEquals", "s3:if-none-match", "*"),
+			},
+			{
+				name:        "one key is absent while the other is present",
+				condition:   cond("Null", "s3:if-match", "true"),
+				ifNoneMatch: getPtr("*"),
+				wantAllow:   true,
+			},
+		} {
+			// An If-None-Match write has to target a key that doesn't exist
+			// yet, or it is authorized and then fails the precondition -
+			// every other case conditions on "obj"'s own ETag.
+			key := "obj"
+			if tc.ifNoneMatch != nil {
+				key = fmt.Sprintf("absent-%v", i)
+			}
+
+			if err := func() error {
+				if err := putS3IAMUserPolicy(root, user, "p", policyDoc(accessStatement{
+					Effect: "Allow", Action: actS3PutObject, Resource: objectsArn(bucket),
+					Condition: tc.condition,
+				})); err != nil {
+					return err
+				}
+
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := user.client.PutObject(ctx, &s3.PutObjectInput{
+					Bucket:      &bucket,
+					Key:         &key,
+					Body:        bytes.NewReader([]byte("data")),
+					IfMatch:     tc.ifMatch,
+					IfNoneMatch: tc.ifNoneMatch,
+				})
+				cancel()
+
+				if !tc.wantAllow {
+					return checkApiErr(err, wantImplicitDeny(user.arn, actS3PutObject, objectArn(bucket, key)))
+				}
+				if err != nil {
+					return fmt.Errorf("expected the request to be allowed: %w", err)
+				}
+				// An overwrite may have changed the ETag, so the remaining
+				// cases have to condition on the current one.
+				if etag, err = headObjectETag(s.GetClient(), bucket, "obj"); err != nil {
+					return err
+				}
+				bare = strings.Trim(etag, `"`)
+				return nil
+			}(); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// S3IAMAccessControl_condition_if_match_delete_object covers the half of
+// s3:if-match that isn't an upload: S3's conditional delete.
+func S3IAMAccessControl_condition_if_match_delete_object(s *S3Conf) error {
+	testName := "S3IAMAccessControl_condition_if_match_delete_object"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		etag, err := putObjectAndGetETag(s.GetClient(), bucket, "obj")
+		if err != nil {
+			return err
+		}
+
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3DeleteObject, Resource: objectsArn(bucket),
+				Condition: cond("StringEquals", "s3:if-match", strings.Trim(etag, `"`)),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: getPtr("obj")})
+		cancel()
+		if err := checkApiErr(err, wantImplicitDeny(user.arn, actS3DeleteObject, objectArn(bucket, "obj"))); err != nil {
+			return fmt.Errorf("an unconditional delete must be denied: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:  &bucket,
+			Key:     getPtr("obj"),
+			IfMatch: &etag,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("a delete naming the object's ETag must be allowed: %w", err)
+		}
+		return nil
+	})
+}
+
+// S3IAMAccessControl_condition_if_match_versioned_delete pins the edge of
+// s3:if-match's action set on the identity-policy side, where nothing
+// validates a Condition's key against the action it names. A delete naming
+// a version is authorized as s3:DeleteObjectVersion, which the key doesn't
+// apply to, so it stays absent and a statement demanding it can never be
+// satisfied
+func S3IAMAccessControl_condition_if_match_versioned_delete(s *S3Conf) error {
+	testName := "S3IAMAccessControl_condition_if_match_versioned_delete"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		etag, err := putObjectAndGetETag(s.GetClient(), bucket, "obj")
+		if err != nil {
+			return err
+		}
+
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3DeleteObjectVersion, Resource: objectsArn(bucket),
+				Condition: cond("StringEquals", "s3:if-match", strings.Trim(etag, `"`)),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		// "null" is the version id every object carries until versioning is
+		// enabled, so this is a versioned delete on any backend.
+		deleteVersion := func(ifMatch string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
+			_, err := user.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    &bucket,
+				Key:       getPtr("obj"),
+				VersionId: getPtr("null"),
+				IfMatch:   &ifMatch,
+			})
+			return err
+		}
+
+		if err := checkApiErr(deleteVersion(etag),
+			wantImplicitDeny(user.arn, actS3DeleteObjectVersion, objectArn(bucket, "obj"))); err != nil {
+			return fmt.Errorf("a versioned delete must leave s3:if-match absent: %w", err)
+		}
+
+		// Absent, not merely different: the same request satisfies a
+		// statement requiring the key to be absent.
+		if err := putS3IAMUserPolicy(root, user, "p", policyDoc(accessStatement{
+			Effect: "Allow", Action: actS3DeleteObjectVersion, Resource: objectsArn(bucket),
+			Condition: cond("Null", "s3:if-match", "true"),
+		})); err != nil {
+			return err
+		}
+
+		// Authorized now, and the header still decides the delete: a
+		// mismatch fails the precondition the policy had no say in.
+		if err := checkApiErr(deleteVersion("0123456789abcdef0123456789abcdef"),
+			s3err.GetAPIError(s3err.ErrPreconditionFailed)); err != nil {
+			return fmt.Errorf("the precondition itself must still be enforced: %w", err)
+		}
+		if err := deleteVersion(etag); err != nil {
+			return fmt.Errorf("a versioned delete naming the object's ETag must be allowed: %w", err)
+		}
+		return nil
+	})
+}
+
+// S3IAMAccessControl_condition_if_match_bucket_level_write pins the last
+// shape a bare PUT can take. A bucket sub-resource write carries none of
+// the object sub-resources, so the request alone looks exactly like an
+// upload; only the action it is authorized under separates the two. The
+// gateway reads no If-Match there, so the key has to stay absent rather
+// than satisfy a statement demanding a conditional write.
+func S3IAMAccessControl_condition_if_match_bucket_level_write(s *S3Conf) error {
+	testName := "S3IAMAccessControl_condition_if_match_bucket_level_write"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		etag, err := putObjectAndGetETag(s.GetClient(), bucket, "obj")
+		if err != nil {
+			return err
+		}
+		bareETag := strings.Trim(etag, `"`)
+
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3PutBucketOwnershipControls, Resource: bucketArn(bucket),
+				Condition: cond("StringEquals", "s3:if-match", bareETag),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		putOwnership := func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
+			_, err := user.client.PutBucketOwnershipControls(ctx, &s3.PutBucketOwnershipControlsInput{
+				Bucket: &bucket,
+				OwnershipControls: &types.OwnershipControls{
+					Rules: []types.OwnershipControlsRule{
+						{ObjectOwnership: types.ObjectOwnershipBucketOwnerPreferred},
+					},
+				},
+			}, withRequestHeader("If-Match", etag))
+			return err
+		}
+
+		if err := checkApiErr(putOwnership(),
+			wantImplicitDeny(user.arn, actS3PutBucketOwnershipControls, bucketArn(bucket))); err != nil {
+			return fmt.Errorf("a bucket-level write must leave s3:if-match absent: %w", err)
+		}
+
+		// Absent, not merely different: the same request satisfies a
+		// statement requiring the key to be absent.
+		if err := putS3IAMUserPolicy(root, user, "p", policyDoc(accessStatement{
+			Effect: "Allow", Action: actS3PutBucketOwnershipControls, Resource: bucketArn(bucket),
+			Condition: cond("Null", "s3:if-match", "true"),
+		})); err != nil {
+			return err
+		}
+		if err := putOwnership(); err != nil {
+			return fmt.Errorf("a bucket-level write must be allowed once the statement stops demanding the key: %w", err)
+		}
+		return nil
+	})
+}
+
+// S3IAMAccessControl_condition_conditional_write_keys_ignore_copies pins
+// the other half of that rule. A copy takes its preconditions from the
+// x-amz-copy-source-if-* headers, so the gateway ignores a plain If-Match or
+// If-None-Match on one — and a policy demanding a conditional write must
+// therefore keep denying copies rather than be satisfied by a header that
+// changes nothing.
+func S3IAMAccessControl_condition_conditional_write_keys_ignore_copies(s *S3Conf) error {
+	testName := "S3IAMAccessControl_condition_conditional_write_keys_ignore_copies"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		if _, err := putObjectAndGetETag(s.GetClient(), bucket, "src"); err != nil {
+			return err
+		}
+
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(
+				accessStatement{Effect: "Allow", Action: actS3GetObject, Resource: objectsArn(bucket)},
+				accessStatement{Effect: "Allow", Action: actS3PutObject, Resource: objectsArn(bucket)},
+				accessStatement{
+					Effect: "Deny", Action: actS3PutObject, Resource: objectsArn(bucket),
+					Condition: cond("Null", "s3:if-none-match", "true"),
+				},
+			),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		for _, tc := range []struct {
+			name        string
+			ifNoneMatch *string
+		}{
+			{"a copy without the header", nil},
+			{"a copy carrying the header", getPtr("*")},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := user.client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:      &bucket,
+				Key:         getPtr("dst"),
+				CopySource:  getPtr(bucket + "/src"),
+				IfNoneMatch: tc.ifNoneMatch,
+			})
+			cancel()
+			if err := checkApiErr(err, wantExplicitIdentityDeny(user.arn, actS3PutObject, objectArn(bucket, "dst"))); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// S3IAMAccessControl_condition_if_match_ignores_delete_objects covers the
+// batch delete. DeleteObjects carries one request-level header for the
+// whole batch and the gateway never applies it to any key, so letting it
+// populate s3:if-match would authorize deleting every object in the batch
+// against an ETag nothing checks.
+func S3IAMAccessControl_condition_if_match_ignores_delete_objects(s *S3Conf) error {
+	testName := "S3IAMAccessControl_condition_if_match_ignores_delete_objects"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		etag, err := putObjectAndGetETag(s.GetClient(), bucket, "obj")
+		if err != nil {
+			return err
+		}
+
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3DeleteObject, Resource: objectsArn(bucket),
+				Condition: cond("StringEquals", "s3:if-match", strings.Trim(etag, `"`)),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := user.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{Objects: objectIdentifiers("obj")},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if len(res.Errors) != 1 || getString(res.Errors[0].Code) != "AccessDenied" {
+			return fmt.Errorf("expected the batch delete to be denied, instead got %+v", res)
+		}
+		return nil
+	})
+}
+
+// S3IAMAccessControl_condition_conditional_write_keys_ignore_reads pins the
+// keys to writes. GET and HEAD take If-Match/If-None-Match too, as ordinary
+// HTTP cache preconditions, and neither may populate the condition context
+// there — otherwise a browser revalidating its cache would decide whether a
+// read is authorized.
+func S3IAMAccessControl_condition_conditional_write_keys_ignore_reads(s *S3Conf) error {
+	testName := "S3IAMAccessControl_condition_conditional_write_keys_ignore_reads"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		etag, err := putObjectAndGetETag(s.GetClient(), bucket, "obj")
+		if err != nil {
+			return err
+		}
+
+		user, cleanup, err := newS3IAMUser(root, s, nil)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		for _, tc := range []struct {
+			name      string
+			condition json.RawMessage
+			wantAllow bool
+		}{
+			{"s3:if-match stays absent on a conditional read", cond("Null", "s3:if-match", "true"), true},
+			{"s3:if-none-match stays absent on a conditional read", cond("Null", "s3:if-none-match", "true"), true},
+			{"a read can never satisfy a present-key condition", cond("Null", "s3:if-match", "false"), false},
+			{"nor an equality against the ETag it sent", cond("StringEquals", "s3:if-match", strings.Trim(etag, `"`)), false},
+		} {
+			if err := func() error {
+				if err := putS3IAMUserPolicy(root, user, "p", policyDoc(accessStatement{
+					Effect: "Allow", Action: actS3GetObject, Resource: objectsArn(bucket),
+					Condition: tc.condition,
+				})); err != nil {
+					return err
+				}
+
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := user.client.GetObject(ctx, &s3.GetObjectInput{
+					Bucket:  &bucket,
+					Key:     getPtr("obj"),
+					IfMatch: &etag,
+				})
+				cancel()
+
+				if !tc.wantAllow {
+					return checkApiErr(err, wantImplicitDeny(user.arn, actS3GetObject, objectArn(bucket, "obj")))
+				}
+				if err != nil {
+					return fmt.Errorf("expected the request to be allowed: %w", err)
+				}
+				return nil
+			}(); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
 		return nil
 	})
 }
