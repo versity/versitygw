@@ -302,12 +302,12 @@ func ListMultipartUploads_keyMarker_not_from_list(s *S3Conf) error {
 					UploadId:     out.UploadId,
 					StorageClass: types.StorageClassStandard,
 				})
-				if s.azureTests {
-					// add an artificial delay for azure tests
-					// as azure uploads all these mps with the same
-					// identical creation time
-					time.Sleep(time.Second)
-				}
+				// add an artificial delay, since some backends
+				// (e.g. azure, or posix on filesystems with coarse
+				// mtime resolution) can report the same identical
+				// creation/initiated time for uploads created back
+				// to back, making the resulting order non-deterministic
+				time.Sleep(time.Second)
 			}
 		}
 
@@ -323,7 +323,7 @@ func ListMultipartUploads_keyMarker_not_from_list(s *S3Conf) error {
 		}
 
 		if !compareMultipartUploads(uploads[3:], out.Uploads) {
-			return fmt.Errorf("expected the mp list to be %v, instead got %v", uploads[:3], out.Uploads)
+			return fmt.Errorf("expected the mp list to be %v, instead got %v", uploads[3:], out.Uploads)
 		}
 
 		// should start the listing after the specified uploadId marker
