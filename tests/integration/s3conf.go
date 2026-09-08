@@ -24,13 +24,12 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/smithy-go/middleware"
+	"github.com/aws/smithy-go/logging"
 )
 
 type S3Conf struct {
@@ -205,32 +204,29 @@ func (cfg *S3Conf) getUserClient(usr user) *s3.Client {
 	return config.GetClient()
 }
 
+// Config builds the SDK configuration from the harness's own settings and
+// nothing else. It does not go through config.LoadDefaultConfig: region,
+// credentials, endpoint, and HTTP client all come from S3Conf, so the host's
+// shared AWS configuration has nothing to contribute, and consulting it made
+// the harness fail outright under an AWS_PROFILE the host does not define --
+// the SDK insists a named profile exist even when every setting it could
+// supply is already given.
 func (c *S3Conf) Config() aws.Config {
-	creds := c.getCreds()
-
-	opts := []func(*config.LoadOptions) error{
-		config.WithRegion(c.awsRegion),
-		config.WithCredentialsProvider(creds),
-		config.WithHTTPClient(c.httpClient),
-		config.WithRetryMaxAttempts(1),
+	cfg := aws.Config{
+		Region:           c.awsRegion,
+		Credentials:      c.getCreds(),
+		HTTPClient:       c.httpClient,
+		RetryMaxAttempts: 1,
+		Logger:           logging.NewStandardLogger(os.Stderr),
 	}
 
-	opts = append(opts, config.WithHTTPClient(c.httpClient))
-
 	if c.checksumDisable {
-		opts = append(opts,
-			config.WithAPIOptions([]func(*middleware.Stack) error{v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware}))
+		cfg.APIOptions = append(cfg.APIOptions,
+			v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware)
 	}
 
 	if c.debug {
-		opts = append(opts,
-			config.WithClientLogMode(aws.LogSigning|aws.LogRetries|aws.LogRequest|aws.LogResponse|aws.LogRequestEventMessage|aws.LogResponseEventMessage))
-	}
-
-	cfg, err := config.LoadDefaultConfig(
-		context.TODO(), opts...)
-	if err != nil {
-		log.Fatalln("error:", err)
+		cfg.ClientLogMode = aws.LogSigning | aws.LogRetries | aws.LogRequest | aws.LogResponse | aws.LogRequestEventMessage | aws.LogResponseEventMessage
 	}
 
 	if c.endpoint != "" && c.endpoint != "aws" {
