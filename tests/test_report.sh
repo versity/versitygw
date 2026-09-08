@@ -79,11 +79,11 @@ source ./tests/setup_unit.sh
   expected_output=("GET MAIN " "PUT OBJECT prefix")
 
   for ((i=0; i<${#tests[@]}; i++)); do
-    if file_name=$(get_file_name_with_prefix "openssl" 2>&1); then
+    if ! file_name=$(get_file_name_with_prefix "openssl" 2>&1); then
       return 1
     fi
-    echo "${tests[$i]}" > "$file_name"
-    run get_openssl_method_route_queries "$file_name"
+    echo "${tests[$i]}" > "${TEST_FILE_FOLDER}/${file_name}"
+    run get_openssl_method_route_queries "${TEST_FILE_FOLDER}/${file_name}"
     assert_output "${expected_output[$i]}"
   done
 }
@@ -105,11 +105,11 @@ source ./tests/setup_unit.sh
   for ((i=0; i<${#test_clients[@]}; i++)); do
     echo "test $i"
     if [ "${test_clients[$i]}" == "OPENSSL" ]; then
-      if file_name=$(get_file_name_with_prefix "openssl" 2>&1); then
+      if ! file_name=$(get_file_name_with_prefix "openssl" 2>&1); then
         return 1
       fi
-      echo "${test_data[$i]}" > "$file_name"
-      data_param=$file_name
+      echo "${test_data[$i]}" > "${TEST_FILE_FOLDER}/${file_name}"
+      data_param="${TEST_FILE_FOLDER}/${file_name}"
     else
       data_param=${test_data[$i]}
     fi

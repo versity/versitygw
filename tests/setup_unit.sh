@@ -14,15 +14,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/env.sh
+source ./tests/setup_common.sh
 
 export UNIT_TEST=true
 
 setup() {
-  base_setup
-  setup_test_log_file
+  if ! setup_env; then
+    echo "error with env setup" >&2
+    return 1
+  fi
+  return 0
 }
 
 teardown() {
-  teardown_logs
+  if ! teardown_logs; then
+    echo "log teardown errors" >&2
+    return 1
+  fi
+  return 0
 }
