@@ -81,11 +81,12 @@ func drainRequestBody(ctx fiber.Ctx) {
 	// body, but not for a chunked one: past the terminating chunk it goes back
 	// to the socket for another chunk header that will never come. Reading a
 	// chunked body the handler already finished would block until the deadline
-	// and hold the response back with it, so only Content-Length framing is
-	// drained. Nothing is lost for the aws-chunked uploads this exists for --
-	// STREAMING-* payloads carry a Content-Length.
+	// and hold the response back with it, so do not drain chunked framing. The
+	// stream may still have unread bytes, though, so the connection must not be
+	// reused for another request.
 	cLength := ctx.Request().Header.ContentLength()
-	if cLength <= 0 {
+	if cLength < 0 {
+		ctx.Response().Header.SetConnectionClose()
 		return
 	}
 

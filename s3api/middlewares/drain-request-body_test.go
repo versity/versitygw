@@ -206,6 +206,42 @@ func TestDrainRequestBody_doesNotStallAChunkedBodyTheHandlerFinished(t *testing.
 	}
 }
 
+func TestDrainRequestBody_closesConnectionForUnreadChunkedBody(t *testing.T) {
+	addr := startEarlyResponder(t, false)
+
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+
+	// Leave one decoded byte unread after the handler's initial read. The
+	// middleware cannot safely probe for EOF on a chunked request.
+	chunk := bytes.Repeat([]byte("a"), handlerReadBytes+1)
+	body := fmt.Appendf(nil, "PUT /object HTTP/1.1\r\nHost: %s\r\nTransfer-Encoding: chunked\r\n\r\n%x\r\n", addr, len(chunk))
+	body = append(body, chunk...)
+	body = append(body, []byte("\r\n0\r\n\r\n")...)
+	if _, err := conn.Write(body); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %v, got %v", http.StatusBadRequest, resp.StatusCode)
+	}
+	if !resp.Close {
+		t.Fatal("expected 'Connection: close' for an unread chunked body")
+	}
+}
+
 // The same, for a Content-Length body: fasthttp reports EOF idempotently there,
 // so it is drained, but a handler that already finished it must not be delayed.
 func TestDrainRequestBody_doesNotStallABodyTheHandlerFinished(t *testing.T) {
