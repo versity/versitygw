@@ -31,7 +31,41 @@ var (
 	ErrNoSuchKey = errors.New("no such key")
 )
 
-type XattrMeta struct{}
+// XattrMeta stores metadata as extended attributes on the bucket and object
+// files. The zero value resolves bucket names against the process working
+// directory, which the posix backend sets to its root directory; a backend
+// that keeps the working directory supplies the root through WithRootDir.
+type XattrMeta struct {
+	// rootdir is the absolute path bucket names are resolved under, or ""
+	// to resolve them against the process working directory.
+	rootdir string
+}
+
+var _ RootDirSetter = XattrMeta{}
+
+// WithRootDir returns a copy of x that resolves bucket names against rootdir.
+func (x XattrMeta) WithRootDir(rootdir string) MetadataStorer {
+	x.rootdir = rootdir
+	return x
+}
+
+// path returns the filesystem path holding the attributes of object in
+// bucket (of the bucket itself when object is empty).
+//
+// The bucket argument is normally a bucket name, resolved under the root
+// directory (or the working directory when no root is set). The versioning
+// code instead passes the absolute path of a bucket's versioning directory;
+// an absolute bucket is used as given.
+func (x XattrMeta) path(bucket, object string) (string, error) {
+	if filepath.IsAbs(bucket) {
+		return filepath.Join(bucket, object), nil
+	}
+	if bucket == "" || bucket == "." || bucket == ".." {
+		// Would resolve to the root directory itself or its parent.
+		return "", fmt.Errorf("xattr metadata: invalid bucket name %q", bucket)
+	}
+	return filepath.Join(x.rootdir, bucket, object), nil
+}
 
 // RetrieveAttribute retrieves the value of a specific attribute for an object in a bucket.
 func (x XattrMeta) RetrieveAttribute(f *os.File, bucket, object, attribute string) ([]byte, error) {
@@ -43,7 +77,11 @@ func (x XattrMeta) RetrieveAttribute(f *os.File, bucket, object, attribute strin
 		return b, err
 	}
 
-	b, err := xattr.Get(filepath.Join(bucket, object), xattrPrefix+attribute)
+	name, err := x.path(bucket, object)
+	if err != nil {
+		return nil, err
+	}
+	b, err := xattr.Get(name, xattrPrefix+attribute)
 	if errors.Is(err, xattr.ENOATTR) {
 		return nil, ErrNoSuchKey
 	}
@@ -63,7 +101,11 @@ func (x XattrMeta) StoreAttribute(f *os.File, bucket, object, attribute string, 
 		return err
 	}
 
-	err := xattr.Set(filepath.Join(bucket, object), xattrPrefix+attribute, value)
+	name, err := x.path(bucket, object)
+	if err != nil {
+		return err
+	}
+	err = xattr.Set(name, xattrPrefix+attribute, value)
 	if errors.Is(err, syscall.EROFS) {
 		return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
 	}
@@ -75,7 +117,11 @@ func (x XattrMeta) StoreAttribute(f *os.File, bucket, object, attribute string, 
 
 // DeleteAttribute removes the value of a specific attribute for an object in a bucket.
 func (x XattrMeta) DeleteAttribute(bucket, object, attribute string) error {
-	err := xattr.Remove(filepath.Join(bucket, object), xattrPrefix+attribute)
+	name, err := x.path(bucket, object)
+	if err != nil {
+		return err
+	}
+	err = xattr.Remove(name, xattrPrefix+attribute)
 	if errors.Is(err, xattr.ENOATTR) {
 		return ErrNoSuchKey
 	}
@@ -99,7 +145,11 @@ func (x XattrMeta) RenameObject(_, _, _ string) error {
 
 // ListAttributes lists all attributes for an object in a bucket.
 func (x XattrMeta) ListAttributes(bucket, object string) ([]string, error) {
-	attrs, err := xattr.List(filepath.Join(bucket, object))
+	name, err := x.path(bucket, object)
+	if err != nil {
+		return nil, err
+	}
+	attrs, err := xattr.List(name)
 	if err != nil {
 		return nil, err
 	}

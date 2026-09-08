@@ -88,7 +88,7 @@ func TestObjectPublishLockHonorsContextWhileWaiting(t *testing.T) {
 	shard := objLockShard("cancel-wait")
 	<-p.objLockSlots[shard]
 	defer func() { p.objLockSlots[shard] <- struct{}{} }()
-	if _, err := os.Stat(filepath.Join(bucket, objLockDir)); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(p.ObjectPath(bucket, objLockDir)); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("bucket contains publish lock directory: %v", err)
 	}
 

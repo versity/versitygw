@@ -71,7 +71,7 @@ func TestVersioningUnconfigured(t *testing.T) {
 	t.Run("get bucket versioning returns empty config", func(t *testing.T) {
 		p := newUnversionedGateway(t)
 
-		err := os.Mkdir("bucket", 0o755)
+		err := os.Mkdir(p.BucketPath("bucket"), 0o755)
 		assert.NoError(t, err)
 
 		res, err := p.GetBucketVersioning(context.Background(), "bucket")
@@ -91,7 +91,7 @@ func TestVersioningUnconfigured(t *testing.T) {
 	t.Run("put bucket versioning not configured", func(t *testing.T) {
 		p := newUnversionedGateway(t)
 
-		err := os.Mkdir("bucket", 0o755)
+		err := os.Mkdir(p.BucketPath("bucket"), 0o755)
 		assert.NoError(t, err)
 
 		err = p.PutBucketVersioning(context.Background(), "bucket", types.BucketVersioningStatusEnabled)

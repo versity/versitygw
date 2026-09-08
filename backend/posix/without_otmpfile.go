@@ -51,8 +51,15 @@ type tmpfile struct {
 	doChown     bool
 }
 
+// openTmpFile opens a temporary file in dir (a filesystem path) that link()
+// later publishes as obj within bucket. bucket is a bucket name or, for the
+// versioning code, the absolute path of a bucket's versioning directory.
 func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, _ bool, _ bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
+
+	// The tmpfile keeps the bucket directory's path so that link() addresses
+	// it the same way as every other bucket path.
+	bucket = p.BucketPath(bucket)
 
 	if p.enableODirect && bool(allowODirect) {
 		warnODirectUnsupportedOnce("openTmpFile-nonlinux", os.ErrInvalid)
