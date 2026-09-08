@@ -151,6 +151,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx fiber.Ctx) (*Response, error)
 	tagging := ctx.Get("X-Amz-Tagging")
 	expires := ctx.Get("Expires")
 	websiteRedirectLocation := ctx.Get("X-Amz-Website-Redirect-Location")
+	storageClass := ctx.Get("X-Amz-Storage-Class")
 	legalHoldHdr := ctx.Get("X-Amz-Object-Lock-Legal-Hold")
 	lockModeHdr := ctx.Get("X-Amz-Object-Lock-Mode")
 	objLockDate := ctx.Get("X-Amz-Object-Lock-Retain-Until-Date")
@@ -241,6 +242,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx fiber.Ctx) (*Response, error)
 			ObjectLockMode:            objLockState.ObjectLockMode,
 			ObjectLockLegalHoldStatus: objLockState.LegalHoldStatus,
 			Metadata:                  metadata,
+			StorageClass:              types.StorageClass(storageClass),
 			ChecksumAlgorithm:         checksumAlgorithm,
 			ChecksumType:              checksumType,
 		})

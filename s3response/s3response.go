@@ -608,6 +608,7 @@ type PutObjectInput struct {
 	ObjectLockMode            types.ObjectLockMode
 	ObjectLockLegalHoldStatus types.ObjectLockLegalHoldStatus
 	ChecksumAlgorithm         types.ChecksumAlgorithm
+	StorageClass              types.StorageClass
 
 	Metadata map[string]string
 	Body     io.Reader

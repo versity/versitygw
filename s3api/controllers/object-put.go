@@ -668,6 +668,7 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 	expires := ctx.Get("Expires")
 	websiteRedirectLocation := ctx.Get("X-Amz-Website-Redirect-Location")
 	tagging := ctx.Get("x-amz-tagging")
+	storageClass := ctx.Get("X-Amz-Storage-Class")
 	legalHoldHdr := ctx.Get("X-Amz-Object-Lock-Legal-Hold")
 	lockModeHdr := ctx.Get("X-Amz-Object-Lock-Mode")
 	objLockDate := ctx.Get("X-Amz-Object-Lock-Retain-Until-Date")
@@ -803,6 +804,7 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 			ObjectLockRetainUntilDate: &objLock.RetainUntilDate,
 			ObjectLockMode:            objLock.ObjectLockMode,
 			ObjectLockLegalHoldStatus: objLock.LegalHoldStatus,
+			StorageClass:              types.StorageClass(storageClass),
 			ChecksumAlgorithm:         algorithm,
 			ChecksumCRC32:             utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32]),
 			ChecksumCRC32C:            utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32c]),
