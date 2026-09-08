@@ -37,6 +37,7 @@ type DeviceOpts struct {
 	TExecMs             uint64
 	MaxReadySlots       uint32
 	MaxStageSlots       uint32
+	Debug               bool
 }
 
 // PrincipalID is the SHA-256 digest identifying the requester.
@@ -110,6 +111,27 @@ type SessionInfo struct {
 	Target string
 }
 
+// SessionSnapshot describes a live RC session for observability.
+type SessionSnapshot struct {
+	SessionID    string
+	Op           string
+	Target       string
+	State        uint8
+	ReapPending  bool
+	AgeMs        uint64
+	StagingBytes uint64
+}
+
+// Snapshot state values mirrored from the cgo ABI.
+const (
+	SnapshotStatePrepared     = 0
+	SnapshotStatePublishing   = 1
+	SnapshotStateTransferring = 2
+	SnapshotStateCompleting   = 3
+	SnapshotStateReaping      = 4
+	SnapshotReapPending       = 0x80
+)
+
 // RCSvc owns the RC session server (stub).
 type RCSvc struct{}
 
@@ -148,6 +170,11 @@ func (s *RCSvc) FinishStaging(lease StagingLease, ok bool,
 
 // SessionInfo is a stub.
 func (s *RCSvc) SessionInfo(sessionID string, who PrincipalID) (*SessionInfo, error) {
+	return nil, errNotSupported
+}
+
+// SessionsSnapshot is a stub.
+func (s *RCSvc) SessionsSnapshot() ([]SessionSnapshot, error) {
 	return nil, errNotSupported
 }
 

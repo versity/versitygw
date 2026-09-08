@@ -15,6 +15,8 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <cstdarg>
+#include <cstdio>
 
 #include "rc_ibv_host.h"
 #include "v2_data_phase.h"
@@ -41,6 +43,9 @@ struct RcSession {
   V2Session core;
   uint64_t epoch = 0;
   std::atomic<uint64_t> next_nonce{1};
+  /* Monotonic creation timestamp for session-age observability;
+   * deadlines cannot serve that role because READY moves them. */
+  uint64_t created_ms = 0;
   /* staged metadata from finish_staging (GET) or finish_put. */
   std::string etag;
   std::string version_id;
@@ -89,6 +94,13 @@ struct rc_server {
   hipObj::DeviceHandle *device = nullptr;
   SessionTable table;
   rc_device_opts opts{};
+  /* Diagnostic sink: null keeps stderr-only error reporting.
+   * Reads/writes are plain loads/stores; the sink is installed
+   * once at init time (before the reaper starts) and only
+   * cleared by destroy after the reaper joined, so no thread
+   * races an in-flight sink pointer swap. */
+  rc_log_fn log_fn = nullptr;
+  void *log_ctx = nullptr;
   std::atomic<uint64_t> epoch_counter{1};
   /* resource accounting (global buckets; per-principal map). */
   std::mutex acct_mtx;
@@ -116,6 +128,22 @@ struct rc_server {
 };
 
 namespace {
+
+/* Emits a diagnostic line to the installed sink (level 0 keeps
+ * the stderr error stream intact by also printing there, so
+ * existing deployments do not lose the only log they had).
+ * Callers must not hold map_mtx/acct_mtx when calling. */
+void rcLog(const rc_server *srv, int level, const char *file, int line,
+           const char *fmt, ...) {
+  char buf[256];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  if (level <= 0) fprintf(stderr, "%s\n", buf);
+  rc_log_fn fn = srv->log_fn;
+  if (fn) fn(srv->log_ctx, level, buf, file, line);
+}
 
 RcSession *findSession(rc_server *srv, const std::string &id) {
   auto it = srv->sessions_map.find(id);
@@ -187,6 +215,16 @@ void reapSession(rc_server *srv, RcSession *s) {
   s->core.qp = conn.qp;   /* null on success, survivor on failure */
   s->core.cq = conn.cq;
   bool destroyed = q_ok && c_ok;
+  /* Terminal record for every session teardown path (expiry,
+   * CANCEL, and destroy); reap_pass may have missed the final
+   * state, so the last outcome observed at READY time travels
+   * with the log line. */
+  rcLog(srv, 2, __FILE__, __LINE__,
+        "rc: session reaped id=%s op=%s target=%.96s staged=%llu "
+        "qp_destroyed=%d",
+        s->core.id.c_str(), s->core.op.c_str(),
+        s->core.target.c_str(),
+        (unsigned long long)s->staging_len, (int)destroyed);
   if (destroyed) {
     /* Same policy as releaseStaging: a failed dereg leaves the
      * MR registered against the shared PD, so the buffer stays
@@ -257,9 +295,18 @@ std::string encodeReplyToken(hipObj::DeviceHandle *dh, uint32_t qpn) {
 
 extern "C" {
 
+void rc_server_set_log_sink(rc_server *srv, rc_log_fn fn, void *ctx) {
+  if (!srv) return;
+  srv->log_fn = fn;
+  srv->log_ctx = ctx;
+}
+
 int rc_server_init(const rc_device_opts *opts, rc_server **out) {
   if (!opts || !out) return RC_E_ARG;
-  if (!hipObj::ibv.ensureLoaded()) return RC_E_INTERNAL;
+  if (!hipObj::ibv.ensureLoaded()) {
+    fprintf(stderr, "rc: cannot load libibverbs (dlopen/dlsym failed)\n");
+    return RC_E_INTERNAL;
+  }
   std::unique_ptr<rc_server> srv(new rc_server());
   srv->opts = *opts;
   /* ibv port numbers are 1-based; treat an unset (0) port as 1 so
@@ -275,7 +322,10 @@ int rc_server_init(const rc_device_opts *opts, rc_server **out) {
 
   int n = 0;
   struct ibv_device **devs = hipObj::ibv.get_device_list(&n);
-  if (!devs || n == 0) return RC_E_INTERNAL;
+  if (!devs || n == 0) {
+    fprintf(stderr, "rc: no RDMA devices found (ibv_get_device_list)\n");
+    return RC_E_INTERNAL;
+  }
   struct ibv_device *chosen = devs[0];
   /* GID hint: pick the first device/port whose GID starts with it.
    * Query with srv->opts.port, which the normalization above has
@@ -309,12 +359,15 @@ int rc_server_init(const rc_device_opts *opts, rc_server **out) {
   }
   if (!ctx) {
     hipObj::ibv.free_device_list(devs);
+    fprintf(stderr, "rc: no verbs device matches gid_hint %.32s\n",
+            opts->gid_hint ? opts->gid_hint : "");
     return RC_E_INTERNAL;
   }
   struct ibv_pd *pd = hipObj::ibv.alloc_pd(ctx);
   hipObj::ibv.free_device_list(devs);
   if (!pd) {
     hipObj::ibv.close_device(ctx);
+    fprintf(stderr, "rc: alloc_pd failed\n");
     return RC_E_INTERNAL;
   }
   srv->device = new hipObj::DeviceHandle();
@@ -563,6 +616,11 @@ int rc_prepare(rc_server *srv, const rc_prepare_req *req,
       srv->opts.t_prep_ms
           ? hipObj::v2::clockSource().nowMs() + srv->opts.t_prep_ms
           : 0;
+  rs.created_ms = hipObj::v2::clockSource().nowMs();
+  /* The session record carries its own id copy: reap logging and the
+   * terminal teardown record read core.id, while the map key is the
+   * only other place the id lives. */
+  rs.core.id = id;
   {
     std::lock_guard<std::mutex> g(srv->map_mtx);
     rs.staging_buf = reinterpret_cast<uint8_t *>(buf);
@@ -703,6 +761,44 @@ int rc_session_info(rc_server *srv, rc_str_in session_id,
   return RC_OK;
 }
 
+int rc_server_sessions_snapshot(rc_server *srv, rc_snapshot_cb cb,
+                                void *ctx) {
+  if (!srv || !cb) return RC_E_ARG;
+  if (srv->closing.load()) return RC_E_INTERNAL;
+
+  /* Fixed records so the vector can move without invalidating the
+   * string pointers inside; the copies own everything the callback
+   * reads, so delivery happens outside the map lock and cannot race
+   * the reaper moving or erasing entries. */
+  std::vector<rc_session_snapshot> recs;
+  uint64_t now = hipObj::v2::clockSource().nowMs();
+  {
+    std::lock_guard<std::mutex> g(srv->map_mtx);
+    recs.reserve(srv->sessions_map.size());
+    for (const auto &kv : srv->sessions_map) {
+      const RcSession &s = *kv.second;
+      rc_session_snapshot r{};
+      if (s.core.id.size() != 32) continue; /* live ids are 32 hex */
+      if (s.core.op.size() >= sizeof(r.op)) continue;
+      if (s.core.target.size() > sizeof(r.target) - 1) continue;
+      memcpy(r.session_id, s.core.id.data(), 32);
+      r.session_id[32] = 0;
+      memcpy(r.op, s.core.op.data(), s.core.op.size());
+      r.op[s.core.op.size()] = 0;
+      memcpy(r.target, s.core.target.data(), s.core.target.size());
+      r.target[s.core.target.size()] = 0;
+      r.target_len = (uint32_t)s.core.target.size();
+      r.state = (uint8_t)s.core.state;
+      if (s.reap_pending) r.state |= RC_SNAPSHOT_REAP_PENDING;
+      r.age_ms = s.created_ms ? now - s.created_ms : 0;
+      r.staging_bytes = s.staging_len;
+      recs.push_back(r);
+    }
+  }
+  for (const auto &r : recs) cb(&r, ctx);
+  return RC_OK;
+}
+
 int rc_ready_transfer(rc_server *srv, const rc_ready_req *req,
                       rc_ready_resp *resp) {
   if (!srv || !req || !resp) return RC_E_ARG;
@@ -797,6 +893,19 @@ int rc_ready_transfer(rc_server *srv, const rc_ready_req *req,
   g.lock();
   RcSession *after = findSession(srv, id);
   if (!after) return RC_E_NO_SESSION;
+
+  /* Keep the wire-level reason (poll status vs post failure vs
+   * timeout) alongside the outcome the response carries, so a
+   * VerifyFail is diagnosable without re-running the transfer.
+   * Logged with the lock dropped: the sink must not block under
+   * map_mtx. */
+  int rlog = (r == hipObj::v2::DataPhaseResult::Ok)
+                 ? 2
+                 : (r == hipObj::v2::DataPhaseResult::Busy ? 2 : 0);
+  rcLog(srv, rlog, __FILE__, __LINE__,
+        "rc: ready data phase session=%s op=%s outcome=%d bytes=%llu",
+        id.c_str(), after->core.op.c_str(), (int)r,
+        (unsigned long long)stats.bytes);
 
   switch (r) {
     case hipObj::v2::DataPhaseResult::Ok:
