@@ -114,6 +114,16 @@ func IAMCommand() *cli.Command {
 				Usage:   "reject CreateOpenIDConnectProvider requests that omit ThumbprintList instead of auto-fetching it over an outbound TLS connection",
 				EnvVars: []string{"VGW_IAM_DISABLE_OIDC_THUMBPRINT_AUTOFETCH"},
 			},
+			&cli.BoolFlag{
+				Name:    "oidc-allow-private-endpoints",
+				Usage:   "allow OIDC provider URLs that resolve to loopback/private/link-local addresses and that carry an explicit port; needed for an identity provider that only exists on an internal network, and also re-permits cloud metadata endpoints as fetch targets",
+				EnvVars: []string{"VGW_IAM_OIDC_ALLOW_PRIVATE_ENDPOINTS"},
+			},
+			&cli.BoolFlag{
+				Name:    "oidc-allow-insecure-transport",
+				Usage:   "allow plaintext http OIDC provider URLs and skip TLS certificate verification (thumbprint pinning included) for https ones; only for an identity provider reached over an already-trusted path, such as a loopback-bound sidecar",
+				EnvVars: []string{"VGW_IAM_OIDC_ALLOW_INSECURE_TRANSPORT"},
+			},
 			&cli.StringSliceFlag{
 				Name:    "private-ports",
 				Usage:   "private endpoint listen address: a unix socket path, or <ip>:<port>/:<port> when mTLS (--private-cert/--private-cert-key/--private-client-ca) is also configured — refuses to start otherwise (can be specified multiple times)",

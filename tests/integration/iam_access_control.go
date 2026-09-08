@@ -24,11 +24,12 @@ package integration
 // that mints a session in this codebase, and a real successful call requires
 // the server to fetch a real JWKS from the token's issuer and verify a real
 // cryptographic signature. The SSRF guard in iamutil's OIDC fetch path
-// (isDisallowedFetchTarget) unconditionally rejects loopback, private
-// (RFC1918), and link-local addresses as fetch targets — so no JWKS server
-// this test process stands up on the same machine can ever be reachable,
-// and a real successful AssumeRoleWithWebIdentity is unreachable from this
-// suite by design. Every test below that needs to observe a trust-policy
+// (isDisallowedFetchTarget) rejects loopback, private (RFC1918), and
+// link-local addresses as fetch targets unless the gateway under test was
+// started with --oidc-allow-private-endpoints, which this suite's gateway
+// never is — so no JWKS server this test process stands up on the same
+// machine can ever be reachable, and a real successful
+// AssumeRoleWithWebIdentity is unreachable from this suite by design. Every test below that needs to observe a trust-policy
 // "Allowed" decision instead uses the same technique the rest of this
 // package's AssumeRoleWithWebIdentity tests already use (see
 // IAMAssumeRoleWithWebIdentity_oaud_condition_matches in

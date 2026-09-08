@@ -1264,7 +1264,7 @@ func (s *InternalStore) CreateOIDCProvider(_ context.Context, provider types.OID
 		}
 
 		if _, ok := conf.OIDCProviders[provider.Url]; ok {
-			return nil, iamerr.EntityAlreadyExistsOIDCProvider("https://" + provider.Url)
+			return nil, iamerr.EntityAlreadyExistsOIDCProvider(iamutil.OIDCEndpointURL(provider.Url))
 		}
 		if len(conf.OIDCProviders) >= MaxOIDCProvidersPerAccount {
 			return nil, iamerr.OIDCProvidersPerAccountLimitExceeded(MaxOIDCProvidersPerAccount)

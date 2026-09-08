@@ -407,10 +407,34 @@ iamServer:
   # Debug logger verbosity: "silent" (default), "debug", or "unsafe" -- see
   # gateway.logLevel for details.
   logLevel: silent
-  # Reject CreateOpenIDConnectProvider requests that omit ThumbprintList
-  # instead of auto-fetching it over an outbound TLS connection to the
-  # caller-supplied URL. Recommended for restricted/air-gapped clusters.
+  # Deprecated alias for oidc.disableThumbprintAutofetch below; still honored.
   disableOidcThumbprintAutofetch: false
+
+  # -- OIDC identity providers (AssumeRoleWithWebIdentity) --
+  oidc:
+    # Reject CreateOpenIDConnectProvider requests that omit ThumbprintList
+    # instead of auto-fetching it over an outbound TLS connection to the
+    # caller-supplied URL. Recommended for restricted/air-gapped clusters.
+    disableThumbprintAutofetch: false
+    # Allow OIDC provider URLs that resolve to loopback/private/link-local
+    # addresses and that carry an explicit port. Both are refused by default,
+    # which makes an in-cluster identity provider -- a SPIFFE/SPIRE OIDC
+    # discovery provider on a ClusterIP Service, say -- impossible to register
+    # or to verify tokens against. Transport is unaffected: still https, still
+    # fully verified.
+    #
+    # This also re-permits cloud metadata endpoints (169.254.169.254) as fetch
+    # targets, so enable it only where CreateOpenIDConnectProvider is already
+    # an administrator-only operation.
+    allowPrivateEndpoints: false
+    # Allow plaintext http OIDC provider URLs and skip TLS certificate
+    # verification (thumbprint pinning included) for https ones, leaving the
+    # network path as the only thing authenticating the identity provider.
+    # Intended for a provider reached over an already-trusted path -- a
+    # discovery provider bound to 127.0.0.1 as a sidecar in the IAM server's
+    # own pod. Needs allowPrivateEndpoints as well for a loopback or
+    # cluster-internal address.
+    allowInsecureTransport: false
   # Access-Control-Allow-Origin for the control-plane API. Required before a
   # browser can reach this service: the WebUI is served from another origin, so
   # every call it makes is cross-origin and is blocked without this. Set it to

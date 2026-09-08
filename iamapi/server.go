@@ -27,6 +27,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/iamapi/internal/iammiddleware"
+	"github.com/versity/versitygw/iamapi/internal/iamutil"
 	"github.com/versity/versitygw/iamapi/storage"
 	"github.com/versity/versitygw/internal/netutil"
 )
@@ -59,11 +60,39 @@ type IAMApiServer struct {
 	maxRequests    int
 	socketPerm     os.FileMode
 	onListen       func()
-	// oidcThumbprintAutoFetchDisabled disables CreateOpenIDConnectProvider's
-	// TLS auto-fetch fallback; see WithOIDCThumbprintAutoFetchDisabled.
-	oidcThumbprintAutoFetchDisabled bool
+	// oidc holds the OIDC provider settings threaded into the router,
+	// controller, and policy middleware; see OIDCConfig.
+	oidc OIDCConfig
 	// corsAllowOrigin is the single origin browsers may call this API from
 	corsAllowOrigin string
+}
+
+// OIDCConfig groups the settings that govern how this API treats OIDC
+// identity providers: whether CreateOpenIDConnectProvider may reach out for
+// a thumbprint at all, and how strictly a provider's endpoint is validated
+// and fetched from. The zero value is the default AWS-matching posture.
+type OIDCConfig struct {
+	// ThumbprintAutoFetchDisabled disables CreateOpenIDConnectProvider's
+	// TLS auto-fetch fallback when ThumbprintList is omitted; see
+	// WithOIDCThumbprintAutoFetchDisabled.
+	ThumbprintAutoFetchDisabled bool
+	// AllowPrivateEndpoints permits OIDC provider URLs that resolve to
+	// loopback/private/link-local addresses, and that carry an explicit
+	// port; see WithOIDCAllowPrivateEndpoints.
+	AllowPrivateEndpoints bool
+	// AllowInsecureTransport permits plaintext http OIDC provider URLs and
+	// drops TLS verification for https ones; see
+	// WithOIDCAllowInsecureTransport.
+	AllowInsecureTransport bool
+}
+
+// endpointPolicy projects the two endpoint relaxations into the form
+// iamutil's URL-validation and fetch helpers take.
+func (c OIDCConfig) endpointPolicy() iamutil.OIDCEndpointPolicy {
+	return iamutil.OIDCEndpointPolicy{
+		AllowPrivateEndpoints:  c.AllowPrivateEndpoints,
+		AllowInsecureTransport: c.AllowInsecureTransport,
+	}
 }
 
 func New(store storage.Storer, root RootCredentials, opts ...Option) (*IAMApiServer, error) {
@@ -96,7 +125,7 @@ func New(store storage.Storer, root RootCredentials, opts ...Option) (*IAMApiSer
 	server.app = app
 	server.Router.app = app
 	server.Router.rootCreds = server.rootCreds
-	server.Router.oidcThumbprintAutoFetchDisabled = server.oidcThumbprintAutoFetchDisabled
+	server.Router.oidc = server.oidc
 
 	app.Use("*", recover.New(recover.Config{
 		EnableStackTrace:  true,
@@ -184,7 +213,27 @@ func WithOnListen(fn func()) Option {
 // the gateway making an outbound TLS connection to the caller-supplied URL
 // — an operational safety valve for restricted/air-gapped deployments.
 func WithOIDCThumbprintAutoFetchDisabled() Option {
-	return func(s *IAMApiServer) { s.oidcThumbprintAutoFetchDisabled = true }
+	return func(s *IAMApiServer) { s.oidc.ThumbprintAutoFetchDisabled = true }
+}
+
+// WithOIDCAllowPrivateEndpoints permits an OIDC provider Url that resolves
+// to a loopback/private/link-local address, and one carrying an explicit
+// port. Both are refused by default, which makes an IdP that only exists on
+// an internal network — a SPIFFE/SPIRE OIDC discovery provider on a cluster
+// Service, say — impossible to register or verify tokens against. Transport
+// is unaffected: still https, still fully verified.
+func WithOIDCAllowPrivateEndpoints() Option {
+	return func(s *IAMApiServer) { s.oidc.AllowPrivateEndpoints = true }
+}
+
+// WithOIDCAllowInsecureTransport permits plaintext http OIDC provider URLs
+// and drops TLS certificate verification (ThumbprintList pinning included)
+// for https ones, leaving the network path as the only thing authenticating
+// the IdP. Intended for an IdP reachable only over a path that is itself
+// trusted — a discovery provider bound to loopback as a sidecar in this
+// process's own pod.
+func WithOIDCAllowInsecureTransport() Option {
+	return func(s *IAMApiServer) { s.oidc.AllowInsecureTransport = true }
 }
 
 func (s *IAMApiServer) ServeMultiPort(ports []string) error {

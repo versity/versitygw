@@ -32,18 +32,20 @@ import (
 
 type IAMApiController struct {
 	store storage.Storer
-	// oidcThumbprintAutoFetchDisabled disables CreateOpenIDConnectProvider's
-	// TLS auto-fetch fallback when ThumbprintList is omitted (operational
-	// safety valve for restricted/air-gapped deployments); set via
-	// iamapi.WithOIDCThumbprintAutoFetchDisabled(). Defaults to false
-	// (auto-fetch enabled), matching real AWS behavior.
-	oidcThumbprintAutoFetchDisabled bool
+	// oidc holds the OIDC provider settings; see OIDCConfig. Its zero value
+	// is the default AWS-matching posture: auto-fetch enabled, and only
+	// verified https endpoints at publicly routable addresses.
+	oidc OIDCConfig
+	// oidcPolicy is oidc's endpoint relaxations in the form iamutil's URL
+	// validation and fetch helpers take, projected once at construction.
+	oidcPolicy iamutil.OIDCEndpointPolicy
 }
 
-func NewController(store storage.Storer, oidcThumbprintAutoFetchDisabled bool) IAMApiController {
+func NewController(store storage.Storer, oidc OIDCConfig) IAMApiController {
 	return IAMApiController{
-		store:                           store,
-		oidcThumbprintAutoFetchDisabled: oidcThumbprintAutoFetchDisabled,
+		store:      store,
+		oidc:       oidc,
+		oidcPolicy: oidc.endpointPolicy(),
 	}
 }
 
@@ -1035,7 +1037,7 @@ func (c IAMApiController) CreateOpenIDConnectProvider(ctx fiber.Ctx) (*Response,
 		debuglogger.Logf("missing required CreateOpenIDConnectProvider parameter: Url")
 		return nil, iamerr.MissingValue("url")
 	}
-	url, err := iamutil.ValidateOIDCProviderURL(rawURL)
+	url, err := iamutil.ValidateOIDCProviderURL(rawURL, c.oidcPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -1052,16 +1054,24 @@ func (c IAMApiController) CreateOpenIDConnectProvider(ctx fiber.Ctx) (*Response,
 
 	thumbprints := iamutil.ParseStringList(ctx, "ThumbprintList")
 	if len(thumbprints) == 0 {
-		if c.oidcThumbprintAutoFetchDisabled {
+		switch {
+		case iamutil.IsInsecureOIDCProviderURL(url):
+			// A plaintext http provider never presents a certificate, so
+			// there is nothing to auto-fetch and nothing for a later JWKS
+			// fetch to pin against: an empty ThumbprintList is the accurate
+			// record of that, not a missing one.
+			debuglogger.Logf("CreateOpenIDConnectProvider: %q is a plaintext http provider; storing an empty ThumbprintList", url)
+		case c.oidc.ThumbprintAutoFetchDisabled:
 			debuglogger.Logf("CreateOpenIDConnectProvider: ThumbprintList omitted and auto-fetch is disabled")
 			return nil, iamerr.MissingValue("thumbprintList")
+		default:
+			fetched, err := iamutil.FetchThumbprint(ctx.Context(), url, c.oidcPolicy)
+			if err != nil {
+				debuglogger.Logf("failed to auto-fetch OIDC thumbprint for url %q: %v", url, err)
+				return nil, err
+			}
+			thumbprints = []string{fetched}
 		}
-		fetched, err := iamutil.FetchThumbprint(ctx.Context(), url)
-		if err != nil {
-			debuglogger.Logf("failed to auto-fetch OIDC thumbprint for url %q: %v", url, err)
-			return nil, err
-		}
-		thumbprints = []string{fetched}
 	} else {
 		if err := iamutil.ValidateThumbprintList(thumbprints, false); err != nil {
 			return nil, err
@@ -1450,7 +1460,7 @@ func (c IAMApiController) AssumeRoleWithWebIdentity(ctx fiber.Ctx) (*Response, e
 		return nil, iamerr.InvalidIdentityTokenClaims()
 	}
 
-	verifiedClaims, err := iamutil.VerifyWebIdentitySignature(ctx.Context(), webIdentityToken, provider.Url, provider.ThumbprintList)
+	verifiedClaims, err := iamutil.VerifyWebIdentitySignature(ctx.Context(), webIdentityToken, provider.Url, provider.ThumbprintList, c.oidcPolicy)
 	if err != nil {
 		return nil, err
 	}

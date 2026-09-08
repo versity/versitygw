@@ -193,6 +193,21 @@ type IAMConfig struct {
 	// outbound TLS connection to the caller-supplied URL — for restricted
 	// or air-gapped deployments.
 	DisableOIDCThumbprintAutoFetch bool
+
+	// OIDCAllowPrivateEndpoints permits OIDC provider URLs that resolve to
+	// loopback/private/link-local addresses and that carry an explicit port,
+	// both refused by default. Required to use an IdP that exists only on an
+	// internal network, such as a SPIFFE/SPIRE OIDC discovery provider on a
+	// cluster-internal Service. Transport stays https and fully verified.
+	OIDCAllowPrivateEndpoints bool
+
+	// OIDCAllowInsecureTransport permits plaintext http OIDC provider URLs
+	// and drops TLS certificate verification (ThumbprintList pinning
+	// included) for https ones, leaving the network path as the only thing
+	// authenticating the IdP. For an IdP reachable only over a path that is
+	// itself trusted, such as a discovery provider bound to loopback as a
+	// sidecar in this process's own pod.
+	OIDCAllowInsecureTransport bool
 }
 
 // privateAPIServer is the standalone IAM service's private endpoint set
@@ -419,6 +434,12 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 	}
 	if cfg.DisableOIDCThumbprintAutoFetch {
 		opts = append(opts, iamapi.WithOIDCThumbprintAutoFetchDisabled())
+	}
+	if cfg.OIDCAllowPrivateEndpoints {
+		opts = append(opts, iamapi.WithOIDCAllowPrivateEndpoints())
+	}
+	if cfg.OIDCAllowInsecureTransport {
+		opts = append(opts, iamapi.WithOIDCAllowInsecureTransport())
 	}
 	corsAllowOrigin := strings.TrimSpace(cfg.CORSAllowOrigin)
 	if len(cfg.WebuiPorts) > 0 && corsAllowOrigin == "" {

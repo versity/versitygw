@@ -1,6 +1,7 @@
 {{- $iamServer := .Values.iamServer | default dict -}}
 {{- if ($iamServer.enabled | default false) }}
 {{- $iamServerAuth := .Values.iamServer.auth | default dict -}}
+{{- $iamServerOidc := .Values.iamServer.oidc | default dict -}}
 {{- if not (or (eq .Values.iamServer.storage.type "internal") (eq .Values.iamServer.storage.type "vault")) }}
   {{- fail "iamServer.storage.type must be either internal or vault" }}
 {{- end }}
@@ -111,8 +112,16 @@ spec:
             - name: VGW_LOG_LEVEL
               value: {{ .Values.iamServer.logLevel | quote }}
             {{- end }}
-            {{- if .Values.iamServer.disableOidcThumbprintAutofetch }}
+            {{- if or $iamServerOidc.disableThumbprintAutofetch .Values.iamServer.disableOidcThumbprintAutofetch }}
             - name: VGW_IAM_DISABLE_OIDC_THUMBPRINT_AUTOFETCH
+              value: "true"
+            {{- end }}
+            {{- if $iamServerOidc.allowPrivateEndpoints }}
+            - name: VGW_IAM_OIDC_ALLOW_PRIVATE_ENDPOINTS
+              value: "true"
+            {{- end }}
+            {{- if $iamServerOidc.allowInsecureTransport }}
+            - name: VGW_IAM_OIDC_ALLOW_INSECURE_TRANSPORT
               value: "true"
             {{- end }}
             {{- if .Values.iamServer.corsAllowOrigin }}

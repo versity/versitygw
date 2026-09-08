@@ -195,7 +195,7 @@ under the License.
             <div>
               <label class="block text-sm font-medium text-charcoal mb-2">Provider URL <span class="text-red-500">*</span></label>
               <input type="text" id="create-provider-url" maxlength="255" placeholder="https://token.example.com" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal font-mono text-sm placeholder:font-sans placeholder:text-charcoal-300 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
-              <p class="mt-2 text-xs text-charcoal-300">Must start with https://. No port, user info, query string or fragment. The URL cannot be changed after creation.</p>
+              <p class="mt-2 text-xs text-charcoal-300">Must start with https://. No user info, query string or fragment. A port, or an http:// URL, is accepted only if the service was started with --oidc-allow-private-endpoints / --oidc-allow-insecure-transport. The URL cannot be changed after creation.</p>
             </div>
             <div>
               <div class="flex items-center justify-between mb-2">
@@ -454,9 +454,14 @@ under the License.
       openModal('create-provider-modal');
     }
 
+    // Whether http:// and an explicit port are accepted depends on the IAM
+    // service's own --oidc-allow-private-endpoints/--oidc-allow-insecure-transport
+    // settings, which this page has no way to read. Those two rules are left
+    // to the server, whose rejection surfaces as a toast like any other API
+    // error; everything checked here holds regardless of configuration.
     function validateProviderUrl(url) {
       if (!url) return 'Provider URL is required.';
-      if (!url.startsWith('https://')) return 'Provider URL must start with https://.';
+      if (!url.startsWith('https://') && !url.startsWith('http://')) return 'Provider URL must start with https://.';
       if (url.length > IAM_LIMITS.oidcUrlChars) return `Provider URL must be ${IAM_LIMITS.oidcUrlChars} characters or fewer.`;
       let parsed;
       try {
@@ -464,7 +469,6 @@ under the License.
       } catch (e) {
         return 'Provider URL is not a valid URL.';
       }
-      if (parsed.port) return 'Provider URL must not include a port.';
       if (parsed.username || parsed.password) return 'Provider URL must not include user info.';
       if (parsed.search) return 'Provider URL must not include a query string.';
       if (parsed.hash) return 'Provider URL must not include a fragment.';

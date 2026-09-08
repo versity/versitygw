@@ -85,8 +85,29 @@ func TestDialAndVerifyThumbprintRejectsUntrustedCert(t *testing.T) {
 	// roots=nil selects the host system's real trust store, the same as
 	// FetchThumbprint's actual usage - httptest's self-signed certificate
 	// must not verify against it.
-	if _, err := dialAndVerifyThumbprint(context.Background(), srv.Listener.Addr().String(), "example.com", nil); err == nil {
+	if _, err := dialAndVerifyThumbprint(context.Background(), srv.Listener.Addr().String(), "example.com", nil, false); err == nil {
 		t.Fatal("dialAndVerifyThumbprint: expected verification error for untrusted self-signed certificate, got nil")
+	}
+}
+
+// TestDialAndVerifyThumbprintInsecureAcceptsUntrustedCert covers the
+// AllowInsecureTransport path: the very chain
+// TestDialAndVerifyThumbprintRejectsUntrustedCert requires to be rejected
+// must be accepted and hashed once the operator has declared the network
+// path itself to be the trust boundary — otherwise an IdP whose certificate
+// cannot chain to a public root by construction could never use auto-fetch.
+func TestDialAndVerifyThumbprintInsecureAcceptsUntrustedCert(t *testing.T) {
+	srv := httptest.NewTLSServer(nil)
+	defer srv.Close()
+
+	got, err := dialAndVerifyThumbprint(context.Background(), srv.Listener.Addr().String(), "example.com", nil, true)
+	if err != nil {
+		t.Fatalf("dialAndVerifyThumbprint(insecure=true): %v", err)
+	}
+
+	sum := sha1.Sum(srv.Certificate().Raw)
+	if want := hex.EncodeToString(sum[:]); got != want {
+		t.Fatalf("dialAndVerifyThumbprint thumbprint = %q, want %q", got, want)
 	}
 }
 
@@ -104,7 +125,7 @@ func TestDialAndVerifyThumbprintAcceptsVerifiedCert(t *testing.T) {
 	roots := x509.NewCertPool()
 	roots.AddCert(srv.Certificate())
 
-	got, err := dialAndVerifyThumbprint(context.Background(), srv.Listener.Addr().String(), "example.com", roots)
+	got, err := dialAndVerifyThumbprint(context.Background(), srv.Listener.Addr().String(), "example.com", roots, false)
 	if err != nil {
 		t.Fatalf("dialAndVerifyThumbprint: %v", err)
 	}
@@ -128,7 +149,7 @@ func TestFetchThumbprintSSRFGuard(t *testing.T) {
 	}
 	for _, host := range tests {
 		t.Run(host, func(t *testing.T) {
-			_, err := FetchThumbprint(context.Background(), host)
+			_, err := FetchThumbprint(context.Background(), host, OIDCEndpointPolicy{})
 			if err == nil {
 				t.Fatalf("FetchThumbprint(%q): expected SSRF guard error, got nil", host)
 			}
@@ -136,10 +157,83 @@ func TestFetchThumbprintSSRFGuard(t *testing.T) {
 	}
 }
 
+// TestFetchThumbprintAllowPrivateEndpoints confirms AllowPrivateEndpoints
+// waives the address check rather than merely reordering it: with the guard
+// off, a loopback provider gets as far as a real TLS handshake against a
+// same-process server and yields that server's own thumbprint — something
+// TestFetchThumbprintSSRFGuard shows is impossible by default.
+func TestFetchThumbprintAllowPrivateEndpoints(t *testing.T) {
+	srv := httptest.NewTLSServer(nil)
+	defer srv.Close()
+
+	policy := OIDCEndpointPolicy{AllowPrivateEndpoints: true, AllowInsecureTransport: true}
+	// The listener's host:port becomes the provider Url's authority, which
+	// only parses as one because AllowPrivateEndpoints also permits a port.
+	got, err := FetchThumbprint(context.Background(), srv.Listener.Addr().String(), policy)
+	if err != nil {
+		t.Fatalf("FetchThumbprint(loopback, AllowPrivateEndpoints): %v", err)
+	}
+
+	sum := sha1.Sum(srv.Certificate().Raw)
+	if want := hex.EncodeToString(sum[:]); got != want {
+		t.Fatalf("FetchThumbprint thumbprint = %q, want %q", got, want)
+	}
+}
+
+// TestFetchThumbprintRejectsPlaintextProvider covers the defensive branch
+// for an http provider Url: there is no handshake to observe a certificate
+// in, so auto-fetch must report a failure rather than dial anything.
+func TestFetchThumbprintRejectsPlaintextProvider(t *testing.T) {
+	policy := OIDCEndpointPolicy{AllowPrivateEndpoints: true, AllowInsecureTransport: true}
+	if _, err := FetchThumbprint(context.Background(), "http://127.0.0.1:8080", policy); err == nil {
+		t.Fatal("FetchThumbprint(http provider): expected an error, got nil")
+	}
+}
+
 func TestFetchThumbprintDNSFailure(t *testing.T) {
-	_, err := FetchThumbprint(context.Background(), "this-host-should-not-resolve.invalid")
+	_, err := FetchThumbprint(context.Background(), "this-host-should-not-resolve.invalid", OIDCEndpointPolicy{})
 	if err == nil {
 		t.Fatal("expected error for unresolvable host")
+	}
+}
+
+func TestSplitOIDCHostPort(t *testing.T) {
+	tests := []struct {
+		hostport string
+		wantHost string
+		wantPort string
+	}{
+		{"example.com", "example.com", "443"},
+		{"spire-oidc.spire.svc:8443", "spire-oidc.spire.svc", "8443"},
+		{"127.0.0.1", "127.0.0.1", "443"},
+		{"127.0.0.1:8443", "127.0.0.1", "8443"},
+		{"[::1]:8443", "::1", "8443"},
+		{"[::1]", "::1", "443"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.hostport, func(t *testing.T) {
+			host, port := splitOIDCHostPort(tt.hostport)
+			if host != tt.wantHost || port != tt.wantPort {
+				t.Errorf("splitOIDCHostPort(%q) = (%q, %q), want (%q, %q)", tt.hostport, host, port, tt.wantHost, tt.wantPort)
+			}
+		})
+	}
+}
+
+func TestHostFromOIDCUrl(t *testing.T) {
+	tests := []struct{ providerURL, want string }{
+		{"example.com", "example.com"},
+		{"example.com/path", "example.com"},
+		{"spire-oidc.spire.svc:8443", "spire-oidc.spire.svc:8443"},
+		{"http://127.0.0.1:8080", "127.0.0.1:8080"},
+		{"http://127.0.0.1:8080/oidc", "127.0.0.1:8080"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.providerURL, func(t *testing.T) {
+			if got := hostFromOIDCUrl(tt.providerURL); got != tt.want {
+				t.Errorf("hostFromOIDCUrl(%q) = %q, want %q", tt.providerURL, got, tt.want)
+			}
+		})
 	}
 }
 
