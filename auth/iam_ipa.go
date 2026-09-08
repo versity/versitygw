@@ -19,6 +19,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -168,7 +169,7 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 		return account, fmt.Errorf("ipa cannot generate session key: %w", err)
 	}
 
-	encryptedKey, err := rsa.EncryptPKCS1v15(rand.Reader, ipa.kraTransportKey, session_key)
+	encryptedKey, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, ipa.kraTransportKey, session_key, nil)
 	if err != nil {
 		return account, fmt.Errorf("ipa vault secret retrieval: %w", err)
 	}

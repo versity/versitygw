@@ -543,11 +543,15 @@ func (k jwk) publicKey() (any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("decode EC y: %w", err)
 		}
-		return &ecdsa.PublicKey{
-			Curve: curve,
-			X:     new(big.Int).SetBytes(xb),
-			Y:     new(big.Int).SetBytes(yb),
-		}, nil
+		x := new(big.Int).SetBytes(xb)
+		y := new(big.Int).SetBytes(yb)
+		keyBytes := make([]byte, 1+(curve.Params().BitSize+7)/8*2)
+		keyBytes[0] = 0x04
+		xBytes := x.FillBytes(make([]byte, (curve.Params().BitSize+7)/8))
+		yBytes := y.FillBytes(make([]byte, (curve.Params().BitSize+7)/8))
+		copy(keyBytes[1:1+len(xBytes)], xBytes)
+		copy(keyBytes[1+len(xBytes):], yBytes)
+		return ecdsa.ParseUncompressedPublicKey(curve, keyBytes)
 	default:
 		return nil, fmt.Errorf("unsupported JWK key type %q", k.Kty)
 	}
