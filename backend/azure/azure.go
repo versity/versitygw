@@ -1764,12 +1764,18 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 		}
 	}
 
-	// Sort once: Key asc, Initiated asc
-	sort.SliceStable(uploads, func(i, j int) bool {
+	// Sort once: Key asc, Initiated asc, UploadID asc
+	// UploadID is a tie-breaker for uploads that share both key and
+	// initiated time, since azure reports the same identical creation
+	// time for uploads created back to back.
+	sort.Slice(uploads, func(i, j int) bool {
 		if uploads[i].Key != uploads[j].Key {
 			return uploads[i].Key < uploads[j].Key
 		}
-		return uploads[i].Initiated.Before(uploads[j].Initiated)
+		if !uploads[i].Initiated.Equal(uploads[j].Initiated) {
+			return uploads[i].Initiated.Before(uploads[j].Initiated)
+		}
+		return uploads[i].UploadID < uploads[j].UploadID
 	})
 
 	result, err := backend.ListMultipartUploads(uploads, prefix, delimiter, keyMarker, uploadIDMarker, maxUploads)
