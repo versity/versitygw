@@ -567,6 +567,7 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 							[]any{"eq", "$content-encoding", "gzip"},
 							[]any{"eq", "$content-language", "en-US"},
 							[]any{"eq", "$expires", "Fri, 21 Mar 2026 00:00:00 GMT"},
+							[]any{"eq", "$x-amz-storage-class", string(types.StorageClassGlacier)},
 						}),
 						"file":                  "ignored",
 						"x-amz-signature":       "ignored",
@@ -580,6 +581,7 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						"content-encoding":      "gzip",
 						"content-language":      "en-US",
 						"expires":               "Fri, 21 Mar 2026 00:00:00 GMT",
+						"x-amz-storage-class":   string(types.StorageClassGlacier),
 					},
 					FileRdr:       newMockFileReader("payload"),
 					ContentLength: int64(len("payload")),
@@ -719,6 +721,7 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						assert.Equal(t, "en-US", *putObjectInput.ContentLanguage)
 						assert.Equal(t, "max-age=60", *putObjectInput.CacheControl)
 						assert.Equal(t, "Fri, 21 Mar 2026 00:00:00 GMT", *putObjectInput.Expires)
+						assert.Equal(t, types.StorageClassGlacier, putObjectInput.StorageClass)
 						assert.Equal(t, int64(len("payload")), *putObjectInput.ContentLength)
 						assert.Equal(t, "project=alpha+team", *putObjectInput.Tagging)
 						assert.Equal(t, map[string]string{"owner": "alice"}, putObjectInput.Metadata)

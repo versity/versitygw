@@ -312,6 +312,7 @@ func TestS3ApiController_CreateMultipartUpload(t *testing.T) {
 				headers: map[string]string{
 					"x-amz-checksum-algorithm": string(types.ChecksumAlgorithmCrc32),
 					"x-amz-checksum-type":      string(types.ChecksumTypeComposite),
+					"X-Amz-Storage-Class":      string(types.StorageClassGlacier),
 				},
 			},
 			output: testOutput{
@@ -332,6 +333,9 @@ func TestS3ApiController_CreateMultipartUpload(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			be := &BackendMock{
 				CreateMultipartUploadFunc: func(contextMoqParam context.Context, createMultipartUploadInput s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+					if tt.name == "successful response" && createMultipartUploadInput.StorageClass != types.StorageClassGlacier {
+						t.Fatalf("expected storage class %q, got %q", types.StorageClassGlacier, createMultipartUploadInput.StorageClass)
+					}
 					return tt.input.beRes.(s3response.InitiateMultipartUploadResult), tt.input.beErr
 				},
 				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {

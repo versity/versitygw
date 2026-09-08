@@ -1169,6 +1169,58 @@ func TestS3ApiController_PutObject(t *testing.T) {
 	emptyStringPtr := &str
 	objSize := int64(120)
 
+	t.Run("forwards storage class", func(t *testing.T) {
+		be := &BackendMock{
+			PutObjectFunc: func(_ context.Context, input s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+				if input.StorageClass != types.StorageClassGlacier {
+					t.Fatalf("expected storage class %q, got %q", types.StorageClassGlacier, input.StorageClass)
+				}
+				return s3response.PutObjectOutput{ETag: "etag", VersionID: "version-id"}, nil
+			},
+			GetBucketPolicyFunc: func(_ context.Context, _ string) ([]byte, error) {
+				return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+			},
+			GetObjectLockConfigurationFunc: func(_ context.Context, _ string) ([]byte, error) {
+				return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+			},
+			GetBucketVersioningFunc: func(_ context.Context, _ string) (s3response.GetBucketVersioningOutput, error) {
+				return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+			},
+		}
+
+		ctrl := S3ApiController{be: be}
+		testController(t, ctrl.PutObject, &Response{
+			Headers: map[string]*string{
+				"ETag":                     utils.GetStringPtr("etag"),
+				"x-amz-checksum-crc32":     nil,
+				"x-amz-checksum-crc32c":    nil,
+				"x-amz-checksum-crc64nvme": nil,
+				"x-amz-checksum-sha1":      nil,
+				"x-amz-checksum-sha256":    nil,
+				"x-amz-checksum-sha512":    nil,
+				"x-amz-checksum-md5":       nil,
+				"x-amz-checksum-xxhash64":  nil,
+				"x-amz-checksum-xxhash3":   nil,
+				"x-amz-checksum-xxhash128": nil,
+				"x-amz-checksum-type":      nil,
+				"x-amz-version-id":         utils.GetStringPtr("version-id"),
+				"x-amz-object-size":        nil,
+			},
+			MetaOpts: &MetaOptions{
+				BucketOwner:   "root",
+				ObjectETag:    utils.GetStringPtr("etag"),
+				ContentLength: 0,
+				ObjectSize:    0,
+				EventName:     s3event.EventObjectCreatedPut,
+			},
+		}, nil, ctxInputs{
+			locals: defaultLocals,
+			headers: map[string]string{
+				"X-Amz-Storage-Class": string(types.StorageClassGlacier),
+			},
+		})
+	})
+
 	tests := []struct {
 		name   string
 		input  testInput

@@ -127,6 +127,7 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 	cacheControl := parsed.Fields["cache-control"]
 	expires := parsed.Fields["expires"]
 	websiteRedirectLocation := parsed.Fields["x-amz-website-redirect-location"]
+	storageClass := parsed.Fields["x-amz-storage-class"]
 
 	key := parsed.Fields["key"]
 
@@ -233,6 +234,7 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 		ContentLength:           &parsed.ContentLength,
 		Tagging:                 &tagging,
 		Metadata:                metadata,
+		StorageClass:            types.StorageClass(storageClass),
 		ChecksumCRC32:           utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32]),
 		ChecksumCRC32C:          utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32c]),
 		ChecksumSHA1:            utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha1]),
