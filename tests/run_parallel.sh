@@ -74,6 +74,10 @@ run_tests() {
   done
 }
 
+auto_build_container() {
+
+}
+
 if ! check_param_count_ge_le "docker image tag, test suites (separated by comma), max parallel jobs at once (default '$DEFAULT_MAX_PARALLEL_JOBS', log folder (default '$DEFAULT_DOCKER_LOG_FOLDER')" 2 4 $#; then
   exit 1
 fi

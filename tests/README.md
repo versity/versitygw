@@ -63,11 +63,11 @@ The bats tests have tag headers to allow the test user to easily find tests that
 
 To preserve buckets while running tests, set `RECREATE_BUCKETS` to `false`.  Two utility functions are included, if needed, to create, and delete buckets for this:  `tests/setup_static.sh` and `tests/remove_static.sh`.  Note that this creates a bucket with object lock enabled, and some tests may fail if the bucket being tested doesn't have object lock enabled.
 
-### ~~S3 Backend~~ (Not Working)
+### S3 Backend
 
-Instructions are mostly the same; however, testing with the S3 backend requires two S3 accounts.  Ideally, these are two real accounts, but one can also be a dummy account that versity uses internally.
+The S3 backend mode allows versitygw to connect to another S3 endpoint.  For example, this can connect to S3 itself in a proxy configuration, or can connect to another versitygw instance with a posix backend.  This can be done for applications such as local authorization, distributed deployments, testing, etc.
 
-To set up the latter:
+To set up S3 as a proxy:
 1. Create a new AWS profile with ID and key values set to dummy 20-char allcaps and 40-char alphabetical values respectively.
 2. In the `.secrets` file being used, create the fields `AWS_ACCESS_KEY_ID_TWO` and `AWS_SECRET_ACCESS_KEY_TWO`.  Set these values to the actual AWS ID and key.  
 3. Set the values for `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` the same dummy values set in the AWS profile, and set `AWS_PROFILE` to the profile you just created.
