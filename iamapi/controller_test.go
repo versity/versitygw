@@ -16,12 +16,15 @@ package iamapi
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -34,6 +37,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/gofiber/fiber/v3"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/iamapi/internal/iammiddleware"
 	"github.com/versity/versitygw/iamapi/internal/iamutil"
@@ -3630,6 +3634,234 @@ func TestIAMApiControllerCreateOIDCProviderAutoFetchSSRFGuard(t *testing.T) {
 	})
 	requireIAMError(t, resp, http.StatusBadRequest, "Sender", "OpenIdIdpCommunicationError",
 		"Could not connect to https://127.0.0.1")
+}
+
+// newIAMControllerTestServerWith is newIAMControllerTestServer for the tests
+// that need a non-default server option.
+func newIAMControllerTestServerWith(t *testing.T, opts ...Option) *IAMApiServer {
+	t.Helper()
+
+	store, err := storage.New(storage.Config{Dir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	server, err := New(store, testRoot, append([]Option{WithQuiet()}, opts...)...)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return server
+}
+
+// TestIAMApiControllerCreateOIDCProviderEndpointRelaxations covers both
+// endpoint-relaxation options end to end through the HTTP action handler:
+// the two Url shapes an IdP on an isolated network needs (an explicit port,
+// and plaintext http) are rejected by default and accepted once the
+// corresponding option is set — including the record each one leaves behind,
+// since the stored Url is what a later token's iss claim is matched against.
+func TestIAMApiControllerCreateOIDCProviderEndpointRelaxations(t *testing.T) {
+	const thumbprint = "6938fd4d98bab03faadb97b34396831e3780aea1"
+
+	create := func(t *testing.T, server *IAMApiServer, providerURL string, withThumbprint bool) *http.Response {
+		t.Helper()
+		params := url.Values{
+			"Action": {"CreateOpenIDConnectProvider"},
+			"Url":    {providerURL},
+		}
+		if withThumbprint {
+			params.Set("ThumbprintList.member.1", thumbprint)
+		}
+		return doIAMAction(t, server, params)
+	}
+
+	getProvider := func(t *testing.T, server *IAMApiServer, arn string) iamtypes.GetOpenIDConnectProviderResult {
+		t.Helper()
+		resp := doIAMAction(t, server, url.Values{
+			"Action":                   {"GetOpenIDConnectProvider"},
+			"OpenIDConnectProviderArn": {arn},
+		})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GetOpenIDConnectProvider status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+		}
+		var out iamtypes.GetOpenIDConnectProviderResponse
+		unmarshalXML(t, readBody(t, resp), &out)
+		return out.Result
+	}
+
+	requireCreated := func(t *testing.T, resp *http.Response, wantArn string) {
+		t.Helper()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("CreateOpenIDConnectProvider status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+		}
+		var out iamtypes.CreateOpenIDConnectProviderResponse
+		unmarshalXML(t, readBody(t, resp), &out)
+		if out.Result.OpenIDConnectProviderArn != wantArn {
+			t.Fatalf("OpenIDConnectProviderArn = %q, want %q", out.Result.OpenIDConnectProviderArn, wantArn)
+		}
+	}
+
+	t.Run("explicit port rejected by default", func(t *testing.T) {
+		server := newIAMControllerTestServer(t)
+		requireIAMError(t, create(t, server, "https://spire-oidc.spire.svc:8443", true),
+			http.StatusBadRequest, "Sender", "InvalidInput", "Invalid Open ID Connect Provider URL.")
+	})
+
+	t.Run("http rejected by default", func(t *testing.T) {
+		server := newIAMControllerTestServer(t)
+		requireIAMError(t, create(t, server, "http://127.0.0.1:8080", true),
+			http.StatusBadRequest, "Sender", "InvalidInput",
+			"Invalid Open ID Connect Provider URL. The URL must begin with https://.")
+	})
+
+	t.Run("http still rejected with only private endpoints allowed", func(t *testing.T) {
+		server := newIAMControllerTestServerWith(t, WithOIDCAllowPrivateEndpoints())
+		requireIAMError(t, create(t, server, "http://127.0.0.1:8080", true),
+			http.StatusBadRequest, "Sender", "InvalidInput",
+			"Invalid Open ID Connect Provider URL. The URL must begin with https://.")
+	})
+
+	t.Run("explicit port accepted with private endpoints allowed", func(t *testing.T) {
+		server := newIAMControllerTestServerWith(t, WithOIDCAllowPrivateEndpoints())
+		requireCreated(t, create(t, server, "https://spire-oidc.spire.svc:8443", true),
+			"arn:aws:iam::000000000000:oidc-provider/spire-oidc.spire.svc:8443")
+
+		// The port survives into the stored Url, so it is part of what a
+		// token's iss claim must match.
+		got := getProvider(t, server, "arn:aws:iam::000000000000:oidc-provider/spire-oidc.spire.svc:8443")
+		if got.Url != "spire-oidc.spire.svc:8443" {
+			t.Errorf("stored Url = %q, want %q", got.Url, "spire-oidc.spire.svc:8443")
+		}
+		if len(got.ThumbprintList) != 1 || got.ThumbprintList[0] != thumbprint {
+			t.Errorf("ThumbprintList = %v, want [%s]", got.ThumbprintList, thumbprint)
+		}
+	})
+
+	t.Run("http provider accepted with insecure transport allowed", func(t *testing.T) {
+		server := newIAMControllerTestServerWith(t, WithOIDCAllowPrivateEndpoints(), WithOIDCAllowInsecureTransport())
+		const arn = "arn:aws:iam::000000000000:oidc-provider/http://127.0.0.1:8080"
+
+		// No ThumbprintList, and no auto-fetch attempt either: a plaintext
+		// provider presents no certificate, so an empty list is stored
+		// rather than the request failing.
+		requireCreated(t, create(t, server, "http://127.0.0.1:8080", false), arn)
+
+		got := getProvider(t, server, arn)
+		if got.Url != "http://127.0.0.1:8080" {
+			t.Errorf("stored Url = %q, want the scheme to be retained", got.Url)
+		}
+		if len(got.ThumbprintList) != 0 {
+			t.Errorf("ThumbprintList = %v, want empty for a plaintext provider", got.ThumbprintList)
+		}
+	})
+
+	t.Run("http and https providers for the same host coexist", func(t *testing.T) {
+		// The retained scheme is what keeps these two distinct resources:
+		// stored stripped, both would collide on one ARN and one storage key.
+		server := newIAMControllerTestServerWith(t, WithOIDCAllowPrivateEndpoints(), WithOIDCAllowInsecureTransport())
+		requireCreated(t, create(t, server, "http://idp.example", false),
+			"arn:aws:iam::000000000000:oidc-provider/http://idp.example")
+		requireCreated(t, create(t, server, "https://idp.example", true),
+			"arn:aws:iam::000000000000:oidc-provider/idp.example")
+	})
+}
+
+// TestIAMApiControllerAssumeRoleWithWebIdentityLoopbackIdP is the only test
+// that drives AssumeRoleWithWebIdentity all the way to a real verified
+// signature: with the two endpoint relaxations set, a plaintext OIDC
+// provider on loopback — the spire-oidc-discovery-provider-as-a-sidecar
+// shape — is reachable, so the discovery document and JWKS are really
+// fetched over the network and a real RS256 signature is really checked
+// against the published key. Every other AssumeRoleWithWebIdentity test
+// stops at the fetch, which the default posture refuses outright.
+func TestIAMApiControllerAssumeRoleWithWebIdentityLoopbackIdP(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey: %v", err)
+	}
+
+	var issuer string
+	idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			json.NewEncoder(w).Encode(map[string]any{
+				"issuer":   issuer,
+				"jwks_uri": issuer + "/keys",
+			})
+		case "/keys":
+			json.NewEncoder(w).Encode(map[string]any{"keys": []any{map[string]any{
+				"kty": "RSA",
+				"kid": "k1",
+				"n":   base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+				"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
+			}}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer idp.Close()
+	issuer = idp.URL // "http://127.0.0.1:<port>"
+
+	server := newIAMControllerTestServerWith(t, WithOIDCAllowPrivateEndpoints(), WithOIDCAllowInsecureTransport())
+	providerArn := createTestOIDCProviderForTrust(t, server, issuer, "versitygw")
+	createTestRoleForTrust(t, server, "spire-role",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"`+providerArn+`"},`+
+			`"Action":"sts:AssumeRoleWithWebIdentity","Condition":{"StringEquals":{"`+issuer+`:aud":"versitygw"}}}]}`)
+
+	signedToken := func(t *testing.T, signingKey *rsa.PrivateKey, subject string) string {
+		t.Helper()
+		token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iss": issuer,
+			"aud": "versitygw",
+			"sub": subject,
+			"iat": time.Now().Unix(),
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		token.Header["kid"] = "k1"
+		signed, err := token.SignedString(signingKey)
+		if err != nil {
+			t.Fatalf("sign token: %v", err)
+		}
+		return signed
+	}
+
+	assume := func(t *testing.T, token, sessionName string) *http.Response {
+		t.Helper()
+		return doSTSAction(t, server, url.Values{
+			"Action":           {"AssumeRoleWithWebIdentity"},
+			"RoleArn":          {"arn:aws:iam::000000000000:role/spire-role"},
+			"RoleSessionName":  {sessionName},
+			"WebIdentityToken": {token},
+		})
+	}
+
+	t.Run("correctly signed token is accepted", func(t *testing.T) {
+		resp := assume(t, signedToken(t, key, "spiffe://example.org/ns/default/sa/versitygw"), "spire-session")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("AssumeRoleWithWebIdentity status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+		}
+		var out iamtypes.AssumeRoleWithWebIdentityResponse
+		unmarshalXML(t, readBody(t, resp), &out)
+		if out.Result.SubjectFromWebIdentityToken != "spiffe://example.org/ns/default/sa/versitygw" {
+			t.Errorf("SubjectFromWebIdentityToken = %q", out.Result.SubjectFromWebIdentityToken)
+		}
+		if out.Result.Provider != issuer {
+			t.Errorf("Provider = %q, want %q", out.Result.Provider, issuer)
+		}
+		if out.Result.Credentials.SessionToken == "" || out.Result.Credentials.AccessKeyId == "" {
+			t.Errorf("no session credentials returned: %+v", out.Result.Credentials)
+		}
+	})
+
+	t.Run("token signed by a different key is rejected", func(t *testing.T) {
+		// The relaxations reach the endpoint; they must not weaken what
+		// happens once the real JWKS is in hand.
+		forgedKey, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatalf("rsa.GenerateKey: %v", err)
+		}
+		resp := assume(t, signedToken(t, forgedKey, "attacker"), "attacker-session")
+		requireSTSError(t, resp, http.StatusBadRequest, "Sender", "InvalidIdentityToken",
+			"The web identity token provided could not be validated. See the AssumeRoleWithWebIdentity documentation for requirements.")
+	})
 }
 
 // accessKeyImplicitUserNameActions are the four access-key actions that

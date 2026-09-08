@@ -374,8 +374,9 @@ func IAMAssumeRoleWithWebIdentity_empty_client_id_list(s *S3Conf) error {
 // IAMAssumeRoleWithWebIdentity_idp_communication_error confirms the
 // network-dependent signature-verification step is wired all the way
 // through the real HTTP action handler: a provider Url that's a loopback IP
-// literal is rejected by VerifyWebIdentitySignature's mandatory SSRF guard
-// before any real network attempt, deterministically and without requiring
+// literal is rejected by VerifyWebIdentitySignature's SSRF guard (on by
+// default, and never waived for this suite's gateway) before any real
+// network attempt, deterministically and without requiring
 // outbound network access from the test environment — the same technique
 // IAMCreateOpenIDConnectProvider_thumbprint_autofetch_communication_error
 // uses for CreateOpenIDConnectProvider's own auto-fetch path.

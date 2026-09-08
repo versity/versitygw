@@ -269,14 +269,14 @@ func TestVerifyOIDCConnection(t *testing.T) {
 		// net/http/internal/testcert), and it is self-signed, so it forms a
 		// valid one-certificate chain rooted at itself for that name.
 		cs := tls.ConnectionState{PeerCertificates: chain, ServerName: "example.com"}
-		if err := verifyOIDCConnection(cs, []string{thumbprint}); err != nil {
+		if err := verifyOIDCConnection(cs, []string{thumbprint}, OIDCEndpointPolicy{}); err != nil {
 			t.Fatalf("expected pinned thumbprint to be accepted for a matching hostname: %v", err)
 		}
 	})
 
 	t.Run("matching pinned thumbprint does not bypass hostname verification", func(t *testing.T) {
 		cs := tls.ConnectionState{PeerCertificates: chain, ServerName: "totally-different-host.example"}
-		if err := verifyOIDCConnection(cs, []string{thumbprint}); err == nil {
+		if err := verifyOIDCConnection(cs, []string{thumbprint}, OIDCEndpointPolicy{}); err == nil {
 			t.Fatal("expected pinned thumbprint to still be rejected for a non-matching hostname")
 		}
 	})
@@ -290,30 +290,72 @@ func TestVerifyOIDCConnection(t *testing.T) {
 
 		forged := append([]*x509.Certificate{unrelatedLeaf}, chain...)
 		cs := tls.ConnectionState{PeerCertificates: forged, ServerName: "example.com"}
-		if err := verifyOIDCConnection(cs, []string{thumbprint}); err == nil {
+		if err := verifyOIDCConnection(cs, []string{thumbprint}, OIDCEndpointPolicy{}); err == nil {
 			t.Fatal("expected forged chain (unrelated leaf + appended pinned cert) to be rejected")
 		}
 	})
 
 	t.Run("non-matching thumbprint falls back to standard verification and fails", func(t *testing.T) {
 		cs := tls.ConnectionState{PeerCertificates: chain, ServerName: "example.com"}
-		if err := verifyOIDCConnection(cs, []string{"0000000000000000000000000000000000000000"}); err == nil {
+		if err := verifyOIDCConnection(cs, []string{"0000000000000000000000000000000000000000"}, OIDCEndpointPolicy{}); err == nil {
 			t.Fatal("expected standard verification to fail for a self-signed cert not in the system pool")
 		}
 	})
 
 	t.Run("no thumbprints falls back to standard verification and fails", func(t *testing.T) {
 		cs := tls.ConnectionState{PeerCertificates: chain, ServerName: "example.com"}
-		if err := verifyOIDCConnection(cs, nil); err == nil {
+		if err := verifyOIDCConnection(cs, nil, OIDCEndpointPolicy{}); err == nil {
 			t.Fatal("expected standard verification to fail for a self-signed cert not in the system pool")
 		}
 	})
 
 	t.Run("no certificates presented", func(t *testing.T) {
-		if err := verifyOIDCConnection(tls.ConnectionState{}, nil); err == nil {
+		if err := verifyOIDCConnection(tls.ConnectionState{}, nil, OIDCEndpointPolicy{}); err == nil {
 			t.Fatal("expected error when no certificate is presented")
 		}
 	})
+
+	t.Run("insecure transport accepts a chain every other case rejects", func(t *testing.T) {
+		insecure := OIDCEndpointPolicy{AllowInsecureTransport: true}
+		// Untrusted chain, wrong hostname, and no pinned thumbprint - each
+		// on its own is a rejection above.
+		cs := tls.ConnectionState{PeerCertificates: chain, ServerName: "totally-different-host.example"}
+		if err := verifyOIDCConnection(cs, nil, insecure); err != nil {
+			t.Fatalf("expected AllowInsecureTransport to accept any chain: %v", err)
+		}
+	})
+
+	t.Run("insecure transport still requires a certificate", func(t *testing.T) {
+		insecure := OIDCEndpointPolicy{AllowInsecureTransport: true}
+		if err := verifyOIDCConnection(tls.ConnectionState{}, nil, insecure); err == nil {
+			t.Fatal("expected error when no certificate is presented at all")
+		}
+	})
+}
+
+func TestIsFetchableOIDCEndpoint(t *testing.T) {
+	insecure := OIDCEndpointPolicy{AllowInsecureTransport: true}
+	tests := []struct {
+		rawURL string
+		policy OIDCEndpointPolicy
+		want   bool
+	}{
+		{"https://example.com/keys", OIDCEndpointPolicy{}, true},
+		{"http://example.com/keys", OIDCEndpointPolicy{}, false},
+		{"http://127.0.0.1:8080/keys", insecure, true},
+		{"https://127.0.0.1:8080/keys", insecure, true},
+		{"file:///etc/passwd", insecure, false},
+		{"//example.com/keys", insecure, false},
+		// AllowPrivateEndpoints alone is about addresses, not schemes.
+		{"http://10.0.0.1/keys", OIDCEndpointPolicy{AllowPrivateEndpoints: true}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.rawURL, func(t *testing.T) {
+			if got := isFetchableOIDCEndpoint(tt.rawURL, tt.policy); got != tt.want {
+				t.Errorf("isFetchableOIDCEndpoint(%q, %+v) = %v, want %v", tt.rawURL, tt.policy, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestVerifySignatureWithKeys(t *testing.T) {
@@ -560,7 +602,7 @@ func TestForceRefreshJWKSCacheGatesFailedAttempts(t *testing.T) {
 
 	ctx := context.Background()
 
-	if _, err := forceRefreshJWKSCache(ctx, issuer, nil); err == nil {
+	if _, err := forceRefreshJWKSCache(ctx, issuer, nil, OIDCEndpointPolicy{}); err == nil {
 		t.Fatal("forceRefreshJWKSCache() = nil error, want an error for a disallowed loopback target")
 	}
 
@@ -575,7 +617,7 @@ func TestForceRefreshJWKSCacheGatesFailedAttempts(t *testing.T) {
 	// A second forced refresh within jwksMinForcedRefreshInterval must be
 	// gated - failing immediately with no cached keys to fall back on -
 	// rather than attempting another fetch.
-	if _, err := forceRefreshJWKSCache(ctx, issuer, nil); err == nil {
+	if _, err := forceRefreshJWKSCache(ctx, issuer, nil, OIDCEndpointPolicy{}); err == nil {
 		t.Fatal("forceRefreshJWKSCache() = nil error on gated retry, want an error (no cached keys available)")
 	}
 	jwksCacheMu.Lock()

@@ -194,8 +194,9 @@ func IAMCreateOpenIDConnectProvider_already_exists(s *S3Conf) error {
 // IAMCreateOpenIDConnectProvider_thumbprint_autofetch_communication_error
 // confirms the network-dependent auto-fetch fallback (triggered by
 // omitting ThumbprintList) is wired all the way through the real HTTP
-// action handler: a loopback URL is rejected by the fetch's mandatory
-// SSRF guard before any real network attempt, deterministically and
+// action handler: a loopback URL is rejected by the fetch's SSRF guard (on
+// by default, and never waived for this suite's gateway) before any real
+// network attempt, deterministically and
 // without requiring outbound network access from the test environment.
 func IAMCreateOpenIDConnectProvider_thumbprint_autofetch_communication_error(s *S3Conf) error {
 	testName := "IAMCreateOpenIDConnectProvider_thumbprint_autofetch_communication_error"

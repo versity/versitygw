@@ -71,6 +71,8 @@ func runIAM(ctx *cli.Context) error {
 		VaultClientCert:                ctx.String("vault-client-cert"),
 		VaultClientCertKey:             ctx.String("vault-client-cert-key"),
 		DisableOIDCThumbprintAutoFetch: ctx.Bool("disable-oidc-thumbprint-autofetch"),
+		OIDCAllowPrivateEndpoints:      ctx.Bool("oidc-allow-private-endpoints"),
+		OIDCAllowInsecureTransport:     ctx.Bool("oidc-allow-insecure-transport"),
 		CORSAllowOrigin:                corsAllowOrigin,
 		Region:                         region,
 		WebuiPorts:                     webuiPorts,

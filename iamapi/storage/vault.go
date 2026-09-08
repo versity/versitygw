@@ -1528,7 +1528,7 @@ func oidcProviderPathSegment(url string) string {
 func (s *VaultStore) CreateOIDCProvider(_ context.Context, provider types.OIDCProvider) (*types.OIDCProvider, error) {
 	segment := oidcProviderPathSegment(provider.Url)
 	path := s.oidcProvidersPath() + "/" + segment
-	displayURL := "https://" + provider.Url
+	displayURL := iamutil.OIDCEndpointURL(provider.Url)
 
 	resp, err := s.client.Secrets.KvV2List(context.Background(), s.oidcProvidersPath(), s.kvReqOpts...)
 	if err != nil && !vault.IsErrorStatus(err, http.StatusNotFound) {

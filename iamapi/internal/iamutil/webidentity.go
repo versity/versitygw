@@ -222,11 +222,13 @@ func ParseWebIdentityClaims(tokenString string) (jwt.MapClaims, error) {
 //
 // Only an "https://" prefix is stripped — OIDC issuer identifiers are
 // compared exactly, scheme included, and CreateOpenIDConnectProvider already
-// requires every registered provider's Url to be https. An iss using any
-// other scheme (or none at all) therefore can never legitimately equal a
-// registered provider; returning it unstripped in that case (rather than
-// also trimming a bare "http://") guarantees it stays distinguishable from a
-// same-host https issuer instead of being silently treated as equivalent.
+// stores every https provider's Url scheme-stripped. An iss using any other
+// scheme is returned unstripped, which is exactly what makes it comparable:
+// a plaintext provider (registrable only under
+// OIDCEndpointPolicy.AllowInsecureTransport) is stored with its "http://"
+// intact, so trimming it here would collapse "http://host" and
+// "https://host" into the same value and let one issuer stand in for the
+// other.
 func WebIdentityIssuer(claims jwt.MapClaims) (string, bool) {
 	iss, ok := claims["iss"].(string)
 	if !ok || iss == "" {
@@ -416,12 +418,13 @@ func VerifyWebIdentityRequiredClaims(claims jwt.MapClaims, now time.Time) error 
 // thumbprints is the OIDC provider's registered ThumbprintList, used as a
 // pinned-certificate fallback when the JWKS endpoint's TLS certificate
 // doesn't chain to a trusted root (self-signed/private-CA providers).
+// policy carries the deployment's endpoint relaxations, if any.
 //
 // If the cached key set doesn't contain the token's kid, the cache is
 // bypassed for one forced refresh before giving up — the provider may have
 // rotated its signing key since the cache entry was fetched.
-func VerifyWebIdentitySignature(ctx context.Context, tokenString, issuerURL string, thumbprints []string) (jwt.MapClaims, error) {
-	keys, err := cachedJWKS(ctx, issuerURL, thumbprints)
+func VerifyWebIdentitySignature(ctx context.Context, tokenString, issuerURL string, thumbprints []string, policy OIDCEndpointPolicy) (jwt.MapClaims, error) {
+	keys, err := cachedJWKS(ctx, issuerURL, thumbprints, policy)
 	if err != nil {
 		debuglogger.Logf("failed to fetch JWKS for web identity provider %q: %v", issuerURL, err)
 		return nil, iamerr.InvalidIdentityTokenIDPCommunicationError()
@@ -429,7 +432,7 @@ func VerifyWebIdentitySignature(ctx context.Context, tokenString, issuerURL stri
 
 	claims, err := verifySignatureWithKeys(tokenString, keys)
 	if err != nil && errors.Is(err, errUnknownKID) {
-		keys, refreshErr := forceRefreshJWKSCache(ctx, issuerURL, thumbprints)
+		keys, refreshErr := forceRefreshJWKSCache(ctx, issuerURL, thumbprints, policy)
 		if refreshErr != nil {
 			debuglogger.Logf("failed to refresh JWKS for web identity provider %q: %v", issuerURL, refreshErr)
 			return nil, iamerr.InvalidIdentityTokenIDPCommunicationError()
@@ -451,7 +454,7 @@ var errUnknownKID = errors.New("no matching JWKS key for kid")
 // verifySignatureWithKeys is VerifyWebIdentitySignature's network-free core,
 // split out so it can be exercised directly against an in-memory key set
 // (the SSRF guard in fetchJWKS's dialer means it can never itself be
-// exercised against a same-process test server — the same split
+// exercised against a same-process test server by default — the same split
 // FetchThumbprint/ThumbprintFromChain use). The returned error is the raw
 // parse/verification failure (not yet converted to an iamerr), so callers
 // can distinguish errUnknownKID from every other failure.
@@ -561,7 +564,7 @@ type oidcDiscoveryDoc struct {
 // reachable from the provider's own URL — otherwise a provider could return,
 // or be redirected/misdirected to, an entirely different issuer's metadata.
 func validateDiscoveryIssuer(doc oidcDiscoveryDoc, issuerURL string) error {
-	want := "https://" + issuerURL
+	want := OIDCEndpointURL(issuerURL)
 	if doc.Issuer != want {
 		return fmt.Errorf("discovery document for %q has mismatched issuer %q", issuerURL, doc.Issuer)
 	}
@@ -616,7 +619,7 @@ func jwksCacheKey(issuerURL string, thumbprints []string) string {
 // cachedJWKS returns issuerURL's key set from cache if a fresh-enough entry
 // exists for the current thumbprints, otherwise fetches and caches a fresh
 // one.
-func cachedJWKS(ctx context.Context, issuerURL string, thumbprints []string) (*jwkSet, error) {
+func cachedJWKS(ctx context.Context, issuerURL string, thumbprints []string, policy OIDCEndpointPolicy) (*jwkSet, error) {
 	key := jwksCacheKey(issuerURL, thumbprints)
 	jwksCacheMu.Lock()
 	entry, ok := jwksCache[key]
@@ -624,7 +627,7 @@ func cachedJWKS(ctx context.Context, issuerURL string, thumbprints []string) (*j
 	if ok && time.Now().Before(entry.expiresAt) {
 		return entry.keys, nil
 	}
-	return fetchAndCacheJWKS(ctx, issuerURL, thumbprints)
+	return fetchAndCacheJWKS(ctx, issuerURL, thumbprints, policy)
 }
 
 // forceRefreshJWKSCache is VerifyWebIdentitySignature's fallback when a
@@ -644,7 +647,7 @@ func cachedJWKS(ctx context.Context, issuerURL string, thumbprints []string) (*j
 // backoff, since a failed attempt never set the timestamp that would have
 // gated the next one. Recording the attempt up front bounds retries to one
 // per jwksMinForcedRefreshInterval regardless of whether the fetch succeeds.
-func forceRefreshJWKSCache(ctx context.Context, issuerURL string, thumbprints []string) (*jwkSet, error) {
+func forceRefreshJWKSCache(ctx context.Context, issuerURL string, thumbprints []string, policy OIDCEndpointPolicy) (*jwkSet, error) {
 	key := jwksCacheKey(issuerURL, thumbprints)
 	jwksCacheMu.Lock()
 	entry, ok := jwksCache[key]
@@ -664,7 +667,7 @@ func forceRefreshJWKSCache(ctx context.Context, issuerURL string, thumbprints []
 	jwksCache[key] = entry
 	jwksCacheMu.Unlock()
 
-	return fetchAndCacheJWKS(ctx, issuerURL, thumbprints)
+	return fetchAndCacheJWKS(ctx, issuerURL, thumbprints, policy)
 }
 
 // fetchAndCacheJWKS fetches issuerURL's key set and, on success, replaces
@@ -672,10 +675,10 @@ func forceRefreshJWKSCache(ctx context.Context, issuerURL string, thumbprints []
 // thumbprints via jwksFetchGroup (keyed identically to jwksCache, so a
 // caller mid-fetch for one thumbprint configuration never receives a result
 // coalesced from a differently-configured concurrent caller).
-func fetchAndCacheJWKS(ctx context.Context, issuerURL string, thumbprints []string) (*jwkSet, error) {
+func fetchAndCacheJWKS(ctx context.Context, issuerURL string, thumbprints []string, policy OIDCEndpointPolicy) (*jwkSet, error) {
 	key := jwksCacheKey(issuerURL, thumbprints)
 	v, err, _ := jwksFetchGroup.Do(key, func() (any, error) {
-		keys, err := fetchJWKS(ctx, issuerURL, thumbprints)
+		keys, err := fetchJWKS(ctx, issuerURL, thumbprints, policy)
 		if err != nil {
 			return nil, err
 		}
@@ -694,14 +697,13 @@ func fetchAndCacheJWKS(ctx context.Context, issuerURL string, thumbprints []stri
 }
 
 // fetchJWKS retrieves issuerURL's OIDC discovery document, then the JWKS it
-// points to. issuerURL is the provider's stored Url (scheme stripped).
-// thumbprints, if non-empty, lets the fetch's TLS connections succeed
-// against a self-signed/private-CA certificate whose chain matches one of
-// them, the same trust-pinning fallback real AWS documents for OIDC
-// providers.
-func fetchJWKS(ctx context.Context, issuerURL string, thumbprints []string) (*jwkSet, error) {
-	client := ssrfSafeHTTPClient(thumbprints)
-	base := "https://" + issuerURL
+// points to. issuerURL is the provider's stored Url. thumbprints, if
+// non-empty, lets the fetch's TLS connections succeed against a
+// self-signed/private-CA certificate whose chain matches one of them, the
+// same trust-pinning fallback real AWS documents for OIDC providers.
+func fetchJWKS(ctx context.Context, issuerURL string, thumbprints []string, policy OIDCEndpointPolicy) (*jwkSet, error) {
+	client := ssrfSafeHTTPClient(thumbprints, policy)
+	base := OIDCEndpointURL(issuerURL)
 
 	var doc oidcDiscoveryDoc
 	if err := fetchJSON(ctx, client, strings.TrimRight(base, "/")+"/.well-known/openid-configuration", &doc); err != nil {
@@ -710,7 +712,7 @@ func fetchJWKS(ctx context.Context, issuerURL string, thumbprints []string) (*jw
 	if err := validateDiscoveryIssuer(doc, issuerURL); err != nil {
 		return nil, err
 	}
-	if !strings.HasPrefix(doc.JWKSUri, "https://") {
+	if !isFetchableOIDCEndpoint(doc.JWKSUri, policy) {
 		return nil, fmt.Errorf("discovery document for %q has non-https jwks_uri %q", issuerURL, doc.JWKSUri)
 	}
 
@@ -773,6 +775,24 @@ func fetchJSON(ctx context.Context, client *http.Client, url string, out any) er
 	return json.Unmarshal(body, out)
 }
 
+// isFetchableOIDCEndpoint reports whether a URL a discovery document points
+// at may be fetched: https always, http only where policy has already
+// accepted a plaintext IdP. Matched on the literal prefix, so a jwks_uri
+// naming anything else — including a scheme net/http would otherwise
+// happily dial — never reaches the client.
+func isFetchableOIDCEndpoint(rawURL string, policy OIDCEndpointPolicy) bool {
+	if strings.HasPrefix(rawURL, "https://") {
+		return true
+	}
+	return policy.AllowInsecureTransport && strings.HasPrefix(rawURL, insecureOIDCScheme)
+}
+
+// isFetchableOIDCScheme is isFetchableOIDCEndpoint for an already-parsed
+// URL, used on the redirect path where net/http hands over a *url.URL.
+func isFetchableOIDCScheme(scheme string, policy OIDCEndpointPolicy) bool {
+	return scheme == "https" || (policy.AllowInsecureTransport && scheme == "http")
+}
+
 // ssrfSafeHTTPClient returns an http.Client whose transport resolves each
 // dial target's DNS once and rejects loopback/private/link-local/multicast
 // addresses before connecting, mirroring FetchThumbprint's SSRF guard. It
@@ -789,7 +809,13 @@ func fetchJSON(ctx context.Context, client *http.Client, url string, out any) er
 // standard CA-based verification would otherwise reject it, and falls back
 // to ordinary hostname+CA verification against the system root pool
 // whenever thumbprints is empty or doesn't match.
-func ssrfSafeHTTPClient(thumbprints []string) *http.Client {
+//
+// policy relaxes exactly two of those behaviors, and nothing else:
+// AllowPrivateEndpoints drops the resolved-address check (the DNS-once,
+// dial-the-resolved-IP shape stays, so a rebind still can't redirect the
+// connection), and AllowInsecureTransport additionally admits http targets
+// and redirects and makes verifyOIDCConnection accept any chain.
+func ssrfSafeHTTPClient(thumbprints []string, policy OIDCEndpointPolicy) *http.Client {
 	dialer := &net.Dialer{}
 	return &http.Client{
 		Timeout: oidcFetchTimeout,
@@ -797,8 +823,8 @@ func ssrfSafeHTTPClient(thumbprints []string) *http.Client {
 			if len(via) >= maxOIDCFetchRedirects {
 				return fmt.Errorf("stopped after %d redirects", maxOIDCFetchRedirects)
 			}
-			if req.URL.Scheme != "https" {
-				return fmt.Errorf("refusing to follow non-https redirect to %q", req.URL)
+			if !isFetchableOIDCScheme(req.URL.Scheme, policy) {
+				return fmt.Errorf("refusing to follow redirect to %q: disallowed scheme", req.URL)
 			}
 			return nil
 		},
@@ -812,9 +838,11 @@ func ssrfSafeHTTPClient(thumbprints []string) *http.Client {
 				if err != nil || len(ips) == 0 {
 					return nil, fmt.Errorf("dns lookup failed for %q", host)
 				}
-				for _, ip := range ips {
-					if isDisallowedFetchTarget(ip) {
-						return nil, fmt.Errorf("refusing to dial disallowed address %q for host %q", ip, host)
+				if !policy.AllowPrivateEndpoints {
+					for _, ip := range ips {
+						if isDisallowedFetchTarget(ip) {
+							return nil, fmt.Errorf("refusing to dial disallowed address %q for host %q", ip, host)
+						}
 					}
 				}
 				return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
@@ -822,7 +850,7 @@ func ssrfSafeHTTPClient(thumbprints []string) *http.Client {
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: true, // verified ourselves via VerifyConnection below
 				VerifyConnection: func(cs tls.ConnectionState) error {
-					return verifyOIDCConnection(cs, thumbprints)
+					return verifyOIDCConnection(cs, thumbprints, policy)
 				},
 			},
 		},
@@ -841,9 +869,17 @@ func ssrfSafeHTTPClient(thumbprints []string) *http.Client {
 // cryptographically issue the leaf and the leaf must match cs.ServerName.
 // Falls back to standard hostname+CA verification against the system root
 // pool whenever thumbprints is empty or none matches.
-func verifyOIDCConnection(cs tls.ConnectionState, thumbprints []string) error {
+//
+// policy.AllowInsecureTransport accepts any chain outright, pinning
+// included: the operator has declared the network path itself to be the
+// trust boundary, and a partial check that silently passed on some
+// certificates and not others would only obscure that.
+func verifyOIDCConnection(cs tls.ConnectionState, thumbprints []string, policy OIDCEndpointPolicy) error {
 	if len(cs.PeerCertificates) == 0 {
 		return errors.New("iamutil: no certificate presented")
+	}
+	if policy.AllowInsecureTransport {
+		return nil
 	}
 
 	if len(thumbprints) > 0 {

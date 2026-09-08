@@ -50,13 +50,13 @@ type IAMApiRouter struct {
 	Ctrl      IAMApiController
 	actions   map[string]ActionHandler
 	rootCreds *RootCredentials
-	// oidcThumbprintAutoFetchDisabled is threaded into the controller;
-	// see IAMApiController.oidcThumbprintAutoFetchDisabled.
-	oidcThumbprintAutoFetchDisabled bool
+	// oidc is threaded into the controller and the policy middleware, both
+	// of which validate caller-supplied OIDC provider URLs
+	oidc OIDCConfig
 }
 
 func (r *IAMApiRouter) Init() {
-	r.Ctrl = NewController(r.store, r.oidcThumbprintAutoFetchDisabled)
+	r.Ctrl = NewController(r.store, r.oidc)
 
 	r.actions = map[string]ActionHandler{
 		// User CRUD
@@ -114,7 +114,7 @@ func (r *IAMApiRouter) Init() {
 
 	iamRoute := ProcessHandlers(r.routeAction,
 		iammiddleware.VerifyIAMAuth(sigv4auth.ServiceIAM, r.rootCreds, r.store),
-		iammiddleware.VerifyIAMPolicy(r.store),
+		iammiddleware.VerifyIAMPolicy(r.store, r.oidc.endpointPolicy()),
 	)
 	stsAuthRoute := ProcessHandlers(r.routeAction,
 		iammiddleware.VerifyIAMAuth(sigv4auth.ServiceSTS, r.rootCreds, r.store),

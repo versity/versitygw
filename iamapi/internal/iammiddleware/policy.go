@@ -52,7 +52,7 @@ const iamActionPrefix = "iam:"
 // requestConditionContext supplies the request's aws:SourceIp/aws:username/
 // aws:PrincipalArn/aws:CurrentTime/aws:EpochTime values for a statement's
 // Condition block.
-func VerifyIAMPolicy(store iamutil.IdentityStore) fiber.Handler {
+func VerifyIAMPolicy(store iamutil.IdentityStore, oidcPolicy iamutil.OIDCEndpointPolicy) fiber.Handler {
 	return func(ctx fiber.Ctx) error {
 		identity, _ := httpctx.ContextKeyCallerIdentity.Get(ctx).(types.Identity)
 		if identity.IsRoot {
@@ -62,7 +62,7 @@ func VerifyIAMPolicy(store iamutil.IdentityStore) fiber.Handler {
 		action, _ := iamutil.RequestParam(ctx, "Action")
 		fullAction := iamActionPrefix + action
 
-		resourceArn, resourceTags := resourceForAction(ctx, store, action)
+		resourceArn, resourceTags := resourceForAction(ctx, store, action, oidcPolicy)
 		reqCtx := policy.RequestContext{
 			Action:    fullAction,
 			Resource:  resourceArn,
@@ -166,7 +166,7 @@ func AuthorizeSplit(identity types.Identity, reqCtx policy.RequestContext) (iden
 // request still reaches the controller afterward, which reports the
 // specific NoSuchEntity/MissingValue error if authorization happens to pass
 // on a wildcard grant, or AccessDenied first if it doesn't.
-func resourceForAction(ctx fiber.Ctx, store iamutil.IdentityStore, action string) (string, []types.Tag) {
+func resourceForAction(ctx fiber.Ctx, store iamutil.IdentityStore, action string, oidcPolicy iamutil.OIDCEndpointPolicy) (string, []types.Tag) {
 	switch action {
 	case "CreateUser":
 		return newUserResource(ctx), nil
@@ -183,7 +183,7 @@ func resourceForAction(ctx fiber.Ctx, store iamutil.IdentityStore, action string
 		"TagRole", "UntagRole", "ListRoleTags":
 		return existingRoleResource(ctx, store)
 	case "CreateOpenIDConnectProvider":
-		return newOIDCProviderResource(ctx), nil
+		return newOIDCProviderResource(ctx, oidcPolicy), nil
 	case "GetOpenIDConnectProvider", "DeleteOpenIDConnectProvider", "AddClientIDToOpenIDConnectProvider",
 		"RemoveClientIDFromOpenIDConnectProvider", "UpdateOpenIDConnectProviderThumbprint",
 		"TagOpenIDConnectProvider", "UntagOpenIDConnectProvider", "ListOpenIDConnectProviderTags":
@@ -326,12 +326,17 @@ func existingRoleResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, [
 	return role.Arn, role.Tags
 }
 
-func newOIDCProviderResource(ctx fiber.Ctx) string {
+// newOIDCProviderResource builds the ARN of the provider a
+// CreateOpenIDConnectProvider request would create, canonicalizing the Url
+// exactly as the controller will. oidcPolicy must therefore be the same one
+// the controller holds: a Url the controller would accept but this rejects
+// resolves to "", which only a wildcard Resource statement matches.
+func newOIDCProviderResource(ctx fiber.Ctx, oidcPolicy iamutil.OIDCEndpointPolicy) string {
 	rawURL, ok := iamutil.RequestParam(ctx, "Url")
 	if !ok || rawURL == "" {
 		return "*"
 	}
-	url, err := iamutil.ValidateOIDCProviderURL(rawURL)
+	url, err := iamutil.ValidateOIDCProviderURL(rawURL, oidcPolicy)
 	if err != nil {
 		return ""
 	}
