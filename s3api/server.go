@@ -61,6 +61,7 @@ type S3ApiServer struct {
 	middlewares      []middlewareMount
 	socketPerm       os.FileMode
 	onListen         func()
+	onListenAddrs    func(addrs []net.Addr)
 }
 
 type routeMount struct {
@@ -355,6 +356,16 @@ func WithOnListen(fn func()) Option {
 	return func(s *S3ApiServer) { s.onListen = fn }
 }
 
+// WithOnListenAddrs is WithOnListen with the addresses the server bound
+// passed to the callback: one per listener, in the order of the port
+// specifications given to ServeMultiPort, with a specification that resolves
+// to several addresses contributing one each. This is how a caller that asked
+// for port 0 learns which port the kernel chose; the server does not report
+// it anywhere else.
+func WithOnListenAddrs(fn func(addrs []net.Addr)) Option {
+	return func(s *S3ApiServer) { s.onListenAddrs = fn }
+}
+
 // ServeMultiPort creates listeners for multiple port specifications and serves
 // on all of them simultaneously. This supports listening on multiple ports and/or
 // addresses (e.g., [":7070", "localhost:8080", "0.0.0.0:9090"]).
@@ -389,10 +400,15 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 	// Combine all listeners
 	finalListener := netutil.NewMultiListener(listeners...)
 
-	if sa.onListen != nil {
-		fn := sa.onListen
+	if sa.onListen != nil || sa.onListenAddrs != nil {
+		fn, fnAddrs := sa.onListen, sa.onListenAddrs
 		sa.app.Hooks().OnListen(func(fiber.ListenData) error {
-			fn()
+			if fn != nil {
+				fn()
+			}
+			if fnAddrs != nil {
+				fnAddrs(finalListener.Addrs())
+			}
 			return nil
 		})
 	}

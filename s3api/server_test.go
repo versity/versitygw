@@ -15,6 +15,7 @@
 package s3api
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -80,6 +81,51 @@ func TestS3ApiServer_Serve(t *testing.T) {
 				t.Errorf("S3ApiServer.Serve() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestWithOnListenAddrs serves on port 0 and checks that the listen hook
+// reports the port the kernel chose, after the bind, for a listener that
+// accepts connections.
+func TestWithOnListenAddrs(t *testing.T) {
+	got := make(chan []net.Addr, 1)
+	sa, err := newTestS3ApiServer(WithOnListenAddrs(func(addrs []net.Addr) { got <- addrs }))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	served := make(chan error, 1)
+	go func() { served <- sa.ServeMultiPort([]string{"127.0.0.1:0"}) }()
+
+	var addrs []net.Addr
+	select {
+	case addrs = <-got:
+	case err := <-served:
+		t.Fatalf("ServeMultiPort() returned before the listen hook fired: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("listen hook did not fire")
+	}
+	if len(addrs) != 1 {
+		t.Fatalf("hook received %d addresses, want 1: %v", len(addrs), addrs)
+	}
+	tcp, ok := addrs[0].(*net.TCPAddr)
+	if !ok || tcp.Port == 0 || !tcp.IP.Equal(net.IPv4(127, 0, 0, 1)) {
+		t.Fatalf("hook received %v, want a 127.0.0.1 address with the bound port", addrs[0])
+	}
+	conn, err := net.DialTimeout("tcp", tcp.String(), 5*time.Second)
+	if err != nil {
+		t.Fatalf("dialing the reported address: %v", err)
+	}
+	conn.Close()
+
+	if err := sa.ShutDown(); err != nil {
+		t.Fatalf("ShutDown() error = %v", err)
+	}
+	// ServeMultiPort reports the closed listener on the way out; only that
+	// it returns matters here.
+	select {
+	case <-served:
+	case <-time.After(shutDownDuration + time.Second):
+		t.Fatal("ServeMultiPort() did not return after ShutDown()")
 	}
 }
 

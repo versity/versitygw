@@ -198,3 +198,40 @@ func issueTestCert(t *testing.T, ca testCA, cn string) tls.Certificate {
 		PrivateKey:  key,
 	}
 }
+
+// TestMultiListenerAddrs checks that Addrs reports every bound address,
+// including those behind a nested MultiListener and the ports the kernel
+// chose for port 0, where Addr reports only the first.
+func TestMultiListenerAddrs(t *testing.T) {
+	var inner []net.Listener
+	for range 2 {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		inner = append(inner, ln)
+	}
+	outer, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ml := NewMultiListener(NewMultiListener(inner...), outer)
+	defer ml.Close()
+
+	want := []string{inner[0].Addr().String(), inner[1].Addr().String(), outer.Addr().String()}
+	addrs := ml.Addrs()
+	if len(addrs) != len(want) {
+		t.Fatalf("Addrs() returned %d addresses, want %d: %v", len(addrs), len(want), addrs)
+	}
+	for i, addr := range addrs {
+		if addr.String() != want[i] {
+			t.Errorf("Addrs()[%d] = %s, want %s", i, addr, want[i])
+		}
+		if addr.(*net.TCPAddr).Port == 0 {
+			t.Errorf("Addrs()[%d] = %s reports port 0, want the bound port", i, addr)
+		}
+	}
+	if ml.Addr().String() != want[0] {
+		t.Errorf("Addr() = %s, want the first address %s", ml.Addr(), want[0])
+	}
+}

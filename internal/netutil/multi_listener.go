@@ -124,6 +124,23 @@ func (ml *MultiListener) Addr() net.Addr {
 	return nil
 }
 
+// Addrs returns the address of every underlying listener, in the order the
+// listeners were given, expanding nested MultiListeners. Unlike Addr, which
+// reports only the first, this covers every address the MultiListener
+// accepts on -- including the ports the kernel chose for specifications
+// that asked for port 0.
+func (ml *MultiListener) Addrs() []net.Addr {
+	addrs := make([]net.Addr, 0, len(ml.listeners))
+	for _, ln := range ml.listeners {
+		if inner, ok := ln.(*MultiListener); ok {
+			addrs = append(addrs, inner.Addrs()...)
+			continue
+		}
+		addrs = append(addrs, ln.Addr())
+	}
+	return addrs
+}
+
 func IsUnixSocketPath(addr string) bool {
 	_, _, err := net.SplitHostPort(addr)
 	return err != nil
