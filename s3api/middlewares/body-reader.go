@@ -88,7 +88,7 @@ var _ ChecksumReader = &MockChecksumReader{}
 func wrapBodyReader(ctx fiber.Ctx, wr func(io.Reader) io.Reader) {
 	rdr, ok := utils.ContextKeyBodyReader.Get(ctx).(io.Reader)
 	if !ok {
-		rdr = ctx.Request().BodyStream()
+		rdr = requestBodyStream(ctx)
 		// Override the body reader with an empty reader to prevent panics
 		// in case of unexpected or malformed HTTP requests.
 		if rdr == nil {

@@ -72,7 +72,7 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 			return s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
 		}
 
-		bodyRdr := ctx.Request().BodyStream()
+		bodyRdr := requestBodyStream(ctx)
 		if bodyRdr == nil {
 			bodyRdr = bytes.NewReader(ctx.BodyRaw())
 		}

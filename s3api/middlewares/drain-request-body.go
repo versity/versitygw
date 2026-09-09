@@ -22,6 +22,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/s3api/utils"
 )
 
 const (
@@ -57,35 +58,41 @@ var (
 //
 // Draining first lets the client finish its write and read the real error. It
 // also keeps keep-alive connections in sync: leftover body bytes would otherwise
-// be parsed as the start of the next request.
+// be parsed as the start of the next request, which on a connection shared by an
+// upstream proxy mixes requests across tenants.
+//
+// It wraps the body in a bodyStreamTracker on the way in, which is what tells a
+// body the handler finished from one it abandoned. Every reader in the chain
+// must therefore take the body from requestBodyStream.
 //
 // Register it before every route so it wraps all of them. It runs before the
 // fiber ErrorHandler, which fiber invokes after the handler chain returns, so
 // that handler must not reset the response header the drain may have written to.
 func DrainRequestBody() fiber.Handler {
 	return func(ctx fiber.Ctx) error {
+		var body *bodyStreamTracker
+		if stream := ctx.Request().BodyStream(); stream != nil {
+			body = &bodyStreamTracker{reader: stream}
+			utils.ContextKeyBodyStream.Set(ctx, body)
+		}
+
 		// deferred so a panic unwinding through the chain still drains
-		defer drainRequestBody(ctx)
+		defer drainRequestBody(ctx, body)
+
 		return ctx.Next()
 	}
 }
 
-func drainRequestBody(ctx fiber.Ctx) {
-	stream := ctx.Request().BodyStream()
-	if stream == nil {
-		// The body was either absent or already buffered in full by fasthttp.
+func drainRequestBody(ctx fiber.Ctx, body *bodyStreamTracker) {
+	if body == nil || ctx.Request().BodyStream() == nil {
+		// The body was either absent, or buffered in full and released by
+		// fasthttp behind the chain's back, the way ctx.Body() does.
 		return
 	}
 
-	// fasthttp's requestStream reports EOF idempotently for a Content-Length
-	// body, but not for a chunked one: past the terminating chunk it goes back
-	// to the socket for another chunk header that will never come. Reading a
-	// chunked body the handler already finished would block until the deadline
-	// and hold the response back with it, so only Content-Length framing is
-	// drained. Nothing is lost for the aws-chunked uploads this exists for --
-	// STREAMING-* payloads carry a Content-Length.
-	cLength := ctx.Request().Header.ContentLength()
-	if cLength <= 0 {
+	if errors.Is(body.end, io.EOF) {
+		// The handler read the body to its end: the socket holds nothing more
+		// of it and the connection is already in sync for the next request.
 		return
 	}
 
@@ -93,8 +100,26 @@ func drainRequestBody(ctx fiber.Ctx) {
 	if conn != nil {
 		defer conn.SetReadDeadline(time.Time{})
 	}
+
+	// The leftovers are read back through the tracker, so a drain that reaches
+	// the end of the body records it the same way the handler's reads would.
+	src := io.Reader(body)
+	if body.end != nil {
+		// The framing broke before the body ended, so what is still queued
+		// cannot be told apart from the start of the next request and the
+		// connection cannot carry one. Draining is still worth attempting: the
+		// connection is going away either way, and absorbing the client's
+		// in-flight write is what lets it read the S3 error instead of an RST.
+		// Only the raw socket can absorb it once the framing is gone.
+		ctx.Response().Header.SetConnectionClose()
+		if conn == nil {
+			return
+		}
+		src = conn
+	}
+
 	reader := &drainReader{
-		reader:   stream,
+		reader:   src,
 		conn:     conn,
 		deadline: time.Now().Add(drainTotalTimeout),
 	}
@@ -122,6 +147,51 @@ func drainRequestBody(ctx fiber.Ctx) {
 	// be parsed as the start of the next request on a keep-alive connection.
 	// Tell fasthttp to close it instead.
 	ctx.Response().Header.SetConnectionClose()
+}
+
+// requestBodyStream returns the reader the request body must be read through.
+// Reading ctx.Request().BodyStream() directly instead hides those reads from
+// DrainRequestBody, which then cannot tell a finished body from an abandoned
+// one and falls back to closing the connection.
+//
+// It yields the raw stream where DrainRequestBody is not registered, and nil
+// when the request carries no streamed body.
+func requestBodyStream(ctx fiber.Ctx) io.Reader {
+	if body, ok := utils.ContextKeyBodyStream.Get(ctx).(*bodyStreamTracker); ok {
+		return body
+	}
+
+	return ctx.Request().BodyStream()
+}
+
+// bodyStreamTracker remembers how the request body ended, so the drain can tell
+// a body the handler read to its end from one it stopped partway through.
+//
+// fasthttp cannot be asked a second time. Its requestStream reports EOF
+// idempotently for a Content-Length body, but not for a chunked one: past the
+// terminating chunk it goes back to the socket for another chunk header that
+// will never come, so a read of a body the handler already finished blocks
+// until the deadline and holds the response back with it. The first terminal
+// result is recorded here and replayed instead.
+type bodyStreamTracker struct {
+	reader io.Reader
+	// end is the first error the stream ended on: nil while it still has more
+	// to give, io.EOF once it was read out in full, and the framing error if it
+	// broke before that.
+	end error
+}
+
+func (t *bodyStreamTracker) Read(p []byte) (int, error) {
+	if t.end != nil {
+		return 0, t.end
+	}
+
+	n, err := t.reader.Read(p)
+	if err != nil {
+		t.end = err
+	}
+
+	return n, err
 }
 
 // drainReader refreshes the connection's read deadline before every read, so a

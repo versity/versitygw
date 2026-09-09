@@ -32,6 +32,7 @@ const (
 	ContextKeyParsedAcl        = httpctx.ContextKeyParsedAcl
 	ContextKeySkipResBodyLog   = httpctx.ContextKeySkipResBodyLog
 	ContextKeyBodyReader       = httpctx.ContextKeyBodyReader
+	ContextKeyBodyStream       = httpctx.ContextKeyBodyStream
 	ContextKeySkip             = httpctx.ContextKeySkip
 	ContextKeyStack            = httpctx.ContextKeyStack
 	ContextKeyBucketOwner      = httpctx.ContextKeyBucketOwner

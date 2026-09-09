@@ -32,6 +32,7 @@ const (
 	ContextKeyParsedAcl        ContextKey = "parsed-acl"
 	ContextKeySkipResBodyLog   ContextKey = "skip-res-body-log"
 	ContextKeyBodyReader       ContextKey = "body-reader"
+	ContextKeyBodyStream       ContextKey = "body-stream"
 	ContextKeySkip             ContextKey = "__skip"
 	ContextKeyStack            ContextKey = "stack"
 	ContextKeyBucketOwner      ContextKey = "bucket-owner"
