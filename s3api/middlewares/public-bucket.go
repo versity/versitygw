@@ -98,7 +98,7 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 				return err
 			} else if utils.IsUnsignedPaylod(payloadHash) {
 				// for UNSIGNED-PAYLOD simply store the body reader in context locals
-				utils.ContextKeyBodyReader.Set(ctx, ctx.Request().BodyStream())
+				utils.ContextKeyBodyReader.Set(ctx, requestBodyStream(ctx))
 				return nil
 			} else {
 				// stack a hash reader to calculated the payload sha256 hash

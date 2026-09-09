@@ -86,15 +86,7 @@ func slowClientFinishesWriting(t *testing.T, disableKeepalive bool) {
 	}
 
 	// a fully drained body leaves the connection in sync for the next request
-	if _, err := conn.Write(putHeaders(addr, 0)); err != nil {
-		t.Fatalf("write second request: %v", err)
-	}
-	resp2, err := http.ReadResponse(br, nil)
-	if err != nil {
-		t.Fatalf("read second response: %v", err)
-	}
-	defer resp2.Body.Close()
-	if resp2.StatusCode != http.StatusBadRequest {
+	if resp2 := reuseConnection(t, conn, br, addr, resp); resp2.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status %v on the reused connection, got %v", http.StatusBadRequest, resp2.StatusCode)
 	}
 }
@@ -133,9 +125,7 @@ func TestDrainRequestBody_closesConnectionWhenUnreadBodyExceedsTheLimit(t *testi
 }
 
 func TestDrainRequestBody_givesUpOnAClientThatStopsSending(t *testing.T) {
-	idle, total := drainIdleTimeout, drainTotalTimeout
-	drainIdleTimeout, drainTotalTimeout = 100*time.Millisecond, 250*time.Millisecond
-	t.Cleanup(func() { drainIdleTimeout, drainTotalTimeout = idle, total })
+	shortenDrainTimeouts(t)
 
 	addr := startEarlyResponder(t, true)
 
@@ -173,7 +163,8 @@ func TestDrainRequestBody_givesUpOnAClientThatStopsSending(t *testing.T) {
 
 // A chunked body the handler read to its end must not be read again: fasthttp's
 // requestStream goes back to the socket for another chunk header past the
-// terminating chunk, which would hold the response back until the deadline.
+// terminating chunk, which would hold the response back until the deadline. It
+// also has nothing left to desync the connection, so it keeps keep-alive.
 func TestDrainRequestBody_doesNotStallAChunkedBodyTheHandlerFinished(t *testing.T) {
 	addr := startFullReader(t)
 
@@ -186,13 +177,13 @@ func TestDrainRequestBody_doesNotStallAChunkedBodyTheHandlerFinished(t *testing.
 		t.Fatalf("set deadline: %v", err)
 	}
 
-	body := "PUT /object HTTP/1.1\r\nHost: " + addr + "\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n"
-	if _, err := conn.Write([]byte(body)); err != nil {
+	if _, err := conn.Write(chunkedRequest(addr, []byte("hello"))); err != nil {
 		t.Fatalf("write request: %v", err)
 	}
 
 	start := time.Now()
-	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
 	if err != nil {
 		t.Fatalf("read response: %v", err)
 	}
@@ -204,9 +195,18 @@ func TestDrainRequestBody_doesNotStallAChunkedBodyTheHandlerFinished(t *testing.
 	if elapsed := time.Since(start); elapsed > drainIdleTimeout {
 		t.Fatalf("the response was held back for %v: the drain re-read a finished chunked body", elapsed)
 	}
+	if resp.Close {
+		t.Fatal("expected the connection to stay usable after a chunked body the handler finished")
+	}
+
+	if resp2 := reuseConnection(t, conn, br, addr, resp); resp2.StatusCode != http.StatusOK {
+		t.Fatalf("expected status %v on the reused connection, got %v", http.StatusOK, resp2.StatusCode)
+	}
 }
 
-func TestDrainRequestBody_closesConnectionForUnreadChunkedBody(t *testing.T) {
+// A chunked body the handler abandoned is drained like any other. Only the read
+// past its end is unsafe, and the drain never gets there on a body it finished.
+func TestDrainRequestBody_drainsAnUnreadChunkedBody(t *testing.T) {
 	addr := startEarlyResponder(t, false)
 
 	conn, err := net.Dial("tcp", addr)
@@ -218,14 +218,94 @@ func TestDrainRequestBody_closesConnectionForUnreadChunkedBody(t *testing.T) {
 		t.Fatalf("set deadline: %v", err)
 	}
 
-	// Leave one decoded byte unread after the handler's initial read. The
-	// middleware cannot safely probe for EOF on a chunked request.
+	// leave one decoded byte unread after the handler's initial read
 	chunk := bytes.Repeat([]byte("a"), handlerReadBytes+1)
-	body := fmt.Appendf(nil, "PUT /object HTTP/1.1\r\nHost: %s\r\nTransfer-Encoding: chunked\r\n\r\n%x\r\n", addr, len(chunk))
-	body = append(body, chunk...)
-	body = append(body, []byte("\r\n0\r\n\r\n")...)
-	if _, err := conn.Write(body); err != nil {
+	if _, err := conn.Write(chunkedRequest(addr, chunk)); err != nil {
 		t.Fatalf("write request: %v", err)
+	}
+
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %v, got %v", http.StatusBadRequest, resp.StatusCode)
+	}
+	if resp.Close {
+		t.Fatal("expected the connection to stay usable after the chunked body was drained")
+	}
+
+	if resp2 := reuseConnection(t, conn, br, addr, resp); resp2.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %v on the reused connection, got %v", http.StatusBadRequest, resp2.StatusCode)
+	}
+}
+
+func TestDrainRequestBody_closesConnectionWhenUnreadChunkedBodyExceedsTheLimit(t *testing.T) {
+	addr := startEarlyResponder(t, false)
+	chunk := bytes.Repeat([]byte("a"), int(maxDrainBytes)*4)
+
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+
+	// the write is expected to fail once the server gives up draining
+	go conn.Write(chunkedRequest(addr, chunk))
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %v, got %v", http.StatusBadRequest, resp.StatusCode)
+	}
+	if !resp.Close {
+		t.Fatal("expected 'Connection: close', the undrained chunk bytes would desync the next request")
+	}
+}
+
+// Broken chunk framing leaves nothing that can be decoded as body bytes, so the
+// connection cannot be reused. The drain still absorbs what the client is
+// writing, off the socket itself, so it reaches the S3 error instead of an RST.
+func TestDrainRequestBody_drainsAndClosesOnBrokenChunkedFraming(t *testing.T) {
+	shortenDrainTimeouts(t)
+
+	addr := startEarlyResponder(t, false)
+	// small enough to be absorbed in full, big enough that it cannot sit in the
+	// socket buffers while the server decides to close
+	garbage := bytes.Repeat([]byte("a"), 128<<10)
+
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+
+	// a chunk size that is not a hex number: the handler's first read fails
+	head := fmt.Appendf(nil, "PUT /object HTTP/1.1\r\nHost: %s\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n", addr)
+	if _, err := conn.Write(head); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+
+	// dribble the rest out, the way a client keeps uploading after the gateway
+	// has already given up on the request
+	for off := 0; off < len(garbage); off += 4 << 10 {
+		if _, err := conn.Write(garbage[off:min(off+(4<<10), len(garbage))]); err != nil {
+			t.Fatalf("the server dropped the connection with %v of %v bytes sent: %v", off, len(garbage), err)
+		}
+		time.Sleep(time.Millisecond)
 	}
 
 	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
@@ -238,7 +318,7 @@ func TestDrainRequestBody_closesConnectionForUnreadChunkedBody(t *testing.T) {
 		t.Fatalf("expected status %v, got %v", http.StatusBadRequest, resp.StatusCode)
 	}
 	if !resp.Close {
-		t.Fatal("expected 'Connection: close' for an unread chunked body")
+		t.Fatal("expected 'Connection: close', broken chunk framing cannot be resynchronized")
 	}
 }
 
@@ -291,7 +371,7 @@ func startEarlyResponder(t *testing.T, disableKeepalive bool) string {
 	})
 	app.Use("*", DrainRequestBody())
 	app.Put("/object", func(ctx fiber.Ctx) error {
-		if body := ctx.Request().BodyStream(); body != nil {
+		if body := requestBodyStream(ctx); body != nil {
 			// consume a little of it, the way the chunk reader parses a chunk
 			// header before rejecting the upload
 			io.CopyN(io.Discard, body, handlerReadBytes) //nolint:errcheck
@@ -324,10 +404,10 @@ func putHeaders(addr string, contentLength int) []byte {
 func startFullReader(t *testing.T) string {
 	t.Helper()
 
-	app := fiber.New(fiber.Config{StreamRequestBody: true, DisableKeepalive: true})
+	app := fiber.New(fiber.Config{StreamRequestBody: true})
 	app.Use("*", DrainRequestBody())
 	app.Put("/object", func(ctx fiber.Ctx) error {
-		if body := ctx.Request().BodyStream(); body != nil {
+		if body := requestBodyStream(ctx); body != nil {
 			if _, err := io.Copy(io.Discard, body); err != nil {
 				return err
 			}
@@ -336,4 +416,44 @@ func startFullReader(t *testing.T) string {
 	})
 
 	return listen(t, app)
+}
+
+// chunkedRequest builds a PUT that carries body as a single chunk, the framing
+// a client uses when it cannot announce a Content-Length up front.
+func chunkedRequest(addr string, body []byte) []byte {
+	req := fmt.Appendf(nil, "PUT /object HTTP/1.1\r\nHost: %s\r\nTransfer-Encoding: chunked\r\n\r\n%x\r\n", addr, len(body))
+	req = append(req, body...)
+
+	return append(req, "\r\n0\r\n\r\n"...)
+}
+
+// reuseConnection sends a second, bodiless request on the same connection once
+// prev is off the wire. It is answered only while the connection is still in
+// sync with the client.
+func reuseConnection(t *testing.T, conn net.Conn, br *bufio.Reader, addr string, prev *http.Response) *http.Response {
+	t.Helper()
+
+	if _, err := io.Copy(io.Discard, prev.Body); err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if _, err := conn.Write(putHeaders(addr, 0)); err != nil {
+		t.Fatalf("write second request: %v", err)
+	}
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatalf("read second response: %v", err)
+	}
+	t.Cleanup(func() { resp.Body.Close() }) //nolint:errcheck
+
+	return resp
+}
+
+// shortenDrainTimeouts keeps a test that waits the drain out from taking the
+// production timeouts to finish.
+func shortenDrainTimeouts(t *testing.T) {
+	t.Helper()
+
+	idle, total := drainIdleTimeout, drainTotalTimeout
+	drainIdleTimeout, drainTotalTimeout = 100*time.Millisecond, 250*time.Millisecond
+	t.Cleanup(func() { drainIdleTimeout, drainTotalTimeout = idle, total })
 }
