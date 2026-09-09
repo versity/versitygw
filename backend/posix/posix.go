@@ -669,6 +669,12 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 	err = os.Mkdir(bucket, p.newDirPerm)
 	if err != nil && os.IsExist(err) {
 		aclJSON, err := p.meta.RetrieveAttribute(nil, bucket, "", aclkey)
+		if errors.Is(err, meta.ErrNoSuchKey) {
+			// The directory already exists but has no gateway-managed acl
+			// attribute, e.g. a preexisting directory on a dataset the
+			// gateway was pointed at rather than one created via CreateBucket
+			return s3err.GetBucketErr(s3err.ErrBucketAlreadyExists, bucket)
+		}
 		if err != nil {
 			return fmt.Errorf("get bucket acl: %w", err)
 		}
