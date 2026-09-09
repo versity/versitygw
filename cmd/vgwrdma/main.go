@@ -1276,7 +1276,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		// rollback closure and the RunVersityGW lifecycle a
 		// single, ordered owner of both steps.
 		be = rdmamode.WrapBackendShutdownAfterRC(be, rcSvc)
-
 		rcVerify := middlewares.VerifyV4Signature(
 			middlewares.RootUserConfig{
 				Access: gwcli.RootUserAccess,
@@ -1287,13 +1286,45 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		// nil on success without doing so. Wrap it so a verified
 		// request reaches the route handler, while errors end the
 		// chain as usual.
+		rcH := rcroutes.New(rcSvc, be, iamSvc, readonly, disableACLs, int(rcMaxSessions))
+		// The RC shutdown wrapper drains queued operational
+		// publications before the sinks close; the drain hook is
+		// the route handler, which is built only now (it needs
+		// the wrapped backend).
+		if w, ok := be.(*rdmamode.BackendShutdownAfterRC); ok {
+			w.SetOpsDrainer(rcH)
+		}
 		rcAuth := func(ctx fiber.Ctx) error {
+			// The RC routes run before the default-values
+			// middleware sets the request locals; the access
+			// logger and event schema read the region from
+			// there, so set it for every verified request.
+			utils.ContextKeyRegion.Set(ctx, region)
+			// Verification runs outside the admission barrier:
+			// signature checks can block on IAM lookups that
+			// carry no cancellation, and holding the barrier
+			// across them would let one stalled lookup defer
+			// RC shutdown indefinitely. The handlers enforce
+			// admission themselves; a failure publication
+			// produced here checks the drain state before
+			// dispatching, so it cannot outlive the sinks.
 			if err := rcVerify(ctx); err != nil {
+				rcH.PublishAuthFailure(ctx, err)
 				return rcroutes.WriteRouteError(ctx, err)
 			}
 			return ctx.Next()
 		}
-		rcH := rcroutes.New(rcSvc, be, iamSvc, readonly, disableACLs)
+		// The gateway builds the access logger, metrics manager,
+		// and event sender inside RunVersityGW; hand them to the
+		// RC routes as soon as they exist so finished transfers
+		// publish into them.
+		cfg.OnServicesReady = func(s embedgw.OpsServices) {
+			rcH.SetOpsServices(rcroutes.OpsServices{
+				Logger:  s.Logger,
+				Metrics: s.Metrics,
+				Events:  s.Events,
+			})
+		}
 		cfg.S3Options = append(s3Opts,
 			s3api.WithRoute("POST", "/.hipobj-rc/prepare", rcAuth, rcH.Prepare),
 			s3api.WithRoute("POST", "/.hipobj-rc/ready", rcAuth, rcH.Ready),

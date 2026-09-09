@@ -101,6 +101,11 @@ struct rc_server {
    * races an in-flight sink pointer swap. */
   rc_log_fn log_fn = nullptr;
   void *log_ctx = nullptr;
+  /* Terminal notification sink: same lifetime contract as log_fn
+   * (installed once at init, cleared by destroy after the reaper
+   * joined). Fired by reapSession with no lock held. */
+  rc_terminal_fn term_fn = nullptr;
+  void *term_ctx = nullptr;
   std::atomic<uint64_t> epoch_counter{1};
   /* resource accounting (global buckets; per-principal map). */
   std::mutex acct_mtx;
@@ -253,6 +258,13 @@ void reapSession(rc_server *srv, RcSession *s) {
    * is actually gone: a surviving QP still holds the device. */
   if (destroyed) hipObj::v2::releaseDevice(srv->device);
   limitsRelease(srv, s->principal, s->staging_len);
+  /* Terminal notification: the sink runs after every server-side
+   * bookkeeping above so it observes the session as fully gone,
+   * and no lock is held here per the callback contract. */
+  rc_terminal_fn tfn = srv->term_fn;
+  if (tfn)
+    tfn(srv->term_ctx, s->core.id.c_str(), s->last_outcome,
+        (uint64_t)s->staging_len);
 }
 
 /* Runs the reap pass: sessions marked reap_pending (or in the
@@ -299,6 +311,13 @@ void rc_server_set_log_sink(rc_server *srv, rc_log_fn fn, void *ctx) {
   if (!srv) return;
   srv->log_fn = fn;
   srv->log_ctx = ctx;
+}
+
+void rc_server_set_terminal_notify(rc_server *srv, rc_terminal_fn fn,
+                                   void *ctx) {
+  if (!srv) return;
+  srv->term_fn = fn;
+  srv->term_ctx = ctx;
 }
 
 int rc_server_init(const rc_device_opts *opts, rc_server **out) {
@@ -860,6 +879,7 @@ int rc_ready_transfer(rc_server *srv, const rc_ready_req *req,
                                       /*destLid*/ 0, destGid,
                                       s->core.clientPsn) != 0) {
     g.lock();
+    s->last_outcome = RC_READY_WIRE_FAIL;
     s->reap_pending = true;
     s->active_ref = 0; /* roll the completion ref back: no data
                         * phase will run for this session */
@@ -868,6 +888,7 @@ int rc_ready_transfer(rc_server *srv, const rc_ready_req *req,
   if (hipObj::v2::transitionQpToRtsV2(conn, srv->device,
                                       s->core.serverPsn) != 0) {
     g.lock();
+    s->last_outcome = RC_READY_WIRE_FAIL;
     s->reap_pending = true;
     s->active_ref = 0;
     return RC_E_WIRE;
@@ -949,7 +970,9 @@ int rc_ready_transfer(rc_server *srv, const rc_ready_req *req,
           if (after->active_ref > 0) after->active_ref--;
         } else {
           /* Cannot re-arm the QP (or the session died mid-reset):
-           * not retryable. */
+           * not retryable. Record the wire failure so the
+           * teardown publication classifies it as one. */
+          after->last_outcome = RC_READY_WIRE_FAIL;
           after->reap_pending = true;
           if (after->active_ref > 0) after->active_ref--;
           return RC_E_WIRE;
@@ -962,6 +985,10 @@ int rc_ready_transfer(rc_server *srv, const rc_ready_req *req,
       after->active_ref = 0;
       return RC_E_WIRE;
     case hipObj::v2::DataPhaseResult::VerifyFail:
+      after->last_outcome = RC_READY_VERIFY_FAIL;
+      after->reap_pending = true;
+      after->active_ref = 0;
+      return RC_E_WIRE;
     case hipObj::v2::DataPhaseResult::WireFail:
       after->last_outcome = RC_READY_WIRE_FAIL;
       after->reap_pending = true;

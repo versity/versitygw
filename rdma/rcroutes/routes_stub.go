@@ -19,6 +19,8 @@
 package rcroutes
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/versity/versitygw/auth"
@@ -30,7 +32,7 @@ type Handler struct{}
 
 // New builds a stub route handler; the routes answer 501.
 func New(svc any, be backend.Backend, iam auth.IAMService,
-	readonly, disableACL bool) *Handler {
+	readonly, disableACL bool, sessionLimit int) *Handler {
 	return &Handler{}
 }
 
@@ -48,3 +50,27 @@ func (h *Handler) Ready(ctx fiber.Ctx) error { return notImplemented(ctx) }
 
 // Cancel is a stub handler that answers 501 Not Implemented.
 func (h *Handler) Cancel(ctx fiber.Ctx) error { return notImplemented(ctx) }
+
+// OpsServices carries the operational service instances (stub
+// mirror; the fields exist only to keep the embedding surface
+// platform-independent).
+type OpsServices struct {
+	Logger  any
+	Metrics any
+	Events  any
+}
+
+// SetOpsServices is a stub: without RDMA support there is nothing
+// to publish into.
+func (h *Handler) SetOpsServices(ops OpsServices) {}
+
+// PublishAuthFailure is a stub mirror of the linux handler.
+func (h *Handler) PublishAuthFailure(ctx fiber.Ctx, err error) {}
+
+// ErrNotAdmitted is a stub mirror of the linux helper.
+func ErrNotAdmitted() error {
+	return errors.New("rc routes unavailable")
+}
+
+// Shutdown is a stub mirror of the linux handler.
+func (h *Handler) Shutdown() {}

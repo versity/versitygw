@@ -34,6 +34,8 @@ package rcserver
 extern void rcgo_log_sink(void *ctx, int level, char *msg,
                           char *file, int line);
 extern void rcgo_snapshot_cb(rc_session_snapshot *rec, void *ctx);
+extern void rcgo_terminal_cb(void *ctx, char *id, int outcome,
+                             uint64_t bytes);
 */
 import "C"
 
@@ -546,6 +548,53 @@ var (
 	snapshotMu   sync.Mutex
 	snapshotSink *[]SessionSnapshot
 )
+
+// TerminalEvent describes one reaped session, delivered through the
+// terminal notification sink.
+type TerminalEvent struct {
+	SessionID string
+	Outcome   int // RC_READY_* value observed at teardown
+	Bytes     uint64
+}
+
+// terminalNotify serializes the trampoline callback and stores the
+// subscriber. The RC service has a single instance per gateway, so
+// one process-wide sink matches the log-sink pattern.
+var (
+	terminalNotifyMu sync.Mutex
+	terminalNotify   func(TerminalEvent)
+)
+
+//export rcgo_terminal_cb
+func rcgo_terminal_cb(_ unsafe.Pointer, id *C.char, outcome C.int, bytes C.uint64_t) {
+	if id == nil {
+		return
+	}
+	terminalNotifyMu.Lock()
+	fn := terminalNotify
+	terminalNotifyMu.Unlock()
+	if fn == nil {
+		return
+	}
+	fn(TerminalEvent{
+		SessionID: C.GoString(id),
+		Outcome:   int(outcome),
+		Bytes:     uint64(bytes),
+	})
+}
+
+// SetTerminalNotify installs the session-teardown callback. The C
+// side invokes it with no lock held; the callback must return
+// promptly and must not call back into the service.
+func (s *RCSvc) SetTerminalNotify(fn func(TerminalEvent)) {
+	terminalNotifyMu.Lock()
+	terminalNotify = fn
+	terminalNotifyMu.Unlock()
+	if s.srv != nil {
+		C.rc_server_set_terminal_notify(s.srv,
+			(*[0]byte)(C.rcgo_terminal_cb), nil)
+	}
+}
 
 //export rcgo_snapshot_cb
 func rcgo_snapshot_cb(rec *C.rc_session_snapshot, _ unsafe.Pointer) {

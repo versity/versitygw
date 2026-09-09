@@ -22,6 +22,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/s3err"
@@ -44,18 +45,31 @@ type Tag struct {
 // Manager is the interface definition for metrics manager
 type Manager interface {
 	Send(ctx fiber.Ctx, err error, action string, count int64, status int)
+	// SendWithBucket is Send with the bucket dimension stated
+	// by the caller. The S3 middleware derives the bucket from
+	// the matched route, which synthesized contexts (RDMA
+	// operational records) cannot reproduce: they pass the
+	// captured bucket explicitly instead.
+	SendWithBucket(ctx fiber.Ctx, err error, action string, count int64, status int, bucket string)
 	Close()
 }
 
 // manager is a manager of metrics plugins
 type manager struct {
-	wg  sync.WaitGroup
-	ctx context.Context
+	wg     sync.WaitGroup
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	config Config
 
 	publishers  []publisher
 	addDataChan chan datapoint
+	// closed gates senders against Close: the datapoint channel
+	// is closed to drain the forwarder, and a send on a closed
+	// channel panics. Producers that lose this race (an S3
+	// handler still finishing after the shutdown timeout) drop
+	// their update instead of taking the process down.
+	closed atomic.Bool
 }
 
 type Config struct {
@@ -80,9 +94,15 @@ func NewManager(ctx context.Context, conf Config) (Manager, error) {
 
 	addDataChan := make(chan datapoint, dataItemCount)
 
+	// Derive a cancellable child of the caller context: closing
+	// the manager cancels it itself (a standalone user of the
+	// API has no external cancellation to rely on), while the
+	// gateway shutdown path keeps its own context propagation.
+	mctx, mcancel := context.WithCancel(ctx)
 	mgr := &manager{
 		addDataChan: addDataChan,
-		ctx:         ctx,
+		ctx:         mctx,
+		cancel:      mcancel,
 		config:      conf,
 	}
 
@@ -93,6 +113,7 @@ func NewManager(ctx context.Context, conf Config) (Manager, error) {
 		for server := range statsdServers {
 			statsd, err := newStatsd(server, conf.ServiceName)
 			if err != nil {
+				mcancel()
 				return nil, err
 			}
 			mgr.publishers = append(mgr.publishers, statsd)
@@ -106,6 +127,10 @@ func NewManager(ctx context.Context, conf Config) (Manager, error) {
 		for server := range dogStatsdServers {
 			dogStatsd, err := newDogStatsd(server, conf.ServiceName)
 			if err != nil {
+				// The derived child context would otherwise stay
+				// attached to the parent until the parent is
+				// canceled.
+				mcancel()
 				return nil, err
 			}
 			mgr.publishers = append(mgr.publishers, dogStatsd)
@@ -137,6 +162,28 @@ func (m *manager) Send(ctx fiber.Ctx, err error, action string, count int64, sta
 		reqTags = append(reqTags, Tag{Key: "bucket", Value: bucket})
 	}
 
+	m.send(ctx, err, action, count, status, reqTags)
+}
+
+// SendWithBucket reports with the bucket dimension supplied by the
+// caller; see the Manager interface.
+func (m *manager) SendWithBucket(ctx fiber.Ctx, err error, action string, count int64, status int, bucket string) {
+	if action == "" {
+		action = ActionUndetected
+	}
+	a := ActionMap[action]
+	reqTags := []Tag{
+		{Key: "method", Value: ctx.Method()},
+		{Key: "api", Value: a.Service},
+		{Key: "action", Value: a.Name},
+	}
+	if bucket != "" {
+		reqTags = append(reqTags, Tag{Key: "bucket", Value: bucket})
+	}
+	m.send(ctx, err, action, count, status, reqTags)
+}
+
+func (m *manager) send(ctx fiber.Ctx, err error, action string, count int64, status int, reqTags []Tag) {
 	reqStatus := status
 
 	if err != nil {
@@ -186,7 +233,7 @@ func (m *manager) increment(key string, tags ...Tag) {
 
 // add adds value to key
 func (m *manager) add(key string, value int64, tags ...Tag) {
-	if m.ctx.Err() != nil {
+	if m.ctx.Err() != nil || m.closed.Load() {
 		return
 	}
 
@@ -196,6 +243,13 @@ func (m *manager) add(key string, value int64, tags ...Tag) {
 		tags:  tags,
 	}
 
+	// The send races Close for last-producer position: the
+	// closed check above and the channel close in Close are not
+	// atomic, so the send below can still observe a closed
+	// channel. Recovering here turns that race into a dropped
+	// datapoint, which is the documented contract for late
+	// producers.
+	defer func() { _ = recover() }()
 	select {
 	case m.addDataChan <- d:
 	default:
@@ -203,10 +257,17 @@ func (m *manager) add(key string, value int64, tags ...Tag) {
 	}
 }
 
-// Close closes metrics channels, waits for data to complete, closes all plugins
+// Close stops the manager: producers drop new datapoints, the
+// forwarder drains the buffered ones and exits through the
+// canceled context, and the publishers flush and close. The
+// datapoint channel itself is never closed - a producer racing
+// the closure would panic - so the closed flag and the context
+// cancellation carry the shutdown instead.
 func (m *manager) Close() {
-	// drain the datapoint channels
-	close(m.addDataChan)
+	m.closed.Store(true)
+	// Self-owned cancellation terminates the forwarder wherever
+	// it is waiting; the external context is only a second path.
+	m.cancel()
 	m.wg.Wait()
 
 	// close all publishers
@@ -222,12 +283,36 @@ type publisher interface {
 }
 
 func (m *manager) addForwarder(addChan <-chan datapoint) {
-	for data := range addChan {
-		for _, s := range m.publishers {
-			s.Add(data.key, data.value, data.tags...)
+	defer m.wg.Done()
+	for {
+		select {
+		case data, ok := <-addChan:
+			if !ok {
+				return
+			}
+			for _, s := range m.publishers {
+				s.Add(data.key, data.value, data.tags...)
+			}
+		case <-m.ctx.Done():
+			// The channel is never closed (producers race its
+			// closure otherwise); termination is the context.
+			// Drain whatever the buffer still holds so late
+			// datapoints are not lost, then exit.
+			for {
+				select {
+				case data, ok := <-addChan:
+					if !ok {
+						return
+					}
+					for _, s := range m.publishers {
+						s.Add(data.key, data.value, data.tags...)
+					}
+				default:
+					return
+				}
+			}
 		}
 	}
-	m.wg.Done()
 }
 
 type datapoint struct {

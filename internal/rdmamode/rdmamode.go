@@ -21,6 +21,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/versity/versitygw/backend"
@@ -124,6 +125,12 @@ func V2ValidationError(s V2Settings) string {
 // idempotent.
 type Closer interface{ Close() }
 
+// OpsDrainer drains operational publications (audit records,
+// events) that the RC teardown path queued before the RC service
+// closes, so nothing is left waiting on sinks that are about to
+// close. It is idempotent.
+type OpsDrainer interface{ Shutdown() }
+
 // BackendShutdownAfterRC forwards a backend and closes the RC
 // service before the wrapped backend shuts down. The RC handlers
 // reference the backend and IAM service, so the RC service must
@@ -136,13 +143,31 @@ type Closer interface{ Close() }
 type BackendShutdownAfterRC struct {
 	backend.Backend
 	rc     Closer
+	ops    atomic.Pointer[OpsDrainer]
 	closed sync.Once
 }
 
-// Shutdown closes the RC service, then the wrapped backend, once.
+// SetOpsDrainer installs the operational publication drainer. The
+// route handler that owns the publications is built after this
+// wrapper (it needs the wrapped backend), so the drainer arrives
+// via this setter; installs after Shutdown ran are dropped, since
+// the drain window has passed.
+func (b *BackendShutdownAfterRC) SetOpsDrainer(d OpsDrainer) {
+	b.ops.Store(&d)
+}
+
+// Shutdown closes the RC service, drains operational publications,
+// then shuts the wrapped backend down, once. The drain runs AFTER
+// the RC close: closing RC quiesces the native reaper (every
+// teardown callback has returned by the time Close returns), so no
+// producer can enqueue behind the drain - enqueue-then-worker-exit
+// stranding is impossible by ordering rather than by locking.
 func (b *BackendShutdownAfterRC) Shutdown() {
 	b.closed.Do(func() {
 		b.rc.Close()
+		if d := b.ops.Load(); d != nil {
+			(*d).Shutdown()
+		}
 		b.Backend.Shutdown()
 	})
 }

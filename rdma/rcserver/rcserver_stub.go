@@ -178,6 +178,16 @@ func (s *RCSvc) SessionsSnapshot() ([]SessionSnapshot, error) {
 	return nil, errNotSupported
 }
 
+// TerminalEvent is a stub mirror of the linux record.
+type TerminalEvent struct {
+	SessionID string
+	Outcome   int
+	Bytes     uint64
+}
+
+// SetTerminalNotify is a stub.
+func (s *RCSvc) SetTerminalNotify(fn func(TerminalEvent)) {}
+
 // ReadyTransfer is a stub.
 func (s *RCSvc) ReadyTransfer(req ReadyRequest) (*ReadyResponse, error) {
 	return nil, errNotSupported
