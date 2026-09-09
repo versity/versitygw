@@ -38,14 +38,15 @@ import (
 )
 
 const (
-	actS3GetObject           = "s3:GetObject"
-	actS3PutObject           = "s3:PutObject"
-	actS3DeleteObject        = "s3:DeleteObject"
-	actS3DeleteObjectVersion = "s3:DeleteObjectVersion"
-	actS3ListBucket          = "s3:ListBucket"
-	actS3CreateBucket        = "s3:CreateBucket"
-	actS3ListAllMyBuckets    = "s3:ListAllMyBuckets"
-	actS3BypassGovernance    = "s3:BypassGovernanceRetention"
+	actS3GetObject                  = "s3:GetObject"
+	actS3PutObject                  = "s3:PutObject"
+	actS3DeleteObject               = "s3:DeleteObject"
+	actS3DeleteObjectVersion        = "s3:DeleteObjectVersion"
+	actS3ListBucket                 = "s3:ListBucket"
+	actS3CreateBucket               = "s3:CreateBucket"
+	actS3ListAllMyBuckets           = "s3:ListAllMyBuckets"
+	actS3BypassGovernance           = "s3:BypassGovernanceRetention"
+	actS3PutBucketOwnershipControls = "s3:PutBucketOwnershipControls"
 )
 
 const (

@@ -1017,6 +1017,61 @@ func putObjects(client *s3.Client, objs []string, bucket string) ([]types.Object
 	return contents, nil
 }
 
+// putObjectAndGetETag uploads an object and returns its ETag as the wire
+// carries it, quotes included, for the conditional-write tests that have to
+// name a real ETag in an If-Match header or a policy condition.
+func putObjectAndGetETag(client *s3.Client, bucket, key string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+
+	res, err := client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+		Body:   bytes.NewReader([]byte("data")),
+	})
+	if err != nil {
+		return "", err
+	}
+	return getString(res.ETag), nil
+}
+
+// withRequestHeader sets a raw header on an SDK request, for the cases no
+// input field reaches — an If-Match on a bucket-level write, say. The
+// middleware runs right before signing so the header is signed like any
+// other.
+func withRequestHeader(key, value string) func(*s3.Options) {
+	return func(o *s3.Options) {
+		o.APIOptions = append(o.APIOptions, func(stack *middleware.Stack) error {
+			return stack.Finalize.Insert(
+				middleware.FinalizeMiddlewareFunc("SetRequestHeader",
+					func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
+						out middleware.FinalizeOutput, md middleware.Metadata, err error,
+					) {
+						if req, ok := in.Request.(*smithyhttp.Request); ok {
+							req.Header.Set(key, value)
+						}
+						return next.HandleFinalize(ctx, in)
+					}),
+				"Signing",
+				middleware.Before,
+			)
+		})
+	}
+}
+
+// headObjectETag re-reads an object's current ETag, which an overwrite may
+// have changed.
+func headObjectETag(client *s3.Client, bucket, key string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+
+	res, err := client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &bucket, Key: &key})
+	if err != nil {
+		return "", err
+	}
+	return getString(res.ETag), nil
+}
+
 func listObjects(client *s3.Client, bucket, prefix, delimiter string, maxKeys int32) ([]types.Object, []types.CommonPrefix, error) {
 	var contents []types.Object
 	var commonPrefixes []types.CommonPrefix

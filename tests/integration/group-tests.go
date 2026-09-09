@@ -633,6 +633,7 @@ func TestPutBucketPolicy(ts *TestState) {
 	ts.Run(PutBucketPolicy_condition_invalid_operator)
 	ts.Run(PutBucketPolicy_condition_invalid_key)
 	ts.Run(PutBucketPolicy_condition_action_mismatch)
+	ts.Run(PutBucketPolicy_condition_conditional_write_keys)
 	ts.Run(PutBucketPolicy_condition_invalid_ip)
 }
 
@@ -1744,6 +1745,14 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_condition_principal_tag)
 	ts.Run(S3IAMAccessControl_condition_on_deny_statement)
 	ts.Run(S3IAMAccessControl_condition_multiple_keys_anded)
+	ts.Run(S3IAMAccessControl_condition_if_none_match_required)
+	ts.Run(S3IAMAccessControl_condition_conditional_write_values)
+	ts.Run(S3IAMAccessControl_condition_if_match_delete_object)
+	ts.Run(S3IAMAccessControl_condition_if_match_versioned_delete)
+	ts.Run(S3IAMAccessControl_condition_conditional_write_keys_ignore_reads)
+	ts.Run(S3IAMAccessControl_condition_conditional_write_keys_ignore_copies)
+	ts.Run(S3IAMAccessControl_condition_if_match_bucket_level_write)
+	ts.Run(S3IAMAccessControl_condition_if_match_ignores_delete_objects)
 	ts.Run(S3IAMAccessControl_inactive_and_deleted_credentials)
 	ts.Run(S3IAMAccessControl_access_key_last_used_records_s3)
 	ts.Run(S3IAMPrincipal_accepted_forms)
@@ -1875,6 +1884,11 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_bucket_policy_condition_bool_operator)
 	ts.Run(AccessControl_bucket_policy_condition_binary_operator)
 	ts.Run(AccessControl_bucket_policy_condition_null_operator)
+	ts.Run(AccessControl_bucket_policy_condition_if_none_match_required)
+	ts.Run(AccessControl_bucket_policy_condition_if_none_match_value)
+	ts.Run(AccessControl_bucket_policy_condition_if_match_value)
+	ts.Run(AccessControl_bucket_policy_condition_if_match_delete_object)
+	ts.Run(AccessControl_bucket_policy_condition_if_match_versioned_delete)
 }
 
 func TestPublicBuckets(ts *TestState) {
@@ -2201,6 +2215,14 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_condition_principal_tag":                                       S3IAMAccessControl_condition_principal_tag,
 		"S3IAMAccessControl_condition_on_deny_statement":                                   S3IAMAccessControl_condition_on_deny_statement,
 		"S3IAMAccessControl_condition_multiple_keys_anded":                                 S3IAMAccessControl_condition_multiple_keys_anded,
+		"S3IAMAccessControl_condition_if_none_match_required":                              S3IAMAccessControl_condition_if_none_match_required,
+		"S3IAMAccessControl_condition_conditional_write_values":                            S3IAMAccessControl_condition_conditional_write_values,
+		"S3IAMAccessControl_condition_if_match_delete_object":                              S3IAMAccessControl_condition_if_match_delete_object,
+		"S3IAMAccessControl_condition_if_match_versioned_delete":                           S3IAMAccessControl_condition_if_match_versioned_delete,
+		"S3IAMAccessControl_condition_conditional_write_keys_ignore_reads":                 S3IAMAccessControl_condition_conditional_write_keys_ignore_reads,
+		"S3IAMAccessControl_condition_conditional_write_keys_ignore_copies":                S3IAMAccessControl_condition_conditional_write_keys_ignore_copies,
+		"S3IAMAccessControl_condition_if_match_bucket_level_write":                         S3IAMAccessControl_condition_if_match_bucket_level_write,
+		"S3IAMAccessControl_condition_if_match_ignores_delete_objects":                     S3IAMAccessControl_condition_if_match_ignores_delete_objects,
 		"S3IAMAccessControl_inactive_and_deleted_credentials":                              S3IAMAccessControl_inactive_and_deleted_credentials,
 		"S3IAMSession_bucket_policy_role_arn_covers_every_session":                         S3IAMSession_bucket_policy_role_arn_covers_every_session,
 		"S3IAMSession_bucket_policy_names_one_session":                                     S3IAMSession_bucket_policy_names_one_session,
@@ -3167,6 +3189,7 @@ func GetIntTests() IntTests {
 		"PutBucketPolicy_condition_invalid_operator":                                       PutBucketPolicy_condition_invalid_operator,
 		"PutBucketPolicy_condition_invalid_key":                                            PutBucketPolicy_condition_invalid_key,
 		"PutBucketPolicy_condition_action_mismatch":                                        PutBucketPolicy_condition_action_mismatch,
+		"PutBucketPolicy_condition_conditional_write_keys":                                 PutBucketPolicy_condition_conditional_write_keys,
 		"PutBucketPolicy_condition_invalid_ip":                                             PutBucketPolicy_condition_invalid_ip,
 		"GetBucketPolicy_non_existing_bucket":                                              GetBucketPolicy_non_existing_bucket,
 		"GetBucketPolicy_not_set":                                                          GetBucketPolicy_not_set,
@@ -3388,6 +3411,11 @@ func GetIntTests() IntTests {
 		"AccessControl_bucket_policy_condition_bool_operator":                              AccessControl_bucket_policy_condition_bool_operator,
 		"AccessControl_bucket_policy_condition_binary_operator":                            AccessControl_bucket_policy_condition_binary_operator,
 		"AccessControl_bucket_policy_condition_null_operator":                              AccessControl_bucket_policy_condition_null_operator,
+		"AccessControl_bucket_policy_condition_if_none_match_required":                     AccessControl_bucket_policy_condition_if_none_match_required,
+		"AccessControl_bucket_policy_condition_if_none_match_value":                        AccessControl_bucket_policy_condition_if_none_match_value,
+		"AccessControl_bucket_policy_condition_if_match_value":                             AccessControl_bucket_policy_condition_if_match_value,
+		"AccessControl_bucket_policy_condition_if_match_delete_object":                     AccessControl_bucket_policy_condition_if_match_delete_object,
+		"AccessControl_bucket_policy_condition_if_match_versioned_delete":                  AccessControl_bucket_policy_condition_if_match_versioned_delete,
 		"PublicBucket_default_private_bucket":                                              PublicBucket_default_private_bucket,
 		"PublicBucket_public_bucket_policy":                                                PublicBucket_public_bucket_policy,
 		"PublicBucket_public_object_policy":                                                PublicBucket_public_object_policy,
