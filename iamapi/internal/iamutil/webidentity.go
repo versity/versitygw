@@ -543,12 +543,16 @@ func (k jwk) publicKey() (any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("decode EC y: %w", err)
 		}
+		byteLen := (curve.Params().BitSize + 7) / 8
+		if len(xb) > byteLen || len(yb) > byteLen {
+			return nil, fmt.Errorf("EC coordinate too large for curve %q", k.Crv)
+		}
 		x := new(big.Int).SetBytes(xb)
 		y := new(big.Int).SetBytes(yb)
-		keyBytes := make([]byte, 1+(curve.Params().BitSize+7)/8*2)
+		keyBytes := make([]byte, 1+byteLen*2)
 		keyBytes[0] = 0x04
-		xBytes := x.FillBytes(make([]byte, (curve.Params().BitSize+7)/8))
-		yBytes := y.FillBytes(make([]byte, (curve.Params().BitSize+7)/8))
+		xBytes := x.FillBytes(make([]byte, byteLen))
+		yBytes := y.FillBytes(make([]byte, byteLen))
 		copy(keyBytes[1:1+len(xBytes)], xBytes)
 		copy(keyBytes[1+len(xBytes):], yBytes)
 		return ecdsa.ParseUncompressedPublicKey(curve, keyBytes)

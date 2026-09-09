@@ -16,6 +16,8 @@ package iamutil
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -626,4 +628,47 @@ func TestForceRefreshJWKSCacheGatesFailedAttempts(t *testing.T) {
 	if !after.Equal(before) {
 		t.Errorf("forceRefreshJWKSCache re-attempted a fetch within jwksMinForcedRefreshInterval: lastForcedRefresh changed from %v to %v", before, after)
 	}
+}
+
+func TestJwkPublicKeyEC(t *testing.T) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate EC key: %v", err)
+	}
+	byteLen := (priv.Curve.Params().BitSize + 7) / 8
+	// Uncompressed point: 0x04 || X || Y. Derived via PublicKey.Bytes
+	// rather than the deprecated X/Y fields directly.
+	pointBytes, err := priv.PublicKey.Bytes()
+	if err != nil {
+		t.Fatalf("encode EC public key: %v", err)
+	}
+	validX := base64.RawURLEncoding.EncodeToString(pointBytes[1 : 1+byteLen])
+	validY := base64.RawURLEncoding.EncodeToString(pointBytes[1+byteLen:])
+
+	t.Run("valid coordinates round-trip to the same key", func(t *testing.T) {
+		k := jwk{Kty: "EC", Crv: "P-256", X: validX, Y: validY}
+		pub, err := k.publicKey()
+		if err != nil {
+			t.Fatalf("publicKey() error = %v", err)
+		}
+		ecPub, ok := pub.(*ecdsa.PublicKey)
+		if !ok {
+			t.Fatalf("publicKey() returned %T, want *ecdsa.PublicKey", pub)
+		}
+		if !ecPub.Equal(&priv.PublicKey) {
+			t.Fatalf("publicKey() returned a key that doesn't match the source key")
+		}
+	})
+
+	// Regression test: an oversized "x"/"y" JWK field (no length check
+	// existed before) used to panic in big.Int.FillBytes instead of
+	// returning an error, which took down the request instead of failing
+	// cleanly with an "invalid identity token" style error.
+	t.Run("oversized coordinate errors instead of panicking", func(t *testing.T) {
+		oversized := base64.RawURLEncoding.EncodeToString(make([]byte, byteLen+1))
+		k := jwk{Kty: "EC", Crv: "P-256", X: oversized, Y: validY}
+		if _, err := k.publicKey(); err == nil {
+			t.Fatal("publicKey() error = nil, want an error for an oversized x coordinate")
+		}
+	})
 }

@@ -169,27 +169,19 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 		return account, fmt.Errorf("ipa cannot generate session key: %w", err)
 	}
 
-	encryptedKey, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, ipa.kraTransportKey, session_key, nil)
+	// FreeIPA's KRA can be configured to unwrap session keys with either
+	// RSA PKCS#1 v1.5 (its default) or RSA-OAEP (used under FIPS mode), and
+	// the REST API gives no way to tell which one a given deployment uses.
+	// FreeIPA's own client hits the same wall - see the use_oaep fallback in
+	// ipaclient/plugins/vault.py's _do_internal - so try the default first
+	// and fall back to OAEP so both KRA configurations keep working.
+	data, err := ipa.retrieveVaultSecret(access, session_key, false)
 	if err != nil {
-		return account, fmt.Errorf("ipa vault secret retrieval: %w", err)
-	}
-
-	req, err = ipa.newRequest("vault_retrieve_internal/1", []string{ipa.vaultName},
-		map[string]any{"username": access,
-			"session_key":   Base64EncodedWrapped(encryptedKey),
-			"wrapping_algo": "aes-128-cbc"})
-	if err != nil {
-		return Account{}, fmt.Errorf("ipa vault_retrieve_internal: %w", err)
-	}
-
-	data := struct {
-		Vault_data Base64EncodedWrapped
-		Nonce      Base64EncodedWrapped
-	}{}
-
-	err = ipa.rpc(req, &data)
-	if err != nil {
-		return account, err
+		debuglogger.IAMLogf("ipa vault_retrieve_internal with PKCS1v15 session key wrap failed, retrying with OAEP: %v", err)
+		data, err = ipa.retrieveVaultSecret(access, session_key, true)
+		if err != nil {
+			return account, err
+		}
 	}
 
 	aes, err := aes.NewCipher(session_key)
@@ -210,6 +202,46 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 	account.Secret = string(secret.Data)
 
 	return account, nil
+}
+
+type vaultSecretData struct {
+	Vault_data Base64EncodedWrapped
+	Nonce      Base64EncodedWrapped
+}
+
+// retrieveVaultSecret RSA-wraps sessionKey with the KRA transport key and
+// calls vault_retrieve_internal to fetch the account secret it protects.
+// useOAEP selects RSA-OAEP wrapping instead of the PKCS#1 v1.5 default.
+func (ipa *IpaIAMService) retrieveVaultSecret(access string, sessionKey []byte, useOAEP bool) (vaultSecretData, error) {
+	var (
+		encryptedKey []byte
+		err          error
+	)
+	if useOAEP {
+		encryptedKey, err = rsa.EncryptOAEP(sha256.New(), rand.Reader, ipa.kraTransportKey, sessionKey, nil)
+	} else {
+		//lint:ignore SA1019 Reason: PKCS#1 v1.5 is the FreeIPA KRA's default
+		//session key wrapping scheme and required for protocol compatibility
+		//with it; see the fallback this feeds in GetUserAccount.
+		encryptedKey, err = rsa.EncryptPKCS1v15(rand.Reader, ipa.kraTransportKey, sessionKey)
+	}
+	if err != nil {
+		return vaultSecretData{}, fmt.Errorf("ipa vault secret retrieval: %w", err)
+	}
+
+	req, err := ipa.newRequest("vault_retrieve_internal/1", []string{ipa.vaultName},
+		map[string]any{"username": access,
+			"session_key":   Base64EncodedWrapped(encryptedKey),
+			"wrapping_algo": "aes-128-cbc"})
+	if err != nil {
+		return vaultSecretData{}, fmt.Errorf("ipa vault_retrieve_internal: %w", err)
+	}
+
+	var data vaultSecretData
+	if err := ipa.rpc(req, &data); err != nil {
+		return vaultSecretData{}, err
+	}
+	return data, nil
 }
 
 // ResolveAccounts returns the subset of accessKeyIDs that do not exist.
