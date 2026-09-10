@@ -139,6 +139,10 @@ teardown_common() {
   if ! remove_test_file_folder_if_desired; then
     log 3 "test file folder cleanup error"
   fi
+  # for docker failures
+  if [ "${BATS_TEST_STATUS:-0}" -ne 0 ] && [ -n "$TEST_LOG_FILE" ]; then
+    printf 'test log file: %s\n' "${TEST_LOG_FILE}.${TEST_ID}" >&2
+  fi
   if ! teardown_logs; then
     log 3 "log file teardown error"
   fi
