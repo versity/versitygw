@@ -42,6 +42,14 @@ func (c S3ApiController) PutObjectTagging(ctx fiber.Ctx) (*Response, error) {
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
+	if err := utils.ValidateVersionId(ctx); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	action := auth.PutObjectTaggingAction
 	if versionId != "" {
 		action = auth.PutObjectVersionTaggingAction
@@ -95,6 +103,14 @@ func (c S3ApiController) PutObjectRetention(ctx fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
+
+	if err := utils.ValidateVersionId(ctx); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
 
 	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
@@ -160,6 +176,14 @@ func (c S3ApiController) PutObjectLegalHold(ctx fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
+
+	if err := utils.ValidateVersionId(ctx); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
 
 	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,

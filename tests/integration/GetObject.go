@@ -1767,3 +1767,7 @@ func GetObject_ranged_with_checksum_mode(s *S3Conf) error {
 		return nil
 	})
 }
+
+func GetObject_empty_version_id(s *S3Conf) error {
+	return testEmptyVersionId(s, "GetObject_empty_version_id", http.MethodGet, "", nil)
+}

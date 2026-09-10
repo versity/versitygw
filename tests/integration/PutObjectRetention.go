@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -647,4 +648,8 @@ func PutObjectRetention_success(s *S3Conf) error {
 
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: key, isCompliance: true}})
 	}, withLock())
+}
+
+func PutObjectRetention_empty_version_id(s *S3Conf) error {
+	return testEmptyVersionId(s, "PutObjectRetention_empty_version_id", http.MethodPut, "retention", []byte("<Retention><Mode>GOVERNANCE</Mode><RetainUntilDate>2222-01-01T00:00:00Z</RetainUntilDate></Retention>"))
 }

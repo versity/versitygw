@@ -40,6 +40,23 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 		output testOutput
 	}{
 		{
+			name: "empty versionId query param",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEmptyVersionId, ""),
+			},
+		},
+		{
 			name: "verify access fails",
 			input: testInput{
 				locals: accessDeniedLocals,
