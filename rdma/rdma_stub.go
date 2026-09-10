@@ -57,9 +57,6 @@ func NewServer(ip string, port uint16, tunables *RDMATunables) (*Server, error) 
 // StartSession always returns errNotSupported on this platform.
 func (s *Server) StartSession() error { return errNotSupported }
 
-// InitRDMAConfig always returns errNotSupported on this platform.
-func (s *Server) InitRDMAConfig(t RDMATunables) error { return errNotSupported }
-
 // IsConnected always returns false on this platform.
 func (s *Server) IsConnected() bool { return false }
 

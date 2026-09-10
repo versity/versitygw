@@ -19,7 +19,9 @@ package rdma
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../include -I${SRCDIR}/../cuwrapper
-#cgo LDFLAGS: -L${SRCDIR} -l:libcuobjwrapper.a -L/usr/lib64 -lcuobjserver -lstdc++ -ldl
+// Links against cuObjServer 2.x: the resulting binary records a
+// libcuobjserver.so.2 NEEDED entry and will not run against a 1.x install.
+#cgo LDFLAGS: -L${SRCDIR} -l:libcuobjwrapper.a -L/usr/lib64 -lcuobjserver -lstdc++
 #include "cuobjserver_wrapper.h"
 #include <stdlib.h>
 */
@@ -30,6 +32,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"unsafe"
 )
 
@@ -112,6 +115,10 @@ func tunablesToC(t RDMATunables) C.cuobj_rdma_tunables_t {
 // Uses CUOBJ_PROTO_RDMA_DC_V1 (1001). If tunables is non-nil, the 4-argument
 // constructor is used so the tunable parameters apply to the initial session
 // started by the constructor. Pass nil to use library defaults.
+//
+// The constructor is the only point at which tunables can be applied:
+// libcuobjserver starts the RDMA session inside it, and cuObjServer 2.0.0
+// removed the after-the-fact initRDMAConfigParams() entry point.
 func NewServer(ip string, port uint16, tunables *RDMATunables) (*Server, error) {
 	cip := C.CString(ip)
 	defer C.free(unsafe.Pointer(cip))
@@ -127,16 +134,21 @@ func NewServer(ip string, port uint16, tunables *RDMATunables) (*Server, error) 
 		return nil, fmt.Errorf("rdma: failed to create cuObjServer on %s:%d", ip, port)
 	}
 	srv := &Server{csrv: csrv}
-	// Some library versions start the session as part of construction;
-	// record that readiness so StartSession can be a no-op and Close/CloseSession
-	// use a consistent ownership model.
+	// The library starts the session as part of construction; record that
+	// readiness so StartSession can be a no-op and Close/CloseSession use a
+	// consistent ownership model.
 	if srv.IsConnected() {
 		srv.sessionOpen = true
 	}
 	return srv, nil
 }
 
-// StartSession initiates the RDMA listening session.
+// StartSession reports whether the RDMA session is up.
+//
+// libcuobjserver starts the session inside the cuObjServer constructor and has
+// never exposed an explicit start entry point, so this verifies the session
+// came up rather than initiating it. It is kept as an explicit lifecycle step
+// so callers can fail fast on a server that constructed but did not connect.
 // StartSession must not be called concurrently with CloseSession or Close.
 func (s *Server) StartSession() error {
 	s.mu.Lock()
@@ -153,20 +165,11 @@ func (s *Server) StartSession() error {
 			s.mu.Unlock()
 			return nil
 		}
-		return fmt.Errorf("rdma: startRDMASession failed (rc=%d)", rc)
+		return fmt.Errorf("rdma: RDMA session is not connected (rc=%d)", rc)
 	}
 	s.mu.Lock()
 	s.sessionOpen = true
 	s.mu.Unlock()
-	return nil
-}
-
-// InitRDMAConfig applies RDMA tuning parameters. Must be called before StartSession.
-func (s *Server) InitRDMAConfig(t RDMATunables) error {
-	ct := tunablesToC(t)
-	if rc := C.cuobj_server_init_rdma_config(s.csrv, &ct); rc != 0 {
-		return fmt.Errorf("rdma: initRDMAConfigParams failed (rc=%d)", rc)
-	}
 	return nil
 }
 
@@ -236,6 +239,12 @@ func (s *Server) FreeChannel(id uint16) {
 // HandleGet performs an RDMA WRITE (server→client) to serve a GET request.
 // The local buffer must already contain the data to send.
 // Returns bytes transferred.
+//
+// On failure the library returns a negative errno, which is wrapped into the
+// returned error: a malformed RDMA descriptor, or one whose prefix does not
+// match the server's protocol, reports syscall.EPROTO and can be matched with
+// errors.Is. That distinguishes a bad client-supplied descriptor from a
+// transport fault.
 func (s *Server) HandleGet(key string, buf *Buffer, remoteStart uint64, size int64, rdmaDescr string, channel uint16) (int64, error) {
 	if buf == nil || buf.cbuf == nil {
 		return 0, errors.New("rdma: invalid or deregistered buffer")
@@ -255,7 +264,7 @@ func (s *Server) HandleGet(key string, buf *Buffer, remoteStart uint64, size int
 	n := C.cuobj_server_handle_get(s.csrv, ckey, buf.cbuf,
 		C.uint64_t(remoteStart), C.size_t(size), cdescr, C.uint16_t(channel))
 	if n < 0 {
-		return 0, fmt.Errorf("rdma: handleGetObject failed (rc=%d)", n)
+		return 0, fmt.Errorf("rdma: handleGetObject failed (rc=%d): %w", n, syscall.Errno(-int64(n)))
 	}
 	return int64(n), nil
 }
@@ -263,6 +272,12 @@ func (s *Server) HandleGet(key string, buf *Buffer, remoteStart uint64, size int
 // HandlePut performs an RDMA READ (client→server) to serve a PUT request.
 // After return, the local buffer contains the data read from the client.
 // Returns bytes transferred.
+//
+// On failure the library returns a negative errno, which is wrapped into the
+// returned error: a malformed RDMA descriptor, or one whose prefix does not
+// match the server's protocol, reports syscall.EPROTO and can be matched with
+// errors.Is. That distinguishes a bad client-supplied descriptor from a
+// transport fault.
 func (s *Server) HandlePut(key string, buf *Buffer, remoteStart uint64, size int64, rdmaDescr string, channel uint16) (int64, error) {
 	if buf == nil || buf.cbuf == nil {
 		return 0, errors.New("rdma: invalid or deregistered buffer")
@@ -282,12 +297,14 @@ func (s *Server) HandlePut(key string, buf *Buffer, remoteStart uint64, size int
 	n := C.cuobj_server_handle_put(s.csrv, ckey, buf.cbuf,
 		C.uint64_t(remoteStart), C.size_t(size), cdescr, C.uint16_t(channel))
 	if n < 0 {
-		return 0, fmt.Errorf("rdma: handlePutObject failed (rc=%d)", n)
+		return 0, fmt.Errorf("rdma: handlePutObject failed (rc=%d): %w", n, syscall.Errno(-int64(n)))
 	}
 	return int64(n), nil
 }
 
-// CloseSession tears down the RDMA session.
+// CloseSession marks the session closed. The underlying library ties session
+// teardown to the cuObjServer destructor, so the session is not actually torn
+// down until Close is called.
 func (s *Server) CloseSession() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

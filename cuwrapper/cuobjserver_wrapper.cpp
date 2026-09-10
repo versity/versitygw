@@ -18,7 +18,6 @@
 #include "cuobjserver_wrapper.h"
 #include "cuobjserver.h"
 
-#include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <atomic>
@@ -26,53 +25,23 @@
 #include <string>
 
 // ---------------------------------------------------------------------------
-// Session management — runtime symbol resolution
+// Session management
 //
-// libcuobjserver.so may export startRDMASession / closeRDMASession under one
-// of two C++ mangled names depending on when the library was compiled:
+// libcuobjserver does not expose an explicit RDMA session start/close entry
+// point. cuObjServer's constructor brings the session up and its destructor
+// tears it down.
 //
-//   Newer header layout (RDMAConnection base class):
-//     _ZN14RDMAConnection16startRDMASessionEv
-//     _ZN14RDMAConnection16closeRDMASessionEv
-//
-//   Older layout (method directly on cuObjServer):
-//     _ZN11cuObjServer16startRDMASessionEv
-//     _ZN11cuObjServer16closeRDMASessionEv
-//
-// We resolve lazily at first call so neither name needs to be present at
-// link time, and the code works with both library generations.
+// Earlier revisions of this wrapper resolved startRDMASession/closeRDMASession
+// at runtime via dlsym, trying both the RDMAConnection and cuObjServer mangled
+// names. Neither symbol was ever exported, so those lookups always failed and
+// the fallback paths below are what has always actually run. cuObjServer 2.0.0
+// deletes the RDMAConnection base class outright, so the lookup can no longer
+// succeed even in principle — it is gone rather than left as dead code.
 // ---------------------------------------------------------------------------
-
-typedef int  (*rdma_start_fn_t)(void *);
-typedef void (*rdma_close_fn_t)(void *);
 
 // Verbose wrapper logs are enabled when cuobj_server_set_telem_flags includes
 // info/debug bits (configured by cuserver -debug).
 static std::atomic<bool> g_verbose_logs{false};
-
-static rdma_start_fn_t find_start_rdma_session() {
-    void *proc = dlopen(nullptr, RTLD_LAZY);
-    if (!proc) return nullptr;
-    rdma_start_fn_t fn = reinterpret_cast<rdma_start_fn_t>(
-        dlsym(proc, "_ZN14RDMAConnection16startRDMASessionEv"));
-    if (!fn)
-        fn = reinterpret_cast<rdma_start_fn_t>(
-            dlsym(proc, "_ZN11cuObjServer16startRDMASessionEv"));
-    dlclose(proc);
-    return fn;
-}
-
-static rdma_close_fn_t find_close_rdma_session() {
-    void *proc = dlopen(nullptr, RTLD_LAZY);
-    if (!proc) return nullptr;
-    rdma_close_fn_t fn = reinterpret_cast<rdma_close_fn_t>(
-        dlsym(proc, "_ZN14RDMAConnection16closeRDMASessionEv"));
-    if (!fn)
-        fn = reinterpret_cast<rdma_close_fn_t>(
-            dlsym(proc, "_ZN11cuObjServer16closeRDMASessionEv"));
-    dlclose(proc);
-    return fn;
-}
 
 extern "C" {
 
@@ -85,8 +54,8 @@ cuobj_server_t* cuobj_server_create(const char *ip, unsigned short port, unsigne
     }
 }
 
-// Build a cuObjRDMATunable from the flat C struct, shared by
-// cuobj_server_create_with_config and cuobj_server_init_rdma_config.
+// Build a cuObjRDMATunable from the flat C struct for
+// cuobj_server_create_with_config.
 static cuObjRDMATunable tunables_from_c(const cuobj_rdma_tunables_t *t) {
     cuObjRDMATunable config;
     config.setNumDcis(t->num_dcis);
@@ -122,27 +91,16 @@ void cuobj_server_destroy(cuobj_server_t *srv) {
 }
 
 int cuobj_server_start_session(cuobj_server_t *srv) {
-    static rdma_start_fn_t fn = find_start_rdma_session();
-    if (!fn) {
-        // Symbol not exported — library calls startRDMASession() internally
-        // from the cuObjServer constructor. Verify the session actually came
-        // up instead of unconditionally reporting success.
-        auto *s = reinterpret_cast<cuObjServer*>(srv);
-        return s->isConnected() ? 0 : -1;
-    }
-    int rc = fn(reinterpret_cast<void *>(srv));
-    if (rc != 0)
-        fprintf(stderr, "cuobjwrapper: startRDMASession returned %d\n", rc);
-    return rc;
+    // The cuObjServer constructor starts the session. Verify it actually came
+    // up instead of unconditionally reporting success.
+    auto *s = reinterpret_cast<cuObjServer*>(srv);
+    return s->isConnected() ? 0 : -1;
 }
 
 void cuobj_server_close_session(cuobj_server_t *srv) {
-    static rdma_close_fn_t fn = find_close_rdma_session();
-    if (!fn) {
-        // Symbol not exported — session cleanup handled by destructor.
-        return;
-    }
-    fn(reinterpret_cast<void *>(srv));
+    // Session teardown is owned by ~cuObjServer(); there is no separate close
+    // entry point. cuobj_server_destroy() is what actually closes the session.
+    (void)srv;
 }
 
 int cuobj_server_is_connected(cuobj_server_t *srv) {
@@ -231,17 +189,10 @@ void cuobj_server_shutdown_telemetry(void) {
 
 void cuobj_server_set_telem_flags(unsigned flags) {
     g_verbose_logs.store((flags & 0x0003u) != 0u);
-    cuObjServer::setTelemFlags(flags);
-}
-
-int cuobj_server_init_rdma_config(cuobj_server_t *srv, const cuobj_rdma_tunables_t *t) {
-    auto *s = reinterpret_cast<cuObjServer*>(srv);
-    try {
-        s->initRDMAConfigParams(tunables_from_c(t));
-        return 0;
-    } catch (...) {
-        return -1;
-    }
+    // 2.0.0 added a second mask selecting which operations get logged
+    // (CUOBJ_LOG_OP_GET / CUOBJ_LOG_OP_PUT). cuObjTelem initialises it to 0,
+    // so passing 0 keeps the 1.2.0 behaviour of no per-operation logging.
+    cuObjServer::setTelemFlags(flags, 0);
 }
 
 } // extern "C"
