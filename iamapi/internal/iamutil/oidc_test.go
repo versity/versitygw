@@ -25,6 +25,44 @@ var (
 	insecureOIDCPolicy = OIDCEndpointPolicy{AllowPrivateEndpoints: true, AllowInsecureTransport: true}
 )
 
+// TestResolveDiscovery covers where a provider's discovery document is
+// fetched from, and the address-check waiver a configured discovery URL
+// carries: the endpoint is named by the operator at startup, not by a
+// request, so it needs no AllowPrivateEndpoints to be private.
+func TestResolveDiscovery(t *testing.T) {
+	const clusterURL = "https://oidc.oidc-ns/.well-known/openid-configuration"
+	policy := OIDCEndpointPolicy{DiscoveryURLs: map[string]string{"oidc.example.com": clusterURL}}
+
+	tests := []struct {
+		name        string
+		providerURL string
+		want        string
+		wantPrivate bool
+	}{
+		{"override", "oidc.example.com", clusterURL, true},
+		{"other provider unaffected", "other.example.com", "https://other.example.com/.well-known/openid-configuration", false},
+		{"trailing slash", "other.example.com/", "https://other.example.com/.well-known/openid-configuration", false},
+		{"http provider keeps its scheme", "http://127.0.0.1:8080", "http://127.0.0.1:8080/.well-known/openid-configuration", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotPolicy := policy.ResolveDiscovery(tt.providerURL)
+			if got != tt.want {
+				t.Errorf("ResolveDiscovery(%q) = %q, want %q", tt.providerURL, got, tt.want)
+			}
+			if gotPolicy.AllowPrivateEndpoints != tt.wantPrivate {
+				t.Errorf("AllowPrivateEndpoints = %v, want %v", gotPolicy.AllowPrivateEndpoints, tt.wantPrivate)
+			}
+		})
+	}
+
+	// The waiver is scoped to the returned copy: the policy the rest of the
+	// request is validated against keeps its address check.
+	if policy.AllowPrivateEndpoints {
+		t.Error("ResolveDiscovery mutated the receiver's AllowPrivateEndpoints")
+	}
+}
+
 func TestValidateOIDCProviderURL(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -704,17 +704,18 @@ func fetchAndCacheJWKS(ctx context.Context, issuerURL string, thumbprints []stri
 	return v.(*jwkSet), nil
 }
 
-// fetchJWKS retrieves issuerURL's OIDC discovery document, then the JWKS it
-// points to. issuerURL is the provider's stored Url. thumbprints, if
-// non-empty, lets the fetch's TLS connections succeed against a
-// self-signed/private-CA certificate whose chain matches one of them, the
-// same trust-pinning fallback real AWS documents for OIDC providers.
+// fetchJWKS retrieves issuerURL's OIDC discovery document — from wherever
+// ResolveDiscovery places it — then the JWKS that document points to.
+// issuerURL is the provider's stored Url. thumbprints, if non-empty, lets
+// the fetch's TLS connections succeed against a self-signed/private-CA
+// certificate whose chain matches one of them, the same trust-pinning
+// fallback real AWS documents for OIDC providers.
 func fetchJWKS(ctx context.Context, issuerURL string, thumbprints []string, policy OIDCEndpointPolicy) (*jwkSet, error) {
+	discoveryURL, policy := policy.ResolveDiscovery(issuerURL)
 	client := ssrfSafeHTTPClient(thumbprints, policy)
-	base := OIDCEndpointURL(issuerURL)
 
 	var doc oidcDiscoveryDoc
-	if err := fetchJSON(ctx, client, strings.TrimRight(base, "/")+"/.well-known/openid-configuration", &doc); err != nil {
+	if err := fetchJSON(ctx, client, discoveryURL, &doc); err != nil {
 		return nil, err
 	}
 	if err := validateDiscoveryIssuer(doc, issuerURL); err != nil {

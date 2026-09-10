@@ -435,6 +435,19 @@ iamServer:
     # own pod. Needs allowPrivateEndpoints as well for a loopback or
     # cluster-internal address.
     allowInsecureTransport: false
+    # Fetch individual providers' discovery documents from somewhere other
+    # than the provider URL itself, as "<provider url>=<discovery url>"
+    # entries. The discovery URL is fetched exactly as written, so include the
+    # "/.well-known/openid-configuration" path, and it may be a private
+    # in-cluster address without allowPrivateEndpoints above -- it is named
+    # here rather than by a request. Only the fetch moves: tokens are still
+    # matched against the provider URL, the fetched document's own issuer must
+    # still equal it, and keys still come from the jwks_uri that document
+    # publishes. This is how an identity provider hands out tokens naming its
+    # public issuer while the gateway reads its keys over a cluster-internal
+    # Service.
+    discoveryUrls: []
+    #  - "https://oidc.example.com=https://oidc.oidc-ns/.well-known/openid-configuration"
   # Access-Control-Allow-Origin for the control-plane API. Required before a
   # browser can reach this service: the WebUI is served from another origin, so
   # every call it makes is cross-origin and is blocked without this. Set it to

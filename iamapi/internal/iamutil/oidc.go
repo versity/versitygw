@@ -79,6 +79,12 @@ type OIDCEndpointPolicy struct {
 	// path is trustworthy on its own, such as a sidecar bound to loopback
 	// inside the gateway's own pod.
 	AllowInsecureTransport bool
+
+	// DiscoveryURLs maps a stored provider Url to the exact URL its
+	// discovery document is fetched from, so an IdP's keys can be read over
+	// a private in-cluster path while the tokens it issues keep naming their
+	// public issuer. Only the fetch moves; see ResolveDiscovery.
+	DiscoveryURLs map[string]string
 }
 
 // IsInsecureOIDCProviderURL reports whether providerURL, a stored provider
@@ -101,6 +107,32 @@ func OIDCEndpointURL(providerURL string) string {
 		return providerURL
 	}
 	return "https://" + providerURL
+}
+
+// CanonicalOIDCProviderURL reduces a full provider URL to the form providers
+// are stored under, the inverse of OIDCEndpointURL.
+func CanonicalOIDCProviderURL(rawURL string) string {
+	if IsInsecureOIDCProviderURL(rawURL) {
+		return rawURL
+	}
+	return strings.TrimPrefix(rawURL, "https://")
+}
+
+// ResolveDiscovery returns where providerURL's discovery document is fetched
+// from, and the policy governing that fetch and the jwks_uri the document
+// publishes: the well-known path under the provider's own endpoint under an
+// unchanged policy, or a configured DiscoveryURLs entry under one whose
+// private-address check is waived. That entry is named by the operator at
+// startup rather than by a request, so it needs no AllowPrivateEndpoints to
+// be private. Transport is unaffected either way.
+func (p OIDCEndpointPolicy) ResolveDiscovery(providerURL string) (string, OIDCEndpointPolicy) {
+	endpoint, ok := p.DiscoveryURLs[providerURL]
+	if !ok {
+		base := strings.TrimRight(OIDCEndpointURL(providerURL), "/")
+		return base + "/.well-known/openid-configuration", p
+	}
+	p.AllowPrivateEndpoints = true
+	return endpoint, p
 }
 
 // ParseStringList reads flat indexed list members "<paramName>.member.1",
@@ -256,10 +288,7 @@ func ValidateOIDCProviderURL(rawURL string, policy OIDCEndpointPolicy) (string, 
 		return "", iamerr.InvalidInput("Invalid Open ID Connect Provider URL.")
 	}
 
-	if insecure {
-		return rawURL, nil
-	}
-	return strings.TrimPrefix(rawURL, "https://"), nil
+	return CanonicalOIDCProviderURL(rawURL), nil
 }
 
 func isValidOIDCHostname(host string) bool {

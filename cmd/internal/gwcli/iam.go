@@ -125,6 +125,11 @@ func IAMCommand() *cli.Command {
 				EnvVars: []string{"VGW_IAM_OIDC_ALLOW_INSECURE_TRANSPORT"},
 			},
 			&cli.StringSliceFlag{
+				Name:    "oidc-discovery-url",
+				Usage:   "fetch one OIDC provider's discovery document from somewhere other than the provider URL itself, as '<provider url>=<discovery url>' (can be specified multiple times); the discovery URL is fetched exactly as given, so include the '/.well-known/openid-configuration' path, and it may be a private in-cluster address without --oidc-allow-private-endpoints. Tokens are still matched against the provider URL, and keys are still read from the jwks_uri the fetched document publishes",
+				EnvVars: []string{"VGW_IAM_OIDC_DISCOVERY_URLS"},
+			},
+			&cli.StringSliceFlag{
 				Name:    "private-ports",
 				Usage:   "private endpoint listen address: a unix socket path, or <ip>:<port>/:<port> when mTLS (--private-cert/--private-cert-key/--private-client-ca) is also configured — refuses to start otherwise (can be specified multiple times)",
 				EnvVars: []string{"VGW_IAM_PRIVATE_PORTS"},
