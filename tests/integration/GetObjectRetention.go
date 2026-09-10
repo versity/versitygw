@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -156,4 +157,8 @@ func GetObjectRetention_success(s *S3Conf) error {
 
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: key, isCompliance: true}})
 	}, withLock())
+}
+
+func GetObjectRetention_empty_version_id(s *S3Conf) error {
+	return testEmptyVersionId(s, "GetObjectRetention_empty_version_id", http.MethodGet, "retention", nil)
 }

@@ -41,6 +41,23 @@ func TestS3ApiController_GetObjectTagging(t *testing.T) {
 		output testOutput
 	}{
 		{
+			name: "empty versionId query param",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEmptyVersionId, ""),
+			},
+		},
+		{
 			name: "verify access fails",
 			input: testInput{
 				locals: accessDeniedLocals,
@@ -142,6 +159,23 @@ func TestS3ApiController_GetObjectRetention(t *testing.T) {
 		input  testInput
 		output testOutput
 	}{
+		{
+			name: "empty versionId query param",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEmptyVersionId, ""),
+			},
+		},
 		{
 			name: "verify access fails",
 			input: testInput{
@@ -245,6 +279,23 @@ func TestS3ApiController_GetObjectLegalHold(t *testing.T) {
 		input  testInput
 		output testOutput
 	}{
+		{
+			name: "empty versionId query param",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEmptyVersionId, ""),
+			},
+		},
 		{
 			name: "verify access fails",
 			input: testInput{
@@ -553,6 +604,23 @@ func TestS3ApiController_GetObjectAttributes(t *testing.T) {
 		output testOutput
 	}{
 		{
+			name: "empty versionId query param",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEmptyVersionId, ""),
+			},
+		},
+		{
 			name: "verify access fails",
 			input: testInput{
 				locals: accessDeniedLocals,
@@ -674,6 +742,23 @@ func TestS3ApiController_GetObject(t *testing.T) {
 		input  testInput
 		output testOutput
 	}{
+		{
+			name: "empty versionId query param",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEmptyVersionId, ""),
+			},
+		},
 		{
 			name: "verify access fails",
 			input: testInput{

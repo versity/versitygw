@@ -16,6 +16,7 @@ package integration
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -148,4 +149,8 @@ func PutObjectLegalHold_success(s *S3Conf) error {
 
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: key, removeOnlyLeglHold: true}})
 	}, withLock())
+}
+
+func PutObjectLegalHold_empty_version_id(s *S3Conf) error {
+	return testEmptyVersionId(s, "PutObjectLegalHold_empty_version_id", http.MethodPut, "legal-hold", []byte("<LegalHold><Status>ON</Status></LegalHold>"))
 }

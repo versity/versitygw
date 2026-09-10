@@ -71,6 +71,14 @@ func (c S3ApiController) HeadObject(ctx fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrAnonymousResponseHeaders)
 	}
 
+	if err := utils.ValidateVersionId(ctx); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	action := auth.GetObjectAction
 	if ctx.Request().URI().QueryArgs().Has("versionId") {
 		action = auth.GetObjectVersionAction

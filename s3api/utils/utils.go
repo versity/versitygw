@@ -962,6 +962,20 @@ func GetQueryParam(ctx fiber.Ctx, key string) *string {
 	return &value
 }
 
+// ValidateVersionId ensures the versionId query parameter, if specified, isn't
+// empty. S3 rejects both "?versionId=" and the valueless "?versionId" form, and
+// rejects the request if any of the repeated values is empty.
+func ValidateVersionId(ctx fiber.Ctx) error {
+	for _, val := range ctx.Request().URI().QueryArgs().PeekMulti("versionId") {
+		if len(val) == 0 {
+			debuglogger.Logf("empty versionId query parameter")
+			return s3err.GetInvalidArgumentErr(s3err.InvalidArgEmptyVersionId, "")
+		}
+	}
+
+	return nil
+}
+
 // ApplyOverride returns the override value if it exists and status is 200, otherwise returns original
 func ApplyOverride(original, override *string) *string {
 	if override != nil {

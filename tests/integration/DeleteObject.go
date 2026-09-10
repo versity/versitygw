@@ -383,3 +383,7 @@ func DeleteObject_expected_bucket_owner(s *S3Conf) error {
 		return err
 	})
 }
+
+func DeleteObject_empty_version_id(s *S3Conf) error {
+	return testEmptyVersionId(s, "DeleteObject_empty_version_id", http.MethodDelete, "", nil)
+}

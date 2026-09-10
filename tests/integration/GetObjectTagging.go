@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -127,4 +128,8 @@ func GetObjectTagging_success(s *S3Conf) error {
 
 		return nil
 	})
+}
+
+func GetObjectTagging_empty_version_id(s *S3Conf) error {
+	return testEmptyVersionId(s, "GetObjectTagging_empty_version_id", http.MethodGet, "tagging", nil)
 }

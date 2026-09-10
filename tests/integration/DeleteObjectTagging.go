@@ -196,3 +196,7 @@ func DeleteObjectTagging_expected_bucket_owner(s *S3Conf) error {
 		return nil
 	})
 }
+
+func DeleteObjectTagging_empty_version_id(s *S3Conf) error {
+	return testEmptyVersionId(s, "DeleteObjectTagging_empty_version_id", http.MethodDelete, "tagging", nil)
+}

@@ -496,6 +496,61 @@ func checkHTTPResponseApiErr(resp *http.Response, expected s3err.S3Error) error 
 	return compareS3ApiError(expected, &errResp)
 }
 
+// testEmptyVersionId verifies an action rejects an empty versionId query
+// parameter. The SDK drops empty query parameters, so the request has to be
+// signed and sent by hand. subresource is the action's query flag, e.g.
+// "tagging", and is empty for the actions addressed by the bare object path.
+// body is required for the actions whose routes are guarded by the checksum
+// middleware, which rejects empty bodies before the controller runs.
+func testEmptyVersionId(s *S3Conf, testName, method, subresource string, body []byte) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		var headers map[string]string
+		if len(body) != 0 {
+			sum := md5.Sum(body)
+			headers = map[string]string{
+				"Content-Md5": base64.StdEncoding.EncodeToString(sum[:]),
+			}
+		}
+
+		query := "versionId="
+		if subresource != "" {
+			query = fmt.Sprintf("%v&%v", subresource, query)
+		}
+
+		req, err := createSignedReq(method, s.endpoint,
+			fmt.Sprintf("%v/%v?%v", bucket, obj, query), s.awsID, s.awsSecret,
+			"s3", s.awsRegion, "", body, time.Now(), headers)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		expected := s3err.GetInvalidArgumentErr(s3err.InvalidArgEmptyVersionId, "")
+		// HEAD responses carry no body: only the status code is verifiable
+		if method == http.MethodHead {
+			resp.Body.Close()
+			if resp.StatusCode != expected.StatusCode() {
+				return fmt.Errorf("expected response status code to be %v, instead got %v",
+					expected.StatusCode(), resp.StatusCode)
+			}
+
+			return nil
+		}
+
+		return checkHTTPResponseApiErr(resp, expected)
+	})
+}
+
 func checkIAMAuthRequest(s *S3Conf, req *http.Request, expected iamerr.APIError) error {
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -1436,6 +1491,15 @@ func getString(str *string) string {
 
 func getPtr[T any](str T) *T {
 	return &str
+}
+
+// getNonEmptyPtr returns nil for an empty string, rather than a pointer to
+// the empty string.
+func getNonEmptyPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func checksumHeaderName(algo types.ChecksumAlgorithm) string {
@@ -2942,7 +3006,7 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 				_, err := client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
 					Bucket:    &bucket,
 					Key:       &obj.key,
-					VersionId: getPtr(obj.versionId),
+					VersionId: getNonEmptyPtr(obj.versionId),
 					LegalHold: &types.ObjectLockLegalHold{
 						Status: types.ObjectLockLegalHoldStatusOff, // Disable legal hold
 					},
@@ -2980,7 +3044,7 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 			_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 				Bucket:                    &bucket,
 				Key:                       &obj.key,
-				VersionId:                 getPtr(obj.versionId),
+				VersionId:                 getNonEmptyPtr(obj.versionId),
 				BypassGovernanceRetention: getBoolPtr(true),
 				Retention: &types.ObjectLockRetention{
 					Mode:            types.ObjectLockRetentionModeGovernance,
@@ -3021,7 +3085,7 @@ func waitOutComplianceRetention(client *s3.Client, bucket string, obj objToDelet
 	out, err := client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
 		Bucket:    &bucket,
 		Key:       &obj.key,
-		VersionId: getPtr(obj.versionId),
+		VersionId: getNonEmptyPtr(obj.versionId),
 	})
 	cancel()
 
@@ -3048,7 +3112,7 @@ func waitOutComplianceRetention(client *s3.Client, bucket string, obj objToDelet
 		_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket:    &bucket,
 			Key:       &obj.key,
-			VersionId: getPtr(obj.versionId),
+			VersionId: getNonEmptyPtr(obj.versionId),
 			Retention: &types.ObjectLockRetention{
 				Mode:            types.ObjectLockRetentionModeCompliance,
 				RetainUntilDate: &retDate,
@@ -3092,7 +3156,7 @@ func lockObject(client *s3.Client, mode objectLockMode, bucket, object, versionI
 		_, err := client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
 			Bucket:    &bucket,
 			Key:       &object,
-			VersionId: getPtr(versionId),
+			VersionId: getNonEmptyPtr(versionId),
 			LegalHold: &types.ObjectLockLegalHold{
 				Status: types.ObjectLockLegalHoldStatusOn,
 			},
@@ -3110,7 +3174,7 @@ func lockObject(client *s3.Client, mode objectLockMode, bucket, object, versionI
 	_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 		Bucket:    &bucket,
 		Key:       &object,
-		VersionId: getPtr(versionId),
+		VersionId: getNonEmptyPtr(versionId),
 		Retention: &types.ObjectLockRetention{
 			Mode:            m,
 			RetainUntilDate: &date,

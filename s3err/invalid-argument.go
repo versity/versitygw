@@ -52,6 +52,7 @@ const (
 	InvalidArgMetadataDirective
 	InvalidArgTaggingDirective
 	InvalidArgVersionId
+	InvalidArgEmptyVersionId
 	InvalidArgChecksumPart
 	InvalidArgMissingUploadId
 	InvalidArgUploadIdMarker
@@ -173,6 +174,10 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	},
 	InvalidArgVersionId: {
 		Description:  "Invalid version id specified",
+		ArgumentName: "versionId",
+	},
+	InvalidArgEmptyVersionId: {
+		Description:  "Version id cannot be the empty string",
 		ArgumentName: "versionId",
 	},
 	InvalidArgChecksumPart: {

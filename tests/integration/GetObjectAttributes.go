@@ -20,6 +20,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -272,4 +273,8 @@ func GetObjectAttributes_checksums(s *S3Conf) error {
 		}
 		return nil
 	})
+}
+
+func GetObjectAttributes_empty_version_id(s *S3Conf) error {
+	return testEmptyVersionId(s, "GetObjectAttributes_empty_version_id", http.MethodGet, "attributes", nil)
 }

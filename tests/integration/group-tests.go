@@ -234,6 +234,7 @@ func TestHeadObject(ts *TestState) {
 	ts.Run(HeadObject_mp_part_number_resp_status)
 	ts.Run(HeadObject_non_mp_part_number_1_success)
 	ts.Run(HeadObject_empty_object_part_number_1)
+	ts.Run(HeadObject_empty_version_id)
 }
 
 func TestGetObjectAttributes(ts *TestState) {
@@ -248,6 +249,7 @@ func TestGetObjectAttributes(ts *TestState) {
 	if !ts.conf.azureTests {
 		ts.Run(GetObjectAttributes_checksums)
 	}
+	ts.Run(GetObjectAttributes_empty_version_id)
 }
 
 func TestGetObject(ts *TestState) {
@@ -281,6 +283,7 @@ func TestGetObject(ts *TestState) {
 	ts.Run(GetObject_mp_part_number_resp_status)
 	ts.Run(GetObject_non_mp_part_number_1_success)
 	ts.Run(GetObject_empty_object_part_number_1)
+	ts.Run(GetObject_empty_version_id)
 }
 
 func TestListObjects(ts *TestState) {
@@ -350,6 +353,7 @@ func TestDeleteObject(ts *TestState) {
 	ts.Run(DeleteObject_success_status_code)
 	ts.Run(DeleteObject_incorrect_expected_bucket_owner)
 	ts.Run(DeleteObject_expected_bucket_owner)
+	ts.Run(DeleteObject_empty_version_id)
 }
 
 func TestDeleteObjects(ts *TestState) {
@@ -406,6 +410,7 @@ func TestPutObjectTagging(ts *TestState) {
 	ts.Run(PutObjectTagging_tag_count_limit)
 	ts.Run(PutObjectTagging_invalid_tags)
 	ts.Run(PutObjectTagging_success)
+	ts.Run(PutObjectTagging_empty_version_id)
 }
 
 func TestGetObjectTagging(ts *TestState) {
@@ -413,6 +418,7 @@ func TestGetObjectTagging(ts *TestState) {
 	ts.Run(GetObjectTagging_unset_tags)
 	ts.Run(GetObjectTagging_invalid_parent)
 	ts.Run(GetObjectTagging_success)
+	ts.Run(GetObjectTagging_empty_version_id)
 }
 
 func TestDeleteObjectTagging(ts *TestState) {
@@ -420,6 +426,7 @@ func TestDeleteObjectTagging(ts *TestState) {
 	ts.Run(DeleteObjectTagging_success_status)
 	ts.Run(DeleteObjectTagging_success)
 	ts.Run(DeleteObjectTagging_expected_bucket_owner)
+	ts.Run(DeleteObjectTagging_empty_version_id)
 }
 
 func TestCreateMultipartUpload(ts *TestState) {
@@ -782,6 +789,7 @@ func TestPutObjectRetention(ts *TestState) {
 	ts.Run(PutObjectRetention_shorten_compliance_denied)
 	ts.Run(PutObjectRetention_rewrite_same_date)
 	ts.Run(PutObjectRetention_success)
+	ts.Run(PutObjectRetention_empty_version_id)
 }
 
 func TestGetObjectRetention(ts *TestState) {
@@ -790,6 +798,7 @@ func TestGetObjectRetention(ts *TestState) {
 	ts.Run(GetObjectRetention_disabled_lock)
 	ts.Run(GetObjectRetention_unset_config)
 	ts.Run(GetObjectRetention_success)
+	ts.Run(GetObjectRetention_empty_version_id)
 }
 
 func TestPutObjectLegalHold(ts *TestState) {
@@ -799,6 +808,7 @@ func TestPutObjectLegalHold(ts *TestState) {
 	ts.Run(PutObjectLegalHold_invalid_status)
 	ts.Run(PutObjectLegalHold_unset_bucket_object_lock_config)
 	ts.Run(PutObjectLegalHold_success)
+	ts.Run(PutObjectLegalHold_empty_version_id)
 }
 
 func TestGetObjectLegalHold(ts *TestState) {
@@ -807,6 +817,7 @@ func TestGetObjectLegalHold(ts *TestState) {
 	ts.Run(GetObjectLegalHold_disabled_lock)
 	ts.Run(GetObjectLegalHold_unset_config)
 	ts.Run(GetObjectLegalHold_success)
+	ts.Run(GetObjectLegalHold_empty_version_id)
 }
 
 func TestNotImplementedActions(ts *TestState) {
@@ -2884,6 +2895,7 @@ func GetIntTests() IntTests {
 		"HeadObject_mp_part_number_exceeds_parts_count":                                    HeadObject_mp_part_number_exceeds_parts_count,
 		"HeadObject_mp_part_number_success":                                                HeadObject_mp_part_number_success,
 		"HeadObject_mp_part_number_resp_status":                                            HeadObject_mp_part_number_resp_status,
+		"HeadObject_empty_version_id":                                                      HeadObject_empty_version_id,
 		"HeadObject_non_mp_part_number_1_success":                                          HeadObject_non_mp_part_number_1_success,
 		"HeadObject_empty_object_part_number_1":                                            HeadObject_empty_object_part_number_1,
 		"GetObjectAttributes_non_existing_bucket":                                          GetObjectAttributes_non_existing_bucket,
@@ -2894,6 +2906,7 @@ func GetIntTests() IntTests {
 		"GetObjectAttributes_empty_attrs":                                                  GetObjectAttributes_empty_attrs,
 		"GetObjectAttributes_existing_object":                                              GetObjectAttributes_existing_object,
 		"GetObjectAttributes_checksums":                                                    GetObjectAttributes_checksums,
+		"GetObjectAttributes_empty_version_id":                                             GetObjectAttributes_empty_version_id,
 		"GetObject_non_existing_key":                                                       GetObject_non_existing_key,
 		"GetObject_directory_object_noslash":                                               GetObject_directory_object_noslash,
 		"GetObject_with_range":                                                             GetObject_with_range,
@@ -2921,6 +2934,7 @@ func GetIntTests() IntTests {
 		"GetObject_mp_part_number_resp_status":                                             GetObject_mp_part_number_resp_status,
 		"GetObject_non_mp_part_number_1_success":                                           GetObject_non_mp_part_number_1_success,
 		"GetObject_empty_object_part_number_1":                                             GetObject_empty_object_part_number_1,
+		"GetObject_empty_version_id":                                                       GetObject_empty_version_id,
 		"ListObjects_non_existing_bucket":                                                  ListObjects_non_existing_bucket,
 		"ListObjects_with_prefix":                                                          ListObjects_with_prefix,
 		"ListObjects_truncated":                                                            ListObjects_truncated,
@@ -2970,6 +2984,7 @@ func GetIntTests() IntTests {
 		"DeleteObject_directory_object":                                                    DeleteObject_directory_object,
 		"DeleteObject_success":                                                             DeleteObject_success,
 		"DeleteObject_success_status_code":                                                 DeleteObject_success_status_code,
+		"DeleteObject_empty_version_id":                                                    DeleteObject_empty_version_id,
 		"DeleteObject_incorrect_expected_bucket_owner":                                     DeleteObject_incorrect_expected_bucket_owner,
 		"DeleteObject_expected_bucket_owner":                                               DeleteObject_expected_bucket_owner,
 		"DeleteObjects_empty_input":                                                        DeleteObjects_empty_input,
@@ -3018,13 +3033,16 @@ func GetIntTests() IntTests {
 		"PutObjectTagging_tag_count_limit":                                                 PutObjectTagging_tag_count_limit,
 		"PutObjectTagging_invalid_tags":                                                    PutObjectTagging_invalid_tags,
 		"PutObjectTagging_success":                                                         PutObjectTagging_success,
+		"PutObjectTagging_empty_version_id":                                                PutObjectTagging_empty_version_id,
 		"GetObjectTagging_non_existing_object":                                             GetObjectTagging_non_existing_object,
 		"GetObjectTagging_unset_tags":                                                      GetObjectTagging_unset_tags,
 		"GetObjectTagging_invalid_parent":                                                  GetObjectTagging_invalid_parent,
 		"GetObjectTagging_success":                                                         GetObjectTagging_success,
+		"GetObjectTagging_empty_version_id":                                                GetObjectTagging_empty_version_id,
 		"DeleteObjectTagging_non_existing_object":                                          DeleteObjectTagging_non_existing_object,
 		"DeleteObjectTagging_success_status":                                               DeleteObjectTagging_success_status,
 		"DeleteObjectTagging_success":                                                      DeleteObjectTagging_success,
+		"DeleteObjectTagging_empty_version_id":                                             DeleteObjectTagging_empty_version_id,
 		"DeleteObjectTagging_expected_bucket_owner":                                        DeleteObjectTagging_expected_bucket_owner,
 		"CreateMultipartUpload_non_existing_bucket":                                        CreateMultipartUpload_non_existing_bucket,
 		"CreateMultipartUpload_long_metadata":                                              CreateMultipartUpload_long_metadata,
@@ -3291,22 +3309,26 @@ func GetIntTests() IntTests {
 		"PutObjectRetention_shorten_compliance_denied":                                     PutObjectRetention_shorten_compliance_denied,
 		"PutObjectRetention_rewrite_same_date":                                             PutObjectRetention_rewrite_same_date,
 		"PutObjectRetention_success":                                                       PutObjectRetention_success,
+		"PutObjectRetention_empty_version_id":                                              PutObjectRetention_empty_version_id,
 		"GetObjectRetention_non_existing_bucket":                                           GetObjectRetention_non_existing_bucket,
 		"GetObjectRetention_non_existing_object":                                           GetObjectRetention_non_existing_object,
 		"GetObjectRetention_disabled_lock":                                                 GetObjectRetention_disabled_lock,
 		"GetObjectRetention_unset_config":                                                  GetObjectRetention_unset_config,
 		"GetObjectRetention_success":                                                       GetObjectRetention_success,
+		"GetObjectRetention_empty_version_id":                                              GetObjectRetention_empty_version_id,
 		"PutObjectLegalHold_non_existing_bucket":                                           PutObjectLegalHold_non_existing_bucket,
 		"PutObjectLegalHold_non_existing_object":                                           PutObjectLegalHold_non_existing_object,
 		"PutObjectLegalHold_invalid_body":                                                  PutObjectLegalHold_invalid_body,
 		"PutObjectLegalHold_invalid_status":                                                PutObjectLegalHold_invalid_status,
 		"PutObjectLegalHold_unset_bucket_object_lock_config":                               PutObjectLegalHold_unset_bucket_object_lock_config,
 		"PutObjectLegalHold_success":                                                       PutObjectLegalHold_success,
+		"PutObjectLegalHold_empty_version_id":                                              PutObjectLegalHold_empty_version_id,
 		"GetObjectLegalHold_non_existing_bucket":                                           GetObjectLegalHold_non_existing_bucket,
 		"GetObjectLegalHold_non_existing_object":                                           GetObjectLegalHold_non_existing_object,
 		"GetObjectLegalHold_disabled_lock":                                                 GetObjectLegalHold_disabled_lock,
 		"GetObjectLegalHold_unset_config":                                                  GetObjectLegalHold_unset_config,
 		"GetObjectLegalHold_success":                                                       GetObjectLegalHold_success,
+		"GetObjectLegalHold_empty_version_id":                                              GetObjectLegalHold_empty_version_id,
 		"PutBucketAnalyticsConfiguration_not_implemented":                                  PutBucketAnalyticsConfiguration_not_implemented,
 		"GetBucketAnalyticsConfiguration_not_implemented":                                  GetBucketAnalyticsConfiguration_not_implemented,
 		"ListBucketAnalyticsConfiguration_not_implemented":                                 ListBucketAnalyticsConfiguration_not_implemented,

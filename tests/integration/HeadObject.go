@@ -1510,3 +1510,7 @@ func HeadObject_overrides_fail_public(s *S3Conf) error {
 		return nil
 	}, withAnonymousClient())
 }
+
+func HeadObject_empty_version_id(s *S3Conf) error {
+	return testEmptyVersionId(s, "HeadObject_empty_version_id", http.MethodHead, "", nil)
+}

@@ -40,6 +40,14 @@ func (c S3ApiController) GetObjectTagging(ctx fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
+	if err := utils.ValidateVersionId(ctx); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	action := auth.GetObjectTaggingAction
 	if versionId != "" {
 		action = auth.GetObjectVersionTaggingAction
@@ -101,6 +109,14 @@ func (c S3ApiController) GetObjectRetention(ctx fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
+	if err := utils.ValidateVersionId(ctx); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionRead,
@@ -146,6 +162,14 @@ func (c S3ApiController) GetObjectLegalHold(ctx fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
+
+	if err := utils.ValidateVersionId(ctx); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
 
 	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
@@ -289,6 +313,14 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
+	if err := utils.ValidateVersionId(ctx); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	action := auth.GetObjectAttributesAction
 	if versionId != "" {
 		action = auth.GetObjectVersionAttributesAction
@@ -410,6 +442,14 @@ func (c S3ApiController) GetObject(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrAnonymousResponseHeaders)
+	}
+
+	if err := utils.ValidateVersionId(ctx); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
 	}
 
 	action := auth.GetObjectAction

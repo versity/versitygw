@@ -36,6 +36,14 @@ func (c S3ApiController) DeleteObjectTagging(ctx fiber.Ctx) (*Response, error) {
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
+	if err := utils.ValidateVersionId(ctx); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	action := auth.DeleteObjectTaggingAction
 	if versionId != "" {
 		action = auth.DeleteObjectVersionTaggingAction
@@ -130,6 +138,14 @@ func (c S3ApiController) DeleteObject(ctx fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
+
+	if err := utils.ValidateVersionId(ctx); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
 
 	action := auth.DeleteObjectAction
 	if versionId != "" {
