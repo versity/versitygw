@@ -59,10 +59,10 @@ func New(opts CuServerOpts, be backend.Backend) (*CuServer, error) {
 		return nil, fmt.Errorf("cuserver: rdma server: %w", err)
 	}
 
-	// StartSession is a no-op when the library manages session start
-	// internally (e.g. libcuobjserver v1.2.0 calls startRDMASession from
-	// the cuObjServer constructor). It is kept here for forward compatibility
-	// with library versions that require an explicit call.
+	// libcuobjserver starts the RDMA session inside the cuObjServer
+	// constructor, so this verifies the session came up rather than
+	// initiating it, and fails fast if the server constructed but did not
+	// connect.
 	if err := rdmaSrv.StartSession(); err != nil {
 		rdmaSrv.Close()
 		be.Shutdown()
