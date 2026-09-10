@@ -208,6 +208,15 @@ type IAMConfig struct {
 	// itself trusted, such as a discovery provider bound to loopback as a
 	// sidecar in this process's own pod.
 	OIDCAllowInsecureTransport bool
+
+	// OIDCDiscoveryURLs redirects individual providers' discovery-document
+	// fetches, as "<provider url>=<discovery url>" pairs. The discovery URL
+	// is fetched exactly as given, path included. Only the fetch moves: the
+	// provider Url stays what a token's iss claim and the fetched document's
+	// own issuer field must match, so an IdP can hand out tokens naming its
+	// public issuer while this process reads its keys over a private,
+	// in-cluster path.
+	OIDCDiscoveryURLs []string
 }
 
 // privateAPIServer is the standalone IAM service's private endpoint set
@@ -440,6 +449,9 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 	}
 	if cfg.OIDCAllowInsecureTransport {
 		opts = append(opts, iamapi.WithOIDCAllowInsecureTransport())
+	}
+	if len(cfg.OIDCDiscoveryURLs) > 0 {
+		opts = append(opts, iamapi.WithOIDCDiscoveryURLs(cfg.OIDCDiscoveryURLs))
 	}
 	corsAllowOrigin := strings.TrimSpace(cfg.CORSAllowOrigin)
 	if len(cfg.WebuiPorts) > 0 && corsAllowOrigin == "" {

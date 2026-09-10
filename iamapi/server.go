@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -84,15 +85,72 @@ type OIDCConfig struct {
 	// drops TLS verification for https ones; see
 	// WithOIDCAllowInsecureTransport.
 	AllowInsecureTransport bool
+	// DiscoveryURLs holds "<provider url>=<discovery url>" pairs, each
+	// redirecting one provider's discovery-document fetch; see
+	// WithOIDCDiscoveryURLs.
+	DiscoveryURLs []string
+	// discovery is DiscoveryURLs parsed and keyed by stored provider Url,
+	// built by New.
+	discovery map[string]string
 }
 
-// endpointPolicy projects the two endpoint relaxations into the form
-// iamutil's URL-validation and fetch helpers take.
+// endpointPolicy projects the endpoint relaxations into the form iamutil's
+// URL-validation and fetch helpers take.
 func (c OIDCConfig) endpointPolicy() iamutil.OIDCEndpointPolicy {
 	return iamutil.OIDCEndpointPolicy{
 		AllowPrivateEndpoints:  c.AllowPrivateEndpoints,
 		AllowInsecureTransport: c.AllowInsecureTransport,
+		DiscoveryURLs:          c.discovery,
 	}
+}
+
+// parseDiscoveryURLs turns DiscoveryURLs' pairs into the map the endpoint
+// policy takes, keyed by stored provider Url so a lookup by a provider's
+// stored form hits directly. The provider Url is held to the same rules
+// CreateOpenIDConnectProvider applies, so a pair naming a provider that could
+// never be registered fails here; the discovery URL must be an absolute
+// http or https URL, since it is fetched exactly as written.
+func (c *OIDCConfig) parseDiscoveryURLs() error {
+	if len(c.DiscoveryURLs) == 0 {
+		return nil
+	}
+	c.discovery = make(map[string]string, len(c.DiscoveryURLs))
+	for _, pair := range c.DiscoveryURLs {
+		providerURL, discoveryURL, ok := cutDiscoveryURLPair(pair)
+		providerURL, discoveryURL = strings.TrimSpace(providerURL), strings.TrimSpace(discoveryURL)
+		if !ok || providerURL == "" {
+			return fmt.Errorf("iamapi: oidc discovery url %q must be in <provider url>=<discovery url> form, with an http:// or https:// discovery url", pair)
+		}
+		stored, err := iamutil.ValidateOIDCProviderURL(providerURL, c.endpointPolicy())
+		if err != nil {
+			return fmt.Errorf("iamapi: oidc discovery url %q: invalid provider url %q: %w", pair, providerURL, err)
+		}
+		parsed, err := url.Parse(discoveryURL)
+		if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+			return fmt.Errorf("iamapi: oidc discovery url %q: invalid discovery url %q", pair, discoveryURL)
+		}
+		if parsed.Scheme == "http" && !c.AllowInsecureTransport {
+			return fmt.Errorf("iamapi: plaintext oidc discovery url %q requires insecure transport to be allowed", discoveryURL)
+		}
+		c.discovery[stored] = discoveryURL
+	}
+	return nil
+}
+
+// cutDiscoveryURLPair splits a "<provider url>=<discovery url>" pair at the
+// "=" immediately preceding the discovery URL's scheme rather than at the
+// first "=", since a provider Url's path may itself contain "=".
+func cutDiscoveryURLPair(pair string) (providerURL, discoveryURL string, ok bool) {
+	i := -1
+	for _, sep := range []string{"=https://", "=http://"} {
+		if j := strings.Index(pair, sep); j >= 0 && (i < 0 || j < i) {
+			i = j
+		}
+	}
+	if i < 0 {
+		return "", "", false
+	}
+	return pair[:i], pair[i+1:], true
 }
 
 func New(store storage.Storer, root RootCredentials, opts ...Option) (*IAMApiServer, error) {
@@ -110,6 +168,10 @@ func New(store storage.Storer, root RootCredentials, opts ...Option) (*IAMApiSer
 
 	for _, opt := range opts {
 		opt(server)
+	}
+
+	if err := server.oidc.parseDiscoveryURLs(); err != nil {
+		return nil, err
 	}
 
 	app := fiber.New(fiber.Config{
@@ -234,6 +296,22 @@ func WithOIDCAllowPrivateEndpoints() Option {
 // process's own pod.
 func WithOIDCAllowInsecureTransport() Option {
 	return func(s *IAMApiServer) { s.oidc.AllowInsecureTransport = true }
+}
+
+// WithOIDCDiscoveryURLs redirects the discovery-document fetch of individual
+// providers, taking "<provider url>=<discovery url>" pairs. The discovery URL
+// is fetched exactly as given, so it must include the
+// "/.well-known/openid-configuration" path when the IdP serves it there.
+//
+// Only the fetch moves: the provider Url is still what a token's iss claim
+// and the fetched document's own issuer field must match, and the JWKS is
+// still fetched from the jwks_uri that document publishes. That is what lets
+// an IdP hand out tokens naming a public issuer while this gateway reads its
+// keys over a cluster-internal path — the endpoints being private is the
+// point, so a configured discovery URL and the jwks_uri it publishes are
+// exempt from the private-address check without WithOIDCAllowPrivateEndpoints.
+func WithOIDCDiscoveryURLs(pairs []string) Option {
+	return func(s *IAMApiServer) { s.oidc.DiscoveryURLs = pairs }
 }
 
 func (s *IAMApiServer) ServeMultiPort(ports []string) error {

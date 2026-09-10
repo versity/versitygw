@@ -38,7 +38,9 @@ const oidcThumbprintFetchTimeout = 8 * time.Second
 // the presented chain against the system trust store and the provider's own
 // hostname like any normal TLS client, and returns the SHA-1 thumbprint of
 // the last (top-most/intermediate CA) certificate in the peer's presented
-// chain.
+// chain. A configured discovery URL moves the handshake to that endpoint's
+// host, since that is the host every later fetch pins this thumbprint
+// against.
 //
 // SSRF hardening: the hostname is resolved once via
 // net.DefaultResolver.LookupIP; if any resolved address is
@@ -70,14 +72,15 @@ const oidcThumbprintFetchTimeout = 8 * time.Second
 // verification for this handshake entirely and pins whatever is presented.
 func FetchThumbprint(ctx context.Context, providerURL string, policy OIDCEndpointPolicy) (string, error) {
 	displayURL := OIDCEndpointURL(providerURL)
-	if IsInsecureOIDCProviderURL(providerURL) {
-		// A plaintext http provider performs no handshake, so there is no
+	endpoint, policy := policy.ResolveDiscovery(providerURL)
+	if !strings.HasPrefix(endpoint, "https://") {
+		// A plaintext http endpoint performs no handshake, so there is no
 		// certificate to observe. Callers skip auto-fetch for these
 		// entirely; this is the guard for the ones that don't.
-		debuglogger.Logf("oidc thumbprint fetch: %q is a plaintext http provider and presents no certificate", displayURL)
+		debuglogger.Logf("oidc thumbprint fetch: %q is reached over plaintext http and presents no certificate", endpoint)
 		return "", iamerr.OpenIdIdpCommunicationError(displayURL)
 	}
-	host, port := splitOIDCHostPort(hostFromOIDCUrl(providerURL))
+	host, port := splitOIDCHostPort(hostFromOIDCUrl(CanonicalOIDCProviderURL(endpoint)))
 
 	ctx, cancel := context.WithTimeout(ctx, oidcThumbprintFetchTimeout)
 	defer cancel()
