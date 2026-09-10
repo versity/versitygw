@@ -72,3 +72,35 @@ EOF
   matching_logs=("$log_folder"/failing-suite-*.log)
   assert [ -f "${matching_logs[0]}" ]
 }
+
+# tags: unit
+@test "run_parallel captures individual test log reference" {
+  local fake_bin log_folder log_contents matching_logs
+
+  fake_bin="$TEST_FILE_FOLDER/bin"
+  log_folder="$TEST_FILE_FOLDER/run_parallel_logs_$(uuidgen)"
+  mkdir -p "$fake_bin" "$log_folder"
+
+  cat > "$fake_bin/docker" <<'EOF'
+#!/usr/bin/env bash
+
+if [ "$1" == "image" ] && [ "$2" == "inspect" ]; then
+  exit 0
+fi
+if [ "$1" == "run" ]; then
+  printf '%s\n' "test log file: /home/tester/log/test-command-fake.log"
+  exit 7
+fi
+printf 'unexpected docker args: %s\n' "$*" >&2
+exit 1
+EOF
+  chmod +x "$fake_bin/docker"
+
+  PATH="$fake_bin:$PATH" run ./tests/run_parallel.sh "fake-image" "failing-suite" 1 "$log_folder"
+
+  assert_success
+  matching_logs=("$log_folder"/failing-suite-*.log)
+  assert [ -f "${matching_logs[0]}" ]
+  log_contents=$(<"${matching_logs[0]}")
+  [[ "$log_contents" == *"test log file: /home/tester/log/test-command-fake.log"* ]]
+}

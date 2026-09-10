@@ -27,7 +27,7 @@ setup_env() {
   source_config_file
 
   if ! setup_test_log_file; then
-    log 1 "error creating test log file"
+    echo "error creating test log file" >&2
     return 1
   fi
 

@@ -54,7 +54,7 @@ get_log_name_from_placeholders() {
 get_log_name() {
   if [ -n "$TEST_LOG_FILE_PATTERN" ]; then
     if [ -n "$TEST_LOG_FILE" ]; then
-      echo "both TEST_LOG_FILE_PATTERN and TEST_LOG_FILE cannot be defined"
+      echo "both TEST_LOG_FILE_PATTERN and TEST_LOG_FILE cannot be defined" >&2
       return 1
     fi
     if [[ ( "$TEST_LOG_FILE_PATTERN" == *'{'* ) || ( "$TEST_LOG_FILE_PATTERN" == *'}'* ) ]]; then
@@ -68,11 +68,11 @@ get_log_name() {
 setup_test_log_file() {
   if [ -n "$TEST_LOG_FILE" ] || [ -n "$TEST_LOG_FILE_PATTERN" ]; then
     if ! get_log_name; then
-      log 1 "error getting log file name"
+      echo "error getting log file name" >&2
       return 1
     fi
     if ! error=$(touch "$TEST_LOG_FILE.$TEST_ID" 2>&1); then
-      log 1 "error creating test log file: $error"
+      echo "error creating test log file: $error" >&2
       return 1
     fi
     export TEST_LOG_FILE
