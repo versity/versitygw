@@ -74,7 +74,7 @@ $(BIN):
 	$(GOBUILD) $(LDFLAGS) -o $(BIN) cmd/$(BIN)/*.go
 
 $(VGWRDMA_WRAPPER_LIB): cuwrapper/cuobjserver_wrapper.cpp cuwrapper/cuobjserver_wrapper.h
-	$(CXX) -c -fPIC \
+	$(CXX) -c -fPIC -std=c++17 \
 		-I$(CUOBJ_SERVER_INC_DIR) -Icuwrapper \
 		-o cuwrapper/cuobjserver_wrapper.o \
 		cuwrapper/cuobjserver_wrapper.cpp

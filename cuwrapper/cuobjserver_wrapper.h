@@ -39,6 +39,13 @@ cuobj_server_t* cuobj_server_create(const char *ip, unsigned short port, unsigne
 void            cuobj_server_destroy(cuobj_server_t *srv);
 
 // RDMA session
+//
+// libcuobjserver has never exported an explicit session start/close entry
+// point: the constructor brings the session up and the destructor tears it
+// down. cuObjServer 2.0.0 makes that official by deleting the RDMAConnection
+// base class that once declared start/closeRDMASession(). These two calls are
+// kept so callers can express lifecycle intent — start_session reports whether
+// the constructor-started session actually came up, close_session is a no-op.
 int  cuobj_server_start_session(cuobj_server_t *srv);
 void cuobj_server_close_session(cuobj_server_t *srv);
 int  cuobj_server_is_connected(cuobj_server_t *srv);
@@ -58,7 +65,9 @@ void     cuobj_server_free_channel(cuobj_server_t *srv, uint16_t channel_id);
 // Data transfer (synchronous, no poll_delay override)
 //
 // handleGetObject: RDMA WRITE server→client (serves a GET request)
-//   Returns bytes transferred or -1 on error.
+//   Returns bytes transferred, or a negative errno on failure
+//   (-EPROTO when the RDMA descriptor is malformed or its prefix does not
+//   match the server's protocol).
 ssize_t cuobj_server_handle_get(cuobj_server_t *srv,
                                 const char *key,
                                 cuobj_rdma_buffer_t *local_buf,
@@ -68,7 +77,9 @@ ssize_t cuobj_server_handle_get(cuobj_server_t *srv,
                                 uint16_t channel);
 
 // handlePutObject: RDMA READ client→server (serves a PUT request)
-//   Returns bytes transferred or -1 on error.
+//   Returns bytes transferred, or a negative errno on failure
+//   (-EPROTO when the RDMA descriptor is malformed or its prefix does not
+//   match the server's protocol).
 ssize_t cuobj_server_handle_put(cuobj_server_t *srv,
                                 const char *key,
                                 cuobj_rdma_buffer_t *local_buf,
@@ -78,12 +89,23 @@ ssize_t cuobj_server_handle_put(cuobj_server_t *srv,
                                 uint16_t channel);
 
 // Telemetry (optional)
+//
+// cuObjServer 2.0.0 split setTelemFlags into (log_flags, log_op_flags), where
+// the second mask (CUOBJ_LOG_OP_GET / CUOBJ_LOG_OP_PUT) enables per-operation
+// logging. That mask is not exposed here: cuObjTelem defaults it to 0, so
+// passing 0 reproduces the 1.2.0 behaviour this wrapper was written against.
 void cuobj_server_setup_telemetry(int use_otel);
 void cuobj_server_shutdown_telemetry(void);
 void cuobj_server_set_telem_flags(unsigned flags);
 
 // RDMA tunable parameters — flat C struct for CGO compatibility.
 // Field names and defaults match cuObjRDMATunableParam in cuobjrdma.h.
+//
+// cuObjServer 2.0.0 adds two further tunables, deliberately omitted here so
+// they keep their library defaults: `proto` (already defaults to
+// CUOBJ_PROTO_RDMA_DC_V1, the only protocol this gateway implements) and
+// `drain_wait_ms` (only consulted by the multi-VIP removeVip path, which this
+// wrapper does not expose).
 typedef struct {
     int           num_dcis;             // default 128
     unsigned      cq_depth;             // default 640
@@ -100,14 +122,11 @@ typedef struct {
     int           max_rd_atomic;        // default 0 (auto)
 } cuobj_rdma_tunables_t;
 
-// Apply RDMA tuning parameters to an existing connection object.
-// Takes effect on the next reconnection if called after session start.
-// Returns 0 on success, -1 on error.
-int cuobj_server_init_rdma_config(cuobj_server_t *srv, const cuobj_rdma_tunables_t *t);
-
 // Create a cuObjServer with tunable parameters applied before the session
-// starts. This is the preferred constructor when non-default tunables are
-// needed, since the library starts the RDMA session inside the constructor.
+// starts. This is the only way to set tunables: cuObjServer 2.0.0 deleted the
+// RDMAConnection base class, and with it initRDMAConfigParams(), so tunables
+// can no longer be applied to an already-constructed server. The library
+// starts the RDMA session inside the constructor regardless.
 cuobj_server_t* cuobj_server_create_with_config(const char *ip, unsigned short port, unsigned proto, const cuobj_rdma_tunables_t *t);
 
 #ifdef __cplusplus
