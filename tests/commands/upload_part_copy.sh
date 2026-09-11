@@ -15,34 +15,37 @@
 # under the License.
 
 upload_part_copy() {
-  if [ $# -ne 5 ]; then
-    log 2 "upload multipart part copy function must have bucket, key, upload ID, file name, part number"
+  if ! check_param_count_v2 "bucket, key, upload ID, file name, part number" 5 $#; then
     return 1
   fi
-  local etag_json
-  log 5 "parameters:  '$1' '$2' '$3' '$4' '$5'"
-  etag_json=$(send_command aws --no-verify-ssl s3api upload-part-copy --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --copy-source "$1/$4-$(($5-1))") || local uploaded=$?
-  if [[ $uploaded -ne 0 ]]; then
-    log 2 "Error uploading part $5: $etag_json"
+  local bucket="$1" key="$2" upload_id="$3" file_name="$4" part_number="$5"
+  local response response_without_warning
+
+  if ! response=$(send_command aws --no-verify-ssl s3api upload-part-copy --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --copy-source "$1/$4-$(($5-1))" 2>&1); then
+    log 2 "UploadPartCopy command error: $response"
     return 1
   fi
-  etag=$(echo "$etag_json" | jq '.CopyPartResult.ETag')
-  export etag
+  log 5 "UploadPartCopy response: $response"
+  response_without_warning=$(grep -v "InsecureRequestWarning" - <<< "$response")
+  etag=$(jq -r '.CopyPartResult.ETag' - <<< "$response_without_warning" 2>&1)
+  printf '%s\n' "$etag"
+  return 0
 }
 
 upload_part_copy_with_range() {
-  if [ $# -ne 6 ]; then
-    log 2 "upload multipart part copy function must have bucket, key, upload ID, file name, part number, range"
+  if ! check_param_count_v2 "bucket, key, upload ID, file name, part number, range" 6 $#; then
     return 1
   fi
-  local etag_json
-  log 5 "bucket: $1, key: $2, upload ID: $3, file name: $4, range: $5, copy source range: $6"
-  etag_json=$(send_command aws --no-verify-ssl s3api upload-part-copy --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --copy-source "$1/$4-$(($5-1))" --copy-source-range "$6" 2>&1) || local uploaded=$?
-  if [[ $uploaded -ne 0 ]]; then
-    log 2 "Error uploading part $5: $etag_json"
-    export upload_part_copy_error=$etag_json
+  local bucket="$1" key="$2" upload_id="$3" file_name="$4" part_number="$5" range="$6"
+  local response etag
+
+  if ! response=$(send_command aws --no-verify-ssl s3api upload-part-copy --bucket "$bucket" --key "$key" --upload-id "$upload_id" \
+      --part-number "$part_number" --copy-source "${bucket}/${file_name}-$((part_number-1))" --copy-source-range "$range" 2>&1); then
+    printf "s3api UploadPartCopy command error: %s\n" "$response"
     return 1
   fi
-  etag=$(echo "$etag_json" | grep -v "InsecureRequestWarning" | jq '.CopyPartResult.ETag')
-  export etag
+  log 5 "UploadPartCopy with range response: $response"
+  etag=$(echo "$response" | grep -v "InsecureRequestWarning" | jq -r '.CopyPartResult.ETag')
+  printf '%s\n' "$etag"
+  return 0
 }

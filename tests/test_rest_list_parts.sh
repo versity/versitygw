@@ -18,6 +18,7 @@ load ./bats-support/load
 load ./bats-assert/load
 
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/create_multipart_upload/create_multipart_upload_rest.sh
 source ./tests/setup.sh
 
 @test "REST - ListParts - invalid part number marker" {

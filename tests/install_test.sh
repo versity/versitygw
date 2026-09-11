@@ -644,9 +644,16 @@ if ! install_managed_libraries "$os"; then
 fi
 
 if [ -z "$DOWNLOAD_ONLY_FOLDER" ]; then
-  if ! response=$(go get -v -t -d ./... 2>&1); then
-    printf "error installing go dependencies: %s\n" "$response"
-    exit 1
+  if [ -n "$INSTALL_ONLY_FOLDER" ]; then
+    if ! response=$(GOPROXY=off go mod download 2>&1); then
+      printf "error installing go dependencies: %s\n" "$response"
+      exit 1
+    fi
+  else
+    if ! response=$(go mod download 2>&1); then
+      printf "error installing go dependencies: %s\n" "$response"
+      exit 1
+    fi
   fi
 fi
 

@@ -21,8 +21,10 @@ source ./tests/setup.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/rest.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/create_multipart_upload/create_multipart_upload_rest.sh
 source ./tests/drivers/complete_multipart_upload/complete_multipart_upload_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
+source ./tests/drivers/put_object/put_object_s3api.sh
 source ./tests/drivers/upload_part/upload_part_rest.sh
 
 # tags: curl,multipart,CreateMultipartUpload,AbortMultipartUpload
