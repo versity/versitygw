@@ -43,6 +43,8 @@ func azErrToS3err(azErr *azcore.ResponseError) s3err.APIError {
 		return s3err.GetAPIError(s3err.ErrInvalidTagValue)
 	case "Requested Range Not Satisfiable":
 		return s3err.GetAPIError(s3err.ErrInvalidRange)
+	case "AuthorizationPermissionMismatch":
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 	return s3err.APIError{
 		Code:           azErr.ErrorCode,
@@ -55,9 +57,16 @@ func parseMpError(mpErr error) error {
 	err := azureErrToS3Err(mpErr)
 
 	serr, ok := err.(s3err.APIError)
-	if !ok || serr.Code != "NoSuchKey" {
+	if !ok {
 		return mpErr
 	}
 
-	return s3err.GetAPIError(s3err.ErrNoSuchUpload)
+	switch serr.Code {
+	case "NoSuchKey":
+		return s3err.GetAPIError(s3err.ErrNoSuchUpload)
+	case "AccessDenied":
+		return serr
+	}
+
+	return mpErr
 }
