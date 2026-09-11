@@ -96,9 +96,10 @@ type Posix struct {
 	// support copy_file_range is mounted over NFSv4.2.
 	forceNoCopyFileRange bool
 
-	// forceNoObjLockFile disables the shared advisory lock file used for
-	// conditional object publishes. Process-local serialization remains active.
-	forceNoObjLockFile bool
+	// objectLockMode selects the advisory lock used for conditional object
+	// publishes. The local mode retains process-local serialization only, and
+	// the none mode rejects conditional writes.
+	objectLockMode ObjectLockMode
 
 	// enableODirect is a flag to open object data files with O_DIRECT.
 	// This is best-effort and falls back to buffered I/O when unsupported.
@@ -144,9 +145,6 @@ type Posix struct {
 	// per-bucket lock files by lockObjectPublish. Channels make local lock
 	// acquisition cancelable while avoiding filesystem lock thrash.
 	objLockSlots [objLockShards]chan struct{}
-	// objLockWarn ensures the advisory-locking-unavailable warning is
-	// logged at most once
-	objLockWarn sync.Once
 }
 
 func (o *PosixOpts) SetNewDirPerm(perm fs.FileMode) {
@@ -250,10 +248,13 @@ type PosixOpts struct {
 	ForceNoTmpFile bool
 	// ForceNoCopyFileRange disables the use of io.Copy for multipart uploads parts
 	ForceNoCopyFileRange bool
-	// ForceNoObjLockFile disables the shared advisory lock file used for
-	// conditional object publishes. Conditional writes are only atomic within a
-	// single gateway process when enabled.
+	// ForceNoObjLockFile is a deprecated compatibility alias for
+	// ObjectLockModeLocal.
 	ForceNoObjLockFile bool
+	// ObjectLockMode selects flock, fcntl, local, or none for conditional object
+	// publishes. An empty value defaults to flock. Local locking is only atomic
+	// within a single gateway process; none rejects conditional writes.
+	ObjectLockMode ObjectLockMode
 	// EnableODirect enables best-effort O_DIRECT for object data reads/writes.
 	// Disabled by default.
 	EnableODirect bool
@@ -291,13 +292,12 @@ type PosixOpts struct {
 	DataIntegrityEtag bool
 }
 
-// New returns a backend serving buckets from the directories under rootdir.
-//
-// By default New changes the process working directory to rootdir and
-// addresses every bucket and object by a path relative to it. With
-// opts.AbsolutePaths the working directory is left alone and paths are built
-// from the absolute root directory instead (see BucketPath and ObjectPath).
+// New returns a Posix backend serving buckets from the directories under rootdir.
 func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
+	objectLockMode, err := resolveObjectLockMode(opts.ObjectLockMode, opts.ForceNoObjLockFile)
+	if err != nil {
+		return nil, err
+	}
 	ioBufferSize := ioBufferSizeOrDefault(opts.IOBufferSize)
 	rootdirAbs, err := filepath.Abs(rootdir)
 	if err != nil {
@@ -396,7 +396,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		newFilePerm = opts.NewFilePerm.Perm()
 	}
 
-	return &Posix{
+	p := &Posix{
 		meta:                 ms,
 		rootfd:               f,
 		rootdir:              rootdirAbs,
@@ -411,7 +411,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		newFilePerm:          newFilePerm,
 		forceNoTmpFile:       opts.ForceNoTmpFile,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
-		forceNoObjLockFile:   opts.ForceNoObjLockFile,
+		objectLockMode:       objectLockMode,
 		enableODirect:        opts.EnableODirect,
 		validateBucketName:   opts.ValidateBucketNames,
 		actionLimiter:        semaphore.NewWeighted(int64(concurrencyOrDefault(opts.Concurrency))),
@@ -424,7 +424,12 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		}},
 		dataIntegrityEtag: opts.DataIntegrityEtag,
 		objLockSlots:      newObjLockSlots(),
-	}, nil
+	}
+	if err := p.verifyObjectLockMode(); err != nil {
+		p.Shutdown()
+		return nil, err
+	}
+	return p, nil
 }
 
 // BucketPath returns the filesystem path of the bucket directory: the bucket
@@ -4113,6 +4118,9 @@ func getEmptyChecksumValue(algo types.ChecksumAlgorithm) string {
 func (p *Posix) checkPutPreconditions(bucket, object string, ifMatch, ifNoneMatch *string) error {
 	if ifMatch == nil && ifNoneMatch == nil {
 		return nil
+	}
+	if p.objectLockMode == ObjectLockModeNone {
+		return s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
 
 	etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)

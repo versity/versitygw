@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/debuglogger"
 )
 
 // Object publish locking
@@ -33,8 +32,8 @@ import (
 // replacement happen as one atomic step per bucket/key. The gateway is
 // stateless and multiple gateway processes may share the same backend
 // filesystem, so an in-process mutex alone is not sufficient: exclusion is
-// provided by an advisory lock (flock on unix, LockFileEx on windows) on a
-// shared lock file, combined with a process-local striped mutex so that
+// provided by a configured advisory lock (flock or fcntl on unix, LockFileEx
+// on windows) on a shared lock file, combined with a process-local striped mutex so that
 // contention within one process is resolved cheaply and each process presents
 // at most one waiter to the filesystem lock.
 //
@@ -56,13 +55,11 @@ import (
 // the file handle is closed or the process exits, so failures, cancellation,
 // or crashes cannot leave a permanently stale lock.
 //
-// NFS notes: flock on Linux NFS clients is mapped to NFSv4 byte-range locks
-// (or NLM on NFSv3), giving cross-client exclusion. Mounting with
-// "-o nolock" or "-o local_lock=flock"/"local_lock=all" disables server-side
-// locking and reduces exclusion to a single client; conditional-write
-// atomicity across gateways requires server-backed locking. If the filesystem
-// does not support advisory locking at all, the gateway falls back to
-// process-local exclusion and logs a warning once.
+// Filesystem lock scope varies by filesystem and mount options. Operators using
+// multiple gateway processes must select a mode that their filesystem provides
+// with cluster-wide exclusion. The local mode provides only process-local
+// exclusion and is unsafe for conditional writes across gateway processes. The
+// none mode rejects conditional writes.
 
 const (
 	// objLockDir is the root directory holding object publish lock files.
@@ -70,6 +67,63 @@ const (
 	// objLockShards is the number of lock shards per bucket
 	objLockShards = 256
 )
+
+// ObjectLockMode selects the advisory locking primitive used to serialize
+// conditional object publishes.
+type ObjectLockMode string
+
+const (
+	ObjectLockModeFlock ObjectLockMode = "flock"
+	ObjectLockModeFcntl ObjectLockMode = "fcntl"
+	ObjectLockModeLocal ObjectLockMode = "local"
+	ObjectLockModeNone  ObjectLockMode = "none"
+)
+
+func resolveObjectLockMode(mode ObjectLockMode, forceNoObjLockFile bool) (ObjectLockMode, error) {
+	if mode == "" {
+		if forceNoObjLockFile {
+			return ObjectLockModeLocal, nil
+		}
+		return ObjectLockModeFlock, nil
+	}
+	if forceNoObjLockFile && mode != ObjectLockModeLocal {
+		return "", fmt.Errorf("disable object lock file conflicts with object lock mode %q", mode)
+	}
+	switch mode {
+	case ObjectLockModeFlock, ObjectLockModeFcntl, ObjectLockModeLocal, ObjectLockModeNone:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid object lock mode %q (want flock, fcntl, local, or none)", mode)
+	}
+}
+
+// verifyObjectLockMode verifies that the configured shared lock primitive is
+// available on the filesystem containing the gateway's lock directory. It
+// cannot verify cross-node lock coherence.
+func (p *Posix) verifyObjectLockMode() error {
+	if p.objectLockMode == ObjectLockModeLocal || p.objectLockMode == ObjectLockModeNone {
+		return nil
+	}
+	if err := validateObjectLockMode(p.objectLockMode); err != nil {
+		return err
+	}
+
+	lockDir := filepath.Join(p.rootdir, objLockDir)
+	if err := backend.MkdirAll(lockDir, 0, 0, false, p.newDirPerm); err != nil {
+		return fmt.Errorf("make object lock directory: %w", err)
+	}
+	f, err := os.CreateTemp(lockDir, ".startup-lock-*")
+	if err != nil {
+		return fmt.Errorf("create object lock probe: %w", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	if err := lockFileExclusive(context.Background(), f, p.objectLockMode); err != nil {
+		return fmt.Errorf("verify object lock mode %q: %w", p.objectLockMode, err)
+	}
+	return nil
+}
 
 // objLockShard returns the shard index for an object key.
 func objLockShard(object string) uint8 {
@@ -96,7 +150,7 @@ func (p *Posix) lockObjectPublish(ctx context.Context, bucket, object string) (f
 		releaseLocal()
 		return nil, err
 	}
-	if p.forceNoObjLockFile {
+	if p.objectLockMode == ObjectLockModeLocal || p.objectLockMode == ObjectLockModeNone {
 		return releaseLocal, nil
 	}
 
@@ -106,25 +160,15 @@ func (p *Posix) lockObjectPublish(ctx context.Context, bucket, object string) (f
 		return nil, err
 	}
 
-	err = lockFileExclusive(ctx, f)
+	err = lockFileExclusive(ctx, f, p.objectLockMode)
 	if err != nil {
 		f.Close()
 		if ctx.Err() != nil {
 			releaseLocal()
 			return nil, ctx.Err()
 		}
-		if !isAdvisoryLockUnsupported(err) {
-			releaseLocal()
-			return nil, fmt.Errorf("lock object publish: %w", err)
-		}
-		// The filesystem does not support advisory locking (e.g. NFS mounted
-		// with -o nolock). Fall back to process-local exclusion and warn once:
-		// conditional writes are then only atomic within this gateway process.
-		p.objLockWarn.Do(func() {
-			debuglogger.Logf("object lock file locking unavailable (%v): "+
-				"conditional write atomicity limited to this process", err)
-		})
-		return releaseLocal, nil
+		releaseLocal()
+		return nil, fmt.Errorf("lock object publish: %w", err)
 	}
 
 	return func() {

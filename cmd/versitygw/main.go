@@ -125,8 +125,11 @@ func main() {
 	app := initApp()
 	posixCommand := gwcli.PosixCommand()
 	posixCommand.Before = func(ctx *cli.Context) error {
-		if ctx.Bool("disable-object-lock-file") {
+		if ctx.Bool("disable-object-lock-file") || ctx.String("object-lock-mode") == "local" {
 			fmt.Println("Warning: shared object publish locking disabled; conditional write atomicity is limited to this gateway process")
+		}
+		if ctx.String("object-lock-mode") == "none" {
+			fmt.Println("Warning: conditional writes are disabled because object-lock-mode is none")
 		}
 		return nil
 	}

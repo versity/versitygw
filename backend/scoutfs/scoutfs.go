@@ -18,6 +18,7 @@ import (
 	"io/fs"
 
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/posix"
 )
 
 // ScoutfsOpts are the options for the ScoutFS backend
@@ -67,6 +68,8 @@ type ScoutfsOpts struct {
 	// (e.g. "CRC64NVME-<base64>"). For multipart uploads, part ETags become
 	// CRC64NVME-based values and the completed object ETag is checksum-derived.
 	DataIntegrityEtag bool
+	// ObjectLockMode selects local or none for conditional object publishes.
+	ObjectLockMode posix.ObjectLockMode
 }
 
 func (o *ScoutfsOpts) SetNewDirPerm(perm fs.FileMode) {
