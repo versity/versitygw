@@ -546,6 +546,32 @@ func (c S3ApiController) PutBucketAcl(ctx fiber.Ctx) (*Response, error) {
 	}, err
 }
 
+// validateLocationConstraint checks a CreateBucket location constraint. The
+// global endpoint serves defaultRegion and takes no constraint; any other
+// region is a region specific endpoint and requires the constraint to name it.
+func validateLocationConstraint(constraint *string, region string) error {
+	if region == defaultRegion {
+		if constraint != nil {
+			debuglogger.Logf("invalid location constraint: %s", *constraint)
+			return s3err.GetInvalidLocationConstraintErr(*constraint)
+		}
+
+		return nil
+	}
+
+	if constraint == nil {
+		debuglogger.Logf("missing location constraint for region %s", region)
+		return s3err.GetIllegalLocationConstraintErr("")
+	}
+
+	if *constraint != region {
+		debuglogger.Logf("illegal location constraint %s for region %s", *constraint, region)
+		return s3err.GetIllegalLocationConstraintErr(*constraint)
+	}
+
+	return nil
+}
+
 func (c S3ApiController) CreateBucket(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	acl := types.BucketCannedACL(c.getAclHeaderValue(ctx, "X-Amz-Acl"))
@@ -658,18 +684,19 @@ func (c S3ApiController) CreateBucket(ctx fiber.Ctx) (*Response, error) {
 				},
 			}, s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
+	}
 
-		if body.LocationConstraint != nil {
-			region := utils.ContextKeyRegion.Get(ctx).(string)
-			if *body.LocationConstraint != region || *body.LocationConstraint == "us-east-1" {
-				debuglogger.Logf("invalid location constraint: %s", *body.LocationConstraint)
-				return &Response{
-					MetaOpts: &MetaOptions{
-						BucketOwner: bucketOwner.Access,
-					},
-				}, s3err.GetInvalidLocationConstraintErr(*body.LocationConstraint)
-			}
-		}
+	region, ok := utils.ContextKeyRegion.Get(ctx).(string)
+	if !ok {
+		region = defaultRegion
+	}
+
+	if err := validateLocationConstraint(body.LocationConstraint, region); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: bucketOwner.Access,
+			},
+		}, err
 	}
 
 	defACL := auth.ACL{
