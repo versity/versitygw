@@ -427,9 +427,9 @@ check_required_commands() {
     xxd
   )
 
-  if [ "${INSTALL_MC:-false}" = "true" ]; then
-    commands+=(mc)
-  fi
+  #if [ "${INSTALL_MC:-false}" = "true" ]; then
+  #  commands+=(mc)
+  #fi
 
   local cmd
   for cmd in "${commands[@]}"; do
@@ -654,9 +654,9 @@ if [ "$os" == "Linux" ] && ! download_and_install_aws_cli; then
   exit 1
 fi
 
-if ! download_and_install_mc "$os"; then
-  exit 1
-fi
+#if ! download_and_install_mc "$os"; then
+#  exit 1
+#fi
 
 if ! download_and_install_bats_helpers; then
   exit 1
