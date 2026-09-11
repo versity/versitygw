@@ -28,8 +28,10 @@ import (
 func handleParentDirError(name string) error {
 	dir := filepath.Dir(name)
 
-	// Walk up the directory hierarchy
-	for dir != "." && dir != "/" {
+	// Walk up the directory hierarchy until Dir returns its argument
+	// unchanged: "." for a relative path, the volume root for an absolute
+	// one.
+	for dir != filepath.Dir(dir) {
 		d, statErr := os.Stat(dir)
 		if statErr == nil {
 			// Path component exists
