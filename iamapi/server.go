@@ -84,15 +84,54 @@ type OIDCConfig struct {
 	// drops TLS verification for https ones; see
 	// WithOIDCAllowInsecureTransport.
 	AllowInsecureTransport bool
+	// DiscoveryURLs holds "<provider url>=<discovery url>" pairs, each
+	// redirecting one provider's discovery-document fetch; see
+	// WithOIDCDiscoveryURLs.
+	DiscoveryURLs []string
+	// discovery is DiscoveryURLs parsed and keyed by stored provider Url,
+	// built by New.
+	discovery map[string]string
 }
 
-// endpointPolicy projects the two endpoint relaxations into the form
-// iamutil's URL-validation and fetch helpers take.
+// endpointPolicy projects the endpoint relaxations into the form iamutil's
+// URL-validation and fetch helpers take.
 func (c OIDCConfig) endpointPolicy() iamutil.OIDCEndpointPolicy {
 	return iamutil.OIDCEndpointPolicy{
 		AllowPrivateEndpoints:  c.AllowPrivateEndpoints,
 		AllowInsecureTransport: c.AllowInsecureTransport,
+		DiscoveryURLs:          c.discovery,
 	}
+}
+
+// parseDiscoveryURLs turns DiscoveryURLs' pairs into the map the endpoint
+// policy takes, keyed by stored provider Url so a lookup by a provider's
+// stored form hits directly. Both sides must carry a scheme: the provider
+// Url because "http://idp" and "https://idp" are distinct providers, the
+// discovery URL because it is fetched exactly as written.
+func (c *OIDCConfig) parseDiscoveryURLs() error {
+	if len(c.DiscoveryURLs) == 0 {
+		return nil
+	}
+	c.discovery = make(map[string]string, len(c.DiscoveryURLs))
+	for _, pair := range c.DiscoveryURLs {
+		providerURL, discoveryURL, ok := strings.Cut(pair, "=")
+		providerURL, discoveryURL = strings.TrimSpace(providerURL), strings.TrimSpace(discoveryURL)
+		if !ok || providerURL == "" || discoveryURL == "" {
+			return fmt.Errorf("iamapi: oidc discovery url %q must be in <provider url>=<discovery url> form", pair)
+		}
+		if !hasOIDCURLScheme(providerURL) || !hasOIDCURLScheme(discoveryURL) {
+			return fmt.Errorf("iamapi: oidc discovery url %q must give both URLs with an http:// or https:// scheme", pair)
+		}
+		if strings.HasPrefix(discoveryURL, "http://") && !c.AllowInsecureTransport {
+			return fmt.Errorf("iamapi: plaintext oidc discovery url %q requires insecure transport to be allowed", discoveryURL)
+		}
+		c.discovery[iamutil.CanonicalOIDCProviderURL(providerURL)] = discoveryURL
+	}
+	return nil
+}
+
+func hasOIDCURLScheme(rawURL string) bool {
+	return strings.HasPrefix(rawURL, "https://") || strings.HasPrefix(rawURL, "http://")
 }
 
 func New(store storage.Storer, root RootCredentials, opts ...Option) (*IAMApiServer, error) {
@@ -110,6 +149,10 @@ func New(store storage.Storer, root RootCredentials, opts ...Option) (*IAMApiSer
 
 	for _, opt := range opts {
 		opt(server)
+	}
+
+	if err := server.oidc.parseDiscoveryURLs(); err != nil {
+		return nil, err
 	}
 
 	app := fiber.New(fiber.Config{
@@ -234,6 +277,22 @@ func WithOIDCAllowPrivateEndpoints() Option {
 // process's own pod.
 func WithOIDCAllowInsecureTransport() Option {
 	return func(s *IAMApiServer) { s.oidc.AllowInsecureTransport = true }
+}
+
+// WithOIDCDiscoveryURLs redirects the discovery-document fetch of individual
+// providers, taking "<provider url>=<discovery url>" pairs. The discovery URL
+// is fetched exactly as given, so it must include the
+// "/.well-known/openid-configuration" path when the IdP serves it there.
+//
+// Only the fetch moves: the provider Url is still what a token's iss claim
+// and the fetched document's own issuer field must match, and the JWKS is
+// still fetched from the jwks_uri that document publishes. That is what lets
+// an IdP hand out tokens naming a public issuer while this gateway reads its
+// keys over a cluster-internal path — the endpoints being private is the
+// point, so a configured discovery URL and the jwks_uri it publishes are
+// exempt from the private-address check without WithOIDCAllowPrivateEndpoints.
+func WithOIDCDiscoveryURLs(pairs []string) Option {
+	return func(s *IAMApiServer) { s.oidc.DiscoveryURLs = pairs }
 }
 
 func (s *IAMApiServer) ServeMultiPort(ports []string) error {

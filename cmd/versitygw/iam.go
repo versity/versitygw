@@ -73,6 +73,7 @@ func runIAM(ctx *cli.Context) error {
 		DisableOIDCThumbprintAutoFetch: ctx.Bool("disable-oidc-thumbprint-autofetch"),
 		OIDCAllowPrivateEndpoints:      ctx.Bool("oidc-allow-private-endpoints"),
 		OIDCAllowInsecureTransport:     ctx.Bool("oidc-allow-insecure-transport"),
+		OIDCDiscoveryURLs:              ctx.StringSlice("oidc-discovery-url"),
 		CORSAllowOrigin:                corsAllowOrigin,
 		Region:                         region,
 		WebuiPorts:                     webuiPorts,
