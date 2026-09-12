@@ -65,19 +65,43 @@ const (
 
 	protocolValue = "hipobj-rc-v2"
 
+	// defaultMaxPartNumber is the S3-surface default part cap; the
+	// RC part surface falls back to the same value when no limit is
+	// configured.
+	defaultMaxPartNumber = 10000
+
 	hdrReply     = "x-amz-rdma-reply"
 	hdrBytes     = "x-amz-rdma-bytes-transferred"
 	hdrEtag      = "x-amz-rdma-etag"
 	hdrVersionID = "x-amz-rdma-version-id"
+
+	// hdrCapabilities advertises optional transfer capabilities
+	// (comma/space-separated tokens; "mp" = multipart part
+	// transfers through the RC query surface). Emitted on exactly
+	// two surfaces: the READY success response and error responses
+	// for requests in which a native session was created (see
+	// sessionCreatedKey).
+	hdrCapabilities    = "x-amz-rdma-capabilities"
+	capabilityMultipart = "mp"
+
+	// sessionCreatedKey marks, per request, that a native session
+	// was created during this request (svc.Prepare succeeded). The
+	// boundary is creation, not survival: an error serialized after
+	// FinishPrepare(false) still advertises, while errors before
+	// session creation never do.
+	sessionCreatedKey = "rc.sessionCreated"
 )
 
 // Handler serves the three control routes.
 type Handler struct {
-	svc        *rcserver.RCSvc
+	svc        rcService
 	be         backend.Backend
 	iam        auth.IAMService
 	readonly   bool
 	disableACL bool
+	// mpMaxParts caps the part number accepted for part transfers;
+	// zero falls back to the S3 default (10000) at use time.
+	mpMaxParts int
 	// ops owns terminal publication into the operational services
 	// (access log, request metrics, object events); nil keeps the
 	// routes uninstrumented.
@@ -115,13 +139,28 @@ func (h *Handler) Shutdown() {
 }
 
 // New builds the route handler around a started RC service. The
-// operational services arrive later through SetOpsServices, once
-// the gateway has created them.
+// operational services arrive later through SetOpsServices, once the
+// gateway has created them. mpMaxParts carries the configured
+// multipart part limit (the same value the S3 controllers enforce);
+// zero selects the S3 default.
 func New(svc *rcserver.RCSvc, be backend.Backend, iam auth.IAMService,
-	readonly, disableACL bool, sessionLimit int) *Handler {
+	readonly, disableACL bool, sessionLimit, mpMaxParts int) *Handler {
 	return &Handler{svc: svc, be: be, iam: iam,
-		readonly: readonly, disableACL: disableACL,
-		ops: newOpsTracker(sessionLimit)}
+		readonly:   readonly,
+		disableACL: disableACL,
+		mpMaxParts: mpMaxParts,
+		ops:        newOpsTracker(sessionLimit)}
+}
+
+// effectiveMpMaxParts mirrors the S3 controllers' fallback: a
+// configured limit of zero or below selects the default cap of
+// 10000, so the RC part surface never accepts more parts than the
+// REST surface would.
+func (h *Handler) effectiveMpMaxParts() int {
+	if h.mpMaxParts > 0 {
+		return h.mpMaxParts
+	}
+	return defaultMaxPartNumber
 }
 
 // principalID derives the session identity digest from the
@@ -159,6 +198,13 @@ func (h *Handler) Prepare(ctx fiber.Ctx) error {
 	// production S3 error handler turns ordinary Fiber
 	// errors into a generic 500 response.
 	if err := h.prepareCore(ctx); err != nil {
+		// Requests that created a native session before failing
+		// advertise the transfer capabilities on the error
+		// surface too (design: advertisement accompanies the
+		// READY outcome and post-creation failures alike).
+		if created, _ := ctx.Locals(sessionCreatedKey).(bool); created {
+			ctx.Set(hdrCapabilities, capabilityMultipart)
+		}
 		return WriteRouteError(ctx, err)
 	}
 	return nil
@@ -178,7 +224,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	// identity and operation the malformed headers still carried.
 	publishHeaderErr := func(err error, isPut bool) error {
 		target := ctx.Get(hdrTarget)
-		bucket, key, _ := splitTarget(target)
+		bucket, key, _, _ := splitTarget(target)
 		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
 		return err
 	}
@@ -193,10 +239,21 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	}
 	isPut := op == "PUT"
 	target := ctx.Get(hdrTarget)
-	bucket, key, ok := splitTarget(target)
+	bucket, key, query, ok := splitTarget(target)
 	if !ok {
 		return publishHeaderErr(invalidHeader(hdrTarget, target), isPut)
 	}
+	// Parse the query into the session's semantic operation. The
+	// query selects a plain transfer (empty), a part upload, or a
+	// part read; part validation runs here so both phases see the
+	// same parsed identity.
+	semantic, part, err := parseSemanticOp(
+		map[bool]uint8{false: 0, true: 1}[isPut], query,
+		h.effectiveMpMaxParts())
+	if err != nil {
+		return publishHeaderErr(err, isPut)
+	}
+	_ = part
 	size, err := parseUint(ctx.Get(hdrSize), 10, 64)
 	if err != nil || size == 0 {
 		return publishHeaderErr(invalidHeader(hdrSize, ctx.Get(hdrSize)), isPut)
@@ -214,8 +271,12 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 		return publishHeaderErr(invalidHeader(hdrCookie, ctx.Get(hdrCookie)), isPut)
 	}
 
-	// Authorize through the regular object-access chain.
-	if err := h.authorize(ctx, acct, isRoot, bucket, key, isPut); err != nil {
+	// Authorize through the regular object-access chain. A part
+	// upload authorizes as PutObject with readonly enforcement but
+	// skips the overwrite/object-lock check: a part does not
+	// overwrite the object (the REST UploadPart controller performs
+	// no overwrite check either).
+	if err := h.authorize(ctx, acct, isRoot, bucket, key, semantic); err != nil {
 		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
 		return err
 	}
@@ -234,11 +295,17 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 		h.ops.publishRequest(ctx, acct, mapRcError(err), bucket, key, isPut)
 		return mapRcError(err)
 	}
+	// A native session exists from here on. Later failures in this
+	// request (staging, admission, finalization) serialize through
+	// the route error path, which advertises the capabilities for
+	// session-created requests.
+	ctx.Locals(sessionCreatedKey, true)
 
 	// GET: stage the object into the session buffer before the
 	// PREPARE response commits the session.
 	if !isPut {
-		if err := h.stageGet(ctx, resp.SessionID, bucket, key, offset, size); err != nil {
+		if err := h.stageGet(ctx, resp.SessionID, bucket, key,
+			offset, size, part); err != nil {
 			_ = h.svc.FinishPrepare(resp.SessionID, false)
 			h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
 			return err
@@ -253,7 +320,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	// hold unpublished audit records, so the new session is
 	// rejected before the native side commits it.
 	if err := h.ops.register(resp.SessionID, acct,
-		regionFromCtx(ctx), bucket, key, isPut, time.Now()); err != nil {
+		regionFromCtx(ctx), bucket, key, isPut, semantic, query, time.Now()); err != nil {
 		_ = h.svc.FinishPrepare(resp.SessionID, false)
 		// The audit record carries the same SlowDown the wire
 		// shows, so operator-side accounting matches what the
@@ -298,9 +365,12 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 }
 
 // stageGet reads the object range into the session staging buffer
-// and records the staged length on the session.
+// and records the staged length on the session. A part read stages
+// the whole part (PartNumber dispatch); the capacity contract then
+// fails the transfer if the part exceeds the announced size, and a
+// short part stages only its actual bytes.
 func (h *Handler) stageGet(ctx fiber.Ctx, sessionID, bucket, key string,
-	offset, size uint64) error {
+	offset, size uint64, part *partTransfer) error {
 	lease, err := h.svc.BorrowStaging(sessionID)
 	if err != nil {
 		return mapRcError(err)
@@ -313,16 +383,29 @@ func (h *Handler) stageGet(ctx fiber.Ctx, sessionID, bucket, key string,
 	}()
 
 	acceptRange := fmt.Sprintf("bytes=%d-%d", offset, offset+size-1)
+	input := s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	}
+	if part != nil {
+		// A part read dispatches by part number; the offset and
+		// Range are not applicable (an offset into a part has no
+		// defined meaning on the S3 surface).
+		if offset != 0 {
+			return fmt.Errorf(
+				"part read with nonzero offset: %w", errRouteBadRequest{})
+		}
+		pn := int32(part.PartNumber)
+		input.PartNumber = &pn
+	} else {
+		input.Range = &acceptRange
+	}
 	// Bind the object read to the service context so gateway
 	// shutdown cancels it through RCSvc.Close instead of letting
 	// the ops wait spin on a stalled backend.
 	objCtx, stopSvc := svcCtx(ctx.RequestCtx(), h.svc.Context())
 	defer stopSvc()
-	res, err := h.be.GetObject(objCtx, &s3.GetObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-		Range:  &acceptRange,
-	})
+	res, err := h.be.GetObject(objCtx, &input)
 	if err != nil {
 		return err
 	}
@@ -409,10 +492,21 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	// Re-run authorization for the session's stored target and
 	// operation using the account authenticated for this READY
 	// request.
-	bucket, key, ok := splitTarget(info.Target)
+	bucket, key, query, ok := splitTarget(info.Target)
 	if !ok {
 		return errors.New("invalid session target")
 	}
+	// Rebuild the semantic operation from the stored target query
+	// and the transport op, using the same parser and limit PREPARE
+	// used, so the READY re-authorization branch matches the
+	// PREPARE branch exactly (the stored target+query is immutable
+	// from PREPARE on).
+	semantic, part, err := parseSemanticOp(info.Op, query,
+		h.effectiveMpMaxParts())
+	if err != nil {
+		return err
+	}
+	_ = part
 	// Reserve the publication BEFORE the transfer claim and before
 	// re-authorization: once ReadyTransfer returns this handler
 	// holds the native completion reference, and a concurrent
@@ -439,7 +533,7 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	publish := func(err error, bytes int64) {
 		h.ops.publishReserved(sessionID, rsv, err, bytes)
 	}
-	if err := h.authorize(ctx, acct, isRoot, bucket, key, info.Op == 1); err != nil {
+	if err := h.authorize(ctx, acct, isRoot, bucket, key, semantic); err != nil {
 		// Permission revoked mid-session: publish the real
 		// denial - not an expiry - as the outcome, release the
 		// reservation, and cancel the session.
@@ -524,7 +618,8 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 		// finalizer retires exactly at that point; a failure
 		// *before* the borrow still falls back to the
 		// finalizer path below.
-		put, viewDone, committed, err := h.commitPut(ctx, sessionID, bucket, key, sizeOf(resp))
+		put, viewDone, committed, err := h.commitPut(ctx, sessionID,
+			bucket, key, sizeOf(resp), part)
 		if viewDone {
 			finalized = true
 		}
@@ -556,8 +651,10 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	doPublish(nil, int64(resp.BytesTransferred))
 
 	// Wire reply per the hipobj-rc-v2 contract: protocol echo,
-	// cookie echo, transferred bytes, and object metadata.
+	// cookie echo, transferred bytes, and object metadata. The
+	// success surface carries the capability advertisement.
 	ctx.Set(hdrProtocol, protocolValue)
+	ctx.Set(hdrCapabilities, capabilityMultipart)
 	ctx.Set(hdrBytes, strconv.FormatUint(resp.BytesTransferred, 10))
 	ctx.Set(hdrCookie, formatCookie(resp.CookieEcho))
 	if resp.Etag != "" {
@@ -577,14 +674,16 @@ func sizeOf(resp *rcserver.ReadyResponse) uint64 {
 }
 
 // commitPut borrows the PUT view and stores it through the regular
-// object-put backend path. The second return value reports whether
-// the borrow (GetPutData) succeeded: from that point the put view
-// owns the completion ref and FinishPut is its only release, so
-// the caller must not run the session finalizer anymore. A
-// panic-safe defer releases the view if the handler unwinds before
-// FinishPut runs.
+// object-put backend path; a part upload stores through the
+// UploadPart backend path with the upload id and part number the
+// query carried. The second return value reports whether the borrow
+// (GetPutData) succeeded: from that point the put view owns the
+// completion ref and FinishPut is its only release, so the caller
+// must not run the session finalizer anymore. A panic-safe defer
+// releases the view if the handler unwinds before FinishPut runs.
 func (h *Handler) commitPut(ctx fiber.Ctx, sessionID, bucket, key string,
-	size uint64) (put *s3response.PutObjectOutput, viewDone bool, committed int64, err error) {
+	size uint64, part *partTransfer) (put *s3response.PutObjectOutput,
+	viewDone bool, committed int64, err error) {
 	view, err := h.svc.GetPutData(sessionID)
 	if err != nil {
 		return nil, false, 0, mapRcError(err)
@@ -603,6 +702,35 @@ func (h *Handler) commitPut(ctx fiber.Ctx, sessionID, bucket, key string,
 	contentLength := int64(len(view.Buf))
 	putCtx, stopSvc := svcCtx(ctx.RequestCtx(), h.svc.Context())
 	defer stopSvc()
+	if part != nil {
+		// Part upload: store the received bytes as the upload's
+		// part. The returned ETag feeds the client's Complete
+		// call; the object itself is only created there.
+		pn := int32(part.PartNumber)
+		uploadID := part.UploadID
+		pres, perr := h.be.UploadPart(putCtx, &s3.UploadPartInput{
+			Bucket:        &bucket,
+			Key:           &key,
+			UploadId:      &uploadID,
+			PartNumber:    &pn,
+			ContentLength: &contentLength,
+			Body:          bytes.NewReader(view.Buf),
+		})
+		if perr != nil {
+			return nil, true, 0, perr
+		}
+		committed = contentLength
+		if err := h.svc.FinishPut(*view, true,
+			stringify(pres.ETag), ""); err != nil {
+			return &s3response.PutObjectOutput{
+				ETag: stringify(pres.ETag),
+			}, true, committed, mapRcError(err)
+		}
+		putDone = true
+		return &s3response.PutObjectOutput{
+			ETag: stringify(pres.ETag),
+		}, true, committed, nil
+	}
 	res, err := h.be.PutObject(putCtx, s3response.PutObjectInput{
 		Bucket:        &bucket,
 		Key:           &key,
@@ -623,6 +751,14 @@ func (h *Handler) commitPut(ctx fiber.Ctx, sessionID, bucket, key string,
 	}
 	putDone = true
 	return &res, true, committed, nil
+}
+
+// stringify dereferences an optional string pointer.
+func stringify(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // Cancel handles CANCEL: authenticated owner tears the session down.
@@ -663,12 +799,14 @@ func (h *Handler) cancelCore(ctx fiber.Ctx) error {
 }
 
 // authorize runs the object access checks (ACL + policy), plus the
-// retention/object-lock re-check for PUT, mirroring the regular
-// object controllers. The backend lookups run under a context
-// merged with the RC service context so gateway shutdown cancels
-// them too.
+// retention/object-lock re-check for a plain PUT (a part upload
+// skips it: parts do not overwrite the object), mirroring the
+// regular object controllers. The backend lookups run under a
+// context merged with the RC service context so gateway shutdown
+// cancels them too.
 func (h *Handler) authorize(ctx fiber.Ctx, acct auth.Account, isRoot bool,
-	bucket, key string, isPut bool) error {
+	bucket, key string, semantic semanticOp) error {
+	isPut := semantic.isPut()
 	authCtx, stopSvc := svcCtx(ctx.RequestCtx(), h.svc.Context())
 	defer stopSvc()
 	acl, err := h.be.GetBucketAcl(authCtx,
@@ -728,28 +866,53 @@ func svcCtx(request context.Context, svc context.Context) (context.Context, func
 // form; a leading slash separates the bucket from the key) and
 // percent-decodes each segment: the wire form is the canonical
 // percent-encoded path, so the decoded bucket/key must feed the
-// authorization and object I/O, not the raw encoding.
-func splitTarget(target string) (bucket, key string, ok bool) {
+// authorization and object I/O, not the raw encoding. The raw
+// query is returned alongside for use-site parsing; the raw
+// target stays the signed identity surface.
+func splitTarget(target string) (bucket, key, query string, ok bool) {
 	if target == "" || !strings.HasPrefix(target, "/") {
-		return "", "", false
+		return "", "", "", false
 	}
 	target = target[1:]
+	query = ""
 	if i := strings.IndexByte(target, '?'); i >= 0 {
+		query = target[i+1:]
 		target = target[:i]
 	}
 	bucket, key, found := strings.Cut(target, "/")
 	if !found || bucket == "" || key == "" {
-		return "", "", false
+		return "", "", "", false
 	}
 	bucket, err := url.PathUnescape(bucket)
 	if err != nil {
-		return "", "", false
+		return "", "", "", false
 	}
 	key, err = url.PathUnescape(key)
 	if err != nil || key == "" {
-		return "", "", false
+		return "", "", "", false
 	}
-	return bucket, key, true
+	return bucket, key, query, true
+}
+
+// validatePlainQuery enforces the plain-operation contract for this
+// stage: the target query is a future extension surface (part
+// transfers), so any query key - including malformed encodings -
+// answers 400 instead of being silently dropped. An empty query is
+// the only accepted form.
+func validatePlainQuery(query string) error {
+	if query == "" {
+		return nil
+	}
+	vals, err := url.ParseQuery(query)
+	if err != nil {
+		return fmt.Errorf("invalid target query: %q: %w",
+			query, errRouteBadRequest{})
+	}
+	for key := range vals {
+		return fmt.Errorf("unsupported target query key: %q: %w",
+			key, errRouteBadRequest{})
+	}
+	return nil
 }
 
 // parseUint parses a decimal or bare-hex (wire) unsigned value.
