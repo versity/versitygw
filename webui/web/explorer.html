@@ -2965,6 +2965,41 @@ under the License.
     // Upload
     // ============================================
 
+    // Persistent widget (unlike showToast's fire-and-forget toasts) tracking
+    // overall byte progress across every file/part of the current upload
+    // batch, so a large file no longer looks stalled with no feedback.
+    let uploadProgressEl = null;
+
+    function showUploadProgress(fileName, fileIndex, fileCount, bytesDone, bytesTotal) {
+      if (!uploadProgressEl) {
+        uploadProgressEl = document.createElement('div');
+        uploadProgressEl.id = 'upload-progress-indicator';
+        uploadProgressEl.className = 'fixed bottom-4 right-4 z-50 w-80 bg-white rounded-lg shadow-lg border border-gray-200 p-4';
+        document.body.appendChild(uploadProgressEl);
+      }
+
+      const percent = bytesTotal > 0 ? Math.min(100, Math.round((bytesDone / bytesTotal) * 100)) : 0;
+      const label = fileCount > 1 ? `File ${fileIndex} of ${fileCount}: ${fileName}` : fileName;
+
+      uploadProgressEl.innerHTML = `
+        <div class="flex items-center justify-between mb-2 gap-2">
+          <p class="text-sm font-medium text-gray-800 truncate" title="${escapeHtml(fileName)}">${escapeHtml(label)}</p>
+          <span class="text-sm font-semibold text-blue-600 shrink-0">${percent}%</span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+          <div class="bg-blue-600 h-2 rounded-full transition-all duration-150" style="width: ${percent}%"></div>
+        </div>
+        <p class="text-xs text-gray-500 mt-1">${formatSize(bytesDone)} / ${formatSize(bytesTotal)}</p>
+      `;
+    }
+
+    function hideUploadProgress() {
+      if (uploadProgressEl) {
+        uploadProgressEl.remove();
+        uploadProgressEl = null;
+      }
+    }
+
     function openUploadDialog() {
       if (!currentBucket) {
         showToast('Please select a bucket first', 'warning');
@@ -3009,23 +3044,38 @@ under the License.
         showToast(`Uploading ${files.length} files...`, 'info');
       }
 
-      for (const file of files) {
-        const key = currentPrefix + file.name;
+      const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+      let bytesDoneBeforeCurrentFile = 0;
 
-        try {
-          if (file.size >= MULTIPART_THRESHOLD) {
-            // Use multipart upload for large files
-            await uploadMultipart(file, key);
-          } else {
-            // Use simple PUT for small files
-            await api.putObject(currentBucket, key, file);
+      try {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const key = currentPrefix + file.name;
+
+          try {
+            if (file.size >= MULTIPART_THRESHOLD) {
+              // Use multipart upload for large files
+              await uploadMultipart(file, key, (bytesDoneInFile) => {
+                showUploadProgress(file.name, i + 1, files.length, bytesDoneBeforeCurrentFile + bytesDoneInFile, totalBytes);
+              });
+            } else {
+              // Use simple PUT for small files (no per-chunk hook to report progress
+              // through, so report it in one step once the PUT actually resolves —
+              // matches the multipart path only firing onProgress after each part is
+              // confirmed uploaded, never optimistically before)
+              await api.putObject(currentBucket, key, file);
+              showUploadProgress(file.name, i + 1, files.length, bytesDoneBeforeCurrentFile + file.size, totalBytes);
+            }
+            bytesDoneBeforeCurrentFile += file.size;
+            successCount++;
+          } catch (error) {
+            console.error('Upload error:', error);
+            showToast(`Failed to upload ${file.name}: ${error.message}`, 'error');
+            failCount++;
           }
-          successCount++;
-        } catch (error) {
-          console.error('Upload error:', error);
-          showToast(`Failed to upload ${file.name}: ${error.message}`, 'error');
-          failCount++;
         }
+      } finally {
+        hideUploadProgress();
       }
 
       if (successCount > 0) {
@@ -3034,7 +3084,7 @@ under the License.
       }
     }
 
-    async function uploadMultipart(file, key) {
+    async function uploadMultipart(file, key, onProgress) {
       const contentType = file.type || 'application/octet-stream';
 
       // Calculate optimal part size for this file
@@ -3056,6 +3106,8 @@ under the License.
 
           const etag = await api.uploadPart(currentBucket, key, uploadId, partNumber, chunkBuffer);
           parts.push({ partNumber, etag });
+
+          if (onProgress) onProgress(end);
         }
 
         // Complete the multipart upload
