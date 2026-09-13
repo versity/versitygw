@@ -1166,18 +1166,19 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 	}
 	defer f.cleanup()
 
-	// Keeps original time
-	srcInfo, _ := sf.Stat()
-	beforeMTime := srcInfo.ModTime()
+	originalMTime := time.Now()
+	if srcInfo, err := sf.Stat(); err == nil {
+		originalMTime = srcInfo.ModTime()
+	}
 
 	// Prioritize copy_file_range for internal file-to-file version copies.
 	_, err = io.Copy(f.File(), sf)
-
-	err = os.Chtimes(f.File().Name(), time.Now(), beforeMTime)
 	if err != nil {
 		return versionPath, err
 	}
 
+	// Restore original mtime after copy
+	err = os.Chtimes(f.File().Name(), time.Now(), originalMTime)
 	if err != nil {
 		return versionPath, err
 	}
