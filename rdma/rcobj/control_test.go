@@ -46,6 +46,7 @@ type fakeS3 struct {
 	cancelReqs   []recordedReq
 	finalRelease chan struct{}
 	closeOnce    sync.Once
+	releaseOnce  sync.Once
 }
 
 type recordedReq struct {
@@ -73,7 +74,9 @@ func newFakeS3(t *testing.T, prepareStatus int, prepareHeaders http.Header) *fak
 
 func (f *fakeS3) close() {
 	f.closeOnce.Do(func() {
-		close(f.finalRelease)
+		f.releaseOnce.Do(func() {
+			close(f.finalRelease)
+		})
 		f.ln.Close()
 	})
 }
@@ -266,17 +269,15 @@ func TestReadySplitExchange(t *testing.T) {
 
 	// Withhold, then release from another goroutine so finishReady
 	// observes a complete response under its budget.
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		f.mu.Lock()
-		f.withholdFinal = false
-		f.mu.Unlock()
-		select {
-		case <-f.finalRelease:
-		default:
+	f.releaseOnce.Do(func() {
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			f.mu.Lock()
+			f.withholdFinal = false
+			f.mu.Unlock()
 			close(f.finalRelease)
-		}
-	}()
+		}()
+	})
 	if rc := cp.finishReadyForTest(r); rc != 0 {
 		t.Fatalf("finishReady rc=%d", rc)
 	}
