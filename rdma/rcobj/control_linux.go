@@ -28,7 +28,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -138,16 +137,6 @@ func (cp *controlPlane) SetProbeObject(bucket, key string) {
 	cp.probeMu.Unlock()
 }
 
-// escapeKeyPath percent-escapes each path segment of an object
-// key so the signed path matches what the gateway parses.
-func escapeKeyPath(key string) string {
-	segs := strings.Split(key, "/")
-	for i, seg := range segs {
-		segs[i] = url.PathEscape(seg)
-	}
-	return strings.Join(segs, "/")
-}
-
 // recordCapabilities stores the advertisement observed on the
 // PREPARE surface so the admission layer and callers can inspect
 // it after a transfer.
@@ -250,7 +239,7 @@ func (cp *controlPlane) signedObjectProbe(ctx context.Context) (uint64, bool, er
 	}
 	extra := http.Header{}
 	extra.Set("Range", "bytes=0-0")
-	path := "/" + bucket + "/" + escapeKeyPath(key)
+	path := probeObjectPath(bucket, key)
 	if err := cp.signAndWrite(conn, r, http.MethodGet, path, extra); err != nil {
 		return 0, false, err
 	}
@@ -334,6 +323,16 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 		if rerr != nil {
 			return nil, rerr
 		}
+		// Divide the remaining budget evenly across the
+		// candidates: one blackholed route must not consume
+		// the whole deadline before the other family is
+		// tried. The per-attempt timeout also stays capped by
+		// that share.
+		remaining := time.Until(cp.deadlineFor(ctx))
+		if remaining <= 0 {
+			return nil, context.DeadlineExceeded
+		}
+		per := remaining / time.Duration(len(cands))
 		var lastErr error
 		for _, c := range cands {
 			la, aerr := linkAddrFor(dev, c)
@@ -341,19 +340,39 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 				lastErr = aerr
 				continue
 			}
-			nd := net.Dialer{Timeout: cp.dialer.Timeout,
+			perTimeout := per
+			if t := cp.dialer.Timeout; t > 0 && t < per {
+				perTimeout = t
+			}
+			nd := net.Dialer{Timeout: perTimeout,
 				DualStack: cp.dialer.DualStack,
 				KeepAlive: cp.dialer.KeepAlive}
 			nd.LocalAddr = la
-			conn, derr := nd.DialContext(ctx, "tcp", c)
+			actx, acancel := context.WithTimeout(ctx, per)
+			conn, derr := nd.DialContext(actx, "tcp", c)
+			acancel()
 			if derr == nil {
 				return conn, nil
 			}
 			lastErr = derr
+			if ctx.Err() != nil {
+				// The shared budget is gone; later candidates
+				// cannot succeed either.
+				break
+			}
 		}
 		return nil, lastErr
 	}
 	return d.DialContext(ctx, "tcp", host)
+}
+
+// deadlineFor reports the cutoff the caller's context carries, or
+// the zero time when it has none.
+func (cp *controlPlane) deadlineFor(ctx context.Context) time.Time {
+	if dl, ok := ctx.Deadline(); ok {
+		return dl
+	}
+	return time.Time{}
 }
 
 // resolveDest expands the endpoint host into dial candidates in
@@ -1085,6 +1104,14 @@ func linkAddrFor(dev, hostport string) (*net.TCPAddr, error) {
 		return nil, fmt.Errorf("unresolved destination %s", hostport)
 	}
 	want4 := target.To4() != nil
+	// Source scope must fit the destination scope: a link-local
+	// source only serves a link-local (or on-link) destination,
+	// and a routable destination needs a routable source. Prefer
+	// the scope the destination demands and fall back to the
+	// other when the interface lacks the preferred one, so a
+	// global destination still binds a global source even when
+	// the link-local address sorts first.
+	var fallback *net.TCPAddr
 	for _, a := range addrs {
 		ipn, ok := a.(*net.IPNet)
 		if !ok {
@@ -1094,10 +1121,25 @@ func linkAddrFor(dev, hostport string) (*net.TCPAddr, error) {
 		if is4 != want4 {
 			continue
 		}
-		if !is4 && ipn.IP.IsLinkLocalUnicast() {
-			return &net.TCPAddr{IP: ipn.IP, Zone: iface.Name}, nil
+		if is4 {
+			return &net.TCPAddr{IP: ipn.IP}, nil
 		}
+		if ipn.IP.IsLinkLocalUnicast() {
+			// Only directly usable when the destination is
+			// itself link-local.
+			if target.IsLinkLocalUnicast() {
+				return &net.TCPAddr{IP: ipn.IP, Zone: iface.Name}, nil
+			}
+			if fallback == nil {
+				fallback = &net.TCPAddr{IP: ipn.IP, Zone: iface.Name}
+			}
+			continue
+		}
+		// A global IPv6 source serves any destination scope.
 		return &net.TCPAddr{IP: ipn.IP}, nil
+	}
+	if fallback != nil {
+		return fallback, nil
 	}
 	fam := "IPv6"
 	if want4 {

@@ -46,6 +46,7 @@ type fakeS3 struct {
 	prepareReqs  []recordedReq
 	readyReqs    []recordedReq
 	cancelReqs   []recordedReq
+	connBytes    map[net.Conn]int
 	finalRelease chan struct{}
 	closeOnce    sync.Once
 	releaseOnce  sync.Once
@@ -67,6 +68,7 @@ func newFakeS3(t *testing.T, prepareStatus int, prepareHeaders http.Header) *fak
 		ln:             ln,
 		prepareStatus:  prepareStatus,
 		prepareHeaders: prepareHeaders,
+		connBytes:      make(map[net.Conn]int),
 		finalRelease:   make(chan struct{}),
 	}
 	go f.serve()
@@ -97,9 +99,32 @@ func (f *fakeS3) serve() {
 	}
 }
 
+// countingReader tracks how many raw bytes a connection actually
+// delivered, so a test can assert zero bytes were written before a
+// rejection even when no request parses.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
+}
+
 func (f *fakeS3) handle(conn net.Conn) {
 	defer conn.Close()
-	br := bufio.NewReader(conn)
+	cr := &countingReader{r: conn}
+	f.mu.Lock()
+	f.connBytes[conn] = 0
+	f.mu.Unlock()
+	defer func() {
+		f.mu.Lock()
+		f.connBytes[conn] = int(cr.n)
+		f.mu.Unlock()
+	}()
+	br := bufio.NewReader(cr)
 	for {
 		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 		req, err := http.ReadRequest(br)
@@ -107,6 +132,7 @@ func (f *fakeS3) handle(conn net.Conn) {
 			return
 		}
 		f.mu.Lock()
+		f.connBytes[conn] = int(cr.n)
 		rec := recordedReq{
 			path:   req.URL.Path,
 			hdr:    req.Header.Clone(),
@@ -500,18 +526,45 @@ func TestPrepareMismatchedPeerUnsent(t *testing.T) {
 		t.Fatal("admission not positive after successful probe")
 	}
 
-	// Now point the pin at a different peer and dial again.
+	// Snapshot the byte totals, then point the pin at a different
+	// peer and dial again. The production valve must drop the new
+	// connection before a single request byte is written: parse
+	// failures cannot hide it because the fake counts raw bytes
+	// per connection.
+	f.mu.Lock()
+	baseTotal := 0
+	for _, b := range f.connBytes {
+		baseTotal += b
+	}
+	basePrepares := len(f.prepareReqs)
+	f.mu.Unlock()
 	cp.probeMu.Lock()
 	cp.probePeer = "127.0.0.1:1"
 	cp.probeMu.Unlock()
 	if rc := cp.prepareForTest(r); rc != -1 {
 		t.Fatalf("prepare rc=%d, want -1", rc)
 	}
-	f.mu.Lock()
-	n := len(f.prepareReqs)
-	f.mu.Unlock()
-	if n != 0 {
-		t.Errorf("mismatched peer received %d PREPAREs, want 0", n)
+	// Give the rejected connection's reader a moment to observe
+	// EOF, then assert no new connection delivered any byte after
+	// the mismatch dial.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		f.mu.Lock()
+		total := 0
+		for _, b := range f.connBytes {
+			total += b
+		}
+		prepares := len(f.prepareReqs)
+		f.mu.Unlock()
+		grew := total > baseTotal || prepares > basePrepares
+		if !grew {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("after mismatch: bytes %d->%d, PREPAREs %d->%d",
+				baseTotal, total, basePrepares, prepares)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if cp.elig.Admitted() {
 		t.Error("admission still positive after peer mismatch")
@@ -527,9 +580,9 @@ func TestPrepareMismatchedPeerUnsent(t *testing.T) {
 		t.Fatalf("post-mismatch prepare rc=%d, want 0", rc)
 	}
 	f.mu.Lock()
-	n = len(f.prepareReqs)
+	n2 := len(f.prepareReqs)
 	f.mu.Unlock()
-	if n == 0 {
+	if n2 == 0 {
 		t.Error("no PREPARE after re-probe against replacement")
 	}
 	if !cp.elig.Admitted() {
