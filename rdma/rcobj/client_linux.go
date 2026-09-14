@@ -145,6 +145,12 @@ type Client struct {
 	mu     sync.Mutex
 	closed bool
 
+	// inflight counts transfer calls that passed the closed check
+	// and are inside C. Shutdown flips closed first and then waits
+	// for this counter so a delayed call can never enter the
+	// library after its callback slot has been freed.
+	inflight sync.WaitGroup
+
 	// Callback context handed to C: a C-allocated slot carrying one
 	// uint64 id, resolved back to this client through ctxRegistry.
 	slot unsafe.Pointer
@@ -208,6 +214,9 @@ func Init(cfg Config) (*Client, error) {
 }
 
 // Shutdown tears the library down and releases the callback slot.
+// When the library fails to quiesce it keeps its resources, so the
+// wrapper stays retryable: the failure is returned without freeing
+// the slot, and a later Shutdown attempt runs the cleanup again.
 func (c *Client) Shutdown() error {
 	c.mu.Lock()
 	if c.closed {
@@ -217,7 +226,22 @@ func (c *Client) Shutdown() error {
 	c.closed = true
 	c.mu.Unlock()
 
+	// Stop new admissions, then wait for the calls already inside
+	// C before destroying the callback context they may resolve.
+	c.inflight.Wait()
+
+	if c.ctrl != nil {
+		c.ctrl.abortPending()
+	}
+
 	rc := C.hipObjShutdown()
+	if rc.opError != C.hipObjSuccess {
+		// The library retained its state; allow a retry.
+		c.mu.Lock()
+		c.closed = false
+		c.mu.Unlock()
+		return opErr("shutdown", rc)
+	}
 	ctxMu.Lock()
 	delete(ctxRegistry, c.id)
 	ctxMu.Unlock()
@@ -225,17 +249,33 @@ func (c *Client) Shutdown() error {
 		C.free(c.slot)
 		c.slot = nil
 	}
-	return opErr("shutdown", rc)
+	return nil
 }
 
 // registerBuffer / deregisterBuffer wrap the device-MR registration
 // the v2 entry points require.
 func (c *Client) RegisterBuffer(devPtr unsafe.Pointer, size uint64) error {
+	c.mu.Lock()
+	closed := c.closed
+	c.mu.Unlock()
+	if closed {
+		return &OpError{Op: "register", Code: OpNotInitialized}
+	}
+	c.inflight.Add(1)
+	defer c.inflight.Done()
 	rc := C.hipObjBufRegister(devPtr, C.size_t(size))
 	return opErr("register", rc)
 }
 
 func (c *Client) DeregisterBuffer(devPtr unsafe.Pointer) error {
+	c.mu.Lock()
+	closed := c.closed
+	c.mu.Unlock()
+	if closed {
+		return &OpError{Op: "deregister", Code: OpNotInitialized}
+	}
+	c.inflight.Add(1)
+	defer c.inflight.Done()
 	rc := C.hipObjBufDeregister(devPtr)
 	return opErr("deregister", rc)
 }
@@ -249,6 +289,8 @@ func (c *Client) Get(bucket, key string, devPtr unsafe.Pointer,
 	if closed {
 		return &OpError{Op: "get", Code: OpNotInitialized}
 	}
+	c.inflight.Add(1)
+	defer c.inflight.Done()
 
 	cb, kd, err := c.borrowStrings(bucket, key, query)
 	if err != nil {
@@ -269,6 +311,8 @@ func (c *Client) Put(bucket, key string, devPtr unsafe.Pointer,
 	if closed {
 		return &OpError{Op: "put", Code: OpNotInitialized}
 	}
+	c.inflight.Add(1)
+	defer c.inflight.Done()
 
 	cb, kd, err := c.borrowStrings(bucket, key, query)
 	if err != nil {
