@@ -340,7 +340,13 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 		}
 		per := remaining / time.Duration(len(cands))
 		var lastErr error
-		var v4Fallback *net.TCPAddr
+		// The fallback source is discovered at most once per
+		// dial (including a failed lookup), but eligibility is
+		// evaluated per candidate: a refused first destination
+		// must not disable the fallback for a later reachable
+		// one.
+		var v4Src *net.TCPAddr
+		v4Resolved := false
 		for _, c := range cands {
 			perTimeout := per
 			if t := cp.dialer.Timeout; t > 0 && t < per {
@@ -362,27 +368,33 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 			// interface's IPv4 address binding, the fallback
 			// the reference bridge ships, instead of failing
 			// the whole transfer path.
-			if errors.Is(derr, syscall.EPERM) && v4Fallback == nil {
-				chost, _, serr := net.SplitHostPort(c)
-				if serr == nil {
+			if errors.Is(derr, syscall.EPERM) {
+				is4 := false
+				if chost, _, serr := net.SplitHostPort(c); serr == nil {
 					if ip := net.ParseIP(chost); ip != nil && ip.To4() != nil {
-						if la, aerr := devIPv4Addr(dev); aerr == nil {
-							v4Fallback = &net.TCPAddr{IP: la}
-						}
+						is4 = true
 					}
 				}
-				if v4Fallback != nil {
-					fd := net.Dialer{Timeout: perTimeout,
-						DualStack: cp.dialer.DualStack,
-						KeepAlive: cp.dialer.KeepAlive}
-					fd.LocalAddr = v4Fallback
-					fctx, fcancel := context.WithTimeout(ctx, per)
-					conn, ferr := fd.DialContext(fctx, "tcp", c)
-					fcancel()
-					if ferr == nil {
-						return conn, nil
+				if is4 {
+					if !v4Resolved {
+						v4Resolved = true
+						if la, aerr := devIPv4Addr(dev); aerr == nil {
+							v4Src = &net.TCPAddr{IP: la}
+						}
 					}
-					lastErr = ferr
+					if v4Src != nil {
+						fd := net.Dialer{Timeout: perTimeout,
+							DualStack: cp.dialer.DualStack,
+							KeepAlive: cp.dialer.KeepAlive}
+						fd.LocalAddr = v4Src
+						fctx, fcancel := context.WithTimeout(ctx, per)
+						conn, ferr := fd.DialContext(fctx, "tcp", c)
+						fcancel()
+						if ferr == nil {
+							return conn, nil
+						}
+						lastErr = ferr
+					}
 				}
 			}
 			if ctx.Err() != nil {
