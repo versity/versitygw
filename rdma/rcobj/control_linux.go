@@ -323,14 +323,19 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 			return nil, fmt.Errorf("selected interface %q (port %d, gid %d) not found",
 				r.Nic, r.NicPort, r.NicGid)
 		}
-		la, err := linkAddr(dev)
+		// Bind to the selected interface with an address whose
+		// family matches the destination: an IPv6 endpoint needs
+		// an IPv6 source (zone included for link-local), and an
+		// IPv4 endpoint an IPv4 source. Go drops dials whose
+		// source and destination families differ.
+		la, err := linkAddrFor(dev, host)
 		if err != nil {
-			return nil, fmt.Errorf("interface %s has no address: %w", dev, err)
+			return nil, fmt.Errorf("interface %s unusable for %s: %w", dev, host, err)
 		}
 		d = &net.Dialer{Timeout: cp.dialer.Timeout,
 			DualStack: cp.dialer.DualStack,
 			KeepAlive: cp.dialer.KeepAlive}
-		d.LocalAddr = &net.TCPAddr{IP: la}
+		d.LocalAddr = &net.TCPAddr{IP: la.IP, Zone: la.Zone}
 	}
 	return d.DialContext(ctx, "tcp", host)
 }
@@ -527,6 +532,14 @@ func (cp *controlPlane) prepareWire(r transferReq,
 	}
 	defer conn.Close()
 	if err := conn.SetDeadline(deadline); err != nil {
+		return -1
+	}
+	// The admitted exchange must reach the same peer the probe
+	// pinned: a re-resolution that landed elsewhere means the
+	// evidence authorizes the wrong server, so fail closed and
+	// re-probe rather than sending.
+	if !cp.peerMatches(conn) {
+		cp.invalidate()
 		return -1
 	}
 
@@ -986,7 +999,14 @@ func netdevForGid(dev string, port, gid int) (string, bool) {
 
 // linkAddr picks a source address on the named interface so the
 // control TCP connection egresses through it.
-func linkAddr(dev string) (net.IP, error) {
+// linkAddrFor picks an address on dev whose family matches the
+// dial destination: IPv4 for IPv4 (or IPv4-mapped) targets, IPv6
+// otherwise. A link-local IPv6 source carries the interface zone
+// so the route resolves. The reference bridge binds to the device
+// itself (SO_BINDTODEVICE) after an AF_UNSPEC resolve; selecting
+// the same-family source here gives equivalent reachability for
+// the TCP control exchanges.
+func linkAddrFor(dev, hostport string) (*net.TCPAddr, error) {
 	iface, err := net.InterfaceByName(dev)
 	if err != nil {
 		return nil, err
@@ -995,10 +1015,29 @@ func linkAddr(dev string) (net.IP, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, a := range addrs {
-		if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil {
-			return ipn.IP, nil
-		}
+	host, _, serr := net.SplitHostPort(hostport)
+	if serr != nil {
+		host = hostport
 	}
-	return nil, fmt.Errorf("no IPv4 address on %s", dev)
+	target := net.ParseIP(host)
+	want4 := target == nil || target.To4() != nil
+	for _, a := range addrs {
+		ipn, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		is4 := ipn.IP.To4() != nil
+		if is4 != want4 {
+			continue
+		}
+		if !is4 && ipn.IP.IsLinkLocalUnicast() {
+			return &net.TCPAddr{IP: ipn.IP, Zone: iface.Name}, nil
+		}
+		return &net.TCPAddr{IP: ipn.IP}, nil
+	}
+	fam := "IPv6"
+	if want4 {
+		fam = "IPv4"
+	}
+	return nil, fmt.Errorf("no %s address on %s", fam, dev)
 }

@@ -19,6 +19,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -456,6 +457,57 @@ func TestConnLost(t *testing.T) {
 		if !connLost(e) {
 			t.Errorf("%v classified as not lost", e)
 		}
+	}
+}
+
+// TestPrepareMismatchedPeerUnsent pins the admission contract for
+// PREPARE: when the freshly dialed peer differs from the probe's
+// pin, nothing is sent and the evidence is dropped, so a server
+// that replaced the pinned one never observes a PREPARE.
+func TestPrepareMismatchedPeerUnsent(t *testing.T) {
+	ph := http.Header{}
+	ph.Set("X-Amz-Rdma-Protocol", protocolV2)
+	f := newFakeS3(t, 200, ph)
+	cp := newTestCP(f.endpoint())
+	// Pin a peer that is not this listener.
+	cp.probeMu.Lock()
+	cp.probePeer = "127.0.0.1:1"
+	cp.probeMu.Unlock()
+
+	r := testReq(2000)
+	r.Endpoint = f.endpoint()
+	if rc := cp.prepareForTest(r); rc != -1 {
+		t.Fatalf("prepare rc=%d, want -1", rc)
+	}
+	f.mu.Lock()
+	n := len(f.prepareReqs)
+	neg := cp.elig.Admitted()
+	f.mu.Unlock()
+	if n != 0 {
+		t.Errorf("mismatched peer received %d PREPAREs, want 0", n)
+	}
+	if neg {
+		t.Error("admission still positive after peer mismatch")
+	}
+}
+
+// TestConnLostChains exercises wrapped and timeout-shaped errors
+// the production transports can surface.
+func TestConnLostChains(t *testing.T) {
+	wrapped := fmt.Errorf("dial: %w", context.DeadlineExceeded)
+	if connLost(wrapped) {
+		t.Error("wrapped deadline classified as lost")
+	}
+	opErr := &net.OpError{Op: "read", Net: "tcp",
+		Err: fmt.Errorf("connection reset by peer")}
+	if !connLost(opErr) {
+		t.Error("net.OpError reset classified as not lost")
+	}
+	if !connLost(io.EOF) {
+		t.Error("io.EOF classified as not lost")
+	}
+	if !connLost(io.ErrUnexpectedEOF) {
+		t.Error("unexpected EOF classified as not lost")
 	}
 }
 
