@@ -191,7 +191,7 @@ func testReq(remaining uint32) transferReq {
 func TestPrepareWireHeaders(t *testing.T) {
 	ph := http.Header{}
 	ph.Set("X-Amz-Rdma-Protocol", protocolV2)
-	ph.Set("X-Amz-Rdma-Reply", "200 abc88")
+	ph.Set("X-Amz-Rdma-Reply", "200:"+strings.Repeat("ab", 44))
 	ph.Set("X-Amz-Rdma-Session", "32hexsession")
 	ph.Set("X-Amz-Rdma-Psn", "000010")
 	f := newFakeS3(t, 200, ph)
@@ -395,5 +395,58 @@ func TestDialRejectsHTTPS(t *testing.T) {
 		t.Fatal("https control endpoint must be rejected")
 	} else if !strings.Contains(err.Error(), "https") {
 		t.Fatalf("unexpected dial error: %v", err)
+	}
+}
+
+// TestReplyTokenPayload pins the status-prefix contract: only
+// "<three digits>:<token>" yields a payload.
+func TestReplyTokenPayload(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"200:" + strings.Repeat("ab", 44), strings.Repeat("ab", 44)},
+		{"204:tok", "tok"},
+		{"garbage:tok", ""},
+		{":tok", ""},
+		{"2000:tok", ""},
+		{"200:", ""},
+		{"200", ""},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := replyTokenPayload(c.in); got != c.want {
+			t.Errorf("replyTokenPayload(%q) = %q want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestChecksumValid pins the wire checksum contract on the pure
+// predicate form used before the C copy.
+func TestChecksumValid(t *testing.T) {
+	valid := []string{
+		"CRC64NVME AQIDBAUGBwg=",
+		"CRC64NVME AAAAAAAAAAA=",
+		"CRC64NVME +/+/+/+/+/+=",
+	}
+	for _, v := range valid {
+		if !checksumValid(v) {
+			t.Errorf("checksumValid(%q) rejected", v)
+		}
+	}
+	bad := []string{
+		"CRC64NVME ============",
+		"CRC64NVME AQIDBAUGBwg",
+		"CRC64NVMEAQIDBAUGBwg=",
+		"crc64nvme AQIDBAUGBwg=",
+		"CRC64NVME AQIDBAUGBw==",
+		"CRC64NVME AQIDBAUGBwg=extra",
+		"CRC64NVME AQ=DAUGBwg=",
+		"",
+	}
+	for _, b := range bad {
+		if checksumValid(b) {
+			t.Errorf("checksumValid(%q) accepted", b)
+		}
 	}
 }
