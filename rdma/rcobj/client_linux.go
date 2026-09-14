@@ -21,7 +21,6 @@
 package rcobj
 
 /*
-#cgo CFLAGS: -I/home/potatogim/workspace/github/hipObject/include
 #cgo LDFLAGS: -lhipobj
 #include <stdlib.h>
 #include <hipobj.h>
