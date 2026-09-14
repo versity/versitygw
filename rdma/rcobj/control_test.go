@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -167,7 +168,19 @@ func newTestCP(endpoint string) *controlPlane {
 			Region:    "us-east-1",
 		},
 	}
-	return newControlPlane(cfg)
+	cp := newControlPlane(cfg)
+	// The wire tests exercise the exchange functions directly, so
+	// no probe ever ran: pin the loopback form of the listener's
+	// address as the admitted peer the way a successful probe
+	// would (a probe connection's RemoteAddr is the dialer-side
+	// view: 127.0.0.1:port for a loopback listener).
+	if _, port, err := net.SplitHostPort(strings.TrimPrefix(
+		endpoint, "http://")); err == nil {
+		cp.probeMu.Lock()
+		cp.probePeer = net.JoinHostPort("127.0.0.1", port)
+		cp.probeMu.Unlock()
+	}
+	return cp
 }
 
 func testReq(remaining uint32) transferReq {
@@ -417,6 +430,31 @@ func TestReplyTokenPayload(t *testing.T) {
 	for _, c := range cases {
 		if got := replyTokenPayload(c.in); got != c.want {
 			t.Errorf("replyTokenPayload(%q) = %q want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestConnLost pins the transport-loss classification: the typed
+// deadline errors are intentional local aborts and everything
+// else is a lost connection, whenever it is observed.
+func TestConnLost(t *testing.T) {
+	if connLost(nil) {
+		t.Error("nil error classified as lost")
+	}
+	if connLost(context.DeadlineExceeded) {
+		t.Error("context deadline classified as lost")
+	}
+	if connLost(os.ErrDeadlineExceeded) {
+		t.Error("os deadline classified as lost")
+	}
+	for _, e := range []error{
+		fmt.Errorf("write tcp: broken pipe"),
+		fmt.Errorf("unexpected EOF"),
+		fmt.Errorf("read: connection reset by peer"),
+		fmt.Errorf("http: unexpected EOF reading body"),
+	} {
+		if !connLost(e) {
+			t.Errorf("%v classified as not lost", e)
 		}
 	}
 }
