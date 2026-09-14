@@ -243,7 +243,15 @@ func (cp *controlPlane) signAndWrite(conn net.Conn, r transferReq,
 
 	var b strings.Builder
 	b.WriteString("POST " + path + " HTTP/1.1\r\n")
+	// The Host header is written exactly once: Go's http.Header
+	// canonicalization would emit a duplicate if it were also in
+	// the signed set (the signer lowercases into the same slot,
+	// so the map held two values under one key).
+	b.WriteString("Host: " + host + "\r\n")
 	for k, v := range res.SignedHeaders {
+		if strings.EqualFold(k, "Host") {
+			continue
+		}
 		for _, vv := range v {
 			b.WriteString(k + ": " + vv + "\r\n")
 		}
