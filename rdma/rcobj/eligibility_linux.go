@@ -24,8 +24,8 @@ import (
 	"sync/atomic"
 )
 
-// Eligibility is the v2 admission layer (port plan section 7, C3):
-// admission evidence comes from a one-byte GET probe through the
+// Eligibility is the v2 admission layer: admission evidence comes
+// from a one-byte GET probe through the
 // real API, capability headers are captured by the PREPARE callback,
 // and the wrapper turns negative (fail-closed) on connection
 // replacement or redirect until a fresh probe succeeds. No admitted
