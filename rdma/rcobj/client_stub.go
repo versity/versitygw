@@ -35,6 +35,11 @@ type Config struct {
 
 	Credentials Credentials
 	Region      string
+
+	// ProbeBucket/ProbeKey name the readable object the admission
+	// probe reads; empty disables admission (dev/test only).
+	ProbeBucket string
+	ProbeKey    string
 }
 
 type Credentials struct {
@@ -65,6 +70,19 @@ func NotSupported(err error) bool { return false }
 // C memory without cgo, so callers fail at Init instead.
 func Valloc(size int) unsafe.Pointer { return nil }
 func Free(p unsafe.Pointer)          {}
+
+// Device-memory helpers: the stub has no HIP runtime linkage, so
+// allocation fails and the copy helpers report the same condition.
+func VallocDev(size int) (unsafe.Pointer, error) {
+	return nil, errNoCgo
+}
+func FreeDev(p unsafe.Pointer) error { return errNoCgo }
+func CopyDevHostToDev(dst unsafe.Pointer, src []byte) error {
+	return errNoCgo
+}
+func CopyDevDevToHost(dst []byte, src unsafe.Pointer) error {
+	return errNoCgo
+}
 
 type OpError struct {
 	Op       string
