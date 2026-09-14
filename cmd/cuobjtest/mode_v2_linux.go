@@ -647,8 +647,24 @@ func restGetRange(base *s3lib.Client, key string,
 		return err
 	}
 	defer out.Body.Close()
-	_, err = io.ReadFull(out.Body, dst)
-	return err
+	// A ranged response declares its exact length: anything else
+	// is a wrong object or a wrong range.
+	if out.ContentLength != nil && *out.ContentLength != int64(len(dst)) {
+		return fmt.Errorf("range response for %q is %d bytes, want %d",
+			key, *out.ContentLength, len(dst))
+	}
+	if _, err := io.ReadFull(out.Body, dst); err != nil {
+		return err
+	}
+	var probe [1]byte
+	n, perr := out.Body.Read(probe[:])
+	if n != 0 {
+		return fmt.Errorf("range response for %q is longer than the expected %d bytes", key, len(dst))
+	}
+	if perr != nil && perr != io.EOF {
+		return perr
+	}
+	return nil
 }
 
 // restGetObj is the REST fallback for the verification GET.
@@ -661,8 +677,21 @@ func restGetObj(base *s3lib.Client, key string, dst []byte) error {
 		return err
 	}
 	defer out.Body.Close()
-	_, err = io.ReadFull(out.Body, dst)
-	return err
+	if _, err := io.ReadFull(out.Body, dst); err != nil {
+		return err
+	}
+	// The object must end here: a longer body means the stored
+	// object outgrew the expectation and dst only matched its
+	// prefix. Read one extra byte to pin the length.
+	var probe [1]byte
+	n, err := out.Body.Read(probe[:])
+	if n != 0 {
+		return fmt.Errorf("object %q is longer than the expected %d bytes", key, len(dst))
+	}
+	if err != nil && err != io.EOF {
+		return err
+	}
+	return nil
 }
 
 func min(a, b int) int {
