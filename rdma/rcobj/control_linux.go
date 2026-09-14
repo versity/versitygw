@@ -306,7 +306,7 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 	}
 	d := cp.dialer
 	if r.Nic != "" {
-		dev, ok := netdevForGid(r.Nic, r.NicPort, r.NicGid)
+		dev, ok := netdevForGidLookup(r.Nic, r.NicPort, r.NicGid)
 		if !ok {
 			// The bridge refuses the connection when it cannot
 			// resolve the selected netdev; so does the wrapper.
@@ -411,14 +411,17 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 // bindToDevice returns a socket control function that binds new
 // sockets to the named interface (SO_BINDTODEVICE) so the kernel
 // routes and picks source addresses within that device alone.
-// The control function swallows EPERM: older kernels (before 5.7)
-// require CAP_NET_RAW for every SO_BINDTODEVICE set, and the
-// reference bridge degrades to binding the interface's IPv4
-// address instead of failing the connection. The dial loop
-// performs that fallback when it observes the permission error
-// surfaced through the dial error, so unprivileged deployments on
-// those kernels keep the IPv4 path the bridge supports.
-func bindToDevice(dev string) func(string, string, syscall.RawConn) error {
+// The control function returns EPERM unchanged: older kernels
+// (before 5.7) require CAP_NET_RAW for every SO_BINDTODEVICE set,
+// and the reference bridge degrades to binding the interface's
+// IPv4 address instead of failing the connection. The dial loop
+// observes that permission error through the failed candidate and
+// retries IPv4 destinations from the interface address, so
+// unprivileged deployments on those kernels keep the IPv4 path
+// the bridge supports.
+// bindToDevice builds the socket control function binding sockets
+// to the named interface; tests replace it to force EPERM.
+var bindToDevice = func(dev string) func(string, string, syscall.RawConn) error {
 	return func(network, address string, rc syscall.RawConn) error {
 		var serr error
 		if err := rc.Control(func(fd uintptr) {
@@ -438,7 +441,9 @@ func bindToDevice(dev string) func(string, string, syscall.RawConn) error {
 
 // devIPv4Addr reports the first IPv4 address on the named
 // interface, for the permission-denied fallback.
-func devIPv4Addr(dev string) (net.IP, error) {
+// devIPv4Addr reports the first IPv4 address on the named
+// interface, for the permission-denied fallback; tests replace it.
+var devIPv4Addr = func(dev string) (net.IP, error) {
 	iface, err := net.InterfaceByName(dev)
 	if err != nil {
 		return nil, err
@@ -1154,6 +1159,10 @@ func targetOf(r transferReq) string {
 // netdevForGid reads the sysfs ndevs entry backing the data plane's
 // selected GID, so the control connection binds the same interface
 // the RDMA address handle uses.
+// netdevForGidLookup resolves the netdev backing an RDMA port/GID;
+// tests replace it to exercise the fallback paths deterministically.
+var netdevForGidLookup = netdevForGid
+
 func netdevForGid(dev string, port, gid int) (string, bool) {
 	if dev == "" || port <= 0 || gid < 0 {
 		return "", false
