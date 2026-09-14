@@ -431,8 +431,7 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 	// allocator and the transfer core both reject empty buffers,
 	// and S3 has no notion of an empty part. Only size 1
 	// produces one (the padding covers the whole object); larger
-	// odd sizes always leave a nonzero remainder. When the size
-	// divides evenly the object is simply one padded part.
+	// odd sizes always leave a nonzero remainder.
 	if part2Len == 0 {
 		partLens = partLens[:1]
 	}
