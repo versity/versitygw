@@ -497,6 +497,21 @@ func fillFinalReply(out *C.hipObjFinalReplyV2_t, resp *http.Response) {
 	}
 }
 
+// prepareForTest drives one PREPARE exchange and reports only the
+// return code; test builds cannot import "C" directly, so the C
+// reply struct stays inside the cgo build.
+func (cp *controlPlane) prepareForTest(r transferReq) int {
+	var out C.hipObjPrepareReplyV2_t
+	return cp.prepare(r, &out)
+}
+
+// finishReadyForTest drives the FINAL read and reports only the
+// return code.
+func (cp *controlPlane) finishReadyForTest(r transferReq) int {
+	var out C.hipObjFinalReplyV2_t
+	return cp.finishReady(r, &out)
+}
+
 // replyTokenPayload strips the status prefix the x-amz-rdma-reply
 // header carries ("200 <token>").
 func replyTokenPayload(v string) string {
