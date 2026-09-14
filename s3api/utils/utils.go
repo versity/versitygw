@@ -1086,3 +1086,29 @@ func DetectResourceType(ctx fiber.Ctx) s3err.ResourceType {
 
 	return s3err.ResourceTypeObject
 }
+
+// ValidateLocationConstraint checks a CreateBucket location constraint. The
+// global endpoint serves us-east-1 and takes no constraint; any other
+// region is a region specific endpoint and requires the constraint to name it.
+func ValidateLocationConstraint(constraint *string, region string) error {
+	if region == "us-east-1" {
+		if constraint != nil {
+			debuglogger.Logf("invalid location constraint: %s", *constraint)
+			return s3err.GetInvalidLocationConstraintErr(*constraint)
+		}
+
+		return nil
+	}
+
+	if constraint == nil {
+		debuglogger.Logf("missing location constraint for region %s", region)
+		return s3err.GetIllegalLocationConstraintErr("")
+	}
+
+	if *constraint != region {
+		debuglogger.Logf("illegal location constraint %s for region %s", *constraint, region)
+		return s3err.GetIllegalLocationConstraintErr(*constraint)
+	}
+
+	return nil
+}
