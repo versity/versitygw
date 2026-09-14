@@ -59,6 +59,7 @@ const (
 	hdrEtag           = "x-amz-rdma-etag"
 	hdrChecksum       = "x-amz-rdma-checksum"
 	hdrProtocolStatus = "x-amz-rdma-protocol-status"
+	hdrCapabilities   = "x-amz-rdma-capabilities"
 
 	pathPrepare = "/.hipobj-rc/prepare"
 	pathReady   = "/.hipobj-rc/ready"
@@ -98,6 +99,34 @@ type controlPlane struct {
 	// consumed exactly once by finishReady or an abort.
 	pendingMu sync.Mutex
 	pending   *readyExchange
+
+	// elig is the admission layer; nil disables the fail-closed
+	// gating (probeless operation, e.g. tests driving the
+	// callbacks directly).
+	elig *Eligibility
+
+	// lastCaps memoizes the capability advertisement the last
+	// PREPARE response carried (probe evidence for the caller).
+	capsMu   sync.Mutex
+	lastCaps string
+}
+
+// recordCapabilities stores the advertisement observed on the
+// PREPARE surface so the admission layer and callers can inspect
+// it after a transfer.
+func (cp *controlPlane) recordCapabilities(resp *http.Response) {
+	caps := resp.Header.Get(hdrCapabilities)
+	cp.capsMu.Lock()
+	cp.lastCaps = caps
+	cp.capsMu.Unlock()
+}
+
+// Capabilities returns the capability advertisement observed by the
+// most recent PREPARE exchange, or "" when none was carried.
+func (cp *controlPlane) Capabilities() string {
+	cp.capsMu.Lock()
+	defer cp.capsMu.Unlock()
+	return cp.lastCaps
 }
 
 type readyExchange struct {
@@ -276,7 +305,7 @@ func (cp *controlPlane) prepare(r transferReq,
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
 
-	fillPrepareReply(out, resp)
+	fillPrepareReply(cp, out, resp)
 	return 0
 }
 
@@ -401,11 +430,15 @@ func (cp *controlPlane) cancel(r transferReq) int {
 	return 0
 }
 
-func fillPrepareReply(out *C.hipObjPrepareReplyV2_t, resp *http.Response) {
+func fillPrepareReply(cp *controlPlane, out *C.hipObjPrepareReplyV2_t, resp *http.Response) {
 	out.httpStatus = C.int(resp.StatusCode)
 	if strings.EqualFold(resp.Header.Get(hdrProtocol), protocolV2) {
 		out.protocolEcho = 1
 	}
+	// Capability advertisement observed on the PREPARE surface is
+	// recorded on the control plane for the admission layer; the
+	// C reply carries only the wire contract fields.
+	cp.recordCapabilities(resp)
 	if strings.EqualFold(resp.Header.Get(hdrProtocolStatus), "unsupported") {
 		out.unsupportedMarker = 1
 	}
