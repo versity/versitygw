@@ -984,6 +984,20 @@ func GetCopySourceObjectTooLargeErr(limit int64) APIError {
 	}
 }
 
+// Returns illegal location constraint APIError. An empty constraint stands for
+// a CreateBucket request that carried no LocationConstraint at all.
+func GetIllegalLocationConstraintErr(constraint string) APIError {
+	if constraint == "" {
+		constraint = "unspecified"
+	}
+
+	return APIError{
+		Code:           "IllegalLocationConstraintException",
+		Description:    fmt.Sprintf("The %s location constraint is incompatible for the region specific endpoint this request was sent to.", constraint),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
 func GetInvalidRedirectCodeErr(input int) APIError {
 	return APIError{
 		Code:           "InvalidRequest",

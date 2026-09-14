@@ -26,13 +26,17 @@ create_bucket() {
   fi
 
   local exit_code=0 error
+  local location_args=()
+  if [ -n "$AWS_REGION" ] && [ "$AWS_REGION" != "us-east-1" ]; then
+    location_args=(--create-bucket-configuration LocationConstraint="$AWS_REGION")
+  fi
   if [[ $1 == 's3' ]]; then
     error=$(send_command aws --no-verify-ssl s3 mb s3://"$2" 2>&1) || exit_code=$?
   elif [[ $1 == 's3api' ]]; then
-    error=$(send_command aws --no-verify-ssl s3api create-bucket --bucket "$2" 2>&1) || exit_code=$?
+    error=$(send_command aws --no-verify-ssl s3api create-bucket --bucket "$2" "${location_args[@]}" 2>&1) || exit_code=$?
   elif [[ $1 == "s3cmd" ]]; then
     log 5 "s3cmd ${S3CMD_OPTS[*]} --no-check-certificate mb s3://$2"
-    error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate mb s3://"$2" 2>&1) || exit_code=$?
+    error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate mb --region="$AWS_REGION" s3://"$2" 2>&1) || exit_code=$?
   elif [[ $1 == "mc" ]]; then
     error=$(send_command mc --insecure mb "$MC_ALIAS"/"$2" --region "$AWS_REGION" 2>&1) || exit_code=$?
   else
@@ -101,7 +105,11 @@ create_bucket_object_lock_enabled() {
   fi
 
   local exit_code=0
-  error=$(send_command aws --no-verify-ssl s3api create-bucket --bucket "$1" 2>&1 --object-lock-enabled-for-bucket 2>&1) || local exit_code=$?
+  local location_args=()
+  if [ -n "$AWS_REGION" ] && [ "$AWS_REGION" != "us-east-1" ]; then
+    location_args=(--create-bucket-configuration LocationConstraint="$AWS_REGION")
+  fi
+  error=$(send_command aws --no-verify-ssl s3api create-bucket --bucket "$1" "${location_args[@]}" 2>&1 --object-lock-enabled-for-bucket 2>&1) || local exit_code=$?
   if [ $exit_code -ne 0 ]; then
     log 2 "error creating bucket: $error"
     return 1

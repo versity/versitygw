@@ -726,6 +726,11 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
+	euLocConstBody, err := xml.Marshal(s3response.CreateBucketConfiguration{
+		LocationConstraint: utils.GetStringPtr("eu-central-1"),
+	})
+	assert.NoError(t, err)
+
 	tests := []struct {
 		name   string
 		input  testInput
@@ -810,6 +815,59 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 					MetaOpts: &MetaOptions{BucketOwner: adminAcc.Access},
 				},
 				err: s3err.GetInvalidLocationConstraintErr("us-west-1"),
+			},
+		},
+		{
+			name: "illegal location constraint",
+			input: testInput{
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyAccount: adminAcc,
+					utils.ContextKeyRegion:  "us-west-1",
+				},
+				body: euLocConstBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: adminAcc.Access},
+				},
+				err: s3err.GetIllegalLocationConstraintErr("eu-central-1"),
+			},
+		},
+		{
+			name: "missing location constraint",
+			input: testInput{
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyAccount: adminAcc,
+					utils.ContextKeyRegion:  "us-west-1",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: adminAcc.Access},
+				},
+				err: s3err.GetIllegalLocationConstraintErr(""),
+			},
+		},
+		{
+			name: "matching location constraint",
+			input: testInput{
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyAccount: adminAcc,
+					utils.ContextKeyRegion:  "us-west-1",
+				},
+				bucket: "my-bucket",
+				body:   invLocConstBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: adminAcc.Access,
+					},
+					Headers: map[string]*string{
+						"Location":         utils.GetStringPtr("/my-bucket"),
+						"x-amz-bucket-arn": utils.GetStringPtr("arn:aws:s3:::my-bucket"),
+					},
+				},
 			},
 		},
 		{
