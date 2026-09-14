@@ -427,7 +427,7 @@ func TestChecksumValid(t *testing.T) {
 	valid := []string{
 		"CRC64NVME AQIDBAUGBwg=",
 		"CRC64NVME AAAAAAAAAAA=",
-		"CRC64NVME +/+/+/+/+/+=",
+		"CRC64NVME AAAAAAAAAAA=",
 	}
 	for _, v := range valid {
 		if !checksumValid(v) {

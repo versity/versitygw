@@ -72,14 +72,21 @@ func (e *Eligibility) Probe(ctx context.Context) error {
 
 // Admit reports whether the current transport generation may carry
 // admitted bytes. gen comes from the connection identity captured
-// at the send boundary of each request.
+// at the send boundary of each request; when the caller has no
+// per-connection identity (raw-socket probe transport), pass Gen
+// and the layer decides on its fail-closed state alone.
 func (e *Eligibility) Admit(gen uint64) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.negative {
 		return false
 	}
-	return gen == e.connGen && e.connGen != 0
+	if gen != e.connGen {
+		// The caller rides a transport the probe never saw:
+		// fail closed until fresh evidence arrives.
+		return false
+	}
+	return e.connGen != 0
 }
 
 // OnConnectionChange invalidates admission when the transport is
@@ -90,6 +97,14 @@ func (e *Eligibility) OnConnectionChange(newGen uint64) {
 	defer e.mu.Unlock()
 	e.negative = true
 	e.connGen = newGen
+}
+
+// Admitted reports whether the layer currently holds positive
+// evidence: the one question a PREPARE needs before the wire.
+func (e *Eligibility) Admitted() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return !e.negative && e.connGen != 0
 }
 
 // Gen exposes the admitted generation (0 when none).

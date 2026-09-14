@@ -100,19 +100,23 @@ func runV2Mode(size int) error {
 
 	// 1. Plain PUT
 	r := v2Result{step: "PUT"}
-	r.dur, r.bytes, r.err = v2DoTransfer(cl, opPut,
+	r.dur, r.bytes, _, r.err = v2DoTransfer(cl, opPut,
 		putAlloc, 0, uint64(size), "", *key, func() error {
 			return restPutObj(restBase, *key, hostPayload)
 		})
 	results = append(results, r)
 
 	// 2. Plain GET (full): device buffer, staged down for compare.
+	// Every early exit from here releases the buffers already
+	// acquired, in reverse order.
 	getAlloc, gerr := rcobj.VallocDev(size)
 	if gerr != nil {
+		_ = releasePut()
 		return fmt.Errorf("alloc GET device buffer: %w", gerr)
 	}
 	if err := cl.RegisterBuffer(getAlloc, uint64(size)); err != nil {
 		_ = rcobj.FreeDev(getAlloc)
+		_ = releasePut()
 		return fmt.Errorf("register GET buffer: %w", err)
 	}
 	releaseGet := func() error {
@@ -127,15 +131,24 @@ func runV2Mode(size int) error {
 
 	if r.err == nil {
 		r = v2Result{step: "GET"}
-		r.dur, r.bytes, r.err = v2DoTransfer(cl, opGet,
+		restGot := make([]byte, size)
+		r.dur, r.bytes, r.viaRest, r.err = v2DoTransfer(cl, opGet,
 			getAlloc, 0, uint64(size), "", *key, func() error {
-				return restGetObj(restBase, *key, putBufGlobal)
+				return restGetObj(restBase, *key, restGot)
 			})
 		if r.err == nil {
-			got := make([]byte, size)
-			if cerr := rcobj.CopyDevDevToHost(got, getAlloc); cerr != nil {
-				r.err = fmt.Errorf("stage down GET result: %w", cerr)
+			var got []byte
+			if r.viaRest {
+				// The REST path produced the bytes; the device
+				// buffer stayed untouched.
+				got = restGot
 			} else {
+				got = make([]byte, size)
+				if cerr := rcobj.CopyDevDevToHost(got, getAlloc); cerr != nil {
+					r.err = fmt.Errorf("stage down GET result: %w", cerr)
+				}
+			}
+			if r.err == nil {
 				r.byteMatch = string(putBufGlobal) == string(got)
 				if !r.byteMatch {
 					r.firstDiff = -1
@@ -160,23 +173,34 @@ func runV2Mode(size int) error {
 	if r.err == nil && rangeOffset > 0 && rangeSize > 0 {
 		rgAlloc, rgerr := rcobj.VallocDev(int(rangeSize))
 		if rgerr != nil {
+			_ = releaseGet()
+			_ = releasePut()
 			return fmt.Errorf("alloc Range device buffer: %w", rgerr)
 		}
 		if err := cl.RegisterBuffer(rgAlloc, rangeSize); err != nil {
 			_ = rcobj.FreeDev(rgAlloc)
+			_ = releaseGet()
+			_ = releasePut()
 			return fmt.Errorf("register Range buffer: %w", err)
 		}
 		r = v2Result{step: fmt.Sprintf("GET+Range@%d", rangeOffset)}
-		r.dur, r.bytes, r.err = v2DoTransfer(cl, opGet,
+		restGot := make([]byte, rangeSize)
+		r.dur, r.bytes, r.viaRest, r.err = v2DoTransfer(cl, opGet,
 			rgAlloc, rangeOffset, rangeSize, "", *key, func() error {
 				return restGetRange(restBase, *key,
-					rangeOffset, rangeSize, putBufGlobal[rangeOffset:rangeOffset+rangeSize])
+					rangeOffset, rangeSize, restGot)
 			})
 		if r.err == nil {
-			got := make([]byte, rangeSize)
-			if cerr := rcobj.CopyDevDevToHost(got, rgAlloc); cerr != nil {
-				r.err = fmt.Errorf("stage down Range result: %w", cerr)
+			var got []byte
+			if r.viaRest {
+				got = restGot
 			} else {
+				got = make([]byte, rangeSize)
+				if cerr := rcobj.CopyDevDevToHost(got, rgAlloc); cerr != nil {
+					r.err = fmt.Errorf("stage down Range result: %w", cerr)
+				}
+			}
+			if r.err == nil {
 				want := putBufGlobal[rangeOffset : rangeOffset+rangeSize]
 				r.byteMatch = string(want) == string(got)
 				if !r.byteMatch {
@@ -199,9 +223,13 @@ func runV2Mode(size int) error {
 		// for DMA, so that failure is reported and the allocation
 		// is preserved.
 		if derr := cl.DeregisterBuffer(rgAlloc); derr != nil {
+			_ = releaseGet()
+			_ = releasePut()
 			return fmt.Errorf("deregister Range buffer: %w (buffer kept)", derr)
 		}
 		if ferr := rcobj.FreeDev(rgAlloc); ferr != nil {
+			_ = releaseGet()
+			_ = releasePut()
 			return fmt.Errorf("free Range device buffer: %w", ferr)
 		}
 	}
@@ -270,9 +298,14 @@ const (
 // query string carries the part context for multipart uploads.
 // key names the object this transfer addresses; the multipart flow
 // passes its own key so parts land on the upload's object.
+// v2DoTransfer runs one operation through the v2 client and, when
+// the endpoint declines v2 with NotSupported, the same operation
+// over REST. The bool reports whether the REST path produced the
+// bytes (callers verify against the REST result, not the untouched
+// device buffer).
 func v2DoTransfer(cl *rcobj.Client, op int,
 	buf unsafe.Pointer, offset, size uint64, query, key string,
-	rest func() error) (time.Duration, int, error) {
+	rest func() error) (time.Duration, int, bool, error) {
 
 	start := time.Now()
 	name := opName(op)
@@ -288,13 +321,13 @@ func v2DoTransfer(cl *rcobj.Client, op int,
 			// The endpoint declined v2: run the same operation over
 			// REST so an old gateway stays readable.
 			if rerr := rest(); rerr != nil {
-				return dur, 0, fmt.Errorf("%s rest fallback: %w", name, rerr)
+				return dur, 0, false, fmt.Errorf("%s rest fallback: %w", name, rerr)
 			}
-			return dur, int(size), nil
+			return dur, int(size), true, nil
 		}
-		return dur, 0, fmt.Errorf("%s: %w", name, err)
+		return dur, 0, false, fmt.Errorf("%s: %w", name, err)
 	}
-	return dur, int(size), nil
+	return dur, int(size), false, nil
 }
 
 func opName(op int) string {
@@ -387,7 +420,7 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 			return false, fmt.Errorf("register part %d: %w", part, err)
 		}
 		query := fmt.Sprintf("partNumber=%d&uploadId=%s", part, uploadID)
-		_, _, terr := v2DoTransfer(cl, opPut,
+		_, _, _, terr := v2DoTransfer(cl, opPut,
 			alloc, 0, uint64(plen), query, mpKey, func() error {
 				return restUploadPart(base, mpKey, uploadID, part, buf)
 			})
@@ -444,23 +477,32 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 		_ = rcobj.FreeDev(verifyAlloc)
 		return false, fmt.Errorf("register verify buffer: %w", err)
 	}
-	_, _, gerr := v2DoTransfer(cl, opGet, verifyAlloc, 0, uint64(verifyLen), "", mpKey,
-		func() error { return restGetObj(base, mpKey, putBufGlobal) })
-	if gerr != nil {
-		_ = cl.DeregisterBuffer(verifyAlloc)
-		_ = rcobj.FreeDev(verifyAlloc)
-		return false, fmt.Errorf("verify get: %w", gerr)
+	// releaseVerify releases the registration and the device
+	// allocation in that order. A failed deregistration keeps the
+	// allocation: the registration may still pin it for DMA, so
+	// freeing the storage under it would hand released memory to
+	// the NIC.
+	releaseVerify := func() error {
+		if derr := cl.DeregisterBuffer(verifyAlloc); derr != nil {
+			return fmt.Errorf("deregister verify buffer: %w (buffer kept)", derr)
+		}
+		if ferr := rcobj.FreeDev(verifyAlloc); ferr != nil {
+			return fmt.Errorf("free verify device buffer: %w", ferr)
+		}
+		return nil
 	}
-	// Stage the result down and compare while the allocation is
-	// alive: the expected content is the exact concatenation of both
-	// uploaded parts. The buffer is freed only after the
-	// deregistration succeeded, so a pinned registration never
-	// leaves DMA referencing released memory.
-	vbuf := make([]byte, verifyLen)
-	if cerr := rcobj.CopyDevDevToHost(vbuf, verifyAlloc); cerr != nil {
-		_ = cl.DeregisterBuffer(verifyAlloc)
-		_ = rcobj.FreeDev(verifyAlloc)
-		return false, fmt.Errorf("stage down verify result: %w", cerr)
+
+	// Full GET verifies the assembled bytes: the expected content
+	// is the exact concatenation of both uploaded parts (part 1
+	// payload plus any padding plus part 2 payload), padded to the
+	// part boundary. The REST fallback reads into its own buffer;
+	// the v2 path stages the device result down.
+	restGot := make([]byte, verifyLen)
+	_, _, viaRest, gerr := v2DoTransfer(cl, opGet, verifyAlloc, 0, uint64(verifyLen), "", mpKey,
+		func() error { return restGetObj(base, mpKey, restGot) })
+	if gerr != nil {
+		_ = releaseVerify()
+		return false, fmt.Errorf("verify get: %w", gerr)
 	}
 	want := make([]byte, 0, verifyLen)
 	want = append(want, putBufGlobal[:partSize]...)
@@ -468,12 +510,19 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 		want = append(want, pad...)
 	}
 	want = append(want, putBufGlobal[partSize:size]...)
-	match := bytes.Equal(vbuf, want)
-	if derr := cl.DeregisterBuffer(verifyAlloc); derr != nil {
-		return false, fmt.Errorf("deregister verify buffer: %w (buffer kept)", derr)
+	var got []byte
+	if viaRest {
+		got = restGot
+	} else {
+		got = make([]byte, verifyLen)
+		if cerr := rcobj.CopyDevDevToHost(got, verifyAlloc); cerr != nil {
+			_ = releaseVerify()
+			return false, fmt.Errorf("stage down verify result: %w", cerr)
+		}
 	}
-	if ferr := rcobj.FreeDev(verifyAlloc); ferr != nil {
-		return false, fmt.Errorf("free verify device buffer: %w", ferr)
+	match := bytes.Equal(got, want)
+	if rerr := releaseVerify(); rerr != nil {
+		return false, rerr
 	}
 	if !match {
 		return false, fmt.Errorf("multipart verify: bytes mismatch")
@@ -580,6 +629,7 @@ type v2Result struct {
 	dur       time.Duration
 	bytes     int
 	err       error
+	viaRest   bool
 	byteMatch bool
 	firstDiff int
 	gotByte   byte

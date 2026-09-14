@@ -237,20 +237,32 @@ func Init(cfg Config) (*Client, error) {
 // wrapper stays retryable: the failure is returned without freeing
 // the slot, and a later Shutdown attempt runs the cleanup again.
 // Concurrent callers wait for the in-progress attempt and receive
-// its outcome rather than a premature success.
+// its recorded outcome rather than a premature success or a retry
+// of their own.
 func (c *Client) Shutdown() error {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
 		return nil
 	}
+	// Waiters join the attempt in progress; when it finishes
+	// they take its recorded outcome. A waiter that wakes to a
+	// failed attempt returns that failure even if a third caller
+	// has already begun a retry; that retry will record its own
+	// outcome for its own waiters.
+	joined := false
 	for c.shuttingDown {
+		joined = true
 		c.shutCond.Wait()
 	}
-	if c.closed {
-		// The attempt we waited for completed the teardown.
+	if joined {
+		if c.closed {
+			c.mu.Unlock()
+			return nil
+		}
+		err := c.shutErr
 		c.mu.Unlock()
-		return c.shutErr
+		return err
 	}
 	c.shuttingDown = true
 	c.mu.Unlock()
@@ -276,12 +288,14 @@ func (c *Client) Shutdown() error {
 			C.free(c.slot)
 			c.slot = nil
 		}
-		c.closed = true
 	}
 
 	c.mu.Lock()
 	c.shuttingDown = false
 	c.shutErr = err
+	if err == nil {
+		c.closed = true
+	}
 	c.shutCond.Broadcast()
 	c.mu.Unlock()
 	return err
