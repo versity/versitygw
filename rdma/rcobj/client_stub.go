@@ -46,8 +46,8 @@ type Credentials struct {
 
 type Client struct{}
 
-func Init(cfg Config) (*Client, error)          { return nil, errNoCgo }
-func (c *Client) Shutdown() error               { return errNoCgo }
+func Init(cfg Config) (*Client, error)                            { return nil, errNoCgo }
+func (c *Client) Shutdown() error                                 { return errNoCgo }
 func (c *Client) RegisterBuffer(p unsafe.Pointer, s uint64) error { return errNoCgo }
 func (c *Client) DeregisterBuffer(p unsafe.Pointer) error         { return errNoCgo }
 func (c *Client) Get(bucket, key string, devPtr unsafe.Pointer,
