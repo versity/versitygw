@@ -323,21 +323,70 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 			return nil, fmt.Errorf("selected interface %q (port %d, gid %d) not found",
 				r.Nic, r.NicPort, r.NicGid)
 		}
-		// Bind to the selected interface with an address whose
-		// family matches the destination: an IPv6 endpoint needs
-		// an IPv6 source (zone included for link-local), and an
-		// IPv4 endpoint an IPv4 source. Go drops dials whose
-		// source and destination families differ.
-		la, err := linkAddrFor(dev, host)
-		if err != nil {
-			return nil, fmt.Errorf("interface %s unusable for %s: %w", dev, host, err)
+		// Bind to the selected interface with a source whose
+		// family matches a reachable destination candidate. A
+		// hostname (or scoped literal) is resolved here under
+		// the same deadline; each candidate keeps its zone, and
+		// the dial retries across families so an unreachable
+		// IPv4 route can fall back to IPv6 like an ordinary
+		// dial would.
+		cands, rerr := resolveDest(ctx, host)
+		if rerr != nil {
+			return nil, rerr
 		}
-		d = &net.Dialer{Timeout: cp.dialer.Timeout,
-			DualStack: cp.dialer.DualStack,
-			KeepAlive: cp.dialer.KeepAlive}
-		d.LocalAddr = &net.TCPAddr{IP: la.IP, Zone: la.Zone}
+		var lastErr error
+		for _, c := range cands {
+			la, aerr := linkAddrFor(dev, c)
+			if aerr != nil {
+				lastErr = aerr
+				continue
+			}
+			nd := net.Dialer{Timeout: cp.dialer.Timeout,
+				DualStack: cp.dialer.DualStack,
+				KeepAlive: cp.dialer.KeepAlive}
+			nd.LocalAddr = la
+			conn, derr := nd.DialContext(ctx, "tcp", c)
+			if derr == nil {
+				return conn, nil
+			}
+			lastErr = derr
+		}
+		return nil, lastErr
 	}
 	return d.DialContext(ctx, "tcp", host)
+}
+
+// resolveDest expands the endpoint host into dial candidates in
+// preference order. A literal (with or without a zone) is its own
+// single candidate; a hostname is resolved through the resolver
+// the context allows, preserving address order and zones. The
+// candidates are still host:port strings so a zone survives into
+// the dial.
+func resolveDest(ctx context.Context, hostport string) ([]string, error) {
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+		port = "80"
+	}
+	// A scoped literal keeps its zone through ParseIP? No: the
+	// net package rejects zoned literals in ParseIP but SplitHostPort
+	// preserves the zone in the host string, so treat it as an
+	// IPv6 literal and dial it verbatim.
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	if ip := net.ParseIP(strings.SplitN(host, "%", 2)[0]); ip != nil {
+		return []string{net.JoinHostPort(host, port)}, nil
+	}
+	addrs, rerr := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if rerr != nil {
+		return nil, fmt.Errorf("resolve %s: %w", host, rerr)
+	}
+	cands := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		cands = append(cands, net.JoinHostPort(a.IP.String(), port))
+	}
+	return cands, nil
 }
 
 // signAndWrite signs the control-plane request per SigV4 (host,
@@ -868,6 +917,15 @@ func (cp *controlPlane) prepareForTest(r transferReq) int {
 	return cp.prepareWire(r, &out, deadline)
 }
 
+// prepareValveForTest drives the production entry point in full:
+// the admission valve (probe when negative) then the PREPARE
+// exchange, writing the reply into a real cgo struct so tests can
+// assert the re-probe and recovery path end to end.
+func (cp *controlPlane) prepareValveForTest(r transferReq) int {
+	var out C.hipObjPrepareReplyV2_t
+	return cp.prepare(r, &out)
+}
+
 // finishReadyForTest drives the FINAL read and reports only the
 // return code.
 func (cp *controlPlane) finishReadyForTest(r transferReq) int {
@@ -1000,12 +1058,11 @@ func netdevForGid(dev string, port, gid int) (string, bool) {
 // linkAddr picks a source address on the named interface so the
 // control TCP connection egresses through it.
 // linkAddrFor picks an address on dev whose family matches the
-// dial destination: IPv4 for IPv4 (or IPv4-mapped) targets, IPv6
-// otherwise. A link-local IPv6 source carries the interface zone
-// so the route resolves. The reference bridge binds to the device
-// itself (SO_BINDTODEVICE) after an AF_UNSPEC resolve; selecting
-// the same-family source here gives equivalent reachability for
-// the TCP control exchanges.
+// dial candidate. A link-local IPv6 source carries the interface
+// zone so the route resolves. The reference bridge binds to the
+// device itself (SO_BINDTODEVICE) after an AF_UNSPEC resolve;
+// selecting the same-family source here gives equivalent
+// reachability for the TCP control exchanges.
 func linkAddrFor(dev, hostport string) (*net.TCPAddr, error) {
 	iface, err := net.InterfaceByName(dev)
 	if err != nil {
@@ -1019,8 +1076,15 @@ func linkAddrFor(dev, hostport string) (*net.TCPAddr, error) {
 	if serr != nil {
 		host = hostport
 	}
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	host = strings.SplitN(host, "%", 2)[0]
 	target := net.ParseIP(host)
-	want4 := target == nil || target.To4() != nil
+	if target == nil {
+		return nil, fmt.Errorf("unresolved destination %s", hostport)
+	}
+	want4 := target.To4() != nil
 	for _, a := range addrs {
 		ipn, ok := a.(*net.IPNet)
 		if !ok {

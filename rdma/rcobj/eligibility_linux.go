@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Eligibility is the v2 admission layer (port plan section 7, C3):
@@ -115,42 +116,49 @@ func (e *Eligibility) Gen() uint64 {
 }
 
 // HTTPProbe builds a ProbeFn from an http client and endpoint: it
-// issues the one-byte GET and treats transport success as the
-// admission signal; the PREPARE callback's capability headers are
-// the per-transfer verdict.
-func HTTPProbe(client *http.Client, endpoint string) ProbeFn {
+// issues a one-byte ranged GET of the probe object and treats a
+// direct 2xx as the admission signal. The probe object path
+// follows the object API convention (<bucket>/<key>); pass the
+// base endpoint and the bucket/key the deployment provisions for
+// admission. Redirects are refused here, not delegated to the
+// client, because a redirect means the endpoint that answered is
+// not the one the transfer would use.
+func HTTPProbe(client *http.Client, endpoint, bucket, key string) ProbeFn {
+	// The probe must not silently follow a redirect: keep the
+	// caller's transport while pinning the redirect policy.
+	c := client
+	if c == nil {
+		c = http.DefaultClient
+	}
 	return func(ctx context.Context) (uint64, bool, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-			strings.TrimSuffix(endpoint, "/")+"/probe", nil)
+			strings.TrimSuffix(endpoint, "/")+"/"+bucket+"/"+key, nil)
 		if err != nil {
 			return 0, false, err
 		}
 		req.Header.Set("Range", "bytes=0-0")
-		resp, err := client.Do(req)
+		// Redirects are negative evidence: stop before following.
+		base := *c
+		noRedirect := base
+		noRedirect.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		resp, err := noRedirect.Do(req)
 		if err != nil {
 			return 0, false, err
 		}
 		defer resp.Body.Close()
-		// Only a real API response (2xx) is positive evidence:
-		// redirects and errors mean the endpoint did not serve
-		// the object API this transfer path needs.
-		return transportGen(resp), resp.StatusCode >= 200 && resp.StatusCode < 300, nil
+		gen := probeGenCounter.Add(1)
+		ok := resp.StatusCode >= 200 && resp.StatusCode < 300
+		return gen, ok, nil
 	}
 }
 
-// transportGen derives a stable identity from the response's
-// transport connection, when the runtime exposes one.
-func transportGen(resp *http.Response) uint64 {
-	if resp == nil {
-		return 0
-	}
-	if tc, ok := resp.Request.Context().Value(connGenKey{}).(uint64); ok {
-		return tc
-	}
-	return 0
-}
-
-type connGenKey struct{}
+// probeGenCounter distinguishes successful probes on transports
+// the package cannot otherwise identify: each probe attempt gets
+// a fresh value, so a later OnConnectionChange (which reports 0)
+// still turns the layer negative until the next probe succeeds.
+var probeGenCounter atomic.Uint64
 
 // A 3xx on the probe or any admitted exchange is a transport
 // replacement, not an upgrade: callers report it through
