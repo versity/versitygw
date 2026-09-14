@@ -28,6 +28,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -133,9 +134,14 @@ func (cp *controlPlane) SetProbeObject(bucket, key string) {
 	cp.probeMu.Unlock()
 }
 
-// objectPath renders the S3 object path for a key.
-func objectPath(key string) string {
-	return "/" + key
+// escapeKeyPath percent-escapes each path segment of an object
+// key so the signed path matches what the gateway parses.
+func escapeKeyPath(key string) string {
+	segs := strings.Split(key, "/")
+	for i, seg := range segs {
+		segs[i] = url.PathEscape(seg)
+	}
+	return strings.Join(segs, "/")
 }
 
 // recordCapabilities stores the advertisement observed on the
@@ -184,8 +190,12 @@ func newControlPlane(cfg Config) *controlPlane {
 		},
 	}
 	// The admission probe rides the same signed request shape the
-	// transfer callbacks use, against the real object API.
+	// transfer callbacks use, against the real object API. An
+	// empty probe object leaves the layer negative: PREPARE fails
+	// closed until SetProbeObject supplies one.
 	cp.endpoint = cfg.ControlEndpoint
+	cp.probeBucket = cfg.ProbeBucket
+	cp.probeKey = cfg.ProbeKey
 	cp.elig = NewEligibility(cp.signedObjectProbe)
 	return cp
 }
@@ -201,20 +211,27 @@ func (cp *controlPlane) signedObjectProbe(ctx context.Context) (uint64, bool, er
 		return 0, false, errors.New("rcobj: no probe object")
 	}
 	r := transferReq{Bucket: bucket, Key: key, Endpoint: cp.endpoint}
-	deadline := time.Now().Add(10 * time.Second)
-	ctx2, cancel := context.WithDeadline(ctx, deadline)
+	// The probe rides the caller's deadline: PREPARE handed its
+	// remaining budget to the admission layer, so dial, write,
+	// and read all share one absolute cutoff.
+	dl, has := ctx.Deadline()
+	if !has {
+		dl = time.Now().Add(10 * time.Second)
+	}
+	ctx2, cancel := context.WithDeadline(ctx, dl)
 	defer cancel()
 	conn, err := cp.dialControl(ctx2, r)
 	if err != nil {
 		return 0, false, err
 	}
 	defer conn.Close()
-	if err := conn.SetDeadline(deadline); err != nil {
+	if err := conn.SetDeadline(dl); err != nil {
 		return 0, false, err
 	}
 	extra := http.Header{}
 	extra.Set("Range", "bytes=0-0")
-	if err := cp.signAndWrite(conn, r, objectPath(key), extra); err != nil {
+	path := "/" + bucket + "/" + escapeKeyPath(key)
+	if err := cp.signAndWrite(conn, r, http.MethodGet, path, extra); err != nil {
 		return 0, false, err
 	}
 	br := bufio.NewReader(conn)
@@ -226,8 +243,13 @@ func (cp *controlPlane) signedObjectProbe(ctx context.Context) (uint64, bool, er
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
 		return 0, false, err
 	}
-	ok := resp.StatusCode >= 200 && resp.StatusCode < 300 &&
-		resp.Header.Get(hdrProtocol) == protocolV2
+	// A direct 2xx from the object API is positive admission
+	// evidence: the credentials work and the endpoint serves
+	// object traffic on this transport. Whether it speaks the v2
+	// protocol is PREPARE's negotiation; a legacy gateway that
+	// answers the probe but declines PREPARE with NotSupported
+	// lets the CLI fall back without admission blocking it first.
+	ok := resp.StatusCode >= 200 && resp.StatusCode < 300
 	gen := cp.probeGen.Add(1)
 	return gen, ok, nil
 }
@@ -273,12 +295,13 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 	return cp.dialer.DialContext(ctx, "tcp", host)
 }
 
-// signAndWrite signs the request per SigV4 (host, x-amz-date,
-// x-amz-content-sha256 of the empty body, Content-Length: 0, plus
-// the rdma headers) and writes it to conn without reading the
-// response.
+// signAndWrite signs the control-plane request per SigV4 (host,
+// x-amz-date, x-amz-content-sha256 of the empty body,
+// Content-Length: 0, plus the rdma headers) and writes it to conn
+// without reading the response. The control exchanges are POSTs;
+// pass method http.MethodGet for the admission probe.
 func (cp *controlPlane) signAndWrite(conn net.Conn, r transferReq,
-	path string, extra http.Header) error {
+	method, path string, extra http.Header) error {
 
 	host := authorityOf(r.Endpoint)
 	if host == ":80" {
@@ -311,7 +334,7 @@ func (cp *controlPlane) signAndWrite(conn net.Conn, r transferReq,
 	key := sigv4auth.DeriveKey(cp.creds.SecretKey, now.Format("20060102"),
 		cp.creds.Region, sigv4auth.ServiceS3)
 	res := sigv4auth.BuildAndSign(key, sigv4auth.SigningInput{
-		Method:          http.MethodPost,
+		Method:          method,
 		Host:            host,
 		URIPath:         path,
 		Query:           nil,
@@ -325,7 +348,7 @@ func (cp *controlPlane) signAndWrite(conn net.Conn, r transferReq,
 	})
 
 	var b strings.Builder
-	b.WriteString("POST " + path + " HTTP/1.1\r\n")
+	b.WriteString(method + " " + path + " HTTP/1.1\r\n")
 	// The Host header is written exactly once: Go's http.Header
 	// canonicalization would emit a duplicate if it were also in
 	// the signed set (the signer lowercases into the same slot,
@@ -375,30 +398,32 @@ func authorityOf(endpoint string) string {
 func (cp *controlPlane) prepare(r transferReq,
 	out *C.hipObjPrepareReplyV2_t) int {
 
-	// Admission valve: when the layer is negative (first use, or a
-	// transport replacement invalidated the evidence) a fresh probe
-	// must succeed before this transfer touches the wire.
-	if cp.elig != nil && !cp.elig.Admit(cp.elig.Gen()) {
-		pctx, pcancel := context.WithTimeout(context.Background(),
-			10*time.Second)
-		perr := cp.elig.Probe(pctx)
-		pcancel()
-		if perr != nil || !cp.elig.Admit(cp.elig.Gen()) {
-			return -1
-		}
-	}
-
-	return cp.prepareWire(r, out)
-}
-
-// prepareWire is the PREPARE round trip without the valve.
-func (cp *controlPlane) prepareWire(r transferReq,
-	out *C.hipObjPrepareReplyV2_t) int {
-
+	// One absolute deadline governs the whole callback: the
+	// admission probe (when needed) and the PREPARE exchange share
+	// the remaining budget, and an exhausted budget fails before
+	// anything touches the wire.
 	deadline, ok := budget(r)
 	if !ok {
 		return -1
 	}
+
+	// Admission valve: when the layer is negative (first use, or a
+	// transport replacement invalidated the evidence) a fresh probe
+	// must succeed before this transfer touches the wire.
+	if cp.elig != nil && !cp.elig.Admitted() {
+		perr := cp.elig.Probe(context.Background())
+		if perr != nil || !cp.elig.Admitted() {
+			return -1
+		}
+	}
+
+	return cp.prepareWire(r, out, deadline)
+}
+
+// prepareWire is the PREPARE round trip without the valve.
+func (cp *controlPlane) prepareWire(r transferReq,
+	out *C.hipObjPrepareReplyV2_t, deadline time.Time) int {
+
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 
@@ -423,7 +448,7 @@ func (cp *controlPlane) prepareWire(r transferReq,
 		extra.Set(hdrOffset, strconv.FormatUint(r.Offset, 10))
 	}
 
-	if err := cp.signAndWrite(conn, r, pathPrepare, extra); err != nil {
+	if err := cp.signAndWrite(conn, r, http.MethodPost, pathPrepare, extra); err != nil {
 		return -1
 	}
 	br := bufio.NewReader(conn)
@@ -434,6 +459,13 @@ func (cp *controlPlane) prepareWire(r transferReq,
 	defer resp.Body.Close()
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
 		return -1
+	}
+
+	// A redirect on a control exchange replaces the transport the
+	// admission evidence was gathered on: turn the layer negative
+	// so the next PREPARE re-probes before admitted bytes flow.
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 && cp.elig != nil {
+		cp.elig.OnConnectionChange(0)
 	}
 
 	if !fillPrepareReply(cp, out, resp) {
@@ -469,7 +501,7 @@ func (cp *controlPlane) readyRequest(r transferReq) int {
 	extra.Set(hdrMrAddr, hex64(r.ClientMrAddr))
 	extra.Set(hdrMrRkey, hex32(r.ClientMrRkey))
 
-	if err := cp.signAndWrite(conn, r, pathReady, extra); err != nil {
+	if err := cp.signAndWrite(conn, r, http.MethodPost, pathReady, extra); err != nil {
 		conn.Close()
 		return -1
 	}
@@ -514,6 +546,11 @@ func (cp *controlPlane) finishReady(r transferReq,
 		return -1
 	}
 	ex.conn.Close()
+	// A redirect here replaces the transport the admission
+	// evidence rode on; the next PREPARE re-probes.
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 && cp.elig != nil {
+		cp.elig.OnConnectionChange(0)
+	}
 	if !fillFinalReply(out, resp) {
 		return -1
 	}
@@ -562,7 +599,7 @@ func (cp *controlPlane) cancel(r transferReq) int {
 	extra.Set(hdrSession, r.Session)
 	extra.Set(hdrCookie, hex32(r.Cookie))
 
-	if err := cp.signAndWrite(conn, r, pathCancel, extra); err != nil {
+	if err := cp.signAndWrite(conn, r, http.MethodPost, pathCancel, extra); err != nil {
 		return -1
 	}
 	br := bufio.NewReader(conn)
@@ -660,8 +697,12 @@ func fillFinalReply(out *C.hipObjFinalReplyV2_t, resp *http.Response) bool {
 // reply struct stays inside the cgo build. It drives the wire
 // exchange directly so wire-level tests need no probe object.
 func (cp *controlPlane) prepareForTest(r transferReq) int {
+	deadline, ok := budget(r)
+	if !ok {
+		return -1
+	}
 	var out C.hipObjPrepareReplyV2_t
-	return cp.prepareWire(r, &out)
+	return cp.prepareWire(r, &out, deadline)
 }
 
 // finishReadyForTest drives the FINAL read and reports only the
@@ -739,7 +780,27 @@ func checksumValid(v string) bool {
 			return false
 		}
 	}
-	return true
+	// The final data character carries two padding bits that must
+	// be zero (the bridge rejects b64v(payload[10]) & 0x3), so a
+	// syntactically valid string with set padding bits is not a
+	// canonical encoding the gateway would have produced.
+	return b64v(payload[10])&0x3 == 0
+}
+
+// b64v decodes one base64 character to its six-bit value.
+func b64v(c byte) byte {
+	switch {
+	case c >= 'A' && c <= 'Z':
+		return c - 'A'
+	case c >= 'a' && c <= 'z':
+		return c - 'a' + 26
+	case c >= '0' && c <= '9':
+		return c - '0' + 52
+	case c == '+':
+		return 62
+	default: // '/'
+		return 63
+	}
 }
 
 func hex24(v uint32) string { return fmt.Sprintf("%06x", v) }
