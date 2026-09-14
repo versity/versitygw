@@ -960,15 +960,18 @@ func TestDialEPERMIPv6CandidateSkipsFallback(t *testing.T) {
 	}
 }
 
-// TestDialEPERMBudgetSplit pins the candidate-split behavior
-// reachable on loopback: both candidates are attempted within one
-// dial, in order, and the dial completes well inside the parent
-// deadline. A stalled TCP handshake cannot be produced on
-// loopback (the kernel completes it without the accept), so the
-// per-share cancellation path itself is exercised by the refused
-// and no-source tests above through their share-capped retries.
+// TestDialEPERMBudgetSplit pins the multi-candidate prompt
+// completion reachable on loopback: both candidates are attempted
+// within one dial, in order, and the dial completes well inside
+// the parent deadline. A stalled TCP handshake cannot be produced
+// on loopback (the kernel completes it without the accept), so
+// deadline expiry and per-share cancellation remain unverified
+// here; this test does not claim them.
 func TestDialEPERMBudgetSplit(t *testing.T) {
-	rejPort := deadPort(t)
+	// The live listener is created before the dead port is
+	// reserved, so the reservation cannot hand its just-released
+	// port to this test's own live listener and collapse both
+	// candidates into one.
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Skipf("no ipv4 loopback: %v", err)
@@ -985,6 +988,7 @@ func TestDialEPERMBudgetSplit(t *testing.T) {
 			served <- struct{}{}
 		}
 	}()
+	rejPort := deadPort(t)
 	_, livePort, _ := net.SplitHostPort(ln.Addr().String())
 	src := net.ParseIP("127.0.0.2")
 	lookups, attempts := dialFallbackEnv(t, src, nil)
