@@ -693,8 +693,10 @@ func deadPort(t *testing.T) string {
 // dialFallbackEnv wires the netdev lookup, the socket control
 // callback (EPERM, the pre-5.7 unprivileged kernel behavior), and
 // optionally the source lookup for a single dial, restoring all
-// replacements on cleanup. It returns the source lookup counter.
-func dialFallbackEnv(t *testing.T, source net.IP, srcErr error) *int32 {
+// replacements on cleanup. It returns the source lookup counter
+// and a recorder of the destination addresses the primary
+// (device-bound) attempts targeted, in order.
+func dialFallbackEnv(t *testing.T, source net.IP, srcErr error) (*int32, *[]string) {
 	t.Helper()
 	savedNetdev := netdevForGidLookup
 	netdevForGidLookup = func(dev string, port, gid int) (string, bool) {
@@ -708,9 +710,11 @@ func dialFallbackEnv(t *testing.T, source net.IP, srcErr error) *int32 {
 			return source, srcErr
 		}
 	}
+	var attempts []string
 	savedBind := bindToDevice
 	bindToDevice = func(dev string) func(string, string, syscall.RawConn) error {
 		return func(network, address string, rc syscall.RawConn) error {
+			attempts = append(attempts, address)
 			return syscall.EPERM
 		}
 	}
@@ -719,7 +723,7 @@ func dialFallbackEnv(t *testing.T, source net.IP, srcErr error) *int32 {
 		devIPv4Addr = savedSrc
 		bindToDevice = savedBind
 	})
-	return &lookups
+	return &lookups, &attempts
 }
 
 // fallbackReq builds a request pinned to the selected interface.
@@ -752,8 +756,12 @@ func TestDialEPERMFallbackBindsSource(t *testing.T) {
 		}
 	}()
 	_, port, _ := net.SplitHostPort(ln.Addr().String())
-	src := net.ParseIP("127.0.0.1")
-	lookups := dialFallbackEnv(t, src, nil)
+	// 127.0.0.2 is loopback too (the whole 127/8 block routes to
+	// the host) but is not the address an unbound dial to
+	// 127.0.0.1 would select, so the equality assertion below
+	// discriminates explicit binding from ordinary routing.
+	src := net.ParseIP("127.0.0.2")
+	lookups, attempts := dialFallbackEnv(t, src, nil)
 	// One IPv4 candidate; a fixed source makes the chosen address
 	// observable rather than inferred from the route.
 	cp := newTestCP("http://127.0.0.1:1")
@@ -777,6 +785,9 @@ func TestDialEPERMFallbackBindsSource(t *testing.T) {
 	}
 	if n := atomic.LoadInt32(lookups); n != 1 {
 		t.Fatalf("source lookups = %d want 1", n)
+	}
+	if len(*attempts) != 1 || (*attempts)[0] != cands[0] {
+		t.Fatalf("primary attempts = %v want [%s]", *attempts, cands[0])
 	}
 }
 
@@ -802,13 +813,15 @@ func TestDialEPERMRefusedThenReachableOneDial(t *testing.T) {
 		}
 	}()
 	// A reserved-then-closed port refuses deterministically; the
-	// kernel sends RST before the handshake completes, so the
-	// primary dial fails and the fallback runs.
+	// fallback dial there fails and the loop advances to the live
+	// candidate. The EPERM-injected primary never leaves the
+	// control callback.
 	rejPort := deadPort(t)
-	refused := true
 	_, livePort, _ := net.SplitHostPort(ln.Addr().String())
-	src := net.ParseIP("127.0.0.1")
-	lookups := dialFallbackEnv(t, src, nil)
+	// 127.0.0.2 discriminates explicit binding from the unbound
+	// route choice the live endpoint would otherwise produce.
+	src := net.ParseIP("127.0.0.2")
+	lookups, attempts := dialFallbackEnv(t, src, nil)
 	cp := newTestCP("http://127.0.0.1:1")
 	cands := []string{"127.0.0.1:" + rejPort, "127.0.0.1:" + livePort}
 	savedResolve := resolveDest
@@ -831,7 +844,33 @@ func TestDialEPERMRefusedThenReachableOneDial(t *testing.T) {
 	if n := atomic.LoadInt32(lookups); n != 1 {
 		t.Fatalf("source lookups = %d want 1", n)
 	}
-	_ = refused
+	// Both candidates were attempted by the injected primary, in
+	// order: the first refused, the second reached.
+	if len(*attempts) != 2 {
+		t.Fatalf("primary attempts = %v want both candidates", *attempts)
+	}
+	if (*attempts)[0] != cands[0] || (*attempts)[1] != cands[1] {
+		t.Fatalf("candidate order = %v want %v", *attempts, cands)
+	}
+	// The live listener observed the successful fallback. The
+	// handshake completes in the kernel before the listener
+	// goroutine sees the connection, so poll briefly instead of
+	// requiring it to have raced the dial.
+	servedDeadline := time.Now().Add(2 * time.Second)
+	for {
+		select {
+		case <-served:
+			servedDeadline = time.Time{}
+		default:
+		}
+		if servedDeadline.IsZero() {
+			break
+		}
+		if time.Now().After(servedDeadline) {
+			t.Fatal("live candidate was never reached")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 // TestDialEPERMNoSourceSurfacesError pins the failed-discovery
@@ -853,7 +892,7 @@ func TestDialEPERMNoSourceSurfacesError(t *testing.T) {
 		}
 	}()
 	_, port, _ := net.SplitHostPort(ln.Addr().String())
-	lookups := dialFallbackEnv(t, nil, fmt.Errorf("no IPv4 on lo"))
+	lookups, _ := dialFallbackEnv(t, nil, fmt.Errorf("no IPv4 on lo"))
 	cp := newTestCP("http://127.0.0.1:1")
 	cands := []string{"127.0.0.1:" + port, "127.0.0.1:" + port}
 	savedResolve := resolveDest
@@ -895,11 +934,11 @@ func TestDialEPERMIPv6CandidateSkipsFallback(t *testing.T) {
 		}
 	}()
 	addr := ln.Addr().String()
-	src := net.ParseIP("127.0.0.1")
-	lookups := dialFallbackEnv(t, src, nil)
+	src := net.ParseIP("127.0.0.2")
+	lookups, attempts := dialFallbackEnv(t, src, nil)
 	cp := newTestCP("http://" + addr)
-	// IPv6 destination first so the IPv4 discovery, if wrongly
-	// consulted for it, is observable through the lookup count.
+	// IPv6 destinations only: the IPv4 discovery, if wrongly
+	// consulted for them, is observable through the lookup count.
 	cands := []string{addr, addr}
 	savedResolve := resolveDest
 	resolveDest = func(ctx context.Context, hostport string) ([]string, error) {
@@ -915,6 +954,9 @@ func TestDialEPERMIPv6CandidateSkipsFallback(t *testing.T) {
 	}
 	if n := atomic.LoadInt32(lookups); n != 0 {
 		t.Fatalf("source lookups = %d want 0 for IPv6 destinations", n)
+	}
+	if len(*attempts) != 2 {
+		t.Fatalf("primary attempts = %d want 2", len(*attempts))
 	}
 }
 
@@ -944,8 +986,8 @@ func TestDialEPERMBudgetSplit(t *testing.T) {
 		}
 	}()
 	_, livePort, _ := net.SplitHostPort(ln.Addr().String())
-	src := net.ParseIP("127.0.0.1")
-	lookups := dialFallbackEnv(t, src, nil)
+	src := net.ParseIP("127.0.0.2")
+	lookups, attempts := dialFallbackEnv(t, src, nil)
 	cp := newTestCP("http://127.0.0.1:1")
 	cands := []string{"127.0.0.1:" + rejPort, "127.0.0.1:" + livePort}
 	savedResolve := resolveDest
@@ -990,5 +1032,13 @@ func TestDialEPERMBudgetSplit(t *testing.T) {
 	}
 	if n := atomic.LoadInt32(lookups); n != 1 {
 		t.Fatalf("source lookups = %d want 1", n)
+	}
+	// Both candidates were attempted in order, proving the loop
+	// advanced past the refused first share.
+	if len(*attempts) != 2 {
+		t.Fatalf("primary attempts = %d want 2", len(*attempts))
+	}
+	if (*attempts)[0] != cands[0] || (*attempts)[1] != cands[1] {
+		t.Fatalf("candidate order = %v want %v", *attempts, cands)
 	}
 }
