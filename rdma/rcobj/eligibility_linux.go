@@ -67,6 +67,16 @@ func (e *Eligibility) Probe(ctx context.Context) error {
 	gen, ok, err := e.probe(ctx)
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.invals != start {
+		// The transport was replaced while this probe was in
+		// flight: its evidence predates the replacement and
+		// must not touch the current state, whether newer
+		// evidence was published in the meantime or not. The
+		// layer keeps whatever the newest probe established
+		// until a fresh probe on the current transport
+		// succeeds.
+		return errors.New("rcobj: transport replaced during probe")
+	}
 	e.lastProbeErr = err
 	if err != nil || !ok {
 		e.negative = true
@@ -74,14 +84,6 @@ func (e *Eligibility) Probe(ctx context.Context) error {
 			return err
 		}
 		return errors.New("rcobj: endpoint declined v2 admission")
-	}
-	if e.invals != start {
-		// The transport was replaced while this probe was in
-		// flight: its evidence predates the replacement and
-		// must not re-admit. The layer stays negative until a
-		// fresh probe on the new transport succeeds.
-		e.negative = true
-		return errors.New("rcobj: transport replaced during probe")
 	}
 	e.negative = false
 	e.connGen = gen

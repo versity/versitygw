@@ -34,6 +34,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -312,13 +313,18 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 			return nil, fmt.Errorf("selected interface %q (port %d, gid %d) not found",
 				r.Nic, r.NicPort, r.NicGid)
 		}
-		// Bind to the selected interface with a source whose
-		// family matches a reachable destination candidate. A
-		// hostname (or scoped literal) is resolved here under
-		// the same deadline; each candidate keeps its zone, and
-		// the dial retries across families so an unreachable
-		// IPv4 route can fall back to IPv6 like an ordinary
-		// dial would.
+		// Bind the socket to the selected interface and let the
+		// kernel choose the source address from its routes, the
+		// same policy the reference bridge uses. Pinning a
+		// source ourselves cannot see routing domains (ULA vs
+		// global) and picks addresses the return route cannot
+		// reach; SO_BINDTODEVICE keeps the traffic on the
+		// selected device while the kernel applies source
+		// selection per candidate. A hostname (or scoped
+		// literal) is resolved here under the same deadline,
+		// and the dial retries across families so an
+		// unreachable route falls back like an ordinary dial
+		// would.
 		cands, rerr := resolveDest(ctx, host)
 		if rerr != nil {
 			return nil, rerr
@@ -335,19 +341,14 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 		per := remaining / time.Duration(len(cands))
 		var lastErr error
 		for _, c := range cands {
-			la, aerr := linkAddrFor(dev, c)
-			if aerr != nil {
-				lastErr = aerr
-				continue
-			}
 			perTimeout := per
 			if t := cp.dialer.Timeout; t > 0 && t < per {
 				perTimeout = t
 			}
 			nd := net.Dialer{Timeout: perTimeout,
 				DualStack: cp.dialer.DualStack,
-				KeepAlive: cp.dialer.KeepAlive}
-			nd.LocalAddr = la
+				KeepAlive: cp.dialer.KeepAlive,
+				Control:   bindToDevice(dev)}
 			actx, acancel := context.WithTimeout(ctx, per)
 			conn, derr := nd.DialContext(actx, "tcp", c)
 			acancel()
@@ -364,6 +365,22 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 		return nil, lastErr
 	}
 	return d.DialContext(ctx, "tcp", host)
+}
+
+// bindToDevice returns a socket control function that binds new
+// sockets to the named interface (SO_BINDTODEVICE) so the kernel
+// routes and picks source addresses within that device alone.
+func bindToDevice(dev string) func(string, string, syscall.RawConn) error {
+	return func(network, address string, rc syscall.RawConn) error {
+		var serr error
+		if err := rc.Control(func(fd uintptr) {
+			serr = syscall.SetsockoptString(int(fd), syscall.SOL_SOCKET,
+				syscall.SO_BINDTODEVICE, dev)
+		}); err != nil {
+			return err
+		}
+		return serr
+	}
 }
 
 // deadlineFor reports the cutoff the caller's context carries, or
@@ -1072,78 +1089,4 @@ func netdevForGid(dev string, port, gid int) (string, bool) {
 	}
 	name := strings.TrimSpace(string(b))
 	return name, name != ""
-}
-
-// linkAddr picks a source address on the named interface so the
-// control TCP connection egresses through it.
-// linkAddrFor picks an address on dev whose family matches the
-// dial candidate. A link-local IPv6 source carries the interface
-// zone so the route resolves. The reference bridge binds to the
-// device itself (SO_BINDTODEVICE) after an AF_UNSPEC resolve;
-// selecting the same-family source here gives equivalent
-// reachability for the TCP control exchanges.
-func linkAddrFor(dev, hostport string) (*net.TCPAddr, error) {
-	iface, err := net.InterfaceByName(dev)
-	if err != nil {
-		return nil, err
-	}
-	addrs, err := iface.Addrs()
-	if err != nil {
-		return nil, err
-	}
-	host, _, serr := net.SplitHostPort(hostport)
-	if serr != nil {
-		host = hostport
-	}
-	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
-		host = host[1 : len(host)-1]
-	}
-	host = strings.SplitN(host, "%", 2)[0]
-	target := net.ParseIP(host)
-	if target == nil {
-		return nil, fmt.Errorf("unresolved destination %s", hostport)
-	}
-	want4 := target.To4() != nil
-	// Source scope must fit the destination scope: a link-local
-	// source only serves a link-local (or on-link) destination,
-	// and a routable destination needs a routable source. Prefer
-	// the scope the destination demands and fall back to the
-	// other when the interface lacks the preferred one, so a
-	// global destination still binds a global source even when
-	// the link-local address sorts first.
-	var fallback *net.TCPAddr
-	for _, a := range addrs {
-		ipn, ok := a.(*net.IPNet)
-		if !ok {
-			continue
-		}
-		is4 := ipn.IP.To4() != nil
-		if is4 != want4 {
-			continue
-		}
-		if is4 {
-			return &net.TCPAddr{IP: ipn.IP}, nil
-		}
-		if ipn.IP.IsLinkLocalUnicast() {
-			// Only directly usable when the destination is
-			// itself link-local.
-			if target.IsLinkLocalUnicast() {
-				return &net.TCPAddr{IP: ipn.IP, Zone: iface.Name}, nil
-			}
-			if fallback == nil {
-				fallback = &net.TCPAddr{IP: ipn.IP, Zone: iface.Name}
-			}
-			continue
-		}
-		// A global IPv6 source serves any destination scope.
-		return &net.TCPAddr{IP: ipn.IP}, nil
-	}
-	if fallback != nil {
-		return fallback, nil
-	}
-	fam := "IPv6"
-	if want4 {
-		fam = "IPv4"
-	}
-	return nil, fmt.Errorf("no %s address on %s", fam, dev)
 }
