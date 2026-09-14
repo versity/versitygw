@@ -50,6 +50,7 @@ var (
 	putOnly    = flag.Bool("put-only", false, "Run PUT only (skip GET and checksum verification)")
 	getOnly    = flag.Bool("get-only", false, "Run GET only (assumes object already exists)")
 	stdS3      = flag.Bool("std-s3", false, "Use standard S3 PUT/GET (no cuObject RDMA transfer)")
+	v2Mode     = flag.Bool("v2", false, "RC v2 client mode: plain PUT/GET plus a Range GET at a non-zero offset, one iteration, then exit")
 )
 
 func main() {
@@ -76,6 +77,13 @@ func main() {
 	}
 	if size <= 0 || size > cuobjclient.MaxTransferSize {
 		fatalf("cuobjtest: -size must be between 1 B and %d bytes", cuobjclient.MaxTransferSize)
+	}
+
+	if *v2Mode {
+		if err := runV2Mode(size); err != nil {
+			fatalf("cuobjtest: %v", err)
+		}
+		return
 	}
 
 	if err := runBenchmark(size); err != nil {
