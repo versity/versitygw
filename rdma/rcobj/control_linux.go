@@ -207,8 +207,13 @@ func newControlPlane(cfg Config) *controlPlane {
 // one-byte ranged GET of the probe object, signed with the
 // configured credentials. Only a direct 2xx answer is positive.
 func (cp *controlPlane) signedObjectProbe(ctx context.Context) (uint64, bool, error) {
+	// Snapshot the whole probe input under one lock hold: the
+	// object identity and the transport selection are captured
+	// together, so the request the probe sends is exactly the one
+	// the triggering PREPARE configured.
 	cp.probeMu.Lock()
 	bucket, key := cp.probeBucket, cp.probeKey
+	nic, nicPort, nicGid := cp.probeNic, cp.probeNicPort, cp.probeNicGid
 	cp.probeMu.Unlock()
 	if key == "" {
 		return 0, false, errors.New("rcobj: no probe object")
@@ -217,9 +222,11 @@ func (cp *controlPlane) signedObjectProbe(ctx context.Context) (uint64, bool, er
 	// callbacks use: the selected NIC, port, and GID that the C
 	// core reported for the data plane bind the probe socket too,
 	// so admission evidence reflects the interface that will
-	// actually carry the exchange.
+	// actually carry the exchange. (The C core invokes the
+	// callbacks serially under apiLock; the snapshot above keeps
+	// the fields self-consistent even if that ever changes.)
 	r := transferReq{Bucket: bucket, Key: key, Endpoint: cp.endpoint,
-		Nic: cp.probeNic, NicPort: cp.probeNicPort, NicGid: cp.probeNicGid}
+		Nic: nic, NicPort: nicPort, NicGid: nicGid}
 	// The probe rides the caller's deadline: PREPARE handed its
 	// remaining budget to the admission layer, so dial, write,
 	// and read all share one absolute cutoff. A context without a
@@ -453,6 +460,30 @@ func (cp *controlPlane) prepare(r transferReq,
 	return cp.prepareWire(r, out, deadline)
 }
 
+// connLost reports whether err is an actual transport failure
+// rather than the callback budget expiring: a deadline hit is an
+// intentional local abort, while resets, EOFs, refused writes,
+// and truncated bodies mean the connection the admission evidence
+// rode on is gone.
+func connLost(err error, deadline time.Time) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, os.ErrDeadlineExceeded) {
+		return false
+	}
+	return time.Now().After(deadline)
+}
+
+// invalidate drops the admission evidence when the transport it
+// was gathered on has observably broken mid-exchange.
+func (cp *controlPlane) invalidate() {
+	if cp.elig != nil {
+		cp.elig.OnConnectionChange(0)
+	}
+}
+
 // prepareWire is the PREPARE round trip without the valve.
 func (cp *controlPlane) prepareWire(r transferReq,
 	out *C.hipObjPrepareReplyV2_t, deadline time.Time) int {
@@ -488,11 +519,17 @@ func (cp *controlPlane) prepareWire(r transferReq,
 	}
 
 	if err := cp.signAndWrite(conn, r, http.MethodPost, pathPrepare, extra); err != nil {
+		if connLost(err, deadline) {
+			cp.invalidate()
+		}
 		return -1
 	}
 	br := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(br, &http.Request{Method: http.MethodPost})
 	if err != nil {
+		if connLost(err, deadline) {
+			cp.invalidate()
+		}
 		return -1
 	}
 	defer resp.Body.Close()
@@ -506,6 +543,9 @@ func (cp *controlPlane) prepareWire(r transferReq,
 	}
 
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		if connLost(err, deadline) {
+			cp.invalidate()
+		}
 		return -1
 	}
 
@@ -550,6 +590,9 @@ func (cp *controlPlane) readyRequest(r transferReq) int {
 
 	if err := cp.signAndWrite(conn, r, http.MethodPost, pathReady, extra); err != nil {
 		conn.Close()
+		if connLost(err, deadline) {
+			cp.invalidate()
+		}
 		return -1
 	}
 	cp.pendingMu.Lock()
@@ -586,6 +629,9 @@ func (cp *controlPlane) finishReady(r transferReq,
 	resp, err := http.ReadResponse(ex.br, &http.Request{Method: http.MethodPost})
 	if err != nil {
 		ex.conn.Close()
+		if connLost(err, deadline) {
+			cp.invalidate()
+		}
 		return -1
 	}
 	// Invalidate on the status line, before any fallible body
@@ -595,6 +641,9 @@ func (cp *controlPlane) finishReady(r transferReq,
 	}
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
 		ex.conn.Close()
+		if connLost(err, deadline) {
+			cp.invalidate()
+		}
 		return -1
 	}
 	ex.conn.Close()
@@ -653,14 +702,29 @@ func (cp *controlPlane) cancel(r transferReq) int {
 	extra.Set(hdrCookie, hex32(r.Cookie))
 
 	if err := cp.signAndWrite(conn, r, http.MethodPost, pathCancel, extra); err != nil {
+		if connLost(err, deadline) {
+			cp.invalidate()
+		}
 		return -1
 	}
 	br := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(br, &http.Request{Method: http.MethodPost})
 	if err != nil {
+		if connLost(err, deadline) {
+			cp.invalidate()
+		}
 		return -1
 	}
+	// A redirect on the cleanup exchange replaces the transport
+	// the admission evidence rode on; invalidate on the status
+	// line as on every other admitted exchange.
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 && cp.elig != nil {
+		cp.elig.OnConnectionChange(0)
+	}
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		if connLost(err, deadline) {
+			cp.invalidate()
+		}
 		return -1
 	}
 	return 0
