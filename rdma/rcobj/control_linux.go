@@ -200,7 +200,10 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 func (cp *controlPlane) signAndWrite(conn net.Conn, r transferReq,
 	path string, extra http.Header) error {
 
-	host := hostOf(conn.RemoteAddr())
+	host := authorityOf(r.Endpoint)
+	if host == ":80" {
+		host = hostOf(conn.RemoteAddr())
+	}
 	hdr := http.Header{}
 	hdr.Set("Host", host)
 	now := time.Now().UTC()
@@ -270,6 +273,23 @@ func hostOf(addr net.Addr) string {
 	return h
 }
 
+// authorityOf extracts the host[:port] the endpoint URL names, the
+// authority that must appear in the signed and transmitted Host
+// header. It defaults the port to :80 exactly like dialControl.
+func authorityOf(endpoint string) string {
+	h := endpoint
+	if i := strings.Index(h, "://"); i >= 0 {
+		h = h[i+3:]
+	}
+	if i := strings.Index(h, "/"); i >= 0 {
+		h = h[:i]
+	}
+	if !strings.Contains(h, ":") {
+		h += ":80"
+	}
+	return h
+}
+
 // prepare implements sendPrepare: one complete round trip.
 func (cp *controlPlane) prepare(r transferReq,
 	out *C.hipObjPrepareReplyV2_t) int {
@@ -311,9 +331,13 @@ func (cp *controlPlane) prepare(r transferReq,
 		return -1
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return -1
+	}
 
-	fillPrepareReply(cp, out, resp)
+	if !fillPrepareReply(cp, out, resp) {
+		return -1
+	}
 	return 0
 }
 
@@ -384,9 +408,14 @@ func (cp *controlPlane) finishReady(r transferReq,
 		ex.conn.Close()
 		return -1
 	}
-	io.Copy(io.Discard, resp.Body)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		ex.conn.Close()
+		return -1
+	}
 	ex.conn.Close()
-	fillFinalReply(out, resp)
+	if !fillFinalReply(out, resp) {
+		return -1
+	}
 	return 0
 }
 
@@ -405,6 +434,12 @@ func (cp *controlPlane) abortPending() {
 // cancel implements sendCancel: one idempotent round trip on a
 // fresh connection under the cleanup budget.
 func (cp *controlPlane) cancel(r transferReq) int {
+	// The library calls CANCEL without a prior finishReady whenever
+	// the data phase failed or expired, so the pending READY
+	// exchange is released here first: its socket must be closed,
+	// not pooled, and the slot must be free for the next transfer.
+	cp.abortPending()
+
 	deadline, ok := budget(r)
 	if !ok {
 		return -1
@@ -434,11 +469,13 @@ func (cp *controlPlane) cancel(r transferReq) int {
 	if err != nil {
 		return -1
 	}
-	io.Copy(io.Discard, resp.Body)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return -1
+	}
 	return 0
 }
 
-func fillPrepareReply(cp *controlPlane, out *C.hipObjPrepareReplyV2_t, resp *http.Response) {
+func fillPrepareReply(cp *controlPlane, out *C.hipObjPrepareReplyV2_t, resp *http.Response) bool {
 	out.httpStatus = C.int(resp.StatusCode)
 	if strings.EqualFold(resp.Header.Get(hdrProtocol), protocolV2) {
 		out.protocolEcho = 1
@@ -451,10 +488,14 @@ func fillPrepareReply(cp *controlPlane, out *C.hipObjPrepareReplyV2_t, resp *htt
 		out.unsupportedMarker = 1
 	}
 	if tok := replyTokenPayload(resp.Header.Get(hdrReply)); tok != "" {
-		setCStr(&out.serverToken[0], tok)
+		if !setCStr(&out.serverToken[0], tok, 97) {
+			return false
+		}
 	}
 	if s := resp.Header.Get(hdrSession); s != "" {
-		setCStr(&out.session[0], s)
+		if !setCStr(&out.session[0], s, 65) {
+			return false
+		}
 	}
 	if psn := resp.Header.Get(hdrPsn); psn != "" {
 		if n, err := strconv.ParseUint(psn, 16, 32); err == nil && n <= 0xffffff {
@@ -470,15 +511,16 @@ func fillPrepareReply(cp *controlPlane, out *C.hipObjPrepareReplyV2_t, resp *htt
 			// Malformed or partial staging is reported as absent so
 			// the core classifies the reply as InvalidValue for PUT.
 			out.stagingPresent = 0
-			return
+			return true
 		}
 		out.stagingAddr = C.uint64_t(a)
 		out.stagingRkey = C.uint32_t(rk)
 		out.stagingPresent = 1
 	}
+	return true
 }
 
-func fillFinalReply(out *C.hipObjFinalReplyV2_t, resp *http.Response) {
+func fillFinalReply(out *C.hipObjFinalReplyV2_t, resp *http.Response) bool {
 	out.httpStatus = C.int(resp.StatusCode)
 	if strings.EqualFold(resp.Header.Get(hdrProtocol), protocolV2) {
 		out.protocolEcho = 1
@@ -495,14 +537,21 @@ func fillFinalReply(out *C.hipObjFinalReplyV2_t, resp *http.Response) {
 		}
 	}
 	if e := resp.Header.Get(hdrEtag); e != "" {
-		setCStr(&out.etag[0], e)
+		if !setCStr(&out.etag[0], e, 128) {
+			return false
+		}
 	}
 	if v := resp.Header.Get("x-amz-version-id"); v != "" {
-		setCStr(&out.versionId[0], v)
+		if !setCStr(&out.versionId[0], v, 128) {
+			return false
+		}
 	}
 	if cs := resp.Header.Get(hdrChecksum); cs != "" {
-		setCStr(&out.checksumB64[0], cs)
+		if !copyChecksum(&out.checksumB64[0], cs) {
+			return false
+		}
 	}
+	return true
 }
 
 // prepareForTest drives one PREPARE exchange and reports only the
@@ -521,23 +570,51 @@ func (cp *controlPlane) finishReadyForTest(r transferReq) int {
 }
 
 // replyTokenPayload strips the status prefix the x-amz-rdma-reply
-// header carries ("200 <token>").
+// header carries ("200:<token>" from the bridge and gateway).
 func replyTokenPayload(v string) string {
-	if i := strings.IndexByte(v, ' '); i >= 0 {
+	if i := strings.IndexByte(v, ':'); i >= 0 {
 		return v[i+1:]
 	}
 	return ""
 }
 
-// setCStr copies s into a fixed C char array (NUL-terminated,
-// truncated to fit).
-func setCStr(dst *C.char, s string) {
-	b := []byte(s)
-	n := len(b)
-	for i := 0; i < n; i++ {
-		*(*C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(dst)) + uintptr(i))) = C.char(b[i])
+// setCStr copies s into a fixed C char array of cap bytes,
+// NUL-terminated. It returns false when s does not fit; the
+// destination stays empty in that case so an oversized protocol
+// field is rejected rather than silently truncating or spilling
+// into adjacent struct memory.
+func setCStr(dst *C.char, s string, cap int) bool {
+	if len(s) >= cap {
+		return false
 	}
-	*(*C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(dst)) + uintptr(n))) = 0
+	for i := 0; i < len(s); i++ {
+		*(*C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(dst)) + uintptr(i))) = C.char(s[i])
+	}
+	*(*C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(dst)) + uintptr(len(s)))) = 0
+	return true
+}
+
+// copyChecksum validates the "CRC64NVME <base64>" form and copies
+// only the 12-character canonical base64 payload.
+func copyChecksum(dst *C.char, v string) bool {
+	const algo = "CRC64NVME"
+	if !strings.HasPrefix(v, algo) {
+		return false
+	}
+	payload := strings.TrimSpace(v[len(algo):])
+	// Canonical CRC64NVME base64 is exactly 12 characters.
+	if len(payload) != 12 {
+		return false
+	}
+	for i := 0; i < len(payload); i++ {
+		c := payload[i]
+		isB64 := (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+			(c >= '0' && c <= '9') || c == '+' || c == '/' || c == '='
+		if !isB64 {
+			return false
+		}
+	}
+	return setCStr(dst, payload, 13)
 }
 
 func hex24(v uint32) string { return fmt.Sprintf("%06x", v) }

@@ -116,9 +116,10 @@ func HTTPProbe(client *http.Client, endpoint string) ProbeFn {
 			return 0, false, err
 		}
 		defer resp.Body.Close()
-		// The probe rides whatever transport the client owns;
-		// identity is the client pointer's generation in tests.
-		return transportGen(resp), resp.StatusCode < 500, nil
+		// Only a real API response (2xx) is positive evidence:
+		// redirects and errors mean the endpoint did not serve
+		// the object API this transfer path needs.
+		return transportGen(resp), resp.StatusCode >= 200 && resp.StatusCode < 300, nil
 	}
 }
 
