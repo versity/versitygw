@@ -15,6 +15,7 @@
 # under the License.
 
 source ./tests/commands/command.sh
+source ./tests/drivers/create_multipart_upload/create_multipart_upload_rest.sh
 source ./tests/drivers/list_objects/list_objects_rest.sh
 source ./tests/drivers/xml.sh
 

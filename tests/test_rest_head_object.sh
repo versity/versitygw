@@ -19,6 +19,7 @@ load ./bats-assert/load
 
 source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/create_multipart_upload/create_multipart_upload_rest.sh
 source ./tests/drivers/complete_multipart_upload/complete_multipart_upload_rest.sh
 source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
 source ./tests/drivers/string.sh

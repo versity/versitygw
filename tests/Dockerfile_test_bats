@@ -36,6 +36,8 @@ ENV PATH="$VENV/bin:${PATH}"
 WORKDIR /home/tester
 RUN make
 
+RUN chown -R tester:tester /home/tester/.cache/go-build /home/tester/go
+
 USER tester
 
 RUN . $SECRETS_FILE && \
@@ -54,6 +56,15 @@ RUN mkdir config log && cp $CONFIG_FILE config/.env
 
 ENV WORKSPACE=.
 ENV VERSITYGW_TEST_ENV=/home/tester/config/.env
+
+#RUN set -x; \
+#    id; \
+#    whoami; \
+#    echo "GOCACHE=$(go env GOCACHE)"; \
+#    echo "GOMODCACHE=$(go env GOMODCACHE)"; \
+#    echo "GOPATH=$(go env GOPATH)" || true
+#
+#RUN cache="$(go env GOCACHE)" && ls -ld "$cache" && find "$cache" -maxdepth 2 -ls 2>/dev/null | head -100 || true
 
 ENTRYPOINT ["tests/run.sh"]
 CMD ["s3api,s3,s3cmd,mc,rest"]
