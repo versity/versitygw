@@ -770,6 +770,37 @@ type Checksum struct {
 	XXHASH128 *string
 }
 
+// SetSum stores sum in the field matching algo. A nil sum or an unknown
+// algorithm leaves the checksum unchanged.
+func (c *Checksum) SetSum(algo types.ChecksumAlgorithm, sum *string) {
+	if sum == nil {
+		return
+	}
+
+	switch algo {
+	case types.ChecksumAlgorithmCrc32:
+		c.CRC32 = sum
+	case types.ChecksumAlgorithmCrc32c:
+		c.CRC32C = sum
+	case types.ChecksumAlgorithmSha1:
+		c.SHA1 = sum
+	case types.ChecksumAlgorithmSha256:
+		c.SHA256 = sum
+	case types.ChecksumAlgorithmCrc64nvme:
+		c.CRC64NVME = sum
+	case types.ChecksumAlgorithmSha512:
+		c.SHA512 = sum
+	case types.ChecksumAlgorithmMd5:
+		c.MD5 = sum
+	case types.ChecksumAlgorithmXxhash64:
+		c.XXHASH64 = sum
+	case types.ChecksumAlgorithmXxhash3:
+		c.XXHASH3 = sum
+	case types.ChecksumAlgorithmXxhash128:
+		c.XXHASH128 = sum
+	}
+}
+
 // LocationConstraint represents the GetBucketLocation response
 type LocationConstraint struct {
 	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ LocationConstraint"`
