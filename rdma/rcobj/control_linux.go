@@ -122,6 +122,7 @@ type controlPlane struct {
 	probeNic     string
 	probeNicPort int
 	probeNicGid  int
+	probePeer    string
 
 	// lastCaps memoizes the capability advertisement the last
 	// PREPARE response carried (probe evidence for the caller).
@@ -269,6 +270,15 @@ func (cp *controlPlane) signedObjectProbe(ctx context.Context) (uint64, bool, er
 	// answers the probe but declines PREPARE with NotSupported
 	// lets the CLI fall back without admission blocking it first.
 	ok := resp.StatusCode >= 200 && resp.StatusCode < 300
+	// Pin the evidence to the peer that actually answered: every
+	// later admitted exchange re-resolves the authority, so a
+	// different reachable peer means the evidence no longer
+	// describes where the bytes would go.
+	if ok {
+		cp.probeMu.Lock()
+		cp.probePeer = conn.RemoteAddr().String()
+		cp.probeMu.Unlock()
+	}
 	gen := cp.probeGen.Add(1)
 	return gen, ok, nil
 }
@@ -461,11 +471,12 @@ func (cp *controlPlane) prepare(r transferReq,
 }
 
 // connLost reports whether err is an actual transport failure
-// rather than the callback budget expiring: a deadline hit is an
-// intentional local abort, while resets, EOFs, refused writes,
-// and truncated bodies mean the connection the admission evidence
-// rode on is gone.
-func connLost(err error, deadline time.Time) bool {
+// rather than the callback budget expiring: the typed deadline
+// errors are intentional local aborts, while everything else -
+// resets, EOFs, refused writes, truncated bodies - means the
+// connection the admission evidence rode on is gone, whether the
+// failure was observed before or after the cutoff.
+func connLost(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -473,7 +484,19 @@ func connLost(err error, deadline time.Time) bool {
 		errors.Is(err, os.ErrDeadlineExceeded) {
 		return false
 	}
-	return time.Now().After(deadline)
+	return true
+}
+
+// peerMatches reports whether the freshly dialed connection
+// reaches the peer the admission evidence was pinned to. An empty
+// pin (no successful probe yet) never matches: the valve in
+// prepare has already re-probed by then, so this only guards the
+// window between the probe and this dial.
+func (cp *controlPlane) peerMatches(conn net.Conn) bool {
+	cp.probeMu.Lock()
+	pin := cp.probePeer
+	cp.probeMu.Unlock()
+	return pin != "" && pin == conn.RemoteAddr().String()
 }
 
 // invalidate drops the admission evidence when the transport it
@@ -494,10 +517,11 @@ func (cp *controlPlane) prepareWire(r transferReq,
 	conn, err := cp.dialControl(ctx, r)
 	if err != nil {
 		// The transport the admission evidence was gathered on
-		// refused the dial: the evidence no longer describes a
-		// reachable path, so fail closed until a fresh probe.
-		if cp.elig != nil {
-			cp.elig.OnConnectionChange(0)
+		// refused the dial (or the budget expired first, which is
+		// an intentional local abort): only a real refusal
+		// invalidates the evidence.
+		if connLost(err) {
+			cp.invalidate()
 		}
 		return -1
 	}
@@ -519,7 +543,7 @@ func (cp *controlPlane) prepareWire(r transferReq,
 	}
 
 	if err := cp.signAndWrite(conn, r, http.MethodPost, pathPrepare, extra); err != nil {
-		if connLost(err, deadline) {
+		if connLost(err) {
 			cp.invalidate()
 		}
 		return -1
@@ -527,7 +551,7 @@ func (cp *controlPlane) prepareWire(r transferReq,
 	br := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(br, &http.Request{Method: http.MethodPost})
 	if err != nil {
-		if connLost(err, deadline) {
+		if connLost(err) {
 			cp.invalidate()
 		}
 		return -1
@@ -538,12 +562,12 @@ func (cp *controlPlane) prepareWire(r transferReq,
 	// admission evidence was gathered on. Invalidate immediately
 	// after the status line: a stalled or truncated body must not
 	// leave the stale positive decision in place.
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 && cp.elig != nil {
-		cp.elig.OnConnectionChange(0)
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		cp.invalidate()
 	}
 
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		if connLost(err, deadline) {
+		if connLost(err) {
 			cp.invalidate()
 		}
 		return -1
@@ -568,15 +592,23 @@ func (cp *controlPlane) readyRequest(r transferReq) int {
 	conn, err := cp.dialControl(ctx, r)
 	if err != nil {
 		// The transport the admission evidence was gathered on
-		// refused the dial: the evidence no longer describes a
-		// reachable path, so fail closed until a fresh probe.
-		if cp.elig != nil {
-			cp.elig.OnConnectionChange(0)
+		// refused the dial (or the budget expired first, which is
+		// an intentional local abort): only a real refusal
+		// invalidates the evidence.
+		if connLost(err) {
+			cp.invalidate()
 		}
 		return -1
 	}
 	if err := conn.SetWriteDeadline(deadline); err != nil {
 		conn.Close()
+		return -1
+	}
+	// READY rides its own dial: the same pinned peer must answer
+	// before the admitted bytes flow.
+	if !cp.peerMatches(conn) {
+		conn.Close()
+		cp.invalidate()
 		return -1
 	}
 
@@ -590,7 +622,7 @@ func (cp *controlPlane) readyRequest(r transferReq) int {
 
 	if err := cp.signAndWrite(conn, r, http.MethodPost, pathReady, extra); err != nil {
 		conn.Close()
-		if connLost(err, deadline) {
+		if connLost(err) {
 			cp.invalidate()
 		}
 		return -1
@@ -629,19 +661,19 @@ func (cp *controlPlane) finishReady(r transferReq,
 	resp, err := http.ReadResponse(ex.br, &http.Request{Method: http.MethodPost})
 	if err != nil {
 		ex.conn.Close()
-		if connLost(err, deadline) {
+		if connLost(err) {
 			cp.invalidate()
 		}
 		return -1
 	}
 	// Invalidate on the status line, before any fallible body
 	// work can strand the stale admission decision.
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 && cp.elig != nil {
-		cp.elig.OnConnectionChange(0)
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		cp.invalidate()
 	}
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
 		ex.conn.Close()
-		if connLost(err, deadline) {
+		if connLost(err) {
 			cp.invalidate()
 		}
 		return -1
@@ -684,10 +716,11 @@ func (cp *controlPlane) cancel(r transferReq) int {
 	conn, err := cp.dialControl(ctx, r)
 	if err != nil {
 		// The transport the admission evidence was gathered on
-		// refused the dial: the evidence no longer describes a
-		// reachable path, so fail closed until a fresh probe.
-		if cp.elig != nil {
-			cp.elig.OnConnectionChange(0)
+		// refused the dial (or the budget expired first, which is
+		// an intentional local abort): only a real refusal
+		// invalidates the evidence.
+		if connLost(err) {
+			cp.invalidate()
 		}
 		return -1
 	}
@@ -702,7 +735,7 @@ func (cp *controlPlane) cancel(r transferReq) int {
 	extra.Set(hdrCookie, hex32(r.Cookie))
 
 	if err := cp.signAndWrite(conn, r, http.MethodPost, pathCancel, extra); err != nil {
-		if connLost(err, deadline) {
+		if connLost(err) {
 			cp.invalidate()
 		}
 		return -1
@@ -710,7 +743,7 @@ func (cp *controlPlane) cancel(r transferReq) int {
 	br := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(br, &http.Request{Method: http.MethodPost})
 	if err != nil {
-		if connLost(err, deadline) {
+		if connLost(err) {
 			cp.invalidate()
 		}
 		return -1
@@ -718,11 +751,11 @@ func (cp *controlPlane) cancel(r transferReq) int {
 	// A redirect on the cleanup exchange replaces the transport
 	// the admission evidence rode on; invalidate on the status
 	// line as on every other admitted exchange.
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 && cp.elig != nil {
-		cp.elig.OnConnectionChange(0)
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		cp.invalidate()
 	}
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		if connLost(err, deadline) {
+		if connLost(err) {
 			cp.invalidate()
 		}
 		return -1
