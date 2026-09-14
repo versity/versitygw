@@ -36,9 +36,10 @@ type Config struct {
 	Credentials Credentials
 	Region      string
 
-	// ProbeBucket/ProbeKey name the readable object the admission
-	// An empty probe object leaves admission fail-closed:
-	// PREPARE fails until SetProbeObject supplies one.
+	// ProbeBucket/ProbeKey name the readable object the
+	// admission probe reads. They must be set here, before the
+	// client is constructed: an empty probe object leaves
+	// admission fail-closed and every PREPARE fails.
 	ProbeBucket string
 	ProbeKey    string
 }

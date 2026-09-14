@@ -25,6 +25,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -670,5 +671,187 @@ func TestChecksumValid(t *testing.T) {
 		if checksumValid(b) {
 			t.Errorf("checksumValid(%q) accepted", b)
 		}
+	}
+}
+
+// dialFallbackTest drives dialControl with a selected interface
+// whose device binding is denied (EPERM), the pre-5.7 unprivileged
+// kernel behavior, against a local listener.
+func dialFallbackTest(t *testing.T, ln net.Listener) (*controlPlane, transferReq) {
+	t.Helper()
+	saved := netdevForGidLookup
+	netdevForGidLookup = func(dev string, port, gid int) (string, bool) {
+		return "lo", true
+	}
+	t.Cleanup(func() { netdevForGidLookup = saved })
+	cp := newTestCP("http://" + ln.Addr().String())
+	r := testReq(1000)
+	r.Endpoint = "http://" + ln.Addr().String()
+	r.Nic = "mlx5_0"
+	r.NicPort = 1
+	r.NicGid = 0
+	return cp, r
+}
+
+// denyBindToDevice forces the control callback to deny every
+// SO_BINDTODEVICE set with EPERM, as a pre-5.7 kernel does for
+// unprivileged callers.
+func denyBindToDevice(t *testing.T) {
+	t.Helper()
+	saved := bindToDevice
+	bindToDevice = func(dev string) func(string, string, syscall.RawConn) error {
+		return func(network, address string, rc syscall.RawConn) error {
+			return syscall.EPERM
+		}
+	}
+	t.Cleanup(func() { bindToDevice = saved })
+}
+
+// TestDialEPERMFallbackIPv4 pins the fallback contract: when the
+// kernel denies the device binding, an IPv4 destination is retried
+// from the interface's IPv4 address and succeeds.
+func TestDialEPERMFallbackIPv4(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("no ipv4 loopback: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	denyBindToDevice(t)
+	cp, r := dialFallbackTest(t, ln)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := cp.dialControl(ctx, r)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	la := conn.LocalAddr().(*net.TCPAddr)
+	if !la.IP.IsLoopback() {
+		t.Fatalf("local addr %v not on loopback", la)
+	}
+	conn.Close()
+}
+
+// TestDialEPERMFallbackRefusedThenReachable pins the R12-1 repair:
+// a refused first IPv4 destination must not disable the fallback
+// for a reachable second candidate.
+func TestDialEPERMFallbackRefusedThenReachable(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("no ipv4 loopback: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	denyBindToDevice(t)
+	cp, r := dialFallbackTest(t, ln)
+	// A literal IPv4 destination resolves to a single candidate.
+	// The refused-then-reachable sequence then spans two dials:
+	// first to a port with no listener (fallback attempted and
+	// refused), then to the live listener. The second dial must
+	// still build and use the fallback source: a refused first
+	// attempt must not disable it for a later reachable one.
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	deadPort := 1
+	host := "127.0.0.1"
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	rDead := r
+	rDead.Endpoint = fmt.Sprintf("http://%s:%d", host, deadPort)
+	if conn, err := cp.dialControl(ctx, rDead); err == nil {
+		conn.Close()
+		t.Fatal("dead-port dial must fail")
+	}
+	r.Endpoint = fmt.Sprintf("http://%s:%s", host, port)
+	conn, err := cp.dialControl(ctx, r)
+	if err != nil {
+		t.Fatalf("dial after refused destination: %v", err)
+	}
+	la := conn.LocalAddr().(*net.TCPAddr)
+	if !la.IP.IsLoopback() {
+		t.Fatalf("local addr %v not on loopback", la)
+	}
+	conn.Close()
+}
+
+// TestDialEPERMFallbackNoSource pins the failed-discovery memory:
+// when the selected interface exposes no IPv4 address, the fallback
+// is skipped (no unbound dial) and the EPERM error surfaces.
+func TestDialEPERMFallbackNoSource(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("no ipv4 loopback: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	denyBindToDevice(t)
+	saved := devIPv4Addr
+	devIPv4Addr = func(dev string) (net.IP, error) {
+		return nil, fmt.Errorf("no IPv4 on %s", dev)
+	}
+	t.Cleanup(func() { devIPv4Addr = saved })
+	cp, r := dialFallbackTest(t, ln)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := cp.dialControl(ctx, r); err == nil {
+		t.Fatal("expected EPERM to surface when no fallback source exists")
+	}
+}
+
+// TestDialEPERMFallbackBudget pins the shared-deadline split: the
+// fallback retry runs under its own share of the budget and the
+// overall dial honors the parent deadline.
+func TestDialEPERMFallbackBudget(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("no ipv4 loopback: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	denyBindToDevice(t)
+	cp, r := dialFallbackTest(t, ln)
+	// The budget check targets a refused destination: primary and
+	// fallback attempts each get their share and the dial returns
+	// promptly instead of consuming the whole parent deadline.
+	r.Endpoint = "http://127.0.0.1:1"
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := cp.dialControl(ctx, r); err == nil {
+		t.Fatal("refused dial unexpectedly succeeded")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("dial outlived its budget: %v", elapsed)
 	}
 }
