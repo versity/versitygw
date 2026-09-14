@@ -97,7 +97,22 @@ func (f *fakeS3) serve() {
 		if err != nil {
 			return
 		}
-		go f.handle(conn)
+		// Register the connection before dispatching its
+		// handler, so a test can wait for acceptance and then
+		// for handler completion instead of racing the
+		// goroutine schedule.
+		f.mu.Lock()
+		if f.connBytes == nil {
+			f.connBytes = make(map[net.Conn]int)
+		}
+		if f.connDone == nil {
+			f.connDone = make(map[net.Conn]chan struct{})
+		}
+		f.connBytes[conn] = 0
+		done := make(chan struct{})
+		f.connDone[conn] = done
+		f.mu.Unlock()
+		go f.handle(conn, done)
 	}
 }
 
@@ -115,15 +130,10 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (f *fakeS3) handle(conn net.Conn) {
-	done := make(chan struct{})
+func (f *fakeS3) handle(conn net.Conn, done chan struct{}) {
 	defer close(done)
 	defer conn.Close()
 	cr := &countingReader{r: conn}
-	f.mu.Lock()
-	f.connBytes[conn] = 0
-	f.connDone[conn] = done
-	f.mu.Unlock()
 	defer func() {
 		f.mu.Lock()
 		f.connBytes[conn] = int(cr.n)
