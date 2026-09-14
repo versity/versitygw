@@ -61,6 +61,11 @@ func (c *Client) Put(bucket, key string, devPtr unsafe.Pointer,
 
 func NotSupported(err error) bool { return false }
 
+// Valloc/Free are host-memory helpers; the stub cannot allocate
+// C memory without cgo, so callers fail at Init instead.
+func Valloc(size int) unsafe.Pointer { return nil }
+func Free(p unsafe.Pointer)          {}
+
 type OpError struct {
 	Op       string
 	Code     int
