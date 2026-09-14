@@ -43,6 +43,11 @@ CUOBJ_LIB_DIR ?= /usr/local/cuda-13.3/targets/x86_64-linux/lib
 CUOBJ_SERVER_INC_DIR ?= /usr/include
 CUOBJ_CLIENT_INC_DIR ?= /usr/include
 CUOBJ_CUDA_INC_DIR ?= /usr/local/cuda/include
+# hipObject client library (hipobj-rc-v2 data plane) for the rcobj binding
+HIPOBJ_INC_DIR ?= /usr/include
+HIPOBJ_LIB_DIR ?= /usr/lib
+RCOBJ_CGO_CFLAGS=-I$(HIPOBJ_INC_DIR)
+RCOBJ_CGO_LDFLAGS=-L$(HIPOBJ_LIB_DIR) -Wl,-rpath,$(HIPOBJ_LIB_DIR) -lhipobj
 CXX ?= g++
 AR ?= ar
 
@@ -119,8 +124,8 @@ cuobjtest: cuobjtest-gpu
 .PHONY: cuobjtest-gpu
 cuobjtest-gpu: $(CUOBJCLIENT_WRAPPER_LIB)
 	CGO_ENABLED=1 \
-	CGO_CFLAGS="$(CUOBJCLIENT_CGO_CFLAGS)" \
-	CGO_LDFLAGS="$(CUOBJCLIENT_CGO_LDFLAGS)" \
+	CGO_CFLAGS="$(CUOBJCLIENT_CGO_CFLAGS) $(RCOBJ_CGO_CFLAGS)" \
+	CGO_LDFLAGS="$(CUOBJCLIENT_CGO_LDFLAGS) $(RCOBJ_CGO_LDFLAGS)" \
 		$(GOBUILD) -buildvcs=false $(LDFLAGS) -o $(CUOBJTEST_BIN) $(CUOBJTEST_CMD)
 
 .PHONY: cuobjtest-host
