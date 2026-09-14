@@ -21,7 +21,7 @@ import (
 	"testing"
 )
 
-// TestEligibilityFailClosed pins the C3 properties: connection
+// TestEligibilityFailClosed pins the admission properties: connection
 // replacement turns admission negative, and no bytes are admitted
 // before a fresh probe succeeds.
 func TestEligibilityFailClosed(t *testing.T) {

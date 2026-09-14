@@ -388,7 +388,7 @@ func errStr(e error) string {
 	return e.Error()
 }
 
-// v2Multipart covers the 8.3 flow: REST CreateMultipartUpload,
+// v2Multipart covers the multipart flow: REST CreateMultipartUpload,
 // two v2 UploadPart transfers, REST CompleteMultipartUpload, then
 // a full v2 GET verifying the assembled bytes.
 func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
