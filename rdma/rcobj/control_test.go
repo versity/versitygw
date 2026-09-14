@@ -152,6 +152,12 @@ func (f *fakeS3) handle(conn net.Conn) {
 			b.WriteString("Content-Length: 0\r\nConnection: close\r\n\r\n")
 			conn.Write([]byte(b.String()))
 			return
+		case "/b/k":
+			// The admission probe object: a one-byte ranged GET
+			// answers 206 with a single byte, exactly what the
+			// signed object probe treats as positive evidence.
+			conn.Write([]byte("HTTP/1.1 206 partial\r\nContent-Length: 1\r\nConnection: close\r\n\r\nx"))
+			return
 		default:
 			conn.Write([]byte("HTTP/1.1 404 nf\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"))
 			return
@@ -163,6 +169,8 @@ func (f *fakeS3) handle(conn net.Conn) {
 func newTestCP(endpoint string) *controlPlane {
 	cfg := Config{
 		ControlEndpoint: endpoint,
+		ProbeBucket:     "b",
+		ProbeKey:        "k",
 		Credentials: Credentials{
 			AccessKey: "AKIAFAKE",
 			SecretKey: "secretfake",
@@ -461,33 +469,71 @@ func TestConnLost(t *testing.T) {
 }
 
 // TestPrepareMismatchedPeerUnsent pins the admission contract for
-// PREPARE: when the freshly dialed peer differs from the probe's
-// pin, nothing is sent and the evidence is dropped, so a server
-// that replaced the pinned one never observes a PREPARE.
+// PREPARE: starting from asserted positive admission evidence, a
+// freshly dialed peer that differs from the probe's pin sends
+// nothing, the evidence is dropped, and the next transfer through
+// the production valve re-probes against the replacement before
+// any PREPARE flows.
 func TestPrepareMismatchedPeerUnsent(t *testing.T) {
 	ph := http.Header{}
 	ph.Set("X-Amz-Rdma-Protocol", protocolV2)
 	f := newFakeS3(t, 200, ph)
 	cp := newTestCP(f.endpoint())
-	// Pin a peer that is not this listener.
+	// Establish positive evidence the way production does: the
+	// signed object probe the valve runs, admitted state asserted
+	// before the mismatch.
+	r := testReq(2000)
+	r.Endpoint = f.endpoint()
+	r.Bucket = "b"
+	r.Key = "k"
+	cp.probeMu.Lock()
+	cp.probeNic = r.Nic
+	cp.probeNicPort = r.NicPort
+	cp.probeNicGid = r.NicGid
+	cp.probeMu.Unlock()
+	pctx, pcancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer pcancel()
+	if perr := cp.elig.Probe(pctx); perr != nil {
+		t.Fatalf("initial admission probe: %v", perr)
+	}
+	if !cp.elig.Admitted() {
+		t.Fatal("admission not positive after successful probe")
+	}
+
+	// Now point the pin at a different peer and dial again.
 	cp.probeMu.Lock()
 	cp.probePeer = "127.0.0.1:1"
 	cp.probeMu.Unlock()
-
-	r := testReq(2000)
-	r.Endpoint = f.endpoint()
 	if rc := cp.prepareForTest(r); rc != -1 {
 		t.Fatalf("prepare rc=%d, want -1", rc)
 	}
 	f.mu.Lock()
 	n := len(f.prepareReqs)
-	neg := cp.elig.Admitted()
 	f.mu.Unlock()
 	if n != 0 {
 		t.Errorf("mismatched peer received %d PREPAREs, want 0", n)
 	}
-	if neg {
+	if cp.elig.Admitted() {
 		t.Error("admission still positive after peer mismatch")
+	}
+
+	// The next production transfer re-probes through the valve
+	// and succeeds against the replacement: PREPARE flows again.
+	r2 := testReq(2000)
+	r2.Endpoint = f.endpoint()
+	r2.Bucket = "b"
+	r2.Key = "k"
+	if rc := cp.prepareValveForTest(r2); rc != 0 {
+		t.Fatalf("post-mismatch prepare rc=%d, want 0", rc)
+	}
+	f.mu.Lock()
+	n = len(f.prepareReqs)
+	f.mu.Unlock()
+	if n == 0 {
+		t.Error("no PREPARE after re-probe against replacement")
+	}
+	if !cp.elig.Admitted() {
+		t.Error("admission not positive after re-probe")
 	}
 }
 
