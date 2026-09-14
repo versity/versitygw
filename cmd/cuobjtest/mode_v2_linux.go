@@ -8,7 +8,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -52,37 +51,35 @@ func runV2Mode(size int) error {
 			SecretKey: *secret,
 			Region:    *region,
 		},
-		Region: *region,
+		Region:      *region,
+		ProbeBucket: *bucket,
+		ProbeKey:    probeKey,
 	})
 	if err != nil {
 		return fmt.Errorf("rcobj init: %w", err)
 	}
 	defer cl.Shutdown()
 
-	// Admission evidence: one real-API GET against the probe
-	// object before any transfer is attempted. A declining
-	// endpoint fails the run here instead of per-transfer.
-	probeClient := &http.Client{Timeout: 10 * time.Second}
-	elig := rcobj.NewEligibility(rcobj.HTTPProbe(probeClient,
-		"http://"+host+":"+fmt.Sprint(port)))
-	if err := elig.Probe(context.Background()); err != nil {
-		return fmt.Errorf("admission probe: %w", err)
-	}
-
 	// Host memory is registered through the library's host-MR
 	// path; the v2 entry points require a registered buffer.
-	putAlloc := rcobj.Valloc(size)
-	if putAlloc == nil {
-		return fmt.Errorf("alloc PUT buffer")
-	}
-	putBuf := unsafe.Slice((*byte)(putAlloc), size)
-	putBufGlobal = putBuf
-	if _, err := readRandom(putBuf); err != nil {
-		rcobj.Free(putAlloc)
+	// The transfer payload lives in device memory: v2 transfers
+	// require a device-backed MR, so the staging bytes are
+	// generated on the host and copied up through the HIP runtime.
+	hostPayload := make([]byte, size)
+	if _, err := readRandom(hostPayload); err != nil {
 		return fmt.Errorf("fill PUT buffer: %w", err)
 	}
+	putBufGlobal = hostPayload
+	putAlloc, err := rcobj.VallocDev(size)
+	if err != nil {
+		return fmt.Errorf("alloc PUT device buffer: %w", err)
+	}
+	if err := rcobj.CopyDevHostToDev(putAlloc, hostPayload); err != nil {
+		_ = rcobj.FreeDev(putAlloc)
+		return fmt.Errorf("stage PUT payload: %w", err)
+	}
 	if err := cl.RegisterBuffer(putAlloc, uint64(size)); err != nil {
-		rcobj.Free(putAlloc)
+		_ = rcobj.FreeDev(putAlloc)
 		return fmt.Errorf("register: %w", err)
 	}
 	// releasePut frees the buffer only after a successful
@@ -92,7 +89,9 @@ func runV2Mode(size int) error {
 		if err := cl.DeregisterBuffer(putAlloc); err != nil {
 			return fmt.Errorf("deregister PUT buffer: %w (buffer kept)", err)
 		}
-		rcobj.Free(putAlloc)
+		if err := rcobj.FreeDev(putAlloc); err != nil {
+			return fmt.Errorf("free PUT device buffer: %w", err)
+		}
 		return nil
 	}
 
@@ -103,25 +102,26 @@ func runV2Mode(size int) error {
 	r := v2Result{step: "PUT"}
 	r.dur, r.bytes, r.err = v2DoTransfer(cl, opPut,
 		putAlloc, 0, uint64(size), "", *key, func() error {
-			return restPutObj(restBase, *key, putBuf)
+			return restPutObj(restBase, *key, hostPayload)
 		})
 	results = append(results, r)
 
-	// 2. Plain GET (full)
-	getAlloc := rcobj.Valloc(size)
-	if getAlloc == nil {
-		return fmt.Errorf("alloc GET buffer")
+	// 2. Plain GET (full): device buffer, staged down for compare.
+	getAlloc, gerr := rcobj.VallocDev(size)
+	if gerr != nil {
+		return fmt.Errorf("alloc GET device buffer: %w", gerr)
 	}
-	getBuf := unsafe.Slice((*byte)(getAlloc), size)
 	if err := cl.RegisterBuffer(getAlloc, uint64(size)); err != nil {
-		rcobj.Free(getAlloc)
+		_ = rcobj.FreeDev(getAlloc)
 		return fmt.Errorf("register GET buffer: %w", err)
 	}
 	releaseGet := func() error {
 		if err := cl.DeregisterBuffer(getAlloc); err != nil {
 			return fmt.Errorf("deregister GET buffer: %w (buffer kept)", err)
 		}
-		rcobj.Free(getAlloc)
+		if err := rcobj.FreeDev(getAlloc); err != nil {
+			return fmt.Errorf("free GET device buffer: %w", err)
+		}
 		return nil
 	}
 
@@ -129,20 +129,27 @@ func runV2Mode(size int) error {
 		r = v2Result{step: "GET"}
 		r.dur, r.bytes, r.err = v2DoTransfer(cl, opGet,
 			getAlloc, 0, uint64(size), "", *key, func() error {
-				return restGetObj(restBase, *key, getBuf)
+				return restGetObj(restBase, *key, putBufGlobal)
 			})
-		r.byteMatch = r.err == nil && string(putBuf) == string(getBuf)
-		if r.err == nil && !r.byteMatch {
-			r.firstDiff = -1
-			for i := 0; i < len(putBuf); i++ {
-				if putBuf[i] != getBuf[i] {
-					r.firstDiff = i
-					r.gotByte = getBuf[i]
-					r.wantByte = putBuf[i]
-					break
+		if r.err == nil {
+			got := make([]byte, size)
+			if cerr := rcobj.CopyDevDevToHost(got, getAlloc); cerr != nil {
+				r.err = fmt.Errorf("stage down GET result: %w", cerr)
+			} else {
+				r.byteMatch = string(putBufGlobal) == string(got)
+				if !r.byteMatch {
+					r.firstDiff = -1
+					for i := 0; i < len(putBufGlobal); i++ {
+						if putBufGlobal[i] != got[i] {
+							r.firstDiff = i
+							r.gotByte = got[i]
+							r.wantByte = putBufGlobal[i]
+							break
+						}
+					}
+					r.err = fmt.Errorf("GET bytes mismatch")
 				}
 			}
-			r.err = fmt.Errorf("GET bytes mismatch")
 		}
 		results = append(results, r)
 	}
@@ -151,38 +158,52 @@ func runV2Mode(size int) error {
 	rangeOffset := uint64(size / 4)
 	rangeSize := uint64(size / 2)
 	if r.err == nil && rangeOffset > 0 && rangeSize > 0 {
-		rgAlloc := rcobj.Valloc(int(rangeSize))
-		if rgAlloc == nil {
-			return fmt.Errorf("alloc Range buffer")
+		rgAlloc, rgerr := rcobj.VallocDev(int(rangeSize))
+		if rgerr != nil {
+			return fmt.Errorf("alloc Range device buffer: %w", rgerr)
 		}
-		rangeBuf := unsafe.Slice((*byte)(rgAlloc), int(rangeSize))
 		if err := cl.RegisterBuffer(rgAlloc, rangeSize); err != nil {
+			_ = rcobj.FreeDev(rgAlloc)
 			return fmt.Errorf("register Range buffer: %w", err)
 		}
 		r = v2Result{step: fmt.Sprintf("GET+Range@%d", rangeOffset)}
 		r.dur, r.bytes, r.err = v2DoTransfer(cl, opGet,
 			rgAlloc, rangeOffset, rangeSize, "", *key, func() error {
 				return restGetRange(restBase, *key,
-					rangeOffset, rangeSize, rangeBuf)
+					rangeOffset, rangeSize, putBufGlobal[rangeOffset:rangeOffset+rangeSize])
 			})
-		r.byteMatch = r.err == nil &&
-			string(putBuf[rangeOffset:rangeOffset+rangeSize]) == string(rangeBuf)
-		if r.err == nil && !r.byteMatch {
-			want := putBuf[rangeOffset : rangeOffset+rangeSize]
-			r.firstDiff = -1
-			for i := 0; i < len(want); i++ {
-				if want[i] != rangeBuf[i] {
-					r.firstDiff = i
-					r.gotByte = rangeBuf[i]
-					r.wantByte = want[i]
-					break
+		if r.err == nil {
+			got := make([]byte, rangeSize)
+			if cerr := rcobj.CopyDevDevToHost(got, rgAlloc); cerr != nil {
+				r.err = fmt.Errorf("stage down Range result: %w", cerr)
+			} else {
+				want := putBufGlobal[rangeOffset : rangeOffset+rangeSize]
+				r.byteMatch = string(want) == string(got)
+				if !r.byteMatch {
+					r.firstDiff = -1
+					for i := 0; i < len(want); i++ {
+						if want[i] != got[i] {
+							r.firstDiff = i
+							r.gotByte = got[i]
+							r.wantByte = want[i]
+							break
+						}
+					}
+					r.err = fmt.Errorf("Range GET bytes mismatch")
 				}
 			}
-			r.err = fmt.Errorf("Range GET bytes mismatch")
 		}
 		results = append(results, r)
-		cl.DeregisterBuffer(rgAlloc)
-		rcobj.Free(rgAlloc)
+		// The buffer may only be freed once the registration is
+		// gone: a failed deregistration can leave the memory pinned
+		// for DMA, so that failure is reported and the allocation
+		// is preserved.
+		if derr := cl.DeregisterBuffer(rgAlloc); derr != nil {
+			return fmt.Errorf("deregister Range buffer: %w (buffer kept)", derr)
+		}
+		if ferr := rcobj.FreeDev(rgAlloc); ferr != nil {
+			return fmt.Errorf("free Range device buffer: %w", ferr)
+		}
 	}
 
 	ok := true
@@ -340,11 +361,11 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 	parts := make([]types.CompletedPart, 0, 2)
 	for part := 1; part <= 2; part++ {
 		plen := partLens[part-1]
-		alloc := rcobj.Valloc(plen)
-		if alloc == nil {
-			return false, fmt.Errorf("alloc part %d", part)
+		alloc, aerr := rcobj.VallocDev(plen)
+		if aerr != nil {
+			return false, fmt.Errorf("alloc part %d: %w", part, aerr)
 		}
-		buf := unsafe.Slice((*byte)(alloc), plen)
+		buf := make([]byte, plen)
 		off := (part - 1) * partSize
 		end := off + partSize
 		if part == 2 {
@@ -357,8 +378,12 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 		if plen > end-off {
 			copy(buf[end-off:], pad)
 		}
+		if cerr := rcobj.CopyDevHostToDev(alloc, buf); cerr != nil {
+			_ = rcobj.FreeDev(alloc)
+			return false, fmt.Errorf("stage part %d: %w", part, cerr)
+		}
 		if err := cl.RegisterBuffer(alloc, uint64(plen)); err != nil {
-			rcobj.Free(alloc)
+			_ = rcobj.FreeDev(alloc)
 			return false, fmt.Errorf("register part %d: %w", part, err)
 		}
 		query := fmt.Sprintf("partNumber=%d&uploadId=%s", part, uploadID)
@@ -386,7 +411,9 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 		if derr := cl.DeregisterBuffer(alloc); derr != nil {
 			return false, fmt.Errorf("deregister part %d: %w (buffer kept)", part, derr)
 		}
-		rcobj.Free(alloc)
+		if ferr := rcobj.FreeDev(alloc); ferr != nil {
+			return false, fmt.Errorf("free part %d device buffer: %w", part, ferr)
+		}
 		if terr != nil {
 			return false, fmt.Errorf("part %d: %w", part, terr)
 		}
@@ -409,23 +436,31 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 	// is the exact concatenation of both uploaded parts (part 1
 	// payload plus any padding plus part 2 payload).
 	verifyLen := part1Len + part2Len
-	verifyAlloc := rcobj.Valloc(verifyLen)
-	if verifyAlloc == nil {
-		return false, fmt.Errorf("alloc verify buffer")
+	verifyAlloc, vaerr := rcobj.VallocDev(verifyLen)
+	if vaerr != nil {
+		return false, fmt.Errorf("alloc verify device buffer: %w", vaerr)
 	}
-	vbuf := unsafe.Slice((*byte)(verifyAlloc), verifyLen)
 	if err := cl.RegisterBuffer(verifyAlloc, uint64(verifyLen)); err != nil {
-		rcobj.Free(verifyAlloc)
+		_ = rcobj.FreeDev(verifyAlloc)
 		return false, fmt.Errorf("register verify buffer: %w", err)
 	}
 	_, _, gerr := v2DoTransfer(cl, opGet, verifyAlloc, 0, uint64(verifyLen), "", mpKey,
-		func() error { return restGetObj(base, mpKey, vbuf) })
-	if derr := cl.DeregisterBuffer(verifyAlloc); derr != nil {
-		return false, fmt.Errorf("deregister verify buffer: %w (buffer kept)", derr)
-	}
-	rcobj.Free(verifyAlloc)
+		func() error { return restGetObj(base, mpKey, putBufGlobal) })
 	if gerr != nil {
+		_ = cl.DeregisterBuffer(verifyAlloc)
+		_ = rcobj.FreeDev(verifyAlloc)
 		return false, fmt.Errorf("verify get: %w", gerr)
+	}
+	// Stage the result down and compare while the allocation is
+	// alive: the expected content is the exact concatenation of both
+	// uploaded parts. The buffer is freed only after the
+	// deregistration succeeded, so a pinned registration never
+	// leaves DMA referencing released memory.
+	vbuf := make([]byte, verifyLen)
+	if cerr := rcobj.CopyDevDevToHost(vbuf, verifyAlloc); cerr != nil {
+		_ = cl.DeregisterBuffer(verifyAlloc)
+		_ = rcobj.FreeDev(verifyAlloc)
+		return false, fmt.Errorf("stage down verify result: %w", cerr)
 	}
 	want := make([]byte, 0, verifyLen)
 	want = append(want, putBufGlobal[:partSize]...)
@@ -433,7 +468,14 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 		want = append(want, pad...)
 	}
 	want = append(want, putBufGlobal[partSize:size]...)
-	if !bytes.Equal(vbuf, want) {
+	match := bytes.Equal(vbuf, want)
+	if derr := cl.DeregisterBuffer(verifyAlloc); derr != nil {
+		return false, fmt.Errorf("deregister verify buffer: %w (buffer kept)", derr)
+	}
+	if ferr := rcobj.FreeDev(verifyAlloc); ferr != nil {
+		return false, fmt.Errorf("free verify device buffer: %w", ferr)
+	}
+	if !match {
 		return false, fmt.Errorf("multipart verify: bytes mismatch")
 	}
 	return true, nil
@@ -521,8 +563,10 @@ func min(a, b int) int {
 	return b
 }
 
-// putBufGlobal holds the PUT payload for the multipart flow's
-// part-copy step.
+// putBufGlobal holds the host-side PUT payload. The transfer
+// buffer itself lives in device memory; this copy is the staging
+// source (H2D before the PUT) and the comparison reference for
+// the GET, Range, and multipart verification steps.
 var putBufGlobal []byte
 
 // readRandom fills b with crypto-random bytes.
