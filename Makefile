@@ -160,7 +160,7 @@ testbin:
 	$(GOBUILD) $(LDFLAGS) -o $(BIN) -cover -race cmd/$(BIN)/*.go
 
 .PHONY: test
-test: 
+test: $(RCSERVER_LIB)
 	$(GOTEST) ./...
 
 .PHONY: check
