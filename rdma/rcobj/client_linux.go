@@ -280,6 +280,20 @@ func (c *Client) Put(bucket, key string, devPtr unsafe.Pointer,
 	return opErr("put", rc)
 }
 
+// Valloc allocates host memory for a registered buffer so the
+// registration pointer is not a Go-heap pointer (cgo argument
+// rule). Free releases it.
+func Valloc(size int) unsafe.Pointer {
+	return C.malloc(C.size_t(size))
+}
+
+// Free releases memory from Valloc.
+func Free(p unsafe.Pointer) {
+	if p != nil {
+		C.free(p)
+	}
+}
+
 // borrowed C strings for one call; free releases them.
 type borrowed struct {
 	b, k, q *C.char
