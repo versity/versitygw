@@ -427,9 +427,16 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 	}
 	part2Len := size - partSize
 	partLens := []int{part1Len, part2Len}
+	// A zero-length trailing part is not uploadable: the device
+	// allocator and the transfer core both reject empty buffers,
+	// and S3 has no notion of an empty part. When the size
+	// divides evenly the object is simply one padded part.
+	if part2Len == 0 {
+		partLens = partLens[:1]
+	}
 	pad := make([]byte, part1Len-partSize)
-	parts := make([]types.CompletedPart, 0, 2)
-	for part := 1; part <= 2; part++ {
+	parts := make([]types.CompletedPart, 0, len(partLens))
+	for part := 1; part <= len(partLens); part++ {
 		plen := partLens[part-1]
 		alloc, aerr := rcobj.VallocDev(plen)
 		if aerr != nil {
@@ -438,7 +445,7 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 		buf := make([]byte, plen)
 		off := (part - 1) * partSize
 		end := off + partSize
-		if part == 2 {
+		if part == len(partLens) {
 			end = size
 		}
 		if end > len(putBufGlobal) {

@@ -47,6 +47,7 @@ type fakeS3 struct {
 	readyReqs    []recordedReq
 	cancelReqs   []recordedReq
 	connBytes    map[net.Conn]int
+	connDone     map[net.Conn]chan struct{}
 	finalRelease chan struct{}
 	closeOnce    sync.Once
 	releaseOnce  sync.Once
@@ -69,6 +70,7 @@ func newFakeS3(t *testing.T, prepareStatus int, prepareHeaders http.Header) *fak
 		prepareStatus:  prepareStatus,
 		prepareHeaders: prepareHeaders,
 		connBytes:      make(map[net.Conn]int),
+		connDone:       make(map[net.Conn]chan struct{}),
 		finalRelease:   make(chan struct{}),
 	}
 	go f.serve()
@@ -114,10 +116,13 @@ func (c *countingReader) Read(p []byte) (int, error) {
 }
 
 func (f *fakeS3) handle(conn net.Conn) {
+	done := make(chan struct{})
+	defer close(done)
 	defer conn.Close()
 	cr := &countingReader{r: conn}
 	f.mu.Lock()
 	f.connBytes[conn] = 0
+	f.connDone[conn] = done
 	f.mu.Unlock()
 	defer func() {
 		f.mu.Lock()
@@ -544,25 +549,34 @@ func TestPrepareMismatchedPeerUnsent(t *testing.T) {
 	if rc := cp.prepareForTest(r); rc != -1 {
 		t.Fatalf("prepare rc=%d, want -1", rc)
 	}
-	// Give the rejected connection's reader a moment to observe
-	// EOF, then assert no new connection delivered any byte after
-	// the mismatch dial.
+	// The mismatch dial itself reaches the server (the valve
+	// drops it after accept), so wait for every connection opened
+	// after the snapshot to finish reading before asserting: an
+	// early return could miss bytes still in flight.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		f.mu.Lock()
 		total := 0
-		for _, b := range f.connBytes {
+		pending := 0
+		for c, b := range f.connBytes {
 			total += b
+			select {
+			case <-f.connDone[c]:
+			default:
+				pending++
+			}
 		}
 		prepares := len(f.prepareReqs)
 		f.mu.Unlock()
-		grew := total > baseTotal || prepares > basePrepares
-		if !grew {
+		if pending == 0 && (total > baseTotal || prepares > basePrepares) {
+			t.Fatalf("after mismatch: bytes %d->%d, PREPAREs %d->%d",
+				baseTotal, total, basePrepares, prepares)
+		}
+		if pending == 0 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("after mismatch: bytes %d->%d, PREPAREs %d->%d",
-				baseTotal, total, basePrepares, prepares)
+			t.Fatalf("after mismatch: %d connection(s) still unread", pending)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
