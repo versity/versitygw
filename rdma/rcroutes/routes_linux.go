@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions
 // and limitations under the License.
 
-//go:build linux && amd64 && cgo
+//go:build linux && amd64 && cgo && rdma
 
 // Package rcroutes serves the /.hipobj-rc/{prepare,ready,cancel}
 // terminal routes of the hipobj-rc-v2 two-phase transfer protocol.

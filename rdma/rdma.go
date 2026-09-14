@@ -12,7 +12,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//go:build linux && amd64 && cgo
+//go:build linux && amd64 && cgo && rdma
 
 // Package rdma provides Go bindings to libcuobjserver via CGO.
 package rdma

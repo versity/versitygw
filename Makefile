@@ -111,7 +111,7 @@ vgwrdma: $(VGWRDMA_WRAPPER_LIB) $(RCSERVER_LIB)
 	CGO_ENABLED=1 \
 	CGO_CFLAGS="$(VGWRDMA_RDMA_CGO_CFLAGS)" \
 	CGO_LDFLAGS="$(VGWRDMA_RDMA_CGO_LDFLAGS)" \
-		$(GOBUILD) -buildvcs=false $(LDFLAGS) -o $(VGWRDMA_BIN) $(VGWRDMA_CMD)
+		$(GOBUILD) -buildvcs=false -tags rdma $(LDFLAGS) -o $(VGWRDMA_BIN) $(VGWRDMA_CMD)
 
 .PHONY: cuobjtest
 cuobjtest: cuobjtest-gpu
@@ -121,12 +121,12 @@ cuobjtest-gpu: $(CUOBJCLIENT_WRAPPER_LIB)
 	CGO_ENABLED=1 \
 	CGO_CFLAGS="$(CUOBJCLIENT_CGO_CFLAGS)" \
 	CGO_LDFLAGS="$(CUOBJCLIENT_CGO_LDFLAGS)" \
-		$(GOBUILD) -buildvcs=false $(LDFLAGS) -o $(CUOBJTEST_BIN) $(CUOBJTEST_CMD)
+		$(GOBUILD) -buildvcs=false -tags rdma $(LDFLAGS) -o $(CUOBJTEST_BIN) $(CUOBJTEST_CMD)
 
 .PHONY: cuobjtest-host
 cuobjtest-host: $(HOSTCLIENT_WRAPPER_LIB)
 	CGO_ENABLED=1 \
-		$(GOBUILD) -buildvcs=false -tags $(CUOBJTEST_HOST_TAG) $(LDFLAGS) -o $(CUOBJTEST_BIN) $(CUOBJTEST_CMD)
+		$(GOBUILD) -buildvcs=false -tags "rdma $(CUOBJTEST_HOST_TAG)" $(LDFLAGS) -o $(CUOBJTEST_BIN) $(CUOBJTEST_CMD)
 
 .PHONY: vgwrdma-builder-image
 vgwrdma-builder-image:
@@ -160,8 +160,12 @@ testbin:
 	$(GOBUILD) $(LDFLAGS) -o $(BIN) -cover -race cmd/$(BIN)/*.go
 
 .PHONY: test
-test: 
+test:
 	$(GOTEST) ./...
+
+.PHONY: rdmatest
+rdmatest: $(VGWRDMA_WRAPPER_LIB) $(CUOBJCLIENT_WRAPPER_LIB) $(HOSTCLIENT_WRAPPER_LIB) $(RCSERVER_LIB)
+	$(GOTEST) -tags rdma ./...
 
 .PHONY: check
 check:

@@ -14,7 +14,7 @@
 // under the License.
 
 // Admin session snapshot route for the RC data plane.
-//go:build linux && amd64 && cgo
+//go:build linux && amd64 && cgo && rdma
 
 package rcroutes
 

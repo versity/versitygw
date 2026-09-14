@@ -12,7 +12,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//go:build linux && amd64 && cgo && !cuobjclient_host
+//go:build linux && amd64 && cgo && rdma && !cuobjclient_host
 
 package cuobjclient
 
