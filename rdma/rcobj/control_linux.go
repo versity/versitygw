@@ -479,7 +479,9 @@ func (cp *controlPlane) deadlineFor(ctx context.Context) time.Time {
 // the context allows, preserving address order and zones. The
 // candidates are still host:port strings so a zone survives into
 // the dial.
-func resolveDest(ctx context.Context, hostport string) ([]string, error) {
+// resolveDest expands a host or scoped literal into dial
+// candidates; tests replace it to control candidate order.
+var resolveDest = func(ctx context.Context, hostport string) ([]string, error) {
 	host, port, err := net.SplitHostPort(hostport)
 	if err != nil {
 		host = hostport
