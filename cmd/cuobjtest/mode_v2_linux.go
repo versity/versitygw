@@ -76,12 +76,18 @@ func runV2Mode(size int) error {
 		return fmt.Errorf("alloc PUT device buffer: %w", err)
 	}
 	if err := rcobj.CopyDevHostToDev(putAlloc, hostPayload); err != nil {
-		_ = rcobj.FreeDev(putAlloc)
-		return fmt.Errorf("stage PUT payload: %w", err)
+		err = fmt.Errorf("stage PUT payload: %w", err)
+		if ferr := rcobj.FreeDev(putAlloc); ferr != nil {
+			err = errors.Join(err, ferr)
+		}
+		return err
 	}
 	if err := cl.RegisterBuffer(putAlloc, uint64(size)); err != nil {
-		_ = rcobj.FreeDev(putAlloc)
-		return fmt.Errorf("register: %w", err)
+		err = fmt.Errorf("register: %w", err)
+		if ferr := rcobj.FreeDev(putAlloc); ferr != nil {
+			err = errors.Join(err, ferr)
+		}
+		return err
 	}
 	// releasePut frees the buffer only after a successful
 	// deregistration; a pinned registration keeps the allocation
@@ -311,7 +317,7 @@ func runV2Mode(size int) error {
 		cleanupErr = err
 	}
 	if err := releaseGet(); err != nil {
-		cleanupErr = err
+		cleanupErr = errors.Join(cleanupErr, err)
 	}
 	if cleanupErr != nil {
 		return fmt.Errorf("v2 mode cleanup: %w", cleanupErr)
@@ -443,12 +449,18 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 			copy(buf[end-off:], pad)
 		}
 		if cerr := rcobj.CopyDevHostToDev(alloc, buf); cerr != nil {
-			_ = rcobj.FreeDev(alloc)
-			return false, fmt.Errorf("stage part %d: %w", part, cerr)
+			err := fmt.Errorf("stage part %d: %w", part, cerr)
+			if ferr := rcobj.FreeDev(alloc); ferr != nil {
+				err = errors.Join(err, ferr)
+			}
+			return false, err
 		}
 		if err := cl.RegisterBuffer(alloc, uint64(plen)); err != nil {
-			_ = rcobj.FreeDev(alloc)
-			return false, fmt.Errorf("register part %d: %w", part, err)
+			err := fmt.Errorf("register part %d: %w", part, err)
+			if ferr := rcobj.FreeDev(alloc); ferr != nil {
+				err = errors.Join(err, ferr)
+			}
+			return false, err
 		}
 		query := fmt.Sprintf("partNumber=%d&uploadId=%s", part, uploadID)
 		_, _, _, terr := v2DoTransfer(cl, opPut,
@@ -472,11 +484,19 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 		// The buffer may only be released once the registration is
 		// gone: a failed deregistration can leave the memory pinned
 		// for DMA, so the allocation is preserved on that failure.
+		// Either failure joins the transfer error rather than
+		// replacing it, so both stay visible.
+		var relErr error
 		if derr := cl.DeregisterBuffer(alloc); derr != nil {
-			return false, fmt.Errorf("deregister part %d: %w (buffer kept)", part, derr)
+			relErr = fmt.Errorf("deregister part %d: %w (buffer kept)", part, derr)
+		} else if ferr := rcobj.FreeDev(alloc); ferr != nil {
+			relErr = fmt.Errorf("free part %d device buffer: %w", part, ferr)
 		}
-		if ferr := rcobj.FreeDev(alloc); ferr != nil {
-			return false, fmt.Errorf("free part %d device buffer: %w", part, ferr)
+		if relErr != nil {
+			if terr != nil {
+				return false, errors.Join(terr, relErr)
+			}
+			return false, relErr
 		}
 		if terr != nil {
 			return false, fmt.Errorf("part %d: %w", part, terr)
@@ -505,8 +525,11 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 		return false, fmt.Errorf("alloc verify device buffer: %w", vaerr)
 	}
 	if err := cl.RegisterBuffer(verifyAlloc, uint64(verifyLen)); err != nil {
-		_ = rcobj.FreeDev(verifyAlloc)
-		return false, fmt.Errorf("register verify buffer: %w", err)
+		err = fmt.Errorf("register verify buffer: %w", err)
+		if ferr := rcobj.FreeDev(verifyAlloc); ferr != nil {
+			err = errors.Join(err, ferr)
+		}
+		return false, err
 	}
 	// releaseVerify releases the registration and the device
 	// allocation in that order. A failed deregistration keeps the
