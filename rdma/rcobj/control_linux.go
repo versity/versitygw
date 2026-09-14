@@ -116,9 +116,12 @@ type controlPlane struct {
 
 	// probeBucket/probeKey name the admission probe object, set by
 	// the owner before the first transfer.
-	probeMu     sync.Mutex
-	probeBucket string
-	probeKey    string
+	probeMu      sync.Mutex
+	probeBucket  string
+	probeKey     string
+	probeNic     string
+	probeNicPort int
+	probeNicGid  int
 
 	// lastCaps memoizes the capability advertisement the last
 	// PREPARE response carried (probe evidence for the caller).
@@ -210,13 +213,22 @@ func (cp *controlPlane) signedObjectProbe(ctx context.Context) (uint64, bool, er
 	if key == "" {
 		return 0, false, errors.New("rcobj: no probe object")
 	}
-	r := transferReq{Bucket: bucket, Key: key, Endpoint: cp.endpoint}
+	// The probe rides the same transport selection the transfer
+	// callbacks use: the selected NIC, port, and GID that the C
+	// core reported for the data plane bind the probe socket too,
+	// so admission evidence reflects the interface that will
+	// actually carry the exchange.
+	r := transferReq{Bucket: bucket, Key: key, Endpoint: cp.endpoint,
+		Nic: cp.probeNic, NicPort: cp.probeNicPort, NicGid: cp.probeNicGid}
 	// The probe rides the caller's deadline: PREPARE handed its
 	// remaining budget to the admission layer, so dial, write,
-	// and read all share one absolute cutoff.
+	// and read all share one absolute cutoff. A context without a
+	// deadline means the caller bypassed the budget contract;
+	// fail closed rather than inventing time the transfer does
+	// not have.
 	dl, has := ctx.Deadline()
 	if !has {
-		dl = time.Now().Add(10 * time.Second)
+		return 0, false, errors.New("rcobj: probe without deadline")
 	}
 	ctx2, cancel := context.WithDeadline(ctx, dl)
 	defer cancel()
@@ -285,14 +297,25 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 	if !strings.Contains(host, ":") {
 		host += ":80"
 	}
+	d := cp.dialer
 	if r.Nic != "" {
-		if dev, ok := netdevForGid(r.Nic, r.NicPort, r.NicGid); ok {
-			if la, err := linkAddr(dev); err == nil {
-				cp.dialer.LocalAddr = &net.TCPAddr{IP: la}
-			}
+		dev, ok := netdevForGid(r.Nic, r.NicPort, r.NicGid)
+		if !ok {
+			// The bridge refuses the connection when it cannot
+			// resolve the selected netdev; so does the wrapper.
+			return nil, fmt.Errorf("selected interface %q (port %d, gid %d) not found",
+				r.Nic, r.NicPort, r.NicGid)
 		}
+		la, err := linkAddr(dev)
+		if err != nil {
+			return nil, fmt.Errorf("interface %s has no address: %w", dev, err)
+		}
+		d = &net.Dialer{Timeout: cp.dialer.Timeout,
+			DualStack: cp.dialer.DualStack,
+			KeepAlive: cp.dialer.KeepAlive}
+		d.LocalAddr = &net.TCPAddr{IP: la}
 	}
-	return cp.dialer.DialContext(ctx, "tcp", host)
+	return d.DialContext(ctx, "tcp", host)
 }
 
 // signAndWrite signs the control-plane request per SigV4 (host,
@@ -411,7 +434,17 @@ func (cp *controlPlane) prepare(r transferReq,
 	// transport replacement invalidated the evidence) a fresh probe
 	// must succeed before this transfer touches the wire.
 	if cp.elig != nil && !cp.elig.Admitted() {
-		perr := cp.elig.Probe(context.Background())
+		cp.probeMu.Lock()
+		cp.probeNic = r.Nic
+		cp.probeNicPort = r.NicPort
+		cp.probeNicGid = r.NicGid
+		cp.probeMu.Unlock()
+		// The probe shares the callback's budget: it runs under
+		// the same absolute deadline PREPARE will use, so it can
+		// never outlive the transfer it is admitting.
+		pctx, pcancel := context.WithDeadline(context.Background(), deadline)
+		perr := cp.elig.Probe(pctx)
+		pcancel()
 		if perr != nil || !cp.elig.Admitted() {
 			return -1
 		}
@@ -429,6 +462,12 @@ func (cp *controlPlane) prepareWire(r transferReq,
 
 	conn, err := cp.dialControl(ctx, r)
 	if err != nil {
+		// The transport the admission evidence was gathered on
+		// refused the dial: the evidence no longer describes a
+		// reachable path, so fail closed until a fresh probe.
+		if cp.elig != nil {
+			cp.elig.OnConnectionChange(0)
+		}
 		return -1
 	}
 	defer conn.Close()
@@ -457,15 +496,17 @@ func (cp *controlPlane) prepareWire(r transferReq,
 		return -1
 	}
 	defer resp.Body.Close()
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		return -1
-	}
 
 	// A redirect on a control exchange replaces the transport the
-	// admission evidence was gathered on: turn the layer negative
-	// so the next PREPARE re-probes before admitted bytes flow.
+	// admission evidence was gathered on. Invalidate immediately
+	// after the status line: a stalled or truncated body must not
+	// leave the stale positive decision in place.
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 && cp.elig != nil {
 		cp.elig.OnConnectionChange(0)
+	}
+
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return -1
 	}
 
 	if !fillPrepareReply(cp, out, resp) {
@@ -486,6 +527,12 @@ func (cp *controlPlane) readyRequest(r transferReq) int {
 
 	conn, err := cp.dialControl(ctx, r)
 	if err != nil {
+		// The transport the admission evidence was gathered on
+		// refused the dial: the evidence no longer describes a
+		// reachable path, so fail closed until a fresh probe.
+		if cp.elig != nil {
+			cp.elig.OnConnectionChange(0)
+		}
 		return -1
 	}
 	if err := conn.SetWriteDeadline(deadline); err != nil {
@@ -541,16 +588,16 @@ func (cp *controlPlane) finishReady(r transferReq,
 		ex.conn.Close()
 		return -1
 	}
+	// Invalidate on the status line, before any fallible body
+	// work can strand the stale admission decision.
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 && cp.elig != nil {
+		cp.elig.OnConnectionChange(0)
+	}
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
 		ex.conn.Close()
 		return -1
 	}
 	ex.conn.Close()
-	// A redirect here replaces the transport the admission
-	// evidence rode on; the next PREPARE re-probes.
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 && cp.elig != nil {
-		cp.elig.OnConnectionChange(0)
-	}
 	if !fillFinalReply(out, resp) {
 		return -1
 	}
@@ -587,6 +634,12 @@ func (cp *controlPlane) cancel(r transferReq) int {
 
 	conn, err := cp.dialControl(ctx, r)
 	if err != nil {
+		// The transport the admission evidence was gathered on
+		// refused the dial: the evidence no longer describes a
+		// reachable path, so fail closed until a fresh probe.
+		if cp.elig != nil {
+			cp.elig.OnConnectionChange(0)
+		}
 		return -1
 	}
 	defer conn.Close()
