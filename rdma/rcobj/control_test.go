@@ -541,14 +541,16 @@ func TestPrepareMismatchedPeerUnsent(t *testing.T) {
 		t.Fatal("admission not positive after successful probe")
 	}
 
-	// Snapshot the byte totals, then point the pin at a different
-	// peer and dial again. The production valve must drop the new
-	// connection before a single request byte is written: parse
-	// failures cannot hide it because the fake counts raw bytes
-	// per connection.
+	// Snapshot the observed connections, then point the pin at a
+	// different peer and dial again. The production valve must
+	// drop the new connection before a single request byte is
+	// written: parse failures cannot hide it because the fake
+	// counts raw bytes per connection.
 	f.mu.Lock()
+	baseConns := make(map[net.Conn]bool, len(f.connBytes))
 	baseTotal := 0
-	for _, b := range f.connBytes {
+	for c, b := range f.connBytes {
+		baseConns[c] = true
 		baseTotal += b
 	}
 	basePrepares := len(f.prepareReqs)
@@ -560,16 +562,21 @@ func TestPrepareMismatchedPeerUnsent(t *testing.T) {
 		t.Fatalf("prepare rc=%d, want -1", rc)
 	}
 	// The mismatch dial itself reaches the server (the valve
-	// drops it after accept), so wait for every connection opened
-	// after the snapshot to finish reading before asserting: an
-	// early return could miss bytes still in flight.
+	// drops it after accept). Wait for the new connection to be
+	// accepted and its handler to finish reading before
+	// asserting its byte count: an earlier exit could race the
+	// accept or miss bytes still in flight.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		f.mu.Lock()
+		var fresh []net.Conn
 		total := 0
 		pending := 0
 		for c, b := range f.connBytes {
 			total += b
+			if !baseConns[c] {
+				fresh = append(fresh, c)
+			}
 			select {
 			case <-f.connDone[c]:
 			default:
@@ -578,15 +585,16 @@ func TestPrepareMismatchedPeerUnsent(t *testing.T) {
 		}
 		prepares := len(f.prepareReqs)
 		f.mu.Unlock()
-		if pending == 0 && (total > baseTotal || prepares > basePrepares) {
+		if total > baseTotal || prepares > basePrepares {
 			t.Fatalf("after mismatch: bytes %d->%d, PREPAREs %d->%d",
 				baseTotal, total, basePrepares, prepares)
 		}
-		if pending == 0 {
+		if len(fresh) > 0 && pending == 0 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("after mismatch: %d connection(s) still unread", pending)
+			t.Fatalf("after mismatch: %d new connection(s), %d still unread",
+				len(fresh), pending)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
