@@ -429,7 +429,9 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 	partLens := []int{part1Len, part2Len}
 	// A zero-length trailing part is not uploadable: the device
 	// allocator and the transfer core both reject empty buffers,
-	// and S3 has no notion of an empty part. When the size
+	// and S3 has no notion of an empty part. Only size 1
+	// produces one (the padding covers the whole object); larger
+	// odd sizes always leave a nonzero remainder. When the size
 	// divides evenly the object is simply one padded part.
 	if part2Len == 0 {
 		partLens = partLens[:1]
