@@ -1,4 +1,5 @@
 // Copyright 2026 Versity Software
+// Copyright 2026 Gluesys Inc. and Jihyeon Gim
 // This file is licensed under the Apache License, Version 2.0 (the
 // "License"); you may not use this file except in compliance
 // with the License.  You may obtain a copy of the License at
@@ -11,7 +12,7 @@
 // express or implied.  See the License for the specific language
 // governing permissions and limitations under the License.
 
-//go:build linux && amd64 && (!cgo || cuobjclient_host)
+//go:build linux && amd64 && (!cgo || !hipobj || cuobjclient_host)
 
 package rcobj
 
@@ -21,9 +22,10 @@ import (
 	"unsafe"
 )
 
-// errNoCgo is returned by every entry point on builds without cgo
-// (mirrors the rcclient stub contract).
-var errNoCgo = errors.New("rcobj: libhipobj binding requires cgo")
+// errNoCgo is returned by every entry point on builds without the
+// hipobj tag or without cgo.
+// Build with CGO_ENABLED=1 and -tags hipobj to link libhipobj.
+var errNoCgo = errors.New("rcobj: libhipobj binding requires cgo and the hipobj build tag")
 
 type Config struct {
 	ControlEndpoint     string
