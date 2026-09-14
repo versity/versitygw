@@ -129,12 +129,12 @@ func opErr(op string, rc C.hipObjError_t) error {
 // Config carries the v2 init settings. ControlEndpoint is required
 // ("http://host:port"; https is rejected by the callbacks).
 type Config struct {
-	ControlEndpoint      string
-	DeviceIndex          int
-	NicHint              string
-	ConnectDeadlineMs    uint32
-	TransferDeadlineMs   uint32
-	CancelCleanupBudget  uint32
+	ControlEndpoint     string
+	DeviceIndex         int
+	NicHint             string
+	ConnectDeadlineMs   uint32
+	TransferDeadlineMs  uint32
+	CancelCleanupBudget uint32
 
 	Credentials Credentials
 	Region      string
@@ -374,7 +374,7 @@ type transferReq struct {
 	NicPort   int
 	NicGid    int
 
-	ClientQpn   uint32
+	ClientQpn    uint32
 	ClientMrAddr uint64
 	ClientMrRkey uint32
 }
