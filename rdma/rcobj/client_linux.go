@@ -83,24 +83,6 @@ import (
 	"unsafe"
 )
 
-// Error codes mirrored from hipobj.h.
-const (
-	OpSuccess            = 0
-	OpInvalidValue       = 1
-	OpNotInitialized     = 2
-	OpAlreadyInitialized = 3
-	OpRdmaError          = 4
-	OpS3Error            = 5
-	OpBufNotRegistered   = 6
-	OpBufAlreadyReg      = 7
-	OpNicNotFound        = 8
-	OpDmabufNotSupported = 9
-	OpSizeTooLarge       = 10
-	OpInternalError      = 11
-	OpNotSupported       = 12
-	OpBusy               = 13
-)
-
 // OpError reports the operation-level error of a failed call.
 type OpError struct {
 	Op       string
@@ -144,7 +126,8 @@ type Config struct {
 	Region      string
 
 	// ProbeBucket/ProbeKey name the readable object the admission
-	// probe reads; empty disables admission (dev/test only).
+	// An empty probe object leaves admission fail-closed:
+	// PREPARE fails until SetProbeObject supplies one.
 	ProbeBucket string
 	ProbeKey    string
 }
@@ -158,10 +141,13 @@ type Client struct {
 	// immediately, while closed is set only after the C teardown
 	// succeeded so a retry stays possible and a concurrent second
 	// Shutdown waits for the first one's outcome instead of
-	// reporting success early.
+	// reporting success early. shutAttempt is the in-progress
+	// attempt whose recorded outcome every waiter receives, so a
+	// retry started after a failure cannot substitute its result
+	// for the attempt an existing waiter joined.
 	shuttingDown bool
 	shutCond     *sync.Cond
-	shutErr      error
+	shutAttempt  *shutdownAttempt
 
 	// inflight counts transfer calls that passed the closed check
 	// and are inside C. Shutdown flips closed first and then waits
@@ -232,6 +218,14 @@ func Init(cfg Config) (*Client, error) {
 	return cl, nil
 }
 
+// shutdownAttempt is one teardown execution. Every waiter that
+// joined this attempt reads its outcome once the client mutex is
+// reacquired after the broadcast; the outcome is immutable once
+// recorded.
+type shutdownAttempt struct {
+	err error
+}
+
 // Shutdown tears the library down and releases the callback slot.
 // When the library fails to quiesce it keeps its resources, so the
 // wrapper stays retryable: the failure is returned without freeing
@@ -245,26 +239,25 @@ func (c *Client) Shutdown() error {
 		c.mu.Unlock()
 		return nil
 	}
-	// Waiters join the attempt in progress; when it finishes
-	// they take its recorded outcome. A waiter that wakes to a
-	// failed attempt returns that failure even if a third caller
-	// has already begun a retry; that retry will record its own
-	// outcome for its own waiters.
-	joined := false
+	// Waiters pin the in-progress attempt object and wait for it
+	// directly: each receives the outcome of exactly the attempt
+	// it joined, independent of any later retry. A waiter that
+	// arrives between attempts (after a failure, before a retry)
+	// starts a fresh attempt of its own.
+	var joined *shutdownAttempt
+	if c.shuttingDown {
+		joined = c.shutAttempt
+	}
 	for c.shuttingDown {
-		joined = true
 		c.shutCond.Wait()
 	}
-	if joined {
-		if c.closed {
-			c.mu.Unlock()
-			return nil
-		}
-		err := c.shutErr
+	if joined != nil {
 		c.mu.Unlock()
-		return err
+		return joined.err
 	}
+	at := &shutdownAttempt{}
 	c.shuttingDown = true
+	c.shutAttempt = at
 	c.mu.Unlock()
 
 	// Stop new admissions, then wait for the calls already inside
@@ -291,11 +284,12 @@ func (c *Client) Shutdown() error {
 	}
 
 	c.mu.Lock()
-	c.shuttingDown = false
-	c.shutErr = err
 	if err == nil {
 		c.closed = true
 	}
+	at.err = err
+	c.shuttingDown = false
+	c.shutAttempt = nil
 	c.shutCond.Broadcast()
 	c.mu.Unlock()
 	return err

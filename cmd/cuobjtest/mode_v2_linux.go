@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -111,13 +112,21 @@ func runV2Mode(size int) error {
 	// acquired, in reverse order.
 	getAlloc, gerr := rcobj.VallocDev(size)
 	if gerr != nil {
-		_ = releasePut()
-		return fmt.Errorf("alloc GET device buffer: %w", gerr)
+		err := fmt.Errorf("alloc GET device buffer: %w", gerr)
+		if rerr := releasePut(); rerr != nil {
+			err = errors.Join(err, rerr)
+		}
+		return err
 	}
 	if err := cl.RegisterBuffer(getAlloc, uint64(size)); err != nil {
-		_ = rcobj.FreeDev(getAlloc)
-		_ = releasePut()
-		return fmt.Errorf("register GET buffer: %w", err)
+		err = fmt.Errorf("register GET buffer: %w", err)
+		if ferr := rcobj.FreeDev(getAlloc); ferr != nil {
+			err = errors.Join(err, ferr)
+		}
+		if rerr := releasePut(); rerr != nil {
+			err = errors.Join(err, rerr)
+		}
+		return err
 	}
 	releaseGet := func() error {
 		if err := cl.DeregisterBuffer(getAlloc); err != nil {
@@ -173,15 +182,27 @@ func runV2Mode(size int) error {
 	if r.err == nil && rangeOffset > 0 && rangeSize > 0 {
 		rgAlloc, rgerr := rcobj.VallocDev(int(rangeSize))
 		if rgerr != nil {
-			_ = releaseGet()
-			_ = releasePut()
-			return fmt.Errorf("alloc Range device buffer: %w", rgerr)
+			err := fmt.Errorf("alloc Range device buffer: %w", rgerr)
+			if rerr := releaseGet(); rerr != nil {
+				err = errors.Join(err, rerr)
+			}
+			if rerr := releasePut(); rerr != nil {
+				err = errors.Join(err, rerr)
+			}
+			return err
 		}
 		if err := cl.RegisterBuffer(rgAlloc, rangeSize); err != nil {
-			_ = rcobj.FreeDev(rgAlloc)
-			_ = releaseGet()
-			_ = releasePut()
-			return fmt.Errorf("register Range buffer: %w", err)
+			err = fmt.Errorf("register Range buffer: %w", err)
+			if ferr := rcobj.FreeDev(rgAlloc); ferr != nil {
+				err = errors.Join(err, ferr)
+			}
+			if rerr := releaseGet(); rerr != nil {
+				err = errors.Join(err, rerr)
+			}
+			if rerr := releasePut(); rerr != nil {
+				err = errors.Join(err, rerr)
+			}
+			return err
 		}
 		r = v2Result{step: fmt.Sprintf("GET+Range@%d", rangeOffset)}
 		restGot := make([]byte, rangeSize)
@@ -223,14 +244,24 @@ func runV2Mode(size int) error {
 		// for DMA, so that failure is reported and the allocation
 		// is preserved.
 		if derr := cl.DeregisterBuffer(rgAlloc); derr != nil {
-			_ = releaseGet()
-			_ = releasePut()
-			return fmt.Errorf("deregister Range buffer: %w (buffer kept)", derr)
+			err := fmt.Errorf("deregister Range buffer: %w (buffer kept)", derr)
+			if rerr := releaseGet(); rerr != nil {
+				err = errors.Join(err, rerr)
+			}
+			if rerr := releasePut(); rerr != nil {
+				err = errors.Join(err, rerr)
+			}
+			return err
 		}
 		if ferr := rcobj.FreeDev(rgAlloc); ferr != nil {
-			_ = releaseGet()
-			_ = releasePut()
-			return fmt.Errorf("free Range device buffer: %w", ferr)
+			err := fmt.Errorf("free Range device buffer: %w", ferr)
+			if rerr := releaseGet(); rerr != nil {
+				err = errors.Join(err, rerr)
+			}
+			if rerr := releasePut(); rerr != nil {
+				err = errors.Join(err, rerr)
+			}
+			return err
 		}
 	}
 
@@ -501,8 +532,11 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 	_, _, viaRest, gerr := v2DoTransfer(cl, opGet, verifyAlloc, 0, uint64(verifyLen), "", mpKey,
 		func() error { return restGetObj(base, mpKey, restGot) })
 	if gerr != nil {
-		_ = releaseVerify()
-		return false, fmt.Errorf("verify get: %w", gerr)
+		err := fmt.Errorf("verify get: %w", gerr)
+		if rerr := releaseVerify(); rerr != nil {
+			err = errors.Join(err, rerr)
+		}
+		return false, err
 	}
 	want := make([]byte, 0, verifyLen)
 	want = append(want, putBufGlobal[:partSize]...)
@@ -516,8 +550,11 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 	} else {
 		got = make([]byte, verifyLen)
 		if cerr := rcobj.CopyDevDevToHost(got, verifyAlloc); cerr != nil {
-			_ = releaseVerify()
-			return false, fmt.Errorf("stage down verify result: %w", cerr)
+			err := fmt.Errorf("stage down verify result: %w", cerr)
+			if rerr := releaseVerify(); rerr != nil {
+				err = errors.Join(err, rerr)
+			}
+			return false, err
 		}
 	}
 	match := bytes.Equal(got, want)

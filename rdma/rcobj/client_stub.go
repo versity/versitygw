@@ -37,7 +37,8 @@ type Config struct {
 	Region      string
 
 	// ProbeBucket/ProbeKey name the readable object the admission
-	// probe reads; empty disables admission (dev/test only).
+	// An empty probe object leaves admission fail-closed:
+	// PREPARE fails until SetProbeObject supplies one.
 	ProbeBucket string
 	ProbeKey    string
 }
