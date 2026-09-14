@@ -36,17 +36,21 @@ typedef int (*finish_fn)(void*, const hipObjTransferReqV2_t*,
                          hipObjFinalReplyV2_t*);
 typedef int (*cancel_fn)(void*, const hipObjTransferReqV2_t*);
 
-typedef int (*prepare_fn)(void*, const hipObjTransferReqV2_t*,
-                          hipObjPrepareReplyV2_t*);
-typedef int (*ready_req_fn)(void*, const hipObjTransferReqV2_t*);
-typedef int (*finish_fn)(void*, const hipObjTransferReqV2_t*,
-                         hipObjFinalReplyV2_t*);
-typedef int (*cancel_fn)(void*, const hipObjTransferReqV2_t*);
 
 extern int rcobjGoPrepareTramp(void *ctx, void *req, void *out);
 extern int rcobjGoReadyRequestTramp(void *ctx, void *req);
 extern int rcobjGoFinishReadyTramp(void *ctx, void *req, void *out);
 extern int rcobjGoCancelTramp(void *ctx, void *req);
+
+// HIP runtime entry points, resolved from the libamdhip64 the
+// library already links; declared with plain prototypes so the
+// cgo build needs no HIP headers.
+extern int hipMalloc(void** ptr, size_t size);
+extern int hipFree(void* ptr);
+extern int hipMemcpy(void* dst, const void* src, size_t size,
+                     unsigned int kind);
+#define RC_H2D 1
+#define RC_D2H 2
 
 static int rcobjPrepareAdapter(void *ctx, const hipObjTransferReqV2_t *req,
                                hipObjPrepareReplyV2_t *out) {
@@ -138,12 +142,26 @@ type Config struct {
 
 	Credentials Credentials
 	Region      string
+
+	// ProbeBucket/ProbeKey name the readable object the admission
+	// probe reads; empty disables admission (dev/test only).
+	ProbeBucket string
+	ProbeKey    string
 }
 
 // Client is a live libhipobj v2 client.
 type Client struct {
 	mu     sync.Mutex
 	closed bool
+
+	// shuttingDown marks a Shutdown in progress: admissions stop
+	// immediately, while closed is set only after the C teardown
+	// succeeded so a retry stays possible and a concurrent second
+	// Shutdown waits for the first one's outcome instead of
+	// reporting success early.
+	shuttingDown bool
+	shutCond     *sync.Cond
+	shutErr      error
 
 	// inflight counts transfer calls that passed the closed check
 	// and are inside C. Shutdown flips closed first and then waits
@@ -204,6 +222,7 @@ func Init(cfg Config) (*Client, error) {
 	cl := &Client{slot: slot, id: id}
 	ctxRegistry[id] = cl
 	ctxMu.Unlock()
+	cl.shutCond = sync.NewCond(&cl.mu)
 	*(*uint64)(slot) = id
 
 	cl.ctrl = newControlPlane(cfg)
@@ -217,13 +236,23 @@ func Init(cfg Config) (*Client, error) {
 // When the library fails to quiesce it keeps its resources, so the
 // wrapper stays retryable: the failure is returned without freeing
 // the slot, and a later Shutdown attempt runs the cleanup again.
+// Concurrent callers wait for the in-progress attempt and receive
+// its outcome rather than a premature success.
 func (c *Client) Shutdown() error {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
 		return nil
 	}
-	c.closed = true
+	for c.shuttingDown {
+		c.shutCond.Wait()
+	}
+	if c.closed {
+		// The attempt we waited for completed the teardown.
+		c.mu.Unlock()
+		return c.shutErr
+	}
+	c.shuttingDown = true
 	c.mu.Unlock()
 
 	// Stop new admissions, then wait for the calls already inside
@@ -235,46 +264,58 @@ func (c *Client) Shutdown() error {
 	}
 
 	rc := C.hipObjShutdown()
+	var err error
 	if rc.opError != C.hipObjSuccess {
 		// The library retained its state; allow a retry.
-		c.mu.Lock()
-		c.closed = false
-		c.mu.Unlock()
-		return opErr("shutdown", rc)
+		err = opErr("shutdown", rc)
+	} else {
+		ctxMu.Lock()
+		delete(ctxRegistry, c.id)
+		ctxMu.Unlock()
+		if c.slot != nil {
+			C.free(c.slot)
+			c.slot = nil
+		}
+		c.closed = true
 	}
-	ctxMu.Lock()
-	delete(ctxRegistry, c.id)
-	ctxMu.Unlock()
-	if c.slot != nil {
-		C.free(c.slot)
-		c.slot = nil
+
+	c.mu.Lock()
+	c.shuttingDown = false
+	c.shutErr = err
+	c.shutCond.Broadcast()
+	c.mu.Unlock()
+	return err
+}
+
+// admit registers the calling operation with the in-flight
+// counter under the same mutex hold that checks closed, so a
+// Shutdown that observes a zero counter cannot interleave between
+// the check and the registration.
+func (c *Client) admit(op string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed || c.shuttingDown {
+		return &OpError{Op: op, Code: OpNotInitialized}
 	}
+	c.inflight.Add(1)
 	return nil
 }
 
 // registerBuffer / deregisterBuffer wrap the device-MR registration
 // the v2 entry points require.
 func (c *Client) RegisterBuffer(devPtr unsafe.Pointer, size uint64) error {
-	c.mu.Lock()
-	closed := c.closed
-	c.mu.Unlock()
-	if closed {
-		return &OpError{Op: "register", Code: OpNotInitialized}
+	if err := c.admit("register"); err != nil {
+		return err
 	}
-	c.inflight.Add(1)
 	defer c.inflight.Done()
 	rc := C.hipObjBufRegister(devPtr, C.size_t(size))
 	return opErr("register", rc)
 }
 
 func (c *Client) DeregisterBuffer(devPtr unsafe.Pointer) error {
-	c.mu.Lock()
-	closed := c.closed
-	c.mu.Unlock()
-	if closed {
-		return &OpError{Op: "deregister", Code: OpNotInitialized}
+	if err := c.admit("deregister"); err != nil {
+		return err
 	}
-	c.inflight.Add(1)
 	defer c.inflight.Done()
 	rc := C.hipObjBufDeregister(devPtr)
 	return opErr("deregister", rc)
@@ -283,13 +324,9 @@ func (c *Client) DeregisterBuffer(devPtr unsafe.Pointer) error {
 // Get performs a v2 GET into a registered device buffer.
 func (c *Client) Get(bucket, key string, devPtr unsafe.Pointer,
 	size, offset uint64, query string) error {
-	c.mu.Lock()
-	closed := c.closed
-	c.mu.Unlock()
-	if closed {
-		return &OpError{Op: "get", Code: OpNotInitialized}
+	if err := c.admit("get"); err != nil {
+		return err
 	}
-	c.inflight.Add(1)
 	defer c.inflight.Done()
 
 	cb, kd, err := c.borrowStrings(bucket, key, query)
@@ -305,13 +342,9 @@ func (c *Client) Get(bucket, key string, devPtr unsafe.Pointer,
 // Put performs a v2 PUT from a registered device buffer.
 func (c *Client) Put(bucket, key string, devPtr unsafe.Pointer,
 	size, offset uint64, query string) error {
-	c.mu.Lock()
-	closed := c.closed
-	c.mu.Unlock()
-	if closed {
-		return &OpError{Op: "put", Code: OpNotInitialized}
+	if err := c.admit("put"); err != nil {
+		return err
 	}
-	c.inflight.Add(1)
 	defer c.inflight.Done()
 
 	cb, kd, err := c.borrowStrings(bucket, key, query)
@@ -326,7 +359,9 @@ func (c *Client) Put(bucket, key string, devPtr unsafe.Pointer,
 
 // Valloc allocates host memory for a registered buffer so the
 // registration pointer is not a Go-heap pointer (cgo argument
-// rule). Free releases it.
+// rule). Free releases it. Host allocations are accepted by the
+// registration layer, but v2 transfers require a device-backed
+// MR: use VallocDev for buffers that carry transfer payloads.
 func Valloc(size int) unsafe.Pointer {
 	return C.malloc(C.size_t(size))
 }
@@ -336,6 +371,57 @@ func Free(p unsafe.Pointer) {
 	if p != nil {
 		C.free(p)
 	}
+}
+
+// VallocDev allocates device memory through the HIP runtime the
+// library already links, so the registration is device-backed and
+// v2 transfers can DMA through it. kind is 1 (hipMemcpyHostToDevice)
+// or 2 (hipMemcpyDeviceToHost) for CopyDev.
+func VallocDev(size int) (unsafe.Pointer, error) {
+	var p unsafe.Pointer
+	rc := C.hipMalloc(&p, C.size_t(size))
+	if rc != 0 {
+		return nil, fmt.Errorf("hipMalloc(%d): hip error %d", size, int(rc))
+	}
+	return p, nil
+}
+
+// FreeDev releases memory from VallocDev.
+func FreeDev(p unsafe.Pointer) error {
+	if p == nil {
+		return nil
+	}
+	rc := C.hipFree(p)
+	if rc != 0 {
+		return fmt.Errorf("hipFree: hip error %d", int(rc))
+	}
+	return nil
+}
+
+// CopyDevHostToDev / CopyDevDevToHost stage payload bytes through
+// the HIP runtime between host and device allocations.
+func CopyDevHostToDev(dst unsafe.Pointer, src []byte) error {
+	if len(src) == 0 {
+		return nil
+	}
+	rc := C.hipMemcpy(dst, unsafe.Pointer(&src[0]),
+		C.size_t(len(src)), C.RC_H2D)
+	if rc != 0 {
+		return fmt.Errorf("hipMemcpy H2D: hip error %d", int(rc))
+	}
+	return nil
+}
+
+func CopyDevDevToHost(dst []byte, src unsafe.Pointer) error {
+	if len(dst) == 0 {
+		return nil
+	}
+	rc := C.hipMemcpy(unsafe.Pointer(&dst[0]), src,
+		C.size_t(len(dst)), C.RC_D2H)
+	if rc != 0 {
+		return fmt.Errorf("hipMemcpy D2H: hip error %d", int(rc))
+	}
+	return nil
 }
 
 // borrowed C strings for one call; free releases them.

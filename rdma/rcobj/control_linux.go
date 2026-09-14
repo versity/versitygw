@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -105,10 +106,36 @@ type controlPlane struct {
 	// callbacks directly).
 	elig *Eligibility
 
+	// probeGen numbers physical probe exchanges so Admit can bind
+	// evidence to the transport generation that produced it.
+	probeGen atomic.Uint64
+
+	// endpoint is the configured control authority (host[:port]).
+	endpoint string
+
+	// probeBucket/probeKey name the admission probe object, set by
+	// the owner before the first transfer.
+	probeMu     sync.Mutex
+	probeBucket string
+	probeKey    string
+
 	// lastCaps memoizes the capability advertisement the last
 	// PREPARE response carried (probe evidence for the caller).
 	capsMu   sync.Mutex
 	lastCaps string
+}
+
+// SetProbeObject names the object the admission probe reads.
+func (cp *controlPlane) SetProbeObject(bucket, key string) {
+	cp.probeMu.Lock()
+	cp.probeBucket = bucket
+	cp.probeKey = key
+	cp.probeMu.Unlock()
+}
+
+// objectPath renders the S3 object path for a key.
+func objectPath(key string) string {
+	return "/" + key
 }
 
 // recordCapabilities stores the advertisement observed on the
@@ -138,18 +165,71 @@ type readyExchange struct {
 
 func newControlPlane(cfg Config) *controlPlane {
 	d := &net.Dialer{Timeout: 30 * time.Second}
-	return &controlPlane{
+	tr := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return d.DialContext(ctx, "tcp", addr)
+		},
+		DisableKeepAlives: true,
+	}
+	cp := &controlPlane{
 		creds:  cfg.Credentials,
 		dialer: d,
 		base: &http.Client{
-			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-					return d.DialContext(ctx, "tcp", addr)
-				},
-				DisableKeepAlives: true,
+			Transport: tr,
+			// The probe must observe the endpoint's own verdict,
+			// not a redirect chain that ends in a 2xx elsewhere.
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
 			},
 		},
 	}
+	// The admission probe rides the same signed request shape the
+	// transfer callbacks use, against the real object API.
+	cp.endpoint = cfg.ControlEndpoint
+	cp.elig = NewEligibility(cp.signedObjectProbe)
+	return cp
+}
+
+// signedObjectProbe issues the admission evidence request: a
+// one-byte ranged GET of the probe object, signed with the
+// configured credentials. Only a direct 2xx answer is positive.
+func (cp *controlPlane) signedObjectProbe(ctx context.Context) (uint64, bool, error) {
+	cp.probeMu.Lock()
+	bucket, key := cp.probeBucket, cp.probeKey
+	cp.probeMu.Unlock()
+	if key == "" {
+		return 0, false, errors.New("rcobj: no probe object")
+	}
+	r := transferReq{Bucket: bucket, Key: key, Endpoint: cp.endpoint}
+	deadline := time.Now().Add(10 * time.Second)
+	ctx2, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	conn, err := cp.dialControl(ctx2, r)
+	if err != nil {
+		return 0, false, err
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(deadline); err != nil {
+		return 0, false, err
+	}
+	extra := http.Header{}
+	extra.Set("Range", "bytes=0-0")
+	if err := cp.signAndWrite(conn, r, objectPath(key), extra); err != nil {
+		return 0, false, err
+	}
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		return 0, false, err
+	}
+	defer resp.Body.Close()
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return 0, false, err
+	}
+	ok := resp.StatusCode >= 200 && resp.StatusCode < 300 &&
+		resp.Header.Get(hdrProtocol) == protocolV2
+	gen := cp.probeGen.Add(1)
+	return gen, ok, nil
 }
 
 // budget converts the callback's remaining budget into a context
@@ -290,8 +370,29 @@ func authorityOf(endpoint string) string {
 	return h
 }
 
-// prepare implements sendPrepare: one complete round trip.
+// prepare implements sendPrepare: the admission valve first, then
+// one complete round trip.
 func (cp *controlPlane) prepare(r transferReq,
+	out *C.hipObjPrepareReplyV2_t) int {
+
+	// Admission valve: when the layer is negative (first use, or a
+	// transport replacement invalidated the evidence) a fresh probe
+	// must succeed before this transfer touches the wire.
+	if cp.elig != nil && !cp.elig.Admit(cp.elig.Gen()) {
+		pctx, pcancel := context.WithTimeout(context.Background(),
+			10*time.Second)
+		perr := cp.elig.Probe(pctx)
+		pcancel()
+		if perr != nil || !cp.elig.Admit(cp.elig.Gen()) {
+			return -1
+		}
+	}
+
+	return cp.prepareWire(r, out)
+}
+
+// prepareWire is the PREPARE round trip without the valve.
+func (cp *controlPlane) prepareWire(r transferReq,
 	out *C.hipObjPrepareReplyV2_t) int {
 
 	deadline, ok := budget(r)
@@ -556,10 +657,11 @@ func fillFinalReply(out *C.hipObjFinalReplyV2_t, resp *http.Response) bool {
 
 // prepareForTest drives one PREPARE exchange and reports only the
 // return code; test builds cannot import "C" directly, so the C
-// reply struct stays inside the cgo build.
+// reply struct stays inside the cgo build. It drives the wire
+// exchange directly so wire-level tests need no probe object.
 func (cp *controlPlane) prepareForTest(r transferReq) int {
 	var out C.hipObjPrepareReplyV2_t
-	return cp.prepare(r, &out)
+	return cp.prepareWire(r, &out)
 }
 
 // finishReadyForTest drives the FINAL read and reports only the
@@ -570,12 +672,21 @@ func (cp *controlPlane) finishReadyForTest(r transferReq) int {
 }
 
 // replyTokenPayload strips the status prefix the x-amz-rdma-reply
-// header carries ("200:<token>" from the bridge and gateway).
+// header carries ("<three digits>:<token>" from the bridge and
+// gateway). Only that shape yields a payload;
+// a bare token without the prefix, a malformed prefix, or an empty
+// suffix all return empty so the caller treats the header as
+// absent rather than fabricating a token.
 func replyTokenPayload(v string) string {
-	if i := strings.IndexByte(v, ':'); i >= 0 {
-		return v[i+1:]
+	if len(v) < 4 || v[3] != ':' {
+		return ""
 	}
-	return ""
+	for i := 0; i < 3; i++ {
+		if v[i] < '0' || v[i] > '9' {
+			return ""
+		}
+	}
+	return v[4:]
 }
 
 // setCStr copies s into a fixed C char array of cap bytes,
@@ -596,25 +707,39 @@ func setCStr(dst *C.char, s string, cap int) bool {
 
 // copyChecksum validates the "CRC64NVME <base64>" form and copies
 // only the 12-character canonical base64 payload.
+// copyChecksum validates the wire checksum against the bridge
+// contract: exactly "CRC64NVME " followed by the canonical base64
+// of eight bytes - eleven data characters and one '=' pad, with
+// the pad in the final position only. Anything else (unknown
+// algorithm, wrong length, misplaced or repeated padding) is
+// rejected rather than stored as if it were a valid value.
 func copyChecksum(dst *C.char, v string) bool {
-	const algo = "CRC64NVME"
-	if !strings.HasPrefix(v, algo) {
+	if !checksumValid(v) {
 		return false
 	}
-	payload := strings.TrimSpace(v[len(algo):])
-	// Canonical CRC64NVME base64 is exactly 12 characters.
-	if len(payload) != 12 {
+	return setCStr(dst, v[len("CRC64NVME "):], 13)
+}
+
+// checksumValid is the pure predicate for the wire checksum
+// contract, so tests can pin it without cgo.
+func checksumValid(v string) bool {
+	const prefix = "CRC64NVME "
+	if !strings.HasPrefix(v, prefix) {
 		return false
 	}
-	for i := 0; i < len(payload); i++ {
+	payload := v[len(prefix):]
+	if len(payload) != 12 || payload[11] != '=' {
+		return false
+	}
+	for i := 0; i < 11; i++ {
 		c := payload[i]
 		isB64 := (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-			(c >= '0' && c <= '9') || c == '+' || c == '/' || c == '='
+			(c >= '0' && c <= '9') || c == '+' || c == '/'
 		if !isB64 {
 			return false
 		}
 	}
-	return setCStr(dst, payload, 13)
+	return true
 }
 
 func hex24(v uint32) string { return fmt.Sprintf("%06x", v) }
