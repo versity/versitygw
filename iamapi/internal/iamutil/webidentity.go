@@ -617,18 +617,22 @@ var (
 // current ThumbprintList (freshly read from storage for the request being
 // verified), so a changed configuration always maps to a different key here;
 // thumbprints are sorted first since storage doesn't guarantee list order is
-// stable across reads of an unchanged provider.
-func jwksCacheKey(issuerURL string, thumbprints []string) string {
+// stable across reads of an unchanged provider. The discovery endpoint
+// policy resolves issuerURL to is bound in as well, so an in-process restart
+// with a different discovery override never reuses key material fetched
+// from the previous endpoint.
+func jwksCacheKey(issuerURL string, thumbprints []string, policy OIDCEndpointPolicy) string {
 	sorted := slices.Clone(thumbprints)
 	slices.Sort(sorted)
-	return issuerURL + "|" + strings.Join(sorted, ",")
+	discoveryURL, _ := policy.ResolveDiscovery(issuerURL)
+	return issuerURL + "|" + discoveryURL + "|" + strings.Join(sorted, ",")
 }
 
 // cachedJWKS returns issuerURL's key set from cache if a fresh-enough entry
 // exists for the current thumbprints, otherwise fetches and caches a fresh
 // one.
 func cachedJWKS(ctx context.Context, issuerURL string, thumbprints []string, policy OIDCEndpointPolicy) (*jwkSet, error) {
-	key := jwksCacheKey(issuerURL, thumbprints)
+	key := jwksCacheKey(issuerURL, thumbprints, policy)
 	jwksCacheMu.Lock()
 	entry, ok := jwksCache[key]
 	jwksCacheMu.Unlock()
@@ -656,7 +660,7 @@ func cachedJWKS(ctx context.Context, issuerURL string, thumbprints []string, pol
 // gated the next one. Recording the attempt up front bounds retries to one
 // per jwksMinForcedRefreshInterval regardless of whether the fetch succeeds.
 func forceRefreshJWKSCache(ctx context.Context, issuerURL string, thumbprints []string, policy OIDCEndpointPolicy) (*jwkSet, error) {
-	key := jwksCacheKey(issuerURL, thumbprints)
+	key := jwksCacheKey(issuerURL, thumbprints, policy)
 	jwksCacheMu.Lock()
 	entry, ok := jwksCache[key]
 	if ok && time.Since(entry.lastForcedRefresh) < jwksMinForcedRefreshInterval {
@@ -679,12 +683,12 @@ func forceRefreshJWKSCache(ctx context.Context, issuerURL string, thumbprints []
 }
 
 // fetchAndCacheJWKS fetches issuerURL's key set and, on success, replaces
-// its cache entry, coalescing concurrent callers for the same issuerURL AND
-// thumbprints via jwksFetchGroup (keyed identically to jwksCache, so a
+// its cache entry, coalescing concurrent callers for the same issuerURL,
+// thumbprints AND discovery endpoint via jwksFetchGroup (keyed identically to jwksCache, so a
 // caller mid-fetch for one thumbprint configuration never receives a result
 // coalesced from a differently-configured concurrent caller).
 func fetchAndCacheJWKS(ctx context.Context, issuerURL string, thumbprints []string, policy OIDCEndpointPolicy) (*jwkSet, error) {
-	key := jwksCacheKey(issuerURL, thumbprints)
+	key := jwksCacheKey(issuerURL, thumbprints, policy)
 	v, err, _ := jwksFetchGroup.Do(key, func() (any, error) {
 		keys, err := fetchJWKS(ctx, issuerURL, thumbprints, policy)
 		if err != nil {
@@ -704,17 +708,18 @@ func fetchAndCacheJWKS(ctx context.Context, issuerURL string, thumbprints []stri
 	return v.(*jwkSet), nil
 }
 
-// fetchJWKS retrieves issuerURL's OIDC discovery document, then the JWKS it
-// points to. issuerURL is the provider's stored Url. thumbprints, if
-// non-empty, lets the fetch's TLS connections succeed against a
-// self-signed/private-CA certificate whose chain matches one of them, the
-// same trust-pinning fallback real AWS documents for OIDC providers.
+// fetchJWKS retrieves issuerURL's OIDC discovery document — from wherever
+// ResolveDiscovery places it — then the JWKS that document points to.
+// issuerURL is the provider's stored Url. thumbprints, if non-empty, lets
+// the fetch's TLS connections succeed against a self-signed/private-CA
+// certificate whose chain matches one of them, the same trust-pinning
+// fallback real AWS documents for OIDC providers.
 func fetchJWKS(ctx context.Context, issuerURL string, thumbprints []string, policy OIDCEndpointPolicy) (*jwkSet, error) {
+	discoveryURL, policy := policy.ResolveDiscovery(issuerURL)
 	client := ssrfSafeHTTPClient(thumbprints, policy)
-	base := OIDCEndpointURL(issuerURL)
 
 	var doc oidcDiscoveryDoc
-	if err := fetchJSON(ctx, client, strings.TrimRight(base, "/")+"/.well-known/openid-configuration", &doc); err != nil {
+	if err := fetchJSON(ctx, client, discoveryURL, &doc); err != nil {
 		return nil, err
 	}
 	if err := validateDiscoveryIssuer(doc, issuerURL); err != nil {

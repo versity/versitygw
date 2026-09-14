@@ -124,6 +124,10 @@ spec:
             - name: VGW_IAM_OIDC_ALLOW_INSECURE_TRANSPORT
               value: "true"
             {{- end }}
+            {{- if $iamServerOidc.discoveryUrls }}
+            - name: VGW_IAM_OIDC_DISCOVERY_URLS
+              value: {{ join "," $iamServerOidc.discoveryUrls | quote }}
+            {{- end }}
             {{- if .Values.iamServer.corsAllowOrigin }}
             - name: VGW_CORS_ALLOW_ORIGIN
               value: {{ .Values.iamServer.corsAllowOrigin | quote }}

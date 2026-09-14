@@ -3864,6 +3864,102 @@ func TestIAMApiControllerAssumeRoleWithWebIdentityLoopbackIdP(t *testing.T) {
 	})
 }
 
+// TestIAMApiControllerAssumeRoleWithWebIdentityDiscoveryURL exercises a
+// configured discovery URL: the token's issuer is a public URL that is never
+// contacted, while the discovery document and the JWKS it points to are
+// served from loopback. Only the discovery override makes that address
+// reachable — insecure transport is about schemes, not addresses — and the
+// document's own issuer must still equal the provider Url.
+func TestIAMApiControllerAssumeRoleWithWebIdentityDiscoveryURL(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey: %v", err)
+	}
+
+	const goodIssuer = "https://oidc.discovery.example"
+	const badIssuer = "https://oidc.mismatch.example"
+
+	var keysURI string
+	idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/good/.well-known/openid-configuration":
+			json.NewEncoder(w).Encode(map[string]any{"issuer": goodIssuer, "jwks_uri": keysURI})
+		case "/mismatch/.well-known/openid-configuration":
+			// Served for badIssuer, but naming its own private location.
+			json.NewEncoder(w).Encode(map[string]any{"issuer": r.Host, "jwks_uri": keysURI})
+		case "/keys":
+			json.NewEncoder(w).Encode(map[string]any{"keys": []any{map[string]any{
+				"kty": "RSA",
+				"kid": "k1",
+				"n":   base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+				"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
+			}}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer idp.Close()
+	keysURI = idp.URL + "/keys"
+
+	server := newIAMControllerTestServerWith(t,
+		WithOIDCAllowInsecureTransport(),
+		WithOIDCDiscoveryURLs([]string{
+			goodIssuer + "=" + idp.URL + "/good/.well-known/openid-configuration",
+			badIssuer + "=" + idp.URL + "/mismatch/.well-known/openid-configuration",
+		}))
+
+	for _, issuer := range []string{goodIssuer, badIssuer} {
+		providerArn := createTestOIDCProviderForTrust(t, server, issuer, "versitygw")
+		roleName := "role-for-" + iamutil.CanonicalOIDCProviderURL(issuer)
+		createTestRoleForTrust(t, server, roleName,
+			`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"`+providerArn+`"},`+
+				`"Action":"sts:AssumeRoleWithWebIdentity"}]}`)
+	}
+
+	assume := func(t *testing.T, issuer, roleName string) *http.Response {
+		t.Helper()
+		token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iss": issuer,
+			"aud": "versitygw",
+			"sub": "spiffe://example.org/ns/default/sa/versitygw",
+			"iat": time.Now().Unix(),
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		token.Header["kid"] = "k1"
+		signed, err := token.SignedString(key)
+		if err != nil {
+			t.Fatalf("sign token: %v", err)
+		}
+		return doSTSAction(t, server, url.Values{
+			"Action":           {"AssumeRoleWithWebIdentity"},
+			"RoleArn":          {"arn:aws:iam::000000000000:role/" + roleName},
+			"RoleSessionName":  {"discovery-session"},
+			"WebIdentityToken": {signed},
+		})
+	}
+
+	t.Run("keys read over the private path", func(t *testing.T) {
+		resp := assume(t, goodIssuer, "role-for-oidc.discovery.example")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("AssumeRoleWithWebIdentity status = %d, body=%s", resp.StatusCode, readBody(t, resp))
+		}
+		var out iamtypes.AssumeRoleWithWebIdentityResponse
+		unmarshalXML(t, readBody(t, resp), &out)
+		if out.Result.Provider != goodIssuer {
+			t.Errorf("Provider = %q, want the public issuer %q", out.Result.Provider, goodIssuer)
+		}
+		if out.Result.Credentials.SessionToken == "" {
+			t.Errorf("no session credentials returned: %+v", out.Result.Credentials)
+		}
+	})
+
+	t.Run("discovery document naming another issuer is rejected", func(t *testing.T) {
+		resp := assume(t, badIssuer, "role-for-oidc.mismatch.example")
+		requireSTSError(t, resp, http.StatusBadRequest, "Sender", "InvalidIdentityToken",
+			"Couldn't retrieve verification key from your identity provider,  please reference AssumeRoleWithWebIdentity documentation for requirements")
+	})
+}
+
 // accessKeyImplicitUserNameActions are the four access-key actions that
 // accept an omitted UserName and infer it from the calling access key.
 var accessKeyImplicitUserNameActions = []string{"CreateAccessKey", "UpdateAccessKey", "DeleteAccessKey", "ListAccessKeys"}

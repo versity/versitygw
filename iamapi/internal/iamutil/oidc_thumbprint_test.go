@@ -180,6 +180,31 @@ func TestFetchThumbprintAllowPrivateEndpoints(t *testing.T) {
 	}
 }
 
+// TestFetchThumbprintDiscoveryURL confirms auto-fetch pins the endpoint it
+// will actually talk to: with a discovery URL configured, the handshake goes
+// to that endpoint's host — a loopback one here, which the default address
+// check would refuse — rather than to the provider's own unreachable host.
+func TestFetchThumbprintDiscoveryURL(t *testing.T) {
+	srv := httptest.NewTLSServer(nil)
+	defer srv.Close()
+
+	policy := OIDCEndpointPolicy{
+		AllowInsecureTransport: true,
+		DiscoveryURLs: map[string]string{
+			"idp.example": "https://" + srv.Listener.Addr().String() + "/.well-known/openid-configuration",
+		},
+	}
+	got, err := FetchThumbprint(context.Background(), "idp.example", policy)
+	if err != nil {
+		t.Fatalf("FetchThumbprint(discovery url): %v", err)
+	}
+
+	sum := sha1.Sum(srv.Certificate().Raw)
+	if want := hex.EncodeToString(sum[:]); got != want {
+		t.Fatalf("FetchThumbprint thumbprint = %q, want the discovery endpoint's %q", got, want)
+	}
+}
+
 // TestFetchThumbprintRejectsPlaintextProvider covers the defensive branch
 // for an http provider Url: there is no handshake to observe a certificate
 // in, so auto-fetch must report a failure rather than dial anything.
