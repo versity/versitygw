@@ -3,9 +3,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -56,29 +59,52 @@ func runV2Mode(size int) error {
 	}
 	defer cl.Shutdown()
 
+	// Admission evidence: one real-API GET against the probe
+	// object before any transfer is attempted. A declining
+	// endpoint fails the run here instead of per-transfer.
+	probeClient := &http.Client{Timeout: 10 * time.Second}
+	elig := rcobj.NewEligibility(rcobj.HTTPProbe(probeClient,
+		"http://"+host+":"+fmt.Sprint(port)))
+	if err := elig.Probe(context.Background()); err != nil {
+		return fmt.Errorf("admission probe: %w", err)
+	}
+
 	// Host memory is registered through the library's host-MR
 	// path; the v2 entry points require a registered buffer.
 	putAlloc := rcobj.Valloc(size)
 	if putAlloc == nil {
 		return fmt.Errorf("alloc PUT buffer")
 	}
-	defer rcobj.Free(putAlloc)
 	putBuf := unsafe.Slice((*byte)(putAlloc), size)
 	putBufGlobal = putBuf
 	if _, err := readRandom(putBuf); err != nil {
+		rcobj.Free(putAlloc)
 		return fmt.Errorf("fill PUT buffer: %w", err)
 	}
 	if err := cl.RegisterBuffer(putAlloc, uint64(size)); err != nil {
+		rcobj.Free(putAlloc)
 		return fmt.Errorf("register: %w", err)
 	}
-	defer cl.DeregisterBuffer(putAlloc)
+	// releasePut frees the buffer only after a successful
+	// deregistration; a pinned registration keeps the allocation
+	// alive and reports the failure.
+	releasePut := func() error {
+		if err := cl.DeregisterBuffer(putAlloc); err != nil {
+			return fmt.Errorf("deregister PUT buffer: %w (buffer kept)", err)
+		}
+		rcobj.Free(putAlloc)
+		return nil
+	}
 
 	results := []v2Result{}
+	restBase := newS3Client(*endpoint, *access, *secret, *region)
 
 	// 1. Plain PUT
 	r := v2Result{step: "PUT"}
 	r.dur, r.bytes, r.err = v2DoTransfer(cl, opPut,
-		putAlloc, 0, uint64(size), "")
+		putAlloc, 0, uint64(size), "", *key, func() error {
+			return restPutObj(restBase, *key, putBuf)
+		})
 	results = append(results, r)
 
 	// 2. Plain GET (full)
@@ -86,17 +112,25 @@ func runV2Mode(size int) error {
 	if getAlloc == nil {
 		return fmt.Errorf("alloc GET buffer")
 	}
-	defer rcobj.Free(getAlloc)
 	getBuf := unsafe.Slice((*byte)(getAlloc), size)
 	if err := cl.RegisterBuffer(getAlloc, uint64(size)); err != nil {
+		rcobj.Free(getAlloc)
 		return fmt.Errorf("register GET buffer: %w", err)
 	}
-	defer cl.DeregisterBuffer(getAlloc)
+	releaseGet := func() error {
+		if err := cl.DeregisterBuffer(getAlloc); err != nil {
+			return fmt.Errorf("deregister GET buffer: %w (buffer kept)", err)
+		}
+		rcobj.Free(getAlloc)
+		return nil
+	}
 
 	if r.err == nil {
 		r = v2Result{step: "GET"}
 		r.dur, r.bytes, r.err = v2DoTransfer(cl, opGet,
-			getAlloc, 0, uint64(size), "")
+			getAlloc, 0, uint64(size), "", *key, func() error {
+				return restGetObj(restBase, *key, getBuf)
+			})
 		r.byteMatch = r.err == nil && string(putBuf) == string(getBuf)
 		if r.err == nil && !r.byteMatch {
 			r.firstDiff = -1
@@ -127,7 +161,10 @@ func runV2Mode(size int) error {
 		}
 		r = v2Result{step: fmt.Sprintf("GET+Range@%d", rangeOffset)}
 		r.dur, r.bytes, r.err = v2DoTransfer(cl, opGet,
-			rgAlloc, rangeOffset, rangeSize, "")
+			rgAlloc, rangeOffset, rangeSize, "", *key, func() error {
+				return restGetRange(restBase, *key,
+					rangeOffset, rangeSize, rangeBuf)
+			})
 		r.byteMatch = r.err == nil &&
 			string(putBuf[rangeOffset:rangeOffset+rangeSize]) == string(rangeBuf)
 		if r.err == nil && !r.byteMatch {
@@ -181,7 +218,23 @@ func runV2Mode(size int) error {
 	}
 
 	if !ok {
+		if err := releasePut(); err != nil {
+			fmt.Printf("  cleanup: %v\n", err)
+		}
+		if err := releaseGet(); err != nil {
+			fmt.Printf("  cleanup: %v\n", err)
+		}
 		return fmt.Errorf("v2 mode had failures")
+	}
+	var cleanupErr error
+	if err := releasePut(); err != nil {
+		cleanupErr = err
+	}
+	if err := releaseGet(); err != nil {
+		cleanupErr = err
+	}
+	if cleanupErr != nil {
+		return fmt.Errorf("v2 mode cleanup: %w", cleanupErr)
 	}
 	fmt.Printf("\nv2 mode: all steps green\n")
 	return nil
@@ -194,22 +247,28 @@ const (
 
 // v2DoTransfer runs one v2 transfer through the rcobj wrapper. The
 // query string carries the part context for multipart uploads.
+// key names the object this transfer addresses; the multipart flow
+// passes its own key so parts land on the upload's object.
 func v2DoTransfer(cl *rcobj.Client, op int,
-	buf unsafe.Pointer, offset, size uint64, query string) (time.Duration, int, error) {
+	buf unsafe.Pointer, offset, size uint64, query, key string,
+	rest func() error) (time.Duration, int, error) {
 
 	start := time.Now()
 	name := opName(op)
 	var err error
 	if op == opPut {
-		err = cl.Put(*bucket, *key, buf, size, offset, query)
+		err = cl.Put(*bucket, key, buf, size, offset, query)
 	} else {
-		err = cl.Get(*bucket, *key, buf, size, offset, query)
+		err = cl.Get(*bucket, key, buf, size, offset, query)
 	}
 	dur := time.Since(start)
 	if err != nil {
-		if rcobj.NotSupported(err) {
-			// The endpoint declined v2: fall back to REST for this
-			// transfer so an old gateway stays readable.
+		if rcobj.NotSupported(err) && rest != nil {
+			// The endpoint declined v2: run the same operation over
+			// REST so an old gateway stays readable.
+			if rerr := rest(); rerr != nil {
+				return dur, 0, fmt.Errorf("%s rest fallback: %w", name, rerr)
+			}
 			return dur, int(size), nil
 		}
 		return dur, 0, fmt.Errorf("%s: %w", name, err)
@@ -265,16 +324,18 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 		}
 	}()
 
-	partSize := size / 2
+	partSize := (size + 1) / 2
 	// S3 requires every part except the last to be at least 5 MiB,
 	// so part 1 is padded with a fixed payload when the test size
-	// is smaller.
+	// is smaller. part 2 carries the remainder so the assembled
+	// object is exactly the uploaded payload.
 	const minPart = 5 << 20
 	part1Len := partSize
 	if part1Len < minPart {
 		part1Len = minPart
 	}
-	partLens := []int{part1Len, partSize}
+	part2Len := size - partSize
+	partLens := []int{part1Len, part2Len}
 	pad := make([]byte, part1Len-partSize)
 	parts := make([]types.CompletedPart, 0, 2)
 	for part := 1; part <= 2; part++ {
@@ -286,12 +347,15 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 		buf := unsafe.Slice((*byte)(alloc), plen)
 		off := (part - 1) * partSize
 		end := off + partSize
+		if part == 2 {
+			end = size
+		}
 		if end > len(putBufGlobal) {
 			end = len(putBufGlobal)
 		}
 		copy(buf, putBufGlobal[off:end])
-		if plen > partSize {
-			copy(buf[partSize:], pad)
+		if plen > end-off {
+			copy(buf[end-off:], pad)
 		}
 		if err := cl.RegisterBuffer(alloc, uint64(plen)); err != nil {
 			rcobj.Free(alloc)
@@ -299,17 +363,33 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 		}
 		query := fmt.Sprintf("partNumber=%d&uploadId=%s", part, uploadID)
 		_, _, terr := v2DoTransfer(cl, opPut,
-			alloc, 0, uint64(plen), query)
-		cl.DeregisterBuffer(alloc)
+			alloc, 0, uint64(plen), query, mpKey, func() error {
+				return restUploadPart(base, mpKey, uploadID, part, buf)
+			})
+		if terr == nil {
+			// The server's authoritative ETag for this part: fetched
+			// through the parts listing rather than fabricated, so
+			// CompleteMultipartUpload carries real values.
+			etag, gerr := restPartETag(base, mpKey, uploadID, part)
+			if gerr != nil {
+				terr = fmt.Errorf("part %d etag: %w", part, gerr)
+			} else {
+				parts = append(parts, types.CompletedPart{
+					ETag:       aws.String(etag),
+					PartNumber: aws.Int32(int32(part)),
+				})
+			}
+		}
+		// The buffer may only be released once the registration is
+		// gone: a failed deregistration can leave the memory pinned
+		// for DMA, so the allocation is preserved on that failure.
+		if derr := cl.DeregisterBuffer(alloc); derr != nil {
+			return false, fmt.Errorf("deregister part %d: %w (buffer kept)", part, derr)
+		}
 		rcobj.Free(alloc)
 		if terr != nil {
 			return false, fmt.Errorf("part %d: %w", part, terr)
 		}
-		etag := "placeholder"
-		parts = append(parts, types.CompletedPart{
-			ETag:       aws.String(etag),
-			PartNumber: aws.Int32(int32(part)),
-		})
 	}
 	_, err = base.CompleteMultipartUpload(context.Background(),
 		&s3lib.CompleteMultipartUploadInput{
@@ -325,28 +405,113 @@ func v2Multipart(cl *rcobj.Client, size int) (bool, error) {
 	}
 	mpDone = true
 
-	// Full GET verifies the assembled bytes.
-	verifyAlloc := rcobj.Valloc(size)
+	// Full GET verifies the assembled bytes: the expected content
+	// is the exact concatenation of both uploaded parts (part 1
+	// payload plus any padding plus part 2 payload).
+	verifyLen := part1Len + part2Len
+	verifyAlloc := rcobj.Valloc(verifyLen)
 	if verifyAlloc == nil {
 		return false, fmt.Errorf("alloc verify buffer")
 	}
-	defer rcobj.Free(verifyAlloc)
-	vbuf := unsafe.Slice((*byte)(verifyAlloc), size)
-	if err := cl.RegisterBuffer(verifyAlloc, uint64(size)); err != nil {
+	vbuf := unsafe.Slice((*byte)(verifyAlloc), verifyLen)
+	if err := cl.RegisterBuffer(verifyAlloc, uint64(verifyLen)); err != nil {
+		rcobj.Free(verifyAlloc)
 		return false, fmt.Errorf("register verify buffer: %w", err)
 	}
-	defer cl.DeregisterBuffer(verifyAlloc)
-	if _, _, gerr := v2DoTransfer(cl, opGet, verifyAlloc, 0, uint64(size), ""); gerr != nil {
+	_, _, gerr := v2DoTransfer(cl, opGet, verifyAlloc, 0, uint64(verifyLen), "", mpKey,
+		func() error { return restGetObj(base, mpKey, vbuf) })
+	if derr := cl.DeregisterBuffer(verifyAlloc); derr != nil {
+		return false, fmt.Errorf("deregister verify buffer: %w (buffer kept)", derr)
+	}
+	rcobj.Free(verifyAlloc)
+	if gerr != nil {
 		return false, fmt.Errorf("verify get: %w", gerr)
 	}
-	want := putBufGlobal
-	if size > len(want) {
-		want = want[:size]
+	want := make([]byte, 0, verifyLen)
+	want = append(want, putBufGlobal[:partSize]...)
+	if len(pad) > 0 {
+		want = append(want, pad...)
 	}
-	if !strings.Contains(string(vbuf), string(want[:min(size, len(want))])) {
+	want = append(want, putBufGlobal[partSize:size]...)
+	if !bytes.Equal(vbuf, want) {
 		return false, fmt.Errorf("multipart verify: bytes mismatch")
 	}
 	return true, nil
+}
+
+// restUploadPart is the REST fallback for one part upload.
+func restUploadPart(base *s3lib.Client, key, uploadID string,
+	part int, buf []byte) error {
+	_, err := base.UploadPart(context.Background(), &s3lib.UploadPartInput{
+		Bucket:     aws.String(*bucket),
+		Key:        aws.String(key),
+		UploadId:   aws.String(uploadID),
+		PartNumber: aws.Int32(int32(part)),
+		Body:       bytes.NewReader(buf),
+	})
+	return err
+}
+
+// restPartETag fetches the server's ETag for an uploaded part.
+func restPartETag(base *s3lib.Client, key, uploadID string,
+	part int) (string, error) {
+	out, err := base.ListParts(context.Background(), &s3lib.ListPartsInput{
+		Bucket:   aws.String(*bucket),
+		Key:      aws.String(key),
+		UploadId: aws.String(uploadID),
+	})
+	if err != nil {
+		return "", err
+	}
+	for _, p := range out.Parts {
+		if int(*p.PartNumber) == part {
+			if p.ETag == nil {
+				return "", fmt.Errorf("part %d has no etag", part)
+			}
+			return *p.ETag, nil
+		}
+	}
+	return "", fmt.Errorf("part %d not listed", part)
+}
+
+// restPutObj is the REST fallback for a plain PUT.
+func restPutObj(base *s3lib.Client, key string, src []byte) error {
+	_, err := base.PutObject(context.Background(), &s3lib.PutObjectInput{
+		Bucket: aws.String(*bucket),
+		Key:    aws.String(key),
+		Body:   bytes.NewReader(src),
+	})
+	return err
+}
+
+// restGetRange is the REST fallback for a ranged GET.
+func restGetRange(base *s3lib.Client, key string,
+	offset, size uint64, dst []byte) error {
+	out, err := base.GetObject(context.Background(), &s3lib.GetObjectInput{
+		Bucket: aws.String(*bucket),
+		Key:    aws.String(key),
+		Range:  aws.String(fmt.Sprintf("bytes=%d-%d", offset, offset+size-1)),
+	})
+	if err != nil {
+		return err
+	}
+	defer out.Body.Close()
+	_, err = io.ReadFull(out.Body, dst)
+	return err
+}
+
+// restGetObj is the REST fallback for the verification GET.
+func restGetObj(base *s3lib.Client, key string, dst []byte) error {
+	out, err := base.GetObject(context.Background(), &s3lib.GetObjectInput{
+		Bucket: aws.String(*bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return err
+	}
+	defer out.Body.Close()
+	_, err = io.ReadFull(out.Body, dst)
+	return err
 }
 
 func min(a, b int) int {
