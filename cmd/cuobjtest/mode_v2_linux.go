@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -31,8 +32,7 @@ func runV2Mode(size int) error {
 	if err != nil {
 		return err
 	}
-	_ = host
-	_ = port
+	authority := net.JoinHostPort(host, fmt.Sprint(port))
 
 	probeKey := *key + "-probe"
 	if err := v2EnsureProbeObject(host, port, probeKey); err != nil {
@@ -42,7 +42,7 @@ func runV2Mode(size int) error {
 	// v2 client: libhipobj owns the RDMA data plane; the control
 	// callbacks live inside the wrapper.
 	cl, err := rcobj.Init(rcobj.Config{
-		ControlEndpoint:     "http://" + host + ":" + fmt.Sprint(port),
+		ControlEndpoint:     "http://" + authority,
 		NicHint:             os.Getenv("VGWRDMA_RDMA_GID_HINT"),
 		ConnectDeadlineMs:   10000,
 		TransferDeadlineMs:  60000,
