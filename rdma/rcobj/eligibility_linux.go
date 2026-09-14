@@ -38,6 +38,12 @@ type Eligibility struct {
 	// conns tracks the physical transport identity of the last
 	// admitted control exchange so replacement invalidates.
 	connGen uint64
+	// invals counts connection changes. A probe snapshots the
+	// count before it runs and only publishes its result when
+	// the count still matches: evidence gathered on a transport
+	// that was replaced mid-probe is stale and must not lift
+	// the negative state.
+	invals uint64
 }
 
 // ProbeFn performs the one-byte GET probe through the real API and
@@ -55,6 +61,9 @@ func NewEligibility(probe ProbeFn) *Eligibility {
 // replacement turns the layer negative until a fresh probe
 // succeeds.
 func (e *Eligibility) Probe(ctx context.Context) error {
+	e.mu.Lock()
+	start := e.invals
+	e.mu.Unlock()
 	gen, ok, err := e.probe(ctx)
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -65,6 +74,14 @@ func (e *Eligibility) Probe(ctx context.Context) error {
 			return err
 		}
 		return errors.New("rcobj: endpoint declined v2 admission")
+	}
+	if e.invals != start {
+		// The transport was replaced while this probe was in
+		// flight: its evidence predates the replacement and
+		// must not re-admit. The layer stays negative until a
+		// fresh probe on the new transport succeeds.
+		e.negative = true
+		return errors.New("rcobj: transport replaced during probe")
 	}
 	e.negative = false
 	e.connGen = gen
@@ -97,6 +114,7 @@ func (e *Eligibility) OnConnectionChange(newGen uint64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.negative = true
+	e.invals++
 	e.connGen = newGen
 }
 
@@ -132,7 +150,7 @@ func HTTPProbe(client *http.Client, endpoint, bucket, key string) ProbeFn {
 	}
 	return func(ctx context.Context) (uint64, bool, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-			strings.TrimSuffix(endpoint, "/")+"/"+bucket+"/"+key, nil)
+			strings.TrimSuffix(endpoint, "/")+probeObjectPath(bucket, key), nil)
 		if err != nil {
 			return 0, false, err
 		}
