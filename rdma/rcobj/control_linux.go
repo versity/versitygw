@@ -340,6 +340,7 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 		}
 		per := remaining / time.Duration(len(cands))
 		var lastErr error
+		var v4Fallback *net.TCPAddr
 		for _, c := range cands {
 			perTimeout := per
 			if t := cp.dialer.Timeout; t > 0 && t < per {
@@ -356,6 +357,34 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 				return conn, nil
 			}
 			lastErr = derr
+			// Older kernels refuse SO_BINDTODEVICE without
+			// CAP_NET_RAW on every socket: degrade to the
+			// interface's IPv4 address binding, the fallback
+			// the reference bridge ships, instead of failing
+			// the whole transfer path.
+			if errors.Is(derr, syscall.EPERM) && v4Fallback == nil {
+				chost, _, serr := net.SplitHostPort(c)
+				if serr == nil {
+					if ip := net.ParseIP(chost); ip != nil && ip.To4() != nil {
+						if la, aerr := devIPv4Addr(dev); aerr == nil {
+							v4Fallback = &net.TCPAddr{IP: la}
+						}
+					}
+				}
+				if v4Fallback != nil {
+					fd := net.Dialer{Timeout: perTimeout,
+						DualStack: cp.dialer.DualStack,
+						KeepAlive: cp.dialer.KeepAlive}
+					fd.LocalAddr = v4Fallback
+					fctx, fcancel := context.WithTimeout(ctx, per)
+					conn, ferr := fd.DialContext(fctx, "tcp", c)
+					fcancel()
+					if ferr == nil {
+						return conn, nil
+					}
+					lastErr = ferr
+				}
+			}
 			if ctx.Err() != nil {
 				// The shared budget is gone; later candidates
 				// cannot succeed either.
@@ -370,6 +399,13 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 // bindToDevice returns a socket control function that binds new
 // sockets to the named interface (SO_BINDTODEVICE) so the kernel
 // routes and picks source addresses within that device alone.
+// The control function swallows EPERM: older kernels (before 5.7)
+// require CAP_NET_RAW for every SO_BINDTODEVICE set, and the
+// reference bridge degrades to binding the interface's IPv4
+// address instead of failing the connection. The dial loop
+// performs that fallback when it observes the permission error
+// surfaced through the dial error, so unprivileged deployments on
+// those kernels keep the IPv4 path the bridge supports.
 func bindToDevice(dev string) func(string, string, syscall.RawConn) error {
 	return func(network, address string, rc syscall.RawConn) error {
 		var serr error
@@ -379,8 +415,36 @@ func bindToDevice(dev string) func(string, string, syscall.RawConn) error {
 		}); err != nil {
 			return err
 		}
+		if errors.Is(serr, syscall.EPERM) {
+			// Signal the dial loop through the error value; the
+			// candidate dial fails and the loop falls back.
+			return serr
+		}
 		return serr
 	}
+}
+
+// devIPv4Addr reports the first IPv4 address on the named
+// interface, for the permission-denied fallback.
+func devIPv4Addr(dev string) (net.IP, error) {
+	iface, err := net.InterfaceByName(dev)
+	if err != nil {
+		return nil, err
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range addrs {
+		ipn, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		if ip4 := ipn.IP.To4(); ip4 != nil {
+			return ip4, nil
+		}
+	}
+	return nil, fmt.Errorf("no IPv4 address on %s", dev)
 }
 
 // deadlineFor reports the cutoff the caller's context carries, or
