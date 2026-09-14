@@ -146,7 +146,6 @@ type Client struct {
 	// retry started after a failure cannot substitute its result
 	// for the attempt an existing waiter joined.
 	shuttingDown bool
-	shutCond     *sync.Cond
 	shutAttempt  *shutdownAttempt
 
 	// inflight counts transfer calls that passed the closed check
@@ -208,7 +207,6 @@ func Init(cfg Config) (*Client, error) {
 	cl := &Client{slot: slot, id: id}
 	ctxRegistry[id] = cl
 	ctxMu.Unlock()
-	cl.shutCond = sync.NewCond(&cl.mu)
 	*(*uint64)(slot) = id
 
 	cl.ctrl = newControlPlane(cfg)
@@ -218,12 +216,14 @@ func Init(cfg Config) (*Client, error) {
 	return cl, nil
 }
 
-// shutdownAttempt is one teardown execution. Every waiter that
-// joined this attempt reads its outcome once the client mutex is
-// reacquired after the broadcast; the outcome is immutable once
-// recorded.
+// shutdownAttempt is one teardown execution. done closes after
+// the attempt records its immutable outcome; a waiter waits on
+// the channel, not on any global flag, so later retries by other
+// callers can never delay a waiter whose attempt already
+// finished.
 type shutdownAttempt struct {
-	err error
+	done chan struct{}
+	err  error
 }
 
 // Shutdown tears the library down and releases the callback slot.
@@ -239,23 +239,21 @@ func (c *Client) Shutdown() error {
 		c.mu.Unlock()
 		return nil
 	}
-	// Waiters pin the in-progress attempt object and wait for it
-	// directly: each receives the outcome of exactly the attempt
-	// it joined, independent of any later retry. A waiter that
-	// arrives between attempts (after a failure, before a retry)
-	// starts a fresh attempt of its own.
+	// Waiters pin the in-progress attempt object and wait on its
+	// completion channel: each receives the outcome of exactly the
+	// attempt it joined, and no retry by another caller can delay
+	// it. A waiter that arrives between attempts (after a failure,
+	// before a retry) starts a fresh attempt of its own.
 	var joined *shutdownAttempt
 	if c.shuttingDown {
 		joined = c.shutAttempt
 	}
-	for c.shuttingDown {
-		c.shutCond.Wait()
-	}
 	if joined != nil {
 		c.mu.Unlock()
+		<-joined.done
 		return joined.err
 	}
-	at := &shutdownAttempt{}
+	at := &shutdownAttempt{done: make(chan struct{})}
 	c.shuttingDown = true
 	c.shutAttempt = at
 	c.mu.Unlock()
@@ -290,8 +288,10 @@ func (c *Client) Shutdown() error {
 	at.err = err
 	c.shuttingDown = false
 	c.shutAttempt = nil
-	c.shutCond.Broadcast()
 	c.mu.Unlock()
+	// Publish after the state is consistent: the channel close
+	// orders the recorded err before every waiter's read.
+	close(at.done)
 	return err
 }
 
