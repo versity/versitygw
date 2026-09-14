@@ -1,4 +1,5 @@
 // Copyright 2026 Versity Software
+// Copyright 2026 Gluesys Inc. and Jihyeon Gim
 // This file is licensed under the Apache License, Version 2.0 (the
 // "License"); you may not use this file except in compliance
 // with the License.  You may obtain a copy of the License at
@@ -11,7 +12,7 @@
 // express or implied.  See the License for the specific language
 // governing permissions and limitations under the License.
 
-//go:build linux && amd64 && cgo && !cuobjclient_host
+//go:build linux && amd64 && cgo && hipobj && !cuobjclient_host
 
 // Package rcobj binds the hipobj-rc-v2 client library (libhipobj) to
 // Go. The library owns the RDMA data plane and drives the transfer
