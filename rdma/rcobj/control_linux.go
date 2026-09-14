@@ -67,9 +67,8 @@ const (
 	pathReady   = "/.hipobj-rc/ready"
 	pathCancel  = "/.hipobj-rc/cancel"
 
-	// Per the plan (section 4, C2): the Go wrapper signs the
-	// empty-body SHA256; the bridge's UNSIGNED-PAYLOAD stays
-	// bridge-only.
+	// The wrapper signs the empty-body SHA256; the bridge's
+	// UNSIGNED-PAYLOAD stays bridge-only.
 	emptySHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 )
 
