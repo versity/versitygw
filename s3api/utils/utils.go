@@ -1112,3 +1112,28 @@ func ValidateLocationConstraint(constraint *string, region string) error {
 
 	return nil
 }
+
+// The coding announced when a body is framed in aws-chunked, as the SDKs do to
+// carry a trailing checksum.
+const awsChunkedEncoding = "aws-chunked"
+
+// StripAwsChunkedEncoding drops the aws-chunked token, which frames the request
+// rather than the object, from a Content-Encoding value.
+func StripAwsChunkedEncoding(contentEncoding string) string {
+	if contentEncoding == "" {
+		return ""
+	}
+
+	codings := strings.Split(contentEncoding, ",")
+	kept := make([]string, 0, len(codings))
+	for _, coding := range codings {
+		trimmed := strings.TrimSpace(coding)
+		if trimmed == "" || strings.EqualFold(trimmed, awsChunkedEncoding) {
+			continue
+		}
+
+		kept = append(kept, trimmed)
+	}
+
+	return strings.Join(kept, ",")
+}
