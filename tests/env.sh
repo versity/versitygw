@@ -436,7 +436,11 @@ init_command_log() {
   #fi
   COMMAND_LOG="$TEST_FILE_FOLDER/command-$(uuidgen).log"
   export COMMAND_LOG
-  if ! echo "******** $(date +"%Y-%m-%d %H:%M:%S") $BATS_TEST_NAME COMMANDS ********" > "$COMMAND_LOG"; then
+  if ! touch "$COMMAND_LOG"; then
+    log 1 "error creating command log file '$COMMAND_LOG'"
+    return 1
+  fi
+  if ! echo "******** $(date +"%Y-%m-%d %H:%M:%S") $BATS_TEST_NAME COMMANDS ********" >> "$COMMAND_LOG"; then
     log 1 "fatal error:  unable to write to file '$COMMAND_LOG'"
     return 1
   fi
