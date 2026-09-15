@@ -211,6 +211,17 @@ check_universal_vars() {
   if [[ $BYPASS_ENV_FILE != "true" ]]; then
     source_config_file
   fi
+  if [ -z "$TEST_FILE_FOLDER" ]; then
+    log 1 "TEST_FILE_FOLDER missing"
+    return 1
+  fi
+  if [ ! -d "$TEST_FILE_FOLDER" ]; then
+    if ! error=$(mkdir -p "$TEST_FILE_FOLDER" 2>&1); then
+      log 1 "error creating test folder: $error"
+      return 1
+    fi
+  fi
+  export TEST_FILE_FOLDER
   #if [ -n "$COMMAND_LOG" ]; then
   if ! init_command_log; then
     log 1 "error initializing command log"
@@ -263,18 +274,6 @@ check_universal_vars() {
     log 1 "error checking bucket-related env vars"
     return 1
   fi
-
-  if [ -z "$TEST_FILE_FOLDER" ]; then
-    log 1 "TEST_FILE_FOLDER missing"
-    return 1
-  fi
-  if [ ! -d "$TEST_FILE_FOLDER" ]; then
-    if ! error=$(mkdir -p "$TEST_FILE_FOLDER" 2>&1); then
-      log 1 "error creating test folder: $error"
-      return 1
-    fi
-  fi
-  export TEST_FILE_FOLDER
   return 0
 }
 
@@ -436,10 +435,6 @@ init_command_log() {
   #fi
   COMMAND_LOG="$TEST_FILE_FOLDER/command-$(uuidgen).log"
   export COMMAND_LOG
-  if ! touch "$COMMAND_LOG"; then
-    log 1 "error creating command log file '$COMMAND_LOG'"
-    return 1
-  fi
   if ! echo "******** $(date +"%Y-%m-%d %H:%M:%S") $BATS_TEST_NAME COMMANDS ********" >> "$COMMAND_LOG"; then
     log 1 "fatal error:  unable to write to file '$COMMAND_LOG'"
     return 1
