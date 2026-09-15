@@ -2666,6 +2666,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		// version's path-based metadata into this (new) version's sidecar.
 		_ = p.meta.DeleteAttribute(bucket, object, objectLegalHoldKey)
 		_ = p.meta.DeleteAttribute(bucket, object, objectRetentionKey)
+		_ = p.meta.DeleteAttribute(bucket, object, deleteMarkerKey)
 	}
 
 	// if the versioning is enabled, generate a new versionID for the object
@@ -4165,6 +4166,7 @@ func (p *Posix) snapshotObjVersion(bucket, key string, vStatus types.BucketVersi
 		// bleed into the new version.
 		_ = p.meta.DeleteAttribute(bucket, key, objectLegalHoldKey)
 		_ = p.meta.DeleteAttribute(bucket, key, objectRetentionKey)
+		_ = p.meta.DeleteAttribute(bucket, key, deleteMarkerKey)
 	}
 
 	return nil
@@ -4775,7 +4777,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			}
 
 			// Mark the object as a delete marker
-			err = p.meta.StoreAttribute(nil, bucket, object, deleteMarkerKey, []byte{})
+			err = p.meta.StorobjectRetentionKeyeAttribute(nil, bucket, object, deleteMarkerKey, []byte{})
 			if err != nil {
 				return nil, fmt.Errorf("set delete marker: %w", err)
 			}
@@ -4840,12 +4842,13 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					return nil, err
 				}
 				err = os.Remove(objpath)
-				if err != nil {
+				if err != nil && !errors.Is(err, fs.ErrNotExist) && !isErrNotDir(err) {
 					return nil, fmt.Errorf("remove obj version: %w", err)
 				}
 
 				ents, err := os.ReadDir(versionPath)
 				if errors.Is(err, fs.ErrNotExist) {
+					_ = p.meta.DeleteAttributes(bucket, object)
 					p.removeParents(bucket, object)
 					return &s3.DeleteObjectOutput{
 						DeleteMarker: &isDelMarker,
@@ -4857,6 +4860,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				}
 
 				if len(ents) == 0 {
+					_ = p.meta.DeleteAttributes(bucket, object)
 					p.removeParents(bucket, object)
 					return &s3.DeleteObjectOutput{
 						DeleteMarker: &isDelMarker,
