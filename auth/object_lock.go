@@ -134,10 +134,12 @@ func ParseBucketLockConfigurationOutput(input []byte) (*types.ObjectLockConfigur
 		return nil, fmt.Errorf("parse object lock config: %w", err)
 	}
 
-	result := &types.ObjectLockConfiguration{
-		Rule: &types.ObjectLockRule{
+	result := &types.ObjectLockConfiguration{}
+
+	if config.DefaultRetention != nil {
+		result.Rule = &types.ObjectLockRule{
 			DefaultRetention: config.DefaultRetention,
-		},
+		}
 	}
 
 	if config.Enabled {
