@@ -19,10 +19,21 @@ source ./tests/env.sh
 export UNIT_TEST=true
 
 setup() {
-  base_setup
-  setup_test_log_file
+  if ! base_setup; then
+    echo "error with base setup" >&2
+    return 1
+  fi
+  if ! setup_test_logging; then
+    echo "error setting up test logging" >&2
+    return  1
+  fi
+  return 0
 }
 
 teardown() {
-  teardown_logs
+  if ! teardown_logs; then
+    echo "log teardown errors" >&2
+    return 1
+  fi
+  return 0
 }
