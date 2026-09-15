@@ -1515,3 +1515,30 @@ func TestValidateCopySource(t *testing.T) {
 		})
 	}
 }
+
+func TestStripAwsChunkedEncoding(t *testing.T) {
+	tests := []struct {
+		name            string
+		contentEncoding string
+		want            string
+	}{
+		{"empty", "", ""},
+		{"only aws-chunked", "aws-chunked", ""},
+		{"only aws-chunked, uppercase", "AWS-CHUNKED", ""},
+		{"only aws-chunked, padded", "  aws-chunked  ", ""},
+		{"no aws-chunked", "gzip", "gzip"},
+		{"other codings kept in order", "deflate,gzip", "deflate,gzip"},
+		{"aws-chunked first", "aws-chunked,gzip", "gzip"},
+		{"aws-chunked last", "gzip,aws-chunked", "gzip"},
+		{"aws-chunked in the middle", "deflate,aws-chunked,gzip", "deflate,gzip"},
+		{"spaces around codings", "aws-chunked, gzip", "gzip"},
+		{"repeated aws-chunked", "aws-chunked,aws-chunked", ""},
+		{"empty coding dropped", "gzip,,aws-chunked", "gzip"},
+		{"coding containing the token is kept", "aws-chunked-custom", "aws-chunked-custom"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, StripAwsChunkedEncoding(tt.contentEncoding))
+		})
+	}
+}
