@@ -87,34 +87,9 @@ var (
 // checksum.  If the provided sum is "", then the Sum() method can still
 // be used to get the current checksum for the data read so far.
 func NewHashReader(r io.Reader, expectedSum string, ht HashType) (*HashReader, error) {
-	var hash hash.Hash
-	switch ht {
-	case HashTypeContentMD5, HashTypeMd5:
-		hash = md5.New()
-	case HashTypeSha256Hex:
-		hash = sha256.New()
-	case HashTypeSha256:
-		hash = sha256.New()
-	case HashTypeSha1:
-		hash = sha1.New()
-	case HashTypeSha512:
-		hash = sha512.New()
-	case HashTypeCRC32:
-		hash = crc32.NewIEEE()
-	case HashTypeCRC32C:
-		hash = crc32.New(crc32.MakeTable(crc32.Castagnoli))
-	case HashTypeCRC64NVME:
-		hash = crc64.New(crc64NVMETable)
-	case HashTypeXXHASH64:
-		hash = xxhash.New()
-	case HashTypeXXHASH3:
-		hash = xxh3.New()
-	case HashTypeXXHASH128:
-		hash = xxh3.New128()
-	case HashTypeNone:
-		hash = noop{}
-	default:
-		return nil, errInvalidHashType
+	hash, err := NewHash(ht)
+	if err != nil {
+		return nil, err
 	}
 
 	return &HashReader{
@@ -123,6 +98,36 @@ func NewHashReader(r io.Reader, expectedSum string, ht HashType) (*HashReader, e
 		sum:      expectedSum,
 		hashType: ht,
 	}, nil
+}
+
+// NewHash returns the hash.Hash implementing the given checksum algorithm.
+func NewHash(ht HashType) (hash.Hash, error) {
+	switch ht {
+	case HashTypeContentMD5, HashTypeMd5:
+		return md5.New(), nil
+	case HashTypeSha256Hex, HashTypeSha256:
+		return sha256.New(), nil
+	case HashTypeSha1:
+		return sha1.New(), nil
+	case HashTypeSha512:
+		return sha512.New(), nil
+	case HashTypeCRC32:
+		return crc32.NewIEEE(), nil
+	case HashTypeCRC32C:
+		return crc32.New(crc32.MakeTable(crc32.Castagnoli)), nil
+	case HashTypeCRC64NVME:
+		return crc64.New(crc64NVMETable), nil
+	case HashTypeXXHASH64:
+		return xxhash.New(), nil
+	case HashTypeXXHASH3:
+		return xxh3.New(), nil
+	case HashTypeXXHASH128:
+		return xxh3.New128(), nil
+	case HashTypeNone:
+		return noop{}, nil
+	default:
+		return nil, errInvalidHashType
+	}
 }
 
 // Read allows *HashReader to be used as an io.Reader

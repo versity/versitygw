@@ -2018,35 +2018,6 @@ func getPartChecksum(algo types.ChecksumAlgorithm, part types.CompletedPart) str
 	}
 }
 
-func setStoredChecksum(checksum *s3response.Checksum, algo types.ChecksumAlgorithm, sum *string) {
-	if sum == nil {
-		return
-	}
-
-	switch algo {
-	case types.ChecksumAlgorithmCrc32:
-		checksum.CRC32 = sum
-	case types.ChecksumAlgorithmCrc32c:
-		checksum.CRC32C = sum
-	case types.ChecksumAlgorithmSha1:
-		checksum.SHA1 = sum
-	case types.ChecksumAlgorithmSha256:
-		checksum.SHA256 = sum
-	case types.ChecksumAlgorithmCrc64nvme:
-		checksum.CRC64NVME = sum
-	case types.ChecksumAlgorithmSha512:
-		checksum.SHA512 = sum
-	case types.ChecksumAlgorithmMd5:
-		checksum.MD5 = sum
-	case types.ChecksumAlgorithmXxhash64:
-		checksum.XXHASH64 = sum
-	case types.ChecksumAlgorithmXxhash3:
-		checksum.XXHASH3 = sum
-	case types.ChecksumAlgorithmXxhash128:
-		checksum.XXHASH128 = sum
-	}
-}
-
 func setUploadPartChecksum(res *s3.UploadPartOutput, algo types.ChecksumAlgorithm, sum *string) {
 	if sum == nil {
 		return
@@ -3726,7 +3697,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 			sum = hashRdr.Sum()
 		}
 
-		setStoredChecksum(&checksum, checksums.Algorithm, &sum)
+		checksum.SetSum(checksums.Algorithm, &sum)
 		setUploadPartChecksum(res, checksums.Algorithm, &sum)
 
 		err := p.storeChecksums(f.File(), bucket, partPath, checksum)
@@ -4039,7 +4010,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		}
 
 		sum := hashRdr.Sum()
-		setStoredChecksum(&checksums, algo, &sum)
+		checksums.SetSum(algo, &sum)
 
 		err := p.storeChecksums(f.File(), *upi.Bucket, partPath, checksums)
 		if err != nil {
@@ -4356,7 +4327,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			Algorithm: checksumAlgorithm,
 		}
 
-		setStoredChecksum(&checksum, checksumAlgorithm, &expectedSum)
+		checksum.SetSum(checksumAlgorithm, &expectedSum)
 
 		err = p.storeChecksums(nil, *po.Bucket, *po.Key, checksum)
 		if err != nil {
@@ -4568,7 +4539,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		Algorithm: checksumAlgorithm,
 	}
 
-	setStoredChecksum(&checksum, checksumAlgorithm, &sum)
+	checksum.SetSum(checksumAlgorithm, &sum)
 	err = p.storeChecksums(f.File(), *po.Bucket, *po.Key, checksum)
 	if err != nil {
 		return s3response.PutObjectOutput{}, fmt.Errorf("store checksum: %w", err)
