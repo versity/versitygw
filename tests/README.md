@@ -174,8 +174,6 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **TEST_LOG_FILE**:  log file location for these bats tests.
 
-**VERSITY_LOG_FILE**:  log file for versity application as it is tested by bats tests.
-
 **DIRECT**:  if **true**, bypass versitygw and run directly against s3, for comparison and validity-checking purposes.  This parameter disables the `AWS_ENDPOINT_URL` parameter.
 
 **DIRECT_DISPLAY_NAME**:  AWS ACL main user display name if **DIRECT** is set to **true**.
@@ -189,8 +187,6 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 **REMOVE_TEST_FILE_FOLDER**:  whether to delete the test file folder between tests, should be set to **true** unless checking the files after a single test, or not yet sure that the test folder is in a safe location to avoid deleting other files.
 
 **VERSIONING_DIR**:  where to put gateway file versioning info.
-
-**COMMAND_LOG**:  where to store list of client commands, which if using will be reported during test failures.
 
 **TIME_LOG**:  optional log to show duration of individual tests
 

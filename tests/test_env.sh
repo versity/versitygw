@@ -134,6 +134,51 @@ EOF
 }
 
 # tags: unit
+@test "main log cleanup - fails when appending temp log fails" {
+  local main_log temp_log
+
+  TEST_ID="main-log-append-fail-$(uuidgen)"
+  TEST_LOG_FILE="$TEST_FILE_FOLDER/main-log-$(uuidgen)"
+  BATS_TEST_COMPLETED=0
+  main_log="$TEST_LOG_FILE"
+  temp_log="${TEST_LOG_FILE}.${TEST_ID}"
+  mkdir -p "$main_log"
+  printf '%s\n' "temp test log entry" > "$temp_log"
+
+  run main_log_cleanup
+
+  TEST_LOG_FILE=
+
+  assert_failure 1
+  assert_output -p "error appending temp log to main log"
+  assert [ -d "$main_log" ]
+  assert [ -f "$temp_log" ]
+}
+
+# tags: unit
+@test "main log cleanup - skips append when LOG_ON_SUCCESS is false" {
+  local main_log temp_log contents
+
+  TEST_ID="main-log-success-skip-$(uuidgen)"
+  TEST_LOG_FILE="$TEST_FILE_FOLDER/main-log-$(uuidgen).log"
+  BATS_TEST_COMPLETED=1
+  LOG_ON_SUCCESS=false
+  main_log="$TEST_LOG_FILE"
+  temp_log="${TEST_LOG_FILE}.${TEST_ID}"
+  printf '%s\n' "existing main log" > "$main_log"
+  printf '%s\n' "successful temp log entry" > "$temp_log"
+
+  run main_log_cleanup
+
+  assert_success
+  assert_output ""
+  assert [ ! -f "$temp_log" ]
+  contents=$(<"$main_log")
+  [[ "$contents" == *"existing main log"* ]]
+  [[ "$contents" != *"successful temp log entry"* ]]
+}
+
+# tags: unit
 @test "teardown versity log - appends to existing test log" {
   local test_log versity_log contents
 
