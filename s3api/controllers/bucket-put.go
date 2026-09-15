@@ -658,18 +658,19 @@ func (c S3ApiController) CreateBucket(ctx fiber.Ctx) (*Response, error) {
 				},
 			}, s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
+	}
 
-		if body.LocationConstraint != nil {
-			region := utils.ContextKeyRegion.Get(ctx).(string)
-			if *body.LocationConstraint != region || *body.LocationConstraint == "us-east-1" {
-				debuglogger.Logf("invalid location constraint: %s", *body.LocationConstraint)
-				return &Response{
-					MetaOpts: &MetaOptions{
-						BucketOwner: bucketOwner.Access,
-					},
-				}, s3err.GetInvalidLocationConstraintErr(*body.LocationConstraint)
-			}
-		}
+	region, ok := utils.ContextKeyRegion.Get(ctx).(string)
+	if !ok {
+		region = defaultRegion
+	}
+
+	if err := utils.ValidateLocationConstraint(body.LocationConstraint, region); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: bucketOwner.Access,
+			},
+		}, err
 	}
 
 	defACL := auth.ACL{

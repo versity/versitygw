@@ -572,27 +572,31 @@ func TestValidateDiscoveryIssuer(t *testing.T) {
 }
 
 func TestJWKSCacheKeyBindsThumbprints(t *testing.T) {
-	base := jwksCacheKey("example.com", []string{"aaaa"})
+	base := jwksCacheKey("example.com", []string{"aaaa"}, OIDCEndpointPolicy{})
 
-	if got := jwksCacheKey("example.com", []string{"bbbb"}); got == base {
+	if got := jwksCacheKey("example.com", []string{"bbbb"}, OIDCEndpointPolicy{}); got == base {
 		t.Errorf("jwksCacheKey did not change when thumbprint changed: %q", got)
 	}
-	if got := jwksCacheKey("example.com", nil); got == base {
+	if got := jwksCacheKey("example.com", nil, OIDCEndpointPolicy{}); got == base {
 		t.Errorf("jwksCacheKey did not change when thumbprint was removed: %q", got)
 	}
-	if got := jwksCacheKey("other.example.com", []string{"aaaa"}); got == base {
+	if got := jwksCacheKey("other.example.com", []string{"aaaa"}, OIDCEndpointPolicy{}); got == base {
 		t.Errorf("jwksCacheKey did not change when issuer changed: %q", got)
+	}
+	overridden := OIDCEndpointPolicy{DiscoveryURLs: map[string]string{"example.com": "https://oidc.internal/.well-known/openid-configuration"}}
+	if got := jwksCacheKey("example.com", []string{"aaaa"}, overridden); got == base {
+		t.Errorf("jwksCacheKey did not change when the discovery endpoint changed: %q", got)
 	}
 	// Storage doesn't guarantee ThumbprintList order is stable across reads
 	// of an unchanged provider, so the key must not depend on input order.
-	if got := jwksCacheKey("example.com", []string{"bbbb", "aaaa"}); got != jwksCacheKey("example.com", []string{"aaaa", "bbbb"}) {
+	if got := jwksCacheKey("example.com", []string{"bbbb", "aaaa"}, OIDCEndpointPolicy{}); got != jwksCacheKey("example.com", []string{"aaaa", "bbbb"}, OIDCEndpointPolicy{}) {
 		t.Errorf("jwksCacheKey is sensitive to thumbprint order: %q", got)
 	}
 }
 
 func TestForceRefreshJWKSCacheGatesFailedAttempts(t *testing.T) {
 	issuer := "localhost"
-	key := jwksCacheKey(issuer, nil)
+	key := jwksCacheKey(issuer, nil, OIDCEndpointPolicy{})
 	jwksCacheMu.Lock()
 	delete(jwksCache, key)
 	jwksCacheMu.Unlock()

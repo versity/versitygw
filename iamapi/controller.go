@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -1054,13 +1055,14 @@ func (c IAMApiController) CreateOpenIDConnectProvider(ctx fiber.Ctx) (*Response,
 
 	thumbprints := iamutil.ParseStringList(ctx, "ThumbprintList")
 	if len(thumbprints) == 0 {
+		endpoint, _ := c.oidcPolicy.ResolveDiscovery(url)
 		switch {
-		case iamutil.IsInsecureOIDCProviderURL(url):
-			// A plaintext http provider never presents a certificate, so
+		case !strings.HasPrefix(endpoint, "https://"):
+			// A plaintext http endpoint never presents a certificate, so
 			// there is nothing to auto-fetch and nothing for a later JWKS
 			// fetch to pin against: an empty ThumbprintList is the accurate
 			// record of that, not a missing one.
-			debuglogger.Logf("CreateOpenIDConnectProvider: %q is a plaintext http provider; storing an empty ThumbprintList", url)
+			debuglogger.Logf("CreateOpenIDConnectProvider: %q is reached over plaintext http; storing an empty ThumbprintList", endpoint)
 		case c.oidc.ThumbprintAutoFetchDisabled:
 			debuglogger.Logf("CreateOpenIDConnectProvider: ThumbprintList omitted and auto-fetch is disabled")
 			return nil, iamerr.MissingValue("thumbprintList")
