@@ -357,6 +357,7 @@ func TestDeleteObject(ts *TestState) {
 }
 
 func TestDeleteObjects(ts *TestState) {
+	ts.Run(DeleteObjects_non_existing_bucket)
 	ts.Run(DeleteObjects_empty_input)
 	ts.Run(DeleteObjects_non_existing_objects)
 	ts.Run(DeleteObjects_success)
@@ -2988,6 +2989,7 @@ func GetIntTests() IntTests {
 		"DeleteObject_empty_version_id":                                                    DeleteObject_empty_version_id,
 		"DeleteObject_incorrect_expected_bucket_owner":                                     DeleteObject_incorrect_expected_bucket_owner,
 		"DeleteObject_expected_bucket_owner":                                               DeleteObject_expected_bucket_owner,
+		"DeleteObjects_non_existing_bucket":                                                DeleteObjects_non_existing_bucket,
 		"DeleteObjects_empty_input":                                                        DeleteObjects_empty_input,
 		"DeleteObjects_non_existing_objects":                                               DeleteObjects_non_existing_objects,
 		"DeleteObjects_success":                                                            DeleteObjects_success,
