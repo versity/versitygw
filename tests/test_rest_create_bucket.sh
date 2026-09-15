@@ -133,7 +133,16 @@ export RUN_USERS=true
 
 # tags: curl,CreateBucket,invalid-header,location-constraint
 @test "REST - CreateBucket - empty location constraint" {
-  run send_curl_command_create_bucket_expect_error "400" "InvalidLocationConstraint" "The specified location-constraint is not valid" "-locationConstraint" ""
+  local expected_exception expected_string
+
+  if [ "$AWS_REGION" == "us-east-1" ]; then
+    expected_exception="InvalidLocationConstraint"
+    expected_string="location-constraint is not valid"
+  else
+    expected_exception="IllegalLocationConstraintException"
+    expected_string="location constraint is incompatible"
+  fi
+  run send_curl_command_create_bucket_expect_error "400" "$expected_exception" "$expected_string" "-locationConstraint" ""
   assert_success
 }
 
@@ -142,12 +151,18 @@ export RUN_USERS=true
   if [ "$DIRECT" == "true" ]; then
     skip "not valid for direct mode"
   fi
-  local region="us-east-1"
+  local region expected_exception expected_string
   if [ "$AWS_REGION" == "us-east-1" ]; then
     region="us-west-1"
+    expected_exception="InvalidLocationConstraint"
+    expected_string="location-constraint is not valid"
+  else
+    region="us-east-1"
+    expected_exception="IllegalLocationConstraintException"
+    expected_string="location constraint is incompatible"
   fi
 
-  run send_curl_command_create_bucket_expect_error "400" "InvalidLocationConstraint" "The specified location-constraint is not valid" "-locationConstraint" "$region"
+  run send_curl_command_create_bucket_expect_error "400" "$expected_exception" "$expected_string" "-locationConstraint" "$region"
   assert_success
 }
 
