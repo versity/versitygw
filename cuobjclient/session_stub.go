@@ -22,6 +22,8 @@ import (
 	s3lib "github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
+var errUnsupportedPlatform = fmt.Errorf("cuobjclient: only supported on linux/amd64 with cgo")
+
 // Session is a non-Linux stub so packages compile on unsupported platforms.
 type Session struct{}
 
@@ -37,7 +39,7 @@ func NewSession(size int) (*Session, error) {
 	if size > MaxTransferSize {
 		return nil, fmt.Errorf("invalid size %d: exceeds MaxTransferSize (%d)", size, MaxTransferSize)
 	}
-	return nil, fmt.Errorf("cuobjclient: NewSession is only supported on linux/amd64 with cgo and the rdma build tag")
+	return nil, errUnsupportedPlatform
 }
 
 // Close is a no-op in the unsupported-platform stub.
@@ -52,7 +54,7 @@ func (s *Session) Upload(base *s3lib.Client, bucket, key string, src []byte) err
 	_ = bucket
 	_ = key
 	_ = src
-	return fmt.Errorf("cuobjclient: Upload is only supported on linux/amd64 with cgo and the rdma build tag")
+	return errUnsupportedPlatform
 }
 
 // Download always returns an unsupported-platform error on this build.
@@ -62,5 +64,5 @@ func (s *Session) Download(base *s3lib.Client, bucket, key string, dst []byte) e
 	_ = bucket
 	_ = key
 	_ = dst
-	return fmt.Errorf("cuobjclient: Download is only supported on linux/amd64 with cgo and the rdma build tag")
+	return errUnsupportedPlatform
 }

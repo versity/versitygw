@@ -20,10 +20,12 @@ package cubackend
 // This file is a stub for platforms without RDMA support.
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/versity/versitygw/backend"
 )
+
+var errUnsupportedPlatform = errors.New("cuserver: RDMA backend not supported on this platform")
 
 // CuServer is a non-functional stub on platforms without RDMA support.
 type CuServer struct {
@@ -32,5 +34,5 @@ type CuServer struct {
 
 // New always returns an unsupported-platform error on this build.
 func New(opts CuServerOpts, be backend.Backend) (*CuServer, error) {
-	return nil, fmt.Errorf("cuserver: RDMA backend not supported on this platform")
+	return nil, errUnsupportedPlatform
 }
