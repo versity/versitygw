@@ -196,7 +196,7 @@ exit 1
 EOF
   chmod +x "$fake_bin/rm"
 
-  PATH="$fake_bin:$PATH" run teardown_versity_log 1
+  PATH="$fake_bin:$PATH" run teardown_versity_log 1 "$versity_log"
 
   assert_failure 1
   assert_output ""
