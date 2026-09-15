@@ -145,7 +145,7 @@ EOF
   printf '%s\n' "existing test log" > "$test_log"
   printf '%s\n' "versity log entry" > "$versity_log"
 
-  run teardown_versity_log 1
+  run teardown_versity_log 1 "$versity_log"
 
   assert_success
   assert_output ""
@@ -167,7 +167,7 @@ EOF
   versity_log="${VERSITY_LOG_FILE}.${TEST_ID}.1"
   printf '%s\n' "failed versity log entry" > "$versity_log"
 
-  run teardown_versity_log 1
+  run teardown_versity_log 1 "$versity_log"
 
   assert_success
   assert_output -p "failed versity log entry"
