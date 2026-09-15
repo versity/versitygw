@@ -15,7 +15,7 @@
 
 // Admin session snapshot route (stub for platforms without RDMA
 // support).
-//go:build !(linux && amd64 && cgo)
+//go:build !(linux && amd64 && cgo && rdma)
 
 package rcroutes
 

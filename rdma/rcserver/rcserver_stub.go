@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions
 // and limitations under the License.
 
-//go:build !(linux && amd64 && cgo)
+//go:build !(linux && amd64 && cgo && rdma)
 
 // Package rcserver binds the RC session server implementing the
 // hipobj-rc-v2 two-phase transfer protocol. This file is a stub for

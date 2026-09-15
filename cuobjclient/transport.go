@@ -12,7 +12,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//go:build linux && amd64 && cgo
+//go:build linux && amd64 && cgo && rdma
 
 // This file holds the S3 request plumbing shared by the GPU (session_linux.go)
 // and host-memory (session_host_linux.go) session implementations: both issue

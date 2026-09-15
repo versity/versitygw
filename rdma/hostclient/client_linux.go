@@ -12,7 +12,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//go:build linux && amd64 && cgo
+//go:build linux && amd64 && cgo && rdma
 
 // Package hostclient implements the client side of the cuObject RDMA DC
 // protocol using libibverbs + mlx5 direct verbs, with no CUDA/GPU dependency.

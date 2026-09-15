@@ -12,7 +12,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//go:build !(linux && amd64 && cgo)
+//go:build !(linux && amd64 && cgo && rdma)
 
 package cuobjclient
 
@@ -37,7 +37,7 @@ func NewSession(size int) (*Session, error) {
 	if size > MaxTransferSize {
 		return nil, fmt.Errorf("invalid size %d: exceeds MaxTransferSize (%d)", size, MaxTransferSize)
 	}
-	return nil, fmt.Errorf("cuobjclient: NewSession is only supported on linux/amd64 with cgo")
+	return nil, fmt.Errorf("cuobjclient: NewSession is only supported on linux/amd64 with cgo and the rdma build tag")
 }
 
 // Close is a no-op in the unsupported-platform stub.
@@ -52,7 +52,7 @@ func (s *Session) Upload(base *s3lib.Client, bucket, key string, src []byte) err
 	_ = bucket
 	_ = key
 	_ = src
-	return fmt.Errorf("cuobjclient: Upload is only supported on linux/amd64 with cgo")
+	return fmt.Errorf("cuobjclient: Upload is only supported on linux/amd64 with cgo and the rdma build tag")
 }
 
 // Download always returns an unsupported-platform error on this build.
@@ -62,5 +62,5 @@ func (s *Session) Download(base *s3lib.Client, bucket, key string, dst []byte) e
 	_ = bucket
 	_ = key
 	_ = dst
-	return fmt.Errorf("cuobjclient: Download is only supported on linux/amd64 with cgo")
+	return fmt.Errorf("cuobjclient: Download is only supported on linux/amd64 with cgo and the rdma build tag")
 }
