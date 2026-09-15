@@ -65,7 +65,7 @@ get_log_name() {
   fi
 }
 
-setup_test_log_file() {
+setup_test_logging() {
   if [ -n "$TEST_LOG_FILE" ] || [ -n "$TEST_LOG_FILE_PATTERN" ]; then
     if ! get_log_name; then
       echo "error getting log file name" >&2
@@ -76,6 +76,12 @@ setup_test_log_file() {
       return 1
     fi
     export TEST_LOG_FILE
+  fi
+  if [ "$LOG_ON_SUCCESS" == "" ]; then
+    LOG_ON_SUCCESS="true"
+  elif [ "$LOG_ON_SUCCESS" != "true" ] && [ "$LOG_ON_SUCCESS" != "false" ]; then
+    log 1 "LOG_ON_SUCCESS must be unset, true, or false"
+    return 1
   fi
   return 0
 }
@@ -205,12 +211,12 @@ check_universal_vars() {
   if [[ $BYPASS_ENV_FILE != "true" ]]; then
     source_config_file
   fi
-  if [ -n "$COMMAND_LOG" ]; then
-    if ! init_command_log; then
-      log 1 "error initializing command log"
-      return 1
-    fi
+  #if [ -n "$COMMAND_LOG" ]; then
+  if ! init_command_log; then
+    log 1 "error initializing command log"
+    return 1
   fi
+  #fi
   if [ "$GITHUB_ACTIONS" != "true" ] && [ -r "$SECRETS_FILE" ]; then
     # shellcheck source=./tests/.secrets
     source "$SECRETS_FILE"
@@ -424,10 +430,12 @@ delete_command_log() {
 }
 
 init_command_log() {
-  if ! delete_command_log; then
-    log 1 "error deleting old command log"
-    return 1
-  fi
+  #if ! delete_command_log; then
+  #  log 1 "error deleting old command log"
+  #  return 1
+  #fi
+  COMMAND_LOG="$TEST_FILE_FOLDER/command-$(uuidgen).log"
+  export COMMAND_LOG
   if ! echo "******** $(date +"%Y-%m-%d %H:%M:%S") $BATS_TEST_NAME COMMANDS ********" >> "$COMMAND_LOG"; then
     log 1 "fatal error:  unable to write to file '$COMMAND_LOG'"
     return 1
@@ -437,11 +445,14 @@ init_command_log() {
 
 main_log_cleanup() {
   if [ -f "${TEST_LOG_FILE}.${TEST_ID}" ]; then
-    if ! error=$(cat "${TEST_LOG_FILE}.${TEST_ID}" >> "$TEST_LOG_FILE" 2>&1); then
-      log 2 "error appending temp log to main log: $error"
+    if [ "$LOG_ON_SUCCESS" == "true" ] || [ "$BATS_TEST_COMPLETED" != "1" ]; then
+      if ! error=$(cat "${TEST_LOG_FILE}.${TEST_ID}" >> "$TEST_LOG_FILE" 2>&1); then
+        echo "error appending temp log to main log: $error" >&2
+        return 1
+      fi
     fi
     if ! error=$(rm "${TEST_LOG_FILE}.${TEST_ID}" 2>&1); then
-      log 2 "error deleting temp log: $error"
+      echo "error deleting temp log: $error" >&2
       return 1
     fi
   fi
@@ -449,27 +460,28 @@ main_log_cleanup() {
 }
 
 teardown_logs() {
-  local response
+  local response teardown_result=0
 
   if [[ $LOG_LEVEL -ge 4 ]] || [[ -n "$TIME_LOG" ]]; then
-    teardown_time_log
+    teardown_time_log || teardown_result=$?
   fi
   if [[ -f "${TEST_LOG_FILE}.${TEST_ID}" ]]; then
     echo "********************************** END TEST LOG **********************************" >> "${TEST_LOG_FILE}.${TEST_ID}"
   fi
   if [[ -f "$COMMAND_LOG" ]]; then
-    teardown_command_log
+    teardown_command_log || teardown_result=$?
   fi
-  if [ -f "${VERSITY_LOG_FILE}.${TEST_ID}.1" ]; then
-    teardown_versity_log 1
+  if [ -f "$VERSITY_LOG_FILE_1" ]; then
+    teardown_versity_log 1 "$VERSITY_LOG_FILE_1" || teardown_result=$?
   fi
-  if [ -f "${VERSITY_LOG_FILE}.${TEST_ID}.2" ]; then
-    teardown_versity_log 2
+  if [ -f "$VERSITY_LOG_FILE_2" ]; then
+    teardown_versity_log 2 "$VERSITY_LOG_FILE_2" || teardown_result=$?
   fi
   if [ -f "${TEST_LOG_FILE}.${TEST_ID}" ] && [ "$BATS_TEST_COMPLETED" != "1" ]; then
     cat "${TEST_LOG_FILE}.${TEST_ID}"
   fi
-  main_log_cleanup
+  main_log_cleanup || teardown_result=$?
+  return $teardown_result
 }
 
 teardown_time_log() {
@@ -502,17 +514,20 @@ teardown_command_log() {
 }
 
 teardown_versity_log() {
-  if ! check_param_count_v2 "versitygw process ID" 1 $#; then
+  if ! check_param_count_v2 "versitygw process ID, log name" 2 $#; then
     return 1
   fi
-  echo "**********************************************************************************" >> "${VERSITY_LOG_FILE}.${TEST_ID}.$1"
+  local versitygw_pid="$1" log_name="$2"
+
+  echo "**********************************************************************************" >> "$log_name"
   if [ -f "${TEST_LOG_FILE}.${TEST_ID}" ]; then
-    cat "${VERSITY_LOG_FILE}.${TEST_ID}.$1" >> "${TEST_LOG_FILE}.${TEST_ID}"
+    cat "$log_name" >> "${TEST_LOG_FILE}.${TEST_ID}"
   elif [ "$BATS_TEST_COMPLETED" != "1" ]; then
-    cat "${VERSITY_LOG_FILE}.${TEST_ID}.$1"
+    cat "$log_name"
   fi
-  if ! response=$(rm "${VERSITY_LOG_FILE}.${TEST_ID}.$1" 2>&1); then
-    log 3 "error deleting log file '${VERSITY_LOG_FILE}.${TEST_ID}.$1': $response"
+  if ! response=$(rm "$log_name" 2>&1); then
+    log 3 "error deleting log file '$log_name': $response"
+    return 1
   fi
   return 0
 }

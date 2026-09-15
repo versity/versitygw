@@ -26,8 +26,8 @@ setup_env() {
 
   source_config_file
 
-  if ! setup_test_log_file; then
-    echo "error creating test log file" >&2
+  if ! setup_test_logging; then
+    echo "error setting up test logging" >&2
     return 1
   fi
 
@@ -114,7 +114,7 @@ setup_clients() {
 }
 
 teardown_common() {
-  local response proc_status_one proc_status_two
+  local response proc_status_one proc_status_two teardown_status=0
 
   response=$(check_versity_process_status)
   read -r proc_status_one proc_status_two <<< "$response"
@@ -124,29 +124,34 @@ teardown_common() {
   if [ "$proc_status_one" == "none" ] || [[ ( "$proc_status_one" == "running" ) && (( "$proc_status_two" == "none") || ( "$proc_status_two" == "running")) ]]; then
     if ! bucket_and_user_cleanup; then
       log 3 "bucket and user cleanup not properly done"
+      teardown_status=1
     fi
   fi
   if [ "$proc_status_one" == "running" ]; then
     if ! stop_versity_process "$VERSITYGW_PID_1"; then
       log 3 "unable to properly stop versitygw process"
+      teardown_status=1
     fi
   fi
   if [ "$proc_status_two" == "running" ]; then
     if ! stop_versity_process "$VERSITYGW_PID_2"; then
       log 3 "unable to properly stop second versity process"
+      teardown_status=1
     fi
   fi
   if ! remove_test_file_folder_if_desired; then
     log 3 "test file folder cleanup error"
+    teardown_status=1
   fi
   # for docker failures
   if [ "${BATS_TEST_STATUS:-0}" -ne 0 ] && [ -n "$TEST_LOG_FILE" ]; then
-    printf 'test log file: %s\n' "${TEST_LOG_FILE}.${TEST_ID}" >&2
+    log 2 "test log file location: '${TEST_LOG_FILE}.${TEST_ID}'"
   fi
   if ! teardown_logs; then
     log 3 "log file teardown error"
+    teardown_status=1
   fi
-  return 0
+  return $teardown_status
 }
 
 static_user_v1_cleanup() {
