@@ -351,12 +351,9 @@ func (s *ScoutFS) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 		return nil, s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
 
-	_, err := os.Stat(s.BucketPath(bucket))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetBucketErr(s3err.ErrNoSuchBucket, *input.Bucket)
-	}
+	err := s.DoesBucketExist(bucket)
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return nil, err
 	}
 
 	objPath := s.ObjectPath(bucket, object)
@@ -446,12 +443,9 @@ func (s *ScoutFS) RestoreObject(_ context.Context, input *s3.RestoreObjectInput)
 		return s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
 
-	_, err := os.Stat(s.BucketPath(bucket))
-	if errors.Is(err, fs.ErrNotExist) {
-		return s3err.GetBucketErr(s3err.ErrNoSuchBucket, *input.Bucket)
-	}
+	err := s.DoesBucketExist(bucket)
 	if err != nil {
-		return fmt.Errorf("stat bucket: %w", err)
+		return err
 	}
 
 	err = setStaging(s.ObjectPath(bucket, object))
