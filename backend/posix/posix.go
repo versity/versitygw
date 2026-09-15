@@ -4777,7 +4777,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			}
 
 			// Mark the object as a delete marker
-			err = p.meta.StorobjectRetentionKeyeAttribute(nil, bucket, object, deleteMarkerKey, []byte{})
+			err = p.meta.StoreAttribute(nil, bucket, object, deleteMarkerKey, []byte{})
 			if err != nil {
 				return nil, fmt.Errorf("set delete marker: %w", err)
 			}
