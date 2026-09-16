@@ -75,6 +75,13 @@ type Config struct {
 	// control over the admin endpoint with optionally separate TLS certs.
 	AdminPorts []string
 
+	// AdminPathPrefix mounts the admin API under a URL path prefix (e.g.
+	// "/admin"), on AdminPorts or, when those are empty, on the S3 endpoints.
+	// Must be "/" followed by a single segment of unreserved characters
+	// (letters, digits, '-', '.', '_', '~'), other than "." or "..". Leave
+	// empty to serve from the root path.
+	AdminPathPrefix string
+
 	// AdminOptions carries extra standalone-admin-server options from
 	// the embedding binary (e.g. additional admin routes). Only used
 	// when AdminPorts is non-empty.
@@ -465,7 +472,8 @@ type Config struct {
 	WebuiGateways []string
 	// WebuiAdminGateways overrides the admin gateway URLs provided to the
 	// WebUI. By default the gateway auto-detects URLs from AdminPorts, or
-	// reuses WebuiGateways when AdminPorts is empty.
+	// reuses WebuiGateways when AdminPorts is empty, appending
+	// AdminPathPrefix in both cases.
 	WebuiAdminGateways []string
 	// WebuiIAMGateways are the standalone IAM service (versitygw iam) URLs
 	// offered to the WebUI's optional IAM endpoint field. There is no
@@ -631,6 +639,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	if err != nil {
 		return err
 	}
+	if err := validateAdminPathPrefix(cfg.AdminPathPrefix); err != nil {
+		return err
+	}
 
 	if cfg.MaxConnections < 1 {
 		return fmt.Errorf("max-connections must be positive")
@@ -691,6 +702,10 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 
 	if err := validateWebUIPathPrefix("WebuiS3Prefix", cfg.WebuiS3Prefix); err != nil {
 		return err
+	}
+	// The WebUI mount would shadow admin routes sharing its prefix.
+	if len(cfg.AdminPorts) == 0 && cfg.AdminPathPrefix != "" && strings.EqualFold(cfg.AdminPathPrefix, cfg.WebuiS3Prefix) {
+		return fmt.Errorf("AdminPathPrefix %q must differ from WebuiS3Prefix when the admin API is served on the S3 port", cfg.AdminPathPrefix)
 	}
 
 	// Pre-validate gateway URL lists once; both the WebuiS3Prefix block and the
@@ -755,6 +770,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	}
 	if len(cfg.AdminPorts) == 0 {
 		opts = append(opts, s3api.WithAdminServer())
+		if cfg.AdminPathPrefix != "" {
+			opts = append(opts, s3api.WithAdminServerPathPrefix(cfg.AdminPathPrefix))
+		}
 	}
 	if cfg.Quiet {
 		opts = append(opts, s3api.WithQuiet())
@@ -868,6 +886,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			}
 			sortGatewayURLs(s3WebAdminGateways)
 		}
+		if len(validatedWebuiAdminGateways) == 0 {
+			s3WebAdminGateways = appendPathPrefix(s3WebAdminGateways, cfg.AdminPathPrefix)
+		}
 
 		opts = append(opts, s3api.WithWebUI(cfg.WebuiS3Prefix, &webui.ServerConfig{
 			Gateways:      s3WebGateways,
@@ -937,6 +958,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		}
 		if cfg.SocketPerm != "" {
 			admOpts = append(admOpts, s3api.WithAdminSocketPerm(parsedSocketPerm))
+		}
+		if cfg.AdminPathPrefix != "" {
+			admOpts = append(admOpts, s3api.WithAdminPathPrefix(cfg.AdminPathPrefix))
 		}
 
 		admSrv = s3api.NewAdminServer(be, middlewares.RootUserConfig{Access: cfg.RootUserAccess, Secret: cfg.RootUserSecret}, cfg.Region, iam, loggers.AdminLogger, srv.Router.Ctrl, admOpts...)
@@ -1019,6 +1043,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 				adminGateways = append(adminGateways, urls...)
 			}
 			sortGatewayURLs(adminGateways)
+		}
+		if len(validatedWebuiAdminGateways) == 0 {
+			adminGateways = appendPathPrefix(adminGateways, cfg.AdminPathPrefix)
 		}
 
 		if cfg.Quiet {
@@ -1385,7 +1412,7 @@ func (cfg Config) printBanner() {
 		centerText(""),
 	}
 
-	if len(allAdmInterfaces) > 0 {
+	if len(cfg.AdminPorts) > 0 || cfg.AdminPathPrefix != "" {
 		lines = append(lines, leftText("S3 service listening on:"))
 	} else {
 		lines = append(lines, leftText("Admin/S3 service listening on:"))
@@ -1395,7 +1422,7 @@ func (cfg Config) printBanner() {
 		lines = append(lines, leftText("  "+u))
 	}
 
-	if len(allAdmInterfaces) > 0 {
+	if len(cfg.AdminPorts) > 0 {
 		lines = append(lines, centerText(""), leftText("Admin service listening on:"))
 		for _, addrPort := range allAdmInterfaces {
 			if netutil.IsUnixSocketPath(addrPort) {
@@ -1410,6 +1437,14 @@ func (cfg Config) printBanner() {
 			u := fmt.Sprintf("http://%s", hostPort)
 			if admSSL {
 				u = fmt.Sprintf("https://%s", hostPort)
+			}
+			lines = append(lines, leftText("  "+u+cfg.AdminPathPrefix))
+		}
+	} else if cfg.AdminPathPrefix != "" {
+		lines = append(lines, centerText(""), leftText("Admin service listening on:"))
+		for _, u := range urls {
+			if !strings.HasPrefix(u, "unix:") {
+				u += cfg.AdminPathPrefix
 			}
 			lines = append(lines, leftText("  "+u))
 		}
@@ -1721,6 +1756,39 @@ func validateWebUIPathPrefix(option, prefix string) error {
 		return fmt.Errorf("invalid %v %q: backslashes are not allowed", option, prefix)
 	}
 	return nil
+}
+
+// validateAdminPathPrefix accepts only unreserved characters, since SigV4
+// clients escape anything else in the signed path.
+func validateAdminPathPrefix(prefix string) error {
+	if prefix == "" {
+		return nil
+	}
+	seg, ok := strings.CutPrefix(prefix, "/")
+	valid := ok && seg != "" && seg != "." && seg != ".."
+	for _, c := range seg {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("-._~", c)) {
+			valid = false
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("invalid AdminPathPrefix %q: must be '/' followed by a single segment of letters, digits, '-', '.', '_' or '~', other than '.' or '..' (example: '/admin')", prefix)
+	}
+	return nil
+}
+
+// appendPathPrefix returns urls with prefix appended to each, leaving urls
+// unmodified.
+func appendPathPrefix(urls []string, prefix string) []string {
+	if prefix == "" {
+		return urls
+	}
+	out := make([]string, 0, len(urls))
+	for _, u := range urls {
+		out = append(out, strings.TrimRight(u, "/")+prefix)
+	}
+	return out
 }
 
 func sortGatewayURLs(urls []string) {

@@ -7,6 +7,13 @@
 {{- $iamStandalone := .Values.iam.standalone | default dict -}}
 {{- $iamStandaloneEndpoint := $iamStandalone.endpoint | default "" -}}
 {{- $iamStandaloneCredentials := $iamStandalone.credentials | default dict -}}
+{{- $internalIAM := and .Values.iam.enabled (eq .Values.iam.type "internal") -}}
+{{- $iamDir := clean (.Values.iam.dir | default "/mnt/iam") -}}
+{{- $iamPersistence := .Values.iam.persistence | default dict -}}
+{{- $sidecarDir := .Values.gateway.backend.sidecarDir -}}
+{{- $versioningDir := .Values.gateway.backend.versioningDir -}}
+{{- $adminPathPrefix := .Values.admin.pathPrefix | default "" -}}
+{{- $webuiS3Prefix := .Values.webui.s3Prefix | default "" -}}
 {{- /* Safety check: multiple replicas with local state must have persistence enabled */}}
 {{- if and (gt (int .Values.replicaCount) 1) .Values.iam.enabled (eq .Values.iam.type "internal") }}
   {{- fail "replicaCount > 1 cannot use iam.type=internal because the file store does not coordinate concurrent writers; use standalone or another external IAM backend" }}
@@ -31,8 +38,43 @@
 {{- if and .Values.gateway.backend.versioningDir (not (or (eq .Values.gateway.backend.type "posix") (eq .Values.gateway.backend.type "scoutfs"))) }}
   {{- fail "gateway.backend.versioningDir is only supported with the posix and scoutfs backends" }}
 {{- end }}
+{{- /* Bucket deletion removes <dir>/<bucket> in these directories, so nesting one in another loses data */}}
+{{- if and $sidecarDir (include "versitygw.pathsOverlap" (list $sidecarDir "/mnt/data")) }}
+  {{- fail "gateway.backend.sidecarDir must not overlap the backend data mount /mnt/data" }}
+{{- end }}
+{{- if and $versioningDir (include "versitygw.pathsOverlap" (list $versioningDir "/mnt/data")) }}
+  {{- fail "gateway.backend.versioningDir must not overlap the backend data mount /mnt/data" }}
+{{- end }}
+{{- if and $sidecarDir $versioningDir (include "versitygw.pathsOverlap" (list $sidecarDir $versioningDir)) }}
+  {{- fail "gateway.backend.sidecarDir and gateway.backend.versioningDir must not overlap" }}
+{{- end }}
 {{- if not (or (eq $gatewayLogLevel "silent") (eq $gatewayLogLevel "debug") (eq $gatewayLogLevel "unsafe")) }}
   {{- fail "gateway.logLevel must be one of silent, debug, or unsafe" }}
+{{- end }}
+{{- if and $adminPathPrefix (or (not (regexMatch "^/[A-Za-z0-9._~-]+$" $adminPathPrefix)) (eq $adminPathPrefix "/.") (eq $adminPathPrefix "/..")) }}
+  {{- fail "admin.pathPrefix must be \"/\" followed by a single segment of letters, digits, '-', '.', '_' or '~', other than '.' or '..' (e.g. /admin)" }}
+{{- end }}
+{{- range $key, $prefix := dict "webui.pathPrefix" .Values.webui.pathPrefix "webui.s3Prefix" $webuiS3Prefix }}
+{{- if and $prefix (not (regexMatch "^/[^/?#\\\\[:space:]]+$" $prefix)) }}
+  {{- fail (printf "%s must be \"/\" followed by a single path segment (e.g. /ui)" $key) }}
+{{- end }}
+{{- end }}
+{{- if and (not .Values.admin.enabled) $adminPathPrefix (eq (lower $adminPathPrefix) (lower $webuiS3Prefix)) }}
+  {{- fail "admin.pathPrefix must differ from webui.s3Prefix when the admin API is served on the S3 port (admin.enabled=false)" }}
+{{- end }}
+{{- if $internalIAM }}
+{{- $iamOverlap := not (isAbs $iamDir) }}
+{{- range compact (list "/mnt/data" $sidecarDir $versioningDir) }}
+{{- if include "versitygw.pathsOverlap" (list $iamDir .) }}
+{{- $iamOverlap = true }}
+{{- end }}
+{{- end }}
+{{- if $iamOverlap }}
+  {{- fail "iam.dir must be an absolute path that does not overlap /mnt/data, gateway.backend.sidecarDir or gateway.backend.versioningDir" }}
+{{- end }}
+{{- end }}
+{{- if and $internalIAM $iamPersistence.enabled (not (dig "create" true $iamPersistence)) (not $iamPersistence.claimName) }}
+  {{- fail "iam.persistence.claimName is required when iam.persistence.create is false" }}
 {{- end }}
 {{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (not .Values.iam.standalone.endpoint) (not $iamServerEnabled) }}
   {{- fail "iam.type=standalone requires either iam.standalone.endpoint or iamServer.enabled=true" }}
@@ -179,6 +221,10 @@ spec:
             - name: VGW_ADMIN_MAX_REQUESTS
               value: {{ .Values.admin.maxRequests | quote }}
             {{- end }}
+            {{- if $adminPathPrefix }}
+            - name: VGW_ADMIN_PATH_PREFIX
+              value: {{ $adminPathPrefix | quote }}
+            {{- end }}
             # WebUI
             {{- if .Values.webui.enabled }}
             - name: VGW_WEBUI_PORT
@@ -187,6 +233,16 @@ spec:
             - name: VGW_WEBUI_NO_TLS
               value: "true"
             {{- end }}
+            {{- if .Values.webui.pathPrefix }}
+            - name: VGW_WEBUI_PATH_PREFIX
+              value: {{ .Values.webui.pathPrefix | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if $webuiS3Prefix }}
+            - name: VGW_WEBUI_S3_PREFIX
+              value: {{ $webuiS3Prefix | quote }}
+            {{- end }}
+            {{- if or .Values.webui.enabled $webuiS3Prefix }}
             {{- if .Values.webui.apiGateways }}
             - name: VGW_WEBUI_GATEWAYS
               value: {{ .Values.webui.apiGateways | join "," | quote }}
@@ -215,7 +271,7 @@ spec:
             # IAM settings
             {{- if eq .Values.iam.type "internal" }}
             - name: VGW_IAM_DIR
-              value: "/mnt/iam"
+              value: {{ $iamDir | quote }}
             {{- else if eq .Values.iam.type "standalone" }}
             - name: VGW_IAM_STANDALONE_ENDPOINT
               value: {{ include "versitygw.standaloneIAMEndpoint" . | quote }}
@@ -326,7 +382,16 @@ spec:
               subPath: versioning
               readOnly: false
             {{- end }}
-            {{- if or (not .Values.iam.enabled) (eq .Values.iam.type "internal") }}
+            {{- if and $internalIAM $iamPersistence.enabled }}
+            - name: iam
+              mountPath: {{ $iamDir | quote }}
+              readOnly: false
+            {{- else if $internalIAM }}
+            - name: data
+              mountPath: {{ $iamDir | quote }}
+              subPath: iam
+              readOnly: false
+            {{- else if not .Values.iam.enabled }}
             - name: data
               mountPath: /mnt/iam
               subPath: iam
@@ -356,6 +421,11 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- if and $internalIAM $iamPersistence.enabled }}
+        - name: iam
+          persistentVolumeClaim:
+            claimName: {{ include "versitygw.iamPvcName" . }}
+        {{- end }}
         {{- if .Values.tls.enabled }}
         - name: certificates
           secret:

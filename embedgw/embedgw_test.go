@@ -15,7 +15,12 @@
 package embedgw
 
 import (
+	"context"
+	"slices"
+	"strings"
 	"testing"
+
+	"github.com/versity/versitygw/backend"
 )
 
 func TestValidatePortConflicts(t *testing.T) {
@@ -153,6 +158,101 @@ func TestValidatePortConflicts(t *testing.T) {
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("%s: expected no error but got: %v", tt.description, err)
+			}
+		})
+	}
+}
+
+func TestValidateAdminPathPrefix(t *testing.T) {
+	tests := []struct {
+		prefix  string
+		wantErr bool
+	}{
+		{prefix: "", wantErr: false},
+		{prefix: "/admin", wantErr: false},
+		{prefix: "/vgw-admin_1.0~x", wantErr: false},
+		{prefix: "admin", wantErr: true},
+		{prefix: "/", wantErr: true},
+		{prefix: "/admin/", wantErr: true},
+		{prefix: "/api/admin", wantErr: true},
+		{prefix: "/.", wantErr: true},
+		{prefix: "/..", wantErr: true},
+		{prefix: "/ad min", wantErr: true},
+		{prefix: "/:bucket", wantErr: true},
+		{prefix: "/admin*", wantErr: true},
+		{prefix: "/admin%20", wantErr: true},
+		{prefix: "/admin?x", wantErr: true},
+		{prefix: " /admin", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.prefix, func(t *testing.T) {
+			err := validateAdminPathPrefix(tt.prefix)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateAdminPathPrefix(%q) = %v, wantErr %v", tt.prefix, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestAppendPathPrefix(t *testing.T) {
+	urls := []string{"http://127.0.0.1:7070", "https://s3.example.com/"}
+
+	got := appendPathPrefix(urls, "/admin")
+	want := []string{"http://127.0.0.1:7070/admin", "https://s3.example.com/admin"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("appendPathPrefix = %v, want %v", got, want)
+	}
+	if urls[0] != "http://127.0.0.1:7070" {
+		t.Fatalf("appendPathPrefix modified its input: %v", urls)
+	}
+	if got := appendPathPrefix(urls, ""); !slices.Equal(got, urls) {
+		t.Fatalf("appendPathPrefix without prefix = %v, want %v", got, urls)
+	}
+}
+
+func TestRunVersityGWValidatesAdminPathPrefix(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr string
+	}{
+		{
+			name: "invalid prefix",
+			mutate: func(cfg *Config) {
+				cfg.AdminPathPrefix = "/api/admin"
+			},
+			wantErr: "invalid AdminPathPrefix",
+		},
+		{
+			name: "same as webui s3 prefix",
+			mutate: func(cfg *Config) {
+				cfg.AdminPathPrefix = "/ui"
+				cfg.WebuiS3Prefix = "/UI"
+			},
+			wantErr: "must differ from WebuiS3Prefix",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{
+				RootUserAccess:    "root",
+				RootUserSecret:    "secret",
+				Ports:             []string{"127.0.0.1:0"},
+				MaxConnections:    1,
+				MaxRequests:       1,
+				MultipartMaxParts: 1,
+				Quiet:             true,
+			}
+			tt.mutate(&cfg)
+
+			err := RunVersityGW(context.Background(), backend.BackendUnsupported{}, &cfg)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %q, want substring %q", err, tt.wantErr)
 			}
 		})
 	}
