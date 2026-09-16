@@ -206,6 +206,66 @@ func TestStageGetPartDispatch(t *testing.T) {
 		t.Fatalf("plain GET Range = %v", gotRange)
 	}
 
+	// Part GET longer than the announced size with a declared
+	// content length is rejected.
+	be.getObject = func(ctx context.Context, in *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+		body := io.NopCloser(bytes.NewReader(make([]byte, 9)))
+		cl := int64(9)
+		return &s3.GetObjectOutput{Body: body, ContentLength: &cl}, nil
+	}
+	h.svc = &leaseService{fixedService: svc, buf: make([]byte, 8)}
+	inHandler(t, func(c fiber.Ctx) {
+		err = h.stageGet(c, "s4", "bkt", "obj", 0, 8,
+			&partTransfer{PartNumber: 3})
+	})
+	if err == nil {
+		t.Fatal("oversized part with declared length accepted")
+	}
+
+	// Part GET longer than the announced size without a content
+	// length is rejected by the probe read.
+	be.getObject = func(ctx context.Context, in *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+		body := io.NopCloser(bytes.NewReader(make([]byte, 9)))
+		return &s3.GetObjectOutput{Body: body}, nil
+	}
+	h.svc = &leaseService{fixedService: svc, buf: make([]byte, 8)}
+	inHandler(t, func(c fiber.Ctx) {
+		err = h.stageGet(c, "s5", "bkt", "obj", 0, 8,
+			&partTransfer{PartNumber: 3})
+	})
+	if err == nil {
+		t.Fatal("oversized part without declared length accepted")
+	}
+
+	// A transient zero-byte read before the extra byte is still
+	// detected as an overrun once the byte arrives.
+	be.getObject = func(ctx context.Context, in *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+		body := io.NopCloser(io.MultiReader(&zeroReader{}, bytes.NewReader(make([]byte, 1))))
+		return &s3.GetObjectOutput{Body: body}, nil
+	}
+	h.svc = &leaseService{fixedService: svc, buf: make([]byte, 8)}
+	inHandler(t, func(c fiber.Ctx) {
+		err = h.stageGet(c, "s6", "bkt", "obj", 0, 8,
+			&partTransfer{PartNumber: 3})
+	})
+	if err == nil {
+		t.Fatal("overrun after transient zero-byte read accepted")
+	}
+
+	// An exactly sized part with no content length passes the probe.
+	be.getObject = func(ctx context.Context, in *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+		body := io.NopCloser(bytes.NewReader(make([]byte, 8)))
+		return &s3.GetObjectOutput{Body: body}, nil
+	}
+	h.svc = &leaseService{fixedService: svc, buf: make([]byte, 8)}
+	inHandler(t, func(c fiber.Ctx) {
+		err = h.stageGet(c, "s7", "bkt", "obj", 0, 8,
+			&partTransfer{PartNumber: 3})
+	})
+	if err != nil {
+		t.Fatalf("exact part without declared length rejected: %v", err)
+	}
+
 	// Part GET with nonzero offset is rejected before the backend.
 	called := false
 	be.getObject = func(ctx context.Context, in *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
@@ -281,3 +341,17 @@ func TestCommitPutPartDispatch(t *testing.T) {
 type putObjectAlias = s3response.PutObjectOutput
 
 var _ = auth.Account{}
+
+// zeroReader returns (0, nil) once before delegating, mimicking a
+// transient zero-progress read allowed by the io.Reader contract.
+type zeroReader struct {
+	served bool
+}
+
+func (z *zeroReader) Read(p []byte) (int, error) {
+	if !z.served {
+		z.served = true
+		return 0, nil
+	}
+	return len(p), nil
+}
