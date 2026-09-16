@@ -427,15 +427,30 @@ func (h *Handler) stageGet(ctx fiber.Ctx, sessionID, bucket, key string,
 		return rerr
 	}
 	// A part read must stage the whole part: the announced size is
-	// the part's exact length, so a backend part longer than the
-	// buffer would be silently truncated (ReadFull stops at the
-	// buffer) and a shorter one fails the native staged-length
-	// equality. Read one extra byte to detect the overrun.
-	if part != nil && res.ContentLength != nil && *res.ContentLength >= 0 &&
-		uint64(*res.ContentLength) != size {
-		return fmt.Errorf(
-			"part length %d does not match the announced size %d",
-			*res.ContentLength, size)
+	// the part's exact length. A shorter backend part fails the
+	// native staged-length equality downstream. An oversized one is
+	// caught here: by the declared content length when the backend
+	// provides it, otherwise by reading one byte past the buffer
+	// (ReadFull stops at the buffer, so any byte there means the
+	// part would have been silently truncated). A normalized short
+	// read already established EOF, so the probe runs only after a
+	// completely filled buffer.
+	if part != nil {
+		if res.ContentLength != nil && *res.ContentLength >= 0 {
+			if uint64(*res.ContentLength) != size {
+				return fmt.Errorf(
+					"part length %d does not match the announced size %d",
+					*res.ContentLength, size)
+			}
+		} else {
+			var probe [1]byte
+			if n, perr := io.ReadFull(res.Body, probe[:]); n > 0 {
+				return fmt.Errorf(
+					"part exceeds the announced size %d", size)
+			} else if perr != nil && !errors.Is(perr, io.EOF) {
+				return perr
+			}
+		}
 	}
 	etag, version := "", ""
 	if res.ETag != nil {
