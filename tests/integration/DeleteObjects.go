@@ -24,6 +24,22 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
+func DeleteObjects_non_existing_bucket(s *S3Conf) error {
+	testName := "DeleteObjects_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		bckt := getBucketName()
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bckt,
+			Delete: &types.Delete{
+				Objects: []types.ObjectIdentifier{{Key: getPtr("obj1")}, {Key: getPtr("obj2")}},
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket))
+	})
+}
+
 func DeleteObjects_empty_input(s *S3Conf) error {
 	testName := "DeleteObjects_empty_input"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
