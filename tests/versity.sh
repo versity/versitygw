@@ -20,27 +20,32 @@ start_versity_process() {
   if ! check_param_count_gt "versity app index, command array" 2 $#; then
     exit 1
   fi
-  local response process_id
+  local versity_app_index="$1" command_array=("${@:2}")
+  local log_file_name response process_id
 
-  if ! response=$(build_run_and_log_command "$1" "${@:2}" 2>&1); then
+  log_file_name="${TEST_FILE_FOLDER}/versity-${TEST_ID}-${versity_app_index}-$(uuidgen)"
+  printf -v "VERSITY_LOG_FILE_${versity_app_index}" '%s' "$log_file_name"
+  export VERSITY_LOG_FILE_"${versity_app_index}"
+
+  if ! response=$(build_run_and_log_command "$versity_app_index" "$log_file_name" "${command_array[@]}" 2>&1); then
     log 2 "error building, logging, and/or running 'versitygw' executable: $response"
     return 1
   fi
   process_id="$response"
 
-  printf -v "VERSITYGW_PID_$1" '%s' "$process_id"
-  log 4 "versitygw PID for $1:  $process_id"
-  export VERSITYGW_PID_"$1"
+  printf -v "VERSITYGW_PID_${versity_app_index}" '%s' "$process_id"
+  log 4 "versitygw PID for ${versity_app_index}:  $process_id"
+  export VERSITYGW_PID_"${versity_app_index}"
 
   return 0
 }
 
 build_run_and_log_command() {
-  if ! check_param_count_gt "versitygw process number (1 or 2), command array" 2 $#; then
+  if ! check_param_count_gt "versitygw process number (1 or 2), log file, command array" 3 $#; then
     return 1
   fi
-  local process_number="$1" command_array=("${@:2}")
-  local response full_command versitygw_log_file_name="" pid check_result
+  local process_number="$1" log_file="$2" command_array=("${@:3}")
+  local response full_command pid check_result
 
   IFS=' ' read -r -a full_command <<< "${command_array[@]}"
   log 5 "versity command: ${full_command[*]}"
@@ -52,16 +57,16 @@ build_run_and_log_command() {
     # shellcheck disable=SC2154
     echo "$response" >> "$COMMAND_LOG"
   fi
-  if [ -n "$VERSITY_LOG_FILE" ]; then
-    versitygw_log_file_name="$VERSITY_LOG_FILE.$TEST_ID".$process_number
-    printf '****************************** VERSITYGW %s LOG \***********************************\n' "$1" >> "$versitygw_log_file_name"
-    "${full_command[@]}" >> "$versitygw_log_file_name" 2>&1 &
-  else
-    "${full_command[@]}" >/dev/null 2>&1 &
-  fi
+  #if [ -n "$VERSITY_LOG_FILE" ]; then
+    #versitygw_log_file_name="$VERSITY_LOG_FILE.$TEST_ID".$process_number
+  printf '****************************** VERSITYGW %s LOG \***********************************\n' "$process_number" >> "$log_file"
+  "${full_command[@]}" >> "$log_file" 2>&1 &
+  #else
+  #  "${full_command[@]}" >/dev/null 2>&1 &
+  #fi
 
   pid="$!"
-  if ! verify_process_started "$process_number" "$pid" "$versitygw_log_file_name"; then
+  if ! verify_process_started "$process_number" "$pid" "$log_file"; then
     return 1
   fi
 
