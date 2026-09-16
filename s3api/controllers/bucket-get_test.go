@@ -799,9 +799,6 @@ func TestS3ApiController_GetObjectLockConfiguration(t *testing.T) {
 				response: &Response{
 					Data: &types.ObjectLockConfiguration{
 						ObjectLockEnabled: types.ObjectLockEnabledEnabled,
-						Rule: &types.ObjectLockRule{
-							DefaultRetention: nil,
-						},
 					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",

@@ -770,6 +770,7 @@ func TestPutObjectLockConfiguration(ts *TestState) {
 func TestGetObjectLockConfiguration(ts *TestState) {
 	ts.Run(GetObjectLockConfiguration_non_existing_bucket)
 	ts.Run(GetObjectLockConfiguration_unset_config)
+	ts.Run(GetObjectLockConfiguration_no_default_retention)
 	ts.Run(GetObjectLockConfiguration_success)
 }
 
@@ -3293,6 +3294,7 @@ func GetIntTests() IntTests {
 		"PutObjectLockConfiguration_success":                                               PutObjectLockConfiguration_success,
 		"GetObjectLockConfiguration_non_existing_bucket":                                   GetObjectLockConfiguration_non_existing_bucket,
 		"GetObjectLockConfiguration_unset_config":                                          GetObjectLockConfiguration_unset_config,
+		"GetObjectLockConfiguration_no_default_retention":                                  GetObjectLockConfiguration_no_default_retention,
 		"GetObjectLockConfiguration_success":                                               GetObjectLockConfiguration_success,
 		"PutObjectRetention_non_existing_bucket":                                           PutObjectRetention_non_existing_bucket,
 		"PutObjectRetention_non_existing_object":                                           PutObjectRetention_non_existing_object,
