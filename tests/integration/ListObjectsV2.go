@@ -483,8 +483,13 @@ func ListObjectsV2_list_all_objs(s *S3Conf) error {
 			return fmt.Errorf("expected the StartAfter to be nil, instead got %v",
 				*out.StartAfter)
 		}
-		if out.ContinuationToken != nil {
-			return fmt.Errorf("expected the ContinuationToken to be nil, instead got %v",
+		// S3 echoes the request continuation token back, so the response
+		// carries the element with an empty value rather than omitting it
+		if out.ContinuationToken == nil {
+			return fmt.Errorf("expected the ContinuationToken to be an empty string, instead got nil")
+		}
+		if *out.ContinuationToken != "" {
+			return fmt.Errorf("expected the ContinuationToken to be an empty string, instead got %v",
 				*out.ContinuationToken)
 		}
 		if out.NextContinuationToken != nil {
