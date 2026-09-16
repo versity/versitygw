@@ -43,6 +43,35 @@ export RUN_USERS=true
   assert_success
 }
 
+# tags: curl, PutObject, content-encoding
+@test "REST - PutObject - aws-chunked kept when the payload is not chunked" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run put_object_rest_with_content_encoding "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "aws-chunked"
+  assert_success
+
+  run check_content_encoding "$bucket_name" "$test_file" "aws-chunked"
+  assert_success
+}
+
+# tags: curl, PutObject, content-encoding, x-amz-content-sha256, invalid-header
+@test "REST - PutObject - aws-chunked with UNSIGNED-PAYLOAD rejected" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run put_object_rest_unsigned_payload_with_aws_chunked "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
+  assert_success
+}
+
 # tags: curl, PutObject, Expires, invalid-header
 @test "REST - PutObject - invalid 'Expires' parameter" {
   run get_bucket_name "$BUCKET_ONE_NAME"

@@ -328,28 +328,6 @@ func TestS3ApiController_CreateMultipartUpload(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "strips aws-chunked content encoding",
-			input: testInput{
-				locals: defaultLocals,
-				beRes:  s3response.InitiateMultipartUploadResult{},
-				headers: map[string]string{
-					"Content-Encoding": "aws-chunked,gzip",
-				},
-			},
-			output: testOutput{
-				response: &Response{
-					Data: s3response.InitiateMultipartUploadResult{},
-					Headers: map[string]*string{
-						"x-amz-checksum-algorithm": nil,
-						"x-amz-checksum-type":      nil,
-					},
-					MetaOpts: &MetaOptions{
-						BucketOwner: "root",
-					},
-				},
-			},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -357,14 +335,6 @@ func TestS3ApiController_CreateMultipartUpload(t *testing.T) {
 				CreateMultipartUploadFunc: func(contextMoqParam context.Context, createMultipartUploadInput s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 					if tt.name == "successful response" && createMultipartUploadInput.StorageClass != types.StorageClassGlacier {
 						t.Fatalf("expected storage class %q, got %q", types.StorageClassGlacier, createMultipartUploadInput.StorageClass)
-					}
-					if tt.name == "strips aws-chunked content encoding" {
-						if createMultipartUploadInput.ContentEncoding == nil {
-							t.Fatal("expected content encoding to be set")
-						}
-						if *createMultipartUploadInput.ContentEncoding != "gzip" {
-							t.Fatalf("expected content encoding %q, got %q", "gzip", *createMultipartUploadInput.ContentEncoding)
-						}
 					}
 					return tt.input.beRes.(s3response.InitiateMultipartUploadResult), tt.input.beErr
 				},

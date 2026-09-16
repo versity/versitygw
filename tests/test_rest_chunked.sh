@@ -21,6 +21,7 @@ source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/head_object/head_object_rest.sh
 source ./tests/drivers/get_object_lock_config/get_object_lock_config_rest.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 
@@ -101,6 +102,29 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
   assert_success
 
   run check_file_integrity "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  assert_success
+}
+
+# tags: openssl,chunked,PutObject,content-encoding
+@test "REST - chunked upload, aws-chunked not stored as Content-Encoding" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run create_file_single_char "$test_file" 8192 'a'
+  assert_success
+
+  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
+  assert_success
+
+  run check_content_encoding "$bucket_name" "$test_file" ""
   assert_success
 }
 

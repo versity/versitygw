@@ -95,6 +95,29 @@ verify_checksum_doesnt_exist() {
   fi
 }
 
+parse_content_encoding() {
+  if ! check_param_count_v2 "file" 1 $#; then
+    return 1
+  fi
+  content_encoding=$(grep -i "^content-encoding:" "$1" | cut -d' ' -f2- | sed 's/\r$//')
+  echo "$content_encoding"
+}
+
+check_content_encoding() {
+  if ! check_param_count_v2 "bucket, key, expected content encoding" 3 $#; then
+    return 1
+  fi
+  if ! content_encoding=$(head_object_rest_expect_success_callback "$1" "$2" "" "parse_content_encoding" 2>&1); then
+    log 2 "error calling HeadObject command: $content_encoding"
+    return 1
+  fi
+  if [ "$content_encoding" != "$3" ]; then
+    log 2 "content encoding mismatch (expected: '$3', actual: '$content_encoding')"
+    return 1
+  fi
+  return 0
+}
+
 parse_content_length() {
   if ! check_param_count_v2 "file" 1 $#; then
     return 1
