@@ -117,3 +117,79 @@ func GetObjectLockConfiguration_success(s *S3Conf) error {
 		return nil
 	}, withLock())
 }
+
+func GetObjectLockConfiguration_no_default_retention(s *S3Conf) error {
+	testName := "GetObjectLockConfiguration_no_default_retention"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.GetObjectLockConfiguration(ctx, &s3.GetObjectLockConfigurationInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if resp.ObjectLockConfiguration == nil {
+			return fmt.Errorf("got nil object lock configuration")
+		}
+		if resp.ObjectLockConfiguration.ObjectLockEnabled != types.ObjectLockEnabledEnabled {
+			return fmt.Errorf("expected lock status to be %v, instead got %v",
+				types.ObjectLockEnabledEnabled, resp.ObjectLockConfiguration.ObjectLockEnabled)
+		}
+		if resp.ObjectLockConfiguration.Rule != nil {
+			return fmt.Errorf("expected nil object lock rule, instead got %+v",
+				*resp.ObjectLockConfiguration.Rule)
+		}
+
+		// A default retention must still be reported as a rule, so a response
+		// that omits the rule unconditionally cannot pass this case.
+		var days int32 = 20
+		config := types.ObjectLockConfiguration{
+			ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+			Rule: &types.ObjectLockRule{
+				DefaultRetention: &types.DefaultRetention{
+					Mode: types.ObjectLockRetentionModeCompliance,
+					Days: &days,
+				},
+			},
+		}
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket:                  &bucket,
+			ObjectLockConfiguration: &config,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err = s3client.GetObjectLockConfiguration(ctx, &s3.GetObjectLockConfigurationInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if resp.ObjectLockConfiguration == nil {
+			return fmt.Errorf("got nil object lock configuration")
+		}
+		if resp.ObjectLockConfiguration.Rule == nil {
+			return fmt.Errorf("got nil object lock rule for a configured default retention")
+		}
+		if resp.ObjectLockConfiguration.Rule.DefaultRetention == nil {
+			return fmt.Errorf("got nil object lock default retention")
+		}
+		if resp.ObjectLockConfiguration.Rule.DefaultRetention.Days == nil {
+			return fmt.Errorf("expected lock config days to be not nil")
+		}
+		if *resp.ObjectLockConfiguration.Rule.DefaultRetention.Days != days {
+			return fmt.Errorf("expected lock config days to be %v, instead got %v",
+				days, *resp.ObjectLockConfiguration.Rule.DefaultRetention.Days)
+		}
+
+		return nil
+	}, withLock())
+}

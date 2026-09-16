@@ -17,6 +17,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"testing"
 	"time"
 
@@ -378,4 +379,46 @@ func TestVerifyBypassGovernancePermission_ArnPrincipals(t *testing.T) {
 		assert.Contains(t, apiErr.Description, rootArn)
 		assert.Contains(t, apiErr.Description, "with an explicit deny in a resource-based policy")
 	})
+}
+
+// TestParseBucketLockConfigurationOutput covers the object lock configuration
+// reported to clients. A bucket with object lock enabled and no default
+// retention must omit the <Rule> element, the way AWS S3 does: an empty
+// <Rule></Rule> is accepted by the XML parser but leaves AWS SDK v2 clients
+// (the Java SDK among them) with nothing to read the rule from.
+func TestParseBucketLockConfigurationOutput(t *testing.T) {
+	days := int32(30)
+
+	tests := []struct {
+		name       string
+		config     string
+		wantRule   bool
+		wantMarker string
+	}{
+		{name: "no default retention", config: `{"Enabled":true}`, wantMarker: "<ObjectLockEnabled>Enabled</ObjectLockEnabled>"},
+		{name: "default retention", config: `{"Enabled":true,"DefaultRetention":{"Mode":"GOVERNANCE","Days":30}}`, wantRule: true, wantMarker: "<Days>30</Days>"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := ParseBucketLockConfigurationOutput([]byte(tt.config))
+			assert.NoError(t, err)
+
+			if !tt.wantRule {
+				assert.Nil(t, out.Rule)
+			} else {
+				assert.NotNil(t, out.Rule)
+				assert.Equal(t, &days, out.Rule.DefaultRetention.Days)
+			}
+
+			data, err := xml.Marshal(out)
+			assert.NoError(t, err)
+			assert.Contains(t, string(data), tt.wantMarker)
+			if tt.wantRule {
+				assert.Contains(t, string(data), "<Rule>")
+			} else {
+				assert.NotContains(t, string(data), "<Rule>")
+			}
+		})
+	}
 }
