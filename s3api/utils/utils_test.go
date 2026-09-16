@@ -20,6 +20,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"math/rand"
+	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
@@ -1516,29 +1517,64 @@ func TestValidateCopySource(t *testing.T) {
 	}
 }
 
-func TestStripAwsChunkedEncoding(t *testing.T) {
+func TestHasAwsChunkedEncoding(t *testing.T) {
 	tests := []struct {
 		name            string
 		contentEncoding string
-		want            string
+		want            bool
 	}{
-		{"empty", "", ""},
-		{"only aws-chunked", "aws-chunked", ""},
-		{"only aws-chunked, uppercase", "AWS-CHUNKED", ""},
-		{"only aws-chunked, padded", "  aws-chunked  ", ""},
-		{"no aws-chunked", "gzip", "gzip"},
-		{"other codings kept in order", "deflate,gzip", "deflate,gzip"},
-		{"aws-chunked first", "aws-chunked,gzip", "gzip"},
-		{"aws-chunked last", "gzip,aws-chunked", "gzip"},
-		{"aws-chunked in the middle", "deflate,aws-chunked,gzip", "deflate,gzip"},
-		{"spaces around codings", "aws-chunked, gzip", "gzip"},
-		{"repeated aws-chunked", "aws-chunked,aws-chunked", ""},
-		{"empty coding dropped", "gzip,,aws-chunked", "gzip"},
-		{"coding containing the token is kept", "aws-chunked-custom", "aws-chunked-custom"},
+		{"empty", "", false},
+		{"only aws-chunked", "aws-chunked", true},
+		{"uppercase", "AWS-CHUNKED", true},
+		{"padded", "  aws-chunked  ", true},
+		{"alongside another coding", "aws-chunked, gzip", true},
+		{"other coding only", "gzip", false},
+		{"token is a prefix of another coding", "aws-chunked-custom", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, StripAwsChunkedEncoding(tt.contentEncoding))
+			assert.Equal(t, tt.want, HasAwsChunkedEncoding(tt.contentEncoding))
+		})
+	}
+}
+
+func TestParseContentEncoding(t *testing.T) {
+	tests := []struct {
+		name            string
+		contentSha256   string
+		contentEncoding string
+		want            string
+	}{
+		// streaming: the token frames the request, so S3 drops it
+		{"streaming, only aws-chunked", "STREAMING-UNSIGNED-PAYLOAD-TRAILER", "aws-chunked", ""},
+		{"streaming, aws-chunked first", "STREAMING-UNSIGNED-PAYLOAD-TRAILER", "aws-chunked,gzip", "gzip"},
+		{"streaming, aws-chunked last", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD", "gzip,aws-chunked", "gzip"},
+		{"streaming, aws-chunked in the middle", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER", "deflate,aws-chunked,gzip", "deflate,gzip"},
+		{"streaming, spaces around codings", "STREAMING-UNSIGNED-PAYLOAD-TRAILER", "aws-chunked, gzip", "gzip"},
+		{"streaming, uppercase", "STREAMING-UNSIGNED-PAYLOAD-TRAILER", "AWS-CHUNKED,gzip", "gzip"},
+		{"streaming, repeated", "STREAMING-UNSIGNED-PAYLOAD-TRAILER", "aws-chunked,aws-chunked", ""},
+		{"streaming, empty coding dropped", "STREAMING-UNSIGNED-PAYLOAD-TRAILER", "gzip,,aws-chunked", "gzip"},
+		{"streaming, token is a prefix of another coding", "STREAMING-UNSIGNED-PAYLOAD-TRAILER", "aws-chunked-custom", "aws-chunked-custom"},
+		{"streaming, no aws-chunked", "STREAMING-UNSIGNED-PAYLOAD-TRAILER", "gzip", "gzip"},
+		{"streaming, no content encoding", "STREAMING-UNSIGNED-PAYLOAD-TRAILER", "", ""},
+		// not streaming: the token is a value the client chose, and S3 keeps it
+		{"hex payload keeps aws-chunked", "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "aws-chunked", "aws-chunked"},
+		{"hex payload keeps other codings", "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "aws-chunked,gzip", "aws-chunked,gzip"},
+		{"ecdsa streaming is not chunk decoded, so the value is kept", "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD", "aws-chunked", "aws-chunked"},
+		{"no payload header", "", "gzip", "gzip"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			headers := http.Header{}
+			if tt.contentSha256 != "" {
+				headers.Set("X-Amz-Content-Sha256", tt.contentSha256)
+			}
+			if tt.contentEncoding != "" {
+				headers.Set("Content-Encoding", tt.contentEncoding)
+			}
+
+			ctx := fiberCtxFromURL(t, http.MethodPut, "http://localhost/bucket/object", headers)
+			assert.Equal(t, tt.want, ParseContentEncoding(ctx))
 		})
 	}
 }

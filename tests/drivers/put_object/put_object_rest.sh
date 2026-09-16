@@ -224,6 +224,32 @@ attempt_chunked_upload_with_bad_first_signature() {
   return 0
 }
 
+put_object_rest_with_content_encoding() {
+  if ! check_param_count_v2 "data file, bucket name, key, content encoding" 4 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" CONTENT_ENCODING="$4" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object.sh 2>&1); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected response code of '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  return 0
+}
+
+put_object_rest_unsigned_payload_with_aws_chunked() {
+  if ! check_param_count_v2 "data file, bucket name, key" 3 $#; then
+    return 1
+  fi
+  if ! put_object_rest_expect_error "$1" "$2" "$3" "PAYLOAD=UNSIGNED-PAYLOAD CONTENT_ENCODING=aws-chunked" "400" "InvalidArgument" "aws-chunked encoding is not supported"; then
+    log 2 "expected aws-chunked with UNSIGNED-PAYLOAD to be rejected"
+    return 1
+  fi
+  return 0
+}
+
 chunked_upload_success() {
   if ! check_param_count_v2 "data file, bucket name, key" 3 $#; then
     return 1

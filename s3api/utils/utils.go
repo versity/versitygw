@@ -1113,15 +1113,30 @@ func ValidateLocationConstraint(constraint *string, region string) error {
 	return nil
 }
 
-// The coding announced when a body is framed in aws-chunked, as the SDKs do to
-// carry a trailing checksum.
+// The coding a client announces when it frames a body in aws-chunked, as the
+// SDKs do to carry a trailing checksum.
 const awsChunkedEncoding = "aws-chunked"
 
-// StripAwsChunkedEncoding drops the aws-chunked token, which frames the request
-// rather than the object, from a Content-Encoding value.
-func StripAwsChunkedEncoding(contentEncoding string) string {
-	if contentEncoding == "" {
-		return ""
+// HasAwsChunkedEncoding reports whether a Content-Encoding value carries the
+// aws-chunked token.
+func HasAwsChunkedEncoding(contentEncoding string) bool {
+	for _, coding := range strings.Split(contentEncoding, ",") {
+		if strings.EqualFold(strings.TrimSpace(coding), awsChunkedEncoding) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ParseContentEncoding returns the Content-Encoding to store for a request,
+// dropping the aws-chunked token when the payload type says the body was framed
+// in it. S3 strips it only for streaming uploads: on any other request the
+// token is a value the client chose and is stored as sent.
+func ParseContentEncoding(ctx fiber.Ctx) string {
+	contentEncoding := ctx.Get("Content-Encoding")
+	if !IsStreamingPayload(ctx.Get("X-Amz-Content-Sha256")) {
+		return contentEncoding
 	}
 
 	codings := strings.Split(contentEncoding, ",")
