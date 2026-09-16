@@ -17,13 +17,19 @@ package posix
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 // newUnversionedGateway creates a Posix backend over a temporary root
@@ -99,4 +105,70 @@ func TestVersioningUnconfigured(t *testing.T) {
 			t.Errorf("expected VersioningNotConfigured, got %v", err)
 		}
 	})
+}
+
+func TestVersioningDeleteMarkerStaleSidecarClearedOnSameKeyReupload(t *testing.T) {
+	root := t.TempDir()
+	vdir := filepath.Join(t.TempDir(), "versions")
+	sidecarDir := filepath.Join(t.TempDir(), "sidecar")
+	if err := os.MkdirAll(vdir, 0o755); err != nil {
+		t.Fatalf("mkdir versioning dir: %v", err)
+	}
+	if err := os.MkdirAll(sidecarDir, 0o755); err != nil {
+		t.Fatalf("mkdir sidecar: %v", err)
+	}
+
+	sc, err := meta.NewSideCar(sidecarDir)
+	if err != nil {
+		t.Fatalf("new sidecar: %v", err)
+	}
+	p, err := New(root, sc, PosixOpts{
+		ValidateBucketNames: true,
+		VersioningDir:       vdir,
+		SideCarDir:          sidecarDir,
+	})
+	if err != nil {
+		t.Fatalf("new posix: %v", err)
+	}
+
+	ctx := context.Background()
+	bucket, key := "bucket", "object"
+	createTestBucket(t, p, bucket)
+	if err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled); err != nil {
+		t.Fatalf("put bucket versioning: %v", err)
+	}
+
+	put := func(body string) {
+		t.Helper()
+		_, err := p.PutObject(ctx, s3response.PutObjectInput{
+			Bucket:        &bucket,
+			Key:           &key,
+			Body:          strings.NewReader(body),
+			ContentLength: aws.Int64(int64(len(body))),
+		})
+		if err != nil {
+			t.Fatalf("put object %q: %v", body, err)
+		}
+	}
+
+	put("one")
+
+	_, err = p.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: &key})
+	assert.NoError(t, err)
+
+	put("two")
+
+	_, err = p.meta.RetrieveAttribute(nil, bucket, key, deleteMarkerKey)
+	assert.ErrorIs(t, err, meta.ErrNoSuchKey)
+
+	out, err := p.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &key})
+	if err != nil {
+		t.Fatalf("get object after reupload: %v", err)
+	}
+	defer out.Body.Close()
+	body, err := io.ReadAll(out.Body)
+	if err != nil {
+		t.Fatalf("read object body: %v", err)
+	}
+	assert.Equal(t, "two", string(body))
 }
