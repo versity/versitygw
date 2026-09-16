@@ -1060,6 +1060,13 @@ func TestS3ApiController_ListObjectsV2(t *testing.T) {
 			{Key: utils.GetStringPtr("my-key")},
 		},
 	}
+	// The controller echoes the request continuation token back, so the
+	// element is in the response even when the backend leaves it unset.
+	// utils.GetStringPtr collapses "" to nil, which is the behaviour under
+	// test here, so take the address of an empty string directly.
+	emptyToken := ""
+	listV2ResultEchoed := listV2Result
+	listV2ResultEchoed.ContinuationToken = &emptyToken
 	tests := []struct {
 		name   string
 		input  testInput
@@ -1123,7 +1130,7 @@ func TestS3ApiController_ListObjectsV2(t *testing.T) {
 					Headers: map[string]*string{
 						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
 					},
-					Data: listV2Result,
+					Data: listV2ResultEchoed,
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},
@@ -1169,6 +1176,13 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 			{Key: utils.GetStringPtr("my-key")},
 		},
 	}
+	// The controller echoes the request marker back, so the element is in
+	// the response even when the backend leaves it unset. utils.GetStringPtr
+	// collapses "" to nil, which is the behaviour under test here, so take
+	// the address of an empty string directly.
+	emptyMarker := ""
+	listResultEchoed := listResult
+	listResultEchoed.Marker = &emptyMarker
 	tests := []struct {
 		name   string
 		input  testInput
@@ -1229,7 +1243,7 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					Data: listResult,
+					Data: listResultEchoed,
 					Headers: map[string]*string{
 						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
 					},

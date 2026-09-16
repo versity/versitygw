@@ -564,3 +564,37 @@ list_objects_v1_check_nextmarker_empty() {
   fi
   return 0
 }
+
+# S3 returns the request's marker (v1) or continuation token (v2) in the
+# listing response, and includes the element even when the request carried
+# neither, so clients can read the field unconditionally.
+list_objects_check_empty_echo_element() {
+  if ! check_param_count "list_objects_check_empty_echo_element" "bucket, version two, element name" 3 $#; then
+    return 1
+  fi
+  if ! response=$(get_file_names 2 2>&1); then
+    log 2 "error getting file names: $response"
+    return 1
+  fi
+  read -r file_name list_bucket_file <<< "$response"
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" VERSION_TWO="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error listing objects: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200' was '$result' ($(cat "$TEST_FILE_FOLDER/$file_name"))"
+    return 1
+  fi
+  log 5 "objects: $(cat "$TEST_FILE_FOLDER/$file_name")"
+  if ! list_bucket_result=$(xmllint --xpath '//*[local-name()="ListBucketResult"]' "$TEST_FILE_FOLDER/$file_name" 2>&1); then
+    log 2 "error getting list bucket result: $list_bucket_result"
+    return 1
+  fi
+  echo -n "$list_bucket_result" > "$TEST_FILE_FOLDER/$list_bucket_file"
+  if ! check_xml_element "$TEST_FILE_FOLDER/$list_bucket_file" "" "$3"; then
+    log 2 "$3 should be present and empty"
+    return 1
+  fi
+  return 0
+}
