@@ -222,12 +222,10 @@ check_universal_vars() {
     fi
   fi
   export TEST_FILE_FOLDER
-  #if [ -n "$COMMAND_LOG" ]; then
   if ! init_command_log; then
     log 1 "error initializing command log"
     return 1
   fi
-  #fi
   if [ "$GITHUB_ACTIONS" != "true" ] && [ -r "$SECRETS_FILE" ]; then
     # shellcheck source=./tests/.secrets
     source "$SECRETS_FILE"
@@ -418,21 +416,17 @@ check_user_profile_and_add_if_needed() {
   return 0
 }
 
-delete_command_log() {
-  if [ -f "$COMMAND_LOG" ]; then
-    if ! error=$(rm "$COMMAND_LOG"); then
-      log 2 "error removing command log: $error"
-      return 1
-    fi
-  fi
-  return 0
-}
+#delete_command_log() {
+#  if [ -f "$COMMAND_LOG" ]; then
+#    if ! error=$(rm "$COMMAND_LOG"); then
+#      log 2 "error removing command log: $error"
+#      return 1
+#    fi
+#  fi
+#  return 0
+#}
 
 init_command_log() {
-  #if ! delete_command_log; then
-  #  log 1 "error deleting old command log"
-  #  return 1
-  #fi
   COMMAND_LOG="$TEST_FILE_FOLDER/command-$(uuidgen).log"
   export COMMAND_LOG
   if ! echo "******** $(date +"%Y-%m-%d %H:%M:%S") $BATS_TEST_NAME COMMANDS ********" >> "$COMMAND_LOG"; then
@@ -471,10 +465,10 @@ teardown_logs() {
     teardown_command_log || teardown_result=$?
   fi
   if [ -f "$VERSITY_LOG_FILE_1" ]; then
-    teardown_versity_log 1 "$VERSITY_LOG_FILE_1" || teardown_result=$?
+    teardown_versity_log "$VERSITY_LOG_FILE_1" || teardown_result=$?
   fi
   if [ -f "$VERSITY_LOG_FILE_2" ]; then
-    teardown_versity_log 2 "$VERSITY_LOG_FILE_2" || teardown_result=$?
+    teardown_versity_log "$VERSITY_LOG_FILE_2" || teardown_result=$?
   fi
   if [ -f "${TEST_LOG_FILE}.${TEST_ID}" ] && [ "$BATS_TEST_COMPLETED" != "1" ]; then
     cat "${TEST_LOG_FILE}.${TEST_ID}"
@@ -499,24 +493,21 @@ teardown_time_log() {
 }
 
 teardown_command_log() {
-  echo "**********************************************************************************" >> "$COMMAND_LOG"
-  if [ -f "${TEST_LOG_FILE}.${TEST_ID}" ]; then
-    cat "$COMMAND_LOG" >> "${TEST_LOG_FILE}.${TEST_ID}"
-  elif [ "$BATS_TEST_COMPLETED" != "1" ]; then
-    cat "$COMMAND_LOG"
-  fi
-  if ! delete_command_log; then
-    log 2 "error deleting command log"
-    return 1
-  fi
-  return 0
+  teardown_appended_log "$COMMAND_LOG"
 }
 
 teardown_versity_log() {
-  if ! check_param_count_v2 "versitygw process ID, log name" 2 $#; then
+  if ! check_param_count_v2 "log name" 1 $#; then
     return 1
   fi
-  local versitygw_pid="$1" log_name="$2"
+  teardown_appended_log "$1"
+}
+
+teardown_appended_log() {
+  if ! check_param_count_v2 "log name" 1 $#; then
+    return 1
+  fi
+  local log_name="$1" response
 
   echo "**********************************************************************************" >> "$log_name"
   if [ -f "${TEST_LOG_FILE}.${TEST_ID}" ]; then

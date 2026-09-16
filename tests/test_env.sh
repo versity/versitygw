@@ -55,7 +55,95 @@ source ./tests/setup_unit.sh
 }
 
 # tags: unit
-@test "teardown command log - appends to existing test log" {
+@test "teardown appended log - appends to existing test log" {
+  local test_log appended_log contents
+
+  TEST_ID="appended-log-$(uuidgen)"
+  TEST_LOG_FILE="$TEST_FILE_FOLDER/test-$(uuidgen).log"
+  appended_log="$TEST_FILE_FOLDER/appended-$(uuidgen).log"
+  test_log="${TEST_LOG_FILE}.${TEST_ID}"
+  printf '%s\n' "existing test log" > "$test_log"
+  printf '%s\n' "appended log entry" > "$appended_log"
+
+  run teardown_appended_log "$appended_log"
+
+  assert_success
+  assert_output ""
+  assert [ ! -f "$appended_log" ]
+  contents=$(<"$test_log")
+  [[ "$contents" == *"existing test log"* ]]
+  [[ "$contents" == *"appended log entry"* ]]
+  [[ "$contents" == *"**********************************************************************************"* ]]
+}
+
+# tags: unit
+@test "teardown appended log - prints when test log is missing and test fails" {
+  local appended_log
+
+  TEST_ID="appended-log-missing-$(uuidgen)"
+  TEST_LOG_FILE="$TEST_FILE_FOLDER/test-$(uuidgen).log"
+  BATS_TEST_COMPLETED=0
+  appended_log="$TEST_FILE_FOLDER/appended-$(uuidgen).log"
+  printf '%s\n' "failed appended log entry" > "$appended_log"
+
+  run teardown_appended_log "$appended_log"
+
+  assert_success
+  assert_output -p "failed appended log entry"
+  assert_output -p "**********************************************************************************"
+  assert [ ! -f "$appended_log" ]
+  assert [ ! -f "${TEST_LOG_FILE}.${TEST_ID}" ]
+}
+
+# tags: unit
+@test "teardown appended log - deletes only when test log is missing and test passes" {
+  local appended_log
+
+  TEST_ID="appended-log-complete-$(uuidgen)"
+  TEST_LOG_FILE="$TEST_FILE_FOLDER/test-$(uuidgen).log"
+  BATS_TEST_COMPLETED=1
+  appended_log="$TEST_FILE_FOLDER/appended-$(uuidgen).log"
+  printf '%s\n' "completed appended log entry" > "$appended_log"
+
+  run teardown_appended_log "$appended_log"
+
+  assert_success
+  assert_output ""
+  assert [ ! -f "$appended_log" ]
+  assert [ ! -f "${TEST_LOG_FILE}.${TEST_ID}" ]
+}
+
+# tags: unit
+@test "teardown appended log - fails when delete fails" {
+  local fake_bin test_log appended_log contents
+
+  fake_bin="$TEST_FILE_FOLDER/bin-$(uuidgen)"
+  TEST_ID="appended-log-delete-fail-$(uuidgen)"
+  TEST_LOG_FILE="$TEST_FILE_FOLDER/test-$(uuidgen).log"
+  test_log="${TEST_LOG_FILE}.${TEST_ID}"
+  appended_log="$TEST_FILE_FOLDER/appended-$(uuidgen).log"
+  mkdir -p "$fake_bin"
+  printf '%s\n' "existing test log" > "$test_log"
+  printf '%s\n' "appended log entry" > "$appended_log"
+  cat > "$fake_bin/rm" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "fake rm failure" >&2
+exit 1
+EOF
+  chmod +x "$fake_bin/rm"
+
+  PATH="$fake_bin:$PATH" run teardown_appended_log "$appended_log"
+
+  assert_failure 1
+  assert_output ""
+  assert [ -f "$appended_log" ]
+  contents=$(<"$test_log")
+  [[ "$contents" == *"error deleting log file"* ]]
+  [[ "$contents" == *"fake rm failure"* ]]
+}
+
+# tags: unit
+@test "teardown command log - uses COMMAND_LOG" {
   local test_log contents
 
   TEST_ID="command-log-$(uuidgen)"
@@ -71,66 +159,7 @@ source ./tests/setup_unit.sh
   assert_output ""
   assert [ ! -f "$COMMAND_LOG" ]
   contents=$(<"$test_log")
-  [[ "$contents" == *"existing test log"* ]]
   [[ "$contents" == *"command log entry"* ]]
-  [[ "$contents" == *"**********************************************************************************"* ]]
-}
-
-# tags: unit
-@test "teardown command log - prints when test log is missing and test fails" {
-  TEST_ID="command-log-missing-$(uuidgen)"
-  TEST_LOG_FILE="$TEST_FILE_FOLDER/test-$(uuidgen).log"
-  COMMAND_LOG="$TEST_FILE_FOLDER/command-$(uuidgen).log"
-  BATS_TEST_COMPLETED=0
-  printf '%s\n' "failed command log entry" > "$COMMAND_LOG"
-
-  run teardown_command_log
-
-  assert_success
-  assert_output -p "failed command log entry"
-  assert_output -p "**********************************************************************************"
-  assert [ ! -f "$COMMAND_LOG" ]
-  assert [ ! -f "${TEST_LOG_FILE}.${TEST_ID}" ]
-}
-
-# tags: unit
-@test "teardown command log - deletes only when test log is missing and test passes" {
-  TEST_ID="command-log-complete-$(uuidgen)"
-  TEST_LOG_FILE="$TEST_FILE_FOLDER/test-$(uuidgen).log"
-  COMMAND_LOG="$TEST_FILE_FOLDER/command-$(uuidgen).log"
-  BATS_TEST_COMPLETED=1
-  printf '%s\n' "completed command log entry" > "$COMMAND_LOG"
-
-  run teardown_command_log
-
-  assert_success
-  assert_output ""
-  assert [ ! -f "$COMMAND_LOG" ]
-  assert [ ! -f "${TEST_LOG_FILE}.${TEST_ID}" ]
-}
-
-# tags: unit
-@test "teardown command log - fails when delete fails" {
-  local fake_bin
-
-  fake_bin="$TEST_FILE_FOLDER/bin-$(uuidgen)"
-  TEST_ID="command-log-delete-fail-$(uuidgen)"
-  TEST_LOG_FILE="$TEST_FILE_FOLDER/test-$(uuidgen).log"
-  COMMAND_LOG="$TEST_FILE_FOLDER/command-$(uuidgen).log"
-  mkdir -p "$fake_bin"
-  printf '%s\n' "command log entry" > "$COMMAND_LOG"
-  cat > "$fake_bin/rm" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "fake rm failure" >&2
-exit 1
-EOF
-  chmod +x "$fake_bin/rm"
-
-  PATH="$fake_bin:$PATH" run teardown_command_log
-
-  assert_failure 1
-  assert_output -p "error deleting command log"
-  assert [ -f "$COMMAND_LOG" ]
 }
 
 # tags: unit
@@ -179,74 +208,21 @@ EOF
 }
 
 # tags: unit
-@test "teardown versity log - appends to existing test log" {
+@test "teardown versity log - uses provided log name" {
   local test_log versity_log contents
 
   TEST_ID="versity-log-$(uuidgen)"
   TEST_LOG_FILE="$TEST_FILE_FOLDER/test-$(uuidgen).log"
-  VERSITY_LOG_FILE="$TEST_FILE_FOLDER/versity-$(uuidgen).log"
   test_log="${TEST_LOG_FILE}.${TEST_ID}"
-  versity_log="${VERSITY_LOG_FILE}.${TEST_ID}.1"
+  versity_log="$TEST_FILE_FOLDER/versity-$(uuidgen).log"
   printf '%s\n' "existing test log" > "$test_log"
   printf '%s\n' "versity log entry" > "$versity_log"
 
-  run teardown_versity_log 1 "$versity_log"
+  run teardown_versity_log "$versity_log"
 
   assert_success
   assert_output ""
   assert [ ! -f "$versity_log" ]
   contents=$(<"$test_log")
-  [[ "$contents" == *"existing test log"* ]]
   [[ "$contents" == *"versity log entry"* ]]
-  [[ "$contents" == *"**********************************************************************************"* ]]
-}
-
-# tags: unit
-@test "teardown versity log - prints when test log is missing and test fails" {
-  local versity_log
-
-  TEST_ID="versity-log-missing-$(uuidgen)"
-  TEST_LOG_FILE="$TEST_FILE_FOLDER/test-$(uuidgen).log"
-  VERSITY_LOG_FILE="$TEST_FILE_FOLDER/versity-$(uuidgen).log"
-  BATS_TEST_COMPLETED=0
-  versity_log="${VERSITY_LOG_FILE}.${TEST_ID}.1"
-  printf '%s\n' "failed versity log entry" > "$versity_log"
-
-  run teardown_versity_log 1 "$versity_log"
-
-  assert_success
-  assert_output -p "failed versity log entry"
-  assert_output -p "**********************************************************************************"
-  assert [ ! -f "$versity_log" ]
-  assert [ ! -f "${TEST_LOG_FILE}.${TEST_ID}" ]
-}
-
-# tags: unit
-@test "teardown versity log - fails when delete fails" {
-  local fake_bin test_log versity_log contents
-
-  fake_bin="$TEST_FILE_FOLDER/bin-$(uuidgen)"
-  TEST_ID="versity-log-delete-fail-$(uuidgen)"
-  TEST_LOG_FILE="$TEST_FILE_FOLDER/test-$(uuidgen).log"
-  VERSITY_LOG_FILE="$TEST_FILE_FOLDER/versity-$(uuidgen).log"
-  test_log="${TEST_LOG_FILE}.${TEST_ID}"
-  versity_log="${VERSITY_LOG_FILE}.${TEST_ID}.1"
-  mkdir -p "$fake_bin"
-  printf '%s\n' "existing test log" > "$test_log"
-  printf '%s\n' "versity log entry" > "$versity_log"
-  cat > "$fake_bin/rm" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "fake rm failure" >&2
-exit 1
-EOF
-  chmod +x "$fake_bin/rm"
-
-  PATH="$fake_bin:$PATH" run teardown_versity_log 1 "$versity_log"
-
-  assert_failure 1
-  assert_output ""
-  assert [ -f "$versity_log" ]
-  contents=$(<"$test_log")
-  [[ "$contents" == *"error deleting log file"* ]]
-  [[ "$contents" == *"fake rm failure"* ]]
 }
