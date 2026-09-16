@@ -20,8 +20,9 @@ jobs:
         run: |
           docker compose -f tests/docker-compose.yml --env-file .env.dev --project-directory . up -d azurite azuritegw
 
-      - name: Wait for Azurite to be ready
-        run: sleep 40
+      - name: Wait for services to be ready
+        run: |
+          timeout 180 bash -c 'until curl -s -o /dev/null http://127.0.0.1:7070/; do sleep 2; done'
 
       - name: Get Dependencies
         run: |
