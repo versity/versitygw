@@ -2666,7 +2666,13 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		// version's path-based metadata into this (new) version's sidecar.
 		_ = p.meta.DeleteAttribute(bucket, object, objectLegalHoldKey)
 		_ = p.meta.DeleteAttribute(bucket, object, objectRetentionKey)
-		_ = p.meta.DeleteAttribute(bucket, object, deleteMarkerKey)
+	}
+
+	// Clear the live marker after any snapshot, including when the data file
+	// is missing or versioning does not require archiving the previous object.
+	err = p.meta.DeleteAttribute(bucket, object, deleteMarkerKey)
+	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
+		return res, "", fmt.Errorf("delete object delete-marker: %w", err)
 	}
 
 	// if the versioning is enabled, generate a new versionID for the object
@@ -4166,7 +4172,6 @@ func (p *Posix) snapshotObjVersion(bucket, key string, vStatus types.BucketVersi
 		// bleed into the new version.
 		_ = p.meta.DeleteAttribute(bucket, key, objectLegalHoldKey)
 		_ = p.meta.DeleteAttribute(bucket, key, objectRetentionKey)
-		_ = p.meta.DeleteAttribute(bucket, key, deleteMarkerKey)
 	}
 
 	return nil
@@ -4518,6 +4523,13 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, verr
 	}
 
+	// Marker cleanup belongs to publishing: snapshotting can be skipped for
+	// orphaned sidecars, suspended versioning, or a missing version ID.
+	err = p.meta.DeleteAttribute(*po.Bucket, *po.Key, deleteMarkerKey)
+	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
+		return s3response.PutObjectOutput{}, fmt.Errorf("delete object delete-marker: %w", err)
+	}
+
 	// Before finalizing the object creation remove
 	// null versionId object from versioning directory
 	// if it exists and the versioning status is Suspended
@@ -4848,7 +4860,10 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 
 				ents, err := os.ReadDir(versionPath)
 				if errors.Is(err, fs.ErrNotExist) {
-					_ = p.meta.DeleteAttributes(bucket, object)
+					if err := p.meta.DeleteAttributes(bucket, object); err != nil &&
+						!errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
+						return nil, fmt.Errorf("delete object attributes: %w", err)
+					}
 					p.removeParents(bucket, object)
 					return &s3.DeleteObjectOutput{
 						DeleteMarker: &isDelMarker,
@@ -4860,7 +4875,10 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				}
 
 				if len(ents) == 0 {
-					_ = p.meta.DeleteAttributes(bucket, object)
+					if err := p.meta.DeleteAttributes(bucket, object); err != nil &&
+						!errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
+						return nil, fmt.Errorf("delete object attributes: %w", err)
+					}
 					p.removeParents(bucket, object)
 					return &s3.DeleteObjectOutput{
 						DeleteMarker: &isDelMarker,
