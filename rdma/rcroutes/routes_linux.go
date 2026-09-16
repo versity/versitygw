@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -81,7 +82,7 @@ const (
 	// two surfaces: the READY success response and error responses
 	// for requests in which a native session was created (see
 	// sessionCreatedKey).
-	hdrCapabilities    = "x-amz-rdma-capabilities"
+	hdrCapabilities     = "x-amz-rdma-capabilities"
 	capabilityMultipart = "mp"
 
 	// sessionCreatedKey marks, per request, that a native session
@@ -253,7 +254,6 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	if err != nil {
 		return publishHeaderErr(err, isPut)
 	}
-	_ = part
 	size, err := parseUint(ctx.Get(hdrSize), 10, 64)
 	if err != nil || size == 0 {
 		return publishHeaderErr(invalidHeader(hdrSize, ctx.Get(hdrSize)), isPut)
@@ -277,7 +277,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	// overwrite the object (the REST UploadPart controller performs
 	// no overwrite check either).
 	if err := h.authorize(ctx, acct, isRoot, bucket, key, semantic); err != nil {
-		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
+		h.ops.publishSemanticRequest(ctx, acct, err, bucket, key, semantic, query)
 		return err
 	}
 
@@ -292,7 +292,8 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 		ClientToken: ctx.Get(hdrToken),
 	})
 	if err != nil {
-		h.ops.publishRequest(ctx, acct, mapRcError(err), bucket, key, isPut)
+		h.ops.publishSemanticRequest(ctx, acct, mapRcError(err), bucket, key,
+			semantic, query)
 		return mapRcError(err)
 	}
 	// A native session exists from here on. Later failures in this
@@ -307,7 +308,8 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 		if err := h.stageGet(ctx, resp.SessionID, bucket, key,
 			offset, size, part); err != nil {
 			_ = h.svc.FinishPrepare(resp.SessionID, false)
-			h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
+			h.ops.publishSemanticRequest(ctx, acct, err, bucket, key,
+				semantic, query)
 			return err
 		}
 	}
@@ -326,7 +328,8 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 		// shows, so operator-side accounting matches what the
 		// client saw.
 		apiErr := s3err.GetAPIError(s3err.ErrSlowDown)
-		h.ops.publishRequest(ctx, acct, apiErr, bucket, key, isPut)
+		h.ops.publishSemanticRequest(ctx, acct, apiErr, bucket, key,
+			semantic, query)
 		return apiErr
 	}
 	if err := h.svc.FinishPrepare(resp.SessionID, true); err != nil {
@@ -366,9 +369,9 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 
 // stageGet reads the object range into the session staging buffer
 // and records the staged length on the session. A part read stages
-// the whole part (PartNumber dispatch); the capacity contract then
-// fails the transfer if the part exceeds the announced size, and a
-// short part stages only its actual bytes.
+// the whole part (PartNumber dispatch): the announced size must
+// match the part's actual length exactly, because the session's
+// capacity contract reports one staged length for the transfer.
 func (h *Handler) stageGet(ctx fiber.Ctx, sessionID, bucket, key string,
 	offset, size uint64, part *partTransfer) error {
 	lease, err := h.svc.BorrowStaging(sessionID)
@@ -395,6 +398,10 @@ func (h *Handler) stageGet(ctx fiber.Ctx, sessionID, bucket, key string,
 			return fmt.Errorf(
 				"part read with nonzero offset: %w", errRouteBadRequest{})
 		}
+		if part.PartNumber > math.MaxInt32 {
+			return fmt.Errorf(
+				"part number %d exceeds the int32 wire limit", part.PartNumber)
+		}
 		pn := int32(part.PartNumber)
 		input.PartNumber = &pn
 	} else {
@@ -418,6 +425,17 @@ func (h *Handler) stageGet(ctx fiber.Ctx, sessionID, bucket, key string,
 	}
 	if rerr != nil {
 		return rerr
+	}
+	// A part read must stage the whole part: the announced size is
+	// the part's exact length, so a backend part longer than the
+	// buffer would be silently truncated (ReadFull stops at the
+	// buffer) and a shorter one fails the native staged-length
+	// equality. Read one extra byte to detect the overrun.
+	if part != nil && res.ContentLength != nil && *res.ContentLength >= 0 &&
+		uint64(*res.ContentLength) != size {
+		return fmt.Errorf(
+			"part length %d does not match the announced size %d",
+			*res.ContentLength, size)
 	}
 	etag, version := "", ""
 	if res.ETag != nil {
@@ -506,7 +524,6 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	_ = part
 	// Reserve the publication BEFORE the transfer claim and before
 	// re-authorization: once ReadyTransfer returns this handler
 	// holds the native completion reference, and a concurrent
@@ -706,6 +723,10 @@ func (h *Handler) commitPut(ctx fiber.Ctx, sessionID, bucket, key string,
 		// Part upload: store the received bytes as the upload's
 		// part. The returned ETag feeds the client's Complete
 		// call; the object itself is only created there.
+		if part.PartNumber > math.MaxInt32 {
+			return nil, false, 0, fmt.Errorf(
+				"part number %d exceeds the int32 wire limit", part.PartNumber)
+		}
 		pn := int32(part.PartNumber)
 		uploadID := part.UploadID
 		pres, perr := h.be.UploadPart(putCtx, &s3.UploadPartInput{
@@ -838,7 +859,11 @@ func (h *Handler) authorize(ctx fiber.Ctx, acct auth.Account, isRoot bool,
 	}); err != nil {
 		return err
 	}
-	if isPut {
+	// A part upload writes into an open multipart upload, not the
+	// object: like the REST UploadPart controller, it performs no
+	// overwrite/object-lock check (the check belongs to the
+	// Complete call that creates the object).
+	if semantic == opPlainPut {
 		if err := auth.CheckObjectAccess(ctx, bucket, acct,
 			[]types.ObjectIdentifier{{Key: &key}}, auth.BypassOverwrite,
 			false, h.be, h.iam, true); err != nil {
