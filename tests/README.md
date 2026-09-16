@@ -232,6 +232,8 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **WEBSITE_ENDPOINT**:  website endpoint, if using versitygw website functionality
 
+**LOG_ON_SUCCESS**:  set to `false` to delete log on test success
+
 ## REST Scripts
 
 REST scripts are included for calls to S3's REST API in the `./tests/rest_scripts/` folder.  To call a script, the following parameters are needed:

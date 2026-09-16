@@ -14,18 +14,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/env.sh
+source ./tests/setup_common.sh
 
 export UNIT_TEST=true
 
 setup() {
-  if ! base_setup; then
-    echo "error with base setup" >&2
+  if ! setup_env; then
+    echo "error with env setup" >&2
     return 1
-  fi
-  if ! setup_test_logging; then
-    echo "error setting up test logging" >&2
-    return  1
   fi
   return 0
 }
