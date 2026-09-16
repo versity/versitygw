@@ -101,14 +101,32 @@ gateway:
 | **cert-manager** | `certificate.create=true`, `certificate.issuerRef`, `certificate.dnsNames` |
 | **Ingress** | `ingress.enabled=true`, `ingress.className`, `ingress.hosts`, `ingress.tls` |
 | **HTTPRoute** | `httpRoute.enabled=true` — Gateway API successor to Ingress for S3 API; also `admin.httpRoute.enabled=true` and `webui.httpRoute.enabled=true` to expose the admin API and/or WebUI |
-| **Admin API** | `admin.enabled=true` — exposes a separate management API on `admin.port` (default `7071`) |
-| **WebUI** | `webui.enabled=true` — browser-based management UI on `webui.port` (default `8080`); set `webui.apiGateways` and `webui.adminGateways` to your externally reachable endpoints, and `webui.iamGateways` when `iam.type=standalone` so the login page offers the IAM service (the WebUI then ignores the admin API entirely — the IAM service manages users, and buckets are managed over the S3 API) |
+| **Admin API** | `admin.enabled=true` — exposes a separate management API on `admin.port` (default `7071`); `admin.pathPrefix` (e.g. `/admin`) serves it under a path prefix, on the S3 port when `admin.enabled=false` — see [Serving Under One Hostname](#serving-under-one-hostname) |
+| **WebUI** | `webui.enabled=true` — browser-based management UI on `webui.port` (default `8080`); set `webui.apiGateways` and `webui.adminGateways` to your externally reachable endpoints, and `webui.iamGateways` when `iam.type=standalone` so the login page offers the IAM service (the WebUI then ignores the admin API entirely — the IAM service manages users, and buckets are managed over the S3 API). `webui.pathPrefix` serves it under a path on `webui.port`; `webui.s3Prefix` also serves it on the S3 port |
 | **Website Hosting** | `website.enabled=true` — static website hosting endpoint on `website.port` (default `8090`); optionally set `website.domain` for virtual-host routing (e.g. `example.com`), or omit it for catch-all mode where the full hostname is the bucket name |
-| **IAM** | `iam.enabled=true` — identity and access management. `iam.type=internal` (default) stores accounts in a flat file alongside backend data; `iam.type=standalone` delegates to a separate standalone IAM API service — see [Standalone IAM Service](#standalone-iam-service) below |
-| **Persistence** | `persistence.enabled=true` — provisions a PVC for backend data and IAM storage; defaults to `10Gi`, or uses a hostPath volume specified by `persistence.hostPath` |
+| **IAM** | `iam.enabled=true` — identity and access management. `iam.type=internal` (default) stores accounts in a flat file under `iam.dir`, alongside backend data or on its own PVC with `iam.persistence.enabled=true`; `iam.type=standalone` delegates to a separate standalone IAM API service — see [Standalone IAM Service](#standalone-iam-service) below |
+| **Persistence** | `persistence.enabled=true` — provisions a PVC for backend data and IAM storage (unless `iam.persistence.enabled=true`); defaults to `10Gi`, or uses a hostPath volume specified by `persistence.hostPath` |
 | **NetworkPolicy** | `networkPolicy.enabled=true` — restricts ingress to selected pods/namespaces; allows all egress |
 | **Debug logging** | `gateway.logLevel` — `silent` (default), `debug` (request/response logging, secrets masked), or `unsafe` (unmasked, local troubleshooting only) |
 | **Scheduling** | `nodeSelector`, `affinity`, `tolerations`, and `topologySpreadConstraints` — control pod placement and spread replicas across nodes/zones for high availability |
+
+## Serving Under One Hostname
+
+The WebUI and admin API can share the S3 API's hostname under path prefixes instead of needing hostnames of their own. The simplest setup serves all three on the S3 port, so the existing S3 `ingress` or `httpRoute` covers them:
+
+```yaml
+admin:
+  pathPrefix: /admin       # admin API on the S3 port under /admin
+webui:
+  s3Prefix: /ui            # WebUI on the S3 port under /ui
+  apiGateways:
+    - https://s3.example.com
+  # adminGateways defaults to apiGateways plus admin.pathPrefix
+```
+
+With `admin.enabled=true` and `webui.enabled=true`, set `admin.pathPrefix` and `webui.pathPrefix` instead, and route those paths to the admin and WebUI ports: `servicePort: admin` / `servicePort: webui` on `ingress.hosts[].paths[]`, or `backendPort` set to `admin.port` / `webui.port` (e.g. `7071` / `8080`) on `httpRoute.rules[]`. Set `webui.adminGateways` to the prefixed URL, e.g. `https://s3.example.com/admin`.
+
+Admin requests are signed over the full path, so the proxy must forward the prefix unchanged. If it strips or rewrites the prefix, admin requests fail. A bucket whose name matches a prefix served outside the S3 API (`webui.s3Prefix`, or a path routed to the admin or WebUI port) is unreachable on that hostname.
 
 ## Standalone IAM Service
 
@@ -166,7 +184,7 @@ When scaling `versitygw` horizontally by setting `replicaCount` greater than 1, 
     - Using **ReadWriteOnce (RWO)**: All replicas must be scheduled on the **same Kubernetes node** to share the same volume. This is useful for process-level concurrency (e.g., when using high-performance local block storage) but limits high availability across nodes.
     - Using **ReadWriteMany (RWX)**: Replicas can be distributed across **multiple nodes** in the cluster. This is the recommended approach for true horizontal scaling and high availability. When using RWX, it is also recommended to use pod anti-affinity (via `affinity` in `values.yaml`) or topology spread constraints (via `topologySpreadConstraints` in `values.yaml`) to ensure pods are distributed across nodes/zones.
 - **IAM**: `iam.type=internal` is limited to a single gateway replica because its file store does not coordinate concurrent writers. Use standalone IAM with Vault storage, LDAP, Vault-direct, or another external IAM backend before scaling the gateway above one replica.
-- **Stateless Backends (S3, Azure)**: If you are using a stateless storage backend (e.g. proxying to another S3 store) **and** you are either not using IAM or using an external IAM provider (e.g. LDAP, Vault), persistence can be safely disabled by setting `persistence.enabled=false`.
+- **Stateless Backends (S3, Azure)**: If you are using a stateless storage backend (e.g. proxying to another S3 store) **and** you are either not using IAM or using an external IAM provider (e.g. LDAP, Vault), persistence can be safely disabled by setting `persistence.enabled=false`. With `iam.type=internal`, set `iam.persistence.enabled=true` to keep the IAM data on its own smaller PVC.
 
 ### Deployment Strategy
 

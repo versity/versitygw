@@ -253,6 +253,12 @@ func WithAdminServer() Option {
 	return func(s *S3ApiServer) { s.Router.WithAdmSrv = true }
 }
 
+// WithAdminServerPathPrefix mounts the admin endpoints served with the
+// gateway under the given path prefix (e.g. "/admin").
+func WithAdminServerPathPrefix(prefix string) Option {
+	return func(s *S3ApiServer) { s.Router.adminPathPrefix = prefix }
+}
+
 // WithQuiet silences default logging output
 func WithQuiet() Option {
 	return func(s *S3ApiServer) { s.quiet = true }

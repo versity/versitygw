@@ -45,106 +45,20 @@ type S3ApiRouter struct {
 	virtualDomain   string
 	corsAllowOrigin string
 	mpMaxParts      int
+	adminPathPrefix string
 }
 
 func (sa *S3ApiRouter) Init() {
 	ctrl := controllers.New(sa.be, sa.iam, sa.logger, sa.evs, sa.mm, sa.readonly, sa.disableACL, sa.virtualDomain, sa.mpMaxParts)
 	sa.Ctrl = ctrl
-	adminServices := &controllers.Services{
-		Logger: sa.aLogger,
-	}
-
 	// initialize global host-style parser middleware if virtual domain is specified
 	if sa.virtualDomain != "" {
 		sa.app.Use("*", middlewares.HostStyleParser(sa.virtualDomain))
 	}
 
 	if sa.WithAdmSrv {
-		adminController := controllers.NewAdminController(sa.iam, sa.be, sa.aLogger, ctrl)
-
-		// CreateUser admin api
-		sa.app.Patch("/create-user",
-			controllers.ProcessHandlers(adminController.CreateUser, metrics.ActionAdminCreateUser, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
-				middlewares.IsAdmin(metrics.ActionAdminCreateUser),
-				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-			))
-		sa.app.Options("/create-user",
-			middlewares.ApplyDefaultCORSPreflight(sa.corsAllowOrigin),
-			middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-		)
-
-		// DeleteUsers admin api
-		sa.app.Patch("/delete-user",
-			controllers.ProcessHandlers(adminController.DeleteUser, metrics.ActionAdminDeleteUser, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
-				middlewares.IsAdmin(metrics.ActionAdminDeleteUser),
-				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-			))
-		sa.app.Options("/delete-user",
-			middlewares.ApplyDefaultCORSPreflight(sa.corsAllowOrigin),
-			middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-		)
-
-		// UpdateUser admin api
-		sa.app.Patch("/update-user",
-			controllers.ProcessHandlers(adminController.UpdateUser, metrics.ActionAdminUpdateUser, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
-				middlewares.IsAdmin(metrics.ActionAdminUpdateUser),
-				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-			))
-		sa.app.Options("/update-user",
-			middlewares.ApplyDefaultCORSPreflight(sa.corsAllowOrigin),
-			middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-		)
-
-		// ListUsers admin api
-		sa.app.Patch("/list-users",
-			controllers.ProcessHandlers(adminController.ListUsers, metrics.ActionAdminListUsers, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
-				middlewares.IsAdmin(metrics.ActionAdminListUsers),
-				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-			))
-		sa.app.Options("/list-users",
-			middlewares.ApplyDefaultCORSPreflight(sa.corsAllowOrigin),
-			middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-		)
-
-		// ChangeBucketOwner admin api
-		sa.app.Patch("/change-bucket-owner",
-			controllers.ProcessHandlers(adminController.ChangeBucketOwner, metrics.ActionAdminChangeBucketOwner, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
-				middlewares.IsAdmin(metrics.ActionAdminChangeBucketOwner),
-				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-			))
-		sa.app.Options("/change-bucket-owner",
-			middlewares.ApplyDefaultCORSPreflight(sa.corsAllowOrigin),
-			middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-		)
-
-		// ListBucketsAndOwners admin api
-		sa.app.Patch("/list-buckets",
-			controllers.ProcessHandlers(adminController.ListBuckets, metrics.ActionAdminListBuckets, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
-				middlewares.IsAdmin(metrics.ActionAdminListBuckets),
-				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-			))
-		sa.app.Options("/list-buckets",
-			middlewares.ApplyDefaultCORSPreflight(sa.corsAllowOrigin),
-			middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-		)
-
-		// CreateBucket admin api
-		sa.app.Patch("/:bucket/create",
-			controllers.ProcessHandlers(adminController.CreateBucket, metrics.ActionAdminCreateBucket, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
-				middlewares.IsAdmin(metrics.ActionAdminCreateBucket),
-				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-			))
-		sa.app.Options("/:bucket/create",
-			middlewares.ApplyDefaultCORSPreflight(sa.corsAllowOrigin),
-			middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
-		)
+		adminRouter := &S3AdminRouter{s3api: ctrl}
+		adminRouter.Init(sa.app.Group(sa.adminPathPrefix), sa.be, sa.iam, sa.aLogger, sa.root, sa.region, false, sa.corsAllowOrigin)
 	}
 
 	services := &controllers.Services{

@@ -35,3 +35,23 @@ jobs:
             helm lint chart/ --strict --set auth.existingSecret=root-credentials ${scenario}
             echo "::endgroup::"
           done
+
+      - name: Lint path prefix and internal IAM storage configurations
+        run: |
+          scenarios=(
+            # admin API and WebUI on their own ports under path prefixes
+            "--set admin.enabled=true --set admin.pathPrefix=/admin --set webui.enabled=true --set webui.pathPrefix=/ui"
+            # admin API and WebUI on the S3 port under path prefixes
+            "--set admin.pathPrefix=/admin --set webui.s3Prefix=/ui --set webui.apiGateways[0]=https://s3.example.test"
+            # internal IAM on its own PVC with ephemeral backend data
+            "--set iam.enabled=true --set iam.persistence.enabled=true --set iam.dir=/var/lib/versitygw/iam --set persistence.enabled=false"
+            # internal IAM on an existing PVC
+            "--set iam.enabled=true --set iam.persistence.enabled=true --set iam.persistence.create=false --set iam.persistence.claimName=versitygw-iam"
+          )
+
+          for scenario in "${scenarios[@]}"; do
+            echo "::group::helm lint --set ${scenario}"
+            # shellcheck disable=SC2086
+            helm lint chart/ --strict --set auth.existingSecret=root-credentials ${scenario}
+            echo "::endgroup::"
+          done

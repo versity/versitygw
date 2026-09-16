@@ -28,7 +28,7 @@ type S3AdminRouter struct {
 	s3api controllers.S3ApiController
 }
 
-func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, root middlewares.RootUserConfig, region string, debug bool, corsAllowOrigin string) {
+func (ar *S3AdminRouter) Init(app fiber.Router, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, root middlewares.RootUserConfig, region string, debug bool, corsAllowOrigin string) {
 	ctrl := controllers.NewAdminController(iam, be, logger, ar.s3api)
 	services := &controllers.Services{
 		Logger: logger,
@@ -107,7 +107,7 @@ func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMSe
 	)
 
 	app.Patch("/:bucket/create",
-		controllers.ProcessHandlers(ctrl.CreateBucket, metrics.ActionAdminListBuckets, services,
+		controllers.ProcessHandlers(ctrl.CreateBucket, metrics.ActionAdminCreateBucket, services,
 			middlewares.VerifyV4Signature(root, iam, region, false, true, false),
 			middlewares.IsAdmin(metrics.ActionAdminCreateBucket),
 			middlewares.ApplyDefaultCORS(corsAllowOrigin),

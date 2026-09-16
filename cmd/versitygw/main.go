@@ -38,6 +38,7 @@ var (
 	adminMaxConnections, adminMaxRequests         int
 	corsAllowOrigin                               string
 	admCertFile, admKeyFile                       string
+	adminPathPrefix                               string
 	certFile, keyFile                             string
 	kafkaURL, kafkaTopic, kafkaKey                string
 	natsURL, natsTopic                            string
@@ -392,6 +393,12 @@ func initFlags() []cli.Flag {
 			Usage:       "TLS key file for admin server",
 			EnvVars:     []string{"VGW_ADMIN_CERT_KEY"},
 			Destination: &admKeyFile,
+		},
+		&cli.StringFlag{
+			Name:        "admin-path-prefix",
+			Usage:       "mount the admin API under a path prefix (e.g. '/admin'), on --admin-port or, when that is unset, on the S3 port; must be '/' followed by a single segment of letters, digits, '-', '.', '_' or '~'",
+			EnvVars:     []string{"VGW_ADMIN_PATH_PREFIX"},
+			Destination: &adminPathPrefix,
 		},
 		&cli.StringFlag{
 			Name: "log-level",
@@ -947,6 +954,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		KeyFile:                     keyFile,
 		AdminCertFile:               admCertFile,
 		AdminKeyFile:                admKeyFile,
+		AdminPathPrefix:             adminPathPrefix,
 		CORSAllowOrigin:             corsAllowOrigin,
 		LogLevel:                    logLvl,
 		IAMDebug:                    iamDebug,

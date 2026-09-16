@@ -15,3 +15,22 @@ spec:
   storageClassName: {{ .Values.persistence.storageClassName | quote }}
   {{- end }}
 {{- end }}
+{{- $iamPersistence := .Values.iam.persistence | default dict }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "internal") $iamPersistence.enabled (dig "create" true $iamPersistence) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "versitygw.iamPvcName" . }}
+  labels:
+    {{- include "versitygw.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ $iamPersistence.accessMode | default "ReadWriteOnce" | quote }}
+  resources:
+    requests:
+      storage: {{ $iamPersistence.size | default "1Gi" }}
+  {{- if $iamPersistence.storageClassName }}
+  storageClassName: {{ $iamPersistence.storageClassName | quote }}
+  {{- end }}
+{{- end }}

@@ -102,6 +102,32 @@ Returns empty string if persistence is disabled.
 {{- end }}
 
 {{/*
+The name of the PVC holding the gateway's internal IAM data when
+iam.persistence.enabled is set.
+*/}}
+{{- define "versitygw.iamPvcName" -}}
+{{- $iamPersistence := .Values.iam.persistence | default dict -}}
+{{- if $iamPersistence.claimName }}
+{{- $iamPersistence.claimName }}
+{{- else }}
+{{- $base := include "versitygw.fullname" . | trunc 51 | trimSuffix "-" -}}
+{{- printf "%s-gateway-iam" $base }}
+{{- end }}
+{{- end }}
+
+{{/*
+Returns "true" when two absolute paths are equal or one contains the other.
+Takes a list of two paths.
+*/}}
+{{- define "versitygw.pathsOverlap" -}}
+{{- $a := clean (index . 0) -}}
+{{- $b := clean (index . 1) -}}
+{{- if or (eq $a $b) (eq $a "/") (eq $b "/") (hasPrefix (printf "%s/" $a) $b) (hasPrefix (printf "%s/" $b) $a) -}}
+true
+{{- end -}}
+{{- end }}
+
+{{/*
 The name of the TLS Secret used for HTTPS.
 Uses certificate.secretName if set, otherwise derives a name from the release fullname.
 */}}

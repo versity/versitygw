@@ -42,6 +42,7 @@ type S3AdminServer struct {
 	maxConnections  int
 	maxRequests     int
 	socketPerm      os.FileMode
+	pathPrefix      string
 	extraRoutes     []adminRouteMount
 }
 
@@ -102,14 +103,15 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 		app.Use("*", middlewares.DebugLogger())
 	}
 
-	server.router.Init(app, be, iam, l, root, region, server.debug, server.corsAllowOrigin)
+	router := app.Group(server.pathPrefix)
+	server.router.Init(router, be, iam, l, root, region, server.debug, server.corsAllowOrigin)
 
 	for _, r := range server.extraRoutes {
 		args := make([]any, 0, len(r.handlers))
 		for _, h := range r.handlers {
 			args = append(args, h)
 		}
-		app.Add([]string{r.method}, r.path, args[0], args[1:]...)
+		router.Add([]string{r.method}, r.path, args[0], args[1:]...)
 	}
 
 	return server
@@ -151,6 +153,12 @@ func WithAdminConcurrencyLimiter(maxConnections, maxRequests int) AdminOpt {
 // namespace sockets.
 func WithAdminSocketPerm(perm os.FileMode) AdminOpt {
 	return func(s *S3AdminServer) { s.socketPerm = perm }
+}
+
+// WithAdminPathPrefix mounts all admin routes under the given path prefix
+// (e.g. "/admin").
+func WithAdminPathPrefix(prefix string) AdminOpt {
+	return func(s *S3AdminServer) { s.pathPrefix = prefix }
 }
 
 // WithAdminRoute registers a route on the standalone admin server,
