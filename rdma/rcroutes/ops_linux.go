@@ -128,13 +128,14 @@ func (e *opsEmitter) synthesize() (fiber.Ctx, func()) {
 	ctx.Method(method)
 	// The access logger and the event schema both split this path
 	// into bucket/key, so the synthesized path must be the object
-	// path in canonical form. A part read keeps its part
-	// coordinates in the query so the record shows part semantics.
-	path := "/" + e.bucket + "/" + e.key
+	// path in canonical form, with the query kept on the URI (the
+	// logger reads the request line through OriginalURL) so a part
+	// record still shows its part coordinates without polluting
+	// the object key.
+	ctx.Path("/" + e.bucket + "/" + e.key)
 	if e.query != "" {
-		path += "?" + e.query
+		ctx.Request().URI().SetQueryString(e.query)
 	}
-	ctx.Path(path)
 	utils.ContextKeyAccount.Set(ctx, e.acct)
 	utils.ContextKeyRegion.Set(ctx, e.region)
 	utils.ContextKeyStartTime.Set(ctx, e.start)
@@ -800,6 +801,33 @@ func (t *opsTracker) publishRequest(ctx fiber.Ctx, acct auth.Account,
 	// that arrives after is dropped here (not published inline),
 	// because a request publication has no owner left to
 	// guarantee its sinks are still open.
+	t.dispatchOrDrop(pubJob{emit: emit, err: err})
+}
+
+// publishSemanticRequest is publishRequest for requests whose
+// target was parsed into a semantic operation before failing: the
+// record carries the multipart identity (action label and query)
+// instead of the bare transport op, so an UploadPart denial is not
+// recorded as a plain PutObject.
+func (t *opsTracker) publishSemanticRequest(ctx fiber.Ctx,
+	acct auth.Account, err error, bucket, key string,
+	semantic semanticOp, query string) {
+	if t == nil {
+		return
+	}
+	acct.Access = strings.Clone(acct.Access)
+	emit := &opsEmitter{
+		ops:      t.loadOps(),
+		app:      t.app,
+		acct:     acct,
+		region:   strings.Clone(regionFromCtx(ctx)),
+		bucket:   strings.Clone(bucket),
+		key:      strings.Clone(key),
+		isPut:    semantic.isPut(),
+		semantic: semantic,
+		query:    strings.Clone(query),
+		start:    time.Now(),
+	}
 	t.dispatchOrDrop(pubJob{emit: emit, err: err})
 }
 

@@ -41,7 +41,6 @@ type capService struct {
 	*fixedService
 
 	prepareErr  error // returned by Prepare when set (pre-creation)
-	stageFail   bool  // stageGet fails after the session exists
 	refuseEnter bool  // admission answer for TryEnter
 }
 
