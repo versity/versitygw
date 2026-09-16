@@ -685,7 +685,7 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	contentType := ctx.Get("Content-Type", defaultContentType)
-	contentEncoding := ctx.Get("Content-Encoding")
+	contentEncoding := utils.ParseContentEncoding(ctx)
 	contentDisposition := ctx.Get("Content-Disposition")
 	contentLanguage := ctx.Get("Content-Language")
 	cacheControl := ctx.Get("Cache-Control")
