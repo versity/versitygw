@@ -60,6 +60,7 @@ const (
 	InvalidArgOnlyAws4HmacSha256
 	InvalidArgDateHeader
 	InvalidArgIndexDocumentSuffix
+	InvalidArgMissingIndexDocumentSuffix
 	InvalidArgErrorDocumentKey
 )
 
@@ -206,6 +207,10 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	},
 	InvalidArgIndexDocumentSuffix: {
 		Description:  "The IndexDocument Suffix is not well formed",
+		ArgumentName: "IndexDocument",
+	},
+	InvalidArgMissingIndexDocumentSuffix: {
+		Description:  "A value for IndexDocument Suffix must be provided if RedirectAllRequestsTo is empty",
 		ArgumentName: "IndexDocument",
 	},
 	InvalidArgErrorDocumentKey: {
