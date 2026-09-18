@@ -17,6 +17,7 @@ package posix
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -85,9 +86,9 @@ func TestObjectPublishLockHonorsContextWhileWaiting(t *testing.T) {
 	bucket := "testbucket"
 	createTestBucket(t, p, bucket)
 
-	shard := objLockShard("cancel-wait")
-	<-p.objLockSlots[shard]
-	defer func() { p.objLockSlots[shard] <- struct{}{} }()
+	slot := objLockSlot(sha256.Sum256([]byte(bucket)), objLockShard("cancel-wait"))
+	<-p.objLockSlots[slot]
+	defer func() { p.objLockSlots[slot] <- struct{}{} }()
 	if _, err := os.Stat(p.ObjectPath(bucket, objLockDir)); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("bucket contains publish lock directory: %v", err)
 	}
@@ -132,6 +133,25 @@ func TestObjectPublishLockHonorsCancellationAfterSlotAcquired(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("lockObjectPublish error = %v, want context.Canceled", err)
 	}
+}
+
+func TestObjectPublishLockDoesNotBlockOtherBuckets(t *testing.T) {
+	p := newTestPosix(t, metaModes(t)["xattr"])
+
+	unlock, err := p.lockObjectPublish(context.Background(), "bucket-a", "my-obj")
+	if err != nil {
+		t.Fatalf("lock object publish: %v", err)
+	}
+	defer unlock()
+
+	// the same key in another bucket has its own lock file
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	unlockOther, err := p.lockObjectPublish(ctx, "bucket-b", "my-obj")
+	if err != nil {
+		t.Fatalf("lock object publish in another bucket: %v", err)
+	}
+	unlockOther()
 }
 
 func TestObjectPublishLockModes(t *testing.T) {

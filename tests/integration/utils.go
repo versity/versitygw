@@ -1234,22 +1234,24 @@ func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client, 
 
 	var csum [32]byte
 	var data []byte
-	if input.Body == nil && lgth != 0 {
-		data = make([]byte, lgth)
-		rand.Read(data)
+	if input.Body == nil {
+		if lgth != 0 {
+			data = make([]byte, lgth)
+			rand.Read(data)
 
-		csum = sha256.Sum256(data)
-		if cfg.checksumAlgorithm != "" {
-			hasher, err := NewHasher(cfg.checksumAlgorithm)
-			if err != nil {
-				return nil, err
+			if cfg.checksumAlgorithm != "" {
+				hasher, err := NewHasher(cfg.checksumAlgorithm)
+				if err != nil {
+					return nil, err
+				}
+
+				hasher.Write(data)
+				sum := base64.StdEncoding.EncodeToString(hasher.Sum(nil))
+				setPutObjectChecksum(input, cfg.checksumAlgorithm, &sum)
 			}
-
-			hasher.Write(data)
-			sum := base64.StdEncoding.EncodeToString(hasher.Sum(nil))
-			setPutObjectChecksum(input, cfg.checksumAlgorithm, &sum)
+			input.Body = bytes.NewReader(data)
 		}
-		input.Body = bytes.NewReader(data)
+		csum = sha256.Sum256(data)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
@@ -2298,10 +2300,10 @@ func createObjVersions(client *s3.Client, bucket, object string, count int, opts
 	versions := []types.ObjectVersion{}
 	for i := range count {
 		rNumber, err := rand.Int(rand.Reader, big.NewInt(100000))
-		dataLength := rNumber.Int64()
 		if err != nil {
 			return nil, err
 		}
+		dataLength := objDataLen(object, rNumber.Int64())
 
 		r, err := putObjectWithData(dataLength, &s3.PutObjectInput{
 			Bucket: &bucket,
@@ -2371,6 +2373,27 @@ func createObjVersions(client *s3.Client, bucket, object string, count int, opts
 	versions = reverseSlice(versions)
 
 	return versions, nil
+}
+
+// objDataLen returns the data length to upload for key: a directory
+// object can't hold data
+func objDataLen(key string, lgth int64) int64 {
+	if strings.HasSuffix(key, "/") {
+		return 0
+	}
+	return lgth
+}
+
+// forEachKey runs fn for each of the keys and prefixes a returned error
+// with the key it failed for. Tests use it to run the same scenario for
+// a regular object and a directory object.
+func forEachKey(keys []string, fn func(key string) error) error {
+	for _, key := range keys {
+		if err := fn(key); err != nil {
+			return fmt.Errorf("%v: %w", key, err)
+		}
+	}
+	return nil
 }
 
 // ReverseSlice reverses a slice of any type

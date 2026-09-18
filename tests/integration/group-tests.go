@@ -1941,6 +1941,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_PutObject_null_versionId_obj)
 	ts.Run(Versioning_PutObject_overwrite_null_versionId_obj)
 	ts.Run(Versioning_PutObject_success)
+	ts.Run(Versioning_PutObject_dir_object_new_version_resets_attributes)
 	// CopyObject action
 	ts.Run(Versioning_CopyObject_invalid_versionId)
 	ts.Run(Versioning_CopyObject_encoded_versionid_separator_invalid_versionId)
@@ -1957,6 +1958,7 @@ func TestVersioning(ts *TestState) {
 	}
 	ts.Run(Versioning_HeadObject_invalid_parent)
 	ts.Run(Versioning_HeadObject_success)
+	ts.Run(Versioning_HeadObject_dir_object_versions)
 	ts.Run(Versioning_HeadObject_without_versionId)
 	ts.Run(Versioning_HeadObject_delete_marker)
 	// GetObject action
@@ -1982,9 +1984,12 @@ func TestVersioning(ts *TestState) {
 	// DeleteObject actions
 	ts.Run(Versioning_DeleteObject_invalid_versionId)
 	ts.Run(Versioning_DeleteObject_delete_object_version)
+	ts.Run(Versioning_DeleteObject_dir_object_latest_version)
 	ts.Run(Versioning_DeleteObject_non_existing_object)
+	ts.Run(Versioning_DeleteObject_implicit_dir)
 	if !ts.conf.windowsTests {
 		ts.Run(Versioning_DeleteObject_delete_a_delete_marker)
+		ts.Run(Versioning_DeleteObject_dir_object_with_children)
 	}
 	ts.Run(Versioning_Delete_null_versionId_object)
 	ts.Run(Versioning_DeleteObject_nested_dir_object)
@@ -1997,6 +2002,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(ListObjectVersions_negative_max_keys)
 	ts.Run(ListObjectVersions_list_single_object_versions)
 	ts.Run(ListObjectVersions_list_multiple_object_versions)
+	ts.Run(ListObjectVersions_dir_object_with_children)
 	ts.Run(ListObjectVersions_multiple_object_versions_truncated)
 	ts.Run(ListObjectVersions_with_delete_markers)
 	ts.Run(ListObjectVersions_containing_null_versionId_obj)
@@ -2029,6 +2035,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_Put_GetObjectLegalHold_success)
 	// WORM protection
 	ts.Run(Versioning_WORM_obj_version_locked_with_legal_hold)
+	ts.Run(Versioning_WORM_dir_object_lock_headers)
 	ts.Run(Versioning_WORM_obj_version_locked_with_governance_retention)
 	ts.Run(Versioning_WORM_obj_version_locked_with_compliance_retention)
 	ts.Run(Versioning_WORM_delete_marker_locked_object_legal_hold)
@@ -3464,6 +3471,7 @@ func GetIntTests() IntTests {
 		"Versioning_PutObject_null_versionId_obj":                                          Versioning_PutObject_null_versionId_obj,
 		"Versioning_PutObject_overwrite_null_versionId_obj":                                Versioning_PutObject_overwrite_null_versionId_obj,
 		"Versioning_PutObject_success":                                                     Versioning_PutObject_success,
+		"Versioning_PutObject_dir_object_new_version_resets_attributes":                    Versioning_PutObject_dir_object_new_version_resets_attributes,
 		"Versioning_CopyObject_invalid_versionId":                                          Versioning_CopyObject_invalid_versionId,
 		"Versioning_CopyObject_encoded_versionid_separator_invalid_versionId":              Versioning_CopyObject_encoded_versionid_separator_invalid_versionId,
 		"Versioning_CopyObject_success":                                                    Versioning_CopyObject_success,
@@ -3474,6 +3482,7 @@ func GetIntTests() IntTests {
 		"Versioning_HeadObject_non_existing_object_version":                                Versioning_HeadObject_non_existing_object_version,
 		"Versioning_HeadObject_invalid_parent":                                             Versioning_HeadObject_invalid_parent,
 		"Versioning_HeadObject_success":                                                    Versioning_HeadObject_success,
+		"Versioning_HeadObject_dir_object_versions":                                        Versioning_HeadObject_dir_object_versions,
 		"Versioning_HeadObject_without_versionId":                                          Versioning_HeadObject_without_versionId,
 		"Versioning_HeadObject_delete_marker":                                              Versioning_HeadObject_delete_marker,
 		"Versioning_GetObject_invalid_versionId":                                           Versioning_GetObject_invalid_versionId,
@@ -3495,8 +3504,11 @@ func GetIntTests() IntTests {
 		"Versioning_GetObjectAttributes_delete_marker":                                     Versioning_GetObjectAttributes_delete_marker,
 		"Versioning_DeleteObject_invalid_versionId":                                        Versioning_DeleteObject_invalid_versionId,
 		"Versioning_DeleteObject_delete_object_version":                                    Versioning_DeleteObject_delete_object_version,
+		"Versioning_DeleteObject_dir_object_latest_version":                                Versioning_DeleteObject_dir_object_latest_version,
 		"Versioning_DeleteObject_non_existing_object":                                      Versioning_DeleteObject_non_existing_object,
+		"Versioning_DeleteObject_implicit_dir":                                             Versioning_DeleteObject_implicit_dir,
 		"Versioning_DeleteObject_delete_a_delete_marker":                                   Versioning_DeleteObject_delete_a_delete_marker,
+		"Versioning_DeleteObject_dir_object_with_children":                                 Versioning_DeleteObject_dir_object_with_children,
 		"Versioning_Delete_null_versionId_object":                                          Versioning_Delete_null_versionId_object,
 		"Versioning_DeleteObject_nested_dir_object":                                        Versioning_DeleteObject_nested_dir_object,
 		"Versioning_DeleteObject_non_existing_objects":                                     Versioning_DeleteObject_non_existing_objects,
@@ -3507,6 +3519,7 @@ func GetIntTests() IntTests {
 		"ListObjectVersions_negative_max_keys":                                             ListObjectVersions_negative_max_keys,
 		"ListObjectVersions_list_single_object_versions":                                   ListObjectVersions_list_single_object_versions,
 		"ListObjectVersions_list_multiple_object_versions":                                 ListObjectVersions_list_multiple_object_versions,
+		"ListObjectVersions_dir_object_with_children":                                      ListObjectVersions_dir_object_with_children,
 		"ListObjectVersions_multiple_object_versions_truncated":                            ListObjectVersions_multiple_object_versions_truncated,
 		"ListObjectVersions_with_delete_markers":                                           ListObjectVersions_with_delete_markers,
 		"ListObjectVersions_containing_null_versionId_obj":                                 ListObjectVersions_containing_null_versionId_obj,
@@ -3534,6 +3547,7 @@ func GetIntTests() IntTests {
 		"Versioning_PutGetObjectLegalHold_delete_marker":                                   Versioning_PutGetObjectLegalHold_delete_marker,
 		"Versioning_Put_GetObjectLegalHold_success":                                        Versioning_Put_GetObjectLegalHold_success,
 		"Versioning_WORM_obj_version_locked_with_legal_hold":                               Versioning_WORM_obj_version_locked_with_legal_hold,
+		"Versioning_WORM_dir_object_lock_headers":                                          Versioning_WORM_dir_object_lock_headers,
 		"Versioning_WORM_obj_version_locked_with_governance_retention":                     Versioning_WORM_obj_version_locked_with_governance_retention,
 		"Versioning_WORM_obj_version_locked_with_compliance_retention":                     Versioning_WORM_obj_version_locked_with_compliance_retention,
 		"Versioning_WORM_delete_marker_locked_object_legal_hold":                           Versioning_WORM_delete_marker_locked_object_legal_hold,
