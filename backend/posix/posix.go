@@ -1264,6 +1264,81 @@ func isRemovableAttr(attr string) bool {
 	}
 }
 
+// dirObjectAttrs are the attributes that make up the state of a directory
+// object. The directory is kept across versions and is also the parent of
+// other objects, so it may carry attributes that don't belong to the object:
+// only these are copied into, restored from and cleared between versions.
+// An attribute stored on objects must also be listed here.
+var dirObjectAttrs = []string{
+	etagkey,
+	checksumsKey,
+	contentTypeHdr,
+	contentEncHdr,
+	contentLangHdr,
+	contentDispHdr,
+	cacheCtrlHdr,
+	expiresHdr,
+	websiteRedirectHdr,
+	metadataHdr,
+	tagHdr,
+	objectLegalHoldKey,
+	objectRetentionKey,
+	versionIdKey,
+	deleteMarkerKey,
+}
+
+// isDirObject reports whether the directory at bucket/key is a directory
+// object: only directories created with a put carry an etag
+func (p *Posix) isDirObject(bucket, key string) (bool, error) {
+	_, err := p.meta.RetrieveAttribute(nil, bucket, key, etagkey)
+	if errors.Is(err, meta.ErrNoSuchKey) || errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("get dir etag: %w", err)
+	}
+	return true, nil
+}
+
+// isLiveDirObject reports whether fi, the entry at the path of the
+// directory object key, is a directory object
+func (p *Posix) isLiveDirObject(fi os.FileInfo, bucket, key string) (bool, error) {
+	if !fi.IsDir() {
+		return false, nil
+	}
+	return p.isDirObject(bucket, key)
+}
+
+// clearDirObjectAttrs removes the directory object attributes, including
+// legacy metadata attributes, from the directory at bucket/key. The etag is
+// kept: it marks the directory as an object, so a failure before the new
+// attributes are stored leaves the object and its versions visible.
+func (p *Posix) clearDirObjectAttrs(bucket, key string) error {
+	attrs, err := p.meta.ListAttributes(bucket, key)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("list object attributes: %w", err)
+	}
+	for _, attr := range attrs {
+		if isValidMeta(attr) {
+			err := p.meta.DeleteAttribute(bucket, key, attr)
+			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+				return fmt.Errorf("remove %v attribute: %w", attr, err)
+			}
+		}
+	}
+
+	for _, attr := range dirObjectAttrs {
+		if attr == etagkey {
+			continue
+		}
+		err := p.meta.DeleteAttribute(bucket, key, attr)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove %v attribute: %w", attr, err)
+		}
+	}
+	return nil
+}
+
 // Creates a new copy(version) of an object in the versioning directory
 func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Account, removeAttributes bool) (versionPath string, err error) {
 	sf, err := os.Open(p.ObjectPath(bucket, key))
@@ -1283,9 +1358,19 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 		versionId = nullVersionId
 	}
 
-	attrs, err := p.meta.ListAttributes(bucket, key)
-	if err != nil {
-		return versionPath, fmt.Errorf("load object attributes: %w", err)
+	// a directory object version is an empty file carrying the
+	// directory object attributes
+	isDir := strings.HasSuffix(key, "/")
+	attrs := dirObjectAttrs
+	if isDir {
+		size = 0
+		// store legacy metadata attributes as the metadata attribute
+		p.loadObjectMetadata(sf, bucket, key)
+	} else {
+		attrs, err = p.meta.ListAttributes(bucket, key)
+		if err != nil {
+			return versionPath, fmt.Errorf("load object attributes: %w", err)
+		}
 	}
 
 	versionBucketPath := filepath.Join(p.versioningDir, bucket)
@@ -1303,10 +1388,12 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 		originalMTime = srcInfo.ModTime()
 	}
 
-	// Prioritize copy_file_range for internal file-to-file version copies.
-	_, err = io.Copy(f.File(), sf)
-	if err != nil {
-		return versionPath, err
+	if !isDir {
+		// Prioritize copy_file_range for internal file-to-file version copies.
+		_, err = io.Copy(f.File(), sf)
+		if err != nil {
+			return versionPath, err
+		}
 	}
 
 	// Restore original mtime after copy
@@ -1325,6 +1412,9 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 	// Copy the object attributes(metadata)
 	for _, attr := range attrs {
 		data, err := p.meta.RetrieveAttribute(sf, bucket, key, attr)
+		if isDir && errors.Is(err, meta.ErrNoSuchKey) {
+			continue
+		}
 		if err != nil {
 			return versionPath, fmt.Errorf("list %v attribute: %w", attr, err)
 		}
@@ -1479,51 +1569,19 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				Truncated:      true,
 			}, nil
 		}
+		// a directory is listed under the key with the trailing slash
+		key := path
 		if d.IsDir() {
-			// directory object only happens if directory empty
-			// check to see if this is a directory object by checking etag
-			etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, path, etagkey)
-			if errors.Is(err, meta.ErrNoSuchKey) || errors.Is(err, fs.ErrNotExist) {
-				return nil, backend.ErrSkipObj
-			}
-			if err != nil {
-				return nil, fmt.Errorf("get etag: %w", err)
-			}
-			etag := string(etagBytes)
-
-			fi, err := d.Info()
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil, backend.ErrSkipObj
-			}
-			if err != nil {
-				return nil, fmt.Errorf("get fileinfo: %w", err)
-			}
-
-			key := path + "/"
-			// Directory objects don't contain data
-			size := int64(0)
-			versionId := "null"
-
-			objects = append(objects, s3response.ObjectVersion{
-				ETag:         &etag,
-				Key:          &key,
-				LastModified: backend.GetTimePtr(fi.ModTime()),
-				IsLatest:     getBoolPtr(true),
-				Size:         &size,
-				VersionId:    &versionId,
-				StorageClass: types.ObjectVersionStorageClassStandard,
-			})
-
-			return &backend.ObjVersionFuncResult{
-				ObjectVersions: objects,
-				DelMarkers:     delMarkers,
-				Truncated:      availableObjCount == 1,
-			}, nil
+			key = path + "/"
 		}
 
-		// file object, get object info and fill out object data
+		// get object info and fill out object data
 		etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, path, etagkey)
 		if errors.Is(err, fs.ErrNotExist) {
+			return nil, backend.ErrSkipObj
+		}
+		if d.IsDir() && errors.Is(err, meta.ErrNoSuchKey) {
+			// a directory is listed only if it's a directory object
 			return nil, backend.ErrSkipObj
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -1552,6 +1610,10 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 			}
 
 			size := fi.Size()
+			if d.IsDir() {
+				// directory objects don't contain data
+				size = 0
+			}
 
 			isDel, err := p.isObjDeleteMarker(bucket, path)
 			if err != nil {
@@ -1563,7 +1625,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 					IsLatest:     getBoolPtr(true),
 					VersionId:    &versionId,
 					LastModified: backend.GetTimePtr(fi.ModTime()),
-					Key:          &path,
+					Key:          &key,
 				})
 			} else {
 				// Retrieve checksum
@@ -1574,7 +1636,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 
 				objects = append(objects, s3response.ObjectVersion{
 					ETag:              &etag,
-					Key:               &path,
+					Key:               &key,
 					LastModified:      backend.GetTimePtr(fi.ModTime()),
 					Size:              &size,
 					VersionId:         &versionId,
@@ -1604,7 +1666,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 		}
 
 		// List all the versions of the object in the versioning directory
-		versionPath := p.genObjVersionPath(bucket, path)
+		versionPath := p.genObjVersionPath(bucket, key)
 		dirEnts, err := os.ReadDir(versionPath)
 		if errors.Is(err, fs.ErrNotExist) {
 			return &backend.ObjVersionFuncResult{
@@ -1642,7 +1704,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				nullObjDelMarker = &types.DeleteMarkerEntry{
 					VersionId:    backend.GetPtrFromString("null"),
 					LastModified: backend.GetTimePtr(nf.ModTime()),
-					Key:          &path,
+					Key:          &key,
 					IsLatest:     getBoolPtr(false),
 				}
 			} else {
@@ -1665,7 +1727,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 
 				nullVersionIdObj = &s3response.ObjectVersion{
 					ETag:         &etag,
-					Key:          &path,
+					Key:          &key,
 					LastModified: backend.GetTimePtr(nf.ModTime()),
 					Size:         &size,
 					VersionId:    backend.GetPtrFromString("null"),
@@ -1775,7 +1837,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				delMarkers = append(delMarkers, types.DeleteMarkerEntry{
 					VersionId:    &versionId,
 					LastModified: backend.GetTimePtr(f.ModTime()),
-					Key:          &path,
+					Key:          &key,
 					IsLatest:     getBoolPtr(false),
 				})
 			} else {
@@ -1786,7 +1848,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				}
 				objects = append(objects, s3response.ObjectVersion{
 					ETag:              &etag,
-					Key:               &path,
+					Key:               &key,
 					LastModified:      backend.GetTimePtr(f.ModTime()),
 					Size:              &size,
 					VersionId:         &versionId,
@@ -3889,8 +3951,23 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	if err != nil {
 		return s3response.CopyPartResult{}, fmt.Errorf("stat object: %w", err)
 	}
+	if strings.HasSuffix(srcObject, "/") != fi.IsDir() {
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	// a directory object holds no data
+	srcSize := fi.Size()
+	if fi.IsDir() {
+		isObj, err := p.isDirObject(srcBucket, srcObject)
+		if err != nil {
+			return s3response.CopyPartResult{}, err
+		}
+		if !isObj {
+			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		srcSize = 0
+	}
 
-	startOffset, length, err := backend.ParseCopySourceRange(fi.Size(), *upi.CopySourceRange)
+	startOffset, length, err := backend.ParseCopySourceRange(srcSize, *upi.CopySourceRange)
 	if err != nil {
 		return s3response.CopyPartResult{}, err
 	}
@@ -4128,10 +4205,21 @@ func (p *Posix) snapshotObjVersion(bucket, key string, vStatus types.BucketVersi
 		return nil
 	}
 
+	isDir := strings.HasSuffix(key, "/")
 	d, err := os.Stat(p.ObjectPath(bucket, key))
-	if err != nil || d.IsDir() {
+	if err != nil || d.IsDir() != isDir {
 		// nothing to snapshot
 		return nil
+	}
+	if isDir {
+		isObj, err := p.isDirObject(bucket, key)
+		if err != nil {
+			return err
+		}
+		if !isObj {
+			// nothing to snapshot
+			return nil
+		}
 	}
 
 	var isVersionIdMissing bool
@@ -4268,6 +4356,37 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			return s3response.PutObjectOutput{}, err
 		}
 
+		expectedSum := getEmptyChecksumValue(checksumAlgorithm)
+		if checksumValue != "" && expectedSum != checksumValue {
+			return s3response.PutObjectOutput{}, s3err.GetChecksumBadDigestErr(checksumAlgorithm)
+		}
+
+		// reject object lock settings the bucket doesn't support before
+		// the directory object is changed
+		if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn || po.ObjectLockMode != "" {
+			err = p.isBucketObjectLockEnabled(*po.Bucket)
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+				return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+			}
+			if err != nil {
+				return s3response.PutObjectOutput{}, err
+			}
+		}
+
+		vStatus, err := p.getBucketVersioningStatus(ctx, *po.Bucket)
+		if err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
+		versioned := p.versioningEnabled() && vStatus != ""
+
+		// In a versioned bucket the directory is kept across versions: its
+		// current version is copied to the versioning directory and its
+		// object attributes are then replaced with the new version's.
+		err = p.snapshotObjVersion(*po.Bucket, *po.Key, vStatus, acct)
+		if err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
+
 		err = p.mkdirAll(name, uid, gid, doChown)
 		if err != nil {
 			if errors.Is(err, syscall.EDQUOT) {
@@ -4277,6 +4396,23 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 				return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 			}
 			return s3response.PutObjectOutput{}, err
+		}
+
+		var versionID string
+		if versioned {
+			err = p.clearDirObjectAttrs(*po.Bucket, *po.Key)
+			if err != nil {
+				return s3response.PutObjectOutput{}, err
+			}
+
+			if p.isBucketVersioningSuspended(vStatus) {
+				err = p.deleteNullVersionIdObject(*po.Bucket, *po.Key)
+				if err != nil {
+					return s3response.PutObjectOutput{}, err
+				}
+			} else {
+				versionID = ulid.Make().String()
+			}
 		}
 
 		err = p.storeObjectMetadata(nil, *po.Bucket, *po.Key, po.Metadata)
@@ -4291,8 +4427,6 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 				return s3response.PutObjectOutput{}, err
 			}
 		}
-
-		expectedSum := getEmptyChecksumValue(checksumAlgorithm)
 
 		dirETag := emptyMD5
 		if p.dataIntegrityEtag {
@@ -4321,10 +4455,6 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			}
 		}
 
-		if checksumValue != "" && expectedSum != checksumValue {
-			return s3response.PutObjectOutput{}, s3err.GetChecksumBadDigestErr(checksumAlgorithm)
-		}
-
 		// set empty checksum
 		checksum := s3response.Checksum{
 			Type:      types.ChecksumTypeFullObject,
@@ -4338,9 +4468,29 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			return s3response.PutObjectOutput{}, fmt.Errorf("store checksum: %w", err)
 		}
 
-		// for directory object no version is created
+		if versionID != "" {
+			err = p.meta.StoreAttribute(nil, *po.Bucket, *po.Key, versionIdKey, []byte(versionID))
+			if err != nil {
+				return s3response.PutObjectOutput{}, fmt.Errorf("set versionId attr: %w", err)
+			}
+		}
+
+		if versioned {
+			// The directory mtime is the version's last modified time.
+			// Setting it needs the directory to be owned by the gateway,
+			// otherwise it's left as is.
+			now := time.Now()
+			_ = os.Chtimes(name, now, now)
+		}
+
+		err = p.putObjectLockSettings(ctx, po)
+		if err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
+
 		return s3response.PutObjectOutput{
 			ETag:              dirETag,
+			VersionID:         versionID,
 			Size:              &contentLength,
 			ChecksumType:      checksum.Type,
 			ChecksumCRC32:     checksum.CRC32,
@@ -4614,34 +4764,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		}
 	}
 
-	// Set object legal hold
-	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
-		err := p.PutObjectLegalHold(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", true)
-		if err != nil {
-			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
-				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
-			}
-			return s3response.PutObjectOutput{}, err
-		}
-	}
-
-	// Set object retention
-	if po.ObjectLockMode != "" {
-		retention := types.ObjectLockRetention{
-			Mode:            types.ObjectLockRetentionMode(po.ObjectLockMode),
-			RetainUntilDate: po.ObjectLockRetainUntilDate,
-		}
-		retParsed, err := json.Marshal(retention)
-		if err != nil {
-			return s3response.PutObjectOutput{}, fmt.Errorf("parse object lock retention: %w", err)
-		}
-		err = p.PutObjectRetention(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", retParsed)
-		if err != nil {
-			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
-				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
-			}
-			return s3response.PutObjectOutput{}, err
-		}
+	err = p.putObjectLockSettings(ctx, po)
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
 	}
 
 	return s3response.PutObjectOutput{
@@ -4660,6 +4785,42 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		Size:              &objsize,
 		ChecksumType:      checksum.Type,
 	}, nil
+}
+
+// putObjectLockSettings sets the legal hold and retention requested with
+// the put on the object that was just published
+func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObjectInput) error {
+	// Set object legal hold
+	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
+		err := p.PutObjectLegalHold(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", true)
+		if err != nil {
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+			}
+			return err
+		}
+	}
+
+	// Set object retention
+	if po.ObjectLockMode != "" {
+		retention := types.ObjectLockRetention{
+			Mode:            types.ObjectLockRetentionMode(po.ObjectLockMode),
+			RetainUntilDate: po.ObjectLockRetainUntilDate,
+		}
+		retParsed, err := json.Marshal(retention)
+		if err != nil {
+			return fmt.Errorf("parse object lock retention: %w", err)
+		}
+		err = p.PutObjectRetention(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", retParsed)
+		if err != nil {
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+			}
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
@@ -4721,8 +4882,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			})
 	}
 
-	// Directory objects can't have versions
-	if !isDir && p.versioningEnabled() && vStatus != "" {
+	if p.versioningEnabled() && vStatus != "" {
 		if getString(input.VersionId) == "" {
 			// if the versionId is not specified, make the current version a delete marker
 			fi, err := os.Stat(objpath)
@@ -4735,6 +4895,16 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			}
 			if err != nil {
 				return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+			}
+			if isDir {
+				isObj, err := p.isLiveDirObject(fi, bucket, object)
+				if err != nil {
+					return nil, err
+				}
+				if !isObj {
+					// AWS returns success if the object does not exist
+					return &s3.DeleteObjectOutput{}, nil
+				}
 			}
 
 			err = evalPreconditions(fi, bucket, object)
@@ -4792,6 +4962,30 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		} else {
 			versionPath := p.genObjVersionPath(bucket, object)
 
+			if isDir {
+				// the attributes at a directory object path may belong to a
+				// file or to a directory that isn't an object
+				fi, err := os.Stat(objpath)
+				if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
+					// AWS returns success if the object does not exist
+					return &s3.DeleteObjectOutput{VersionId: input.VersionId}, nil
+				}
+				if isErrNameTooLong(err) {
+					return nil, s3err.GetKeyTooLongErr(int64(len(object)), 1024)
+				}
+				if err != nil {
+					return nil, fmt.Errorf("stat object: %w", err)
+				}
+				isObj, err := p.isLiveDirObject(fi, bucket, object)
+				if err != nil {
+					return nil, err
+				}
+				if !isObj {
+					// AWS returns success if the object does not exist
+					return &s3.DeleteObjectOutput{VersionId: input.VersionId}, nil
+				}
+			}
+
 			vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
 			if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 				// AWS returns success if the object does not exist
@@ -4829,6 +5023,16 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				if err != nil {
 					return nil, err
 				}
+				if isDir {
+					err = p.deleteDirObjectLatestVersion(bucket, object)
+					if err != nil {
+						return nil, err
+					}
+					return &s3.DeleteObjectOutput{
+						DeleteMarker: &isDelMarker,
+						VersionId:    input.VersionId,
+					}, nil
+				}
 				err = os.Remove(objpath)
 				if err != nil && !errors.Is(err, fs.ErrNotExist) && !isErrNotDir(err) {
 					return nil, fmt.Errorf("remove obj version: %w", err)
@@ -4862,7 +5066,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					}, nil
 				}
 
-				srcObjVersion, err := ents[len(ents)-1].Info()
+				srcObjVersion, err := latestObjVersion(ents).Info()
 				if err != nil {
 					return nil, fmt.Errorf("get file info: %w", err)
 				}
@@ -5033,6 +5237,93 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	return &s3.DeleteObjectOutput{}, nil
 }
 
+// latestObjVersion returns the entry of the version, among the version
+// directory entries, that becomes the latest one when the latest version
+// of the object is deleted
+func latestObjVersion(ents []fs.DirEntry) fs.DirEntry {
+	return ents[len(ents)-1]
+}
+
+// deleteDirObjectLatestVersion removes the latest version of the directory
+// object at bucket/key. The newest remaining version is restored onto the
+// directory. With no versions left the directory stops being an object and
+// is removed, unless other objects are under it.
+func (p *Posix) deleteDirObjectLatestVersion(bucket, key string) error {
+	objpath := p.ObjectPath(bucket, key)
+	versionPath := p.genObjVersionPath(bucket, key)
+
+	ents, err := os.ReadDir(versionPath)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("read version dir: %w", err)
+	}
+
+	if len(ents) == 0 {
+		err := os.Remove(objpath)
+		if isErrDirNotEmpty(err) {
+			// the directory stays as the parent of the objects under it
+			err = p.clearDirObjectAttrs(bucket, key)
+			if err != nil {
+				return err
+			}
+			err = p.meta.DeleteAttribute(bucket, key, etagkey)
+			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+				return fmt.Errorf("remove etag attribute: %w", err)
+			}
+			return nil
+		}
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove dir object: %w", err)
+		}
+		err = p.meta.DeleteAttributes(bucket, key)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("delete object attributes: %w", err)
+		}
+		p.removeParents(bucket, key)
+		return nil
+	}
+
+	srcVersion := latestObjVersion(ents)
+	srcVersionId := srcVersion.Name()
+	srcInfo, err := srcVersion.Info()
+	if err != nil {
+		return fmt.Errorf("get file info: %w", err)
+	}
+
+	// replace the attributes in place, so that the directory keeps its etag
+	for _, attr := range dirObjectAttrs {
+		data, err := p.meta.RetrieveAttribute(nil, versionPath, srcVersionId, attr)
+		if errors.Is(err, meta.ErrNoSuchKey) {
+			err = p.meta.DeleteAttribute(bucket, key, attr)
+			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+				return fmt.Errorf("remove %v attribute: %w", attr, err)
+			}
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("load %v attribute: %w", attr, err)
+		}
+
+		err = p.meta.StoreAttribute(nil, bucket, key, attr, data)
+		if err != nil {
+			return fmt.Errorf("store %v attribute: %w", attr, err)
+		}
+	}
+
+	err = os.Remove(filepath.Join(versionPath, srcVersionId))
+	if err != nil {
+		return fmt.Errorf("remove obj version: %w", err)
+	}
+
+	_ = p.meta.DeleteAttributes(versionPath, srcVersionId)
+	p.removeParents(filepath.Join(p.versioningDir, bucket), filepath.Join(genObjVersionKey(key), srcVersionId))
+
+	// The restored version keeps its last modified time. Setting it needs
+	// the directory to be owned by the gateway, otherwise it's left as is.
+	_ = os.Chtimes(objpath, time.Now(), srcInfo.ModTime())
+
+	return nil
+}
+
 func (p *Posix) removeParents(bucket, object string) {
 	// this will remove all parent directories that were not
 	// specifically uploaded with a put object. we detect
@@ -5195,12 +5486,12 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		// in '/') have an etag attribute. Directories created incidentally on the
 		// filesystem or as parent directories during object upload should not be
 		// accessible via get-object.
-		_, derr := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
-		if errors.Is(derr, meta.ErrNoSuchKey) || errors.Is(derr, fs.ErrNotExist) {
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		isObj, err := p.isDirObject(bucket, object)
+		if err != nil {
+			return nil, err
 		}
-		if derr != nil {
-			return nil, fmt.Errorf("get dir etag: %w", derr)
+		if !isObj {
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 	}
 
@@ -5239,6 +5530,18 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// If versioning is configured get the object versionId
+	if p.versioningEnabled() && versionId == "" {
+		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
+		if errors.Is(err, meta.ErrNoSuchKey) {
+			versionId = nullVersionId
+		} else if err != nil {
+			return nil, err
+		}
+
+		versionId = string(vId)
 	}
 
 	if fid.IsDir() {
@@ -5297,18 +5600,6 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 			StorageClass:            types.StorageClassStandard,
 			VersionId:               &versionId,
 		}, nil
-	}
-
-	// If versioning is configured get the object versionId
-	if p.versioningEnabled() && versionId == "" {
-		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, meta.ErrNoSuchKey) {
-			versionId = nullVersionId
-		} else if err != nil {
-			return nil, err
-		}
-
-		versionId = string(vId)
 	}
 
 	// openForRead opens with FILE_SHARE_DELETE on Windows so that a concurrent
@@ -5535,12 +5826,12 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		// in '/') have an etag attribute. Directories created incidentally on the
 		// filesystem or as parent directories during object upload should not be
 		// accessible via head-object.
-		_, derr := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
-		if errors.Is(derr, meta.ErrNoSuchKey) || errors.Is(derr, fs.ErrNotExist) {
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		isObj, err := p.isDirObject(bucket, object)
+		if err != nil {
+			return nil, err
 		}
-		if derr != nil {
-			return nil, fmt.Errorf("get dir etag: %w", derr)
+		if !isObj {
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 	}
 
@@ -5878,7 +6169,21 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	if !strings.HasSuffix(srcObject, "/") && fi.IsDir() {
 		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
-	if fi.Size() > p.copyObjectThreshold {
+	// a directory object holds no data
+	srcSize := fi.Size()
+	var srcBody io.Reader = f
+	if fi.IsDir() {
+		isObj, err := p.isDirObject(srcBucket, srcObject)
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
+		if !isObj {
+			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		srcSize = 0
+		srcBody = strings.NewReader("")
+	}
+	if srcSize > p.copyObjectThreshold {
 		return s3response.CopyObjectOutput{}, s3err.GetCopySourceObjectTooLargeErr(p.copyObjectThreshold)
 	}
 
@@ -6042,7 +6347,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 			}
 		}
 	} else {
-		contentLength := fi.Size()
+		contentLength := srcSize
 
 		checksums, err := p.retrieveChecksums(f, srcBucket, srcObject)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -6058,7 +6363,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		putObjectInput := s3response.PutObjectInput{
 			Bucket:                    &dstBucket,
 			Key:                       &dstObject,
-			Body:                      f,
+			Body:                      srcBody,
 			ContentLength:             &contentLength,
 			ChecksumAlgorithm:         checksums.Algorithm,
 			ContentType:               input.ContentType,
@@ -6237,7 +6542,7 @@ func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 			}
 		}
 		if d.IsDir() {
-			// directory object only happens if directory empty
+			// a directory is listed only if it's a directory object
 			// check to see if this is a directory object by checking etag
 			etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, path, etagkey)
 			if errors.Is(err, meta.ErrNoSuchKey) || errors.Is(err, fs.ErrNotExist) {
@@ -6247,6 +6552,12 @@ func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 				return s3response.Object{}, fmt.Errorf("get etag: %w", err)
 			}
 			etag := string(etagBytes)
+
+			// If the directory object is a delete marker, skip
+			isDel, _ := p.isObjDeleteMarker(bucket, path)
+			if isDel {
+				return s3response.Object{}, backend.ErrSkipObj
+			}
 
 			fi, err := d.Info()
 			if errors.Is(err, fs.ErrNotExist) {
