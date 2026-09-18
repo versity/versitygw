@@ -91,7 +91,8 @@ func (c *WebsiteConfiguration) Validate() error {
 
 	if c.IndexDocument == nil {
 		debuglogger.Logf("website index document is missing")
-		return s3err.GetAPIError(s3err.ErrMalformedXML)
+		// S3 reports the absent suffix value as the literal "null".
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingIndexDocumentSuffix, "null")
 	}
 	if c.IndexDocument.Suffix == "" {
 		debuglogger.Logf("website index suffix is empty")
