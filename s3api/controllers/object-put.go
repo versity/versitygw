@@ -27,6 +27,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
@@ -306,6 +307,12 @@ func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 		body = bodyi.(io.Reader)
 	} else {
 		body = bytes.NewReader([]byte{})
+	}
+	// aws-chunked bodies are framed and length-checked by the chunk readers
+	// (the ones implementing middlewares.ChecksumReader). A plain body has
+	// nothing but Content-Length to tell a finished upload from an aborted one.
+	if _, chunked := body.(middlewares.ChecksumReader); !chunked {
+		body = utils.NewContentLengthReader(body, contentLength)
 	}
 
 	res, err := c.be.UploadPart(ctx.RequestCtx(),
@@ -806,6 +813,12 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 		body = bodyi.(io.Reader)
 	} else {
 		body = bytes.NewReader([]byte{})
+	}
+	// aws-chunked bodies are framed and length-checked by the chunk readers
+	// (the ones implementing middlewares.ChecksumReader). A plain body has
+	// nothing but Content-Length to tell a finished upload from an aborted one.
+	if _, chunked := body.(middlewares.ChecksumReader); !chunked {
+		body = utils.NewContentLengthReader(body, contentLength)
 	}
 
 	ifMatch, ifNoneMatch := utils.ParsePreconditionMatchHeaders(ctx)
