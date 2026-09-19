@@ -168,6 +168,9 @@ func TestGetBucketLocation(ts *TestState) {
 func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_non_existing_bucket)
 	ts.Run(PutObject_special_chars)
+	ts.Run(PutObject_aborted_plain_body)
+	ts.Run(PutObject_aborted_streaming_body)
+	ts.Run(PutObject_plain_body_with_decoded_length)
 	ts.Run(PutObject_tagging)
 	ts.Run(PutObject_missing_object_lock_retention_config)
 	ts.Run(PutObject_with_object_lock)
@@ -2867,6 +2870,9 @@ func GetIntTests() IntTests {
 		"GetBucketLocation_no_access":                                                      GetBucketLocation_no_access,
 		"PutObject_non_existing_bucket":                                                    PutObject_non_existing_bucket,
 		"PutObject_special_chars":                                                          PutObject_special_chars,
+		"PutObject_aborted_plain_body":                                                     PutObject_aborted_plain_body,
+		"PutObject_aborted_streaming_body":                                                 PutObject_aborted_streaming_body,
+		"PutObject_plain_body_with_decoded_length":                                         PutObject_plain_body_with_decoded_length,
 		"PutObject_tagging":                                                                PutObject_tagging,
 		"PutObject_success":                                                                PutObject_success,
 		"PutObject_default_content_type":                                                   PutObject_default_content_type,
