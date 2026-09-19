@@ -631,21 +631,20 @@ func (p *Posix) doesBucketExist(bucket string) error {
 	return nil
 }
 
-func (p *Posix) doesBucketAndObjectExist(bucket, object string) error {
+// doesBucketAndObjectExist checks that bucket exists and, when versionId is
+// empty, that object has a current version. A specific version is looked up
+// once versionId is validated.
+func (p *Posix) doesBucketAndObjectExist(bucket, object, versionId string) error {
 	err := p.doesBucketExist(bucket)
 	if err != nil {
 		return err
 	}
-
-	_, err = os.Stat(p.ObjectPath(bucket, object))
-	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-		return s3err.GetAPIError(s3err.ErrNoSuchKey)
-	}
-	if err != nil {
-		return fmt.Errorf("stat object: %w", err)
+	if versionId != "" {
+		return nil
 	}
 
-	return nil
+	_, _, err = p.objVersionAttrPath(bucket, object, "")
+	return err
 }
 
 func (p *Posix) ListBuckets(ctx context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
@@ -1300,13 +1299,77 @@ func (p *Posix) isDirObject(bucket, key string) (bool, error) {
 	return true, nil
 }
 
-// isLiveDirObject reports whether fi, the entry at the path of the
-// directory object key, is a directory object
-func (p *Posix) isLiveDirObject(fi os.FileInfo, bucket, key string) (bool, error) {
-	if !fi.IsDir() {
+// isLiveObject reports whether fi, the entry at the path of key, is the
+// current version of key. A key and the same key with a trailing slash
+// share one path and one set of attributes: a file there is the object of
+// the key without the slash, a directory object the object of the key with
+// it.
+func (p *Posix) isLiveObject(fi os.FileInfo, bucket, key string) (bool, error) {
+	if fi.IsDir() != strings.HasSuffix(key, "/") {
 		return false, nil
 	}
+	if !fi.IsDir() {
+		return true, nil
+	}
 	return p.isDirObject(bucket, key)
+}
+
+// statLiveObject returns the file info of the current version of key. An
+// error matching fs.ErrNotExist is returned when key has no current
+// version, including when the entry at its path is another key's object.
+func (p *Posix) statLiveObject(bucket, key string) (os.FileInfo, error) {
+	fi, err := os.Stat(p.ObjectPath(bucket, key))
+	if isErrNotDir(err) {
+		return nil, fs.ErrNotExist
+	}
+	if err != nil {
+		return nil, err
+	}
+	isObj, err := p.isLiveObject(fi, bucket, key)
+	if err != nil {
+		return nil, err
+	}
+	if !isObj {
+		return nil, fs.ErrNotExist
+	}
+	return fi, nil
+}
+
+// objVersionAttrPath returns the bucket and object that the attributes of
+// the version versionId of key are stored at: key itself for its current
+// version, an entry of the versioning directory for other versions. An
+// empty versionId selects the current version, and NoSuchKey is returned if
+// key has none.
+func (p *Posix) objVersionAttrPath(bucket, key, versionId string) (string, string, error) {
+	_, err := p.statLiveObject(bucket, key)
+	if isErrNameTooLong(err) {
+		return "", "", s3err.GetKeyTooLongErr(int64(len(key)), 1024)
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", "", fmt.Errorf("stat object: %w", err)
+	}
+	isLive := err == nil
+
+	if versionId == "" {
+		if !isLive {
+			return "", "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		return bucket, key, nil
+	}
+
+	if isLive {
+		vId, err := p.meta.RetrieveAttribute(nil, bucket, key, versionIdKey)
+		if errors.Is(err, meta.ErrNoSuchKey) {
+			vId = []byte(nullVersionId)
+		} else if err != nil {
+			return "", "", fmt.Errorf("get obj versionId: %w", err)
+		}
+		if string(vId) == versionId {
+			return bucket, key, nil
+		}
+	}
+
+	return filepath.Join(p.versioningDir, bucket), filepath.Join(genObjVersionKey(key), versionId), nil
 }
 
 // clearDirObjectAttrs removes the directory object attributes, including
@@ -1962,7 +2025,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 
 	// set object tagging
 	if tags != nil {
-		err := p.PutObjectTagging(withCtxNoSlot(ctx), bucket, filepath.Join(objdir, uploadID), "", tags)
+		err := p.storeObjectTags(bucket, filepath.Join(objdir, uploadID), tags)
 		if err != nil {
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
@@ -1993,7 +2056,10 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 
 	// set object legal hold
 	if mpu.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
-		err := p.PutObjectLegalHold(withCtxNoSlot(ctx), bucket, filepath.Join(objdir, uploadID), "", true)
+		err := p.isBucketObjectLockEnabled(bucket)
+		if err == nil {
+			err = p.meta.StoreAttribute(nil, bucket, filepath.Join(objdir, uploadID), objectLegalHoldKey, []byte{1})
+		}
 		if err != nil {
 			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
 				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
@@ -2020,7 +2086,10 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 			_ = p.meta.DeleteAttributes(bucket, filepath.Join(objdir, uploadID))
 			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("parse object lock retention: %w", err)
 		}
-		err = p.PutObjectRetention(withCtxNoSlot(ctx), bucket, filepath.Join(objdir, uploadID), "", retParsed)
+		err = p.isBucketObjectLockEnabled(bucket)
+		if err == nil {
+			err = p.meta.StoreAttribute(nil, bucket, filepath.Join(objdir, uploadID), objectRetentionKey, retParsed)
+		}
 		if err != nil {
 			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
 				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
@@ -2313,7 +2382,9 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			}, "", nil
 		}
 		// Directory is gone: the concurrent call already completed and cleaned up.
-		if _, statErr := os.Stat(p.ObjectPath(bucket, object)); statErr == nil {
+		// A directory at the object path is the object of the key with a
+		// trailing slash, not the completed upload.
+		if fi, statErr := os.Stat(p.ObjectPath(bucket, object)); statErr == nil && !fi.IsDir() {
 			etag := multipartClaimToken
 			if p.dataIntegrityEtag {
 				etagBytes, etagErr := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
@@ -2383,12 +2454,16 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	defer os.Rename(uploadIDInProgress, uploadIDDir)
 	defer p.meta.RenameObject(bucket, newMetaObj, oldMetaObj)
 
-	// Fast-fail precondition check before the parts are assembled. This is
-	// only advisory: the authoritative check is repeated while holding the
-	// object publish lock just before the final link.
+	// Fast-fail precondition and directory checks before the parts are
+	// assembled. These are only advisory: the authoritative checks are
+	// repeated while holding the object publish lock just before the final
+	// link.
 	err = p.checkPutPreconditions(bucket, object, input.IfMatch, input.IfNoneMatch)
 	if err != nil {
 		return res, "", err
+	}
+	if d, err := os.Stat(p.ObjectPath(bucket, object)); err == nil && d.IsDir() {
+		return res, "", s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 	}
 
 	checksums, err := p.retrieveChecksums(nil, bucket, filepath.Join(objdir, activeUploadName))
@@ -2717,9 +2792,14 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	vEnabled := p.isBucketVersioningEnabled(vStatus)
 
 	d, err := os.Stat(objname)
+	if err == nil && d.IsDir() {
+		// the directory is the object of the key with a trailing slash, or
+		// the parent of other objects: its attributes are not this object's
+		return res, "", s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
+	}
 
 	// if the versioning is enabled first create the file object version
-	if p.versioningEnabled() && vEnabled && err == nil && !d.IsDir() {
+	if p.versioningEnabled() && vEnabled && err == nil {
 		_, err := p.createObjVersion(bucket, object, d.Size(), acct, false)
 		if err != nil {
 			return res, "", fmt.Errorf("create object version: %w", err)
@@ -4189,6 +4269,13 @@ func (p *Posix) checkPutPreconditions(bucket, object string, ifMatch, ifNoneMatc
 		return s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
 
+	// the etag at the object path may be the one of the key with or
+	// without the trailing slash
+	_, err := p.statLiveObject(bucket, object)
+	if errors.Is(err, fs.ErrNotExist) {
+		return backend.EvaluateObjectPutPreconditions("", ifMatch, ifNoneMatch, false)
+	}
+
 	etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, meta.ErrNoSuchKey) {
 		return backend.EvaluateObjectPutPreconditions(string(etagBytes), ifMatch, ifNoneMatch, err == nil)
@@ -4420,14 +4507,6 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			return s3response.PutObjectOutput{}, fmt.Errorf("set object metadata: %w", err)
 		}
 
-		// Set object tagging
-		if tags != nil {
-			err := p.PutObjectTagging(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", tags)
-			if err != nil {
-				return s3response.PutObjectOutput{}, err
-			}
-		}
-
 		dirETag := emptyMD5
 		if p.dataIntegrityEtag {
 			dirETag = fmt.Sprintf("\"%s-%s\"", strings.ToUpper(string(checksumAlgorithm)), expectedSum)
@@ -4481,6 +4560,14 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			// otherwise it's left as is.
 			now := time.Now()
 			_ = os.Chtimes(name, now, now)
+		}
+
+		// Set object tagging once the etag makes the directory an object
+		if tags != nil {
+			err := p.PutObjectTagging(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", tags)
+			if err != nil {
+				return s3response.PutObjectOutput{}, err
+			}
 		}
 
 		err = p.putObjectLockSettings(ctx, po)
@@ -4896,15 +4983,15 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			if err != nil {
 				return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 			}
-			if isDir {
-				isObj, err := p.isLiveDirObject(fi, bucket, object)
-				if err != nil {
-					return nil, err
-				}
-				if !isObj {
-					// AWS returns success if the object does not exist
-					return &s3.DeleteObjectOutput{}, nil
-				}
+			// the entry at the object path may be the object of the key
+			// with or without the trailing slash
+			isObj, err := p.isLiveObject(fi, bucket, object)
+			if err != nil {
+				return nil, err
+			}
+			if !isObj {
+				// AWS returns success if the object does not exist
+				return &s3.DeleteObjectOutput{}, nil
 			}
 
 			err = evalPreconditions(fi, bucket, object)
@@ -4962,28 +5049,19 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		} else {
 			versionPath := p.genObjVersionPath(bucket, object)
 
-			if isDir {
-				// the attributes at a directory object path may belong to a
-				// file or to a directory that isn't an object
-				fi, err := os.Stat(objpath)
-				if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-					// AWS returns success if the object does not exist
-					return &s3.DeleteObjectOutput{VersionId: input.VersionId}, nil
-				}
-				if isErrNameTooLong(err) {
-					return nil, s3err.GetKeyTooLongErr(int64(len(object)), 1024)
-				}
-				if err != nil {
-					return nil, fmt.Errorf("stat object: %w", err)
-				}
-				isObj, err := p.isLiveDirObject(fi, bucket, object)
-				if err != nil {
-					return nil, err
-				}
-				if !isObj {
-					// AWS returns success if the object does not exist
-					return &s3.DeleteObjectOutput{VersionId: input.VersionId}, nil
-				}
+			// the attributes at the object path may belong to the key with
+			// or without the trailing slash, or to a directory that isn't an
+			// object
+			_, err := p.statLiveObject(bucket, object)
+			if errors.Is(err, fs.ErrNotExist) {
+				// AWS returns success if the object does not exist
+				return &s3.DeleteObjectOutput{VersionId: input.VersionId}, nil
+			}
+			if isErrNameTooLong(err) {
+				return nil, s3err.GetKeyTooLongErr(int64(len(object)), 1024)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("stat object: %w", err)
 			}
 
 			vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
@@ -4997,16 +5075,6 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				return nil, fmt.Errorf("get obj versionId: %w", err)
 			}
 			if errors.Is(err, meta.ErrNoSuchKey) {
-				// With sidecar, ErrNoSuchKey means "attribute absent" regardless of
-				// whether the data file exists.  If the file is absent the object
-				// does not exist at all → AWS returns success for DeleteObject.
-				// Also handle ENOTDIR: when a key such as "foo/bar" is requested
-				// but "foo" is a regular file (not a directory), the path cannot
-				// contain any object.
-				_, statErr := os.Stat(p.ObjectPath(bucket, object))
-				if errors.Is(statErr, fs.ErrNotExist) || isErrNotDir(statErr) {
-					return &s3.DeleteObjectOutput{VersionId: input.VersionId}, nil
-				}
 				vId = []byte(nullVersionId)
 			}
 
@@ -6836,36 +6904,14 @@ func (p *Posix) GetObjectTagging(ctx context.Context, bucket, object, versionId 
 		return nil, err
 	}
 
-	if versionId == "" {
-		_, err = os.Stat(p.ObjectPath(bucket, object))
-		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-		}
-		if isErrNameTooLong(err) {
-			return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("stat object: %w", err)
-		}
+	if versionId != "" && !p.versioningEnabled() {
+		//TODO: Maybe we need to return our custom error here?
+		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 	}
 
-	if versionId != "" {
-		if !p.versioningEnabled() {
-			//TODO: Maybe we need to return our custom error here?
-			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
-		}
-		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-		}
-		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return nil, fmt.Errorf("get obj versionId: %w", err)
-		}
-
-		if string(vId) != versionId {
-			bucket = filepath.Join(p.versioningDir, bucket)
-			object = filepath.Join(genObjVersionKey(object), versionId)
-		}
+	bucket, object, err = p.objVersionAttrPath(bucket, object, versionId)
+	if err != nil {
+		return nil, err
 	}
 
 	err = p.ensureNotDeleteMarker(bucket, object, versionId)
@@ -6923,36 +6969,14 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 		return err
 	}
 
-	if versionId == "" {
-		_, err = os.Stat(p.ObjectPath(bucket, object))
-		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-			return s3err.GetAPIError(s3err.ErrNoSuchKey)
-		}
-		if isErrNameTooLong(err) {
-			return s3err.GetAPIError(s3err.ErrKeyTooLong)
-		}
-		if err != nil {
-			return fmt.Errorf("stat object: %w", err)
-		}
+	if versionId != "" && !p.versioningEnabled() {
+		//TODO: Maybe we need to return our custom error here?
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 	}
 
-	if versionId != "" {
-		if !p.versioningEnabled() {
-			//TODO: Maybe we need to return our custom error here?
-			return s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
-		}
-		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-			return s3err.GetAPIError(s3err.ErrNoSuchKey)
-		}
-		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return fmt.Errorf("get obj versionId: %w", err)
-		}
-
-		if string(vId) != versionId {
-			bucket = filepath.Join(p.versioningDir, bucket)
-			object = filepath.Join(genObjVersionKey(object), versionId)
-		}
+	bucket, object, err = p.objVersionAttrPath(bucket, object, versionId)
+	if err != nil {
+		return err
 	}
 
 	err = p.ensureNotDeleteMarker(bucket, object, versionId)
@@ -6977,12 +7001,7 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 		return nil
 	}
 
-	b, err := json.Marshal(tags)
-	if err != nil {
-		return fmt.Errorf("marshal tags: %w", err)
-	}
-
-	err = p.meta.StoreAttribute(nil, bucket, object, tagHdr, b)
+	err = p.storeObjectTags(bucket, object, tags)
 	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return s3err.GetNoSuchVersionErr(object, versionId)
@@ -6994,6 +7013,16 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 	}
 
 	return nil
+}
+
+// storeObjectTags stores tags as the tagging attribute of bucket/object
+func (p *Posix) storeObjectTags(bucket, object string, tags map[string]string) error {
+	b, err := json.Marshal(tags)
+	if err != nil {
+		return fmt.Errorf("marshal tags: %w", err)
+	}
+
+	return p.meta.StoreAttribute(nil, bucket, object, tagHdr, b)
 }
 
 func (p *Posix) DeleteObjectTagging(ctx context.Context, bucket, object, versionId string) error {
@@ -7317,7 +7346,7 @@ func (p *Posix) PutObjectLegalHold(ctx context.Context, bucket, object, versionI
 	if !p.isBucketValid(bucket) {
 		return s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
-	err = p.doesBucketAndObjectExist(bucket, object)
+	err = p.doesBucketAndObjectExist(bucket, object, versionId)
 	if err != nil {
 		return err
 	}
@@ -7342,17 +7371,9 @@ func (p *Posix) PutObjectLegalHold(ctx context.Context, bucket, object, versionI
 			//TODO: Maybe we need to return our custom error here?
 			return s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 		}
-		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-			return s3err.GetAPIError(s3err.ErrNoSuchKey)
-		}
-		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return fmt.Errorf("get obj versionId: %w", err)
-		}
-
-		if string(vId) != versionId {
-			bucket = filepath.Join(p.versioningDir, bucket)
-			object = filepath.Join(genObjVersionKey(object), versionId)
+		bucket, object, err = p.objVersionAttrPath(bucket, object, versionId)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -7385,7 +7406,7 @@ func (p *Posix) GetObjectLegalHold(ctx context.Context, bucket, object, versionI
 	if !p.isBucketValid(bucket) {
 		return nil, s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
-	err = p.doesBucketAndObjectExist(bucket, object)
+	err = p.doesBucketAndObjectExist(bucket, object, versionId)
 	if err != nil {
 		return nil, err
 	}
@@ -7403,17 +7424,9 @@ func (p *Posix) GetObjectLegalHold(ctx context.Context, bucket, object, versionI
 			//TODO: Maybe we need to return our custom error here?
 			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 		}
-		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-		}
-		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return nil, fmt.Errorf("get obj versionId: %w", err)
-		}
-
-		if string(vId) != versionId {
-			bucket = filepath.Join(p.versioningDir, bucket)
-			object = filepath.Join(genObjVersionKey(object), versionId)
+		bucket, object, err = p.objVersionAttrPath(bucket, object, versionId)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -7451,7 +7464,7 @@ func (p *Posix) PutObjectRetention(ctx context.Context, bucket, object, versionI
 	if !p.isBucketValid(bucket) {
 		return s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
-	err = p.doesBucketAndObjectExist(bucket, object)
+	err = p.doesBucketAndObjectExist(bucket, object, versionId)
 	if err != nil {
 		return err
 	}
@@ -7469,17 +7482,9 @@ func (p *Posix) PutObjectRetention(ctx context.Context, bucket, object, versionI
 			//TODO: Maybe we need to return our custom error here?
 			return s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 		}
-		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-			return s3err.GetAPIError(s3err.ErrNoSuchKey)
-		}
-		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return fmt.Errorf("get obj versionId: %w", err)
-		}
-
-		if string(vId) != versionId {
-			bucket = filepath.Join(p.versioningDir, bucket)
-			object = filepath.Join(genObjVersionKey(object), versionId)
+		bucket, object, err = p.objVersionAttrPath(bucket, object, versionId)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -7506,7 +7511,7 @@ func (p *Posix) GetObjectRetention(ctx context.Context, bucket, object, versionI
 	if !p.isBucketValid(bucket) {
 		return nil, s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
-	err = p.doesBucketAndObjectExist(bucket, object)
+	err = p.doesBucketAndObjectExist(bucket, object, versionId)
 	if err != nil {
 		return nil, err
 	}
@@ -7524,17 +7529,9 @@ func (p *Posix) GetObjectRetention(ctx context.Context, bucket, object, versionI
 			//TODO: Maybe we need to return our custom error here?
 			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
 		}
-		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-		}
-		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return nil, fmt.Errorf("get obj versionId: %w", err)
-		}
-
-		if string(vId) != versionId {
-			bucket = filepath.Join(p.versioningDir, bucket)
-			object = filepath.Join(genObjVersionKey(object), versionId)
+		bucket, object, err = p.objVersionAttrPath(bucket, object, versionId)
+		if err != nil {
+			return nil, err
 		}
 	}
 

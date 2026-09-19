@@ -2016,6 +2016,83 @@ func Versioning_DeleteObject_dir_object_with_children(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_DeleteObject_trailing_slash_counterpart(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_trailing_slash_counterpart"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		expected := []types.ObjectVersion{}
+		// deleting the key with or without a trailing slash doesn't delete
+		// the object or any of its versions
+		for _, keys := range [][2]string{{"my-dir/", "my-dir"}, {"my-obj", "my-obj/"}} {
+			obj, other := keys[0], keys[1]
+			versions, err := createObjVersions(s3client, bucket, obj, 2)
+			if err != nil {
+				return err
+			}
+			expected = append(expected, versions...)
+
+			for _, versionId := range []*string{versions[0].VersionId, versions[1].VersionId} {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+					Bucket:    &bucket,
+					Key:       &other,
+					VersionId: versionId,
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("%v: %w", other, err)
+				}
+				if getString(out.VersionId) != *versionId {
+					return fmt.Errorf("%v: expected the versionId to be %v, instead got %v",
+						other, *versionId, getString(out.VersionId))
+				}
+				if out.DeleteMarker != nil && *out.DeleteMarker {
+					return fmt.Errorf("%v: expected the response DeleteMarker to be false", other)
+				}
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &other,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%v: %w", other, err)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%v: %w", obj, err)
+			}
+			if getString(res.VersionId) != getString(versions[0].VersionId) {
+				return fmt.Errorf("%v: expected the versionId to be %v, instead got %v",
+					obj, getString(versions[0].VersionId), getString(res.VersionId))
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(expected, res.Versions) {
+			return fmt.Errorf("expected the versions to be %v, instead got %v",
+				expected, res.Versions)
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_Delete_null_versionId_object(s *S3Conf) error {
 	testName := "Versioning_Delete_null_versionId_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -4196,6 +4273,139 @@ func Versioning_WORM_remove_delete_marker_under_bucket_default_retention(s *S3Co
 	}, withLock())
 }
 
+func Versioning_WORM_trailing_slash_counterpart(s *S3Conf) error {
+	testName := "Versioning_WORM_trailing_slash_counterpart"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		rDate := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+		lockedObjs := []objToDelete{}
+
+		for _, keys := range [][2]string{{"my-dir/", "my-dir"}, {"my-obj", "my-obj/"}} {
+			obj, other := keys[0], keys[1]
+			res, err := putObjectWithData(objDataLen(obj, 10), &s3.PutObjectInput{
+				Bucket:                    &bucket,
+				Key:                       &obj,
+				ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+				ObjectLockMode:            types.ObjectLockModeGovernance,
+				ObjectLockRetainUntilDate: &rDate,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+			versionId := getString(res.res.VersionId)
+			lockedObjs = append(lockedObjs, objToDelete{
+				key:                obj,
+				versionId:          versionId,
+				removeOnlyLeglHold: true,
+			})
+
+			// the version belongs to the object, not to the other key
+			err = checkObjectLockErr(s3client, bucket, other, versionId, s3err.GetAPIError(s3err.ErrNoSuchVersion))
+			if err != nil {
+				return fmt.Errorf("%v: %w", other, err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    &bucket,
+				Key:       &other,
+				VersionId: &versionId,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%v: %w", other, err)
+			}
+
+			err = checkObjectLock(s3client, bucket, obj, versionId, rDate)
+			if err != nil {
+				return fmt.Errorf("%v: %w", obj, err)
+			}
+		}
+
+		return cleanupLockedObjects(s3client, bucket, lockedObjs)
+	}, withLock())
+}
+
+func Versioning_WORM_null_version_locked_with_legal_hold(s *S3Conf) error {
+	testName := "Versioning_WORM_null_version_locked_with_legal_hold"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objs := []string{"my-obj", "my-dir/"}
+		// the objects are put before versioning is enabled: their
+		// current versions are the null versions
+		_, err := putObjects(s3client, objs, bucket)
+		if err != nil {
+			return err
+		}
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		lockedObjs := []objToDelete{}
+		err = forEachKey(objs, func(obj string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: getPtr(nullVersionId),
+				LegalHold: &types.ObjectLockLegalHold{
+					Status: types.ObjectLockLegalHoldStatusOn,
+				},
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			lockedObjs = append(lockedObjs, objToDelete{
+				key:                obj,
+				versionId:          nullVersionId,
+				removeOnlyLeglHold: true,
+			})
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: getPtr(nullVersionId),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if res.LegalHold == nil || res.LegalHold.Status != types.ObjectLockLegalHoldStatusOn {
+				return fmt.Errorf("expected the legal hold status to be %q, instead got %v",
+					types.ObjectLockLegalHoldStatusOn, res.LegalHold)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: getPtr(nullVersionId),
+			})
+			cancel()
+			return checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked))
+		})
+		if err != nil {
+			return err
+		}
+
+		return cleanupLockedObjects(s3client, bucket, lockedObjs)
+	})
+}
+
 func Versioning_AccessControl_GetObjectVersion(s *S3Conf) error {
 	testName := "Versioning_AccessControl_GetObjectVersion"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -5030,5 +5240,48 @@ func Versioning_PutGetDeleteObjectTagging_success(s *S3Conf) error {
 
 			return nil
 		})
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_ObjectTagging_trailing_slash_counterpart(s *S3Conf) error {
+	testName := "Versioning_ObjectTagging_trailing_slash_counterpart"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagSet := []types.Tag{{Key: getPtr("key"), Value: getPtr("value")}}
+
+		for _, keys := range [][2]string{{"my-dir/", "my-dir"}, {"my-obj", "my-obj/"}} {
+			obj, other := keys[0], keys[1]
+			res, err := putObjectWithData(objDataLen(obj, 10), &s3.PutObjectInput{
+				Bucket:  &bucket,
+				Key:     &obj,
+				Tagging: getPtr("key=value"),
+			}, s3client)
+			if err != nil {
+				return err
+			}
+			versionId := getString(res.res.VersionId)
+
+			// the version belongs to the object, not to the other key
+			err = checkObjectTaggingErr(s3client, bucket, other, versionId, s3err.GetAPIError(s3err.ErrNoSuchVersion))
+			if err != nil {
+				return fmt.Errorf("%v: %w", other, err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: &versionId,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%v: %w", obj, err)
+			}
+			if !areTagsSame(out.TagSet, tagSet) {
+				return fmt.Errorf("%v: expected the tag set to be %v, instead got %v",
+					obj, tagSet, out.TagSet)
+			}
+		}
+
+		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
