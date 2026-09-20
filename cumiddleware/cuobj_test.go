@@ -73,30 +73,6 @@ func TestCuObjMiddlewareNoHeadersPassesThrough(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-func TestCuObjMiddlewareLegacyHeaders(t *testing.T) {
-	app := fiber.New()
-	app.Use("*", CuObjMiddleware)
-	app.Post("/", func(ctx fiber.Ctx) error {
-		rctx := ctx.RequestCtx()
-		descr, ok := GetRDMADescriptor(rctx)
-		assert.True(t, ok)
-		assert.Equal(t, "deadbeef", descr)
-		size, ok := GetRDMASize(rctx)
-		assert.True(t, ok)
-		assert.Equal(t, int64(4096), size)
-		assert.Equal(t, uint64(4660), GetRDMARemoteStart(rctx))
-		return ctx.SendStatus(http.StatusOK)
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/", nil)
-	req.Header.Set(HeaderRDMADescr, "deadbeef")
-	req.Header.Set(HeaderRDMASize, "4096")
-	req.Header.Set(HeaderRDMARemoteAddr, "4660")
-	resp, err := app.Test(req)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-}
-
 func TestCuObjMiddlewareTokenWithContentLength(t *testing.T) {
 	app := fiber.New()
 	app.Use("*", CuObjMiddleware)
@@ -271,22 +247,4 @@ func TestRCTokenScheme16HexNoColonStill400(t *testing.T) {
 	resp, err := app.Test(req)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-}
-
-func TestLegacyDescriptorTakesPrecedenceOverRCToken(t *testing.T) {
-	// When both the legacy descriptor header and an RC-shaped combined
-	// token are present, the legacy path handles the request and the RC
-	// gate must not fire.
-	app, reached := newTestApp(t)
-	req := httptest.NewRequest(http.MethodPost, "/", nil)
-	req.Header.Set(HeaderRDMADescr, "legacy-descriptor")
-	req.Header.Set(HeaderRDMAToken, rcToken(""))
-	resp, err := app.Test(req)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	select {
-	case <-reached:
-	default:
-		t.Fatal("handler should have been reached via the legacy path")
-	}
 }

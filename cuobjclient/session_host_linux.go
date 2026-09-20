@@ -43,11 +43,10 @@ import (
 // Session owns a host buffer registered for cuObject RDMA transfers via the
 // host-memory RDMA client. Session methods are not safe for concurrent use.
 type Session struct {
-	client      *hostclient.Client
-	buf         []byte
-	token       string
-	size        int
-	remoteStart uint64
+	client *hostclient.Client
+	buf    []byte
+	token  string
+	size   int
 }
 
 // NewSession creates a host-memory RDMA session for a fixed transfer size.
@@ -81,11 +80,10 @@ func NewSession(size int) (*Session, error) {
 	}
 
 	return &Session{
-		client:      client,
-		buf:         buf,
-		token:       token,
-		size:        size,
-		remoteStart: client.BufferAddr(),
+		client: client,
+		buf:    buf,
+		token:  token,
+		size:   size,
 	}, nil
 }
 
@@ -107,7 +105,7 @@ func (s *Session) Upload(base *s3lib.Client, bucket, key string, src []byte) err
 		return fmt.Errorf("upload size mismatch: got %d bytes, want %d", len(src), s.size)
 	}
 	copy(s.buf, src)
-	return doPut(base, bucket, key, int64(s.size), s.token, s.remoteStart)
+	return doPut(base, bucket, key, int64(s.size), s.token)
 }
 
 // Download performs a GET; the gateway RDMA-writes into the registered host
@@ -119,7 +117,7 @@ func (s *Session) Download(base *s3lib.Client, bucket, key string, dst []byte) e
 	for i := range s.buf {
 		s.buf[i] = 0
 	}
-	if err := doGet(base, bucket, key, int64(s.size), s.token, s.remoteStart); err != nil {
+	if err := doGet(base, bucket, key, int64(s.size), s.token); err != nil {
 		return err
 	}
 	copy(dst, s.buf)

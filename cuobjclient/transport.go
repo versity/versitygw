@@ -16,7 +16,7 @@
 
 // This file holds the S3 request plumbing shared by the GPU (session_linux.go)
 // and host-memory (session_host_linux.go) session implementations: both issue
-// a zero-byte PUT/GET carrying the cuObject RDMA descriptor headers, and let
+// a zero-byte PUT/GET carrying the cuObject RDMA token header, and let
 // the gateway perform the actual transfer via RDMA.
 package cuobjclient
 
@@ -37,10 +37,10 @@ import (
 	"github.com/versity/versitygw/cumiddleware"
 )
 
-func doPut(base *s3lib.Client, bucket, key string, size int64, descr string, remoteStart uint64) error {
+func doPut(base *s3lib.Client, bucket, key string, size int64, token string) error {
 	var replyStatus string
 	var transferredHeader string
-	c := withRDMAHeaders(base, descr, size, remoteStart, &replyStatus, &transferredHeader)
+	c := withRDMAHeaders(base, token, &replyStatus, &transferredHeader)
 	_, err := c.PutObject(context.Background(), &s3lib.PutObjectInput{
 		Bucket:        aws.String(bucket),
 		Key:           aws.String(key),
@@ -73,10 +73,10 @@ func doPut(base *s3lib.Client, bucket, key string, size int64, descr string, rem
 	return nil
 }
 
-func doGet(base *s3lib.Client, bucket, key string, size int64, descr string, remoteStart uint64) error {
+func doGet(base *s3lib.Client, bucket, key string, size int64, token string) error {
 	var replyStatus string
 	var transferredHeader string
-	c := withRDMAHeaders(base, descr, size, remoteStart, &replyStatus, &transferredHeader)
+	c := withRDMAHeaders(base, token, &replyStatus, &transferredHeader)
 	out, err := c.GetObject(context.Background(), &s3lib.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -114,8 +114,8 @@ func doGet(base *s3lib.Client, bucket, key string, size int64, descr string, rem
 	return err
 }
 
-// withRDMAHeaders returns a client that adds the legacy RDMA descriptor,
-// size, and remote-address headers to every request. The headers are added
+// withRDMAHeaders returns a client that adds the RDMA token header to every
+// request. The header is added
 // via a Build-step middleware — which runs before the Finalize step that
 // signs the request — so SigV4 covers them in SignedHeaders; an
 // intermediary can no longer alter the RDMA controls without invalidating
@@ -125,7 +125,7 @@ func doGet(base *s3lib.Client, bucket, key string, size int64, descr string, rem
 // otherwise checksum the empty HTTP body instead of the actual RDMA payload.
 // If replyStatus/transferred are non-nil, they are set to the response
 // HeaderRDMAReply and HeaderRDMABytesTransferred values (empty if absent).
-func withRDMAHeaders(base *s3lib.Client, descr string, size int64, remoteStart uint64, replyStatus, transferred *string) *s3lib.Client {
+func withRDMAHeaders(base *s3lib.Client, token string, replyStatus, transferred *string) *s3lib.Client {
 	opts := base.Options()
 	opts.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 	opts.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
@@ -134,9 +134,7 @@ func withRDMAHeaders(base *s3lib.Client, descr string, size int64, remoteStart u
 			func(ctx context.Context, in smithymiddleware.BuildInput, next smithymiddleware.BuildHandler) (
 				smithymiddleware.BuildOutput, smithymiddleware.Metadata, error) {
 				if req, ok := in.Request.(*smithyhttp.Request); ok {
-					req.Header.Set(cumiddleware.HeaderRDMADescr, descr)
-					req.Header.Set(cumiddleware.HeaderRDMASize, strconv.FormatInt(size, 10))
-					req.Header.Set(cumiddleware.HeaderRDMARemoteAddr, strconv.FormatUint(remoteStart, 10))
+					req.Header.Set(cumiddleware.HeaderRDMAToken, token)
 				}
 				return next.HandleBuild(ctx, in)
 			}), smithymiddleware.Before); err != nil {
