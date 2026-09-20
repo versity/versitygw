@@ -1618,6 +1618,24 @@ func (p *Posix) isObjDeleteMarker(bucket, object string) (bool, error) {
 	return true, nil
 }
 
+// checkCopySourceDeleteMarker rejects a copy whose source resolves to a
+// delete marker: the key has no current version when the marker is the
+// latest, and a marker named by version id holds no data to copy.
+func (p *Posix) checkCopySourceDeleteMarker(bucket, object, versionId string) error {
+	isDel, err := p.isObjDeleteMarker(bucket, object)
+	if err != nil {
+		return err
+	}
+	if !isDel {
+		return nil
+	}
+	if versionId != "" {
+		return s3err.GetAPIError(s3err.ErrCopySourceDeleteMarker)
+	}
+
+	return s3err.GetAPIError(s3err.ErrNoSuchKey)
+}
+
 // Converts the file to object version. Finds all the object versions,
 // delete markers from the versioning directory and returns
 func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
@@ -4034,6 +4052,9 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	if strings.HasSuffix(srcObject, "/") != fi.IsDir() {
 		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	if err := p.checkCopySourceDeleteMarker(srcBucket, srcObject, srcVersionId); err != nil {
+		return s3response.CopyPartResult{}, err
+	}
 	// a directory object holds no data
 	srcSize := fi.Size()
 	if fi.IsDir() {
@@ -6236,6 +6257,9 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	}
 	if !strings.HasSuffix(srcObject, "/") && fi.IsDir() {
 		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err := p.checkCopySourceDeleteMarker(srcBucket, srcObject, srcVersionId); err != nil {
+		return s3response.CopyObjectOutput{}, err
 	}
 	// a directory object holds no data
 	srcSize := fi.Size()

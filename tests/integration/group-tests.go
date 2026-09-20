@@ -1957,6 +1957,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_CopyObject_success)
 	ts.Run(Versioning_CopyObject_non_existing_version_id)
 	ts.Run(Versioning_CopyObject_from_an_object_version)
+	ts.Run(Versioning_CopyObject_from_a_delete_marker)
 	if !ts.conf.windowsTests {
 		ts.Run(Versioning_CopyObject_special_chars)
 	}
@@ -2026,6 +2027,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId)
 	ts.Run(Versioning_UploadPartCopy_non_existing_versionId)
 	ts.Run(Versioning_UploadPartCopy_from_an_object_version)
+	ts.Run(Versioning_UploadPartCopy_from_a_delete_marker)
 	// Object lock configuration
 	ts.Run(Versioning_object_lock_not_enabled_on_bucket_creation)
 	ts.Run(Versioning_Enable_object_lock)
@@ -3494,6 +3496,7 @@ func GetIntTests() IntTests {
 		"Versioning_CopyObject_success":                                                    Versioning_CopyObject_success,
 		"Versioning_CopyObject_non_existing_version_id":                                    Versioning_CopyObject_non_existing_version_id,
 		"Versioning_CopyObject_from_an_object_version":                                     Versioning_CopyObject_from_an_object_version,
+		"Versioning_CopyObject_from_a_delete_marker":                                       Versioning_CopyObject_from_a_delete_marker,
 		"Versioning_CopyObject_special_chars":                                              Versioning_CopyObject_special_chars,
 		"Versioning_HeadObject_invalid_versionId":                                          Versioning_HeadObject_invalid_versionId,
 		"Versioning_HeadObject_non_existing_object_version":                                Versioning_HeadObject_non_existing_object_version,
@@ -3550,6 +3553,7 @@ func GetIntTests() IntTests {
 		"Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId":          Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId,
 		"Versioning_UploadPartCopy_non_existing_versionId":                                 Versioning_UploadPartCopy_non_existing_versionId,
 		"Versioning_UploadPartCopy_from_an_object_version":                                 Versioning_UploadPartCopy_from_an_object_version,
+		"Versioning_UploadPartCopy_from_a_delete_marker":                                   Versioning_UploadPartCopy_from_a_delete_marker,
 		"Versioning_object_lock_not_enabled_on_bucket_creation":                            Versioning_object_lock_not_enabled_on_bucket_creation,
 		"Versioning_Enable_object_lock":                                                    Versioning_Enable_object_lock,
 		"Versioning_status_switch_to_suspended_with_object_lock":                           Versioning_status_switch_to_suspended_with_object_lock,

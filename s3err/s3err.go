@@ -131,6 +131,7 @@ const (
 	ErrMissingDateHeader
 	ErrGetUploadsWithKey
 	ErrVersionsWithKey
+	ErrCopySourceDeleteMarker
 	ErrInvalidRequest
 	ErrAuthNotSetup
 	ErrNotImplemented
@@ -451,6 +452,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrVersionsWithKey: {
 		Code:           "InvalidRequest",
 		Description:    "There is no such thing as the ?versions sub-resource for a key",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrCopySourceDeleteMarker: {
+		Code:           "InvalidRequest",
+		Description:    "The source of a copy request may not specifically refer to a delete marker by version id.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidRequest: {

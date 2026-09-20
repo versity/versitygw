@@ -670,6 +670,78 @@ func Versioning_CopyObject_from_an_object_version(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+// A copy source that resolves to a delete marker is rejected: the key has no
+// current version when the marker is the latest, and naming the marker by
+// version id is an invalid request. Versions the marker hides stay copyable.
+func Versioning_CopyObject_from_a_delete_marker(s *S3Conf) error {
+	testName := "Versioning_CopyObject_from_a_delete_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dstBucket, dstObj := getBucketName(), "dst-obj"
+		if err := setup(s, dstBucket); err != nil {
+			return err
+		}
+
+		err := forEachKey([]string{"my-obj", "my-dir/"}, func(srcObj string) error {
+			srcObjVersions, err := createObjVersions(s3client, bucket, srcObj, 1)
+			if err != nil {
+				return err
+			}
+
+			delMarker, err := createDeleteMarker(s3client, bucket, srcObj)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:     &dstBucket,
+				Key:        &dstObj,
+				CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket: &dstBucket,
+				Key:    &dstObj,
+				CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=%v",
+					bucket, srcObj, delMarker)),
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrCopySourceDeleteMarker)); err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket: &dstBucket,
+				Key:    &dstObj,
+				CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=%v",
+					bucket, srcObj, getString(srcObjVersions[0].VersionId))),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if getString(out.CopySourceVersionId) != getString(srcObjVersions[0].VersionId) {
+				return fmt.Errorf("expected the copy-source-version-id to be %v, instead got %v",
+					getString(srcObjVersions[0].VersionId), getString(out.CopySourceVersionId))
+			}
+
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		return teardown(s, dstBucket)
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_CopyObject_special_chars(s *S3Conf) error {
 	testName := "Versioning_CopyObject_special_chars"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -3005,6 +3077,85 @@ func Versioning_UploadPartCopy_from_an_object_version(s *S3Conf) error {
 			}
 
 			return nil
+		})
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// A copy source that resolves to a delete marker is rejected: the key has no
+// current version when the marker is the latest, and naming the marker by
+// version id is an invalid request. Versions the marker hides stay copyable.
+func Versioning_UploadPartCopy_from_a_delete_marker(s *S3Conf) error {
+	testName := "Versioning_UploadPartCopy_from_a_delete_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(srcObj string) error {
+			dstBucket, dstObj := getBucketName(), "dst-obj"
+			if err := setup(s, dstBucket); err != nil {
+				return err
+			}
+
+			srcObjVersions, err := createObjVersions(s3client, bucket, srcObj, 1)
+			if err != nil {
+				return err
+			}
+
+			delMarker, err := createDeleteMarker(s3client, bucket, srcObj)
+			if err != nil {
+				return err
+			}
+
+			mp, err := createMp(s3client, dstBucket, dstObj)
+			if err != nil {
+				return err
+			}
+
+			partNumber := int32(1)
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:     &dstBucket,
+				Key:        &dstObj,
+				UploadId:   mp.UploadId,
+				PartNumber: &partNumber,
+				CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:     &dstBucket,
+				Key:        &dstObj,
+				UploadId:   mp.UploadId,
+				PartNumber: &partNumber,
+				CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=%v",
+					bucket, srcObj, delMarker)),
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrCopySourceDeleteMarker)); err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:     &dstBucket,
+				Key:        &dstObj,
+				UploadId:   mp.UploadId,
+				PartNumber: &partNumber,
+				CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=%v",
+					bucket, srcObj, getString(srcObjVersions[0].VersionId))),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if getString(out.CopySourceVersionId) != getString(srcObjVersions[0].VersionId) {
+				return fmt.Errorf("expected the copy-source-version-id to be %v, instead got %v",
+					getString(srcObjVersions[0].VersionId), getString(out.CopySourceVersionId))
+			}
+
+			return teardown(s, dstBucket)
 		})
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
