@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -606,6 +609,102 @@ func UnsignedStreamingPayloadTrailer_not_allowed(s *S3Conf) error {
 			if err := compareS3ApiError(s3err.GetAPIError(s3err.ErrInvalidSHA256PayloadUsage), apiErr); err != nil {
 				return fmt.Errorf("test %v failed: %w", i+1, err)
 			}
+		}
+
+		return nil
+	})
+}
+
+// abortedChunkReader serves the first n bytes of a chunk-framed payload and
+// then fails, so the transport tears the connection down mid-body.
+type abortedChunkReader struct {
+	data []byte
+	pos  int
+}
+
+func (r *abortedChunkReader) Read(p []byte) (int, error) {
+	if r.pos >= len(r.data) {
+		return 0, fmt.Errorf("connection aborted by test")
+	}
+	n := copy(p, r.data[r.pos:])
+	r.pos += n
+	return n, nil
+}
+
+// UnsignedStreamingPayloadTrailer_aborted_connection checks that an aws-chunked
+// upload whose connection dies in the middle of a chunk leaves no object.
+//
+// UnsignedStreamingPayloadTrailer_incomplete_body already covers malformed and
+// truncated framing, but every one of those is a COMPLETE request: the body is
+// short, Content-Length agrees with it, and the chunk reader rejects what it
+// parses. This one is the other shape - the framing is valid and the bytes
+// simply stop arriving, which is what a client that dies or cancels looks like
+// on the wire. That is the shape the plain path got wrong.
+//
+// The chunk readers already handled it, so this is a regression guard: the
+// Content-Length check added for plain bodies must not change this path.
+//
+// NOTE: the request must really take the chunked path. The gateway decides
+// that from x-amz-content-sha256 alone, so an UNSIGNED-PAYLOAD request with
+// Content-Encoding: aws-chunked stays on the plain path - a test written that
+// way silently duplicates the plain one instead of covering this.
+func UnsignedStreamingPayloadTrailer_aborted_connection(s *S3Conf) error {
+	testName := "UnsignedStreamingPayloadTrailer_aborted_connection"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "aborted-streaming"
+
+		decoded, payload, err := constructUnsignedPaylod(65536)
+		if err != nil {
+			return fmt.Errorf("failed to construct the payload: %w", err)
+		}
+		full := append(payload, []byte("0\r\nx-amz-checksum-crc64nvme:dPVWc2vU1+Q=\r\n\r\n")...)
+
+		// Stop well inside the first chunk: the header has been parsed, the
+		// data has not finished arriving.
+		cut := len(full) / 4
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+			fmt.Sprintf("%s/%s/%s", s.endpoint, bucket, object),
+			&abortedChunkReader{data: full[:cut]})
+		if err != nil {
+			cancel()
+			return fmt.Errorf("failed to create a request: %w", err)
+		}
+		// Announce the whole framed payload, send a quarter of it.
+		req.ContentLength = int64(len(full))
+		req.Header.Set("x-amz-content-sha256", "STREAMING-UNSIGNED-PAYLOAD-TRAILER")
+		req.Header.Set("x-amz-trailer", "x-amz-checksum-crc64nvme")
+		req.Header.Set("x-amz-decoded-content-length", fmt.Sprintf("%v", decoded))
+
+		signer := v4.NewSigner()
+		if err := signer.SignHTTP(req.Context(),
+			aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret},
+			req, "STREAMING-UNSIGNED-PAYLOAD-TRAILER", "s3", s.awsRegion, time.Now()); err != nil {
+			cancel()
+			return fmt.Errorf("failed to sign the request: %w", err)
+		}
+
+		// The request is expected to fail: either the gateway answers with an
+		// error or the connection is gone. Both are fine - what matters is the
+		// object below.
+		resp, doErr := s.httpClient.Do(req)
+		cancel()
+		if doErr == nil && resp != nil {
+			resp.Body.Close()
+			if resp.StatusCode < 300 {
+				return fmt.Errorf("expected the aborted upload to fail, got %v", resp.StatusCode)
+			}
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &object,
+		})
+		cancel()
+		if err == nil {
+			return fmt.Errorf("expected the aborted upload to leave no object, but %v exists", object)
 		}
 
 		return nil

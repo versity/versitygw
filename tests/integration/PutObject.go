@@ -1330,3 +1330,141 @@ func PutObject_false_negative_object_names(s *S3Conf) error {
 		return nil
 	})
 }
+
+// abortedBodyReader yields `sent` bytes and then fails, so the transport tears
+// the connection down mid-body. That is what a client that dies or cancels
+// looks like on the wire.
+type abortedBodyReader struct {
+	remaining int
+}
+
+func (r *abortedBodyReader) Read(p []byte) (int, error) {
+	if r.remaining <= 0 {
+		return 0, fmt.Errorf("connection aborted by test")
+	}
+	n := len(p)
+	if n > r.remaining {
+		n = r.remaining
+	}
+	for i := 0; i < n; i++ {
+		p[i] = 'a'
+	}
+	r.remaining -= n
+	return n, nil
+}
+
+// putObjectAborted announces `declared` bytes, sends `sent`, then drops the
+// connection. It returns no error: the request is expected to fail.
+func putObjectAborted(s *S3Conf, bucket, obj string, declared, sent int, extra map[string]string) {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+		fmt.Sprintf("%s/%s/%s", s.endpoint, bucket, obj), &abortedBodyReader{remaining: sent})
+	if err != nil {
+		return
+	}
+	req.ContentLength = int64(declared)
+	req.Header.Set("x-amz-content-sha256", "UNSIGNED-PAYLOAD")
+	for k, v := range extra {
+		req.Header.Set(k, v)
+	}
+
+	signer := v4.NewSigner()
+	if err := signer.SignHTTP(req.Context(),
+		aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret},
+		req, "UNSIGNED-PAYLOAD", "s3", s.awsRegion, time.Now()); err != nil {
+		return
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err == nil && resp != nil {
+		resp.Body.Close()
+	}
+}
+
+// PutObject_aborted_plain_body checks that a plain (non-aws-chunked) PUT whose
+// body ends before Content-Length does not become a readable object.
+//
+// Real S3 rejects the request and the key stays absent. The posix backend used
+// to truncate the object to the bytes received and link it into place, so the
+// aborted upload showed up as a complete - but shorter - object.
+func PutObject_aborted_plain_body(s *S3Conf) error {
+	testName := "PutObject_aborted_plain_body"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "aborted-plain"
+		putObjectAborted(s, bucket, obj, 65536, 20000, nil)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err == nil {
+			return fmt.Errorf("expected the aborted upload to leave no object, but %v exists", obj)
+		}
+		return nil
+	})
+}
+
+// PutObject_plain_body_with_decoded_length checks that a COMPLETE plain upload
+// still succeeds when it happens to carry X-Amz-Decoded-Content-Length.
+//
+// AWS S3 ignores that header on a plain body and stores Content-Length bytes.
+// The length check must therefore use Content-Length, not the decoded value -
+// otherwise a complete upload is rejected with IncompleteBody.
+func PutObject_plain_body_with_decoded_length(s *S3Conf) error {
+	testName := "PutObject_plain_body_with_decoded_length"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "plain-with-decoded-length"
+		data := "hello world"
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+			fmt.Sprintf("%s/%s/%s", s.endpoint, bucket, obj), strings.NewReader(data))
+		if err != nil {
+			cancel()
+			return err
+		}
+		req.Header.Set("x-amz-content-sha256", "UNSIGNED-PAYLOAD")
+		// Larger than Content-Length on purpose: this is the shape that used to
+		// be rejected once the body was checked against the decoded value.
+		req.Header.Set("X-Amz-Decoded-Content-Length", "99999")
+
+		signer := v4.NewSigner()
+		if err := signer.SignHTTP(req.Context(),
+			aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret},
+			req, "UNSIGNED-PAYLOAD", "s3", s.awsRegion, time.Now()); err != nil {
+			cancel()
+			return fmt.Errorf("failed to sign the request: %w", err)
+		}
+
+		resp, err := s.httpClient.Do(req)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("send request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected the response status code to be %v, instead got %v",
+				http.StatusOK, resp.StatusCode)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if out.ContentLength == nil || *out.ContentLength != int64(len(data)) {
+			return fmt.Errorf("expected the stored object to be %v bytes, instead got %v",
+				len(data), out.ContentLength)
+		}
+		return nil
+	})
+}

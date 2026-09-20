@@ -27,6 +27,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
@@ -306,6 +307,21 @@ func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 		body = bodyi.(io.Reader)
 	} else {
 		body = bytes.NewReader([]byte{})
+	}
+	// aws-chunked bodies are framed and length-checked by the chunk readers
+	// (the ones implementing middlewares.ChecksumReader). A plain body has
+	// nothing but Content-Length to tell a finished upload from an aborted one.
+	//
+	// Use the raw Content-Length header, not contentLength: that variable may
+	// have been replaced by X-Amz-Decoded-Content-Length above, which describes
+	// the DECODED size. That header only applies to aws-chunked payloads, and
+	// those skip this wrapper anyway. AWS S3 ignores it on a plain body and
+	// stores Content-Length bytes, so checking against the decoded value would
+	// reject a complete upload.
+	if _, chunked := body.(middlewares.ChecksumReader); !chunked {
+		if raw, cerr := strconv.ParseInt(ctx.Get("Content-Length"), 10, 64); cerr == nil && raw > 0 {
+			body = utils.NewContentLengthReader(body, raw)
+		}
 	}
 
 	res, err := c.be.UploadPart(ctx.RequestCtx(),
@@ -806,6 +822,21 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 		body = bodyi.(io.Reader)
 	} else {
 		body = bytes.NewReader([]byte{})
+	}
+	// aws-chunked bodies are framed and length-checked by the chunk readers
+	// (the ones implementing middlewares.ChecksumReader). A plain body has
+	// nothing but Content-Length to tell a finished upload from an aborted one.
+	//
+	// Use the raw Content-Length header, not contentLength: that variable may
+	// have been replaced by X-Amz-Decoded-Content-Length above, which describes
+	// the DECODED size. That header only applies to aws-chunked payloads, and
+	// those skip this wrapper anyway. AWS S3 ignores it on a plain body and
+	// stores Content-Length bytes, so checking against the decoded value would
+	// reject a complete upload.
+	if _, chunked := body.(middlewares.ChecksumReader); !chunked {
+		if raw, cerr := strconv.ParseInt(ctx.Get("Content-Length"), 10, 64); cerr == nil && raw > 0 {
+			body = utils.NewContentLengthReader(body, raw)
+		}
 	}
 
 	ifMatch, ifNoneMatch := utils.ParsePreconditionMatchHeaders(ctx)

@@ -168,6 +168,8 @@ func TestGetBucketLocation(ts *TestState) {
 func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_non_existing_bucket)
 	ts.Run(PutObject_special_chars)
+	ts.Run(PutObject_aborted_plain_body)
+	ts.Run(PutObject_plain_body_with_decoded_length)
 	ts.Run(PutObject_tagging)
 	ts.Run(PutObject_missing_object_lock_retention_config)
 	ts.Run(PutObject_with_object_lock)
@@ -2122,6 +2124,7 @@ func TestUnsignedStreaminPayloadTrailer(ts *TestState) {
 		ts.Run(UnsignedStreamingPayloadTrailer_multiple_checksum_headers)
 		ts.Run(UnsignedStreamingPayloadTrailer_sdk_algo_and_trailer_mismatch)
 		ts.Run(UnsignedStreamingPayloadTrailer_incomplete_body)
+		ts.Run(UnsignedStreamingPayloadTrailer_aborted_connection)
 		ts.Run(UnsignedStreamingPayloadTrailer_invalid_chunk_size)
 		ts.Run(UnsignedStreamingPayloadTrailer_content_length_payload_size_mismatch)
 		ts.Run(UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme)
@@ -2868,6 +2871,8 @@ func GetIntTests() IntTests {
 		"GetBucketLocation_no_access":                                                      GetBucketLocation_no_access,
 		"PutObject_non_existing_bucket":                                                    PutObject_non_existing_bucket,
 		"PutObject_special_chars":                                                          PutObject_special_chars,
+		"PutObject_aborted_plain_body":                                                     PutObject_aborted_plain_body,
+		"PutObject_plain_body_with_decoded_length":                                         PutObject_plain_body_with_decoded_length,
 		"PutObject_tagging":                                                                PutObject_tagging,
 		"PutObject_success":                                                                PutObject_success,
 		"PutObject_default_content_type":                                                   PutObject_default_content_type,
@@ -3559,6 +3564,7 @@ func GetIntTests() IntTests {
 		"RouterCopySourceNotAllowed":                                                       RouterCopySourceNotAllowed,
 		"RouterListVersionsWithKey":                                                        RouterListVersionsWithKey,
 		"UnsignedStreaminPayloadTrailer_malformed_trailer":                                 UnsignedStreaminPayloadTrailer_malformed_trailer,
+		"UnsignedStreamingPayloadTrailer_aborted_connection":                               UnsignedStreamingPayloadTrailer_aborted_connection,
 		"UnsignedStreamingPayloadTrailer_missing_invalid_dec_content_length":               UnsignedStreamingPayloadTrailer_missing_invalid_dec_content_length,
 		"UnsignedStreamingPayloadTrailer_invalid_trailing_checksum":                        UnsignedStreamingPayloadTrailer_invalid_trailing_checksum,
 		"UnsignedStreamingPayloadTrailer_incorrect_trailing_checksum":                      UnsignedStreamingPayloadTrailer_incorrect_trailing_checksum,
