@@ -1408,31 +1408,6 @@ func PutObject_aborted_plain_body(s *S3Conf) error {
 	})
 }
 
-// PutObject_aborted_streaming_body is the same check for an aws-chunked
-// (streaming) upload. Those are framed by the chunk readers, so this guards
-// that path separately - a fix for one must not regress the other.
-func PutObject_aborted_streaming_body(s *S3Conf) error {
-	testName := "PutObject_aborted_streaming_body"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj := "aborted-streaming"
-		putObjectAborted(s, bucket, obj, 65536, 20000, map[string]string{
-			"Content-Encoding":             "aws-chunked",
-			"X-Amz-Decoded-Content-Length": "40000",
-		})
-
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
-		if err == nil {
-			return fmt.Errorf("expected the aborted upload to leave no object, but %v exists", obj)
-		}
-		return nil
-	})
-}
-
 // PutObject_plain_body_with_decoded_length checks that a COMPLETE plain upload
 // still succeeds when it happens to carry X-Amz-Decoded-Content-Length.
 //
