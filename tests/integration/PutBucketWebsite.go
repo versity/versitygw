@@ -17,7 +17,9 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -57,6 +59,34 @@ func PutBucketWebsite_empty_suffix(s *S3Conf) error {
 		})
 		cancel()
 		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgIndexDocumentSuffix, ""))
+	})
+}
+
+func PutBucketWebsite_empty_configuration(s *S3Conf) error {
+	testName := "PutBucketWebsite_empty_configuration"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// The payload from https://github.com/versity/versitygw/issues/2260
+		body := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<WebsiteConfiguration xmlns="https://s3.amazonaws.com/doc/2006-03-01/"></WebsiteConfiguration>`)
+
+		// The SDK collapses the error into a generic API error that drops the
+		// ArgumentName and ArgumentValue fields, so the request is signed by
+		// hand and the raw error body checked.
+		req, err := createSignedReq(http.MethodPut, s.endpoint,
+			fmt.Sprintf("%v?website=", bucket), s.awsID, s.awsSecret,
+			"s3", s.awsRegion, "", body, time.Now(),
+			map[string]string{"Content-Type": "application/xml"})
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp,
+			s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingIndexDocumentSuffix, "null"))
 	})
 }
 
