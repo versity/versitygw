@@ -149,6 +149,35 @@ func TestS3ApiRouter_PutBucketTagging_ErrorStillIncludesFallbackCORS(t *testing.
 	}
 }
 
+func TestS3ApiRouter_PutObjectLockConfiguration_ErrorStillIncludesFallbackCORS(t *testing.T) {
+	origin := "http://127.0.0.1:9090"
+
+	app := fiber.New()
+	(&S3ApiRouter{
+		app:             app,
+		be:              backendWithCorsOnly{},
+		iam:             &auth.IAMServiceInternal{},
+		region:          "us-east-1",
+		corsAllowOrigin: origin,
+	}).Init()
+
+	req, err := http.NewRequest(http.MethodPut, "/testing?object-lock=", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Host = "localhost"
+	req.Header.Set("Origin", origin)
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != origin {
+		t.Fatalf("expected Access-Control-Allow-Origin %q, got %q", origin, got)
+	}
+}
+
 func TestS3ApiRouter_PutObjectTagging_ErrorStillIncludesFallbackCORS(t *testing.T) {
 	origin := "http://127.0.0.1:9090"
 
