@@ -742,6 +742,182 @@ func Versioning_CopyObject_from_a_delete_marker(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+// A copy of an object onto itself in a versioned bucket is an ordinary
+// write: it creates a new version and leaves the one it replaces untouched.
+// Without a metadata directive there is nothing to replace, so it's rejected.
+func Versioning_CopyObject_to_itself(s *S3Conf) error {
+	testName := "Versioning_CopyObject_to_itself"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(obj string) error {
+			// directory objects always carry the directory content-type
+			srcContentType, dstContentType := "text/plain", "application/json"
+			if strings.HasSuffix(obj, "/") {
+				srcContentType, dstContentType = directoryContentType, directoryContentType
+			}
+
+			srcMeta := map[string]string{"key": "value"}
+			r, err := putObjectWithData(objDataLen(obj, 1234), &s3.PutObjectInput{
+				Bucket:      &bucket,
+				Key:         &obj,
+				ContentType: getPtr("text/plain"),
+				Metadata:    srcMeta,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+
+			srcVersionId := getString(r.res.VersionId)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, obj)),
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidCopyDest)); err != nil {
+				return err
+			}
+
+			dstMeta := map[string]string{"new-key": "new-value"}
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:            &bucket,
+				Key:               &obj,
+				CopySource:        getPtr(fmt.Sprintf("%v/%v", bucket, obj)),
+				MetadataDirective: types.MetadataDirectiveReplace,
+				ContentType:       getPtr("application/json"),
+				Metadata:          dstMeta,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			dstVersionId := getString(out.VersionId)
+			if dstVersionId == "" {
+				return fmt.Errorf("expected non empty versionId")
+			}
+			if dstVersionId == srcVersionId {
+				return fmt.Errorf("expected a new versionId, instead got %v", dstVersionId)
+			}
+
+			// the replaced version keeps its own metadata
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: &srcVersionId,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if getString(res.ContentType) != srcContentType {
+				return fmt.Errorf("expected the source version content-type to be %v, instead got %v",
+					srcContentType, getString(res.ContentType))
+			}
+			if !areMapsSame(res.Metadata, srcMeta) {
+				return fmt.Errorf("expected the source version metadata to be %v, instead got %v",
+					srcMeta, res.Metadata)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			res, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if getString(res.VersionId) != dstVersionId {
+				return fmt.Errorf("expected the current versionId to be %v, instead got %v",
+					dstVersionId, getString(res.VersionId))
+			}
+			if getString(res.ContentType) != dstContentType {
+				return fmt.Errorf("expected the new version content-type to be %v, instead got %v",
+					dstContentType, getString(res.ContentType))
+			}
+			if !areMapsSame(res.Metadata, dstMeta) {
+				return fmt.Errorf("expected the new version metadata to be %v, instead got %v",
+					dstMeta, res.Metadata)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			vRes, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+				Bucket: &bucket,
+				Prefix: &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if len(vRes.Versions) != 2 {
+				return fmt.Errorf("expected 2 object versions, instead got %v", len(vRes.Versions))
+			}
+
+			return nil
+		})
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// Naming the current version in the copy source makes a copy onto the same
+// key a regular copy, so it is accepted even without a metadata directive.
+func Versioning_CopyObject_to_itself_from_the_current_version(s *S3Conf) error {
+	testName := "Versioning_CopyObject_to_itself_from_the_current_version"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(obj string) error {
+			versions, err := createObjVersions(s3client, bucket, obj, 1)
+			if err != nil {
+				return err
+			}
+
+			srcVersionId := getString(versions[0].VersionId)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=%v", bucket, obj, srcVersionId)),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if getString(out.CopySourceVersionId) != srcVersionId {
+				return fmt.Errorf("expected the copy-source-version-id to be %v, instead got %v",
+					srcVersionId, getString(out.CopySourceVersionId))
+			}
+			if getString(out.VersionId) == srcVersionId {
+				return fmt.Errorf("expected a new versionId, instead got %v", getString(out.VersionId))
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: &srcVersionId,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if getString(res.VersionId) != srcVersionId {
+				return fmt.Errorf("expected the source version to remain, instead got %v",
+					getString(res.VersionId))
+			}
+
+			return nil
+		})
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_CopyObject_special_chars(s *S3Conf) error {
 	testName := "Versioning_CopyObject_special_chars"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -4243,6 +4419,105 @@ func Versioning_WORM_CopyObject_overwrite_locked_object(s *S3Conf) error {
 				{
 					key:                obj,
 					versionId:          getString(v.VersionId),
+					removeOnlyLeglHold: true,
+				},
+			})
+		})
+	}, withLock())
+}
+
+// A copy of a locked object onto itself creates a new version, leaving the
+// locked one and its legal hold in place.
+func Versioning_WORM_CopyObject_to_itself_locked_object(s *S3Conf) error {
+	testName := "Versioning_WORM_CopyObject_to_itself_locked_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(obj string) error {
+			versions, err := createObjVersions(s3client, bucket, obj, 1)
+			if err != nil {
+				return err
+			}
+
+			v := versions[0]
+			v.IsLatest = getPtr(false)
+			lockedVersionId := getString(v.VersionId)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+				Bucket: &bucket,
+				Key:    &obj,
+				LegalHold: &types.ObjectLockLegalHold{
+					Status: types.ObjectLockLegalHoldStatusOn,
+				},
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			copyResult, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:            &bucket,
+				Key:               &obj,
+				CopySource:        getPtr(fmt.Sprintf("%v/%v", bucket, obj)),
+				MetadataDirective: types.MetadataDirectiveReplace,
+				ContentType:       getPtr("application/json"),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if getString(copyResult.VersionId) == lockedVersionId {
+				return fmt.Errorf("expected a new versionId, instead got %v",
+					getString(copyResult.VersionId))
+			}
+
+			version := types.ObjectVersion{
+				ETag:         copyResult.CopyObjectResult.ETag,
+				IsLatest:     getPtr(true),
+				Key:          &obj,
+				Size:         v.Size,
+				VersionId:    copyResult.VersionId,
+				StorageClass: types.ObjectVersionStorageClassStandard,
+				ChecksumType: copyResult.CopyObjectResult.ChecksumType,
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+				Bucket: &bucket,
+				Prefix: &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if !compareVersions([]types.ObjectVersion{version, v}, out.Versions) {
+				return fmt.Errorf("expected the object versions to be %v, instead got %v",
+					[]types.ObjectVersion{version, v}, out.Versions)
+			}
+
+			// the legal hold stays on the version it was set on
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			lhRes, err := s3client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: &lockedVersionId,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if lhRes.LegalHold.Status != types.ObjectLockLegalHoldStatusOn {
+				return fmt.Errorf("expected the legal hold status to be %v, instead got %v",
+					types.ObjectLockLegalHoldStatusOn, lhRes.LegalHold.Status)
+			}
+
+			return cleanupLockedObjects(s3client, bucket, []objToDelete{
+				{
+					key:                obj,
+					versionId:          lockedVersionId,
 					removeOnlyLeglHold: true,
 				},
 			})

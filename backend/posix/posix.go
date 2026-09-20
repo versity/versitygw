@@ -6310,11 +6310,18 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	var chType types.ChecksumType
 
 	dstObjdPath := joinPathWithTrailer(p.BucketPath(dstBucket), dstObject)
-	if dstObjdPath == objPath {
-		if input.MetadataDirective == types.MetadataDirectiveCopy {
-			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
-		}
+	// A copy of an object onto itself is rejected unless it replaces the
+	// object metadata. Naming a source version makes it a regular copy.
+	selfCopy := dstObjdPath == objPath
+	if selfCopy && srcVersionId == "" &&
+		input.MetadataDirective == types.MetadataDirectiveCopy {
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+	}
 
+	// In a versioned bucket a self copy creates a new version like any other
+	// write, so only unversioned buckets are rewritten in place.
+	versioned := p.versioningEnabled() && vStatus != ""
+	if selfCopy && !versioned {
 		// Delete the object metadata
 		err = p.meta.DeleteAttribute(dstBucket, dstObject, metadataHdr)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -6452,6 +6459,14 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 			checksums.Algorithm = input.ChecksumAlgorithm
 		}
 
+		// A self copy publishes the new version over the source path, which
+		// on Windows can't be renamed over while the source is still open.
+		// PutObject reads the body before publishing, so the handle is
+		// released as soon as the data has been staged.
+		if selfCopy {
+			srcBody = &closeOnEOFReader{r: srcBody, c: f}
+		}
+
 		putObjectInput := s3response.PutObjectInput{
 			Bucket:                    &dstBucket,
 			Key:                       &dstObject,
@@ -6488,23 +6503,29 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 			putObjectInput.Tagging = input.Tagging
 		}
 
-		res, err := p.PutObject(withCtxNoSlot(ctx), putObjectInput)
-		if err != nil {
-			return s3response.CopyObjectOutput{}, err
-		}
-
-		// copy the source object tagging after the destination object
-		// creation, if tagging directive is "COPY"
+		// read the source tagging before the destination is written, as a
+		// self copy replaces the source object's metadata
+		var srcTagging []byte
+		var hasSrcTagging bool
 		if input.TaggingDirective == types.TaggingDirectiveCopy {
 			tagging, err := p.meta.RetrieveAttribute(nil, srcBucket, srcObject, tagHdr)
 			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 				return s3response.CopyObjectOutput{}, fmt.Errorf("get source object tagging: %w", err)
 			}
-			if err == nil {
-				err := p.meta.StoreAttribute(nil, dstBucket, dstObject, tagHdr, tagging)
-				if err != nil {
-					return s3response.CopyObjectOutput{}, fmt.Errorf("set destination object tagging: %w", err)
-				}
+			srcTagging, hasSrcTagging = tagging, err == nil
+		}
+
+		res, err := p.PutObject(withCtxNoSlot(ctx), putObjectInput)
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
+
+		// the source tagging is stored after the destination object creation,
+		// if tagging directive is "COPY"
+		if hasSrcTagging {
+			err := p.meta.StoreAttribute(nil, dstBucket, dstObject, tagHdr, srcTagging)
+			if err != nil {
+				return s3response.CopyObjectOutput{}, fmt.Errorf("set destination object tagging: %w", err)
 			}
 		}
 
