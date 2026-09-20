@@ -70,7 +70,7 @@ func TestWebsiteConfiguration_Validate(t *testing.T) {
 			name:    "missing index document",
 			config:  WebsiteConfiguration{},
 			wantErr: true,
-			errCode: "MalformedXML",
+			errCode: "InvalidArgument",
 		},
 		{
 			name: "empty index suffix",

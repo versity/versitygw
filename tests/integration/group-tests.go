@@ -687,6 +687,7 @@ func TestDeleteBucketCors(ts *TestState) {
 func TestPutBucketWebsite(ts *TestState) {
 	ts.Run(PutBucketWebsite_non_existing_bucket)
 	ts.Run(PutBucketWebsite_empty_suffix)
+	ts.Run(PutBucketWebsite_empty_configuration)
 	ts.Run(PutBucketWebsite_suffix_with_slash)
 	ts.Run(PutBucketWebsite_invalid_redirect_protocol)
 	ts.Run(PutBucketWebsite_redirectAll_index_error_routingRules)
@@ -3235,6 +3236,7 @@ func GetIntTests() IntTests {
 		"PutBucketCors_success":                                                            PutBucketCors_success,
 		"PutBucketWebsite_non_existing_bucket":                                             PutBucketWebsite_non_existing_bucket,
 		"PutBucketWebsite_empty_suffix":                                                    PutBucketWebsite_empty_suffix,
+		"PutBucketWebsite_empty_configuration":                                             PutBucketWebsite_empty_configuration,
 		"PutBucketWebsite_suffix_with_slash":                                               PutBucketWebsite_suffix_with_slash,
 		"PutBucketWebsite_invalid_redirect_protocol":                                       PutBucketWebsite_invalid_redirect_protocol,
 		"PutBucketWebsite_redirectAll_index_error_routingRules":                            PutBucketWebsite_redirectAll_index_error_routingRules,

@@ -1334,3 +1334,111 @@ func TestS3ApiController_PutBucketAcl(t *testing.T) {
 		})
 	}
 }
+
+func TestS3ApiController_PutBucketWebsite(t *testing.T) {
+	validBody, err := xml.Marshal(s3response.WebsiteConfiguration{
+		IndexDocument: &s3response.IndexDocument{Suffix: "index.html"},
+	})
+	assert.NoError(t, err)
+
+	// The payload from https://github.com/versity/versitygw/issues/2260
+	emptyBody := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<WebsiteConfiguration xmlns="https://s3.amazonaws.com/doc/2006-03-01/"></WebsiteConfiguration>`)
+
+	tests := []struct {
+		name   string
+		input  testInput
+		output testOutput
+	}{
+		{
+			name: "verify access fails",
+			input: testInput{
+				locals: accessDeniedLocals,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "empty website configuration",
+			input: testInput{
+				locals: defaultLocals,
+				body:   emptyBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingIndexDocumentSuffix, "null"),
+			},
+		},
+		{
+			name: "malformed xml",
+			input: testInput{
+				locals: defaultLocals,
+				body:   []byte("<WebsiteConfiguration><IndexDocument>"),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetAPIError(s3err.ErrMalformedXML),
+			},
+		},
+		{
+			name: "backend error",
+			input: testInput{
+				locals: defaultLocals,
+				beErr:  s3err.GetAPIError(s3err.ErrNoSuchBucket),
+				body:   validBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetAPIError(s3err.ErrNoSuchBucket),
+			},
+		},
+		{
+			name: "success",
+			input: testInput{
+				locals: defaultLocals,
+				body:   validBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			be := &BackendMock{
+				PutBucketWebsiteFunc: func(contextMoqParam context.Context, bucket string, website []byte) error {
+					return tt.input.beErr
+				},
+				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+					return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+				},
+			}
+
+			ctrl := S3ApiController{
+				be: be,
+			}
+
+			testController(t, ctrl.PutBucketWebsite, tt.output.response, tt.output.err, ctxInputs{
+				locals: tt.input.locals,
+				body:   tt.input.body,
+			})
+		})
+	}
+}
