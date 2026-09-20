@@ -47,21 +47,11 @@ const (
 )
 
 // Header names used by the cuObject client to pass RDMA descriptor info.
-//
-// HeaderRDMADescr/HeaderRDMASize/HeaderRDMARemoteAddr are a legacy 3-header
-// scheme used only by this repo's own test tools (cmd/cuobjtest,
-// cmd/rdmatest). The real cuObject/minio-cpp SDK does not send these; it
-// sends a single combined HeaderRDMAToken instead. Both schemes are
-// supported so existing test tooling keeps working.
 const (
-	HeaderRDMADescr      = "X-CuObj-RDMA-Descr"
-	HeaderRDMASize       = "X-CuObj-Content-Length"
-	HeaderRDMARemoteAddr = "X-CuObj-Remote-Buf-Start"
-
 	// HeaderRDMAToken is the single combined header sent by the real
-	// cuObject client SDK (e.g. minio-cpp). Its value is a colon-delimited
-	// token per the cuObj RDMA descriptor protocol. The whole token is
-	// passed through verbatim to the RDMA backend as the descriptor.
+	// cuObject client. Its value is a colon-delimited token per the
+	// cuObj RDMA descriptor protocol. The whole token is passed through
+	// verbatim to the RDMA backend as the descriptor.
 	//
 	// This is the canonical definition of the wire format; the encoder in
 	// cuwrapper/rdma_host_client_wrapper.cpp (build_token) must stay in
@@ -99,16 +89,15 @@ const (
 // the fasthttp request context so the backend can retrieve them via the
 // GetRDMA* helper functions.
 //
-// If neither the legacy descriptor header nor the combined RDMA token
-// header is present, the request passes through unchanged — the backend
+// If the combined RDMA token header is not present, the request passes
+// through unchanged — the backend
 // will use the normal (non-RDMA) code path.
 //
 // If a descriptor is present but required fields are malformed, a 400 Bad
 // Request is returned immediately.
 func CuObjMiddleware(ctx fiber.Ctx) error {
-	descr := ctx.Get(HeaderRDMADescr)
 	token := ctx.Get(HeaderRDMAToken)
-	if descr == "" && token == "" {
+	if token == "" {
 		return ctx.Next()
 	}
 
@@ -116,32 +105,7 @@ func CuObjMiddleware(ctx fiber.Ctx) error {
 	// the ctx.RequestCtx() call the versitygw controller uses to invoke the backend.
 	rctx := ctx.RequestCtx()
 
-	if descr != "" {
-		// Legacy 3-header scheme.
-		rctx.SetUserValue(localKeyRDMADescr, descr)
-
-		if sizeStr := ctx.Get(HeaderRDMASize); sizeStr != "" {
-			size, err := strconv.ParseInt(sizeStr, 10, 64)
-			if err != nil || size <= 0 {
-				return fiber.NewError(fiber.StatusBadRequest,
-					HeaderRDMASize+": must be a positive integer")
-			}
-			rctx.SetUserValue(localKeyRDMASize, size)
-		}
-
-		if addrStr := ctx.Get(HeaderRDMARemoteAddr); addrStr != "" {
-			addr, err := strconv.ParseUint(addrStr, 10, 64)
-			if err != nil {
-				return fiber.NewError(fiber.StatusBadRequest,
-					HeaderRDMARemoteAddr+": must be a non-negative integer")
-			}
-			rctx.SetUserValue(localKeyRDMARemoteStart, addr)
-		}
-
-		return ctx.Next()
-	}
-
-	// Combined token scheme (real cuObject client SDK). The descriptor
+	// The descriptor
 	// passed to the RDMA backend is the raw token string; the remote base
 	// address is parsed from the token's first field, and the transfer size
 	// normally comes from the standard Content-Length header (RDMA replaces

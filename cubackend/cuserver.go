@@ -121,9 +121,7 @@ func (cs *CuServer) PutObject(ctx context.Context, po s3response.PutObjectInput)
 	// RDMA-accelerated path
 	size, ok := cumiddleware.GetRDMASize(ctx)
 	if !ok || size <= 0 {
-		// Size comes from the legacy 3-header scheme or, for the combined
-		// token scheme, the standard Content-Length header — neither was usable.
-		return s3response.PutObjectOutput{}, fmt.Errorf("cuserver: RDMA PUT requires a positive size via the %s header or a standard Content-Length header", cumiddleware.HeaderRDMASize)
+		return s3response.PutObjectOutput{}, fmt.Errorf("cuserver: RDMA PUT requires a positive Content-Length or RDMA token buffer size")
 	}
 	if size > int64(rdma.MaxTransferSize) {
 		return s3response.PutObjectOutput{}, fmt.Errorf("cuserver: object size %d exceeds RDMA max %d", size, rdma.MaxTransferSize)

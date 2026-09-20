@@ -38,10 +38,9 @@ const (
 
 // Session owns a CUDA buffer registered for cuObject RDMA token exchange.
 type Session struct {
-	ctx         *C.cuobj_client_ctx_t
-	gpuBuf      unsafe.Pointer
-	size        int
-	remoteStart uint64
+	ctx    *C.cuobj_client_ctx_t
+	gpuBuf unsafe.Pointer
+	size   int
 }
 
 // NewSession creates a GPU-backed cuObject session for a fixed transfer size.
@@ -82,7 +81,6 @@ func NewSession(size int) (*Session, error) {
 		return nil, err
 	}
 
-	s.remoteStart = uint64(C.cuobj_client_ptr_to_u64(s.gpuBuf))
 	return s, nil
 }
 
@@ -102,7 +100,7 @@ func (s *Session) Close() {
 }
 
 // Upload copies src into the session GPU buffer and performs a PUT operation
-// using cuObject RDMA headers.
+// using a cuObject RDMA token.
 // src length must exactly match the size passed to NewSession.
 func (s *Session) Upload(base *s3lib.Client, bucket, key string, src []byte) error {
 	if len(src) != s.size {
@@ -116,7 +114,7 @@ func (s *Session) Upload(base *s3lib.Client, bucket, key string, src []byte) err
 		return err
 	}
 	defer s.putToken(token)
-	return doPut(base, bucket, key, int64(s.size), C.GoString(token), s.remoteStart)
+	return doPut(base, bucket, key, int64(s.size), C.GoString(token))
 }
 
 // Download performs a GET operation into the session GPU buffer and copies the
@@ -134,7 +132,7 @@ func (s *Session) Download(base *s3lib.Client, bucket, key string, dst []byte) e
 		return err
 	}
 	defer s.putToken(token)
-	if err := doGet(base, bucket, key, int64(s.size), C.GoString(token), s.remoteStart); err != nil {
+	if err := doGet(base, bucket, key, int64(s.size), C.GoString(token)); err != nil {
 		return err
 	}
 	return s.copyD2H(dst)

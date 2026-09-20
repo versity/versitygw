@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG CUDA_TAG=13.3.0-devel-rockylinux9
+ARG CUDA_TAG=13.4.1-devel-rockylinux9
 FROM --platform=linux/amd64 nvidia/cuda:${CUDA_TAG}
 
 # Install build prerequisites and cuObject server development packages.
