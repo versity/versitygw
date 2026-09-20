@@ -24,9 +24,12 @@ import (
 	"hash/crc32"
 	"hash/crc64"
 	"math/bits"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -497,6 +500,77 @@ func UploadPart_success(s *S3Conf) error {
 		}
 		if getString(res.ETag) == "" {
 			return fmt.Errorf("expected a valid etag, instead got empty")
+		}
+		return nil
+	})
+}
+
+// UploadPart_plain_body_with_decoded_length checks that a complete plain part
+// uses Content-Length rather than X-Amz-Decoded-Content-Length. The latter is
+// only meaningful for aws-chunked uploads and must not preallocate a zero tail.
+func UploadPart_plain_body_with_decoded_length(s *S3Conf) error {
+	testName := "UploadPart_plain_body_with_decoded_length"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "plain-part-with-decoded-length"
+		upload, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		data := "hello"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+			fmt.Sprintf("%s/%s/%s?uploadId=%s&partNumber=1", s.endpoint, bucket, obj, *upload.UploadId),
+			strings.NewReader(data))
+		if err != nil {
+			cancel()
+			return fmt.Errorf("create upload part request: %w", err)
+		}
+		req.Header.Set("x-amz-content-sha256", "UNSIGNED-PAYLOAD")
+		req.Header.Set("X-Amz-Decoded-Content-Length", "99999")
+
+		signer := v4.NewSigner()
+		if err := signer.SignHTTP(req.Context(),
+			aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret},
+			req, "UNSIGNED-PAYLOAD", "s3", s.awsRegion, time.Now()); err != nil {
+			cancel()
+			return fmt.Errorf("sign upload part request: %w", err)
+		}
+
+		resp, err := s.httpClient.Do(req)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("send upload part request: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected upload part status %v, got %v", http.StatusOK, resp.StatusCode)
+		}
+
+		partNumber := int32(1)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: upload.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{Parts: []types.CompletedPart{{
+				ETag:       aws.String(resp.Header.Get("ETag")),
+				PartNumber: &partNumber,
+			}}},
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("complete multipart upload: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &bucket, Key: &obj})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if out.ContentLength == nil || *out.ContentLength != int64(len(data)) {
+			return fmt.Errorf("expected completed object to be %v bytes, got %v", len(data), out.ContentLength)
 		}
 		return nil
 	})

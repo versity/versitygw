@@ -474,6 +474,7 @@ func TestUploadPart(ts *TestState) {
 		ts.Run(UploadPart_with_checksums_success)
 	}
 	ts.Run(UploadPart_success)
+	ts.Run(UploadPart_plain_body_with_decoded_length)
 	ts.Run(UploadPart_etag_quoting_consistency)
 }
 
@@ -2873,6 +2874,7 @@ func GetIntTests() IntTests {
 		"PutObject_special_chars":                                                          PutObject_special_chars,
 		"PutObject_aborted_plain_body":                                                     PutObject_aborted_plain_body,
 		"PutObject_plain_body_with_decoded_length":                                         PutObject_plain_body_with_decoded_length,
+		"UploadPart_plain_body_with_decoded_length":                                        UploadPart_plain_body_with_decoded_length,
 		"PutObject_tagging":                                                                PutObject_tagging,
 		"PutObject_success":                                                                PutObject_success,
 		"PutObject_default_content_type":                                                   PutObject_default_content_type,
