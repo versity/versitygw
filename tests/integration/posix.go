@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -220,6 +221,255 @@ func CopyObject_overwrite_same_file_object(s *S3Conf) error {
 
 		return nil
 	})
+}
+
+func CompleteMultipartUpload_overwrite_dir_obj(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_overwrite_dir_obj"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dir, obj := "foo/", "foo"
+		_, err := putObjects(s3client, []string{dir}, bucket)
+		if err != nil {
+			return err
+		}
+
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{ETag: parts[0].ETag, PartNumber: parts[0].PartNumber},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)); err != nil {
+			return err
+		}
+
+		// the directory object isn't taken for the object of a completed upload
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: getPtr("non-existing-upload-id"),
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{ETag: parts[0].ETag, PartNumber: parts[0].PartNumber},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &dir,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// the failed upload can still be completed or aborted
+		return checkAndAbortUpload(s3client, bucket, obj, *mp.UploadId)
+	})
+}
+
+func CompleteMultipartUpload_overwrite_dir_obj_delete_marker(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_overwrite_dir_obj_delete_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dir, obj := "foo/", "foo"
+		versions, err := createObjVersions(s3client, bucket, dir, 1)
+		if err != nil {
+			return err
+		}
+		versions[0].IsLatest = getPtr(false)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &dir,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		delMarkers := []types.DeleteMarkerEntry{
+			{Key: &dir, VersionId: out.VersionId, IsLatest: getPtr(true)},
+		}
+
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{ETag: parts[0].ETag, PartNumber: parts[0].PartNumber},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)); err != nil {
+			return err
+		}
+
+		// the delete marker of the directory object is left in place
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(versions, res.Versions) {
+			return fmt.Errorf("expected the versions to be %v, instead got %v",
+				versions, res.Versions)
+		}
+		if !compareDelMarkers(delMarkers, res.DeleteMarkers) {
+			return fmt.Errorf("expected the delete markers to be %v, instead got %v",
+				delMarkers, res.DeleteMarkers)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &dir,
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "NotFound"); err != nil {
+			return err
+		}
+
+		return checkAndAbortUpload(s3client, bucket, obj, *mp.UploadId)
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func ObjectTagging_trailing_slash_counterpart(s *S3Conf) error {
+	testName := "ObjectTagging_trailing_slash_counterpart"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagSet := []types.Tag{{Key: getPtr("key"), Value: getPtr("value")}}
+
+		// a key and the same key with a trailing slash have one path: the
+		// object of one of them isn't an object of the other
+		for _, keys := range [][2]string{{"my-dir/", "my-dir"}, {"my-obj", "my-obj/"}} {
+			obj, other := keys[0], keys[1]
+			_, err := putObjectWithData(objDataLen(obj, 10), &s3.PutObjectInput{
+				Bucket:  &bucket,
+				Key:     &obj,
+				Tagging: getPtr("key=value"),
+			}, s3client)
+			if err != nil {
+				return err
+			}
+
+			err = checkObjectTaggingErr(s3client, bucket, other, "", s3err.GetAPIError(s3err.ErrNoSuchKey))
+			if err != nil {
+				return fmt.Errorf("%v: %w", other, err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%v: %w", obj, err)
+			}
+			if !areTagsSame(res.TagSet, tagSet) {
+				return fmt.Errorf("%v: expected the tag set to be %v, instead got %v",
+					obj, tagSet, res.TagSet)
+			}
+		}
+
+		// neither key names the parent directory of an object
+		_, err := putObjects(s3client, []string{"my-parent/obj"}, bucket)
+		if err != nil {
+			return err
+		}
+		for _, key := range []string{"my-parent/", "my-parent"} {
+			err := checkObjectTaggingErr(s3client, bucket, key, "", s3err.GetAPIError(s3err.ErrNoSuchKey))
+			if err != nil {
+				return fmt.Errorf("%v: %w", key, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func ObjectLock_trailing_slash_counterpart(s *S3Conf) error {
+	testName := "ObjectLock_trailing_slash_counterpart"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		rDate := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+		lockedObjs := []objToDelete{}
+
+		for _, keys := range [][2]string{{"my-dir/", "my-dir"}, {"my-obj", "my-obj/"}} {
+			obj, other := keys[0], keys[1]
+			_, err := putObjectWithData(objDataLen(obj, 10), &s3.PutObjectInput{
+				Bucket:                    &bucket,
+				Key:                       &obj,
+				ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+				ObjectLockMode:            types.ObjectLockModeGovernance,
+				ObjectLockRetainUntilDate: &rDate,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+			lockedObjs = append(lockedObjs, objToDelete{key: obj, removeOnlyLeglHold: true})
+
+			err = checkObjectLockErr(s3client, bucket, other, "", s3err.GetAPIError(s3err.ErrNoSuchKey))
+			if err != nil {
+				return fmt.Errorf("%v: %w", other, err)
+			}
+
+			// the lock of the object doesn't protect the other key
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &other,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%v: %w", other, err)
+			}
+
+			err = checkObjectLock(s3client, bucket, obj, "", rDate)
+			if err != nil {
+				return fmt.Errorf("%v: %w", obj, err)
+			}
+		}
+
+		return cleanupLockedObjects(s3client, bucket, lockedObjs)
+	}, withLock())
 }
 
 // PutObject_race_with_delete tests the race between PutObject and DeleteObject

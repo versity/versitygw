@@ -495,7 +495,9 @@ func (s objectLockState) checkObject(ctx context.Context, be backend.Backend, ia
 
 	checkRetention := true
 	retentionData, err := be.GetObjectRetention(ctx, bucket, key, versionId)
-	if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+	// an object or version that doesn't exist has nothing to protect
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) ||
+		errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchVersion)) {
 		return nil
 	}
 	// the object is a delete marker, if a `MethodNotAllowed` error is returned
@@ -538,7 +540,8 @@ func (s objectLockState) checkObject(ctx context.Context, be backend.Backend, ia
 
 	status, err := be.GetObjectLegalHold(ctx, bucket, key, versionId)
 	if err != nil {
-		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) ||
+			errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchVersion)) {
 			return nil
 		}
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)) {
