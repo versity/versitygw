@@ -15,6 +15,7 @@
 package s3api
 
 import (
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -285,5 +286,43 @@ func TestCustomMountValidation(t *testing.T) {
 				t.Fatalf("New() error = %v, want substring %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestRequestAddressIgnoresProxyHeaders pins the peer address reported by
+// ctx.IP(). The gateway deliberately configures neither fiber's ProxyHeader nor
+// TrustProxy, because ctx.IP() feeds aws:SourceIp in IAM policy conditions and
+// a client-supplied header must not be able to influence that. The logging
+// address is resolved separately from an opt-in header.
+func TestRequestAddressIgnoresProxyHeaders(t *testing.T) {
+	server, err := newTestS3ApiServer(
+		WithQuiet(),
+		WithRoute(http.MethodGet, "/addr", func(ctx fiber.Ctx) error {
+			// app.Test() serves over a placeholder connection; pin the peer
+			// address so the fallback is deterministic.
+			ctx.RequestCtx().SetRemoteAddr(&net.TCPAddr{IP: net.ParseIP("192.0.2.1"), Port: 12345})
+			return ctx.SendString(ctx.IP())
+		}),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/addr", nil)
+	req.Header.Set("X-Forwarded-For", "203.0.113.7")
+	req.Header.Set("X-Real-Ip", "203.0.113.7")
+
+	resp, err := server.app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if got := string(body); got != "192.0.2.1" {
+		t.Fatalf("ctx.IP() = %q, want the socket peer address %q", got, "192.0.2.1")
 	}
 }

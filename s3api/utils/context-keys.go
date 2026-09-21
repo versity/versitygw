@@ -40,4 +40,5 @@ const (
 	ContextKeyRequestID        = httpctx.ContextKeyRequestID
 	ContextKeyHostID           = httpctx.ContextKeyHostID
 	ContextKeyWebsiteConfig    = httpctx.ContextKeyWebsiteConfig
+	ContextKeyClientIP         = httpctx.ContextKeyClientIP
 )

@@ -370,6 +370,13 @@ type Config struct {
 	// AdminLogFile is the file path or stream name (stdout, stderr, or - for
 	// stdout) for admin API request logs.
 	AdminLogFile string
+	// ClientIPHeader records the client address from this proxy header in the
+	// request log and the S3 and admin access logs. Accepted values are
+	// "X-Forwarded-For" and "X-Real-Ip". Empty (the default) keeps the socket
+	// peer address. Enabling it trusts the header, so the gateway must only be
+	// reachable through the proxy. IAM aws:SourceIp conditions are unaffected
+	// and keep evaluating the socket address.
+	ClientIPHeader string
 
 	// Metrics
 	//
@@ -657,6 +664,11 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		return fmt.Errorf("mp-max-parts must be positive")
 	}
 
+	clientIPHeader, err := utils.NormalizeClientIPHeader(cfg.ClientIPHeader)
+	if err != nil {
+		return err
+	}
+
 	if len(cfg.Ports) == 0 {
 		return fmt.Errorf("no ports specified")
 	}
@@ -791,6 +803,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	}
 	if cfg.DisableACLs {
 		opts = append(opts, s3api.WithDisableACL())
+	}
+	if clientIPHeader != "" {
+		opts = append(opts, s3api.WithClientIPHeader(clientIPHeader))
 	}
 	if len(cfg.S3Options) > 0 {
 		opts = append(opts, cfg.S3Options...)
@@ -961,6 +976,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		}
 		if cfg.AdminPathPrefix != "" {
 			admOpts = append(admOpts, s3api.WithAdminPathPrefix(cfg.AdminPathPrefix))
+		}
+		if clientIPHeader != "" {
+			admOpts = append(admOpts, s3api.WithAdminClientIPHeader(clientIPHeader))
 		}
 
 		admSrv = s3api.NewAdminServer(be, middlewares.RootUserConfig{Access: cfg.RootUserAccess, Secret: cfg.RootUserSecret}, cfg.Region, iam, loggers.AdminLogger, srv.Router.Ctrl, admOpts...)

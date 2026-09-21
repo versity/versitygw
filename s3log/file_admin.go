@@ -78,7 +78,7 @@ func (f *AdminFileLogger) Log(ctx fiber.Ctx, err error, body []byte, meta LogMet
 	}
 
 	lf.Time = time.Now()
-	lf.RemoteIP = ctx.IP()
+	lf.RemoteIP = utils.ClientIP(ctx)
 	lf.Requester = access
 	lf.Operation = meta.Action
 	lf.RequestURI = reqURI

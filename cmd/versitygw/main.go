@@ -48,6 +48,7 @@ var (
 	eventConfigFilePath                           string
 	logWebhookURL, accessLog                      string
 	adminLogFile                                  string
+	clientIPHeader                                string
 	healthPath                                    string
 	virtualDomain                                 string
 	logLevel                                      string
@@ -461,6 +462,12 @@ func initFlags() []cli.Flag {
 			Usage:       "enable admin server access logging to specified file, stdout, stderr, or - for stdout",
 			EnvVars:     []string{"LOGFILE", "VGW_ADMIN_ACCESS_LOG"},
 			Destination: &adminLogFile,
+		},
+		&cli.StringFlag{
+			Name:        "client-ip-header",
+			Usage:       `header to take the client IP for logs from: "X-Forwarded-For" (leftmost entry) or "X-Real-Ip"; disabled by default`,
+			EnvVars:     []string{"VGW_CLIENT_IP_HEADER"},
+			Destination: &clientIPHeader,
 		},
 		&cli.StringFlag{
 			Name:        "log-webhook-url",
@@ -1018,6 +1025,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		AccessLog:                   accessLog,
 		LogWebhookURL:               logWebhookURL,
 		AdminLogFile:                adminLogFile,
+		ClientIPHeader:              clientIPHeader,
 		MetricsService:              metricsService,
 		StatsdServers:               statsdServers,
 		DogstatsServers:             dogstatsServers,
