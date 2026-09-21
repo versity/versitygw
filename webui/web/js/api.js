@@ -1395,7 +1395,7 @@ class VersityAPI {
   /**
    * Upload an object (PutObject) - for small files < 5MB
    */
-  async putObject(bucket, key, file, contentType = null) {
+  async putObject(bucket, key, file, contentType = null, signal = undefined) {
     const finalContentType = contentType || file.type || 'application/octet-stream';
     const path = `/${bucket}/${encodeS3Key(key)}`;
 
@@ -1408,6 +1408,7 @@ class VersityAPI {
       method: 'PUT',
       headers: signed.headers,
       body: file,
+      signal,
     });
 
     if (!response.ok) {
@@ -1585,12 +1586,13 @@ class VersityAPI {
    * Initiate a multipart upload
    * Returns uploadId needed for subsequent parts
    */
-  async createMultipartUpload(bucket, key, contentType = 'application/octet-stream') {
+  async createMultipartUpload(bucket, key, contentType = 'application/octet-stream', signal = undefined) {
     const fetchParams = await this.buildFetchParams('POST', `/${bucket}/${encodeS3Key(key)}`, { uploads: '' }, '', false, contentType);
 
     const response = await fetch(fetchParams.url, {
       method: 'POST',
       headers: fetchParams.headers,
+      signal,
     });
 
     if (!response.ok) {
@@ -1614,7 +1616,7 @@ class VersityAPI {
    * Upload a single part of a multipart upload
    * Returns ETag needed for CompleteMultipartUpload
    */
-  async uploadPart(bucket, key, uploadId, partNumber, data) {
+  async uploadPart(bucket, key, uploadId, partNumber, data, signal = undefined) {
     const arrayBuffer = data instanceof ArrayBuffer ? data : await data.arrayBuffer();
     const path = `/${bucket}/${encodeS3Key(key)}`;
     const queryParams = {
@@ -1635,6 +1637,7 @@ class VersityAPI {
       method: 'PUT',
       headers: signed.headers,
       body: arrayBuffer,
+      signal,
     });
 
     if (!response.ok) {
@@ -1669,7 +1672,7 @@ class VersityAPI {
    * Complete a multipart upload
    * parts should be an array of { partNumber, etag }
    */
-  async completeMultipartUpload(bucket, key, uploadId, parts) {
+  async completeMultipartUpload(bucket, key, uploadId, parts, signal = undefined) {
     let body = '<?xml version="1.0" encoding="UTF-8"?>\n<CompleteMultipartUpload>';
 
     // Sort parts by partNumber
@@ -1690,6 +1693,7 @@ class VersityAPI {
       method: 'POST',
       headers: fetchParams.headers,
       body: body,
+      signal,
     });
 
     if (!response.ok) {
