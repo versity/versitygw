@@ -17,6 +17,7 @@ package controllers
 import (
 	"context"
 	"encoding/xml"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +32,13 @@ import (
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3response"
 )
+
+type checksumBodyReader struct {
+	io.Reader
+}
+
+func (checksumBodyReader) Algorithm() string { return "" }
+func (checksumBodyReader) Checksum() string  { return "" }
 
 func TestS3ApiController_PutObjectTagging(t *testing.T) {
 	validTaggingBody, err := xml.Marshal(
@@ -496,7 +504,12 @@ func TestS3ApiController_UploadPart(t *testing.T) {
 		{
 			name: "invalid content length",
 			input: testInput{
-				locals: defaultLocals,
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyIsRoot:     true,
+					utils.ContextKeyParsedAcl:  auth.ACL{Owner: "root"},
+					utils.ContextKeyAccount:    auth.Account{Access: "root", Role: auth.RoleAdmin},
+					utils.ContextKeyBodyReader: checksumBodyReader{strings.NewReader("")},
+				},
 				headers: map[string]string{
 					"X-Amz-Decoded-Content-Length": "invalid_cLength",
 				},
@@ -629,6 +642,52 @@ func TestS3ApiController_UploadPart(t *testing.T) {
 				})
 		})
 	}
+}
+
+func TestS3ApiController_UploadPartPlainBodyUsesContentLength(t *testing.T) {
+	be := &BackendMock{
+		UploadPartFunc: func(_ context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+			assert.Equal(t, int64(5), *input.ContentLength)
+			body, err := io.ReadAll(input.Body)
+			assert.NoError(t, err)
+			assert.Equal(t, "hello", string(body))
+			return &s3.UploadPartOutput{}, nil
+		},
+		GetBucketPolicyFunc: func(_ context.Context, _ string) ([]byte, error) {
+			return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+		},
+	}
+	ctrl := S3ApiController{be: be, mpMaxParts: 10000}
+
+	testController(t, ctrl.UploadPart, &Response{
+		Headers: map[string]*string{
+			"ETag":                     nil,
+			"x-amz-checksum-crc32":     nil,
+			"x-amz-checksum-crc32c":    nil,
+			"x-amz-checksum-crc64nvme": nil,
+			"x-amz-checksum-sha1":      nil,
+			"x-amz-checksum-sha256":    nil,
+			"x-amz-checksum-sha512":    nil,
+			"x-amz-checksum-md5":       nil,
+			"x-amz-checksum-xxhash64":  nil,
+			"x-amz-checksum-xxhash3":   nil,
+			"x-amz-checksum-xxhash128": nil,
+		},
+		MetaOpts: &MetaOptions{BucketOwner: "root", ContentLength: 5},
+	}, nil, ctxInputs{
+		body: []byte("hello"),
+		locals: map[utils.ContextKey]any{
+			utils.ContextKeyIsRoot:     true,
+			utils.ContextKeyParsedAcl:  auth.ACL{Owner: "root"},
+			utils.ContextKeyAccount:    auth.Account{Access: "root", Role: auth.RoleAdmin},
+			utils.ContextKeyBodyReader: strings.NewReader("hello"),
+		},
+		headers: map[string]string{
+			"Content-Length":               "5",
+			"X-Amz-Decoded-Content-Length": "99999",
+		},
+		queries: map[string]string{"partNumber": "1", "uploadId": "upload"},
+	})
 }
 
 func TestS3ApiController_UploadPartCopy(t *testing.T) {
@@ -1309,7 +1368,12 @@ func TestS3ApiController_PutObject(t *testing.T) {
 		{
 			name: "invalid content length",
 			input: testInput{
-				locals:       defaultLocals,
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyIsRoot:     true,
+					utils.ContextKeyParsedAcl:  auth.ACL{Owner: "root"},
+					utils.ContextKeyAccount:    auth.Account{Access: "root", Role: auth.RoleAdmin},
+					utils.ContextKeyBodyReader: checksumBodyReader{strings.NewReader("")},
+				},
 				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
 				headers: map[string]string{
 					"X-Amz-Decoded-Content-Length": "invalid_length",

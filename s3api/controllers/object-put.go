@@ -246,12 +246,7 @@ func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 	if contentLengthStr == "" {
 		contentLengthStr = "0"
 	}
-	// Use decoded content length if available because the
-	// middleware will decode the chunked transfer encoding
 	decodedLength := ctx.Get("X-Amz-Decoded-Content-Length")
-	if decodedLength != "" {
-		contentLengthStr = decodedLength
-	}
 
 	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
@@ -280,7 +275,6 @@ func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 			},
 		}, s3err.GetInvalidArgumentErr(s3err.InvalidArgPartNumber, ctx.Query("partNumber"))
 	}
-
 	contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
 	if err != nil {
 		debuglogger.Logf("error parsing content length %q: %v", contentLengthStr, err)
@@ -308,20 +302,23 @@ func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 	} else {
 		body = bytes.NewReader([]byte{})
 	}
+	_, chunked := body.(middlewares.ChecksumReader)
+	if chunked && decodedLength != "" {
+		contentLength, err = strconv.ParseInt(decodedLength, 10, 64)
+		if err != nil {
+			debuglogger.Logf("error parsing content length %q: %v", decodedLength, err)
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		}
+	}
 	// aws-chunked bodies are framed and length-checked by the chunk readers
 	// (the ones implementing middlewares.ChecksumReader). A plain body has
 	// nothing but Content-Length to tell a finished upload from an aborted one.
-	//
-	// Use the raw Content-Length header, not contentLength: that variable may
-	// have been replaced by X-Amz-Decoded-Content-Length above, which describes
-	// the DECODED size. That header only applies to aws-chunked payloads, and
-	// those skip this wrapper anyway. AWS S3 ignores it on a plain body and
-	// stores Content-Length bytes, so checking against the decoded value would
-	// reject a complete upload.
-	if _, chunked := body.(middlewares.ChecksumReader); !chunked {
-		if raw, cerr := strconv.ParseInt(ctx.Get("Content-Length"), 10, 64); cerr == nil && raw > 0 {
-			body = utils.NewContentLengthReader(body, raw)
-		}
+	if !chunked && contentLength > 0 {
+		body = utils.NewContentLengthReader(body, contentLength)
 	}
 
 	res, err := c.be.UploadPart(ctx.RequestCtx(),
@@ -723,12 +720,7 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 	if contentLengthStr == "" {
 		contentLengthStr = "0"
 	}
-	// Use decoded content length if available because the
-	// middleware will decode the chunked transfer encoding
 	decodedLength := ctx.Get("X-Amz-Decoded-Content-Length")
-	if decodedLength != "" {
-		contentLengthStr = decodedLength
-	}
 
 	actions := []auth.Action{auth.PutObjectAction}
 	if tagging != "" {
@@ -787,7 +779,6 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 			},
 		}, err
 	}
-
 	contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
 	if err != nil {
 		debuglogger.Logf("error parsing content length %q: %v", contentLengthStr, err)
@@ -823,20 +814,23 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 	} else {
 		body = bytes.NewReader([]byte{})
 	}
+	_, chunked := body.(middlewares.ChecksumReader)
+	if chunked && decodedLength != "" {
+		contentLength, err = strconv.ParseInt(decodedLength, 10, 64)
+		if err != nil {
+			debuglogger.Logf("error parsing content length %q: %v", decodedLength, err)
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		}
+	}
 	// aws-chunked bodies are framed and length-checked by the chunk readers
 	// (the ones implementing middlewares.ChecksumReader). A plain body has
 	// nothing but Content-Length to tell a finished upload from an aborted one.
-	//
-	// Use the raw Content-Length header, not contentLength: that variable may
-	// have been replaced by X-Amz-Decoded-Content-Length above, which describes
-	// the DECODED size. That header only applies to aws-chunked payloads, and
-	// those skip this wrapper anyway. AWS S3 ignores it on a plain body and
-	// stores Content-Length bytes, so checking against the decoded value would
-	// reject a complete upload.
-	if _, chunked := body.(middlewares.ChecksumReader); !chunked {
-		if raw, cerr := strconv.ParseInt(ctx.Get("Content-Length"), 10, 64); cerr == nil && raw > 0 {
-			body = utils.NewContentLengthReader(body, raw)
-		}
+	if !chunked && contentLength > 0 {
+		body = utils.NewContentLengthReader(body, contentLength)
 	}
 
 	ifMatch, ifNoneMatch := utils.ParsePreconditionMatchHeaders(ctx)
