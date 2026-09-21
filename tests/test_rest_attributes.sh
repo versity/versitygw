@@ -87,4 +87,6 @@ source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
 
   run add_and_check_checksum "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
+
+  return 1
 }
