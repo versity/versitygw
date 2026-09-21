@@ -2375,6 +2375,28 @@ func createObjVersions(client *s3.Client, bucket, object string, count int, opts
 	return versions, nil
 }
 
+// createDeleteMarker deletes object without a version id, making the
+// resulting delete marker the current version, and returns its version id.
+func createDeleteMarker(client *s3.Client, bucket, object string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	out, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &bucket,
+		Key:    &object,
+	})
+	cancel()
+	if err != nil {
+		return "", err
+	}
+	if out.DeleteMarker == nil || !*out.DeleteMarker {
+		return "", fmt.Errorf("expected a delete marker to be created for %v", object)
+	}
+	if getString(out.VersionId) == "" {
+		return "", fmt.Errorf("expected non empty delete marker versionId for %v", object)
+	}
+
+	return *out.VersionId, nil
+}
+
 // objDataLen returns the data length to upload for key: a directory
 // object can't hold data
 func objDataLen(key string, lgth int64) int64 {
