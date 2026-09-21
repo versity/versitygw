@@ -16,6 +16,7 @@ package integration
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,7 +26,9 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 func PresignedAuth_security_token_with_permanent_credentials(s *S3Conf) error {
@@ -961,6 +964,227 @@ func PresignedAuth_UploadPart(s *S3Conf) error {
 		}
 		if *out.Parts[0].PartNumber != partNumber {
 			return fmt.Errorf("expected uploaded part part-number to be %v, instead got %v", partNumber, *out.Parts[0].PartNumber)
+		}
+
+		return nil
+	})
+}
+
+// PresignedAuth_PutObject_strips_aws_chunked_content_encoding checks that
+// aws-chunked is dropped from the stored Content-Encoding on a presigned PUT.
+func PresignedAuth_PutObject_strips_aws_chunked_content_encoding(s *S3Conf) error {
+	testName := "PresignedAuth_PutObject_strips_aws_chunked_content_encoding"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
+		s3client := s.GetClient()
+		for i, test := range []struct {
+			contentEncoding string
+			stored          string
+		}{
+			// nothing is left, so no Content-Encoding is stored at all
+			{"aws-chunked", ""},
+			{"aws-chunked,gzip", "gzip"},
+			// the remaining codings keep their order
+			{"gzip,aws-chunked,br", "gzip,br"},
+			{"AWS-Chunked", ""},
+			// the token has to match in full
+			{"aws-chunked-custom", "aws-chunked-custom"},
+			{"gzip", "gzip"},
+		} {
+			object := fmt.Sprintf("presigned-obj-%v", i)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			v4req, err := client.PresignPutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &object,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			req, err := http.NewRequest(v4req.Method, v4req.URL, strings.NewReader("hello world"))
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+			req.Header.Set("Content-Encoding", test.contentEncoding)
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("test %v failed to send the request: %w", i+1, err)
+			}
+			resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("test %v: expected the response status code to be %v, instead got %v",
+					i+1, http.StatusOK, resp.StatusCode)
+			}
+
+			stored, err := getStoredContentEncoding(s3client, bucket, object)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+			if stored != test.stored {
+				return fmt.Errorf("test %v: expected the stored content encoding to be %q, instead got %q",
+					i+1, test.stored, stored)
+			}
+		}
+
+		return nil
+	})
+}
+
+// PresignedAuth_CopyObject_strips_aws_chunked_content_encoding checks that
+// aws-chunked is dropped from the stored Content-Encoding on a presigned copy.
+func PresignedAuth_CopyObject_strips_aws_chunked_content_encoding(s *S3Conf) error {
+	testName := "PresignedAuth_CopyObject_strips_aws_chunked_content_encoding"
+	return presignedAuthHandler(s, testName, func(_ *s3.PresignClient, bucket string) error {
+		s3client := s.GetClient()
+		srcObj := "copy-source"
+
+		// the source carries a coding of its own, so a stored value can only
+		// have come from the copy request
+		_, err := putObjectWithData(int64(len("hello world")), &s3.PutObjectInput{
+			Bucket:          &bucket,
+			Key:             &srcObj,
+			ContentEncoding: getPtr("br"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		for i, test := range []struct {
+			contentEncoding string
+			stored          string
+		}{
+			{"aws-chunked", ""},
+			{"aws-chunked,gzip", "gzip"},
+			{"gzip,aws-chunked,br", "gzip,br"},
+			{"AWS-Chunked", ""},
+			// the token has to match in full
+			{"aws-chunked-custom", "aws-chunked-custom"},
+			{"gzip", "gzip"},
+		} {
+			object := fmt.Sprintf("copy-dst-%v", i)
+
+			req, err := createPresignedReq(http.MethodPut, s.endpoint,
+				fmt.Sprintf("%s/%s", bucket, object), s.awsID, s.awsSecret, s.awsRegion, time.Now(),
+				map[string]string{
+					"X-Amz-Copy-Source":        fmt.Sprintf("/%s/%s", bucket, srcObj),
+					"X-Amz-Metadata-Directive": string(types.MetadataDirectiveReplace),
+					"Content-Encoding":         test.contentEncoding,
+				})
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("test %v failed to send the request: %w", i+1, err)
+			}
+			resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("test %v: expected the response status code to be %v, instead got %v",
+					i+1, http.StatusOK, resp.StatusCode)
+			}
+
+			stored, err := getStoredContentEncoding(s3client, bucket, object)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+			if stored != test.stored {
+				return fmt.Errorf("test %v: expected the stored content encoding to be %q, instead got %q",
+					i+1, test.stored, stored)
+			}
+		}
+
+		return nil
+	})
+}
+
+// PresignedAuth_CreateMultipartUpload_strips_aws_chunked_content_encoding checks
+// that aws-chunked is dropped from the Content-Encoding a presigned
+// CreateMultipartUpload stores for the completed object.
+func PresignedAuth_CreateMultipartUpload_strips_aws_chunked_content_encoding(s *S3Conf) error {
+	testName := "PresignedAuth_CreateMultipartUpload_strips_aws_chunked_content_encoding"
+	return presignedAuthHandler(s, testName, func(_ *s3.PresignClient, bucket string) error {
+		s3client := s.GetClient()
+		for i, test := range []struct {
+			contentEncoding string
+			stored          string
+		}{
+			{"aws-chunked", ""},
+			{"aws-chunked,gzip", "gzip"},
+			{"gzip,aws-chunked,br", "gzip,br"},
+			{"AWS-Chunked", ""},
+			// the token has to match in full
+			{"aws-chunked-custom", "aws-chunked-custom"},
+			{"gzip", "gzip"},
+		} {
+			object := fmt.Sprintf("mp-obj-%v", i)
+
+			req, err := createPresignedReq(http.MethodPost, s.endpoint,
+				fmt.Sprintf("%s/%s?uploads=", bucket, object),
+				s.awsID, s.awsSecret, s.awsRegion, time.Now(),
+				map[string]string{"Content-Encoding": test.contentEncoding})
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("test %v failed to send the request: %w", i+1, err)
+			}
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				return fmt.Errorf("test %v failed to read the response body: %w", i+1, err)
+			}
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("test %v: expected the response status code to be %v, instead got %v",
+					i+1, http.StatusOK, resp.StatusCode)
+			}
+
+			var out s3response.InitiateMultipartUploadResult
+			if err := xml.Unmarshal(body, &out); err != nil {
+				return fmt.Errorf("test %v failed to parse the response body: %w", i+1, err)
+			}
+
+			// the parts carry no Content-Encoding: the completed object can
+			// only inherit what the create named
+			parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, object, out.UploadId)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			compParts := []types.CompletedPart{}
+			for _, el := range parts {
+				compParts = append(compParts, types.CompletedPart{
+					ETag:       el.ETag,
+					PartNumber: el.PartNumber,
+				})
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+				Bucket:          &bucket,
+				Key:             &object,
+				UploadId:        &out.UploadId,
+				MultipartUpload: &types.CompletedMultipartUpload{Parts: compParts},
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			stored, err := getStoredContentEncoding(s3client, bucket, object)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+			if stored != test.stored {
+				return fmt.Errorf("test %v: expected the stored content encoding to be %q, instead got %q",
+					i+1, test.stored, stored)
+			}
 		}
 
 		return nil

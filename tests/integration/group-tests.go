@@ -68,6 +68,9 @@ func TestPresignedAuthentication(ts *TestState) {
 	ts.Run(PresignedAuth_incorrect_secret_key)
 	ts.Run(PresignedAuth_sigv2_not_supported)
 	ts.Run(PresignedAuth_PutObject_success)
+	ts.Run(PresignedAuth_PutObject_strips_aws_chunked_content_encoding)
+	ts.Run(PresignedAuth_CopyObject_strips_aws_chunked_content_encoding)
+	ts.Run(PresignedAuth_CreateMultipartUpload_strips_aws_chunked_content_encoding)
 	ts.Run(PresignedAuth_Put_GetObject_with_data)
 	if !ts.conf.azureTests {
 		ts.Run(PresignedAuth_Put_GetObject_with_UTF8_chars)
@@ -2818,6 +2821,9 @@ func GetIntTests() IntTests {
 		"PresignedAuth_incorrect_secret_key":                                               PresignedAuth_incorrect_secret_key,
 		"PresignedAuth_sigv2_not_supported":                                                PresignedAuth_sigv2_not_supported,
 		"PresignedAuth_PutObject_success":                                                  PresignedAuth_PutObject_success,
+		"PresignedAuth_PutObject_strips_aws_chunked_content_encoding":                      PresignedAuth_PutObject_strips_aws_chunked_content_encoding,
+		"PresignedAuth_CopyObject_strips_aws_chunked_content_encoding":                     PresignedAuth_CopyObject_strips_aws_chunked_content_encoding,
+		"PresignedAuth_CreateMultipartUpload_strips_aws_chunked_content_encoding":          PresignedAuth_CreateMultipartUpload_strips_aws_chunked_content_encoding,
 		"PutObject_missing_object_lock_retention_config":                                   PutObject_missing_object_lock_retention_config,
 		"PutObject_name_too_long":                                                          PutObject_name_too_long,
 		"PutObject_with_object_lock":                                                       PutObject_with_object_lock,

@@ -1130,12 +1130,25 @@ func HasAwsChunkedEncoding(contentEncoding string) bool {
 }
 
 // ParseContentEncoding returns the Content-Encoding to store for a request,
-// dropping the aws-chunked token when the payload type says the body was framed
-// in it. S3 strips it only for streaming uploads: on any other request the
-// token is a value the client chose and is stored as sent.
+// dropping the aws-chunked token unless the request declares a non streaming
+// payload type in x-amz-content-sha256.
+//
+// S3 keys this on the declaration alone. A streaming payload type frames the
+// body in aws-chunked, and a request that declares no payload type - a
+// presigned URL, signed as UNSIGNED-PAYLOAD and carrying no header - may frame
+// it too, so both drop the token. A declared hex digest or UNSIGNED-PAYLOAD
+// says the body is sent as-is, so there the token is a coding the client chose
+// and is stored as sent.
+//
+// S3 applies this to the Content-Encoding header itself, before any API sees
+// it, so every controller that reads the header inherits it - including
+// CopyObject and CreateMultipartUpload, which carry no body to frame. POSTObject
+// takes its value from a form field and ignores the header, so it stores the
+// token as sent and must not call this.
 func ParseContentEncoding(ctx fiber.Ctx) string {
 	contentEncoding := ctx.Get("Content-Encoding")
-	if !IsStreamingPayload(ctx.Get("X-Amz-Content-Sha256")) {
+	payloadType := ctx.Get("X-Amz-Content-Sha256")
+	if payloadType != "" && !IsStreamingPayload(payloadType) {
 		return contentEncoding
 	}
 
