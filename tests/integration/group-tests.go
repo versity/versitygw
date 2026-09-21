@@ -170,6 +170,8 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_special_chars)
 	ts.Run(PutObject_aborted_plain_body)
 	ts.Run(PutObject_plain_body_with_decoded_length)
+	ts.Run(PutObject_plain_stores_aws_chunked_content_encoding)
+	ts.Run(PutObject_unsigned_payload_with_aws_chunked_content_encoding)
 	ts.Run(PutObject_tagging)
 	ts.Run(PutObject_missing_object_lock_retention_config)
 	ts.Run(PutObject_with_object_lock)
@@ -2161,6 +2163,7 @@ func TestUnsignedStreaminPayloadTrailer(ts *TestState) {
 		ts.Run(UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme)
 		ts.Run(UnsignedStreamingPayloadTrailer_no_payload_trailer_only_headers)
 		ts.Run(UnsignedStreamingPayloadTrailer_success_both_sdk_algo_and_trailer)
+		ts.Run(UnsignedStreamingPayloadTrailer_strips_aws_chunked_content_encoding)
 		ts.Run(UnsignedStreamingPayloadTrailer_UploadPart_no_trailer_composite_checksum)
 		ts.Run(UnsignedStreamingPayloadTrailer_UploadPart_no_trailer_full_object)
 		ts.Run(UnsignedStreamingPayloadTrailer_UploadPart_trailer_and_mp_algo_mismatch)
@@ -2905,6 +2908,8 @@ func GetIntTests() IntTests {
 		"PutObject_aborted_plain_body":                                                     PutObject_aborted_plain_body,
 		"PutObject_plain_body_with_decoded_length":                                         PutObject_plain_body_with_decoded_length,
 		"UploadPart_plain_body_with_decoded_length":                                        UploadPart_plain_body_with_decoded_length,
+		"PutObject_plain_stores_aws_chunked_content_encoding":                              PutObject_plain_stores_aws_chunked_content_encoding,
+		"PutObject_unsigned_payload_with_aws_chunked_content_encoding":                     PutObject_unsigned_payload_with_aws_chunked_content_encoding,
 		"PutObject_tagging":                                                                PutObject_tagging,
 		"PutObject_success":                                                                PutObject_success,
 		"PutObject_default_content_type":                                                   PutObject_default_content_type,
@@ -3633,6 +3638,7 @@ func GetIntTests() IntTests {
 		"UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme":            UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme,
 		"UnsignedStreamingPayloadTrailer_no_payload_trailer_only_headers":                  UnsignedStreamingPayloadTrailer_no_payload_trailer_only_headers,
 		"UnsignedStreamingPayloadTrailer_success_both_sdk_algo_and_trailer":                UnsignedStreamingPayloadTrailer_success_both_sdk_algo_and_trailer,
+		"UnsignedStreamingPayloadTrailer_strips_aws_chunked_content_encoding":              UnsignedStreamingPayloadTrailer_strips_aws_chunked_content_encoding,
 		"UnsignedStreamingPayloadTrailer_UploadPart_no_trailer_composite_checksum":         UnsignedStreamingPayloadTrailer_UploadPart_no_trailer_composite_checksum,
 		"UnsignedStreamingPayloadTrailer_UploadPart_no_trailer_full_object":                UnsignedStreamingPayloadTrailer_UploadPart_no_trailer_full_object,
 		"UnsignedStreamingPayloadTrailer_UploadPart_trailer_and_mp_algo_mismatch":          UnsignedStreamingPayloadTrailer_UploadPart_trailer_and_mp_algo_mismatch,

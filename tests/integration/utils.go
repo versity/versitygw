@@ -4178,3 +4178,22 @@ func checkAndAbortUpload(client *s3.Client, bucket, key, uploadId string) error 
 	cancel()
 	return err
 }
+
+// getStoredContentEncoding returns the Content-Encoding stored for an object,
+// reporting an absent header as the empty string.
+func getStoredContentEncoding(s3client *s3.Client, bucket, object string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &bucket,
+		Key:    &object,
+	})
+	cancel()
+	if err != nil {
+		return "", err
+	}
+	if out.ContentEncoding == nil {
+		return "", nil
+	}
+
+	return *out.ContentEncoding, nil
+}

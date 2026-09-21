@@ -123,8 +123,8 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 		ArgumentName: "x-amz-content-sha256",
 	},
 	InvalidArgAwsChunkedUnsignedPayload: {
-		Description:  "aws-chunked encoding is not supported when x-amz-content-sha256 UNSIGNED-PAYLOAD is supplied",
-		ArgumentName: "x-amz-content-sha256",
+		Description:  "aws-chunked encoding is not supported when x-amz-content-sha256 UNSIGNED-PAYLOAD is supplied.",
+		ArgumentName: "Content-Encoding",
 	},
 	InvalidArgCopySource: {
 		Description:  "You can only specify a copy source header for copy requests.",

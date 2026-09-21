@@ -1113,15 +1113,15 @@ func ValidateLocationConstraint(constraint *string, region string) error {
 	return nil
 }
 
-// The coding a client announces when it frames a body in aws-chunked, as the
-// SDKs do to carry a trailing checksum.
-const awsChunkedEncoding = "aws-chunked"
+// AwsChunkedEncoding is the coding a client announces when it frames a body in
+// aws-chunked, as the SDKs do to carry a trailing checksum.
+const AwsChunkedEncoding = "aws-chunked"
 
 // HasAwsChunkedEncoding reports whether a Content-Encoding value carries the
 // aws-chunked token.
 func HasAwsChunkedEncoding(contentEncoding string) bool {
 	for _, coding := range strings.Split(contentEncoding, ",") {
-		if strings.EqualFold(strings.TrimSpace(coding), awsChunkedEncoding) {
+		if strings.EqualFold(strings.TrimSpace(coding), AwsChunkedEncoding) {
 			return true
 		}
 	}
@@ -1143,7 +1143,7 @@ func ParseContentEncoding(ctx fiber.Ctx) string {
 	kept := make([]string, 0, len(codings))
 	for _, coding := range codings {
 		trimmed := strings.TrimSpace(coding)
-		if trimmed == "" || strings.EqualFold(trimmed, awsChunkedEncoding) {
+		if trimmed == "" || strings.EqualFold(trimmed, AwsChunkedEncoding) {
 			continue
 		}
 
