@@ -43,6 +43,7 @@ type S3AdminServer struct {
 	maxRequests     int
 	socketPerm      os.FileMode
 	pathPrefix      string
+	clientIPHeader  string
 	extraRoutes     []adminRouteMount
 }
 
@@ -83,15 +84,25 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 
 	// Logging middlewares
 	if !server.quiet {
+		customTags := map[string]logger.LogFunc{
+			logger.TagQueryStringParams: debuglogger.RedactedQueryParamsTag,
+		}
+		if server.clientIPHeader != "" {
+			customTags[logger.TagIP] = clientIPTag
+		}
 		app.Use("*", logger.New(logger.Config{
-			Format: "${time} | adm | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
-			CustomTags: map[string]logger.LogFunc{
-				logger.TagQueryStringParams: debuglogger.RedactedQueryParamsTag,
-			},
+			Format:     "${time} | adm | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
+			CustomTags: customTags,
 		}))
 	}
 	// initialize requestId middleware
 	app.Use("*", middlewares.RequestIDs())
+
+	// resolve the logged client address from a trusted proxy header, when
+	// one is configured
+	if server.clientIPHeader != "" {
+		app.Use("*", middlewares.ClientIP(server.clientIPHeader))
+	}
 
 	// initialize total requests cap limiter middleware
 	app.Use("*", middlewares.RateLimiter(server.maxRequests, nil, l))
@@ -137,6 +148,12 @@ func WithAdminDebug() AdminOpt {
 // for the standalone admin server.
 func WithAdminCORSAllowOrigin(origin string) AdminOpt {
 	return func(s *S3AdminServer) { s.corsAllowOrigin = origin }
+}
+
+// WithAdminClientIPHeader is WithClientIPHeader for the standalone admin
+// server.
+func WithAdminClientIPHeader(header string) AdminOpt {
+	return func(s *S3AdminServer) { s.clientIPHeader = header }
 }
 
 // WithAdminConcurrencyLimiter sets the admin standalone server's maximum
