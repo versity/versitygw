@@ -177,11 +177,18 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 			return fs.SkipDir
 		}
 
+		// A directory is compared to the markers as the key of its
+		// directory object, which has a trailing slash.
+		key := path
+		if d.IsDir() {
+			key += "/"
+		}
+
 		if !pastMarker {
-			if path == keyMarker {
+			if key == keyMarker {
 				pastMarker = true
 			}
-			if path < keyMarker {
+			if key < keyMarker {
 				return nil
 			}
 		}
@@ -195,28 +202,32 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 			// building to match. So only skip if path isn't a prefix of prefix
 			// and prefix isn't a prefix of path.
 			if prefix != "" &&
-				!strings.HasPrefix(path+"/", prefix) &&
-				!strings.HasPrefix(prefix, path+"/") {
+				!strings.HasPrefix(key, prefix) &&
+				!strings.HasPrefix(prefix, key) {
 				return fs.SkipDir
 			}
 
 			// Don't recurse into subdirectories when listing with delimiter.
+			// The walk also enters the directories that sort before the key
+			// marker, so the common prefix is the part of the key up to the
+			// first delimiter after the prefix.
 			if delimiter == "/" &&
-				prefix != path+"/" &&
-				strings.HasPrefix(path+"/", prefix) {
-				cpmap.Add(path + "/")
+				prefix != key &&
+				strings.HasPrefix(key, prefix) {
+				before, _, _ := strings.Cut(strings.TrimPrefix(key, prefix), delimiter)
+				cpmap.Add(prefix + before + delimiter)
 				return fs.SkipDir
 			}
 
 			// Skip ancestor directories of the specified prefix; only process
 			// the directory that exactly matches the prefix.
-			// At this point we know strings.HasPrefix(prefix, path+"/") holds
+			// At this point we know strings.HasPrefix(prefix, key) holds
 			// (i.e. path is an ancestor of the prefix directory). Skip it
 			// unless it is the exact prefix directory.
 			// Note: WalkVersions always walks from "." (unlike Walk, which
 			// narrows the root) because versioning marker semantics require
 			// visiting all entries in order, so this guard is needed instead.
-			if prefix != "" && strings.HasPrefix(prefix, path+"/") && path+"/" != prefix {
+			if prefix != "" && strings.HasPrefix(prefix, key) && key != prefix {
 				return nil
 			}
 
@@ -231,7 +242,7 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 			delMarkers = append(delMarkers, res.DelMarkers...)
 			if res.Truncated {
 				truncated = true
-				nextMarker = path
+				nextMarker = key
 				nextVersionIdMarker = res.NextVersionIdMarker
 				return fs.SkipAll
 			}

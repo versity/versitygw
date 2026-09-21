@@ -49,6 +49,11 @@ import (
 // file takes its place, which is unsafe to detect reliably on NFS due to
 // attribute caching.
 //
+// The process-local slot is picked from the bucket hash and the shard, so all
+// requests for one lock file take the same slot (fcntl locks don't exclude
+// within a process), while the same key in different buckets usually takes
+// different slots and doesn't wait on an unrelated lock.
+//
 // The lock is held only for the commit phase (condition re-check, metadata
 // stores, final link/rename) — request bodies are staged to a temp file
 // before the lock is taken. The OS releases advisory locks automatically when
@@ -131,15 +136,22 @@ func objLockShard(object string) uint8 {
 	return sum[0]
 }
 
+// objLockSlot returns the process-local slot index for the lock file of the
+// shard in the bucket with bucketHash.
+func objLockSlot(bucketHash [sha256.Size]byte, shard uint8) uint8 {
+	return bucketHash[0] ^ shard
+}
+
 // lockObjectPublish acquires the publish lock for bucket/object. It returns a
 // release function that must be called (typically deferred) once the new
 // object state is visible. All code paths that create or replace an object at
 // its final key must hold this lock across condition evaluation and
 // publication.
 func (p *Posix) lockObjectPublish(ctx context.Context, bucket, object string) (func(), error) {
+	bucketHash := sha256.Sum256([]byte(bucket))
 	shard := objLockShard(object)
 
-	slot := p.objLockSlots[shard]
+	slot := p.objLockSlots[objLockSlot(bucketHash, shard)]
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -154,7 +166,7 @@ func (p *Posix) lockObjectPublish(ctx context.Context, bucket, object string) (f
 		return releaseLocal, nil
 	}
 
-	f, err := p.openObjLockFile(bucket, shard)
+	f, err := p.openObjLockFile(bucketHash, shard)
 	if err != nil {
 		releaseLocal()
 		return nil, err
@@ -188,9 +200,8 @@ func newObjLockSlots() [objLockShards]chan struct{} {
 }
 
 // openObjLockFile opens (creating as needed) the lock file for the shard in
-// the given bucket.
-func (p *Posix) openObjLockFile(bucket string, shard uint8) (*os.File, error) {
-	bucketHash := sha256.Sum256([]byte(bucket))
+// the bucket with bucketHash.
+func (p *Posix) openObjLockFile(bucketHash [sha256.Size]byte, shard uint8) (*os.File, error) {
 	lockDir := filepath.Join(p.rootdir, objLockDir, fmt.Sprintf("%x", bucketHash))
 	name := filepath.Join(lockDir, fmt.Sprintf("%02x", shard))
 

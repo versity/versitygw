@@ -1234,22 +1234,24 @@ func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client, 
 
 	var csum [32]byte
 	var data []byte
-	if input.Body == nil && lgth != 0 {
-		data = make([]byte, lgth)
-		rand.Read(data)
+	if input.Body == nil {
+		if lgth != 0 {
+			data = make([]byte, lgth)
+			rand.Read(data)
 
-		csum = sha256.Sum256(data)
-		if cfg.checksumAlgorithm != "" {
-			hasher, err := NewHasher(cfg.checksumAlgorithm)
-			if err != nil {
-				return nil, err
+			if cfg.checksumAlgorithm != "" {
+				hasher, err := NewHasher(cfg.checksumAlgorithm)
+				if err != nil {
+					return nil, err
+				}
+
+				hasher.Write(data)
+				sum := base64.StdEncoding.EncodeToString(hasher.Sum(nil))
+				setPutObjectChecksum(input, cfg.checksumAlgorithm, &sum)
 			}
-
-			hasher.Write(data)
-			sum := base64.StdEncoding.EncodeToString(hasher.Sum(nil))
-			setPutObjectChecksum(input, cfg.checksumAlgorithm, &sum)
+			input.Body = bytes.NewReader(data)
 		}
-		input.Body = bytes.NewReader(data)
+		csum = sha256.Sum256(data)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
@@ -2298,10 +2300,10 @@ func createObjVersions(client *s3.Client, bucket, object string, count int, opts
 	versions := []types.ObjectVersion{}
 	for i := range count {
 		rNumber, err := rand.Int(rand.Reader, big.NewInt(100000))
-		dataLength := rNumber.Int64()
 		if err != nil {
 			return nil, err
 		}
+		dataLength := objDataLen(object, rNumber.Int64())
 
 		r, err := putObjectWithData(dataLength, &s3.PutObjectInput{
 			Bucket: &bucket,
@@ -2371,6 +2373,49 @@ func createObjVersions(client *s3.Client, bucket, object string, count int, opts
 	versions = reverseSlice(versions)
 
 	return versions, nil
+}
+
+// createDeleteMarker deletes object without a version id, making the
+// resulting delete marker the current version, and returns its version id.
+func createDeleteMarker(client *s3.Client, bucket, object string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	out, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &bucket,
+		Key:    &object,
+	})
+	cancel()
+	if err != nil {
+		return "", err
+	}
+	if out.DeleteMarker == nil || !*out.DeleteMarker {
+		return "", fmt.Errorf("expected a delete marker to be created for %v", object)
+	}
+	if getString(out.VersionId) == "" {
+		return "", fmt.Errorf("expected non empty delete marker versionId for %v", object)
+	}
+
+	return *out.VersionId, nil
+}
+
+// objDataLen returns the data length to upload for key: a directory
+// object can't hold data
+func objDataLen(key string, lgth int64) int64 {
+	if strings.HasSuffix(key, "/") {
+		return 0
+	}
+	return lgth
+}
+
+// forEachKey runs fn for each of the keys and prefixes a returned error
+// with the key it failed for. Tests use it to run the same scenario for
+// a regular object and a directory object.
+func forEachKey(keys []string, fn func(key string) error) error {
+	for _, key := range keys {
+		if err := fn(key); err != nil {
+			return fmt.Errorf("%v: %w", key, err)
+		}
+	}
+	return nil
 }
 
 // ReverseSlice reverses a slice of any type
@@ -3965,4 +4010,171 @@ func checkDeleteObjectsErrsInOrder(got []types.Error, want []keyDenial) error {
 		}
 	}
 	return nil
+}
+
+// checkObjectTaggingErr checks that getting, putting and deleting the
+// tagging of the version versionId of key fail with expected. An empty
+// versionId selects the current version.
+func checkObjectTaggingErr(client *s3.Client, bucket, key, versionId string, expected s3err.S3Error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+		Bucket:    &bucket,
+		Key:       &key,
+		VersionId: getNonEmptyPtr(versionId),
+	})
+	cancel()
+	if err := checkApiErr(err, expected); err != nil {
+		return fmt.Errorf("get object tagging: %w", err)
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+		Bucket:    &bucket,
+		Key:       &key,
+		VersionId: getNonEmptyPtr(versionId),
+		Tagging: &types.Tagging{
+			TagSet: []types.Tag{{Key: getPtr("other-key"), Value: getPtr("other-value")}},
+		},
+	})
+	cancel()
+	if err := checkApiErr(err, expected); err != nil {
+		return fmt.Errorf("put object tagging: %w", err)
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
+		Bucket:    &bucket,
+		Key:       &key,
+		VersionId: getNonEmptyPtr(versionId),
+	})
+	cancel()
+	if err := checkApiErr(err, expected); err != nil {
+		return fmt.Errorf("delete object tagging: %w", err)
+	}
+
+	return nil
+}
+
+// checkObjectLockErr checks that getting and putting the legal hold and the
+// retention of the version versionId of key fail with expected. An empty
+// versionId selects the current version.
+func checkObjectLockErr(client *s3.Client, bucket, key, versionId string, expected s3err.S3Error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+		Bucket:    &bucket,
+		Key:       &key,
+		VersionId: getNonEmptyPtr(versionId),
+	})
+	cancel()
+	if err := checkApiErr(err, expected); err != nil {
+		return fmt.Errorf("get object legal hold: %w", err)
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+		Bucket:    &bucket,
+		Key:       &key,
+		VersionId: getNonEmptyPtr(versionId),
+		LegalHold: &types.ObjectLockLegalHold{
+			Status: types.ObjectLockLegalHoldStatusOff,
+		},
+	})
+	cancel()
+	if err := checkApiErr(err, expected); err != nil {
+		return fmt.Errorf("put object legal hold: %w", err)
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+		Bucket:    &bucket,
+		Key:       &key,
+		VersionId: getNonEmptyPtr(versionId),
+	})
+	cancel()
+	if err := checkApiErr(err, expected); err != nil {
+		return fmt.Errorf("get object retention: %w", err)
+	}
+
+	rDate := time.Now().Add(time.Hour * 2)
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		Bucket:    &bucket,
+		Key:       &key,
+		VersionId: getNonEmptyPtr(versionId),
+		Retention: &types.ObjectLockRetention{
+			Mode:            types.ObjectLockRetentionModeGovernance,
+			RetainUntilDate: &rDate,
+		},
+	})
+	cancel()
+	if err := checkApiErr(err, expected); err != nil {
+		return fmt.Errorf("put object retention: %w", err)
+	}
+
+	return nil
+}
+
+// checkObjectLock checks that the version versionId of key is under legal
+// hold and has a governance retention until rDate. An empty versionId
+// selects the current version.
+func checkObjectLock(client *s3.Client, bucket, key, versionId string, rDate time.Time) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	lHold, err := client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+		Bucket:    &bucket,
+		Key:       &key,
+		VersionId: getNonEmptyPtr(versionId),
+	})
+	cancel()
+	if err != nil {
+		return err
+	}
+	if lHold.LegalHold == nil || lHold.LegalHold.Status != types.ObjectLockLegalHoldStatusOn {
+		return fmt.Errorf("expected the legal hold status to be %q, instead got %v",
+			types.ObjectLockLegalHoldStatusOn, lHold.LegalHold)
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	ret, err := client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+		Bucket:    &bucket,
+		Key:       &key,
+		VersionId: getNonEmptyPtr(versionId),
+	})
+	cancel()
+	if err != nil {
+		return err
+	}
+	if ret.Retention == nil || ret.Retention.Mode != types.ObjectLockRetentionModeGovernance ||
+		ret.Retention.RetainUntilDate == nil || ret.Retention.RetainUntilDate.Unix() != rDate.Unix() {
+		return fmt.Errorf("expected a %q retention until %v, instead got %+v",
+			types.ObjectLockRetentionModeGovernance, rDate.Format(time.RFC3339), ret.Retention)
+	}
+
+	return nil
+}
+
+// checkAndAbortUpload checks that the upload uploadId of key is the only
+// multipart upload in the bucket and aborts it
+func checkAndAbortUpload(client *s3.Client, bucket, key, uploadId string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	res, err := client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+		Bucket: &bucket,
+	})
+	cancel()
+	if err != nil {
+		return err
+	}
+	if len(res.Uploads) != 1 || getString(res.Uploads[0].Key) != key ||
+		getString(res.Uploads[0].UploadId) != uploadId {
+		return fmt.Errorf("expected the upload %v of %v to be listed, instead got %+v",
+			uploadId, key, res.Uploads)
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+		Bucket:   &bucket,
+		Key:      &key,
+		UploadId: &uploadId,
+	})
+	cancel()
+	return err
 }
