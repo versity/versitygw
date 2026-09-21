@@ -54,6 +54,7 @@ const (
 	minPartNumber                = 1
 	maxPartNumber                = 10000
 	maxWebsiteConfigurationBytes = 131072
+	maxDeleteObjects             = 1000
 
 	defaultRegion      = "us-east-1"
 	defaultContentType = "binary/octet-stream"

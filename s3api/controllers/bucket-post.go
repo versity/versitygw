@@ -56,6 +56,19 @@ func (c S3ApiController) DeleteObjects(ctx fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
+	// S3 caps a single DeleteObjects request at 1000 keys. Reject an
+	// over-limit request before authorization and before anything reaches
+	// the backend, so a too-large batch can't be applied partially.
+	if len(dObj.Objects) > maxDeleteObjects {
+		debuglogger.Logf("delete objects: %d keys exceeds the limit of %d",
+			len(dObj.Objects), maxDeleteObjects)
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
+
 	// checkErrs holds one entry per requested object — nil where it may
 	// proceed to the backend, an AWS-shaped denial otherwise. DeleteObjects
 	// supports partial success, so a denial on one object (policy or object
