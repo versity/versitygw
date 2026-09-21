@@ -1958,6 +1958,8 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_CopyObject_non_existing_version_id)
 	ts.Run(Versioning_CopyObject_from_an_object_version)
 	ts.Run(Versioning_CopyObject_from_a_delete_marker)
+	ts.Run(Versioning_CopyObject_to_itself)
+	ts.Run(Versioning_CopyObject_to_itself_from_the_current_version)
 	if !ts.conf.windowsTests {
 		ts.Run(Versioning_CopyObject_special_chars)
 	}
@@ -2056,6 +2058,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_WORM_delete_marker_locked_object_compliance_retention)
 	ts.Run(Versioning_WORM_PutObject_overwrite_locked_object)
 	ts.Run(Versioning_WORM_CopyObject_overwrite_locked_object)
+	ts.Run(Versioning_WORM_CopyObject_to_itself_locked_object)
 	ts.Run(Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object)
 	if !ts.conf.windowsTests {
 		ts.Run(Versioning_WORM_remove_delete_marker_under_bucket_default_retention)
@@ -3497,6 +3500,8 @@ func GetIntTests() IntTests {
 		"Versioning_CopyObject_non_existing_version_id":                                    Versioning_CopyObject_non_existing_version_id,
 		"Versioning_CopyObject_from_an_object_version":                                     Versioning_CopyObject_from_an_object_version,
 		"Versioning_CopyObject_from_a_delete_marker":                                       Versioning_CopyObject_from_a_delete_marker,
+		"Versioning_CopyObject_to_itself":                                                  Versioning_CopyObject_to_itself,
+		"Versioning_CopyObject_to_itself_from_the_current_version":                         Versioning_CopyObject_to_itself_from_the_current_version,
 		"Versioning_CopyObject_special_chars":                                              Versioning_CopyObject_special_chars,
 		"Versioning_HeadObject_invalid_versionId":                                          Versioning_HeadObject_invalid_versionId,
 		"Versioning_HeadObject_non_existing_object_version":                                Versioning_HeadObject_non_existing_object_version,
@@ -3578,6 +3583,7 @@ func GetIntTests() IntTests {
 		"Versioning_WORM_delete_marker_locked_object_compliance_retention":                 Versioning_WORM_delete_marker_locked_object_compliance_retention,
 		"Versioning_WORM_PutObject_overwrite_locked_object":                                Versioning_WORM_PutObject_overwrite_locked_object,
 		"Versioning_WORM_CopyObject_overwrite_locked_object":                               Versioning_WORM_CopyObject_overwrite_locked_object,
+		"Versioning_WORM_CopyObject_to_itself_locked_object":                               Versioning_WORM_CopyObject_to_itself_locked_object,
 		"Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object":                  Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object,
 		"Versioning_WORM_remove_delete_marker_under_bucket_default_retention":              Versioning_WORM_remove_delete_marker_under_bucket_default_retention,
 		"Versioning_WORM_trailing_slash_counterpart":                                       Versioning_WORM_trailing_slash_counterpart,
