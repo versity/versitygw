@@ -101,6 +101,10 @@ function requireGatewayUsers() {
     window.location.href = 'iam-users.html';
     return false;
   }
+  if (!api.canManageGatewayUsers()) {
+    window.location.href = defaultLandingPage();
+    return false;
+  }
   return requireAdmin();
 }
 
@@ -420,9 +424,9 @@ function updateUserInfo() {
  *                         standalone-IAM deployment
  *   data-s3-only          the S3 data plane answered for these credentials
  *   data-iam-only         the standalone IAM service answered for them
- *   data-admin-users-only the inverse of data-iam-only: the gateway's own
- *                         account store is still the user directory, rather
- *                         than a configured standalone IAM service
+ *   data-admin-users-only the gateway's own account store is available for
+ *                         management, rather than standalone IAM or
+ *                         single-user mode
  */
 function initSidebarWithRole() {
   initSidebar();
@@ -435,7 +439,7 @@ function initSidebarWithRole() {
   if (!api.hasManagement()) hide('[data-management-only]');
   if (!api.hasS3()) hide('[data-s3-only]');
   if (!api.hasIAM()) hide('[data-iam-only]');
-  if (api.hasIAM()) hide('[data-admin-users-only]');
+  if (api.hasIAM() || !api.canManageGatewayUsers()) hide('[data-admin-users-only]');
 
   reportIAMProbeFailure();
 }

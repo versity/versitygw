@@ -419,10 +419,19 @@ under the License.
     }
 
     async function loadGatewayUsers() {
+      if (!api.canManageGatewayUsers()) return true;
+
       let users;
       try {
         users = await api.listUsers();
       } catch (error) {
+        if (error.code === 'XAdminMethodNotSupported') {
+          api.setCanManageGatewayUsers(false);
+          document.querySelectorAll('[data-admin-users-only]').forEach(item => {
+            item.style.display = 'none';
+          });
+          return true;
+        }
         console.error('Error loading users:', error);
         showToast('Error loading users: ' + error.message, 'error');
         return false;
