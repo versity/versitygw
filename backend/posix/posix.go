@@ -1226,6 +1226,30 @@ func (p *Posix) isBucketVersioningSuspended(s types.BucketVersioningStatus) bool
 	return s == types.BucketVersioningStatusSuspended
 }
 
+// liveObjVersionId returns the version id to report for the current version
+// of bucket/object. An object with no versionId attribute is the null
+// version, but only a bucket with versioning configured has versions at all:
+// in a bucket that was never versioned the object has no version id.
+func (p *Posix) liveObjVersionId(ctx context.Context, bucket, object string) (string, error) {
+	vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
+	if err == nil {
+		return string(vId), nil
+	}
+	if !errors.Is(err, meta.ErrNoSuchKey) {
+		return "", fmt.Errorf("get obj versionId: %w", err)
+	}
+
+	status, err := p.getBucketVersioningStatus(ctx, bucket)
+	if err != nil {
+		return "", fmt.Errorf("get bucket versioning status: %w", err)
+	}
+	if status == "" {
+		return "", nil
+	}
+
+	return nullVersionId, nil
+}
+
 // Generates the object version path in the versioning directory
 func (p *Posix) genObjVersionPath(bucket, key string) string {
 	return filepath.Join(p.versioningDir, bucket, genObjVersionKey(key))
@@ -5155,9 +5179,9 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					}, nil
 				}
 
-				srcObjVersion, err := latestObjVersion(ents).Info()
+				srcObjVersion, err := latestObjVersion(ents)
 				if err != nil {
-					return nil, fmt.Errorf("get file info: %w", err)
+					return nil, fmt.Errorf("get latest obj version: %w", err)
 				}
 				srcVersionId := srcObjVersion.Name()
 				sf, err := os.Open(filepath.Join(versionPath, srcVersionId))
@@ -5326,11 +5350,45 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	return &s3.DeleteObjectOutput{}, nil
 }
 
-// latestObjVersion returns the entry of the version, among the version
-// directory entries, that becomes the latest one when the latest version
-// of the object is deleted
-func latestObjVersion(ents []fs.DirEntry) fs.DirEntry {
-	return ents[len(ents)-1]
+// latestObjVersion returns the version, among the version directory entries,
+// that becomes the latest one when the latest version of the object is
+// deleted. The entries are named after the version id and os.ReadDir sorts
+// them by name, which puts the ulid version ids in creation order. The null
+// version id doesn't sort with them, so it's placed by its modification time,
+// which is the time the version was created.
+func latestObjVersion(ents []fs.DirEntry) (fs.FileInfo, error) {
+	var latest, nullEnt fs.DirEntry
+	for _, ent := range ents {
+		if ent.Name() == nullVersionId {
+			nullEnt = ent
+			continue
+		}
+		latest = ent
+	}
+
+	switch {
+	case latest == nil && nullEnt == nil:
+		return nil, fs.ErrNotExist
+	case latest == nil:
+		return nullEnt.Info()
+	case nullEnt == nil:
+		return latest.Info()
+	}
+
+	latestInfo, err := latest.Info()
+	if err != nil {
+		return nil, err
+	}
+	nullInfo, err := nullEnt.Info()
+	if err != nil {
+		return nil, err
+	}
+
+	if nullInfo.ModTime().After(latestInfo.ModTime()) {
+		return nullInfo, nil
+	}
+
+	return latestInfo, nil
 }
 
 // deleteDirObjectLatestVersion removes the latest version of the directory
@@ -5371,12 +5429,11 @@ func (p *Posix) deleteDirObjectLatestVersion(bucket, key string) error {
 		return nil
 	}
 
-	srcVersion := latestObjVersion(ents)
-	srcVersionId := srcVersion.Name()
-	srcInfo, err := srcVersion.Info()
+	srcInfo, err := latestObjVersion(ents)
 	if err != nil {
-		return fmt.Errorf("get file info: %w", err)
+		return fmt.Errorf("get latest obj version: %w", err)
 	}
+	srcVersionId := srcInfo.Name()
 
 	// replace the attributes in place, so that the directory keeps its etag
 	for _, attr := range dirObjectAttrs {
@@ -5623,14 +5680,10 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 
 	// If versioning is configured get the object versionId
 	if p.versioningEnabled() && versionId == "" {
-		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if errors.Is(err, meta.ErrNoSuchKey) {
-			versionId = nullVersionId
-		} else if err != nil {
+		versionId, err = p.liveObjVersionId(ctx, bucket, object)
+		if err != nil {
 			return nil, err
 		}
-
-		versionId = string(vId)
 	}
 
 	if fid.IsDir() {
@@ -5879,8 +5932,8 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 			return nil, fmt.Errorf("get obj versionId: %w", err)
 		}
 		if errors.Is(err, meta.ErrNoSuchKey) {
-			bucket = filepath.Join(p.versioningDir, bucket)
-			object = filepath.Join(genObjVersionKey(object), versionId)
+			// an object without a versionId attribute is the null version
+			vId = []byte(nullVersionId)
 		}
 
 		if string(vId) != versionId {
@@ -5944,12 +5997,10 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	if p.versioningEnabled() && versionId == "" {
-		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return nil, fmt.Errorf("get object versionId: %v", err)
+		versionId, err = p.liveObjVersionId(ctx, bucket, object)
+		if err != nil {
+			return nil, err
 		}
-
-		versionId = string(vId)
 	}
 
 	objMeta := p.loadObjectMetaProperties(nil, bucket, object, &fi)

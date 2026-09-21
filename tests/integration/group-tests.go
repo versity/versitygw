@@ -1972,6 +1972,8 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_HeadObject_success)
 	ts.Run(Versioning_HeadObject_dir_object_versions)
 	ts.Run(Versioning_HeadObject_without_versionId)
+	ts.Run(Versioning_HeadObject_null_version_without_versionId)
+	ts.Run(Versioning_HeadObject_null_versionId_obj)
 	ts.Run(Versioning_HeadObject_delete_marker)
 	// GetObject action
 	ts.Run(Versioning_GetObject_invalid_versionId)
@@ -1980,6 +1982,8 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_GetObject_delete_marker_without_versionId)
 	ts.Run(Versioning_GetObject_delete_marker)
 	ts.Run(Versioning_GetObject_null_versionId_obj)
+	ts.Run(Versioning_GetObject_null_version_without_versionId)
+	ts.Run(Versioning_unversioned_bucket_omits_versionId)
 	// object tagging actions
 	ts.Run(Versioning_PutObjectTagging_invalid_versionId)
 	ts.Run(Versioning_PutObjectTagging_non_existing_object_version)
@@ -1998,6 +2002,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_DeleteObject_invalid_versionId)
 	ts.Run(Versioning_DeleteObject_delete_object_version)
 	ts.Run(Versioning_DeleteObject_dir_object_latest_version)
+	ts.Run(Versioning_DeleteObject_latest_version_with_null_version)
 	ts.Run(Versioning_DeleteObject_non_existing_object)
 	ts.Run(Versioning_DeleteObject_implicit_dir)
 	ts.Run(Versioning_DeleteObject_trailing_slash_counterpart)
@@ -3509,12 +3514,16 @@ func GetIntTests() IntTests {
 		"Versioning_HeadObject_success":                                                    Versioning_HeadObject_success,
 		"Versioning_HeadObject_dir_object_versions":                                        Versioning_HeadObject_dir_object_versions,
 		"Versioning_HeadObject_without_versionId":                                          Versioning_HeadObject_without_versionId,
+		"Versioning_HeadObject_null_versionId_obj":                                         Versioning_HeadObject_null_versionId_obj,
+		"Versioning_HeadObject_null_version_without_versionId":                             Versioning_HeadObject_null_version_without_versionId,
 		"Versioning_HeadObject_delete_marker":                                              Versioning_HeadObject_delete_marker,
 		"Versioning_GetObject_invalid_versionId":                                           Versioning_GetObject_invalid_versionId,
 		"Versioning_GetObject_non_existing_object_version":                                 Versioning_GetObject_non_existing_object_version,
 		"Versioning_GetObject_success":                                                     Versioning_GetObject_success,
 		"Versioning_GetObject_delete_marker_without_versionId":                             Versioning_GetObject_delete_marker_without_versionId,
 		"Versioning_GetObject_delete_marker":                                               Versioning_GetObject_delete_marker,
+		"Versioning_unversioned_bucket_omits_versionId":                                    Versioning_unversioned_bucket_omits_versionId,
+		"Versioning_GetObject_null_version_without_versionId":                              Versioning_GetObject_null_version_without_versionId,
 		"Versioning_GetObject_null_versionId_obj":                                          Versioning_GetObject_null_versionId_obj,
 		"Versioning_PutObjectTagging_invalid_versionId":                                    Versioning_PutObjectTagging_invalid_versionId,
 		"Versioning_PutObjectTagging_non_existing_object_version":                          Versioning_PutObjectTagging_non_existing_object_version,
@@ -3530,6 +3539,7 @@ func GetIntTests() IntTests {
 		"Versioning_GetObjectAttributes_delete_marker":                                     Versioning_GetObjectAttributes_delete_marker,
 		"Versioning_DeleteObject_invalid_versionId":                                        Versioning_DeleteObject_invalid_versionId,
 		"Versioning_DeleteObject_delete_object_version":                                    Versioning_DeleteObject_delete_object_version,
+		"Versioning_DeleteObject_latest_version_with_null_version":                         Versioning_DeleteObject_latest_version_with_null_version,
 		"Versioning_DeleteObject_dir_object_latest_version":                                Versioning_DeleteObject_dir_object_latest_version,
 		"Versioning_DeleteObject_non_existing_object":                                      Versioning_DeleteObject_non_existing_object,
 		"Versioning_DeleteObject_implicit_dir":                                             Versioning_DeleteObject_implicit_dir,

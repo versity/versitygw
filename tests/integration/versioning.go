@@ -1269,6 +1269,105 @@ func Versioning_HeadObject_without_versionId(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+// Versioning_HeadObject_null_version_without_versionId heads an object put
+// into a versioning-suspended bucket, without naming a version id.
+func Versioning_HeadObject_null_versionId_obj(s *S3Conf) error {
+	testName := "Versioning_HeadObject_null_versionId_obj"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		keys, dataLen := []string{"my-obj", "my-dir/"}, int64(321)
+		// the objects are put before versioning is enabled
+		etags := make(map[string]string, len(keys))
+		err := forEachKey(keys, func(obj string) error {
+			out, err := putObjectWithData(objDataLen(obj, dataLen), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+			etags[obj] = getString(out.res.ETag)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+		if err != nil {
+			return err
+		}
+
+		return forEachKey(keys, func(obj string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: &nullVersionId,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if getString(res.VersionId) != nullVersionId {
+				return fmt.Errorf("expected the versionId to be %v, instead got %v",
+					nullVersionId, getString(res.VersionId))
+			}
+			if res.ContentLength == nil || *res.ContentLength != objDataLen(obj, dataLen) {
+				return fmt.Errorf("expected the Content-Length to be %v, instead got %v",
+					objDataLen(obj, dataLen), res.ContentLength)
+			}
+			if getString(res.ETag) != etags[obj] {
+				return fmt.Errorf("expected the ETag to be %v, instead got %v",
+					etags[obj], getString(res.ETag))
+			}
+
+			return nil
+		})
+	})
+}
+
+func Versioning_HeadObject_null_version_without_versionId(s *S3Conf) error {
+	testName := "Versioning_HeadObject_null_version_without_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(obj string) error {
+			dataLen := objDataLen(obj, 765)
+			out, err := putObjectWithData(dataLen, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if getString(res.VersionId) != nullVersionId {
+				return fmt.Errorf("expected the versionId to be %v, instead got %v",
+					nullVersionId, getString(res.VersionId))
+			}
+			if res.ContentLength == nil || *res.ContentLength != dataLen {
+				return fmt.Errorf("expected the Content-Length to be %v, instead got %v",
+					dataLen, res.ContentLength)
+			}
+			if getString(res.ETag) != getString(out.res.ETag) {
+				return fmt.Errorf("expected the ETag to be %v, instead got %v",
+					getString(out.res.ETag), getString(res.ETag))
+			}
+
+			return nil
+		})
+	}, withVersioning(types.BucketVersioningStatusSuspended))
+}
+
 func Versioning_HeadObject_delete_marker(s *S3Conf) error {
 	testName := "Versioning_HeadObject_delete_marker"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1604,6 +1703,120 @@ func Versioning_GetObject_null_versionId_obj(s *S3Conf) error {
 			if *res.ETag != etag {
 				return fmt.Errorf("expecte the ETag to be %v, instead got %v",
 					etag, *res.ETag)
+			}
+
+			return nil
+		})
+	})
+}
+
+// Versioning_GetObject_null_version_without_versionId reads an object put
+// into a versioning-suspended bucket, without naming a version id. The object
+// is the null version and the response has to report it as null rather than
+// leave the version id out.
+func Versioning_GetObject_null_version_without_versionId(s *S3Conf) error {
+	testName := "Versioning_GetObject_null_version_without_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(obj string) error {
+			dataLen := objDataLen(obj, 543)
+			out, err := putObjectWithData(dataLen, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+			// a put into a versioning-suspended bucket creates the null
+			// version and reports no version id
+			if out.res.VersionId != nil {
+				return fmt.Errorf("expected PutObject response to omit versionId, instead got %v",
+					getString(out.res.VersionId))
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if getString(res.VersionId) != nullVersionId {
+				return fmt.Errorf("expected the versionId to be %v, instead got %v",
+					nullVersionId, getString(res.VersionId))
+			}
+			if res.ContentLength == nil || *res.ContentLength != dataLen {
+				return fmt.Errorf("expected the Content-Length to be %v, instead got %v",
+					dataLen, res.ContentLength)
+			}
+			if getString(res.ETag) != getString(out.res.ETag) {
+				return fmt.Errorf("expected the ETag to be %v, instead got %v",
+					getString(out.res.ETag), getString(res.ETag))
+			}
+
+			return nil
+		})
+	}, withVersioning(types.BucketVersioningStatusSuspended))
+}
+
+// Versioning_unversioned_bucket_omits_versionId reads an object in a bucket
+// that never had versioning configured. Such a bucket has no versions at all,
+// so neither GetObject nor HeadObject reports a version id, not even the null
+// one, even though the gateway itself runs with versioning enabled.
+func Versioning_unversioned_bucket_omits_versionId(s *S3Conf) error {
+	testName := "Versioning_unversioned_bucket_omits_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		vRes, err := s3client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		// guard the premise of the test
+		if vRes.Status != "" {
+			return fmt.Errorf("expected the bucket versioning to be unconfigured, instead got %v",
+				vRes.Status)
+		}
+
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(obj string) error {
+			_, err := putObjectWithData(objDataLen(obj, 432), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			gRes, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if gRes.VersionId != nil {
+				return fmt.Errorf("expected GetObject to omit the versionId, instead got %v",
+					*gRes.VersionId)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			hRes, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if hRes.VersionId != nil {
+				return fmt.Errorf("expected HeadObject to omit the versionId, instead got %v",
+					*hRes.VersionId)
 			}
 
 			return nil
@@ -1958,6 +2171,122 @@ func Versioning_DeleteObject_dir_object_latest_version(s *S3Conf) error {
 		}
 
 		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// Versioning_DeleteObject_latest_version_with_null_version deletes the current
+// version of an object whose history also holds a null version, created while
+// versioning was suspended. The version that becomes current has to be the one
+// created right before the deleted version, not the older null version.
+func Versioning_DeleteObject_latest_version_with_null_version(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_latest_version_with_null_version"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(obj string) error {
+			// the versions are told apart by a metadata entry, as a
+			// directory object carries no data
+			put := func(marker string) (*s3.PutObjectOutput, error) {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				defer cancel()
+				return s3client.PutObject(ctx, &s3.PutObjectInput{
+					Bucket:   &bucket,
+					Key:      &obj,
+					Metadata: map[string]string{"marker": marker},
+				})
+			}
+
+			if _, err := put("v1"); err != nil {
+				return err
+			}
+			if _, err := put("v2"); err != nil {
+				return err
+			}
+
+			err := putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
+			if err != nil {
+				return err
+			}
+
+			// the null version sits in the middle of the version history
+			if _, err := put("null"); err != nil {
+				return err
+			}
+
+			err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+			if err != nil {
+				return err
+			}
+
+			third, err := put("v3")
+			if err != nil {
+				return err
+			}
+			latest, err := put("v4")
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: latest.VersionId,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if getString(out.VersionId) != getString(latest.VersionId) {
+				return fmt.Errorf("expected the deleted versionId to be %v, instead got %v",
+					getString(latest.VersionId), getString(out.VersionId))
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			expectedMeta := map[string]string{"marker": "v3"}
+			if !areMapsSame(res.Metadata, expectedMeta) {
+				return fmt.Errorf("expected the object metadata to be %v, instead got %v",
+					expectedMeta, res.Metadata)
+			}
+			if getString(res.VersionId) != getString(third.VersionId) {
+				return fmt.Errorf("expected the current versionId to be %v, instead got %v",
+					getString(third.VersionId), getString(res.VersionId))
+			}
+
+			// the null version has to be left untouched by the delete
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			versions, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+				Bucket: &bucket,
+				Prefix: &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			nullFound := false
+			for _, v := range versions.Versions {
+				if getString(v.VersionId) == nullVersionId {
+					nullFound = true
+					if v.IsLatest != nil && *v.IsLatest {
+						return fmt.Errorf("expected the null version not to be the latest")
+					}
+				}
+			}
+			if !nullFound {
+				return fmt.Errorf("expected the null version to be kept in %v",
+					versions.Versions)
+			}
+
+			return nil
+		})
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
