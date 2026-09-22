@@ -208,6 +208,9 @@ func WrapMiddleware(handler fiber.Handler, logger s3log.AuditLogger, mm metrics.
 					// for MethodNotAllowed errors, set the 'Allow' header
 					ctx.Response().Header.Set("Allow", mnaErr.AllowedMethodsString())
 				}
+				// for signing region mismatches, set the
+				// 'x-amz-bucket-region' header
+				utils.SetRegionMismatchHeader(ctx, serr)
 				return ctx.Status(serr.StatusCode()).Send(serr.XMLBody(requestID, hostID))
 			}
 
@@ -262,6 +265,7 @@ func ProcessController(ctx fiber.Ctx, controller Controller, s3action string, sv
 			if mnaErr, ok := serr.(s3err.MethodNotAllowedError); ok && len(mnaErr.AllowedMethods) != 0 {
 				ctx.Response().Header.Set("Allow", mnaErr.AllowedMethodsString())
 			}
+			utils.SetRegionMismatchHeader(ctx, serr)
 			return ctx.Status(serr.StatusCode()).Send(serr.XMLBody(requestID, hostID))
 		}
 

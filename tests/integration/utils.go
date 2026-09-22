@@ -527,7 +527,34 @@ func checkHTTPResponseApiErr(resp *http.Response, expected s3err.S3Error) error 
 	if resp.StatusCode != apiErr.HTTPStatusCode {
 		return fmt.Errorf("expected response status code to be %v, instead got %v", apiErr.HTTPStatusCode, resp.StatusCode)
 	}
+
+	if err := checkRegionMismatchHeader(resp, expected); err != nil {
+		return err
+	}
+
 	return compareS3ApiError(expected, &errResp)
+}
+
+// checkRegionMismatchHeader verifies that a signing region mismatch reports the
+// gateway region in the x-amz-bucket-region response header. HEAD requests
+// carry no response body, so the header is the only channel through which a
+// client can discover the region and retry against it.
+func checkRegionMismatchHeader(resp *http.Response, expected s3err.S3Error) error {
+	rerr, ok := expected.(s3err.RegionMismatchError)
+	if !ok {
+		return nil
+	}
+
+	region := rerr.ExpectedRegion()
+	if region == "" {
+		return nil
+	}
+
+	if got := resp.Header.Get("x-amz-bucket-region"); got != region {
+		return fmt.Errorf("expected x-amz-bucket-region response header to be %v, instead got %v", region, got)
+	}
+
+	return nil
 }
 
 // testEmptyVersionId verifies an action rejects an empty versionId query
@@ -841,6 +868,7 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 		return compareS3ApiErrFields(
 			compareErrField("ArgumentName", err.ArgumentName, received.ArgumentName),
 			compareErrField("ArgumentValue", err.ArgumentValue, received.ArgumentValue),
+			compareErrField("Region", err.Region, received.Region),
 		)
 	case s3err.InvalidChunkSizeError:
 		return compareS3ApiErrFields(
@@ -890,6 +918,8 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 			compareErrField("ResourceType", err.ResourceType, received.ResourceType),
 		)
 	case s3err.MalformedAuthError:
+		return compareErrField("Region", err.Region, received.Region)
+	case s3err.AuthQueryParamError:
 		return compareErrField("Region", err.Region, received.Region)
 	case s3err.HeadersNotSignedError:
 		return compareErrField("HeadersNotSigned", err.HeadersNotSigned, received.HeadersNotSigned)

@@ -35,6 +35,16 @@ type S3Error interface {
 	HTMLBody(requestID, hostID string) []byte
 }
 
+// RegionMismatchError is implemented by the error types that report a signing
+// region mismatch. S3 reports the region the request should have been signed
+// for in the x-amz-bucket-region response header as well as in the response
+// body, since HEAD requests carry no body for the client to parse.
+type RegionMismatchError interface {
+	// ExpectedRegion returns the region the gateway serves, or an empty
+	// string when the error is not a region mismatch.
+	ExpectedRegion() string
+}
+
 // APIError structure
 type APIError struct {
 	Code           string

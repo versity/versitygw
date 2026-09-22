@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/backend"
@@ -1584,6 +1585,67 @@ func TestParseContentEncoding(t *testing.T) {
 
 			ctx := fiberCtxFromURL(t, http.MethodPut, "http://localhost/bucket/object", headers)
 			assert.Equal(t, tt.want, ParseContentEncoding(ctx))
+		})
+	}
+}
+
+func TestSetRegionMismatchHeader(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			"signature v4 header region mismatch",
+			s3err.MalformedAuth.IncorrectRegion("eu-west-1", "us-east-1"),
+			"eu-west-1",
+		},
+		{
+			"presigned url region mismatch",
+			s3err.QueryAuthErrors.IncorrectRegion("eu-west-1", "us-east-1"),
+			"eu-west-1",
+		},
+		{
+			"post object region mismatch",
+			s3err.PostAuth.IncorrectRegion("creds", "eu-west-1", "us-east-1"),
+			"eu-west-1",
+		},
+		// only the region mismatch carries a region, the rest of the errors
+		// must not report one
+		{
+			"malformed auth error without a region",
+			s3err.MalformedAuth.MissingSignature(),
+			"",
+		},
+		{
+			"presigned url error without a region",
+			s3err.QueryAuthErrors.IncorrectService("", "iam"),
+			"",
+		},
+		{
+			"invalid argument error without a region",
+			s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "bucket"),
+			"",
+		},
+		{
+			"unrelated s3 error",
+			s3err.GetAPIError(s3err.ErrNoSuchBucket),
+			"",
+		},
+		{
+			"non s3 error",
+			errors.New("internal"),
+			"",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := fiber.New().AcquireCtx(&fasthttp.RequestCtx{})
+
+			SetRegionMismatchHeader(ctx, tt.err)
+
+			assert.Equal(t, tt.want,
+				string(ctx.Response().Header.Peek("x-amz-bucket-region")))
 		})
 	}
 }

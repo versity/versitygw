@@ -588,6 +588,7 @@ func sendError(ctx fiber.Ctx, err error) error {
 	if methodErr, ok := serr.(s3err.MethodNotAllowedError); ok && len(methodErr.AllowedMethods) != 0 {
 		ctx.Response().Header.Set("Allow", methodErr.AllowedMethodsString())
 	}
+	utils.SetRegionMismatchHeader(ctx, serr)
 
 	ctx.Response().Header.SetContentType(fiber.MIMETextHTMLCharsetUTF8)
 	return ctx.Status(serr.StatusCode()).Send(serr.HTMLBody(requestId, hostId))

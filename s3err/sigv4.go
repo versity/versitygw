@@ -50,6 +50,9 @@ func (e MalformedAuthError) HTMLBody(requestID, hostID string) []byte {
 	)
 }
 
+// ExpectedRegion implements RegionMismatchError.
+func (e MalformedAuthError) ExpectedRegion() string { return e.Region }
+
 func (e MalformedAuthError) Is(target error) bool {
 	t, ok := target.(APIError)
 	return ok && e.APIError == t
@@ -98,7 +101,7 @@ func (malformedAuthErrors) IncorrectTerminal(_, s string) S3Error {
 }
 
 func (malformedAuthErrors) IncorrectRegion(expected, actual string) S3Error {
-	err := malformedAuthError("the region %q is wrong; expecting %q", actual, expected)
+	err := malformedAuthError("the region '%s' is wrong; expecting '%s'", actual, expected)
 	err.Region = expected
 	return err
 }
