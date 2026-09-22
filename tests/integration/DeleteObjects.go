@@ -355,7 +355,7 @@ func DeleteObjects_iam_all_locked(s *S3Conf) error {
 }
 
 // DeleteObjects_key_limit pins the S3 limit of 1000 keys per request: a
-// batch of exactly 1000 succeeds, and 1001 is rejected with InvalidRequest
+// batch of exactly 1000 succeeds, and 1001 is rejected with MalformedXML
 // before any of the keys is deleted.
 func DeleteObjects_key_limit(s *S3Conf) error {
 	testName := "DeleteObjects_key_limit"
@@ -384,7 +384,7 @@ func DeleteObjects_key_limit(s *S3Conf) error {
 			Delete: &types.Delete{Objects: delObjects},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRequest)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
 			return fmt.Errorf("expected 1001 keys to be rejected: %w", err)
 		}
 

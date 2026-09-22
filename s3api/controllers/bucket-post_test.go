@@ -231,7 +231,7 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidRequest),
+				err: s3err.GetAPIError(s3err.ErrMalformedXML),
 			},
 			configureMock: func(be *BackendMock) {
 				be.DeleteObjectsFunc = func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {

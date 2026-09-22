@@ -66,7 +66,7 @@ func (c S3ApiController) DeleteObjects(ctx fiber.Ctx) (*Response, error) {
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	// checkErrs holds one entry per requested object — nil where it may
