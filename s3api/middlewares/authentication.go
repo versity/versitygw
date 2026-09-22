@@ -132,6 +132,11 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 		if !streamBody && utils.IsStreamingPayload(hashPayload) {
 			return s3err.GetAPIError(s3err.ErrInvalidSHA256PayloadUsage)
 		}
+		// aws-chunked frames the body, so it contradicts an unsigned payload,
+		// which declares the body is sent as-is
+		if utils.IsUnsignedPaylod(hashPayload) && utils.HasAwsChunkedEncoding(ctx.Get("Content-Encoding")) {
+			return s3err.GetInvalidArgumentErr(s3err.InvalidArgAwsChunkedUnsignedPayload, utils.AwsChunkedEncoding)
+		}
 
 		canonicalString, err := utils.CheckValidSignature(ctx, authData, derivedKey, hashPayload, tdate, contentLength)
 		if err != nil {

@@ -30,6 +30,8 @@ checksum_type="$CHECKSUM_TYPE"
 payload="$PAYLOAD"
 # shellcheck disable=SC2153
 expires="$EXPIRES"
+# shellcheck disable=SC2153
+content_encoding="$CONTENT_ENCODING"
 # use this parameter to check incorrect checksums
 # shellcheck disable=SC2153,SC2154
 checksum_hash="$CHECKSUM"
@@ -47,6 +49,9 @@ else
 fi
 
 cr_data=("PUT" "/$bucket_name/$key" "")
+if [ -n "$content_encoding" ]; then
+  cr_data+=("content-encoding:$content_encoding")
+fi
 if [ -n "$expires" ]; then
   cr_data+=("expires:$expires")
 fi

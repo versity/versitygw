@@ -62,6 +62,7 @@ const (
 	InvalidArgIndexDocumentSuffix
 	InvalidArgMissingIndexDocumentSuffix
 	InvalidArgErrorDocumentKey
+	InvalidArgAwsChunkedUnsignedPayload
 )
 
 var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
@@ -120,6 +121,10 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgSHA256Payload: {
 		Description:  "x-amz-content-sha256 must be UNSIGNED-PAYLOAD, STREAMING-UNSIGNED-PAYLOAD-TRAILER, STREAMING-AWS4-HMAC-SHA256-PAYLOAD, STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER, STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD, STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER or a valid sha256 value.",
 		ArgumentName: "x-amz-content-sha256",
+	},
+	InvalidArgAwsChunkedUnsignedPayload: {
+		Description:  "aws-chunked encoding is not supported when x-amz-content-sha256 UNSIGNED-PAYLOAD is supplied.",
+		ArgumentName: "Content-Encoding",
 	},
 	InvalidArgCopySource: {
 		Description:  "You can only specify a copy source header for copy requests.",

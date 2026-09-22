@@ -412,6 +412,40 @@ func createSignedReq(method, endpoint, path, access, secret, service, region, ov
 	return req, nil
 }
 
+// createPresignedReq presigns an S3 request for an operation the SDK's
+// PresignClient doesn't cover. Every header passed is signed, and the returned
+// request carries back exactly what the signer decided to sign.
+func createPresignedReq(method, endpoint, path, access, secret, region string, date time.Time, headers map[string]string) (*http.Request, error) {
+	req, err := http.NewRequest(method, fmt.Sprintf("%v/%v", endpoint, path), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create the request: %w", err)
+	}
+	// the signer doesn't add the expiration - the SDK's PresignClient puts it in
+	// the query before signing - and S3 rejects a presigned URL without it
+	query := req.URL.Query()
+	query.Set("X-Amz-Expires", "900")
+	req.URL.RawQuery = query.Encode()
+
+	for key, val := range headers {
+		req.Header.Set(key, val)
+	}
+
+	uri, signedHeaders, err := v4.NewSigner().PresignHTTP(req.Context(),
+		aws.Credentials{AccessKeyID: access, SecretAccessKey: secret},
+		req, "UNSIGNED-PAYLOAD", "s3", region, date)
+	if err != nil {
+		return nil, fmt.Errorf("failed to presign the request: %w", err)
+	}
+
+	presigned, err := http.NewRequest(method, uri, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create the presigned request: %w", err)
+	}
+	presigned.Header = signedHeaders
+
+	return presigned, nil
+}
+
 type APIErrorResponse struct {
 	XMLName                     xml.Name `xml:"Error"`
 	Code                        string
@@ -4177,4 +4211,23 @@ func checkAndAbortUpload(client *s3.Client, bucket, key, uploadId string) error 
 	})
 	cancel()
 	return err
+}
+
+// getStoredContentEncoding returns the Content-Encoding stored for an object,
+// reporting an absent header as the empty string.
+func getStoredContentEncoding(s3client *s3.Client, bucket, object string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &bucket,
+		Key:    &object,
+	})
+	cancel()
+	if err != nil {
+		return "", err
+	}
+	if out.ContentEncoding == nil {
+		return "", nil
+	}
+
+	return *out.ContentEncoding, nil
 }

@@ -1112,3 +1112,56 @@ func ValidateLocationConstraint(constraint *string, region string) error {
 
 	return nil
 }
+
+// AwsChunkedEncoding is the coding a client announces when it frames a body in
+// aws-chunked, as the SDKs do to carry a trailing checksum.
+const AwsChunkedEncoding = "aws-chunked"
+
+// HasAwsChunkedEncoding reports whether a Content-Encoding value carries the
+// aws-chunked token.
+func HasAwsChunkedEncoding(contentEncoding string) bool {
+	for _, coding := range strings.Split(contentEncoding, ",") {
+		if strings.EqualFold(strings.TrimSpace(coding), AwsChunkedEncoding) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ParseContentEncoding returns the Content-Encoding to store for a request,
+// dropping the aws-chunked token unless the request declares a non streaming
+// payload type in x-amz-content-sha256.
+//
+// S3 keys this on the declaration alone. A streaming payload type frames the
+// body in aws-chunked, and a request that declares no payload type - a
+// presigned URL, signed as UNSIGNED-PAYLOAD and carrying no header - may frame
+// it too, so both drop the token. A declared hex digest or UNSIGNED-PAYLOAD
+// says the body is sent as-is, so there the token is a coding the client chose
+// and is stored as sent.
+//
+// S3 applies this to the Content-Encoding header itself, before any API sees
+// it, so every controller that reads the header inherits it - including
+// CopyObject and CreateMultipartUpload, which carry no body to frame. POSTObject
+// takes its value from a form field and ignores the header, so it stores the
+// token as sent and must not call this.
+func ParseContentEncoding(ctx fiber.Ctx) string {
+	contentEncoding := ctx.Get("Content-Encoding")
+	payloadType := ctx.Get("X-Amz-Content-Sha256")
+	if payloadType != "" && !IsStreamingPayload(payloadType) {
+		return contentEncoding
+	}
+
+	codings := strings.Split(contentEncoding, ",")
+	kept := make([]string, 0, len(codings))
+	for _, coding := range codings {
+		trimmed := strings.TrimSpace(coding)
+		if trimmed == "" || strings.EqualFold(trimmed, AwsChunkedEncoding) {
+			continue
+		}
+
+		kept = append(kept, trimmed)
+	}
+
+	return strings.Join(kept, ",")
+}

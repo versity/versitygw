@@ -437,6 +437,53 @@ func UnsignedStreamingPayloadTrailer_success_both_sdk_algo_and_trailer(s *S3Conf
 	})
 }
 
+// UnsignedStreamingPayloadTrailer_strips_aws_chunked_content_encoding checks that the
+// aws-chunked token is dropped from the stored Content-Encoding when the body
+// really was framed in it, and that every other coding survives in order.
+func UnsignedStreamingPayloadTrailer_strips_aws_chunked_content_encoding(s *S3Conf) error {
+	testName := "UnsignedStreamingPayloadTrailer_strips_aws_chunked_content_encoding"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i, test := range []struct {
+			contentEncoding string
+			stored          string
+		}{
+			// nothing is left, so no Content-Encoding is stored at all
+			{"aws-chunked", ""},
+			{"aws-chunked,gzip", "gzip"},
+			// the remaining codings keep their order
+			{"gzip,aws-chunked,br", "gzip,br"},
+			// a framed body doesn't make every coding transport
+			{"gzip", "gzip"},
+		} {
+			object := fmt.Sprintf("streaming-obj-%v", i)
+			reqHeaders := map[string]string{
+				"x-amz-decoded-content-length": "11",
+				"Content-Encoding":             test.contentEncoding,
+			}
+			body := []byte("B\r\nhello world\r\n0\r\n\r\n")
+
+			_, apiErr, err := testUnsignedStreamingPayloadTrailerObjectPut(s, bucket, object, body, reqHeaders)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+			if apiErr != nil {
+				return fmt.Errorf("test %v failed: (%s) %s", i+1, apiErr.Code, apiErr.Message)
+			}
+
+			stored, err := getStoredContentEncoding(s3client, bucket, object)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+			if stored != test.stored {
+				return fmt.Errorf("test %v: expected the stored content encoding to be %q, instead got %q",
+					i+1, test.stored, stored)
+			}
+		}
+
+		return nil
+	})
+}
+
 func UnsignedStreamingPayloadTrailer_UploadPart_no_trailer_composite_checksum(s *S3Conf) error {
 	testName := "UnsignedStreamingPayloadTrailer_UploadPart_no_trailer_composite_checksum"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

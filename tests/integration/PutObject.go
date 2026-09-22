@@ -1468,3 +1468,92 @@ func PutObject_plain_body_with_decoded_length(s *S3Conf) error {
 		return nil
 	})
 }
+
+// PutObject_plain_stores_aws_chunked_content_encoding checks that aws-chunked
+// is stored as sent when the request wasn't framed in it.
+//
+// The token is transport only where x-amz-content-sha256 names a streaming
+// payload type. On a plain PUT it is a coding the client chose, and S3 keeps it
+// like any other.
+func PutObject_plain_stores_aws_chunked_content_encoding(s *S3Conf) error {
+	testName := "PutObject_plain_stores_aws_chunked_content_encoding"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i, contentEncoding := range []string{"aws-chunked", "gzip,aws-chunked"} {
+			object := fmt.Sprintf("plain-obj-%v", i)
+
+			req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%s/%s", bucket, object),
+				s.awsID, s.awsSecret, "s3", s.awsRegion, "", []byte("hello world"), time.Now(),
+				map[string]string{"Content-Encoding": contentEncoding})
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("test %v failed to send the request: %w", i+1, err)
+			}
+			resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("test %v: expected the response status code to be %v, instead got %v",
+					i+1, http.StatusOK, resp.StatusCode)
+			}
+
+			stored, err := getStoredContentEncoding(s3client, bucket, object)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+			if stored != contentEncoding {
+				return fmt.Errorf("test %v: expected the stored content encoding to be %q, instead got %q",
+					i+1, contentEncoding, stored)
+			}
+		}
+
+		return nil
+	})
+}
+
+func PutObject_unsigned_payload_with_aws_chunked_content_encoding(s *S3Conf) error {
+	testName := "PutObject_unsigned_payload_with_aws_chunked_content_encoding"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-obj"
+		for i, contentEncoding := range []string{
+			"aws-chunked",
+			"aws-chunked,gzip",
+			"gzip, aws-chunked",
+			"AWS-Chunked",
+		} {
+			req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%s/%s", bucket, object),
+				s.awsID, s.awsSecret, "s3", s.awsRegion, "UNSIGNED-PAYLOAD", []byte("hello world"), time.Now(),
+				map[string]string{"Content-Encoding": contentEncoding})
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("test %v failed to send the request: %w", i+1, err)
+			}
+
+			// the error names the offending header and reports the token
+			// alone, not the whole header value
+			err = checkHTTPResponseApiErr(resp,
+				s3err.GetInvalidArgumentErr(s3err.InvalidArgAwsChunkedUnsignedPayload, "aws-chunked"))
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &object,
+		})
+		cancel()
+		if err == nil {
+			return fmt.Errorf("expected the rejected uploads to leave no object, but %v exists", object)
+		}
+
+		return nil
+	})
+}
