@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -236,6 +237,50 @@ func S3IAMAccessControl_identity_policy_bucket_vs_object_arn(s *S3Conf) error {
 			return fmt.Errorf("expected ListObjects to be allowed by a bucket-ARN grant: %w", err)
 		}
 		return nil
+	})
+}
+
+// S3IAMAccessControl_post_object_identity_policy_resource_scoping verifies
+// a POST upload evaluates against the ARN of the object its key field
+// names, as PutObject does, not the bucket ARN the request is addressed to:
+// an s3:PutObject grant on "bucket/allowed/*" allows a POST to a key under
+// allowed/ and denies any other.
+func S3IAMAccessControl_post_object_identity_policy_resource_scoping(s *S3Conf) error {
+	testName := "S3IAMAccessControl_post_object_identity_policy_resource_scoping"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3PutObject,
+				Resource: objectArn(bucket, "allowed/*"),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		post := func(key string) (*http.Response, error) {
+			return sendPostObject(PostRequestConfig{
+				bucket:      bucket,
+				key:         key,
+				s3Conf:      &user.conf,
+				fileContent: []byte("data"),
+			})
+		}
+
+		resp, err := post("allowed/obj")
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("expected POST on the matching key to be allowed: %w", err)
+		}
+
+		resp, err = post("denied/obj")
+		if err != nil {
+			return err
+		}
+		return checkHTTPResponseApiErr(resp, wantImplicitDeny(user.arn, actS3PutObject, objectArn(bucket, "denied/obj")))
 	})
 }
 

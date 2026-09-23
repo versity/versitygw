@@ -2490,6 +2490,94 @@ func PublicBucket_policy_deny_overrides_public_acl(s *S3Conf) error {
 	}, withAnonymousClient(), withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
+// PublicBucket_post_object_policy covers anonymous POST uploads to a bucket
+// whose policy grants public s3:PutObject on a key prefix. The POST is
+// addressed to the bucket, but it is authorized against the ARN of the
+// object its key field names, as PutObject is: a key under uploads/ is
+// allowed and any other denied.
+func PublicBucket_post_object_policy(s *S3Conf) error {
+	testName := "PublicBucket_post_object_policy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/uploads/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		allowedKey := "uploads/my-obj"
+		resp, err := sendAnonymousPostObject(s, bucket, allowedKey, []byte("data"))
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("POST %s: %w", allowedKey, err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &allowedKey,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected %s to be uploaded: %w", allowedKey, err)
+		}
+
+		resp, err = sendAnonymousPostObject(s, bucket, "private/my-obj", []byte("data"))
+		if err != nil {
+			return err
+		}
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}
+
+// PublicBucket_post_object_policy_deny_overrides_public_acl covers a public
+// Deny scoped to a key prefix on a bucket whose ACL is public-read-write:
+// an anonymous POST to a key under private/ matches the Deny on its object
+// ARN and is refused, rather than falling through to the ACL's public
+// write grant, which still allows a POST to any other key.
+func PublicBucket_post_object_policy_deny_overrides_public_acl(s *S3Conf) error {
+	testName := "PublicBucket_post_object_policy_deny_overrides_public_acl"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACLPublicReadWrite,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Deny",
+			Principal: "*",
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/private/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		allowedKey := "public/my-obj"
+		resp, err := sendAnonymousPostObject(s, bucket, allowedKey, []byte("data"))
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("POST %s: %w", allowedKey, err)
+		}
+
+		resp, err = sendAnonymousPostObject(s, bucket, "private/my-obj", []byte("data"))
+		if err != nil {
+			return err
+		}
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrAccessDenied))
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
 func PublicBucket_signed_streaming_payload(s *S3Conf) error {
 	testName := "PublicBucket_signed_streaming_payload"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
