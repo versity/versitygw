@@ -80,9 +80,10 @@ func main() {
 	}
 
 	if *v2Mode {
-		if err := runV2Mode(size); err != nil {
-			fatalf("cuobjtest: %v", err)
+		if !hasV2Mode {
+			fatalf("cuobjtest: -v2 requires CGO_ENABLED=1 and the hipobj build tag (libhipobj linked)")
 		}
+		runV2Mode(size)
 		return
 	}
 

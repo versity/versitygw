@@ -258,9 +258,15 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	if err != nil || size == 0 {
 		return publishHeaderErr(invalidHeader(hdrSize, ctx.Get(hdrSize)), isPut)
 	}
-	offset, err := parseUint(ctx.Get(hdrOffset), 10, 64)
-	if err != nil {
-		return publishHeaderErr(invalidHeader(hdrOffset, ctx.Get(hdrOffset)), isPut)
+	// The offset header is optional and defaults to zero: clients
+	// omit it for non-ranged transfers, matching the C++ reference
+	// parser in v2_request.cpp.
+	var offset uint64
+	if raw := ctx.Get(hdrOffset); raw != "" {
+		var err error
+		if offset, err = parseUint(raw, 10, 64); err != nil {
+			return publishHeaderErr(invalidHeader(hdrOffset, raw), isPut)
+		}
 	}
 	psn, err := parseUint(ctx.Get(hdrPsn), 16, 32)
 	if err != nil || psn == 0 || psn > 0xffffff {
