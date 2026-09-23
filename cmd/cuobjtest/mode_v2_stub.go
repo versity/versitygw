@@ -17,10 +17,13 @@
 
 package main
 
-import "fmt"
-
-// runV2Mode reports the missing hipobj binding when the binary was
-// built without the hipobj tag.
-func runV2Mode(size int) error {
-	return fmt.Errorf("cuobjtest: -v2 requires CGO_ENABLED=1 and the hipobj build tag (libhipobj linked)")
+// runV2Mode is unreachable on stub builds: main gates -v2 behind a
+// hasV2Mode check, so the stub never runs. It exists only to keep
+// the call site compiling on builds without the hipobj tag.
+func runV2Mode(size int) {
+	fatalf("cuobjtest: -v2 requires CGO_ENABLED=1 and the hipobj build tag (libhipobj linked)")
 }
+
+// hasV2Mode reports whether this binary carries the hipobj-backed
+// v2 client mode.
+const hasV2Mode = false

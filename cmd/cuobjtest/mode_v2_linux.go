@@ -38,11 +38,21 @@ import (
 	"github.com/versity/versitygw/rdma/rcobj"
 )
 
+// hasV2Mode reports whether this binary carries the hipobj-backed
+// v2 client mode.
+const hasV2Mode = true
+
 // runV2Mode drives the hipobj-rc-v2 flow through the rcobj Go
 // wrapper on libhipobj: admission probe, plain PUT/GET, Range GET,
 // and the multipart flow, then REST fallback verification on an
 // old gateway.
-func runV2Mode(size int) error {
+func runV2Mode(size int) {
+	if err := runV2ModeErr(size); err != nil {
+		fatalf("cuobjtest: %v", err)
+	}
+}
+
+func runV2ModeErr(size int) error {
 	host, port, err := v2EndpointParts(*endpoint)
 	if err != nil {
 		return err
