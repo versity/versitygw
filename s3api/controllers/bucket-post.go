@@ -220,6 +220,15 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	err = auth.CheckObjectAccess(ctx, bucket, acct, []types.ObjectIdentifier{{Key: &key}}, auth.BypassOverwrite, IsBucketPublic, c.be, c.iam, true)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	res, err := c.be.PutObject(ctx.RequestCtx(), s3response.PutObjectInput{
 		Bucket:                  &bucket,
 		Key:                     &key,

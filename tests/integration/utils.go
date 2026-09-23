@@ -2253,7 +2253,7 @@ func putBucketVersioningStatus(client *s3.Client, bucket string, status types.Bu
 	return err
 }
 
-func checkWORMProtection(client *s3.Client, bucket, object string) error {
+func checkWORMProtection(s *S3Conf, client *s3.Client, bucket, object string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	_, err := client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: &bucket,
@@ -2262,6 +2262,19 @@ func checkWORMProtection(client *s3.Client, bucket, object string) error {
 	cancel()
 	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 		return err
+	}
+
+	resp, err := sendPostObject(PostRequestConfig{
+		bucket:      bucket,
+		key:         object,
+		s3Conf:      s,
+		fileContent: []byte("overwrite"),
+	})
+	if err != nil {
+		return err
+	}
+	if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		return fmt.Errorf("POST object overwrite: %w", err)
 	}
 
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
