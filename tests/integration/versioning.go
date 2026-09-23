@@ -2917,6 +2917,78 @@ func Versioning_DeleteObject_suspended(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_DeleteObject_never_versioned_bucket(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_never_versioned_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		versionId := "01KF2YVN948NAZ4JJR4X1AAVRA"
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(obj string) error {
+			out, err := putObjectWithData(objDataLen(obj, 10), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+
+			// the object only has a null version, so deleting any other
+			// version succeeds without deleting the object
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: &versionId,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if getString(res.VersionId) != versionId {
+				return fmt.Errorf("expected the versionId to be %v, instead got %v",
+					versionId, getString(res.VersionId))
+			}
+			if res.DeleteMarker != nil && *res.DeleteMarker {
+				return fmt.Errorf("expected the response DeleteMarker to be false")
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if getString(head.ETag) != getString(out.res.ETag) {
+				return fmt.Errorf("expected the ETag to be %v, instead got %v",
+					getString(out.res.ETag), getString(head.ETag))
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: &nullVersionId,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err == nil {
+				return fmt.Errorf("expected NotFound, instead got nil")
+			}
+			return checkSdkApiErr(err, "NotFound")
+		})
+	})
+}
+
 func Versioning_DeleteObjects_success(s *S3Conf) error {
 	testName := "Versioning_DeleteObjects_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -3196,6 +3268,76 @@ func Versioning_DeleteObjects_delete_deleteMarkers(s *S3Conf) error {
 
 		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_DeleteObjects_never_versioned_bucket(s *S3Conf) error {
+	testName := "Versioning_DeleteObjects_never_versioned_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		versionId := "01KF2YVN948NAZ4JJR4X1AAVRA"
+		objs := []string{"my-obj", "my-dir/"}
+		etags := map[string]string{}
+		objIds := []types.ObjectIdentifier{}
+		for _, obj := range objs {
+			out, err := putObjectWithData(objDataLen(obj, 10), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+			etags[obj] = getString(out.res.ETag)
+			objIds = append(objIds, types.ObjectIdentifier{
+				Key:       &obj,
+				VersionId: &versionId,
+			})
+		}
+
+		// the objects only have a null version, so deleting any other
+		// version succeeds without deleting the objects
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{
+				Objects: objIds,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(res.Errors) != 0 {
+			return fmt.Errorf("expected no errors, instead got %v", res.Errors)
+		}
+		delResult := []types.DeletedObject{}
+		for _, objId := range objIds {
+			delResult = append(delResult, types.DeletedObject{
+				Key:       objId.Key,
+				VersionId: objId.VersionId,
+			})
+		}
+		if !compareDelObjects(delResult, res.Deleted) {
+			return fmt.Errorf("expected the deleted objects to be %v, instead got %v",
+				delResult, res.Deleted)
+		}
+
+		return forEachKey(objs, func(obj string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if getString(head.ETag) != etags[obj] {
+				return fmt.Errorf("expected the ETag to be %v, instead got %v",
+					etags[obj], getString(head.ETag))
+			}
+			return nil
+		})
+	})
 }
 
 func Versioning_Multipart_Upload_success(s *S3Conf) error {

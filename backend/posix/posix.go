@@ -5284,6 +5284,13 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		}
 	}
 
+	// a bucket that has never been versioned only holds null versions, so
+	// any other versionId names a version that doesn't exist: AWS returns
+	// success and deletes nothing
+	if versionId := getString(input.VersionId); versionId != "" && versionId != nullVersionId {
+		return &s3.DeleteObjectOutput{VersionId: input.VersionId}, nil
+	}
+
 	fi, err := os.Stat(objpath)
 	if isErrNameTooLong(err) {
 		return nil, s3err.GetKeyTooLongErr(int64(len(object)), 1024)
