@@ -284,6 +284,83 @@ func S3IAMAccessControl_post_object_identity_policy_resource_scoping(s *S3Conf) 
 	})
 }
 
+// S3IAMAccessControl_post_object_tagging_identity_policy verifies a POST
+// upload that tags its object needs s3:PutObjectTagging on the object in
+// addition to s3:PutObject, as PutObject does. With only s3:PutObject
+// granted, the tagged upload is denied naming s3:PutObjectTagging, and an
+// explicit Deny on s3:PutObjectTagging refuses it even under s3:*. The
+// untagged upload succeeds in both cases.
+func S3IAMAccessControl_post_object_tagging_identity_policy(s *S3Conf) error {
+	testName := "S3IAMAccessControl_post_object_tagging_identity_policy"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		cases := []struct {
+			name   string
+			policy string
+			want   func(principal, resourceArn string) s3err.S3Error
+		}{
+			{
+				name: "s3:PutObject only",
+				policy: policyDoc(accessStatement{
+					Effect: "Allow", Action: actS3PutObject, Resource: objectsArn(bucket),
+				}),
+				want: func(principal, resourceArn string) s3err.S3Error {
+					return wantImplicitDeny(principal, actS3PutObjectTagging, resourceArn)
+				},
+			},
+			{
+				name: "s3:PutObjectTagging explicitly denied",
+				policy: policyDoc(
+					accessStatement{Effect: "Allow", Action: "s3:*", Resource: objectsArn(bucket)},
+					accessStatement{Effect: "Deny", Action: actS3PutObjectTagging, Resource: objectsArn(bucket)},
+				),
+				want: func(principal, resourceArn string) s3err.S3Error {
+					return wantExplicitIdentityDeny(principal, actS3PutObjectTagging, resourceArn)
+				},
+			},
+		}
+		for _, tc := range cases {
+			if err := func() error {
+				user, cleanup, err := newS3IAMUser(root, s, map[string]string{"p": tc.policy})
+				if err != nil {
+					return err
+				}
+				defer cleanup()
+
+				cfg := PostRequestConfig{
+					bucket:      bucket,
+					key:         "obj",
+					s3Conf:      &user.conf,
+					fileContent: []byte("data"),
+				}
+
+				resp, err := sendPostObject(cfg)
+				if err != nil {
+					return err
+				}
+				if err := checkPostObjectSuccess(resp); err != nil {
+					return fmt.Errorf("expected the untagged POST to be allowed: %w", err)
+				}
+
+				taggingXML := `<Tagging><TagSet><Tag><Key>env</Key><Value>test</Value></Tag></TagSet></Tagging>`
+				cfg.policyConditions = []any{
+					[]any{"eq", "$tagging", taggingXML},
+				}
+				cfg.extraFields = map[string]string{
+					"tagging": taggingXML,
+				}
+				resp, err = sendPostObject(cfg)
+				if err != nil {
+					return err
+				}
+				return checkHTTPResponseApiErr(resp, tc.want(user.arn, objectArn(bucket, "obj")))
+			}(); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
+	})
+}
+
 // S3IAMAccessControl_identity_policy_not_action_and_not_resource verifies
 // NotAction and NotResource grant everything *except* what they name.
 func S3IAMAccessControl_identity_policy_not_action_and_not_resource(s *S3Conf) error {

@@ -421,9 +421,9 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 					},
 					utils.ContextKeyRegion: "us-east-1",
 					utils.ContextKeyObjectPostResult: middlewares.PostObjectResult{
-						Fields: map[string]string{
-							"key": "key",
-						},
+						Fields:        baseFields,
+						FileRdr:       newMockFileReader("payload"),
+						ContentLength: int64(len("payload")),
 					},
 				},
 			},
