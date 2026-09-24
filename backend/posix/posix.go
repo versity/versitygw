@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -191,6 +192,7 @@ const (
 	versioningKey       = "versioning"
 	deleteMarkerKey     = "delete-marker"
 	versionIdKey        = "version-id"
+	nullVersionPrevKey  = "null-version-prev"
 	partCrc64nvme       = "part-crc64nvme"
 	mpMetaKey           = "mp-metadata"
 
@@ -1520,6 +1522,21 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 		}
 	}
 
+	if versionId == nullVersionId {
+		// the null version id doesn't sort with the ulid version ids, so
+		// record its place in the version history: it's the current
+		// version, which makes it newer than the versions already in the
+		// versioning directory and older than any version created later
+		prev, err := newestObjVersionId(filepath.Join(versionBucketPath, genObjVersionKey(key)))
+		if err != nil {
+			return versionPath, fmt.Errorf("get newest object version: %w", err)
+		}
+		err = p.meta.StoreAttribute(f.File(), versionPath, "", nullVersionPrevKey, []byte(prev))
+		if err != nil {
+			return versionPath, fmt.Errorf("store %v attribute: %w", nullVersionPrevKey, err)
+		}
+	}
+
 	if err := f.link(); err != nil {
 		return versionPath, err
 	}
@@ -1702,10 +1719,11 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 		if err == nil {
 			versionId = string(versionIdBytes)
 		}
-		if versionId == versionIdMarker {
-			*pastVersionIdMarker = true
-		}
-		if *pastVersionIdMarker {
+		// the version id marker is the version listed last, so the
+		// listing continues with the version following it
+		if !*pastVersionIdMarker {
+			*pastVersionIdMarker = versionId == versionIdMarker
+		} else {
 			fi, err := d.Info()
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil, backend.ErrSkipObj
@@ -1794,11 +1812,17 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 		// before starting the object versions listing
 		var nullVersionIdObj *s3response.ObjectVersion
 		var nullObjDelMarker *types.DeleteMarkerEntry
+		var nullPos nullVersionPos
 		nf, err := os.Stat(filepath.Join(versionPath, nullVersionId))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return nil, err
 		}
 		if err == nil {
+			nullPos, err = p.getNullVersionPos(versionPath, nf)
+			if err != nil {
+				return nil, err
+			}
+
 			isDel, err := p.isObjDeleteMarker(versionPath, nullVersionId)
 			if err != nil {
 				return nil, err
@@ -1847,34 +1871,39 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 		}
 
 		isNullVersionIdObjFound := nullVersionIdObj != nil || nullObjDelMarker != nil
+		isNullVersionIdObjAdded := false
 
-		if len(dirEnts) == 1 && (isNullVersionIdObjFound) {
-			if nullObjDelMarker != nil {
-				delMarkers = append(delMarkers, *nullObjDelMarker)
+		// addNullVersion lists the null version at its place in the
+		// version history, or continues the listing after it when it's
+		// the version id marker. It returns the truncated result when
+		// the null version fills up the listing.
+		addNullVersion := func() *backend.ObjVersionFuncResult {
+			isNullVersionIdObjAdded = true
+			if !*pastVersionIdMarker {
+				*pastVersionIdMarker = versionIdMarker == nullVersionId
+				return nil
 			}
+
 			if nullVersionIdObj != nil {
 				objects = append(objects, *nullVersionIdObj)
 			}
+			if nullObjDelMarker != nil {
+				delMarkers = append(delMarkers, *nullObjDelMarker)
+			}
 
-			if availableObjCount == 1 {
+			if availableObjCount--; availableObjCount == 0 {
 				return &backend.ObjVersionFuncResult{
 					ObjectVersions:      objects,
 					DelMarkers:          delMarkers,
 					Truncated:           true,
 					NextVersionIdMarker: nullVersionId,
-				}, nil
-			} else {
-				return &backend.ObjVersionFuncResult{
-					ObjectVersions: objects,
-					DelMarkers:     delMarkers,
-				}, nil
+				}
 			}
+			return nil
 		}
 
-		isNullVersionIdObjAdded := false
+		for _, dEntry := range slices.Backward(dirEnts) {
 
-		for i := len(dirEnts) - 1; i >= 0; i-- {
-			dEntry := dirEnts[i]
 			// Skip the null versionId object to not
 			// break the object versions list
 			if dEntry.Name() == nullVersionId {
@@ -1890,26 +1919,11 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 			}
 
 			// If the null versionId object is found, first push it
-			// by checking its creation date, then continue the adding
-			if isNullVersionIdObjFound && !isNullVersionIdObjAdded {
-				if nf.ModTime().After(f.ModTime()) {
-					if nullVersionIdObj != nil {
-						objects = append(objects, *nullVersionIdObj)
-					}
-					if nullObjDelMarker != nil {
-						delMarkers = append(delMarkers, *nullObjDelMarker)
-					}
-
-					isNullVersionIdObjAdded = true
-
-					if availableObjCount--; availableObjCount == 0 {
-						return &backend.ObjVersionFuncResult{
-							ObjectVersions:      objects,
-							DelMarkers:          delMarkers,
-							Truncated:           true,
-							NextVersionIdMarker: nullVersionId,
-						}, nil
-					}
+			// by checking its place in the version history, then
+			// continue the adding
+			if isNullVersionIdObjFound && !isNullVersionIdObjAdded && nullPos.isNewerThan(f) {
+				if res := addNullVersion(); res != nil {
+					return res, nil
 				}
 			}
 			versionId := f.Name()
@@ -1979,20 +1993,8 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 		// If null versionId object is found but not yet pushed,
 		// push it after the listing, as it's the oldest object version
 		if isNullVersionIdObjFound && !isNullVersionIdObjAdded {
-			if nullVersionIdObj != nil {
-				objects = append(objects, *nullVersionIdObj)
-			}
-			if nullObjDelMarker != nil {
-				delMarkers = append(delMarkers, *nullObjDelMarker)
-			}
-
-			if availableObjCount--; availableObjCount == 0 {
-				return &backend.ObjVersionFuncResult{
-					ObjectVersions:      objects,
-					DelMarkers:          delMarkers,
-					Truncated:           true,
-					NextVersionIdMarker: nullVersionId,
-				}, nil
+			if res := addNullVersion(); res != nil {
+				return res, nil
 			}
 		}
 
@@ -5179,7 +5181,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					}, nil
 				}
 
-				srcObjVersion, err := latestObjVersion(ents)
+				srcObjVersion, err := p.latestObjVersion(versionPath, ents)
 				if err != nil {
 					return nil, fmt.Errorf("get latest obj version: %w", err)
 				}
@@ -5231,6 +5233,11 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				}
 
 				for _, attr := range attrs {
+					// the place of the null version only applies in
+					// the versioning directory
+					if attr == nullVersionPrevKey {
+						continue
+					}
 					data, err := p.meta.RetrieveAttribute(nil, versionPath, srcVersionId, attr)
 					if err != nil {
 						return nil, fmt.Errorf("load %v attribute", attr)
@@ -5357,13 +5364,65 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	return &s3.DeleteObjectOutput{}, nil
 }
 
-// latestObjVersion returns the version, among the version directory entries,
-// that becomes the latest one when the latest version of the object is
-// deleted. The entries are named after the version id and os.ReadDir sorts
-// them by name, which puts the ulid version ids in creation order. The null
-// version id doesn't sort with them, so it's placed by its modification time,
-// which is the time the version was created.
-func latestObjVersion(ents []fs.DirEntry) (fs.FileInfo, error) {
+// newestObjVersionId returns the id of the newest version, other than the
+// null version, in the object versioning directory at versionPath, or an
+// empty string if it has none. The entries are named after the version id
+// and os.ReadDir sorts them by name, which puts the ulid version ids in
+// creation order.
+func newestObjVersionId(versionPath string) (string, error) {
+	ents, err := os.ReadDir(versionPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	for _, ent := range slices.Backward(ents) {
+		if ent.Name() != nullVersionId {
+			return ent.Name(), nil
+		}
+	}
+	return "", nil
+}
+
+// nullVersionPos is the place of the null version in the version history of
+// an object, among the versions ordered by their ulid version ids
+type nullVersionPos struct {
+	// prev is the id of the newest version older than the null version,
+	// empty if the null version is the oldest one
+	prev string
+	// modTime places a null version that was moved to the versioning
+	// directory before its place was recorded
+	modTime *time.Time
+}
+
+// isNewerThan reports whether the null version is newer than the version
+// fi, an entry of the object versioning directory named after its version id
+func (n nullVersionPos) isNewerThan(fi fs.FileInfo) bool {
+	if n.modTime != nil {
+		return n.modTime.After(fi.ModTime())
+	}
+	return fi.Name() <= n.prev
+}
+
+// getNullVersionPos returns the place of the null version, nullInfo, in the
+// object versioning directory at versionPath
+func (p *Posix) getNullVersionPos(versionPath string, nullInfo fs.FileInfo) (nullVersionPos, error) {
+	prev, err := p.meta.RetrieveAttribute(nil, versionPath, nullVersionId, nullVersionPrevKey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		modTime := nullInfo.ModTime()
+		return nullVersionPos{modTime: &modTime}, nil
+	}
+	if err != nil {
+		return nullVersionPos{}, fmt.Errorf("get %v attribute: %w", nullVersionPrevKey, err)
+	}
+	return nullVersionPos{prev: string(prev)}, nil
+}
+
+// latestObjVersion returns the version, among the entries of the object
+// versioning directory at versionPath, that becomes the latest one when the
+// latest version of the object is deleted
+func (p *Posix) latestObjVersion(versionPath string, ents []fs.DirEntry) (fs.FileInfo, error) {
 	var latest, nullEnt fs.DirEntry
 	for _, ent := range ents {
 		if ent.Name() == nullVersionId {
@@ -5391,7 +5450,11 @@ func latestObjVersion(ents []fs.DirEntry) (fs.FileInfo, error) {
 		return nil, err
 	}
 
-	if nullInfo.ModTime().After(latestInfo.ModTime()) {
+	pos, err := p.getNullVersionPos(versionPath, nullInfo)
+	if err != nil {
+		return nil, err
+	}
+	if pos.isNewerThan(latestInfo) {
 		return nullInfo, nil
 	}
 
@@ -5436,7 +5499,7 @@ func (p *Posix) deleteDirObjectLatestVersion(bucket, key string) error {
 		return nil
 	}
 
-	srcInfo, err := latestObjVersion(ents)
+	srcInfo, err := p.latestObjVersion(versionPath, ents)
 	if err != nil {
 		return fmt.Errorf("get latest obj version: %w", err)
 	}

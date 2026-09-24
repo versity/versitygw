@@ -2290,6 +2290,147 @@ func Versioning_DeleteObject_latest_version_with_null_version(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_DeleteObject_latest_version_null_version_order(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_latest_version_null_version_order"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// the null version is either an object put or a delete marker
+		// created while versioning is suspended
+		cases := []struct {
+			obj       string
+			delMarker bool
+		}{
+			{"my-obj", false},
+			{"my-dir/", false},
+			{"my-dm-obj", true},
+			{"my-dm-dir/", true},
+		}
+		for _, c := range cases {
+			obj := c.obj
+			// the versions are told apart by a metadata entry, as a
+			// directory object carries no data
+			put := func(marker string) (string, error) {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				defer cancel()
+				out, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+					Bucket:   &bucket,
+					Key:      &obj,
+					Metadata: map[string]string{"marker": marker},
+				})
+				if err != nil {
+					return "", err
+				}
+				return getString(out.VersionId), nil
+			}
+
+			// history is the version ids from the newest to the oldest,
+			// with the marker each one is put with
+			type version struct {
+				id, marker string
+			}
+			var history []version
+			for _, marker := range []string{"v1", "v2"} {
+				id, err := put(marker)
+				if err != nil {
+					return err
+				}
+				history = append([]version{{id, marker}}, history...)
+			}
+
+			err := putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
+			if err != nil {
+				return err
+			}
+
+			// the null version sits in the middle of the version history
+			if c.delMarker {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+					Bucket: &bucket,
+					Key:    &obj,
+				})
+				cancel()
+				if err != nil {
+					return err
+				}
+				if getString(out.VersionId) != nullVersionId {
+					return fmt.Errorf("%v: expected the delete marker versionId to be %v, instead got %v",
+						obj, nullVersionId, getString(out.VersionId))
+				}
+				history = append([]version{{nullVersionId, ""}}, history...)
+			} else {
+				if _, err := put("null"); err != nil {
+					return err
+				}
+				history = append([]version{{nullVersionId, "null"}}, history...)
+			}
+
+			err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+			if err != nil {
+				return err
+			}
+
+			for _, marker := range []string{"v3", "v4"} {
+				id, err := put(marker)
+				if err != nil {
+					return err
+				}
+				history = append([]version{{id, marker}}, history...)
+			}
+
+			// deleting the latest version makes the version created right
+			// before it the latest one, whether it's the null version or not
+			for i, deleted := range history {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+					Bucket:    &bucket,
+					Key:       &obj,
+					VersionId: &deleted.id,
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("%v: delete version %v: %w", obj, deleted.id, err)
+				}
+
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+					Bucket: &bucket,
+					Key:    &obj,
+				})
+				cancel()
+
+				// the object is left with no current version when the
+				// null delete marker or none of the versions is latest
+				if i+1 == len(history) || history[i+1].marker == "" {
+					if err == nil {
+						return fmt.Errorf("%v: expected the object to have no current version after deleting %v, instead got version %v",
+							obj, deleted.id, getString(res.VersionId))
+					}
+					if err := checkSdkApiErr(err, "NotFound"); err != nil {
+						return fmt.Errorf("%v: after deleting %v: %w", obj, deleted.id, err)
+					}
+					continue
+				}
+				if err != nil {
+					return fmt.Errorf("%v: head object after deleting %v: %w", obj, deleted.id, err)
+				}
+
+				expected := history[i+1]
+				if getString(res.VersionId) != expected.id {
+					return fmt.Errorf("%v: expected the current versionId after deleting %v to be %v, instead got %v",
+						obj, deleted.id, expected.id, getString(res.VersionId))
+				}
+				expectedMeta := map[string]string{"marker": expected.marker}
+				if !areMapsSame(res.Metadata, expectedMeta) {
+					return fmt.Errorf("%v: expected the object metadata after deleting %v to be %v, instead got %v",
+						obj, deleted.id, expectedMeta, res.Metadata)
+				}
+			}
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_DeleteObject_non_existing_object(s *S3Conf) error {
 	testName := "Versioning_DeleteObject_non_existing_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
