@@ -15,8 +15,11 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -52,7 +55,7 @@ func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) 
 			return err
 		}
 
-		if err := checkWORMProtection(s3client, bucket, object); err != nil {
+		if err := checkWORMProtection(s, s3client, bucket, object); err != nil {
 			return err
 		}
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: object, isCompliance: true}})
@@ -87,7 +90,7 @@ func WORMProtection_bucket_object_lock_configuration_governance_mode(s *S3Conf) 
 			return err
 		}
 
-		if err := checkWORMProtection(s3client, bucket, object); err != nil {
+		if err := checkWORMProtection(s, s3client, bucket, object); err != nil {
 			return err
 		}
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: object}})
@@ -287,7 +290,7 @@ func WORMProtection_object_lock_retention_compliance_locked(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkWORMProtection(s3client, bucket, object); err != nil {
+		if err := checkWORMProtection(s, s3client, bucket, object); err != nil {
 			return err
 		}
 
@@ -320,7 +323,7 @@ func WORMProtection_object_lock_retention_governance_locked(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkWORMProtection(s3client, bucket, object); err != nil {
+		if err := checkWORMProtection(s, s3client, bucket, object); err != nil {
 			return err
 		}
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: object}})
@@ -473,6 +476,77 @@ func WORMProtection_object_lock_retention_governance_bypass_overwrite_copy(s *S3
 	}, withLock())
 }
 
+func WORMProtection_object_lock_retention_governance_bypass_overwrite_post(s *S3Conf) error {
+	testName := "WORMProtection_object_lock_retention_governance_bypass_overwrite_post"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-obj"
+
+		_, err := putObjects(s3client, []string{object}, bucket)
+		if err != nil {
+			return err
+		}
+
+		err = lockObject(s3client, objectLockModeGovernance, bucket, object, "")
+		if err != nil {
+			return err
+		}
+
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, s.awsID), `["s3:BypassGovernanceRetention"]`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket))
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &policy,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// overwrite the locked object with a new object with POST object
+		data := []byte("new object data")
+		resp, err := sendPostObject(PostRequestConfig{
+			bucket:      bucket,
+			key:         object,
+			s3Conf:      s,
+			fileContent: data,
+		})
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("expected status 204, instead got %d", resp.StatusCode)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		defer cancel()
+		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &object,
+		})
+		if err != nil {
+			return err
+		}
+		defer out.Body.Close()
+
+		gotData, err := io.ReadAll(out.Body)
+		if err != nil {
+			return err
+		}
+
+		if getString(out.ETag) != resp.Header.Get("ETag") {
+			return fmt.Errorf("expected the object ETag to be %s, instead got %s", resp.Header.Get("ETag"), getString(out.ETag))
+		}
+		if !bytes.Equal(gotData, data) {
+			return fmt.Errorf("expected the object data to be %q, instead got %q", data, gotData)
+		}
+
+		return nil
+	}, withLock())
+}
+
 func WORMProtection_unable_to_overwrite_locked_object_put(s *S3Conf) error {
 	testName := "WORMProtection_unable_to_overwrite_locked_object_put"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -586,6 +660,43 @@ func WORMProtection_unable_to_overwrite_locked_object_mp(s *S3Conf) error {
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+			return err
+		}
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:                object,
+				removeOnlyLeglHold: true,
+			},
+		})
+	}, withLock())
+}
+
+func WORMProtection_unable_to_overwrite_locked_object_post(s *S3Conf) error {
+	testName := "WORMProtection_unable_to_overwrite_locked_object_post"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-obj"
+
+		_, err := putObjects(s3client, []string{object}, bucket)
+		if err != nil {
+			return err
+		}
+
+		err = lockObject(s3client, objectLockModeLegalHold, bucket, object, "")
+		if err != nil {
+			return err
+		}
+
+		// overwrite the locked object with a new object with POST object
+		resp, err := sendPostObject(PostRequestConfig{
+			bucket:      bucket,
+			key:         object,
+			s3Conf:      s,
+			fileContent: []byte("new object data"),
+		})
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 			return err
 		}
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{
@@ -766,7 +877,7 @@ func WORMProtection_root_bypass_governance_retention_delete_object(s *S3Conf) er
 			return err
 		}
 
-		if err := checkWORMProtection(s3client, bucket, obj); err != nil {
+		if err := checkWORMProtection(s, s3client, bucket, obj); err != nil {
 			return err
 		}
 

@@ -485,6 +485,27 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 			},
 		},
 		{
+			name: "overwriting a locked object",
+			input: testInput{
+				// object lock enabled on the bucket; the mock reports a
+				// legal hold on every object
+				extraMockResp: []byte(`{"Enabled":true}`),
+				locals: postObjectLocalsForTest(middlewares.PostObjectResult{
+					Fields:        baseFields,
+					FileRdr:       newMockFileReader("payload"),
+					ContentLength: int64(len("payload")),
+				}),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrObjectLocked),
+			},
+		},
+		{
 			name: "backend returns error",
 			input: testInput{
 				beErr: s3err.GetAPIError(s3err.ErrNoSuchBucket),
@@ -733,6 +754,22 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 				},
 				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
 					return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+				},
+				GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
+					return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+				},
+				GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+					if tt.input.extraMockResp != nil {
+						return tt.input.extraMockResp.([]byte), nil
+					}
+					return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+				},
+				GetObjectRetentionFunc: func(contextMoqParam context.Context, bucket, object, versionId string) ([]byte, error) {
+					return nil, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)
+				},
+				GetObjectLegalHoldFunc: func(contextMoqParam context.Context, bucket, object, versionId string) (*bool, error) {
+					legalHold := true
+					return &legalHold, nil
 				},
 			}
 

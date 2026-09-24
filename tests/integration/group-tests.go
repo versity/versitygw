@@ -896,9 +896,11 @@ func TestWORMProtection(ts *TestState) {
 	ts.Run(WORMProtection_object_lock_retention_governance_bypass_overwrite_put)
 	ts.Run(WORMProtection_object_lock_retention_governance_bypass_overwrite_copy)
 	ts.Run(WORMProtection_object_lock_retention_governance_bypass_overwrite_mp)
+	ts.Run(WORMProtection_object_lock_retention_governance_bypass_overwrite_post)
 	ts.Run(WORMProtection_unable_to_overwrite_locked_object_put)
 	ts.Run(WORMProtection_unable_to_overwrite_locked_object_copy)
 	ts.Run(WORMProtection_unable_to_overwrite_locked_object_mp)
+	ts.Run(WORMProtection_unable_to_overwrite_locked_object_post)
 	ts.Run(WORMProtection_object_lock_retention_governance_bypass_delete)
 	ts.Run(WORMProtection_object_lock_retention_governance_bypass_delete_mul)
 	ts.Run(WORMProtection_object_lock_legal_hold_locked)
@@ -3437,9 +3439,11 @@ func GetIntTests() IntTests {
 		"WORMProtection_object_lock_retention_governance_bypass_overwrite_put":             WORMProtection_object_lock_retention_governance_bypass_overwrite_put,
 		"WORMProtection_object_lock_retention_governance_bypass_overwrite_copy":            WORMProtection_object_lock_retention_governance_bypass_overwrite_copy,
 		"WORMProtection_object_lock_retention_governance_bypass_overwrite_mp":              WORMProtection_object_lock_retention_governance_bypass_overwrite_mp,
+		"WORMProtection_object_lock_retention_governance_bypass_overwrite_post":            WORMProtection_object_lock_retention_governance_bypass_overwrite_post,
 		"WORMProtection_unable_to_overwrite_locked_object_put":                             WORMProtection_unable_to_overwrite_locked_object_put,
 		"WORMProtection_unable_to_overwrite_locked_object_copy":                            WORMProtection_unable_to_overwrite_locked_object_copy,
 		"WORMProtection_unable_to_overwrite_locked_object_mp":                              WORMProtection_unable_to_overwrite_locked_object_mp,
+		"WORMProtection_unable_to_overwrite_locked_object_post":                            WORMProtection_unable_to_overwrite_locked_object_post,
 		"WORMProtection_object_lock_retention_governance_bypass_delete":                    WORMProtection_object_lock_retention_governance_bypass_delete,
 		"WORMProtection_object_lock_retention_governance_bypass_delete_mul":                WORMProtection_object_lock_retention_governance_bypass_delete_mul,
 		"WORMProtection_object_lock_legal_hold_locked":                                     WORMProtection_object_lock_legal_hold_locked,
