@@ -1751,6 +1751,7 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_identity_policy_resource_scoping)
 	ts.Run(S3IAMAccessControl_identity_policy_bucket_vs_object_arn)
 	ts.Run(S3IAMAccessControl_post_object_identity_policy_resource_scoping)
+	ts.Run(S3IAMAccessControl_post_object_tagging_identity_policy)
 	ts.Run(S3IAMAccessControl_identity_policy_not_action_and_not_resource)
 	ts.Run(S3IAMAccessControl_identity_policy_explicit_deny_wins)
 	ts.Run(S3IAMAccessControl_multiple_inline_policies_combine)
@@ -2131,6 +2132,9 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_access_denied)
 	ts.Run(PostObject_bucket_policy_object_resource)
 	ts.Run(PostObject_bucket_policy_explicit_deny)
+	ts.Run(PostObject_tagging_requires_put_object_tagging)
+	ts.Run(PostObject_tagging_bucket_policy_explicit_deny)
+	ts.Run(PostObject_empty_tag_set_requires_only_put_object)
 	ts.Run(PostObject_invalid_object_names)
 	ts.Run(PostObject_policy_access_control)
 	ts.Run(PostObject_policy_expired)
@@ -2262,6 +2266,7 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_identity_policy_resource_scoping":                              S3IAMAccessControl_identity_policy_resource_scoping,
 		"S3IAMAccessControl_identity_policy_bucket_vs_object_arn":                          S3IAMAccessControl_identity_policy_bucket_vs_object_arn,
 		"S3IAMAccessControl_post_object_identity_policy_resource_scoping":                  S3IAMAccessControl_post_object_identity_policy_resource_scoping,
+		"S3IAMAccessControl_post_object_tagging_identity_policy":                           S3IAMAccessControl_post_object_tagging_identity_policy,
 		"S3IAMAccessControl_identity_policy_not_action_and_not_resource":                   S3IAMAccessControl_identity_policy_not_action_and_not_resource,
 		"S3IAMAccessControl_identity_policy_explicit_deny_wins":                            S3IAMAccessControl_identity_policy_explicit_deny_wins,
 		"S3IAMAccessControl_multiple_inline_policies_combine":                              S3IAMAccessControl_multiple_inline_policies_combine,
@@ -3699,6 +3704,9 @@ func GetIntTests() IntTests {
 		"PostObject_access_denied":                                                         PostObject_access_denied,
 		"PostObject_bucket_policy_object_resource":                                         PostObject_bucket_policy_object_resource,
 		"PostObject_bucket_policy_explicit_deny":                                           PostObject_bucket_policy_explicit_deny,
+		"PostObject_tagging_requires_put_object_tagging":                                   PostObject_tagging_requires_put_object_tagging,
+		"PostObject_tagging_bucket_policy_explicit_deny":                                   PostObject_tagging_bucket_policy_explicit_deny,
+		"PostObject_empty_tag_set_requires_only_put_object":                                PostObject_empty_tag_set_requires_only_put_object,
 		"PostObject_invalid_object_names":                                                  PostObject_invalid_object_names,
 		"PostObject_policy_access_control":                                                 PostObject_policy_access_control,
 		"PostObject_policy_expired":                                                        PostObject_policy_expired,

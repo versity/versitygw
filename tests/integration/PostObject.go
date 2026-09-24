@@ -428,6 +428,238 @@ func PostObject_bucket_policy_explicit_deny(s *S3Conf) error {
 	})
 }
 
+func PostObject_tagging_requires_put_object_tagging(s *S3Conf) error {
+	testName := "PostObject_tagging_requires_put_object_tagging"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		key := "my-obj"
+		taggingXML := `<Tagging><TagSet><Tag><Key>env</Key><Value>test</Value></Tag></TagSet></Tagging>`
+		post := func() (*http.Response, error) {
+			return sendPostObject(PostRequestConfig{
+				bucket:      bucket,
+				key:         key,
+				access:      testuser.access,
+				secret:      testuser.secret,
+				s3Conf:      s,
+				fileContent: []byte("data"),
+				policyConditions: []any{
+					[]any{"eq", "$tagging", taggingXML},
+				},
+				extraFields: map[string]string{
+					"tagging": taggingXML,
+				},
+			})
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		resp, err := post()
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("POST with s3:PutObject only: %w", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "NotFound"); err != nil {
+			return fmt.Errorf("expected the denied POST not to create %s: %w", key, err)
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    []string{"s3:PutObject", "s3:PutObjectTagging"},
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		resp, err = post()
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("POST with s3:PutObject and s3:PutObjectTagging: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		tagging, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedTagging := []types.Tag{{Key: getPtr("env"), Value: getPtr("test")}}
+		if !areTagsSame(expectedTagging, tagging.TagSet) {
+			return fmt.Errorf("expected %v tagging, instead got %v", expectedTagging, tagging.TagSet)
+		}
+
+		return nil
+	})
+}
+
+// PostObject_tagging_bucket_policy_explicit_deny covers a Deny on
+// s3:PutObjectTagging scoped to a key prefix. It refuses a tagged POST
+// upload to a key under that prefix although a bucket-wide Allow grants
+// both actions, and leaves an untagged upload there, which needs only
+// s3:PutObject, alone.
+func PostObject_tagging_bucket_policy_explicit_deny(s *S3Conf) error {
+	testName := "PostObject_tagging_bucket_policy_explicit_deny"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket,
+			bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    []string{"s3:PutObject", "s3:PutObjectTagging"},
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+			},
+			bucketStatement{
+				Effect:    "Deny",
+				Principal: testuser.access,
+				Action:    "s3:PutObjectTagging",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/private/*", bucket),
+			},
+		); err != nil {
+			return err
+		}
+
+		cfg := func(key string) PostRequestConfig {
+			return PostRequestConfig{
+				bucket:      bucket,
+				key:         key,
+				access:      testuser.access,
+				secret:      testuser.secret,
+				s3Conf:      s,
+				fileContent: []byte("data"),
+			}
+		}
+		taggingXML := `<Tagging><TagSet><Tag><Key>env</Key><Value>test</Value></Tag></TagSet></Tagging>`
+		tagged := func(key string) PostRequestConfig {
+			c := cfg(key)
+			c.policyConditions = []any{
+				[]any{"eq", "$tagging", taggingXML},
+			}
+			c.extraFields = map[string]string{
+				"tagging": taggingXML,
+			}
+			return c
+		}
+
+		allowedKey := "public/my-obj"
+		resp, err := sendPostObject(tagged(allowedKey))
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("tagged POST %s: %w", allowedKey, err)
+		}
+
+		deniedKey := "private/my-obj"
+		resp, err = sendPostObject(tagged(deniedKey))
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, s3err.GetExplicitDenyAccessErr(testuser.access, "s3:PutObjectTagging",
+			fmt.Sprintf("arn:aws:s3:::%s/%s", bucket, deniedKey), "a resource-based policy")); err != nil {
+			return fmt.Errorf("tagged POST %s: %w", deniedKey, err)
+		}
+
+		resp, err = sendPostObject(cfg(deniedKey))
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("untagged POST %s: %w", deniedKey, err)
+		}
+		return nil
+	})
+}
+
+// PostObject_empty_tag_set_requires_only_put_object covers a tagging field
+// whose tag set is empty. It tags nothing, so the upload needs only
+// s3:PutObject, as it does on S3.
+func PostObject_empty_tag_set_requires_only_put_object(s *S3Conf) error {
+	testName := "PostObject_empty_tag_set_requires_only_put_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		key := "my-obj"
+		taggingXML := `<Tagging><TagSet></TagSet></Tagging>`
+		resp, err := sendPostObject(PostRequestConfig{
+			bucket:      bucket,
+			key:         key,
+			access:      testuser.access,
+			secret:      testuser.secret,
+			s3Conf:      s,
+			fileContent: []byte("data"),
+			policyConditions: []any{
+				[]any{"eq", "$tagging", taggingXML},
+			},
+			extraFields: map[string]string{
+				"tagging": taggingXML,
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		tagging, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if len(tagging.TagSet) != 0 {
+			return fmt.Errorf("expected no tags, instead got %v", tagging.TagSet)
+		}
+
+		return nil
+	})
+}
+
 func PostObject_invalid_object_names(s *S3Conf) error {
 	testName := "PostObject_invalid_object_names"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
