@@ -43,6 +43,15 @@ CUOBJ_LIB_DIR ?= /usr/local/cuda-13.3/targets/x86_64-linux/lib
 CUOBJ_SERVER_INC_DIR ?= /usr/include
 CUOBJ_CLIENT_INC_DIR ?= /usr/include
 CUOBJ_CUDA_INC_DIR ?= /usr/local/cuda/include
+# hipObject client library (hipobj-rc-v2 data plane) for the rcobj
+# binding. The binding is opt-in: without HIPOBJ_ENABLED the rcobj
+# package builds its non-cgo stub and cuobjtest drops the -v2 mode.
+HIPOBJ_ENABLED ?=
+HIPOBJ_INC_DIR ?= /usr/include
+HIPOBJ_LIB_DIR ?= /usr/lib
+RCOBJ_RPATH=-Wl,-rpath,$(HIPOBJ_LIB_DIR)
+RCOBJ_CGO_CFLAGS=$(if $(HIPOBJ_ENABLED),-I$(HIPOBJ_INC_DIR),)
+RCOBJ_CGO_LDFLAGS=$(if $(HIPOBJ_ENABLED),-L$(HIPOBJ_LIB_DIR) $(RCOBJ_RPATH) -lhipobj -lstdc++,)
 CXX ?= g++
 AR ?= ar
 
@@ -119,9 +128,9 @@ cuobjtest: cuobjtest-gpu
 .PHONY: cuobjtest-gpu
 cuobjtest-gpu: $(CUOBJCLIENT_WRAPPER_LIB)
 	CGO_ENABLED=1 \
-	CGO_CFLAGS="$(CUOBJCLIENT_CGO_CFLAGS)" \
-	CGO_LDFLAGS="$(CUOBJCLIENT_CGO_LDFLAGS)" \
-		$(GOBUILD) -buildvcs=false -tags rdma $(LDFLAGS) -o $(CUOBJTEST_BIN) $(CUOBJTEST_CMD)
+	CGO_CFLAGS="$(CUOBJCLIENT_CGO_CFLAGS) $(RCOBJ_CGO_CFLAGS)" \
+	CGO_LDFLAGS="$(CUOBJCLIENT_CGO_LDFLAGS) $(RCOBJ_CGO_LDFLAGS)" \
+		$(GOBUILD) -buildvcs=false -tags rdma $(if $(HIPOBJ_ENABLED),-tags hipobj,) $(LDFLAGS) -o $(CUOBJTEST_BIN) $(CUOBJTEST_CMD)
 
 .PHONY: cuobjtest-host
 cuobjtest-host: $(HOSTCLIENT_WRAPPER_LIB)
