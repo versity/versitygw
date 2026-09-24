@@ -1748,6 +1748,7 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_identity_policy_action_wildcards)
 	ts.Run(S3IAMAccessControl_identity_policy_resource_scoping)
 	ts.Run(S3IAMAccessControl_identity_policy_bucket_vs_object_arn)
+	ts.Run(S3IAMAccessControl_post_object_identity_policy_resource_scoping)
 	ts.Run(S3IAMAccessControl_identity_policy_not_action_and_not_resource)
 	ts.Run(S3IAMAccessControl_identity_policy_explicit_deny_wins)
 	ts.Run(S3IAMAccessControl_multiple_inline_policies_combine)
@@ -1937,6 +1938,8 @@ func TestPublicBuckets(ts *TestState) {
 	}
 	ts.Run(PublicBucket_public_acl)
 	ts.Run(PublicBucket_policy_deny_overrides_public_acl)
+	ts.Run(PublicBucket_post_object_policy)
+	ts.Run(PublicBucket_post_object_policy_deny_overrides_public_acl)
 	ts.Run(PublicBucket_signed_streaming_payload)
 	ts.Run(PublicBucket_incorrect_sha256_hash)
 }
@@ -2122,6 +2125,8 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_signature_mismatch)
 	ts.Run(PostObject_expired_due_to_date)
 	ts.Run(PostObject_access_denied)
+	ts.Run(PostObject_bucket_policy_object_resource)
+	ts.Run(PostObject_bucket_policy_explicit_deny)
 	ts.Run(PostObject_invalid_object_names)
 	ts.Run(PostObject_policy_access_control)
 	ts.Run(PostObject_policy_expired)
@@ -2252,6 +2257,7 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_identity_policy_action_wildcards":                              S3IAMAccessControl_identity_policy_action_wildcards,
 		"S3IAMAccessControl_identity_policy_resource_scoping":                              S3IAMAccessControl_identity_policy_resource_scoping,
 		"S3IAMAccessControl_identity_policy_bucket_vs_object_arn":                          S3IAMAccessControl_identity_policy_bucket_vs_object_arn,
+		"S3IAMAccessControl_post_object_identity_policy_resource_scoping":                  S3IAMAccessControl_post_object_identity_policy_resource_scoping,
 		"S3IAMAccessControl_identity_policy_not_action_and_not_resource":                   S3IAMAccessControl_identity_policy_not_action_and_not_resource,
 		"S3IAMAccessControl_identity_policy_explicit_deny_wins":                            S3IAMAccessControl_identity_policy_explicit_deny_wins,
 		"S3IAMAccessControl_multiple_inline_policies_combine":                              S3IAMAccessControl_multiple_inline_policies_combine,
@@ -3507,6 +3513,8 @@ func GetIntTests() IntTests {
 		"PublicBucket_public_object_policy":                                                PublicBucket_public_object_policy,
 		"PublicBucket_public_acl":                                                          PublicBucket_public_acl,
 		"PublicBucket_policy_deny_overrides_public_acl":                                    PublicBucket_policy_deny_overrides_public_acl,
+		"PublicBucket_post_object_policy":                                                  PublicBucket_post_object_policy,
+		"PublicBucket_post_object_policy_deny_overrides_public_acl":                        PublicBucket_post_object_policy_deny_overrides_public_acl,
 		"PublicBucket_signed_streaming_payload":                                            PublicBucket_signed_streaming_payload,
 		"PublicBucket_incorrect_sha256_hash":                                               PublicBucket_incorrect_sha256_hash,
 		"PutBucketVersioning_non_existing_bucket":                                          PutBucketVersioning_non_existing_bucket,
@@ -3681,6 +3689,8 @@ func GetIntTests() IntTests {
 		"PostObject_signature_mismatch":                                                    PostObject_signature_mismatch,
 		"PostObject_expired_due_to_date":                                                   PostObject_expired_due_to_date,
 		"PostObject_access_denied":                                                         PostObject_access_denied,
+		"PostObject_bucket_policy_object_resource":                                         PostObject_bucket_policy_object_resource,
+		"PostObject_bucket_policy_explicit_deny":                                           PostObject_bucket_policy_explicit_deny,
 		"PostObject_invalid_object_names":                                                  PostObject_invalid_object_names,
 		"PostObject_policy_access_control":                                                 PostObject_policy_access_control,
 		"PostObject_policy_expired":                                                        PostObject_policy_expired,

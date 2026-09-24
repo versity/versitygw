@@ -309,6 +309,125 @@ func PostObject_access_denied(s *S3Conf) error {
 	})
 }
 
+// PostObject_bucket_policy_object_resource covers a user whose only upload
+// grant is a bucket policy scoped to a key prefix. A POST upload is an
+// s3:PutObject on the object its key field names, so it is authorized
+// against that object's ARN, as PutObject is: the grant on
+// "bucket/uploads/*" allows a key under uploads/ and denies any other.
+func PostObject_bucket_policy_object_resource(s *S3Conf) error {
+	testName := "PostObject_bucket_policy_object_resource"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: testuser.access,
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/uploads/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		post := func(key string) (*http.Response, error) {
+			return sendPostObject(PostRequestConfig{
+				bucket:      bucket,
+				key:         key,
+				access:      testuser.access,
+				secret:      testuser.secret,
+				s3Conf:      s,
+				fileContent: []byte("data"),
+			})
+		}
+
+		allowedKey := "uploads/my-obj"
+		resp, err := post(allowedKey)
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("POST %s: %w", allowedKey, err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &allowedKey,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected %s to be uploaded: %w", allowedKey, err)
+		}
+
+		resp, err = post("private/my-obj")
+		if err != nil {
+			return err
+		}
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}
+
+// PostObject_bucket_policy_explicit_deny covers a Deny statement scoped to
+// a key prefix overriding a bucket-wide Allow for POST uploads, the way it
+// does for PutObject: the Deny on "bucket/private/*" matches the object ARN
+// a POST to a private/ key is authorized against, and nothing else.
+func PostObject_bucket_policy_explicit_deny(s *S3Conf) error {
+	testName := "PostObject_bucket_policy_explicit_deny"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket,
+			bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:PutObject",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+			},
+			bucketStatement{
+				Effect:    "Deny",
+				Principal: testuser.access,
+				Action:    "s3:PutObject",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/private/*", bucket),
+			},
+		); err != nil {
+			return err
+		}
+
+		post := func(key string) (*http.Response, error) {
+			return sendPostObject(PostRequestConfig{
+				bucket:      bucket,
+				key:         key,
+				access:      testuser.access,
+				secret:      testuser.secret,
+				s3Conf:      s,
+				fileContent: []byte("data"),
+			})
+		}
+
+		allowedKey := "public/my-obj"
+		resp, err := post(allowedKey)
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("POST %s: %w", allowedKey, err)
+		}
+
+		deniedKey := "private/my-obj"
+		resp, err = post(deniedKey)
+		if err != nil {
+			return err
+		}
+		return checkHTTPResponseApiErr(resp, s3err.GetExplicitDenyAccessErr(testuser.access, "s3:PutObject",
+			fmt.Sprintf("arn:aws:s3:::%s/%s", bucket, deniedKey), "a resource-based policy"))
+	})
+}
+
 func PostObject_invalid_object_names(s *S3Conf) error {
 	testName := "PostObject_invalid_object_names"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

@@ -57,6 +57,15 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 		}
 
 		bucket, object := parsePath(ctx.Path())
+		if s3action == metrics.ActionPostObject {
+			// A POST upload is addressed to the bucket; the object it writes
+			// is named by the form's key field instead, which
+			// AuthorizePostObject has already parsed. Authorize against that
+			// object's ARN, as PutObject is.
+			if parsed, ok := utils.ContextKeyObjectPostResult.Get(ctx).(PostObjectResult); ok {
+				object = parsed.Fields["key"]
+			}
+		}
 		err := auth.VerifyPublicAccess(ctx, be, policyPermission, permission, bucket, object)
 		if err != nil {
 			if s3action == metrics.ActionHeadBucket {

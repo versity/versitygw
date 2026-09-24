@@ -131,6 +131,9 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 
 	key := parsed.Fields["key"]
 
+	// A POST upload is an s3:PutObject on the object named by the form's
+	// key field, so it is authorized against that object's ARN — the same
+	// resource PutObject is — not the bucket's.
 	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
 			Acl:             parsedAcl,
@@ -138,6 +141,7 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 			IsRoot:          isRoot,
 			Acc:             acct,
 			Bucket:          bucket,
+			Object:          key,
 			Actions:         []auth.Action{auth.PutObjectAction},
 			IsPublicRequest: IsBucketPublic,
 		})
