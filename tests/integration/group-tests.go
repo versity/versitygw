@@ -2023,8 +2023,10 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_DeleteObject_nested_dir_object)
 	ts.Run(Versioning_DeleteObject_non_existing_objects)
 	ts.Run(Versioning_DeleteObject_suspended)
+	ts.Run(Versioning_DeleteObject_never_versioned_bucket)
 	ts.Run(Versioning_DeleteObjects_success)
 	ts.Run(Versioning_DeleteObjects_delete_deleteMarkers)
+	ts.Run(Versioning_DeleteObjects_never_versioned_bucket)
 	// ListObjectVersions
 	ts.Run(ListObjectVersions_non_existing_bucket)
 	ts.Run(ListObjectVersions_negative_max_keys)
@@ -3570,8 +3572,10 @@ func GetIntTests() IntTests {
 		"Versioning_DeleteObject_nested_dir_object":                                        Versioning_DeleteObject_nested_dir_object,
 		"Versioning_DeleteObject_non_existing_objects":                                     Versioning_DeleteObject_non_existing_objects,
 		"Versioning_DeleteObject_suspended":                                                Versioning_DeleteObject_suspended,
+		"Versioning_DeleteObject_never_versioned_bucket":                                   Versioning_DeleteObject_never_versioned_bucket,
 		"Versioning_DeleteObjects_success":                                                 Versioning_DeleteObjects_success,
 		"Versioning_DeleteObjects_delete_deleteMarkers":                                    Versioning_DeleteObjects_delete_deleteMarkers,
+		"Versioning_DeleteObjects_never_versioned_bucket":                                  Versioning_DeleteObjects_never_versioned_bucket,
 		"ListObjectVersions_non_existing_bucket":                                           ListObjectVersions_non_existing_bucket,
 		"ListObjectVersions_negative_max_keys":                                             ListObjectVersions_negative_max_keys,
 		"ListObjectVersions_list_single_object_versions":                                   ListObjectVersions_list_single_object_versions,
