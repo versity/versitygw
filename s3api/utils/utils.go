@@ -1087,6 +1087,25 @@ func DetectResourceType(ctx fiber.Ctx) s3err.ResourceType {
 	return s3err.ResourceTypeObject
 }
 
+// SetRegionMismatchHeader reports the region the request should have been
+// signed for in the x-amz-bucket-region response header, when err is a signing
+// region mismatch. HEAD requests carry no response body, so the header is the
+// only channel through which a client can discover the gateway region and
+// retry against it, which is how the aws sdks recover from the mismatch.
+func SetRegionMismatchHeader(ctx fiber.Ctx, err error) {
+	rerr, ok := err.(s3err.RegionMismatchError)
+	if !ok {
+		return
+	}
+
+	region := rerr.ExpectedRegion()
+	if region == "" {
+		return
+	}
+
+	ctx.Response().Header.Set("x-amz-bucket-region", region)
+}
+
 // ValidateLocationConstraint checks a CreateBucket location constraint. The
 // global endpoint serves us-east-1 and takes no constraint; any other
 // region is a region specific endpoint and requires the constraint to name it.

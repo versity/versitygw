@@ -17,10 +17,37 @@ package s3err
 import (
 	"fmt"
 	"net/http"
+	"strings"
 )
 
+// argCredential is the canonical spelling of the POST form credential field.
+// S3 echoes the form field names back in <ArgumentName> canonicalized, not as
+// they are spelled in the submitted form.
+const argCredential = "X-Amz-Credential"
+
+// canonicalPOSTFormFields maps the POST form authentication field names to the
+// spelling S3 reports them with. Fields that are not part of the signing
+// protocol, such as "key", are reported as submitted.
+var canonicalPOSTFormFields = map[string]string{
+	"x-amz-algorithm":      "X-Amz-Algorithm",
+	"x-amz-credential":     argCredential,
+	"x-amz-date":           "X-Amz-Date",
+	"x-amz-signature":      "X-Amz-Signature",
+	"x-amz-security-token": "X-Amz-Security-Token",
+}
+
+// canonicalPOSTFormField returns the spelling S3 reports field with, leaving
+// fields outside the signing protocol untouched.
+func canonicalPOSTFormField(field string) string {
+	if canonical, ok := canonicalPOSTFormFields[strings.ToLower(field)]; ok {
+		return canonical
+	}
+
+	return field
+}
+
 // Factory for building s3 object POST authentication errors.
-func invalidPOSTObjectAuthErr(argName, argValue, format string, args ...any) S3Error {
+func invalidPOSTObjectAuthErr(argName, argValue, format string, args ...any) InvalidArgumentError {
 	return InvalidArgumentError{
 		ArgumentName:  argName,
 		ArgumentValue: argValue,
@@ -32,7 +59,7 @@ type invalidPostAuthErr struct{}
 
 func (invalidPostAuthErr) InvalidDateFormat(creds, date string) S3Error {
 	return invalidPOSTObjectAuthErr(
-		"x-amz-credential",
+		argCredential,
 		creds,
 		"incorrect date format %q. This date in the credential must be in the format \"yyyyMMdd\".",
 		date,
@@ -41,7 +68,7 @@ func (invalidPostAuthErr) InvalidDateFormat(creds, date string) S3Error {
 
 func (invalidPostAuthErr) MalformedCredential(creds string) S3Error {
 	return invalidPOSTObjectAuthErr(
-		"x-amz-credential",
+		argCredential,
 		creds,
 		"the Credential is mal-formed; expecting \"<YOUR-AKID>/YYYYMMDD/REGION/SERVICE/aws4_request\".",
 	)
@@ -49,7 +76,7 @@ func (invalidPostAuthErr) MalformedCredential(creds string) S3Error {
 
 func (invalidPostAuthErr) IncorrectTerminal(creds, terminal string) S3Error {
 	return invalidPOSTObjectAuthErr(
-		"x-amz-credential",
+		argCredential,
 		creds,
 		"incorrect terminal %q. This endpoint uses \"aws4_request\".",
 		terminal,
@@ -57,18 +84,21 @@ func (invalidPostAuthErr) IncorrectTerminal(creds, terminal string) S3Error {
 }
 
 func (invalidPostAuthErr) IncorrectRegion(creds, expected, actual string) S3Error {
-	return invalidPOSTObjectAuthErr(
-		"x-amz-credential",
+	err := invalidPOSTObjectAuthErr(
+		argCredential,
 		creds,
-		"the region %q is wrong; expecting %q",
+		"the region '%s' is wrong; expecting '%s'",
 		actual,
 		expected,
 	)
+	err.Region = expected
+
+	return err
 }
 
 func (invalidPostAuthErr) IncorrectService(creds, service string) S3Error {
 	return invalidPOSTObjectAuthErr(
-		"x-amz-credential",
+		argCredential,
 		creds,
 		"incorrect service %q. This endpoint belongs to \"s3\".",
 		service,
@@ -76,11 +106,13 @@ func (invalidPostAuthErr) IncorrectService(creds, service string) S3Error {
 }
 
 func (invalidPostAuthErr) MissingField(field string) S3Error {
+	name := canonicalPOSTFormField(field)
+
 	return invalidPOSTObjectAuthErr(
-		field,
+		name,
 		"",
 		"Bucket POST must contain a field named '%s'.  If it is specified, please check the order of the fields.",
-		field,
+		name,
 	)
 }
 

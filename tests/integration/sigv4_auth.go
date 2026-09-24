@@ -267,6 +267,43 @@ func Authentication_credentials_incorrect_region(s *S3Conf) error {
 	})
 }
 
+// Authentication_credentials_incorrect_region_head verifies that a HEAD request
+// signed for the wrong region reports the gateway region in the
+// x-amz-bucket-region response header. HEAD responses carry no body, so the
+// header is the only channel through which a client can discover the region and
+// retry against it, which is how the aws sdks recover from the mismatch.
+func Authentication_credentials_incorrect_region_head(s *S3Conf) error {
+	testName := "Authentication_credentials_incorrect_region_head"
+	cfg := *s
+	if cfg.awsRegion == "us-east-1" {
+		cfg.awsRegion = "us-west-1"
+	} else {
+		cfg.awsRegion = "us-east-1"
+	}
+	return authHandler(&cfg, &authConfig{
+		testName: testName,
+		path:     getBucketName(),
+		method:   http.MethodHead,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		expected := s3err.MalformedAuth.IncorrectRegion(s.awsRegion, cfg.awsRegion)
+		if resp.StatusCode != expected.BaseError().HTTPStatusCode {
+			return fmt.Errorf("expected response status code to be %v, instead got %v",
+				expected.BaseError().HTTPStatusCode, resp.StatusCode)
+		}
+
+		return checkRegionMismatchHeader(resp, expected)
+	})
+}
+
 func Authentication_credentials_invalid_date(s *S3Conf) error {
 	testName := "Authentication_credentials_invalid_date"
 	return authHandler(s, &authConfig{

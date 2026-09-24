@@ -15,16 +15,64 @@
 package s3err
 
 import (
+	"encoding/xml"
 	"fmt"
 	"net/http"
 )
 
+// AuthQueryParamError is returned when the Signature V4 query parameters of a
+// presigned URL are malformed. Produces a <Region> field in the XML response
+// when the expected gateway region is known.
+type AuthQueryParamError struct {
+	APIError
+	Region string
+}
+
+func (e AuthQueryParamError) XMLBody(requestID, hostID string) []byte {
+	return encodeResponse(struct {
+		XMLName   xml.Name `xml:"Error"`
+		Code      string
+		Message   string
+		Region    string `xml:",omitempty"`
+		RequestID string `xml:"RequestId,omitempty"`
+		HostID    string `xml:"HostId,omitempty"`
+	}{
+		Code:      e.Code,
+		Message:   e.Description,
+		Region:    e.Region,
+		RequestID: requestID,
+		HostID:    hostID,
+	})
+}
+
+func (e AuthQueryParamError) HTMLBody(requestID, hostID string) []byte {
+	// Region is only set for the credential region mismatch; every other
+	// query parameter error leaves it out.
+	if e.Region == "" {
+		return e.APIError.encodeHTMLResponse(requestID, hostID)
+	}
+
+	return e.APIError.encodeHTMLResponse(requestID, hostID,
+		ErrorField{Name: "Region", Value: e.Region},
+	)
+}
+
+// ExpectedRegion implements RegionMismatchError.
+func (e AuthQueryParamError) ExpectedRegion() string { return e.Region }
+
+func (e AuthQueryParamError) Is(target error) bool {
+	t, ok := target.(APIError)
+	return ok && e.APIError == t
+}
+
 // Factory for building AuthorizationQueryParametersError errors.
-func authQueryParamError(format string, args ...any) S3Error {
-	return APIError{
-		Code:           "AuthorizationQueryParametersError",
-		Description:    fmt.Sprintf(format, args...),
-		HTTPStatusCode: http.StatusBadRequest,
+func authQueryParamError(format string, args ...any) AuthQueryParamError {
+	return AuthQueryParamError{
+		APIError: APIError{
+			Code:           "AuthorizationQueryParametersError",
+			Description:    fmt.Sprintf(format, args...),
+			HTTPStatusCode: http.StatusBadRequest,
+		},
 	}
 }
 
@@ -43,7 +91,9 @@ func (queryAuthErrors) IncorrectService(_, s string) S3Error {
 }
 
 func (queryAuthErrors) IncorrectRegion(expected, actual string) S3Error {
-	return authQueryParamError(`Error parsing the X-Amz-Credential parameter; the region %q is wrong; expecting %q`, actual, expected)
+	err := authQueryParamError(`Error parsing the X-Amz-Credential parameter; the region '%s' is wrong; expecting '%s'`, actual, expected)
+	err.Region = expected
+	return err
 }
 
 func (queryAuthErrors) IncorrectTerminal(_, s string) S3Error {

@@ -26,6 +26,7 @@ func TestAuthentication(ts *TestState) {
 	ts.Run(Authentication_credentials_invalid_terminal)
 	ts.Run(Authentication_credentials_incorrect_service)
 	ts.Run(Authentication_credentials_incorrect_region)
+	ts.Run(Authentication_credentials_incorrect_region_head)
 	ts.Run(Authentication_credentials_invalid_date)
 	ts.Run(Authentication_credentials_future_date)
 	ts.Run(Authentication_credentials_past_date)
@@ -2315,6 +2316,7 @@ func GetIntTests() IntTests {
 		"Authentication_credentials_invalid_terminal":                                      Authentication_credentials_invalid_terminal,
 		"Authentication_credentials_incorrect_service":                                     Authentication_credentials_incorrect_service,
 		"Authentication_credentials_incorrect_region":                                      Authentication_credentials_incorrect_region,
+		"Authentication_credentials_incorrect_region_head":                                 Authentication_credentials_incorrect_region_head,
 		"Authentication_credentials_invalid_date":                                          Authentication_credentials_invalid_date,
 		"Authentication_credentials_future_date":                                           Authentication_credentials_future_date,
 		"Authentication_credentials_past_date":                                             Authentication_credentials_past_date,

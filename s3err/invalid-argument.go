@@ -225,11 +225,13 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 }
 
 // InvalidArgumentError is returned when a request argument is invalid.
-// Produces <ArgumentName> and <ArgumentValue> fields in the XML response.
+// Produces <ArgumentName> and <ArgumentValue> fields in the XML response, and
+// a <Region> field when the expected gateway region is known.
 type InvalidArgumentError struct {
 	Description   string
 	ArgumentName  string
 	ArgumentValue string
+	Region        string `xml:",omitempty"`
 }
 
 func (e InvalidArgumentError) BaseError() APIError {
@@ -258,6 +260,7 @@ func (e InvalidArgumentError) XMLBody(requestID, hostID string) []byte {
 		Message       string
 		ArgumentName  string `xml:"ArgumentName,omitempty"`
 		ArgumentValue string `xml:"ArgumentValue,omitempty"`
+		Region        string `xml:"Region,omitempty"`
 		RequestId     string `xml:"RequestId,omitempty"`
 		HostId        string `xml:"HostId,omitempty"`
 	}{
@@ -265,17 +268,29 @@ func (e InvalidArgumentError) XMLBody(requestID, hostID string) []byte {
 		Message:       e.Description,
 		ArgumentName:  e.ArgumentName,
 		ArgumentValue: e.ArgumentValue,
+		Region:        e.Region,
 		RequestId:     requestID,
 		HostId:        hostID,
 	})
 }
 
 func (e InvalidArgumentError) HTMLBody(requestID, hostID string) []byte {
-	return e.BaseError().encodeHTMLResponse(requestID, hostID,
-		ErrorField{Name: "ArgumentName", Value: e.ArgumentName},
-		ErrorField{Name: "ArgumentValue", Value: e.ArgumentValue},
-	)
+	fields := []ErrorField{
+		{Name: "ArgumentName", Value: e.ArgumentName},
+		{Name: "ArgumentValue", Value: e.ArgumentValue},
+	}
+	// Region is only set for the credential region mismatch; every other
+	// invalid argument error leaves it out.
+	if e.Region != "" {
+		fields = append(fields, ErrorField{Name: "Region", Value: e.Region})
+	}
+
+	return e.BaseError().encodeHTMLResponse(requestID, hostID, fields...)
 }
+
+// ExpectedRegion implements RegionMismatchError. Only the credential region
+// mismatch sets Region; every other invalid argument error returns "".
+func (e InvalidArgumentError) ExpectedRegion() string { return e.Region }
 
 func GetInvalidArgumentErr(code InvalidArgErrorCode, value string) InvalidArgumentError {
 	err := invalidArgErrResponses[code]
