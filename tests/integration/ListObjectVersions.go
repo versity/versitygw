@@ -599,6 +599,136 @@ func ListObjectVersions_single_null_versionId_object(s *S3Conf) error {
 	})
 }
 
+func ListObjectVersions_paginate_null_version(s *S3Conf) error {
+	testName := "ListObjectVersions_paginate_null_version"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// the null version sits in the middle of the version history:
+		// it's an object for "a-obj" and "c-dir/" and a delete marker
+		// for "b-obj"
+		objs := []string{"a-obj", "b-obj", "c-dir/"}
+		oldVersions := map[string][]types.ObjectVersion{}
+		for _, obj := range objs {
+			versions, err := createObjVersions(s3client, bucket, obj, 2)
+			if err != nil {
+				return err
+			}
+			versions[0].IsLatest = getBoolPtr(false)
+			oldVersions[obj] = versions
+		}
+
+		err := putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
+		if err != nil {
+			return err
+		}
+
+		nullVersions := map[string][]types.ObjectVersion{}
+		for _, obj := range []string{"a-obj", "c-dir/"} {
+			size := objDataLen(obj, 100)
+			out, err := putObjectWithData(size, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+			nullVersions[obj] = []types.ObjectVersion{
+				{
+					ETag:         out.res.ETag,
+					IsLatest:     getBoolPtr(false),
+					Key:          &obj,
+					Size:         &size,
+					VersionId:    &nullVersionId,
+					StorageClass: types.ObjectVersionStorageClassStandard,
+				},
+			}
+		}
+
+		delMarkerObj := "b-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &delMarkerObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		delMarkers := []types.DeleteMarkerEntry{
+			{
+				Key:       &delMarkerObj,
+				VersionId: &nullVersionId,
+				IsLatest:  getBoolPtr(false),
+			},
+		}
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+		if err != nil {
+			return err
+		}
+
+		versions := []types.ObjectVersion{}
+		for _, obj := range objs {
+			newVersions, err := createObjVersions(s3client, bucket, obj, 2)
+			if err != nil {
+				return err
+			}
+			versions = append(versions, newVersions...)
+			versions = append(versions, nullVersions[obj]...)
+			versions = append(versions, oldVersions[obj]...)
+		}
+
+		// the pages end on each of the versions, the null ones included,
+		// and each version is listed once
+		total := len(versions) + len(delMarkers)
+		for _, maxKeys := range []int32{1, 2, 3, 4, 1000} {
+			var gotVersions []types.ObjectVersion
+			var gotDelMarkers []types.DeleteMarkerEntry
+			var keyMarker, versionIdMarker *string
+			for page := 0; ; page++ {
+				if page > total {
+					return fmt.Errorf("max-keys %v: expected the listing to end within %v pages",
+						maxKeys, total)
+				}
+
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				out, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+					Bucket:          &bucket,
+					MaxKeys:         &maxKeys,
+					KeyMarker:       keyMarker,
+					VersionIdMarker: versionIdMarker,
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("max-keys %v, page %v: %w", maxKeys, page, err)
+				}
+
+				if count := len(out.Versions) + len(out.DeleteMarkers); count > int(maxKeys) {
+					return fmt.Errorf("max-keys %v, page %v: expected at most %v entries, instead got %v",
+						maxKeys, page, maxKeys, count)
+				}
+				gotVersions = append(gotVersions, out.Versions...)
+				gotDelMarkers = append(gotDelMarkers, out.DeleteMarkers...)
+
+				if out.IsTruncated == nil || !*out.IsTruncated {
+					break
+				}
+				keyMarker, versionIdMarker = out.NextKeyMarker, out.NextVersionIdMarker
+			}
+
+			if !compareVersions(versions, gotVersions) {
+				return fmt.Errorf("max-keys %v: expected the listed object versions to be %v, instead got %v",
+					maxKeys, sprintVersions(versions), sprintVersions(gotVersions))
+			}
+			if !compareDelMarkers(delMarkers, gotDelMarkers) {
+				return fmt.Errorf("max-keys %v: expected the listed delete markers to be %v, instead got %v",
+					maxKeys, delMarkers, gotDelMarkers)
+			}
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func ListObjectVersions_checksum(s *S3Conf) error {
 	testName := "ListObjectVersions_checksum"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
