@@ -369,6 +369,7 @@ func TestDeleteObjects(ts *TestState) {
 	ts.Run(DeleteObjects_empty_input)
 	ts.Run(DeleteObjects_non_existing_objects)
 	ts.Run(DeleteObjects_success)
+	ts.Run(DeleteObjects_key_limit)
 }
 
 func TestCopyObject(ts *TestState) {
@@ -3060,6 +3061,7 @@ func GetIntTests() IntTests {
 		"DeleteObjects_empty_input":                                                        DeleteObjects_empty_input,
 		"DeleteObjects_non_existing_objects":                                               DeleteObjects_non_existing_objects,
 		"DeleteObjects_success":                                                            DeleteObjects_success,
+		"DeleteObjects_key_limit":                                                          DeleteObjects_key_limit,
 		"DeleteObjects_iam_mixed_denials_and_success":                                      DeleteObjects_iam_mixed_denials_and_success,
 		"DeleteObjects_iam_all_access_denied":                                              DeleteObjects_iam_all_access_denied,
 		"DeleteObjects_iam_all_locked":                                                     DeleteObjects_iam_all_locked,

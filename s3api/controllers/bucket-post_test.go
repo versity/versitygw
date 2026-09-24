@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -56,6 +57,24 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 			{Key: utils.GetStringPtr("ok")},
 		},
 	})
+	assert.NoError(t, err)
+
+	// 1000 keys is the S3 limit for a single DeleteObjects request; 1001
+	// must be rejected before any of them reaches the backend. The counts
+	// are spelled out rather than derived from the limit constant so the
+	// test pins the documented boundary.
+	const keyLimit = 1000
+	keyLimitObjs := make([]types.ObjectIdentifier, keyLimit+1)
+	for i := range keyLimitObjs {
+		keyLimitObjs[i] = types.ObjectIdentifier{Key: utils.GetStringPtr(fmt.Sprintf("key-%d", i))}
+	}
+	atLimitBody, err := xml.Marshal(s3response.DeleteObjects{Objects: keyLimitObjs[:keyLimit]})
+	assert.NoError(t, err)
+
+	overLimitBody, err := xml.Marshal(s3response.DeleteObjects{Objects: keyLimitObjs})
+	assert.NoError(t, err)
+
+	emptyBody, err := xml.Marshal(s3response.DeleteObjects{Objects: []types.ObjectIdentifier{}})
 	assert.NoError(t, err)
 
 	lockConfig, err := json.Marshal(auth.BucketLockConfig{Enabled: true})
@@ -155,6 +174,70 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 						ObjectCount: 1,
 					},
 				},
+			},
+		},
+		{
+			name: "empty delete list",
+			input: testInput{
+				locals:       defaultLocals,
+				body:         emptyBody,
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
+			},
+			output: testOutput{
+				response: &Response{
+					Data: s3response.DeleteResult{},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+						EventName:   s3event.EventObjectRemovedDeleteObjects,
+						ObjectCount: 0,
+					},
+				},
+			},
+		},
+		{
+			name: "exactly at the 1000 key limit",
+			input: testInput{
+				locals:       defaultLocals,
+				body:         atLimitBody,
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
+			},
+			output: testOutput{
+				response: &Response{
+					Data: s3response.DeleteResult{},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+						EventName:   s3event.EventObjectRemovedDeleteObjects,
+						ObjectCount: 1000,
+					},
+				},
+			},
+			configureMock: func(be *BackendMock) {
+				be.DeleteObjectsFunc = func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
+					assert.Len(t, deleteObjectsInput.Delete.Objects, 1000)
+					return s3response.DeleteResult{}, nil
+				}
+			},
+		},
+		{
+			name: "over the 1000 key limit",
+			input: testInput{
+				locals:       defaultLocals,
+				body:         overLimitBody,
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrMalformedXML),
+			},
+			configureMock: func(be *BackendMock) {
+				be.DeleteObjectsFunc = func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
+					t.Error("backend DeleteObjects called for an over-limit request")
+					return s3response.DeleteResult{}, nil
+				}
 			},
 		},
 		{

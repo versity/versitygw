@@ -353,3 +353,41 @@ func DeleteObjects_iam_all_locked(s *S3Conf) error {
 		return nil
 	}, withLock())
 }
+
+// DeleteObjects_key_limit pins the S3 limit of 1000 keys per request: a
+// batch of exactly 1000 succeeds, and 1001 is rejected with MalformedXML
+// before any of the keys is deleted.
+func DeleteObjects_key_limit(s *S3Conf) error {
+	testName := "DeleteObjects_key_limit"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		delObjects := make([]types.ObjectIdentifier, 1001)
+		for i := range delObjects {
+			delObjects[i] = types.ObjectIdentifier{Key: getPtr(fmt.Sprintf("key-%d", i))}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{Objects: delObjects[:1000]},
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected a 1000 key delete to succeed: %w", err)
+		}
+		if len(out.Deleted) != 1000 {
+			return fmt.Errorf("expected 1000 deleted objects, instead got %v", len(out.Deleted))
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{Objects: delObjects},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
+			return fmt.Errorf("expected 1001 keys to be rejected: %w", err)
+		}
+
+		return nil
+	})
+}
