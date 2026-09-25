@@ -726,6 +726,358 @@ func S3IAMAccessControl_copy_object_requires_both_sides(s *S3Conf) error {
 	})
 }
 
+// S3IAMAccessControl_put_object_tagging_split_sources verifies a tagged
+// PutObject decides s3:PutObject and s3:PutObjectTagging independently,
+// each allowed by either policy: the bucket policy can grant one and the
+// identity policy the other, in either direction, and the tags are applied.
+func S3IAMAccessControl_put_object_tagging_split_sources(s *S3Conf) error {
+	testName := "S3IAMAccessControl_put_object_tagging_split_sources"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		cases := []struct {
+			name           string
+			bucketAction   string
+			identityAction string
+		}{
+			{name: "s3:PutObject from the bucket policy", bucketAction: actS3PutObject, identityAction: actS3PutObjectTagging},
+			{name: "s3:PutObject from the identity policy", bucketAction: actS3PutObjectTagging, identityAction: actS3PutObject},
+		}
+		for _, tc := range cases {
+			if err := func() error {
+				user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+					"p": policyDoc(accessStatement{
+						Effect: "Allow", Action: tc.identityAction, Resource: objectsArn(bucket),
+					}),
+				})
+				if err != nil {
+					return err
+				}
+				defer cleanup()
+
+				if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+					Effect: "Allow", Principal: user.arn, Action: tc.bucketAction, Resource: objectsArn(bucket),
+				}); err != nil {
+					return err
+				}
+
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err = user.client.PutObject(ctx, &s3.PutObjectInput{
+					Bucket:  &bucket,
+					Key:     getPtr("obj"),
+					Tagging: getPtr("env=test"),
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("expected the tagged PutObject to be allowed: %w", err)
+				}
+
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				tagging, err := s.GetClient().GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+					Bucket: &bucket,
+					Key:    getPtr("obj"),
+				})
+				cancel()
+				if err != nil {
+					return err
+				}
+
+				expectedTagging := []types.Tag{{Key: getPtr("env"), Value: getPtr("test")}}
+				if !areTagsSame(expectedTagging, tagging.TagSet) {
+					return fmt.Errorf("expected %v tagging, instead got %v", expectedTagging, tagging.TagSet)
+				}
+				return nil
+			}(); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// S3IAMAccessControl_copy_object_tagging_split_sources verifies a CopyObject
+// replacing the tags decides the destination's s3:PutObject and
+// s3:PutObjectTagging independently: a bucket policy granting s3:PutObject
+// (and s3:GetObject for the source) and an identity policy granting only
+// s3:PutObjectTagging together allow it, and the new tags are applied.
+func S3IAMAccessControl_copy_object_tagging_split_sources(s *S3Conf) error {
+	testName := "S3IAMAccessControl_copy_object_tagging_split_sources"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("src")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3PutObjectTagging, Resource: objectsArn(bucket),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect: "Allow", Principal: user.arn,
+			Action: []string{actS3GetObject, actS3PutObject}, Resource: objectsArn(bucket),
+		}); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user.client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:           &bucket,
+			Key:              getPtr("dst"),
+			CopySource:       getPtr(bucket + "/src"),
+			TaggingDirective: types.TaggingDirectiveReplace,
+			Tagging:          getPtr("env=test"),
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected the tag-replacing CopyObject to be allowed: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		tagging, err := s.GetClient().GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    getPtr("dst"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedTagging := []types.Tag{{Key: getPtr("env"), Value: getPtr("test")}}
+		if !areTagsSame(expectedTagging, tagging.TagSet) {
+			return fmt.Errorf("expected %v tagging, instead got %v", expectedTagging, tagging.TagSet)
+		}
+		return nil
+	})
+}
+
+// S3IAMAccessControl_create_multipart_upload_tagging_split_sources verifies
+// a tagged CreateMultipartUpload decides s3:PutObject and
+// s3:PutObjectTagging independently: a bucket policy granting only
+// s3:PutObject and an identity policy granting only s3:PutObjectTagging
+// together allow it, and the completed object carries the tags.
+func S3IAMAccessControl_create_multipart_upload_tagging_split_sources(s *S3Conf) error {
+	testName := "S3IAMAccessControl_create_multipart_upload_tagging_split_sources"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3PutObjectTagging, Resource: objectsArn(bucket),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect: "Allow", Principal: user.arn, Action: actS3PutObject, Resource: objectsArn(bucket),
+		}); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		mp, err := user.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:  &bucket,
+			Key:     getPtr("obj"),
+			Tagging: getPtr("env=test"),
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected the tagged CreateMultipartUpload to be allowed: %w", err)
+		}
+
+		// UploadPart and CompleteMultipartUpload need only s3:PutObject,
+		// which the bucket policy grants.
+		parts, _, err := uploadParts(user.client, 100, 1, bucket, "obj", *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      getPtr("obj"),
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						ETag:          parts[0].ETag,
+						PartNumber:    parts[0].PartNumber,
+						ChecksumCRC32: parts[0].ChecksumCRC32,
+					},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		tagging, err := s.GetClient().GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    getPtr("obj"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedTagging := []types.Tag{{Key: getPtr("env"), Value: getPtr("test")}}
+		if !areTagsSame(expectedTagging, tagging.TagSet) {
+			return fmt.Errorf("expected %v tagging, instead got %v", expectedTagging, tagging.TagSet)
+		}
+		return nil
+	})
+}
+
+// S3IAMAccessControl_post_object_tagging_split_sources verifies a tagged
+// POST upload decides s3:PutObject and s3:PutObjectTagging independently,
+// each allowed by either policy: a bucket policy granting only
+// s3:PutObject and an identity policy granting only s3:PutObjectTagging
+// together allow it.
+func S3IAMAccessControl_post_object_tagging_split_sources(s *S3Conf) error {
+	testName := "S3IAMAccessControl_post_object_tagging_split_sources"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3PutObjectTagging, Resource: objectsArn(bucket),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect: "Allow", Principal: user.arn, Action: actS3PutObject, Resource: objectsArn(bucket),
+		}); err != nil {
+			return err
+		}
+
+		taggingXML := `<Tagging><TagSet><Tag><Key>env</Key><Value>test</Value></Tag></TagSet></Tagging>`
+		resp, err := sendPostObject(PostRequestConfig{
+			bucket:      bucket,
+			key:         "obj",
+			s3Conf:      &user.conf,
+			fileContent: []byte("data"),
+			policyConditions: []any{
+				[]any{"eq", "$tagging", taggingXML},
+			},
+			extraFields: map[string]string{
+				"tagging": taggingXML,
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("expected the tagged POST to be allowed: %w", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		tagging, err := s.GetClient().GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    getPtr("obj"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedTagging := []types.Tag{{Key: getPtr("env"), Value: getPtr("test")}}
+		if !areTagsSame(expectedTagging, tagging.TagSet) {
+			return fmt.Errorf("expected %v tagging, instead got %v", expectedTagging, tagging.TagSet)
+		}
+		return nil
+	})
+}
+
+// S3IAMAccessControl_put_object_lock_split_sources verifies a PutObject
+// setting a legal hold or a retention decides s3:PutObject and the
+// object-lock action independently: a bucket policy granting only
+// s3:PutObject and an identity policy granting only the object-lock actions
+// together allow it, and the lock is applied.
+func S3IAMAccessControl_put_object_lock_split_sources(s *S3Conf) error {
+	testName := "S3IAMAccessControl_put_object_lock_split_sources"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: []string{"s3:PutObjectLegalHold", "s3:PutObjectRetention"},
+				Resource: objectsArn(bucket),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect: "Allow", Principal: user.arn, Action: actS3PutObject, Resource: objectsArn(bucket),
+		}); err != nil {
+			return err
+		}
+
+		_, err = putObjectWithData(0, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       getPtr("legal-hold"),
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+		}, user.client)
+		if err != nil {
+			return fmt.Errorf("expected the PutObject with a legal hold to be allowed: %w", err)
+		}
+
+		retainUntil := time.Now().UTC().Add(time.Hour)
+		_, err = putObjectWithData(0, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       getPtr("retention"),
+			ObjectLockMode:            types.ObjectLockModeGovernance,
+			ObjectLockRetainUntilDate: &retainUntil,
+		}, user.client)
+		if err != nil {
+			return fmt.Errorf("expected the PutObject with a retention to be allowed: %w", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		legalHold, err := s.GetClient().GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+			Bucket: &bucket,
+			Key:    getPtr("legal-hold"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if legalHold.LegalHold.Status != types.ObjectLockLegalHoldStatusOn {
+			return fmt.Errorf("expected the legal hold to be %s, instead got %s",
+				types.ObjectLockLegalHoldStatusOn, legalHold.LegalHold.Status)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		retention, err := s.GetClient().GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    getPtr("retention"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if retention.Retention.Mode != types.ObjectLockRetentionModeGovernance {
+			return fmt.Errorf("expected the retention mode to be %s, instead got %s",
+				types.ObjectLockRetentionModeGovernance, retention.Retention.Mode)
+		}
+
+		return cleanupLockedObjects(s.GetClient(), bucket, []objToDelete{
+			{key: "legal-hold", removeLegalHold: true},
+			{key: "retention"},
+		})
+	}, withLock())
+}
+
 // S3IAMAccessControl_create_bucket verifies s3:CreateBucket is gated by the
 // identity policy alone — the bucket doesn't exist yet, so there is no
 // bucket policy or ACL to consult — and that the grant is resource-scoped to

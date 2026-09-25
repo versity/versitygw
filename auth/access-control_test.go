@@ -715,17 +715,20 @@ func (b noObjectLockBackend) GetObjectLockConfiguration(_ context.Context, _ str
 	return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
 }
 
-// actionSplitPolicyEvaluator denies exactly one action and allows every
-// other, recording each EvaluatePolicy call it receives — for asserting not
-// just the outcome but that DeleteObjects' mixed batch was split into one
-// call per action rather than evaluated as a single undifferentiated batch.
-type actionSplitPolicyEvaluator struct {
+// actionPolicyEvaluator answers each action with its own decision from
+// identity, and from session when that is set, NoMatch for any action they
+// don't list. It records each EvaluatePolicy call it receives — for
+// asserting not just the outcome but which actions were asked about in
+// which call.
+type actionPolicyEvaluator struct {
 	IAMService
-	denyAction Action
-	calls      []evaluatePolicyCall
+	identity     map[Action]policyDecision
+	session      map[Action]policyDecision
+	principalArn string
+	calls        []evaluatePolicyCall
 }
 
-func (m *actionSplitPolicyEvaluator) EvaluatePolicy(access, sessionToken string, actions []Action, resources []string, condition map[string][]string) (PolicyEvaluation, error) {
+func (m *actionPolicyEvaluator) EvaluatePolicy(access, sessionToken string, actions []Action, resources []string, condition map[string][]string) (PolicyEvaluation, error) {
 	m.calls = append(m.calls, evaluatePolicyCall{
 		access:       access,
 		sessionToken: sessionToken,
@@ -733,23 +736,27 @@ func (m *actionSplitPolicyEvaluator) EvaluatePolicy(access, sessionToken string,
 		resources:    resources,
 		condition:    condition,
 	})
-	decisions := make([][]policyDecision, len(resources))
-	for i := range resources {
-		decisions[i] = make([]policyDecision, len(actions))
-		for j, a := range actions {
-			if a == m.denyAction {
-				decisions[i][j] = policyDecisionNoMatch
-			} else {
-				decisions[i][j] = policyDecisionAllow
+	matrix := func(byAction map[Action]policyDecision) [][]policyDecision {
+		decisions := make([][]policyDecision, len(resources))
+		for i := range resources {
+			decisions[i] = make([]policyDecision, len(actions))
+			for j, a := range actions {
+				decisions[i][j] = byAction[a]
 			}
 		}
+		return decisions
 	}
-	return PolicyEvaluation{Decisions: decisions}, nil
+	eval := PolicyEvaluation{Decisions: matrix(m.identity), PrincipalArn: m.principalArn}
+	if m.session != nil {
+		eval.HasSessionPolicy = true
+		eval.SessionDecisions = matrix(m.session)
+	}
+	return eval, nil
 }
 
 func TestVerifyObjectsAccess_VersionedDeleteNeedsSeparatePermission(t *testing.T) {
 	be := noObjectLockBackend{noBucketPolicyBackend{srcAcl: ACL{Owner: "someone-else"}}}
-	pe := &actionSplitPolicyEvaluator{denyAction: DeleteObjectVersionAction}
+	pe := &actionPolicyEvaluator{identity: map[Action]policyDecision{DeleteObjectAction: policyDecisionAllow}}
 
 	objects := []types.ObjectIdentifier{
 		{Key: strPtr("plain.txt")},
@@ -1100,4 +1107,143 @@ func TestVerifyAccess_AccessKeyPrincipalsStillWorkWithoutArns(t *testing.T) {
 		Actions: []Action{GetObjectAction}, Iam: NewIAMServiceSingle(Account{}),
 	})
 	assert.Equal(t, s3err.GetAPIError(s3err.ErrAccessDenied), err)
+}
+
+// splitPolicy builds a bucket policy for acUser on every object in the test
+// bucket: one Allow statement for allow and one Deny statement for deny,
+// each left out when its list is empty.
+func splitPolicy(allow, deny []Action) string {
+	var statements []map[string]any
+	for effect, actions := range map[string][]Action{"Allow": allow, "Deny": deny} {
+		if len(actions) > 0 {
+			statements = append(statements, map[string]any{
+				"Effect":    effect,
+				"Principal": map[string]string{"AWS": acUser().Arn},
+				"Action":    actions,
+				"Resource":  "arn:aws:s3:::bucket/*",
+			})
+		}
+	}
+	b, err := json.Marshal(map[string]any{"Version": "2012-10-17", "Statement": statements})
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
+// TestVerifyAccess_ActionsAuthorizedIndependently covers a request needing
+// several actions on one object, like a tagged PutObject. Each action is
+// allowed by either the bucket policy or the identity policy on its own, so
+// the two can split the actions between them. A session policy must also
+// allow each action, and a denial names the first action not allowed.
+func TestVerifyAccess_ActionsAuthorizedIndependently(t *testing.T) {
+	const resourceArn = "arn:aws:s3:::bucket/key.txt"
+	arn := acUser().Arn
+	put, tagging := PutObjectAction, PutObjectTaggingAction
+
+	tests := []struct {
+		name        string
+		bucketAllow []Action
+		bucketDeny  []Action
+		identity    map[Action]policyDecision
+		session     map[Action]policyDecision
+		want        error
+	}{
+		{
+			name:        "bucket policy grants s3:PutObject, identity policy the tagging",
+			bucketAllow: []Action{put},
+			identity:    map[Action]policyDecision{tagging: policyDecisionAllow},
+		},
+		{
+			name:        "identity policy grants s3:PutObject, bucket policy the tagging",
+			bucketAllow: []Action{tagging},
+			identity:    map[Action]policyDecision{put: policyDecisionAllow},
+		},
+		{
+			name:        "neither grants the tagging",
+			bucketAllow: []Action{put},
+			want:        s3err.GetImplicitDenyAccessErr(arn, string(tagging), resourceArn),
+		},
+		{
+			name:        "neither grants s3:PutObject",
+			bucketAllow: []Action{tagging},
+			want:        s3err.GetImplicitDenyAccessErr(arn, string(put), resourceArn),
+		},
+		{
+			name:        "neither grants either names the first action",
+			bucketAllow: []Action{GetObjectAction},
+			want:        s3err.GetImplicitDenyAccessErr(arn, string(put), resourceArn),
+		},
+		{
+			name:        "identity deny on the tagging overrides the bucket grant",
+			bucketAllow: []Action{put, tagging},
+			identity:    map[Action]policyDecision{tagging: policyDecisionDeny},
+			want:        s3err.GetExplicitDenyAccessErr(arn, string(tagging), resourceArn, "an identity-based policy"),
+		},
+		{
+			name:        "bucket deny on the tagging overrides the identity grant",
+			bucketAllow: []Action{put},
+			bucketDeny:  []Action{tagging},
+			identity:    map[Action]policyDecision{put: policyDecisionAllow, tagging: policyDecisionAllow},
+			want:        s3err.GetExplicitDenyAccessErr(arn, string(tagging), resourceArn, "a resource-based policy"),
+		},
+		{
+			name:        "session policy filters each action of a split grant",
+			bucketAllow: []Action{put},
+			identity:    map[Action]policyDecision{tagging: policyDecisionAllow},
+			session:     map[Action]policyDecision{put: policyDecisionAllow},
+			want:        s3err.GetImplicitDenyAccessErr(arn, string(tagging), resourceArn),
+		},
+		{
+			name:        "session policy allowing both keeps a split grant",
+			bucketAllow: []Action{put},
+			identity:    map[Action]policyDecision{tagging: policyDecisionAllow},
+			session:     map[Action]policyDecision{put: policyDecisionAllow, tagging: policyDecisionAllow},
+		},
+		{
+			name:        "session deny on the tagging overrides both grants",
+			bucketAllow: []Action{put, tagging},
+			session:     map[Action]policyDecision{put: policyDecisionAllow, tagging: policyDecisionDeny},
+			want:        s3err.GetExplicitDenyAccessErr(arn, string(tagging), resourceArn, "an identity-based policy"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			be := arnPolicyBackend{policy: splitPolicy(tt.bucketAllow, tt.bucketDeny)}
+			pe := &actionPolicyEvaluator{identity: tt.identity, session: tt.session, principalArn: arn}
+
+			err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
+				Acc:     acUser(),
+				Bucket:  "bucket",
+				Object:  "key.txt",
+				Actions: []Action{put, tagging},
+				Iam:     pe,
+			})
+
+			if tt.want == nil {
+				assert.NoError(t, err)
+			} else {
+				assert.Equal(t, tt.want, err)
+			}
+			if len(tt.bucketDeny) == 0 && assert.Len(t, pe.calls, 1, "every action is evaluated in one round trip") {
+				assert.Equal(t, []Action{put, tagging}, pe.calls[0].actions)
+			}
+		})
+	}
+}
+
+// TestVerifyAccess_NoActionsFailsClosed pins that a request naming no
+// action is refused rather than allowed because no action was denied.
+func TestVerifyAccess_NoActionsFailsClosed(t *testing.T) {
+	be := arnPolicyBackend{policy: splitPolicy([]Action{GetObjectAction}, nil)}
+
+	err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
+		Acc:    acUser(),
+		Bucket: "bucket",
+		Object: "key.txt",
+		Iam:    &actionPolicyEvaluator{},
+	})
+
+	assert.Error(t, err)
 }

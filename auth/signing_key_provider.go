@@ -62,11 +62,11 @@ type PolicyEvaluation struct {
 // PolicyEvaluator is implemented by IAM backends that enforce IAM identity
 // (user/role/session) policies against S3 requests — currently only the
 // standalone IAM service client. VerifyAccess type-asserts for this
-// interface and, when present, combines its tri-state decision with the
-// bucket's own policy/ACL decision using AWS's real precedence: an explicit
-// Deny from either source wins outright, otherwise either source's Allow is
-// independently sufficient; backends without it are unaffected — there is
-// no identity-policy layer for them.
+// interface and, when present, combines its tri-state decision for each
+// action with the bucket's own policy/ACL decision for that action using
+// AWS's real precedence: an explicit Deny from either source wins outright,
+// otherwise either source's Allow is independently sufficient; backends
+// without it are unaffected — there is no identity-policy layer for them.
 //
 // The full actions × resources matrix is evaluated in a single batched
 // request rather than one round trip per cell. Both dimensions are really
