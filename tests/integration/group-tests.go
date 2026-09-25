@@ -2051,6 +2051,8 @@ func TestVersioning(ts *TestState) {
 	// Multipart upload
 	ts.Run(Versioning_Multipart_Upload_success)
 	ts.Run(Versioning_Multipart_Upload_overwrite_an_object)
+	ts.Run(Versioning_Multipart_Upload_suspended_overwrite_versioned_object)
+	ts.Run(Versioning_Multipart_Upload_overwrite_keeps_previous_version_metadata)
 	ts.Run(Versioning_UploadPartCopy_invalid_versionId)
 	ts.Run(Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId)
 	ts.Run(Versioning_UploadPartCopy_non_existing_versionId)
@@ -3613,6 +3615,8 @@ func GetIntTests() IntTests {
 		"ListObjectVersions_checksum":                                                      ListObjectVersions_checksum,
 		"Versioning_Multipart_Upload_success":                                              Versioning_Multipart_Upload_success,
 		"Versioning_Multipart_Upload_overwrite_an_object":                                  Versioning_Multipart_Upload_overwrite_an_object,
+		"Versioning_Multipart_Upload_suspended_overwrite_versioned_object":                 Versioning_Multipart_Upload_suspended_overwrite_versioned_object,
+		"Versioning_Multipart_Upload_overwrite_keeps_previous_version_metadata":            Versioning_Multipart_Upload_overwrite_keeps_previous_version_metadata,
 		"Versioning_UploadPartCopy_invalid_versionId":                                      Versioning_UploadPartCopy_invalid_versionId,
 		"Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId":          Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId,
 		"Versioning_UploadPartCopy_non_existing_versionId":                                 Versioning_UploadPartCopy_non_existing_versionId,

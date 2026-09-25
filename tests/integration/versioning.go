@@ -3675,6 +3675,289 @@ func Versioning_Multipart_Upload_overwrite_an_object(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_Multipart_Upload_suspended_overwrite_versioned_object(s *S3Conf) error {
+	testName := "Versioning_Multipart_Upload_suspended_overwrite_versioned_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+
+		// the object becomes the null version once versioning is enabled
+		_, err := putObjectWithData(200, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+		if err != nil {
+			return err
+		}
+
+		// archives the null version
+		verLen := int64(300)
+		ver, err := putObjectWithData(verLen, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		if getString(ver.res.VersionId) == "" {
+			return fmt.Errorf("expected non-empty versionId")
+		}
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
+		if err != nil {
+			return err
+		}
+
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		objSize := int64(400)
+		parts, _, err := uploadParts(s3client, objSize, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						ETag:       parts[0].ETag,
+						PartNumber: parts[0].PartNumber,
+					},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.VersionId != nil {
+			return fmt.Errorf("expected CompleteMultipartUpload response to omit versionId, instead got %v",
+				*res.VersionId)
+		}
+
+		// the new object replaces the null version and the versioned
+		// object it overwrites is kept
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		versions := []types.ObjectVersion{
+			{
+				Key:          &obj,
+				VersionId:    &nullVersionId,
+				ETag:         res.ETag,
+				IsLatest:     getBoolPtr(true),
+				Size:         &objSize,
+				StorageClass: types.ObjectVersionStorageClassStandard,
+			},
+			{
+				Key:          &obj,
+				VersionId:    ver.res.VersionId,
+				ETag:         ver.res.ETag,
+				IsLatest:     getBoolPtr(false),
+				Size:         &verLen,
+				StorageClass: types.ObjectVersionStorageClassStandard,
+				ChecksumType: ver.res.ChecksumType,
+			},
+		}
+
+		if !compareVersions(versions, resp.Versions) {
+			return fmt.Errorf("expected the resulting versions to be %v, instead got %v",
+				versions, resp.Versions)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(head.VersionId) != nullVersionId {
+			return fmt.Errorf("expected the current versionId to be %v, instead got %v",
+				nullVersionId, getString(head.VersionId))
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		get, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: ver.res.VersionId,
+		})
+		if err != nil {
+			cancel()
+			return err
+		}
+		bdy, err := io.ReadAll(get.Body)
+		get.Body.Close()
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !isSameData(bdy, ver.data) {
+			return fmt.Errorf("expected the overwritten version %v data to be kept",
+				*ver.res.VersionId)
+		}
+
+		return nil
+	})
+}
+
+func Versioning_Multipart_Upload_overwrite_keeps_previous_version_metadata(s *S3Conf) error {
+	testName := "Versioning_Multipart_Upload_overwrite_keeps_previous_version_metadata"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+
+		prevLen := int64(100)
+		prev, err := putObjectWithData(prevLen, &s3.PutObjectInput{
+			Bucket:             &bucket,
+			Key:                &obj,
+			ContentType:        getPtr("text/plain"),
+			ContentDisposition: getPtr("inline"),
+			CacheControl:       getPtr("no-cache"),
+			Metadata:           map[string]string{"prev": "val"},
+			Tagging:            getPtr("key=prev"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:             &bucket,
+			Key:                &obj,
+			ContentType:        getPtr("application/json"),
+			ContentDisposition: getPtr("attachment"),
+			CacheControl:       getPtr("max-age=60"),
+			Metadata:           map[string]string{"mp": "val"},
+			Tagging:            getPtr("key=mp"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		objSize := int64(500)
+		parts, _, err := uploadParts(s3client, objSize, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						ETag:       parts[0].ETag,
+						PartNumber: parts[0].PartNumber,
+					},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(res.VersionId) == "" {
+			return fmt.Errorf("expected non-empty versionId")
+		}
+
+		for _, v := range []struct {
+			versionId          *string
+			etag               *string
+			size               int64
+			contentType        string
+			contentDisposition string
+			cacheControl       string
+			metadata           map[string]string
+			tag                string
+		}{
+			{prev.res.VersionId, prev.res.ETag, prevLen, "text/plain", "inline", "no-cache", map[string]string{"prev": "val"}, "prev"},
+			{res.VersionId, res.ETag, objSize, "application/json", "attachment", "max-age=60", map[string]string{"mp": "val"}, "mp"},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: v.versionId,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("head version %v: %w", *v.versionId, err)
+			}
+
+			if getString(head.ETag) != getString(v.etag) {
+				return fmt.Errorf("version %v: expected the etag to be %v, instead got %v",
+					*v.versionId, getString(v.etag), getString(head.ETag))
+			}
+			if head.ContentLength == nil || *head.ContentLength != v.size {
+				return fmt.Errorf("version %v: expected the content length to be %v, instead got %v",
+					*v.versionId, v.size, head.ContentLength)
+			}
+			if getString(head.ContentType) != v.contentType {
+				return fmt.Errorf("version %v: expected the content type to be %v, instead got %v",
+					*v.versionId, v.contentType, getString(head.ContentType))
+			}
+			if getString(head.ContentDisposition) != v.contentDisposition {
+				return fmt.Errorf("version %v: expected the content disposition to be %v, instead got %v",
+					*v.versionId, v.contentDisposition, getString(head.ContentDisposition))
+			}
+			if getString(head.CacheControl) != v.cacheControl {
+				return fmt.Errorf("version %v: expected the cache control to be %v, instead got %v",
+					*v.versionId, v.cacheControl, getString(head.CacheControl))
+			}
+			if !areMapsSame(head.Metadata, v.metadata) {
+				return fmt.Errorf("version %v: expected the metadata to be %v, instead got %v",
+					*v.versionId, v.metadata, head.Metadata)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			tagging, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: v.versionId,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("get version %v tagging: %w", *v.versionId, err)
+			}
+
+			expectedTags := []types.Tag{{Key: getPtr("key"), Value: getPtr(v.tag)}}
+			if !areTagsSame(tagging.TagSet, expectedTags) {
+				return fmt.Errorf("version %v: expected the tags to be %v, instead got %v",
+					*v.versionId, expectedTags, tagging.TagSet)
+			}
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_UploadPartCopy_invalid_versionId(s *S3Conf) error {
 	testName := "Versioning_UploadPartCopy_invalid_versionId"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

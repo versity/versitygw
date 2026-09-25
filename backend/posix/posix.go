@@ -2813,12 +2813,6 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 
 	upiddir := filepath.Join(objdir, activeUploadName)
 
-	objMeta := p.loadObjectMetaProperties(nil, bucket, upiddir, nil)
-	err = p.storeObjectMetaProperties(f.File(), bucket, object, objMeta)
-	if err != nil {
-		return res, "", err
-	}
-
 	objname := p.ObjectPath(bucket, object)
 	dir := filepath.Dir(objname)
 	if dir != "" {
@@ -2842,16 +2836,13 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 	}
 
-	// if the versioning is enabled first create the file object version
-	if p.versioningEnabled() && vEnabled && err == nil {
-		_, err := p.createObjVersion(bucket, object, d.Size(), acct, false)
-		if err != nil {
-			return res, "", fmt.Errorf("create object version: %w", err)
-		}
-		// Clean up object-lock attrs that may have leaked from the previous
-		// version's path-based metadata into this (new) version's sidecar.
-		_ = p.meta.DeleteAttribute(bucket, object, objectLegalHoldKey)
-		_ = p.meta.DeleteAttribute(bucket, object, objectRetentionKey)
+	// Snapshot the object that is about to be replaced before any metadata
+	// of the new object is stored: with path-based metadata (sidecar) the
+	// new object's attributes are written at the object path, so storing
+	// them first would archive them with the previous version.
+	err = p.snapshotObjVersion(bucket, object, vStatus, acct)
+	if err != nil {
+		return res, "", err
 	}
 
 	// Clear the live marker after any snapshot, including when the data file
@@ -2859,6 +2850,26 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	err = p.meta.DeleteAttribute(bucket, object, deleteMarkerKey)
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
 		return res, "", fmt.Errorf("delete object delete-marker: %w", err)
+	}
+
+	// With versioning suspended the new object becomes the null version:
+	// it replaces the null version in the versioning directory, if any.
+	if p.isBucketVersioningSuspended(vStatus) {
+		err = p.deleteNullVersionIdObject(bucket, object)
+		if err != nil {
+			return res, "", err
+		}
+		// Clear any stale versionId sidecar attribute left from a previous
+		// versioned object at this path.  With xattr this is implicit (the
+		// new file carries only the attrs set on the tmpfile), but with
+		// path-based metadata the old attr persists until explicitly deleted.
+		_ = p.meta.DeleteAttribute(bucket, object, versionIdKey)
+	}
+
+	objMeta := p.loadObjectMetaProperties(nil, bucket, upiddir, nil)
+	err = p.storeObjectMetaProperties(f.File(), bucket, object, objMeta)
+	if err != nil {
+		return res, "", err
 	}
 
 	// if the versioning is enabled, generate a new versionID for the object
