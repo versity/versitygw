@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -107,10 +108,10 @@ type AccessOptions struct {
 // decision (policy, or ACL absent one) with an identity-based decision from
 // opts.Iam when it implements PolicyEvaluator. An explicit Deny from either
 // source denies the request outright, even when the other source would
-// otherwise allow it; absent any explicit Deny, either source's Allow is
-// independently sufficient; absent both, the request is denied. All three
-// denial shapes are Code: AccessDenied, HTTP 403 — differing only in the
-// dynamic Message text.
+// otherwise allow it; absent any explicit Deny, each action is allowed by
+// either source's Allow on its own, and the request needs every action
+// allowed. All three denial shapes are Code: AccessDenied, HTTP 403 —
+// differing only in the dynamic Message text.
 func VerifyAccess(ctx fiber.Ctx, be backend.Backend, opts AccessOptions) error {
 	if err := verifyAccessGates(opts); err != nil || !authorizationApplies(opts) {
 		return err
@@ -276,7 +277,19 @@ func authorizationApplies(opts AccessOptions) bool {
 // every key in a single round trip to the IAM service. A per-key loop would
 // cost a backend call and a network round trip per object, and DeleteObjects
 // accepts up to 1000 of them.
+//
+// Within a key, each action is authorized on its own: it is allowed when
+// either the bucket policy or the identity policy allows it, and the key is
+// allowed when every action is. A tagged PutObject whose s3:PutObject comes
+// from the bucket policy and whose s3:PutObjectTagging comes from the
+// identity policy is therefore allowed, though neither source allows both.
 func objectsAccessErrors(ctx context.Context, be backend.Backend, opts AccessOptions, keys []string, condCtx map[string][]string) ([]error, error) {
+	if len(opts.Actions) == 0 {
+		// With every action decided on its own, no actions would leave
+		// nothing to deny. Fail closed rather than allow vacuously.
+		return nil, errors.New("no actions to authorize")
+	}
+
 	resourceDecisions, err := verifyResourceAccess(ctx, be, opts, keys, condCtx)
 	if err != nil {
 		return nil, err
@@ -291,9 +304,9 @@ func objectsAccessErrors(ctx context.Context, be backend.Backend, opts AccessOpt
 	// key says nothing about the next one, which still has to be evaluated
 	// on its own merits.
 	allDenied := true
-	for i, rd := range resourceDecisions {
-		if rd.Decision == policyDecisionDeny {
-			errs[i] = s3err.GetExplicitDenyAccessErr(principalName(opts.Acc), string(rd.Action), objectPolicyArn(opts.Bucket, keys[i], be.NormalizeObjectKey), "a resource-based policy")
+	for i, perAction := range resourceDecisions {
+		if j := slices.Index(perAction, policyDecisionDeny); j >= 0 {
+			errs[i] = s3err.GetExplicitDenyAccessErr(principalName(opts.Acc), string(opts.Actions[j]), objectPolicyArn(opts.Bucket, keys[i], be.NormalizeObjectKey), "a resource-based policy")
 			continue
 		}
 		allDenied = false
@@ -311,13 +324,13 @@ func objectsAccessErrors(ctx context.Context, be backend.Backend, opts AccessOpt
 		// No identity-policy layer exists for this backend at all: preserve
 		// today's exact behavior and generic message, unconditionally, for
 		// every internal/LDAP/Vault/IPA/S3-IAM deployment.
-		for i, rd := range resourceDecisions {
+		for i, perAction := range resourceDecisions {
 			if errs[i] != nil {
 				// Explicitly denied above — keep that specific message
 				// rather than flattening it to the generic one.
 				continue
 			}
-			if rd.Decision != policyDecisionAllow {
+			if slices.ContainsFunc(perAction, func(d policyDecision) bool { return d != policyDecisionAllow }) {
 				errs[i] = s3err.GetAPIError(s3err.ErrAccessDenied)
 			}
 		}
@@ -344,39 +357,39 @@ func objectsAccessErrors(ctx context.Context, be backend.Backend, opts AccessOpt
 
 		resourceArn := objectPolicyArn(opts.Bucket, keys[i], be.NormalizeObjectKey)
 
-		if identity.Decisions[i].Decision == policyDecisionDeny {
-			errs[i] = s3err.GetExplicitDenyAccessErr(principal, string(identity.Decisions[i].Action), resourceArn, "an identity-based policy")
+		if j := slices.Index(identity.Decisions[i], policyDecisionDeny); j >= 0 {
+			errs[i] = s3err.GetExplicitDenyAccessErr(principal, string(opts.Actions[j]), resourceArn, "an identity-based policy")
 			continue
 		}
-		if identity.HasSessionPolicy && identity.SessionDecisions[i].Decision == policyDecisionDeny {
-			errs[i] = s3err.GetExplicitDenyAccessErr(principal, string(identity.SessionDecisions[i].Action), resourceArn, "an identity-based policy")
-			continue
+		if identity.HasSessionPolicy {
+			if j := slices.Index(identity.SessionDecisions[i], policyDecisionDeny); j >= 0 {
+				errs[i] = s3err.GetExplicitDenyAccessErr(principal, string(opts.Actions[j]), resourceArn, "an identity-based policy")
+				continue
+			}
 		}
 
-		granted := resourceDecisions[i].Decision == policyDecisionAllow ||
-			identity.Decisions[i].Decision == policyDecisionAllow
+		// The first action neither source allows is the one the denial
+		// names, which matches AWS: a tagged PutObject missing both actions
+		// names s3:PutObject, and one missing only the tagging action names
+		// s3:PutObjectTagging.
+		for j, action := range opts.Actions {
+			granted := resourceDecisions[i][j] == policyDecisionAllow ||
+				identity.Decisions[i][j] == policyDecisionAllow
 
-		// A session policy filters everything the session can do — including
-		// what the bucket policy granted it, not just what the role's own
-		// policies did. Confirmed against real AWS: a role with no identity
-		// policy at all, a bucket policy granting it both s3:GetObject and
-		// s3:PutObject, and a session policy allowing only s3:GetObject
-		// yields a successful Get and a denied Put.
-		if identity.HasSessionPolicy && identity.SessionDecisions[i].Decision != policyDecisionAllow {
-			granted = false
+			// A session policy filters everything the session can do —
+			// including what the bucket policy granted it, not just what the
+			// role's own policies did: a role with no identity policy at
+			// all, a bucket policy granting it both s3:GetObject and
+			// s3:PutObject, and a session policy allowing only s3:GetObject
+			// yields a successful Get and a denied Put.
+			if identity.HasSessionPolicy && identity.SessionDecisions[i][j] != policyDecisionAllow {
+				granted = false
+			}
+			if !granted {
+				errs[i] = s3err.GetImplicitDenyAccessErr(principal, string(action), resourceArn)
+				break
+			}
 		}
-		if granted {
-			continue
-		}
-
-		blamedAction := resourceDecisions[i].Action
-		if blamedAction == "" {
-			blamedAction = identity.Decisions[i].Action
-		}
-		if blamedAction == "" && identity.HasSessionPolicy {
-			blamedAction = identity.SessionDecisions[i].Action
-		}
-		errs[i] = s3err.GetImplicitDenyAccessErr(principal, string(blamedAction), resourceArn)
 	}
 
 	return errs, nil
@@ -392,21 +405,15 @@ func principalName(acc Account) string {
 	return acc.Access
 }
 
-// decisionForResource is one resource's tri-state decision plus, for
-// Deny/NoMatch, the specific action responsible — so the caller can build an
-// AWS-shaped message naming it.
-type decisionForResource struct {
-	Decision policyDecision
-	Action   Action
-}
-
 // verifyResourceAccess checks the bucket's own policy or, absent one, ACL,
-// for each object key, returning one decision per key. The bucket policy is
-// fetched once regardless of how many keys there are. ACL evaluation can
-// only ever produce Allow/NoMatch — ACLs have no concept of an explicit
-// deny — and applies to the whole bucket, so every key shares its verdict.
-func verifyResourceAccess(ctx context.Context, be backend.Backend, opts AccessOptions, objects []string, condCtx map[string][]string) ([]decisionForResource, error) {
-	decisions := make([]decisionForResource, len(objects))
+// for every action on each object key, returning decisions[i][j] for
+// objects[i] and opts.Actions[j]. The bucket policy is fetched and parsed
+// once regardless of how many keys there are. ACL evaluation can only ever
+// produce Allow/NoMatch — ACLs have no concept of an explicit deny — and
+// grants a permission on the whole bucket rather than an action on an
+// object, so every key and action shares its verdict.
+func verifyResourceAccess(ctx context.Context, be backend.Backend, opts AccessOptions, objects []string, condCtx map[string][]string) ([][]policyDecision, error) {
+	decisions := make([][]policyDecision, len(objects))
 
 	policy, policyErr := be.GetBucketPolicy(ctx, opts.Bucket)
 	if policyErr != nil {
@@ -418,33 +425,36 @@ func verifyResourceAccess(ctx context.Context, be backend.Backend, opts AccessOp
 		if err := verifyACL(opts.Acl, opts.Acc.Access, opts.AclPermission, opts.DisableACL); err != nil {
 			decision = policyDecisionNoMatch
 		}
+		perAction := slices.Repeat([]policyDecision{decision}, len(opts.Actions))
 		for i := range decisions {
-			decisions[i] = decisionForResource{Decision: decision}
+			decisions[i] = perAction
 		}
 		return decisions, nil
 	}
 
+	var bp BucketPolicy
+	if err := json.Unmarshal(policy, &bp); err != nil {
+		return nil, fmt.Errorf("failed to parse the bucket policy: %w", err)
+	}
+
 	for i, object := range objects {
-		decision, action, err := verifyBucketPolicy(policy, opts.Acc, opts.Bucket, object, condCtx, be.NormalizeObjectKey, opts.Actions...)
-		if err != nil {
-			return nil, err
+		resource := makePolicyResource(opts.Bucket, object, be.NormalizeObjectKey)
+		decisions[i] = make([]policyDecision, len(opts.Actions))
+		for j, action := range opts.Actions {
+			decisions[i][j] = bp.decisionFor(opts.Acc, action, resource, condCtx, be.NormalizeObjectKey)
 		}
-		decisions[i] = decisionForResource{Decision: decision, Action: action}
 	}
 	return decisions, nil
 }
 
 // identityPolicyDecisions evaluates every action in opts.Actions against
-// every object key, all in a single request, and aggregates each key's
-// actions with the same precedence bucketPolicyDecision uses for a bucket
-// policy: a Deny on any action wins immediately; otherwise Allow only if
-// every action has a matching Allow; otherwise NoMatch, paired with the
-// first action that lacked one.
-//
-// It returns one decision per key, plus the resolved principal ARN, which is
-// shared across the whole batch since one call always evaluates a single
-// identity.
-func identityPolicyDecisions(pe PolicyEvaluator, opts AccessOptions, objects []string, normalizeObjectKey objectKeyNormalizer, condition map[string][]string) (identityDecisions, error) {
+// every object key, all in a single request. The result keeps one decision
+// per action — Decisions[i][j] for objects[i] and opts.Actions[j], and the
+// same for SessionDecisions when HasSessionPolicy is set — so the caller can
+// combine each action with the bucket policy's decision for that same
+// action. PrincipalArn is shared across the whole batch since one call
+// always evaluates a single identity.
+func identityPolicyDecisions(pe PolicyEvaluator, opts AccessOptions, objects []string, normalizeObjectKey objectKeyNormalizer, condition map[string][]string) (PolicyEvaluation, error) {
 	resources := make([]string, len(objects))
 	for i, object := range objects {
 		resources[i] = objectPolicyArn(opts.Bucket, object, normalizeObjectKey)
@@ -452,68 +462,34 @@ func identityPolicyDecisions(pe PolicyEvaluator, opts AccessOptions, objects []s
 
 	eval, err := pe.EvaluatePolicy(opts.Acc.Access, opts.Acc.SessionToken, opts.Actions, resources, condition)
 	if err != nil {
-		return identityDecisions{}, err
+		return PolicyEvaluation{}, err
 	}
 
-	decisions, err := aggregateActionDecisions(eval.Decisions, resources, opts.Actions)
-	if err != nil {
-		return identityDecisions{}, err
+	if err := checkDecisionMatrix(eval.Decisions, len(resources), len(opts.Actions)); err != nil {
+		return PolicyEvaluation{}, err
 	}
-
-	result := identityDecisions{Decisions: decisions, PrincipalArn: eval.PrincipalArn}
 	if eval.HasSessionPolicy {
-		sessionDecisions, err := aggregateActionDecisions(eval.SessionDecisions, resources, opts.Actions)
-		if err != nil {
-			return identityDecisions{}, err
+		if err := checkDecisionMatrix(eval.SessionDecisions, len(resources), len(opts.Actions)); err != nil {
+			return PolicyEvaluation{}, err
 		}
-		result.HasSessionPolicy = true
-		result.SessionDecisions = sessionDecisions
 	}
-	return result, nil
+	return eval, nil
 }
 
-// identityDecisions is identityPolicyDecisions' result: one aggregated
-// decision per object from the caller's identity policies, the same from its
-// session policy when it has one, and the resolved principal ARN.
-type identityDecisions struct {
-	Decisions        []decisionForResource
-	SessionDecisions []decisionForResource
-	HasSessionPolicy bool
-	PrincipalArn     string
-}
-
-// aggregateActionDecisions collapses each resource's per-action decisions
-// into one, using the same precedence bucketPolicyDecision uses: a Deny on
-// any action wins immediately; otherwise Allow only if every action has a
-// matching Allow; otherwise NoMatch, paired with the first action that
-// lacked one.
-func aggregateActionDecisions(matrix [][]policyDecision, resources []string, actions []Action) ([]decisionForResource, error) {
-	if len(matrix) != len(resources) {
-		// A protocol mismatch between the gateway and IAM service builds —
-		// fail closed rather than authorizing a key nobody evaluated.
-		return nil, fmt.Errorf("evaluate policy returned %d resource decisions for %d resources", len(matrix), len(resources))
+// checkDecisionMatrix confirms matrix holds a decision for every resource
+// and action that was asked about. A mismatch is a protocol mismatch
+// between the gateway and IAM service builds — fail closed rather than
+// authorizing a key or action nobody evaluated.
+func checkDecisionMatrix(matrix [][]policyDecision, resources, actions int) error {
+	if len(matrix) != resources {
+		return fmt.Errorf("evaluate policy returned %d resource decisions for %d resources", len(matrix), resources)
 	}
-
-	results := make([]decisionForResource, len(resources))
-	for i, perAction := range matrix {
-		if len(perAction) != len(actions) {
-			return nil, fmt.Errorf("evaluate policy returned %d action decisions for %d actions", len(perAction), len(actions))
+	for _, perAction := range matrix {
+		if len(perAction) != actions {
+			return fmt.Errorf("evaluate policy returned %d action decisions for %d actions", len(perAction), actions)
 		}
-
-		result := decisionForResource{Decision: policyDecisionAllow}
-		for j, decision := range perAction {
-			if decision == policyDecisionDeny {
-				result = decisionForResource{Decision: policyDecisionDeny, Action: actions[j]}
-				break
-			}
-			if decision == policyDecisionNoMatch && result.Decision != policyDecisionNoMatch {
-				result.Decision = policyDecisionNoMatch
-				result.Action = actions[j]
-			}
-		}
-		results[i] = result
 	}
-	return results, nil
+	return nil
 }
 
 // objectPolicyArn builds the ARN a policy statement is matched against for
@@ -633,9 +609,9 @@ func verifyIdentityOnlyAccess(ctx fiber.Ctx, pe PolicyEvaluator, acc Account, ac
 
 	// A session policy narrows what the session may do; there is no resource
 	// policy to combine with here, so the two decisions simply intersect.
-	decision := identity.Decisions[0].Decision
+	decision := identity.Decisions[0][0]
 	if identity.HasSessionPolicy {
-		switch sd := identity.SessionDecisions[0].Decision; {
+		switch sd := identity.SessionDecisions[0][0]; {
 		case sd == policyDecisionDeny:
 			decision = policyDecisionDeny
 		case sd != policyDecisionAllow && decision == policyDecisionAllow:

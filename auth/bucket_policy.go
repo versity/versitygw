@@ -335,40 +335,16 @@ func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) err
 	return nil
 }
 
-// verifyBucketPolicy parses policyBytes and evaluates it against every
-// action, aggregating with the same precedence isAllowed uses for a single
-// action: a Deny on any action wins immediately (returned along with that
-// action, for building an AWS-shaped message); otherwise the decision is
-// Allow only if every action has a matching Allow; otherwise NoMatch,
-// paired with the first action that lacked one. Zero actions is
-// conservatively NoMatch, not vacuously Allow.
-func verifyBucketPolicy(policyBytes []byte, acc Account, bucket, object string, condCtx map[string][]string, normalizeObjectKey objectKeyNormalizer, actions ...Action) (policyDecision, Action, error) {
-	if len(actions) == 0 {
-		return policyDecisionNoMatch, "", nil
-	}
-
+// verifyBucketPolicy parses policyBytes and evaluates it for one action on
+// bucket/object.
+func verifyBucketPolicy(policyBytes []byte, acc Account, bucket, object string, condCtx map[string][]string, normalizeObjectKey objectKeyNormalizer, action Action) (policyDecision, error) {
 	var bp BucketPolicy
 	if err := json.Unmarshal(policyBytes, &bp); err != nil {
-		return policyDecisionNoMatch, "", fmt.Errorf("failed to parse the bucket policy: %w", err)
+		return policyDecisionNoMatch, fmt.Errorf("failed to parse the bucket policy: %w", err)
 	}
 
 	resource := makePolicyResource(bucket, object, normalizeObjectKey)
-
-	result := policyDecisionAllow
-	var blamed Action
-	for _, action := range actions {
-		switch d := bp.decisionFor(acc, action, resource, condCtx, normalizeObjectKey); d {
-		case policyDecisionDeny:
-			return policyDecisionDeny, action, nil
-		case policyDecisionNoMatch:
-			if result != policyDecisionNoMatch {
-				result = policyDecisionNoMatch
-				blamed = action
-			}
-		}
-	}
-
-	return result, blamed, nil
+	return bp.decisionFor(acc, action, resource, condCtx, normalizeObjectKey), nil
 }
 
 // Checks if the bucket policy grants public access

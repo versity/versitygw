@@ -293,7 +293,7 @@ func verifyBypassGovernancePermission(ctx context.Context, be backend.Backend, i
 	case err != nil:
 		return err
 	default:
-		resourceDecision, _, err = verifyBucketPolicy(policy, acc, bucket, key, condCtx, be.NormalizeObjectKey, BypassGovernanceRetentionAction)
+		resourceDecision, err = verifyBucketPolicy(policy, acc, bucket, key, condCtx, be.NormalizeObjectKey, BypassGovernanceRetentionAction)
 		if err != nil {
 			return err
 		}
@@ -333,11 +333,11 @@ func verifyBypassGovernancePermission(ctx context.Context, be backend.Backend, i
 		return err
 	}
 
-	identityDecision := identity.Decisions[0].Decision
-	sessionDenies := identity.HasSessionPolicy && identity.SessionDecisions[0].Decision == policyDecisionDeny
+	identityDecision := identity.Decisions[0][0]
+	sessionDenies := identity.HasSessionPolicy && identity.SessionDecisions[0][0] == policyDecisionDeny
 	// A session policy filters this permission the same way it filters any
 	// other: it can only take away what the role or the bucket policy grants.
-	sessionWithholds := identity.HasSessionPolicy && identity.SessionDecisions[0].Decision != policyDecisionAllow
+	sessionWithholds := identity.HasSessionPolicy && identity.SessionDecisions[0][0] != policyDecisionAllow
 
 	if identityDecision == policyDecisionDeny || sessionDenies {
 		principal := identity.PrincipalArn
