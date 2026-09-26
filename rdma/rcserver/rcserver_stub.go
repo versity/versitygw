@@ -25,6 +25,7 @@ var errNotSupported = errors.New("rcserver: not supported on this platform")
 // DeviceOpts configures device selection and resource limits.
 type DeviceOpts struct {
 	GidHint             string
+	DevName             string
 	Port                uint8
 	GidIdx              int
 	MaxSessions         uint32
