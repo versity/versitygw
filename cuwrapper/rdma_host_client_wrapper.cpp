@@ -112,6 +112,22 @@ static bool select_gid(rdma_host_client_t *c) {
         return false;
     }
 
+    // Native InfiniBand ports carry no RoCE GID pairs: entry 0 is the
+    // port GID (subnet prefix + port GUID) and it is deliberately
+    // link-local (fe80::/10). The RoCE preference order below skips
+    // link-local entries, so on IB it never finds a candidate and the
+    // caller has to hard-code VGWRDMA_GID_INDEX=0. Select entry 0 here.
+    if (port_attr.link_layer == IBV_LINK_LAYER_INFINIBAND) {
+        union ibv_gid gid = {};
+        if (ibv_query_gid(c->ctx, c->port_num, 0, &gid) || gid_is_zero(gid)) {
+            set_err(c, "InfiniBand port has no GID at index 0");
+            return false;
+        }
+        c->gid_index = 0;
+        c->gid = gid;
+        return true;
+    }
+
     int fallback_gid_index = -1;
     union ibv_gid fallback_gid = {};
     int v1_fallback_gid_index = -1;
@@ -179,8 +195,8 @@ static bool select_gid(rdma_host_client_t *c) {
     }
 
     set_err(c,
-            "no usable GID found on selected RDMA port; "
-            "set VGWRDMA_GID_INDEX to a valid RoCE GID index from `ibv_devinfo -v`");
+            "no usable GID found on selected RoCE port; "
+            "set VGWRDMA_GID_INDEX to a valid GID index from `ibv_devinfo -v`");
     return false;
 }
 
