@@ -28,6 +28,9 @@ struct DeviceHandle {
   uint8_t portNum = 1;
   int gidIndex = -1;
   union ibv_gid localGid = {};
+  /* Port LID, needed to address a peer on an InfiniBand link
+   * layer; stays 0 on RoCE where the GRH alone routes. */
+  uint16_t localLid = 0;
   std::atomic<uint32_t> connRefs{0};
 };
 

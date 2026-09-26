@@ -101,6 +101,8 @@ struct V2Session {
   /* Peer endpoint decoded from the 88-hex token: routes the RTR
    * address handle to the real client GID instead of our own. */
   union ibv_gid peerGid;
+  /* Peer port LID from the PREPARE token; 0 on RoCE. */
+  uint16_t peerLid = 0;
   bool hasPeerGid = false;
   /* PUT staging (host buffer + MR owned by the session). */
   void* staging = nullptr;
