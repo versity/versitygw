@@ -116,6 +116,7 @@ var (
 	rdmaIP                                 string
 	rcGidHint                              string
 	rcDevice                               string
+	rcGidIndex                             int
 	rdmaRCEnable                           bool
 	rdmaPort                               uint
 	poolBufSize                            int
@@ -918,6 +919,13 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_RC_GID_HINT"},
 			Destination: &rcGidHint,
 		},
+		&cli.IntFlag{
+			Name:        "rc-gid-index",
+			Usage:       "GID index for the hipobj-rc-v2 RC data plane",
+			EnvVars:     []string{"VGW_RC_GID_INDEX"},
+			Value:       0,
+			Destination: &rcGidIndex,
+		},
 		&cli.BoolFlag{
 			Name:        "rdma-rc-enable",
 			Usage:       "enable the hipobj-rc-v2 RC control routes and data plane (independent of --rdma-ip)",
@@ -1273,6 +1281,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			GidHint:             rcGidHint,
 			DevName:             rcDevice,
 			Port:                1,
+			GidIdx:              rcGidIndex,
 			MaxSessions:         uint32(rcMaxSessions),
 			MaxUserSessions:     uint32(rcMaxUserSessions),
 			MaxStagingBytes:     rcMaxStagingBytes,
