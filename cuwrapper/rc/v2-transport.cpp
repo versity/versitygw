@@ -104,10 +104,14 @@ int modifyQpToRtr(struct ibv_context* ctx, struct ibv_qp* qp,
   attr.rq_psn = rqPsn;
   attr.max_dest_rd_atomic = 1;
   attr.min_rnr_timer = 12;
-  /* hipObject targets RoCEv2: the GRH with the peer GID is
-   * the routing path; the LID stays unused on RoCE links. */
+  /* The GRH with the peer GID routes on RoCEv2, where the LID is
+   * unused and the caller passes 0. On an InfiniBand link layer the
+   * fabric switches on the DLID, so a zero DLID leaves the peer
+   * unreachable (the RTS-side write fails with a transport retry
+   * or a remote invalid request). Carry the peer LID from the
+   * token; a GRH on IB is still valid, so is_global stays set. */
   attr.ah_attr.is_global = 1;
-  attr.ah_attr.dlid = 0;
+  attr.ah_attr.dlid = destLid;
   attr.ah_attr.grh.dgid = destGid;
   attr.ah_attr.grh.hop_limit = 64;
   attr.ah_attr.grh.sgid_index = gidIndex;
