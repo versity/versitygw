@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <cerrno>
 #include "rc_ibv_host.h"
 
 namespace hipObj {
@@ -13,6 +14,37 @@ IBVWrapper &IBVWrapper::instance() {
 }
 
 IBVWrapper ibv __attribute__((init_priority(400)));
+
+/* The inline verbs wrappers of verbs.h, reproduced: route each call
+ * through the ops table of the context that owns the object. A NULL
+ * slot means the provider does not implement the verb; report that
+ * instead of jumping to address zero. */
+static int dispatchPollCq(struct ibv_cq *cq, int num_entries,
+                          struct ibv_wc *wc) {
+  if (!cq || !cq->context || !cq->context->ops.poll_cq) {
+    errno = ENOSYS;
+    return -1;
+  }
+  return cq->context->ops.poll_cq(cq, num_entries, wc);
+}
+
+static int dispatchPostRecv(struct ibv_qp *qp, struct ibv_recv_wr *wr,
+                            struct ibv_recv_wr **bad_wr) {
+  if (!qp || !qp->context || !qp->context->ops.post_recv) {
+    if (bad_wr) *bad_wr = wr;
+    return ENOSYS;
+  }
+  return qp->context->ops.post_recv(qp, wr, bad_wr);
+}
+
+static int dispatchPostSend(struct ibv_qp *qp, struct ibv_send_wr *wr,
+                            struct ibv_send_wr **bad_wr) {
+  if (!qp || !qp->context || !qp->context->ops.post_send) {
+    if (bad_wr) *bad_wr = wr;
+    return ENOSYS;
+  }
+  return qp->context->ops.post_send(qp, wr, bad_wr);
+}
 
 bool IBVWrapper::ensureLoaded() {
   std::lock_guard<std::mutex> guard(mtx_);
@@ -78,29 +110,14 @@ bool IBVWrapper::ensureLoaded() {
            funcs_.modify_qp != nullptr;
   if (loaded) {
     /* poll_cq/post_send/post_recv are static inline wrappers in
-     * modern verbs.h (they dispatch through cq->context->ops), so
-     * dlsym cannot find them on rdma-core 61+. Resolve them from
-     * the ops table of the first successfully opened context
-     * instead; every context from the same device shares these
-     * providers. */
-    int n = 0;
-    struct ibv_device **devs = funcs_.get_device_list(&n);
-    struct ibv_context *probe = nullptr;
-    if (devs && n > 0) probe = funcs_.open_device(devs[0]);
-    if (devs) funcs_.free_device_list(devs);
-    if (!probe) {
-      fprintf(stderr, "rc: no RDMA device to resolve verbs ops\n");
-      loaded = false;
-    } else {
-      funcs_.poll_cq = probe->ops.poll_cq;
-      funcs_.post_recv = probe->ops.post_recv;
-      funcs_.post_send = probe->ops.post_send;
-      funcs_.close_device(probe);
-      if (!funcs_.poll_cq || !funcs_.post_recv || !funcs_.post_send) {
-        fprintf(stderr, "rc: provider ops table incomplete\n");
-        loaded = false;
-      }
-    }
+     * modern verbs.h that dispatch through the object's own
+     * context->ops table, so dlsym cannot find them on rdma-core
+     * 61+. Dispatch the same way, per call: the provider behind a
+     * QP or CQ is whichever opened its context, and a host with
+     * more than one HCA has more than one provider. */
+    funcs_.poll_cq = dispatchPollCq;
+    funcs_.post_recv = dispatchPostRecv;
+    funcs_.post_send = dispatchPostSend;
   }
   if (loaded) {
     /* Mirror into the member seam for direct ibv.x() calls. */
