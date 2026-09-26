@@ -651,6 +651,14 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	// S3 echoes the request marker back in the response, and includes the
+	// element even when the request carried no marker. Backends return a nil
+	// pointer for an empty marker, which encoding/xml drops entirely, so
+	// restore it here for every backend.
+	if res.Marker == nil {
+		res.Marker = &marker
+	}
+
 	return &Response{
 		Headers: map[string]*string{
 			"x-amz-bucket-region": &region,

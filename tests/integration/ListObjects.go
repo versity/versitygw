@@ -402,8 +402,13 @@ func ListObjects_list_all_objs(s *S3Conf) error {
 			return err
 		}
 
-		if out.Marker != nil {
-			return fmt.Errorf("expected the Marker to be nil, instead got %v",
+		// S3 echoes the request marker back, so the response carries the
+		// element with an empty value rather than omitting it
+		if out.Marker == nil {
+			return fmt.Errorf("expected the Marker to be an empty string, instead got nil")
+		}
+		if *out.Marker != "" {
+			return fmt.Errorf("expected the Marker to be an empty string, instead got %v",
 				*out.Marker)
 		}
 		if out.NextMarker != nil {
