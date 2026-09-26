@@ -347,3 +347,23 @@ list_objects_delimiter() {
   run list_objects_with_prefix_and_delimiter_check_results "$bucket_name" "$1" "$prefix" "/" "a-b/" "--" "a-b-1.txt" "a-b-2.txt"
   assert_success
 }
+
+# tags: curl,ListObjects,marker
+@test "REST - ListObjects - Marker returned when request has no marker" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
+  assert_success
+
+  run list_objects_v1_check_empty_marker "$bucket_name"
+  assert_success
+}
