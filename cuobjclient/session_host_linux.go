@@ -24,8 +24,9 @@
 //
 //	VGWRDMA_RDMA_DEV    RDMA device name (default: first device, e.g. mlx5_0)
 //	VGWRDMA_RDMA_PORT   HCA port number (default: 1)
-//	VGWRDMA_GID_INDEX   RoCE GID index from `ibv_devinfo -v`
-//	                    (default: auto-select first non-link-local GID)
+//	VGWRDMA_GID_INDEX   GID index from `ibv_devinfo -v`
+//	                    (default: RoCE auto-selects the first non-link-local
+//	                    GID, preferring RoCEv2; InfiniBand uses index 0)
 //	VGWRDMA_DC_KEY      Dynamic Connection key, decimal or 0x-hex
 //	                    (default: matches server DCKey 0xffeeddcc)
 package cuobjclient
