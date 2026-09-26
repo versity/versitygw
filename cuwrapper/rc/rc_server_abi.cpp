@@ -346,11 +346,17 @@ int rc_server_init(const rc_device_opts *opts, rc_server **out) {
     return RC_E_INTERNAL;
   }
   struct ibv_device *chosen = devs[0];
-  /* GID hint: pick the first device/port whose GID starts with it.
-   * Query with srv->opts.port, which the normalization above has
-   * already made 1-based. */
+  /* Device name, when given, is the primary filter: on a host with
+   * several HCAs (an IB adapter next to a RoCE NIC, say) neither
+   * "first device" nor the 4-byte GID prefix can single out the
+   * one on the right fabric, since every link-local GID starts
+   * fe:80:0:0. Then the GID hint: pick the first device/port whose
+   * GID starts with it. Query with srv->opts.port, which the
+   * normalization above has already made 1-based. */
+  const bool byName = opts->dev_name && *opts->dev_name;
   struct ibv_context *ctx = nullptr;
   for (int i = 0; i < n && !ctx; i++) {
+    if (byName && strcmp(devs[i]->name, opts->dev_name) != 0) continue;
     struct ibv_context *c = hipObj::ibv.open_device(devs[i]);
     if (!c) continue;
     if (opts->gid_hint) {
@@ -378,8 +384,14 @@ int rc_server_init(const rc_device_opts *opts, rc_server **out) {
   }
   if (!ctx) {
     hipObj::ibv.free_device_list(devs);
-    fprintf(stderr, "rc: no verbs device matches gid_hint %.32s\n",
-            opts->gid_hint ? opts->gid_hint : "");
+    if (byName) {
+      fprintf(stderr, "rc: no verbs device named %.64s%s\n",
+              opts->dev_name,
+              opts->gid_hint ? " with a GID matching gid_hint" : "");
+    } else {
+      fprintf(stderr, "rc: no verbs device matches gid_hint %.32s\n",
+              opts->gid_hint ? opts->gid_hint : "");
+    }
     return RC_E_INTERNAL;
   }
   struct ibv_pd *pd = hipObj::ibv.alloc_pd(ctx);

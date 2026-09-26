@@ -67,10 +67,12 @@ typedef void (*rc_terminal_fn)(void *ctx, const char *id, int outcome,
 void rc_server_set_terminal_notify(rc_server *srv, rc_terminal_fn fn,
                                    void *ctx);
 
-/* Device selection: matching GID prefix when gid_hint is set,
- * otherwise the first verbs device. */
+/* Device selection: the verbs device named by dev_name when set,
+ * else the first device whose GID starts with gid_hint when that is
+ * set, otherwise the first verbs device that opens. */
 typedef struct {
   const char *gid_hint; /* nullable; dotted GID prefix */
+  const char *dev_name; /* nullable; verbs device name, e.g. mlx5_0 */
   uint8_t port;
   int gid_index;
   uint32_t max_sessions;

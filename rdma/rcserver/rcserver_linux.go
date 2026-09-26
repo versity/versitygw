@@ -71,6 +71,11 @@ type DeviceOpts struct {
 	// GidHint selects the device whose GID starts with this dotted
 	// prefix; empty picks the first verbs device.
 	GidHint string
+	// DevName selects the verbs device by name (e.g. mlx5_0). It takes
+	// precedence over GidHint and the first-device default, which
+	// cannot tell HCAs apart on a host where every port's GID 0 is
+	// link-local.
+	DevName string
 	Port    uint8
 	GidIdx  int
 	// Global limits.
@@ -256,6 +261,12 @@ func Init(opts DeviceOpts) (*RCSvc, error) {
 		defer C.free(unsafe.Pointer(gidHint))
 	}
 	copts.gid_hint = gidHint
+	var devName *C.char
+	if opts.DevName != "" {
+		devName = C.CString(opts.DevName)
+		defer C.free(unsafe.Pointer(devName))
+	}
+	copts.dev_name = devName
 
 	var srv *C.rc_server
 	if rc := C.rc_server_init(&copts, &srv); rc != C.RC_OK {
