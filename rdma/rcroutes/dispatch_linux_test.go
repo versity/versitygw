@@ -19,6 +19,8 @@ package rcroutes
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -26,6 +28,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/versity/versitygw/auth"
@@ -42,6 +45,7 @@ type fakeBackend struct {
 
 	getObject  func(ctx context.Context, in *s3.GetObjectInput) (*s3.GetObjectOutput, error)
 	uploadPart func(ctx context.Context, in *s3.UploadPartInput) (*s3.UploadPartOutput, error)
+	listParts  func(ctx context.Context, in *s3.ListPartsInput) (s3response.ListPartsResult, error)
 }
 
 // GetBucketAcl answers an empty ACL so wrapper-level tests that run
@@ -82,6 +86,14 @@ func (f *fakeBackend) UploadPart(ctx context.Context,
 		return f.uploadPart(ctx, in)
 	}
 	return nil, errors.New("unexpected UploadPart")
+}
+
+func (f *fakeBackend) ListParts(ctx context.Context,
+	in *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+	if f.listParts != nil {
+		return f.listParts(ctx, in)
+	}
+	return f.BackendUnsupported.ListParts(ctx, in)
 }
 
 // fixedService is the rcService fixture base: admission and the
@@ -221,6 +233,10 @@ func TestStageGetPartDispatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("oversized part with declared length accepted")
 	}
+	var badSize errRouteBadRequest
+	if !errors.As(err, &badSize) {
+		t.Fatalf("oversized declared-length error class = %v", err)
+	}
 
 	// Part GET longer than the announced size without a content
 	// length is rejected by the probe read.
@@ -235,6 +251,9 @@ func TestStageGetPartDispatch(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("oversized part without declared length accepted")
+	}
+	if !errors.As(err, &badSize) {
+		t.Fatalf("oversized undeclared-length error class = %v", err)
 	}
 
 	// A transient zero-byte read before the extra byte is still
@@ -334,6 +353,44 @@ func TestCommitPutPartDispatch(t *testing.T) {
 	}
 	if gotLen != 10 {
 		t.Fatalf("ContentLength = %d, want 10", gotLen)
+	}
+}
+
+// A COMPOSITE MPU part hashes the received bytes and forwards the
+// digest on UploadPart so the POSIX backend does not reject a
+// missing checksum type.
+func TestCommitPutPartCompositeChecksum(t *testing.T) {
+	be := &fakeBackend{}
+	h := &Handler{be: be, svc: newFixedService(), mpMaxParts: 100}
+
+	body := []byte("part-bytes")
+	sum := sha256.Sum256(body)
+	want := base64.StdEncoding.EncodeToString(sum[:])
+	var gotChecksum *string
+	etag := "\"part-etag\""
+	be.listParts = func(ctx context.Context, in *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+		return s3response.ListPartsResult{
+			ChecksumType:      types.ChecksumTypeComposite,
+			ChecksumAlgorithm: types.ChecksumAlgorithmSha256,
+		}, nil
+	}
+	be.uploadPart = func(ctx context.Context, in *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+		gotChecksum = in.ChecksumSHA256
+		return &s3.UploadPartOutput{ETag: &etag}, nil
+	}
+	svc := h.svc.(*fixedService)
+	h.svc = &viewService{fixedService: svc, buf: body}
+
+	var err error
+	inHandler(t, func(c fiber.Ctx) {
+		_, _, _, err = h.commitPut(c, "s1", "bkt", "obj", uint64(len(body)),
+			&partTransfer{UploadID: "up-1", PartNumber: 2})
+	})
+	if err != nil {
+		t.Fatalf("composite part commitPut failed: %v", err)
+	}
+	if gotChecksum == nil || *gotChecksum != want {
+		t.Fatalf("ChecksumSHA256 = %v, want %q", gotChecksum, want)
 	}
 }
 
