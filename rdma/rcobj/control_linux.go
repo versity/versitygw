@@ -91,13 +91,12 @@ type Credentials struct {
 // reads it. An aborted exchange closes that connection and never
 // reuses it.
 type controlPlane struct {
-	creds Credentials
+	creds  Credentials
+	region string
 
 	dialer *net.Dialer
-	// base holds the one-shot (PREPARE/CANCEL) connections.
-	base *http.Client
 
-	// The pending READY exchange, set by sendReadyRequest and
+	// The pending READY exchange, set by readyRequest and
 	// consumed exactly once by finishReady or an abort.
 	pendingMu sync.Mutex
 	pending   *readyExchange
@@ -123,6 +122,7 @@ type controlPlane struct {
 	probeNicPort int
 	probeNicGid  int
 	probePeer    string
+	probePeers   []string
 
 	// lastCaps memoizes the capability advertisement the last
 	// PREPARE response carried (probe evidence for the caller).
@@ -165,23 +165,10 @@ type readyExchange struct {
 
 func newControlPlane(cfg Config) *controlPlane {
 	d := &net.Dialer{Timeout: 30 * time.Second}
-	tr := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return d.DialContext(ctx, "tcp", addr)
-		},
-		DisableKeepAlives: true,
-	}
 	cp := &controlPlane{
 		creds:  cfg.Credentials,
+		region: cfg.Region,
 		dialer: d,
-		base: &http.Client{
-			Transport: tr,
-			// The probe must observe the endpoint's own verdict,
-			// not a redirect chain that ends in a 2xx elsewhere.
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
 	}
 	// The admission probe rides the same signed request shape the
 	// transfer callbacks use, against the real object API. An
@@ -265,8 +252,15 @@ func (cp *controlPlane) signedObjectProbe(ctx context.Context) (uint64, bool, er
 	// different reachable peer means the evidence no longer
 	// describes where the bytes would go.
 	if ok {
+		host := authorityOf(cp.endpoint)
+		cands, _ := resolveDest(ctx2, host)
 		cp.probeMu.Lock()
 		cp.probePeer = conn.RemoteAddr().String()
+		if len(cands) == 0 {
+			cp.probePeers = []string{cp.probePeer}
+		} else {
+			cp.probePeers = cands
+		}
 		cp.probeMu.Unlock()
 	}
 	gen := cp.probeGen.Add(1)
@@ -328,6 +322,9 @@ func (cp *controlPlane) dialControl(ctx context.Context, r transferReq) (net.Con
 		cands, rerr := resolveDest(ctx, host)
 		if rerr != nil {
 			return nil, rerr
+		}
+		if len(cands) == 0 {
+			return nil, fmt.Errorf("resolve %s: no addresses", host)
 		}
 		// Divide the remaining budget evenly across the
 		// candidates: one blackholed route must not consume
@@ -505,6 +502,9 @@ var resolveDest = func(ctx context.Context, hostport string) ([]string, error) {
 	for _, a := range addrs {
 		cands = append(cands, net.JoinHostPort(a.IP.String(), port))
 	}
+	if len(cands) == 0 {
+		return nil, fmt.Errorf("resolve %s: no addresses", host)
+	}
 	return cands, nil
 }
 
@@ -543,9 +543,9 @@ func (cp *controlPlane) signAndWrite(conn net.Conn, r transferReq,
 	sort.Strings(signedHdrs)
 
 	scope := sigv4auth.BuildCredentialScope(now.Format("20060102"),
-		cp.creds.Region, sigv4auth.ServiceS3)
+		cp.signingRegion(), sigv4auth.ServiceS3)
 	key := sigv4auth.DeriveKey(cp.creds.SecretKey, now.Format("20060102"),
-		cp.creds.Region, sigv4auth.ServiceS3)
+		cp.signingRegion(), sigv4auth.ServiceS3)
 	res := sigv4auth.BuildAndSign(key, sigv4auth.SigningInput{
 		Method:          method,
 		Host:            host,
@@ -643,33 +643,32 @@ func (cp *controlPlane) prepare(r transferReq,
 	return cp.prepareWire(r, out, deadline)
 }
 
-// connLost reports whether err is an actual transport failure
-// rather than the callback budget expiring: the typed deadline
-// errors are intentional local aborts, while everything else -
-// resets, EOFs, refused writes, truncated bodies - means the
-// connection the admission evidence rode on is gone, whether the
-// failure was observed before or after the cutoff.
-func connLost(err error) bool {
-	if err == nil {
-		return false
+func (cp *controlPlane) signingRegion() string {
+	if cp.creds.Region != "" {
+		return cp.creds.Region
 	}
-	if errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, os.ErrDeadlineExceeded) {
-		return false
-	}
-	return true
+	return cp.region
 }
 
 // peerMatches reports whether the freshly dialed connection
-// reaches the peer the admission evidence was pinned to. An empty
-// pin (no successful probe yet) never matches: the valve in
-// prepare has already re-probed by then, so this only guards the
-// window between the probe and this dial.
+// reaches a peer the admission evidence covers. An empty pin
+// (no successful probe yet) never matches. Multi-address
+// authorities match any candidate resolved at probe time.
 func (cp *controlPlane) peerMatches(conn net.Conn) bool {
+	addr := conn.RemoteAddr().String()
 	cp.probeMu.Lock()
 	pin := cp.probePeer
+	peers := append([]string(nil), cp.probePeers...)
 	cp.probeMu.Unlock()
-	return pin != "" && pin == conn.RemoteAddr().String()
+	if pin != "" && pin == addr {
+		return true
+	}
+	for _, p := range peers {
+		if p == addr {
+			return true
+		}
+	}
+	return false
 }
 
 // invalidate drops the admission evidence when the transport it
@@ -800,6 +799,14 @@ func (cp *controlPlane) readyRequest(r transferReq) int {
 	extra.Set(hdrQpn, hex64(uint64(r.ClientQpn)))
 	extra.Set(hdrMrAddr, hex64(r.ClientMrAddr))
 	extra.Set(hdrMrRkey, hex32(r.ClientMrRkey))
+
+	cp.pendingMu.Lock()
+	busy := cp.pending != nil
+	cp.pendingMu.Unlock()
+	if busy {
+		conn.Close()
+		return -1
+	}
 
 	if err := cp.signAndWrite(conn, r, http.MethodPost, pathReady, extra); err != nil {
 		conn.Close()
@@ -957,12 +964,12 @@ func fillPrepareReply(cp *controlPlane, out *C.hipObjPrepareReplyV2_t, resp *htt
 		out.unsupportedMarker = 1
 	}
 	if tok := replyTokenPayload(resp.Header.Get(hdrReply)); tok != "" {
-		if !setCStr(&out.serverToken[0], tok, 97) {
+		if !setCStr(&out.serverToken[0], tok, int(unsafe.Sizeof(out.serverToken))) {
 			return false
 		}
 	}
 	if s := resp.Header.Get(hdrSession); s != "" {
-		if !setCStr(&out.session[0], s, 65) {
+		if !setCStr(&out.session[0], s, int(unsafe.Sizeof(out.session))) {
 			return false
 		}
 	}
@@ -1000,18 +1007,21 @@ func fillFinalReply(out *C.hipObjFinalReplyV2_t, resp *http.Response) bool {
 		}
 	}
 	if c := resp.Header.Get(hdrCookie); c != "" {
-		out.cookiePresent = 1
-		if n, err := strconv.ParseUint(c, 16, 32); err == nil {
+		n, err := strconv.ParseUint(c, 16, 32)
+		if err != nil {
+			out.cookiePresent = 0
+		} else {
+			out.cookiePresent = 1
 			out.cookieEcho = C.uint32_t(n)
 		}
 	}
 	if e := resp.Header.Get(hdrEtag); e != "" {
-		if !setCStr(&out.etag[0], e, 128) {
+		if !setCStr(&out.etag[0], e, int(unsafe.Sizeof(out.etag))) {
 			return false
 		}
 	}
 	if v := resp.Header.Get("x-amz-version-id"); v != "" {
-		if !setCStr(&out.versionId[0], v, 128) {
+		if !setCStr(&out.versionId[0], v, int(unsafe.Sizeof(out.versionId))) {
 			return false
 		}
 	}
@@ -1052,24 +1062,6 @@ func (cp *controlPlane) finishReadyForTest(r transferReq) int {
 	return cp.finishReady(r, &out)
 }
 
-// replyTokenPayload strips the status prefix the x-amz-rdma-reply
-// header carries ("<three digits>:<token>" from the bridge and
-// gateway). Only that shape yields a payload;
-// a bare token without the prefix, a malformed prefix, or an empty
-// suffix all return empty so the caller treats the header as
-// absent rather than fabricating a token.
-func replyTokenPayload(v string) string {
-	if len(v) < 4 || v[3] != ':' {
-		return ""
-	}
-	for i := 0; i < 3; i++ {
-		if v[i] < '0' || v[i] > '9' {
-			return ""
-		}
-	}
-	return v[4:]
-}
-
 // setCStr copies s into a fixed C char array of cap bytes,
 // NUL-terminated. It returns false when s does not fit; the
 // destination stays empty in that case so an oversized protocol
@@ -1101,48 +1093,6 @@ func copyChecksum(dst *C.char, v string) bool {
 	return setCStr(dst, v[len("CRC64NVME "):], 13)
 }
 
-// checksumValid is the pure predicate for the wire checksum
-// contract, so tests can pin it without cgo.
-func checksumValid(v string) bool {
-	const prefix = "CRC64NVME "
-	if !strings.HasPrefix(v, prefix) {
-		return false
-	}
-	payload := v[len(prefix):]
-	if len(payload) != 12 || payload[11] != '=' {
-		return false
-	}
-	for i := 0; i < 11; i++ {
-		c := payload[i]
-		isB64 := (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-			(c >= '0' && c <= '9') || c == '+' || c == '/'
-		if !isB64 {
-			return false
-		}
-	}
-	// The final data character carries two padding bits that must
-	// be zero (the bridge rejects b64v(payload[10]) & 0x3), so a
-	// syntactically valid string with set padding bits is not a
-	// canonical encoding the gateway would have produced.
-	return b64v(payload[10])&0x3 == 0
-}
-
-// b64v decodes one base64 character to its six-bit value.
-func b64v(c byte) byte {
-	switch {
-	case c >= 'A' && c <= 'Z':
-		return c - 'A'
-	case c >= 'a' && c <= 'z':
-		return c - 'a' + 26
-	case c >= '0' && c <= '9':
-		return c - '0' + 52
-	case c == '+':
-		return 62
-	default: // '/'
-		return 63
-	}
-}
-
 func hex24(v uint32) string { return fmt.Sprintf("%06x", v) }
 func hex32(v uint32) string { return fmt.Sprintf("%08x", v) }
 func hex64(v uint64) string { return fmt.Sprintf("%016x", v) }
@@ -1151,11 +1101,7 @@ func targetOf(r transferReq) string {
 	if r.Target != "" {
 		return r.Target
 	}
-	t := "/" + r.Bucket + "/" + r.Key
-	if r.Query != "" {
-		t += "?" + r.Query
-	}
-	return t
+	return objectTarget(r.Bucket, r.Key, r.Query)
 }
 
 // netdevForGid reads the sysfs ndevs entry backing the data plane's
