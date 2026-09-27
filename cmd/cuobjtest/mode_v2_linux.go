@@ -305,7 +305,9 @@ func runV2ModeErr(size int) error {
 		}
 		match := ""
 		if res.step != "PUT" {
-			if res.byteMatch {
+			if res.err != nil {
+				match = ""
+			} else if res.byteMatch {
 				match = " bytes=match"
 			} else {
 				match = " bytes=MISMATCH"
@@ -725,13 +727,6 @@ func restGetObj(base *s3lib.Client, key string, dst []byte) error {
 		return err
 	}
 	return nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // putBufGlobal holds the host-side PUT payload. The transfer

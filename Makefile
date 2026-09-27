@@ -130,7 +130,7 @@ cuobjtest-gpu: $(CUOBJCLIENT_WRAPPER_LIB)
 	CGO_ENABLED=1 \
 	CGO_CFLAGS="$(CUOBJCLIENT_CGO_CFLAGS) $(RCOBJ_CGO_CFLAGS)" \
 	CGO_LDFLAGS="$(CUOBJCLIENT_CGO_LDFLAGS) $(RCOBJ_CGO_LDFLAGS)" \
-		$(GOBUILD) -buildvcs=false -tags rdma $(if $(HIPOBJ_ENABLED),-tags hipobj,) $(LDFLAGS) -o $(CUOBJTEST_BIN) $(CUOBJTEST_CMD)
+		$(GOBUILD) -buildvcs=false -tags "rdma$(if $(HIPOBJ_ENABLED), hipobj,)" $(LDFLAGS) -o $(CUOBJTEST_BIN) $(CUOBJTEST_CMD)
 
 .PHONY: cuobjtest-host
 cuobjtest-host: $(HOSTCLIENT_WRAPPER_LIB)

@@ -58,3 +58,15 @@ func escapeKeyPath(key string) string {
 func probeObjectPath(bucket, key string) string {
 	return "/" + bucket + "/" + escapeKeyPath(key)
 }
+
+// objectTarget is the x-amz-rdma-target path for a bucket/key/query
+// triple. The key is escaped the same way as the admission probe so
+// a key containing %, ?, or # addresses the same object on PREPARE
+// and READY as it does on the probe.
+func objectTarget(bucket, key, query string) string {
+	t := "/" + bucket + "/" + escapeKeyPath(key)
+	if query != "" {
+		t += "?" + query
+	}
+	return t
+}

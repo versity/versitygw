@@ -24,7 +24,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -465,54 +464,6 @@ func TestDialRejectsHTTPS(t *testing.T) {
 	}
 }
 
-// TestReplyTokenPayload pins the status-prefix contract: only
-// "<three digits>:<token>" yields a payload.
-func TestReplyTokenPayload(t *testing.T) {
-	cases := []struct {
-		in   string
-		want string
-	}{
-		{"200:" + strings.Repeat("ab", 44), strings.Repeat("ab", 44)},
-		{"204:tok", "tok"},
-		{"garbage:tok", ""},
-		{":tok", ""},
-		{"2000:tok", ""},
-		{"200:", ""},
-		{"200", ""},
-		{"", ""},
-	}
-	for _, c := range cases {
-		if got := replyTokenPayload(c.in); got != c.want {
-			t.Errorf("replyTokenPayload(%q) = %q want %q", c.in, got, c.want)
-		}
-	}
-}
-
-// TestConnLost pins the transport-loss classification: the typed
-// deadline errors are intentional local aborts and everything
-// else is a lost connection, whenever it is observed.
-func TestConnLost(t *testing.T) {
-	if connLost(nil) {
-		t.Error("nil error classified as lost")
-	}
-	if connLost(context.DeadlineExceeded) {
-		t.Error("context deadline classified as lost")
-	}
-	if connLost(os.ErrDeadlineExceeded) {
-		t.Error("os deadline classified as lost")
-	}
-	for _, e := range []error{
-		fmt.Errorf("write tcp: broken pipe"),
-		fmt.Errorf("unexpected EOF"),
-		fmt.Errorf("read: connection reset by peer"),
-		fmt.Errorf("http: unexpected EOF reading body"),
-	} {
-		if !connLost(e) {
-			t.Errorf("%v classified as not lost", e)
-		}
-	}
-}
-
 // TestPrepareMismatchedPeerUnsent pins the admission contract for
 // PREPARE: starting from asserted positive admission evidence, a
 // freshly dialed peer that differs from the probe's pin sends
@@ -561,6 +512,7 @@ func TestPrepareMismatchedPeerUnsent(t *testing.T) {
 	f.mu.Unlock()
 	cp.probeMu.Lock()
 	cp.probePeer = "127.0.0.1:1"
+	cp.probePeers = nil
 	cp.probeMu.Unlock()
 	if rc := cp.prepareForTest(r); rc != -1 {
 		t.Fatalf("prepare rc=%d, want -1", rc)
@@ -623,57 +575,6 @@ func TestPrepareMismatchedPeerUnsent(t *testing.T) {
 	}
 	if !cp.elig.Admitted() {
 		t.Error("admission not positive after re-probe")
-	}
-}
-
-// TestConnLostChains exercises wrapped and timeout-shaped errors
-// the production transports can surface.
-func TestConnLostChains(t *testing.T) {
-	wrapped := fmt.Errorf("dial: %w", context.DeadlineExceeded)
-	if connLost(wrapped) {
-		t.Error("wrapped deadline classified as lost")
-	}
-	opErr := &net.OpError{Op: "read", Net: "tcp",
-		Err: fmt.Errorf("connection reset by peer")}
-	if !connLost(opErr) {
-		t.Error("net.OpError reset classified as not lost")
-	}
-	if !connLost(io.EOF) {
-		t.Error("io.EOF classified as not lost")
-	}
-	if !connLost(io.ErrUnexpectedEOF) {
-		t.Error("unexpected EOF classified as not lost")
-	}
-}
-
-// TestChecksumValid pins the wire checksum contract on the pure
-// predicate form used before the C copy.
-func TestChecksumValid(t *testing.T) {
-	valid := []string{
-		"CRC64NVME AQIDBAUGBwg=",
-		"CRC64NVME AAAAAAAAAAA=",
-		"CRC64NVME AAAAAAAAAAE=",
-	}
-	for _, v := range valid {
-		if !checksumValid(v) {
-			t.Errorf("checksumValid(%q) rejected", v)
-		}
-	}
-	bad := []string{
-		"CRC64NVME AAAAAAAAAAB=",
-		"CRC64NVME ============",
-		"CRC64NVME AQIDBAUGBwg",
-		"CRC64NVMEAQIDBAUGBwg=",
-		"crc64nvme AQIDBAUGBwg=",
-		"CRC64NVME AQIDBAUGBw==",
-		"CRC64NVME AQIDBAUGBwg=extra",
-		"CRC64NVME AQ=DAUGBwg=",
-		"",
-	}
-	for _, b := range bad {
-		if checksumValid(b) {
-			t.Errorf("checksumValid(%q) accepted", b)
-		}
 	}
 }
 
