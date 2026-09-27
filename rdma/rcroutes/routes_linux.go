@@ -439,14 +439,14 @@ func (h *Handler) stageGet(ctx fiber.Ctx, sessionID, bucket, key string,
 		if res.ContentLength != nil && *res.ContentLength >= 0 {
 			if uint64(*res.ContentLength) != size {
 				return fmt.Errorf(
-					"part length %d does not match the announced size %d",
-					*res.ContentLength, size)
+					"part length %d does not match the announced size %d: %w",
+					*res.ContentLength, size, errRouteBadRequest{})
 			}
 		} else {
 			var probe [1]byte
 			if n, perr := io.ReadFull(res.Body, probe[:]); n > 0 {
 				return fmt.Errorf(
-					"part exceeds the announced size %d", size)
+					"part exceeds the announced size %d: %w", size, errRouteBadRequest{})
 			} else if perr != nil && !errors.Is(perr, io.EOF) {
 				return perr
 			}
@@ -744,14 +744,30 @@ func (h *Handler) commitPut(ctx fiber.Ctx, sessionID, bucket, key string,
 		}
 		pn := int32(part.PartNumber)
 		uploadID := part.UploadID
-		pres, perr := h.be.UploadPart(putCtx, &s3.UploadPartInput{
+		in := &s3.UploadPartInput{
 			Bucket:        &bucket,
 			Key:           &key,
 			UploadId:      &uploadID,
 			PartNumber:    &pn,
 			ContentLength: &contentLength,
 			Body:          bytes.NewReader(view.Buf),
-		})
+		}
+		// COMPOSITE MPU parts require the matching checksum on
+		// UploadPart. The RC session does not carry client
+		// checksum headers, so the hash is computed from the
+		// bytes already received. ListParts is how the backend
+		// exposes the MPU checksum algorithm; a failure leaves
+		// the input unchanged (non-checksum uploads).
+		maxParts := int32(1)
+		if lp, lerr := h.be.ListParts(putCtx, &s3.ListPartsInput{
+			Bucket:   &bucket,
+			Key:      &key,
+			UploadId: &uploadID,
+			MaxParts: &maxParts,
+		}); lerr == nil && lp.ChecksumType == types.ChecksumTypeComposite {
+			applyPartChecksum(in, lp.ChecksumAlgorithm, view.Buf)
+		}
+		pres, perr := h.be.UploadPart(putCtx, in)
 		if perr != nil {
 			return nil, true, 0, perr
 		}
@@ -1005,5 +1021,59 @@ func errPanicked() error {
 		Code:           "InternalRDMAError",
 		Description:    "The RDMA transfer ended without a confirmed result",
 		HTTPStatusCode: 500,
+	}
+}
+
+// applyPartChecksum fills the UploadPart checksum field that
+// matches algo with the hash of body. Unknown algorithms are left
+// unset so a COMPOSITE MPU that the RC path cannot hash still
+// fails in the backend rather than with a fabricated digest.
+func applyPartChecksum(in *s3.UploadPartInput, algo types.ChecksumAlgorithm, body []byte) {
+	ht, ok := hashTypeForPartChecksum(algo)
+	if !ok {
+		return
+	}
+	h, err := utils.NewHash(ht)
+	if err != nil {
+		return
+	}
+	_, _ = h.Write(body)
+	sum := utils.Base64SumString(h.Sum(nil))
+	switch algo {
+	case types.ChecksumAlgorithmCrc32:
+		in.ChecksumCRC32 = &sum
+	case types.ChecksumAlgorithmCrc32c:
+		in.ChecksumCRC32C = &sum
+	case types.ChecksumAlgorithmSha1:
+		in.ChecksumSHA1 = &sum
+	case types.ChecksumAlgorithmSha256:
+		in.ChecksumSHA256 = &sum
+	case types.ChecksumAlgorithmCrc64nvme:
+		in.ChecksumCRC64NVME = &sum
+	case types.ChecksumAlgorithmSha512:
+		in.ChecksumSHA512 = &sum
+	case types.ChecksumAlgorithmMd5:
+		in.ChecksumMD5 = &sum
+	}
+}
+
+func hashTypeForPartChecksum(algo types.ChecksumAlgorithm) (utils.HashType, bool) {
+	switch algo {
+	case types.ChecksumAlgorithmCrc32:
+		return utils.HashTypeCRC32, true
+	case types.ChecksumAlgorithmCrc32c:
+		return utils.HashTypeCRC32C, true
+	case types.ChecksumAlgorithmSha1:
+		return utils.HashTypeSha1, true
+	case types.ChecksumAlgorithmSha256:
+		return utils.HashTypeSha256, true
+	case types.ChecksumAlgorithmCrc64nvme:
+		return utils.HashTypeCRC64NVME, true
+	case types.ChecksumAlgorithmSha512:
+		return utils.HashTypeSha512, true
+	case types.ChecksumAlgorithmMd5:
+		return utils.HashTypeMd5, true
+	default:
+		return "", false
 	}
 }
