@@ -17,6 +17,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -720,4 +721,196 @@ func UploadPart_etag_quoting_consistency(s *S3Conf) error {
 
 		return nil
 	})
+}
+
+// UploadPart_object_lock_checksum_required covers parts of multipart uploads
+// created with Object Lock parameters, a legal hold of either status or a
+// retention: each part needs an integrity check of its body, so one with
+// neither Content-MD5 nor a checksum is rejected and one with Content-MD5
+// is stored. A part of an upload created without them needs none.
+func UploadPart_object_lock_checksum_required(s *S3Conf) error {
+	testName := "UploadPart_object_lock_checksum_required"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		data := []byte("data")
+		md5sum := md5.Sum(data)
+		contentMD5 := base64.StdEncoding.EncodeToString(md5sum[:])
+		retainUntilDate := time.Now().Add(time.Hour)
+
+		for _, test := range []struct {
+			name       string
+			input      s3.CreateMultipartUploadInput
+			lockParams bool
+		}{
+			{
+				name: "no lock parameters",
+			},
+			{
+				name:       "legal hold ON",
+				input:      s3.CreateMultipartUploadInput{ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn},
+				lockParams: true,
+			},
+			{
+				name:       "legal hold OFF",
+				input:      s3.CreateMultipartUploadInput{ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOff},
+				lockParams: true,
+			},
+			{
+				name: "retention",
+				input: s3.CreateMultipartUploadInput{
+					ObjectLockMode:            types.ObjectLockModeGovernance,
+					ObjectLockRetainUntilDate: &retainUntilDate,
+				},
+				lockParams: true,
+			},
+		} {
+			input := test.input
+			input.Bucket = &bucket
+			input.Key = &obj
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			mp, err := s3client.CreateMultipartUpload(ctx, &input)
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				UploadId:   mp.UploadId,
+				PartNumber: getPtr(int32(1)),
+				Body:       bytes.NewReader(data),
+			})
+			cancel()
+			if test.lockParams {
+				if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockPartChecksumRequired)); err != nil {
+					return fmt.Errorf("%s, part without an integrity check: %w", test.name, err)
+				}
+			} else if err != nil {
+				return fmt.Errorf("%s, part without an integrity check: %w", test.name, err)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				UploadId:   mp.UploadId,
+				PartNumber: getPtr(int32(2)),
+				Body:       bytes.NewReader(data),
+				ContentMD5: &contentMD5,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%s, part with Content-MD5: %w", test.name, err)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+				Bucket:   &bucket,
+				Key:      &obj,
+				UploadId: mp.UploadId,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}, withLock())
+}
+
+// UploadPart_default_retention_checksum_required covers parts of multipart
+// uploads to a bucket with a default retention rule. Whether an upload
+// carries Object Lock parameters is settled when it is created: the parts of
+// one created under the rule need an integrity check of their body even
+// after the rule is removed, and the parts of one created before the rule
+// was set need none.
+func UploadPart_default_retention_checksum_required(s *S3Conf) error {
+	testName := "UploadPart_default_retention_checksum_required"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		putLockConfig := func(rule *types.ObjectLockRule) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+				Bucket: &bucket,
+				ObjectLockConfiguration: &types.ObjectLockConfiguration{
+					ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+					Rule:              rule,
+				},
+			})
+			cancel()
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		before, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if err := putLockConfig(&types.ObjectLockRule{
+			DefaultRetention: &types.DefaultRetention{
+				Mode: types.ObjectLockRetentionModeGovernance,
+				Days: getPtr(int32(1)),
+			},
+		}); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		under, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if err := putLockConfig(nil); err != nil {
+			return err
+		}
+
+		uploadPart := func(uploadId *string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				UploadId:   uploadId,
+				PartNumber: getPtr(int32(1)),
+				Body:       bytes.NewReader([]byte("data")),
+			})
+			cancel()
+			return err
+		}
+
+		if err := uploadPart(before.UploadId); err != nil {
+			return fmt.Errorf("part of the upload created before the rule: %w", err)
+		}
+		err = uploadPart(under.UploadId)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockPartChecksumRequired)); err != nil {
+			return fmt.Errorf("part of the upload created under the rule: %w", err)
+		}
+
+		for _, uploadId := range []*string{before.UploadId, under.UploadId} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+				Bucket:   &bucket,
+				Key:      &obj,
+				UploadId: uploadId,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}, withLock())
 }

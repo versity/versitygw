@@ -4746,6 +4746,7 @@ func Versioning_WORM_dir_object_lock_headers(s *S3Conf) error {
 			res, err := putObjectWithData(0, &s3.PutObjectInput{
 				Bucket:                    &bucket,
 				Key:                       &obj,
+				ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 				ObjectLockLegalHoldStatus: test.legalHold,
 				ObjectLockMode:            test.mode,
 				ObjectLockRetainUntilDate: test.retainUntilDate,
@@ -5535,7 +5536,9 @@ func Versioning_WORM_remove_delete_marker_under_bucket_default_retention(s *S3Co
 		}
 
 		return forEachKey([]string{"my-object", "my-dir/"}, func(obj string) error {
-			versions, err := createObjVersions(s3client, bucket, obj, 3)
+			// a default retention rule gives every upload Object Lock
+			// parameters, which need a checksum of its body
+			versions, err := createObjVersions(s3client, bucket, obj, 3, withChecksumAlgo(types.ChecksumAlgorithmCrc32))
 			if err != nil {
 				return err
 			}
@@ -5605,6 +5608,7 @@ func Versioning_WORM_trailing_slash_counterpart(s *S3Conf) error {
 			res, err := putObjectWithData(objDataLen(obj, 10), &s3.PutObjectInput{
 				Bucket:                    &bucket,
 				Key:                       &obj,
+				ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 				ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
 				ObjectLockMode:            types.ObjectLockModeGovernance,
 				ObjectLockRetainUntilDate: &rDate,

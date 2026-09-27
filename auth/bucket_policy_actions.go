@@ -332,3 +332,22 @@ func (a Actions) FindMatch(action Action) bool {
 
 	return false
 }
+
+// ObjectUploadActions returns the actions an object upload is authorized
+// as: s3:PutObject, plus one more for each attribute it sets on the object.
+// A non-empty tag set takes s3:PutObjectTagging, a legal hold
+// s3:PutObjectLegalHold whatever its status, and a retention mode or date
+// s3:PutObjectRetention.
+func ObjectUploadActions(tagging, legalHold, lockMode, retainUntilDate string) []Action {
+	actions := []Action{PutObjectAction}
+	if tagging != "" {
+		actions = append(actions, PutObjectTaggingAction)
+	}
+	if legalHold != "" {
+		actions = append(actions, PutObjectLegalHoldAction)
+	}
+	if lockMode != "" || retainUntilDate != "" {
+		actions = append(actions, PutObjectRetentionAction)
+	}
+	return actions
+}

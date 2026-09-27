@@ -36,6 +36,34 @@ type BucketLockConfig struct {
 	CreatedAt        *time.Time
 }
 
+// VerifyWriteObjectLock checks the Object Lock parameters an object write
+// carries against its bucket, and reports whether it carries any. explicit
+// is whether the request sets them itself: a legal hold of either status,
+// or a retention mode and date. Those are rejected on a bucket without
+// Object Lock. A write that sets none still carries the ones a default
+// retention rule gives every object written to the bucket.
+func VerifyWriteObjectLock(ctx context.Context, be backend.Backend, bucket string, explicit bool) (bool, error) {
+	var cfg BucketLockConfig
+	data, err := be.GetObjectLockConfiguration(ctx, bucket)
+	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)) {
+		return false, err
+	}
+	if err == nil {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return false, fmt.Errorf("parse object lock config: %w", err)
+		}
+	}
+
+	if !cfg.Enabled {
+		if explicit {
+			return false, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+		}
+		return false, nil
+	}
+
+	return explicit || cfg.DefaultRetention != nil, nil
+}
+
 // BypassMode says whether, and on whose authority, a request may override a
 // GOVERNANCE-mode retention. It exists because the two ways that can happen
 // are not equivalent, and collapsing them into one boolean previously let

@@ -195,6 +195,7 @@ const (
 	nullVersionPrevKey  = "null-version-prev"
 	partCrc64nvme       = "part-crc64nvme"
 	mpMetaKey           = "mp-metadata"
+	mpObjectLockKey     = "mp-object-lock"
 
 	nullVersionId = "null"
 
@@ -2146,6 +2147,32 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		}
 	}
 
+	// Mark an upload with Object Lock parameters, so that each of its parts
+	// is required to carry an integrity check. They are its own lock
+	// headers, or the bucket's default retention rule as of now: a rule set
+	// or removed later doesn't change what the upload's parts need.
+	lockParams := mpu.ObjectLockLegalHoldStatus != "" || mpu.ObjectLockMode != ""
+	if !lockParams {
+		lockParams, err = p.bucketHasDefaultRetention(bucket)
+		if err != nil {
+			// cleanup object if returning error
+			_ = os.RemoveAll(filepath.Join(tmppath, uploadID))
+			_ = os.Remove(tmppath)
+			_ = p.meta.DeleteAttributes(bucket, filepath.Join(objdir, uploadID))
+			return s3response.InitiateMultipartUploadResult{}, err
+		}
+	}
+	if lockParams {
+		err := p.meta.StoreAttribute(nil, bucket, filepath.Join(objdir, uploadID), mpObjectLockKey, []byte{1})
+		if err != nil {
+			// cleanup object if returning error
+			_ = os.RemoveAll(filepath.Join(tmppath, uploadID))
+			_ = os.Remove(tmppath)
+			_ = p.meta.DeleteAttributes(bucket, filepath.Join(objdir, uploadID))
+			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("store mp object lock: %w", err)
+		}
+	}
+
 	// Set object checksum algorithm
 	if mpu.ChecksumAlgorithm != "" {
 		err := p.storeChecksums(nil, bucket, filepath.Join(objdir, uploadID), s3response.Checksum{
@@ -3691,6 +3718,18 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat uploadid: %w", err)
+	}
+
+	// A part of an upload with Object Lock parameters needs an integrity
+	// check of its body
+	if !backend.UploadPartHasIntegrityCheck(input) {
+		_, err := p.meta.RetrieveAttribute(nil, bucket, mpPath, mpObjectLockKey)
+		if err == nil {
+			return nil, s3err.GetAPIError(s3err.ErrObjectLockPartChecksumRequired)
+		}
+		if !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get mp object lock: %w", err)
+		}
 	}
 
 	partPath := filepath.Join(mpPath, fmt.Sprintf("%v", *part))
@@ -7421,6 +7460,26 @@ func (p *Posix) DeleteBucketWebsite(ctx context.Context, bucket string) error {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 	return p.PutBucketWebsite(ctx, bucket, nil)
+}
+
+// bucketHasDefaultRetention reports whether bucket has Object Lock enabled
+// with a default retention rule, which gives every object written to it
+// Object Lock parameters.
+func (p *Posix) bucketHasDefaultRetention(bucket string) (bool, error) {
+	cfg, err := p.meta.RetrieveAttribute(nil, bucket, "", bucketLockKey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("get object lock config: %w", err)
+	}
+
+	var bucketLockConfig auth.BucketLockConfig
+	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
+		return false, fmt.Errorf("parse bucket lock config: %w", err)
+	}
+
+	return bucketLockConfig.Enabled && bucketLockConfig.DefaultRetention != nil, nil
 }
 
 func (p *Posix) isBucketObjectLockEnabled(bucket string) error {

@@ -220,10 +220,7 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 	// key field, so it is authorized against that object's ARN — the same
 	// resource PutObject is — not the bucket's. Tagging the object also
 	// takes s3:PutObjectTagging, but only for a non-empty tag set
-	actions := []auth.Action{auth.PutObjectAction}
-	if tagging != "" {
-		actions = append(actions, auth.PutObjectTaggingAction)
-	}
+	actions := auth.ObjectUploadActions(tagging, "", "", "")
 
 	err = c.verifyAccess(ctx,
 		auth.AccessOptions{

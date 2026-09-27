@@ -498,44 +498,60 @@ func objectPolicyArn(bucket, object string, normalizeObjectKey objectKeyNormaliz
 	return ResourceArnPrefix + makePolicyResource(bucket, object, normalizeObjectKey)
 }
 
-// VerifyPublicAccess checks if the bucket is publically accessible by ACL or Policy
-func VerifyPublicAccess(ctx fiber.Ctx, be backend.Backend, action Action, permission Permission, bucket, object string) error {
-	// ACL disabled
+// VerifyPublicAccess checks that the bucket grants every one of actions to
+// anonymous requesters. Each action is granted on its own, by the bucket
+// policy or, failing that, the bucket ACL, and the request needs them all:
+// a tagged upload to a public-read-write bucket whose policy publicly grants
+// s3:PutObjectTagging is allowed, the ACL granting its s3:PutObject. An
+// explicit public Deny of any one action denies the request, whatever the
+// ACL grants.
+func VerifyPublicAccess(ctx fiber.Ctx, be backend.Backend, actions []Action, permission Permission, bucket, object string) error {
 	policy, err := be.GetBucketPolicy(ctx.RequestCtx(), bucket)
 	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
 		return err
 	}
-	if err == nil {
-		err = VerifyPublicBucketPolicy(policy, bucket, object, requestConditionContext(ctx, []Action{action}), be.NormalizeObjectKey, action)
-		if errors.Is(err, errExplicitDeny) {
-			// Explicit public-policy Deny has higher precedence than any
-			// public ACL grant, so do not continue to ACL fallback.
+	hasPolicy := err == nil
+	condCtx := requestConditionContext(ctx, actions)
+
+	var aclFallback bool
+	for _, action := range actions {
+		if hasPolicy {
+			err := VerifyPublicBucketPolicy(policy, bucket, object, condCtx, be.NormalizeObjectKey, action)
+			if errors.Is(err, errExplicitDeny) {
+				// Explicit public-policy Deny has higher precedence than any
+				// public ACL grant, so do not continue to ACL fallback.
+				return s3err.GetAPIError(s3err.ErrAccessDenied)
+			}
+			if err == nil {
+				// if ACLs are disabled, and the bucket grants public access,
+				// policy actions should return 'MethodNotAllowed'
+				switch action {
+				case GetBucketPolicyAction:
+					return s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeBucketPolicy, nil)
+				case PutBucketPolicyAction:
+					return s3err.GetMethodNotAllowedErr(http.MethodPut, s3err.ResourceTypeBucketPolicy, nil)
+				case DeleteBucketPolicyAction:
+					return s3err.GetMethodNotAllowedErr(http.MethodDelete, s3err.ResourceTypeBucketPolicy, nil)
+				}
+
+				continue
+			}
+		}
+
+		// if the action is not in the ACL whitelist the access is denied
+		if _, ok := publicACLAllowedActions[action]; !ok {
 			return s3err.GetAPIError(s3err.ErrAccessDenied)
 		}
-		if err == nil {
-			// if ACLs are disabled, and the bucket grants public access,
-			// policy actions should return 'MethodNotAllowed'
-			switch action {
-			case GetBucketPolicyAction:
-				return s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeBucketPolicy, nil)
-			case PutBucketPolicyAction:
-				return s3err.GetMethodNotAllowedErr(http.MethodPut, s3err.ResourceTypeBucketPolicy, nil)
-			case DeleteBucketPolicyAction:
-				return s3err.GetMethodNotAllowedErr(http.MethodDelete, s3err.ResourceTypeBucketPolicy, nil)
-			}
-
-			return nil
-		}
+		aclFallback = true
 	}
 
-	// if the action is not in the ACL whitelist the access is denied
-	_, ok := publicACLAllowedActions[action]
-	if !ok {
-		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	if !aclFallback {
+		return nil
 	}
 
-	err = VerifyPublicBucketACL(ctx.RequestCtx(), be, bucket, action, permission)
-	if err != nil {
+	// An ACL grants a permission on the whole bucket rather than an action
+	// on an object, so one lookup decides every action left to it.
+	if err := VerifyPublicBucketACL(ctx.RequestCtx(), be, bucket, permission); err != nil {
 		return s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 
@@ -630,6 +646,8 @@ func verifyIdentityOnlyAccess(ctx fiber.Ctx, pe PolicyEvaluator, acc Account, ac
 
 type PublicACLAllowedActions map[Action]struct{}
 
+// publicACLAllowedActions are the actions a public ACL grant can give an
+// anonymous requester
 var publicACLAllowedActions PublicACLAllowedActions = PublicACLAllowedActions{
 	ListBucketAction:                 struct{}{},
 	PutObjectAction:                  struct{}{},
@@ -637,6 +655,7 @@ var publicACLAllowedActions PublicACLAllowedActions = PublicACLAllowedActions{
 	DeleteObjectAction:               struct{}{},
 	ListBucketVersionsAction:         struct{}{},
 	GetObjectAction:                  struct{}{},
+	GetObjectVersionAction:           struct{}{},
 	GetObjectAttributesAction:        struct{}{},
 	GetObjectAclAction:               struct{}{},
 }

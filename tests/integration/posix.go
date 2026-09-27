@@ -437,6 +437,7 @@ func ObjectLock_trailing_slash_counterpart(s *S3Conf) error {
 			_, err := putObjectWithData(objDataLen(obj, 10), &s3.PutObjectInput{
 				Bucket:                    &bucket,
 				Key:                       &obj,
+				ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 				ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
 				ObjectLockMode:            types.ObjectLockModeGovernance,
 				ObjectLockRetainUntilDate: &rDate,

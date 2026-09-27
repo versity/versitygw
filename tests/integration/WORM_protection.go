@@ -50,7 +50,13 @@ func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) 
 			return err
 		}
 
-		_, err = putObjects(s3client, []string{object}, bucket)
+		// a default retention rule gives the upload Object Lock parameters,
+		// which need a checksum of its body
+		_, err = putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:            &bucket,
+			Key:               &object,
+			ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
+		}, s3client)
 		if err != nil {
 			return err
 		}
@@ -85,7 +91,13 @@ func WORMProtection_bucket_object_lock_configuration_governance_mode(s *S3Conf) 
 			return err
 		}
 
-		_, err = putObjects(s3client, []string{object}, bucket)
+		// a default retention rule gives the upload Object Lock parameters,
+		// which need a checksum of its body
+		_, err = putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:            &bucket,
+			Key:               &object,
+			ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
+		}, s3client)
 		if err != nil {
 			return err
 		}
@@ -120,7 +132,13 @@ func WORMProtection_bucket_object_lock_governance_bypass_delete(s *S3Conf) error
 			return err
 		}
 
-		_, err = putObjects(s3client, []string{object}, bucket)
+		// a default retention rule gives the upload Object Lock parameters,
+		// which need a checksum of its body
+		_, err = putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:            &bucket,
+			Key:               &object,
+			ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
+		}, s3client)
 		if err != nil {
 			return err
 		}
@@ -172,9 +190,17 @@ func WORMProtection_bucket_object_lock_governance_bypass_delete_multiple(s *S3Co
 			return err
 		}
 
-		_, err = putObjects(s3client, []string{obj1, obj2, obj3}, bucket)
-		if err != nil {
-			return err
+		// a default retention rule gives each upload Object Lock parameters,
+		// which need a checksum of its body
+		for _, key := range []string{obj1, obj2, obj3} {
+			_, err = putObjectWithData(10, &s3.PutObjectInput{
+				Bucket:            &bucket,
+				Key:               &key,
+				ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
+			}, s3client)
+			if err != nil {
+				return err
+			}
 		}
 
 		policy := genPolicyDoc("Allow", `"*"`, `["s3:BypassGovernanceRetention"]`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket))

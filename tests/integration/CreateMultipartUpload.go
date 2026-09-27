@@ -188,13 +188,15 @@ func CreateMultipartUpload_with_object_lock(s *S3Conf) error {
 			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
 			ObjectLockMode:            types.ObjectLockModeGovernance,
 			ObjectLockRetainUntilDate: &retainUntilDate,
+			ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 		})
 		cancel()
 		if err != nil {
 			return err
 		}
 
-		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
+		// the parts of an upload with Object Lock parameters need a checksum
+		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId, withChecksum(types.ChecksumAlgorithmCrc32))
 		if err != nil {
 			return err
 		}
@@ -202,8 +204,9 @@ func CreateMultipartUpload_with_object_lock(s *S3Conf) error {
 		compParts := []types.CompletedPart{}
 		for _, el := range parts {
 			compParts = append(compParts, types.CompletedPart{
-				ETag:       el.ETag,
-				PartNumber: el.PartNumber,
+				ETag:          el.ETag,
+				PartNumber:    el.PartNumber,
+				ChecksumCRC32: el.ChecksumCRC32,
 			})
 		}
 
@@ -262,15 +265,24 @@ func CreateMultipartUpload_with_object_lock_not_enabled(s *S3Conf) error {
 			return err
 		}
 
-		// with legal hold
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket:                    &bucket,
-			Key:                       &obj,
-			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
-		})
-		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces))
+		// with legal hold, of either status
+		for _, status := range []types.ObjectLockLegalHoldStatus{
+			types.ObjectLockLegalHoldStatusOn,
+			types.ObjectLockLegalHoldStatusOff,
+		} {
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+				Bucket:                    &bucket,
+				Key:                       &obj,
+				ObjectLockLegalHoldStatus: status,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)); err != nil {
+				return fmt.Errorf("legal hold %s: %w", status, err)
+			}
+		}
+
+		return nil
 	})
 }
 

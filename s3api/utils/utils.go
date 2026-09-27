@@ -472,6 +472,27 @@ func ParseCalculatedChecksumHeaders(ctx fiber.Ctx) (ChecksumValues, error) {
 	return checksums, nil
 }
 
+// HasPayloadIntegrityCheck reports whether an upload carries an integrity
+// check of its body: a Content-MD5 header, an x-amz-checksum-* header, or an
+// x-amz-checksum-* trailer. A payload hash, signed or not, and chunk
+// signatures don't count as one.
+func HasPayloadIntegrityCheck(ctx fiber.Ctx) bool {
+	if len(ctx.Request().Header.Peek("Content-Md5")) != 0 {
+		return true
+	}
+	if strings.HasPrefix(strings.ToLower(ctx.Get("X-Amz-Trailer")), "x-amz-checksum-") {
+		return true
+	}
+	for key := range ctx.Request().Header.All() {
+		switch k := string(key); {
+		case k == "X-Amz-Checksum-Type", k == "X-Amz-Checksum-Algorithm":
+		case strings.HasPrefix(k, "X-Amz-Checksum-"):
+			return true
+		}
+	}
+	return false
+}
+
 // ParseCalculatedChecksumFields parses and validates object POST checksum fields
 func ParseCalculatedChecksumFields(fields map[string]string) (ChecksumValues, error) {
 	checksums := ChecksumValues{}

@@ -28,6 +28,17 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
+// objectVersionActions maps an object action to the one a request naming a
+// specific object version with versionId is authorized as instead.
+var objectVersionActions = map[auth.Action]auth.Action{
+	auth.GetObjectAction:           auth.GetObjectVersionAction,
+	auth.DeleteObjectAction:        auth.DeleteObjectVersionAction,
+	auth.GetObjectTaggingAction:    auth.GetObjectVersionTaggingAction,
+	auth.PutObjectTaggingAction:    auth.PutObjectVersionTaggingAction,
+	auth.DeleteObjectTaggingAction: auth.DeleteObjectVersionTaggingAction,
+	auth.GetObjectAttributesAction: auth.GetObjectVersionAttributesAction,
+}
+
 // AuthorizePublicBucketAccess checks if the bucket grants public
 // access to anonymous requesters
 func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPermission auth.Action, permission auth.Permission, region string, streamBody bool) fiber.Handler {
@@ -57,16 +68,53 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 		}
 
 		bucket, object := parsePath(ctx.Path())
-		if s3action == metrics.ActionPostObject {
+
+		// A request naming an object version is authorized as that
+		// version's own action, s3:GetObjectVersion rather than
+		// s3:GetObject and so on, which a grant of the plain action
+		// doesn't cover. An empty versionId is left to the handler to
+		// reject.
+		action := policyPermission
+		if ctx.Query("versionId") != "" {
+			if versionAction, ok := objectVersionActions[action]; ok {
+				action = versionAction
+			}
+		}
+		actions := []auth.Action{action}
+
+		// An upload is authorized as s3:PutObject plus an action for each
+		// attribute it sets on the object, and the bucket has to grant
+		// every one of them publicly.
+		switch s3action {
+		case metrics.ActionPutObject:
+			if err := verifyAnonymousUploadLock(ctx, be, bucket); err != nil {
+				return err
+			}
+			actions = auth.ObjectUploadActions(ctx.Get("X-Amz-Tagging"), "", "", "")
+		case metrics.ActionPostObject:
 			// A POST upload is addressed to the bucket; the object it writes
 			// is named by the form's key field instead, which
 			// AuthorizePostObject has already parsed. Authorize against that
 			// object's ARN, as PutObject is.
 			if parsed, ok := utils.ContextKeyObjectPostResult.Get(ctx).(PostObjectResult); ok {
 				object = parsed.Fields["key"]
+
+				// Only a non-empty tag set takes s3:PutObjectTagging, so the
+				// form's tagging has to be parsed to tell, and a malformed
+				// one is rejected before any permission is checked.
+				var tagging string
+				if taggingXML, ok := parsed.Fields["tagging"]; ok {
+					var err error
+					tagging, err = utils.ConvertTaggingXMLToQueryString([]byte(taggingXML))
+					if err != nil {
+						return err
+					}
+				}
+				actions = auth.ObjectUploadActions(tagging, "", "", "")
 			}
 		}
-		err := auth.VerifyPublicAccess(ctx, be, policyPermission, permission, bucket, object)
+
+		err := auth.VerifyPublicAccess(ctx, be, actions, permission, bucket, object)
 		if err != nil {
 			if s3action == metrics.ActionHeadBucket {
 				// add the bucket region header for HeadBucket
@@ -142,4 +190,29 @@ func parsePath(path string) (string, string) {
 	bucket, object, _ := strings.Cut(p, "/")
 
 	return bucket, object
+}
+
+// verifyAnonymousUploadLock refuses an anonymous PutObject that carries
+// Object Lock parameters: only a signed upload may lock the object it
+// writes. The parameters are those its lock headers set and those the
+// bucket's default retention rule gives every object written to it, so a
+// plain upload to such a bucket is refused as well, even when the bucket
+// grants no public access at all. This runs before the upload itself is
+// authorized, and the lock actions it would take are never checked.
+func verifyAnonymousUploadLock(ctx fiber.Ctx, be backend.Backend, bucket string) error {
+	objLock, err := utils.ParsObjectLockHdrs(ctx)
+	if err != nil {
+		return err
+	}
+
+	explicit := objLock.LegalHoldStatus != "" || objLock.ObjectLockMode != ""
+	locked, err := auth.VerifyWriteObjectLock(ctx.RequestCtx(), be, bucket, explicit)
+	if err != nil || !locked {
+		return err
+	}
+
+	if !utils.HasPayloadIntegrityCheck(ctx) {
+		return s3err.GetAPIError(s3err.ErrObjectLockChecksumRequired)
+	}
+	return s3err.GetInvalidArgumentErr(s3err.InvalidArgAnonymousObjectLock, "")
 }

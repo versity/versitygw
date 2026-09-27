@@ -422,6 +422,7 @@ func putGovernanceLockedObject(s *S3Conf, bucket, key string) error {
 	_, err := putObjectWithData(0, &s3.PutObjectInput{
 		Bucket:                    &bucket,
 		Key:                       &key,
+		ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 		ObjectLockMode:            types.ObjectLockModeGovernance,
 		ObjectLockRetainUntilDate: &retainUntil,
 	}, s.GetClient())

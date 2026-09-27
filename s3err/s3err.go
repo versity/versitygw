@@ -173,6 +173,8 @@ const (
 	ErrMultipleChecksumHeaders
 	ErrChecksumSDKAlgoMismatch
 	ErrChecksumRequired
+	ErrObjectLockChecksumRequired
+	ErrObjectLockPartChecksumRequired
 	ErrMissingContentSha256
 	ErrInvalidChecksumAlgorithm
 	ErrChecksumTypeWithAlgo
@@ -231,12 +233,12 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrAnonymousCreateMp: {
 		Code:           "AccessDenied",
-		Description:    "Anonymous users cannot initiate multipart uploads. Please authenticate.",
+		Description:    "Anonymous users cannot initiate multipart uploads.  Please authenticate.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrAnonymousCopyObject: {
 		Code:           "AccessDenied",
-		Description:    "Anonymous users cannot copy objects. Please authenticate.",
+		Description:    "Anonymous users cannot copy objects.  Please authenticate.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrAnonymousPutBucketOwnership: {
@@ -617,6 +619,16 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrChecksumRequired: {
 		Code:           "InvalidRequest",
 		Description:    "Missing required header for this request: Content-MD5 OR x-amz-checksum-*",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrObjectLockChecksumRequired: {
+		Code:           "InvalidRequest",
+		Description:    "Content-MD5 OR x-amz-checksum- HTTP header is required for Put Object requests with Object Lock parameters",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrObjectLockPartChecksumRequired: {
+		Code:           "InvalidRequest",
+		Description:    "Content-MD5 OR x-amz-checksum- HTTP header is required for Put Part requests with Object Lock parameters",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMissingContentSha256: {
