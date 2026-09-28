@@ -38,7 +38,7 @@ const (
 func NewSideCar(dir string) (SideCar, error) {
 	fi, err := os.Lstat(dir)
 	if err != nil {
-		return SideCar{}, fmt.Errorf("failed to stat directory: %v", err)
+		return SideCar{}, fmt.Errorf("failed to stat directory: %w", err)
 	}
 	if !fi.IsDir() {
 		return SideCar{}, fmt.Errorf("not a directory")
@@ -61,7 +61,7 @@ func (s SideCar) RetrieveAttribute(_ *os.File, bucket, object, attribute string)
 		return nil, ErrNoSuchKey
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to read attribute: %v", err)
+		return nil, fmt.Errorf("failed to read attribute: %w", err)
 	}
 
 	return value, nil
@@ -79,7 +79,7 @@ func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, va
 		if errors.Is(err, syscall.ENOSPC) {
 			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 		}
-		return fmt.Errorf("failed to create metadata directory: %v", err)
+		return fmt.Errorf("failed to create metadata directory: %w", err)
 	}
 
 	attr := filepath.Join(metadir, attribute)
@@ -88,7 +88,7 @@ func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, va
 		if errors.Is(err, syscall.ENOSPC) {
 			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 		}
-		return fmt.Errorf("failed to create temporary file: %v", err)
+		return fmt.Errorf("failed to create temporary file: %w", err)
 	}
 	defer os.Remove(tempfile.Name())
 
@@ -98,18 +98,18 @@ func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, va
 		if errors.Is(err, syscall.ENOSPC) {
 			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 		}
-		return fmt.Errorf("failed to write attribute: %v", err)
+		return fmt.Errorf("failed to write attribute: %w", err)
 	}
 
 	// Close explicitly before rename to prevent error on Windows:
 	// The process cannot access the file because it is being used by another process.
 	if err = tempfile.Close(); err != nil {
-		return fmt.Errorf("failed to close temporary file: %v", err)
+		return fmt.Errorf("failed to close temporary file: %w", err)
 	}
 
 	err = os.Rename(tempfile.Name(), attr)
 	if err != nil {
-		return fmt.Errorf("failed to rename temporary file: %v", err)
+		return fmt.Errorf("failed to rename temporary file: %w", err)
 	}
 	return nil
 }
@@ -128,7 +128,7 @@ func (s SideCar) DeleteAttribute(bucket, object, attribute string) error {
 		return ErrNoSuchKey
 	}
 	if err != nil {
-		return fmt.Errorf("failed to remove attribute: %v", err)
+		return fmt.Errorf("failed to remove attribute: %w", err)
 	}
 
 	s.cleanupEmptyDirs(metadir, bucket, object)
@@ -149,7 +149,7 @@ func (s SideCar) ListAttributes(bucket, object string) ([]string, error) {
 		return []string{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to list attributes: %v", err)
+		return nil, fmt.Errorf("failed to list attributes: %w", err)
 	}
 
 	var attrs []string
