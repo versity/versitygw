@@ -60,6 +60,63 @@ func AbortMultipartUpload_incorrect_uploadId(s *S3Conf) error {
 	})
 }
 
+func AbortMultipartUpload_upload_id_path_traversal(s *S3Conf) error {
+	testName := "AbortMultipartUpload_upload_id_path_traversal"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objs := []string{"victim-dir/1", "victim-dir/nested/obj"}
+		_, err := putObjects(s3client, objs, bucket)
+		if err != nil {
+			return err
+		}
+		mp, err := createMp(s3client, bucket, "other-obj")
+		if err != nil {
+			return err
+		}
+
+		// A posix upload directory is three levels below its bucket, so
+		// "../../../victim-dir" names the "victim-dir/" objects and ".."
+		// the directory holding every upload of the bucket.
+		for _, uploadId := range []string{"../../../victim-dir", ".."} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+				Bucket:   &bucket,
+				Key:      getPtr("my-obj"),
+				UploadId: &uploadId,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
+				return fmt.Errorf("upload id %q: %w", uploadId, err)
+			}
+		}
+
+		for _, obj := range objs {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("head %v: %w", obj, err)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if len(res.Uploads) != 1 || getString(res.Uploads[0].UploadId) != *mp.UploadId {
+			return fmt.Errorf("expected just the upload %v, instead got %v", *mp.UploadId, res.Uploads)
+		}
+
+		return nil
+	})
+}
+
 func AbortMultipartUpload_incorrect_object_key(s *S3Conf) error {
 	testName := "AbortMultipartUpload_incorrect_object_key"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

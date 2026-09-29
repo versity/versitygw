@@ -54,6 +54,54 @@ func CompletedMultipartUpload_non_existing_bucket(s *S3Conf) error {
 	})
 }
 
+func CompleteMultipartUpload_upload_id_path_traversal(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_upload_id_path_traversal"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objs, err := putObjects(s3client, []string{"victim-dir/1"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// A posix upload directory is three levels below its bucket, so
+		// the upload ID names the directory holding "victim-dir/1", which
+		// would be taken as part 1 and removed with the upload.
+		obj := "my-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: getPtr("../../../victim-dir"),
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{ETag: objs[0].ETag, PartNumber: getPtr(int32(1))},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    objs[0].Key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		return checkSdkApiErr(err, "NotFound")
+	})
+}
+
 func CompleteMultipartUpload_incorrect_part_number(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_incorrect_part_number"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

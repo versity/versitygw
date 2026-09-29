@@ -41,6 +41,28 @@ func ListParts_incorrect_uploadId(s *S3Conf) error {
 	})
 }
 
+func ListParts_upload_id_path_traversal(s *S3Conf) error {
+	testName := "ListParts_upload_id_path_traversal"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"victim-dir/1"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// A posix upload directory is three levels below its bucket, so
+		// the upload ID names the directory holding "victim-dir/1", which
+		// would be listed as part 1.
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   &bucket,
+			Key:      getPtr("my-obj"),
+			UploadId: getPtr("../../../victim-dir"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload))
+	})
+}
+
 func ListParts_incorrect_object_key(s *S3Conf) error {
 	testName := "ListParts_incorrect_object_key"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

@@ -102,6 +102,47 @@ func UploadPart_non_existing_mp_upload(s *S3Conf) error {
 	})
 }
 
+func UploadPart_upload_id_path_traversal(s *S3Conf) error {
+	testName := "UploadPart_upload_id_path_traversal"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objs, err := putObjects(s3client, []string{"victim-dir/1"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// A posix upload directory is three levels below its bucket, so
+		// part 1 of the upload ID would be written over "victim-dir/1".
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:     &bucket,
+			Key:        getPtr("my-obj"),
+			UploadId:   getPtr("../../../victim-dir"),
+			PartNumber: getPtr(int32(1)),
+			Body:       strings.NewReader("part data"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    objs[0].Key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if getString(out.ETag) != getString(objs[0].ETag) {
+			return fmt.Errorf("expected the object etag to be %v, instead got %v",
+				getString(objs[0].ETag), getString(out.ETag))
+		}
+
+		return nil
+	})
+}
+
 func UploadPart_multiple_checksum_headers(s *S3Conf) error {
 	testName := "UploadPart_multiple_checksum_headers"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

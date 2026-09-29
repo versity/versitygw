@@ -391,3 +391,57 @@ func DeleteObjects_key_limit(s *S3Conf) error {
 		return nil
 	})
 }
+
+func DeleteObjects_invalid_object_keys(s *S3Conf) error {
+	testName := "DeleteObjects_invalid_object_keys"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, otherObj := "my-obj", "other-obj"
+		_, err := putObjects(s3client, []string{obj, otherObj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// Every key resolves outside the bucket or to the bucket itself;
+		// the ones climbing back into it name obj. A request holding any of
+		// them is rejected as a whole, so its valid key isn't deleted
+		// either.
+		for _, key := range []string{
+			".",
+			"..",
+			"/",
+			"../",
+			"../../../etc/passwd",
+			"../" + bucket + "/" + obj,
+			"dir/../../" + bucket + "/" + obj,
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+				Bucket: &bucket,
+				Delete: &types.Delete{
+					Objects: []types.ObjectIdentifier{
+						{Key: &otherObj},
+						{Key: &key},
+					},
+				},
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
+				return fmt.Errorf("key %q: %w", key, err)
+			}
+		}
+
+		for _, key := range []string{obj, otherObj} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("head %v: %w", key, err)
+			}
+		}
+
+		return nil
+	})
+}

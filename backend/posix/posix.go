@@ -2337,6 +2337,10 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", err
 	}
 
+	if err := validateUploadID(uploadID); err != nil {
+		return res, "", err
+	}
+
 	// Rename the upload directory to <uploadId><ETag> to atomically claim
 	// the processing slot. A concurrent call with the same uploadId will compute
 	// the same ETag, so it will either find the directory still present (still
@@ -3112,7 +3116,23 @@ func numberOfChecksums(part types.CompletedPart) (int, string) {
 	return counter, builder.String()
 }
 
+// validateUploadID returns NoSuchUpload for an upload ID this backend never
+// generates. Upload IDs are UUIDs in canonical form, and each one names its
+// upload's directory, so an ID holding a path separator or ".." would
+// otherwise reach a path outside the bucket.
+func validateUploadID(uploadID string) error {
+	id, err := uuid.Parse(uploadID)
+	if err != nil || id.String() != uploadID {
+		return s3err.GetNoSuchUploadErr(uploadID)
+	}
+	return nil
+}
+
 func (p *Posix) checkUploadIDExists(bucket, object, uploadID string) ([32]byte, error) {
+	if err := validateUploadID(uploadID); err != nil {
+		return [32]byte{}, err
+	}
+
 	sum := sha256.Sum256([]byte(object))
 	objdir := filepath.Join(p.BucketPath(bucket), MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
@@ -3363,6 +3383,10 @@ func (p *Posix) AbortMultipartUpload(ctx context.Context, mpu *s3.AbortMultipart
 
 	err = p.doesBucketExist(bucket)
 	if err != nil {
+		return err
+	}
+
+	if err := validateUploadID(uploadID); err != nil {
 		return err
 	}
 
@@ -3726,6 +3750,10 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 		return nil, err
 	}
 
+	if err := validateUploadID(uploadID); err != nil {
+		return nil, err
+	}
+
 	sum := sha256.Sum256([]byte(object))
 	objdir := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
 	mpPath := filepath.Join(objdir, uploadID)
@@ -4058,6 +4086,10 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 
 	err = p.doesBucketExist(*upi.Bucket)
 	if err != nil {
+		return s3response.CopyPartResult{}, err
+	}
+
+	if err := validateUploadID(*upi.UploadId); err != nil {
 		return s3response.CopyPartResult{}, err
 	}
 
