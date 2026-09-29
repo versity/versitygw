@@ -32,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -90,6 +91,12 @@ type Posix struct {
 	// if the filesystem supports it. This is needed for cases where
 	// there are different filesystems mounted below the bucket level.
 	forceNoTmpFile bool
+
+	// tmpSubdirs is the number of .sgwtmp subdirectories named temp files
+	// are spread over; 0 or 1 disables the spreading. See PosixOpts.TmpSubdirs.
+	tmpSubdirs int
+	// tmpSubdirSeq assigns subdirectories to temp files in round-robin order.
+	tmpSubdirSeq atomic.Uint64
 
 	// forceNoCopyFileRange is a flag to disable the use of io.Copy to
 	// reassemble multipart upload parts, which uses copy_file_range on
@@ -249,6 +256,23 @@ type PosixOpts struct {
 	// ForceNoTmpFile disables the use of O_TMPFILE even if the filesystem
 	// supports it
 	ForceNoTmpFile bool
+	// TmpSubdirs spreads named temp files over this many subdirectories of the
+	// bucket's .sgwtmp directory, assigned round-robin per upload. Named temp
+	// files are used whenever O_TMPFILE is unavailable (e.g. Lustre) or
+	// disabled with ForceNoTmpFile. Without sharding, every concurrent upload
+	// into a bucket creates its temp file in, and renames it out of, the single
+	// .sgwtmp directory, and those renames serialize on that shared parent
+	// directory. Valid values are 0-256; 0 and 1 both disable the spreading and
+	// keep the historical layout, while the gateway command defaults to 1
+	// (spreading off). It has no effect on the O_TMPFILE path, which never
+	// names the temp file.
+	//
+	// If throughput is still lower than expected with sharding enabled, check
+	// the kernel block I/O size of the devices backing the filesystem
+	// (/sys/block/<dev>/queue/max_sectors_kb). Some virtual disks report an
+	// optimal transfer length of a single block, which caps every write at
+	// 4 KiB and saturates the disks before directory contention matters.
+	TmpSubdirs int
 	// ForceNoCopyFileRange disables the use of io.Copy for multipart uploads parts
 	ForceNoCopyFileRange bool
 	// ForceNoObjLockFile is a deprecated compatibility alias for
@@ -309,6 +333,11 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 
 	if opts.SideCarDir != "" && strings.HasPrefix(opts.SideCarDir, rootdir) {
 		return nil, fmt.Errorf("sidecar directory cannot be inside the gateway root directory")
+	}
+
+	if opts.TmpSubdirs < 0 || opts.TmpSubdirs > maxTmpSubdirs {
+		return nil, fmt.Errorf("temp subdirs %d out of range [0, %d]",
+			opts.TmpSubdirs, maxTmpSubdirs)
 	}
 
 	// A storer that keeps metadata on the object files (xattr) resolves
@@ -413,6 +442,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		newDirPerm:           newDirPerm,
 		newFilePerm:          newFilePerm,
 		forceNoTmpFile:       opts.ForceNoTmpFile,
+		tmpSubdirs:           opts.TmpSubdirs,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
 		objectLockMode:       objectLockMode,
 		enableODirect:        opts.EnableODirect,
@@ -924,6 +954,29 @@ func (p *Posix) removePartialBucket(bucket string) {
 			debuglogger.Logf("failed to remove partially created bucket version directory (%q): %v", bucket, err)
 		}
 	}
+}
+
+// maxTmpSubdirs bounds PosixOpts.TmpSubdirs. The count only needs to exceed
+// the number of uploads racing on one bucket; a larger value just adds
+// directories to every bucket.
+const maxTmpSubdirs = 256
+
+// tmpSubdir returns the directory the next named temp file created for dir
+// goes in. Only temp files created directly in a .sgwtmp directory are
+// spread out; multipart part directories below .sgwtmp/multipart keep their
+// layout because ListMultipartUploads reads their entries as upload IDs.
+// Subdirectories are picked round-robin rather than by object name so that
+// uploads spread evenly regardless of key distribution; temp file names are
+// unique on their own, so nothing depends on which subdirectory an object
+// uses. Subdirectories are created on demand and never removed while the
+// gateway runs, so a concurrent create never races with the removal of an
+// empty subdirectory.
+func (p *Posix) tmpSubdir(dir string) string {
+	if p.tmpSubdirs <= 1 || filepath.Base(dir) != MetaTmpDir {
+		return dir
+	}
+	n := p.tmpSubdirSeq.Add(1) % uint64(p.tmpSubdirs)
+	return filepath.Join(dir, strconv.FormatUint(n, 10))
 }
 
 // mkdirAll is backend.MkdirAll with this backend's directory permissions and

@@ -150,6 +150,8 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 }
 
 func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, uid, gid int, doChown bool, allowODirect odirectPolicy) (*tmpfile, error) {
+	sum := sha256.Sum256([]byte(obj))
+	dir = p.tmpSubdir(dir)
 	err := p.mkdirAll(dir, uid, gid, doChown)
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
@@ -157,8 +159,7 @@ func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, u
 		}
 		return nil, fmt.Errorf("make temp dir: %w", err)
 	}
-	f, err := os.CreateTemp(dir,
-		fmt.Sprintf("%x.", sha256.Sum256([]byte(obj))))
+	f, err := os.CreateTemp(dir, fmt.Sprintf("%x.", sum))
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
 			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
