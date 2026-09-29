@@ -56,18 +56,25 @@ type tmpfile struct {
 	modTime time.Time
 }
 
-// openTmpFile opens a temporary file in dir (a filesystem path) that link()
-// later publishes as obj within bucket. bucket is a bucket name or, for the
-// versioning code, the absolute path of a bucket's versioning directory.
-func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, dofalloc bool, forceNoTmpFile bool, allowODirect odirectPolicy) (*tmpfile, error) {
+// openTmpFile creates the upload temp file for obj, which link() later
+// publishes into bucket. bucket is a bucket name or, for the versioning
+// code, the absolute path of a bucket's versioning directory. The O_TMPFILE
+// attempt uses dir; namedDir, when not empty, is where a named temp file is
+// staged instead (multipart parts use it to spread over temp subdirectories).
+func (p *Posix) openTmpFile(dir, namedDir string, bucket, obj string, size int64, acct auth.Account, dofalloc bool, forceNoTmpFile bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
 
 	// The tmpfile keeps the bucket directory's path so that link() and its
 	// fallbacks address it the same way as every other bucket path.
 	bucket = p.BucketPath(bucket)
 
+	named := namedDir
+	if named == "" {
+		named = dir
+	}
+
 	if forceNoTmpFile {
-		return p.openMkTemp(dir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
+		return p.openMkTemp(named, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 	}
 
 	// O_TMPFILE allows for a file handle to an unnamed file in the filesystem.
@@ -104,7 +111,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 
 		if err != nil {
 			// O_TMPFILE not supported, try fallback
-			return p.openMkTemp(dir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
+			return p.openMkTemp(named, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 		}
 	}
 
@@ -155,6 +162,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 }
 
 func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, uid, gid int, doChown bool, allowODirect odirectPolicy) (*tmpfile, error) {
+	dir = p.tmpSubdir(dir)
 	err := p.mkdirAll(dir, uid, gid, doChown)
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {

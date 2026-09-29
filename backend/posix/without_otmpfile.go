@@ -56,11 +56,14 @@ type tmpfile struct {
 	modTime time.Time
 }
 
-// openTmpFile opens a temporary file in dir (a filesystem path) that link()
-// later publishes as obj within bucket. bucket is a bucket name or, for the
-// versioning code, the absolute path of a bucket's versioning directory.
-func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, _ bool, _ bool, allowODirect odirectPolicy) (*tmpfile, error) {
+// openTmpFile mirrors the linux variant: it creates a named temp file that
+// link() later publishes into bucket. namedDir, when not empty, is where
+// the temp file is staged instead of dir.
+func (p *Posix) openTmpFile(dir, namedDir string, bucket, obj string, size int64, acct auth.Account, _ bool, _ bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
+	if namedDir != "" {
+		dir = namedDir
+	}
 
 	// The tmpfile keeps the bucket directory's path so that link() addresses
 	// it the same way as every other bucket path.
@@ -71,8 +74,8 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	}
 
 	// Create a temp file for upload while in progress (see link comments below).
-	var err error
-	err = p.mkdirAll(dir, uid, gid, doChown)
+	dir = p.tmpSubdir(dir)
+	err := p.mkdirAll(dir, uid, gid, doChown)
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
 			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
