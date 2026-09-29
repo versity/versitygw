@@ -256,6 +256,7 @@ func dirGone(err error) bool {
 }
 
 func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, uid, gid int, doChown bool, allowODirect odirectPolicy) (*tmpfile, error) {
+	dir = p.tmpSubdir(dir)
 	err := p.mkdirAll(dir, uid, gid, doChown)
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {

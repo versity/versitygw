@@ -73,6 +73,7 @@ func (p *Posix) openTmpFileIn(_, dir, bucket, obj string, size int64, acct auth.
 	}
 
 	// Create a temp file for upload while in progress (see link comments below).
+	dir = p.tmpSubdir(dir)
 	var err error
 	err = p.mkdirAll(dir, uid, gid, doChown)
 	if err != nil {
