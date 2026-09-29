@@ -770,6 +770,8 @@ func (p *Posix) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3.
 }
 
 func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -986,7 +988,9 @@ func (p *Posix) isBucketEmpty(bucket string) error {
 	return nil
 }
 
-func (p *Posix) DeleteBucket(ctx context.Context, bucket string) error {
+func (p *Posix) DeleteBucket(ctx context.Context, bucket string) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -1029,7 +1033,9 @@ func (p *Posix) DeleteBucket(ctx context.Context, bucket string) error {
 	return nil
 }
 
-func (p *Posix) PutBucketOwnershipControls(ctx context.Context, bucket string, ownership types.ObjectOwnership) error {
+func (p *Posix) PutBucketOwnershipControls(ctx context.Context, bucket string, ownership types.ObjectOwnership) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -1077,7 +1083,9 @@ func (p *Posix) GetBucketOwnershipControls(ctx context.Context, bucket string) (
 
 	return types.ObjectOwnership(ownership), nil
 }
-func (p *Posix) DeleteBucketOwnershipControls(ctx context.Context, bucket string) error {
+func (p *Posix) DeleteBucketOwnershipControls(ctx context.Context, bucket string) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -1104,7 +1112,9 @@ func (p *Posix) DeleteBucketOwnershipControls(ctx context.Context, bucket string
 	return nil
 }
 
-func (p *Posix) PutBucketVersioning(ctx context.Context, bucket string, status types.BucketVersioningStatus) error {
+func (p *Posix) PutBucketVersioning(ctx context.Context, bucket string, status types.BucketVersioningStatus) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -2006,7 +2016,9 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 	}
 }
 
-func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.CreateMultipartUploadInput) (_ s3response.InitiateMultipartUploadResult, err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return s3response.InitiateMultipartUploadResult{}, err
@@ -2291,7 +2303,9 @@ type onlyRead struct {
 // be completely aborted on any subsequent failure.
 type CustomCopyFunc func(from *os.File, to *os.File) (bool, error)
 
-func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.CompleteMultipartUploadInput, customCopy CustomCopyFunc) (s3response.CompleteMultipartUploadResult, string, error) {
+func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.CompleteMultipartUploadInput, customCopy CustomCopyFunc) (_ s3response.CompleteMultipartUploadResult, _ string, err error) {
+	defer backend.MapPermissionErr(&err)
+
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
@@ -2318,7 +2332,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
 
-	err := p.doesBucketExist(bucket)
+	err = p.doesBucketExist(bucket)
 	if err != nil {
 		return res, "", err
 	}
@@ -3323,7 +3337,9 @@ func isValidMeta(val string) bool {
 	return strings.HasPrefix(val, oldMetaHdr)
 }
 
-func (p *Posix) AbortMultipartUpload(ctx context.Context, mpu *s3.AbortMultipartUploadInput) error {
+func (p *Posix) AbortMultipartUpload(ctx context.Context, mpu *s3.AbortMultipartUploadInput) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -3679,7 +3695,9 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 	return p.UploadPartWithPostFunc(ctx, input, func(*os.File) error { return nil })
 }
 
-func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPartInput, postprocess func(f *os.File) error) (*s3.UploadPartOutput, error) {
+func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPartInput, postprocess func(f *os.File) error) (_ *s3.UploadPartOutput, err error) {
+	defer backend.MapPermissionErr(&err)
+
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
@@ -3703,7 +3721,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	}
 	r := input.Body
 
-	err := p.doesBucketExist(bucket)
+	err = p.doesBucketExist(bucket)
 	if err != nil {
 		return nil, err
 	}
@@ -4016,7 +4034,9 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	return res, nil
 }
 
-func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
+func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput) (_ s3response.CopyPartResult, err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return s3response.CopyPartResult{}, err
@@ -4441,7 +4461,9 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 	return p.PutObjectWithPostFunc(ctx, po, func(*os.File) error { return nil })
 }
 
-func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObjectInput, postprocess func(f *os.File) error) (s3response.PutObjectOutput, error) {
+func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObjectInput, postprocess func(f *os.File) error) (_ s3response.PutObjectOutput, err error) {
+	defer backend.MapPermissionErr(&err)
+
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
@@ -4453,7 +4475,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	if !p.isBucketValid(*po.Bucket) {
 		return s3response.PutObjectOutput{}, s3err.GetBucketErr(s3err.ErrInvalidBucketName, *po.Bucket)
 	}
-	err := p.doesBucketExist(*po.Bucket)
+	err = p.doesBucketExist(*po.Bucket)
 	if err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
@@ -4790,6 +4812,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	dir := filepath.Dir(name)
 	if dir != "" {
 		err = p.mkdirAll(dir, uid, gid, doChown)
+		if backend.IsPermissionErr(err) {
+			return s3response.PutObjectOutput{}, fmt.Errorf("make parent dir: %w", err)
+		}
 		if err != nil {
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 		}
@@ -4930,6 +4955,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			VersionID: versionID,
 		}, nil
 	}
+	if backend.IsPermissionErr(err) {
+		return s3response.PutObjectOutput{}, fmt.Errorf("link object in namespace: %w", err)
+	}
 	if err != nil {
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 	}
@@ -5007,7 +5035,9 @@ func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObje
 	return nil
 }
 
-func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
+func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (_ *s3.DeleteObjectOutput, err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return nil, err
@@ -6323,7 +6353,9 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 	}, nil
 }
 
-func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
+func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (_ s3response.CopyObjectOutput, err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return s3response.CopyObjectOutput{}, err
@@ -6986,7 +7018,9 @@ func (p *Posix) ListObjectsV2Parametrized(ctx context.Context, input *s3.ListObj
 	}, nil
 }
 
-func (p *Posix) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
+func (p *Posix) PutBucketAcl(ctx context.Context, bucket string, data []byte) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -7034,7 +7068,9 @@ func (p *Posix) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) (
 	return b, nil
 }
 
-func (p *Posix) PutBucketTagging(ctx context.Context, bucket string, tags map[string]string) error {
+func (p *Posix) PutBucketTagging(ctx context.Context, bucket string, tags map[string]string) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -7166,7 +7202,9 @@ func (p *Posix) getAttrTags(bucket, object, versionId string) (map[string]string
 	return tags, nil
 }
 
-func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId string, tags map[string]string) error {
+func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId string, tags map[string]string) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -7248,7 +7286,9 @@ func (p *Posix) DeleteObjectTagging(ctx context.Context, bucket, object, version
 	return p.PutObjectTagging(ctx, bucket, object, versionId, nil)
 }
 
-func (p *Posix) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
+func (p *Posix) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -7320,7 +7360,9 @@ func (p *Posix) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 	return p.PutBucketPolicy(ctx, bucket, nil)
 }
 
-func (p *Posix) PutBucketCors(ctx context.Context, bucket string, cors []byte) error {
+func (p *Posix) PutBucketCors(ctx context.Context, bucket string, cors []byte) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -7385,7 +7427,9 @@ func (p *Posix) DeleteBucketCors(ctx context.Context, bucket string) error {
 	return p.PutBucketCors(ctx, bucket, nil)
 }
 
-func (p *Posix) PutBucketWebsite(ctx context.Context, bucket string, website []byte) error {
+func (p *Posix) PutBucketWebsite(ctx context.Context, bucket string, website []byte) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -7506,7 +7550,9 @@ func (p *Posix) isBucketObjectLockEnabled(bucket string) error {
 	return nil
 }
 
-func (p *Posix) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {
+func (p *Posix) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -7572,7 +7618,9 @@ func (p *Posix) GetObjectLockConfiguration(ctx context.Context, bucket string) (
 	return cfg, nil
 }
 
-func (p *Posix) PutObjectLegalHold(ctx context.Context, bucket, object, versionId string, status bool) error {
+func (p *Posix) PutObjectLegalHold(ctx context.Context, bucket, object, versionId string, status bool) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -7690,7 +7738,9 @@ func (p *Posix) GetObjectLegalHold(ctx context.Context, bucket, object, versionI
 	return &result, nil
 }
 
-func (p *Posix) PutObjectRetention(ctx context.Context, bucket, object, versionId string, retention []byte) error {
+func (p *Posix) PutObjectRetention(ctx context.Context, bucket, object, versionId string, retention []byte) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err
@@ -7793,7 +7843,9 @@ func (p *Posix) GetObjectRetention(ctx context.Context, bucket, object, versionI
 	return data, nil
 }
 
-func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket, owner string) error {
+func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket, owner string) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return err

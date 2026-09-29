@@ -435,7 +435,9 @@ func (s *ScoutFS) glacierFileToObj(bucket string, fetchOwner bool) backend.GetOb
 
 // RestoreObject will set stage request on file if offline and do nothing if
 // file is online
-func (s *ScoutFS) RestoreObject(_ context.Context, input *s3.RestoreObjectInput) error {
+func (s *ScoutFS) RestoreObject(_ context.Context, input *s3.RestoreObjectInput) (err error) {
+	defer backend.MapPermissionErr(&err)
+
 	bucket := *input.Bucket
 	object := *input.Key
 
@@ -443,7 +445,7 @@ func (s *ScoutFS) RestoreObject(_ context.Context, input *s3.RestoreObjectInput)
 		return s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
 
-	err := s.DoesBucketExist(bucket)
+	err = s.DoesBucketExist(bucket)
 	if err != nil {
 		return err
 	}

@@ -37,6 +37,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -637,6 +638,28 @@ func MoveFile(source, destination string, perm os.FileMode) error {
 	}
 
 	return nil
+}
+
+// IsPermissionErr reports whether err is a filesystem permission failure,
+// EACCES or EPERM. Windows ERROR_ACCESS_DENIED is left out: Windows also
+// returns it for transient states, such as a name whose delete is still
+// pending.
+func IsPermissionErr(err error) bool {
+	return errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM)
+}
+
+// MapPermissionErr replaces a filesystem permission failure in *err with
+// AccessDenied; filesystem backend methods that write defer it. The gateway
+// process lacking a permission is not transient: a retry fails the same way,
+// while the InternalError it would otherwise become has S3 clients retry it
+// several times before giving up. The cause is logged at debug level, since
+// the gateway's filesystem permissions denied the request, not its
+// authorization.
+func MapPermissionErr(err *error) {
+	if err != nil && IsPermissionErr(*err) {
+		debuglogger.Logf("filesystem permission denied, reporting AccessDenied: %v", *err)
+		*err = s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 }
 
 // GenerateEtag generates a new quoted etag from the provided hash.Hash
