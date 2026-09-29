@@ -1323,6 +1323,230 @@ func PutObject_default_content_type(s *S3Conf) error {
 	})
 }
 
+func PutObject_overwrite_resets_attributes(s *S3Conf) error {
+	testName := "PutObject_overwrite_resets_attributes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		expires := time.Now().Add(time.Hour)
+
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:                  &bucket,
+			Key:                     &obj,
+			ContentType:             getPtr("text/plain"),
+			ContentEncoding:         getPtr("gzip"),
+			ContentDisposition:      getPtr("inline"),
+			ContentLanguage:         getPtr("en"),
+			CacheControl:            getPtr("no-cache"),
+			Expires:                 &expires,
+			WebsiteRedirectLocation: getPtr("/redirect"),
+			Metadata:                map[string]string{"foo": "bar"},
+			Tagging:                 getPtr("key=val"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		_, err = putObjectWithData(20, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		// the object holds none of the replaced object's attributes
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(out.ContentType) != defaultContentType {
+			return fmt.Errorf("expected default %s Content-Type, instead got %s",
+				defaultContentType, getString(out.ContentType))
+		}
+		for _, hdr := range []struct {
+			name  string
+			value *string
+		}{
+			{"Content-Encoding", out.ContentEncoding},
+			{"Content-Disposition", out.ContentDisposition},
+			{"Content-Language", out.ContentLanguage},
+			{"Cache-Control", out.CacheControl},
+			{"Expires", out.ExpiresString},
+			{"x-amz-website-redirect-location", out.WebsiteRedirectLocation},
+		} {
+			if hdr.value != nil {
+				return fmt.Errorf("expected nil %s, instead got %s", hdr.name, *hdr.value)
+			}
+		}
+		if len(out.Metadata) != 0 {
+			return fmt.Errorf("expected empty metadata, instead got %v", out.Metadata)
+		}
+		if out.TagCount != nil {
+			return fmt.Errorf("expected nil tag count, instead got %v", *out.TagCount)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		tagging, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(tagging.TagSet) != 0 {
+			return fmt.Errorf("expected empty tag set, instead got %v", tagging.TagSet)
+		}
+
+		return nil
+	})
+}
+
+func PutObject_overwrite_multipart_object(s *S3Conf) error {
+	testName := "PutObject_overwrite_multipart_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						ETag:       parts[0].ETag,
+						PartNumber: parts[0].PartNumber,
+					},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		dataLen := int64(10)
+		_, err = putObjectWithData(dataLen, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		// the new object isn't a multipart upload: its only part is the
+		// whole object
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			PartNumber: getPtr(int32(1)),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.PartsCount != nil {
+			return fmt.Errorf("expected nil parts count, instead got %v", *out.PartsCount)
+		}
+		if out.ContentLength == nil {
+			return fmt.Errorf("expected non nil ContentLength")
+		}
+		if *out.ContentLength != dataLen {
+			return fmt.Errorf("expected the content length to be %v, instead got %v",
+				dataLen, *out.ContentLength)
+		}
+
+		return nil
+	})
+}
+
+func PutObject_dir_object_overwrite_resets_attributes(s *S3Conf) error {
+	testName := "PutObject_dir_object_overwrite_resets_attributes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-dir/"
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:                  &bucket,
+			Key:                     &obj,
+			Tagging:                 getPtr("key1=val1&key2=val2"),
+			Metadata:                map[string]string{"foo": "bar"},
+			WebsiteRedirectLocation: getPtr("/some/redirect"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// the object holds none of the replaced object's attributes
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Metadata) != 0 {
+			return fmt.Errorf("expected empty metadata, instead got %v", out.Metadata)
+		}
+		if out.WebsiteRedirectLocation != nil {
+			return fmt.Errorf("expected nil website-redirect-location, instead got %v",
+				*out.WebsiteRedirectLocation)
+		}
+		if out.TagCount != nil {
+			return fmt.Errorf("expected nil tag count, instead got %v", *out.TagCount)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		tagging, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(tagging.TagSet) != 0 {
+			return fmt.Errorf("expected empty tag set, instead got %v", tagging.TagSet)
+		}
+
+		return nil
+	})
+}
+
 func PutObject_invalid_credentials(s *S3Conf) error {
 	testName := "PutObject_invalid_credentials"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

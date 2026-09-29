@@ -143,6 +143,13 @@ func (x XattrMeta) RenameObject(_, _, _ string) error {
 	return nil
 }
 
+// ReplaceObject is a no-op for xattr because extended attributes are stored
+// on the inodes: the replaced file takes its attributes with it, and the new
+// file has only the ones set on it.
+func (x XattrMeta) ReplaceObject(_, _ string, _ []string) error {
+	return nil
+}
+
 // ListAttributes lists all attributes for an object in a bucket.
 func (x XattrMeta) ListAttributes(bucket, object string) ([]string, error) {
 	name, err := x.path(bucket, object)
