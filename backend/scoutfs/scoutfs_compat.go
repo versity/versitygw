@@ -84,6 +84,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 		CopyObjectThreshold: opts.CopyObjectThreshold,
 		DefaultEtag:         opts.DefaultEtag,
 		DataIntegrityEtag:   opts.DataIntegrityEtag,
+		EnableODirect:       opts.EnableODirect,
 		ObjectLockMode:      objectLockMode,
 	}
 	if opts.newDirPermSet {

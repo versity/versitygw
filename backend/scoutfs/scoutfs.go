@@ -68,6 +68,9 @@ type ScoutfsOpts struct {
 	// (e.g. "CRC64NVME-<base64>"). For multipart uploads, part ETags become
 	// CRC64NVME-based values and the completed object ETag is checksum-derived.
 	DataIntegrityEtag bool
+	// EnableODirect enables best-effort O_DIRECT for object data reads/writes.
+	// Disabled by default.
+	EnableODirect bool
 	// ObjectLockMode selects local or none for conditional object publishes.
 	ObjectLockMode posix.ObjectLockMode
 }
