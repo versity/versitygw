@@ -138,6 +138,12 @@ move interfaces as well as support for tiered filesystems.`,
 				EnvVars:     []string{"VGW_DATA_INTEGRITY_ETAG"},
 				Destination: &dataIntegrityEtag,
 			},
+			&cli.BoolFlag{
+				Name:        "enable-odirect",
+				Usage:       "enable best-effort O_DIRECT for object data reads/writes",
+				EnvVars:     []string{"VGW_ENABLE_O_DIRECT"},
+				Destination: &enableODirect,
+			},
 		},
 	}
 }
@@ -177,6 +183,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.ObjectLockMode = posix.ObjectLockMode(scoutfsLockMode)
 	opts.DefaultEtag = defaultEtag
 	opts.DataIntegrityEtag = dataIntegrityEtag
+	opts.EnableODirect = enableODirect
 	opts.SetNewDirPerm(fs.FileMode(dirPerms))
 	opts.SetNewFilePerm(fs.FileMode(filePerms))
 
