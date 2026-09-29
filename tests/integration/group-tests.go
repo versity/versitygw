@@ -375,6 +375,7 @@ func TestDeleteObjects(ts *TestState) {
 	ts.Run(DeleteObjects_non_existing_objects)
 	ts.Run(DeleteObjects_success)
 	ts.Run(DeleteObjects_key_limit)
+	ts.Run(DeleteObjects_invalid_object_keys)
 }
 
 func TestCopyObject(ts *TestState) {
@@ -474,6 +475,7 @@ func TestUploadPart(ts *TestState) {
 	ts.Run(UploadPart_invalid_part_number)
 	ts.Run(UploadPart_non_existing_key)
 	ts.Run(UploadPart_non_existing_mp_upload)
+	ts.Run(UploadPart_upload_id_path_traversal)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(UploadPart_multiple_checksum_headers)
@@ -496,6 +498,7 @@ func TestUploadPart(ts *TestState) {
 func TestUploadPartCopy(ts *TestState) {
 	ts.Run(UploadPartCopy_non_existing_bucket)
 	ts.Run(UploadPartCopy_incorrect_uploadId)
+	ts.Run(UploadPartCopy_upload_id_path_traversal)
 	ts.Run(UploadPartCopy_incorrect_object_key)
 	ts.Run(UploadPartCopy_invalid_part_number)
 	ts.Run(UploadPartCopy_invalid_copy_source)
@@ -518,6 +521,7 @@ func TestUploadPartCopy(ts *TestState) {
 
 func TestListParts(ts *TestState) {
 	ts.Run(ListParts_incorrect_uploadId)
+	ts.Run(ListParts_upload_id_path_traversal)
 	ts.Run(ListParts_incorrect_object_key)
 	ts.Run(ListParts_invalid_max_parts)
 	ts.Run(ListParts_invalid_part_number_marker)
@@ -554,6 +558,7 @@ func TestListMultipartUploads(ts *TestState) {
 func TestAbortMultipartUpload(ts *TestState) {
 	ts.Run(AbortMultipartUpload_non_existing_bucket)
 	ts.Run(AbortMultipartUpload_incorrect_uploadId)
+	ts.Run(AbortMultipartUpload_upload_id_path_traversal)
 	ts.Run(AbortMultipartUpload_incorrect_object_key)
 	ts.Run(AbortMultipartUpload_success)
 	ts.Run(AbortMultipartUpload_success_status_code)
@@ -562,6 +567,7 @@ func TestAbortMultipartUpload(ts *TestState) {
 
 func TestCompleteMultipartUpload(ts *TestState) {
 	ts.Run(CompletedMultipartUpload_non_existing_bucket)
+	ts.Run(CompleteMultipartUpload_upload_id_path_traversal)
 	ts.Run(CompleteMultipartUpload_incorrect_part_number)
 	ts.Run(CompleteMultipartUpload_invalid_part_number)
 	ts.Run(CompleteMultipartUpload_default_content_type)
@@ -1088,6 +1094,7 @@ func TestScoutfs(ts *TestState) {
 	ts.Run(CreateMultipartUpload_success)
 
 	ts.Run(CompletedMultipartUpload_non_existing_bucket)
+	ts.Run(CompleteMultipartUpload_upload_id_path_traversal)
 	ts.Run(CompleteMultipartUpload_incorrect_part_number)
 	ts.Run(CompleteMultipartUpload_invalid_part_number)
 	ts.Run(CompleteMultipartUpload_invalid_ETag)
@@ -3110,6 +3117,7 @@ func GetIntTests() IntTests {
 		"DeleteObjects_non_existing_objects":                                               DeleteObjects_non_existing_objects,
 		"DeleteObjects_success":                                                            DeleteObjects_success,
 		"DeleteObjects_key_limit":                                                          DeleteObjects_key_limit,
+		"DeleteObjects_invalid_object_keys":                                                DeleteObjects_invalid_object_keys,
 		"DeleteObjects_iam_mixed_denials_and_success":                                      DeleteObjects_iam_mixed_denials_and_success,
 		"DeleteObjects_iam_all_access_denied":                                              DeleteObjects_iam_all_access_denied,
 		"DeleteObjects_iam_all_locked":                                                     DeleteObjects_iam_all_locked,
@@ -3187,6 +3195,7 @@ func GetIntTests() IntTests {
 		"UploadPart_invalid_part_number":                                                   UploadPart_invalid_part_number,
 		"UploadPart_non_existing_key":                                                      UploadPart_non_existing_key,
 		"UploadPart_non_existing_mp_upload":                                                UploadPart_non_existing_mp_upload,
+		"UploadPart_upload_id_path_traversal":                                              UploadPart_upload_id_path_traversal,
 		"UploadPart_multiple_checksum_headers":                                             UploadPart_multiple_checksum_headers,
 		"UploadPart_invalid_checksum_header":                                               UploadPart_invalid_checksum_header,
 		"UploadPart_checksum_header_and_algo_mismatch":                                     UploadPart_checksum_header_and_algo_mismatch,
@@ -3203,6 +3212,7 @@ func GetIntTests() IntTests {
 		"UploadPart_data_integrity_etag":                                                   UploadPart_data_integrity_etag,
 		"UploadPartCopy_non_existing_bucket":                                               UploadPartCopy_non_existing_bucket,
 		"UploadPartCopy_incorrect_uploadId":                                                UploadPartCopy_incorrect_uploadId,
+		"UploadPartCopy_upload_id_path_traversal":                                          UploadPartCopy_upload_id_path_traversal,
 		"UploadPartCopy_incorrect_object_key":                                              UploadPartCopy_incorrect_object_key,
 		"UploadPartCopy_invalid_part_number":                                               UploadPartCopy_invalid_part_number,
 		"UploadPartCopy_invalid_copy_source":                                               UploadPartCopy_invalid_copy_source,
@@ -3220,6 +3230,7 @@ func GetIntTests() IntTests {
 		"UploadPartCopy_should_calculate_the_checksum":                                     UploadPartCopy_should_calculate_the_checksum,
 		"UploadPartCopy_data_integrity_etag":                                               UploadPartCopy_data_integrity_etag,
 		"ListParts_incorrect_uploadId":                                                     ListParts_incorrect_uploadId,
+		"ListParts_upload_id_path_traversal":                                               ListParts_upload_id_path_traversal,
 		"ListParts_incorrect_object_key":                                                   ListParts_incorrect_object_key,
 		"ListParts_invalid_max_parts":                                                      ListParts_invalid_max_parts,
 		"ListParts_invalid_part_number_marker":                                             ListParts_invalid_part_number_marker,
@@ -3242,11 +3253,13 @@ func GetIntTests() IntTests {
 		"ListMultipartUploads_with_checksums":                                              ListMultipartUploads_with_checksums,
 		"AbortMultipartUpload_non_existing_bucket":                                         AbortMultipartUpload_non_existing_bucket,
 		"AbortMultipartUpload_incorrect_uploadId":                                          AbortMultipartUpload_incorrect_uploadId,
+		"AbortMultipartUpload_upload_id_path_traversal":                                    AbortMultipartUpload_upload_id_path_traversal,
 		"AbortMultipartUpload_incorrect_object_key":                                        AbortMultipartUpload_incorrect_object_key,
 		"AbortMultipartUpload_success":                                                     AbortMultipartUpload_success,
 		"AbortMultipartUpload_success_status_code":                                         AbortMultipartUpload_success_status_code,
 		"AbortMultipartUpload_if_match_initiated_time":                                     AbortMultipartUpload_if_match_initiated_time,
 		"CompletedMultipartUpload_non_existing_bucket":                                     CompletedMultipartUpload_non_existing_bucket,
+		"CompleteMultipartUpload_upload_id_path_traversal":                                 CompleteMultipartUpload_upload_id_path_traversal,
 		"CompleteMultipartUpload_invalid_part_number":                                      CompleteMultipartUpload_invalid_part_number,
 		"CompleteMultipartUpload_default_content_type":                                     CompleteMultipartUpload_default_content_type,
 		"CompleteMultipartUpload_overwrite_resets_attributes":                              CompleteMultipartUpload_overwrite_resets_attributes,

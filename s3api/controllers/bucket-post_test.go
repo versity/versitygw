@@ -77,6 +77,22 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 	emptyBody, err := xml.Marshal(s3response.DeleteObjects{Objects: []types.ObjectIdentifier{}})
 	assert.NoError(t, err)
 
+	invalidKeyBody, err := xml.Marshal(s3response.DeleteObjects{
+		Objects: []types.ObjectIdentifier{
+			{Key: utils.GetStringPtr("obj")},
+			{Key: utils.GetStringPtr("../../outside/file")},
+		},
+	})
+	assert.NoError(t, err)
+
+	missingKeyBody, err := xml.Marshal(s3response.DeleteObjects{
+		Objects: []types.ObjectIdentifier{
+			{Key: utils.GetStringPtr("obj")},
+			{VersionId: utils.GetStringPtr("null")},
+		},
+	})
+	assert.NoError(t, err)
+
 	lockConfig, err := json.Marshal(auth.BucketLockConfig{Enabled: true})
 	assert.NoError(t, err)
 
@@ -236,6 +252,48 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 			configureMock: func(be *BackendMock) {
 				be.DeleteObjectsFunc = func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
 					t.Error("backend DeleteObjects called for an over-limit request")
+					return s3response.DeleteResult{}, nil
+				}
+			},
+		},
+		{
+			name: "object key escaping the bucket",
+			input: testInput{
+				locals: defaultLocals,
+				body:   invalidKeyBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrBadRequest),
+			},
+			configureMock: func(be *BackendMock) {
+				be.DeleteObjectsFunc = func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
+					t.Error("backend DeleteObjects called for a request with an invalid key")
+					return s3response.DeleteResult{}, nil
+				}
+			},
+		},
+		{
+			name: "missing object key",
+			input: testInput{
+				locals: defaultLocals,
+				body:   missingKeyBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrBadRequest),
+			},
+			configureMock: func(be *BackendMock) {
+				be.DeleteObjectsFunc = func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
+					t.Error("backend DeleteObjects called for a request with a missing key")
 					return s3response.DeleteResult{}, nil
 				}
 			},

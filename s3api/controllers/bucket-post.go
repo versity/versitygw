@@ -24,6 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3api/utils"
@@ -67,6 +68,22 @@ func (c S3ApiController) DeleteObjects(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+
+	// The keys come from the body, so they skip the object name check the
+	// request path gets. A key resolving outside the bucket ("../key") names
+	// a path outside it on a filesystem backend, so the whole request is
+	// rejected before any key is authorized or deleted.
+	for _, obj := range dObj.Objects {
+		if obj.Key == nil || !utils.IsObjectNameValid(*obj.Key) {
+			debuglogger.Logf("delete objects: invalid object key: %q",
+				backend.GetStringFromPtr(obj.Key))
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, s3err.GetAPIError(s3err.ErrBadRequest)
+		}
 	}
 
 	// checkErrs holds one entry per requested object — nil where it may
