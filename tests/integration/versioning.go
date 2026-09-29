@@ -2818,6 +2818,149 @@ func Versioning_DeleteObject_promoted_version_attributes(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+// Versioning_DeleteObject_promoted_version_last_modified deletes the current
+// version of objects, which makes an older version the current one: the
+// version put before it, the version under a delete marker or the null
+// version. The promoted version keeps its last modified time.
+func Versioning_DeleteObject_promoted_version_last_modified(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_promoted_version_last_modified"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		cases := []struct {
+			obj string
+			// the version to promote is put while versioning is suspended
+			null bool
+			// the version to promote is hidden by a delete marker
+			delMarker bool
+			// the last modified time of the version to promote
+			lastModified *time.Time
+		}{
+			{obj: "my-obj"},
+			{obj: "my-dir/"},
+			{obj: "my-dm-obj", delMarker: true},
+			{obj: "my-dm-dir/", delMarker: true},
+			{obj: "my-null-obj", null: true},
+			{obj: "my-null-dir/", null: true},
+		}
+
+		put := func(obj string) (*string, error) {
+			r, err := putObjectWithData(objDataLen(obj, 100), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}, s3client)
+			if err != nil {
+				return nil, err
+			}
+			return r.res.VersionId, nil
+		}
+
+		// the versions to promote are put first, the null versions while
+		// versioning is suspended
+		for _, status := range []types.BucketVersioningStatus{
+			types.BucketVersioningStatusSuspended,
+			types.BucketVersioningStatusEnabled,
+		} {
+			err := putBucketVersioningStatus(s3client, bucket, status)
+			if err != nil {
+				return err
+			}
+			for i, c := range cases {
+				if c.null != (status == types.BucketVersioningStatusSuspended) {
+					continue
+				}
+				if _, err := put(c.obj); err != nil {
+					return err
+				}
+
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+					Bucket: &bucket,
+					Key:    &c.obj,
+				})
+				cancel()
+				if err != nil {
+					return err
+				}
+				if res.LastModified == nil {
+					return fmt.Errorf("%v: expected non nil LastModified", c.obj)
+				}
+				cases[i].lastModified = res.LastModified
+			}
+		}
+
+		// the versions are promoted in a later second than they were put
+		time.Sleep(time.Second)
+
+		for _, c := range cases {
+			var latest *string
+			if c.delMarker {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+					Bucket: &bucket,
+					Key:    &c.obj,
+				})
+				cancel()
+				if err != nil {
+					return err
+				}
+				latest = out.VersionId
+			} else {
+				versionId, err := put(c.obj)
+				if err != nil {
+					return err
+				}
+				latest = versionId
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    &bucket,
+				Key:       &c.obj,
+				VersionId: latest,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &c.obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if res.LastModified == nil || !res.LastModified.Equal(*c.lastModified) {
+				return fmt.Errorf("%v: expected the promoted version LastModified to be %v, instead got %v",
+					c.obj, *c.lastModified, res.LastModified)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			versions, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+				Bucket: &bucket,
+				Prefix: &c.obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if len(versions.Versions) != 1 {
+				return fmt.Errorf("%v: expected 1 object version, instead got %v",
+					c.obj, len(versions.Versions))
+			}
+			v := versions.Versions[0]
+			if v.LastModified == nil || !v.LastModified.Equal(*c.lastModified) {
+				return fmt.Errorf("%v: expected the listed version LastModified to be %v, instead got %v",
+					c.obj, *c.lastModified, v.LastModified)
+			}
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_DeleteObject_non_existing_object(s *S3Conf) error {
 	testName := "Versioning_DeleteObject_non_existing_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

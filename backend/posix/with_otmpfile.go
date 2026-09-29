@@ -50,6 +50,9 @@ type tmpfile struct {
 	gid         int
 	newDirPerm  fs.FileMode
 	newFilePerm fs.FileMode
+	// modTime is the modification time the file is published with,
+	// the time it was last written if zero
+	modTime time.Time
 }
 
 // openTmpFile opens a temporary file in dir (a filesystem path) that link()
@@ -286,6 +289,12 @@ func (tmp *tmpfile) link() error {
 		return tmp.fallbackLink()
 	}
 
+	// the unnamed file has no path until it's linked
+	err = tmp.applyModTime(filepath.Join(procfddir, tmp.procFDName))
+	if err != nil {
+		return fmt.Errorf("set tmpfile modification time: %w", err)
+	}
+
 	procdir, err := os.Open(procfddir)
 	if err != nil {
 		return fmt.Errorf("open proc dir: %w", err)
@@ -349,6 +358,11 @@ func (tmp *tmpfile) fallbackLink() error {
 	err := tmp.f.Close()
 	if err != nil {
 		return fmt.Errorf("close tmpfile: %w", err)
+	}
+
+	err = tmp.applyModTime(tempname)
+	if err != nil {
+		return fmt.Errorf("set tmpfile modification time: %w", err)
 	}
 
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
