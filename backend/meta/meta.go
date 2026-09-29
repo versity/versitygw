@@ -44,6 +44,15 @@ type MetadataStorer interface {
 	// within the given bucket. This must be called whenever the data
 	// directory for an object is renamed so that metadata stays in sync.
 	RenameObject(bucket, oldObject, newObject string) error
+
+	// ReplaceObject removes the attributes of an object, other than the
+	// ones named in keep, when a new file replaces the object's file. This
+	// must be called whenever a new file is published at an object's path
+	// so that it doesn't inherit the metadata of the replaced file. The
+	// attributes in keep are the ones the new file sets anyway: they are
+	// overwritten instead of removed, so that they never go missing for
+	// concurrent readers.
+	ReplaceObject(bucket, object string, keep []string) error
 }
 
 // RootDirSetter is implemented by metadata storers that keep metadata on the

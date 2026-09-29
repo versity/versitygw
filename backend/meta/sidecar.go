@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"syscall"
 
 	"github.com/versity/versitygw/s3err"
@@ -206,6 +207,36 @@ func (s SideCar) RenameObject(bucket, oldObject, newObject string) error {
 		return nil
 	}
 	return err
+}
+
+// ReplaceObject removes the attributes of the object other than the ones in
+// keep. The attributes are stored at the object's path, so they would
+// otherwise outlive the replaced file. Directories in the metadata directory
+// hold the metadata of the objects under "<object>/meta/" and are left in
+// place.
+func (s SideCar) ReplaceObject(bucket, object string, keep []string) error {
+	bucket, object = trimVolume(bucket), trimVolume(object)
+	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
+
+	ents, err := os.ReadDir(metadir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to list attributes: %w", err)
+	}
+
+	for _, ent := range ents {
+		if ent.IsDir() || slices.Contains(keep, ent.Name()) {
+			continue
+		}
+		err := os.Remove(filepath.Join(metadir, ent.Name()))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to remove attribute: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (s SideCar) cleanupEmptyDirs(metadir, bucket, object string) {

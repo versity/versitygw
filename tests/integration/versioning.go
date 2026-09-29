@@ -415,6 +415,283 @@ func Versioning_PutObject_dir_object_new_version_resets_attributes(s *S3Conf) er
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_PutObject_new_version_resets_attributes(s *S3Conf) error {
+	testName := "Versioning_PutObject_new_version_resets_attributes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		meta := map[string]string{"foo": "bar"}
+		tags := []types.Tag{{Key: getPtr("key"), Value: getPtr("val")}}
+
+		first, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:          &bucket,
+			Key:             &obj,
+			ContentType:     getPtr("text/plain"),
+			ContentEncoding: getPtr("gzip"),
+			CacheControl:    getPtr("no-cache"),
+			Metadata:        meta,
+			Tagging:         getPtr("key=val"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		second, err := putObjectWithData(20, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		// the current version holds none of the first version attributes
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		cur, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(cur.VersionId) != getString(second.res.VersionId) {
+			return fmt.Errorf("expected the current versionId to be %v, instead got %v",
+				getString(second.res.VersionId), getString(cur.VersionId))
+		}
+		if getString(cur.ContentType) != defaultContentType {
+			return fmt.Errorf("expected default %s Content-Type, instead got %s",
+				defaultContentType, getString(cur.ContentType))
+		}
+		if cur.ContentEncoding != nil {
+			return fmt.Errorf("expected nil Content-Encoding, instead got %v", *cur.ContentEncoding)
+		}
+		if cur.CacheControl != nil {
+			return fmt.Errorf("expected nil Cache-Control, instead got %v", *cur.CacheControl)
+		}
+		if len(cur.Metadata) != 0 {
+			return fmt.Errorf("expected empty metadata, instead got %v", cur.Metadata)
+		}
+		if cur.TagCount != nil {
+			return fmt.Errorf("expected nil tag count, instead got %v", *cur.TagCount)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		curTags, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(curTags.TagSet) != 0 {
+			return fmt.Errorf("expected empty tag set, instead got %v", curTags.TagSet)
+		}
+
+		// the first version keeps its attributes
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		old, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: first.res.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(old.ContentType) != "text/plain" {
+			return fmt.Errorf("expected the content-type to be text/plain, instead got %v",
+				getString(old.ContentType))
+		}
+		if getString(old.ContentEncoding) != "gzip" {
+			return fmt.Errorf("expected the content-encoding to be gzip, instead got %v",
+				getString(old.ContentEncoding))
+		}
+		if !areMapsSame(meta, old.Metadata) {
+			return fmt.Errorf("expected the metadata to be %v, instead got %v",
+				meta, old.Metadata)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		oldTags, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: first.res.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !areTagsSame(tags, oldTags.TagSet) {
+			return fmt.Errorf("expected the tag set to be %v, instead got %v",
+				tags, oldTags.TagSet)
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_PutObject_over_delete_marker_resets_attributes(s *S3Conf) error {
+	testName := "Versioning_PutObject_over_delete_marker_resets_attributes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:          &bucket,
+			Key:             &obj,
+			ContentType:     getPtr("text/plain"),
+			ContentEncoding: getPtr("gzip"),
+			CacheControl:    getPtr("no-cache"),
+			Metadata:        map[string]string{"foo": "bar"},
+			Tagging:         getPtr("key=val"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		_, err = createDeleteMarker(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		res, err := putObjectWithData(20, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		// the new version holds none of the attributes of the version
+		// under the delete marker
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		cur, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(cur.VersionId) != getString(res.res.VersionId) {
+			return fmt.Errorf("expected the current versionId to be %v, instead got %v",
+				getString(res.res.VersionId), getString(cur.VersionId))
+		}
+		if getString(cur.ContentType) != defaultContentType {
+			return fmt.Errorf("expected default %s Content-Type, instead got %s",
+				defaultContentType, getString(cur.ContentType))
+		}
+		if cur.ContentEncoding != nil {
+			return fmt.Errorf("expected nil Content-Encoding, instead got %v", *cur.ContentEncoding)
+		}
+		if cur.CacheControl != nil {
+			return fmt.Errorf("expected nil Cache-Control, instead got %v", *cur.CacheControl)
+		}
+		if len(cur.Metadata) != 0 {
+			return fmt.Errorf("expected empty metadata, instead got %v", cur.Metadata)
+		}
+		if cur.TagCount != nil {
+			return fmt.Errorf("expected nil tag count, instead got %v", *cur.TagCount)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		curTags, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(curTags.TagSet) != 0 {
+			return fmt.Errorf("expected empty tag set, instead got %v", curTags.TagSet)
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_PutObject_suspended_null_version_resets_attributes(s *S3Conf) error {
+	testName := "Versioning_PutObject_suspended_null_version_resets_attributes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:          &bucket,
+			Key:             &obj,
+			ContentType:     getPtr("text/plain"),
+			ContentEncoding: getPtr("gzip"),
+			CacheControl:    getPtr("no-cache"),
+			Metadata:        map[string]string{"foo": "bar"},
+			Tagging:         getPtr("key=val"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		// the null version is replaced by the new null version
+		_, err = putObjectWithData(20, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		cur, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(cur.VersionId) != nullVersionId {
+			return fmt.Errorf("expected the current versionId to be %v, instead got %v",
+				nullVersionId, getString(cur.VersionId))
+		}
+		if getString(cur.ContentType) != defaultContentType {
+			return fmt.Errorf("expected default %s Content-Type, instead got %s",
+				defaultContentType, getString(cur.ContentType))
+		}
+		if cur.ContentEncoding != nil {
+			return fmt.Errorf("expected nil Content-Encoding, instead got %v", *cur.ContentEncoding)
+		}
+		if cur.CacheControl != nil {
+			return fmt.Errorf("expected nil Cache-Control, instead got %v", *cur.CacheControl)
+		}
+		if len(cur.Metadata) != 0 {
+			return fmt.Errorf("expected empty metadata, instead got %v", cur.Metadata)
+		}
+		if cur.TagCount != nil {
+			return fmt.Errorf("expected nil tag count, instead got %v", *cur.TagCount)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		curTags, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(curTags.TagSet) != 0 {
+			return fmt.Errorf("expected empty tag set, instead got %v", curTags.TagSet)
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusSuspended))
+}
+
 func Versioning_CopyObject_invalid_versionId(s *S3Conf) error {
 	testName := "Versioning_CopyObject_invalid_versionId"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2425,6 +2702,116 @@ func Versioning_DeleteObject_latest_version_null_version_order(s *S3Conf) error 
 						obj, deleted.id, expectedMeta, res.Metadata)
 				}
 			}
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_DeleteObject_promoted_version_attributes(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_promoted_version_attributes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		expires := time.Now().Add(time.Hour)
+
+		dataLen := int64(10)
+		first, err := putObjectWithData(dataLen, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		second, err := putObjectWithData(20, &s3.PutObjectInput{
+			Bucket:                  &bucket,
+			Key:                     &obj,
+			ContentType:             getPtr("text/plain"),
+			ContentEncoding:         getPtr("gzip"),
+			ContentDisposition:      getPtr("inline"),
+			ContentLanguage:         getPtr("en"),
+			CacheControl:            getPtr("no-cache"),
+			Expires:                 &expires,
+			WebsiteRedirectLocation: getPtr("/redirect"),
+			Metadata:                map[string]string{"foo": "bar"},
+			Tagging:                 getPtr("key=val"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		// deleting the latest version makes the first version current again
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: second.res.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// the first version holds none of the deleted version attributes
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		cur, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(cur.VersionId) != getString(first.res.VersionId) {
+			return fmt.Errorf("expected the current versionId to be %v, instead got %v",
+				getString(first.res.VersionId), getString(cur.VersionId))
+		}
+		if cur.ContentLength == nil {
+			return fmt.Errorf("expected non nil ContentLength")
+		}
+		if *cur.ContentLength != dataLen {
+			return fmt.Errorf("expected the content length to be %v, instead got %v",
+				dataLen, *cur.ContentLength)
+		}
+		if getString(cur.ContentType) != defaultContentType {
+			return fmt.Errorf("expected default %s Content-Type, instead got %s",
+				defaultContentType, getString(cur.ContentType))
+		}
+		for _, hdr := range []struct {
+			name  string
+			value *string
+		}{
+			{"Content-Encoding", cur.ContentEncoding},
+			{"Content-Disposition", cur.ContentDisposition},
+			{"Content-Language", cur.ContentLanguage},
+			{"Cache-Control", cur.CacheControl},
+			{"Expires", cur.ExpiresString},
+			{"x-amz-website-redirect-location", cur.WebsiteRedirectLocation},
+		} {
+			if hdr.value != nil {
+				return fmt.Errorf("expected nil %s, instead got %s", hdr.name, *hdr.value)
+			}
+		}
+		if len(cur.Metadata) != 0 {
+			return fmt.Errorf("expected empty metadata, instead got %v", cur.Metadata)
+		}
+		if cur.TagCount != nil {
+			return fmt.Errorf("expected nil tag count, instead got %v", *cur.TagCount)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		curTags, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(curTags.TagSet) != 0 {
+			return fmt.Errorf("expected empty tag set, instead got %v", curTags.TagSet)
 		}
 
 		return nil
@@ -5729,6 +6116,152 @@ func Versioning_WORM_null_version_locked_with_legal_hold(s *S3Conf) error {
 
 		return cleanupLockedObjects(s3client, bucket, lockedObjs)
 	})
+}
+
+func Versioning_WORM_PutObject_new_version_lock_settings(s *S3Conf) error {
+	testName := "Versioning_WORM_PutObject_new_version_lock_settings"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		rDate := time.Now().Add(time.Hour * 48)
+
+		first, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       &obj,
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+			ObjectLockMode:            types.ObjectLockModeGovernance,
+			ObjectLockRetainUntilDate: &rDate,
+		}, s3client, withPutObjectChecksumAlgo(types.ChecksumAlgorithmCrc32))
+		if err != nil {
+			return err
+		}
+
+		second, err := putObjectWithData(20, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		// the new version isn't locked by the first version lock settings
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		cur, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(cur.VersionId) != getString(second.res.VersionId) {
+			return fmt.Errorf("expected the current versionId to be %v, instead got %v",
+				getString(second.res.VersionId), getString(cur.VersionId))
+		}
+		if cur.ObjectLockLegalHoldStatus != "" {
+			return fmt.Errorf("expected empty object legal hold status, instead got %q",
+				cur.ObjectLockLegalHoldStatus)
+		}
+		if cur.ObjectLockMode != "" {
+			return fmt.Errorf("expected empty object lock mode, instead got %q", cur.ObjectLockMode)
+		}
+		if cur.ObjectLockRetainUntilDate != nil {
+			return fmt.Errorf("expected nil object lock retain until date, instead got %v",
+				*cur.ObjectLockRetainUntilDate)
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:             obj,
+				versionId:       getString(first.res.VersionId),
+				removeLegalHold: true,
+			},
+		})
+	}, withLock())
+}
+
+func Versioning_WORM_DeleteObject_promoted_version_lock_settings(s *S3Conf) error {
+	testName := "Versioning_WORM_DeleteObject_promoted_version_lock_settings"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		rDate := time.Now().Add(time.Hour * 48)
+
+		first, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		second, err := putObjectWithData(20, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       &obj,
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+			ObjectLockMode:            types.ObjectLockModeGovernance,
+			ObjectLockRetainUntilDate: &rDate,
+		}, s3client, withPutObjectChecksumAlgo(types.ChecksumAlgorithmCrc32))
+		if err != nil {
+			return err
+		}
+
+		// release the latest version and delete it, which makes the first
+		// version current again
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: second.res.VersionId,
+			LegalHold: &types.ObjectLockLegalHold{
+				Status: types.ObjectLockLegalHoldStatusOff,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:                    &bucket,
+			Key:                       &obj,
+			VersionId:                 second.res.VersionId,
+			BypassGovernanceRetention: getBoolPtr(true),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// the first version holds none of the deleted version lock settings
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		cur, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(cur.VersionId) != getString(first.res.VersionId) {
+			return fmt.Errorf("expected the current versionId to be %v, instead got %v",
+				getString(first.res.VersionId), getString(cur.VersionId))
+		}
+		if cur.ObjectLockLegalHoldStatus != "" {
+			return fmt.Errorf("expected empty object legal hold status, instead got %q",
+				cur.ObjectLockLegalHoldStatus)
+		}
+		if cur.ObjectLockMode != "" {
+			return fmt.Errorf("expected empty object lock mode, instead got %q", cur.ObjectLockMode)
+		}
+		if cur.ObjectLockRetainUntilDate != nil {
+			return fmt.Errorf("expected nil object lock retain until date, instead got %v",
+				*cur.ObjectLockRetainUntilDate)
+		}
+
+		return nil
+	}, withLock())
 }
 
 func Versioning_AccessControl_GetObjectVersion(s *S3Conf) error {

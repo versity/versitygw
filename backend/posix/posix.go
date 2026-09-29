@@ -2886,11 +2886,16 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", err
 	}
 
-	// Clear the live marker after any snapshot, including when the data file
-	// is missing or versioning does not require archiving the previous object.
-	err = p.meta.DeleteAttribute(bucket, object, deleteMarkerKey)
-	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
-		return res, "", fmt.Errorf("delete object delete-marker: %w", err)
+	// The new object starts with none of the replaced object's attributes,
+	// whether or not they were archived above: the null version and the
+	// unversioned object are replaced without a snapshot.
+	keep := []string{etagkey, checksumsKey, mpMetaKey}
+	if p.versioningEnabled() && vEnabled {
+		keep = append(keep, versionIdKey)
+	}
+	err = p.meta.ReplaceObject(bucket, object, keep)
+	if err != nil {
+		return res, "", fmt.Errorf("remove replaced object attributes: %w", err)
 	}
 
 	// With versioning suspended the new object becomes the null version:
@@ -2900,11 +2905,6 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		if err != nil {
 			return res, "", err
 		}
-		// Clear any stale versionId sidecar attribute left from a previous
-		// versioned object at this path.  With xattr this is implicit (the
-		// new file carries only the attrs set on the tmpfile), but with
-		// path-based metadata the old attr persists until explicitly deleted.
-		_ = p.meta.DeleteAttribute(bucket, object, versionIdKey)
 	}
 
 	objMeta := p.loadObjectMetaProperties(nil, bucket, upiddir, nil)
@@ -4439,13 +4439,6 @@ func (p *Posix) snapshotObjVersion(bucket, key string, vStatus types.BucketVersi
 		if err != nil {
 			return fmt.Errorf("create object version: %w", err)
 		}
-		// With path-based metadata backends (e.g. sidecar), object-lock
-		// attributes written on the previous version persist at this path
-		// after createObjVersion because metadata is not replaced atomically
-		// the way xattrs are on file rename.  Delete them so they do not
-		// bleed into the new version.
-		_ = p.meta.DeleteAttribute(bucket, key, objectLegalHoldKey)
-		_ = p.meta.DeleteAttribute(bucket, key, objectRetentionKey)
 	}
 
 	return nil
@@ -4586,8 +4579,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		versioned := p.versioningEnabled() && vStatus != ""
 
 		// In a versioned bucket the directory is kept across versions: its
-		// current version is copied to the versioning directory and its
-		// object attributes are then replaced with the new version's.
+		// current version is copied to the versioning directory first.
 		err = p.snapshotObjVersion(*po.Bucket, *po.Key, vStatus, acct)
 		if err != nil {
 			return s3response.PutObjectOutput{}, err
@@ -4604,13 +4596,16 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			return s3response.PutObjectOutput{}, err
 		}
 
+		// The directory outlives the object it replaces, whether or not
+		// the bucket is versioned: the new object starts with none of the
+		// replaced object's attributes.
+		err = p.clearDirObjectAttrs(*po.Bucket, *po.Key)
+		if err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
+
 		var versionID string
 		if versioned {
-			err = p.clearDirObjectAttrs(*po.Bucket, *po.Key)
-			if err != nil {
-				return s3response.PutObjectOutput{}, err
-			}
-
 			if p.isBucketVersioningSuspended(vStatus) {
 				err = p.deleteNullVersionIdObject(*po.Bucket, *po.Key)
 				if err != nil {
@@ -4854,6 +4849,13 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 
 	}
 
+	// The path may have become a directory while the body was staged: the
+	// attributes there belong to the directory, not to this object.
+	d, err = os.Stat(name)
+	if err == nil && d.IsDir() {
+		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
+	}
+
 	// Snapshot the object that is about to be replaced only after the
 	// conditional check has succeeded and while holding the publish lock.
 	verr := p.snapshotObjVersion(*po.Bucket, *po.Key, vStatus, acct)
@@ -4861,11 +4863,16 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, verr
 	}
 
-	// Marker cleanup belongs to publishing: snapshotting can be skipped for
-	// orphaned sidecars, suspended versioning, or a missing version ID.
-	err = p.meta.DeleteAttribute(*po.Bucket, *po.Key, deleteMarkerKey)
-	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
-		return s3response.PutObjectOutput{}, fmt.Errorf("delete object delete-marker: %w", err)
+	// The new object starts with none of the replaced object's attributes,
+	// whether or not they were archived above: the null version and the
+	// unversioned object are replaced without a snapshot.
+	keep := []string{etagkey, checksumsKey}
+	if versionID != "" {
+		keep = append(keep, versionIdKey)
+	}
+	err = p.meta.ReplaceObject(*po.Bucket, *po.Key, keep)
+	if err != nil {
+		return s3response.PutObjectOutput{}, fmt.Errorf("remove replaced object attributes: %w", err)
 	}
 
 	// Before finalizing the object creation remove
@@ -4877,11 +4884,6 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			return s3response.PutObjectOutput{}, err
 		}
 		versionID = nullVersionId
-		// Clear any stale versionId sidecar attribute left from a previous
-		// versioned object at this path.  With xattr this is implicit (the
-		// new file carries only the attrs set on the tmpfile), but with
-		// path-based metadata the old attr persists until explicitly deleted.
-		_ = p.meta.DeleteAttribute(*po.Bucket, *po.Key, versionIdKey)
 	}
 
 	var sum string
@@ -5298,18 +5300,16 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					return nil, fmt.Errorf("link tmp file: %w", err)
 				}
 
-				// With path-based metadata (sidecar) the live object's attrs are
-				// not replaced atomically.  The restored version may not have all
-				// the attrs that the deleted version had (e.g. a null version has
-				// no versionIdKey).  Clear attrs that belong to the deleted version
-				// before copying the restored version's attrs so that the restored
-				// version presents a clean state.
-				_ = p.meta.DeleteAttribute(bucket, object, versionIdKey)
-				_ = p.meta.DeleteAttribute(bucket, object, deleteMarkerKey)
-
 				attrs, err := p.meta.ListAttributes(versionPath, srcVersionId)
 				if err != nil {
 					return nil, fmt.Errorf("list object attributes: %w", err)
+				}
+
+				// the restored version has only its own attributes: the
+				// ones of the deleted version it doesn't have are removed
+				err = p.meta.ReplaceObject(bucket, object, attrs)
+				if err != nil {
+					return nil, fmt.Errorf("remove deleted version attributes: %w", err)
 				}
 
 				for _, attr := range attrs {

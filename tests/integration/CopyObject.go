@@ -847,6 +847,104 @@ func CopyObject_should_replace_meta_props(s *S3Conf) error {
 	})
 }
 
+func CopyObject_overwrite_resets_attributes(s *S3Conf) error {
+	testName := "CopyObject_overwrite_resets_attributes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "dest-object"
+		expires := time.Now().Add(time.Hour)
+
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:                  &bucket,
+			Key:                     &dstObj,
+			ContentType:             getPtr("text/plain"),
+			ContentEncoding:         getPtr("gzip"),
+			ContentDisposition:      getPtr("inline"),
+			ContentLanguage:         getPtr("en"),
+			CacheControl:            getPtr("no-cache"),
+			Expires:                 &expires,
+			WebsiteRedirectLocation: getPtr("/redirect"),
+			Metadata:                map[string]string{"foo": "bar"},
+			Tagging:                 getPtr("key=val"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		_, err = putObjectWithData(20, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		// the source has no attributes to copy
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			CopySource: getPtr(bucket + "/" + srcObj),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// the destination holds none of the replaced object's attributes
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(out.ContentType) != defaultContentType {
+			return fmt.Errorf("expected default %s Content-Type, instead got %s",
+				defaultContentType, getString(out.ContentType))
+		}
+		for _, hdr := range []struct {
+			name  string
+			value *string
+		}{
+			{"Content-Encoding", out.ContentEncoding},
+			{"Content-Disposition", out.ContentDisposition},
+			{"Content-Language", out.ContentLanguage},
+			{"Cache-Control", out.CacheControl},
+			{"Expires", out.ExpiresString},
+			{"x-amz-website-redirect-location", out.WebsiteRedirectLocation},
+		} {
+			if hdr.value != nil {
+				return fmt.Errorf("expected nil %s, instead got %s", hdr.name, *hdr.value)
+			}
+		}
+		if len(out.Metadata) != 0 {
+			return fmt.Errorf("expected empty metadata, instead got %v", out.Metadata)
+		}
+		if out.TagCount != nil {
+			return fmt.Errorf("expected nil tag count, instead got %v", *out.TagCount)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		tagging, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(tagging.TagSet) != 0 {
+			return fmt.Errorf("expected empty tag set, instead got %v", tagging.TagSet)
+		}
+
+		return nil
+	})
+}
+
 func CopyObject_invalid_website_redirect_location(s *S3Conf) error {
 	testName := "CopyObject_invalid_website_redirect_location"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
