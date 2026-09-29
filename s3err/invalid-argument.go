@@ -49,6 +49,7 @@ const (
 	InvalidArgMissingObjectLockMode
 	InvalidArgLegalHoldStatus
 	InvalidArgObjectLockMode
+	InvalidArgAnonymousObjectLock
 	InvalidArgMetadataDirective
 	InvalidArgTaggingDirective
 	InvalidArgVersionId
@@ -139,11 +140,11 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 		ArgumentName: "x-amz-object-lock-retain-until-date",
 	},
 	InvalidArgMissingObjectLockRetainDate: {
-		Description:  "x-amz-object-lock-retain-until-date and x-amz-object-lock-mode must both be supplied.",
+		Description:  "x-amz-object-lock-retain-until-date and x-amz-object-lock-mode must both be supplied",
 		ArgumentName: "x-amz-object-lock-retain-until-date",
 	},
 	InvalidArgMissingObjectLockMode: {
-		Description:  "x-amz-object-lock-retain-until-date and x-amz-object-lock-mode must both be supplied.",
+		Description:  "x-amz-object-lock-retain-until-date and x-amz-object-lock-mode must both be supplied",
 		ArgumentName: "x-amz-object-lock-mode",
 	},
 	InvalidArgObjectLockRetentionDays: {
@@ -169,6 +170,10 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgObjectLockMode: {
 		Description:  "Unknown wormMode directive.",
 		ArgumentName: "x-amz-object-lock-mode",
+	},
+	InvalidArgAnonymousObjectLock: {
+		Description:  "Put Object requests with Object Lock parameters require AWS Signature Version 4",
+		ArgumentName: "Authorization",
 	},
 	InvalidArgMetadataDirective: {
 		Description:  "Unknown metadata directive.",

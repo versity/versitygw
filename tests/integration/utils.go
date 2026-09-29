@@ -1302,18 +1302,19 @@ func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client, 
 		if lgth != 0 {
 			data = make([]byte, lgth)
 			rand.Read(data)
-
-			if cfg.checksumAlgorithm != "" {
-				hasher, err := NewHasher(cfg.checksumAlgorithm)
-				if err != nil {
-					return nil, err
-				}
-
-				hasher.Write(data)
-				sum := base64.StdEncoding.EncodeToString(hasher.Sum(nil))
-				setPutObjectChecksum(input, cfg.checksumAlgorithm, &sum)
-			}
 			input.Body = bytes.NewReader(data)
+		}
+
+		// an empty body has a checksum too
+		if cfg.checksumAlgorithm != "" {
+			hasher, err := NewHasher(cfg.checksumAlgorithm)
+			if err != nil {
+				return nil, err
+			}
+
+			hasher.Write(data)
+			sum := base64.StdEncoding.EncodeToString(hasher.Sum(nil))
+			setPutObjectChecksum(input, cfg.checksumAlgorithm, &sum)
 		}
 		csum = sha256.Sum256(data)
 	}
@@ -2385,7 +2386,7 @@ func createObjVersions(client *s3.Client, bucket, object string, count int, opts
 		r, err := putObjectWithData(dataLength, &s3.PutObjectInput{
 			Bucket: &bucket,
 			Key:    &object,
-		}, client)
+		}, client, withPutObjectChecksumAlgo(cfg.checksumAlgorithm))
 		if err != nil {
 			return nil, err
 		}

@@ -17,7 +17,9 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"time"
@@ -2628,4 +2630,688 @@ func PublicBucket_incorrect_sha256_hash(s *S3Conf) error {
 
 		return checkHTTPResponseApiErr(resp, s3err.GetContentSHA256MismatchErr(incorrectPayloadHash, emptySHA256Hash))
 	})
+}
+
+// PublicBucket_put_object_tagging covers anonymous PutObject uploads that
+// tag the object they create. Tagging it takes s3:PutObjectTagging on top of
+// s3:PutObject: a policy granting public s3:PutObject alone denies the
+// tagged upload but not an untagged one, granting both allows it, and an
+// explicit public Deny of s3:PutObjectTagging denies it again.
+func PublicBucket_put_object_tagging(s *S3Conf) error {
+	testName := "PublicBucket_put_object_tagging"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objectArn := fmt.Sprintf("arn:aws:s3:::%s/*", bucket)
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    "s3:PutObject",
+			Resource:  objectArn,
+		}); err != nil {
+			return err
+		}
+
+		key := "my-obj"
+		put := func(tagging *string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket:  &bucket,
+				Key:     &key,
+				Tagging: tagging,
+			})
+			cancel()
+			return err
+		}
+
+		err := put(getPtr("env=test"))
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("tagged PutObject with public s3:PutObject only: %w", err)
+		}
+		if err := put(nil); err != nil {
+			return fmt.Errorf("untagged PutObject with public s3:PutObject only: %w", err)
+		}
+
+		allowBoth := bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    []string{"s3:PutObject", "s3:PutObjectTagging"},
+			Resource:  objectArn,
+		}
+		if err := putBucketPolicyDoc(s, bucket, allowBoth); err != nil {
+			return err
+		}
+
+		if err := put(getPtr("env=test")); err != nil {
+			return fmt.Errorf("tagged PutObject with public s3:PutObject and s3:PutObjectTagging: %w", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		tagging, err := s.GetClient().GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedTagging := []types.Tag{{Key: getPtr("env"), Value: getPtr("test")}}
+		if !areTagsSame(expectedTagging, tagging.TagSet) {
+			return fmt.Errorf("expected %v tagging, instead got %v", expectedTagging, tagging.TagSet)
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, allowBoth, bucketStatement{
+			Effect:    "Deny",
+			Principal: "*",
+			Action:    "s3:PutObjectTagging",
+			Resource:  objectArn,
+		}); err != nil {
+			return err
+		}
+
+		err = put(getPtr("env=test"))
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("tagged PutObject with s3:PutObjectTagging publicly denied: %w", err)
+		}
+
+		return nil
+	}, withAnonymousClient())
+}
+
+// PublicBucket_put_object_tagging_public_acl covers anonymous tagged
+// PutObject uploads to a bucket whose ACL is public-read-write. The ACL's
+// write grant covers s3:PutObject alone, so a tagged upload is denied until
+// the bucket policy publicly grants s3:PutObjectTagging, and allowed once it
+// does: each action is granted on its own, by the policy or the ACL.
+func PublicBucket_put_object_tagging_public_acl(s *S3Conf) error {
+	testName := "PublicBucket_put_object_tagging_public_acl"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s.GetClient().PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACLPublicReadWrite,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		key := "my-obj"
+		put := func(tagging *string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket:  &bucket,
+				Key:     &key,
+				Tagging: tagging,
+			})
+			cancel()
+			return err
+		}
+
+		if err := put(nil); err != nil {
+			return fmt.Errorf("untagged PutObject with public-read-write ACL: %w", err)
+		}
+		err = put(getPtr("env=test"))
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("tagged PutObject with public-read-write ACL only: %w", err)
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    "s3:PutObjectTagging",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		if err := put(getPtr("env=test")); err != nil {
+			return fmt.Errorf("tagged PutObject with public-read-write ACL and public s3:PutObjectTagging: %w", err)
+		}
+
+		return nil
+	}, withAnonymousClient(), withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
+// PublicBucket_put_object_lock covers anonymous PutObject uploads carrying
+// Object Lock parameters, which only a signed upload may set. The bucket
+// publicly grants the upload and its lock actions alike, and still a legal
+// hold of either status or a retention is refused: as an invalid argument
+// when the upload carries an integrity check of its body, and for the
+// missing integrity check when it doesn't.
+func PublicBucket_put_object_lock(s *S3Conf) error {
+	testName := "PublicBucket_put_object_lock"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    []string{"s3:PutObject", "s3:PutObjectLegalHold", "s3:PutObjectRetention"},
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		retainUntilDate := time.Now().Add(time.Hour)
+
+		for _, lock := range []struct {
+			name  string
+			input s3.PutObjectInput
+		}{
+			{
+				name:  "legal hold ON",
+				input: s3.PutObjectInput{ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn},
+			},
+			{
+				name:  "legal hold OFF",
+				input: s3.PutObjectInput{ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOff},
+			},
+			{
+				name: "retention",
+				input: s3.PutObjectInput{
+					ObjectLockMode:            types.ObjectLockModeGovernance,
+					ObjectLockRetainUntilDate: &retainUntilDate,
+				},
+			},
+		} {
+			for _, upload := range []struct {
+				name     string
+				opts     []putObjectOpt
+				expected s3err.S3Error
+			}{
+				{
+					name:     "without an integrity check",
+					expected: s3err.GetAPIError(s3err.ErrObjectLockChecksumRequired),
+				},
+				{
+					name:     "with a checksum",
+					opts:     []putObjectOpt{withPutObjectChecksumAlgo(types.ChecksumAlgorithmCrc32)},
+					expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgAnonymousObjectLock, ""),
+				},
+			} {
+				input := lock.input
+				input.Bucket = &bucket
+				input.Key = getPtr("my-obj")
+				_, err := putObjectWithData(10, &input, s3client, upload.opts...)
+				if err := checkApiErr(err, upload.expected); err != nil {
+					return fmt.Errorf("%s %s: %w", lock.name, upload.name, err)
+				}
+			}
+		}
+
+		return nil
+	}, withAnonymousClient(), withLock())
+}
+
+// PublicBucket_put_object_lock_missing_bucket_lock covers anonymous PutObject
+// uploads carrying Object Lock parameters to a bucket without Object Lock,
+// which rejects the parameters themselves, as it does for a signed upload.
+func PublicBucket_put_object_lock_missing_bucket_lock(s *S3Conf) error {
+	testName := "PublicBucket_put_object_lock_missing_bucket_lock"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    []string{"s3:PutObject", "s3:PutObjectLegalHold", "s3:PutObjectRetention"},
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		retainUntilDate := time.Now().Add(time.Hour)
+		for _, lock := range []struct {
+			name  string
+			input s3.PutObjectInput
+		}{
+			{
+				name:  "legal hold ON",
+				input: s3.PutObjectInput{ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn},
+			},
+			{
+				name:  "legal hold OFF",
+				input: s3.PutObjectInput{ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOff},
+			},
+			{
+				name: "retention",
+				input: s3.PutObjectInput{
+					ObjectLockMode:            types.ObjectLockModeGovernance,
+					ObjectLockRetainUntilDate: &retainUntilDate,
+				},
+			},
+		} {
+			input := lock.input
+			input.Bucket = &bucket
+			input.Key = getPtr("my-obj")
+			_, err := putObjectWithData(10, &input, s3client)
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)); err != nil {
+				return fmt.Errorf("%s: %w", lock.name, err)
+			}
+		}
+
+		return nil
+	}, withAnonymousClient())
+}
+
+// PublicBucket_put_object_default_retention covers anonymous uploads to a
+// bucket with a default retention rule, which gives every object written to
+// it Object Lock parameters. Only a signed PutObject may lock the object it
+// writes, so even a plain anonymous one is refused, and before any
+// authorization: the bucket grants no public access yet.
+func PublicBucket_put_object_default_retention(s *S3Conf) error {
+	testName := "PublicBucket_put_object_default_retention"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s.GetClient().PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+				Rule: &types.ObjectLockRule{
+					DefaultRetention: &types.DefaultRetention{
+						Mode: types.ObjectLockRetentionModeGovernance,
+						Days: getPtr(int32(1)),
+					},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		for _, upload := range []struct {
+			name     string
+			opts     []putObjectOpt
+			expected s3err.S3Error
+		}{
+			{
+				name:     "without an integrity check",
+				expected: s3err.GetAPIError(s3err.ErrObjectLockChecksumRequired),
+			},
+			{
+				name:     "with a checksum",
+				opts:     []putObjectOpt{withPutObjectChecksumAlgo(types.ChecksumAlgorithmCrc32)},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgAnonymousObjectLock, ""),
+			},
+		} {
+			_, err := putObjectWithData(10, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    getPtr("my-obj"),
+			}, s3client, upload.opts...)
+			if err := checkApiErr(err, upload.expected); err != nil {
+				return fmt.Errorf("PutObject %s: %w", upload.name, err)
+			}
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		resp, err := sendAnonymousPostObject(s, bucket, "my-obj", []byte("data"))
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("POST: %w", err)
+		}
+
+		return nil
+	}, withAnonymousClient(), withLock())
+}
+
+// PublicBucket_upload_part_object_lock covers anonymous parts of a multipart
+// upload created with a legal hold. Unlike an anonymous PutObject, an
+// anonymous part may go into an upload with Object Lock parameters, but it
+// needs an integrity check of its body like any other part of one.
+func PublicBucket_upload_part_object_lock(s *S3Conf) error {
+	testName := "PublicBucket_upload_part_object_lock"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		rootClient := s.GetClient()
+		obj := "my-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		mp, err := rootClient.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:                    &bucket,
+			Key:                       &obj,
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		data := []byte("data")
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			UploadId:   mp.UploadId,
+			PartNumber: getPtr(int32(1)),
+			Body:       bytes.NewReader(data),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockPartChecksumRequired)); err != nil {
+			return fmt.Errorf("part without an integrity check: %w", err)
+		}
+
+		md5sum := md5.Sum(data)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			UploadId:   mp.UploadId,
+			PartNumber: getPtr(int32(1)),
+			Body:       bytes.NewReader(data),
+			ContentMD5: getPtr(base64.StdEncoding.EncodeToString(md5sum[:])),
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("part with Content-MD5: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = rootClient.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+		})
+		cancel()
+		return err
+	}, withAnonymousClient(), withLock())
+}
+
+// PublicBucket_post_object_tagging covers anonymous POST uploads that tag
+// the object they create. The public grant has to cover
+// s3:PutObjectTagging too: under a policy granting public s3:PutObject
+// alone, a tagged upload is denied while one with an empty tag set, which
+// tags nothing, is not, and the tagged upload succeeds once the policy
+// grants both actions.
+func PublicBucket_post_object_tagging(s *S3Conf) error {
+	testName := "PublicBucket_post_object_tagging"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		key := "my-obj"
+		post := func(taggingXML string) (*http.Response, error) {
+			return sendPostObject(PostRequestConfig{
+				bucket:      bucket,
+				key:         key,
+				s3Conf:      s,
+				fileContent: []byte("data"),
+				extraFields: map[string]string{
+					"x-amz-algorithm":  "",
+					"x-amz-credential": "",
+					"x-amz-date":       "",
+					"policy":           "",
+					"x-amz-signature":  "",
+					"tagging":          taggingXML,
+				},
+			})
+		}
+		taggingXML := `<Tagging><TagSet><Tag><Key>env</Key><Value>test</Value></Tag></TagSet></Tagging>`
+
+		resp, err := post(taggingXML)
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("tagged POST with public s3:PutObject only: %w", err)
+		}
+
+		resp, err = post(`<Tagging><TagSet></TagSet></Tagging>`)
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("POST with an empty tag set: %w", err)
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    []string{"s3:PutObject", "s3:PutObjectTagging"},
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		resp, err = post(taggingXML)
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("tagged POST with public s3:PutObject and s3:PutObjectTagging: %w", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		tagging, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedTagging := []types.Tag{{Key: getPtr("env"), Value: getPtr("test")}}
+		if !areTagsSame(expectedTagging, tagging.TagSet) {
+			return fmt.Errorf("expected %v tagging, instead got %v", expectedTagging, tagging.TagSet)
+		}
+
+		return nil
+	})
+}
+
+// PublicBucket_object_version_actions covers anonymous requests naming an
+// object version, each authorized as the version's own action:
+// s3:GetObjectVersion for GetObject and HeadObject, the version tagging
+// actions for the tagging APIs and s3:DeleteObjectVersion for DeleteObject.
+// A policy granting the plain actions allows only the requests naming no
+// version, and one granting the version actions only those that do.
+func PublicBucket_object_version_actions(s *S3Conf) error {
+	testName := "PublicBucket_object_version_actions"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "my-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// DeleteObject goes last: the plain delete the first policy allows
+		// only adds a delete marker, which leaves the version itself for the
+		// second policy's requests.
+		requests := []struct {
+			action string
+			call   func(ctx context.Context, versionId *string) error
+		}{
+			{"GetObject", func(ctx context.Context, versionId *string) error {
+				_, err := s3client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &key, VersionId: versionId})
+				return err
+			}},
+			{"HeadObject", func(ctx context.Context, versionId *string) error {
+				_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &bucket, Key: &key, VersionId: versionId})
+				return err
+			}},
+			{"GetObjectTagging", func(ctx context.Context, versionId *string) error {
+				_, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{Bucket: &bucket, Key: &key, VersionId: versionId})
+				return err
+			}},
+			{"PutObjectTagging", func(ctx context.Context, versionId *string) error {
+				_, err := s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+					Bucket:    &bucket,
+					Key:       &key,
+					VersionId: versionId,
+					Tagging: &types.Tagging{
+						TagSet: []types.Tag{{Key: getPtr("env"), Value: getPtr("test")}},
+					},
+				})
+				return err
+			}},
+			{"DeleteObjectTagging", func(ctx context.Context, versionId *string) error {
+				_, err := s3client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{Bucket: &bucket, Key: &key, VersionId: versionId})
+				return err
+			}},
+			{"DeleteObject", func(ctx context.Context, versionId *string) error {
+				_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: &key, VersionId: versionId})
+				return err
+			}},
+		}
+
+		for _, policy := range []struct {
+			actions        []string
+			allowVersioned bool
+		}{
+			{
+				actions:        []string{"s3:GetObject", "s3:GetObjectTagging", "s3:PutObjectTagging", "s3:DeleteObjectTagging", "s3:DeleteObject"},
+				allowVersioned: false,
+			},
+			{
+				actions:        []string{"s3:GetObjectVersion", "s3:GetObjectVersionTagging", "s3:PutObjectVersionTagging", "s3:DeleteObjectVersionTagging", "s3:DeleteObjectVersion"},
+				allowVersioned: true,
+			},
+		} {
+			if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+				Effect:    "Allow",
+				Principal: "*",
+				Action:    policy.actions,
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+			}); err != nil {
+				return err
+			}
+
+			for _, req := range requests {
+				for _, versionId := range []*string{out.VersionId, nil} {
+					ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+					err := req.call(ctx, versionId)
+					cancel()
+
+					name := req.action
+					if versionId != nil {
+						name += " with versionId"
+					}
+					if (versionId != nil) == policy.allowVersioned {
+						if err != nil {
+							return fmt.Errorf("%s with public %v: expected success, instead got %w", name, policy.actions, err)
+						}
+						continue
+					}
+
+					if err == nil {
+						return fmt.Errorf("%s with public %v: expected AccessDenied, instead got nil", name, policy.actions)
+					}
+					// A HEAD response has no body, so only its status is checked
+					if req.action == "HeadObject" {
+						err = checkSdkApiErr(err, http.StatusText(http.StatusForbidden))
+					} else {
+						err = checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+					}
+					if err != nil {
+						return fmt.Errorf("%s with public %v: %w", name, policy.actions, err)
+					}
+				}
+			}
+		}
+
+		return nil
+	}, withAnonymousClient(), withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// PublicBucket_object_version_actions_public_acl covers anonymous requests
+// naming an object version on a bucket whose ACL is public-read-write. The
+// ACL's READ grant covers s3:GetObjectVersion as it does s3:GetObject, so
+// versioned reads are allowed, but its WRITE grant never gives an anonymous
+// requester s3:DeleteObjectVersion: a versioned delete is denied, while a
+// plain one, which only adds a delete marker, is allowed.
+func PublicBucket_object_version_actions_public_acl(s *S3Conf) error {
+	testName := "PublicBucket_object_version_actions_public_acl"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		rootClient := s.GetClient()
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := rootClient.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACLPublicReadWrite,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		key := "my-obj"
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := rootClient.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:    &bucket,
+			Key:       &key,
+			VersionId: out.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("GetObject with versionId: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:    &bucket,
+			Key:       &key,
+			VersionId: out.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("HeadObject with versionId: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    &bucket,
+			Key:       &key,
+			VersionId: out.VersionId,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("DeleteObject with versionId: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("DeleteObject: %w", err)
+		}
+
+		return nil
+	}, withAnonymousClient(), withOwnership(types.ObjectOwnershipBucketOwnerPreferred), withVersioning(types.BucketVersioningStatusEnabled))
 }

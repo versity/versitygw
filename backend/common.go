@@ -35,6 +35,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
@@ -255,6 +256,36 @@ func ParseCopySource(copySourceHeader string) (string, string, string, error) {
 	}
 
 	return srcBucket, srcObject, versionId, nil
+}
+
+// UploadPartHasIntegrityCheck reports whether a part upload carries an
+// integrity check of its body: Content-MD5, an x-amz-checksum-* header, or
+// an x-amz-checksum-* trailer, which the body reader then carries. A part of
+// a multipart upload with Object Lock parameters must carry one.
+func UploadPartHasIntegrityCheck(input *s3.UploadPartInput) bool {
+	if input.ContentMD5 != nil && *input.ContentMD5 != "" {
+		return true
+	}
+	if tr, ok := input.Body.(interface{ Algorithm() string }); ok && tr.Algorithm() != "" {
+		return true
+	}
+	for _, sum := range []*string{
+		input.ChecksumCRC32,
+		input.ChecksumCRC32C,
+		input.ChecksumCRC64NVME,
+		input.ChecksumSHA1,
+		input.ChecksumSHA256,
+		input.ChecksumSHA512,
+		input.ChecksumMD5,
+		input.ChecksumXXHASH64,
+		input.ChecksumXXHASH3,
+		input.ChecksumXXHASH128,
+	} {
+		if sum != nil && *sum != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseObjectTags parses the url encoded input string into

@@ -941,16 +941,25 @@ func CopyObject_missing_bucket_lock(s *S3Conf) error {
 			return err
 		}
 
-		// with legal hold
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
-			Bucket:                    &bucket,
-			Key:                       &dstObj,
-			CopySource:                getPtr(fmt.Sprintf("%s/%s", bucket, srcObj)),
-			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
-		})
-		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces))
+		// with legal hold, of either status
+		for _, status := range []types.ObjectLockLegalHoldStatus{
+			types.ObjectLockLegalHoldStatusOn,
+			types.ObjectLockLegalHoldStatusOff,
+		} {
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:                    &bucket,
+				Key:                       &dstObj,
+				CopySource:                getPtr(fmt.Sprintf("%s/%s", bucket, srcObj)),
+				ObjectLockLegalHoldStatus: status,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)); err != nil {
+				return fmt.Errorf("legal hold %s: %w", status, err)
+			}
+		}
+
+		return nil
 	})
 }
 

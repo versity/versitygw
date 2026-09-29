@@ -641,6 +641,7 @@ func AccessControl_PutObject_with_legal_hold_policy(s *S3Conf) error {
 		_, err = putObjectWithData(0, &s3.PutObjectInput{
 			Bucket:                    &bucket,
 			Key:                       &obj,
+			ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
 		}, userClient)
 		if err != nil {
@@ -689,6 +690,7 @@ func AccessControl_PutObject_with_retention_policy(s *S3Conf) error {
 		_, err = putObjectWithData(0, &s3.PutObjectInput{
 			Bucket:                    &bucket,
 			Key:                       &obj,
+			ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 			ObjectLockMode:            types.ObjectLockModeGovernance,
 			ObjectLockRetainUntilDate: &date,
 		}, userClient)

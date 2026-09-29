@@ -1026,6 +1026,7 @@ func S3IAMAccessControl_put_object_lock_split_sources(s *S3Conf) error {
 		_, err = putObjectWithData(0, &s3.PutObjectInput{
 			Bucket:                    &bucket,
 			Key:                       getPtr("legal-hold"),
+			ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
 		}, user.client)
 		if err != nil {
@@ -1036,6 +1037,7 @@ func S3IAMAccessControl_put_object_lock_split_sources(s *S3Conf) error {
 		_, err = putObjectWithData(0, &s3.PutObjectInput{
 			Bucket:                    &bucket,
 			Key:                       getPtr("retention"),
+			ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 			ObjectLockMode:            types.ObjectLockModeGovernance,
 			ObjectLockRetainUntilDate: &retainUntil,
 		}, user.client)
@@ -1426,6 +1428,7 @@ func S3IAMAccessControl_compliance_mode_not_bypassable(s *S3Conf) error {
 		if _, err := putObjectWithData(0, &s3.PutObjectInput{
 			Bucket:                    &bucket,
 			Key:                       aws.String(key),
+			ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 			ObjectLockMode:            types.ObjectLockModeCompliance,
 			ObjectLockRetainUntilDate: &retainUntil,
 		}, s.GetClient()); err != nil {
@@ -1825,6 +1828,7 @@ func S3IAMAccessControl_retention_extension_needs_no_bypass(s *S3Conf) error {
 			if _, err := putObjectWithData(0, &s3.PutObjectInput{
 				Bucket:                    &bucket,
 				Key:                       &key,
+				ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 				ObjectLockMode:            types.ObjectLockMode(mode),
 				ObjectLockRetainUntilDate: &retainUntil,
 			}, s.GetClient()); err != nil {
@@ -1995,6 +1999,7 @@ func S3IAMAccessControl_retention_shortening_needs_bypass(s *S3Conf) error {
 				if _, err := putObjectWithData(0, &s3.PutObjectInput{
 					Bucket:                    &bucket,
 					Key:                       &key,
+					ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 					ObjectLockMode:            types.ObjectLockMode(tc.mode),
 					ObjectLockRetainUntilDate: &original,
 				}, s.GetClient()); err != nil {

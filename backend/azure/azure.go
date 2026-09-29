@@ -76,6 +76,9 @@ const (
 	// keyMpZeroBytesParts tracks zero-byte upload parts in the sgwtmp metadata.
 	// Azure StageBlock rejects Content-Length: 0, so zero-byte parts are stored here.
 	keyMpZeroBytesParts key = "Zerobytesparts"
+	// keyMpObjectLock marks, in the sgwtmp metadata, an upload with Object
+	// Lock parameters, each of whose parts must carry an integrity check.
+	keyMpObjectLock key = "Mpobjectlock"
 	// keyMpMetadata stores multipart upload part-offset metadata on the final
 	// committed blob so that GetObject/HeadObject can serve individual parts
 	// by part-number.
@@ -1437,29 +1440,30 @@ func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object, _ stri
 }
 
 func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
-	if input.ObjectLockLegalHoldStatus != "" || input.ObjectLockMode != "" {
-		bucketLock, err := az.getContainerMetaData(ctx, *input.Bucket, string(keyBucketLock))
-		if err != nil {
-			return s3response.InitiateMultipartUploadResult{}, azureErrToS3Err(err)
-		}
+	bucketLock, err := az.getContainerMetaData(ctx, *input.Bucket, string(keyBucketLock))
+	if err != nil {
+		return s3response.InitiateMultipartUploadResult{}, azureErrToS3Err(err)
+	}
 
-		if len(bucketLock) == 0 {
-			return s3response.InitiateMultipartUploadResult{},
-				s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
-		}
-
-		var bucketLockConfig auth.BucketLockConfig
+	var bucketLockConfig auth.BucketLockConfig
+	if len(bucketLock) != 0 {
 		err = json.Unmarshal(bucketLock, &bucketLockConfig)
 		if err != nil {
 			return s3response.InitiateMultipartUploadResult{},
 				fmt.Errorf("parse bucket lock config: %w", err)
 		}
-
-		if !bucketLockConfig.Enabled {
-			return s3response.InitiateMultipartUploadResult{},
-				s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
-		}
 	}
+
+	explicitLock := input.ObjectLockLegalHoldStatus != "" || input.ObjectLockMode != ""
+	if explicitLock && !bucketLockConfig.Enabled {
+		return s3response.InitiateMultipartUploadResult{},
+			s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+	}
+
+	// The upload carries Object Lock parameters when it sets its own, or the
+	// bucket has a default retention rule as of now: a rule set or removed
+	// later doesn't change what the upload's parts need.
+	lockParams := explicitLock || (bucketLockConfig.Enabled && bucketLockConfig.DefaultRetention != nil)
 
 	meta := parseMetadata(input.Metadata)
 	meta[string(onameAttr)] = input.Key
@@ -1495,6 +1499,12 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.Cre
 		meta[string(keyObjRetention)] = backend.GetPtrFromString(string(retParsed))
 	}
 
+	// mark an upload with Object Lock parameters, so that each of its parts
+	// is required to carry an integrity check
+	if lockParams {
+		meta[string(keyMpObjectLock)] = backend.GetPtrFromString("1")
+	}
+
 	uploadId := uuid.New().String()
 
 	tmpPath := createMetaTmpPath(*input.Key, uploadId)
@@ -1528,9 +1538,15 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.Cre
 
 // Each part is translated into an uncommitted block in a newly created blob in staging area
 func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
-	err := az.checkIfMpExists(ctx, *input.Bucket, *input.Key, *input.UploadId)
+	mpMeta, err := az.getMpMetadata(ctx, *input.Bucket, *input.Key, *input.UploadId)
 	if err != nil {
 		return nil, err
+	}
+
+	// A part of an upload with Object Lock parameters needs an integrity
+	// check of its body
+	if mpMeta[string(keyMpObjectLock)] != nil && !backend.UploadPartHasIntegrityCheck(input) {
+		return nil, s3err.GetAPIError(s3err.ErrObjectLockPartChecksumRequired)
 	}
 
 	// TODO: request streamable version of StageBlock()
@@ -1989,6 +2005,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 
 	// Remove internal tracking keys from metadata before storing on the final blob.
 	delete(props.Metadata, string(keyMpZeroBytesParts))
+	delete(props.Metadata, string(keyMpObjectLock))
 
 	// Serialize multipart metadata so GetObject/HeadObject can serve by part-number.
 	mpMeta := backend.MpUploadMetadata{UploadID: *input.UploadId, Parts: partSizes}
@@ -2670,18 +2687,25 @@ func serializeZeroByteParts(parts []int32) string {
 
 // Checks if the multipart upload existis with the given bucket, key and uploadId
 func (az *Azure) checkIfMpExists(ctx context.Context, bucket, obj, uploadId string) error {
+	_, err := az.getMpMetadata(ctx, bucket, obj, uploadId)
+	return err
+}
+
+// getMpMetadata returns the sgwtmp metadata of a multipart upload, or
+// NoSuchUpload when there is no such upload.
+func (az *Azure) getMpMetadata(ctx context.Context, bucket, obj, uploadId string) (map[string]*string, error) {
 	tmpPath := createMetaTmpPath(obj, uploadId)
 	blobClient, err := az.getBlobClient(bucket, tmpPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	_, err = blobClient.GetProperties(ctx, nil)
+	props, err := blobClient.GetProperties(ctx, nil)
 	if err != nil {
-		return s3err.GetNoSuchUploadErr(uploadId)
+		return nil, s3err.GetNoSuchUploadErr(uploadId)
 	}
 
-	return nil
+	return props.Metadata, nil
 }
 
 func convertAzureEtag(etag *azcore.ETag) string {

@@ -328,6 +328,7 @@ func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 			UploadId:          &uploadId,
 			PartNumber:        &partNumber,
 			ContentLength:     &contentLength,
+			ContentMD5:        utils.GetStringPtr(ctx.Get("Content-MD5")),
 			Body:              body,
 			ChecksumAlgorithm: algorithm,
 			ChecksumCRC32:     utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32]),
@@ -541,16 +542,7 @@ func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	actions := []auth.Action{auth.PutObjectAction}
-	if tagging != "" {
-		actions = append(actions, auth.PutObjectTaggingAction)
-	}
-	if legalHoldHdr != "" {
-		actions = append(actions, auth.PutObjectLegalHoldAction)
-	}
-	if lockModeHdr != "" || objLockDate != "" {
-		actions = append(actions, auth.PutObjectRetentionAction)
-	}
+	actions := auth.ObjectUploadActions(tagging, legalHoldHdr, lockModeHdr, objLockDate)
 
 	err = c.verifyObjectCopyAccess(ctx, copySource,
 		auth.AccessOptions{
@@ -632,6 +624,18 @@ func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	// A copy needs no integrity check of its own, but its lock headers still
+	// need a bucket with Object Lock
+	if objLock.LegalHoldStatus != "" || objLock.ObjectLockMode != "" {
+		if _, err := auth.VerifyWriteObjectLock(ctx.RequestCtx(), c.be, bucket, true); err != nil {
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, err
+		}
 	}
 
 	preconditionHdrs := utils.ParsePreconditionHeaders(ctx, utils.WithCopySource())
@@ -722,16 +726,7 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 	}
 	decodedLength := ctx.Get("X-Amz-Decoded-Content-Length")
 
-	actions := []auth.Action{auth.PutObjectAction}
-	if tagging != "" {
-		actions = append(actions, auth.PutObjectTaggingAction)
-	}
-	if legalHoldHdr != "" {
-		actions = append(actions, auth.PutObjectLegalHoldAction)
-	}
-	if lockModeHdr != "" || objLockDate != "" {
-		actions = append(actions, auth.PutObjectRetentionAction)
-	}
+	actions := auth.ObjectUploadActions(tagging, legalHoldHdr, lockModeHdr, objLockDate)
 
 	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
@@ -805,6 +800,27 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	// An upload with Object Lock parameters, its own or the bucket's
+	// default retention, needs an integrity check of its body. The lookup
+	// is skipped when it could reject nothing: no lock headers, and an
+	// integrity check present. An anonymous upload's lock parameters were
+	// already settled before it was authorized.
+	explicitLock := objLock.LegalHoldStatus != "" || objLock.ObjectLockMode != ""
+	hasIntegrityCheck := utils.HasPayloadIntegrityCheck(ctx)
+	if !IsBucketPublic && (explicitLock || !hasIntegrityCheck) {
+		locked, err := auth.VerifyWriteObjectLock(ctx.RequestCtx(), c.be, bucket, explicitLock)
+		if err == nil && locked && !hasIntegrityCheck {
+			err = s3err.GetAPIError(s3err.ErrObjectLockChecksumRequired)
+		}
+		if err != nil {
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, err
+		}
 	}
 
 	var body io.Reader

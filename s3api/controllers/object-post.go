@@ -161,16 +161,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx fiber.Ctx) (*Response, error)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	actions := []auth.Action{auth.PutObjectAction}
-	if tagging != "" {
-		actions = append(actions, auth.PutObjectTaggingAction)
-	}
-	if legalHoldHdr != "" {
-		actions = append(actions, auth.PutObjectLegalHoldAction)
-	}
-	if lockModeHdr != "" || objLockDate != "" {
-		actions = append(actions, auth.PutObjectRetentionAction)
-	}
+	actions := auth.ObjectUploadActions(tagging, legalHoldHdr, lockModeHdr, objLockDate)
 
 	err := c.verifyAccess(ctx,
 		auth.AccessOptions{
@@ -224,6 +215,17 @@ func (c S3ApiController) CreateMultipartUpload(ctx fiber.Ctx) (*Response, error)
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	// lock headers need a bucket with Object Lock
+	if objLockState.LegalHoldStatus != "" || objLockState.ObjectLockMode != "" {
+		if _, err := auth.VerifyWriteObjectLock(ctx.RequestCtx(), c.be, bucket, true); err != nil {
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, err
+		}
 	}
 
 	res, err := c.be.CreateMultipartUpload(ctx.RequestCtx(),

@@ -182,6 +182,8 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_missing_bucket_lock)
 	ts.Run(PutObject_invalid_legal_hold)
 	ts.Run(PutObject_invalid_object_lock_mode)
+	ts.Run(PutObject_object_lock_checksum_required)
+	ts.Run(PutObject_default_retention_checksum_required)
 	ts.Run(PutObject_past_retain_until_date)
 	ts.Run(PutObject_invalid_retain_until_date)
 	ts.Run(PutObject_conditional_writes)
@@ -483,6 +485,8 @@ func TestUploadPart(ts *TestState) {
 	ts.Run(UploadPart_success)
 	ts.Run(UploadPart_plain_body_with_decoded_length)
 	ts.Run(UploadPart_etag_quoting_consistency)
+	ts.Run(UploadPart_object_lock_checksum_required)
+	ts.Run(UploadPart_default_retention_checksum_required)
 }
 
 func TestUploadPartCopy(ts *TestState) {
@@ -1950,6 +1954,17 @@ func TestPublicBuckets(ts *TestState) {
 	ts.Run(PublicBucket_post_object_policy_deny_overrides_public_acl)
 	ts.Run(PublicBucket_signed_streaming_payload)
 	ts.Run(PublicBucket_incorrect_sha256_hash)
+	ts.Run(PublicBucket_put_object_tagging)
+	ts.Run(PublicBucket_put_object_tagging_public_acl)
+	ts.Run(PublicBucket_put_object_lock)
+	ts.Run(PublicBucket_put_object_lock_missing_bucket_lock)
+	ts.Run(PublicBucket_put_object_default_retention)
+	ts.Run(PublicBucket_upload_part_object_lock)
+	ts.Run(PublicBucket_post_object_tagging)
+	if ts.conf.versioningEnabled {
+		ts.Run(PublicBucket_object_version_actions)
+		ts.Run(PublicBucket_object_version_actions_public_acl)
+	}
 }
 
 func TestVersioning(ts *TestState) {
@@ -2862,6 +2877,8 @@ func GetIntTests() IntTests {
 		"PutObject_missing_bucket_lock":                                                    PutObject_missing_bucket_lock,
 		"PutObject_invalid_legal_hold":                                                     PutObject_invalid_legal_hold,
 		"PutObject_invalid_object_lock_mode":                                               PutObject_invalid_object_lock_mode,
+		"PutObject_object_lock_checksum_required":                                          PutObject_object_lock_checksum_required,
+		"PutObject_default_retention_checksum_required":                                    PutObject_default_retention_checksum_required,
 		"PutObject_past_retain_until_date":                                                 PutObject_past_retain_until_date,
 		"PutObject_invalid_retain_until_date":                                              PutObject_invalid_retain_until_date,
 		"PutObject_conditional_writes":                                                     PutObject_conditional_writes,
@@ -3166,6 +3183,8 @@ func GetIntTests() IntTests {
 		"UploadPart_with_checksums_success":                                                UploadPart_with_checksums_success,
 		"UploadPart_success":                                                               UploadPart_success,
 		"UploadPart_etag_quoting_consistency":                                              UploadPart_etag_quoting_consistency,
+		"UploadPart_object_lock_checksum_required":                                         UploadPart_object_lock_checksum_required,
+		"UploadPart_default_retention_checksum_required":                                   UploadPart_default_retention_checksum_required,
 		"UploadPart_data_integrity_etag":                                                   UploadPart_data_integrity_etag,
 		"UploadPartCopy_non_existing_bucket":                                               UploadPartCopy_non_existing_bucket,
 		"UploadPartCopy_incorrect_uploadId":                                                UploadPartCopy_incorrect_uploadId,
@@ -3540,6 +3559,15 @@ func GetIntTests() IntTests {
 		"PublicBucket_post_object_policy_deny_overrides_public_acl":                        PublicBucket_post_object_policy_deny_overrides_public_acl,
 		"PublicBucket_signed_streaming_payload":                                            PublicBucket_signed_streaming_payload,
 		"PublicBucket_incorrect_sha256_hash":                                               PublicBucket_incorrect_sha256_hash,
+		"PublicBucket_put_object_tagging":                                                  PublicBucket_put_object_tagging,
+		"PublicBucket_put_object_tagging_public_acl":                                       PublicBucket_put_object_tagging_public_acl,
+		"PublicBucket_put_object_lock":                                                     PublicBucket_put_object_lock,
+		"PublicBucket_put_object_lock_missing_bucket_lock":                                 PublicBucket_put_object_lock_missing_bucket_lock,
+		"PublicBucket_put_object_default_retention":                                        PublicBucket_put_object_default_retention,
+		"PublicBucket_upload_part_object_lock":                                             PublicBucket_upload_part_object_lock,
+		"PublicBucket_post_object_tagging":                                                 PublicBucket_post_object_tagging,
+		"PublicBucket_object_version_actions":                                              PublicBucket_object_version_actions,
+		"PublicBucket_object_version_actions_public_acl":                                   PublicBucket_object_version_actions_public_acl,
 		"PutBucketVersioning_non_existing_bucket":                                          PutBucketVersioning_non_existing_bucket,
 		"PutBucketVersioning_invalid_status":                                               PutBucketVersioning_invalid_status,
 		"PutBucketVersioning_success_enabled":                                              PutBucketVersioning_success_enabled,

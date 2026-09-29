@@ -110,6 +110,19 @@ func publicReadACL() ACL {
 	}
 }
 
+func publicWriteACL() ACL {
+	return ACL{
+		Owner: "owner",
+		Grantees: []Grantee{
+			{
+				Permission: PermissionWrite,
+				Access:     "all-users",
+				Type:       types.TypeGroup,
+			},
+		},
+	}
+}
+
 // mockPolicyEvaluator implements IAMService (via the embedded
 // IAMServiceSingle, whose methods are never exercised here) and
 // PolicyEvaluator, recording every EvaluatePolicy call so tests can assert
@@ -428,7 +441,7 @@ func TestVerifyPublicAccess_PublicPolicyDenyStopsACLFallback(t *testing.T) {
 		acl: publicReadACL(),
 	}
 
-	err := VerifyPublicAccess(testFiberCtx(t), be, GetObjectAction, PermissionRead, "bucket", "private/secret.txt")
+	err := VerifyPublicAccess(testFiberCtx(t), be, []Action{GetObjectAction}, PermissionRead, "bucket", "private/secret.txt")
 
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, s3err.GetAPIError(s3err.ErrAccessDenied)))
@@ -448,7 +461,7 @@ func TestVerifyPublicAccess_PublicPolicyNoMatchFallsBackToACL(t *testing.T) {
 		acl: publicReadACL(),
 	}
 
-	err := VerifyPublicAccess(testFiberCtx(t), be, GetObjectAction, PermissionRead, "bucket", "public/object.txt")
+	err := VerifyPublicAccess(testFiberCtx(t), be, []Action{GetObjectAction}, PermissionRead, "bucket", "public/object.txt")
 
 	assert.NoError(t, err)
 	assert.Equal(t, 1, be.aclCalls)
@@ -468,7 +481,46 @@ func TestVerifyPublicAccess_NormalizedDenyStopsACLFallback(t *testing.T) {
 		acl: publicReadACL(),
 	}
 
-	err := VerifyPublicAccess(testFiberCtx(t), be, GetObjectAction, PermissionRead, "bucket", "public/../private/secret.txt")
+	err := VerifyPublicAccess(testFiberCtx(t), be, []Action{GetObjectAction}, PermissionRead, "bucket", "public/../private/secret.txt")
+
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, s3err.GetAPIError(s3err.ErrAccessDenied)))
+	assert.Equal(t, 0, be.aclCalls)
+}
+
+func TestVerifyPublicAccess_ActionsGrantedBySeparateSources(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		policy: []byte(`{
+			"Statement": [{
+				"Effect": "Allow",
+				"Principal": "*",
+				"Action": "s3:PutObjectTagging",
+				"Resource": "arn:aws:s3:::bucket/*"
+			}]
+		}`),
+		acl: publicWriteACL(),
+	}
+
+	err := VerifyPublicAccess(testFiberCtx(t), be, []Action{PutObjectAction, PutObjectTaggingAction}, PermissionWrite, "bucket", "object")
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, be.aclCalls)
+}
+
+func TestVerifyPublicAccess_ACLDoesNotGrantTagging(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		policy: []byte(`{
+			"Statement": [{
+				"Effect": "Allow",
+				"Principal": "*",
+				"Action": "s3:GetObject",
+				"Resource": "arn:aws:s3:::bucket/*"
+			}]
+		}`),
+		acl: publicWriteACL(),
+	}
+
+	err := VerifyPublicAccess(testFiberCtx(t), be, []Action{PutObjectAction, PutObjectTaggingAction}, PermissionWrite, "bucket", "object")
 
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, s3err.GetAPIError(s3err.ErrAccessDenied)))

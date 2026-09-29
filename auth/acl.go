@@ -438,7 +438,7 @@ func verifyACL(acl ACL, access string, permission Permission, disableACL bool) e
 }
 
 // Verifies if the bucket acl grants public access
-func VerifyPublicBucketACL(ctx context.Context, be backend.Backend, bucket string, action Action, permission Permission) error {
+func VerifyPublicBucketACL(ctx context.Context, be backend.Backend, bucket string, permission Permission) error {
 	aclBytes, err := be.GetBucketAcl(ctx, &s3.GetBucketAclInput{
 		Bucket: &bucket,
 	})

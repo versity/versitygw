@@ -268,6 +268,7 @@ func PutObject_with_object_lock(s *S3Conf) error {
 		_, err := putObjectWithData(10, &s3.PutObjectInput{
 			Bucket:                    &bucket,
 			Key:                       &obj,
+			ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
 			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
 			ObjectLockMode:            types.ObjectLockModeCompliance,
 			ObjectLockRetainUntilDate: &retainUntilDate,
@@ -311,13 +312,22 @@ func PutObject_missing_bucket_lock(s *S3Conf) error {
 			return err
 		}
 
-		// with legal hold
-		_, err = putObjectWithData(2, &s3.PutObjectInput{
-			Bucket:                    &bucket,
-			Key:                       getPtr("my-object"),
-			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
-		}, s3client)
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces))
+		// with legal hold, of either status
+		for _, status := range []types.ObjectLockLegalHoldStatus{
+			types.ObjectLockLegalHoldStatusOn,
+			types.ObjectLockLegalHoldStatusOff,
+		} {
+			_, err = putObjectWithData(2, &s3.PutObjectInput{
+				Bucket:                    &bucket,
+				Key:                       getPtr("my-object"),
+				ObjectLockLegalHoldStatus: status,
+			}, s3client)
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)); err != nil {
+				return fmt.Errorf("legal hold %s: %w", status, err)
+			}
+		}
+
+		return nil
 	})
 }
 
@@ -344,6 +354,118 @@ func PutObject_invalid_object_lock_mode(s *S3Conf) error {
 			ObjectLockMode:            types.ObjectLockMode("invalid_mode"),
 		}, s3client)
 		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, "invalid_mode"))
+	}, withLock())
+}
+
+// PutObject_object_lock_checksum_required covers uploads carrying Object
+// Lock parameters, which need an integrity check of their body: a legal
+// hold of either status or a retention sent with neither Content-MD5 nor a
+// checksum is rejected, and a legal hold sent with either is stored.
+func PutObject_object_lock_checksum_required(s *S3Conf) error {
+	testName := "PutObject_object_lock_checksum_required"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		retainUntilDate := time.Now().Add(time.Hour)
+
+		for _, test := range []struct {
+			name  string
+			input s3.PutObjectInput
+		}{
+			{
+				name:  "legal hold ON",
+				input: s3.PutObjectInput{ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn},
+			},
+			{
+				name:  "legal hold OFF",
+				input: s3.PutObjectInput{ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOff},
+			},
+			{
+				name: "retention",
+				input: s3.PutObjectInput{
+					ObjectLockMode:            types.ObjectLockModeGovernance,
+					ObjectLockRetainUntilDate: &retainUntilDate,
+				},
+			},
+		} {
+			input := test.input
+			input.Bucket = &bucket
+			input.Key = getPtr("my-obj")
+			_, err := putObjectWithData(10, &input, s3client)
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockChecksumRequired)); err != nil {
+				return fmt.Errorf("%s without an integrity check: %w", test.name, err)
+			}
+		}
+
+		data := []byte("data")
+		md5sum := md5.Sum(data)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		md5Res, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       getPtr("with-md5"),
+			Body:                      bytes.NewReader(data),
+			ContentMD5:                getPtr(base64.StdEncoding.EncodeToString(md5sum[:])),
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("legal hold with Content-MD5: %w", err)
+		}
+
+		checksumRes, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       getPtr("with-checksum"),
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+		}, s3client, withPutObjectChecksumAlgo(types.ChecksumAlgorithmCrc32))
+		if err != nil {
+			return fmt.Errorf("legal hold with a checksum: %w", err)
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{key: "with-md5", versionId: getString(md5Res.VersionId), removeLegalHold: true},
+			{key: "with-checksum", versionId: getString(checksumRes.res.VersionId), removeLegalHold: true},
+		})
+	}, withLock())
+}
+
+// PutObject_default_retention_checksum_required covers uploads to a bucket
+// with a default retention rule, which gives every object written to it
+// Object Lock parameters: even a plain upload, an empty one included, then
+// needs an integrity check of its body.
+func PutObject_default_retention_checksum_required(s *S3Conf) error {
+	testName := "PutObject_default_retention_checksum_required"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+				Rule: &types.ObjectLockRule{
+					DefaultRetention: &types.DefaultRetention{
+						Mode: types.ObjectLockRetentionModeGovernance,
+						Days: getPtr(int32(1)),
+					},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		for _, size := range []int64{10, 0} {
+			_, err := putObjectWithData(size, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    getPtr("my-obj"),
+			}, s3client)
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockChecksumRequired)); err != nil {
+				return fmt.Errorf("%d byte upload without an integrity check: %w", size, err)
+			}
+		}
+
+		_, err = putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("my-obj"),
+		}, s3client, withPutObjectChecksumAlgo(types.ChecksumAlgorithmCrc32))
+		return err
 	}, withLock())
 }
 

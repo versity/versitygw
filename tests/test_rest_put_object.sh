@@ -398,9 +398,6 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, object-lock, retention, versioning, content-md5, invalid-header
 @test "TEST - REST - PutObject - not allowed without content-MD5 with lock configuration" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1740"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -532,9 +529,6 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, object-lock, legal-hold, x-amz-object-lock-legal-hold, content-md5, invalid-header
 @test "PutObject - x-amz-object-lock-legal-hold - no Content-MD5" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1776"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
