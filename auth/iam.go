@@ -30,7 +30,7 @@ func resolveAccountsByLookup(accessKeyIDs []string, getUserAccount func(string) 
 	for _, access := range accessKeyIDs {
 		_, err := getUserAccount(access)
 		if err != nil {
-			if err == ErrNoSuchUser || err == s3err.GetAPIError(s3err.ErrAdminUserNotFound) {
+			if err == ErrNoSuchUser {
 				missing = append(missing, access)
 				continue
 			}

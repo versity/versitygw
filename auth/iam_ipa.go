@@ -137,6 +137,9 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 	}{}
 
 	err = ipa.rpc(req, &userResult)
+	if errors.Is(err, errRpcNotFound) {
+		return Account{}, ErrNoSuchUser
+	}
 	if err != nil {
 		return Account{}, err
 	}
@@ -176,12 +179,16 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 	// ipaclient/plugins/vault.py's _do_internal - so try the default first
 	// and fall back to OAEP so both KRA configurations keep working.
 	data, err := ipa.retrieveVaultSecret(access, session_key, false)
-	if err != nil {
+	if err != nil && !errors.Is(err, errRpcNotFound) {
 		debuglogger.IAMLogf("ipa vault_retrieve_internal with PKCS1v15 session key wrap failed, retrying with OAEP: %v", err)
 		data, err = ipa.retrieveVaultSecret(access, session_key, true)
-		if err != nil {
-			return account, err
-		}
+	}
+	if errors.Is(err, errRpcNotFound) {
+		// a user without the vault has no secret, so it isn't an S3 account
+		return Account{}, ErrNoSuchUser
+	}
+	if err != nil {
+		return account, err
 	}
 
 	aes, err := aes.NewCipher(session_key)
@@ -332,6 +339,12 @@ func (p rpcResponse) String() string {
 
 var errRpc = errors.New("IPA RPC error")
 
+// errRpcNotFound is the IPA RPC error for an object that does not exist,
+// such as a user or a user's vault (FreeIPA's NotFound error)
+var errRpcNotFound = fmt.Errorf("not found: %w", errRpc)
+
+const ipaErrNotFoundCode = 4001
+
 func (ipa *IpaIAMService) rpc(req rpcRequest, value any) error {
 	err := ipa.login()
 	if err != nil {
@@ -403,6 +416,12 @@ func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 		return rpcResponse{}, err
 	}
 	if string(result.Error) != "null" {
+		rpcErr := struct {
+			Code int `json:"code"`
+		}{}
+		if json.Unmarshal(result.Error, &rpcErr) == nil && rpcErr.Code == ipaErrNotFoundCode {
+			return rpcResponse{}, fmt.Errorf("%s: %w", string(result.Error), errRpcNotFound)
+		}
 		return rpcResponse{}, fmt.Errorf("%s: %w", string(result.Error), errRpc)
 	}
 

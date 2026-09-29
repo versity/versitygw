@@ -245,12 +245,18 @@ func (vt *VaultIAMService) GetUserAccount(access string) (Account, error) {
 	if err != nil {
 		reauthErr := vt.reAuthIfNeeded(err)
 		if reauthErr != nil {
+			if vault.IsErrorStatus(err, http.StatusNotFound) {
+				return Account{}, ErrNoSuchUser
+			}
 			return Account{}, reauthErr
 		}
 		// retry once after re-auth
 		resp, err = vt.client.Secrets.KvV2Read(context.Background(),
 			vt.secretStoragePath+"/"+access, vt.kvReqOpts...)
 		if err != nil {
+			if vault.IsErrorStatus(err, http.StatusNotFound) {
+				return Account{}, ErrNoSuchUser
+			}
 			return Account{}, err
 		}
 	}
