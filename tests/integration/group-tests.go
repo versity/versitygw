@@ -318,6 +318,7 @@ func TestListObjects(ts *TestState) {
 	ts.Run(ListObjects_mp_masking_with_marker)
 	ts.Run(ListObjects_mp_masking_truncation)
 	ts.Run(ListObjects_mp_masking_delimiter)
+	ts.Run(ListObjects_url_encoding)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(ListObjects_with_checksum)
@@ -337,6 +338,7 @@ func TestListObjectsV2(ts *TestState) {
 	ts.Run(ListObjectsV2_list_all_objs)
 	ts.Run(ListObjectsV2_full_pagination)
 	ts.Run(ListObjectsV2_pagination_with_delimiter)
+	ts.Run(ListObjectsV2_url_encoding)
 	ts.Run(ListObjectsV2_with_owner)
 	ts.Run(ListObjectsV2_non_truncated_common_prefixes)
 	//TODO: remove the condition after implementing checksums in azure
@@ -3073,6 +3075,7 @@ func GetIntTests() IntTests {
 		"ListObjects_mp_masking_with_marker":                                               ListObjects_mp_masking_with_marker,
 		"ListObjects_mp_masking_truncation":                                                ListObjects_mp_masking_truncation,
 		"ListObjects_mp_masking_delimiter":                                                 ListObjects_mp_masking_delimiter,
+		"ListObjects_url_encoding":                                                         ListObjects_url_encoding,
 		"ListObjectsV2_non_truncated_common_prefixes":                                      ListObjectsV2_non_truncated_common_prefixes,
 		"ListObjectsV2_invalid_parent_prefix":                                              ListObjectsV2_invalid_parent_prefix,
 		"ListObjectsV2_should_not_list_pending_mps":                                        ListObjectsV2_should_not_list_pending_mps,
@@ -3091,6 +3094,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_list_all_objs":                                                      ListObjectsV2_list_all_objs,
 		"ListObjectsV2_full_pagination":                                                    ListObjectsV2_full_pagination,
 		"ListObjectsV2_pagination_with_delimiter":                                          ListObjectsV2_pagination_with_delimiter,
+		"ListObjectsV2_url_encoding":                                                       ListObjectsV2_url_encoding,
 		"ListObjectsV2_with_owner":                                                         ListObjectsV2_with_owner,
 		"ListObjectsV2_with_checksum":                                                      ListObjectsV2_with_checksum,
 		"ListObjectVersions_VD_success":                                                    ListObjectVersions_VD_success,

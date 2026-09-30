@@ -1205,3 +1205,82 @@ func ParseContentEncoding(ctx fiber.Ctx) string {
 
 	return strings.Join(kept, ",")
 }
+
+// ParseEncodingType validates the encoding-type query parameter of the object
+// listing operations. S3 accepts "url" and rejects any other value.
+func ParseEncodingType(value string) (types.EncodingType, error) {
+	if value == "" {
+		return "", nil
+	}
+	if value != string(types.EncodingTypeUrl) {
+		debuglogger.Logf("invalid encoding-type: %q", value)
+		return "", s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, value)
+	}
+	return types.EncodingTypeUrl, nil
+}
+
+// urlEncodeKeyName encodes a key name the way S3 does for encoding-type=url:
+// as a query component, so a space becomes "+" and "+" becomes "%2B", with "/"
+// left as is.
+func urlEncodeKeyName(name *string) *string {
+	if name == nil {
+		return nil
+	}
+	encoded := strings.ReplaceAll(url.QueryEscape(*name), "%2F", "/")
+	return &encoded
+}
+
+// urlEncodeCommonPrefixes returns a copy of prefixes with each prefix encoded.
+func urlEncodeCommonPrefixes(prefixes []types.CommonPrefix) []types.CommonPrefix {
+	if prefixes == nil {
+		return nil
+	}
+	encoded := make([]types.CommonPrefix, len(prefixes))
+	for i, cp := range prefixes {
+		cp.Prefix = urlEncodeKeyName(cp.Prefix)
+		encoded[i] = cp
+	}
+	return encoded
+}
+
+// urlEncodeObjectKeys returns a copy of objects with each key encoded.
+func urlEncodeObjectKeys(objects []s3response.Object) []s3response.Object {
+	if objects == nil {
+		return nil
+	}
+	encoded := make([]s3response.Object, len(objects))
+	for i, obj := range objects {
+		obj.Key = urlEncodeKeyName(obj.Key)
+		encoded[i] = obj
+	}
+	return encoded
+}
+
+// URLEncodeListObjectsResult returns res as S3 answers a ListObjects request
+// with encoding-type=url: EncodingType set and the Delimiter, Marker, Prefix,
+// NextMarker, Key and CommonPrefixes values encoded. The backend's values are
+// left untouched.
+func URLEncodeListObjectsResult(res s3response.ListObjectsResult) s3response.ListObjectsResult {
+	res.EncodingType = types.EncodingTypeUrl
+	res.Delimiter = urlEncodeKeyName(res.Delimiter)
+	res.Marker = urlEncodeKeyName(res.Marker)
+	res.Prefix = urlEncodeKeyName(res.Prefix)
+	res.NextMarker = urlEncodeKeyName(res.NextMarker)
+	res.Contents = urlEncodeObjectKeys(res.Contents)
+	res.CommonPrefixes = urlEncodeCommonPrefixes(res.CommonPrefixes)
+	return res
+}
+
+// URLEncodeListObjectsV2Result returns res as S3 answers a ListObjectsV2
+// request with encoding-type=url: EncodingType set and the Delimiter, Prefix,
+// StartAfter, Key and CommonPrefixes values encoded. The continuation tokens
+// are opaque and stay as they are.
+func URLEncodeListObjectsV2Result(res s3response.ListObjectsV2Result) s3response.ListObjectsV2Result {
+	res.EncodingType = types.EncodingTypeUrl
+	res.Delimiter = urlEncodeKeyName(res.Delimiter)
+	res.Prefix = urlEncodeKeyName(res.Prefix)
+	res.StartAfter = urlEncodeKeyName(res.StartAfter)
+	res.Contents = urlEncodeObjectKeys(res.Contents)
+	res.CommonPrefixes = urlEncodeCommonPrefixes(res.CommonPrefixes)
+	return res
+}

@@ -20,6 +20,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/s3err"
 )
 
 func ListObjectsV2_start_after(s *S3Conf) error {
@@ -1020,5 +1021,46 @@ func ListObjectsV2_pagination_with_delimiter(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+// ListObjectsV2_url_encoding is ListObjects_url_encoding for ListObjectsV2.
+func ListObjectsV2_url_encoding(s *S3Conf) error {
+	testName := "ListObjectsV2_url_encoding"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"a+ b.txt", "dir a/obj"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:       &bucket,
+			Delimiter:    getPtr("/"),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.EncodingType != types.EncodingTypeUrl {
+			return fmt.Errorf("expected the encoding type to be %q, instead got %q",
+				types.EncodingTypeUrl, out.EncodingType)
+		}
+		if len(out.Contents) != 1 || getString(out.Contents[0].Key) != "a%2B+b.txt" {
+			return fmt.Errorf("expected the key %q, instead got %v", "a%2B+b.txt", out.Contents)
+		}
+		if len(out.CommonPrefixes) != 1 || getString(out.CommonPrefixes[0].Prefix) != "dir+a/" {
+			return fmt.Errorf("expected the common prefix %q, instead got %v", "dir+a/", out.CommonPrefixes)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:       &bucket,
+			EncodingType: "gibberish",
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"))
 	})
 }
