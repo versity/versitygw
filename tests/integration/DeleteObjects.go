@@ -175,6 +175,56 @@ func DeleteObjects_success(s *S3Conf) error {
 	})
 }
 
+// DeleteObjects_quiet_mode checks that a quiet-mode request deletes the
+// objects but lists none of them, since quiet mode reports only the objects
+// that could not be deleted.
+func DeleteObjects_quiet_mode(s *S3Conf) error {
+	testName := "DeleteObjects_quiet_mode"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		contents, err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{
+				Objects: []types.ObjectIdentifier{{Key: getPtr("bar")}, {Key: getPtr("baz")}},
+				Quiet:   getBoolPtr(true),
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Deleted) != 0 {
+			return fmt.Errorf("expected no deleted objects in quiet mode, instead got %v",
+				len(out.Deleted))
+		}
+		if len(out.Errors) != 0 {
+			return fmt.Errorf("expected no errors, instead got %v", len(out.Errors))
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareObjects(contents[2:], res.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents[2:], res.Contents)
+		}
+
+		return nil
+	})
+}
+
 // DeleteObjects_iam_mixed_denials_and_success covers a single batch mixing
 // every DeleteObjects outcome at once: a key the identity policy denies, a
 // governance-locked key with no bypass, and keys the caller may freely

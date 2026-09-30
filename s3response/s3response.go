@@ -292,6 +292,7 @@ func (t *Tagging) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 
 type DeleteObjects struct {
 	Objects []types.ObjectIdentifier `xml:"Object"`
+	Quiet   bool                     `xml:"Quiet,omitempty"`
 }
 
 type DeleteResult struct {

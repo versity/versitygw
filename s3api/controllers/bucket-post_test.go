@@ -93,6 +93,23 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
+	quietBody, err := xml.Marshal(s3response.DeleteObjects{
+		Objects: []types.ObjectIdentifier{
+			{Key: utils.GetStringPtr("ok")},
+			{Key: utils.GetStringPtr("failed")},
+		},
+		Quiet: true,
+	})
+	assert.NoError(t, err)
+
+	failedCode, failedMessage := "InternalError", "We encountered an internal error. Please try again."
+	quietBackendRes := s3response.DeleteResult{
+		Deleted: []types.DeletedObject{{Key: utils.GetStringPtr("ok")}},
+		Error: []types.Error{
+			{Key: utils.GetStringPtr("failed"), Code: &failedCode, Message: &failedMessage},
+		},
+	}
+
 	lockConfig, err := json.Marshal(auth.BucketLockConfig{Enabled: true})
 	assert.NoError(t, err)
 
@@ -188,6 +205,29 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 						BucketOwner: "root",
 						EventName:   s3event.EventObjectRemovedDeleteObjects,
 						ObjectCount: 1,
+					},
+				},
+			},
+		},
+		{
+			name: "quiet mode reports only the objects not deleted",
+			input: testInput{
+				locals:       defaultLocals,
+				body:         quietBody,
+				beRes:        quietBackendRes,
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
+			},
+			output: testOutput{
+				response: &Response{
+					Data: s3response.DeleteResult{
+						Error: []types.Error{
+							{Key: utils.GetStringPtr("failed"), Code: &failedCode, Message: &failedMessage},
+						},
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+						EventName:   s3event.EventObjectRemovedDeleteObjects,
+						ObjectCount: 2,
 					},
 				},
 			},
