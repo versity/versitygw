@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -388,5 +389,43 @@ func TestTmpSubdirMultipartCrashAbort(t *testing.T) {
 		Bucket: &bucket, Key: &key, UploadId: &mp2.UploadId,
 	}); err != nil {
 		t.Fatalf("abort second upload: %v", err)
+	}
+}
+
+// TestTmpPermsAcrossUmask verifies that objects end up with the configured
+// file mode whether or not the umask strips bits of newFilePerm: with a
+// permissive umask the temp file is created with the final mode directly
+// (no fchmod), with a restrictive umask it falls back to CreateTemp plus an
+// explicit chmod.
+func TestTmpPermsAcrossUmask(t *testing.T) {
+	for _, umask := range []fs.FileMode{0o022, 0o077} {
+		t.Run(umask.String(), func(t *testing.T) {
+			old := syscall.Umask(int(umask))
+			defer syscall.Umask(old)
+
+			for _, subdirs := range []int{1, 4} {
+				p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+					return meta.XattrMeta{}, PosixOpts{
+						NewDirPerm:     0o755,
+						ForceNoTmpFile: true,
+						TmpSubdirs:     subdirs,
+					}
+				})
+				bucket := "perm_bucket"
+				createTestBucket(t, p, bucket)
+
+				body := []byte("perm check")
+				if _, err := testPut(p, bucket, "dir/key", body, nil, nil); err != nil {
+					t.Fatalf("put: %v", err)
+				}
+				fi, err := os.Stat(p.ObjectPath(bucket, "dir/key"))
+				if err != nil {
+					t.Fatalf("stat object: %v", err)
+				}
+				if got := fi.Mode().Perm(); got != 0o644 {
+					t.Fatalf("subdirs %d umask %v: object mode = %v, want 644", subdirs, umask, got)
+				}
+			}
+		})
 	}
 }
