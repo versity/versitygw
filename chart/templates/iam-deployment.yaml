@@ -2,6 +2,8 @@
 {{- if ($iamServer.enabled | default false) }}
 {{- $iamServerAuth := .Values.iamServer.auth | default dict -}}
 {{- $iamServerOidc := .Values.iamServer.oidc | default dict -}}
+{{- $iamPrivateCertVolume := dig "private" "certificate" "volumeName" "" $iamServer -}}
+{{- $iamTLSCertVolume := dig "tls" "volumeName" "" $iamServer -}}
 {{- if not (or (eq .Values.iamServer.storage.type "internal") (eq .Values.iamServer.storage.type "vault")) }}
   {{- fail "iamServer.storage.type must be either internal or vault" }}
 {{- end }}
@@ -14,17 +16,17 @@
 {{- if and (eq .Values.iamServer.storage.type "vault") (not .Values.iamServer.storage.vault.endpointUrl) }}
   {{- fail "iamServer.storage.vault.endpointUrl is required when iamServer.storage.type=vault" }}
 {{- end }}
-{{- if and .Values.iamServer.private.enabled (not .Values.iamServer.private.certificate.create) (not .Values.iamServer.private.certificate.existingSecret) }}
-  {{- fail "iamServer.private.enabled requires either iamServer.private.certificate.create=true or iamServer.private.certificate.existingSecret" }}
+{{- if and .Values.iamServer.private.enabled (not .Values.iamServer.private.certificate.create) (not .Values.iamServer.private.certificate.existingSecret) (not $iamPrivateCertVolume) }}
+  {{- fail "iamServer.private.enabled requires iamServer.private.certificate.create=true, iamServer.private.certificate.existingSecret or iamServer.private.certificate.volumeName" }}
 {{- end }}
-{{- if and .Values.iamServer.private.enabled .Values.iamServer.private.certificate.create (not .Values.iamServer.private.certificate.existingSecret) (not .Values.iamServer.private.certificate.issuerRef.name) }}
+{{- if and .Values.iamServer.private.enabled .Values.iamServer.private.certificate.create (not .Values.iamServer.private.certificate.existingSecret) (not $iamPrivateCertVolume) (not .Values.iamServer.private.certificate.issuerRef.name) }}
   {{- fail "iamServer.private.certificate.issuerRef.name is required when creating the IAM server certificate" }}
 {{- end }}
 {{- if and .Values.iamServer.private.enabled (eq (int .Values.iamServer.private.port) (int .Values.iamServer.port)) }}
   {{- fail "iamServer.private.port must differ from iamServer.port" }}
 {{- end }}
-{{- if and .Values.iamServer.tls.enabled (not .Values.iamServer.tls.secretName) }}
-  {{- fail "iamServer.tls.secretName is required when iamServer.tls.enabled=true" }}
+{{- if and .Values.iamServer.tls.enabled (not .Values.iamServer.tls.secretName) (not $iamTLSCertVolume) }}
+  {{- fail "iamServer.tls.secretName or iamServer.tls.volumeName is required when iamServer.tls.enabled=true" }}
 {{- end }}
 {{- if not (or (eq .Values.iamServer.logLevel "silent") (eq .Values.iamServer.logLevel "debug") (eq .Values.iamServer.logLevel "unsafe")) }}
   {{- fail "iamServer.logLevel must be one of silent, debug, or unsafe" }}
@@ -78,10 +80,21 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.iamServer.shareProcessNamespace }}
+      shareProcessNamespace: true
+      {{- end }}
+      {{- with .Values.iamServer.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: iam-server
           image: "{{ .Values.iamServer.image.repository | default .Values.image.repository }}:{{ .Values.iamServer.image.tag | default .Values.image.tag }}"
           imagePullPolicy: {{ .Values.iamServer.image.pullPolicy | default .Values.image.pullPolicy }}
+          {{- with .Values.iamServer.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           env:
             - name: VGW_BACKEND
               value: "iam"
@@ -270,15 +283,21 @@ spec:
               readOnly: false
             {{- end }}
             {{- if .Values.iamServer.private.enabled }}
-            - name: private-certs
+            - name: {{ $iamPrivateCertVolume | default "private-certs" }}
               mountPath: /iam-private-certs
               readOnly: true
             {{- end }}
             {{- if .Values.iamServer.tls.enabled }}
-            - name: certificates
+            - name: {{ $iamTLSCertVolume | default "certificates" }}
               mountPath: /certs
               readOnly: true
             {{- end }}
+            {{- with .Values.iamServer.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- with .Values.iamServer.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       volumes:
         {{- if eq .Values.iamServer.storage.type "internal" }}
         - name: data
@@ -289,17 +308,20 @@ spec:
           emptyDir: {}
           {{- end }}
         {{- end }}
-        {{- if .Values.iamServer.private.enabled }}
+        {{- if and .Values.iamServer.private.enabled (not $iamPrivateCertVolume) }}
         - name: private-certs
           secret:
             secretName: {{ include "versitygw.iamServerPrivateCertSecretName" . }}
             defaultMode: 0440
         {{- end }}
-        {{- if .Values.iamServer.tls.enabled }}
+        {{- if and .Values.iamServer.tls.enabled (not $iamTLSCertVolume) }}
         - name: certificates
           secret:
             secretName: {{ .Values.iamServer.tls.secretName }}
             defaultMode: 0440
+        {{- end }}
+        {{- with .Values.iamServer.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
 
       {{- with .Values.iamServer.nodeSelector }}

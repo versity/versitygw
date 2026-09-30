@@ -7,6 +7,9 @@
 {{- $iamStandalone := .Values.iam.standalone | default dict -}}
 {{- $iamStandaloneEndpoint := $iamStandalone.endpoint | default "" -}}
 {{- $iamStandaloneCredentials := $iamStandalone.credentials | default dict -}}
+{{- $iamClientCertVolume := dig "certificate" "volumeName" "" $iamStandalone -}}
+{{- $iamClientCerts := or .Values.iam.standalone.certificate.create .Values.iam.standalone.certificate.existingSecret $iamClientCertVolume -}}
+{{- $tlsCertVolume := dig "volumeName" "" (.Values.certificate | default dict) -}}
 {{- $internalIAM := and .Values.iam.enabled (eq .Values.iam.type "internal") -}}
 {{- $iamDir := clean (.Values.iam.dir | default "/mnt/iam") -}}
 {{- $iamPersistence := .Values.iam.persistence | default dict -}}
@@ -85,10 +88,10 @@
 {{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") $iamStandaloneEndpoint (not (regexMatch "^(\\[[0-9A-Fa-f:]+\\]|[^/:[:space:]]+):[0-9]+$" $iamStandaloneEndpoint)) }}
   {{- fail "iam.standalone.endpoint must be a host:port TCP address; the chart does not provide a shared volume for Unix sockets" }}
 {{- end }}
-{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (not (or .Values.iam.standalone.certificate.create .Values.iam.standalone.certificate.existingSecret)) }}
-  {{- fail "a standalone IAM TCP endpoint requires iam.standalone.certificate.create=true or iam.standalone.certificate.existingSecret" }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (not $iamClientCerts) }}
+  {{- fail "a standalone IAM TCP endpoint requires iam.standalone.certificate.create=true, iam.standalone.certificate.existingSecret or iam.standalone.certificate.volumeName" }}
 {{- end }}
-{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") .Values.iam.standalone.certificate.create (not .Values.iam.standalone.certificate.existingSecret) (not .Values.iam.standalone.certificate.issuerRef.name) }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") .Values.iam.standalone.certificate.create (not .Values.iam.standalone.certificate.existingSecret) (not $iamClientCertVolume) (not .Values.iam.standalone.certificate.issuerRef.name) }}
   {{- fail "iam.standalone.certificate.issuerRef.name is required when creating the IAM client certificate" }}
 {{- end }}
 {{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (or (and .Values.iam.standalone.access (not .Values.iam.standalone.secret)) (and .Values.iam.standalone.secret (not .Values.iam.standalone.access))) }}
@@ -145,10 +148,21 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.shareProcessNamespace }}
+      shareProcessNamespace: true
+      {{- end }}
+      {{- with .Values.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           env:
             # Backend selection — consumed by docker-entrypoint.sh
             - name: VGW_BACKEND
@@ -296,7 +310,7 @@ spec:
               value: {{ .Values.iam.standalone.secret | quote }}
             {{- end }}
             {{- end }}
-            {{- if or .Values.iam.standalone.certificate.create .Values.iam.standalone.certificate.existingSecret }}
+            {{- if $iamClientCerts }}
             - name: VGW_IAM_STANDALONE_CLIENT_CERT
               value: /iam-client-certs/tls.crt
             - name: VGW_IAM_STANDALONE_CLIENT_CERT_KEY
@@ -358,6 +372,9 @@ spec:
             httpGet:
               path: "/_/health"
               port: s3-api
+              {{- if .Values.tls.enabled }}
+              scheme: HTTPS
+              {{- end }}
             initialDelaySeconds: 5
             periodSeconds: 15
           securityContext:
@@ -397,16 +414,22 @@ spec:
               subPath: iam
               readOnly: false
             {{- end }}
-            {{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (or .Values.iam.standalone.certificate.create .Values.iam.standalone.certificate.existingSecret) }}
-            - name: iam-client-certs
+            {{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") $iamClientCerts }}
+            - name: {{ $iamClientCertVolume | default "iam-client-certs" }}
               mountPath: /iam-client-certs
               readOnly: true
             {{- end }}
             {{- if .Values.tls.enabled }}
-            - name: certificates
+            - name: {{ $tlsCertVolume | default "certificates" }}
               mountPath: /certs
               readOnly: true
             {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- with .Values.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       volumes:
         - name: data
           {{- if .Values.persistence.enabled }}
@@ -426,16 +449,19 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "versitygw.iamPvcName" . }}
         {{- end }}
-        {{- if .Values.tls.enabled }}
+        {{- if and .Values.tls.enabled (not $tlsCertVolume) }}
         - name: certificates
           secret:
             secretName: {{ include "versitygw.certificateSecretName" . }}
         {{- end }}
-        {{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (or .Values.iam.standalone.certificate.create .Values.iam.standalone.certificate.existingSecret) }}
+        {{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") $iamClientCerts (not $iamClientCertVolume) }}
         - name: iam-client-certs
           secret:
             secretName: {{ include "versitygw.iamClientCertSecretName" . }}
             defaultMode: 0440
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
 
       {{- with .Values.nodeSelector }}

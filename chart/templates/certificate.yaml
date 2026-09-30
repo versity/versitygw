@@ -1,4 +1,4 @@
-{{- if .Values.certificate.create }}
+{{- if and .Values.certificate.create (not .Values.certificate.volumeName) }}
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

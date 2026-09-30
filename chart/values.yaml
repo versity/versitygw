@@ -406,6 +406,11 @@ iam:
       # when both are set). Must contain tls.crt, tls.key, and ca.crt (the CA
       # that signed iamServer's private-listener server certificate).
       existingSecret: ""
+      # Or mount a volume defined in extraVolumes instead of a Secret (wins over
+      # both of the above), for certificates written and rotated by another
+      # container, e.g. a spiffe-helper init container/sidecar. Must provide
+      # tls.crt, tls.key, and ca.crt.
+      volumeName: ""
       issuerRef: {}
       #   group: cert-manager.io
       #   kind: ClusterIssuer
@@ -496,6 +501,9 @@ iamServer:
   tls:
     enabled: false
     secretName: ""
+    # Or mount a volume defined in iamServer.extraVolumes instead of a Secret
+    # (wins over secretName). Must provide tls.crt and tls.key.
+    volumeName: ""
 
   # -- Storage backend --
   storage:
@@ -547,6 +555,10 @@ iamServer:
       # when both are set). Must contain tls.crt, tls.key, and ca.crt (the CA
       # that signs gateway client certificates).
       existingSecret: ""
+      # Or mount a volume defined in iamServer.extraVolumes instead of a Secret
+      # (wins over both of the above). Must provide tls.crt, tls.key, and
+      # ca.crt. May name the same volume as iamServer.tls.volumeName.
+      volumeName: ""
       issuerRef: {}
       #   group: cert-manager.io
       #   kind: ClusterIssuer
@@ -576,6 +588,14 @@ iamServer:
   deploymentAnnotations: {}
   podAnnotations: {}
   podLabels: {}
+  # Pod extension hooks for the IAM server; same meaning as the top-level
+  # values of the same names below.
+  shareProcessNamespace: false
+  command: []
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
 
 # Extra environment variables to pass to the container.
 # Use this to configure advanced options not covered above (e.g. event notifications,
@@ -589,10 +609,36 @@ iamServer:
 #       value: "ldap://ldap.example.com"
 extraEnv: []
 
+# --- Pod extension hooks (gateway Deployment) ---
+# Share one process namespace between the pod's containers, e.g. so a sidecar
+# that rotates certificates can signal the gateway (SIGHUP reloads its serving
+# certificates).
+shareProcessNamespace: false
+# Override the gateway container's command. Empty uses the image entrypoint.
+command: []
+# Extra init containers, sidecar containers, volumes, and gateway container
+# volume mounts, rendered as given.
+# Example (certificates from SPIFFE/SPIRE via spiffe-helper):
+#   initContainers:
+#     - name: spiffe-helper-init
+#       image: ghcr.io/spiffe/spiffe-helper:0.11.0
+#       args: ["-config", "/etc/spiffe-helper/helper.conf", "-daemon-mode=false"]
+#       volumeMounts: [...]
+#   extraVolumes:
+#     - name: spiffe-certs
+#       emptyDir: {}
+#   certificate:
+#     volumeName: spiffe-certs
+initContainers: []
+extraContainers: []
+extraVolumes: []
+extraVolumeMounts: []
+
 # --- TLS ---
 # Enable HTTPS for the S3 API (and admin/webui if not separately configured).
 tls:
-  # Set to true to enable TLS. Requires certificate.secretName or certificate.create.
+  # Set to true to enable TLS. Requires certificate.secretName,
+  # certificate.create, or certificate.volumeName.
   enabled: false
 
 # --- cert-manager Certificate ---
@@ -600,6 +646,9 @@ certificate:
   # Set to the name of an existing TLS Secret to use for HTTPS.
   # If empty and certificate.create is false, defaults to <fullname>-cert.
   secretName: ""
+  # Or mount a volume defined in extraVolumes instead of a Secret (wins over
+  # secretName and create). Must provide tls.crt and tls.key.
+  volumeName: ""
   # Create a cert-manager Certificate resource to automatically provision TLS.
   # Requires cert-manager to be installed in the cluster.
   create: false
