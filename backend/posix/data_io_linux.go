@@ -26,6 +26,8 @@ import (
 	"syscall"
 
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
+	"golang.org/x/sys/unix"
 )
 
 // openDataRead opens object data for reading and applies O_DIRECT when
@@ -49,144 +51,177 @@ func openDataRead(name string, useODirect bool) (*os.File, error) {
 	return f, nil
 }
 
-func buildGetObjectBody(f *os.File, path string, startOffset, length, objSize int64, useODirect bool, readBufferSize int) (io.ReadCloser, error) {
+func buildGetObjectBody(f *os.File, _ string, startOffset, length, objSize int64, useODirect bool, readBufferSize int) (io.ReadCloser, error) {
+	// openDataRead may have silently opened without O_DIRECT.
+	if useODirect && isODirectFile(f) {
+		return newODirectReader(f, startOffset, length, readBufferSize), nil
+	}
+
 	if startOffset == 0 && length == objSize {
-		if useODirect {
-			return newODirectReadFallbackFile(path, f, true), nil
-		}
 		return f, nil
 	}
 
-	if !useODirect {
-		rdr := io.NewSectionReader(f, startOffset, length)
-		return withReadBufferSize(&backend.FileSectionReadCloser{R: rdr, F: f}, readBufferSize), nil
+	rdr := io.NewSectionReader(f, startOffset, length)
+	return withReadBufferSize(&backend.FileSectionReadCloser{R: rdr, F: f}, readBufferSize), nil
+}
+
+func isODirectFile(f *os.File) bool {
+	flags, err := unix.FcntlInt(f.Fd(), unix.F_GETFL, 0)
+	return err == nil && flags&unix.O_DIRECT != 0
+}
+
+var odirectReadBufPool sync.Pool
+
+// odirectReader serves [off, end) of f using block-aligned preads into an
+// aligned buffer, as O_DIRECT requires for offset, length, and memory.
+type odirectReader struct {
+	mu     sync.Mutex
+	f      *os.File
+	direct bool
+	off    int64
+	end    int64
+	buf    []byte
+	bufOff int64
+	bufLen int
+}
+
+func newODirectReader(f *os.File, off, length int64, bufSize int) *odirectReader {
+	size := max(odirectAlign, (bufSize+odirectAlign-1)/odirectAlign*odirectAlign)
+	buf, ok := odirectReadBufPool.Get().(*[]byte)
+	if !ok || len(*buf) != size {
+		b := alignedBuffer(size)
+		buf = &b
 	}
-
-	rf := newODirectReadFallbackFile(path, f, true)
-
-	if _, err := rf.Seek(startOffset, io.SeekStart); err != nil {
-		_ = rf.Close()
-		return nil, fmt.Errorf("seek range start: %w", err)
-	}
-
-	return withReadBufferSize(&readerWithCloser{r: io.LimitReader(rf, length), c: rf}, readBufferSize), nil
-}
-
-type readerWithCloser struct {
-	r io.Reader
-	c io.Closer
-}
-
-func (r *readerWithCloser) Read(p []byte) (int, error) {
-	return r.r.Read(p)
-}
-
-func (r *readerWithCloser) Close() error {
-	return r.c.Close()
-}
-
-type odirectReadFallbackFile struct {
-	mu         sync.Mutex
-	path       string
-	f          *os.File
-	useODirect bool
-}
-
-func newODirectReadFallbackFile(path string, f *os.File, useODirect bool) *odirectReadFallbackFile {
-	return &odirectReadFallbackFile{
-		path:       path,
-		f:          f,
-		useODirect: useODirect,
+	return &odirectReader{
+		f:      f,
+		direct: true,
+		off:    off,
+		end:    off + length,
+		buf:    *buf,
 	}
 }
 
-func (r *odirectReadFallbackFile) Read(p []byte) (int, error) {
+func (r *odirectReader) Read(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	n, err := r.f.Read(p)
-	if err != nil && n == 0 && r.useODirect && isODirectRuntimeFallbackErr(err) {
-		if fallbackErr := r.switchToBufferedAtCurrentOffsetLocked(); fallbackErr != nil {
-			return 0, fallbackErr
+	chunk, err := r.chunkLocked()
+	if err != nil {
+		return 0, err
+	}
+	n := copy(p, chunk)
+	r.off += int64(n)
+	return n, nil
+}
+
+func (r *odirectReader) WriteTo(w io.Writer) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var written int64
+	for {
+		chunk, err := r.chunkLocked()
+		if err == io.EOF {
+			return written, nil
 		}
-
-		return r.f.Read(p)
+		if err != nil {
+			return written, err
+		}
+		n, err := w.Write(chunk)
+		r.off += int64(n)
+		written += int64(n)
+		if err != nil {
+			return written, err
+		}
 	}
-
-	return n, err
 }
 
-func (r *odirectReadFallbackFile) WriteTo(w io.Writer) (int64, error) {
-	r.mu.Lock()
-	useODirect := r.useODirect
-	f := r.f
-	r.mu.Unlock()
-
-	if !useODirect {
-		return io.Copy(w, &onlyRead{r})
-	}
-
-	writerTo, ok := interface{}(f).(io.WriterTo)
-	if !ok {
-		return io.Copy(w, &onlyRead{r})
-	}
-
-	n, err := writerTo.WriteTo(w)
-	if err == nil || !isODirectRuntimeFallbackErr(err) {
-		return n, err
-	}
-
-	r.mu.Lock()
-	fallbackErr := r.switchToBufferedAtCurrentOffsetLocked()
-	r.mu.Unlock()
-	if fallbackErr != nil {
-		return n, fallbackErr
-	}
-
-	m, err := io.Copy(w, &onlyRead{r})
-	return n + m, err
-}
-
-func (r *odirectReadFallbackFile) Seek(offset int64, whence int) (int64, error) {
+func (r *odirectReader) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.f.Seek(offset, whence)
-}
 
-func (r *odirectReadFallbackFile) Close() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	if r.buf != nil {
+		buf := r.buf
+		odirectReadBufPool.Put(&buf)
+		r.buf = nil
+	}
 	return r.f.Close()
 }
 
-func (r *odirectReadFallbackFile) switchToBufferedAtOffset(offset int64) error {
-	fd := strconv.Itoa(int(r.f.Fd()))
-	bf, openErr := os.Open(filepath.Join(procfddir, fd))
-	if openErr != nil {
-		return openErr
+// chunkLocked returns the buffered bytes starting at r.off, reading more if needed.
+func (r *odirectReader) chunkLocked() ([]byte, error) {
+	if r.buf == nil {
+		return nil, os.ErrClosed
+	}
+	if r.off >= r.end {
+		return nil, io.EOF
+	}
+	if r.off < r.bufOff || r.off >= r.bufOff+int64(r.bufLen) {
+		if err := r.fillLocked(); err != nil {
+			return nil, err
+		}
 	}
 
-	if _, seekErr := bf.Seek(offset, io.SeekStart); seekErr != nil {
+	stop := int64(r.bufLen)
+	if rem := r.end - r.bufOff; rem < stop {
+		stop = rem
+	}
+	return r.buf[r.off-r.bufOff : stop], nil
+}
+
+func (r *odirectReader) fillLocked() error {
+	alignedOff := r.off &^ (odirectAlign - 1)
+	buf := r.buf
+	if need := (r.end - alignedOff + odirectAlign - 1) &^ (odirectAlign - 1); need < int64(len(buf)) {
+		buf = buf[:int(need)]
+	}
+	n, err := pread(r.f, buf, alignedOff)
+	if n == 0 && r.direct && isODirectRuntimeFallbackErr(err) {
+		debuglogger.Logf("O_DIRECT read of %s failed at offset %d, falling back to buffered I/O: %v", r.f.Name(), alignedOff, err)
+		if ferr := r.switchToBufferedLocked(); ferr != nil {
+			return fmt.Errorf("reopen object in buffered mode after O_DIRECT read failure: %w", ferr)
+		}
+		n, err = pread(r.f, buf, alignedOff)
+	}
+
+	r.bufOff, r.bufLen = alignedOff, n
+	if r.off < alignedOff+int64(n) {
+		return nil
+	}
+	if err == nil || err == io.EOF {
+		return io.ErrUnexpectedEOF
+	}
+	return err
+}
+
+func (r *odirectReader) switchToBufferedLocked() error {
+	bf, err := os.Open(filepath.Join(procfddir, strconv.Itoa(int(r.f.Fd()))))
+	if err != nil {
+		return err
+	}
+	if err := r.f.Close(); err != nil {
 		_ = bf.Close()
-		return seekErr
+		return err
 	}
-
-	if closeErr := r.f.Close(); closeErr != nil {
-		_ = bf.Close()
-		return closeErr
-	}
-
 	r.f = bf
-	r.useODirect = false
-
+	r.direct = false
 	return nil
 }
 
-func (r *odirectReadFallbackFile) switchToBufferedAtCurrentOffsetLocked() error {
-	offset, seekErr := r.f.Seek(0, io.SeekCurrent)
-	if seekErr != nil {
-		return seekErr
+// pread issues a single pread; os.File.ReadAt would loop into an unaligned
+// offset after a short read at EOF, which O_DIRECT can reject.
+func pread(f *os.File, b []byte, off int64) (int, error) {
+	for {
+		n, err := unix.Pread(int(f.Fd()), b, off)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			return 0, err
+		}
+		if n == 0 {
+			return 0, io.EOF
+		}
+		return n, nil
 	}
-
-	return r.switchToBufferedAtOffset(offset)
 }

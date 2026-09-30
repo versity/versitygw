@@ -23,9 +23,28 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+	"unsafe"
+
+	"github.com/versity/versitygw/debuglogger"
 )
 
-const odirectMinWriteAlign = 512
+// odirectAlign covers both 512e and 4Kn logical block sizes for O_DIRECT
+// offsets, lengths, and memory.
+const odirectAlign = 4096
+
+// alignedBuffer returns a size-byte slice whose first byte is odirectAlign aligned.
+func alignedBuffer(size int) []byte {
+	b := make([]byte, size+odirectAlign)
+	off := 0
+	if rem := int(uintptr(unsafe.Pointer(&b[0])) % odirectAlign); rem != 0 {
+		off = odirectAlign - rem
+	}
+	return b[off : off+size : off+size]
+}
+
+func isODirectMemAligned(b []byte) bool {
+	return len(b) == 0 || uintptr(unsafe.Pointer(&b[0]))%odirectAlign == 0
+}
 
 func (tmp *tmpfile) Write(b []byte) (int, error) {
 	if int64(len(b)) > tmp.size {
@@ -33,7 +52,9 @@ func (tmp *tmpfile) Write(b []byte) (int, error) {
 	}
 
 	if tmp.useODirect && !isODirectLenAligned(len(b)) {
-		if err := tmp.switchToBufferedAtCurrentOffset(fmt.Sprintf("unaligned write length: len=%d len%%512=%d", len(b), len(b)%odirectMinWriteAlign)); err != nil {
+		reason := fmt.Sprintf("unaligned write length: len=%d len%%%d=%d", len(b), odirectAlign, len(b)%odirectAlign)
+		debuglogger.Logf("O_DIRECT tmpfile falling back to buffered I/O (%s/%s): %s", tmp.bucket, tmp.objname, reason)
+		if err := tmp.switchToBufferedAtCurrentOffset(reason); err != nil {
 			return 0, err
 		}
 	}
@@ -49,6 +70,73 @@ func (tmp *tmpfile) Write(b []byte) (int, error) {
 	}
 	tmp.size -= int64(n)
 	return n, err
+}
+
+// copyFrom copies r into tmp. With O_DIRECT it fills buf completely before
+// each write so that only the final tail of the object is unaligned.
+func (tmp *tmpfile) copyFrom(r io.Reader, buf []byte) (int64, error) {
+	if !tmp.useODirect || len(buf) < odirectAlign {
+		return io.CopyBuffer(tmp, r, buf)
+	}
+	if !isODirectMemAligned(buf) {
+		buf = alignedBuffer(len(buf))
+	}
+	buf = buf[:len(buf)-len(buf)%odirectAlign]
+
+	var written int64
+	for {
+		// Not io.ReadFull: it drops errors returned alongside a full buffer,
+		// which is how HashReader reports checksum mismatches.
+		n := 0
+		var rerr error
+		for n < len(buf) && rerr == nil {
+			var nn int
+			nn, rerr = r.Read(buf[n:])
+			n += nn
+		}
+
+		if n > 0 {
+			w, werr := tmp.writeAlignedThenTail(buf[:n])
+			written += int64(w)
+			if werr != nil {
+				return written, werr
+			}
+		}
+
+		if rerr == io.EOF {
+			return written, nil
+		}
+		if rerr != nil {
+			return written, rerr
+		}
+	}
+}
+
+// writeAlignedThenTail writes the block-aligned prefix of b with O_DIRECT and
+// any unaligned remainder buffered, without treating the tail as a fallback.
+func (tmp *tmpfile) writeAlignedThenTail(b []byte) (int, error) {
+	if !tmp.useODirect || isODirectLenAligned(len(b)) {
+		return tmp.Write(b)
+	}
+
+	aligned := len(b) - len(b)%odirectAlign
+	n := 0
+	if aligned > 0 {
+		var err error
+		n, err = tmp.Write(b[:aligned])
+		if err != nil {
+			return n, err
+		}
+	}
+
+	if tmp.useODirect {
+		if err := tmp.switchToBufferedAtCurrentOffset("final unaligned tail"); err != nil {
+			return n, err
+		}
+	}
+
+	m, err := tmp.Write(b[aligned:])
+	return n + m, err
 }
 
 func (tmp *tmpfile) switchToBufferedAtCurrentOffset(reason string) error {
@@ -83,7 +171,7 @@ func (tmp *tmpfile) switchToBufferedAtCurrentOffset(reason string) error {
 }
 
 func isODirectLenAligned(n int) bool {
-	return n%odirectMinWriteAlign == 0
+	return n%odirectAlign == 0
 }
 
 func isODirectRuntimeFallbackErr(err error) bool {

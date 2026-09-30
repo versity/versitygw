@@ -422,7 +422,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		defaultEtag:          opts.DefaultEtag,
 		ioBufferSize:         ioBufferSize,
 		ioBufferPool: sync.Pool{New: func() any {
-			b := make([]byte, ioBufferSize)
+			b := alignedBuffer(ioBufferSize)
 			return &b
 		}},
 		dataIntegrityEtag: opts.DataIntegrityEtag,
@@ -484,7 +484,7 @@ func ioBufferSizeOrDefault(n int) int {
 func (p *Posix) getIOBuffer() []byte {
 	bp, ok := p.ioBufferPool.Get().(*[]byte)
 	if !ok || bp == nil || cap(*bp) < p.ioBufferSize {
-		return make([]byte, p.ioBufferSize)
+		return alignedBuffer(p.ioBufferSize)
 	}
 	return (*bp)[:p.ioBufferSize]
 }
@@ -3921,7 +3921,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	buf := p.getIOBuffer()
 	defer p.putIOBuffer(buf)
 
-	_, err = io.CopyBuffer(f, tr, buf)
+	_, err = f.copyFrom(tr, buf)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(tr)
@@ -4805,7 +4805,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	buf := p.getIOBuffer()
 	defer p.putIOBuffer(buf)
 
-	_, err = io.CopyBuffer(f, rdr, buf)
+	_, err = f.copyFrom(rdr, buf)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(rdr)
@@ -6038,8 +6038,7 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		}
 	}
 
-	// Full-object responses can keep the underlying *os.File for sendfile.
-	// Linux range reads on O_DIRECT may need runtime fallback to buffered I/O.
+	// Buffered full-object responses keep the underlying *os.File for sendfile.
 	body, err := buildGetObjectBody(f, objPath, startOffset, length, objSize, p.enableODirect, p.ioBufferSize)
 	if err != nil {
 		return nil, fmt.Errorf("build get object body: %w", err)
