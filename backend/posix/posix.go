@@ -17,7 +17,9 @@ package posix
 import (
 	"context"
 	"crypto/md5"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -97,6 +99,14 @@ type Posix struct {
 	tmpSubdirs int
 	// tmpSubdirSeq assigns subdirectories to temp files in round-robin order.
 	tmpSubdirSeq atomic.Uint64
+	// skipTempChmod records that the process umask cannot strip any bit of
+	// newFilePerm, so temp files can be created with the final mode and the
+	// per-upload fchmod is unnecessary.
+	skipTempChmod bool
+	// fallocUnsupported caches a filesystem that rejected fallocate with
+	// "operation not supported", so later uploads skip the call. Per instance
+	// because separate backends can sit on separate filesystems.
+	fallocUnsupported atomic.Bool
 
 	// forceNoCopyFileRange is a flag to disable the use of io.Copy to
 	// reassemble multipart upload parts, which uses copy_file_range on
@@ -442,6 +452,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		newDirPerm:           newDirPerm,
 		newFilePerm:          newFilePerm,
 		forceNoTmpFile:       opts.ForceNoTmpFile,
+		skipTempChmod:        skipTempChmod(newFilePerm),
 		tmpSubdirs:           opts.TmpSubdirs,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
 		objectLockMode:       objectLockMode,
@@ -954,6 +965,38 @@ func (p *Posix) removePartialBucket(bucket string) {
 			debuglogger.Logf("failed to remove partially created bucket version directory (%q): %v", bucket, err)
 		}
 	}
+}
+
+// skipTempChmod reports whether files can be created directly with perm
+// because the process umask strips none of its bits. rawUmask momentarily
+// clears the mask process-wide, which is only safe before goroutines that
+// create files start running, which holds for backend construction.
+func skipTempChmod(perm fs.FileMode) bool {
+	return perm&fs.FileMode(rawUmask()) == 0
+}
+
+// createTempFile creates a uniquely named temp file in dir with the final
+// file mode. When the process umask cannot strip any bit of newFilePerm the
+// file is created with that mode directly and the per-upload fchmod is
+// unnecessary; otherwise it falls back to CreateTemp(0600) plus an explicit
+// Chmod to keep permissions umask-independent.
+func (p *Posix) createTempFile(dir string, sum [sha256.Size]byte) (*os.File, error) {
+	if !p.skipTempChmod {
+		return os.CreateTemp(dir, fmt.Sprintf("%x.", sum))
+	}
+	for range 3 {
+		var rnd [8]byte
+		if _, err := rand.Read(rnd[:]); err != nil {
+			return nil, err
+		}
+		name := filepath.Join(dir, fmt.Sprintf("%x.%s", sum, hex.EncodeToString(rnd[:])))
+		f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, p.newFilePerm)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		return f, err
+	}
+	return nil, fmt.Errorf("make temp file: name collision")
 }
 
 // maxTmpSubdirs bounds PosixOpts.TmpSubdirs. The count only needs to exceed

@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/versity/versitygw/auth"
@@ -36,9 +37,11 @@ const (
 )
 
 type tmpfile struct {
-	f       *os.File
-	bucket  string
-	objname string
+	permSet  bool
+	noFalloc *atomic.Bool
+	f        *os.File
+	bucket   string
+	objname  string
 	// Retained for compatibility with shared tmpfile methods in otmpfile_common.
 	isOTmp      bool
 	procFDName  string
@@ -75,7 +78,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		}
 		return nil, fmt.Errorf("make temp dir: %w", err)
 	}
-	f, err := os.CreateTemp(dir, fmt.Sprintf("%x.", sum))
+	f, err := p.createTempFile(dir, sum)
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
 			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
@@ -96,6 +99,8 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		f:           f,
 		bucket:      bucket,
 		objname:     obj,
+		permSet:     p.skipTempChmod,
+		noFalloc:    &p.fallocUnsupported,
 		isOTmp:      false,
 		procFDName:  "",
 		useODirect:  false,
@@ -113,8 +118,10 @@ func (tmp *tmpfile) link() error {
 
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
 
-	// reset default file mode because CreateTemp uses 0600
-	tmp.f.Chmod(tmp.newFilePerm)
+	// reset default file mode when creation could not apply it directly
+	if !tmp.permSet {
+		tmp.f.Chmod(tmp.newFilePerm)
+	}
 
 	err := tmp.f.Close()
 	if err != nil {
