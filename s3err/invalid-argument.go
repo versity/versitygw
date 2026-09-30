@@ -75,6 +75,7 @@ const (
 	InvalidArgSSECRequiresTLS
 	InvalidArgUploadIdWithUploads
 	InvalidArgBucketRegionEndpoint
+	InvalidArgEncodingType
 )
 
 var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
@@ -141,6 +142,10 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgAwsChunkedUnsignedPayload: {
 		Description:  "aws-chunked encoding is not supported when x-amz-content-sha256 UNSIGNED-PAYLOAD is supplied.",
 		ArgumentName: "Content-Encoding",
+	},
+	InvalidArgEncodingType: {
+		Description:  "Invalid Encoding Method specified in Request",
+		ArgumentName: "encoding-type",
 	},
 	InvalidArgCopySource: {
 		Description:  "You can only specify a copy source header for copy requests.",

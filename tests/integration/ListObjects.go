@@ -792,3 +792,46 @@ func ListObjects_mp_masking_delimiter(s *S3Conf) error {
 		return nil
 	})
 }
+
+// ListObjects_url_encoding lists keys that need escaping with
+// encoding-type=url: S3 returns EncodingType and encodes the key names as a
+// query component, with "/" left as is. Any other encoding type is rejected.
+func ListObjects_url_encoding(s *S3Conf) error {
+	testName := "ListObjects_url_encoding"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"a+ b.txt", "dir a/obj"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:       &bucket,
+			Delimiter:    getPtr("/"),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.EncodingType != types.EncodingTypeUrl {
+			return fmt.Errorf("expected the encoding type to be %q, instead got %q",
+				types.EncodingTypeUrl, out.EncodingType)
+		}
+		if len(out.Contents) != 1 || getString(out.Contents[0].Key) != "a%2B+b.txt" {
+			return fmt.Errorf("expected the key %q, instead got %v", "a%2B+b.txt", out.Contents)
+		}
+		if len(out.CommonPrefixes) != 1 || getString(out.CommonPrefixes[0].Prefix) != "dir+a/" {
+			return fmt.Errorf("expected the common prefix %q, instead got %v", "dir+a/", out.CommonPrefixes)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:       &bucket,
+			EncodingType: "gibberish",
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"))
+	})
+}

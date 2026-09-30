@@ -1677,3 +1677,53 @@ func TestSetRegionMismatchHeader(t *testing.T) {
 		})
 	}
 }
+
+func TestParseEncodingType(t *testing.T) {
+	encodingType, err := ParseEncodingType("")
+	assert.NoError(t, err)
+	assert.Equal(t, types.EncodingType(""), encodingType)
+
+	encodingType, err = ParseEncodingType("url")
+	assert.NoError(t, err)
+	assert.Equal(t, types.EncodingTypeUrl, encodingType)
+
+	for _, value := range []string{"URL", "base64", "jdfkllaj"} {
+		_, err = ParseEncodingType(value)
+		assert.Equal(t, s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, value), err, value)
+	}
+}
+
+func TestURLEncodeKeyName(t *testing.T) {
+	tests := []struct {
+		name, want string
+	}{
+		{"a+ b.txt", "a%2B+b.txt"},
+		{"dir/sub dir/", "dir/sub+dir/"},
+		{"100%", "100%25"},
+		{"a%2Fb", "a%252Fb"},
+		{"ctl\x01char", "ctl%01char"},
+		{"é", "%C3%A9"},
+		{"plain-key_1.txt", "plain-key_1.txt"},
+	}
+	for _, tt := range tests {
+		got := urlEncodeKeyName(&tt.name)
+		assert.Equal(t, tt.want, *got, tt.name)
+		decoded, err := url.QueryUnescape(*got)
+		assert.NoError(t, err)
+		assert.Equal(t, tt.name, decoded)
+	}
+	assert.Nil(t, urlEncodeKeyName(nil))
+}
+
+func TestURLEncodeListObjectsResultKeepsBackendValues(t *testing.T) {
+	key := "a b"
+	res := s3response.ListObjectsResult{
+		Contents: []s3response.Object{{Key: &key}},
+	}
+
+	encoded := URLEncodeListObjectsResult(res)
+
+	assert.Equal(t, "a+b", *encoded.Contents[0].Key)
+	assert.Equal(t, "a b", *res.Contents[0].Key)
+	assert.Equal(t, "a b", key)
+}

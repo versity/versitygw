@@ -532,6 +532,7 @@ func (c S3ApiController) ListObjectsV2(ctx fiber.Ctx) (*Response, error) {
 	sAfter := ctx.Query("start-after")
 	delimiter := ctx.Query("delimiter")
 	maxkeysStr := ctx.Query("max-keys")
+	encodingTypeStr := ctx.Query("encoding-type")
 	fetchOwner := strings.EqualFold(ctx.Query("fetch-owner"), "true")
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
@@ -567,6 +568,14 @@ func (c S3ApiController) ListObjectsV2(ctx fiber.Ctx) (*Response, error) {
 			},
 		}, err
 	}
+	encodingType, err := utils.ParseEncodingType(encodingTypeStr)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
 
 	res, err := c.be.ListObjectsV2(ctx.RequestCtx(),
 		&s3.ListObjectsV2Input{
@@ -584,6 +593,10 @@ func (c S3ApiController) ListObjectsV2(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	if encodingType == types.EncodingTypeUrl {
+		res = utils.URLEncodeListObjectsV2Result(res)
 	}
 
 	return &Response{
@@ -604,6 +617,7 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 	marker := ctx.Query("marker")
 	delimiter := ctx.Query("delimiter")
 	maxkeysStr := ctx.Query("max-keys")
+	encodingTypeStr := ctx.Query("encoding-type")
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
@@ -639,6 +653,14 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 			},
 		}, err
 	}
+	encodingType, err := utils.ParseEncodingType(encodingTypeStr)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
 
 	res, err := c.be.ListObjects(ctx.RequestCtx(),
 		&s3.ListObjectsInput{
@@ -662,6 +684,10 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 	// restore it here for every backend.
 	if res.Marker == nil {
 		res.Marker = &marker
+	}
+
+	if encodingType == types.EncodingTypeUrl {
+		res = utils.URLEncodeListObjectsResult(res)
 	}
 
 	return &Response{
