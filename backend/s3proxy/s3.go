@@ -345,7 +345,7 @@ func (s *S3Proxy) ListObjectVersions(ctx context.Context, input *s3.ListObjectVe
 
 	return s3response.ListVersionsResult{
 		CommonPrefixes:      out.CommonPrefixes,
-		DeleteMarkers:       out.DeleteMarkers,
+		DeleteMarkers:       convertDeleteMarkers(out.DeleteMarkers),
 		Delimiter:           out.Delimiter,
 		EncodingType:        out.EncodingType,
 		IsTruncated:         out.IsTruncated,
@@ -1926,6 +1926,21 @@ func convertObjectVersions(versions []types.ObjectVersion) []s3response.ObjectVe
 			Size:              v.Size,
 			StorageClass:      v.StorageClass,
 			VersionId:         v.VersionId,
+		})
+	}
+
+	return result
+}
+
+func convertDeleteMarkers(markers []types.DeleteMarkerEntry) []s3response.DeleteMarkerEntry {
+	result := make([]s3response.DeleteMarkerEntry, 0, len(markers))
+	for _, m := range markers {
+		result = append(result, s3response.DeleteMarkerEntry{
+			IsLatest:     m.IsLatest,
+			Key:          m.Key,
+			LastModified: m.LastModified,
+			Owner:        m.Owner,
+			VersionId:    m.VersionId,
 		})
 	}
 

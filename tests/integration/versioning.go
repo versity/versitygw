@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -2954,6 +2956,207 @@ func Versioning_DeleteObject_promoted_version_last_modified(s *S3Conf) error {
 			if v.LastModified == nil || !v.LastModified.Equal(*c.lastModified) {
 				return fmt.Errorf("%v: expected the listed version LastModified to be %v, instead got %v",
 					c.obj, *c.lastModified, v.LastModified)
+			}
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// Versioning_DeleteObject_delete_marker_last_modified creates delete markers
+// over an object version, over another delete marker and, while versioning
+// is suspended, over the null version. A delete marker is last modified when
+// it's created, not when the version it hides was.
+func Versioning_DeleteObject_delete_marker_last_modified(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_delete_marker_last_modified"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		cases := []struct {
+			obj string
+			// the object is put and deleted while versioning is suspended
+			null bool
+			// the last modified time of the object version
+			lastModified *time.Time
+			// the delete markers, from the oldest to the newest
+			delMarkers []string
+		}{
+			{obj: "my-obj"},
+			{obj: "my-dir/"},
+			{obj: "my-null-obj", null: true},
+			{obj: "my-null-dir/", null: true},
+		}
+
+		// delMarkerLastModified returns the last modified time of the delete
+		// marker of obj, which the listing and the Last-Modified header of a
+		// HeadObject request for it report alike
+		delMarkerLastModified := func(obj, versionId string) (time.Time, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+				Bucket: &bucket,
+				Prefix: &obj,
+			})
+			cancel()
+			if err != nil {
+				return time.Time{}, err
+			}
+
+			var lastModified *time.Time
+			for _, dm := range res.DeleteMarkers {
+				if getString(dm.Key) == obj && getString(dm.VersionId) == versionId {
+					lastModified = dm.LastModified
+				}
+			}
+			if lastModified == nil {
+				return time.Time{}, fmt.Errorf("%v: expected the delete marker %v to be listed with LastModified, instead got %v",
+					obj, versionId, res.DeleteMarkers)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: &versionId,
+			})
+			cancel()
+			if err := checkSdkApiErr(err, "MethodNotAllowed"); err != nil {
+				return time.Time{}, err
+			}
+			var respErr *awshttp.ResponseError
+			if !errors.As(err, &respErr) {
+				return time.Time{}, fmt.Errorf("expected an HTTP response error, instead got %w", err)
+			}
+			header, err := http.ParseTime(respErr.Response.Header.Get("Last-Modified"))
+			if err != nil {
+				return time.Time{}, fmt.Errorf("%v: parse the delete marker %v Last-Modified header: %w",
+					obj, versionId, err)
+			}
+			if !header.Equal(*lastModified) {
+				return time.Time{}, fmt.Errorf("%v: expected the delete marker %v Last-Modified header to be %v, instead got %v",
+					obj, versionId, *lastModified, header)
+			}
+
+			return *lastModified, nil
+		}
+
+		// deleteObjects creates a delete marker for each of the cases the
+		// versioning status applies to
+		deleteObjects := func(null bool) error {
+			for i, c := range cases {
+				if c.null != null {
+					continue
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+					Bucket: &bucket,
+					Key:    &c.obj,
+				})
+				cancel()
+				if err != nil {
+					return err
+				}
+				cases[i].delMarkers = append(cases[i].delMarkers, getString(out.VersionId))
+			}
+			return nil
+		}
+
+		// the null versions are put and deleted while versioning is suspended
+		for _, status := range []types.BucketVersioningStatus{
+			types.BucketVersioningStatusSuspended,
+			types.BucketVersioningStatusEnabled,
+		} {
+			err := putBucketVersioningStatus(s3client, bucket, status)
+			if err != nil {
+				return err
+			}
+			for i, c := range cases {
+				if c.null != (status == types.BucketVersioningStatusSuspended) {
+					continue
+				}
+				_, err := putObjectWithData(objDataLen(c.obj, 100), &s3.PutObjectInput{
+					Bucket: &bucket,
+					Key:    &c.obj,
+				}, s3client)
+				if err != nil {
+					return err
+				}
+
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+					Bucket: &bucket,
+					Key:    &c.obj,
+				})
+				cancel()
+				if err != nil {
+					return err
+				}
+				if res.LastModified == nil {
+					return fmt.Errorf("%v: expected non nil LastModified", c.obj)
+				}
+				cases[i].lastModified = res.LastModified
+			}
+		}
+
+		// every delete marker is created in a later second than the
+		// version or the delete marker it hides
+		time.Sleep(time.Second)
+		if err := deleteObjects(false); err != nil {
+			return err
+		}
+		err := putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
+		if err != nil {
+			return err
+		}
+		if err := deleteObjects(true); err != nil {
+			return err
+		}
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+		if err != nil {
+			return err
+		}
+		time.Sleep(time.Second)
+		if err := deleteObjects(false); err != nil {
+			return err
+		}
+
+		for _, c := range cases {
+			prev := *c.lastModified
+			var lastModified []time.Time
+			for _, versionId := range c.delMarkers {
+				dmLastModified, err := delMarkerLastModified(c.obj, versionId)
+				if err != nil {
+					return err
+				}
+				if !dmLastModified.After(prev) {
+					return fmt.Errorf("%v: expected the delete marker %v LastModified %v to be after %v",
+						c.obj, versionId, dmLastModified, prev)
+				}
+				prev = dmLastModified
+				lastModified = append(lastModified, dmLastModified)
+			}
+
+			if c.null {
+				continue
+			}
+
+			// deleting the newest delete marker makes the one it hides
+			// the latest, with its own last modified time
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    &bucket,
+				Key:       &c.obj,
+				VersionId: &c.delMarkers[1],
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			dmLastModified, err := delMarkerLastModified(c.obj, c.delMarkers[0])
+			if err != nil {
+				return err
+			}
+			if !dmLastModified.Equal(lastModified[0]) {
+				return fmt.Errorf("%v: expected the promoted delete marker LastModified to be %v, instead got %v",
+					c.obj, lastModified[0], dmLastModified)
 			}
 		}
 
