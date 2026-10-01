@@ -1496,11 +1496,8 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 		}
 	}
 
-	// Restore original mtime after copy
-	err = os.Chtimes(f.File().Name(), time.Now(), originalMTime)
-	if err != nil {
-		return versionPath, err
-	}
+	// the version keeps the last modified time of the object
+	f.setModTime(originalMTime)
 
 	versionPath = filepath.Join(versionBucketPath, versioningKey)
 
@@ -5327,6 +5324,9 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				if err := sf.Close(); err != nil {
 					return nil, fmt.Errorf("close obj version: %w", err)
 				}
+
+				// the restored version keeps its last modified time
+				f.setModTime(srcObjVersion.ModTime())
 
 				if err := f.link(); err != nil {
 					return nil, fmt.Errorf("link tmp file: %w", err)
