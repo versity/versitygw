@@ -436,6 +436,60 @@ func ListMultipartUploads_delimiter_truncated(s *S3Conf) error {
 	})
 }
 
+func ListMultipartUploads_upload_id_marker_truncated(s *S3Conf) error {
+	testName := "ListMultipartUploads_upload_id_marker_truncated"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		uploads := make([]types.MultipartUpload, 0, 3)
+		for _, key := range []string{"bar", "baz", "foo"} {
+			out, err := createMp(s3client, bucket, key)
+			if err != nil {
+				return err
+			}
+			uploads = append(uploads, types.MultipartUpload{
+				Key:          out.Key,
+				UploadId:     out.UploadId,
+				StorageClass: types.StorageClassStandard,
+			})
+		}
+
+		// the listing starts after the first upload, so a page of 1
+		// leaves one upload behind and a page of 2 reaches the end
+		for _, test := range []struct {
+			maxUploads int32
+			expected   []types.MultipartUpload
+			truncated  bool
+		}{
+			{1, uploads[1:2], true},
+			{2, uploads[1:], false},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+				Bucket:         &bucket,
+				KeyMarker:      getPtr("ba"),
+				UploadIdMarker: uploads[0].UploadId,
+				MaxUploads:     &test.maxUploads,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if !compareMultipartUploads(test.expected, out.Uploads) {
+				return fmt.Errorf("expected the mp list to be %v, instead got %v", test.expected, out.Uploads)
+			}
+			if out.IsTruncated == nil {
+				return fmt.Errorf("unexpected nil is-truncated")
+			}
+			if *out.IsTruncated != test.truncated {
+				return fmt.Errorf("expected is-truncated to be %v with max-uploads %v, instead got %v",
+					test.truncated, test.maxUploads, *out.IsTruncated)
+			}
+		}
+
+		return nil
+	})
+}
+
 func ListMultipartUploads_prefix(s *S3Conf) error {
 	testName := "ListMultipartUploads_prefix"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
