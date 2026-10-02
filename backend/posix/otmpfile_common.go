@@ -96,6 +96,23 @@ func (tmp *tmpfile) File() *os.File {
 	return tmp.f
 }
 
+// setModTime makes link() publish the file with the modification time t
+// instead of the time it was last written
+func (tmp *tmpfile) setModTime(t time.Time) {
+	tmp.modTime = t
+}
+
+// applyModTime sets the modification time requested with setModTime on the
+// file at path. Windows updates the last write time when a handle the file
+// was written through is closed, so it has to be set after that handle is
+// closed.
+func (tmp *tmpfile) applyModTime(path string) error {
+	if tmp.modTime.IsZero() {
+		return nil
+	}
+	return os.Chtimes(path, time.Now(), tmp.modTime)
+}
+
 func sleepWithJitter(backoffMs int) {
 	if backoffMs <= 1 {
 		time.Sleep(1 * time.Millisecond)

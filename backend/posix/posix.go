@@ -1496,11 +1496,8 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 		}
 	}
 
-	// Restore original mtime after copy
-	err = os.Chtimes(f.File().Name(), time.Now(), originalMTime)
-	if err != nil {
-		return versionPath, err
-	}
+	// the version keeps the last modified time of the object
+	f.setModTime(originalMTime)
 
 	versionPath = filepath.Join(versionBucketPath, versioningKey)
 
@@ -1693,7 +1690,7 @@ func (p *Posix) checkCopySourceDeleteMarker(bucket, object, versionId string) er
 func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 	return func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
 		var objects []s3response.ObjectVersion
-		var delMarkers []types.DeleteMarkerEntry
+		var delMarkers []s3response.DeleteMarkerEntry
 		// if the number of available objects is 0, return truncated response
 		if availableObjCount <= 0 {
 			return &backend.ObjVersionFuncResult{
@@ -1755,7 +1752,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 			}
 
 			if isDel {
-				delMarkers = append(delMarkers, types.DeleteMarkerEntry{
+				delMarkers = append(delMarkers, s3response.DeleteMarkerEntry{
 					IsLatest:     getBoolPtr(true),
 					VersionId:    &versionId,
 					LastModified: backend.GetTimePtr(fi.ModTime()),
@@ -1822,7 +1819,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 		// First find the null versionId object(if exists)
 		// before starting the object versions listing
 		var nullVersionIdObj *s3response.ObjectVersion
-		var nullObjDelMarker *types.DeleteMarkerEntry
+		var nullObjDelMarker *s3response.DeleteMarkerEntry
 		var nullPos nullVersionPos
 		nf, err := os.Stat(filepath.Join(versionPath, nullVersionId))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -1841,7 +1838,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 
 			// Check to see if the null versionId object is delete marker or not
 			if isDel {
-				nullObjDelMarker = &types.DeleteMarkerEntry{
+				nullObjDelMarker = &s3response.DeleteMarkerEntry{
 					VersionId:    backend.GetPtrFromString("null"),
 					LastModified: backend.GetTimePtr(nf.ModTime()),
 					Key:          &key,
@@ -1964,7 +1961,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 			}
 
 			if isDel {
-				delMarkers = append(delMarkers, types.DeleteMarkerEntry{
+				delMarkers = append(delMarkers, s3response.DeleteMarkerEntry{
 					VersionId:    &versionId,
 					LastModified: backend.GetTimePtr(f.ModTime()),
 					Key:          &key,
@@ -5203,6 +5200,12 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				}
 			}
 
+			// The delete marker is last modified when it's created, not
+			// when the version it hides was. Setting the time needs the
+			// entry to be owned by the gateway, otherwise it's left as is.
+			now := time.Now()
+			_ = os.Chtimes(objpath, now, now)
+
 			return &s3.DeleteObjectOutput{
 				DeleteMarker: getBoolPtr(true),
 				VersionId:    &versionId,
@@ -5327,6 +5330,9 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				if err := sf.Close(); err != nil {
 					return nil, fmt.Errorf("close obj version: %w", err)
 				}
+
+				// the restored version keeps its last modified time
+				f.setModTime(srcObjVersion.ModTime())
 
 				if err := f.link(); err != nil {
 					return nil, fmt.Errorf("link tmp file: %w", err)

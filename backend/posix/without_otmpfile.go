@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
@@ -49,6 +50,9 @@ type tmpfile struct {
 	uid         int
 	gid         int
 	doChown     bool
+	// modTime is the modification time the file is published with,
+	// the time it was last written if zero
+	modTime time.Time
 }
 
 // openTmpFile opens a temporary file in dir (a filesystem path) that link()
@@ -119,6 +123,11 @@ func (tmp *tmpfile) link() error {
 	err := tmp.f.Close()
 	if err != nil {
 		return fmt.Errorf("close tmpfile: %w", err)
+	}
+
+	err = tmp.applyModTime(tempname)
+	if err != nil {
+		return fmt.Errorf("set tmpfile modification time: %w", err)
 	}
 
 	backoffMs := initialBackoffMs

@@ -130,7 +130,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 type WalkVersioningResults struct {
 	CommonPrefixes      []types.CommonPrefix
 	ObjectVersions      []s3response.ObjectVersion
-	DelMarkers          []types.DeleteMarkerEntry
+	DelMarkers          []s3response.DeleteMarkerEntry
 	Truncated           bool
 	NextMarker          string
 	NextVersionIdMarker string
@@ -138,7 +138,7 @@ type WalkVersioningResults struct {
 
 type ObjVersionFuncResult struct {
 	ObjectVersions      []s3response.ObjectVersion
-	DelMarkers          []types.DeleteMarkerEntry
+	DelMarkers          []s3response.DeleteMarkerEntry
 	NextVersionIdMarker string
 	Truncated           bool
 }
@@ -150,7 +150,7 @@ type GetVersionsFunc func(path, versionIdMarker string, pastVersionIdMarker *boo
 func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyMarker, versionIdMarker string, max int, getObj GetVersionsFunc, skipdirs []string) (WalkVersioningResults, error) {
 	cpmap := cpMap{}
 	var objects []s3response.ObjectVersion
-	var delMarkers []types.DeleteMarkerEntry
+	var delMarkers []s3response.DeleteMarkerEntry
 
 	var pastMarker bool
 	if keyMarker == "" {

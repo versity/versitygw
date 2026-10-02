@@ -511,7 +511,7 @@ type InitiateMultipartUploadResult struct {
 type ListVersionsResult struct {
 	XMLName             xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListVersionsResult" json:"-"`
 	CommonPrefixes      []types.CommonPrefix
-	DeleteMarkers       []types.DeleteMarkerEntry `xml:"DeleteMarker"`
+	DeleteMarkers       []DeleteMarkerEntry `xml:"DeleteMarker"`
 	Delimiter           *string
 	EncodingType        types.EncodingType
 	IsTruncated         *bool
@@ -550,6 +550,30 @@ func (o ObjectVersion) MarshalXML(e *xml.Encoder, start xml.StartElement) error 
 
 	if o.LastModified != nil {
 		aux.LastModified = o.LastModified.UTC().Format(time.RFC3339)
+	}
+
+	return e.EncodeElement(aux, start)
+}
+
+type DeleteMarkerEntry struct {
+	IsLatest     *bool
+	Key          *string
+	LastModified *time.Time
+	Owner        *types.Owner
+	VersionId    *string
+}
+
+func (d DeleteMarkerEntry) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type Alias DeleteMarkerEntry
+	aux := &struct {
+		LastModified string `xml:"LastModified"`
+		*Alias
+	}{
+		Alias: (*Alias)(&d),
+	}
+
+	if d.LastModified != nil {
+		aux.LastModified = d.LastModified.UTC().Format(time.RFC3339)
 	}
 
 	return e.EncodeElement(aux, start)
