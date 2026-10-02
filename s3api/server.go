@@ -278,6 +278,11 @@ func WithMpMaxParts(n int) Option {
 	return func(s *S3ApiServer) { s.Router.mpMaxParts = n }
 }
 
+// WithDisableSSECTLS disables the TLS requirement for SSE-C requests.
+func WithDisableSSECTLS() Option {
+	return func(s *S3ApiServer) { s.Router.disableSSECTLS = true }
+}
+
 // WithHostStyle enabled host-style bucket addressing on the server
 func WithHostStyle(virtualDomain string) Option {
 	return func(s *S3ApiServer) {

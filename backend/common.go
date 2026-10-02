@@ -78,6 +78,17 @@ func GetStringFromPtr(str *string) string {
 	return *str
 }
 
+// HasSSEC reports whether any of the given SSE-C
+// (customer-provided key) values are set.
+func HasSSEC(vals ...*string) bool {
+	for _, v := range vals {
+		if v != nil && *v != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func GetTimePtr(t time.Time) *time.Time {
 	return &t
 }

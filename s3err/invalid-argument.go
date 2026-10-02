@@ -64,6 +64,15 @@ const (
 	InvalidArgMissingIndexDocumentSuffix
 	InvalidArgErrorDocumentKey
 	InvalidArgAwsChunkedUnsignedPayload
+	InvalidArgSSECMissingAlgorithm
+	InvalidArgSSECMissingKey
+	InvalidArgSSECMissingKeyMD5
+	InvalidArgSSECInvalidKey
+	InvalidArgSSECKeyMD5Mismatch
+	InvalidArgSSECInvalidAlgorithm
+	InvalidArgSSECIncompatibleEncryption
+	InvalidArgSSEInvalidEncryptionMethod
+	InvalidArgSSECRequiresTLS
 )
 
 var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
@@ -226,6 +235,42 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgErrorDocumentKey: {
 		Description:  "The ErrorDocument Key is not well formed",
 		ArgumentName: "ErrorDocument",
+	},
+	InvalidArgSSECMissingAlgorithm: {
+		Description:  "Requests specifying Server Side Encryption with Customer provided keys must provide a valid encryption algorithm.",
+		ArgumentName: "x-amz-server-side-encryption",
+	},
+	InvalidArgSSECMissingKey: {
+		Description:  "Requests specifying Server Side Encryption with Customer provided keys must provide an appropriate secret key.",
+		ArgumentName: "x-amz-server-side-encryption",
+	},
+	InvalidArgSSECMissingKeyMD5: {
+		Description:  "Requests specifying Server Side Encryption with Customer provided keys must provide the client calculated MD5 of the secret key.",
+		ArgumentName: "x-amz-server-side-encryption",
+	},
+	InvalidArgSSECInvalidKey: {
+		Description:  "The secret key was invalid for the specified algorithm.",
+		ArgumentName: "x-amz-server-side-encryption",
+	},
+	InvalidArgSSECKeyMD5Mismatch: {
+		Description:  "The calculated MD5 hash of the key did not match the hash that was provided.",
+		ArgumentName: "x-amz-server-side-encryption",
+	},
+	InvalidArgSSECInvalidAlgorithm: {
+		Description:  "The Encryption request you specified is not valid. Supported value: AES256.",
+		ArgumentName: "x-amz-server-side-encryption",
+	},
+	InvalidArgSSECIncompatibleEncryption: {
+		Description:  "Server Side Encryption with Customer provided key is incompatible with the encryption method specified",
+		ArgumentName: "x-amz-server-side-encryption",
+	},
+	InvalidArgSSEInvalidEncryptionMethod: {
+		Description:  "The encryption method specified is not valid.",
+		ArgumentName: "x-amz-server-side-encryption",
+	},
+	InvalidArgSSECRequiresTLS: {
+		Description:  "Requests specifying Server Side Encryption with Customer provided keys must be made over a secure connection.",
+		ArgumentName: "x-amz-server-side-encryption",
 	},
 }
 

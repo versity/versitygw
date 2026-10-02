@@ -16,6 +16,8 @@ package controllers
 
 import (
 	"bytes"
+	"crypto/md5"
+	"encoding/base64"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -245,6 +247,65 @@ func TestSetResponseHeaders(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseSSECHeadersTLSRequirement(t *testing.T) {
+	keyBytes := bytes.Repeat([]byte{0x42}, 32)
+	key := base64.StdEncoding.EncodeToString(keyBytes)
+	sum := md5.Sum(keyBytes)
+	keyMD5 := base64.StdEncoding.EncodeToString(sum[:])
+	tests := []struct {
+		name       string
+		disableTLS bool
+		wantErr    error
+	}{
+		{name: "plaintext rejected", wantErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgSSECRequiresTLS, "")},
+		{name: "plaintext allowed when disabled", disableTLS: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotErr error
+			app := fiber.New()
+			ctrl := S3ApiController{disableSSECTLS: tt.disableTLS}
+			app.Get("/", func(ctx fiber.Ctx) error {
+				_, gotErr = ctrl.parseSSECHeaders(ctx)
+				return nil
+			})
+			req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+			req.Header.Set("X-Amz-Server-Side-Encryption-Customer-Algorithm", "AES256")
+			req.Header.Set("X-Amz-Server-Side-Encryption-Customer-Key", key)
+			req.Header.Set("X-Amz-Server-Side-Encryption-Customer-Key-Md5", keyMD5)
+			_, err := app.Test(req)
+			assert.NoError(t, err)
+			if tt.wantErr != nil {
+				assert.Equal(t, tt.wantErr, gotErr)
+				invalidArg, ok := gotErr.(s3err.InvalidArgumentError)
+				if assert.True(t, ok) {
+					body := string(invalidArg.XMLBody("", ""))
+					assert.Contains(t, body, "<ArgumentName>x-amz-server-side-encryption</ArgumentName>")
+					assert.NotContains(t, body, "<ArgumentValue>")
+				}
+			} else {
+				assert.NoError(t, gotErr)
+			}
+		})
+	}
+}
+
+func TestParseSSECHeadersEncryptionConflictPrecedesValidation(t *testing.T) {
+	var gotErr error
+	app := fiber.New()
+	ctrl := S3ApiController{}
+	app.Get("/", func(ctx fiber.Ctx) error {
+		_, gotErr = ctrl.parseSSECHeaders(ctx)
+		return nil
+	})
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header.Set("X-Amz-Server-Side-Encryption-Customer-Algorithm", "AES256")
+	req.Header.Set("X-Amz-Server-Side-Encryption", "aws:kms")
+	_, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, s3err.GetInvalidArgumentErr(s3err.InvalidArgSSECIncompatibleEncryption, "aws:kms"), gotErr)
 }
 
 func TestEnsureExposeMetaHeaders_AddsActualMetaHeaderNames(t *testing.T) {

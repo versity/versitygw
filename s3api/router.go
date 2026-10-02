@@ -45,11 +45,12 @@ type S3ApiRouter struct {
 	virtualDomain   string
 	corsAllowOrigin string
 	mpMaxParts      int
+	disableSSECTLS  bool
 	adminPathPrefix string
 }
 
 func (sa *S3ApiRouter) Init() {
-	ctrl := controllers.New(sa.be, sa.iam, sa.logger, sa.evs, sa.mm, sa.readonly, sa.disableACL, sa.virtualDomain, sa.mpMaxParts)
+	ctrl := controllers.New(sa.be, sa.iam, sa.logger, sa.evs, sa.mm, sa.readonly, sa.disableACL, sa.virtualDomain, sa.mpMaxParts, sa.disableSSECTLS)
 	sa.Ctrl = ctrl
 	// initialize global host-style parser middleware if virtual domain is specified
 	if sa.virtualDomain != "" {

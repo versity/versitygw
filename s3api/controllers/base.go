@@ -34,15 +34,16 @@ import (
 )
 
 type S3ApiController struct {
-	be            backend.Backend
-	iam           auth.IAMService
-	logger        s3log.AuditLogger
-	evSender      s3event.S3EventSender
-	mm            metrics.Manager
-	mpMaxParts    int
-	readonly      bool
-	disableACL    bool
-	virtualDomain string
+	be             backend.Backend
+	iam            auth.IAMService
+	logger         s3log.AuditLogger
+	evSender       s3event.S3EventSender
+	mm             metrics.Manager
+	mpMaxParts     int
+	readonly       bool
+	disableACL     bool
+	virtualDomain  string
+	disableSSECTLS bool
 }
 
 const (
@@ -64,18 +65,66 @@ var (
 	xmlhdr = []byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 )
 
-func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly, disableACL bool, virtualDomain string, mpMaxParts int) S3ApiController {
+func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly, disableACL bool, virtualDomain string, mpMaxParts int, disableSSECTLS ...bool) S3ApiController {
+	disableSSECTransportEnforcement := len(disableSSECTLS) > 0 && disableSSECTLS[0]
 	return S3ApiController{
-		be:            be,
-		iam:           iam,
-		logger:        logger,
-		evSender:      evs,
-		readonly:      readonly,
-		mm:            mm,
-		disableACL:    disableACL,
-		virtualDomain: virtualDomain,
-		mpMaxParts:    mpMaxParts,
+		be:             be,
+		iam:            iam,
+		logger:         logger,
+		evSender:       evs,
+		readonly:       readonly,
+		mm:             mm,
+		disableACL:     disableACL,
+		virtualDomain:  virtualDomain,
+		mpMaxParts:     mpMaxParts,
+		disableSSECTLS: disableSSECTransportEnforcement,
 	}
+}
+
+func (c S3ApiController) parseSSECHeaders(ctx fiber.Ctx) (utils.SSECHeaders, error) {
+	h, parseErr := utils.ParseSSECHeaders(ctx)
+	if err := utils.ValidateSSEHeaders(h, ctx.Get("X-Amz-Server-Side-Encryption")); err != nil {
+		return h, err
+	}
+	if parseErr != nil {
+		return h, parseErr
+	}
+	if err := c.validateSSECTransport(ctx, h); err != nil {
+		return h, err
+	}
+	return h, nil
+}
+
+func (c S3ApiController) parseCopySourceSSECHeaders(ctx fiber.Ctx) (utils.SSECHeaders, error) {
+	h, err := utils.ParseCopySourceSSECHeaders(ctx)
+	if err != nil {
+		return h, err
+	}
+	if err := c.validateSSECTransport(ctx, h); err != nil {
+		return h, err
+	}
+	return h, nil
+}
+
+func (c S3ApiController) parseSSECFields(ctx fiber.Ctx, fields map[string]string) (utils.SSECHeaders, error) {
+	h, parseErr := utils.ParseSSECFields(fields)
+	if err := utils.ValidateSSEHeaders(h, fields["x-amz-server-side-encryption"]); err != nil {
+		return h, err
+	}
+	if parseErr != nil {
+		return h, parseErr
+	}
+	if err := c.validateSSECTransport(ctx, h); err != nil {
+		return h, err
+	}
+	return h, nil
+}
+
+func (c S3ApiController) validateSSECTransport(ctx fiber.Ctx, h utils.SSECHeaders) error {
+	if !c.disableSSECTLS && !ctx.Secure() && backend.HasSSEC(h.Algorithm, h.Key, h.KeyMD5) {
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgSSECRequiresTLS, "")
+	}
+	return nil
 }
 
 // verifyAccess wraps auth.VerifyAccess, always injecting the controller's
