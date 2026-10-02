@@ -40,6 +40,8 @@ import (
 var (
 	bucketNameRegexp   = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]+[a-z0-9]$`)
 	bucketNameIpRegexp = regexp.MustCompile(`^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$`)
+	// AWS region codes, such as us-east-1, us-gov-west-1 or eusc-de-east-1
+	awsRegionRegexp = regexp.MustCompile(`^[a-z]{2,4}(-[a-z]+)+-[0-9]+$`)
 )
 
 var strictBucketNameValidation atomic.Bool
@@ -1151,6 +1153,13 @@ func ValidateLocationConstraint(constraint *string, region string) error {
 	}
 
 	return nil
+}
+
+// IsValidBucketRegion checks a ListBuckets bucket-region value. The gateway
+// region is valid whatever its name, any other value has to be an AWS region
+// code.
+func IsValidBucketRegion(bucketRegion, region string) bool {
+	return bucketRegion == region || awsRegionRegexp.MatchString(bucketRegion)
 }
 
 // AwsChunkedEncoding is the coding a client announces when it frames a body in

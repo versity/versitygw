@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -265,6 +266,60 @@ func ListBuckets_invalid_max_buckets(s *S3Conf) error {
 		err = listBuckets(invMaxBuckets)
 		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgMaxBuckets, fmt.Sprint(invMaxBuckets))); err != nil {
 			return err
+		}
+
+		return nil
+	})
+}
+
+func ListBuckets_invalid_bucket_region(s *S3Conf) error {
+	testName := "ListBuckets_invalid_bucket_region"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{
+			BucketRegion: getPtr("abc"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetInvalidArgBucketRegion("abc"))
+	})
+}
+
+func ListBuckets_bucket_region(s *S3Conf) error {
+	testName := "ListBuckets_bucket_region"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		listBuckets := func(region string) ([]types.Bucket, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{
+				BucketRegion: &region,
+			})
+			cancel()
+			if err != nil {
+				return nil, err
+			}
+			return out.Buckets, nil
+		}
+
+		buckets, err := listBuckets(s.awsRegion)
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(buckets, func(b types.Bucket) bool { return getString(b.Name) == bucket }) {
+			return fmt.Errorf("expected bucket %v in the %v listing, instead got %v",
+				bucket, s.awsRegion, buckets)
+		}
+
+		// every bucket of the gateway lives in its own region
+		otherRegion := "us-west-2"
+		if s.awsRegion == otherRegion {
+			otherRegion = "us-east-1"
+		}
+		buckets, err = listBuckets(otherRegion)
+		if err != nil {
+			return err
+		}
+		if len(buckets) != 0 {
+			return fmt.Errorf("expected an empty %v listing, instead got %v",
+				otherRegion, buckets)
 		}
 
 		return nil
