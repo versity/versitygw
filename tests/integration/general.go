@@ -15,8 +15,10 @@
 package integration
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -207,6 +209,136 @@ func RouterListVersionsWithKey(s *S3Conf) error {
 		}
 
 		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrVersionsWithKey))
+	})
+}
+
+func RouterObjectAnnotationNotImplemented(s *S3Conf) error {
+	testName := "RouterObjectAnnotationNotImplemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, name := "my-obj", "label"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectAnnotation(ctx, &s3.PutObjectAnnotationInput{
+			Bucket:            &bucket,
+			Key:               &obj,
+			AnnotationName:    &name,
+			AnnotationPayload: strings.NewReader(`{"label":"x"}`),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented)); err != nil {
+			return fmt.Errorf("PutObjectAnnotation: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectAnnotation(ctx, &s3.GetObjectAnnotationInput{
+			Bucket:         &bucket,
+			Key:            &obj,
+			AnnotationName: &name,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented)); err != nil {
+			return fmt.Errorf("GetObjectAnnotation: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.ListObjectAnnotations(ctx, &s3.ListObjectAnnotationsInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented)); err != nil {
+			return fmt.Errorf("ListObjectAnnotations: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObjectAnnotation(ctx, &s3.DeleteObjectAnnotationInput{
+			Bucket:         &bucket,
+			Key:            &obj,
+			AnnotationName: &name,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented)); err != nil {
+			return fmt.Errorf("DeleteObjectAnnotation: %w", err)
+		}
+
+		return nil
+	})
+}
+
+func RouterRenameObjectNotImplemented(s *S3Conf) error {
+	testName := "RouterRenameObjectNotImplemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		src, dst := "src-obj", "dst-obj"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &src,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.RenameObject(ctx, &s3.RenameObjectInput{
+			Bucket:       &bucket,
+			Key:          &dst,
+			RenameSource: &src,
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func RouterObjectTorrentMethodNotAllowed(s *S3Conf) error {
+	testName := "RouterObjectTorrentMethodNotAllowed"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, method := range []string{
+			http.MethodGet,
+			http.MethodHead,
+			http.MethodPut,
+			http.MethodDelete,
+			http.MethodPost,
+		} {
+			req, err := http.NewRequest(method, s.endpoint+"/bucket/object?torrent", nil)
+			if err != nil {
+				return fmt.Errorf("failed to make %s request: %w", method, err)
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("failed to send %s request: %w", method, err)
+			}
+
+			var allowed []string
+			if method != http.MethodGet {
+				allowed = []string{http.MethodGet}
+			}
+			expected := s3err.GetMethodNotAllowedErr(method, s3err.ResourceTypeTorrent, allowed)
+			if got, want := resp.Header.Get("Allow"), expected.AllowedMethodsString(); got != want {
+				return fmt.Errorf("%s: expected Allow header %q, instead got %q", method, want, got)
+			}
+
+			if method == http.MethodHead {
+				// for head requests only check the status code
+				if resp.StatusCode != http.StatusMethodNotAllowed {
+					return fmt.Errorf("expected 405 status code for HEAD request, instead got %v", resp.StatusCode)
+				}
+				continue
+			}
+
+			if err := checkHTTPResponseApiErr(resp, expected); err != nil {
+				return fmt.Errorf("%s: %w", method, err)
+			}
+		}
+
+		return nil
 	})
 }
 

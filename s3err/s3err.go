@@ -1080,6 +1080,7 @@ const (
 	ResourceTypeService      ResourceType = "SERVICE"
 	ResourceTypeBucketPolicy ResourceType = "BUCKETPOLICY"
 	ResourceTypeUpload       ResourceType = "UPLOAD"
+	ResourceTypeTorrent      ResourceType = "TORRENT"
 )
 
 func ObjectDeleteError(key, versionId *string, err error) types.Error {

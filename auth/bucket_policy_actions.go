@@ -94,6 +94,10 @@ const (
 	DeleteBucketWebsiteAction                Action = "s3:DeleteBucketWebsite"
 	GetBucketPolicyStatusAction              Action = "s3:GetBucketPolicyStatus"
 	GetBucketLocationAction                  Action = "s3:GetBucketLocation"
+	PutObjectAnnotationAction                Action = "s3:PutObjectAnnotation"
+	GetObjectAnnotationAction                Action = "s3:GetObjectAnnotation"
+	ListObjectAnnotationsAction              Action = "s3:ListObjectAnnotations"
+	DeleteObjectAnnotationAction             Action = "s3:DeleteObjectAnnotation"
 	// s3:ListAllMyBuckets may appear only in iam user/role
 	// policies, so it doesn't appear in supportedActionList and
 	// it can never be used in bucket policy documents
@@ -175,6 +179,10 @@ var supportedActionList = map[Action]struct{}{
 	DeleteBucketWebsiteAction:                {},
 	GetBucketPolicyStatusAction:              {},
 	GetBucketLocationAction:                  {},
+	PutObjectAnnotationAction:                {},
+	GetObjectAnnotationAction:                {},
+	ListObjectAnnotationsAction:              {},
+	DeleteObjectAnnotationAction:             {},
 	AllActions:                               {},
 }
 
@@ -202,6 +210,10 @@ var supportedObjectActionList = map[Action]struct{}{
 	GetObjectRetentionAction:         {},
 	PutObjectRetentionAction:         {},
 	BypassGovernanceRetentionAction:  {},
+	PutObjectAnnotationAction:        {},
+	GetObjectAnnotationAction:        {},
+	ListObjectAnnotationsAction:      {},
+	DeleteObjectAnnotationAction:     {},
 	AllActions:                       {},
 }
 

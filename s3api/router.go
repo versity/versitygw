@@ -1052,6 +1052,84 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.ParseAcl(sa.be),
 		))
 
+	objectRouter.Put("",
+		middlewares.MatchQueryArgs("annotation"),
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			metrics.ActionPutObjectAnnotation,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutObjectAnnotation, auth.PutObjectAnnotationAction, auth.PermissionWrite, sa.region, false),
+			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ParseAcl(sa.be),
+		),
+	)
+	objectRouter.Get("",
+		middlewares.MatchQueryArgs("annotation", "annotationName"),
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			metrics.ActionGetObjectAnnotation,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetObjectAnnotation, auth.GetObjectAnnotationAction, auth.PermissionRead, sa.region, false),
+			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ParseAcl(sa.be),
+		),
+	)
+	objectRouter.Get("",
+		middlewares.MatchQueryArgs("annotation"),
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			metrics.ActionListObjectAnnotations,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionListObjectAnnotations, auth.ListObjectAnnotationsAction, auth.PermissionRead, sa.region, false),
+			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ParseAcl(sa.be),
+		),
+	)
+	objectRouter.Delete("",
+		middlewares.MatchQueryArgs("annotation"),
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			metrics.ActionDeleteObjectAnnotation,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteObjectAnnotation, auth.DeleteObjectAnnotationAction, auth.PermissionWrite, sa.region, false),
+			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ParseAcl(sa.be),
+		),
+	)
+	objectRouter.Put("",
+		middlewares.MatchQueryArgs("renameObject"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)), metrics.ActionRenameObject, services),
+	)
+
+	// '?torrent' is rejected for every method. GET is the method
+	// GetObjectTorrent is defined for, so it gets no Allow header.
+	objectRouter.Get("",
+		middlewares.MatchQueryArgs("torrent"),
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeTorrent, nil)),
+			metrics.ActionGetObjectTorrent,
+			services,
+		),
+	)
+	objectRouter.Add([]string{http.MethodHead, http.MethodPut, http.MethodDelete, http.MethodPost}, "",
+		middlewares.MatchQueryArgs("torrent"),
+		controllers.ProcessHandlers(
+			func(ctx fiber.Ctx) (*controllers.Response, error) {
+				return &controllers.Response{}, s3err.GetMethodNotAllowedErr(ctx.Method(), s3err.ResourceTypeTorrent, []string{http.MethodGet})
+			},
+			metrics.ActionUndetected,
+			services,
+		),
+	)
+
 	// object HEAD operation is not allowed with copy source
 	objectRouter.Head("/",
 		middlewares.MatchHeader("X-Amz-Copy-Source"),
