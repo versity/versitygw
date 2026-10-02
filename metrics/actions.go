@@ -118,6 +118,12 @@ var (
 	ActionGetBucketPolicyStatus                       = "s3_GetBucketPolicyStatus"
 	ActionGetBucketLocation                           = "s3_GetBucketLocation"
 	ActionPostObject                                  = "s3_PostObject"
+	ActionPutObjectAnnotation                         = "s3_PutObjectAnnotation"
+	ActionGetObjectAnnotation                         = "s3_GetObjectAnnotation"
+	ActionListObjectAnnotations                       = "s3_ListObjectAnnotations"
+	ActionDeleteObjectAnnotation                      = "s3_DeleteObjectAnnotation"
+	ActionRenameObject                                = "s3_RenameObject"
+	ActionGetObjectTorrent                            = "s3_GetObjectTorrent"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"
@@ -507,6 +513,30 @@ func init() {
 	}
 	ActionMap[ActionPostObject] = Action{
 		Name:    "PostObject",
+		Service: "s3",
+	}
+	ActionMap[ActionPutObjectAnnotation] = Action{
+		Name:    "PutObjectAnnotation",
+		Service: "s3",
+	}
+	ActionMap[ActionGetObjectAnnotation] = Action{
+		Name:    "GetObjectAnnotation",
+		Service: "s3",
+	}
+	ActionMap[ActionListObjectAnnotations] = Action{
+		Name:    "ListObjectAnnotations",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteObjectAnnotation] = Action{
+		Name:    "DeleteObjectAnnotation",
+		Service: "s3",
+	}
+	ActionMap[ActionRenameObject] = Action{
+		Name:    "RenameObject",
+		Service: "s3",
+	}
+	ActionMap[ActionGetObjectTorrent] = Action{
+		Name:    "GetObjectTorrent",
 		Service: "s3",
 	}
 }

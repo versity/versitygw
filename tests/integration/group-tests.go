@@ -2159,6 +2159,9 @@ func TestRouter(ts *TestState) {
 	ts.Run(RouterGetUploadsWithKey)
 	ts.Run(RouterCopySourceNotAllowed)
 	ts.Run(RouterListVersionsWithKey)
+	ts.Run(RouterObjectAnnotationNotImplemented)
+	ts.Run(RouterRenameObjectNotImplemented)
+	ts.Run(RouterObjectTorrentMethodNotAllowed)
 }
 
 func TestPostObject(ts *TestState) {
@@ -3743,6 +3746,9 @@ func GetIntTests() IntTests {
 		"RouterGetUploadsWithKey":                                                          RouterGetUploadsWithKey,
 		"RouterCopySourceNotAllowed":                                                       RouterCopySourceNotAllowed,
 		"RouterListVersionsWithKey":                                                        RouterListVersionsWithKey,
+		"RouterObjectAnnotationNotImplemented":                                             RouterObjectAnnotationNotImplemented,
+		"RouterRenameObjectNotImplemented":                                                 RouterRenameObjectNotImplemented,
+		"RouterObjectTorrentMethodNotAllowed":                                              RouterObjectTorrentMethodNotAllowed,
 		"UnsignedStreaminPayloadTrailer_malformed_trailer":                                 UnsignedStreaminPayloadTrailer_malformed_trailer,
 		"UnsignedStreamingPayloadTrailer_aborted_connection":                               UnsignedStreamingPayloadTrailer_aborted_connection,
 		"UnsignedStreamingPayloadTrailer_missing_invalid_dec_content_length":               UnsignedStreamingPayloadTrailer_missing_invalid_dec_content_length,
