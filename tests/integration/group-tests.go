@@ -542,6 +542,7 @@ func TestListMultipartUploads(ts *TestState) {
 	ts.Run(ListMultipartUploads_empty_result)
 	ts.Run(ListMultipartUploads_invalid_max_uploads)
 	ts.Run(ListMultipartUploads_max_uploads)
+	ts.Run(ListMultipartUploads_next_markers_not_truncated)
 	ts.Run(ListMultipartUploads_exceeding_max_uploads)
 	ts.Run(ListMultipartUploads_ignore_upload_id_marker)
 	ts.Run(ListMultipartUploads_invalid_uploadId_marker)
@@ -3250,6 +3251,7 @@ func GetIntTests() IntTests {
 		"ListMultipartUploads_empty_result":                                                ListMultipartUploads_empty_result,
 		"ListMultipartUploads_invalid_max_uploads":                                         ListMultipartUploads_invalid_max_uploads,
 		"ListMultipartUploads_max_uploads":                                                 ListMultipartUploads_max_uploads,
+		"ListMultipartUploads_next_markers_not_truncated":                                  ListMultipartUploads_next_markers_not_truncated,
 		"ListMultipartUploads_exceeding_max_uploads":                                       ListMultipartUploads_exceeding_max_uploads,
 		"ListMultipartUploads_ignore_upload_id_marker":                                     ListMultipartUploads_ignore_upload_id_marker,
 		"ListMultipartUploads_invalid_uploadId_marker":                                     ListMultipartUploads_invalid_uploadId_marker,
