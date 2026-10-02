@@ -36,9 +36,6 @@ source ./tests/setup.sh
 
 # tags: curl, DeleteObjects, malformed-message
 @test "REST - DeleteObjects - no objects added to payload" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2109"
-  fi
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
   read -r bucket_name file_name <<< "$output"

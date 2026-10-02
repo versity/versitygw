@@ -49,23 +49,15 @@ func DeleteObjects_empty_input(s *S3Conf) error {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+		_, err = s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 			Bucket: &bucket,
 			Delete: &types.Delete{
 				Objects: []types.ObjectIdentifier{},
 			},
 		})
 		cancel()
-		if err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
 			return err
-		}
-
-		if len(out.Deleted) != 0 {
-			return fmt.Errorf("expected deleted object count 0, instead got %v",
-				len(out.Deleted))
-		}
-		if len(out.Errors) != 0 {
-			return fmt.Errorf("expected 0 errors, instead got %v", len(out.Errors))
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)

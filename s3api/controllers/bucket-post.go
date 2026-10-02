@@ -57,6 +57,17 @@ func (c S3ApiController) DeleteObjects(ctx fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
+	// S3 requires at least one object in a DeleteObjects request and
+	// rejects an empty delete list as malformed.
+	if len(dObj.Objects) == 0 {
+		debuglogger.Logf("delete objects: no keys in the request")
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+
 	// S3 caps a single DeleteObjects request at 1000 keys. Reject an
 	// over-limit request before authorization and before anything reaches
 	// the backend, so a too-large batch can't be applied partially.
