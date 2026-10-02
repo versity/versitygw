@@ -725,6 +725,11 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, false, false),
 			middlewares.ParseAcl(sa.be),
 		))
+	// bucket operation with both '?uploads' and '?uploadId' is rejected
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("uploads", "uploadId"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetInvalidArgumentErr(s3err.InvalidArgUploadIdWithUploads, "uploadId")), metrics.ActionUndetected, services),
+	)
 	bucketRouter.Get("",
 		middlewares.MatchQueryArgs("uploads"),
 		controllers.ProcessHandlers(

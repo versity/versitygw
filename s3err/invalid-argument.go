@@ -73,6 +73,7 @@ const (
 	InvalidArgSSECIncompatibleEncryption
 	InvalidArgSSEInvalidEncryptionMethod
 	InvalidArgSSECRequiresTLS
+	InvalidArgUploadIdWithUploads
 )
 
 var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
@@ -211,6 +212,10 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgUploadIdMarker: {
 		Description:  "Invalid uploadId marker",
 		ArgumentName: "upload-id-marker",
+	},
+	InvalidArgUploadIdWithUploads: {
+		Description:  "Conflicting query string parameters: uploadId, uploads",
+		ArgumentName: "ResourceType",
 	},
 	InvalidArgCannedAcl: {
 		Description:  "",

@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -576,6 +577,30 @@ func ListMultipartUploads_delimiter_no_matches(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+func ListMultipartUploads_with_upload_id(s *S3Conf) error {
+	testName := "ListMultipartUploads_with_upload_id"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		out, err := createMp(s3client, bucket, "my-obj")
+		if err != nil {
+			return err
+		}
+
+		req, err := createSignedReq(http.MethodGet, s.endpoint,
+			fmt.Sprintf("%v?uploads&uploadId=%v", bucket, *out.UploadId),
+			s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetInvalidArgumentErr(s3err.InvalidArgUploadIdWithUploads, "uploadId"))
 	})
 }
 

@@ -554,6 +554,7 @@ func TestListMultipartUploads(ts *TestState) {
 	ts.Run(ListMultipartUploads_prefix)
 	ts.Run(ListMultipartUploads_both_delimiter_and_prefix)
 	ts.Run(ListMultipartUploads_delimiter_no_matches)
+	ts.Run(ListMultipartUploads_with_upload_id)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(ListMultipartUploads_with_checksums)
@@ -3288,6 +3289,7 @@ func GetIntTests() IntTests {
 		"ListMultipartUploads_delimiter_truncated":                                         ListMultipartUploads_delimiter_truncated,
 		"ListMultipartUploads_prefix":                                                      ListMultipartUploads_prefix,
 		"ListMultipartUploads_both_delimiter_and_prefix":                                   ListMultipartUploads_both_delimiter_and_prefix,
+		"ListMultipartUploads_with_upload_id":                                              ListMultipartUploads_with_upload_id,
 		"ListMultipartUploads_with_checksums":                                              ListMultipartUploads_with_checksums,
 		"AbortMultipartUpload_non_existing_bucket":                                         AbortMultipartUpload_non_existing_bucket,
 		"AbortMultipartUpload_incorrect_uploadId":                                          AbortMultipartUpload_incorrect_uploadId,
