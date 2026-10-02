@@ -126,6 +126,13 @@ move interfaces as well as support for tiered filesystems.`,
 				Value:       5000,
 				Destination: &actionsConcurrency,
 			},
+			&cli.IntFlag{
+				Name:        "io-buffer-size",
+				Usage:       "buffer size in bytes used by POSIX put/get/part read and write paths (<=0 uses backend default 1MiB)",
+				EnvVars:     []string{"VGW_POSIX_IO_BUFFER_SIZE"},
+				Value:       1024 * 1024,
+				Destination: &ioBufferSize,
+			},
 			&cli.StringFlag{
 				Name:        "default-etag",
 				Usage:       "default ETag value returned for objects that do not have a stored etag attribute (e.g. files placed on the filesystem outside of versitygw)",
@@ -179,6 +186,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.ValidateBucketNames = DisableStrictBucketNames
 	opts.SetProjectID = setProjectID
 	opts.Concurrency = actionsConcurrency
+	opts.IOBufferSize = ioBufferSize
 	opts.CopyObjectThreshold = CopyObjectThreshold
 	opts.ObjectLockMode = posix.ObjectLockMode(scoutfsLockMode)
 	opts.DefaultEtag = defaultEtag
