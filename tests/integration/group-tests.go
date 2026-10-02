@@ -2162,6 +2162,7 @@ func TestRouter(ts *TestState) {
 	ts.Run(RouterObjectAnnotationNotImplemented)
 	ts.Run(RouterRenameObjectNotImplemented)
 	ts.Run(RouterObjectTorrentMethodNotAllowed)
+	ts.Run(RouterInvalidURLEscape)
 }
 
 func TestPostObject(ts *TestState) {
@@ -3749,6 +3750,7 @@ func GetIntTests() IntTests {
 		"RouterObjectAnnotationNotImplemented":                                             RouterObjectAnnotationNotImplemented,
 		"RouterRenameObjectNotImplemented":                                                 RouterRenameObjectNotImplemented,
 		"RouterObjectTorrentMethodNotAllowed":                                              RouterObjectTorrentMethodNotAllowed,
+		"RouterInvalidURLEscape":                                                           RouterInvalidURLEscape,
 		"UnsignedStreaminPayloadTrailer_malformed_trailer":                                 UnsignedStreaminPayloadTrailer_malformed_trailer,
 		"UnsignedStreamingPayloadTrailer_aborted_connection":                               UnsignedStreamingPayloadTrailer_aborted_connection,
 		"UnsignedStreamingPayloadTrailer_missing_invalid_dec_content_length":               UnsignedStreamingPayloadTrailer_missing_invalid_dec_content_length,
