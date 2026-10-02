@@ -206,6 +206,9 @@ func ListMultipartUploads_ignore_upload_id_marker(s *S3Conf) error {
 			return fmt.Errorf("expected multipart uploads to be %v, instead got %v",
 				uploads, out.Uploads)
 		}
+		if getString(out.UploadIdMarker) != "" {
+			return fmt.Errorf("expected empty upload id marker, instead got %s", getString(out.UploadIdMarker))
+		}
 
 		// should ignore invalid uploaId marker
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -220,6 +223,9 @@ func ListMultipartUploads_ignore_upload_id_marker(s *S3Conf) error {
 		if !compareMultipartUploads(out.Uploads, uploads) {
 			return fmt.Errorf("expected multipart uploads to be %v, instead got %v",
 				uploads, out.Uploads)
+		}
+		if getString(out.UploadIdMarker) != "" {
+			return fmt.Errorf("expected empty upload id marker, instead got %s", getString(out.UploadIdMarker))
 		}
 
 		return nil
