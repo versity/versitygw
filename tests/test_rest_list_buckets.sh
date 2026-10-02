@@ -258,9 +258,6 @@ export RUN_USERS=true
 
 # tags: curl,ListBuckets,bucket-region,invalid-query
 @test "REST - ListBuckets - invalid bucket-region query" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1923"
-  fi
   local invalid_region="abc"
 
   run get_bucket_name "$BUCKET_ONE_NAME"
@@ -277,9 +274,6 @@ export RUN_USERS=true
 
 # tags: curl,ListBuckets,bucket-region
 @test "REST - ListBuckets - incorrect bucket region" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1930"
-  fi
   local test_region="us-east-1"
   if [ "$AWS_REGION" == "us-east-1" ]; then
     test_region="us-west-1"

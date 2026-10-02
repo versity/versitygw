@@ -17,7 +17,9 @@ package controllers
 import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -25,6 +27,7 @@ func (c S3ApiController) ListBuckets(ctx fiber.Ctx) (*Response, error) {
 	cToken := ctx.Query("continuation-token")
 	prefix := ctx.Query("prefix")
 	maxBucketsStr := ctx.Query("max-buckets")
+	bucketRegion := ctx.Query("bucket-region")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot, _ := utils.ContextKeyIsRoot.Get(ctx).(bool)
 
@@ -55,6 +58,13 @@ func (c S3ApiController) ListBuckets(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	if bucketRegion != "" && !utils.IsValidBucketRegion(bucketRegion, region) {
+		debuglogger.Logf("invalid bucket region: %s", bucketRegion)
+		return &Response{
+			MetaOpts: &MetaOptions{},
+		}, s3err.GetInvalidArgBucketRegion(bucketRegion)
+	}
+
 	// IsAdmin is the backends' "return every bucket, unfiltered" flag.
 	res, err := c.be.ListBuckets(ctx.RequestCtx(),
 		s3response.ListBucketsInput{
@@ -66,6 +76,13 @@ func (c S3ApiController) ListBuckets(ctx fiber.Ctx) (*Response, error) {
 		})
 	if err != nil {
 		return &Response{}, err
+	}
+
+	// every bucket lives in the gateway region, so there is nothing
+	// to list for any other region
+	if bucketRegion != "" && bucketRegion != region {
+		res.Buckets.Bucket = nil
+		res.ContinuationToken = ""
 	}
 
 	for i := range res.Buckets.Bucket {

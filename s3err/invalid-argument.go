@@ -384,3 +384,11 @@ func GetInvalidArgObjectOwnership(value string) InvalidArgumentError {
 		Description: fmt.Sprintf("Invalid x-amz-object-ownership header: %s", value),
 	}
 }
+
+func GetInvalidArgBucketRegion(value string) InvalidArgumentError {
+	return InvalidArgumentError{
+		ArgumentName: "bucket-region",
+		// no ArgumentValue is returned for this error
+		Description: fmt.Sprintf("Argument value %s is not a valid AWS Region", value),
+	}
+}
