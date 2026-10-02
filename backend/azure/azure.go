@@ -1760,7 +1760,7 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 			if !ok {
 				continue
 			}
-			if keyMarker != "" && *key <= keyMarker {
+			if keyMarker != "" && (*key < keyMarker || (*key == keyMarker && uploadIDMarker == "")) {
 				continue
 			}
 			if prefix != "" && !strings.HasPrefix(*key, prefix) {
