@@ -1,5 +1,5 @@
 {{- $iamServer := .Values.iamServer | default dict -}}
-{{- if and ($iamServer.enabled | default false) .Values.iamServer.private.enabled .Values.iamServer.private.certificate.create (not .Values.iamServer.private.certificate.existingSecret) }}
+{{- if and ($iamServer.enabled | default false) .Values.iamServer.private.enabled .Values.iamServer.private.certificate.create (not .Values.iamServer.private.certificate.existingSecret) (not .Values.iamServer.private.certificate.volumeName) }}
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -24,7 +24,7 @@ spec:
   usages:
     - server auth
 {{- end }}
-{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") .Values.iam.standalone.certificate.create (not .Values.iam.standalone.certificate.existingSecret) }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") .Values.iam.standalone.certificate.create (not .Values.iam.standalone.certificate.existingSecret) (not .Values.iam.standalone.certificate.volumeName) }}
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
