@@ -129,8 +129,15 @@ func (c S3ApiController) DeleteObjects(ctx fiber.Ctx) (*Response, error) {
 			})
 	}
 
+	result := utils.MergeDeleteObjectsResult(dObj.Objects, checkErrs, backendResult)
+	// In quiet mode the response lists only the objects that could not be
+	// deleted.
+	if dObj.Quiet {
+		result.Deleted = nil
+	}
+
 	return &Response{
-		Data: utils.MergeDeleteObjectsResult(dObj.Objects, checkErrs, backendResult),
+		Data: result,
 		MetaOpts: &MetaOptions{
 			ObjectCount: int64(len(dObj.Objects)),
 			BucketOwner: parsedAcl.Owner,
