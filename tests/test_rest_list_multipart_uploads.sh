@@ -81,9 +81,6 @@ source ./tests/setup.sh
 
 # tags: curl,ListMultipartUploads,multipart,uploadId,key-marker
 @test "REST - ListMultipartUploads - uploadId and key combo work" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2149"
-  fi
   run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
   assert_success
   read -r bucket_name test_file_one test_file_two <<< "$output"

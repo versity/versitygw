@@ -346,6 +346,49 @@ func ListMultipartUploads_keyMarker_not_from_list(s *S3Conf) error {
 	})
 }
 
+func ListMultipartUploads_upload_id_marker_with_key_marker(s *S3Conf) error {
+	testName := "ListMultipartUploads_upload_id_marker_with_key_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, key := range []string{"bar", "baz", "baz", "foo"} {
+			_, err := createMp(s3client, bucket, key)
+			if err != nil {
+				return err
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		uploads := out.Uploads
+
+		// key-marker and upload-id-marker of any listed upload
+		// should continue the listing right after that upload
+		for i, up := range uploads {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+				Bucket:         &bucket,
+				KeyMarker:      up.Key,
+				UploadIdMarker: up.UploadId,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if !compareMultipartUploads(uploads[i+1:], out.Uploads) {
+				return fmt.Errorf("expected the mp list to be %v, instead got %v", uploads[i+1:], out.Uploads)
+			}
+		}
+
+		return nil
+	})
+}
+
 func ListMultipartUploads_delimiter_truncated(s *S3Conf) error {
 	testName := "ListMultipartUploads_delimiter_truncated"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
