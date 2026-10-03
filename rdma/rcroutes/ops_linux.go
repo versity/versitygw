@@ -63,6 +63,15 @@ type opsEmitter struct {
 	key    string
 	isPut  bool
 	start  time.Time
+	// semantic is the session's semantic operation; it selects the
+	// action label and gates the object-created event (a part
+	// upload suppresses it: the creation event belongs to the REST
+	// Complete call).
+	semantic semanticOp
+	// query is the raw target query, retained so a part read's
+	// synthesized path carries the part coordinates the wire
+	// request carried.
+	query string
 	// Commit metadata the PUT path fills in before publishing the
 	// success record, so the object-created event carries the
 	// backend-assigned ETag and version like the regular put
@@ -119,8 +128,14 @@ func (e *opsEmitter) synthesize() (fiber.Ctx, func()) {
 	ctx.Method(method)
 	// The access logger and the event schema both split this path
 	// into bucket/key, so the synthesized path must be the object
-	// path in canonical form.
+	// path in canonical form, with the query kept on the URI (the
+	// logger reads the request line through OriginalURL) so a part
+	// record still shows its part coordinates without polluting
+	// the object key.
 	ctx.Path("/" + e.bucket + "/" + e.key)
+	if e.query != "" {
+		ctx.Request().URI().SetQueryString(e.query)
+	}
 	utils.ContextKeyAccount.Set(ctx, e.acct)
 	utils.ContextKeyRegion.Set(ctx, e.region)
 	utils.ContextKeyStartTime.Set(ctx, e.start)
@@ -151,6 +166,12 @@ func (e *opsEmitter) publish(err error, bytes int64) {
 	if e.isPut {
 		action = metrics.ActionPutObject
 	}
+	switch e.semantic {
+	case opUploadPart:
+		action = metrics.ActionUploadPart
+	case opGetPart:
+		action = metrics.ActionGetObject
+	}
 	status := http.StatusOK
 	if sinkErr != nil {
 		status = sinkErr.(s3err.APIError).HTTPStatusCode
@@ -175,8 +196,11 @@ func (e *opsEmitter) publish(err error, bytes int64) {
 	// not the publication's error status: a committed PUT whose
 	// native finalizer failed still created the object, so its
 	// creation event must survive. Uncommitted PUTs (backend
-	// failure) never carry it.
-	if e.ops.Events != nil && e.committed && e.isPut && !e.eventSent {
+	// failure) never carry it. A part upload never carries it
+	// either: the object itself is only created by the REST
+	// Complete call, so RC parts suppress the event.
+	if e.ops.Events != nil && e.committed && e.isPut && !e.eventSent &&
+		e.semantic == opPlainPut {
 		meta := s3event.EventMeta{
 			EventName:  s3event.EventObjectCreatedPut,
 			ObjectSize: bytes,
@@ -513,7 +537,8 @@ func (t *opsTracker) SetOpsServices(ops OpsServices) {
 var errPubBacklog = errors.New("publication backlog at capacity")
 
 func (t *opsTracker) register(sessionID string, acct auth.Account,
-	region, bucket, key string, isPut bool, start time.Time) error {
+	region, bucket, key string, isPut bool, semantic semanticOp,
+	query string, start time.Time) error {
 	// Admission control: the native quota counts live sessions,
 	// but teardown notifications fire before the audit records
 	// land, so session turnover can queue more records than the
@@ -541,14 +566,16 @@ func (t *opsTracker) register(sessionID string, acct auth.Account,
 	}
 	acct.Access = strings.Clone(acct.Access)
 	emit := &opsEmitter{
-		ops:    t.loadOps(),
-		app:    t.app,
-		acct:   acct,
-		region: strings.Clone(region),
-		bucket: strings.Clone(bucket),
-		key:    strings.Clone(key),
-		isPut:  isPut,
-		start:  start,
+		ops:      t.loadOps(),
+		app:      t.app,
+		acct:     acct,
+		region:   strings.Clone(region),
+		bucket:   strings.Clone(bucket),
+		key:      strings.Clone(key),
+		isPut:    isPut,
+		semantic: semantic,
+		query:    strings.Clone(query),
+		start:    start,
 	}
 
 	t.mu.Lock()
@@ -774,6 +801,33 @@ func (t *opsTracker) publishRequest(ctx fiber.Ctx, acct auth.Account,
 	// that arrives after is dropped here (not published inline),
 	// because a request publication has no owner left to
 	// guarantee its sinks are still open.
+	t.dispatchOrDrop(pubJob{emit: emit, err: err})
+}
+
+// publishSemanticRequest is publishRequest for requests whose
+// target was parsed into a semantic operation before failing: the
+// record carries the multipart identity (action label and query)
+// instead of the bare transport op, so an UploadPart denial is not
+// recorded as a plain PutObject.
+func (t *opsTracker) publishSemanticRequest(ctx fiber.Ctx,
+	acct auth.Account, err error, bucket, key string,
+	semantic semanticOp, query string) {
+	if t == nil {
+		return
+	}
+	acct.Access = strings.Clone(acct.Access)
+	emit := &opsEmitter{
+		ops:      t.loadOps(),
+		app:      t.app,
+		acct:     acct,
+		region:   strings.Clone(regionFromCtx(ctx)),
+		bucket:   strings.Clone(bucket),
+		key:      strings.Clone(key),
+		isPut:    semantic.isPut(),
+		semantic: semantic,
+		query:    strings.Clone(query),
+		start:    time.Now(),
+	}
 	t.dispatchOrDrop(pubJob{emit: emit, err: err})
 }
 

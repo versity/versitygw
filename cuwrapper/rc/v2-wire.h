@@ -45,6 +45,15 @@ constexpr const char* kVersionHeader = "X-Amz-Rdma-Version-Id";
 constexpr const char* kChecksumHeader = "X-Amz-Rdma-Checksum";
 constexpr const char* kControlPathPrefix = "/.hipobj-rc/";
 
+/* Optional capability advertisement. The server emits the header on
+ * the READY success response and on error responses for requests in
+ * which a native session was created. Tokens are comma/space
+ * separated; "mp" marks multipart part transfers through the RC
+ * query surface. Old parsers ignore the header entirely (named
+ * branches, no unknown-name rejection). */
+constexpr const char* kCapabilitiesHeader = "X-Amz-Rdma-Capabilities";
+constexpr const char* kCapabilityMultipart = "mp";
+
 /* Wire limits. */
 constexpr size_t kSessionHexLen = 32;  /* 128-bit session id */
 constexpr size_t kCookieHexLen = 8;    /* 32-bit cookie */

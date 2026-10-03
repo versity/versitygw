@@ -42,7 +42,7 @@ import (
 func TestOpsTrackerCallbackPublishesExpiry(t *testing.T) {
 	tr := newOpsTracker(0)
 	tr.register("sess-1", auth.Account{Access: "ak"}, "us-east-1",
-		"bkt", "obj", false, time.Now())
+		"bkt", "obj", false, opPlainGet, "", time.Now())
 	if got := len(tr.sessions); got != 1 {
 		t.Fatalf("registered sessions = %d, want 1", got)
 	}
@@ -64,7 +64,7 @@ func TestOpsTrackerCallbackPublishesExpiry(t *testing.T) {
 func TestOpsTrackerReserveBlocksCallback(t *testing.T) {
 	tr := newOpsTracker(0)
 	tr.register("sess-2", auth.Account{Access: "ak"}, "us-east-1",
-		"bkt", "obj", true, time.Now())
+		"bkt", "obj", true, opPlainPut, "", time.Now())
 
 	// The READY path reserves before its completion call; the
 	// callback the call fires synchronously must skip the record.
@@ -92,7 +92,7 @@ func TestOpsTrackerReserveBlocksCallback(t *testing.T) {
 func TestOpsTrackerReserveIsExclusive(t *testing.T) {
 	tr := newOpsTracker(0)
 	tr.register("sess-3", auth.Account{Access: "ak"}, "us-east-1",
-		"bkt", "obj", false, time.Now())
+		"bkt", "obj", false, opPlainGet, "", time.Now())
 
 	if first := tr.reserve("sess-3"); first == nil {
 		t.Fatal("first reserve failed")
@@ -105,7 +105,7 @@ func TestOpsTrackerReserveIsExclusive(t *testing.T) {
 func TestOpsTrackerFailOutcome(t *testing.T) {
 	tr := newOpsTracker(0)
 	tr.register("sess-4", auth.Account{Access: "ak"}, "us-east-1",
-		"bkt", "obj", false, time.Now())
+		"bkt", "obj", false, opPlainGet, "", time.Now())
 
 	// Consume-or-noop: present entry is consumed.
 	tr.failOutcome("sess-4", errors.New("x"))
@@ -120,7 +120,7 @@ func TestOpsTrackerFailOutcome(t *testing.T) {
 func TestOpsTrackerUnregister(t *testing.T) {
 	tr := newOpsTracker(0)
 	tr.register("sess-5", auth.Account{Access: "ak"}, "us-east-1",
-		"bkt", "obj", false, time.Now())
+		"bkt", "obj", false, opPlainGet, "", time.Now())
 	tr.unregister("sess-5")
 	if got := len(tr.sessions); got != 0 {
 		t.Fatalf("unregister left entries: %d", got)
@@ -243,12 +243,12 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	tr.SetOpsServices(OpsServices{Logger: rl})
 
 	// Expiry path: callback publishes a zero-byte error record.
-	tr.register("s-exp", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	tr.register("s-exp", auth.Account{Access: "ak"}, "r", "b", "o", false, opPlainGet, "", time.Now())
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "s-exp"})
 
 	// Reserved path: reserve, callback fires (skipped), the
 	// request path publishes success with bytes.
-	tr.register("s-res", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	tr.register("s-res", auth.Account{Access: "ak"}, "r", "b", "o", false, opPlainGet, "", time.Now())
 	rsv := tr.reserve("s-res")
 	if rsv == nil {
 		t.Fatal("reserve failed")
@@ -258,7 +258,7 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 
 	// Denial path while reserved: failOutcome must not steal the
 	// publication; the owner's success record is the only one.
-	tr.register("s-den", auth.Account{Access: "ak"}, "r", "b", "o", true, time.Now())
+	tr.register("s-den", auth.Account{Access: "ak"}, "r", "b", "o", true, opPlainPut, "", time.Now())
 	rsv2 := tr.reserve("s-den")
 	if rsv2 == nil {
 		t.Fatal("reserve failed")
@@ -268,7 +268,7 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 
 	// Released reservation: the record returns to the pool and
 	// the reaper (or the next claimant) can still publish it.
-	tr.register("s-rel", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	tr.register("s-rel", auth.Account{Access: "ak"}, "r", "b", "o", false, opPlainGet, "", time.Now())
 	rsv3 := tr.reserve("s-rel")
 	if rsv3 == nil {
 		t.Fatal("reserve failed")
@@ -279,7 +279,7 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	// M1 regression: a terminal arriving while reserved is stashed,
 	// and a later claim-rollback release consumes it and publishes the
 	// expiry - the record is not orphaned.
-	tr.register("s-stash", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	tr.register("s-stash", auth.Account{Access: "ak"}, "r", "b", "o", false, opPlainGet, "", time.Now())
 	rsvS := tr.reserve("s-stash")
 	if rsvS == nil {
 		t.Fatal("reserve failed")
@@ -291,7 +291,7 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	// refused, so a duplicate READY cannot claim the transfer
 	// while another request owns the publication. The owner then
 	// completes normally.
-	tr.register("s-dbl", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	tr.register("s-dbl", auth.Account{Access: "ak"}, "r", "b", "o", false, opPlainGet, "", time.Now())
 	rsvD := tr.reserve("s-dbl")
 	if rsvD == nil {
 		t.Fatal("first reserve failed")
@@ -304,7 +304,7 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	// Ownership: a stale emitter must not publish or consume the
 	// current record; the real owner still can, even after the
 	// callback fired (stashed) underneath it.
-	tr.register("s-own", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	tr.register("s-own", auth.Account{Access: "ak"}, "r", "b", "o", false, opPlainGet, "", time.Now())
 	rsvO := tr.reserve("s-own")
 	if rsvO == nil {
 		t.Fatal("reserve failed")
@@ -329,7 +329,7 @@ func TestOpsTrackerPublishesExactlyOncePerSession(t *testing.T) {
 	tr.publishReserved("s-own", rsvB, nil, 32)
 
 	// Consume-or-noop denial of an unreserved session.
-	tr.register("s-fail", auth.Account{Access: "ak"}, "r", "b", "o", false, time.Now())
+	tr.register("s-fail", auth.Account{Access: "ak"}, "r", "b", "o", false, opPlainGet, "", time.Now())
 	tr.failOutcome("s-fail", errors.New("x"))
 
 	// Join the worker: Shutdown drains everything queued and
@@ -372,7 +372,7 @@ func TestOpsTrackerAdmissionAtomicUnderConcurrency(t *testing.T) {
 	tr := newOpsTracker(8)
 	// One predecessor record is already pending.
 	if err := tr.register("s-seed", auth.Account{Access: "a"},
-		"r", "b", "k", false, time.Now()); err != nil {
+		"r", "b", "k", false, opPlainGet, "", time.Now()); err != nil {
 		t.Fatalf("seed registration: %v", err)
 	}
 
@@ -385,7 +385,7 @@ func TestOpsTrackerAdmissionAtomicUnderConcurrency(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			err := tr.register(fmt.Sprintf("s-%d", i), auth.Account{Access: "a"},
-				"r", "b", "k", false, time.Now())
+				"r", "b", "k", false, opPlainGet, "", time.Now())
 			if err == nil {
 				admitted.Add(1)
 			} else if errors.Is(err, errPubBacklog) {
