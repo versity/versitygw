@@ -54,6 +54,9 @@ type ScoutfsOpts struct {
 	// Concurrency sets the maximum number of concurrently running POSIX actions.
 	// Defaults to 5000 when unset or non-positive.
 	Concurrency int
+	// IOBufferSize sets the buffer size in bytes for POSIX copy/read paths.
+	// Defaults to 1MiB when unset or non-positive.
+	IOBufferSize int
 	// CopyObjectThreshold sets the maximum allowed source object size (in bytes)
 	// for CopyObject and UploadPartCopy operations. Requests exceeding this
 	// threshold are rejected with an 'InvalidRequest' error. Defaults to the
