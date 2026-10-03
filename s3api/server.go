@@ -57,6 +57,7 @@ type S3ApiServer struct {
 	maxRequests      int
 	webuiMountPrefix string
 	webuiSrvCfg      *webui.ServerConfig
+	clientIPHeader   string
 	routes           []routeMount
 	middlewares      []middlewareMount
 	socketPerm       os.FileMode
@@ -134,16 +135,26 @@ func New(
 
 	// Logging middlewares
 	if !server.quiet {
+		customTags := map[string]logger.LogFunc{
+			logger.TagQueryStringParams: debuglogger.RedactedQueryParamsTag,
+		}
+		if server.clientIPHeader != "" {
+			customTags[logger.TagIP] = clientIPTag
+		}
 		app.Use("*", logger.New(logger.Config{
-			Format: "${time} | vgw | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
-			CustomTags: map[string]logger.LogFunc{
-				logger.TagQueryStringParams: debuglogger.RedactedQueryParamsTag,
-			},
+			Format:     "${time} | vgw | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
+			CustomTags: customTags,
 		}))
 	}
 
 	// initialize requestId middleware
 	app.Use("*", middlewares.RequestIDs())
+
+	// resolve the logged client address from a trusted proxy header, when
+	// one is configured
+	if server.clientIPHeader != "" {
+		app.Use("*", middlewares.ClientIP(server.clientIPHeader))
+	}
 
 	// Set up health endpoint if specified
 	if server.health != "" {
@@ -296,6 +307,15 @@ func WithCORSAllowOrigin(origin string) Option {
 	return func(s *S3ApiServer) { s.Router.corsAllowOrigin = origin }
 }
 
+// WithClientIPHeader records the client address from the named proxy header in
+// the request log and the S3 access logs. The accepted values are
+// utils.ClientIPHeaderForwardedFor and utils.ClientIPHeaderRealIP; an empty
+// value (the default) keeps the socket peer address. ctx.IP() is not changed,
+// so IAM aws:SourceIp conditions keep evaluating the socket address.
+func WithClientIPHeader(header string) Option {
+	return func(s *S3ApiServer) { s.clientIPHeader = header }
+}
+
 // WithWebUI mounts the WebUI on the S3 server's Fiber app at the given path prefix,
 // before S3 routes are registered. The prefix must start with "/" and must not be
 // empty or just "/".
@@ -433,6 +453,12 @@ func (sa *S3ApiServer) ShutDown() error {
 // in the context locals
 func stackTraceHandler(ctx fiber.Ctx, e any) {
 	utils.ContextKeyStack.Set(ctx, e)
+}
+
+// clientIPTag logs the address recorded by the client IP middleware, falling
+// back to the socket peer address when no proxy header is configured.
+func clientIPTag(output logger.Buffer, ctx fiber.Ctx, _ *logger.Data, _ string) (int, error) {
+	return output.WriteString(utils.ClientIP(ctx))
 }
 
 // globalErrorHandler catches the errors before reaching to

@@ -257,3 +257,24 @@ func TestRunVersityGWValidatesAdminPathPrefix(t *testing.T) {
 		})
 	}
 }
+
+func TestRunVersityGWValidatesClientIPHeader(t *testing.T) {
+	cfg := Config{
+		RootUserAccess:    "root",
+		RootUserSecret:    "secret",
+		Ports:             []string{"127.0.0.1:0"},
+		MaxConnections:    1,
+		MaxRequests:       1,
+		MultipartMaxParts: 1,
+		Quiet:             true,
+		ClientIPHeader:    "Forwarded",
+	}
+
+	err := RunVersityGW(context.Background(), backend.BackendUnsupported{}, &cfg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid client IP header") {
+		t.Fatalf("error = %q, want substring %q", err, "invalid client IP header")
+	}
+}
