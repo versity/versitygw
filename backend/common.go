@@ -796,18 +796,24 @@ func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreCond
 }
 
 // EvaluateObjectPutPreconditions evaluates if-match and if-none-match preconditions
-// for object PUT(PutObject, CompleteMultipartUpload) actions
+// for object PUT(PutObject, CompleteMultipartUpload, CopyObject) actions.
+// The unsupported header combinations and values are rejected first, in
+// this order, whether or not the object exists.
 func EvaluateObjectPutPreconditions(etag string, ifMatch, ifNoneMatch *string, objExists bool) error {
 	if ifMatch == nil && ifNoneMatch == nil {
 		return nil
+	}
+
+	if ifNoneMatch != nil && ifMatch != nil {
+		return s3err.GetNotImplementedErr("If-Match,If-None-Match", s3err.NmpAdditionalMessageMultipleCondHeaders)
 	}
 
 	if ifNoneMatch != nil && *ifNoneMatch != "*" {
 		return s3err.GetNotImplementedErr("If-None-Match", s3err.NmpAdditionalMessageIfNoneMatch)
 	}
 
-	if ifNoneMatch != nil && ifMatch != nil {
-		return s3err.GetNotImplementedErr("If-Match,If-None-Match", s3err.NmpAdditionalMessageMultipleCondHeaders)
+	if ifMatch != nil && *ifMatch == "*" {
+		return s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageIfMatch)
 	}
 
 	if ifNoneMatch != nil && objExists {

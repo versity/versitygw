@@ -1193,6 +1193,13 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		return s3response.CopyObjectOutput{}, err
 	}
 
+	// the destination's conditional write headers are evaluated before the
+	// source is looked up
+	err = az.evaluateWritePreconditions(ctx, input.Bucket, input.Key, input.IfMatch, input.IfNoneMatch)
+	if err != nil {
+		return s3response.CopyObjectOutput{}, err
+	}
+
 	if input.ExpectedSourceBucketOwner != nil && *input.ExpectedSourceBucketOwner != "" {
 		aclData, err := az.GetBucketAcl(ctx, &s3.GetBucketAclInput{Bucket: &srcBucket})
 		if err != nil {

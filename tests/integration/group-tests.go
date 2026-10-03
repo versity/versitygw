@@ -407,6 +407,8 @@ func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_with_legal_hold)
 	ts.Run(CopyObject_with_retention_lock)
 	ts.Run(CopyObject_conditional_reads)
+	ts.Run(CopyObject_conditional_writes)
+	ts.Run(CopyObject_conditional_writes_precedence)
 	ts.Run(CopyObject_object_acl_not_supported)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
@@ -1843,7 +1845,7 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_condition_if_match_delete_object)
 	ts.Run(S3IAMAccessControl_condition_if_match_versioned_delete)
 	ts.Run(S3IAMAccessControl_condition_conditional_write_keys_ignore_reads)
-	ts.Run(S3IAMAccessControl_condition_conditional_write_keys_ignore_copies)
+	ts.Run(S3IAMAccessControl_condition_conditional_write_keys_cover_copies)
 	ts.Run(S3IAMAccessControl_condition_if_match_bucket_level_write)
 	ts.Run(S3IAMAccessControl_condition_if_match_ignores_delete_objects)
 	ts.Run(S3IAMAccessControl_inactive_and_deleted_credentials)
@@ -1978,6 +1980,7 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_bucket_policy_condition_binary_operator)
 	ts.Run(AccessControl_bucket_policy_condition_null_operator)
 	ts.Run(AccessControl_bucket_policy_condition_if_none_match_required)
+	ts.Run(AccessControl_bucket_policy_condition_if_none_match_copy)
 	ts.Run(AccessControl_bucket_policy_condition_if_none_match_value)
 	ts.Run(AccessControl_bucket_policy_condition_if_match_value)
 	ts.Run(AccessControl_bucket_policy_condition_if_match_delete_object)
@@ -2038,6 +2041,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_PutObject_new_version_resets_attributes)
 	ts.Run(Versioning_PutObject_over_delete_marker_resets_attributes)
 	ts.Run(Versioning_PutObject_suspended_null_version_resets_attributes)
+	ts.Run(Versioning_PutObject_conditional_writes_over_delete_marker)
 	// CopyObject action
 	ts.Run(Versioning_CopyObject_invalid_versionId)
 	ts.Run(Versioning_CopyObject_encoded_versionid_separator_invalid_versionId)
@@ -2047,6 +2051,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_CopyObject_from_a_delete_marker)
 	ts.Run(Versioning_CopyObject_to_itself)
 	ts.Run(Versioning_CopyObject_to_itself_from_the_current_version)
+	ts.Run(Versioning_CopyObject_conditional_writes)
 	if !ts.conf.windowsTests {
 		ts.Run(Versioning_CopyObject_special_chars)
 	}
@@ -2126,6 +2131,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_Multipart_Upload_overwrite_an_object)
 	ts.Run(Versioning_Multipart_Upload_suspended_overwrite_versioned_object)
 	ts.Run(Versioning_Multipart_Upload_overwrite_keeps_previous_version_metadata)
+	ts.Run(Versioning_Multipart_Upload_conditional_writes_over_delete_marker)
 	ts.Run(Versioning_UploadPartCopy_invalid_versionId)
 	ts.Run(Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId)
 	ts.Run(Versioning_UploadPartCopy_non_existing_versionId)
@@ -2380,7 +2386,7 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_condition_if_match_delete_object":                              S3IAMAccessControl_condition_if_match_delete_object,
 		"S3IAMAccessControl_condition_if_match_versioned_delete":                           S3IAMAccessControl_condition_if_match_versioned_delete,
 		"S3IAMAccessControl_condition_conditional_write_keys_ignore_reads":                 S3IAMAccessControl_condition_conditional_write_keys_ignore_reads,
-		"S3IAMAccessControl_condition_conditional_write_keys_ignore_copies":                S3IAMAccessControl_condition_conditional_write_keys_ignore_copies,
+		"S3IAMAccessControl_condition_conditional_write_keys_cover_copies":                 S3IAMAccessControl_condition_conditional_write_keys_cover_copies,
 		"S3IAMAccessControl_condition_if_match_bucket_level_write":                         S3IAMAccessControl_condition_if_match_bucket_level_write,
 		"S3IAMAccessControl_condition_if_match_ignores_delete_objects":                     S3IAMAccessControl_condition_if_match_ignores_delete_objects,
 		"S3IAMAccessControl_inactive_and_deleted_credentials":                              S3IAMAccessControl_inactive_and_deleted_credentials,
@@ -3188,6 +3194,8 @@ func GetIntTests() IntTests {
 		"CopyObject_with_legal_hold":                                                       CopyObject_with_legal_hold,
 		"CopyObject_with_retention_lock":                                                   CopyObject_with_retention_lock,
 		"CopyObject_conditional_reads":                                                     CopyObject_conditional_reads,
+		"CopyObject_conditional_writes":                                                    CopyObject_conditional_writes,
+		"CopyObject_conditional_writes_precedence":                                         CopyObject_conditional_writes_precedence,
 		"CopyObject_object_acl_not_supported":                                              CopyObject_object_acl_not_supported,
 		"CopyObject_with_metadata":                                                         CopyObject_with_metadata,
 		"CopyObject_invalid_checksum_algorithm":                                            CopyObject_invalid_checksum_algorithm,
@@ -3636,6 +3644,7 @@ func GetIntTests() IntTests {
 		"AccessControl_bucket_policy_condition_binary_operator":                            AccessControl_bucket_policy_condition_binary_operator,
 		"AccessControl_bucket_policy_condition_null_operator":                              AccessControl_bucket_policy_condition_null_operator,
 		"AccessControl_bucket_policy_condition_if_none_match_required":                     AccessControl_bucket_policy_condition_if_none_match_required,
+		"AccessControl_bucket_policy_condition_if_none_match_copy":                         AccessControl_bucket_policy_condition_if_none_match_copy,
 		"AccessControl_bucket_policy_condition_if_none_match_value":                        AccessControl_bucket_policy_condition_if_none_match_value,
 		"AccessControl_bucket_policy_condition_if_match_value":                             AccessControl_bucket_policy_condition_if_match_value,
 		"AccessControl_bucket_policy_condition_if_match_delete_object":                     AccessControl_bucket_policy_condition_if_match_delete_object,
@@ -3677,6 +3686,7 @@ func GetIntTests() IntTests {
 		"Versioning_PutObject_new_version_resets_attributes":                               Versioning_PutObject_new_version_resets_attributes,
 		"Versioning_PutObject_over_delete_marker_resets_attributes":                        Versioning_PutObject_over_delete_marker_resets_attributes,
 		"Versioning_PutObject_suspended_null_version_resets_attributes":                    Versioning_PutObject_suspended_null_version_resets_attributes,
+		"Versioning_PutObject_conditional_writes_over_delete_marker":                       Versioning_PutObject_conditional_writes_over_delete_marker,
 		"Versioning_CopyObject_invalid_versionId":                                          Versioning_CopyObject_invalid_versionId,
 		"Versioning_CopyObject_encoded_versionid_separator_invalid_versionId":              Versioning_CopyObject_encoded_versionid_separator_invalid_versionId,
 		"Versioning_CopyObject_success":                                                    Versioning_CopyObject_success,
@@ -3685,6 +3695,7 @@ func GetIntTests() IntTests {
 		"Versioning_CopyObject_from_a_delete_marker":                                       Versioning_CopyObject_from_a_delete_marker,
 		"Versioning_CopyObject_to_itself":                                                  Versioning_CopyObject_to_itself,
 		"Versioning_CopyObject_to_itself_from_the_current_version":                         Versioning_CopyObject_to_itself_from_the_current_version,
+		"Versioning_CopyObject_conditional_writes":                                         Versioning_CopyObject_conditional_writes,
 		"Versioning_CopyObject_special_chars":                                              Versioning_CopyObject_special_chars,
 		"Versioning_HeadObject_invalid_versionId":                                          Versioning_HeadObject_invalid_versionId,
 		"Versioning_HeadObject_non_existing_object_version":                                Versioning_HeadObject_non_existing_object_version,
@@ -3751,6 +3762,7 @@ func GetIntTests() IntTests {
 		"Versioning_Multipart_Upload_overwrite_an_object":                                  Versioning_Multipart_Upload_overwrite_an_object,
 		"Versioning_Multipart_Upload_suspended_overwrite_versioned_object":                 Versioning_Multipart_Upload_suspended_overwrite_versioned_object,
 		"Versioning_Multipart_Upload_overwrite_keeps_previous_version_metadata":            Versioning_Multipart_Upload_overwrite_keeps_previous_version_metadata,
+		"Versioning_Multipart_Upload_conditional_writes_over_delete_marker":                Versioning_Multipart_Upload_conditional_writes_over_delete_marker,
 		"Versioning_UploadPartCopy_invalid_versionId":                                      Versioning_UploadPartCopy_invalid_versionId,
 		"Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId":          Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId,
 		"Versioning_UploadPartCopy_non_existing_versionId":                                 Versioning_UploadPartCopy_non_existing_versionId,

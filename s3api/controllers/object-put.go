@@ -695,6 +695,7 @@ func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 	}
 
 	preconditionHdrs := utils.ParsePreconditionHeaders(ctx, utils.WithCopySource())
+	ifMatch, ifNoneMatch := utils.ParsePreconditionMatchHeaders(ctx)
 
 	err = auth.CheckObjectAccess(ctx, bucket, acct, []types.ObjectIdentifier{{Key: &key}}, auth.BypassOverwrite, false, c.be, c.iam, true)
 	if err != nil {
@@ -729,6 +730,8 @@ func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 			CopySourceIfNoneMatch:          preconditionHdrs.IfNoneMatch,
 			CopySourceIfModifiedSince:      preconditionHdrs.IfModSince,
 			CopySourceIfUnmodifiedSince:    preconditionHdrs.IfUnmodeSince,
+			IfMatch:                        ifMatch,
+			IfNoneMatch:                    ifNoneMatch,
 			ExpectedBucketOwner:            &acct.Access,
 			ExpectedSourceBucketOwner:      &expectedSrcBucketOwner,
 			Metadata:                       metadata,

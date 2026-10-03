@@ -103,15 +103,16 @@ func addConditionalWriteKeys(ctx fiber.Ctx, actions []Action, condCtx map[string
 var nonConditionalWriteSubresources = []string{"acl", "tagging", "retention", "legal-hold", "uploadId"}
 
 // conditionalWriteAction reports the action ctx is authorized under, for
-// the requests whose If-Match/If-None-Match the gateway enforces: PutObject
-// and CompleteMultipartUpload, both authorized as s3:PutObject, and
-// DeleteObject, which a versionId turns into s3:DeleteObjectVersion exactly
-// as the handler does. It returns the empty action for everything else.
+// the requests whose If-Match/If-None-Match the gateway enforces: PutObject,
+// CopyObject and CompleteMultipartUpload, all authorized as s3:PutObject,
+// and DeleteObject, which a versionId turns into s3:DeleteObjectVersion
+// exactly as the handler does. It returns the empty action for everything
+// else.
 //
 // Everything else ignores those headers, and a policy must never grant on a
 // precondition that won't be checked — otherwise a form upload, a
-// DeleteObjects batch, a copy or an upload part could satisfy a statement
-// demanding a conditional write by sending a header that changes nothing.
+// DeleteObjects batch or an upload part could satisfy a statement demanding
+// a conditional write by sending a header that changes nothing.
 // Reads are the same case: GET and HEAD take these headers as ordinary HTTP
 // cache preconditions. Excluding a request leaves both keys absent, which
 // denies it under such a policy rather than letting it through.
@@ -131,16 +132,9 @@ func conditionalWriteAction(ctx fiber.Ctx, actions []Action) Action {
 }
 
 // conditionalWriteRouteAction is conditionalWriteAction's request-shape
-// half: the action this method, query and copy-source header would route
-// to, before checking what the request is actually authorized as.
+// half: the action this method and query would route to, before checking
+// what the request is actually authorized as.
 func conditionalWriteRouteAction(ctx fiber.Ctx) Action {
-	// A copy carries its preconditions in the X-Amz-Copy-Source-If-*
-	// headers, which name the source object and populate neither key. Both
-	// a copy and a plain upload are authorized as s3:PutObject, so only
-	// this header tells them apart.
-	if ctx.Get("X-Amz-Copy-Source") != "" {
-		return ""
-	}
 	query := ctx.Request().URI().QueryArgs()
 	switch string(ctx.Request().Header.Method()) {
 	case fiber.MethodPut:
