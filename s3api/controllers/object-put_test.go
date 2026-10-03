@@ -1272,6 +1272,47 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 				})
 		})
 	}
+
+	t.Run("forwards destination conditional headers", func(t *testing.T) {
+		be := &BackendMock{
+			CopyObjectFunc: func(_ context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
+				assert.Equal(t, utils.GetStringPtr("dst-etag"), input.IfMatch)
+				assert.Equal(t, utils.GetStringPtr("*"), input.IfNoneMatch)
+				assert.Equal(t, utils.GetStringPtr("src-etag"), input.CopySourceIfMatch)
+				return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrPreconditionFailed)
+			},
+			GetBucketPolicyFunc: func(_ context.Context, _ string) ([]byte, error) {
+				return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
+			},
+			GetBucketVersioningFunc: func(_ context.Context, _ string) (s3response.GetBucketVersioningOutput, error) {
+				return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+			},
+			GetObjectLockConfigurationFunc: func(_ context.Context, _ string) ([]byte, error) {
+				return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+			},
+		}
+
+		ctrl := S3ApiController{be: be}
+		testController(t, ctrl.CopyObject, &Response{
+			Data: nilResp,
+			Headers: map[string]*string{
+				"x-amz-copy-source-version-id": nil,
+				"x-amz-version-id":             nil,
+			},
+			MetaOpts: &MetaOptions{
+				BucketOwner: "root",
+				EventName:   s3event.EventObjectCreatedCopy,
+			},
+		}, s3err.GetAPIError(s3err.ErrPreconditionFailed), ctxInputs{
+			locals: defaultLocals,
+			headers: map[string]string{
+				"X-Amz-Copy-Source":          "bucket/object",
+				"If-Match":                   `"dst-etag"`,
+				"If-None-Match":              "*",
+				"X-Amz-Copy-Source-If-Match": `"src-etag"`,
+			},
+		})
+	})
 }
 
 func TestS3ApiController_PutObject(t *testing.T) {

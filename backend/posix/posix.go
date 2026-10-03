@@ -4422,6 +4422,16 @@ func (p *Posix) checkPutPreconditions(bucket, object string, ifMatch, ifNoneMatc
 		return backend.EvaluateObjectPutPreconditions("", ifMatch, ifNoneMatch, false)
 	}
 
+	// A delete marker as the current version leaves the key without an
+	// object, although the entry keeps the etag of the version it hides.
+	isDel, err := p.isObjDeleteMarker(bucket, object)
+	if isDel || errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		return backend.EvaluateObjectPutPreconditions("", ifMatch, ifNoneMatch, false)
+	}
+	if err != nil {
+		return err
+	}
+
 	etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, meta.ErrNoSuchKey) {
 		return backend.EvaluateObjectPutPreconditions(string(etagBytes), ifMatch, ifNoneMatch, err == nil)
@@ -6423,6 +6433,20 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		return s3response.CopyObjectOutput{}, s3err.GetBucketErr(s3err.ErrInvalidBucketName, dstBucket)
 	}
 
+	err = p.doesBucketExist(dstBucket)
+	if err != nil {
+		return s3response.CopyObjectOutput{}, err
+	}
+
+	// The destination's conditional write headers are evaluated before the
+	// source is looked up. Like PutObject's own fast-fail check, this one is
+	// only advisory: the authoritative check is repeated under the object
+	// publish lock when the destination is written.
+	err = p.checkPutPreconditions(dstBucket, dstObject, input.IfMatch, input.IfNoneMatch)
+	if err != nil {
+		return s3response.CopyObjectOutput{}, err
+	}
+
 	err = p.doesBucketExist(srcBucket)
 	if err != nil {
 		return s3response.CopyObjectOutput{}, err
@@ -6465,11 +6489,6 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 			srcBucket = joinPathWithTrailer(p.versioningDir, srcBucket)
 			srcObject = joinPathWithTrailer(genObjVersionKey(srcObject), srcVersionId)
 		}
-	}
-
-	err = p.doesBucketExist(dstBucket)
-	if err != nil {
-		return s3response.CopyObjectOutput{}, err
 	}
 
 	objPath := joinPathWithTrailer(p.BucketPath(srcBucket), srcObject)
@@ -6562,6 +6581,20 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	// write, so only unversioned buckets are rewritten in place.
 	versioned := p.versioningEnabled() && vStatus != ""
 	if selfCopy && !versioned {
+		// The object is rewritten in place rather than through PutObject,
+		// so the authoritative precondition check is made here, under the
+		// publish lock that competing writers to the key take.
+		unlock, err := p.lockObjectPublish(ctx, dstBucket, dstObject)
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
+		defer unlock()
+
+		err = p.checkPutPreconditions(dstBucket, dstObject, input.IfMatch, input.IfNoneMatch)
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
+
 		// Delete the object metadata
 		err = p.meta.DeleteAttribute(dstBucket, dstObject, metadataHdr)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -6724,6 +6757,8 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 			ObjectLockRetainUntilDate: input.ObjectLockRetainUntilDate,
 			ObjectLockMode:            input.ObjectLockMode,
 			ObjectLockLegalHoldStatus: input.ObjectLockLegalHoldStatus,
+			IfMatch:                   input.IfMatch,
+			IfNoneMatch:               input.IfNoneMatch,
 		}
 
 		// load and pass the source object meta properties, if metadata directive is "COPY"

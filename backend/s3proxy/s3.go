@@ -1309,6 +1309,12 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInp
 	if input.GrantWriteACP != nil && *input.GrantWriteACP == "" {
 		input.GrantWriteACP = nil
 	}
+	if input.IfMatch != nil && *input.IfMatch == "" {
+		input.IfMatch = nil
+	}
+	if input.IfNoneMatch != nil && *input.IfNoneMatch == "" {
+		input.IfNoneMatch = nil
+	}
 	if input.ObjectLockRetainUntilDate != nil && (*input.ObjectLockRetainUntilDate).Equal(defTime) {
 		input.ObjectLockRetainUntilDate = nil
 	}
@@ -1365,6 +1371,8 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInp
 			GrantRead:                      input.GrantRead,
 			GrantReadACP:                   input.GrantReadACP,
 			GrantWriteACP:                  input.GrantWriteACP,
+			IfMatch:                        input.IfMatch,
+			IfNoneMatch:                    input.IfNoneMatch,
 			SSECustomerAlgorithm:           input.SSECustomerAlgorithm,
 			SSECustomerKey:                 input.SSECustomerKey,
 			SSECustomerKeyMD5:              input.SSECustomerKeyMD5,
