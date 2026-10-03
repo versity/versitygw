@@ -15,13 +15,23 @@ package auth
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -954,5 +964,191 @@ func TestIAMServiceStandaloneCapabilityInterfaces(t *testing.T) {
 	}
 	if _, ok := iam.(PrincipalResolver); !ok {
 		t.Error("standalone client must implement PrincipalResolver")
+	}
+	if _, ok := iam.(CertReloader); !ok {
+		t.Error("standalone client must implement CertReloader")
+	}
+}
+
+// TestIAMServiceStandaloneReloadCerts covers rotating the gateway's side of
+// the private mTLS channel: after ReloadCerts, requests present the reloaded
+// client certificate and verify the IAM service against the reloaded CA
+// bundle, and a reload that fails leaves the working client in place.
+func TestIAMServiceStandaloneReloadCerts(t *testing.T) {
+	oldCA := newStandaloneTestCA(t, "old-ca")
+	newCA := newStandaloneTestCA(t, "new-ca")
+
+	// The fake IAM service serves a certificate from whichever CA is current,
+	// and reports the CN of the client certificate each request arrived
+	// with as its server version.
+	var serverCert atomic.Pointer[tls.Certificate]
+	serverCert.Store(oldCA.issue(t, "iam"))
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return serverCert.Load(), nil
+		},
+		ClientAuth: tls.RequireAnyClientCert,
+	})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(private.ProtocolHeader, strconv.Itoa(private.ProtocolVersion))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(private.VersionResponse{
+			Protocol:      private.ProtocolVersion,
+			MinClient:     private.ProtocolVersion,
+			ServerVersion: r.TLS.PeerCertificates[0].Subject.CommonName,
+		})
+	})}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "client.crt")
+	keyFile := filepath.Join(dir, "client.key")
+	caFile := filepath.Join(dir, "ca.pem")
+	oldCA.writeFiles(t, "gateway-1", certFile, keyFile, caFile)
+
+	rootAcc := Account{Access: standaloneTestRootAccess, Secret: standaloneTestRootSecret, Role: RoleAdmin}
+	client, err := NewIAMServiceStandalone(rootAcc, IAMServiceStandaloneConfig{
+		Endpoint:      ln.Addr().String(),
+		ClientCert:    certFile,
+		ClientCertKey: keyFile,
+		ServerCA:      caFile,
+	})
+	if err != nil {
+		t.Fatalf("NewIAMServiceStandalone: %v", err)
+	}
+	t.Cleanup(func() { client.Shutdown() })
+
+	presented := func() string {
+		t.Helper()
+		var resp private.VersionResponse
+		if err := client.doPrivateRequest(private.VersionPath, struct{}{}, &resp); err != nil {
+			t.Fatalf("private request: %v", err)
+		}
+		return resp.ServerVersion
+	}
+
+	if cn := presented(); cn != "gateway-1" {
+		t.Fatalf("client cert CN = %q, want gateway-1", cn)
+	}
+
+	// Both sides move to a new CA, as a trust-bundle rotation does: the old
+	// client could no longer verify the IAM service at all.
+	serverCert.Store(newCA.issue(t, "iam"))
+	newCA.writeFiles(t, "gateway-2", certFile, keyFile, caFile)
+	if err := client.ReloadCerts(); err != nil {
+		t.Fatalf("ReloadCerts: %v", err)
+	}
+	if cn := presented(); cn != "gateway-2" {
+		t.Fatalf("client cert CN after reload = %q, want gateway-2", cn)
+	}
+
+	if err := os.WriteFile(keyFile, []byte("not a key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.ReloadCerts(); err == nil {
+		t.Fatal("ReloadCerts accepted an unreadable key")
+	}
+	if cn := presented(); cn != "gateway-2" {
+		t.Fatalf("client cert CN after failed reload = %q, want gateway-2", cn)
+	}
+}
+
+// TestIAMServiceStandaloneReloadCertsUnixSocket covers an endpoint with no
+// TLS material, where a SIGHUP must neither fail nor disturb the client.
+func TestIAMServiceStandaloneReloadCertsUnixSocket(t *testing.T) {
+	_, sock := standaloneTestServer(t)
+	client := newStandaloneTestClient(t, sock)
+
+	if err := client.ReloadCerts(); err != nil {
+		t.Fatalf("ReloadCerts: %v", err)
+	}
+	var resp private.VersionResponse
+	if err := client.doPrivateRequest(private.VersionPath, struct{}{}, &resp); err != nil {
+		t.Fatalf("private request after reload: %v", err)
+	}
+}
+
+type standaloneTestCA struct {
+	cert *x509.Certificate
+	key  *ecdsa.PrivateKey
+}
+
+func newStandaloneTestCA(t *testing.T, cn string) standaloneTestCA {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate CA key: %v", err)
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: cn},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create CA cert: %v", err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse CA cert: %v", err)
+	}
+
+	return standaloneTestCA{cert: cert, key: key}
+}
+
+// issue signs a certificate usable for either end of a connection to
+// 127.0.0.1.
+func (ca standaloneTestCA) issue(t *testing.T, cn string) *tls.Certificate {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate %s key: %v", cn, err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{CommonName: cn},
+		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1)},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, ca.cert, &key.PublicKey, ca.key)
+	if err != nil {
+		t.Fatalf("create %s cert: %v", cn, err)
+	}
+
+	return &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+}
+
+// writeFiles writes a fresh certificate for cn and its key, plus this CA's
+// own certificate as the peer-verification bundle.
+func (ca standaloneTestCA) writeFiles(t *testing.T, cn, certFile, keyFile, caFile string) {
+	t.Helper()
+
+	cert := ca.issue(t, cn)
+	keyDER, err := x509.MarshalPKCS8PrivateKey(cert.PrivateKey)
+	if err != nil {
+		t.Fatalf("marshal %s key: %v", cn, err)
+	}
+
+	for path, block := range map[string]*pem.Block{
+		certFile: {Type: "CERTIFICATE", Bytes: cert.Certificate[0]},
+		keyFile:  {Type: "PRIVATE KEY", Bytes: keyDER},
+		caFile:   {Type: "CERTIFICATE", Bytes: ca.cert.Raw},
+	} {
+		if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
 	}
 }

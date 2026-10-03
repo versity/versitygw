@@ -34,15 +34,30 @@ func SetupSignalHandler() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
-	go func() {
-		for sig := range sigs {
-			fmt.Fprintf(os.Stderr, "caught signal %v\n", sig)
-			switch sig {
-			case syscall.SIGINT, syscall.SIGTERM:
-				SigDone <- struct{}{}
-			case syscall.SIGHUP:
-				SigHup <- struct{}{}
-			}
+	go forwardSignals(sigs, SigDone, SigHup)
+}
+
+// forwardSignals relays sigs into done and hup without ever blocking. Every
+// subcommand installs this handler, but only some of them read hup, so a
+// blocking send would park this goroutine on the second SIGHUP and every
+// SIGINT/SIGTERM after it would be lost. A notification already pending
+// covers the new one: a reload re-reads everything it reloads, and shutdown
+// only needs to start once.
+func forwardSignals(sigs <-chan os.Signal, done, hup chan<- struct{}) {
+	for sig := range sigs {
+		fmt.Fprintf(os.Stderr, "caught signal %v\n", sig)
+		switch sig {
+		case syscall.SIGINT, syscall.SIGTERM:
+			notify(done)
+		case syscall.SIGHUP:
+			notify(hup)
 		}
-	}()
+	}
+}
+
+func notify(ch chan<- struct{}) {
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
 }

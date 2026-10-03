@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/versity/versitygw/iamapi/private"
@@ -41,6 +42,9 @@ const (
 	standaloneSigningService = sigv4auth.ServiceIAM
 
 	standaloneRequestTimeout = 10 * time.Second
+	// standaloneIdleConnTimeout also bounds how long a connection stranded
+	// on a client retired by ReloadCerts can stay open.
+	standaloneIdleConnTimeout = 90 * time.Second
 )
 
 // standaloneProbeWindow bounds how long NewIAMServiceStandalone waits for the
@@ -116,7 +120,9 @@ type IAMServiceStandaloneConfig struct {
 // are unsupported here for the same reason: mutating a user requires setting a secret, which must never
 // flow into this process — manage users via the IAM service's own control-plane API instead.
 type IAMServiceStandalone struct {
-	client  *http.Client
+	// client is replaced as a whole by ReloadCerts, since a transport's TLS
+	// config cannot change once it has dialed.
+	client  atomic.Pointer[http.Client]
 	baseURL string
 	access  string
 	secret  string
@@ -136,6 +142,7 @@ var (
 	_ PolicyEvaluator    = (*IAMServiceStandalone)(nil)
 	_ FixedBucketOwner   = (*IAMServiceStandalone)(nil)
 	_ PrincipalResolver  = (*IAMServiceStandalone)(nil)
+	_ CertReloader       = (*IAMServiceStandalone)(nil)
 )
 
 // NewIAMServiceStandalone constructs the standalone IAM service client.
@@ -161,13 +168,13 @@ func NewIAMServiceStandalone(rootAcc Account, cfg IAMServiceStandaloneConfig) (*
 	}
 
 	svc := &IAMServiceStandalone{
-		client:  client,
 		baseURL: baseURL,
 		access:  access,
 		secret:  secret,
 		rootAcc: rootAcc,
 		cfg:     cfg,
 	}
+	svc.client.Store(client)
 
 	if err := svc.probeProtocol(); err != nil {
 		return nil, err
@@ -257,6 +264,7 @@ func newStandaloneHTTPClient(cfg IAMServiceStandaloneConfig) (*http.Client, stri
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				return (&net.Dialer{}).DialContext(ctx, "unix", sock)
 			},
+			IdleConnTimeout: standaloneIdleConnTimeout,
 		}
 		// The host in this URL is never actually resolved/dialed — the
 		// DialContext override above always connects to the unix socket
@@ -283,8 +291,30 @@ func newStandaloneHTTPClient(cfg IAMServiceStandaloneConfig) (*http.Client, stri
 			Certificates: []tls.Certificate{cert},
 			RootCAs:      pool,
 		},
+		IdleConnTimeout: standaloneIdleConnTimeout,
 	}
 	return &http.Client{Transport: transport, Timeout: standaloneRequestTimeout}, "https://" + cfg.Endpoint, nil
+}
+
+// ReloadCerts implements CertReloader: it re-reads the client cert/key and
+// the server CA bundle into a new client, so requests from here on connect
+// with the rotated files. Requests already in flight finish on the old
+// client, whose connections close once idle instead of being reused. A unix
+// socket endpoint has no TLS material, so there is nothing to reload.
+func (s *IAMServiceStandalone) ReloadCerts() error {
+	if netutil.IsUnixSocketPath(s.cfg.Endpoint) {
+		return nil
+	}
+
+	client, _, err := newStandaloneHTTPClient(s.cfg)
+	if err != nil {
+		return err
+	}
+	s.client.Swap(client).CloseIdleConnections()
+
+	fmt.Printf("iam standalone client cert reloaded (cert: %s, key: %s, ca: %s)\n",
+		s.cfg.ClientCert, s.cfg.ClientCertKey, s.cfg.ServerCA)
+	return nil
 }
 
 // doPrivateRequest signs reqBody as this client's own identity (s.access/
@@ -332,7 +362,7 @@ func (s *IAMServiceStandalone) doPrivateRequest(path string, reqBody, respBody a
 	req.Header.Set("X-Amz-Date", result.AmzDate)
 	req.Header.Set("Authorization", result.AuthorizationHeader)
 
-	resp, err := s.client.Do(req)
+	resp, err := s.client.Load().Do(req)
 	if err != nil {
 		return fmt.Errorf("iam standalone: request to %s failed: %w", path, err)
 	}
@@ -726,6 +756,6 @@ func (s *IAMServiceStandalone) ListUserAccounts() ([]Account, error) {
 }
 
 func (s *IAMServiceStandalone) Shutdown() error {
-	s.client.CloseIdleConnections()
+	s.client.Load().CloseIdleConnections()
 	return nil
 }

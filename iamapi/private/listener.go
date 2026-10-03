@@ -37,7 +37,7 @@ func (p *PrivateAPI) ServeMultiPort(addrs []string, tlsOpts netutil.TLSOptions) 
 		return fmt.Errorf("no private listener addresses specified")
 	}
 
-	hasMTLS := tlsOpts.GetCertificate != nil && tlsOpts.ClientCAs != nil && tlsOpts.RequireClientCert
+	hasMTLS := tlsOpts.GetCertificate != nil && tlsOpts.GetClientCAs != nil && tlsOpts.RequireClientCert
 	for _, addr := range addrs {
 		if err := netutil.RequireSecureTransport(addr, hasMTLS); err != nil {
 			return err
