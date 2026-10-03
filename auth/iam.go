@@ -162,6 +162,14 @@ type IAMService interface {
 	Shutdown() error
 }
 
+// CertReloader is implemented by IAM backends that load TLS material from
+// files for their own outbound connections, so a SIGHUP can pick up rotated
+// certificates and CA bundles without a restart. On error the backend keeps
+// using what it had.
+type CertReloader interface {
+	ReloadCerts() error
+}
+
 var (
 	// ErrUserExists is returned when the user already exists
 	ErrUserExists = errors.New("user already exists")

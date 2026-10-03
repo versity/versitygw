@@ -289,12 +289,13 @@ func NewMultiAddrListener(network, address string, opts ListenerOptions) (net.Li
 }
 
 // TLSOptions configures the server-side tls.Config for
-// NewMultiAddrTLSListenerWithOptions. A non-nil ClientCAs enables mTLS:
-// inbound connections must present a certificate verified against that
-// pool
+// NewMultiAddrTLSListenerWithOptions. A non-nil GetClientCAs enables mTLS:
+// inbound connections must present a certificate verified against the pool
+// it returns, which is fetched again for every handshake so a reloaded CA
+// bundle applies to the next connection.
 type TLSOptions struct {
 	GetCertificate    func(*tls.ClientHelloInfo) (*tls.Certificate, error)
-	ClientCAs         *x509.CertPool
+	GetClientCAs      func() *x509.CertPool
 	RequireClientCert bool
 }
 
@@ -313,12 +314,25 @@ func NewMultiAddrTLSListenerWithOptions(network, address string, tlsOpts TLSOpti
 		MinVersion:     tls.VersionTLS12,
 		GetCertificate: tlsOpts.GetCertificate,
 	}
-	if tlsOpts.ClientCAs != nil {
-		config.ClientCAs = tlsOpts.ClientCAs
+	if tlsOpts.GetClientCAs != nil {
 		if tlsOpts.RequireClientCert {
 			config.ClientAuth = tls.RequireAndVerifyClientCert
 		} else {
 			config.ClientAuth = tls.VerifyClientCertIfGiven
+		}
+		// ClientCAs is read from the config a handshake runs with, so the
+		// pool is attached per handshake instead of once here.
+		base := config.Clone()
+		config.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
+			pool := tlsOpts.GetClientCAs()
+			if pool == nil {
+				// A nil ClientCAs verifies against the system roots, so an
+				// empty pool must refuse the client rather than fall back.
+				return nil, errors.New("no client CA pool loaded")
+			}
+			hsConfig := base.Clone()
+			hsConfig.ClientCAs = pool
+			return hsConfig, nil
 		}
 	}
 

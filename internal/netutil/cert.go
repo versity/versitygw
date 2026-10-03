@@ -16,6 +16,7 @@ package netutil
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"sync/atomic"
 )
@@ -39,6 +40,34 @@ func (cs *CertStorage) SetCertificate(certFile string, keyFile string) error {
 	}
 
 	cs.cert.Store(&cert)
+
+	return nil
+}
+
+// CAPoolStorage is CertStorage's counterpart for the CA bundle that verifies
+// a peer: it holds the pool loaded from a file, and SetCAPool swaps in a
+// reloaded one without disturbing connections already verified.
+type CAPoolStorage struct {
+	pool atomic.Pointer[x509.CertPool]
+}
+
+func NewCAPoolStorage() *CAPoolStorage {
+	return &CAPoolStorage{}
+}
+
+func (cs *CAPoolStorage) GetCAPool() *x509.CertPool {
+	return cs.pool.Load()
+}
+
+// SetCAPool loads caFile and makes it the current pool. On error the
+// previous pool stays in place.
+func (cs *CAPoolStorage) SetCAPool(caFile string) error {
+	pool, err := LoadCACertPool(caFile)
+	if err != nil {
+		return err
+	}
+
+	cs.pool.Store(pool)
 
 	return nil
 }

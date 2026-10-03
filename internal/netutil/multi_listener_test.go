@@ -20,8 +20,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"math/big"
 	"net"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -135,6 +139,129 @@ func TestMTLSListenerRejectsClientWithoutCert(t *testing.T) {
 	})
 }
 
+// TestMTLSListenerReloadsClientCAs covers rotating the CA bundle behind a
+// listener that is already serving: the next handshake must verify against
+// the reloaded pool, and a listener whose pool was never loaded must refuse
+// every client instead of falling back to the system roots.
+func TestMTLSListenerReloadsClientCAs(t *testing.T) {
+	oldCA := generateTestCA(t)
+	newCA := generateTestCA(t)
+	serverCert := issueTestCert(t, oldCA, "server")
+	oldClient := issueTestCert(t, oldCA, "client")
+	newClient := issueTestCert(t, newCA, "client")
+
+	serverPool := x509.NewCertPool()
+	serverPool.AddCert(oldCA.cert)
+
+	listen := func(t *testing.T, clientCAs *CAPoolStorage) (net.Listener, <-chan error) {
+		t.Helper()
+		ln, err := NewMultiAddrTLSListenerWithOptions("tcp", "127.0.0.1:0", TLSOptions{
+			GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+				return &serverCert, nil
+			},
+			GetClientCAs:      clientCAs.GetCAPool,
+			RequireClientCert: true,
+		}, ListenerOptions{})
+		if err != nil {
+			t.Fatalf("listen: %v", err)
+		}
+		t.Cleanup(func() { ln.Close() })
+
+		serverErrs := make(chan error, 8)
+		go func() {
+			for {
+				conn, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				serverErrs <- conn.(*tls.Conn).Handshake()
+				conn.Close()
+			}
+		}()
+		return ln, serverErrs
+	}
+
+	// Pinned to TLS 1.2 for the reason given in
+	// TestMTLSListenerRejectsClientWithoutCert.
+	handshake := func(ln net.Listener, clientCert tls.Certificate) error {
+		conn, err := tls.Dial("tcp", ln.Addr().String(), &tls.Config{
+			RootCAs:      serverPool,
+			MaxVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{clientCert},
+			ServerName:   "server",
+		})
+		if err != nil {
+			return err
+		}
+		return conn.Close()
+	}
+
+	t.Run("reloaded pool applies to the next handshake", func(t *testing.T) {
+		caFile := filepath.Join(t.TempDir(), "ca.pem")
+		writeTestCAFile(t, caFile, oldCA)
+		clientCAs := NewCAPoolStorage()
+		if err := clientCAs.SetCAPool(caFile); err != nil {
+			t.Fatalf("SetCAPool: %v", err)
+		}
+		ln, _ := listen(t, clientCAs)
+
+		if err := handshake(ln, oldClient); err != nil {
+			t.Fatalf("client from the loaded CA rejected: %v", err)
+		}
+		if err := handshake(ln, newClient); err == nil {
+			t.Fatal("client from a CA not yet loaded was accepted")
+		}
+
+		writeTestCAFile(t, caFile, newCA)
+		if err := clientCAs.SetCAPool(caFile); err != nil {
+			t.Fatalf("SetCAPool after rotation: %v", err)
+		}
+
+		if err := handshake(ln, newClient); err != nil {
+			t.Fatalf("client from the reloaded CA rejected: %v", err)
+		}
+		if err := handshake(ln, oldClient); err == nil {
+			t.Fatal("client from the rotated-out CA was still accepted")
+		}
+	})
+
+	t.Run("failed reload keeps the current pool", func(t *testing.T) {
+		caFile := filepath.Join(t.TempDir(), "ca.pem")
+		writeTestCAFile(t, caFile, oldCA)
+		clientCAs := NewCAPoolStorage()
+		if err := clientCAs.SetCAPool(caFile); err != nil {
+			t.Fatalf("SetCAPool: %v", err)
+		}
+		pool := clientCAs.GetCAPool()
+
+		if err := os.WriteFile(caFile, []byte("not a certificate"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := clientCAs.SetCAPool(caFile); err == nil {
+			t.Fatal("SetCAPool accepted a file with no certificates")
+		}
+		if clientCAs.GetCAPool() != pool {
+			t.Fatal("failed SetCAPool replaced the current pool")
+		}
+	})
+
+	t.Run("no pool loaded refuses every client", func(t *testing.T) {
+		ln, serverErrs := listen(t, NewCAPoolStorage())
+
+		if err := handshake(ln, oldClient); err == nil {
+			t.Fatal("handshake succeeded with no client CA pool loaded")
+		}
+		select {
+		case err := <-serverErrs:
+			if err == nil || !strings.Contains(err.Error(), "no client CA pool loaded") {
+				t.Fatalf("server handshake error = %v, want the missing-pool refusal", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("server never finished the handshake")
+		}
+	})
+}
+
 type testCA struct {
 	cert *x509.Certificate
 	key  *ecdsa.PrivateKey
@@ -233,5 +360,14 @@ func TestMultiListenerAddrs(t *testing.T) {
 	}
 	if ml.Addr().String() != want[0] {
 		t.Errorf("Addr() = %s, want the first address %s", ml.Addr(), want[0])
+	}
+}
+
+func writeTestCAFile(t *testing.T, path string, ca testCA) {
+	t.Helper()
+
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.cert.Raw})
+	if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
+		t.Fatalf("write CA file: %v", err)
 	}
 }

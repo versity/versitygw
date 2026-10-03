@@ -151,6 +151,7 @@ type standaloneIAMExtensions interface {
 	auth.PolicyEvaluator
 	auth.FixedBucketOwner
 	auth.PrincipalResolver
+	auth.CertReloader
 }
 
 type shutdownOnceService struct {

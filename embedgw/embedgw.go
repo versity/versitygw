@@ -519,8 +519,9 @@ type Config struct {
 	WebsiteNoTLS bool
 
 	// SigHup is an optional channel that signals the gateway to reload TLS
-	// certificates and rotate log files (equivalent to SIGHUP). When nil,
-	// this feature is disabled.
+	// certificates, including the IAM backend's own client certificates and
+	// CA bundle when it implements auth.CertReloader, and rotate log files
+	// (equivalent to SIGHUP). When nil, this feature is disabled.
 	SigHup <-chan struct{}
 
 	// S3Options are appended to the internally built s3api options before the
@@ -1210,6 +1211,11 @@ Loop:
 					debuglogger.InternalError(fmt.Errorf("wsSrv cert reload failed: %w", reloadErr))
 				} else {
 					fmt.Printf("wsSrv cert reloaded (cert: %s, key: %s)\n", wsTLSCert, wsTLSKey)
+				}
+			}
+			if reloader, ok := iam.(auth.CertReloader); ok {
+				if reloadErr := reloader.ReloadCerts(); reloadErr != nil {
+					debuglogger.InternalError(fmt.Errorf("iam cert reload failed: %w", reloadErr))
 				}
 			}
 		}

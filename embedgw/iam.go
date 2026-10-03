@@ -177,8 +177,9 @@ type IAMConfig struct {
 	// dashboard at an S3 gateway as well.
 	Region string
 
-	// SigHup is an optional channel that signals the IAM API to reload TLS
-	// certificates. When nil, this feature is disabled.
+	// SigHup is an optional channel that signals the IAM API to reload its
+	// TLS certificates and the private listener's client CA bundle. When
+	// nil, this feature is disabled.
 	SigHup <-chan struct{}
 
 	// Version, Build, and BuildTime are displayed in the startup banner.
@@ -221,12 +222,13 @@ type IAMConfig struct {
 
 // privateAPIServer is the standalone IAM service's private endpoint set
 // together with everything RunIAMAPI needs to serve and maintain it: the
-// TLS options ServeMultiPort will enforce, and the cert storage backing
-// them so a SIGHUP can swap in a rotated certificate.
+// TLS options ServeMultiPort will enforce, and the cert and client CA
+// storage backing them so a SIGHUP can swap in rotated files.
 type privateAPIServer struct {
 	api         *private.PrivateAPI
 	tlsOpts     netutil.TLSOptions
 	certStorage *netutil.CertStorage
+	clientCAs   *netutil.CAPoolStorage
 }
 
 // newPrivateAPI builds the standalone IAM service's private endpoint set
@@ -241,18 +243,19 @@ func newPrivateAPI(store storage.Storer, cfg *IAMConfig) (*privateAPIServer, err
 
 	var tlsOpts netutil.TLSOptions
 	var certStorage *netutil.CertStorage
+	var clientCAs *netutil.CAPoolStorage
 	if allSet {
 		certStorage = netutil.NewCertStorage()
 		if err := certStorage.SetCertificate(cfg.PrivateCertFile, cfg.PrivateKeyFile); err != nil {
 			return nil, fmt.Errorf("private listener: load certs: %w", err)
 		}
-		pool, err := netutil.LoadCACertPool(cfg.PrivateClientCAFile)
-		if err != nil {
+		clientCAs = netutil.NewCAPoolStorage()
+		if err := clientCAs.SetCAPool(cfg.PrivateClientCAFile); err != nil {
 			return nil, fmt.Errorf("private listener: %w", err)
 		}
 		tlsOpts = netutil.TLSOptions{
 			GetCertificate:    certStorage.GetCertificate,
-			ClientCAs:         pool,
+			GetClientCAs:      clientCAs.GetCAPool,
 			RequireClientCert: true,
 		}
 	}
@@ -280,7 +283,7 @@ func newPrivateAPI(store storage.Storer, cfg *IAMConfig) (*privateAPIServer, err
 		return nil, fmt.Errorf("init private IAM API: %w", err)
 	}
 
-	return &privateAPIServer{api: p, tlsOpts: tlsOpts, certStorage: certStorage}, nil
+	return &privateAPIServer{api: p, tlsOpts: tlsOpts, certStorage: certStorage, clientCAs: clientCAs}, nil
 }
 
 // iamWebUIGateways resolves the IAM service URLs the WebUI login page offers.
@@ -301,6 +304,19 @@ func iamWebUIGateways(cfg *IAMConfig) ([]string, error) {
 	}
 	sortGatewayURLs(gateways)
 	return gateways, nil
+}
+
+// iamWebUITLSFiles resolves the certificate the IAM-hosted WebUI serves: its
+// own when either file is set, otherwise the IAM API's, and none under
+// WebuiNoTLS.
+func iamWebUITLSFiles(cfg *IAMConfig) (certFile, keyFile string) {
+	if cfg.WebuiNoTLS {
+		return "", ""
+	}
+	if cfg.WebuiCertFile == "" && cfg.WebuiKeyFile == "" {
+		return cfg.CertFile, cfg.KeyFile
+	}
+	return cfg.WebuiCertFile, cfg.WebuiKeyFile
 }
 
 // newIAMWebUI builds the WebUI server hosted by the IAM service process. It
@@ -328,24 +344,19 @@ func newIAMWebUI(cfg *IAMConfig) (*webui.Server, error) {
 	}
 
 	var webOpts []webui.Option
-	if !cfg.WebuiNoTLS {
-		webTLSCert, webTLSKey := cfg.WebuiCertFile, cfg.WebuiKeyFile
-		if webTLSCert == "" && webTLSKey == "" {
-			webTLSCert, webTLSKey = cfg.CertFile, cfg.KeyFile
+	webTLSCert, webTLSKey := iamWebUITLSFiles(cfg)
+	if webTLSCert != "" || webTLSKey != "" {
+		if webTLSCert == "" {
+			return nil, fmt.Errorf("webui TLS key specified without cert file")
 		}
-		if webTLSCert != "" || webTLSKey != "" {
-			if webTLSCert == "" {
-				return nil, fmt.Errorf("webui TLS key specified without cert file")
-			}
-			if webTLSKey == "" {
-				return nil, fmt.Errorf("webui TLS cert specified without key file")
-			}
-			cs := netutil.NewCertStorage()
-			if err := cs.SetCertificate(webTLSCert, webTLSKey); err != nil {
-				return nil, fmt.Errorf("tls: load certs: %v", err)
-			}
-			webOpts = append(webOpts, webui.WithTLS(cs))
+		if webTLSKey == "" {
+			return nil, fmt.Errorf("webui TLS cert specified without key file")
 		}
+		cs := netutil.NewCertStorage()
+		if err := cs.SetCertificate(webTLSCert, webTLSKey); err != nil {
+			return nil, fmt.Errorf("tls: load certs: %v", err)
+		}
+		webOpts = append(webOpts, webui.WithTLS(cs))
 	}
 	if cfg.Quiet {
 		webOpts = append(webOpts, webui.WithQuiet())
@@ -560,6 +571,25 @@ Loop:
 					debuglogger.InternalError(fmt.Errorf("private iam api cert reload failed: %w", reloadErr))
 				} else {
 					fmt.Printf("private iam api cert reloaded (cert: %s, key: %s)\n", cfg.PrivateCertFile, cfg.PrivateKeyFile)
+				}
+			}
+			// a rotated CA bundle has to be picked up as well, or gateways
+			// presenting client certs from the new CA are refused.
+			if privateAPI != nil && privateAPI.clientCAs != nil {
+				reloadErr := privateAPI.clientCAs.SetCAPool(cfg.PrivateClientCAFile)
+				if reloadErr != nil {
+					debuglogger.InternalError(fmt.Errorf("private iam api client ca reload failed: %w", reloadErr))
+				} else {
+					fmt.Printf("private iam api client ca reloaded (ca: %s)\n", cfg.PrivateClientCAFile)
+				}
+			}
+			if webSrv != nil && webSrv.CertStorage != nil {
+				webTLSCert, webTLSKey := iamWebUITLSFiles(cfg)
+				reloadErr := webSrv.CertStorage.SetCertificate(webTLSCert, webTLSKey)
+				if reloadErr != nil {
+					debuglogger.InternalError(fmt.Errorf("webSrv cert reload failed: %w", reloadErr))
+				} else {
+					fmt.Printf("webSrv cert reloaded (cert: %s, key: %s)\n", webTLSCert, webTLSKey)
 				}
 			}
 		}
