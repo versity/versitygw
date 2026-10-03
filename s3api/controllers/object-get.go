@@ -239,6 +239,7 @@ func (c S3ApiController) GetObjectAcl(ctx fiber.Ctx) (*Response, error) {
 func (c S3ApiController) ListParts(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
+	ssec := utils.ExtractSSECHeaders(ctx)
 	uploadId := ctx.Query("uploadId")
 	partNumberMarker := ctx.Query("part-number-marker")
 	maxPartsStr := ctx.Query("max-parts")
@@ -287,11 +288,14 @@ func (c S3ApiController) ListParts(ctx fiber.Ctx) (*Response, error) {
 	}
 
 	res, err := c.be.ListParts(ctx.RequestCtx(), &s3.ListPartsInput{
-		Bucket:           &bucket,
-		Key:              &key,
-		UploadId:         &uploadId,
-		PartNumberMarker: &partNumberMarker,
-		MaxParts:         &maxParts,
+		Bucket:               &bucket,
+		Key:                  &key,
+		UploadId:             &uploadId,
+		PartNumberMarker:     &partNumberMarker,
+		MaxParts:             &maxParts,
+		SSECustomerAlgorithm: ssec.Algorithm,
+		SSECustomerKey:       ssec.Key,
+		SSECustomerKeyMD5:    ssec.KeyMD5,
 	})
 	return &Response{
 		Data: res,
@@ -344,6 +348,15 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	ssec, err := c.parseSSECHeaders(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	var maxParts *int32
 	// parse max parts
 	parsed, err := utils.ParseMaxLimiter(maxPartsStr, utils.LimiterTypeMaxParts)
@@ -363,11 +376,14 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 
 	res, err := c.be.GetObjectAttributes(ctx.RequestCtx(),
 		&s3.GetObjectAttributesInput{
-			Bucket:           &bucket,
-			Key:              &key,
-			PartNumberMarker: &partNumberMarker,
-			MaxParts:         maxParts,
-			VersionId:        &versionId,
+			SSECustomerAlgorithm: ssec.Algorithm,
+			SSECustomerKey:       ssec.Key,
+			SSECustomerKeyMD5:    ssec.KeyMD5,
+			Bucket:               &bucket,
+			Key:                  &key,
+			PartNumberMarker:     &partNumberMarker,
+			MaxParts:             maxParts,
+			VersionId:            &versionId,
 		})
 	if err != nil {
 		headers := map[string]*string{
@@ -475,6 +491,15 @@ func (c S3ApiController) GetObject(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	ssec, err := c.parseSSECHeaders(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	var partNumber *int32
 	if ctx.Request().URI().QueryArgs().Has("partNumber") {
 		if partNumberQuery < minPartNumber || partNumberQuery > int32(c.effectiveMpMaxParts()) {
@@ -511,16 +536,19 @@ func (c S3ApiController) GetObject(ctx fiber.Ctx) (*Response, error) {
 	conditionalHeaders := utils.ParsePreconditionHeaders(ctx)
 
 	res, err := c.be.GetObject(ctx.RequestCtx(), &s3.GetObjectInput{
-		Bucket:            &bucket,
-		Key:               &key,
-		Range:             &acceptRange,
-		IfMatch:           conditionalHeaders.IfMatch,
-		IfNoneMatch:       conditionalHeaders.IfNoneMatch,
-		IfModifiedSince:   conditionalHeaders.IfModSince,
-		IfUnmodifiedSince: conditionalHeaders.IfUnmodeSince,
-		VersionId:         &versionId,
-		ChecksumMode:      checksumMode,
-		PartNumber:        partNumber,
+		SSECustomerAlgorithm: ssec.Algorithm,
+		SSECustomerKey:       ssec.Key,
+		SSECustomerKeyMD5:    ssec.KeyMD5,
+		Bucket:               &bucket,
+		Key:                  &key,
+		Range:                &acceptRange,
+		IfMatch:              conditionalHeaders.IfMatch,
+		IfNoneMatch:          conditionalHeaders.IfNoneMatch,
+		IfModifiedSince:      conditionalHeaders.IfModSince,
+		IfUnmodifiedSince:    conditionalHeaders.IfUnmodeSince,
+		VersionId:            &versionId,
+		ChecksumMode:         checksumMode,
+		PartNumber:           partNumber,
 	})
 	if err != nil {
 		var headers map[string]*string
@@ -599,6 +627,8 @@ func (c S3ApiController) GetObject(ctx fiber.Ctx) (*Response, error) {
 			"x-amz-checksum-type":                 utils.ConvertToStringPtr(res.ChecksumType),
 			"x-amz-object-lock-retain-until-date": utils.FormatDatePtrToString(res.ObjectLockRetainUntilDate, time.RFC3339),
 			"Last-Modified":                       utils.FormatDatePtrToString(res.LastModified, timefmt),
+			"x-amz-server-side-encryption-customer-algorithm": res.SSECustomerAlgorithm,
+			"x-amz-server-side-encryption-customer-key-MD5":   res.SSECustomerKeyMD5,
 		},
 		MetaOpts: &MetaOptions{
 			ContentLength: utils.GetInt64(res.ContentLength),

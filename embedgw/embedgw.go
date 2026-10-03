@@ -147,6 +147,8 @@ type Config struct {
 	// bucket ACLs. PutBucketAcl returns AccessControlListNotSupported.
 	// Prefer bucket policies over ACLs when this is enabled.
 	DisableACLs bool
+	// DisableSSECTLS disables the HTTPS requirement for SSE-C requests.
+	DisableSSECTLS bool
 	// DisableStrictBucketNames allows legacy or non-DNS-compliant bucket
 	// names by skipping strict validation. By default, bucket name validation
 	// follows the rules described in the AWS S3 documentation.
@@ -791,6 +793,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	}
 	if cfg.DisableACLs {
 		opts = append(opts, s3api.WithDisableACL())
+	}
+	if cfg.DisableSSECTLS {
+		opts = append(opts, s3api.WithDisableSSECTLS())
 	}
 	if len(cfg.S3Options) > 0 {
 		opts = append(opts, cfg.S3Options...)

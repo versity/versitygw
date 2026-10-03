@@ -319,8 +319,10 @@ func TestS3ApiController_CreateMultipartUpload(t *testing.T) {
 				response: &Response{
 					Data: s3response.InitiateMultipartUploadResult{},
 					Headers: map[string]*string{
-						"x-amz-checksum-algorithm": utils.ConvertToStringPtr(types.ChecksumAlgorithmCrc32),
-						"x-amz-checksum-type":      utils.ConvertToStringPtr(types.ChecksumTypeComposite),
+						"x-amz-checksum-algorithm":                        utils.ConvertToStringPtr(types.ChecksumAlgorithmCrc32),
+						"x-amz-checksum-type":                             utils.ConvertToStringPtr(types.ChecksumTypeComposite),
+						"x-amz-server-side-encryption-customer-algorithm": nil,
+						"x-amz-server-side-encryption-customer-key-MD5":   nil,
 					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",

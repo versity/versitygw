@@ -346,6 +346,10 @@ func (s *ScoutFS) isBucketValid(bucket string) bool {
 }
 
 func (s *ScoutFS) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	bucket := *input.Bucket
 	object := *input.Key
 

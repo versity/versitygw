@@ -105,6 +105,7 @@ var (
 	websiteCertFile, websiteKeyFile               string
 	websiteNoTLS                                  bool
 	disableACLs                                   bool
+	disableSSECTLS                                bool
 	mpMaxParts                                    int
 	socketPerm                                    string
 )
@@ -449,6 +450,12 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_DISABLE_ACL"},
 			Destination: &disableACLs,
 			Aliases:     []string{"noacl"},
+		},
+		&cli.BoolFlag{
+			Name:        "disable-sse-c-tls-enforcement",
+			Usage:       "allow SSE-C requests over plaintext HTTP",
+			EnvVars:     []string{"VGW_DISABLE_SSE_C_TLS_ENFORCEMENT"},
+			Destination: &disableSSECTLS,
 		},
 		&cli.StringFlag{
 			Name:        "access-log",
@@ -962,6 +969,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		Readonly:                    readonly,
 		KeepAlive:                   keepAlive,
 		DisableACLs:                 disableACLs,
+		DisableSSECTLS:              disableSSECTLS,
 		DisableStrictBucketNames:    gwcli.DisableStrictBucketNames,
 		VirtualDomain:               virtualDomain,
 		HealthPath:                  healthPath,

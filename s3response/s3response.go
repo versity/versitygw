@@ -44,6 +44,9 @@ type PutObjectOutput struct {
 	ChecksumXXHASH128 *string
 	Size              *int64
 	ChecksumType      types.ChecksumType
+
+	SSECustomerAlgorithm *string
+	SSECustomerKeyMD5    *string
 }
 
 // Part describes part metadata.
@@ -427,7 +430,9 @@ type CopyPartResult struct {
 	ChecksumXXHASH128 *string
 
 	// not included in the body
-	CopySourceVersionId string `xml:"-"`
+	CopySourceVersionId  string  `xml:"-"`
+	SSECustomerAlgorithm *string `xml:"-"`
+	SSECustomerKeyMD5    *string `xml:"-"`
 }
 
 func (r CopyPartResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
@@ -507,6 +512,10 @@ type InitiateMultipartUploadResult struct {
 	Bucket   string
 	Key      string
 	UploadId string
+
+	// not included in the body
+	SSECustomerAlgorithm *string `xml:"-"`
+	SSECustomerKeyMD5    *string `xml:"-"`
 }
 
 type ListVersionsResult struct {
