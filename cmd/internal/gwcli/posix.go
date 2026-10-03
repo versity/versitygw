@@ -38,6 +38,7 @@ var (
 	sidecar              string
 	nometa               bool
 	forceNoTmpFile       bool
+	tmpSubdirs           int
 	forceNoCopyFileRange bool
 	forceNoObjLockFile   bool
 	objectLockMode       string
@@ -138,6 +139,13 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_DISABLE_OTMP"},
 				Destination: &forceNoTmpFile,
 			},
+			&cli.IntFlag{
+				Name:        "tmp-subdirs",
+				Usage:       "spread named temp files over this many .sgwtmp subdirectories to reduce rename contention when O_TMPFILE is not used (0 or 1 disables, max 256)",
+				EnvVars:     []string{"VGW_POSIX_TMP_SUBDIRS"},
+				Value:       1,
+				Destination: &tmpSubdirs,
+			},
 			&cli.BoolFlag{
 				Name:        "disable-copy-file-range",
 				Usage:       "explicitly copy multipart upload parts instead of using copy_file_range (which may hang with some NFS servers)",
@@ -208,6 +216,7 @@ func runPosix(ctx *cli.Context) error {
 		BucketLinks:          bucketlinks,
 		VersioningDir:        versioningDir,
 		ForceNoTmpFile:       forceNoTmpFile,
+		TmpSubdirs:           tmpSubdirs,
 		ForceNoCopyFileRange: forceNoCopyFileRange,
 		ForceNoObjLockFile:   forceNoObjLockFile,
 		ObjectLockMode:       posix.ObjectLockMode(objectLockMode),

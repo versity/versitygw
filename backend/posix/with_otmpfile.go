@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -38,6 +39,8 @@ import (
 const procfddir = "/proc/self/fd"
 
 type tmpfile struct {
+	permSet     bool
+	noFalloc    *atomic.Bool
 	f           *os.File
 	bucket      string
 	objname     string
@@ -115,10 +118,12 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	// configured mode explicitly so new objects get the same permissions
 	// regardless of umask, and regardless of whether this or the CreateTemp
 	// fallback path (which also chmods) created the file.
-	err = f.Chmod(p.newFilePerm)
-	if err != nil {
-		f.Close()
-		return nil, fmt.Errorf("set temp file mode: %w", err)
+	if !p.skipTempChmod {
+		err = f.Chmod(p.newFilePerm)
+		if err != nil {
+			f.Close()
+			return nil, fmt.Errorf("set temp file mode: %w", err)
+		}
 	}
 
 	tmp := &tmpfile{
@@ -153,6 +158,8 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 }
 
 func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, uid, gid int, doChown bool, allowODirect odirectPolicy) (*tmpfile, error) {
+	sum := sha256.Sum256([]byte(obj))
+	dir = p.tmpSubdir(dir)
 	err := p.mkdirAll(dir, uid, gid, doChown)
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
@@ -160,8 +167,7 @@ func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, u
 		}
 		return nil, fmt.Errorf("make temp dir: %w", err)
 	}
-	f, err := os.CreateTemp(dir,
-		fmt.Sprintf("%x.", sha256.Sum256([]byte(obj))))
+	f, err := p.createTempFile(dir, sum)
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
 			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
@@ -198,6 +204,8 @@ func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, u
 		f:           f,
 		bucket:      bucket,
 		objname:     obj,
+		permSet:     p.skipTempChmod,
+		noFalloc:    &p.fallocUnsupported,
 		useODirect:  useODirect,
 		size:        size,
 		doChown:     doChown,
@@ -223,9 +231,21 @@ func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, u
 	return tmp, nil
 }
 
+// fallocate keeps a once-detected EOPNOTSUPP/ENOSYS result cached so that
+// filesystems without fallocate support (e.g. Lustre) skip the syscall
+// instead of repeating a failing call on every upload.
 func (tmp *tmpfile) falloc() error {
+	if tmp.noFalloc != nil && tmp.noFalloc.Load() {
+		return nil
+	}
 	err := syscall.Fallocate(int(tmp.f.Fd()), 0, 0, tmp.size)
 	if err != nil {
+		if errors.Is(err, syscall.EOPNOTSUPP) || errors.Is(err, syscall.ENOSYS) {
+			if tmp.noFalloc != nil {
+				tmp.noFalloc.Store(true)
+			}
+			return nil
+		}
 		return fmt.Errorf("fallocate: %w", err)
 	}
 	return nil
@@ -352,8 +372,10 @@ func (tmp *tmpfile) link() error {
 func (tmp *tmpfile) fallbackLink() error {
 	tempname := tmp.f.Name()
 
-	// reset default file mode because CreateTemp uses 0600
-	tmp.f.Chmod(tmp.newFilePerm)
+	// reset default file mode when creation could not apply it directly
+	if !tmp.permSet {
+		tmp.f.Chmod(tmp.newFilePerm)
+	}
 
 	err := tmp.f.Close()
 	if err != nil {
