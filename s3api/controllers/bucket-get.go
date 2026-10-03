@@ -472,6 +472,11 @@ func (c S3ApiController) ListMultipartUploads(ctx fiber.Ctx) (*Response, error) 
 	keyMarker := ctx.Query("key-marker")
 	maxUploadsStr := ctx.Query("max-uploads")
 	uploadIdMarker := ctx.Query("upload-id-marker")
+	// upload-id-marker is ignored without a key-marker,
+	// so it shouldn't be echoed back in the response either
+	if keyMarker == "" {
+		uploadIdMarker = ""
+	}
 	// context keys
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
