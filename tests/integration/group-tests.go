@@ -110,6 +110,8 @@ func TestListBuckets(ts *TestState) {
 	ts.Sync(ListBuckets_as_admin)
 	ts.Sync(ListBuckets_with_prefix)
 	ts.Sync(ListBuckets_invalid_max_buckets)
+	ts.Sync(ListBuckets_invalid_bucket_region)
+	ts.Sync(ListBuckets_bucket_region)
 	ts.Sync(ListBuckets_truncated)
 	ts.Sync(ListBuckets_success)
 	ts.Sync(ListBuckets_empty_success)
@@ -2949,6 +2951,8 @@ func GetIntTests() IntTests {
 		"ListBuckets_as_admin":                                                             ListBuckets_as_admin,
 		"ListBuckets_with_prefix":                                                          ListBuckets_with_prefix,
 		"ListBuckets_invalid_max_buckets":                                                  ListBuckets_invalid_max_buckets,
+		"ListBuckets_invalid_bucket_region":                                                ListBuckets_invalid_bucket_region,
+		"ListBuckets_bucket_region":                                                        ListBuckets_bucket_region,
 		"ListBuckets_truncated":                                                            ListBuckets_truncated,
 		"ListBuckets_success":                                                              ListBuckets_success,
 		"ListBuckets_empty_success":                                                        ListBuckets_empty_success,

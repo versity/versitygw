@@ -100,6 +100,63 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid bucket region",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  validRes,
+				queries: map[string]string{
+					"bucket-region": "abc",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetInvalidArgBucketRegion("abc"),
+			},
+		},
+		{
+			name: "bucket region of another region",
+			input: testInput{
+				locals: defaultLocals,
+				beRes: s3response.ListAllMyBucketsResult{
+					Owner:   validRes.Owner,
+					Buckets: validRes.Buckets,
+					Prefix:  "te",
+					// a continuation token from the backend must not
+					// leak into the empty listing
+					ContinuationToken: "test",
+				},
+				queries: map[string]string{
+					"bucket-region": "us-west-2",
+					"prefix":        "te",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: s3response.ListAllMyBucketsResult{
+						Owner:  validRes.Owner,
+						Prefix: "te",
+					},
+				},
+			},
+		},
+		{
+			name: "bucket region of the gateway region",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  validRes,
+				queries: map[string]string{
+					"bucket-region": "us-east-1",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: validRes,
+				},
+			},
+		},
+		{
 			name: "backend returns error",
 			input: testInput{
 				locals: defaultLocals,

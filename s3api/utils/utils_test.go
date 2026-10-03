@@ -1539,6 +1539,31 @@ func TestHasAwsChunkedEncoding(t *testing.T) {
 	}
 }
 
+func TestIsValidBucketRegion(t *testing.T) {
+	tests := []struct {
+		name         string
+		bucketRegion string
+		region       string
+		want         bool
+	}{
+		{"gateway region", "us-east-1", "us-east-1", true},
+		{"custom gateway region", "my-region", "my-region", true},
+		{"another aws region", "eu-central-1", "us-east-1", true},
+		{"gov cloud region", "us-gov-west-1", "us-east-1", true},
+		{"iso partition region", "us-isob-east-1", "us-east-1", true},
+		{"sovereign cloud region", "eusc-de-east-1", "us-east-1", true},
+		{"gibberish", "abc", "us-east-1", false},
+		{"missing number", "us-east", "us-east-1", false},
+		{"uppercase", "US-EAST-1", "us-east-1", false},
+		{"custom region of another gateway", "my-region", "us-east-1", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsValidBucketRegion(tt.bucketRegion, tt.region))
+		})
+	}
+}
+
 func TestParseContentEncoding(t *testing.T) {
 	tests := []struct {
 		name            string
