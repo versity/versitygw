@@ -18,14 +18,18 @@ import (
 	"net/url"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/s3err"
 )
 
 // DecodeURL url path unescapes the request url for the gateway
-// to handle some special characters
+// to handle some special characters. A malformed escape sequence
+// is rejected with InvalidURI.
 func DecodeURL(ctx fiber.Ctx) error {
 	unescp, err := url.PathUnescape(string(ctx.Request().URI().PathOriginal()))
 	if err != nil {
-		return err
+		debuglogger.Logf("failed to unescape the request path: %v", err)
+		return s3err.GetAPIError(s3err.ErrInvalidURI)
 	}
 	ctx.Path(unescp)
 	return nil
