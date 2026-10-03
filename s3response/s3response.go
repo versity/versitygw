@@ -696,6 +696,8 @@ type CopyObjectInput struct {
 	GrantRead                      *string
 	GrantReadACP                   *string
 	GrantWriteACP                  *string
+	IfMatch                        *string
+	IfNoneMatch                    *string
 	SSECustomerAlgorithm           *string
 	SSECustomerKey                 *string
 	SSECustomerKeyMD5              *string

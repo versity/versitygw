@@ -716,6 +716,200 @@ func TestPosixCompleteMultipartUploadIfMatchRace(t *testing.T) {
 	}
 }
 
+func testCopy(p *Posix, bucket, src, dst string, directive types.MetadataDirective, ifMatch, ifNoneMatch *string) (string, error) {
+	res, err := p.CopyObject(context.Background(), s3response.CopyObjectInput{
+		Bucket:              &bucket,
+		Key:                 &dst,
+		CopySource:          aws.String(bucket + "/" + src),
+		ExpectedBucketOwner: aws.String(""),
+		ContentType:         aws.String("application/x-replaced"),
+		MetadataDirective:   directive,
+		IfMatch:             ifMatch,
+		IfNoneMatch:         ifNoneMatch,
+	})
+	if err != nil {
+		return "", err
+	}
+	return *res.CopyObjectResult.ETag, nil
+}
+
+func TestPosixConditionalCopyIfNoneMatchRace(t *testing.T) {
+	for mode, mkMeta := range metaModes(t) {
+		t.Run(mode, func(t *testing.T) {
+			p := newTestPosix(t, mkMeta)
+			p.copyObjectThreshold = 1 << 20
+			bucket := "testbucket"
+			key := "obj-copy-inm"
+			createTestBucket(t, p, bucket)
+
+			for i := range condRaceWriters {
+				_, err := testPut(p, bucket, fmt.Sprintf("src-%d", i), raceBody(i), nil, nil)
+				if err != nil {
+					t.Fatalf("source put: %v", err)
+				}
+			}
+
+			results := runRace(t, condRaceWriters, func(i int) (string, error) {
+				return testCopy(p, bucket, fmt.Sprintf("src-%d", i), key, "", nil, aws.String("*"))
+			})
+			winner := classifyRace(t, results)
+
+			data, etag := getTestObject(t, p, bucket, key)
+			if !bytes.Equal(data, raceBody(winner.idx)) {
+				t.Errorf("final object bytes do not match winning copier %d", winner.idx)
+			}
+			if etag != winner.etag {
+				t.Errorf("final etag %q does not match winner etag %q", etag, winner.etag)
+			}
+		})
+	}
+}
+
+func TestPosixConditionalCopyIfMatchRace(t *testing.T) {
+	for mode, mkMeta := range metaModes(t) {
+		t.Run(mode, func(t *testing.T) {
+			p := newTestPosix(t, mkMeta)
+			p.copyObjectThreshold = 1 << 20
+			bucket := "testbucket"
+			key := "obj-copy-ifmatch"
+			createTestBucket(t, p, bucket)
+
+			seed, err := testPut(p, bucket, key, []byte("seed"), nil, nil)
+			if err != nil {
+				t.Fatalf("seed put: %v", err)
+			}
+			curEtag := seed.ETag
+
+			for round := range 3 {
+				raceBody := func(i int) []byte {
+					return fmt.Appendf(nil, "round-%d-%s", round, raceBody(i))
+				}
+				for i := range condRaceWriters {
+					_, err := testPut(p, bucket, fmt.Sprintf("src-%d", i), raceBody(i), nil, nil)
+					if err != nil {
+						t.Fatalf("source put: %v", err)
+					}
+				}
+
+				results := runRace(t, condRaceWriters, func(i int) (string, error) {
+					return testCopy(p, bucket, fmt.Sprintf("src-%d", i), key, "",
+						aws.String(trimEtag(curEtag)), nil)
+				})
+				winner := classifyRace(t, results)
+
+				data, etag := getTestObject(t, p, bucket, key)
+				if !bytes.Equal(data, raceBody(winner.idx)) {
+					t.Errorf("round %d: final object bytes do not match winning copier %d",
+						round, winner.idx)
+				}
+				if etag != winner.etag {
+					t.Errorf("round %d: final etag %q does not match winner etag %q",
+						round, etag, winner.etag)
+				}
+				curEtag = winner.etag
+			}
+		})
+	}
+}
+
+func TestPosixConditionalCopySequential(t *testing.T) {
+	for mode, mkMeta := range metaModes(t) {
+		t.Run(mode, func(t *testing.T) {
+			p := newTestPosix(t, mkMeta)
+			p.copyObjectThreshold = 1 << 20
+			bucket := "testbucket"
+			createTestBucket(t, p, bucket)
+
+			src, err := testPut(p, bucket, "src", []byte("source"), nil, nil)
+			if err != nil {
+				t.Fatalf("source put: %v", err)
+			}
+			dst, err := testPut(p, bucket, "dst", []byte("destination"), nil, nil)
+			if err != nil {
+				t.Fatalf("destination put: %v", err)
+			}
+			stale := aws.String("deadbeefdeadbeefdeadbeefdeadbeef")
+
+			for _, tc := range []struct {
+				name        string
+				src         string
+				dst         string
+				directive   types.MetadataDirective
+				ifMatch     *string
+				ifNoneMatch *string
+				wantErr     error
+			}{
+				{"stale if-match", "src", "dst", "", stale, nil,
+					s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)},
+				{"if-none-match on existing destination", "src", "dst", "", nil, aws.String("*"),
+					s3err.GetPreconditionFailedErr(s3err.ConditionIfNoneMatch)},
+				{"if-match on missing destination", "src", "missing", "", aws.String(trimEtag(dst.ETag)), nil,
+					s3err.GetAPIError(s3err.ErrNoSuchKey)},
+				{"if-match wildcard", "src", "dst", "", aws.String("*"), nil,
+					s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageIfMatch)},
+				{"if-none-match etag", "src", "dst", "", nil, aws.String(trimEtag(dst.ETag)),
+					s3err.GetNotImplementedErr("If-None-Match", s3err.NmpAdditionalMessageIfNoneMatch)},
+				// the destination is evaluated before the source is looked up
+				{"missing source, stale if-match", "no-src", "dst", "", stale, nil,
+					s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)},
+				{"self copy without replace, stale if-match", "dst", "dst", "", stale, nil,
+					s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)},
+				// an unversioned self copy is rewritten in place
+				{"self copy, stale if-match", "dst", "dst", types.MetadataDirectiveReplace, stale, nil,
+					s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)},
+				{"self copy, if-none-match", "dst", "dst", types.MetadataDirectiveReplace, nil, aws.String("*"),
+					s3err.GetPreconditionFailedErr(s3err.ConditionIfNoneMatch)},
+			} {
+				_, err := testCopy(p, bucket, tc.src, tc.dst, tc.directive, tc.ifMatch, tc.ifNoneMatch)
+				if !errors.Is(err, tc.wantErr) || err.Error() != tc.wantErr.Error() {
+					t.Errorf("%s: want %v, got %v", tc.name, tc.wantErr, err)
+				}
+			}
+
+			// the failed copies left the destination untouched
+			data, etag := getTestObject(t, p, bucket, "dst")
+			if string(data) != "destination" || etag != dst.ETag {
+				t.Errorf("failed conditional copies modified the destination: %q, %q", data, etag)
+			}
+			head, err := p.HeadObject(context.Background(), &s3.HeadObjectInput{Bucket: &bucket, Key: aws.String("dst")})
+			if err != nil {
+				t.Fatalf("head destination: %v", err)
+			}
+			if getString(head.ContentType) == "application/x-replaced" {
+				t.Errorf("failed self copies replaced the destination metadata")
+			}
+			if _, err := os.Stat(p.ObjectPath(bucket, "missing")); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("failed copy created the missing destination: %v", err)
+			}
+
+			// matching preconditions let the copies through
+			_, err = testCopy(p, bucket, "dst", "dst", types.MetadataDirectiveReplace,
+				aws.String(trimEtag(dst.ETag)), nil)
+			if err != nil {
+				t.Fatalf("self copy with matching if-match: %v", err)
+			}
+			head, err = p.HeadObject(context.Background(), &s3.HeadObjectInput{Bucket: &bucket, Key: aws.String("dst")})
+			if err != nil {
+				t.Fatalf("head destination: %v", err)
+			}
+			if getString(head.ContentType) != "application/x-replaced" {
+				t.Errorf("self copy with matching if-match did not replace the metadata")
+			}
+			etag, err = testCopy(p, bucket, "src", "dst", "", aws.String(trimEtag(dst.ETag)), nil)
+			if err != nil {
+				t.Fatalf("copy with matching if-match: %v", err)
+			}
+			if etag != src.ETag {
+				t.Errorf("copy with matching if-match: etag %q, want %q", etag, src.ETag)
+			}
+			_, err = testCopy(p, bucket, "src", "created", "", nil, aws.String("*"))
+			if err != nil {
+				t.Fatalf("copy with if-none-match onto a missing destination: %v", err)
+			}
+		})
+	}
+}
+
 // strayTmpFiles returns any regular files under the bucket's temp dir that are
 // not part of the multipart staging area or the object lock directory. Any
 // leftover file here indicates a leaked staging tmpfile.

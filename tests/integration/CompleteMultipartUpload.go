@@ -1531,6 +1531,8 @@ func CompleteMultipartUpload_conditional_writes(s *S3Conf) error {
 			{obj, nil, etag, errNotImplemented},
 			{obj, nil, getPtr("*"), errPrecond},
 			{obj, etag, getPtr("*"), errNotImplemented},
+			{obj, getPtr("*"), nil, errNotImplemented},
+			{obj, getPtr("*"), getPtr("*"), errNotImplemented},
 			{obj, nil, nil, nil},
 
 			// precondition headers without quotes
@@ -1549,6 +1551,7 @@ func CompleteMultipartUpload_conditional_writes(s *S3Conf) error {
 			{"obj-6", nil, etag, errNotImplemented},
 			{"obj-7", nil, getPtr("*"), nil},
 			{"obj-8", etag, getPtr("*"), errNotImplemented},
+			{"obj-9", getPtr("*"), nil, errNotImplemented},
 		} {
 			res, err := putObjectWithData(0, &s3.PutObjectInput{
 				Bucket: &bucket,

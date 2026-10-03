@@ -251,12 +251,23 @@ func TestRequestConditionContextConditionalWriteKeys(t *testing.T) {
 			want:        map[string][]string{},
 		},
 		{
-			// A copy takes its preconditions from the
-			// X-Amz-Copy-Source-If-* headers, so a plain one is ignored.
-			// It is authorized as s3:PutObject like any other upload, so
-			// only the copy-source header separates the two.
-			name:        "a copy populates neither key",
+			// A copy's If-Match/If-None-Match are conditional writes on
+			// its destination, like a plain upload's.
+			name:        "a copy populates both keys",
 			method:      fiber.MethodPut,
+			ifMatch:     `"abc123"`,
+			ifNoneMatch: "*",
+			copySource:  "/src-bucket/src-key",
+			actions:     []Action{PutObjectAction},
+			want: map[string][]string{
+				"s3:if-match":      {"abc123"},
+				"s3:if-none-match": {"*"},
+			},
+		},
+		{
+			name:        "an upload part copy populates neither key",
+			method:      fiber.MethodPut,
+			query:       "partNumber=1&uploadId=abc",
 			ifMatch:     `"abc123"`,
 			ifNoneMatch: "*",
 			copySource:  "/src-bucket/src-key",
