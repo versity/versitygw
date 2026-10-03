@@ -1060,11 +1060,78 @@ func TestS3ApiController_ListObjectsV2(t *testing.T) {
 			{Key: utils.GetStringPtr("my-key")},
 		},
 	}
+	specialKeysV2Result := s3response.ListObjectsV2Result{
+		Name:                  utils.GetStringPtr("name"),
+		Prefix:                utils.GetStringPtr("dir/a+"),
+		StartAfter:            utils.GetStringPtr("dir/a+ 0"),
+		ContinuationToken:     utils.GetStringPtr("dir/a+ 1"),
+		NextContinuationToken: utils.GetStringPtr("dir/a+ b.txt"),
+		Delimiter:             utils.GetStringPtr("/"),
+		Contents: []s3response.Object{
+			{Key: utils.GetStringPtr("dir/a+ b.txt")},
+		},
+		CommonPrefixes: []types.CommonPrefix{
+			{Prefix: utils.GetStringPtr("dir/a+ c/")},
+		},
+	}
+	urlEncodedV2Result := s3response.ListObjectsV2Result{
+		Name:                  utils.GetStringPtr("name"),
+		Prefix:                utils.GetStringPtr("dir/a%2B"),
+		StartAfter:            utils.GetStringPtr("dir/a%2B+0"),
+		ContinuationToken:     utils.GetStringPtr("dir/a+ 1"),
+		NextContinuationToken: utils.GetStringPtr("dir/a+ b.txt"),
+		Delimiter:             utils.GetStringPtr("/"),
+		Contents: []s3response.Object{
+			{Key: utils.GetStringPtr("dir/a%2B+b.txt")},
+		},
+		CommonPrefixes: []types.CommonPrefix{
+			{Prefix: utils.GetStringPtr("dir/a%2B+c/")},
+		},
+		EncodingType: types.EncodingTypeUrl,
+	}
 	tests := []struct {
 		name   string
 		input  testInput
 		output testOutput
 	}{
+		{
+			name: "invalid encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"encoding-type": "gibberish",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"),
+			},
+		},
+		{
+			name: "url encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  specialKeysV2Result,
+				queries: map[string]string{
+					"encoding-type": "url",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: urlEncodedV2Result,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
 		{
 			name: "verify access fails",
 			input: testInput{
@@ -1176,11 +1243,76 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 	emptyMarker := ""
 	listResultEchoed := listResult
 	listResultEchoed.Marker = &emptyMarker
+	specialKeysResult := s3response.ListObjectsResult{
+		Name:       utils.GetStringPtr("name"),
+		Prefix:     utils.GetStringPtr("dir/a+"),
+		Marker:     utils.GetStringPtr("dir/a+ 0"),
+		NextMarker: utils.GetStringPtr("dir/a+ b.txt"),
+		Delimiter:  utils.GetStringPtr("/"),
+		Contents: []s3response.Object{
+			{Key: utils.GetStringPtr("dir/a+ b.txt")},
+		},
+		CommonPrefixes: []types.CommonPrefix{
+			{Prefix: utils.GetStringPtr("dir/a+ c/")},
+		},
+	}
+	urlEncodedResult := s3response.ListObjectsResult{
+		Name:       utils.GetStringPtr("name"),
+		Prefix:     utils.GetStringPtr("dir/a%2B"),
+		Marker:     utils.GetStringPtr("dir/a%2B+0"),
+		NextMarker: utils.GetStringPtr("dir/a%2B+b.txt"),
+		Delimiter:  utils.GetStringPtr("/"),
+		Contents: []s3response.Object{
+			{Key: utils.GetStringPtr("dir/a%2B+b.txt")},
+		},
+		CommonPrefixes: []types.CommonPrefix{
+			{Prefix: utils.GetStringPtr("dir/a%2B+c/")},
+		},
+		EncodingType: types.EncodingTypeUrl,
+	}
 	tests := []struct {
 		name   string
 		input  testInput
 		output testOutput
 	}{
+		{
+			name: "invalid encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"encoding-type": "gibberish",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"),
+			},
+		},
+		{
+			name: "url encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  specialKeysResult,
+				queries: map[string]string{
+					"encoding-type": "url",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: urlEncodedResult,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
 		{
 			name: "verify access fails",
 			input: testInput{
