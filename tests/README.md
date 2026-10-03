@@ -63,11 +63,11 @@ The bats tests have tag headers to allow the test user to easily find tests that
 
 To preserve buckets while running tests, set `RECREATE_BUCKETS` to `false`.  Two utility functions are included, if needed, to create, and delete buckets for this:  `tests/setup_static.sh` and `tests/remove_static.sh`.  Note that this creates a bucket with object lock enabled, and some tests may fail if the bucket being tested doesn't have object lock enabled.
 
-### ~~S3 Backend~~ (Not Working)
+### S3 Backend
 
-Instructions are mostly the same; however, testing with the S3 backend requires two S3 accounts.  Ideally, these are two real accounts, but one can also be a dummy account that versity uses internally.
+The S3 backend mode allows versitygw to connect to another S3 endpoint.  For example, this can connect to S3 itself in a proxy configuration, or can connect to another versitygw instance with a posix backend.  This can be done for applications such as local authorization, distributed deployments, testing, etc.
 
-To set up the latter:
+To set up S3 as a proxy:
 1. Create a new AWS profile with ID and key values set to dummy 20-char allcaps and 40-char alphabetical values respectively.
 2. In the `.secrets` file being used, create the fields `AWS_ACCESS_KEY_ID_TWO` and `AWS_SECRET_ACCESS_KEY_TWO`.  Set these values to the actual AWS ID and key.  
 3. Set the values for `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` the same dummy values set in the AWS profile, and set `AWS_PROFILE` to the profile you just created.
@@ -174,8 +174,6 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **TEST_LOG_FILE**:  log file location for these bats tests.
 
-**VERSITY_LOG_FILE**:  log file for versity application as it is tested by bats tests.
-
 **DIRECT**:  if **true**, bypass versitygw and run directly against s3, for comparison and validity-checking purposes.  This parameter disables the `AWS_ENDPOINT_URL` parameter.
 
 **DIRECT_DISPLAY_NAME**:  AWS ACL main user display name if **DIRECT** is set to **true**.
@@ -189,8 +187,6 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 **REMOVE_TEST_FILE_FOLDER**:  whether to delete the test file folder between tests, should be set to **true** unless checking the files after a single test, or not yet sure that the test folder is in a safe location to avoid deleting other files.
 
 **VERSIONING_DIR**:  where to put gateway file versioning info.
-
-**COMMAND_LOG**:  where to store list of client commands, which if using will be reported during test failures.
 
 **TIME_LOG**:  optional log to show duration of individual tests
 
@@ -235,6 +231,8 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 **WEBSITE**:  website port, if using versitygw website functionality
 
 **WEBSITE_ENDPOINT**:  website endpoint, if using versitygw website functionality
+
+**LOG_ON_SUCCESS**:  set to `false` to delete log on test success
 
 ## REST Scripts
 

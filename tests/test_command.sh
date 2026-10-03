@@ -41,3 +41,66 @@ source ./tests/setup_unit.sh
   run check_for_and_or_build_go_executable
   assert_success
 }
+
+@test "Run parallel test, print log on failure" {
+  local fake_bin log_folder matching_logs
+
+  fake_bin="$TEST_FILE_FOLDER/bin"
+  log_folder="$TEST_FILE_FOLDER/run_parallel_logs"
+  mkdir -p "$fake_bin" "$log_folder"
+
+  cat > "$fake_bin/docker" <<'EOF'
+#!/usr/bin/env bash
+
+if [ "$1" == "image" ] && [ "$2" == "inspect" ]; then
+  exit 0
+fi
+if [ "$1" == "run" ]; then
+  printf '%s\n' "fake test failure"
+  exit 7
+fi
+printf 'unexpected docker args: %s\n' "$*" >&2
+exit 1
+EOF
+  chmod +x "$fake_bin/docker"
+
+  PATH="$fake_bin:$PATH" run ./tests/run_parallel.sh "fake-image" "failing-suite" 1 "$log_folder" --use-tag
+
+  assert_success
+  assert_output -p "finished with status '7'"
+  assert_output -p "log file:  $log_folder/failing-suite-"
+  matching_logs=("$log_folder"/failing-suite-*.log)
+  assert [ -f "${matching_logs[0]}" ]
+}
+
+# tags: unit
+@test "run_parallel captures individual test log reference" {
+  local fake_bin log_folder log_contents matching_logs
+
+  fake_bin="$TEST_FILE_FOLDER/bin"
+  log_folder="$TEST_FILE_FOLDER/run_parallel_logs_$(uuidgen)"
+  mkdir -p "$fake_bin" "$log_folder"
+
+  cat > "$fake_bin/docker" <<'EOF'
+#!/usr/bin/env bash
+
+if [ "$1" == "image" ] && [ "$2" == "inspect" ]; then
+  exit 0
+fi
+if [ "$1" == "run" ]; then
+  printf '%s\n' "test log file: /home/tester/log/test-command-fake.log"
+  exit 7
+fi
+printf 'unexpected docker args: %s\n' "$*" >&2
+exit 1
+EOF
+  chmod +x "$fake_bin/docker"
+
+  PATH="$fake_bin:$PATH" run ./tests/run_parallel.sh "fake-image" "failing-suite" 1 "$log_folder"
+
+  assert_success
+  matching_logs=("$log_folder"/failing-suite-*.log)
+  assert [ -f "${matching_logs[0]}" ]
+  log_contents=$(<"${matching_logs[0]}")
+  [[ "$log_contents" == *"test log file: /home/tester/log/test-command-fake.log"* ]]
+}
