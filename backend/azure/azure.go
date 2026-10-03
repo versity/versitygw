@@ -364,6 +364,10 @@ func (az *Azure) DeleteBucketOwnershipControls(ctx context.Context, bucket strin
 }
 
 func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+	if backend.HasSSEC(po.SSECustomerAlgorithm, po.SSECustomerKey, po.SSECustomerKeyMD5) {
+		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	tags, err := backend.ParseObjectTags(getString(po.Tagging))
 	if err != nil {
 		return s3response.PutObjectOutput{}, err
@@ -492,6 +496,10 @@ func (az *Azure) DeleteBucketTagging(ctx context.Context, bucket string) error {
 }
 
 func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	client, err := az.getBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
 		return nil, err
@@ -615,6 +623,10 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 }
 
 func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	client, err := az.getBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
 		return nil, err
@@ -739,6 +751,10 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 }
 
 func (az *Azure) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return s3response.GetObjectAttributesResponse{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	data, err := az.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: input.Bucket,
 		Key:    input.Key,
@@ -1162,6 +1178,11 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 }
 
 func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5,
+		input.CopySourceSSECustomerAlgorithm, input.CopySourceSSECustomerKey, input.CopySourceSSECustomerKeyMD5) {
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	dstClient, err := az.getBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
 		return s3response.CopyObjectOutput{}, err
@@ -1440,6 +1461,10 @@ func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object, _ stri
 }
 
 func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	bucketLock, err := az.getContainerMetaData(ctx, *input.Bucket, string(keyBucketLock))
 	if err != nil {
 		return s3response.InitiateMultipartUploadResult{}, azureErrToS3Err(err)
@@ -1538,6 +1563,10 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.Cre
 
 // Each part is translated into an uncommitted block in a newly created blob in staging area
 func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	mpMeta, err := az.getMpMetadata(ctx, *input.Bucket, *input.Key, *input.UploadId)
 	if err != nil {
 		return nil, err
@@ -1595,6 +1624,11 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3
 }
 
 func (az *Azure) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5,
+		input.CopySourceSSECustomerAlgorithm, input.CopySourceSSECustomerKey, input.CopySourceSSECustomerKeyMD5) {
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
 		return s3response.CopyPartResult{}, err
@@ -1860,6 +1894,10 @@ func (az *Azure) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultip
 // It indicates the end of the multipart upload
 func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
 	var res s3response.CompleteMultipartUploadResult
+
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return res, "", s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
 
 	err := az.evaluateWritePreconditions(ctx, input.Bucket, input.Key, input.IfMatch, input.IfNoneMatch)
 	if err != nil {

@@ -265,6 +265,15 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	ssec, err := c.parseSSECFields(ctx, parsed.Fields)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	err = auth.CheckObjectAccess(ctx, bucket, acct, []types.ObjectIdentifier{{Key: &key}}, auth.BypassOverwrite, IsBucketPublic, c.be, c.iam, true)
 	if err != nil {
 		return &Response{
@@ -275,6 +284,9 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 	}
 
 	res, err := c.be.PutObject(ctx.RequestCtx(), s3response.PutObjectInput{
+		SSECustomerAlgorithm:    ssec.Algorithm,
+		SSECustomerKey:          ssec.Key,
+		SSECustomerKeyMD5:       ssec.KeyMD5,
 		Bucket:                  &bucket,
 		Key:                     &key,
 		ContentType:             &contentType,

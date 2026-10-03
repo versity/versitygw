@@ -267,6 +267,15 @@ func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	ssec, err := c.parseSSECHeaders(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	if partNumber < minPartNumber || partNumber > int32(c.effectiveMpMaxParts()) {
 		debuglogger.Logf("invalid part number: %d", partNumber)
 		return &Response{
@@ -323,39 +332,44 @@ func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 
 	res, err := c.be.UploadPart(ctx.RequestCtx(),
 		&s3.UploadPartInput{
-			Bucket:            &bucket,
-			Key:               &key,
-			UploadId:          &uploadId,
-			PartNumber:        &partNumber,
-			ContentLength:     &contentLength,
-			ContentMD5:        utils.GetStringPtr(ctx.Get("Content-MD5")),
-			Body:              body,
-			ChecksumAlgorithm: algorithm,
-			ChecksumCRC32:     utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32]),
-			ChecksumCRC32C:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32c]),
-			ChecksumSHA1:      utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha1]),
-			ChecksumSHA256:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha256]),
-			ChecksumCRC64NVME: utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc64nvme]),
-			ChecksumSHA512:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha512]),
-			ChecksumMD5:       utils.GetStringPtr(checksums[types.ChecksumAlgorithmMd5]),
-			ChecksumXXHASH64:  utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash64]),
-			ChecksumXXHASH3:   utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash3]),
-			ChecksumXXHASH128: utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash128]),
+			Bucket:               &bucket,
+			Key:                  &key,
+			UploadId:             &uploadId,
+			PartNumber:           &partNumber,
+			ContentLength:        &contentLength,
+			SSECustomerAlgorithm: ssec.Algorithm,
+			SSECustomerKey:       ssec.Key,
+			SSECustomerKeyMD5:    ssec.KeyMD5,
+			ContentMD5:           utils.GetStringPtr(ctx.Get("Content-MD5")),
+			Body:                 body,
+			ChecksumAlgorithm:    algorithm,
+			ChecksumCRC32:        utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32]),
+			ChecksumCRC32C:       utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32c]),
+			ChecksumSHA1:         utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha1]),
+			ChecksumSHA256:       utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha256]),
+			ChecksumCRC64NVME:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc64nvme]),
+			ChecksumSHA512:       utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha512]),
+			ChecksumMD5:          utils.GetStringPtr(checksums[types.ChecksumAlgorithmMd5]),
+			ChecksumXXHASH64:     utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash64]),
+			ChecksumXXHASH3:      utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash3]),
+			ChecksumXXHASH128:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash128]),
 		})
 	var headers map[string]*string
 	if err == nil {
 		headers = map[string]*string{
-			"ETag":                     res.ETag,
-			"x-amz-checksum-crc32":     res.ChecksumCRC32,
-			"x-amz-checksum-crc32c":    res.ChecksumCRC32C,
-			"x-amz-checksum-crc64nvme": res.ChecksumCRC64NVME,
-			"x-amz-checksum-sha1":      res.ChecksumSHA1,
-			"x-amz-checksum-sha256":    res.ChecksumSHA256,
-			"x-amz-checksum-sha512":    res.ChecksumSHA512,
-			"x-amz-checksum-md5":       res.ChecksumMD5,
-			"x-amz-checksum-xxhash64":  res.ChecksumXXHASH64,
-			"x-amz-checksum-xxhash3":   res.ChecksumXXHASH3,
-			"x-amz-checksum-xxhash128": res.ChecksumXXHASH128,
+			"ETag":                                            res.ETag,
+			"x-amz-checksum-crc32":                            res.ChecksumCRC32,
+			"x-amz-checksum-crc32c":                           res.ChecksumCRC32C,
+			"x-amz-checksum-crc64nvme":                        res.ChecksumCRC64NVME,
+			"x-amz-checksum-sha1":                             res.ChecksumSHA1,
+			"x-amz-checksum-sha256":                           res.ChecksumSHA256,
+			"x-amz-checksum-sha512":                           res.ChecksumSHA512,
+			"x-amz-checksum-md5":                              res.ChecksumMD5,
+			"x-amz-checksum-xxhash64":                         res.ChecksumXXHASH64,
+			"x-amz-checksum-xxhash3":                          res.ChecksumXXHASH3,
+			"x-amz-checksum-xxhash128":                        res.ChecksumXXHASH128,
+			"x-amz-server-side-encryption-customer-algorithm": res.SSECustomerAlgorithm,
+			"x-amz-server-side-encryption-customer-key-MD5":   res.SSECustomerKeyMD5,
 		}
 	}
 	return &Response{
@@ -410,6 +424,23 @@ func (c S3ApiController) UploadPartCopy(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	ssec, err := c.parseSSECHeaders(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+	srcSSEC, err := c.parseCopySourceSSECHeaders(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	if len(ctx.Request().Body()) != 0 {
 		debuglogger.Logf("expected empty request body")
 		return &Response{
@@ -432,22 +463,30 @@ func (c S3ApiController) UploadPartCopy(ctx fiber.Ctx) (*Response, error) {
 
 	resp, err := c.be.UploadPartCopy(ctx.RequestCtx(),
 		&s3.UploadPartCopyInput{
-			Bucket:                      &bucket,
-			Key:                         &key,
-			CopySource:                  &copySource,
-			PartNumber:                  &partNumber,
-			UploadId:                    &uploadId,
-			CopySourceRange:             &copySrcRange,
-			CopySourceIfMatch:           preconditionHdrs.IfMatch,
-			CopySourceIfNoneMatch:       preconditionHdrs.IfNoneMatch,
-			CopySourceIfModifiedSince:   preconditionHdrs.IfModSince,
-			CopySourceIfUnmodifiedSince: preconditionHdrs.IfUnmodeSince,
-			ExpectedSourceBucketOwner:   &expectedSrcBucketOwnerUPC,
+			SSECustomerAlgorithm:           ssec.Algorithm,
+			SSECustomerKey:                 ssec.Key,
+			SSECustomerKeyMD5:              ssec.KeyMD5,
+			CopySourceSSECustomerAlgorithm: srcSSEC.Algorithm,
+			CopySourceSSECustomerKey:       srcSSEC.Key,
+			CopySourceSSECustomerKeyMD5:    srcSSEC.KeyMD5,
+			Bucket:                         &bucket,
+			Key:                            &key,
+			CopySource:                     &copySource,
+			PartNumber:                     &partNumber,
+			UploadId:                       &uploadId,
+			CopySourceRange:                &copySrcRange,
+			CopySourceIfMatch:              preconditionHdrs.IfMatch,
+			CopySourceIfNoneMatch:          preconditionHdrs.IfNoneMatch,
+			CopySourceIfModifiedSince:      preconditionHdrs.IfModSince,
+			CopySourceIfUnmodifiedSince:    preconditionHdrs.IfUnmodeSince,
+			ExpectedSourceBucketOwner:      &expectedSrcBucketOwnerUPC,
 		})
 	var headers map[string]*string
-	if err == nil && resp.CopySourceVersionId != "" {
+	if err == nil {
 		headers = map[string]*string{
-			"x-amz-copy-source-version-id": &resp.CopySourceVersionId,
+			"x-amz-copy-source-version-id":                    &resp.CopySourceVersionId,
+			"x-amz-server-side-encryption-customer-algorithm": resp.SSECustomerAlgorithm,
+			"x-amz-server-side-encryption-customer-key-MD5":   resp.SSECustomerKeyMD5,
 		}
 	}
 	return &Response{
@@ -562,6 +601,23 @@ func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	ssec, err := c.parseSSECHeaders(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+	srcSSEC, err := c.parseCopySourceSSECHeaders(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	if len(ctx.Request().Body()) != 0 {
 		debuglogger.Logf("expected empty request body")
 		return &Response{
@@ -651,31 +707,37 @@ func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 
 	res, err := c.be.CopyObject(ctx.RequestCtx(),
 		s3response.CopyObjectInput{
-			Bucket:                      &bucket,
-			Key:                         &key,
-			ContentType:                 &contentType,
-			ContentDisposition:          &contentDisposition,
-			ContentEncoding:             &contentEncoding,
-			ContentLanguage:             &contentLanguage,
-			CacheControl:                &cacheControl,
-			Expires:                     &expires,
-			WebsiteRedirectLocation:     &websiteRedirectLocation,
-			Tagging:                     &tagging,
-			TaggingDirective:            taggingDirective,
-			CopySource:                  &copySource,
-			CopySourceIfMatch:           preconditionHdrs.IfMatch,
-			CopySourceIfNoneMatch:       preconditionHdrs.IfNoneMatch,
-			CopySourceIfModifiedSince:   preconditionHdrs.IfModSince,
-			CopySourceIfUnmodifiedSince: preconditionHdrs.IfUnmodeSince,
-			ExpectedBucketOwner:         &acct.Access,
-			ExpectedSourceBucketOwner:   &expectedSrcBucketOwner,
-			Metadata:                    metadata,
-			MetadataDirective:           metaDirective,
-			StorageClass:                types.StorageClass(storageClass),
-			ChecksumAlgorithm:           checksumAlgorithm,
-			ObjectLockRetainUntilDate:   &objLock.RetainUntilDate,
-			ObjectLockLegalHoldStatus:   objLock.LegalHoldStatus,
-			ObjectLockMode:              objLock.ObjectLockMode,
+			SSECustomerAlgorithm:           ssec.Algorithm,
+			SSECustomerKey:                 ssec.Key,
+			SSECustomerKeyMD5:              ssec.KeyMD5,
+			CopySourceSSECustomerAlgorithm: srcSSEC.Algorithm,
+			CopySourceSSECustomerKey:       srcSSEC.Key,
+			CopySourceSSECustomerKeyMD5:    srcSSEC.KeyMD5,
+			Bucket:                         &bucket,
+			Key:                            &key,
+			ContentType:                    &contentType,
+			ContentDisposition:             &contentDisposition,
+			ContentEncoding:                &contentEncoding,
+			ContentLanguage:                &contentLanguage,
+			CacheControl:                   &cacheControl,
+			Expires:                        &expires,
+			WebsiteRedirectLocation:        &websiteRedirectLocation,
+			Tagging:                        &tagging,
+			TaggingDirective:               taggingDirective,
+			CopySource:                     &copySource,
+			CopySourceIfMatch:              preconditionHdrs.IfMatch,
+			CopySourceIfNoneMatch:          preconditionHdrs.IfNoneMatch,
+			CopySourceIfModifiedSince:      preconditionHdrs.IfModSince,
+			CopySourceIfUnmodifiedSince:    preconditionHdrs.IfUnmodeSince,
+			ExpectedBucketOwner:            &acct.Access,
+			ExpectedSourceBucketOwner:      &expectedSrcBucketOwner,
+			Metadata:                       metadata,
+			MetadataDirective:              metaDirective,
+			StorageClass:                   types.StorageClass(storageClass),
+			ChecksumAlgorithm:              checksumAlgorithm,
+			ObjectLockRetainUntilDate:      &objLock.RetainUntilDate,
+			ObjectLockLegalHoldStatus:      objLock.LegalHoldStatus,
+			ObjectLockMode:                 objLock.ObjectLockMode,
 		})
 
 	var etag *string
@@ -685,8 +747,10 @@ func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 
 	return &Response{
 		Headers: map[string]*string{
-			"x-amz-version-id":             res.VersionId,
-			"x-amz-copy-source-version-id": res.CopySourceVersionId,
+			"x-amz-version-id":                                res.VersionId,
+			"x-amz-copy-source-version-id":                    res.CopySourceVersionId,
+			"x-amz-server-side-encryption-customer-algorithm": res.SSECustomerAlgorithm,
+			"x-amz-server-side-encryption-customer-key-MD5":   res.SSECustomerKeyMD5,
 		},
 		Data: res.CopyObjectResult,
 		MetaOpts: &MetaOptions{
@@ -739,6 +803,15 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 			Actions:         actions,
 			IsPublicRequest: IsBucketPublic,
 		})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	ssec, err := c.parseSSECHeaders(ctx)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -853,6 +926,9 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 
 	res, err := c.be.PutObject(ctx.RequestCtx(),
 		s3response.PutObjectInput{
+			SSECustomerAlgorithm:      ssec.Algorithm,
+			SSECustomerKey:            ssec.Key,
+			SSECustomerKeyMD5:         ssec.KeyMD5,
 			Bucket:                    &bucket,
 			Key:                       &key,
 			ContentLength:             &contentLength,
@@ -886,20 +962,22 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 		})
 	return &Response{
 		Headers: map[string]*string{
-			"ETag":                     &res.ETag,
-			"x-amz-checksum-crc32":     res.ChecksumCRC32,
-			"x-amz-checksum-crc32c":    res.ChecksumCRC32C,
-			"x-amz-checksum-crc64nvme": res.ChecksumCRC64NVME,
-			"x-amz-checksum-sha1":      res.ChecksumSHA1,
-			"x-amz-checksum-sha256":    res.ChecksumSHA256,
-			"x-amz-checksum-sha512":    res.ChecksumSHA512,
-			"x-amz-checksum-md5":       res.ChecksumMD5,
-			"x-amz-checksum-xxhash64":  res.ChecksumXXHASH64,
-			"x-amz-checksum-xxhash3":   res.ChecksumXXHASH3,
-			"x-amz-checksum-xxhash128": res.ChecksumXXHASH128,
-			"x-amz-checksum-type":      utils.ConvertToStringPtr(res.ChecksumType),
-			"x-amz-version-id":         &res.VersionID,
-			"x-amz-object-size":        utils.ConvertPtrToStringPtr(res.Size),
+			"ETag":                                            &res.ETag,
+			"x-amz-checksum-crc32":                            res.ChecksumCRC32,
+			"x-amz-checksum-crc32c":                           res.ChecksumCRC32C,
+			"x-amz-checksum-crc64nvme":                        res.ChecksumCRC64NVME,
+			"x-amz-checksum-sha1":                             res.ChecksumSHA1,
+			"x-amz-checksum-sha256":                           res.ChecksumSHA256,
+			"x-amz-checksum-sha512":                           res.ChecksumSHA512,
+			"x-amz-checksum-md5":                              res.ChecksumMD5,
+			"x-amz-checksum-xxhash64":                         res.ChecksumXXHASH64,
+			"x-amz-checksum-xxhash3":                          res.ChecksumXXHASH3,
+			"x-amz-checksum-xxhash128":                        res.ChecksumXXHASH128,
+			"x-amz-checksum-type":                             utils.ConvertToStringPtr(res.ChecksumType),
+			"x-amz-version-id":                                &res.VersionID,
+			"x-amz-object-size":                               utils.ConvertPtrToStringPtr(res.Size),
+			"x-amz-server-side-encryption-customer-algorithm": res.SSECustomerAlgorithm,
+			"x-amz-server-side-encryption-customer-key-MD5":   res.SSECustomerKeyMD5,
 		},
 		MetaOpts: &MetaOptions{
 			ContentLength: contentLength,

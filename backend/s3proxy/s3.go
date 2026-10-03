@@ -470,9 +470,11 @@ func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input s3response.Cr
 	}
 
 	return s3response.InitiateMultipartUploadResult{
-		Bucket:   *out.Bucket,
-		Key:      *out.Key,
-		UploadId: *out.UploadId,
+		Bucket:               *out.Bucket,
+		Key:                  *out.Key,
+		UploadId:             *out.UploadId,
+		SSECustomerAlgorithm: out.SSECustomerAlgorithm,
+		SSECustomerKeyMD5:    out.SSECustomerKeyMD5,
 	}, nil
 }
 
@@ -873,6 +875,9 @@ func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyIn
 		ChecksumXXHASH64:  output.CopyPartResult.ChecksumXXHASH64,
 		ChecksumXXHASH3:   output.CopyPartResult.ChecksumXXHASH3,
 		ChecksumXXHASH128: output.CopyPartResult.ChecksumXXHASH128,
+
+		SSECustomerAlgorithm: output.SSECustomerAlgorithm,
+		SSECustomerKeyMD5:    output.SSECustomerKeyMD5,
 	}, nil
 }
 
@@ -1056,6 +1061,9 @@ func (s *S3Proxy) PutObject(ctx context.Context, input s3response.PutObjectInput
 		ChecksumXXHASH3:   output.ChecksumXXHASH3,
 		ChecksumXXHASH128: output.ChecksumXXHASH128,
 		Size:              output.Size,
+
+		SSECustomerAlgorithm: output.SSECustomerAlgorithm,
+		SSECustomerKeyMD5:    output.SSECustomerKeyMD5,
 	}, nil
 }
 

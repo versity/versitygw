@@ -181,6 +181,15 @@ func (c S3ApiController) CreateMultipartUpload(ctx fiber.Ctx) (*Response, error)
 		}, err
 	}
 
+	ssec, err := c.parseSSECHeaders(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	metadata, err := utils.GetUserMetaData(&ctx.Request().Header)
 	if err != nil {
 		return &Response{
@@ -230,6 +239,9 @@ func (c S3ApiController) CreateMultipartUpload(ctx fiber.Ctx) (*Response, error)
 
 	res, err := c.be.CreateMultipartUpload(ctx.RequestCtx(),
 		s3response.CreateMultipartUploadInput{
+			SSECustomerAlgorithm:      ssec.Algorithm,
+			SSECustomerKey:            ssec.Key,
+			SSECustomerKeyMD5:         ssec.KeyMD5,
 			Bucket:                    &bucket,
 			Key:                       &key,
 			Tagging:                   &tagging,
@@ -251,8 +263,10 @@ func (c S3ApiController) CreateMultipartUpload(ctx fiber.Ctx) (*Response, error)
 	var headers map[string]*string
 	if err == nil {
 		headers = map[string]*string{
-			"x-amz-checksum-algorithm": utils.ConvertToStringPtr(checksumAlgorithm),
-			"x-amz-checksum-type":      utils.ConvertToStringPtr(checksumType),
+			"x-amz-checksum-algorithm":                        utils.ConvertToStringPtr(checksumAlgorithm),
+			"x-amz-checksum-type":                             utils.ConvertToStringPtr(checksumType),
+			"x-amz-server-side-encryption-customer-algorithm": res.SSECustomerAlgorithm,
+			"x-amz-server-side-encryption-customer-key-MD5":   res.SSECustomerKeyMD5,
 		}
 	}
 	return &Response{
@@ -287,6 +301,15 @@ func (c S3ApiController) CompleteMultipartUpload(ctx fiber.Ctx) (*Response, erro
 			Actions:         []auth.Action{auth.PutObjectAction},
 			IsPublicRequest: isBucketPublic,
 		})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	ssec, err := c.parseSSECHeaders(ctx)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -370,9 +393,12 @@ func (c S3ApiController) CompleteMultipartUpload(ctx fiber.Ctx) (*Response, erro
 
 	res, versid, err := c.be.CompleteMultipartUpload(ctx.RequestCtx(),
 		&s3.CompleteMultipartUploadInput{
-			Bucket:   &bucket,
-			Key:      &key,
-			UploadId: &uploadId,
+			SSECustomerAlgorithm: ssec.Algorithm,
+			SSECustomerKey:       ssec.Key,
+			SSECustomerKeyMD5:    ssec.KeyMD5,
+			Bucket:               &bucket,
+			Key:                  &key,
+			UploadId:             &uploadId,
 			MultipartUpload: &types.CompletedMultipartUpload{
 				Parts: body.Parts,
 			},

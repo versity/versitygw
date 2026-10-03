@@ -205,6 +205,8 @@ func TestPutObject(ts *TestState) {
 		ts.Run(PutObject_with_metadata)
 	}
 	ts.Run(PutObject_success)
+	ts.Run(PutObject_sse_c_invalid_headers)
+	ts.Run(PutObject_unsupported_sse_not_implemented)
 	ts.Run(PutObject_default_content_type)
 	ts.Run(PutObject_overwrite_resets_attributes)
 	ts.Run(PutObject_overwrite_multipart_object)
@@ -238,6 +240,7 @@ func TestHeadObject(ts *TestState) {
 		ts.Run(HeadObject_ranged_with_checksum_mode)
 	}
 	ts.Run(HeadObject_success)
+	ts.Run(HeadObject_sse_c_invalid_headers)
 	ts.Run(HeadObject_overrides_success)
 	ts.Run(HeadObject_overrides_presign_success)
 	ts.Run(HeadObject_overrides_fail_public)
@@ -417,6 +420,7 @@ func TestCopyObject(ts *TestState) {
 	}
 	ts.Run(CopyObject_with_special_characters)
 	ts.Run(CopyObject_success)
+	ts.Run(CopyObject_sse_c_invalid_copy_source_headers)
 	ts.Run(CopyObject_cross_bucket_server_side_copy)
 	ts.Run(CopyObject_incorrect_source_bucket_expected_owner)
 }
@@ -903,6 +907,28 @@ func TestNotImplementedActions(ts *TestState) {
 	ts.Run(GetObjectAcl_not_implemented)
 }
 
+// TestSSECNotImplemented is for backends that reject SSE-C rather than forward it.
+func TestSSECNotImplemented(ts *TestState) {
+	ts.Run(PutObject_sse_c_not_implemented)
+	ts.Run(PostObject_sse_c_not_implemented)
+	ts.Run(GetObject_sse_c_not_implemented)
+	ts.Run(HeadObject_sse_c_not_implemented)
+	ts.Run(GetObjectAttributes_sse_c_not_implemented)
+	ts.Run(CopyObject_sse_c_not_implemented)
+	ts.Run(CreateMultipartUpload_sse_c_not_implemented)
+	ts.Run(UploadPart_sse_c_not_implemented)
+	ts.Run(UploadPartCopy_sse_c_not_implemented)
+	ts.Run(CompleteMultipartUpload_sse_c_not_implemented)
+}
+
+func TestSSECTransport(ts *TestState) {
+	if ts.conf.tlsStatus {
+		TestSSECNotImplemented(ts)
+		return
+	}
+	ts.Run(PutObject_sse_c_requires_tls)
+}
+
 func TestWORMProtection(ts *TestState) {
 	ts.Run(WORMProtection_bucket_object_lock_configuration_compliance_mode)
 	ts.Run(WORMProtection_bucket_object_lock_configuration_governance_mode)
@@ -1003,6 +1029,9 @@ func TestFullFlow(ts *TestState) {
 	if ts.conf.versioningEnabled {
 		TestVersioning(ts)
 	}
+	if ts.conf.azureTests {
+		TestSSECTransport(ts)
+	}
 	TestGatewayIAM(ts)
 	TestServer(ts)
 }
@@ -1033,6 +1062,7 @@ func TestPosix(ts *TestState) {
 	if !ts.conf.versioningEnabled {
 		TestVersioningDisabled(ts)
 	}
+	TestSSECTransport(ts)
 }
 
 func TestScoutfs(ts *TestState) {
@@ -1134,6 +1164,7 @@ func TestScoutfs(ts *TestState) {
 	ts.Run(ObjectTagging_trailing_slash_counterpart)
 	ts.Run(ObjectLock_trailing_slash_counterpart)
 	ts.Run(DeleteObject_directory_not_empty)
+	TestSSECTransport(ts)
 }
 
 func TestGatewayIAM(ts *TestState) {
@@ -3539,6 +3570,21 @@ func GetIntTests() IntTests {
 		"PutObject_with_slashes":                                                           PutObject_with_slashes,
 		"PutObject_race_with_delete":                                                       PutObject_race_with_delete,
 		"CreateMultipartUpload_dir_obj":                                                    CreateMultipartUpload_dir_obj,
+		"PutObject_sse_c_not_implemented":                                                  PutObject_sse_c_not_implemented,
+		"PutObject_unsupported_sse_not_implemented":                                        PutObject_unsupported_sse_not_implemented,
+		"PutObject_sse_c_requires_tls":                                                     PutObject_sse_c_requires_tls,
+		"PostObject_sse_c_not_implemented":                                                 PostObject_sse_c_not_implemented,
+		"GetObject_sse_c_not_implemented":                                                  GetObject_sse_c_not_implemented,
+		"HeadObject_sse_c_not_implemented":                                                 HeadObject_sse_c_not_implemented,
+		"GetObjectAttributes_sse_c_not_implemented":                                        GetObjectAttributes_sse_c_not_implemented,
+		"CopyObject_sse_c_not_implemented":                                                 CopyObject_sse_c_not_implemented,
+		"CreateMultipartUpload_sse_c_not_implemented":                                      CreateMultipartUpload_sse_c_not_implemented,
+		"UploadPart_sse_c_not_implemented":                                                 UploadPart_sse_c_not_implemented,
+		"UploadPartCopy_sse_c_not_implemented":                                             UploadPartCopy_sse_c_not_implemented,
+		"CompleteMultipartUpload_sse_c_not_implemented":                                    CompleteMultipartUpload_sse_c_not_implemented,
+		"PutObject_sse_c_invalid_headers":                                                  PutObject_sse_c_invalid_headers,
+		"HeadObject_sse_c_invalid_headers":                                                 HeadObject_sse_c_invalid_headers,
+		"CopyObject_sse_c_invalid_copy_source_headers":                                     CopyObject_sse_c_invalid_copy_source_headers,
 		"IAM_user_access_denied":                                                           IAM_user_access_denied,
 		"IAM_userplus_access_denied":                                                       IAM_userplus_access_denied,
 		"IAM_userplus_CreateBucket":                                                        IAM_userplus_CreateBucket,

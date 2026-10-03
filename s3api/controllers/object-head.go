@@ -103,6 +103,15 @@ func (c S3ApiController) HeadObject(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	ssec, err := c.parseSSECHeaders(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	var partNumber *int32
 	if ctx.Request().URI().QueryArgs().Has("partNumber") {
 		if partNumberQuery < minPartNumber || partNumberQuery > int32(c.effectiveMpMaxParts()) {
@@ -140,16 +149,19 @@ func (c S3ApiController) HeadObject(ctx fiber.Ctx) (*Response, error) {
 
 	res, err := c.be.HeadObject(ctx.RequestCtx(),
 		&s3.HeadObjectInput{
-			Bucket:            &bucket,
-			Key:               &key,
-			PartNumber:        partNumber,
-			VersionId:         &versionId,
-			ChecksumMode:      checksumMode,
-			Range:             &objRange,
-			IfMatch:           conditionalHeaders.IfMatch,
-			IfNoneMatch:       conditionalHeaders.IfNoneMatch,
-			IfModifiedSince:   conditionalHeaders.IfModSince,
-			IfUnmodifiedSince: conditionalHeaders.IfUnmodeSince,
+			SSECustomerAlgorithm: ssec.Algorithm,
+			SSECustomerKey:       ssec.Key,
+			SSECustomerKeyMD5:    ssec.KeyMD5,
+			Bucket:               &bucket,
+			Key:                  &key,
+			PartNumber:           partNumber,
+			VersionId:            &versionId,
+			ChecksumMode:         checksumMode,
+			Range:                &objRange,
+			IfMatch:              conditionalHeaders.IfMatch,
+			IfNoneMatch:          conditionalHeaders.IfNoneMatch,
+			IfModifiedSince:      conditionalHeaders.IfModSince,
+			IfUnmodifiedSince:    conditionalHeaders.IfUnmodeSince,
 		})
 	if err != nil {
 		var headers map[string]*string
@@ -208,6 +220,8 @@ func (c S3ApiController) HeadObject(ctx fiber.Ctx) (*Response, error) {
 			"x-amz-checksum-type":                 utils.ConvertToStringPtr(res.ChecksumType),
 			"x-amz-object-lock-retain-until-date": utils.FormatDatePtrToString(res.ObjectLockRetainUntilDate, time.RFC3339),
 			"x-amz-tagging-count":                 utils.ConvertPtrToStringPtr(res.TagCount),
+			"x-amz-server-side-encryption-customer-algorithm": res.SSECustomerAlgorithm,
+			"x-amz-server-side-encryption-customer-key-MD5":   res.SSECustomerKeyMD5,
 		},
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,

@@ -2016,6 +2016,10 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.CreateMultipartUploadInput) (_ s3response.InitiateMultipartUploadResult, err error) {
 	defer backend.MapPermissionErr(&err)
 
+	if backend.HasSSEC(mpu.SSECustomerAlgorithm, mpu.SSECustomerKey, mpu.SSECustomerKeyMD5) {
+		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return s3response.InitiateMultipartUploadResult{}, err
@@ -2302,6 +2306,10 @@ type CustomCopyFunc func(from *os.File, to *os.File) (bool, error)
 
 func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.CompleteMultipartUploadInput, customCopy CustomCopyFunc) (_ s3response.CompleteMultipartUploadResult, _ string, err error) {
 	defer backend.MapPermissionErr(&err)
+
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return s3response.CompleteMultipartUploadResult{}, "", s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
 
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
@@ -3719,6 +3727,10 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPartInput, postprocess func(f *os.File) error) (_ *s3.UploadPartOutput, err error) {
 	defer backend.MapPermissionErr(&err)
 
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
@@ -4061,6 +4073,11 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 
 func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput) (_ s3response.CopyPartResult, err error) {
 	defer backend.MapPermissionErr(&err)
+
+	if backend.HasSSEC(upi.SSECustomerAlgorithm, upi.SSECustomerKey, upi.SSECustomerKeyMD5,
+		upi.CopySourceSSECustomerAlgorithm, upi.CopySourceSSECustomerKey, upi.CopySourceSSECustomerKeyMD5) {
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
 
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
@@ -4485,6 +4502,10 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 
 func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObjectInput, postprocess func(f *os.File) error) (_ s3response.PutObjectOutput, err error) {
 	defer backend.MapPermissionErr(&err)
+
+	if backend.HasSSEC(po.SSECustomerAlgorithm, po.SSECustomerKey, po.SSECustomerKeyMD5) {
+		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
 
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
@@ -5742,6 +5763,10 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 }
 
 func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return nil, err
@@ -6078,6 +6103,10 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 }
 
 func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return nil, err
@@ -6344,6 +6373,10 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 }
 
 func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return s3response.GetObjectAttributesResponse{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
 		return s3response.GetObjectAttributesResponse{}, err
@@ -6392,6 +6425,11 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 
 func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (_ s3response.CopyObjectOutput, err error) {
 	defer backend.MapPermissionErr(&err)
+
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5,
+		input.CopySourceSSECustomerAlgorithm, input.CopySourceSSECustomerKey, input.CopySourceSSECustomerKeyMD5) {
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
 
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
