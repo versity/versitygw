@@ -205,10 +205,8 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 	}
 
 	if input.ObjectLockEnabledForBucket != nil && *input.ObjectLockEnabledForBucket {
-		now := time.Now()
 		defaultLock := auth.BucketLockConfig{
-			Enabled:   true,
-			CreatedAt: &now,
+			Enabled: true,
 		}
 
 		defaultLockParsed, err := json.Marshal(defaultLock)
@@ -397,6 +395,21 @@ func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s
 			}
 		} else {
 			metadata[string(keyWebsiteRedirect)] = po.WebsiteRedirectLocation
+		}
+	}
+
+	// a put without Object Lock parameters of its own gets the retention of
+	// the bucket's default rule
+	if po.ObjectLockLegalHoldStatus == "" && po.ObjectLockMode == "" {
+		retention, err := az.bucketDefaultRetention(ctx, *po.Bucket)
+		if err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
+		if retention != nil {
+			if metadata == nil {
+				metadata = map[string]*string{}
+			}
+			metadata[string(keyObjRetention)] = backend.GetPtrFromString(string(retention))
 		}
 	}
 
@@ -601,24 +614,29 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 		tagcount = int32(*blobDownloadResponse.TagCount)
 	}
 
+	legalHold, lockMode, retainUntil := objectLockFromMetadata(blobDownloadResponse.Metadata)
+
 	return &s3.GetObjectOutput{
-		AcceptRanges:            backend.GetPtrFromString("bytes"),
-		ContentLength:           blobDownloadResponse.ContentLength,
-		ContentEncoding:         blobDownloadResponse.ContentEncoding,
-		ContentType:             blobDownloadResponse.ContentType,
-		ContentDisposition:      blobDownloadResponse.ContentDisposition,
-		ContentLanguage:         blobDownloadResponse.ContentLanguage,
-		CacheControl:            blobDownloadResponse.CacheControl,
-		ExpiresString:           blobDownloadResponse.Metadata[string(keyExpires)],
-		WebsiteRedirectLocation: blobDownloadResponse.Metadata[string(keyWebsiteRedirect)],
-		ETag:                    backend.GetPtrFromString(convertAzureEtag(blobDownloadResponse.ETag)),
-		LastModified:            blobDownloadResponse.LastModified,
-		Metadata:                parseAndFilterAzMetadata(blobDownloadResponse.Metadata),
-		TagCount:                &tagcount,
-		ContentRange:            contentRange,
-		Body:                    blobDownloadResponse.Body,
-		StorageClass:            types.StorageClassStandard,
-		PartsCount:              partsCount,
+		ObjectLockLegalHoldStatus: legalHold,
+		ObjectLockMode:            lockMode,
+		ObjectLockRetainUntilDate: retainUntil,
+		AcceptRanges:              backend.GetPtrFromString("bytes"),
+		ContentLength:             blobDownloadResponse.ContentLength,
+		ContentEncoding:           blobDownloadResponse.ContentEncoding,
+		ContentType:               blobDownloadResponse.ContentType,
+		ContentDisposition:        blobDownloadResponse.ContentDisposition,
+		ContentLanguage:           blobDownloadResponse.ContentLanguage,
+		CacheControl:              blobDownloadResponse.CacheControl,
+		ExpiresString:             blobDownloadResponse.Metadata[string(keyExpires)],
+		WebsiteRedirectLocation:   blobDownloadResponse.Metadata[string(keyWebsiteRedirect)],
+		ETag:                      backend.GetPtrFromString(convertAzureEtag(blobDownloadResponse.ETag)),
+		LastModified:              blobDownloadResponse.LastModified,
+		Metadata:                  parseAndFilterAzMetadata(blobDownloadResponse.Metadata),
+		TagCount:                  &tagcount,
+		ContentRange:              contentRange,
+		Body:                      blobDownloadResponse.Body,
+		StorageClass:              types.StorageClassStandard,
+		PartsCount:                partsCount,
 	}, nil
 }
 
@@ -723,24 +741,7 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 		StorageClass:            types.StorageClassStandard,
 	}
 
-	status, ok := resp.Metadata[string(keyObjLegalHold)]
-	if ok {
-		if *status == "1" {
-			result.ObjectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOn
-		} else {
-			result.ObjectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOff
-		}
-	}
-
-	retention, ok := resp.Metadata[string(keyObjRetention)]
-	if ok {
-		var config types.ObjectLockRetention
-		err := json.Unmarshal([]byte(*retention), &config)
-		if err == nil {
-			result.ObjectLockMode = types.ObjectLockMode(config.Mode)
-			result.ObjectLockRetainUntilDate = config.RetainUntilDate
-		}
-	}
+	result.ObjectLockLegalHoldStatus, result.ObjectLockMode, result.ObjectLockRetainUntilDate = objectLockFromMetadata(resp.Metadata)
 
 	if resp.TagCount != nil {
 		tagcount := int32(*resp.TagCount)
@@ -1265,36 +1266,9 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 			return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 		}
 
-		// Set object legal hold
-		if input.ObjectLockLegalHoldStatus != "" {
-			err = az.PutObjectLegalHold(ctx, *input.Bucket, *input.Key, "", input.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn)
-			if err != nil {
-				if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
-					err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
-				}
-				return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
-			}
-		}
-		// Set object retention
-		if input.ObjectLockMode != "" && input.ObjectLockRetainUntilDate != nil {
-			retention := s3response.PutObjectRetentionInput{
-				Mode: types.ObjectLockRetentionMode(input.ObjectLockMode),
-				RetainUntilDate: s3response.AmzDate{
-					Time: *input.ObjectLockRetainUntilDate,
-				},
-			}
-
-			retParsed, err := json.Marshal(retention)
-			if err != nil {
-				return s3response.CopyObjectOutput{}, fmt.Errorf("parse object retention: %w", err)
-			}
-			err = az.PutObjectRetention(ctx, *input.Bucket, *input.Key, "", retParsed)
-			if err != nil {
-				if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
-					err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
-				}
-				return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
-			}
+		// Set object legal hold and retention
+		if err := az.applyCopyObjectLock(ctx, *input.Bucket, *input.Key, input); err != nil {
+			return s3response.CopyObjectOutput{}, err
 		}
 
 		// Set object Tagging, if tagging directive is "REPLACE"
@@ -1382,6 +1356,8 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		pInput.ContentType = downloadResp.ContentType
 		pInput.Metadata = parseAzMetadata(downloadResp.Metadata)
 		delete(pInput.Metadata, string(keyWebsiteRedirect))
+		delete(pInput.Metadata, string(keyObjRetention))
+		delete(pInput.Metadata, string(keyObjLegalHold))
 	}
 
 	if input.TaggingDirective == types.TaggingDirectiveReplace {
@@ -1485,10 +1461,15 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.Cre
 			s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
 	}
 
-	// The upload carries Object Lock parameters when it sets its own, or the
-	// bucket has a default retention rule as of now: a rule set or removed
-	// later doesn't change what the upload's parts need.
-	lockParams := explicitLock || (bucketLockConfig.Enabled && bucketLockConfig.DefaultRetention != nil)
+	// An upload without Object Lock parameters of its own gets the retention
+	// of the bucket's default rule as of now: a rule set or removed later
+	// changes neither the object's retention nor what the upload's parts
+	// need.
+	var retention *types.ObjectLockRetention
+	if !explicitLock {
+		retention = bucketLockConfig.DefaultObjectRetention(time.Now())
+	}
+	lockParams := explicitLock || retention != nil
 
 	meta := parseMetadata(input.Metadata)
 	meta[string(onameAttr)] = input.Key
@@ -1513,10 +1494,12 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.Cre
 
 	// set blob retention date
 	if input.ObjectLockMode != "" {
-		retention := types.ObjectLockRetention{
+		retention = &types.ObjectLockRetention{
 			Mode:            types.ObjectLockRetentionMode(input.ObjectLockMode),
 			RetainUntilDate: input.ObjectLockRetainUntilDate,
 		}
+	}
+	if retention != nil {
 		retParsed, err := json.Marshal(retention)
 		if err != nil {
 			return s3response.InitiateMultipartUploadResult{}, azureErrToS3Err(err)
@@ -2368,6 +2351,36 @@ func (az *Azure) isBucketObjectLockEnabled(ctx context.Context, bucket string) e
 	return nil
 }
 
+// bucketDefaultRetention returns the retention, as stored on a blob, that the
+// bucket's default rule gives an object written now, or nil when the bucket
+// has no default rule.
+func (az *Azure) bucketDefaultRetention(ctx context.Context, bucket string) ([]byte, error) {
+	cfg, err := az.getContainerMetaData(ctx, bucket, string(keyBucketLock))
+	if err != nil {
+		return nil, err
+	}
+	if len(cfg) == 0 {
+		return nil, nil
+	}
+
+	var bucketLockConfig auth.BucketLockConfig
+	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
+		return nil, fmt.Errorf("parse bucket lock config: %w", err)
+	}
+
+	retention := bucketLockConfig.DefaultObjectRetention(time.Now())
+	if retention == nil {
+		return nil, nil
+	}
+
+	retParsed, err := json.Marshal(retention)
+	if err != nil {
+		return nil, fmt.Errorf("parse object lock retention: %w", err)
+	}
+
+	return retParsed, nil
+}
+
 func (az *Azure) getContainerURL(cntr string) string {
 	return fmt.Sprintf("%v/%v", strings.TrimRight(az.serviceURL, "/"), cntr)
 }
@@ -2443,6 +2456,26 @@ func parseAndFilterAzMetadata(m map[string]*string) map[string]string {
 		meta[k] = *v
 	}
 	return meta
+}
+
+// objectLockFromMetadata returns the legal hold and retention stored in a
+// blob's metadata, as its GetObject and HeadObject responses report them.
+func objectLockFromMetadata(m map[string]*string) (types.ObjectLockLegalHoldStatus, types.ObjectLockMode, *time.Time) {
+	var legalHold types.ObjectLockLegalHoldStatus
+	if status, ok := m[string(keyObjLegalHold)]; ok && status != nil {
+		legalHold = types.ObjectLockLegalHoldStatusOff
+		if *status == "1" {
+			legalHold = types.ObjectLockLegalHoldStatusOn
+		}
+	}
+
+	var retention types.ObjectLockRetention
+	data, ok := m[string(keyObjRetention)]
+	if !ok || data == nil || json.Unmarshal([]byte(*data), &retention) != nil {
+		return legalHold, "", nil
+	}
+
+	return legalHold, types.ObjectLockMode(retention.Mode), retention.RetainUntilDate
 }
 
 func parseAzMetadata(m map[string]*string) map[string]string {

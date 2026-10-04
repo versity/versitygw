@@ -346,54 +346,80 @@ type objLockCfg struct {
 	LegalHoldStatus types.ObjectLockLegalHoldStatus
 }
 
+// ParsObjectLockHdrs parses and validates the Object Lock headers of an
+// object write. A header sent with an empty value is validated, not ignored.
+// Whether a header is sent is told by its name: fasthttp may hold an empty
+// value as a nil slice, so Peek returning nil doesn't mean it is absent.
 func ParsObjectLockHdrs(ctx fiber.Ctx) (*objLockCfg, error) {
-	legalHoldHdr := ctx.Get("X-Amz-Object-Lock-Legal-Hold")
-	objLockModeHdr := ctx.Get("X-Amz-Object-Lock-Mode")
-	objLockDate := ctx.Get("X-Amz-Object-Lock-Retain-Until-Date")
+	return parseObjectLockParams(func(name string) (string, bool) {
+		values := ctx.Request().Header.PeekAll(name)
+		if len(values) == 0 {
+			return "", false
+		}
+		return string(values[0]), true
+	})
+}
 
-	if objLockDate != "" && objLockModeHdr == "" {
+// ParseObjectLockFields parses and validates the Object Lock fields of a
+// browser-based POST upload form, whose field names are lowercase. A field
+// sent with an empty value is validated, not ignored.
+func ParseObjectLockFields(fields map[string]string) (*objLockCfg, error) {
+	return parseObjectLockParams(func(name string) (string, bool) {
+		value, ok := fields[name]
+		return value, ok
+	})
+}
+
+// parseObjectLockParams validates the Object Lock parameters get returns, in
+// the order S3 checks them: the mode and the retain until date are set
+// together or not at all, then the legal hold, the date and the mode values.
+// The date is kept to the millisecond, the precision S3 stores.
+func parseObjectLockParams(get func(name string) (string, bool)) (*objLockCfg, error) {
+	legalHold, hasLegalHold := get("x-amz-object-lock-legal-hold")
+	mode, hasMode := get("x-amz-object-lock-mode")
+	date, hasDate := get("x-amz-object-lock-retain-until-date")
+
+	if hasDate && !hasMode {
 		debuglogger.Logf("the missing x-amz-object-lock-mode is required with x-amz-object-lock-retain-until-date")
 		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockMode, "")
 	}
-	if objLockDate == "" && objLockModeHdr != "" {
+	if hasMode && !hasDate {
 		debuglogger.Logf("the missing x-amz-object-lock-retain-until-date is required with x-amz-object-lock-mode")
 		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockRetainDate, "")
 	}
 
+	legalHoldStatus := types.ObjectLockLegalHoldStatus(legalHold)
+	if hasLegalHold && legalHoldStatus != types.ObjectLockLegalHoldStatusOff && legalHoldStatus != types.ObjectLockLegalHoldStatusOn {
+		debuglogger.Logf("invalid object lock legal hold status: %q", legalHold)
+		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, legalHold)
+	}
+
 	var retainUntilDate time.Time
-	if objLockDate != "" {
-		rDate, err := time.Parse(time.RFC3339, objLockDate)
+	if hasDate {
+		// the date and time separator and the UTC designator are case
+		// insensitive
+		rDate, err := time.Parse(time.RFC3339, strings.ToUpper(date))
 		if err != nil {
-			debuglogger.Logf("failed to parse retain until date: %v\n", err)
-			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgRetainUntilDate, objLockDate)
+			debuglogger.Logf("failed to parse retain until date: %v", err)
+			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgRetainUntilDate, date)
 		}
 		if rDate.Before(time.Now()) {
-			debuglogger.Logf("expired retain until date: %v\n", rDate.Format(time.RFC3339))
-			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, objLockDate)
+			debuglogger.Logf("expired retain until date: %v", rDate.Format(time.RFC3339))
+			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, date)
 		}
-		retainUntilDate = rDate
+		retainUntilDate = rDate.UTC().Truncate(time.Millisecond)
 	}
 
-	objLockMode := types.ObjectLockMode(objLockModeHdr)
-
-	if objLockMode != "" &&
-		objLockMode != types.ObjectLockModeCompliance &&
-		objLockMode != types.ObjectLockModeGovernance {
-		debuglogger.Logf("invalid object lock mode: %v\n", objLockMode)
-		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, objLockModeHdr)
-	}
-
-	legalHold := types.ObjectLockLegalHoldStatus(legalHoldHdr)
-
-	if legalHold != "" && legalHold != types.ObjectLockLegalHoldStatusOff && legalHold != types.ObjectLockLegalHoldStatusOn {
-		debuglogger.Logf("invalid object lock legal hold status: %v\n", legalHold)
-		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, legalHoldHdr)
+	lockMode := types.ObjectLockMode(mode)
+	if hasMode && lockMode != types.ObjectLockModeCompliance && lockMode != types.ObjectLockModeGovernance {
+		debuglogger.Logf("invalid object lock mode: %q", mode)
+		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, mode)
 	}
 
 	return &objLockCfg{
 		RetainUntilDate: retainUntilDate,
-		ObjectLockMode:  objLockMode,
-		LegalHoldStatus: legalHold,
+		ObjectLockMode:  lockMode,
+		LegalHoldStatus: legalHoldStatus,
 	}, nil
 }
 
@@ -921,6 +947,24 @@ func ConvertPtrToStringPtr[T any](val *T) *string {
 	}
 	str := fmt.Sprint(*val)
 	return &str
+}
+
+// FormatRetainUntilDate formats an Object Lock retain until date for a
+// response header: in UTC to the millisecond, with the milliseconds left
+// out when they are zero.
+func FormatRetainUntilDate(date *time.Time) *string {
+	if date == nil || date.IsZero() {
+		return nil
+	}
+
+	d := date.UTC().Truncate(time.Millisecond)
+	layout := "2006-01-02T15:04:05.000Z"
+	if d.Nanosecond() == 0 {
+		layout = "2006-01-02T15:04:05Z"
+	}
+
+	formatted := d.Format(layout)
+	return &formatted
 }
 
 // Formats the date with the given formatting and returns a string pointer

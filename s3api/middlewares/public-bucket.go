@@ -101,7 +101,8 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 
 				// Only a non-empty tag set takes s3:PutObjectTagging, so the
 				// form's tagging has to be parsed to tell, and a malformed
-				// one is rejected before any permission is checked.
+				// one is rejected before any permission is checked. So are
+				// invalid Object Lock fields.
 				var tagging string
 				if taggingXML, ok := parsed.Fields["tagging"]; ok {
 					var err error
@@ -110,7 +111,11 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 						return err
 					}
 				}
-				actions = auth.ObjectUploadActions(tagging, "", "", "")
+				objLock, err := utils.ParseObjectLockFields(parsed.Fields)
+				if err != nil {
+					return err
+				}
+				actions = auth.ObjectUploadActions(tagging, string(objLock.LegalHoldStatus), string(objLock.ObjectLockMode), "")
 			}
 		}
 

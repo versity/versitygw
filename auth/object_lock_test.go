@@ -422,3 +422,152 @@ func TestParseBucketLockConfigurationOutput(t *testing.T) {
 		})
 	}
 }
+
+// TestDefaultObjectRetention covers the retention a bucket's default rule
+// gives an object: the rule's mode, until the rule's period from the write,
+// in UTC with millisecond precision. Years are calendar years.
+func TestDefaultObjectRetention(t *testing.T) {
+	written := time.Date(2026, 10, 4, 10, 5, 32, 45123456, time.FixedZone("UTC+2", 2*60*60))
+	days, years := int32(1), int32(2)
+
+	tests := []struct {
+		name      string
+		config    BucketLockConfig
+		wantMode  types.ObjectLockRetentionMode
+		wantUntil time.Time
+	}{
+		{
+			name:      "days",
+			config:    BucketLockConfig{Enabled: true, DefaultRetention: &types.DefaultRetention{Mode: types.ObjectLockRetentionModeGovernance, Days: &days}},
+			wantMode:  types.ObjectLockRetentionModeGovernance,
+			wantUntil: time.Date(2026, 10, 5, 8, 5, 32, 45000000, time.UTC),
+		},
+		{
+			name:      "years across a leap day",
+			config:    BucketLockConfig{Enabled: true, DefaultRetention: &types.DefaultRetention{Mode: types.ObjectLockRetentionModeCompliance, Years: &years}},
+			wantMode:  types.ObjectLockRetentionModeCompliance,
+			wantUntil: time.Date(2028, 10, 4, 8, 5, 32, 45000000, time.UTC),
+		},
+		{name: "no default rule", config: BucketLockConfig{Enabled: true}},
+		{name: "object lock disabled", config: BucketLockConfig{DefaultRetention: &types.DefaultRetention{Mode: types.ObjectLockRetentionModeGovernance, Days: &days}}},
+		{name: "rule without a period", config: BucketLockConfig{Enabled: true, DefaultRetention: &types.DefaultRetention{Mode: types.ObjectLockRetentionModeGovernance}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ret := tt.config.DefaultObjectRetention(written)
+			if tt.wantMode == "" {
+				assert.Nil(t, ret)
+				return
+			}
+			if assert.NotNil(t, ret) && assert.NotNil(t, ret.RetainUntilDate) {
+				assert.Equal(t, tt.wantMode, ret.Mode)
+				assert.Equal(t, tt.wantUntil, *ret.RetainUntilDate)
+			}
+		})
+	}
+}
+
+// TestParseBucketLockConfigurationInput covers the default retention rules
+// S3 rejects. A rule needs a valid mode and exactly one of Days and Years.
+func TestParseBucketLockConfigurationInput(t *testing.T) {
+	config := func(rule string) []byte {
+		return []byte("<ObjectLockConfiguration><ObjectLockEnabled>Enabled</ObjectLockEnabled>" + rule + "</ObjectLockConfiguration>")
+	}
+
+	tests := []struct {
+		name    string
+		input   []byte
+		wantErr error
+	}{
+		{name: "mode without a period", input: config("<Rule><DefaultRetention><Mode>GOVERNANCE</Mode></DefaultRetention></Rule>"), wantErr: s3err.GetAPIError(s3err.ErrObjectLockDefaultRetentionPeriodRequired)},
+		{name: "invalid mode without a period", input: config("<Rule><DefaultRetention><Mode>INVALID</Mode></DefaultRetention></Rule>"), wantErr: s3err.GetAPIError(s3err.ErrMalformedXML)},
+		{name: "days without a mode", input: config("<Rule><DefaultRetention><Days>1</Days></DefaultRetention></Rule>"), wantErr: s3err.GetAPIError(s3err.ErrMalformedXML)},
+		{name: "both days and years", input: config("<Rule><DefaultRetention><Mode>GOVERNANCE</Mode><Days>1</Days><Years>1</Years></DefaultRetention></Rule>"), wantErr: s3err.GetAPIError(s3err.ErrMalformedXML)},
+		{name: "empty default retention", input: config("<Rule><DefaultRetention></DefaultRetention></Rule>"), wantErr: s3err.GetAPIError(s3err.ErrMalformedXML)},
+		{name: "rule without default retention", input: config("<Rule></Rule>"), wantErr: s3err.GetAPIError(s3err.ErrMalformedXML)},
+		{name: "no rule", input: config("")},
+		{name: "valid rule", input: config("<Rule><DefaultRetention><Mode>GOVERNANCE</Mode><Days>1</Days></DefaultRetention></Rule>")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseBucketLockConfigurationInput(tt.input)
+			assert.Equal(t, tt.wantErr, err)
+		})
+	}
+}
+
+// TestCheckObjectAccess_ObjectOwnLockOnly covers the locks a delete is
+// checked against: only the object's own retention and legal hold. A legal
+// hold still protects the object once its retention has expired, and the
+// bucket's default retention rule protects nothing by itself, since it is
+// stored on each object when the object is written.
+func TestCheckObjectAccess_ObjectOwnLockOnly(t *testing.T) {
+	days := int32(1)
+	ruleConfig, err := json.Marshal(BucketLockConfig{
+		Enabled:          true,
+		DefaultRetention: &types.DefaultRetention{Mode: types.ObjectLockRetentionModeCompliance, Days: &days},
+	})
+	assert.NoError(t, err)
+	expired := time.Now().Add(-time.Minute)
+	expiredRetention, err := json.Marshal(types.ObjectLockRetention{Mode: types.ObjectLockRetentionModeGovernance, RetainUntilDate: &expired})
+	assert.NoError(t, err)
+	legalHold := true
+	key := "key.txt"
+
+	tests := []struct {
+		name    string
+		be      *objectLockStateBackend
+		wantErr error
+	}{
+		{
+			name:    "legal hold with expired retention",
+			be:      &objectLockStateBackend{config: ruleConfig, retention: expiredRetention, legalHold: &legalHold},
+			wantErr: s3err.GetAPIError(s3err.ErrObjectLocked),
+		},
+		{
+			name: "expired retention",
+			be:   &objectLockStateBackend{config: ruleConfig, retention: expiredRetention},
+		},
+		{
+			name: "default retention rule only",
+			be:   &objectLockStateBackend{config: ruleConfig},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckObjectAccess(testFiberCtx(t), "bucket", Account{Access: "testuser", Role: RoleUser},
+				[]types.ObjectIdentifier{{Key: &key}}, BypassRequested, false, tt.be, nil, false)
+			assert.Equal(t, tt.wantErr, err)
+		})
+	}
+}
+
+// objectLockStateBackend serves a bucket's object lock configuration and
+// one object's retention and legal hold, nil meaning the object has none.
+type objectLockStateBackend struct {
+	backend.BackendUnsupported
+	config    []byte
+	retention []byte
+	legalHold *bool
+}
+
+func (b *objectLockStateBackend) GetObjectLockConfiguration(_ context.Context, _ string) ([]byte, error) {
+	return b.config, nil
+}
+
+func (b *objectLockStateBackend) GetObjectRetention(_ context.Context, _, _, _ string) ([]byte, error) {
+	if b.retention == nil {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)
+	}
+	return b.retention, nil
+}
+
+func (b *objectLockStateBackend) GetObjectLegalHold(_ context.Context, _, _, _ string) (*bool, error) {
+	if b.legalHold == nil {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)
+	}
+	return b.legalHold, nil
+}

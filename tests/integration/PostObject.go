@@ -1692,3 +1692,314 @@ func PostObject_success_double_dash_boundary(s *S3Conf) error {
 		return nil
 	})
 }
+
+// PostObject_object_lock_success covers the Object Lock fields of a POST
+// upload: a retention and a legal hold set on the object, the date kept to
+// the millisecond.
+func PostObject_object_lock_success(s *S3Conf) error {
+	testName := "PostObject_object_lock_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "my-obj"
+		retainUntil := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+		fields := map[string]string{
+			"x-amz-object-lock-mode":              "GOVERNANCE",
+			"x-amz-object-lock-retain-until-date": retainUntil.Format("2006-01-02T15:04:05") + ".123999Z",
+			"x-amz-object-lock-legal-hold":        "ON",
+		}
+
+		var policyConditions []any
+		for field, value := range fields {
+			policyConditions = append(policyConditions, map[string]string{field: value})
+		}
+
+		resp, err := sendPostObject(PostRequestConfig{
+			bucket:           bucket,
+			key:              key,
+			s3Conf:           s,
+			fileContent:      []byte("data"),
+			policyConditions: policyConditions,
+			extraFields:      fields,
+		})
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		ret, err := s3client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if ret.Retention.Mode != types.ObjectLockRetentionModeGovernance {
+			return fmt.Errorf("expected retention mode %v, instead got %v",
+				types.ObjectLockRetentionModeGovernance, ret.Retention.Mode)
+		}
+		wantUntil := retainUntil.Add(123 * time.Millisecond)
+		if ret.Retention.RetainUntilDate == nil || !ret.Retention.RetainUntilDate.Equal(wantUntil) {
+			return fmt.Errorf("expected retain until date %v, instead got %v", wantUntil, ret.Retention.RetainUntilDate)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		legalHold, err := s3client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if legalHold.LegalHold.Status != types.ObjectLockLegalHoldStatusOn {
+			return fmt.Errorf("expected legal hold %v, instead got %v",
+				types.ObjectLockLegalHoldStatusOn, legalHold.LegalHold.Status)
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: key, removeLegalHold: true}})
+	}, withLock())
+}
+
+// PostObject_object_lock_invalid_fields covers invalid Object Lock fields of
+// a POST upload, checked after the POST policy and the tagging, in the order
+// S3 checks them: the mode and the date set together, then the legal hold,
+// the date and the mode values. A field sent empty is invalid.
+func PostObject_object_lock_invalid_fields(s *S3Conf) error {
+	testName := "PostObject_object_lock_invalid_fields"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		date := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+		past := "2020-01-01T00:00:00Z"
+
+		for _, test := range []struct {
+			name      string
+			fields    map[string]string
+			uncovered string
+			expected  s3err.S3Error
+		}{
+			{
+				name:     "mode without a date",
+				fields:   map[string]string{"x-amz-object-lock-mode": "GOVERNANCE", "x-amz-object-lock-legal-hold": "INVALID"},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockRetainDate, ""),
+			},
+			{
+				name:     "date without a mode",
+				fields:   map[string]string{"x-amz-object-lock-retain-until-date": date},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockMode, ""),
+			},
+			{
+				name:     "invalid legal hold before a past date",
+				fields:   map[string]string{"x-amz-object-lock-mode": "GOVERNANCE", "x-amz-object-lock-retain-until-date": past, "x-amz-object-lock-legal-hold": "on"},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, "on"),
+			},
+			{
+				name:     "empty legal hold",
+				fields:   map[string]string{"x-amz-object-lock-legal-hold": ""},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, ""),
+			},
+			{
+				name:     "invalid date before an invalid mode",
+				fields:   map[string]string{"x-amz-object-lock-mode": "INVALID", "x-amz-object-lock-retain-until-date": "2026-10-04"},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgRetainUntilDate, "2026-10-04"),
+			},
+			{
+				name:     "past date before an invalid mode",
+				fields:   map[string]string{"x-amz-object-lock-mode": "INVALID", "x-amz-object-lock-retain-until-date": past},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, past),
+			},
+			{
+				name:     "lowercase mode",
+				fields:   map[string]string{"x-amz-object-lock-mode": "governance", "x-amz-object-lock-retain-until-date": date},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, "governance"),
+			},
+			{
+				name:     "empty mode",
+				fields:   map[string]string{"x-amz-object-lock-mode": "", "x-amz-object-lock-retain-until-date": date},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, ""),
+			},
+			{
+				name:     "malformed tagging before an invalid mode",
+				fields:   map[string]string{"x-amz-object-lock-mode": "INVALID", "x-amz-object-lock-retain-until-date": date, "tagging": "<Tagging>"},
+				expected: s3err.GetAPIError(s3err.ErrMalformedXML),
+			},
+			{
+				name:      "field not in the POST policy",
+				fields:    map[string]string{"x-amz-object-lock-legal-hold": "INVALID"},
+				uncovered: "x-amz-object-lock-legal-hold",
+				expected:  s3err.InvalidPolicyDocument.ExtraInputField("x-amz-object-lock-legal-hold"),
+			},
+		} {
+			var policyConditions []any
+			for field, value := range test.fields {
+				if field != test.uncovered {
+					policyConditions = append(policyConditions, map[string]string{field: value})
+				}
+			}
+
+			resp, err := sendPostObject(PostRequestConfig{
+				bucket:           bucket,
+				key:              "my-obj",
+				s3Conf:           s,
+				fileContent:      []byte("data"),
+				policyConditions: policyConditions,
+				extraFields:      test.fields,
+			})
+			if err != nil {
+				return err
+			}
+			if err := checkHTTPResponseApiErr(resp, test.expected); err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
+		}
+
+		return nil
+	}, withLock())
+}
+
+// PostObject_object_lock_missing_bucket_config covers Object Lock fields of
+// a POST upload to a bucket without Object Lock: a legal hold of either
+// status or a retention is rejected, once the fields are found valid.
+func PostObject_object_lock_missing_bucket_config(s *S3Conf) error {
+	testName := "PostObject_object_lock_missing_bucket_config"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		date := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+
+		for _, test := range []struct {
+			name     string
+			fields   map[string]string
+			expected s3err.S3Error
+		}{
+			{
+				name:     "legal hold off",
+				fields:   map[string]string{"x-amz-object-lock-legal-hold": "OFF"},
+				expected: s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces),
+			},
+			{
+				name:     "retention",
+				fields:   map[string]string{"x-amz-object-lock-mode": "GOVERNANCE", "x-amz-object-lock-retain-until-date": date},
+				expected: s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces),
+			},
+			{
+				name:     "invalid mode",
+				fields:   map[string]string{"x-amz-object-lock-mode": "INVALID", "x-amz-object-lock-retain-until-date": date},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, "INVALID"),
+			},
+		} {
+			var policyConditions []any
+			for field, value := range test.fields {
+				policyConditions = append(policyConditions, map[string]string{field: value})
+			}
+
+			resp, err := sendPostObject(PostRequestConfig{
+				bucket:           bucket,
+				key:              "my-obj",
+				s3Conf:           s,
+				fileContent:      []byte("data"),
+				policyConditions: policyConditions,
+				extraFields:      test.fields,
+			})
+			if err != nil {
+				return err
+			}
+			if err := checkHTTPResponseApiErr(resp, test.expected); err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// PostObject_object_lock_default_retention covers POST uploads to a bucket
+// with a default retention rule: a plain upload gets the rule's retention,
+// one setting a retention keeps its own, and one setting a legal hold, of
+// either status, gets none.
+func PostObject_object_lock_default_retention(s *S3Conf) error {
+	testName := "PostObject_object_lock_default_retention"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+				Rule: &types.ObjectLockRule{
+					DefaultRetention: &types.DefaultRetention{
+						Mode: types.ObjectLockRetentionModeGovernance,
+						Days: getPtr(int32(1)),
+					},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		retainUntil := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+		// the margin absorbs clock skew between this process and the gateway
+		earliest := time.Now().Add(24*time.Hour - time.Minute)
+
+		for _, test := range []struct {
+			key    string
+			fields map[string]string
+		}{
+			{key: "plain"},
+			{key: "retention", fields: map[string]string{"x-amz-object-lock-mode": "GOVERNANCE", "x-amz-object-lock-retain-until-date": retainUntil.Format(time.RFC3339)}},
+			{key: "legal-hold-off", fields: map[string]string{"x-amz-object-lock-legal-hold": "OFF"}},
+		} {
+			cfg := PostRequestConfig{
+				bucket:      bucket,
+				key:         test.key,
+				s3Conf:      s,
+				fileContent: []byte("data"),
+				extraFields: test.fields,
+			}
+			for field, value := range test.fields {
+				cfg.policyConditions = append(cfg.policyConditions, map[string]string{field: value})
+			}
+			resp, err := sendPostObject(cfg)
+			if err != nil {
+				return err
+			}
+			if err := checkPostObjectSuccess(resp); err != nil {
+				return fmt.Errorf("%s: %w", test.key, err)
+			}
+		}
+		latest := time.Now().Add(24*time.Hour + time.Minute)
+
+		getRetention := func(key string) (*types.ObjectLockRetention, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return nil, err
+			}
+			return out.Retention, nil
+		}
+
+		ret, err := getRetention("plain")
+		if err != nil {
+			return err
+		}
+		if ret.Mode != types.ObjectLockRetentionModeGovernance || ret.RetainUntilDate == nil ||
+			ret.RetainUntilDate.Before(earliest) || ret.RetainUntilDate.After(latest) {
+			return fmt.Errorf("plain: expected the default retention, instead got %v until %v", ret.Mode, ret.RetainUntilDate)
+		}
+
+		ret, err = getRetention("retention")
+		if err != nil {
+			return err
+		}
+		if ret.RetainUntilDate == nil || !ret.RetainUntilDate.Equal(retainUntil) {
+			return fmt.Errorf("retention: expected retain until date %v, instead got %v", retainUntil, ret.RetainUntilDate)
+		}
+
+		_, err = getRetention("legal-hold-off")
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration))
+	}, withLock())
+}

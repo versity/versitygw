@@ -185,6 +185,7 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_object_lock_checksum_required)
 	ts.Run(PutObject_default_retention_checksum_required)
 	ts.Run(PutObject_past_retain_until_date)
+	ts.Run(PutObject_object_lock_headers_validation)
 	ts.Run(PutObject_invalid_retain_until_date)
 	ts.Run(PutObject_conditional_writes)
 	ts.Run(PutObject_should_combine_metadata)
@@ -796,6 +797,8 @@ func TestPutObjectLockConfiguration(ts *TestState) {
 	ts.Run(PutObjectLockConfiguration_invalid_mode)
 	ts.Run(PutObjectLockConfiguration_both_years_and_days)
 	ts.Run(PutObjectLockConfiguration_invalid_years_days)
+	ts.Run(PutObjectLockConfiguration_default_retention_missing_period)
+	ts.Run(PutObjectLockConfiguration_rule_without_default_retention)
 	ts.Run(PutObjectLockConfiguration_success)
 }
 
@@ -831,6 +834,7 @@ func TestGetObjectRetention(ts *TestState) {
 	ts.Run(GetObjectRetention_disabled_lock)
 	ts.Run(GetObjectRetention_unset_config)
 	ts.Run(GetObjectRetention_success)
+	ts.Run(GetObjectRetention_retain_until_date_format)
 	ts.Run(GetObjectRetention_empty_version_id)
 }
 
@@ -930,7 +934,6 @@ func TestSSECTransport(ts *TestState) {
 }
 
 func TestWORMProtection(ts *TestState) {
-	ts.Run(WORMProtection_bucket_object_lock_configuration_compliance_mode)
 	ts.Run(WORMProtection_bucket_object_lock_configuration_governance_mode)
 	ts.Run(WORMProtection_bucket_object_lock_governance_bypass_delete)
 	ts.Run(WORMProtection_bucket_object_lock_governance_bypass_delete_multiple)
@@ -949,6 +952,11 @@ func TestWORMProtection(ts *TestState) {
 	ts.Run(WORMProtection_object_lock_retention_governance_bypass_delete_mul)
 	ts.Run(WORMProtection_object_lock_legal_hold_locked)
 	ts.Run(WORMProtection_root_bypass_governance_retention_delete_object)
+	ts.Run(WORMProtection_default_retention_applies_to_new_objects)
+	ts.Run(WORMProtection_default_retention_survives_rule_change)
+	ts.Run(WORMProtection_default_retention_explicit_lock_settings)
+	ts.Run(WORMProtection_default_retention_set_at_create_multipart_upload)
+	ts.Run(WORMProtection_legal_hold_outlives_expired_retention)
 }
 
 func TestFullFlow(ts *TestState) {
@@ -1800,6 +1808,7 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_identity_policy_bucket_vs_object_arn)
 	ts.Run(S3IAMAccessControl_post_object_identity_policy_resource_scoping)
 	ts.Run(S3IAMAccessControl_post_object_tagging_identity_policy)
+	ts.Run(S3IAMAccessControl_post_object_lock_identity_policy)
 	ts.Run(S3IAMAccessControl_identity_policy_not_action_and_not_resource)
 	ts.Run(S3IAMAccessControl_identity_policy_explicit_deny_wins)
 	ts.Run(S3IAMAccessControl_multiple_inline_policies_combine)
@@ -2005,6 +2014,7 @@ func TestPublicBuckets(ts *TestState) {
 	ts.Run(PublicBucket_put_object_default_retention)
 	ts.Run(PublicBucket_upload_part_object_lock)
 	ts.Run(PublicBucket_post_object_tagging)
+	ts.Run(PublicBucket_post_object_lock)
 	if ts.conf.versioningEnabled {
 		ts.Run(PublicBucket_object_version_actions)
 		ts.Run(PublicBucket_object_version_actions_public_acl)
@@ -2231,6 +2241,10 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_invalid_tagging)
 	ts.Run(PostObject_success_with_tagging)
 	ts.Run(PostObject_success_double_dash_boundary)
+	ts.Run(PostObject_object_lock_success)
+	ts.Run(PostObject_object_lock_invalid_fields)
+	ts.Run(PostObject_object_lock_missing_bucket_config)
+	ts.Run(PostObject_object_lock_default_retention)
 	if !ts.conf.azureTests {
 		ts.Run(PostObject_invalid_checksum_value)
 		ts.Run(PostObject_invalid_checksum_algorithm)
@@ -2344,6 +2358,7 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_identity_policy_bucket_vs_object_arn":                          S3IAMAccessControl_identity_policy_bucket_vs_object_arn,
 		"S3IAMAccessControl_post_object_identity_policy_resource_scoping":                  S3IAMAccessControl_post_object_identity_policy_resource_scoping,
 		"S3IAMAccessControl_post_object_tagging_identity_policy":                           S3IAMAccessControl_post_object_tagging_identity_policy,
+		"S3IAMAccessControl_post_object_lock_identity_policy":                              S3IAMAccessControl_post_object_lock_identity_policy,
 		"S3IAMAccessControl_identity_policy_not_action_and_not_resource":                   S3IAMAccessControl_identity_policy_not_action_and_not_resource,
 		"S3IAMAccessControl_identity_policy_explicit_deny_wins":                            S3IAMAccessControl_identity_policy_explicit_deny_wins,
 		"S3IAMAccessControl_multiple_inline_policies_combine":                              S3IAMAccessControl_multiple_inline_policies_combine,
@@ -2936,6 +2951,7 @@ func GetIntTests() IntTests {
 		"PutObject_default_retention_checksum_required":                                    PutObject_default_retention_checksum_required,
 		"PutObject_past_retain_until_date":                                                 PutObject_past_retain_until_date,
 		"PutObject_invalid_retain_until_date":                                              PutObject_invalid_retain_until_date,
+		"PutObject_object_lock_headers_validation":                                         PutObject_object_lock_headers_validation,
 		"PutObject_conditional_writes":                                                     PutObject_conditional_writes,
 		"PutObject_should_combine_metadata":                                                PutObject_should_combine_metadata,
 		"PutObject_md5":                                                                    PutObject_md5,
@@ -3466,6 +3482,8 @@ func GetIntTests() IntTests {
 		"PutObjectLockConfiguration_invalid_mode":                                          PutObjectLockConfiguration_invalid_mode,
 		"PutObjectLockConfiguration_both_years_and_days":                                   PutObjectLockConfiguration_both_years_and_days,
 		"PutObjectLockConfiguration_invalid_years_days":                                    PutObjectLockConfiguration_invalid_years_days,
+		"PutObjectLockConfiguration_default_retention_missing_period":                      PutObjectLockConfiguration_default_retention_missing_period,
+		"PutObjectLockConfiguration_rule_without_default_retention":                        PutObjectLockConfiguration_rule_without_default_retention,
 		"PutObjectLockConfiguration_success":                                               PutObjectLockConfiguration_success,
 		"GetObjectLockConfiguration_non_existing_bucket":                                   GetObjectLockConfiguration_non_existing_bucket,
 		"GetObjectLockConfiguration_unset_config":                                          GetObjectLockConfiguration_unset_config,
@@ -3492,6 +3510,7 @@ func GetIntTests() IntTests {
 		"GetObjectRetention_disabled_lock":                                                 GetObjectRetention_disabled_lock,
 		"GetObjectRetention_unset_config":                                                  GetObjectRetention_unset_config,
 		"GetObjectRetention_success":                                                       GetObjectRetention_success,
+		"GetObjectRetention_retain_until_date_format":                                      GetObjectRetention_retain_until_date_format,
 		"GetObjectRetention_empty_version_id":                                              GetObjectRetention_empty_version_id,
 		"PutObjectLegalHold_non_existing_bucket":                                           PutObjectLegalHold_non_existing_bucket,
 		"PutObjectLegalHold_non_existing_object":                                           PutObjectLegalHold_non_existing_object,
@@ -3544,7 +3563,6 @@ func GetIntTests() IntTests {
 		"GetBucketAccelerateConfiguration_not_implemented":                                 GetBucketAccelerateConfiguration_not_implemented,
 		"PutObjectAcl_not_implemented":                                                     PutObjectAcl_not_implemented,
 		"GetObjectAcl_not_implemented":                                                     GetObjectAcl_not_implemented,
-		"WORMProtection_bucket_object_lock_configuration_compliance_mode":                  WORMProtection_bucket_object_lock_configuration_compliance_mode,
 		"WORMProtection_bucket_object_lock_configuration_governance_mode":                  WORMProtection_bucket_object_lock_configuration_governance_mode,
 		"WORMProtection_bucket_object_lock_governance_bypass_delete":                       WORMProtection_bucket_object_lock_governance_bypass_delete,
 		"WORMProtection_bucket_object_lock_governance_bypass_delete_multiple":              WORMProtection_bucket_object_lock_governance_bypass_delete_multiple,
@@ -3563,6 +3581,11 @@ func GetIntTests() IntTests {
 		"WORMProtection_object_lock_retention_governance_bypass_delete_mul":                WORMProtection_object_lock_retention_governance_bypass_delete_mul,
 		"WORMProtection_object_lock_legal_hold_locked":                                     WORMProtection_object_lock_legal_hold_locked,
 		"WORMProtection_root_bypass_governance_retention_delete_object":                    WORMProtection_root_bypass_governance_retention_delete_object,
+		"WORMProtection_default_retention_applies_to_new_objects":                          WORMProtection_default_retention_applies_to_new_objects,
+		"WORMProtection_default_retention_survives_rule_change":                            WORMProtection_default_retention_survives_rule_change,
+		"WORMProtection_default_retention_explicit_lock_settings":                          WORMProtection_default_retention_explicit_lock_settings,
+		"WORMProtection_default_retention_set_at_create_multipart_upload":                  WORMProtection_default_retention_set_at_create_multipart_upload,
+		"WORMProtection_legal_hold_outlives_expired_retention":                             WORMProtection_legal_hold_outlives_expired_retention,
 		"PutObject_overwrite_dir_obj":                                                      PutObject_overwrite_dir_obj,
 		"PutObject_overwrite_file_obj":                                                     PutObject_overwrite_file_obj,
 		"PutObject_overwrite_file_obj_with_nested_obj":                                     PutObject_overwrite_file_obj_with_nested_obj,
@@ -3648,6 +3671,7 @@ func GetIntTests() IntTests {
 		"PublicBucket_put_object_default_retention":                                        PublicBucket_put_object_default_retention,
 		"PublicBucket_upload_part_object_lock":                                             PublicBucket_upload_part_object_lock,
 		"PublicBucket_post_object_tagging":                                                 PublicBucket_post_object_tagging,
+		"PublicBucket_post_object_lock":                                                    PublicBucket_post_object_lock,
 		"PublicBucket_object_version_actions":                                              PublicBucket_object_version_actions,
 		"PublicBucket_object_version_actions_public_acl":                                   PublicBucket_object_version_actions_public_acl,
 		"PutBucketVersioning_non_existing_bucket":                                          PutBucketVersioning_non_existing_bucket,
@@ -3865,5 +3889,9 @@ func GetIntTests() IntTests {
 		"PostObject_multiple_checksum_headers":                                             PostObject_multiple_checksum_headers,
 		"PostObject_checksums_success":                                                     PostObject_checksums_success,
 		"PostObject_success_double_dash_boundary":                                          PostObject_success_double_dash_boundary,
+		"PostObject_object_lock_success":                                                   PostObject_object_lock_success,
+		"PostObject_object_lock_invalid_fields":                                            PostObject_object_lock_invalid_fields,
+		"PostObject_object_lock_missing_bucket_config":                                     PostObject_object_lock_missing_bucket_config,
+		"PostObject_object_lock_default_retention":                                         PostObject_object_lock_default_retention,
 	}
 }

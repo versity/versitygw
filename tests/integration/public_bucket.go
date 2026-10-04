@@ -3119,6 +3119,124 @@ func PublicBucket_post_object_tagging(s *S3Conf) error {
 	})
 }
 
+// PublicBucket_post_object_lock covers the Object Lock fields of an
+// anonymous POST upload. Unlike an anonymous PutObject, it may lock the
+// object it writes, once the bucket grants each lock action publicly as it
+// does s3:PutObject. Invalid fields are rejected before any permission is
+// checked.
+func PublicBucket_post_object_lock(s *S3Conf) error {
+	testName := "PublicBucket_post_object_lock"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    "s3:PutObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		key := "my-obj"
+		post := func(lockFields map[string]string) (*http.Response, error) {
+			extraFields := map[string]string{
+				"x-amz-algorithm":  "",
+				"x-amz-credential": "",
+				"x-amz-date":       "",
+				"policy":           "",
+				"x-amz-signature":  "",
+			}
+			for field, value := range lockFields {
+				extraFields[field] = value
+			}
+			return sendPostObject(PostRequestConfig{
+				bucket:      bucket,
+				key:         key,
+				s3Conf:      s,
+				fileContent: []byte("data"),
+				extraFields: extraFields,
+			})
+		}
+		retainUntil := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+		retention := map[string]string{
+			"x-amz-object-lock-mode":              "GOVERNANCE",
+			"x-amz-object-lock-retain-until-date": retainUntil,
+		}
+		legalHold := map[string]string{"x-amz-object-lock-legal-hold": "ON"}
+
+		for name, fields := range map[string]map[string]string{"retention": retention, "legal hold": legalHold} {
+			resp, err := post(fields)
+			if err != nil {
+				return err
+			}
+			if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+				return fmt.Errorf("POST with a %s and public s3:PutObject only: %w", name, err)
+			}
+		}
+
+		resp, err := post(map[string]string{
+			"x-amz-object-lock-mode":              "INVALID",
+			"x-amz-object-lock-retain-until-date": retainUntil,
+		})
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, "INVALID")); err != nil {
+			return fmt.Errorf("POST with an invalid mode: %w", err)
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    []string{"s3:PutObject", "s3:PutObjectRetention", "s3:PutObjectLegalHold"},
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		resp, err = post(map[string]string{
+			"x-amz-object-lock-mode":              "GOVERNANCE",
+			"x-amz-object-lock-retain-until-date": retainUntil,
+			"x-amz-object-lock-legal-hold":        "ON",
+		})
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("POST with the lock actions granted publicly: %w", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		ret, err := s3client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if ret.Retention.Mode != types.ObjectLockRetentionModeGovernance {
+			return fmt.Errorf("expected retention mode %v, instead got %v",
+				types.ObjectLockRetentionModeGovernance, ret.Retention.Mode)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		hold, err := s3client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if hold.LegalHold.Status != types.ObjectLockLegalHoldStatusOn {
+			return fmt.Errorf("expected legal hold %v, instead got %v",
+				types.ObjectLockLegalHoldStatusOn, hold.LegalHold.Status)
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: key, removeLegalHold: true}})
+	}, withLock())
+}
+
 // PublicBucket_object_version_actions covers anonymous requests naming an
 // object version, each authorized as the version's own action:
 // s3:GetObjectVersion for GetObject and HeadObject, the version tagging
