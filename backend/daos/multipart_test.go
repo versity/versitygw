@@ -231,3 +231,36 @@ func uploadPart(t *testing.T, d *Daos, key, uploadID string, n int32, body strin
 }
 
 func int64ptr(v int64) *int64 { return &v }
+
+func TestListMultipartUploadsResumes(t *testing.T) {
+	d, _ := newTest(t)
+	first := startUpload(t, d, "photos/a.jpg")
+	second := startUpload(t, d, "photos/a.jpg")
+	max := int32(1)
+	page, err := d.ListMultipartUploads(context.Background(), &s3.ListMultipartUploadsInput{
+		Bucket:     backend.GetPtrFromString("bucket"),
+		MaxUploads: &max,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !page.IsTruncated || len(page.Uploads) != 1 {
+		t.Fatalf("first page = %+v truncated %v", page.Uploads, page.IsTruncated)
+	}
+	next, err := d.ListMultipartUploads(context.Background(), &s3.ListMultipartUploadsInput{
+		Bucket:         backend.GetPtrFromString("bucket"),
+		KeyMarker:      &page.NextKeyMarker,
+		UploadIdMarker: &page.NextUploadIDMarker,
+		MaxUploads:     &max,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(next.Uploads) != 1 {
+		t.Fatalf("second page = %+v", next.Uploads)
+	}
+	got := map[string]bool{page.Uploads[0].UploadID: true, next.Uploads[0].UploadID: true}
+	if !got[first.UploadId] || !got[second.UploadId] || page.Uploads[0].UploadID == next.Uploads[0].UploadID {
+		t.Fatalf("pages %s then %s, want %s and %s", page.Uploads[0].UploadID, next.Uploads[0].UploadID, first.UploadId, second.UploadId)
+	}
+}

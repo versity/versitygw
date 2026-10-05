@@ -223,10 +223,10 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 	}
 	dst := objectPath(bucket, key)
 	if err := d.mkdirParents(dst); err != nil {
-		return out, "", err
+		return out, "", d.mapKeyErr(err, key)
 	}
 	if err := d.fs.Move(tmp, dst); err != nil {
-		return out, "", mapFS(err)
+		return out, "", d.mapKeyErr(err, key)
 	}
 	published = true
 	_ = d.fs.Remove(claim, true)
@@ -384,7 +384,10 @@ func (d *Daos) ListMultipartUploads(_ context.Context, input *s3.ListMultipartUp
 		if prefix != "" && !strings.HasPrefix(objectName, prefix) {
 			continue
 		}
-		if keyMarker != "" && objectName <= keyMarker {
+		if keyMarker != "" && uploadMarker == "" && objectName <= keyMarker {
+			continue
+		}
+		if keyMarker != "" && uploadMarker != "" && objectName < keyMarker {
 			continue
 		}
 		kids, err := d.fs.ReadDir(hashDir)

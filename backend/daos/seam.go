@@ -66,5 +66,6 @@ type FS interface {
 	GetXattr(obj Object, name string) ([]byte, error)
 	ReadDir(path string) ([]Info, error)
 	Release(obj Object) error
+	StatObj(obj Object) (Info, error)
 	Close() error
 }

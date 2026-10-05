@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -285,5 +286,83 @@ func TestXattrLimit(t *testing.T) {
 	}
 	if err := fs.SetXattr(obj, "n", bytes.Repeat([]byte("a"), maxXattrLen+1)); !errors.Is(err, errNameLong) {
 		t.Fatalf("limit = %v", err)
+	}
+}
+
+func TestPutHeadersRoundTrip(t *testing.T) {
+	d, _ := newTest(t)
+	enc := "gzip"
+	lang := "en"
+	disp := "attachment"
+	cache := "max-age=60"
+	exp := "Wed, 21 Oct 2015 07:28:00 GMT"
+	_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket:             backend.GetPtrFromString("bucket"),
+		Key:                backend.GetPtrFromString("obj"),
+		Body:               bytes.NewReader([]byte("hello")),
+		ContentEncoding:    &enc,
+		ContentLanguage:    &lang,
+		ContentDisposition: &disp,
+		CacheControl:       &cache,
+		Expires:            &exp,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("obj"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if awsString(got.ContentEncoding) != enc || awsString(got.ContentLanguage) != lang || awsString(got.ContentDisposition) != disp || awsString(got.CacheControl) != cache || awsString(got.ExpiresString) != exp {
+		t.Fatalf("get headers enc %q lang %q disp %q cache %q exp %q", awsString(got.ContentEncoding), awsString(got.ContentLanguage), awsString(got.ContentDisposition), awsString(got.CacheControl), awsString(got.ExpiresString))
+	}
+	head, err := d.HeadObject(context.Background(), &s3.HeadObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("obj"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if awsString(head.ContentEncoding) != enc || awsString(head.ExpiresString) != exp {
+		t.Fatalf("head enc %q exp %q", awsString(head.ContentEncoding), awsString(head.ExpiresString))
+	}
+}
+
+func TestDirectoryPutKeepsMetadata(t *testing.T) {
+	d, _ := newTest(t)
+	_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket:   backend.GetPtrFromString("bucket"),
+		Key:      backend.GetPtrFromString("folder/"),
+		Body:     bytes.NewReader(nil),
+		Metadata: map[string]string{"origin": "lab"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := d.HeadObject(context.Background(), &s3.HeadObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("folder/"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head.Metadata["origin"] != "lab" || awsString(head.ContentType) != backend.DirContentType {
+		t.Fatalf("head meta %v type %q", head.Metadata, awsString(head.ContentType))
+	}
+}
+
+func TestPutLongComponentIsKeyTooLong(t *testing.T) {
+	d, _ := newTest(t)
+	_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString(strings.Repeat("a", maxComponent+1)),
+		Body:   bytes.NewReader([]byte("x")),
+	})
+	var long s3err.KeyTooLongError
+	if !errors.As(err, &long) {
+		t.Fatalf("put = %v", err)
 	}
 }

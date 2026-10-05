@@ -345,6 +345,19 @@ func (f *dfsFS) Release(obj Object) error {
 	return dfsErrno(rc)
 }
 
+func (f *dfsFS) StatObj(obj Object) (Info, error) {
+	o := obj.(*dfsObj)
+	var st C.struct_stat
+	if err := dfsErrno(C.dfs_ostat(f.dfs, o.obj, &st)); err != nil {
+		return Info{}, err
+	}
+	return Info{
+		Size:  int64(C.versitygw_size(&st)),
+		IsDir: C.versitygw_isdir(&st) != 0,
+		Mtime: int64(C.versitygw_mtime(&st)),
+	}, nil
+}
+
 func (f *dfsFS) parent(p string, flags C.int) (parent *C.dfs_obj_t, name string, release func(), err error) {
 	release = func() {}
 	p = clean(p)

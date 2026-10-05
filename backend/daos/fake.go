@@ -271,6 +271,12 @@ func (f *Fake) ReadDir(p string) ([]Info, error) {
 
 func (f *Fake) Release(Object) error { return nil }
 
+func (f *Fake) StatObj(obj Object) (Info, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return infoOf(obj.(fakeObj).n), nil
+}
+
 func (f *Fake) Close() error { return nil }
 
 func (f *Fake) walk(p string, mkdir bool) (*node, error) {
@@ -282,6 +288,9 @@ func (f *Fake) walk(p string, mkdir bool) (*node, error) {
 	for _, part := range strings.Split(p, "/") {
 		if part == "" {
 			continue
+		}
+		if len(part) > maxComponent {
+			return nil, errNameLong
 		}
 		if !cur.dir {
 			return nil, errNotDir
@@ -305,6 +314,9 @@ func (f *Fake) parent(p string, mkdir bool) (*node, string, error) {
 		return nil, "", errNotDir
 	}
 	dir, base := path.Split(p)
+	if len(base) > maxComponent {
+		return nil, "", errNameLong
+	}
 	parent, err := f.walk(dir, mkdir)
 	if err != nil {
 		return nil, "", err
@@ -318,6 +330,8 @@ func (f *Fake) parent(p string, mkdir bool) (*node, string, error) {
 func infoOf(n *node) Info {
 	return Info{Name: n.name, Size: int64(len(n.data)), IsDir: n.dir, Mtime: n.mtime}
 }
+
+const maxComponent = 255
 
 func clean(p string) string {
 	p = path.Clean("/" + p)

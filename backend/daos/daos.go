@@ -133,7 +133,7 @@ func (d *Daos) PutObject(_ context.Context, po s3response.PutObjectInput) (s3res
 		if len(body) != 0 {
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
 		}
-		return d.putDirectory(bucket, key)
+		return d.putDirectory(bucket, key, po)
 	}
 	return d.putFile(bucket, key, body, po)
 }
@@ -155,7 +155,7 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 		return nil, err
 	}
 	defer d.fs.Release(obj)
-	etag, meta, ctype, err := d.attrs(obj)
+	etag, meta, headers, err := d.attrs(obj)
 	if err != nil {
 		return nil, err
 	}
@@ -183,12 +183,17 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 	}
 	n64 := int64(len(buf))
 	out := &s3.GetObjectOutput{
-		Body:          io.NopCloser(bytes.NewReader(buf)),
-		ContentLength: &n64,
-		ETag:          &etag,
-		ContentType:   &ctype,
-		LastModified:  &mod,
-		Metadata:      meta,
+		Body:               io.NopCloser(bytes.NewReader(buf)),
+		ContentLength:      &n64,
+		ETag:               &etag,
+		ContentType:        strPtr(headers.ctype),
+		ContentEncoding:    strPtr(headers.encoding),
+		ContentLanguage:    strPtr(headers.language),
+		ContentDisposition: strPtr(headers.disposition),
+		CacheControl:       strPtr(headers.cache),
+		ExpiresString:      strPtr(headers.expires),
+		LastModified:       &mod,
+		Metadata:           meta,
 	}
 	if ranged {
 		cr := fmt.Sprintf("bytes %d-%d/%d", start, start+int64(len(buf))-1, info.Size)
@@ -211,7 +216,7 @@ func (d *Daos) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.Hea
 		return nil, err
 	}
 	defer d.fs.Release(obj)
-	etag, meta, ctype, err := d.attrs(obj)
+	etag, meta, headers, err := d.attrs(obj)
 	if err != nil {
 		return nil, err
 	}
@@ -225,11 +230,16 @@ func (d *Daos) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.Hea
 		return nil, err
 	}
 	return &s3.HeadObjectOutput{
-		ContentLength: &info.Size,
-		ETag:          &etag,
-		ContentType:   &ctype,
-		LastModified:  &mod,
-		Metadata:      meta,
+		ContentLength:      &info.Size,
+		ETag:               &etag,
+		ContentType:        strPtr(headers.ctype),
+		ContentEncoding:    strPtr(headers.encoding),
+		ContentLanguage:    strPtr(headers.language),
+		ContentDisposition: strPtr(headers.disposition),
+		CacheControl:       strPtr(headers.cache),
+		ExpiresString:      strPtr(headers.expires),
+		LastModified:       &mod,
+		Metadata:           meta,
 	}, nil
 }
 
@@ -305,33 +315,30 @@ func (d *Daos) putFile(bucket, key string, body []byte, po s3response.PutObjectI
 	}
 	dst := objectPath(bucket, key)
 	if err := d.mkdirParents(dst); err != nil {
-		return s3response.PutObjectOutput{}, err
+		return s3response.PutObjectOutput{}, d.mapKeyErr(err, key)
 	}
 	if err := d.fs.Move(tmp, dst); err != nil {
-		return s3response.PutObjectOutput{}, mapFS(err)
+		return s3response.PutObjectOutput{}, d.mapKeyErr(err, key)
 	}
 	moved = true
 	return s3response.PutObjectOutput{ETag: etag}, nil
 }
 
-func (d *Daos) putDirectory(bucket, key string) (s3response.PutObjectOutput, error) {
+func (d *Daos) putDirectory(bucket, key string, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 	p := objectPath(bucket, key)
 	if err := d.mkdirParents(p); err != nil {
-		return s3response.PutObjectOutput{}, err
+		return s3response.PutObjectOutput{}, d.mapKeyErr(err, key)
 	}
 	if err := d.fs.Mkdir(p); err != nil && !errors.Is(err, errExist) {
-		return s3response.PutObjectOutput{}, mapFS(err)
+		return s3response.PutObjectOutput{}, d.mapKeyErr(err, key)
 	}
 	obj, err := d.fs.Open(p, openRead)
 	if err != nil {
-		return s3response.PutObjectOutput{}, mapFS(err)
+		return s3response.PutObjectOutput{}, d.mapKeyErr(err, key)
 	}
 	defer d.fs.Release(obj)
-	if err := d.fs.SetXattr(obj, attrETag, []byte(emptyMD5)); err != nil {
-		return s3response.PutObjectOutput{}, mapFS(err)
-	}
-	if err := d.fs.SetXattr(obj, attrContentType, []byte(backend.DirContentType)); err != nil {
-		return s3response.PutObjectOutput{}, mapFS(err)
+	if err := d.storeAttrs(obj, emptyMD5, po, true); err != nil {
+		return s3response.PutObjectOutput{}, err
 	}
 	return s3response.PutObjectOutput{ETag: emptyMD5}, nil
 }
@@ -371,41 +378,86 @@ func (d *Daos) storeAttrs(obj Object, etag string, po s3response.PutObjectInput,
 	return nil
 }
 
-func (d *Daos) attrs(obj Object) (string, map[string]string, string, error) {
+type objHeaders struct {
+	ctype, encoding, language, disposition, cache, expires string
+}
+
+func (d *Daos) attrs(obj Object) (string, map[string]string, objHeaders, error) {
+	var headers objHeaders
 	etagb, err := d.fs.GetXattr(obj, attrETag)
 	if err != nil && !errors.Is(err, errNotExist) {
-		return "", nil, "", mapFS(err)
+		return "", nil, headers, mapFS(err)
 	}
-	ctype, err := d.fs.GetXattr(obj, attrContentType)
-	if err != nil && !errors.Is(err, errNotExist) {
-		return "", nil, "", mapFS(err)
+	headers.ctype, err = d.attrString(obj, attrContentType)
+	if err != nil {
+		return "", nil, headers, err
+	}
+	headers.encoding, err = d.attrString(obj, attrEncoding)
+	if err != nil {
+		return "", nil, headers, err
+	}
+	headers.language, err = d.attrString(obj, attrLanguage)
+	if err != nil {
+		return "", nil, headers, err
+	}
+	headers.disposition, err = d.attrString(obj, attrDisposition)
+	if err != nil {
+		return "", nil, headers, err
+	}
+	headers.cache, err = d.attrString(obj, attrCacheCtl)
+	if err != nil {
+		return "", nil, headers, err
+	}
+	headers.expires, err = d.attrString(obj, attrExpires)
+	if err != nil {
+		return "", nil, headers, err
 	}
 	var meta map[string]string
 	raw, err := d.fs.GetXattr(obj, attrMetadata)
 	if err != nil && !errors.Is(err, errNotExist) {
-		return "", nil, "", mapFS(err)
+		return "", nil, headers, mapFS(err)
 	}
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &meta); err != nil {
-			return "", nil, "", fmt.Errorf("parse metadata: %w", err)
+			return "", nil, headers, fmt.Errorf("parse metadata: %w", err)
 		}
 	}
-	return string(etagb), meta, string(ctype), nil
+	return string(etagb), meta, headers, nil
+}
+
+func (d *Daos) attrString(obj Object, name string) (string, error) {
+	b, err := d.fs.GetXattr(obj, name)
+	if errors.Is(err, errNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", mapFS(err)
+	}
+	return string(b), nil
+}
+
+func strPtr(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
 }
 
 func (d *Daos) openLive(bucket, key string, flags int) (Info, Object, error) {
 	p := objectPath(bucket, key)
-	info, err := d.fs.Stat(p)
-	if err != nil {
-		return Info{}, nil, d.mapKeyErr(err, key)
-	}
-	wantDir := strings.HasSuffix(key, "/")
-	if wantDir != info.IsDir {
-		return Info{}, nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-	}
 	obj, err := d.fs.Open(p, flags)
 	if err != nil {
 		return Info{}, nil, d.mapKeyErr(err, key)
+	}
+	info, err := d.fs.StatObj(obj)
+	if err != nil {
+		d.fs.Release(obj)
+		return Info{}, nil, mapFS(err)
+	}
+	wantDir := strings.HasSuffix(key, "/")
+	if wantDir != info.IsDir {
+		d.fs.Release(obj)
+		return Info{}, nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	return info, obj, nil
 }
