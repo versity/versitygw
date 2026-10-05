@@ -191,6 +191,7 @@ var gatewayCommands = map[string]bool{
 	"scoutfs": true,
 	"s3":      true,
 	"azure":   true,
+	"daos":    true,
 	"plugin":  true,
 }
 
@@ -205,6 +206,7 @@ func main() {
 		gwcli.ScoutfsCommand(),
 		gwcli.S3Command(),
 		gwcli.AzureCommand(),
+		gwcli.DaosCommand(),
 		gwcli.PluginCommand(),
 		gwcli.AdminCommand(),
 		gwcli.UtilsCommand(),

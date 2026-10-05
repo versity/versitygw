@@ -17,14 +17,14 @@ backend="${VGW_BACKEND:-}"
 if [ -z "$backend" ]; then
     cat >&2 <<'EOF'
 No command arguments were provided and VGW_BACKEND is unset.
-Set VGW_BACKEND to one of: posix, scoutfs, s3, azure, plugin, iam
+Set VGW_BACKEND to one of: posix, scoutfs, s3, azure, daos, plugin, iam
 or pass explicit arguments to the container to run the versitygw command directly.
 EOF
     exit 1
 fi
 
 case "$backend" in
-    posix|scoutfs|s3|azure|plugin|iam)
+    posix|scoutfs|s3|azure|daos|plugin|iam)
         ;;
     *)
         echo "VGW_BACKEND invalid backend (was '$backend')." >&2
