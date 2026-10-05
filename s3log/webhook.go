@@ -101,7 +101,7 @@ func (wl *WebhookLogger) Log(ctx fiber.Ctx, err error, body []byte, meta LogMeta
 	lf.BucketOwner = meta.BucketOwner
 	lf.Bucket = bucket
 	lf.Time = time.Now()
-	lf.RemoteIP = ctx.IP()
+	lf.RemoteIP = utils.ClientIP(ctx)
 	lf.Requester = access
 	lf.Operation = meta.Action
 	lf.Key = object
