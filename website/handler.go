@@ -141,8 +141,7 @@ func registerWebsiteRoutes(app *fiber.App, be backend.Backend, domain string) {
 // report malformed percent-encoding as an html error page.
 func decodeURL(ctx fiber.Ctx) error {
 	if err := middlewares.DecodeURL(ctx); err != nil {
-		debuglogger.Logf("failed to unescape the request path: %v", err)
-		return sendError(ctx, s3err.GetAPIError(s3err.ErrInvalidURI))
+		return sendError(ctx, err)
 	}
 
 	return ctx.Next()
