@@ -1749,6 +1749,79 @@ func AccessControl_bucket_policy_condition_if_none_match_required(s *S3Conf) err
 	})
 }
 
+// AccessControl_bucket_policy_condition_if_none_match_copy is the same
+// "enforce conditional writes" pattern for a copy: its If-None-Match is a
+// conditional write on the destination, so it populates the key just like
+// an upload's.
+func AccessControl_bucket_policy_condition_if_none_match_copy(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_if_none_match_copy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		src := "src-obj"
+		if _, err := putObjects(s3client, []string{src}, bucket); err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket,
+			bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    []string{"s3:PutObject", "s3:GetObject"},
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+			},
+			bucketStatement{
+				Effect:    "Deny",
+				Principal: testuser.access,
+				Action:    "s3:PutObject",
+				Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+				Condition: json.RawMessage(`{"Null":{"s3:if-none-match":"true"}}`),
+			},
+		); err != nil {
+			return err
+		}
+
+		copySource := getPtr(fmt.Sprintf("%s/%s", bucket, src))
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        getPtr("unconditional"),
+			CopySource: copySource,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetExplicitDenyAccessErr(testuser.access, "s3:PutObject",
+			fmt.Sprintf("arn:aws:s3:::%s/unconditional", bucket), "a resource-based policy")); err != nil {
+			return fmt.Errorf("a copy without If-None-Match must be denied: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("conditional"),
+			CopySource:  copySource,
+			IfNoneMatch: getPtr("*"),
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("a copy carrying If-None-Match must be allowed: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:      &bucket,
+			Key:         getPtr("conditional"),
+			CopySource:  copySource,
+			IfNoneMatch: getPtr("*"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrPreconditionFailed))
+	})
+}
+
 // AccessControl_bucket_policy_condition_if_none_match_value covers the
 // key's value rather than its presence: the only value S3 accepts in an
 // If-None-Match write is "*", and that is what the key carries verbatim -

@@ -694,6 +694,58 @@ func Versioning_PutObject_suspended_null_version_resets_attributes(s *S3Conf) er
 	}, withVersioning(types.BucketVersioningStatusSuspended))
 }
 
+// A delete marker as the current version leaves the key without an object,
+// although the version it hides still has an ETag: If-Match finds no key,
+// while If-None-Match lets the upload through as a new version.
+func Versioning_PutObject_conditional_writes_over_delete_marker(s *S3Conf) error {
+	testName := "Versioning_PutObject_conditional_writes_over_delete_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(obj string) error {
+			versions, err := createObjVersions(s3client, bucket, obj, 1)
+			if err != nil {
+				return err
+			}
+			if _, err := createDeleteMarker(s3client, bucket, obj); err != nil {
+				return err
+			}
+
+			_, err = putObjectWithData(objDataLen(obj, 5), &s3.PutObjectInput{
+				Bucket:  &bucket,
+				Key:     &obj,
+				IfMatch: versions[0].ETag,
+			}, s3client)
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+				return err
+			}
+
+			res, err := putObjectWithData(objDataLen(obj, 5), &s3.PutObjectInput{
+				Bucket:      &bucket,
+				Key:         &obj,
+				IfNoneMatch: getPtr("*"),
+			}, s3client)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if getString(head.VersionId) != getString(res.res.VersionId) {
+				return fmt.Errorf("expected the current version to be %v, instead got %v",
+					getString(res.res.VersionId), getString(head.VersionId))
+			}
+
+			return nil
+		})
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_CopyObject_invalid_versionId(s *S3Conf) error {
 	testName := "Versioning_CopyObject_invalid_versionId"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1194,6 +1246,129 @@ func Versioning_CopyObject_to_itself_from_the_current_version(s *S3Conf) error {
 
 			return nil
 		})
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// A rejected conditional copy creates no version. A delete marker as the
+// current version leaves the destination without an object: If-Match finds
+// no key, while If-None-Match lets the copy through as a new version.
+func Versioning_CopyObject_conditional_writes(s *S3Conf) error {
+	testName := "Versioning_CopyObject_conditional_writes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		src, obj := "src-obj", "my-obj"
+		if _, err := createObjVersions(s3client, bucket, src, 1); err != nil {
+			return err
+		}
+		versions, err := createObjVersions(s3client, bucket, obj, 2)
+		if err != nil {
+			return err
+		}
+		copySource := getPtr(fmt.Sprintf("%v/%v", bucket, src))
+
+		for i, test := range []struct {
+			ifMatch     *string
+			ifNoneMatch *string
+		}{
+			{getPtr("incorrect_etag"), nil},
+			{getPtr(getString(versions[1].ETag)), nil},
+			{nil, getPtr("*")},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:      &bucket,
+				Key:         &obj,
+				CopySource:  copySource,
+				IfMatch:     test.ifMatch,
+				IfNoneMatch: test.ifNoneMatch,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrPreconditionFailed)); err != nil {
+				return fmt.Errorf("test case %v: %w", i, err)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			CopySource: copySource,
+			IfMatch:    versions[0].ETag,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if getString(out.VersionId) == "" || getString(out.VersionId) == getString(versions[0].VersionId) {
+			return fmt.Errorf("expected a new versionId, instead got %v", getString(out.VersionId))
+		}
+
+		if _, err := createDeleteMarker(s3client, bucket, obj); err != nil {
+			return err
+		}
+
+		for i, test := range []struct {
+			ifMatch *string
+			err     s3err.APIError
+		}{
+			{out.CopyObjectResult.ETag, s3err.GetAPIError(s3err.ErrNoSuchKey)},
+			{getPtr("*"), s3err.GetAPIError(s3err.ErrNotImplemented)},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				CopySource: copySource,
+				IfMatch:    test.ifMatch,
+			})
+			cancel()
+			if err := checkApiErr(err, test.err); err != nil {
+				return fmt.Errorf("delete marker test case %v: %w", i, err)
+			}
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:      &bucket,
+			Key:         &obj,
+			CopySource:  copySource,
+			IfNoneMatch: getPtr("*"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if getString(head.VersionId) != getString(out.VersionId) {
+			return fmt.Errorf("expected the current version to be %v, instead got %v",
+				getString(out.VersionId), getString(head.VersionId))
+		}
+
+		// two versions were created, the two successful copies and the
+		// delete marker between them
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+			Prefix: &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if len(res.Versions) != 4 || len(res.DeleteMarkers) != 1 {
+			return fmt.Errorf("expected 4 versions and 1 delete marker, instead got %v and %v",
+				len(res.Versions), len(res.DeleteMarkers))
+		}
+
+		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
@@ -4684,6 +4859,85 @@ func Versioning_Multipart_Upload_overwrite_keeps_previous_version_metadata(s *S3
 			if !areTagsSame(tagging.TagSet, expectedTags) {
 				return fmt.Errorf("version %v: expected the tags to be %v, instead got %v",
 					*v.versionId, expectedTags, tagging.TagSet)
+			}
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// A delete marker as the current version leaves the key without an object:
+// completing an upload with If-Match finds no key, while If-None-Match lets
+// it through as a new version.
+func Versioning_Multipart_Upload_conditional_writes_over_delete_marker(s *S3Conf) error {
+	testName := "Versioning_Multipart_Upload_conditional_writes_over_delete_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		versions, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+		if _, err := createDeleteMarker(s3client, bucket, obj); err != nil {
+			return err
+		}
+
+		for i, test := range []struct {
+			ifMatch     *string
+			ifNoneMatch *string
+			err         error
+		}{
+			{versions[0].ETag, nil, s3err.GetAPIError(s3err.ErrNoSuchKey)},
+			{nil, getPtr("*"), nil},
+		} {
+			mp, err := createMp(s3client, bucket, obj)
+			if err != nil {
+				return err
+			}
+			parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *mp.UploadId)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+				Bucket:   &bucket,
+				Key:      &obj,
+				UploadId: mp.UploadId,
+				MultipartUpload: &types.CompletedMultipartUpload{
+					Parts: []types.CompletedPart{
+						{
+							ETag:              parts[0].ETag,
+							PartNumber:        parts[0].PartNumber,
+							ChecksumCRC64NVME: parts[0].ChecksumCRC64NVME,
+						},
+					},
+				},
+				IfMatch:     test.ifMatch,
+				IfNoneMatch: test.ifNoneMatch,
+			})
+			cancel()
+			if test.err != nil {
+				if err := checkApiErr(err, test.err.(s3err.APIError)); err != nil {
+					return fmt.Errorf("test case %v: %w", i, err)
+				}
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("test case %v: %w", i, err)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if getString(head.VersionId) != getString(out.VersionId) {
+				return fmt.Errorf("test case %v: expected the current version to be %v, instead got %v",
+					i, getString(out.VersionId), getString(head.VersionId))
 			}
 		}
 

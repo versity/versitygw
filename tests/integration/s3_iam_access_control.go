@@ -2942,14 +2942,13 @@ func S3IAMAccessControl_condition_if_match_bucket_level_write(s *S3Conf) error {
 	})
 }
 
-// S3IAMAccessControl_condition_conditional_write_keys_ignore_copies pins
-// the other half of that rule. A copy takes its preconditions from the
-// x-amz-copy-source-if-* headers, so the gateway ignores a plain If-Match or
-// If-None-Match on one — and a policy demanding a conditional write must
-// therefore keep denying copies rather than be satisfied by a header that
-// changes nothing.
-func S3IAMAccessControl_condition_conditional_write_keys_ignore_copies(s *S3Conf) error {
-	testName := "S3IAMAccessControl_condition_conditional_write_keys_ignore_copies"
+// S3IAMAccessControl_condition_conditional_write_keys_cover_copies is the
+// "enforce conditional writes" pattern for a copy. A copy's If-None-Match
+// is a conditional write on its destination, so it populates the key just
+// like an upload's: a copy without it is denied, and one carrying it is
+// authorized and then held to the precondition.
+func S3IAMAccessControl_condition_conditional_write_keys_cover_copies(s *S3Conf) error {
+	testName := "S3IAMAccessControl_condition_conditional_write_keys_cover_copies"
 	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		if _, err := putObjectAndGetETag(s.GetClient(), bucket, "src"); err != nil {
 			return err
@@ -2972,20 +2971,33 @@ func S3IAMAccessControl_condition_conditional_write_keys_ignore_copies(s *S3Conf
 
 		for _, tc := range []struct {
 			name        string
+			key         string
 			ifNoneMatch *string
+			err         s3err.S3Error
 		}{
-			{"a copy without the header", nil},
-			{"a copy carrying the header", getPtr("*")},
+			{"a copy without the header", "unconditional", nil,
+				wantExplicitIdentityDeny(user.arn, actS3PutObject, objectArn(bucket, "unconditional"))},
+			{"a copy carrying the header", "conditional", getPtr("*"), nil},
+			// still authorized once the key exists; only the precondition
+			// itself fails now, which the policy has no say in
+			{"the same copy onto an existing key", "conditional", getPtr("*"),
+				s3err.GetAPIError(s3err.ErrPreconditionFailed)},
 		} {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := user.client.CopyObject(ctx, &s3.CopyObjectInput{
 				Bucket:      &bucket,
-				Key:         getPtr("dst"),
+				Key:         &tc.key,
 				CopySource:  getPtr(bucket + "/src"),
 				IfNoneMatch: tc.ifNoneMatch,
 			})
 			cancel()
-			if err := checkApiErr(err, wantExplicitIdentityDeny(user.arn, actS3PutObject, objectArn(bucket, "dst"))); err != nil {
+			if tc.err == nil {
+				if err != nil {
+					return fmt.Errorf("%s: expected success, got %w", tc.name, err)
+				}
+				continue
+			}
+			if err := checkApiErr(err, tc.err); err != nil {
 				return fmt.Errorf("%s: %w", tc.name, err)
 			}
 		}

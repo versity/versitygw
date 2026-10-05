@@ -21,7 +21,8 @@ import (
 type NmpAdditionalMessage string
 
 const (
-	NmpAdditionalMessageIfNoneMatch         NmpAdditionalMessage = "We don\\'t accept the provided value of If-None-Match header for this API"
+	NmpAdditionalMessageIfMatch             NmpAdditionalMessage = "We don't accept the provided value of If-Match header for this API"
+	NmpAdditionalMessageIfNoneMatch         NmpAdditionalMessage = "We don't accept the provided value of If-None-Match header for this API"
 	NmpAdditionalMessageMultipleCondHeaders NmpAdditionalMessage = "Multiple conditional request headers present in the request"
 )
 

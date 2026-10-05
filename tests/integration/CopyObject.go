@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -1402,6 +1403,208 @@ func CopyObject_conditional_reads(s *S3Conf) error {
 				if err := checkApiErr(err, apiErr); err != nil {
 					return fmt.Errorf("test case %d failed: %w", i, err)
 				}
+			}
+		}
+
+		return nil
+	})
+}
+
+func CopyObject_conditional_writes(s *S3Conf) error {
+	testName := "CopyObject_conditional_writes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		src, obj := "src-obj", "my-obj"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &src,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		res, err := putObjectWithData(0, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Body:   strings.NewReader("dummy"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		etag := res.res.ETag
+		etagTrimmed := strings.Trim(*etag, `"`)
+		incorrectEtag := getPtr("incorrect_etag")
+		errPrecond := s3err.GetAPIError(s3err.ErrPreconditionFailed)
+		errNoSuchKey := s3err.GetAPIError(s3err.ErrNoSuchKey)
+		errNotImplemented := s3err.GetAPIError(s3err.ErrNotImplemented)
+
+		for i, test := range []struct {
+			obj         string
+			ifMatch     *string
+			ifNoneMatch *string
+			err         error
+		}{
+			{obj, etag, nil, nil},
+			{obj, etag, etag, errNotImplemented},
+			{obj, etag, incorrectEtag, errNotImplemented},
+			{obj, incorrectEtag, incorrectEtag, errNotImplemented},
+			{obj, incorrectEtag, etag, errNotImplemented},
+			{obj, incorrectEtag, nil, errPrecond},
+			{obj, nil, incorrectEtag, errNotImplemented},
+			{obj, nil, etag, errNotImplemented},
+			{obj, nil, getPtr("*"), errPrecond},
+			{obj, etag, getPtr("*"), errNotImplemented},
+			{obj, getPtr("*"), nil, errNotImplemented},
+			{obj, getPtr("*"), getPtr("*"), errNotImplemented},
+			{obj, nil, nil, nil},
+
+			// precondition headers without quotes
+			{obj, &etagTrimmed, nil, nil},
+			{obj, &etagTrimmed, &etagTrimmed, errNotImplemented},
+			{obj, &etagTrimmed, incorrectEtag, errNotImplemented},
+			{obj, incorrectEtag, &etagTrimmed, errNotImplemented},
+			{obj, nil, &etagTrimmed, errNotImplemented},
+
+			// destination doesn't exist tests
+			{"obj-1", incorrectEtag, etag, errNotImplemented},
+			{"obj-2", etag, etag, errNotImplemented},
+			{"obj-3", etag, nil, errNoSuchKey},
+			{"obj-4", etag, incorrectEtag, errNotImplemented},
+			{"obj-5", incorrectEtag, nil, errNoSuchKey},
+			{"obj-6", nil, etag, errNotImplemented},
+			{"obj-7", nil, getPtr("*"), nil},
+			{"obj-8", etag, getPtr("*"), errNotImplemented},
+			{"obj-9", getPtr("*"), nil, errNotImplemented},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:      &bucket,
+				Key:         &test.obj,
+				CopySource:  getPtr(fmt.Sprintf("%s/%s", bucket, src)),
+				IfMatch:     test.ifMatch,
+				IfNoneMatch: test.ifNoneMatch,
+			})
+			cancel()
+			if err == nil && test.obj == obj {
+				// azure blob storage generates different ETags for
+				// the exact same data.
+				// to avoid ETag collision reassign the etag value
+				*etag = *out.CopyObjectResult.ETag
+				etagTrimmed = strings.Trim(*etag, `"`)
+			}
+			if test.err == nil && err != nil {
+				return fmt.Errorf("test case %v: expected no error, instead got %w", i, err)
+			}
+			if test.err != nil {
+				apierr, ok := test.err.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("test case %v: invalid error type: %w", i, test.err)
+				}
+
+				if err := checkApiErr(err, apierr); err != nil {
+					return fmt.Errorf("test case %v: %w", i, err)
+				}
+
+				if test.obj != obj {
+					continue
+				}
+				// a rejected copy leaves the destination as it was
+				dstEtag, err := headObjectETag(s3client, bucket, obj)
+				if err != nil {
+					return fmt.Errorf("test case %v: %w", i, err)
+				}
+				if dstEtag != *etag {
+					return fmt.Errorf("test case %v: expected the destination ETag to stay %v, instead got %v",
+						i, *etag, dstEtag)
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
+// The destination's If-Match/If-None-Match are evaluated before the copy
+// source is looked up, so they decide the outcome over a missing source, a
+// failing copy-source precondition and an invalid copy onto itself.
+func CopyObject_conditional_writes_precedence(s *S3Conf) error {
+	testName := "CopyObject_conditional_writes_precedence"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		src, obj := "src-obj", "my-obj"
+		srcRes, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &src,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		res, err := putObjectWithData(20, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		etag := getString(res.res.ETag)
+		staleEtag := `"0123456789abcdef0123456789abcdef"`
+
+		for i, test := range []struct {
+			copySource string
+			headers    map[string]string
+			err        s3err.S3Error
+		}{
+			{src, map[string]string{"If-Match": staleEtag},
+				s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)},
+			{src, map[string]string{"If-None-Match": "*"},
+				s3err.GetPreconditionFailedErr(s3err.ConditionIfNoneMatch)},
+			{src, map[string]string{"If-Match": "*"},
+				s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageIfMatch)},
+			{src, map[string]string{"If-None-Match": etag},
+				s3err.GetNotImplementedErr("If-None-Match", s3err.NmpAdditionalMessageIfNoneMatch)},
+			{src, map[string]string{"If-Match": etag, "If-None-Match": etag},
+				s3err.GetNotImplementedErr("If-Match,If-None-Match", s3err.NmpAdditionalMessageMultipleCondHeaders)},
+			// a valid copy-source precondition doesn't help a stale destination
+			{src, map[string]string{"If-Match": staleEtag, "X-Amz-Copy-Source-If-Match": getString(srcRes.res.ETag)},
+				s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)},
+			// the destination fails before the copy-source precondition
+			// is evaluated
+			{src, map[string]string{"If-None-Match": "*", "X-Amz-Copy-Source-If-None-Match": getString(srcRes.res.ETag)},
+				s3err.GetPreconditionFailedErr(s3err.ConditionIfNoneMatch)},
+			{"missing-src", map[string]string{"If-Match": staleEtag},
+				s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)},
+			{"missing-src", map[string]string{"If-Match": "*"},
+				s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageIfMatch)},
+			// a copy onto itself without a metadata directive
+			{obj, map[string]string{"If-Match": staleEtag},
+				s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)},
+			{obj, map[string]string{"If-None-Match": "*"},
+				s3err.GetPreconditionFailedErr(s3err.ConditionIfNoneMatch)},
+			// and with a REPLACE one
+			{obj, map[string]string{"If-Match": staleEtag, "X-Amz-Metadata-Directive": "REPLACE"},
+				s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)},
+			{obj, map[string]string{"If-None-Match": "*", "X-Amz-Metadata-Directive": "REPLACE"},
+				s3err.GetPreconditionFailedErr(s3err.ConditionIfNoneMatch)},
+		} {
+			test.headers["X-Amz-Copy-Source"] = fmt.Sprintf("%s/%s", bucket, test.copySource)
+			req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%s/%s", bucket, obj),
+				s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), test.headers)
+			if err != nil {
+				return fmt.Errorf("test case %v: %w", i, err)
+			}
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("test case %v: %w", i, err)
+			}
+			if err := checkHTTPResponseApiErr(resp, test.err); err != nil {
+				return fmt.Errorf("test case %v: %w", i, err)
+			}
+
+			dstEtag, err := headObjectETag(s3client, bucket, obj)
+			if err != nil {
+				return fmt.Errorf("test case %v: %w", i, err)
+			}
+			if dstEtag != etag {
+				return fmt.Errorf("test case %v: expected the destination ETag to stay %v, instead got %v",
+					i, etag, dstEtag)
 			}
 		}
 
