@@ -566,7 +566,7 @@ func ListMultipartUploads_upload_id_marker_truncated(s *S3Conf) error {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
 				Bucket:         &bucket,
-				KeyMarker:      getPtr("ba"),
+				KeyMarker:      uploads[0].Key,
 				UploadIdMarker: uploads[0].UploadId,
 				MaxUploads:     &test.maxUploads,
 			})
