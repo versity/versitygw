@@ -1,0 +1,289 @@
+// Copyright 2026 Versity Software
+// Copyright 2026 Gluesys Inc. and Jihyeon Gim
+// This file is licensed under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+package daos
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
+)
+
+func newTest(t *testing.T) (*Daos, *Fake) {
+	t.Helper()
+	fs := NewFake()
+	if err := fs.Mkdir("bucket"); err != nil {
+		t.Fatal(err)
+	}
+	return NewWithFS(fs), fs
+}
+
+func put(t *testing.T, d *Daos, key, body, ctype string, meta map[string]string) string {
+	t.Helper()
+	out, err := d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket:      backend.GetPtrFromString("bucket"),
+		Key:         backend.GetPtrFromString(key),
+		Body:        bytes.NewReader([]byte(body)),
+		ContentType: backend.GetPtrFromString(ctype),
+		Metadata:    meta,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out.ETag
+}
+
+func TestPutGetHeadRoundTrip(t *testing.T) {
+	d, _ := newTest(t)
+	etag := put(t, d, "dir/obj", "hello", "text/plain", map[string]string{"color": "blue"})
+
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("dir/obj"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(got.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "hello" || awsString(got.ETag) != etag || awsString(got.ContentType) != "text/plain" {
+		t.Fatalf("get = %q etag %q type %q", body, awsString(got.ETag), awsString(got.ContentType))
+	}
+	if got.Metadata["color"] != "blue" {
+		t.Fatalf("metadata = %v", got.Metadata)
+	}
+
+	head, err := d.HeadObject(context.Background(), &s3.HeadObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("dir/obj"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if awsString(head.ETag) != etag || head.ContentLength == nil || *head.ContentLength != 5 {
+		t.Fatalf("head etag %q len %v", awsString(head.ETag), head.ContentLength)
+	}
+}
+
+func TestReplaceDoesNotServeTheOldObject(t *testing.T) {
+	d, fs := newTest(t)
+	put(t, d, "obj", "one", "", nil)
+	old, err := fs.Open("bucket/obj", openRead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, d, "obj", "two", "", nil)
+
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("obj"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(got.Body)
+	if string(body) != "two" {
+		t.Fatalf("live object = %q", body)
+	}
+	buf := make([]byte, 3)
+	if _, err := fs.Read(old, buf, 0); err != nil || string(buf) != "one" {
+		t.Fatalf("old handle = %q err %v", buf, err)
+	}
+}
+
+func TestMissingBucketAndKey(t *testing.T) {
+	d, _ := newTest(t)
+	_, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("missing"),
+		Key:    backend.GetPtrFromString("obj"),
+	})
+	if !errors.Is(err, s3err.GetBucketErr(s3err.ErrNoSuchBucket, "missing")) {
+		t.Fatalf("bucket err = %v", err)
+	}
+	_, err = d.HeadObject(context.Background(), &s3.HeadObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("missing"),
+	})
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		t.Fatalf("key err = %v", err)
+	}
+}
+
+func TestDirectoryObject(t *testing.T) {
+	d, _ := newTest(t)
+	etag := put(t, d, "folder/", "", "", nil)
+	if etag != emptyMD5 {
+		t.Fatalf("etag = %q", etag)
+	}
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("folder/"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if awsString(got.ContentType) != backend.DirContentType {
+		t.Fatalf("type = %q", awsString(got.ContentType))
+	}
+	_, err = d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("folder/"),
+		Body:   bytes.NewReader([]byte("x")),
+	})
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)) {
+		t.Fatalf("data err = %v", err)
+	}
+}
+
+func TestConditionalAndVersionRejects(t *testing.T) {
+	d, _ := newTest(t)
+	match := "\"abc\""
+	_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket:  backend.GetPtrFromString("bucket"),
+		Key:     backend.GetPtrFromString("obj"),
+		IfMatch: &match,
+	})
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotImplemented)) {
+		t.Fatalf("put match = %v", err)
+	}
+	ver := "1"
+	_, err = d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket:    backend.GetPtrFromString("bucket"),
+		Key:       backend.GetPtrFromString("obj"),
+		VersionId: &ver,
+	})
+	if err == nil || !errors.Is(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "1")) {
+		t.Fatalf("version = %v", err)
+	}
+	algo := "AES256"
+	_, err = d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket:               backend.GetPtrFromString("bucket"),
+		Key:                  backend.GetPtrFromString("obj"),
+		SSECustomerAlgorithm: &algo,
+	})
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotImplemented)) {
+		t.Fatalf("sse = %v", err)
+	}
+}
+
+func TestDeleteAndDeleteObjects(t *testing.T) {
+	d, _ := newTest(t)
+	put(t, d, "a", "a", "", nil)
+	put(t, d, "keep/", "", "", nil)
+	put(t, d, "keep/child", "c", "", nil)
+	if _, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("a"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("keep/"),
+	})
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrDirectoryNotEmpty)) {
+		t.Fatalf("dir delete = %v", err)
+	}
+	res, err := d.DeleteObjects(context.Background(), &s3.DeleteObjectsInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Delete: &types.Delete{Objects: []types.ObjectIdentifier{
+			{Key: backend.GetPtrFromString("keep/child")},
+			{Key: backend.GetPtrFromString("gone")},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Deleted) != 1 || len(res.Error) != 1 {
+		t.Fatalf("result deleted %d errors %d", len(res.Deleted), len(res.Error))
+	}
+}
+
+func TestReadGetters(t *testing.T) {
+	d, _ := newTest(t)
+	acl, err := d.GetBucketAcl(context.Background(), &s3.GetBucketAclInput{Bucket: backend.GetPtrFromString("bucket")})
+	if err != nil || len(acl) != 0 {
+		t.Fatalf("acl %q err %v", acl, err)
+	}
+	_, err = d.GetBucketPolicy(context.Background(), "bucket")
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
+		t.Fatalf("policy = %v", err)
+	}
+	_, err = d.GetObjectLockConfiguration(context.Background(), "bucket")
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)) {
+		t.Fatalf("lock = %v", err)
+	}
+	_, err = d.GetBucketAcl(context.Background(), &s3.GetBucketAclInput{Bucket: backend.GetPtrFromString("nope")})
+	if !errors.Is(err, s3err.GetBucketErr(s3err.ErrNoSuchBucket, "nope")) {
+		t.Fatalf("missing acl = %v", err)
+	}
+}
+
+func TestFailedPutRemovesTemporaryName(t *testing.T) {
+	d, fs := newTest(t)
+	fs.FailNextMove()
+	_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("obj"),
+		Body:   bytes.NewReader([]byte("hello")),
+	})
+	if err == nil {
+		t.Fatal("put succeeded")
+	}
+	left, err := fs.ReadDir("bucket/.sgwtmp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("temporary names left: %+v", left)
+	}
+	if _, err := fs.Stat("bucket/obj"); !errors.Is(err, errNotExist) {
+		t.Fatalf("destination stat = %v", err)
+	}
+}
+
+func TestObjectLockWriteNotImplemented(t *testing.T) {
+	d, _ := newTest(t)
+	mode := types.ObjectLockModeGovernance
+	_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket:         backend.GetPtrFromString("bucket"),
+		Key:            backend.GetPtrFromString("obj"),
+		ObjectLockMode: mode,
+	})
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotImplemented)) {
+		t.Fatalf("lock write = %v", err)
+	}
+}
+
+func TestXattrLimit(t *testing.T) {
+	fs := NewFake()
+	obj, err := fs.Open("wide", openWrite|openCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.SetXattr(obj, "n", bytes.Repeat([]byte("a"), maxXattrLen+1)); !errors.Is(err, errNameLong) {
+		t.Fatalf("limit = %v", err)
+	}
+}
