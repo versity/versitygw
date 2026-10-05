@@ -127,8 +127,9 @@ func (l *MultipartUploadLister) Run() (*ListMultipartUploadsPage, error) {
 						if out.IsTruncated {
 							out.NextKeyMarker = lastKey
 							out.NextUploadIDMarker = up.UploadID
+							return out, nil
 						}
-						return out, nil
+						break
 					}
 				}
 				continue
@@ -140,9 +141,18 @@ func (l *MultipartUploadLister) Run() (*ListMultipartUploadsPage, error) {
 			if out.IsTruncated {
 				out.NextKeyMarker = lastKey
 				out.NextUploadIDMarker = up.UploadID
+				return out, nil
 			}
-			return out, nil
+			break
 		}
+	}
+
+	// a listing that is not truncated still reports its last upload
+	// in the next markers
+	if len(out.Uploads) != 0 {
+		last := out.Uploads[len(out.Uploads)-1]
+		out.NextKeyMarker = last.Key
+		out.NextUploadIDMarker = last.UploadID
 	}
 
 	return out, nil

@@ -153,6 +153,57 @@ func ListMultipartUploads_max_uploads(s *S3Conf) error {
 	})
 }
 
+func ListMultipartUploads_next_markers_not_truncated(s *S3Conf) error {
+	testName := "ListMultipartUploads_next_markers_not_truncated"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		uploads := []types.MultipartUpload{}
+		for _, key := range []string{"bar", "baz", "foo"} {
+			out, err := createMp(s3client, bucket, key)
+			if err != nil {
+				return err
+			}
+			uploads = append(uploads, types.MultipartUpload{
+				UploadId:     out.UploadId,
+				Key:          out.Key,
+				StorageClass: types.StorageClassStandard,
+			})
+		}
+		last := uploads[len(uploads)-1]
+
+		// a single page still reports the last upload in the next markers,
+		// with the default max-uploads and with one equal to the upload count
+		for _, maxUploads := range []*int32{nil, getPtr(int32(len(uploads)))} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+				Bucket:     &bucket,
+				MaxUploads: maxUploads,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if out.IsTruncated == nil || *out.IsTruncated {
+				return fmt.Errorf("expected a non-truncated response")
+			}
+			if ok := compareMultipartUploads(out.Uploads, uploads); !ok {
+				return fmt.Errorf("expected multipart uploads to be %v, instead got %v",
+					uploads, out.Uploads)
+			}
+			if getString(out.NextKeyMarker) != getString(last.Key) {
+				return fmt.Errorf("expected next-key-marker to be %v, instead got %v",
+					getString(last.Key), getString(out.NextKeyMarker))
+			}
+			if getString(out.NextUploadIdMarker) != getString(last.UploadId) {
+				return fmt.Errorf("expected next-upload-id-marker to be %v, instead got %v",
+					getString(last.UploadId), getString(out.NextUploadIdMarker))
+			}
+		}
+
+		return nil
+	})
+}
+
 func ListMultipartUploads_exceeding_max_uploads(s *S3Conf) error {
 	testName := "ListMultipartUploads_exceeding_max_uploads"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
