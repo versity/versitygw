@@ -372,6 +372,20 @@ type Config struct {
 	// AdminLogFile is the file path or stream name (stdout, stderr, or - for
 	// stdout) for admin API request logs.
 	AdminLogFile string
+	// ClientIPHeader records the client address from this proxy header in the
+	// request log and the S3 and admin access logs. Accepted values are
+	// "X-Forwarded-For" and "X-Real-Ip". Empty (the default) keeps the socket
+	// peer address. The header is only honoured from a peer in
+	// TrustedProxies, which is required when this is set. IAM aws:SourceIp
+	// conditions are unaffected and keep evaluating the socket address.
+	ClientIPHeader string
+	// TrustedProxies lists the comma-separated IP addresses and CIDR prefixes
+	// of the proxies in front of the gateway. The entry "unix" trusts a peer
+	// connected over a unix domain socket, whose address fasthttp reports as
+	// 0.0.0.0. Required when ClientIPHeader is set: the header is ignored
+	// from any other peer, and startup fails when the header is set with no
+	// trusted proxies.
+	TrustedProxies string
 
 	// Metrics
 	//
@@ -660,6 +674,18 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		return fmt.Errorf("mp-max-parts must be positive")
 	}
 
+	clientIPHeader, err := utils.NormalizeClientIPHeader(cfg.ClientIPHeader)
+	if err != nil {
+		return err
+	}
+	trustedProxies, err := utils.ParseTrustedProxies(cfg.TrustedProxies)
+	if err != nil {
+		return err
+	}
+	if clientIPHeader != "" && trustedProxies.IsEmpty() {
+		return fmt.Errorf("client-ip-header is set but trusted-proxies is empty: the header would be trusted from every peer")
+	}
+
 	if len(cfg.Ports) == 0 {
 		return fmt.Errorf("no ports specified")
 	}
@@ -797,6 +823,10 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	}
 	if cfg.DisableSSECTLS {
 		opts = append(opts, s3api.WithDisableSSECTLS())
+	}
+	if clientIPHeader != "" {
+		opts = append(opts, s3api.WithClientIPHeader(clientIPHeader))
+		opts = append(opts, s3api.WithTrustedProxies(trustedProxies))
 	}
 	if len(cfg.S3Options) > 0 {
 		opts = append(opts, cfg.S3Options...)
@@ -968,6 +998,10 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		if cfg.AdminPathPrefix != "" {
 			admOpts = append(admOpts, s3api.WithAdminPathPrefix(cfg.AdminPathPrefix))
 		}
+		if clientIPHeader != "" {
+			admOpts = append(admOpts, s3api.WithAdminClientIPHeader(clientIPHeader))
+			admOpts = append(admOpts, s3api.WithAdminTrustedProxies(trustedProxies))
+		}
 
 		admSrv = s3api.NewAdminServer(be, middlewares.RootUserConfig{Access: cfg.RootUserAccess, Secret: cfg.RootUserSecret}, cfg.Region, iam, loggers.AdminLogger, srv.Router.Ctrl, admOpts...)
 	}
@@ -1063,6 +1097,10 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		if cfg.SocketPerm != "" {
 			webOpts = append(webOpts, webui.WithSocketPerm(parsedSocketPerm))
 		}
+		if clientIPHeader != "" {
+			webOpts = append(webOpts, webui.WithClientIPHeader(clientIPHeader))
+			webOpts = append(webOpts, webui.WithTrustedProxies(trustedProxies))
+		}
 
 		webSrv, err = webui.NewServer(&webui.ServerConfig{
 			Gateways:      gateways,
@@ -1124,6 +1162,10 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		}
 		if cfg.SocketPerm != "" {
 			wsOpts = append(wsOpts, website.WithSocketPerm(parsedSocketPerm))
+		}
+		if clientIPHeader != "" {
+			wsOpts = append(wsOpts, website.WithClientIPHeader(clientIPHeader))
+			wsOpts = append(wsOpts, website.WithTrustedProxies(trustedProxies))
 		}
 
 		wsSrv = website.NewServer(be, cfg.WebsiteDomain, wsOpts...)

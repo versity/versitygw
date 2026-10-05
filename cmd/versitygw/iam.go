@@ -51,6 +51,8 @@ func runIAM(ctx *cli.Context) error {
 		KeepAlive:                      keepAlive,
 		HealthPath:                     healthPath,
 		SocketPerm:                     socketPerm,
+		ClientIPHeader:                 clientIPHeader,
+		TrustedProxies:                 trustedProxies,
 		PrivatePorts:                   ctx.StringSlice("private-ports"),
 		PrivateCertFile:                ctx.String("private-cert"),
 		PrivateKeyFile:                 ctx.String("private-cert-key"),

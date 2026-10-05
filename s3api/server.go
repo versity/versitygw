@@ -57,6 +57,8 @@ type S3ApiServer struct {
 	maxRequests      int
 	webuiMountPrefix string
 	webuiSrvCfg      *webui.ServerConfig
+	clientIPHeader   string
+	trustedProxies   utils.TrustedProxies
 	routes           []routeMount
 	middlewares      []middlewareMount
 	socketPerm       os.FileMode
@@ -104,6 +106,16 @@ func New(
 		opt(server)
 	}
 
+	// validate the header once here, so the request path can compare it
+	// directly instead of re-normalizing on every request
+	if server.clientIPHeader != "" {
+		header, err := utils.NormalizeClientIPHeader(server.clientIPHeader)
+		if err != nil {
+			return nil, err
+		}
+		server.clientIPHeader = header
+	}
+
 	app := fiber.New(fiber.Config{
 		AppName:           "versitygw",
 		ServerHeader:      "VERSITYGW",
@@ -138,12 +150,19 @@ func New(
 			Format: "${time} | vgw | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 			CustomTags: map[string]logger.LogFunc{
 				logger.TagQueryStringParams: debuglogger.RedactedQueryParamsTag,
+				logger.TagIP:                utils.ClientIPTag,
 			},
 		}))
 	}
 
 	// initialize requestId middleware
 	app.Use("*", middlewares.RequestIDs())
+
+	// resolve the logged client address from a trusted proxy header, when
+	// one is configured
+	if server.clientIPHeader != "" {
+		app.Use("*", utils.ClientIPMiddleware(server.clientIPHeader, server.trustedProxies))
+	}
 
 	// Set up health endpoint if specified
 	if server.health != "" {
@@ -299,6 +318,23 @@ func WithKeepAlive() Option {
 // This is applied when no bucket CORS configuration exists, and for admin APIs.
 func WithCORSAllowOrigin(origin string) Option {
 	return func(s *S3ApiServer) { s.Router.corsAllowOrigin = origin }
+}
+
+// WithClientIPHeader records the client address from the named proxy header in
+// the request log and the S3 access logs. The accepted values are
+// utils.ClientIPHeaderForwardedFor and utils.ClientIPHeaderRealIP; an empty
+// value (the default) keeps the socket peer address. The header is only
+// honoured from a peer listed in WithTrustedProxies. ctx.IP() is not changed,
+// so IAM aws:SourceIp conditions keep evaluating the socket address.
+func WithClientIPHeader(header string) Option {
+	return func(s *S3ApiServer) { s.clientIPHeader = header }
+}
+
+// WithTrustedProxies sets the peers whose client IP header is trusted, as
+// parsed by utils.ParseTrustedProxies. It only has an effect together with
+// WithClientIPHeader.
+func WithTrustedProxies(trusted utils.TrustedProxies) Option {
+	return func(s *S3ApiServer) { s.trustedProxies = trusted }
 }
 
 // WithWebUI mounts the WebUI on the S3 server's Fiber app at the given path prefix,

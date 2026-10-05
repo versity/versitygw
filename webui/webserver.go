@@ -27,6 +27,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/static"
+	"github.com/versity/versitygw/internal/clientip"
 	"github.com/versity/versitygw/internal/netutil"
 )
 
@@ -51,6 +52,11 @@ type Server struct {
 	pathPrefix  string
 	quiet       bool
 	socketPerm  os.FileMode
+	// clientIPHeader and trustedProxies control the address recorded in the
+	// standalone server's request log; see WithClientIPHeader and
+	// WithTrustedProxies.
+	clientIPHeader string
+	trustedProxies clientip.TrustedProxies
 }
 
 // Option sets various options for NewServer()
@@ -78,6 +84,23 @@ func WithSocketPerm(perm os.FileMode) Option {
 	return func(s *Server) { s.socketPerm = perm }
 }
 
+// WithClientIPHeader records the client address from the named proxy header in
+// the standalone WebUI request log. The accepted values are
+// clientip.ClientIPHeaderForwardedFor and clientip.ClientIPHeaderRealIP; an
+// empty value (the default) keeps the socket peer address. The header is only
+// honoured from a peer listed in WithTrustedProxies. When the WebUI is mounted
+// on another server's port (MountOn), that server's settings apply instead.
+func WithClientIPHeader(header string) Option {
+	return func(s *Server) { s.clientIPHeader = header }
+}
+
+// WithTrustedProxies sets the peers whose client IP header is trusted, as
+// parsed by clientip.ParseTrustedProxies. It only has an effect together with
+// WithClientIPHeader.
+func WithTrustedProxies(trusted clientip.TrustedProxies) Option {
+	return func(s *Server) { s.trustedProxies = trusted }
+}
+
 // NewServer creates a new GUI server instance
 func NewServer(cfg *ServerConfig, opts ...Option) (*Server, error) {
 	app := fiber.New(fiber.Config{
@@ -92,6 +115,16 @@ func NewServer(cfg *ServerConfig, opts ...Option) (*Server, error) {
 
 	for _, opt := range opts {
 		opt(server)
+	}
+
+	// validate the header once here, so the request path can compare it
+	// directly instead of re-normalizing on every request
+	if server.clientIPHeader != "" {
+		header, err := clientip.NormalizeClientIPHeader(server.clientIPHeader)
+		if err != nil {
+			return nil, err
+		}
+		server.clientIPHeader = header
 	}
 
 	fmt.Printf("initializing web dashboard\n")
@@ -113,7 +146,16 @@ func (s *Server) setupMiddleware() {
 	if !s.quiet {
 		s.app.Use("*", logger.New(logger.Config{
 			Format: "${time} | web | ${status} | ${latency} | ${ip} | ${method} | ${path}\n",
+			CustomTags: map[string]logger.LogFunc{
+				logger.TagIP: clientip.Tag,
+			},
 		}))
+	}
+
+	// resolve the logged client address from a trusted proxy header, when
+	// one is configured
+	if s.clientIPHeader != "" {
+		s.app.Use("*", clientip.Middleware(s.clientIPHeader, s.trustedProxies))
 	}
 }
 

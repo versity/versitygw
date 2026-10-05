@@ -2,6 +2,9 @@
 {{- if ($iamServer.enabled | default false) }}
 {{- $iamServerAuth := .Values.iamServer.auth | default dict -}}
 {{- $iamServerOidc := .Values.iamServer.oidc | default dict -}}
+{{- if and .Values.iamServer.clientIPHeader (not .Values.iamServer.trustedProxies) }}
+  {{- fail "iamServer.trustedProxies is required when iamServer.clientIPHeader is set" }}
+{{- end }}
 {{- $iamPrivateCertVolume := dig "private" "certificate" "volumeName" "" $iamServer -}}
 {{- $iamTLSCertVolume := dig "tls" "volumeName" "" $iamServer -}}
 {{- if not (or (eq .Values.iamServer.storage.type "internal") (eq .Values.iamServer.storage.type "vault")) }}
@@ -124,6 +127,14 @@ spec:
             {{- if ne .Values.iamServer.logLevel "silent" }}
             - name: VGW_LOG_LEVEL
               value: {{ .Values.iamServer.logLevel | quote }}
+            {{- end }}
+            {{- if .Values.iamServer.clientIPHeader }}
+            - name: VGW_CLIENT_IP_HEADER
+              value: {{ .Values.iamServer.clientIPHeader | quote }}
+            {{- end }}
+            {{- if .Values.iamServer.trustedProxies }}
+            - name: VGW_TRUSTED_PROXIES
+              value: {{ .Values.iamServer.trustedProxies | quote }}
             {{- end }}
             {{- if or $iamServerOidc.disableThumbprintAutofetch .Values.iamServer.disableOidcThumbprintAutofetch }}
             - name: VGW_IAM_DISABLE_OIDC_THUMBPRINT_AUTOFETCH
