@@ -167,6 +167,24 @@ test:
 rdmatest: $(VGWRDMA_WRAPPER_LIB) $(CUOBJCLIENT_WRAPPER_LIB) $(HOSTCLIENT_WRAPPER_LIB) $(RCSERVER_LIB)
 	$(GOTEST) -tags rdma ./...
 
+# libdfs.so has no soname. The link line in the tagged file is -ldfs.
+# Set DAOS_PREFIX when the client is not on the default compiler path.
+.PHONY: daostest
+daostest:
+	set -e; \
+	cflags=""; ldflags=""; libdir=""; \
+	if [ -n "$(DAOS_PREFIX)" ]; then \
+		cflags="-I$(DAOS_PREFIX)/include"; \
+		if [ -e "$(DAOS_PREFIX)/lib64/libdfs.so" ]; then libdir="$(DAOS_PREFIX)/lib64"; \
+		else libdir="$(DAOS_PREFIX)/lib"; fi; \
+		ldflags="-L$$libdir -Wl,-rpath,$$libdir"; \
+	fi; \
+	CGO_CFLAGS="$$cflags" CGO_LDFLAGS="$$ldflags" \
+	LD_LIBRARY_PATH="$$libdir$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
+	$(GOTEST) -count=1 -timeout 180s -tags daos ./backend/daos ./cmd/internal/gwcli; \
+	CGO_CFLAGS="$$cflags" CGO_LDFLAGS="$$ldflags" \
+	$(GOBUILD) -tags daos -o /dev/null ./cmd/versitygw
+
 .PHONY: check
 check:
 # note this requires staticcheck be in your PATH:
