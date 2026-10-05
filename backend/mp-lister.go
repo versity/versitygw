@@ -123,7 +123,7 @@ func (l *MultipartUploadLister) Run() (*ListMultipartUploadsPage, error) {
 				if _, ok := seenCP[cpref]; !ok {
 					seenCP[cpref] = struct{}{}
 					if emitCP(cpref) {
-						out.IsTruncated = l.hasMoreAfter(i+1, seenCP)
+						out.IsTruncated = l.hasMoreAfter(startIndex+i+1, seenCP)
 						if out.IsTruncated {
 							out.NextKeyMarker = lastKey
 							out.NextUploadIDMarker = up.UploadID
@@ -137,7 +137,7 @@ func (l *MultipartUploadLister) Run() (*ListMultipartUploadsPage, error) {
 		}
 
 		if emitUpload(up) {
-			out.IsTruncated = l.hasMoreAfter(i+1, seenCP)
+			out.IsTruncated = l.hasMoreAfter(startIndex+i+1, seenCP)
 			if out.IsTruncated {
 				out.NextKeyMarker = lastKey
 				out.NextUploadIDMarker = up.UploadID

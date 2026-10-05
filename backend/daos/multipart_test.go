@@ -256,8 +256,8 @@ func TestListMultipartUploadsResumes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(next.Uploads) != 1 {
-		t.Fatalf("second page = %+v", next.Uploads)
+	if len(next.Uploads) != 1 || next.IsTruncated {
+		t.Fatalf("second page = %+v truncated %v", next.Uploads, next.IsTruncated)
 	}
 	got := map[string]bool{page.Uploads[0].UploadID: true, next.Uploads[0].UploadID: true}
 	if !got[first.UploadId] || !got[second.UploadId] || page.Uploads[0].UploadID == next.Uploads[0].UploadID {

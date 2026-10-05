@@ -357,12 +357,16 @@ func (d *Daos) storeAttrs(obj Object, etag string, po s3response.PutObjectInput,
 		{attrCacheCtl, awsString(po.CacheControl)},
 		{attrExpires, awsString(po.Expires)},
 	} {
-		if pair.val != "" {
+		if dir || pair.val != "" {
 			pairs = append(pairs, [2]string{pair.name, pair.val})
 		}
 	}
-	if len(po.Metadata) > 0 {
-		raw, err := json.Marshal(po.Metadata)
+	if dir || len(po.Metadata) > 0 {
+		meta := po.Metadata
+		if meta == nil {
+			meta = map[string]string{}
+		}
+		raw, err := json.Marshal(meta)
 		if err != nil {
 			return fmt.Errorf("marshal metadata: %w", err)
 		}

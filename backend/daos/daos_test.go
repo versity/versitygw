@@ -333,11 +333,13 @@ func TestPutHeadersRoundTrip(t *testing.T) {
 
 func TestDirectoryPutKeepsMetadata(t *testing.T) {
 	d, _ := newTest(t)
+	cache := "max-age=60"
 	_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
-		Bucket:   backend.GetPtrFromString("bucket"),
-		Key:      backend.GetPtrFromString("folder/"),
-		Body:     bytes.NewReader(nil),
-		Metadata: map[string]string{"origin": "lab"},
+		Bucket:       backend.GetPtrFromString("bucket"),
+		Key:          backend.GetPtrFromString("folder/"),
+		Body:         bytes.NewReader(nil),
+		Metadata:     map[string]string{"origin": "lab"},
+		CacheControl: &cache,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -349,8 +351,26 @@ func TestDirectoryPutKeepsMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if head.Metadata["origin"] != "lab" || awsString(head.ContentType) != backend.DirContentType {
+	if head.Metadata["origin"] != "lab" || awsString(head.ContentType) != backend.DirContentType || awsString(head.CacheControl) != "max-age=60" {
 		t.Fatalf("head meta %v type %q", head.Metadata, awsString(head.ContentType))
+	}
+	_, err = d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("folder/"),
+		Body:   bytes.NewReader(nil),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err = d.HeadObject(context.Background(), &s3.HeadObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("folder/"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head.Metadata["origin"] != "" || awsString(head.CacheControl) != "" {
+		t.Fatalf("cleared head meta %v cache %q", head.Metadata, awsString(head.CacheControl))
 	}
 }
 
