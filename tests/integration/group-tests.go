@@ -2191,6 +2191,7 @@ func TestRouter(ts *TestState) {
 	ts.Run(RouterGetUploadsWithKey)
 	ts.Run(RouterCopySourceNotAllowed)
 	ts.Run(RouterListVersionsWithKey)
+	ts.Run(RouterUploadsWithUploadId)
 	ts.Run(RouterObjectAnnotationNotImplemented)
 	ts.Run(RouterRenameObjectNotImplemented)
 	ts.Run(RouterObjectTorrentMethodNotAllowed)
@@ -3794,6 +3795,7 @@ func GetIntTests() IntTests {
 		"RouterGetUploadsWithKey":                                                          RouterGetUploadsWithKey,
 		"RouterCopySourceNotAllowed":                                                       RouterCopySourceNotAllowed,
 		"RouterListVersionsWithKey":                                                        RouterListVersionsWithKey,
+		"RouterUploadsWithUploadId":                                                        RouterUploadsWithUploadId,
 		"RouterObjectAnnotationNotImplemented":                                             RouterObjectAnnotationNotImplemented,
 		"RouterRenameObjectNotImplemented":                                                 RouterRenameObjectNotImplemented,
 		"RouterObjectTorrentMethodNotAllowed":                                              RouterObjectTorrentMethodNotAllowed,
