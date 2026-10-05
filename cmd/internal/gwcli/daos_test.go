@@ -24,7 +24,7 @@ import (
 	"github.com/versity/versitygw/backend"
 )
 
-func TestDaosCommandReturnsStubErrorBeforeGateway(t *testing.T) {
+func TestDaosCommandDoesNotStartWhenOpenFails(t *testing.T) {
 	called := false
 	prev := RunGateway
 	RunGateway = func(context.Context, backend.Backend) error {
@@ -38,7 +38,7 @@ func TestDaosCommandReturnsStubErrorBeforeGateway(t *testing.T) {
 	if err == nil {
 		t.Fatal("command succeeded")
 	}
-	if !strings.Contains(err.Error(), "-tags daos") && !strings.Contains(err.Error(), "does not serve requests") {
+	if !strings.Contains(err.Error(), "-tags daos") && !strings.Contains(err.Error(), "dfs ") && !strings.Contains(err.Error(), "open daos") {
 		t.Fatalf("error %q", err)
 	}
 	if called {

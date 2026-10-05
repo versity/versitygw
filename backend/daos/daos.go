@@ -68,7 +68,12 @@ func (d *Daos) String() string {
 	return "DAOS Gateway"
 }
 
-func (d *Daos) Shutdown() {}
+func (d *Daos) Shutdown() {
+	if d.fs == nil {
+		return
+	}
+	_ = d.fs.Close()
+}
 
 func (d *Daos) NormalizeObjectKey(bucket, object string) string {
 	fullPath := filepath.Join(bucket, object)

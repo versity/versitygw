@@ -271,6 +271,8 @@ func (f *Fake) ReadDir(p string) ([]Info, error) {
 
 func (f *Fake) Release(Object) error { return nil }
 
+func (f *Fake) Close() error { return nil }
+
 func (f *Fake) walk(p string, mkdir bool) (*node, error) {
 	cur := f.root
 	p = clean(p)

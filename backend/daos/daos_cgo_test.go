@@ -22,15 +22,15 @@ import (
 	"testing"
 )
 
-func TestTaggedNewDoesNotServe(t *testing.T) {
+func TestTaggedNewFailsClosedWithoutAContainer(t *testing.T) {
 	be, err := New("pool", "container", "sys")
 	if be != nil || err == nil {
+		if be != nil {
+			be.Shutdown()
+		}
 		t.Fatalf("New returned %v, err %v", be, err)
 	}
-	if strings.Contains(err.Error(), "-tags daos") {
-		t.Fatalf("tagged build still reports the stub error: %v", err)
-	}
-	if !strings.Contains(err.Error(), "does not serve requests") {
-		t.Fatalf("error %q", err)
+	if strings.Contains(err.Error(), "-tags daos") || strings.Contains(err.Error(), "does not serve requests") {
+		t.Fatalf("tagged build is not serving: %v", err)
 	}
 }

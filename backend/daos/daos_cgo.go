@@ -37,5 +37,9 @@ func New(pool, container, sysName string) (*Daos, error) {
 	if C.versitygw_daos_client_linked() == 0 {
 		return nil, fmt.Errorf("daos client library did not link")
 	}
-	return nil, fmt.Errorf("daos backend does not serve requests")
+	fs, err := openContainer(pool, sysName, container)
+	if err != nil {
+		return nil, err
+	}
+	return NewWithFS(fs), nil
 }
