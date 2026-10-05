@@ -241,13 +241,17 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					Data: s3response.DeleteResult{},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
-						EventName:   s3event.EventObjectRemovedDeleteObjects,
-						ObjectCount: 0,
 					},
 				},
+				err: s3err.GetAPIError(s3err.ErrMalformedXML),
+			},
+			configureMock: func(be *BackendMock) {
+				be.DeleteObjectsFunc = func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
+					t.Error("backend DeleteObjects called for an empty delete list")
+					return s3response.DeleteResult{}, nil
+				}
 			},
 		},
 		{
