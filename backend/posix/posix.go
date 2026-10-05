@@ -4439,6 +4439,19 @@ func (p *Posix) checkPutPreconditions(bucket, object string, ifMatch, ifNoneMatc
 		return backend.EvaluateObjectPutPreconditions("", ifMatch, ifNoneMatch, false)
 	}
 
+	// a delete marker is not a current object: the key was deleted on a
+	// versioning-enabled bucket and reads report it as missing, so the
+	// conditional write must see it as absent as well
+	if err == nil && p.versioningEnabled() {
+		isDelMarker, derr := p.isObjDeleteMarker(bucket, object)
+		if derr != nil && !errors.Is(derr, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+			return derr
+		}
+		if isDelMarker {
+			return backend.EvaluateObjectPutPreconditions("", ifMatch, ifNoneMatch, false)
+		}
+	}
+
 	etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, meta.ErrNoSuchKey) {
 		return backend.EvaluateObjectPutPreconditions(string(etagBytes), ifMatch, ifNoneMatch, err == nil)

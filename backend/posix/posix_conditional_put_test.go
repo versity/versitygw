@@ -308,6 +308,25 @@ func TestListBucketsAndOwnersExcludesObjectLockDirectory(t *testing.T) {
 	}
 }
 
+// newVersionedTestPosix builds a Posix backend with gateway versioning
+// configured, so that DeleteObject on a versioning-enabled bucket leaves a
+// delete marker as the current version of the key.
+func newVersionedTestPosix(t *testing.T, mkMeta func(t *testing.T) (meta.MetadataStorer, PosixOpts)) *Posix {
+	t.Helper()
+	root := t.TempDir()
+	vdir := filepath.Join(t.TempDir(), "versions")
+	if err := os.MkdirAll(vdir, 0o755); err != nil {
+		t.Fatalf("mkdir versioning dir: %v", err)
+	}
+	storer, opts := mkMeta(t)
+	opts.VersioningDir = vdir
+	p, err := New(root, storer, opts)
+	if err != nil {
+		t.Fatalf("new posix: %v", err)
+	}
+	return p
+}
+
 func testPut(p *Posix, bucket, key string, body []byte, ifMatch, ifNoneMatch *string) (s3response.PutObjectOutput, error) {
 	return p.PutObject(context.Background(), s3response.PutObjectInput{
 		Bucket:        &bucket,
@@ -798,6 +817,61 @@ func TestPosixConditionalPutFailureCleanup(t *testing.T) {
 			data, etag := getTestObject(t, p, bucket, key)
 			if string(data) != "after" || etag != res2.ETag {
 				t.Errorf("unexpected final state after recovery put")
+			}
+		})
+	}
+}
+
+// TestPosixConditionalPutIfNoneMatchDeleteMarker covers the case where the
+// current version of the key is a delete marker: the key has no current
+// object (HeadObject reports it as missing), so a conditional create with
+// If-None-Match: * must succeed, as it does on AWS S3.
+func TestPosixConditionalPutIfNoneMatchDeleteMarker(t *testing.T) {
+	for mode, mkMeta := range metaModes(t) {
+		t.Run(mode, func(t *testing.T) {
+			p := newVersionedTestPosix(t, mkMeta)
+			defer p.Shutdown()
+			bucket := "testbucket"
+			key := "lockfile"
+			createTestBucket(t, p, bucket)
+			ctx := context.Background()
+			if err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled); err != nil {
+				t.Fatalf("put bucket versioning: %v", err)
+			}
+
+			// create the object with the same conditional header Terraform
+			// uses for its lockfile
+			if _, err := testPut(p, bucket, key, []byte("one"), nil, aws.String("*")); err != nil {
+				t.Fatalf("if-none-match create: %v", err)
+			}
+
+			// deleting the key on a versioning-enabled bucket leaves a
+			// delete marker as the current version
+			out, err := p.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			if err != nil {
+				t.Fatalf("delete object: %v", err)
+			}
+			if out.DeleteMarker == nil || !*out.DeleteMarker {
+				t.Fatalf("delete object did not leave a delete marker: %+v", out)
+			}
+			if _, err := p.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			}); !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+				t.Fatalf("head object after delete: err = %v, want NoSuchKey", err)
+			}
+
+			// the key has no current version, so the conditional create must
+			// succeed
+			if _, err := testPut(p, bucket, key, []byte("two"), nil, aws.String("*")); err != nil {
+				t.Errorf("if-none-match put after delete marker: %v", err)
+			}
+			data, _ := getTestObject(t, p, bucket, key)
+			if string(data) != "two" {
+				t.Errorf("object body after re-create = %q, want %q", data, "two")
 			}
 		})
 	}
