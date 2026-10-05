@@ -3480,8 +3480,9 @@ func (p *Posix) ListMultipartUploads(ctx context.Context, mpu *s3.ListMultipartU
 		if prefix != "" && !strings.HasPrefix(objectName, prefix) {
 			continue
 		}
-		// filter by keyMarker
-		if keyMarker != "" && objectName <= keyMarker {
+		// filter by keyMarker, keeping the uploads of the key-marker
+		// itself when an upload-id-marker is set
+		if keyMarker != "" && (objectName < keyMarker || (objectName == keyMarker && uploadIDMarker == "")) {
 			continue
 		}
 

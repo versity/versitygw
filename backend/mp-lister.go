@@ -42,7 +42,8 @@ func ListMultipartUploads(uploads []s3response.Upload, prefix, delimiter, keyMar
 // Assumptions about input Uploads:
 //   - Sorted by (Key asc, Initiated asc)
 //   - Filtered by Prefix
-//   - Filtered to start strictly after key-marker when key-marker was provided.
+//   - Filtered to start strictly after key-marker when key-marker was provided,
+//     or at key-marker when upload-id-marker was provided as well.
 type MultipartUploadLister struct {
 	Uploads        []s3response.Upload
 	Prefix         string
@@ -148,13 +149,13 @@ func (l *MultipartUploadLister) Run() (*ListMultipartUploadsPage, error) {
 }
 
 // findUploadIdMarkerIndex finds the index of given uploadId marker in uploads
-// uploadIDMarker must match an upload-id among uploads with the first key after KeyMarker.
-// Since caller filtered to Key > KeyMarker and the list is sorted by key/time,
-// the first key after KeyMarker is Uploads[0].Key (if any).
+// uploadIDMarker must match an upload-id among uploads with the first key at or after KeyMarker.
+// Since caller filtered to Key >= KeyMarker and the list is sorted by key/time,
+// the first key at or after KeyMarker is Uploads[0].Key (if any).
 // -1 is returned if no uploadId is found
 func (l *MultipartUploadLister) findUploadIdMarkerIndex(uploadIDMarker string) int {
 	if len(l.Uploads) == 0 {
-		// key-marker provided but nothing after it => upload-id-marker can never be valid.
+		// key-marker provided but nothing at or after it => upload-id-marker can never be valid.
 		return -1
 	}
 	firstKey := l.Uploads[0].Key
