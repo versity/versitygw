@@ -215,9 +215,6 @@ source ./tests/setup.sh
 
 # tags: curl,ListMultipartUploads,multipart,uploadId,invalid-query
 @test "REST - ListMultipartUploads - uploads/uploadId combo" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2155"
-  fi
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
   read -r bucket_name test_file <<< "$output"

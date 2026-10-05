@@ -195,6 +195,48 @@ func RouterCopySourceNotAllowed(s *S3Conf) error {
 	})
 }
 
+func RouterUploadsWithUploadId(s *S3Conf) error {
+	testName := "RouterUploadsWithUploadId"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, method := range []string{
+			http.MethodGet,
+			http.MethodHead,
+			http.MethodPut,
+			http.MethodPost,
+			http.MethodDelete,
+		} {
+			for _, path := range []string{
+				"/bucket?uploads&uploadId=something",
+				"/bucket/object?uploads&uploadId=something",
+			} {
+				req, err := http.NewRequest(method, s.endpoint+path, nil)
+				if err != nil {
+					return fmt.Errorf("failed to make %s request to %s", method, path)
+				}
+
+				resp, err := s.httpClient.Do(req)
+				if err != nil {
+					return fmt.Errorf("failed to send %s request to %s", method, path)
+				}
+
+				if method == http.MethodHead {
+					// for head requests only check the status code
+					if resp.StatusCode != http.StatusBadRequest {
+						return fmt.Errorf("expected 400 status code for HEAD %s request, instead got %v", path, resp.StatusCode)
+					}
+					continue
+				}
+
+				if err := checkHTTPResponseApiErr(resp, s3err.GetInvalidArgumentErr(s3err.InvalidArgUploadIdWithUploads, "uploadId")); err != nil {
+					return fmt.Errorf("%s %s: %w", method, path, err)
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
 func RouterListVersionsWithKey(s *S3Conf) error {
 	testName := "RouterListVersionsWithKey"
 	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {

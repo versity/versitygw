@@ -102,6 +102,17 @@ func (sa *S3ApiRouter) Init() {
 	objectRouter := sa.app.Group("/:bucket/*")
 	applyBucketCORS := middlewares.ApplyBucketCORS(sa.be, middlewares.BucketFromPath, sa.corsAllowOrigin)
 
+	// '?uploads' together with '?uploadId' is rejected for every
+	// bucket and object operation
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodPost, http.MethodDelete} {
+		for _, router := range []fiber.Router{bucketRouter, objectRouter} {
+			router.Add([]string{method}, "",
+				middlewares.MatchQueryArgs("uploads", "uploadId"),
+				controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetInvalidArgumentErr(s3err.InvalidArgUploadIdWithUploads, "uploadId")), metrics.ActionUndetected, services),
+			)
+		}
+	}
+
 	// PUT bucket operations
 	bucketRouter.Put("",
 		middlewares.MatchQueryArgs("tagging"),
