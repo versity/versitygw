@@ -1155,11 +1155,17 @@ func ValidateLocationConstraint(constraint *string, region string) error {
 	return nil
 }
 
-// IsValidBucketRegion checks a ListBuckets bucket-region value. The gateway
-// region is valid whatever its name, any other value has to be an AWS region
-// code.
-func IsValidBucketRegion(bucketRegion, region string) bool {
-	return bucketRegion == region || awsRegionRegexp.MatchString(bucketRegion)
+// ValidateBucketRegion checks a ListBuckets bucket-region value. Every bucket
+// lives in the gateway region, so like an S3 regional endpoint the gateway
+// rejects any other region, matching it case-insensitively.
+func ValidateBucketRegion(bucketRegion, region string) error {
+	if strings.EqualFold(bucketRegion, region) {
+		return nil
+	}
+	if !awsRegionRegexp.MatchString(strings.ToLower(bucketRegion)) {
+		return s3err.GetInvalidArgBucketRegion(bucketRegion)
+	}
+	return s3err.GetInvalidArgumentErr(s3err.InvalidArgBucketRegionEndpoint, "")
 }
 
 // AwsChunkedEncoding is the coding a client announces when it frames a body in

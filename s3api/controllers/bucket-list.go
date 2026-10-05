@@ -19,7 +19,6 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
-	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -58,11 +57,14 @@ func (c S3ApiController) ListBuckets(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	if bucketRegion != "" && !utils.IsValidBucketRegion(bucketRegion, region) {
-		debuglogger.Logf("invalid bucket region: %s", bucketRegion)
-		return &Response{
-			MetaOpts: &MetaOptions{},
-		}, s3err.GetInvalidArgBucketRegion(bucketRegion)
+	// an empty bucket-region= is checked too, so look for the argument itself
+	if ctx.Request().URI().QueryArgs().Has("bucket-region") {
+		if err := utils.ValidateBucketRegion(bucketRegion, region); err != nil {
+			debuglogger.Logf("invalid bucket region: %q", bucketRegion)
+			return &Response{
+				MetaOpts: &MetaOptions{},
+			}, err
+		}
 	}
 
 	// IsAdmin is the backends' "return every bucket, unfiltered" flag.
@@ -76,13 +78,6 @@ func (c S3ApiController) ListBuckets(ctx fiber.Ctx) (*Response, error) {
 		})
 	if err != nil {
 		return &Response{}, err
-	}
-
-	// every bucket lives in the gateway region, so there is nothing
-	// to list for any other region
-	if bucketRegion != "" && bucketRegion != region {
-		res.Buckets.Bucket = nil
-		res.ContinuationToken = ""
 	}
 
 	for i := range res.Buckets.Bucket {

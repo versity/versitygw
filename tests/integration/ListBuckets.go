@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -308,21 +309,30 @@ func ListBuckets_bucket_region(s *S3Conf) error {
 				bucket, s.awsRegion, buckets)
 		}
 
-		// every bucket of the gateway lives in its own region
+		// the region is matched case-insensitively
+		buckets, err = listBuckets(strings.ToUpper(s.awsRegion))
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(buckets, func(b types.Bucket) bool { return getString(b.Name) == bucket }) {
+			return fmt.Errorf("expected bucket %v in the %v listing, instead got %v",
+				bucket, strings.ToUpper(s.awsRegion), buckets)
+		}
+
+		// every bucket of the gateway lives in its own region, so like an S3
+		// regional endpoint it rejects any other region
 		otherRegion := "us-west-2"
 		if s.awsRegion == otherRegion {
 			otherRegion = "us-east-1"
 		}
-		buckets, err = listBuckets(otherRegion)
-		if err != nil {
+		_, err = listBuckets(otherRegion)
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgBucketRegionEndpoint, "")); err != nil {
 			return err
 		}
-		if len(buckets) != 0 {
-			return fmt.Errorf("expected an empty %v listing, instead got %v",
-				otherRegion, buckets)
-		}
 
-		return nil
+		// an empty bucket-region is not a valid region either
+		_, err = listBuckets("")
+		return checkApiErr(err, s3err.GetInvalidArgBucketRegion(""))
 	})
 }
 
