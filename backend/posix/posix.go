@@ -2475,58 +2475,65 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 				Key:    &object,
 			}, "", nil
 		}
-		// Directory is gone: the concurrent call already completed and cleaned up.
-		// A directory at the object path is the object of the key with a
-		// trailing slash, not the completed upload.
-		if fi, statErr := os.Stat(p.ObjectPath(bucket, object)); statErr == nil && !fi.IsDir() {
-			etag := multipartClaimToken
-			if p.dataIntegrityEtag {
-				etagBytes, etagErr := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
-				if etagErr != nil {
-					return res, "", fmt.Errorf("get object etag: %w", etagErr)
-				}
-				etag = string(etagBytes)
-			}
-			return s3response.CompleteMultipartUploadResult{
-				Bucket: &bucket,
-				ETag:   &etag,
-				Key:    &object,
-			}, "", nil
+		// Directory is gone: a completed upload is linked before its
+		// in-progress directory is removed, so it is the object at this key
+		// carrying this upload ID. No object, or an object written any other
+		// way (a PutObject or another upload), means there is no such upload.
+		// Multipart uploads are never created for keys with a trailing slash,
+		// and a directory at the object path is the object of such a key.
+		if strings.HasSuffix(object, "/") {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		}
+		fi, err := os.Stat(p.ObjectPath(bucket, object))
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		}
+		if isErrNameTooLong(err) {
+			return res, "", s3err.GetKeyTooLongErr(int64(len(object)), 1024)
+		}
+		if err != nil {
+			return res, "", fmt.Errorf("stat object: %w", err)
+		}
+		if fi.IsDir() {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		}
+		mpMetaBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, mpMetaKey)
+		if errors.Is(err, meta.ErrNoSuchKey) || errors.Is(err, fs.ErrNotExist) {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		}
+		if err != nil {
+			return res, "", fmt.Errorf("get object multipart metadata: %w", err)
+		}
+		mpMeta, err := backend.UnmarshalMpUploadMetadata(mpMetaBytes, false)
+		if err != nil {
+			return res, "", fmt.Errorf("parse object multipart metadata: %w", err)
+		}
+		if mpMeta.UploadID != uploadID {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
 		}
 
-		// Last resort: the object stat above may have lost a race with the
-		// concurrent call's link step. Check the mp-metadata xattr, as this
-		// multipart upload may have been finalized and the final object has been created
-		// before or by the racing request
-		if mpMetaBytes, statErr := p.meta.RetrieveAttribute(nil, bucket, object, mpMetaKey); statErr == nil {
-			mpMeta, err := backend.UnmarshalMpUploadMetadata(mpMetaBytes, false)
-			if err != nil {
-				return res, "", fmt.Errorf("parse object multipart metadata: %w", err)
-			}
-
-			// The object may have been overwritten by a newer upload or
-			// it's the result of a completely different multipart upload; only
-			// treat it as our completion if the upload IDs match.
-			if mpMeta.UploadID != uploadID {
-				return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
-			}
-
-			etag := multipartClaimToken
-			if p.dataIntegrityEtag {
-				etagBytes, etagErr := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
-				if etagErr != nil {
-					return res, "", fmt.Errorf("get object etag: %w", etagErr)
-				}
-				etag = string(etagBytes)
-			}
-			return s3response.CompleteMultipartUploadResult{
-				Bucket: &bucket,
-				ETag:   &etag,
-				Key:    &object,
-			}, "", nil
+		etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+		if err != nil {
+			return res, "", fmt.Errorf("get object etag: %w", err)
+		}
+		etag := string(etagBytes)
+		// A retry has to list the parts the upload was completed with. The
+		// data integrity ETag is the object checksum rather than the ETag of
+		// the parts, so only the upload ID is checked in that mode.
+		if !p.dataIntegrityEtag && etag != multipartClaimToken {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
 		}
 
-		return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		versionID, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return res, "", fmt.Errorf("get object version id: %w", err)
+		}
+
+		return s3response.CompleteMultipartUploadResult{
+			Bucket: &bucket,
+			ETag:   &etag,
+			Key:    &object,
+		}, string(versionID), nil
 	}
 	if err != nil {
 		return res, "", fmt.Errorf("rename upload to etag dir: %w", err)

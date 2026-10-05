@@ -614,6 +614,15 @@ func TestCompleteMultipartUpload(ts *TestState) {
 	}
 	ts.Run(CompleteMultipartUpload_success)
 	ts.Run(CompleteMultipartUpload_already_completed)
+	ts.Run(CompleteMultipartUpload_upload_of_another_bucket)
+	ts.Run(CompleteMultipartUpload_upload_of_another_key)
+	ts.Run(CompleteMultipartUpload_non_existing_upload_existing_key)
+	ts.Run(CompleteMultipartUpload_aborted_upload_existing_key)
+	ts.Run(CompleteMultipartUpload_already_completed_overwritten)
+	// azure keeps no ETag of the completed parts to compare a retry with
+	if !ts.conf.azureTests {
+		ts.Run(CompleteMultipartUpload_already_completed_different_parts)
+	}
 	if !(ts.conf.azureTests || ts.conf.sidecarTests) {
 		ts.Run(CompleteMultipartUpload_racey_success)
 		ts.Run(CompleteMultipartUpload_racey_data_integrity)
@@ -2134,6 +2143,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_Multipart_Upload_suspended_overwrite_versioned_object)
 	ts.Run(Versioning_Multipart_Upload_overwrite_keeps_previous_version_metadata)
 	ts.Run(Versioning_Multipart_Upload_conditional_writes_over_delete_marker)
+	ts.Run(Versioning_Multipart_Upload_already_completed)
 	ts.Run(Versioning_UploadPartCopy_invalid_versionId)
 	ts.Run(Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId)
 	ts.Run(Versioning_UploadPartCopy_non_existing_versionId)
@@ -3349,6 +3359,12 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_success":                                                  CompleteMultipartUpload_success,
 		"CompleteMultipartUpload_data_integrity_etag":                                      CompleteMultipartUpload_data_integrity_etag,
 		"CompleteMultipartUpload_already_completed":                                        CompleteMultipartUpload_already_completed,
+		"CompleteMultipartUpload_upload_of_another_bucket":                                 CompleteMultipartUpload_upload_of_another_bucket,
+		"CompleteMultipartUpload_upload_of_another_key":                                    CompleteMultipartUpload_upload_of_another_key,
+		"CompleteMultipartUpload_non_existing_upload_existing_key":                         CompleteMultipartUpload_non_existing_upload_existing_key,
+		"CompleteMultipartUpload_aborted_upload_existing_key":                              CompleteMultipartUpload_aborted_upload_existing_key,
+		"CompleteMultipartUpload_already_completed_different_parts":                        CompleteMultipartUpload_already_completed_different_parts,
+		"CompleteMultipartUpload_already_completed_overwritten":                            CompleteMultipartUpload_already_completed_overwritten,
 		"CompleteMultipartUpload_racey_success":                                            CompleteMultipartUpload_racey_success,
 		"CompleteMultipartUpload_racey_data_integrity":                                     CompleteMultipartUpload_racey_data_integrity,
 		"PutBucketAcl_non_existing_bucket":                                                 PutBucketAcl_non_existing_bucket,
@@ -3767,6 +3783,7 @@ func GetIntTests() IntTests {
 		"Versioning_Multipart_Upload_suspended_overwrite_versioned_object":                 Versioning_Multipart_Upload_suspended_overwrite_versioned_object,
 		"Versioning_Multipart_Upload_overwrite_keeps_previous_version_metadata":            Versioning_Multipart_Upload_overwrite_keeps_previous_version_metadata,
 		"Versioning_Multipart_Upload_conditional_writes_over_delete_marker":                Versioning_Multipart_Upload_conditional_writes_over_delete_marker,
+		"Versioning_Multipart_Upload_already_completed":                                    Versioning_Multipart_Upload_already_completed,
 		"Versioning_UploadPartCopy_invalid_versionId":                                      Versioning_UploadPartCopy_invalid_versionId,
 		"Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId":          Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId,
 		"Versioning_UploadPartCopy_non_existing_versionId":                                 Versioning_UploadPartCopy_non_existing_versionId,

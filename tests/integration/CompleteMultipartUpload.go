@@ -2279,6 +2279,289 @@ func CompleteMultipartUpload_already_completed(s *S3Conf) error {
 	})
 }
 
+func CompleteMultipartUpload_upload_of_another_bucket(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_upload_of_another_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		dstBucket := getBucketName()
+		err := setup(s, dstBucket)
+		if err != nil {
+			return err
+		}
+
+		// the target key exists in the other bucket
+		dstObjs, err := putObjects(s3client, []string{obj}, dstBucket)
+		if err != nil {
+			return err
+		}
+
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &dstBucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &dstBucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if getString(head.ETag) != getString(dstObjs[0].ETag) {
+			return fmt.Errorf("expected the target object ETag to stay %s, instead got %s",
+				getString(dstObjs[0].ETag), getString(head.ETag))
+		}
+
+		// the upload can still be completed on its own bucket
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return teardown(s, dstBucket)
+	})
+}
+
+func CompleteMultipartUpload_upload_of_another_key(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_upload_of_another_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, target := "my-obj", "other-obj"
+		_, err := putObjects(s3client, []string{target}, bucket)
+		if err != nil {
+			return err
+		}
+
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		// the target key exists, doesn't exist and is nested under an object
+		for _, key := range []string{target, "absent-obj", target + "/nested"} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+				Bucket:   &bucket,
+				Key:      &key,
+				UploadId: out.UploadId,
+				MultipartUpload: &types.CompletedMultipartUpload{
+					Parts: compParts,
+				},
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
+				return fmt.Errorf("key %s: %w", key, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func CompleteMultipartUpload_non_existing_upload_existing_key(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_non_existing_upload_existing_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		objs, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: getPtr("3d5d2ea6-3cbb-4a4b-9a43-6b7d0e5f2a11"),
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{ETag: objs[0].ETag, PartNumber: getPtr(int32(1))},
+				},
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload))
+	})
+}
+
+func CompleteMultipartUpload_aborted_upload_existing_key(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_aborted_upload_existing_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		_, err = putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{ETag: parts[0].ETag, PartNumber: parts[0].PartNumber},
+				},
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload))
+	})
+}
+
+func CompleteMultipartUpload_already_completed_different_parts(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_already_completed_different_parts"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{ETag: parts[0].ETag, PartNumber: parts[0].PartNumber},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{ETag: getPtr(`"00000000000000000000000000000000"`), PartNumber: parts[0].PartNumber},
+				},
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload))
+	})
+}
+
+func CompleteMultipartUpload_already_completed_overwritten(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_already_completed_overwritten"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		completeInput := &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{ETag: parts[0].ETag, PartNumber: parts[0].PartNumber},
+				},
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, completeInput)
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		_, err = putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, completeInput)
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload))
+	})
+}
+
 // CompleteMultipartUpload_racey_data_integrity creates a single multipart
 // upload, uploads its parts, then fires multiple concurrent
 // CompleteMultipartUpload calls for the exact same upload ID.  All calls must
