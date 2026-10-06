@@ -21,6 +21,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -199,6 +200,15 @@ func TestMultipartRejectsUnsupported(t *testing.T) {
 	})
 	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotImplemented)) {
 		t.Fatalf("checksum = %v", err)
+	}
+	var zero time.Time
+	_, err = d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
+		Bucket:                    backend.GetPtrFromString("bucket"),
+		Key:                       backend.GetPtrFromString("plain"),
+		ObjectLockRetainUntilDate: &zero,
+	})
+	if err != nil {
+		t.Fatalf("unset lock date = %v", err)
 	}
 }
 

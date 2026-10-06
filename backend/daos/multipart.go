@@ -635,7 +635,7 @@ func unsupportedCreate(in s3response.CreateMultipartUploadInput) bool {
 	if backend.HasSSEC(in.SSECustomerAlgorithm, in.SSECustomerKey, in.SSECustomerKeyMD5) {
 		return true
 	}
-	if in.ChecksumAlgorithm != "" || in.ChecksumType != "" || in.ObjectLockMode != "" || in.ObjectLockLegalHoldStatus != "" || in.ObjectLockRetainUntilDate != nil {
+	if in.ChecksumAlgorithm != "" || in.ChecksumType != "" || in.ObjectLockMode != "" || in.ObjectLockLegalHoldStatus != "" || lockDateSet(in.ObjectLockRetainUntilDate) {
 		return true
 	}
 	if in.ACL != "" || in.ServerSideEncryption != "" || (in.StorageClass != "" && in.StorageClass != types.StorageClassStandard) {
@@ -645,6 +645,10 @@ func unsupportedCreate(in s3response.CreateMultipartUploadInput) bool {
 		return true
 	}
 	return anyString(in.Tagging, in.GrantFullControl, in.GrantRead, in.GrantReadACP, in.GrantWriteACP, in.SSEKMSKeyId, in.SSEKMSEncryptionContext, in.WebsiteRedirectLocation)
+}
+
+func lockDateSet(t *time.Time) bool {
+	return t != nil && !t.IsZero()
 }
 
 func unsupportedComplete(in *s3.CompleteMultipartUploadInput) bool {
