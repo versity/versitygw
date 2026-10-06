@@ -475,3 +475,10 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   run complete_multipart_upload_empty_upload_id "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/$file_name"
   assert_success
 }
+
+@test "REST - multipart overwrite" {
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  read -r bucket_name file_name <<< "$output"
+
+}

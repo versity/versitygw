@@ -446,3 +446,11 @@ create_upload_finish_wrong_etag() {
   fi
   return 0
 }
+
+complete_multipart_upload_overwrite_part() {
+  if ! check_param_count_v2 "bucket, key, file" 3 $#; then
+    return 1
+  fi
+  local bucket="$1" key="$2" file="$3"
+  local response upload_id parts_payload
+}
