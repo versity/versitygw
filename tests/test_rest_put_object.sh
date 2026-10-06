@@ -27,17 +27,15 @@ source ./tests/util/util_public_access_block.sh
 source ./tests/util/util_time.sh
 source ./tests/drivers/get_object/get_object_rest.sh
 
-test_file="test_file"
 export RUN_USERS=true
 
 # tags: curl, PutObject, chunked, x-amz-content-sha256, content-length
 @test "REST - put object w/STREAMING-AWS4-HMAC-SHA256-PAYLOAD without content length" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run put_object_rest_chunked_payload_type_without_content_length "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
@@ -45,12 +43,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, content-encoding
 @test "REST - PutObject - aws-chunked kept when the payload is not chunked" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run put_object_rest_with_content_encoding "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "aws-chunked"
   assert_success
@@ -61,12 +58,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, content-encoding, x-amz-content-sha256, invalid-header
 @test "REST - PutObject - aws-chunked with UNSIGNED-PAYLOAD rejected" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run put_object_rest_unsigned_payload_with_aws_chunked "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
@@ -74,12 +70,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, Expires, invalid-header
 @test "REST - PutObject - invalid 'Expires' parameter" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run put_object_rest_check_expires_header "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
@@ -90,9 +85,15 @@ export RUN_USERS=true
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versity-specific users tests"
   fi
+  local bucket_name test_file username password
+
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
 
   run setup_bucket_file_and_user_v2 "$bucket_name" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "admin"
   assert_success
@@ -109,9 +110,15 @@ export RUN_USERS=true
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versity-specific users tests"
   fi
+  local bucket_name test_file username password
+
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
 
   run setup_bucket_file_and_user_v2 "$bucket_name" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "user"
   assert_success
@@ -127,12 +134,11 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1321"
   fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run put_object_without_content_length "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
@@ -140,12 +146,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, x-amz-checksum-algorithm, checksum
 @test "REST - PutObject w/x-amz-checksum-algorithm" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run put_object_rest_with_unneeded_algorithm_param "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "crc32c"
   assert_success
@@ -153,12 +158,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, If-None-Match, not-implemented
 @test "REST - PutObject - If-None-Match - no asterisk" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_add_file "$bucket_name" "$test_file"
+  run setup_bucket_and_add_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run send_rest_go_command_expect_error "501" "NotImplemented" "not implemented" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
     "-signedParams" "If-None-Match:true"
@@ -167,12 +171,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, If-None-Match
 @test "REST - PutObject - If-None-Match - block copy" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_add_file "$bucket_name" "$test_file"
+  run setup_bucket_and_add_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run send_rest_go_command_expect_error "412" "PreconditionFailed" "did not hold" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
     "-signedParams" "If-None-Match:*"
@@ -181,12 +184,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, If-None-Match
 @test "REST - PutObject - If-None-Match - success" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run send_rest_go_command "200" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
     "-signedParams" "if-none-match:*"
@@ -195,12 +197,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, If-Match
 @test "REST - PutObject - If-Match - file doesn't exist on server" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   send_rest_go_command_expect_error "404" "NoSuchKey" "key does not exist" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
     "-signedParams" "if-match:abc"
@@ -209,12 +210,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, If-Match, ETag
 @test "REST - PutObject - If-Match - incorrect etag" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_add_file "$bucket_name" "$test_file"
+  run setup_bucket_and_add_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run send_rest_go_command_expect_error "412" "PreconditionFailed" "did not hold" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
     "-signedParams" "if-match:abc"
@@ -223,12 +223,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, If-Match, ETag
 @test "REST - PutObject - If-Match - correct etag" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file etag
 
-  run setup_bucket_and_add_file "$bucket_name" "$test_file"
+  run setup_bucket_and_add_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run get_etag_rest "$bucket_name" "$test_file"
   assert_success
@@ -242,15 +241,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject
 @test "PutObject - metadata keys are made lowercase" {
-  uppercase_key="CAPITAL"
-  uppercase_value="DUMMY"
+  local uppercase_key="CAPITAL" uppercase_value="DUMMY" bucket_name test_file
 
-  run get_bucket_name "$BUCKET_ONE_NAME"
+  run setup_bucket_and_add_file_v3 "$BUCKET_ONE_NAME"
   assert_success
-  bucket_name="$output"
-
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
-  assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run send_rest_go_command "200" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
       "-signedParams" "x-amz-meta-$uppercase_key:$uppercase_value"
@@ -265,9 +260,15 @@ export RUN_USERS=true
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versitygw-specific users tests"
   fi
+  local bucket_name test_file username password
+
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
 
   run setup_bucket_file_and_user_v2 "$bucket_name" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "admin"
   assert_success
@@ -280,12 +281,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, Expect
 @test "REST - PutObject - expect continue - success" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run send_rest_go_command "200" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
         "-signedParams" "Expect:100-continue"
@@ -294,17 +294,16 @@ export RUN_USERS=true
 
 # tags: user, curl, PutObject
 @test "REST - PutObject - invalid x-amz-request-payer" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file username password
 
   run create_versitygw_acl_user_or_get_direct_user "$USERNAME_ONE" "$PASSWORD_ONE"
   assert_success
   username=${lines[2]}
   password=${lines[3]}
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run put_bucket_ownership_controls "$bucket_name" "BucketOwnerPreferred"
   assert_success
@@ -324,12 +323,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, Content-Disposition
 @test "REST - PutObject - content disposition" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run send_rest_go_command "200" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
     "-method" "PUT" "-contentMD5" "-signedParams" "Content-Disposition:dummy"
@@ -341,12 +339,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, object-lock, retention, x-amz-object-lock-retain-until-date, x-amz-object-lock-mode, content-md5, invalid-header
 @test "REST - PutObject - x-amz-object-lock-retain-until-date - invalid format" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run send_rest_go_command_expect_error "400" "InvalidArgument" "must be provided in ISO 8601 format" "-bucketName" "$bucket_name" \
     "-objectKey" "$test_file" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
@@ -356,15 +353,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, object-lock, retention, x-amz-object-lock-retain-until-date, x-amz-object-lock-mode, content-md5, invalid-header
 @test "REST - PutObject - x-amz-object-lock-retain-until-date - earlier date" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1734"
-  fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file earlier_date
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   earlier_date="2025-12-25T12:00:00Z"
   run send_rest_go_command_expect_error_with_arg_name_value "400" "InvalidArgument" "must be in the future" \
@@ -375,15 +368,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, object-lock, retention, x-amz-object-lock-mode, x-amz-object-lock-retain-until-date, content-md5, invalid-header
 @test "REST - PutObject - x-amz-object-lock-mode - invalid mode" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1736"
-  fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file later_date lock_mode
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run get_time_seconds_in_future 10
   assert_success
@@ -398,12 +387,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, object-lock, retention, versioning, content-md5, invalid-header
 @test "TEST - REST - PutObject - not allowed without content-MD5 with lock configuration" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run put_bucket_versioning_rest "$bucket_name" "Enabled"
   assert_success
@@ -419,12 +407,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, object-lock, retention, versioning, content-md5, x-amz-object-lock-mode, x-amz-object-lock-retain-until-date
 @test "REST - PutObject - object lock - success" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file later_date
 
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run put_bucket_versioning_rest "$bucket_name" "Enabled"
   assert_success
@@ -445,16 +432,11 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "skip for versitygw - see #1904"
   fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run get_file_name
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
-  test_file="$output"
-
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
-  assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run put_bucket_ownership_controls_rest "$bucket_name" "BucketOwnerPreferred"
   assert_success
@@ -506,19 +488,11 @@ export RUN_USERS=true
 
 # tags: curl, PutObject, object-lock, legal-hold, x-amz-object-lock-legal-hold, invalid-header
 @test "PutObject - x-amz-object-lock-legal-hold - invalid value" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1775"
-  fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run get_file_name
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
-  test_file="$output"
-
-  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
-  assert_success
+  read -r bucket_name test_file <<< "$output"
 
   local legal_hold_value="wrong"
   run send_rest_go_command_expect_error_with_arg_name_value "400" "InvalidArgument" "Legal Hold must be either of" \
@@ -574,16 +548,11 @@ export RUN_USERS=true
 
 # tags: openssl, PutObject
 @test "REST - PutObject - openssl go non-file payload" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file later_date
 
-  run get_file_name
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
-  test_file=$output
-
-  run setup_bucket_v2 "$bucket_name"
-  assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run bash -c "tr -dc 'a-zA-Z0-9 ' < /dev/urandom | head -c 100"
   assert_success

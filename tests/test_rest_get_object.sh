@@ -102,19 +102,18 @@ source ./tests/setup.sh
 
 # tags: curl,GetObject,partNumber,range,Content-Range
 @test "REST - GetObject - part number 1 returns 206, Content-Range header" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2074"
-  fi
+  local bucket_name file_name
+
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
-    assert_success
-    read -r bucket_name file_name <<< "$output"
+  assert_success
+  read -r bucket_name file_name <<< "$output"
 
-    run put_object_rest "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name"
-    assert_success
+  run put_object_rest "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name"
+  assert_success
 
-    run send_rest_go_command_callback "206" "check_for_header_key_and_value" "-bucketName" "$bucket_name" "-objectKey" "$file_name" "-query" "partNumber=1" \
-      "--" "Content-Range" "bytes 0-9/10"
-    assert_success
+  run send_rest_go_command_callback "206" "check_for_header_key_and_value" "-bucketName" "$bucket_name" "-objectKey" "$file_name" "-query" "partNumber=1" \
+    "--" "Content-Range" "bytes 0-9/10"
+  assert_success
 }
 
 # tags: curl,GetObject,invalid-header,response-headers
