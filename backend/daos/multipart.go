@@ -110,17 +110,33 @@ func (d *Daos) UploadPart(_ context.Context, input *s3.UploadPartInput) (*s3.Upl
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) || input.ChecksumAlgorithm != "" {
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
+	uploadDir, err := d.uploadDirReady(bucket, key, uploadID)
+	if err != nil {
+		return nil, err
+	}
+	etag, err := d.writePart(uploadDir, *input.PartNumber, input.Body, input.ContentLength)
+	if err != nil {
+		return nil, err
+	}
+	return &s3.UploadPartOutput{ETag: &etag}, nil
+}
+
+func (d *Daos) uploadDirReady(bucket, key, uploadID string) (string, error) {
 	uploadDir := path.Join(mpHashDir(bucket, key), uploadID)
 	if _, err := d.fs.Stat(uploadDir); err != nil {
 		if errors.Is(err, errNotExist) {
-			return nil, s3err.GetNoSuchUploadErr(uploadID)
+			return "", s3err.GetNoSuchUploadErr(uploadID)
 		}
-		return nil, mapFS(err)
+		return "", mapFS(err)
 	}
+	return uploadDir, nil
+}
+
+func (d *Daos) writePart(uploadDir string, partNumber int32, body io.Reader, length *int64) (string, error) {
 	tmp := path.Join(uploadDir, ".part-"+uuid.NewString())
 	obj, err := d.fs.Open(tmp, openWrite|openCreate|openExcl)
 	if err != nil {
-		return nil, mapFS(err)
+		return "", mapFS(err)
 	}
 	moved := false
 	defer func() {
@@ -129,21 +145,20 @@ func (d *Daos) UploadPart(_ context.Context, input *s3.UploadPartInput) (*s3.Upl
 			_ = d.fs.Remove(tmp, false)
 		}
 	}()
-	sum, n, err := d.writeBody(obj, input.Body, input.ContentLength)
+	sum, _, err := d.writeBody(obj, body, length)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	etag := "\"" + hex.EncodeToString(sum) + "\""
 	if err := d.fs.SetXattr(obj, attrETag, []byte(etag)); err != nil {
-		return nil, mapFS(err)
+		return "", mapFS(err)
 	}
-	_ = n
-	partPath := path.Join(uploadDir, strconv.FormatInt(int64(*input.PartNumber), 10))
+	partPath := path.Join(uploadDir, strconv.FormatInt(int64(partNumber), 10))
 	if err := d.fs.Move(tmp, partPath); err != nil {
-		return nil, mapFS(err)
+		return "", mapFS(err)
 	}
 	moved = true
-	return &s3.UploadPartOutput{ETag: &etag}, nil
+	return etag, nil
 }
 
 func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
