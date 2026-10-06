@@ -92,6 +92,7 @@ send_rest_command() {
     return 1
   fi
   local response output_file response_code
+  local -a env_var_array
 
   if [[ "$1" == *"OUTPUT_FILE"* ]]; then
     if ! response=$(echo -n "$1" | sed -n 's/^.*OUTPUT_FILE=\([^ ]*\).*$/\1/p' 2>&1); then
@@ -108,8 +109,8 @@ send_rest_command() {
   fi
   local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$output_file")
   if [ "$1" != "" ]; then
-    IFS=' ' read -r -a env_vars <<< "$1"
-    env_array+=("${env_vars[@]}")
+    IFS=' ' read -r -a env_var_array <<< "$1"
+    env_array+=("${env_var_array[@]}")
   fi
   # shellcheck disable=SC2068
   if ! response=$(${env_array[@]} "$2" 2>&1); then
@@ -130,9 +131,23 @@ send_rest_command_expect_error() {
   if ! check_param_count_v2 "env vars, script, response code, error, message" 5 $#; then
     return 1
   fi
+  local env_vars="$1" script="$2" response_code="$3" error="$4" message="$5"
+
+  if ! send_rest_command_expect_error_callback "$env_vars" "$script" "$response_code" "$error" "$message"; then
+    log 2 "error checking REST error with empty callback"
+    return 1
+  fi
+  return 0
+}
+
+send_rest_command_expect_error_callback() {
+  if ! check_param_count_gt "env vars, script, expected HTTP code, expected error, expected message, callback, params" 5 $#; then
+    return 1
+  fi
+  local env_vars="$1" script="$2" expected_http_code="$3" expected_error="$4" expected_message="$5" callback="$6" params=("${@:7}")
   local response response_lines response_code output_file
 
-  if ! response=$(send_rest_command "$1" "$2" 2>&1); then
+  if ! response=$(send_rest_command "$env_vars" "$script" 2>&1); then
     log 2 "error sending REST command: $response"
     return 1
   fi
@@ -140,8 +155,12 @@ send_rest_command_expect_error() {
   response_code="${response_lines[0]}"
   output_file="${response_lines[1]}"
 
-  if ! check_rest_expected_error "$response_code" "$output_file" "$3" "$4" "$5"; then
+  if ! check_rest_expected_error "$response_code" "$output_file" "$expected_http_code" "$expected_error" "$expected_message"; then
     log 2 "error checking REST error"
+    return 1
+  fi
+  if [ -n "$callback" ] && ! "$callback" "$output_file" "${params[@]}"; then
+    log 2 "callback error"
     return 1
   fi
   return 0
