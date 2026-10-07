@@ -1,5 +1,5 @@
 /* Copyright (c) Advanced Micro Devices, Inc. All rights reserved.
- * Copyright (c) Gluesys Inc. and Jihyeon Gim. All rights reserved.
+ * Copyright (c) Gluesys and Jihyeon Gim. All rights reserved.
  *
  * SPDX-License-Identifier: MIT
  */
