@@ -5747,9 +5747,12 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 		// once concurrency is implemented, the posix rate limiter should
 		// be taken into account.
 		res, err := p.DeleteObject(withCtxNoSlot(ctx), &s3.DeleteObjectInput{
-			Bucket:    input.Bucket,
-			Key:       obj.Key,
-			VersionId: obj.VersionId,
+			Bucket:                  input.Bucket,
+			Key:                     obj.Key,
+			VersionId:               obj.VersionId,
+			IfMatch:                 obj.ETag,
+			IfMatchLastModifiedTime: obj.LastModifiedTime,
+			IfMatchSize:             obj.Size,
 		})
 		if err == nil {
 			delEntity := types.DeletedObject{

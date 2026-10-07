@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -482,6 +483,113 @@ func DeleteObjects_invalid_object_keys(s *S3Conf) error {
 			if err != nil {
 				return fmt.Errorf("head %v: %w", key, err)
 			}
+		}
+
+		return nil
+	})
+}
+
+// DeleteObjects_conditional_deletes checks that the per-object ETag and Size
+// in a DeleteObjects request are evaluated like the If-Match headers of
+// DeleteObject: a mismatch is reported as a PreconditionFailed error for that
+// key and the object is kept.
+func DeleteObjects_conditional_deletes(s *S3Conf) error {
+	testName := "DeleteObjects_conditional_deletes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, otherObj := "my-obj", "other-obj"
+		etag, err := putObjectAndGetETag(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		otherEtag, err := putObjectAndGetETag(s3client, bucket, otherObj)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		deleteObjects := func(objects ...types.ObjectIdentifier) (*s3.DeleteObjectsOutput, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
+			return s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+				Bucket: &bucket,
+				Delete: &types.Delete{Objects: objects},
+			})
+		}
+		headObject := func(key string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
+			_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			return err
+		}
+
+		for i, test := range []types.ObjectIdentifier{
+			{Key: &obj, ETag: getPtr("incorrect_etag")},
+			{Key: &obj, ETag: getPtr(`"incorrect_etag"`)},
+			{Key: &obj, Size: getPtr(int64(23234))},
+			{Key: &obj, ETag: &etag, Size: getPtr(int64(23234))},
+		} {
+			out, err := deleteObjects(test)
+			if err != nil {
+				return fmt.Errorf("test case %d failed: %w", i, err)
+			}
+			if len(out.Deleted) != 0 {
+				return fmt.Errorf("test case %d failed: expected no deleted objects, instead got %v",
+					i, len(out.Deleted))
+			}
+			if len(out.Errors) != 1 || getString(out.Errors[0].Key) != obj ||
+				getString(out.Errors[0].Code) != "PreconditionFailed" {
+				return fmt.Errorf("test case %d failed: expected a PreconditionFailed error for %v, instead got %v",
+					i, obj, out.Errors)
+			}
+			if err := headObject(obj); err != nil {
+				return fmt.Errorf("test case %d failed: expected the object to be kept: %w", i, err)
+			}
+		}
+
+		// a batch reports the failed precondition for one key and still
+		// deletes the other one, matched by its unquoted ETag
+		out, err := deleteObjects(
+			types.ObjectIdentifier{Key: &obj, ETag: getPtr("incorrect_etag")},
+			types.ObjectIdentifier{Key: &otherObj, ETag: getPtr(strings.Trim(otherEtag, `"`))},
+		)
+		if err != nil {
+			return err
+		}
+		if len(out.Deleted) != 1 || getString(out.Deleted[0].Key) != otherObj {
+			return fmt.Errorf("expected %v to be deleted, instead got %v", otherObj, out.Deleted)
+		}
+		if len(out.Errors) != 1 || getString(out.Errors[0].Key) != obj ||
+			getString(out.Errors[0].Code) != "PreconditionFailed" {
+			return fmt.Errorf("expected a PreconditionFailed error for %v, instead got %v",
+				obj, out.Errors)
+		}
+
+		out, err = deleteObjects(types.ObjectIdentifier{
+			Key:  &obj,
+			ETag: &etag,
+			Size: head.ContentLength,
+		})
+		if err != nil {
+			return err
+		}
+		if len(out.Deleted) != 1 || len(out.Errors) != 0 {
+			return fmt.Errorf("expected %v to be deleted, instead got deleted %v, errors %v",
+				obj, out.Deleted, out.Errors)
+		}
+		if err := checkSdkApiErr(headObject(obj), "NotFound"); err != nil {
+			return err
 		}
 
 		return nil

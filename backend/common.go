@@ -843,7 +843,7 @@ type ObjectDeletePreconditions struct {
 func EvaluateObjectDeletePreconditions(etag string, modTime time.Time, size int64, preconditions ObjectDeletePreconditions) error {
 	etag = strings.Trim(etag, `"`)
 	ifMatch := preconditions.IfMatch
-	if ifMatch != nil && *ifMatch != etag {
+	if ifMatch != nil && strings.Trim(*ifMatch, `"`) != etag {
 		return s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)
 	}
 
