@@ -585,13 +585,16 @@ func (d *Daos) writeBody(obj Object, r io.Reader, length *int64) ([]byte, int64,
 	if length != nil {
 		want = *length
 	}
-	for want < 0 || off < want {
+	for {
 		chunk := buf
-		if want >= 0 && int64(len(chunk)) > want-off {
+		if want >= 0 && off < want && int64(len(chunk)) > want-off {
 			chunk = chunk[:want-off]
 		}
 		n, err := r.Read(chunk)
 		if n > 0 {
+			if want >= 0 && off+int64(n) > want {
+				return nil, off, s3err.GetAPIError(s3err.ErrInvalidRequest)
+			}
 			if _, werr := h.Write(chunk[:n]); werr != nil {
 				return nil, off, werr
 			}
@@ -607,7 +610,10 @@ func (d *Daos) writeBody(obj Object, r io.Reader, length *int64) ([]byte, int64,
 			return nil, off, err
 		}
 		if n == 0 {
-			break
+			if want >= 0 && off >= want {
+				break
+			}
+			return nil, off, io.ErrNoProgress
 		}
 	}
 	if want >= 0 && off != want {

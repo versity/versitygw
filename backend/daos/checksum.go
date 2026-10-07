@@ -167,6 +167,7 @@ type partHash struct {
 	user    *utils.HashReader
 	crc64   *utils.HashReader
 	trail   middlewares.ChecksumReader
+	sum     string
 	expose  bool
 	userAlg utils.HashType
 }
@@ -247,7 +248,7 @@ func (h partHash) userSum() string {
 	if h.user != nil {
 		return h.user.Sum()
 	}
-	return ""
+	return h.sum
 }
 
 func (h partHash) crc64Sum() string {
@@ -285,6 +286,34 @@ func partHeaderChecksum(input *s3.UploadPartInput) (utils.HashType, string) {
 		return utils.HashType(strings.ToLower(string(input.ChecksumAlgorithm))), ""
 	}
 	return "", ""
+}
+
+func setCopyPartChecksum(res *s3response.CopyPartResult, alg utils.HashType, sum string) {
+	if sum == "" {
+		return
+	}
+	switch types.ChecksumAlgorithm(strings.ToUpper(string(alg))) {
+	case types.ChecksumAlgorithmCrc32:
+		res.ChecksumCRC32 = &sum
+	case types.ChecksumAlgorithmCrc32c:
+		res.ChecksumCRC32C = &sum
+	case types.ChecksumAlgorithmSha1:
+		res.ChecksumSHA1 = &sum
+	case types.ChecksumAlgorithmSha256:
+		res.ChecksumSHA256 = &sum
+	case types.ChecksumAlgorithmCrc64nvme:
+		res.ChecksumCRC64NVME = &sum
+	case types.ChecksumAlgorithmSha512:
+		res.ChecksumSHA512 = &sum
+	case types.ChecksumAlgorithmMd5:
+		res.ChecksumMD5 = &sum
+	case types.ChecksumAlgorithmXxhash64:
+		res.ChecksumXXHASH64 = &sum
+	case types.ChecksumAlgorithmXxhash3:
+		res.ChecksumXXHASH3 = &sum
+	case types.ChecksumAlgorithmXxhash128:
+		res.ChecksumXXHASH128 = &sum
+	}
 }
 
 func setPartChecksum(res *s3.UploadPartOutput, alg utils.HashType, sum string) {

@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -184,5 +185,61 @@ func TestUploadPartCopyWritesTheRequestedRange(t *testing.T) {
 	}
 	if string(body) != "defg" {
 		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestUploadPartCopyKeepsCompositeChecksum(t *testing.T) {
+	d, _ := newTest(t)
+	body := "hello"
+	put(t, d, "src", body, "", nil)
+	created, err := d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
+		Bucket:            backend.GetPtrFromString("bucket"),
+		Key:               backend.GetPtrFromString("copied"),
+		ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
+		ChecksumType:      types.ChecksumTypeComposite,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	part, err := d.UploadPartCopy(context.Background(), &s3.UploadPartCopyInput{
+		Bucket:     backend.GetPtrFromString("bucket"),
+		Key:        backend.GetPtrFromString("copied"),
+		UploadId:   &created.UploadId,
+		PartNumber: int32ptr(1),
+		CopySource: backend.GetPtrFromString("bucket/src"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, err := hashBytes(types.ChecksumAlgorithmCrc32, []byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if awsString(part.ChecksumCRC32) != sum {
+		t.Fatalf("copied checksum %q", awsString(part.ChecksumCRC32))
+	}
+	reader, err := utils.NewCompositeChecksumReader(utils.HashTypeCRC32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Process(sum); err != nil {
+		t.Fatal(err)
+	}
+	bare := reader.Sum()
+	done, _, err := d.CompleteMultipartUpload(context.Background(), &s3.CompleteMultipartUploadInput{
+		Bucket:   backend.GetPtrFromString("bucket"),
+		Key:      backend.GetPtrFromString("copied"),
+		UploadId: &created.UploadId,
+		MultipartUpload: &types.CompletedMultipartUpload{Parts: []types.CompletedPart{
+			{PartNumber: int32ptr(1), ETag: part.ETag, ChecksumCRC32: part.ChecksumCRC32},
+		}},
+		ChecksumCRC32: &bare,
+		ChecksumType:  types.ChecksumTypeComposite,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if awsString(done.ChecksumCRC32) != bare+"-1" {
+		t.Fatalf("complete checksum %q", awsString(done.ChecksumCRC32))
 	}
 }
