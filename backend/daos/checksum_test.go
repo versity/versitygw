@@ -17,9 +17,12 @@ package daos
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/crc32"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -171,5 +174,93 @@ func TestMultipartChecksumComposite(t *testing.T) {
 	}
 	if awsString(got.ChecksumCRC32) != awsString(done.ChecksumCRC32) || got.ChecksumType != types.ChecksumTypeComposite {
 		t.Fatalf("get %q type %q", awsString(got.ChecksumCRC32), got.ChecksumType)
+	}
+}
+
+type shortHashReader struct {
+	body []byte
+	alg  string
+	sum  string
+}
+
+func (r *shortHashReader) Read(p []byte) (int, error) {
+	if len(r.body) == 0 {
+		return 0, nil
+	}
+	n := copy(p, r.body)
+	r.body = r.body[n:]
+	return n, nil
+}
+
+func (r *shortHashReader) Algorithm() string { return r.alg }
+
+func (r *shortHashReader) Checksum() string { return r.sum }
+
+func crc32Chunk(body, trailer string) string {
+	return fmt.Sprintf("%x\r\n%s\r\n0\r\nx-amz-checksum-crc32:%s\r\n\r\n", len(body), body, trailer)
+}
+
+func TestUploadPartReadsPastContentLength(t *testing.T) {
+	d, _ := newTest(t)
+	created, err := d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
+		Bucket:            backend.GetPtrFromString("bucket"),
+		Key:               backend.GetPtrFromString("mp"),
+		ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
+		ChecksumType:      types.ChecksumTypeComposite,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := "hello"
+	h := crc32.NewIEEE()
+	_, _ = h.Write([]byte(body))
+	sum := base64.StdEncoding.EncodeToString(h.Sum(nil))
+	wrong := base64.StdEncoding.EncodeToString([]byte{0, 0, 0, 0})
+	n := int32(1)
+	length := int64(len(body))
+	chunk, err := utils.NewUnsignedChunkReader(strings.NewReader(crc32Chunk(body, wrong)), "x-amz-checksum-crc32", length)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = d.UploadPart(context.Background(), &s3.UploadPartInput{
+		Bucket:        backend.GetPtrFromString("bucket"),
+		Key:           backend.GetPtrFromString("mp"),
+		UploadId:      &created.UploadId,
+		PartNumber:    &n,
+		ContentLength: &length,
+		Body:          chunk,
+	})
+	if !errors.Is(err, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmCrc32)) {
+		t.Fatalf("trailing checksum err = %v", err)
+	}
+	_, err = d.UploadPart(context.Background(), &s3.UploadPartInput{
+		Bucket:        backend.GetPtrFromString("bucket"),
+		Key:           backend.GetPtrFromString("mp"),
+		UploadId:      &created.UploadId,
+		PartNumber:    &n,
+		ContentLength: &length,
+		Body:          bytes.NewReader([]byte(body)),
+		ChecksumCRC32: backend.GetPtrFromString("00000000"),
+	})
+	if !errors.Is(err, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmCrc32)) {
+		t.Fatalf("header checksum err = %v", err)
+	}
+	good, err := utils.NewUnsignedChunkReader(strings.NewReader(crc32Chunk(body, sum)), "x-amz-checksum-crc32", length)
+	if err != nil {
+		t.Fatal(err)
+	}
+	part, err := d.UploadPart(context.Background(), &s3.UploadPartInput{
+		Bucket:        backend.GetPtrFromString("bucket"),
+		Key:           backend.GetPtrFromString("mp"),
+		UploadId:      &created.UploadId,
+		PartNumber:    &n,
+		ContentLength: &length,
+		Body:          good,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if awsString(part.ChecksumCRC32) != sum {
+		t.Fatalf("part checksum %q", awsString(part.ChecksumCRC32))
 	}
 }

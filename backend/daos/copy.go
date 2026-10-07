@@ -17,6 +17,7 @@ package daos
 import (
 	"bytes"
 	"context"
+	"io"
 	"path"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -182,19 +184,46 @@ func (d *Daos) UploadPartCopy(_ context.Context, input *s3.UploadPartCopyInput) 
 		}
 		body = body[:n]
 	}
-	nlen := int64(len(body))
-	etag, err := d.writePart(uploadDir, *input.PartNumber, bytes.NewReader(body), &nlen)
+	stored, err := d.loadChecksumsAt(uploadDir)
 	if err != nil {
 		return out, err
 	}
-	partInfo, err := d.fs.Stat(path.Join(uploadDir, strconv.FormatInt(int64(*input.PartNumber), 10)))
+	reader := bytes.NewReader(body)
+	var hashed partHash
+	hashed.body = reader
+	if stored.Type != "" {
+		sum, err := hashReader(stored.Algorithm, reader, "")
+		if err != nil {
+			return out, err
+		}
+		hashed.sum = sum
+		hashed.userAlg = utils.HashType(strings.ToLower(string(stored.Algorithm)))
+		hashed.expose = true
+		if _, err := reader.Seek(0, io.SeekStart); err != nil {
+			return out, err
+		}
+	}
+	nlen := int64(len(body))
+	etag, err := d.writePart(uploadDir, *input.PartNumber, reader, &nlen)
+	if err != nil {
+		return out, err
+	}
+	partPath := path.Join(uploadDir, strconv.FormatInt(int64(*input.PartNumber), 10))
+	if err := d.storePartSums(partPath, stored, hashed); err != nil {
+		return out, err
+	}
+	partInfo, err := d.fs.Stat(partPath)
 	if err != nil {
 		return out, mapFS(err)
 	}
-	return s3response.CopyPartResult{
+	res := s3response.CopyPartResult{
 		ETag:         &etag,
 		LastModified: time.Unix(partInfo.Mtime, 0).UTC(),
-	}, nil
+	}
+	if hashed.expose {
+		setCopyPartChecksum(&res, hashed.userAlg, hashed.userSum())
+	}
+	return res, nil
 }
 
 func readObjectBytes(fs FS, obj Object, info Info) ([]byte, error) {
