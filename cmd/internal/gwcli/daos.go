@@ -27,8 +27,7 @@ func DaosCommand() *cli.Command {
 		Name:  "daos",
 		Usage: "DAOS POSIX container storage backend",
 		Description: `Open one existing DAOS pool and one existing POSIX container.
-Bucket directories are created by an administrator. This command does not
-create pools or containers.`,
+This command does not create pools or containers.`,
 		Action: runDaos,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
