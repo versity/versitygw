@@ -199,7 +199,8 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	}
 	// A query other than a part upload must not fall through to the
 	// object key. Reject it before the session exists.
-	if _, err := classifyRCTarget(isPut, target); err != nil {
+	partQuery, err := classifyRCTarget(isPut, target)
+	if err != nil {
 		return publishHeaderErr(invalidHeader(hdrTarget, target), isPut)
 	}
 	size, err := parseUint(ctx.Get(hdrSize), 10, 64)
@@ -266,6 +267,9 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 		apiErr := s3err.GetAPIError(s3err.ErrSlowDown)
 		h.ops.publishRequest(ctx, acct, apiErr, bucket, key, isPut)
 		return apiErr
+	}
+	if partQuery.partPut {
+		h.ops.markPartUpload(resp.SessionID)
 	}
 	if err := h.svc.FinishPrepare(resp.SessionID, true); err != nil {
 		// The finalization failed. Exactly one publication

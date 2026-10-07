@@ -62,7 +62,11 @@ type opsEmitter struct {
 	bucket string
 	key    string
 	isPut  bool
-	start  time.Time
+	// partUpload is an RC PUT of one multipart part. The audit
+	// action is UploadPart, and the object-created event stays
+	// off: the object key does not exist until complete.
+	partUpload bool
+	start      time.Time
 	// Commit metadata the PUT path fills in before publishing the
 	// success record, so the object-created event carries the
 	// backend-assigned ETag and version like the regular put
@@ -148,7 +152,9 @@ func (e *opsEmitter) publish(err error, bytes int64) {
 	defer release()
 
 	action := metrics.ActionGetObject
-	if e.isPut {
+	if e.partUpload {
+		action = metrics.ActionUploadPart
+	} else if e.isPut {
 		action = metrics.ActionPutObject
 	}
 	status := http.StatusOK
@@ -176,7 +182,7 @@ func (e *opsEmitter) publish(err error, bytes int64) {
 	// native finalizer failed still created the object, so its
 	// creation event must survive. Uncommitted PUTs (backend
 	// failure) never carry it.
-	if e.ops.Events != nil && e.committed && e.isPut && !e.eventSent {
+	if e.ops.Events != nil && e.committed && e.isPut && !e.partUpload && !e.eventSent {
 		meta := s3event.EventMeta{
 			EventName:  s3event.EventObjectCreatedPut,
 			ObjectSize: bytes,
@@ -555,6 +561,21 @@ func (t *opsTracker) register(sessionID string, acct auth.Account,
 	defer t.mu.Unlock()
 	t.sessions[sessionID] = &sessionRecord{emit: emit}
 	return nil
+}
+
+// markPartUpload records that this session stores one part, not the
+// object. The flag is read when the terminal record is published.
+func (t *opsTracker) markPartUpload(sessionID string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	rec := t.sessions[sessionID]
+	if rec == nil || rec.emit == nil {
+		return
+	}
+	rec.emit.partUpload = true
 }
 
 // unregister drops a session entry whose PREPARE finalization

@@ -133,6 +133,20 @@ func TestOpsTrackerUnregister(t *testing.T) {
 	}
 }
 
+func TestMarkPartUpload(t *testing.T) {
+	var nilTracker *opsTracker
+	nilTracker.markPartUpload("missing")
+
+	tr := newOpsTracker(0)
+	tr.markPartUpload("missing")
+	tr.register("sess-part", auth.Account{Access: "ak"}, "us-east-1",
+		"bkt", "obj", true, time.Now())
+	tr.markPartUpload("sess-part")
+	if !tr.sessions["sess-part"].emit.partUpload {
+		t.Fatal("part upload flag was not set")
+	}
+}
+
 func TestOpsTrackerUnknownSession(t *testing.T) {
 	tr := newOpsTracker(0)
 	// Unknown sessions and the nil tracker are silent no-ops.
