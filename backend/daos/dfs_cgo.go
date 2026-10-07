@@ -284,6 +284,16 @@ func (f *dfsFS) SetXattr(obj Object, name string, value []byte) error {
 	return dfsErrno(C.dfs_setxattr(o.fs.dfs, o.obj, cname, ptr, C.daos_size_t(len(value)), 0))
 }
 
+func (f *dfsFS) RemoveXattr(obj Object, name string) error {
+	if len(name) > maxXattrName {
+		return errNameLong
+	}
+	o := obj.(*dfsObj)
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	return dfsErrno(C.dfs_removexattr(o.fs.dfs, o.obj, cname, 0))
+}
+
 func (f *dfsFS) GetXattr(obj Object, name string) ([]byte, error) {
 	o := obj.(*dfsObj)
 	cname := C.CString(name)

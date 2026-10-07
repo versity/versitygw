@@ -78,6 +78,9 @@ func (d *Daos) CreateMultipartUpload(_ context.Context, input s3response.CreateM
 		return out, mapFS(err)
 	}
 	err = d.storeAttrs(obj, "", putInputFromCreate(input), false)
+	if err == nil {
+		err = d.storeTagHeader(obj, input.Tagging)
+	}
 	if err == nil && input.ChecksumAlgorithm != "" {
 		err = d.storeChecksums(obj, s3response.Checksum{
 			Algorithm: input.ChecksumAlgorithm,
@@ -259,6 +262,9 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 		return out, "", err
 	}
 	if err := d.storeAttrs(obj, etag, po, false); err != nil {
+		return out, "", err
+	}
+	if err := d.copyAttr(claim, obj, attrTags); err != nil {
 		return out, "", err
 	}
 	ch, err := d.objectChecksumFromParts(claim, input, parts)
@@ -623,6 +629,7 @@ func (d *Daos) loadUserAttrs(p string) (s3response.PutObjectInput, error) {
 	po.ContentDisposition = optionalString(d.fs, obj, attrDisposition)
 	po.CacheControl = optionalString(d.fs, obj, attrCacheCtl)
 	po.Expires = optionalString(d.fs, obj, attrExpires)
+	po.WebsiteRedirectLocation = optionalString(d.fs, obj, attrRedirect)
 	raw, err := d.fs.GetXattr(obj, attrMetadata)
 	if err != nil && !errors.Is(err, errNotExist) {
 		return po, mapFS(err)
@@ -693,7 +700,7 @@ func unsupportedCreate(in s3response.CreateMultipartUploadInput) bool {
 	if in.BucketKeyEnabled != nil && *in.BucketKeyEnabled {
 		return true
 	}
-	return anyString(in.Tagging, in.GrantFullControl, in.GrantRead, in.GrantReadACP, in.GrantWriteACP, in.SSEKMSKeyId, in.SSEKMSEncryptionContext, in.WebsiteRedirectLocation)
+	return anyString(in.GrantFullControl, in.GrantRead, in.GrantReadACP, in.GrantWriteACP, in.SSEKMSKeyId, in.SSEKMSEncryptionContext)
 }
 
 func lockDateSet(t *time.Time) bool {
@@ -712,13 +719,14 @@ func unsupportedComplete(in *s3.CompleteMultipartUploadInput) bool {
 
 func putInputFromCreate(in s3response.CreateMultipartUploadInput) s3response.PutObjectInput {
 	return s3response.PutObjectInput{
-		ContentType:        in.ContentType,
-		ContentEncoding:    in.ContentEncoding,
-		ContentDisposition: in.ContentDisposition,
-		ContentLanguage:    in.ContentLanguage,
-		CacheControl:       in.CacheControl,
-		Expires:            in.Expires,
-		Metadata:           in.Metadata,
+		ContentType:             in.ContentType,
+		ContentEncoding:         in.ContentEncoding,
+		ContentDisposition:      in.ContentDisposition,
+		ContentLanguage:         in.ContentLanguage,
+		CacheControl:            in.CacheControl,
+		Expires:                 in.Expires,
+		WebsiteRedirectLocation: in.WebsiteRedirectLocation,
+		Metadata:                in.Metadata,
 	}
 }
 

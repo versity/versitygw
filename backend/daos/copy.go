@@ -224,14 +224,15 @@ func putInputFromCopy(input s3response.CopyObjectInput, meta map[string]string, 
 		}
 	}
 	return s3response.PutObjectInput{
-		ContentType:        strPtr(headers.ctype),
-		ContentEncoding:    strPtr(headers.encoding),
-		ContentLanguage:    strPtr(headers.language),
-		ContentDisposition: strPtr(headers.disposition),
-		CacheControl:       strPtr(headers.cache),
-		Expires:            strPtr(headers.expires),
-		Metadata:           meta,
-		ChecksumAlgorithm:  input.ChecksumAlgorithm,
+		ContentType:             strPtr(headers.ctype),
+		ContentEncoding:         strPtr(headers.encoding),
+		ContentLanguage:         strPtr(headers.language),
+		ContentDisposition:      strPtr(headers.disposition),
+		CacheControl:            strPtr(headers.cache),
+		Expires:                 strPtr(headers.expires),
+		WebsiteRedirectLocation: strPtr(headers.redirect),
+		Metadata:                meta,
+		ChecksumAlgorithm:       input.ChecksumAlgorithm,
 	}
 }
 

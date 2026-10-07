@@ -87,17 +87,19 @@ func (d *Daos) NormalizeObjectKey(bucket, object string) string {
 }
 
 func (d *Daos) GetBucketAcl(_ context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
-	if err := d.bucketExists(awsString(input.Bucket)); err != nil {
-		return nil, err
+	raw, err := d.getBucketBytes(awsString(input.Bucket), attrACL)
+	if errors.Is(err, errNotExist) {
+		return []byte{}, nil
 	}
-	return []byte{}, nil
+	return raw, err
 }
 
 func (d *Daos) GetBucketPolicy(_ context.Context, bucket string) ([]byte, error) {
-	if err := d.bucketExists(bucket); err != nil {
-		return nil, err
+	raw, err := d.getBucketBytes(bucket, attrPolicy)
+	if errors.Is(err, errNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
 	}
-	return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
+	return raw, err
 }
 
 func (d *Daos) GetObjectLockConfiguration(_ context.Context, bucket string) ([]byte, error) {
@@ -182,17 +184,18 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 	}
 	n64 := int64(len(buf))
 	out := &s3.GetObjectOutput{
-		Body:               io.NopCloser(bytes.NewReader(buf)),
-		ContentLength:      &n64,
-		ETag:               &etag,
-		ContentType:        strPtr(headers.ctype),
-		ContentEncoding:    strPtr(headers.encoding),
-		ContentLanguage:    strPtr(headers.language),
-		ContentDisposition: strPtr(headers.disposition),
-		CacheControl:       strPtr(headers.cache),
-		ExpiresString:      strPtr(headers.expires),
-		LastModified:       &mod,
-		Metadata:           meta,
+		Body:                    io.NopCloser(bytes.NewReader(buf)),
+		ContentLength:           &n64,
+		ETag:                    &etag,
+		ContentType:             strPtr(headers.ctype),
+		ContentEncoding:         strPtr(headers.encoding),
+		ContentLanguage:         strPtr(headers.language),
+		ContentDisposition:      strPtr(headers.disposition),
+		CacheControl:            strPtr(headers.cache),
+		ExpiresString:           strPtr(headers.expires),
+		LastModified:            &mod,
+		Metadata:                meta,
+		WebsiteRedirectLocation: strPtr(headers.redirect),
 	}
 	if ranged {
 		cr := fmt.Sprintf("bytes %d-%d/%d", start, start+int64(len(buf))-1, info.Size)
@@ -234,16 +237,17 @@ func (d *Daos) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.Hea
 		return nil, err
 	}
 	out := &s3.HeadObjectOutput{
-		ContentLength:      &info.Size,
-		ETag:               &etag,
-		ContentType:        strPtr(headers.ctype),
-		ContentEncoding:    strPtr(headers.encoding),
-		ContentLanguage:    strPtr(headers.language),
-		ContentDisposition: strPtr(headers.disposition),
-		CacheControl:       strPtr(headers.cache),
-		ExpiresString:      strPtr(headers.expires),
-		LastModified:       &mod,
-		Metadata:           meta,
+		ContentLength:           &info.Size,
+		ETag:                    &etag,
+		ContentType:             strPtr(headers.ctype),
+		ContentEncoding:         strPtr(headers.encoding),
+		ContentLanguage:         strPtr(headers.language),
+		ContentDisposition:      strPtr(headers.disposition),
+		CacheControl:            strPtr(headers.cache),
+		ExpiresString:           strPtr(headers.expires),
+		LastModified:            &mod,
+		Metadata:                meta,
+		WebsiteRedirectLocation: strPtr(headers.redirect),
 	}
 	if ch, err := d.loadChecksums(obj); err != nil {
 		return nil, err
@@ -323,6 +327,9 @@ func (d *Daos) putFile(bucket, key string, body []byte, po s3response.PutObjectI
 	if err := d.storeAttrs(obj, etag, po, false); err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
+	if err := d.storeTagHeader(obj, po.Tagging); err != nil {
+		return s3response.PutObjectOutput{}, err
+	}
 	out := s3response.PutObjectOutput{ETag: etag}
 	if ch, ok, err := checksumForPut(po, body); err != nil {
 		return s3response.PutObjectOutput{}, err
@@ -359,6 +366,9 @@ func (d *Daos) putDirectory(bucket, key string, po s3response.PutObjectInput) (s
 	if err := d.storeAttrs(obj, emptyMD5, po, true); err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
+	if err := d.storeTagHeader(obj, po.Tagging); err != nil {
+		return s3response.PutObjectOutput{}, err
+	}
 	out := s3response.PutObjectOutput{ETag: emptyMD5}
 	if ch, ok, err := checksumForPut(po, nil); err != nil {
 		return s3response.PutObjectOutput{}, err
@@ -384,6 +394,7 @@ func (d *Daos) storeAttrs(obj Object, etag string, po s3response.PutObjectInput,
 		{attrDisposition, awsString(po.ContentDisposition)},
 		{attrCacheCtl, awsString(po.CacheControl)},
 		{attrExpires, awsString(po.Expires)},
+		{attrRedirect, awsString(po.WebsiteRedirectLocation)},
 	} {
 		if dir || pair.val != "" {
 			pairs = append(pairs, [2]string{pair.name, pair.val})
@@ -411,7 +422,7 @@ func (d *Daos) storeAttrs(obj Object, etag string, po s3response.PutObjectInput,
 }
 
 type objHeaders struct {
-	ctype, encoding, language, disposition, cache, expires string
+	ctype, encoding, language, disposition, cache, expires, redirect string
 }
 
 func (d *Daos) attrs(obj Object) (string, map[string]string, objHeaders, error) {
@@ -441,6 +452,10 @@ func (d *Daos) attrs(obj Object) (string, map[string]string, objHeaders, error) 
 		return "", nil, headers, err
 	}
 	headers.expires, err = d.attrString(obj, attrExpires)
+	if err != nil {
+		return "", nil, headers, err
+	}
+	headers.redirect, err = d.attrString(obj, attrRedirect)
 	if err != nil {
 		return "", nil, headers, err
 	}
@@ -495,8 +510,8 @@ func (d *Daos) openLive(bucket, key string, flags int) (Info, Object, error) {
 }
 
 func (d *Daos) bucketExists(bucket string) error {
-	if bucket == "" || bucket == "." || bucket == ".." || strings.ContainsRune(bucket, '/') {
-		return s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
+	if err := validBucketName(bucket); err != nil {
+		return err
 	}
 	info, err := d.fs.Stat(bucket)
 	if errors.Is(err, errNotExist) || (err == nil && !info.IsDir) {

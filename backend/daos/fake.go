@@ -240,6 +240,17 @@ func (f *Fake) SetXattr(obj Object, name string, value []byte) error {
 	return nil
 }
 
+func (f *Fake) RemoveXattr(obj Object, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := obj.(fakeObj).n
+	if _, ok := n.xattr[name]; !ok {
+		return errNotExist
+	}
+	delete(n.xattr, name)
+	return nil
+}
+
 func (f *Fake) GetXattr(obj Object, name string) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
