@@ -220,6 +220,7 @@ func putInputFromCopy(input s3response.CopyObjectInput, meta map[string]string, 
 			Expires:                 input.Expires,
 			Metadata:                input.Metadata,
 			WebsiteRedirectLocation: input.WebsiteRedirectLocation,
+			ChecksumAlgorithm:       input.ChecksumAlgorithm,
 		}
 	}
 	return s3response.PutObjectInput{
@@ -230,11 +231,12 @@ func putInputFromCopy(input s3response.CopyObjectInput, meta map[string]string, 
 		CacheControl:       strPtr(headers.cache),
 		Expires:            strPtr(headers.expires),
 		Metadata:           meta,
+		ChecksumAlgorithm:  input.ChecksumAlgorithm,
 	}
 }
 
 func unsupportedCopy(in s3response.CopyObjectInput) bool {
-	if in.ChecksumAlgorithm != "" || in.ObjectLockMode != "" || in.ObjectLockLegalHoldStatus != "" || lockDateSet(in.ObjectLockRetainUntilDate) {
+	if in.ObjectLockMode != "" || in.ObjectLockLegalHoldStatus != "" || lockDateSet(in.ObjectLockRetainUntilDate) {
 		return true
 	}
 	if in.ACL != "" || in.ServerSideEncryption != "" || (in.StorageClass != "" && in.StorageClass != types.StorageClassStandard) {
