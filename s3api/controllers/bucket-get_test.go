@@ -1089,6 +1089,8 @@ func TestS3ApiController_ListObjectsV2(t *testing.T) {
 		},
 		EncodingType: types.EncodingTypeUrl,
 	}
+	urlEncodedV2ResultMixedCase := urlEncodedV2Result
+	urlEncodedV2ResultMixedCase.EncodingType = "uRl"
 	tests := []struct {
 		name   string
 		input  testInput
@@ -1109,6 +1111,44 @@ func TestS3ApiController_ListObjectsV2(t *testing.T) {
 					},
 				},
 				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"),
+			},
+		},
+		{
+			name: "empty encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"encoding-type": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, ""),
+			},
+		},
+		{
+			name: "url encoding type in any letter case",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  specialKeysV2Result,
+				queries: map[string]string{
+					"encoding-type": "uRl",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: urlEncodedV2ResultMixedCase,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
 			},
 		},
 		{
@@ -1270,6 +1310,8 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 		},
 		EncodingType: types.EncodingTypeUrl,
 	}
+	urlEncodedResultMixedCase := urlEncodedResult
+	urlEncodedResultMixedCase.EncodingType = "uRl"
 	tests := []struct {
 		name   string
 		input  testInput
@@ -1290,6 +1332,44 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 					},
 				},
 				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"),
+			},
+		},
+		{
+			name: "empty encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"encoding-type": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, ""),
+			},
+		},
+		{
+			name: "url encoding type in any letter case",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  specialKeysResult,
+				queries: map[string]string{
+					"encoding-type": "uRl",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: urlEncodedResultMixedCase,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
 			},
 		},
 		{

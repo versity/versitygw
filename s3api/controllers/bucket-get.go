@@ -532,7 +532,6 @@ func (c S3ApiController) ListObjectsV2(ctx fiber.Ctx) (*Response, error) {
 	sAfter := ctx.Query("start-after")
 	delimiter := ctx.Query("delimiter")
 	maxkeysStr := ctx.Query("max-keys")
-	encodingTypeStr := ctx.Query("encoding-type")
 	fetchOwner := strings.EqualFold(ctx.Query("fetch-owner"), "true")
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
@@ -568,7 +567,7 @@ func (c S3ApiController) ListObjectsV2(ctx fiber.Ctx) (*Response, error) {
 			},
 		}, err
 	}
-	encodingType, err := utils.ParseEncodingType(encodingTypeStr)
+	encodingType, err := utils.ParseEncodingType(ctx)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -595,8 +594,8 @@ func (c S3ApiController) ListObjectsV2(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	if encodingType == types.EncodingTypeUrl {
-		res = utils.URLEncodeListObjectsV2Result(res)
+	if encodingType != "" {
+		res = utils.URLEncodeListObjectsV2Result(res, encodingType)
 	}
 
 	return &Response{
@@ -617,7 +616,6 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 	marker := ctx.Query("marker")
 	delimiter := ctx.Query("delimiter")
 	maxkeysStr := ctx.Query("max-keys")
-	encodingTypeStr := ctx.Query("encoding-type")
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
@@ -653,7 +651,7 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 			},
 		}, err
 	}
-	encodingType, err := utils.ParseEncodingType(encodingTypeStr)
+	encodingType, err := utils.ParseEncodingType(ctx)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -686,8 +684,8 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 		res.Marker = &marker
 	}
 
-	if encodingType == types.EncodingTypeUrl {
-		res = utils.URLEncodeListObjectsResult(res)
+	if encodingType != "" {
+		res = utils.URLEncodeListObjectsResult(res, encodingType)
 	}
 
 	return &Response{

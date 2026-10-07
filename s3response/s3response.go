@@ -178,7 +178,7 @@ type ListObjectsResult struct {
 	IsTruncated    *bool
 	Contents       []Object
 	CommonPrefixes []types.CommonPrefix
-	EncodingType   types.EncodingType
+	EncodingType   types.EncodingType `xml:",omitempty"`
 }
 
 type ListObjectsV2Result struct {
@@ -194,7 +194,7 @@ type ListObjectsV2Result struct {
 	IsTruncated           *bool
 	Contents              []Object
 	CommonPrefixes        []types.CommonPrefix
-	EncodingType          types.EncodingType
+	EncodingType          types.EncodingType `xml:",omitempty"`
 }
 
 type Object struct {
