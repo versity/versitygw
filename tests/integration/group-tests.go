@@ -585,6 +585,7 @@ func TestCompleteMultipartUpload(ts *TestState) {
 	ts.Run(CompleteMultipartUpload_default_content_type)
 	ts.Run(CompleteMultipartUpload_overwrite_resets_attributes)
 	ts.Run(CompleteMultipartUpload_invalid_ETag)
+	ts.Run(CompleteMultipartUpload_invalid_ETag_error_fields)
 	ts.Run(CompleteMultipartUpload_small_upload_size)
 	ts.Run(CompleteMultipartUpload_empty_parts)
 	ts.Run(CompleteMultipartUpload_missing_part_fields)
@@ -3322,6 +3323,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_default_content_type":                                     CompleteMultipartUpload_default_content_type,
 		"CompleteMultipartUpload_overwrite_resets_attributes":                              CompleteMultipartUpload_overwrite_resets_attributes,
 		"CompleteMultipartUpload_invalid_ETag":                                             CompleteMultipartUpload_invalid_ETag,
+		"CompleteMultipartUpload_invalid_ETag_error_fields":                                CompleteMultipartUpload_invalid_ETag_error_fields,
 		"CompleteMultipartUpload_small_upload_size":                                        CompleteMultipartUpload_small_upload_size,
 		"CompleteMultipartUpload_empty_parts":                                              CompleteMultipartUpload_empty_parts,
 		"CompleteMultipartUpload_missing_part_fields":                                      CompleteMultipartUpload_missing_part_fields,

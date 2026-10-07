@@ -2356,7 +2356,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	// Compute the default multipart ETag token used for claim naming.
 	// In standard mode this is the S3-compatible multipart MD5 ETag; in
 	// dataIntegrityEtag mode it may fall back to a deterministic claim token.
-	multipartClaimToken, err := backend.ComputeMultipartETagFromPartETags(parts)
+	multipartClaimToken, err := backend.ComputeMultipartETagFromPartETags(uploadID, parts)
 	if err != nil {
 		if !p.dataIntegrityEtag {
 			return res, "", err
