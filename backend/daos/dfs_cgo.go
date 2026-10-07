@@ -291,7 +291,7 @@ func (f *dfsFS) RemoveXattr(obj Object, name string) error {
 	o := obj.(*dfsObj)
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
-	return dfsErrno(C.dfs_removexattr(o.fs.dfs, o.obj, cname, 0))
+	return dfsErrno(C.dfs_removexattr(o.fs.dfs, o.obj, cname))
 }
 
 func (f *dfsFS) GetXattr(obj Object, name string) ([]byte, error) {
