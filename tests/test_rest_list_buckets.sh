@@ -258,9 +258,6 @@ export RUN_USERS=true
 
 # tags: curl,ListBuckets,bucket-region,invalid-query
 @test "REST - ListBuckets - invalid bucket-region query" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1923"
-  fi
   local invalid_region="abc"
 
   run get_bucket_name "$BUCKET_ONE_NAME"
@@ -277,9 +274,6 @@ export RUN_USERS=true
 
 # tags: curl,ListBuckets,bucket-region
 @test "REST - ListBuckets - incorrect bucket region" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1930"
-  fi
   local test_region="us-east-1"
   if [ "$AWS_REGION" == "us-east-1" ]; then
     test_region="us-west-1"
@@ -291,12 +285,16 @@ export RUN_USERS=true
   run setup_bucket "$bucket_name"
   assert_success
 
-  local params=()
   if [ "$DIRECT" == "true" ]; then
-    params+=("-url" "https://s3.$test_region.amazonaws.com" "-awsRegion" "$test_region")
+    # the regional endpoint of that region lists only its own buckets
+    run list_buckets_bucket_not_in_list "$bucket_name" "$test_region" "-url" "https://s3.$test_region.amazonaws.com" "-awsRegion" "$test_region"
+    assert_success
+    return
   fi
 
-  run list_buckets_bucket_not_in_list "$bucket_name" "$test_region" "${params[@]}"
+  # the gateway is a single regional endpoint, so any other region is rejected
+  run send_rest_go_command_expect_error_with_specific_arg_name_value "400" "InvalidArgument" "Requests with bucket-region specified must be made to the corresponding regional endpoint" \
+   "ArgumentName" "bucket-region" "-query" "bucket-region=$test_region"
   assert_success
 }
 

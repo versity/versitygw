@@ -1539,6 +1539,34 @@ func TestHasAwsChunkedEncoding(t *testing.T) {
 	}
 }
 
+func TestValidateBucketRegion(t *testing.T) {
+	endpointErr := s3err.GetInvalidArgumentErr(s3err.InvalidArgBucketRegionEndpoint, "")
+	tests := []struct {
+		name         string
+		bucketRegion string
+		region       string
+		want         error
+	}{
+		{"gateway region", "us-east-1", "us-east-1", nil},
+		{"gateway region in uppercase", "EU-CENTRAL-1", "eu-central-1", nil},
+		{"custom gateway region", "my-region", "my-region", nil},
+		{"another aws region", "eu-central-1", "us-east-1", endpointErr},
+		{"another aws region in uppercase", "US-EAST-1", "eu-central-1", endpointErr},
+		{"gov cloud region", "us-gov-west-1", "us-east-1", endpointErr},
+		{"iso partition region", "us-isob-east-1", "us-east-1", endpointErr},
+		{"sovereign cloud region", "eusc-de-east-1", "us-east-1", endpointErr},
+		{"gibberish", "abc", "us-east-1", s3err.GetInvalidArgBucketRegion("abc")},
+		{"empty", "", "us-east-1", s3err.GetInvalidArgBucketRegion("")},
+		{"missing number", "us-east", "us-east-1", s3err.GetInvalidArgBucketRegion("us-east")},
+		{"custom region of another gateway", "my-region", "us-east-1", s3err.GetInvalidArgBucketRegion("my-region")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, ValidateBucketRegion(tt.bucketRegion, tt.region))
+		})
+	}
+}
+
 func TestParseContentEncoding(t *testing.T) {
 	tests := []struct {
 		name            string

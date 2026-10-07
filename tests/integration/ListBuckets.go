@@ -17,7 +17,9 @@ package integration
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -268,6 +270,69 @@ func ListBuckets_invalid_max_buckets(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+func ListBuckets_invalid_bucket_region(s *S3Conf) error {
+	testName := "ListBuckets_invalid_bucket_region"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{
+			BucketRegion: getPtr("abc"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetInvalidArgBucketRegion("abc"))
+	})
+}
+
+func ListBuckets_bucket_region(s *S3Conf) error {
+	testName := "ListBuckets_bucket_region"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		listBuckets := func(region string) ([]types.Bucket, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{
+				BucketRegion: &region,
+			})
+			cancel()
+			if err != nil {
+				return nil, err
+			}
+			return out.Buckets, nil
+		}
+
+		buckets, err := listBuckets(s.awsRegion)
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(buckets, func(b types.Bucket) bool { return getString(b.Name) == bucket }) {
+			return fmt.Errorf("expected bucket %v in the %v listing, instead got %v",
+				bucket, s.awsRegion, buckets)
+		}
+
+		// the region is matched case-insensitively
+		buckets, err = listBuckets(strings.ToUpper(s.awsRegion))
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(buckets, func(b types.Bucket) bool { return getString(b.Name) == bucket }) {
+			return fmt.Errorf("expected bucket %v in the %v listing, instead got %v",
+				bucket, strings.ToUpper(s.awsRegion), buckets)
+		}
+
+		// every bucket of the gateway lives in its own region, so like an S3
+		// regional endpoint it rejects any other region
+		otherRegion := "us-west-2"
+		if s.awsRegion == otherRegion {
+			otherRegion = "us-east-1"
+		}
+		_, err = listBuckets(otherRegion)
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgBucketRegionEndpoint, "")); err != nil {
+			return err
+		}
+
+		// an empty bucket-region is not a valid region either
+		_, err = listBuckets("")
+		return checkApiErr(err, s3err.GetInvalidArgBucketRegion(""))
 	})
 }
 

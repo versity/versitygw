@@ -100,6 +100,84 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid bucket region",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  validRes,
+				queries: map[string]string{
+					"bucket-region": "abc",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetInvalidArgBucketRegion("abc"),
+			},
+		},
+		{
+			name: "bucket region of another region",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  validRes,
+				queries: map[string]string{
+					"bucket-region": "us-west-2",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgBucketRegionEndpoint, ""),
+			},
+		},
+		{
+			name: "empty bucket region",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  validRes,
+				queries: map[string]string{
+					"bucket-region": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetInvalidArgBucketRegion(""),
+			},
+		},
+		{
+			name: "bucket region of the gateway region in uppercase",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  validRes,
+				queries: map[string]string{
+					"bucket-region": "US-EAST-1",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: validRes,
+				},
+			},
+		},
+		{
+			name: "bucket region of the gateway region",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  validRes,
+				queries: map[string]string{
+					"bucket-region": "us-east-1",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: validRes,
+				},
+			},
+		},
+		{
 			name: "backend returns error",
 			input: testInput{
 				locals: defaultLocals,

@@ -74,9 +74,14 @@ const (
 	InvalidArgSSEInvalidEncryptionMethod
 	InvalidArgSSECRequiresTLS
 	InvalidArgUploadIdWithUploads
+	InvalidArgBucketRegionEndpoint
 )
 
 var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
+	InvalidArgBucketRegionEndpoint: {
+		Description:  "Requests with bucket-region specified must be made to the corresponding regional endpoint",
+		ArgumentName: "bucket-region",
+	},
 	InvalidArgMaxBuckets: {
 		Description:  "Argument max-buckets must be an integer between 1 and 10000.",
 		ArgumentName: "max-buckets",
@@ -382,5 +387,17 @@ func GetInvalidArgObjectOwnership(value string) InvalidArgumentError {
 		ArgumentName: "x-amz-object-ownership",
 		// no ArgumentValue is returned for this error
 		Description: fmt.Sprintf("Invalid x-amz-object-ownership header: %s", value),
+	}
+}
+
+func GetInvalidArgBucketRegion(value string) InvalidArgumentError {
+	description := fmt.Sprintf("Argument value %s is not a valid AWS Region", value)
+	if value == "" {
+		description = "Argument value is not a valid AWS Region"
+	}
+	return InvalidArgumentError{
+		ArgumentName: "bucket-region",
+		// no ArgumentValue is returned for this error
+		Description: description,
 	}
 }
