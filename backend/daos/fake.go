@@ -153,6 +153,15 @@ func (f *Fake) Mkdir(p string) error {
 func (f *Fake) Remove(p string, force bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if strings.HasSuffix(p, "/") {
+		n, err := f.walk(p, false)
+		if err != nil {
+			return err
+		}
+		if !n.dir {
+			return errNotExist
+		}
+	}
 	parent, base, err := f.parent(p, false)
 	if err != nil {
 		return err

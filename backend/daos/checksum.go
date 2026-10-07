@@ -345,12 +345,7 @@ func setPartChecksum(res *s3.UploadPartOutput, alg utils.HashType, sum string) {
 	}
 }
 
-func (d *Daos) storePartSums(partPath string, stored s3response.Checksum, hashed partHash) error {
-	obj, err := d.fs.Open(partPath, openRead)
-	if err != nil {
-		return mapFS(err)
-	}
-	defer d.fs.Release(obj)
+func (d *Daos) storePartSums(obj Object, stored s3response.Checksum, hashed partHash) error {
 	if stored.Type == "" {
 		return nil
 	}

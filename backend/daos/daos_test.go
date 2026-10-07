@@ -386,3 +386,36 @@ func TestPutLongComponentIsKeyTooLong(t *testing.T) {
 		t.Fatalf("put = %v", err)
 	}
 }
+
+func TestDeleteSlashKeyDoesNotRemoveSibling(t *testing.T) {
+	d, _ := newTest(t)
+	_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("a/b"),
+		Body:   bytes.NewReader([]byte("keep")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("a/b/"),
+	})
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		t.Fatalf("delete = %v", err)
+	}
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("a/b"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(got.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "keep" {
+		t.Fatalf("body %q", body)
+	}
+}

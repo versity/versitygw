@@ -205,14 +205,15 @@ func (d *Daos) UploadPartCopy(_ context.Context, input *s3.UploadPartCopyInput) 
 		}
 	}
 	nlen := int64(len(body))
-	etag, err := d.writePart(uploadDir, *input.PartNumber, reader, &nlen)
+	etag, obj, err := d.writePart(uploadDir, *input.PartNumber, reader, &nlen)
 	if err != nil {
 		return out, err
 	}
-	partPath := path.Join(uploadDir, strconv.FormatInt(int64(*input.PartNumber), 10))
-	if err := d.storePartSums(partPath, stored, hashed); err != nil {
+	defer d.fs.Release(obj)
+	if err := d.storePartSums(obj, stored, hashed); err != nil {
 		return out, err
 	}
+	partPath := path.Join(uploadDir, strconv.FormatInt(int64(*input.PartNumber), 10))
 	partInfo, err := d.fs.Stat(partPath)
 	if err != nil {
 		return out, mapFS(err)

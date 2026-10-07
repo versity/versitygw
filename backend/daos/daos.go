@@ -273,6 +273,19 @@ func (d *Daos) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) (*s3
 	if err := d.bucketExists(bucket); err != nil {
 		return nil, err
 	}
+	if strings.HasSuffix(key, "/") {
+		if err := d.fs.Remove(objectPath(bucket, key), false); err != nil {
+			return nil, d.mapKeyErr(err, key)
+		}
+		return &s3.DeleteObjectOutput{}, nil
+	}
+	info, err := d.fs.Stat(objectPath(bucket, key))
+	if err != nil {
+		return nil, d.mapKeyErr(err, key)
+	}
+	if info.IsDir {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
 	if err := d.fs.Remove(objectPath(bucket, key), false); err != nil {
 		return nil, d.mapKeyErr(err, key)
 	}

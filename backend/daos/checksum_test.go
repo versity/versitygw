@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"io"
 	"strings"
 	"testing"
 
@@ -263,5 +264,44 @@ func TestUploadPartReadsPastContentLength(t *testing.T) {
 	}
 	if awsString(part.ChecksumCRC32) != sum {
 		t.Fatalf("part checksum %q", awsString(part.ChecksumCRC32))
+	}
+}
+
+type emptyThenEOF struct {
+	n int
+}
+
+func (r *emptyThenEOF) Read([]byte) (int, error) {
+	if r.n == 0 {
+		r.n++
+		return 0, nil
+	}
+	return 0, io.EOF
+}
+
+func TestUploadPartAllowsOneEmptyRead(t *testing.T) {
+	d, _ := newTest(t)
+	created, err := d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("empty-read"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := int32(1)
+	length := int64(0)
+	part, err := d.UploadPart(context.Background(), &s3.UploadPartInput{
+		Bucket:        backend.GetPtrFromString("bucket"),
+		Key:           backend.GetPtrFromString("empty-read"),
+		UploadId:      &created.UploadId,
+		PartNumber:    &n,
+		ContentLength: &length,
+		Body:          &emptyThenEOF{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if part.ETag == nil || *part.ETag == "" {
+		t.Fatal("missing etag")
 	}
 }

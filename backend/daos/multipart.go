@@ -131,12 +131,12 @@ func (d *Daos) UploadPart(_ context.Context, input *s3.UploadPartInput) (*s3.Upl
 	if err != nil {
 		return nil, err
 	}
-	etag, err := d.writePart(uploadDir, *input.PartNumber, hashed.body, input.ContentLength)
+	etag, obj, err := d.writePart(uploadDir, *input.PartNumber, hashed.body, input.ContentLength)
 	if err != nil {
 		return nil, err
 	}
-	partPath := path.Join(uploadDir, strconv.FormatInt(int64(*input.PartNumber), 10))
-	if err := d.storePartSums(partPath, stored, hashed); err != nil {
+	defer d.fs.Release(obj)
+	if err := d.storePartSums(obj, stored, hashed); err != nil {
 		return nil, err
 	}
 	res := &s3.UploadPartOutput{ETag: &etag}
@@ -157,11 +157,11 @@ func (d *Daos) uploadDirReady(bucket, key, uploadID string) (string, error) {
 	return uploadDir, nil
 }
 
-func (d *Daos) writePart(uploadDir string, partNumber int32, body io.Reader, length *int64) (string, error) {
+func (d *Daos) writePart(uploadDir string, partNumber int32, body io.Reader, length *int64) (string, Object, error) {
 	tmp := path.Join(uploadDir, ".part-"+uuid.NewString())
 	obj, err := d.fs.Open(tmp, openWrite|openCreate|openExcl)
 	if err != nil {
-		return "", mapFS(err)
+		return "", nil, mapFS(err)
 	}
 	moved := false
 	defer func() {
@@ -172,25 +172,25 @@ func (d *Daos) writePart(uploadDir string, partNumber int32, body io.Reader, len
 	}()
 	r, crcSum, err := partCRCReader(body)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	sum, _, err := d.writeBody(obj, r, length)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if err := d.fs.SetXattr(obj, attrPartCRC64, []byte(crcSum())); err != nil {
-		return "", mapFS(err)
+		return "", nil, mapFS(err)
 	}
 	etag := "\"" + hex.EncodeToString(sum) + "\""
 	if err := d.fs.SetXattr(obj, attrETag, []byte(etag)); err != nil {
-		return "", mapFS(err)
+		return "", nil, mapFS(err)
 	}
 	partPath := path.Join(uploadDir, strconv.FormatInt(int64(partNumber), 10))
 	if err := d.fs.Move(tmp, partPath); err != nil {
-		return "", mapFS(err)
+		return "", nil, mapFS(err)
 	}
 	moved = true
-	return etag, nil
+	return etag, obj, nil
 }
 
 func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
@@ -582,6 +582,7 @@ func (d *Daos) writeBody(obj Object, r io.Reader, length *int64) ([]byte, int64,
 	h := md5.New()
 	buf := make([]byte, 32*1024)
 	var off int64
+	var emptyReads int
 	want := int64(-1)
 	if length != nil {
 		want = *length
@@ -611,11 +612,13 @@ func (d *Daos) writeBody(obj Object, r io.Reader, length *int64) ([]byte, int64,
 			return nil, off, err
 		}
 		if n == 0 {
-			if want >= 0 && off >= want {
-				break
+			emptyReads++
+			if emptyReads > 8 {
+				return nil, off, io.ErrNoProgress
 			}
-			return nil, off, io.ErrNoProgress
+			continue
 		}
+		emptyReads = 0
 	}
 	if want >= 0 && off != want {
 		return nil, off, io.ErrUnexpectedEOF
