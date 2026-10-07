@@ -63,6 +63,7 @@ type FS interface {
 	Stat(path string) (Info, error)
 	SetXattr(obj Object, name string, value []byte) error
 	GetXattr(obj Object, name string) ([]byte, error)
+	RemoveXattr(obj Object, name string) error
 	ReadDir(path string) ([]Info, error)
 	Release(obj Object) error
 	StatObj(obj Object) (Info, error)
