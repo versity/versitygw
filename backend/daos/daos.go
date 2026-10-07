@@ -112,7 +112,7 @@ func (d *Daos) PutObject(_ context.Context, po s3response.PutObjectInput) (s3res
 	if backend.HasSSEC(po.SSECustomerAlgorithm, po.SSECustomerKey, po.SSECustomerKeyMD5) {
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
-	if po.IfMatch != nil || po.IfNoneMatch != nil || po.ChecksumAlgorithm != "" ||
+	if po.IfMatch != nil || po.IfNoneMatch != nil ||
 		po.ObjectLockMode != "" || po.ObjectLockLegalHoldStatus != "" ||
 		(po.ObjectLockRetainUntilDate != nil && !po.ObjectLockRetainUntilDate.IsZero()) {
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
@@ -199,6 +199,11 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 		cr := fmt.Sprintf("bytes %d-%d/%d", start, start+int64(len(buf))-1, info.Size)
 		out.ContentRange = &cr
 	}
+	if ch, err := d.loadChecksums(obj); err != nil {
+		return nil, err
+	} else {
+		fillGetChecksum(out, ch)
+	}
 	return out, nil
 }
 
@@ -229,7 +234,7 @@ func (d *Daos) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.Hea
 	}); err != nil {
 		return nil, err
 	}
-	return &s3.HeadObjectOutput{
+	out := &s3.HeadObjectOutput{
 		ContentLength:      &info.Size,
 		ETag:               &etag,
 		ContentType:        strPtr(headers.ctype),
@@ -240,7 +245,13 @@ func (d *Daos) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.Hea
 		ExpiresString:      strPtr(headers.expires),
 		LastModified:       &mod,
 		Metadata:           meta,
-	}, nil
+	}
+	if ch, err := d.loadChecksums(obj); err != nil {
+		return nil, err
+	} else {
+		fillHeadChecksum(out, ch)
+	}
+	return out, nil
 }
 
 func (d *Daos) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
@@ -313,6 +324,15 @@ func (d *Daos) putFile(bucket, key string, body []byte, po s3response.PutObjectI
 	if err := d.storeAttrs(obj, etag, po, false); err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
+	out := s3response.PutObjectOutput{ETag: etag}
+	if ch, ok, err := checksumForPut(po, body); err != nil {
+		return s3response.PutObjectOutput{}, err
+	} else if ok {
+		if err := d.storeChecksums(obj, ch); err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
+		fillPutChecksum(&out, ch)
+	}
 	dst := objectPath(bucket, key)
 	if err := d.mkdirParents(dst); err != nil {
 		return s3response.PutObjectOutput{}, d.mapKeyErr(err, key)
@@ -321,7 +341,7 @@ func (d *Daos) putFile(bucket, key string, body []byte, po s3response.PutObjectI
 		return s3response.PutObjectOutput{}, d.mapKeyErr(err, key)
 	}
 	moved = true
-	return s3response.PutObjectOutput{ETag: etag}, nil
+	return out, nil
 }
 
 func (d *Daos) putDirectory(bucket, key string, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
@@ -340,7 +360,16 @@ func (d *Daos) putDirectory(bucket, key string, po s3response.PutObjectInput) (s
 	if err := d.storeAttrs(obj, emptyMD5, po, true); err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
-	return s3response.PutObjectOutput{ETag: emptyMD5}, nil
+	out := s3response.PutObjectOutput{ETag: emptyMD5}
+	if ch, ok, err := checksumForPut(po, nil); err != nil {
+		return s3response.PutObjectOutput{}, err
+	} else if ok {
+		if err := d.storeChecksums(obj, ch); err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
+		fillPutChecksum(&out, ch)
+	}
+	return out, nil
 }
 
 func (d *Daos) storeAttrs(obj Object, etag string, po s3response.PutObjectInput, dir bool) error {

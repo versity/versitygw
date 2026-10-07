@@ -193,14 +193,6 @@ func TestMultipartRejectsUnsupported(t *testing.T) {
 	if !errors.Is(err, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)) {
 		t.Fatalf("directory = %v", err)
 	}
-	_, err = d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
-		Bucket:            backend.GetPtrFromString("bucket"),
-		Key:               backend.GetPtrFromString("locked"),
-		ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
-	})
-	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotImplemented)) {
-		t.Fatalf("checksum = %v", err)
-	}
 	var zero time.Time
 	_, err = d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
 		Bucket:                    backend.GetPtrFromString("bucket"),

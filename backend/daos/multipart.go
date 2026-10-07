@@ -79,6 +79,12 @@ func (d *Daos) CreateMultipartUpload(_ context.Context, input s3response.CreateM
 		return out, mapFS(err)
 	}
 	err = d.storeAttrs(obj, "", putInputFromCreate(input), false)
+	if err == nil && input.ChecksumAlgorithm != "" {
+		err = d.storeChecksums(obj, s3response.Checksum{
+			Algorithm: input.ChecksumAlgorithm,
+			Type:      input.ChecksumType,
+		})
+	}
 	d.fs.Release(obj)
 	if err != nil {
 		_ = d.fs.Remove(uploadDir, true)
@@ -107,18 +113,34 @@ func (d *Daos) UploadPart(_ context.Context, input *s3.UploadPartInput) (*s3.Upl
 	if input.PartNumber == nil || *input.PartNumber < 1 || *input.PartNumber > maxPartNumber {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
 	}
-	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) || input.ChecksumAlgorithm != "" {
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
 	uploadDir, err := d.uploadDirReady(bucket, key, uploadID)
 	if err != nil {
 		return nil, err
 	}
-	etag, err := d.writePart(uploadDir, *input.PartNumber, input.Body, input.ContentLength)
+	stored, err := d.loadChecksumsAt(uploadDir)
 	if err != nil {
 		return nil, err
 	}
-	return &s3.UploadPartOutput{ETag: &etag}, nil
+	hashed, err := d.wrapPartBody(input, stored)
+	if err != nil {
+		return nil, err
+	}
+	etag, err := d.writePart(uploadDir, *input.PartNumber, hashed.body, input.ContentLength)
+	if err != nil {
+		return nil, err
+	}
+	partPath := path.Join(uploadDir, strconv.FormatInt(int64(*input.PartNumber), 10))
+	if err := d.storePartSums(partPath, stored, hashed); err != nil {
+		return nil, err
+	}
+	res := &s3.UploadPartOutput{ETag: &etag}
+	if hashed.expose {
+		setPartChecksum(res, hashed.userAlg, hashed.userSum())
+	}
+	return res, nil
 }
 
 func (d *Daos) uploadDirReady(bucket, key, uploadID string) (string, error) {
@@ -145,9 +167,16 @@ func (d *Daos) writePart(uploadDir string, partNumber int32, body io.Reader, len
 			_ = d.fs.Remove(tmp, false)
 		}
 	}()
-	sum, _, err := d.writeBody(obj, body, length)
+	r, crcSum, err := partCRCReader(body)
 	if err != nil {
 		return "", err
+	}
+	sum, _, err := d.writeBody(obj, r, length)
+	if err != nil {
+		return "", err
+	}
+	if err := d.fs.SetXattr(obj, attrPartCRC64, []byte(crcSum())); err != nil {
+		return "", mapFS(err)
 	}
 	etag := "\"" + hex.EncodeToString(sum) + "\""
 	if err := d.fs.SetXattr(obj, attrETag, []byte(etag)); err != nil {
@@ -233,6 +262,13 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 	if err := d.storeAttrs(obj, etag, po, false); err != nil {
 		return out, "", err
 	}
+	ch, err := d.objectChecksumFromParts(claim, input, parts)
+	if err != nil {
+		return out, "", err
+	}
+	if err := d.storeChecksums(obj, ch); err != nil {
+		return out, "", err
+	}
 	if _, err := d.fs.Stat(claim); err != nil {
 		return out, "", s3err.GetNoSuchUploadErr(uploadID)
 	}
@@ -245,11 +281,13 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 	}
 	published = true
 	_ = d.fs.Remove(claim, true)
-	return s3response.CompleteMultipartUploadResult{
+	result := s3response.CompleteMultipartUploadResult{
 		Bucket: &bucket,
 		Key:    &key,
 		ETag:   &etag,
-	}, "", nil
+	}
+	fillCompleteChecksum(&result, ch)
+	return result, "", nil
 }
 
 func (d *Daos) AbortMultipartUpload(_ context.Context, input *s3.AbortMultipartUploadInput) error {
@@ -491,9 +529,6 @@ func (d *Daos) copyParts(dst Object, dir string, parts []types.CompletedPart) er
 
 func (d *Daos) verifyParts(dir, uploadID string, parts []types.CompletedPart) error {
 	for _, part := range parts {
-		if partHasChecksum(part) {
-			return s3err.GetAPIError(s3err.ErrNotImplemented)
-		}
 		pp := path.Join(dir, strconv.FormatInt(int64(*part.PartNumber), 10))
 		got, err := d.xattr(pp, attrETag)
 		if errors.Is(err, errNotExist) {
@@ -650,7 +685,7 @@ func unsupportedCreate(in s3response.CreateMultipartUploadInput) bool {
 	if backend.HasSSEC(in.SSECustomerAlgorithm, in.SSECustomerKey, in.SSECustomerKeyMD5) {
 		return true
 	}
-	if in.ChecksumAlgorithm != "" || in.ChecksumType != "" || in.ObjectLockMode != "" || in.ObjectLockLegalHoldStatus != "" || lockDateSet(in.ObjectLockRetainUntilDate) {
+	if in.ObjectLockMode != "" || in.ObjectLockLegalHoldStatus != "" || lockDateSet(in.ObjectLockRetainUntilDate) {
 		return true
 	}
 	if in.ACL != "" || in.ServerSideEncryption != "" || (in.StorageClass != "" && in.StorageClass != types.StorageClassStandard) {
@@ -667,17 +702,13 @@ func lockDateSet(t *time.Time) bool {
 }
 
 func unsupportedComplete(in *s3.CompleteMultipartUploadInput) bool {
-	if in.ChecksumType != "" || in.MpuObjectSize != nil {
+	if in.MpuObjectSize != nil {
 		return true
 	}
 	if backend.HasSSEC(in.SSECustomerAlgorithm, in.SSECustomerKey, in.SSECustomerKeyMD5) {
 		return true
 	}
-	return anyString(in.IfMatch, in.IfNoneMatch, in.ChecksumCRC32, in.ChecksumCRC32C, in.ChecksumCRC64NVME, in.ChecksumMD5, in.ChecksumSHA1, in.ChecksumSHA256, in.ChecksumSHA512, in.ChecksumXXHASH64, in.ChecksumXXHASH3, in.ChecksumXXHASH128)
-}
-
-func partHasChecksum(p types.CompletedPart) bool {
-	return anyString(p.ChecksumCRC32, p.ChecksumCRC32C, p.ChecksumCRC64NVME, p.ChecksumMD5, p.ChecksumSHA1, p.ChecksumSHA256, p.ChecksumSHA512, p.ChecksumXXHASH64, p.ChecksumXXHASH3, p.ChecksumXXHASH128)
+	return anyString(in.IfMatch, in.IfNoneMatch)
 }
 
 func putInputFromCreate(in s3response.CreateMultipartUploadInput) s3response.PutObjectInput {
