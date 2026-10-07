@@ -61,6 +61,14 @@ func (c S3ApiController) HeadObject(ctx fiber.Ctx) (*Response, error) {
 		}
 	}
 
+	if err := utils.ValidateResponseOverrides(ctx); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	// Validate that response override parameters are not used with anonymous requests
 	if hasResponseOverrides && isPublicBucket {
 		debuglogger.Logf("anonymous access is denied with response override params")

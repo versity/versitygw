@@ -382,6 +382,16 @@ func GetInvalidArgExceedingRange(size int64) InvalidArgumentError {
 	}
 }
 
+// GetInvalidArgResponseOverride returns the error for a response-* query
+// parameter that isn't one of the overridable response headers
+func GetInvalidArgResponseOverride(name, value string) InvalidArgumentError {
+	return InvalidArgumentError{
+		ArgumentName:  name,
+		ArgumentValue: value,
+		Description:   fmt.Sprintf("%s is not in the set of overridable response headers. Please refer to the S3 API documentation for a complete list of overridable response headers.", name),
+	}
+}
+
 func GetInvalidArgObjectOwnership(value string) InvalidArgumentError {
 	return InvalidArgumentError{
 		ArgumentName: "x-amz-object-ownership",
