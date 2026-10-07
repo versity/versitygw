@@ -279,9 +279,6 @@ source ./tests/drivers/objects_and_versions.sh
 
 # tags: curl,ListObjectsV2,start-after,continuation-token
 @test "ListObjectsV1 - start-after - doesn't include continuation token" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2007"
-  fi
   run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
   assert_success
   read -r bucket_name file_one file_two <<< "$output"
