@@ -124,6 +124,9 @@ func (d *Daos) PutObject(_ context.Context, po s3response.PutObjectInput) (s3res
 	if key == "" {
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	if err := reservedKey(key); err != nil {
+		return s3response.PutObjectOutput{}, err
+	}
 	if err := d.bucketExists(bucket); err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
@@ -588,6 +591,14 @@ func mapFS(err error) error {
 
 func objectPath(bucket, key string) string {
 	return bucket + "/" + strings.TrimPrefix(key, "/")
+}
+
+func reservedKey(key string) error {
+	cleaned := clean(key)
+	if cleaned == tmpDirName || strings.HasPrefix(cleaned, tmpDirName+"/") {
+		return s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
+	return nil
 }
 
 func pathDir(p string) string {

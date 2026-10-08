@@ -55,6 +55,9 @@ func (d *Daos) CreateMultipartUpload(_ context.Context, input s3response.CreateM
 	if key == "" {
 		return out, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	if err := reservedKey(key); err != nil {
+		return out, err
+	}
 	if strings.HasSuffix(key, "/") {
 		return out, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
 	}
@@ -202,6 +205,9 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 	}
 	if key == "" || strings.HasSuffix(key, "/") {
 		return out, "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err := reservedKey(key); err != nil {
+		return out, "", err
 	}
 	if err := validUploadID(uploadID); err != nil {
 		return out, "", err

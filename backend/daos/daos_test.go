@@ -439,3 +439,59 @@ func TestDeleteSlashKeyDoesNotRemoveSibling(t *testing.T) {
 		t.Fatalf("body %q", body)
 	}
 }
+
+func TestReservedTempKeyIsRejected(t *testing.T) {
+	d, fs := newTest(t)
+	for _, key := range []string{".sgwtmp/user-data", "foo/../.sgwtmp/x", ".sgwtmp"} {
+		_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
+			Bucket: backend.GetPtrFromString("bucket"),
+			Key:    backend.GetPtrFromString(key),
+			Body:   bytes.NewReader([]byte("hidden")),
+		})
+		if !errors.Is(err, s3err.GetAPIError(s3err.ErrInvalidRequest)) {
+			t.Fatalf("put %s = %v", key, err)
+		}
+	}
+	put(t, d, ".sgwtmp/../ok", "visible", "", nil)
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("ok"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(got.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "visible" {
+		t.Fatalf("body %q", body)
+	}
+	_, err = d.CopyObject(context.Background(), s3response.CopyObjectInput{
+		Bucket:     backend.GetPtrFromString("bucket"),
+		Key:        backend.GetPtrFromString(".sgwtmp/copied"),
+		CopySource: backend.GetPtrFromString("bucket/ok"),
+	})
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrInvalidRequest)) {
+		t.Fatalf("copy = %v", err)
+	}
+	_, err = d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString(".sgwtmp/parted"),
+	})
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrInvalidRequest)) {
+		t.Fatalf("create = %v", err)
+	}
+	if _, err := fs.Stat("bucket/.sgwtmp/user-data"); !errors.Is(err, errNotExist) {
+		t.Fatalf("reserved object stat = %v", err)
+	}
+	if _, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("ok"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.DeleteBucket(context.Background(), "bucket"); err != nil {
+		t.Fatal(err)
+	}
+}

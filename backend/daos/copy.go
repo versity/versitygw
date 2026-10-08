@@ -61,6 +61,9 @@ func (d *Daos) CopyObject(_ context.Context, input s3response.CopyObjectInput) (
 	}
 	dstBucket := awsString(input.Bucket)
 	dstKey := awsString(input.Key)
+	if err := reservedKey(dstKey); err != nil {
+		return out, err
+	}
 	if err := d.bucketExists(srcBucket); err != nil {
 		return out, err
 	}
