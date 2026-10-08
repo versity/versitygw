@@ -24,13 +24,17 @@ source ./tests/drivers/put_object_tagging/put_object_tagging_rest.sh
 source ./tests/util/util_public_access_block.sh
 source ./tests/setup.sh
 
-test_file="test_file"
-
 # tags: curl, PutObjectTagging, tagging, content-md5
 @test "REST - PutObjectTagging - content-md5 not required for object tagging" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
+  local bucket_name test_file
+
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
 
   run put_bucket_object_run_command "$bucket_name" "$test_file" "200" "-commandType" "putObjectTagging" "-tagKey" "key" "-tagValue" "value"
   assert_success
@@ -41,15 +45,11 @@ test_file="test_file"
 
 # tags: curl, PutObjectTagging, tagging, invalid-query
 @test "REST - PutObjectTagging - invalid key returns invalid key in error" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1663"
-  fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file
 
-  run setup_bucket_and_add_file "$bucket_name" "$test_file"
+  run setup_bucket_and_add_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run get_check_tag_error_with_invalid_key "$bucket_name" "$test_file" "ke&y" "value"
   assert_success
@@ -57,9 +57,15 @@ test_file="test_file"
 
 # tags: curl, PutObjectTagging, tagging, content-md5
 @test "REST - PutObjectTagging - success with content-md5" {
+  local bucket_name test_file
+
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
 
   run put_bucket_object_run_command "$bucket_name" "$test_file" "200" "-commandType" "putObjectTagging" "-tagKey" "key" "-tagValue" "value" "-contentMD5"
   assert_success
@@ -70,9 +76,15 @@ test_file="test_file"
 
 # tags: curl, PutObjectTagging, tagging, x-amz-expected-bucket-owner, invalid-header
 @test "REST - PutObjectTagging - mismatched bucket owner" {
+  local bucket_name test_file
+
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
 
   run put_bucket_object_run_command_expect_error "$bucket_name" "$test_file" "403" "AccessDenied" "Access Denied" \
     "-commandType" "putObjectTagging" "-tagKey" "key" "-tagValue" "value" "-contentMD5" "-signedParams" "x-amz-expected-bucket-owner:012345678901"
@@ -84,9 +96,15 @@ test_file="test_file"
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "cannot change versioning status for static buckets"
   fi
+  local bucket_name test_file
+
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
 
   run setup_bucket_versioning_file_two_versions "$bucket_name" "$test_file"
   assert_success

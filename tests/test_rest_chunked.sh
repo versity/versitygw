@@ -472,9 +472,9 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
 
 # tags: openssl,chunked,PutObject,invalid-header,content-length
 @test "REST - PutObject - STREAMING-AWS4-HMAC-SHA256-PAYLOAD - missing content length" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1623"
-  fi
+  #if [ "$DIRECT" != "true" ]; then
+  #  skip "https://github.com/versity/versitygw/issues/1623"
+  #fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

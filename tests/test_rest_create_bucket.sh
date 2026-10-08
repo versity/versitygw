@@ -177,9 +177,6 @@ export RUN_USERS=true
 
 # tags: curl,CreateBucket,invalid-header,location-constraint
 @test "REST - CreateBucket - location constraint error returns invalid constraint" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1645"
-  fi
   run send_invalid_location_constraint_check_error "abc"
   assert_success
 }

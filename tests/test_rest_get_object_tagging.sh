@@ -61,9 +61,9 @@ source ./tests/drivers/put_object/put_object_rest.sh
 
 # tags: curl,GetObjectTagging,tagging,versioning,invalid-header,versionId
 @test "REST - GetObjectTagging - invalid version ID error returns version ID" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1698"
-  fi
+  #if [ "$DIRECT" != "true" ]; then
+  #  skip "https://github.com/versity/versitygw/issues/1698"
+  #fi
   run get_file_name
   assert_success
   test_file="$output"
