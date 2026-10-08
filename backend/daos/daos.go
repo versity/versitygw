@@ -292,6 +292,7 @@ func (d *Daos) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) (*s3
 		}
 		return nil, d.mapKeyErr(err, key)
 	}
+	d.pruneEmptyParents(bucket, key)
 	return &s3.DeleteObjectOutput{}, nil
 }
 
@@ -594,11 +595,43 @@ func objectPath(bucket, key string) string {
 }
 
 func reservedKey(key string) error {
-	cleaned := clean(key)
-	if cleaned == tmpDirName || strings.HasPrefix(cleaned, tmpDirName+"/") {
-		return s3err.GetAPIError(s3err.ErrInvalidRequest)
+	for _, part := range strings.Split(clean(key), "/") {
+		if part == tmpDirName {
+			return s3err.GetAPIError(s3err.ErrInvalidRequest)
+		}
 	}
 	return nil
+}
+
+func (d *Daos) pruneEmptyParents(bucket, key string) {
+	parent := pathDir(strings.Trim(clean(key), "/"))
+	for parent != "" && parent != "." {
+		p := objectPath(bucket, parent)
+		info, err := d.fs.Stat(p)
+		if err != nil || !info.IsDir {
+			return
+		}
+		obj, err := d.fs.Open(p, openRead)
+		if err != nil {
+			return
+		}
+		etag, err := d.fs.GetXattr(obj, attrETag)
+		_ = d.fs.Release(obj)
+		if err == nil && len(etag) > 0 {
+			return
+		}
+		if err != nil && !errors.Is(err, errNotExist) {
+			return
+		}
+		ents, err := d.fs.ReadDir(p)
+		if err != nil || len(ents) != 0 {
+			return
+		}
+		if err := d.fs.Remove(p, false); err != nil {
+			return
+		}
+		parent = pathDir(parent)
+	}
 }
 
 func pathDir(p string) string {

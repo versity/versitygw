@@ -442,7 +442,7 @@ func TestDeleteSlashKeyDoesNotRemoveSibling(t *testing.T) {
 
 func TestReservedTempKeyIsRejected(t *testing.T) {
 	d, fs := newTest(t)
-	for _, key := range []string{".sgwtmp/user-data", "foo/../.sgwtmp/x", ".sgwtmp"} {
+	for _, key := range []string{".sgwtmp/user-data", "foo/../.sgwtmp/x", ".sgwtmp", "dir/.sgwtmp/file"} {
 		_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
 			Bucket: backend.GetPtrFromString("bucket"),
 			Key:    backend.GetPtrFromString(key),
@@ -493,5 +493,52 @@ func TestReservedTempKeyIsRejected(t *testing.T) {
 	}
 	if err := d.DeleteBucket(context.Background(), "bucket"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDeletePrunesImplicitParents(t *testing.T) {
+	d, _ := newTest(t)
+	put(t, d, "a/b/c", "nested", "", nil)
+	put(t, d, "a/keep", "stay", "", nil)
+	if _, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("a/b/c"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.DeleteBucket(context.Background(), "bucket"); !errors.Is(err, s3err.GetBucketErr(s3err.ErrBucketNotEmpty, "bucket")) {
+		t.Fatalf("bucket with sibling = %v", err)
+	}
+	if _, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("a/keep"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.DeleteBucket(context.Background(), "bucket"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeleteKeepsExplicitDirectory(t *testing.T) {
+	d, _ := newTest(t)
+	put(t, d, "keep/", "", "", nil)
+	put(t, d, "keep/file", "child", "", nil)
+	if _, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("keep/file"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("keep/"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = got.Body.Close()
+	if err := d.DeleteBucket(context.Background(), "bucket"); !errors.Is(err, s3err.GetBucketErr(s3err.ErrBucketNotEmpty, "bucket")) {
+		t.Fatalf("explicit directory bucket = %v", err)
 	}
 }
