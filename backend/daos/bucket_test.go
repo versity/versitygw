@@ -111,6 +111,18 @@ func TestDeleteBucketLeavesTheContainer(t *testing.T) {
 	}
 }
 
+func TestDeleteBucketKeepsObjectPublishedDuringRemoval(t *testing.T) {
+	d, fs := newTest(t)
+	fs.PlantBeforeRemove("bucket/late")
+	err := d.DeleteBucket(context.Background(), "bucket")
+	if !errors.Is(err, s3err.GetBucketErr(s3err.ErrBucketNotEmpty, "bucket")) {
+		t.Fatalf("delete = %v", err)
+	}
+	if _, err := fs.Stat("bucket/late"); err != nil {
+		t.Fatalf("published object = %v", err)
+	}
+}
+
 func TestListSkipsReservedNamesAndMissingAcl(t *testing.T) {
 	fs := NewFake()
 	d := NewWithFS(fs)

@@ -143,7 +143,13 @@ func (d *Daos) DeleteBucket(_ context.Context, bucket string) error {
 		}
 		return s3err.GetBucketErr(s3err.ErrBucketNotEmpty, bucket)
 	}
-	if err := d.fs.Remove(bucket, true); err != nil {
+	if err := d.fs.Remove(objectPath(bucket, tmpDirName), true); err != nil && !errors.Is(err, errNotExist) {
+		return mapFS(err)
+	}
+	if err := d.fs.Remove(bucket, false); err != nil {
+		if errors.Is(err, errNotEmpty) {
+			return s3err.GetBucketErr(s3err.ErrBucketNotEmpty, bucket)
+		}
 		return mapFS(err)
 	}
 	return nil

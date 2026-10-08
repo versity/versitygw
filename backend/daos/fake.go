@@ -31,6 +31,7 @@ type Fake struct {
 	failMove     bool
 	failMoveAt   int
 	moveCount    int
+	plantBefore  string
 	bytesRead    int64
 	bytesWritten int64
 }
@@ -150,9 +151,25 @@ func (f *Fake) Mkdir(p string) error {
 	return nil
 }
 
+func (f *Fake) PlantBeforeRemove(p string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.plantBefore = p
+}
+
 func (f *Fake) Remove(p string, force bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.plantBefore != "" && pathDir(clean(f.plantBefore)) == clean(p) {
+		planted := f.plantBefore
+		f.plantBefore = ""
+		parent, base, err := f.parent(planted, true)
+		if err == nil {
+			if _, ok := parent.kids[base]; !ok {
+				parent.kids[base] = &node{name: base, data: []byte("late"), mtime: now()}
+			}
+		}
+	}
 	if strings.HasSuffix(p, "/") {
 		n, err := f.walk(p, false)
 		if err != nil {
