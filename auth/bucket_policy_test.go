@@ -156,3 +156,38 @@ func TestVerifyPublicBucketPolicy_Condition(t *testing.T) {
 		})
 	}
 }
+
+func TestBucketPolicyIsPublic(t *testing.T) {
+	tests := []struct {
+		name   string
+		policy string
+		want   bool
+	}{
+		{
+			name: "Allow to every principal is public",
+			policy: `{"Statement":[{"Effect":"Allow","Principal":"*",
+				"Action":"s3:GetObject","Resource":"arn:aws:s3:::mybucket/*"}]}`,
+			want: true,
+		},
+		{
+			name: "Deny to every principal is not public",
+			policy: `{"Statement":[{"Effect":"Deny","Principal":"*",
+				"Action":"s3:GetObject","Resource":"arn:aws:s3:::mybucket/deny-probe/*"}]}`,
+			want: false,
+		},
+		{
+			name: "Allow to one principal is not public",
+			policy: `{"Statement":[{"Effect":"Allow","Principal":{"AWS":["user1"]},
+				"Action":"s3:GetObject","Resource":"arn:aws:s3:::mybucket/*"}]}`,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy, err := ParsePolicyDocument([]byte(tt.policy))
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, policy.IsPublic())
+		})
+	}
+}
