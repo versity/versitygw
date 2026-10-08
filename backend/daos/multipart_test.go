@@ -266,3 +266,56 @@ func TestListMultipartUploadsResumes(t *testing.T) {
 		t.Fatalf("pages %s then %s, want %s and %s", page.Uploads[0].UploadID, next.Uploads[0].UploadID, first.UploadId, second.UploadId)
 	}
 }
+
+func TestListPartsReturnsChecksumAndHonorsZero(t *testing.T) {
+	d, _ := newTest(t)
+	sum, err := hashBytes(types.ChecksumAlgorithmCrc32, []byte("part"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
+		Bucket:            backend.GetPtrFromString("bucket"),
+		Key:               backend.GetPtrFromString("listed"),
+		ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
+		ChecksumType:      types.ChecksumTypeFullObject,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := int32(1)
+	_, err = d.UploadPart(context.Background(), &s3.UploadPartInput{
+		Bucket:        backend.GetPtrFromString("bucket"),
+		Key:           backend.GetPtrFromString("listed"),
+		UploadId:      &created.UploadId,
+		PartNumber:    &n,
+		Body:          bytes.NewReader([]byte("part")),
+		ChecksumCRC32: &sum,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := d.ListParts(context.Background(), &s3.ListPartsInput{
+		Bucket:   backend.GetPtrFromString("bucket"),
+		Key:      backend.GetPtrFromString("listed"),
+		UploadId: &created.UploadId,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed.ChecksumAlgorithm != types.ChecksumAlgorithmCrc32 || len(listed.Parts) != 1 || awsString(listed.Parts[0].ChecksumCRC32) != sum {
+		t.Fatalf("listed = %+v", listed)
+	}
+	zero := int32(0)
+	empty, err := d.ListParts(context.Background(), &s3.ListPartsInput{
+		Bucket:   backend.GetPtrFromString("bucket"),
+		Key:      backend.GetPtrFromString("listed"),
+		UploadId: &created.UploadId,
+		MaxParts: &zero,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty.Parts) != 0 || !empty.IsTruncated {
+		t.Fatalf("zero page parts %d truncated %v", len(empty.Parts), empty.IsTruncated)
+	}
+}

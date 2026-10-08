@@ -244,3 +244,26 @@ func TestUploadPartCopyKeepsCompositeChecksum(t *testing.T) {
 		t.Fatalf("complete checksum %q", awsString(done.ChecksumCRC32))
 	}
 }
+
+func TestCopyKeepsTags(t *testing.T) {
+	d, _ := newTest(t)
+	put(t, d, "src", "tagged", "", nil)
+	if err := d.PutObjectTagging(context.Background(), "bucket", "src", "", map[string]string{"color": "blue"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := d.CopyObject(context.Background(), s3response.CopyObjectInput{
+		Bucket:     backend.GetPtrFromString("bucket"),
+		Key:        backend.GetPtrFromString("dst"),
+		CopySource: backend.GetPtrFromString("bucket/src"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.GetObjectTagging(context.Background(), "bucket", "dst", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["color"] != "blue" {
+		t.Fatalf("tags = %v", got)
+	}
+}

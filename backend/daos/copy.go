@@ -18,8 +18,12 @@ package daos
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -87,7 +91,12 @@ func (d *Daos) CopyObject(_ context.Context, input s3response.CopyObjectInput) (
 	if err != nil {
 		return out, err
 	}
+	tagging, err := d.copyTagging(input, obj)
+	if err != nil {
+		return out, err
+	}
 	po := putInputFromCopy(input, meta, headers)
+	po.Tagging = tagging
 	var putOut s3response.PutObjectOutput
 	if strings.HasSuffix(dstKey, "/") {
 		if len(body) != 0 {
@@ -261,6 +270,33 @@ func putInputFromCopy(input s3response.CopyObjectInput, meta map[string]string, 
 		Metadata:                meta,
 		ChecksumAlgorithm:       input.ChecksumAlgorithm,
 	}
+}
+
+func (d *Daos) copyTagging(input s3response.CopyObjectInput, src Object) (*string, error) {
+	if input.TaggingDirective == types.TaggingDirectiveReplace {
+		return input.Tagging, nil
+	}
+	raw, err := d.fs.GetXattr(src, attrTags)
+	if errors.Is(err, errNotExist) || len(raw) == 0 {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, mapFS(err)
+	}
+	var tags map[string]string
+	if err := json.Unmarshal(raw, &tags); err != nil {
+		return nil, fmt.Errorf("parse source tags: %w", err)
+	}
+	if len(tags) == 0 {
+		return nil, nil
+	}
+	parts := make([]string, 0, len(tags))
+	for key, value := range tags {
+		parts = append(parts, key+"="+value)
+	}
+	sort.Strings(parts)
+	encoded := strings.Join(parts, "&")
+	return &encoded, nil
 }
 
 func unsupportedCopy(in s3response.CopyObjectInput) bool {

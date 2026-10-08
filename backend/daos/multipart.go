@@ -380,16 +380,28 @@ func (d *Daos) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respons
 		if err != nil && !errors.Is(err, errNotExist) {
 			return out, mapFS(err)
 		}
-		parts = append(parts, s3response.Part{
+		ch, err := d.loadChecksumsAt(path.Join(dir, ent.Name))
+		if err != nil {
+			return out, err
+		}
+		if ch.Algorithm == "" {
+			ch = s3response.Checksum{}
+		}
+		part := s3response.Part{
 			PartNumber:   pn,
 			ETag:         string(etagb),
 			Size:         ent.Size,
 			LastModified: time.Unix(ent.Mtime, 0).UTC(),
-		})
+		}
+		fillPartChecksum(&part, ch)
+		parts = append(parts, part)
 	}
 	sort.Slice(parts, func(i, j int) bool { return parts[i].PartNumber < parts[j].PartNumber })
 	truncated := false
-	if maxParts > 0 && len(parts) > maxParts {
+	if maxParts == 0 {
+		parts = nil
+		truncated = true
+	} else if len(parts) > maxParts {
 		parts = parts[:maxParts]
 		truncated = true
 	}
@@ -397,10 +409,16 @@ func (d *Daos) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respons
 	if len(parts) > 0 {
 		next = parts[len(parts)-1].PartNumber
 	}
+	uploadCh, err := d.loadChecksumsAt(dir)
+	if err != nil {
+		return out, err
+	}
 	return s3response.ListPartsResult{
 		Bucket:               bucket,
 		Key:                  key,
 		UploadID:             uploadID,
+		ChecksumAlgorithm:    uploadCh.Algorithm,
+		ChecksumType:         uploadCh.Type,
 		PartNumberMarker:     marker,
 		NextPartNumberMarker: next,
 		MaxParts:             maxParts,

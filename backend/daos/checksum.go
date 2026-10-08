@@ -317,6 +317,34 @@ func setCopyPartChecksum(res *s3response.CopyPartResult, alg utils.HashType, sum
 	}
 }
 
+func fillPartChecksum(part *s3response.Part, ch s3response.Checksum) {
+	if ch.Algorithm == "" {
+		return
+	}
+	switch ch.Algorithm {
+	case types.ChecksumAlgorithmCrc32:
+		part.ChecksumCRC32 = ch.CRC32
+	case types.ChecksumAlgorithmCrc32c:
+		part.ChecksumCRC32C = ch.CRC32C
+	case types.ChecksumAlgorithmSha1:
+		part.ChecksumSHA1 = ch.SHA1
+	case types.ChecksumAlgorithmSha256:
+		part.ChecksumSHA256 = ch.SHA256
+	case types.ChecksumAlgorithmCrc64nvme:
+		part.ChecksumCRC64NVME = ch.CRC64NVME
+	case types.ChecksumAlgorithmSha512:
+		part.ChecksumSHA512 = ch.SHA512
+	case types.ChecksumAlgorithmMd5:
+		part.ChecksumMD5 = ch.MD5
+	case types.ChecksumAlgorithmXxhash64:
+		part.ChecksumXXHASH64 = ch.XXHASH64
+	case types.ChecksumAlgorithmXxhash3:
+		part.ChecksumXXHASH3 = ch.XXHASH3
+	case types.ChecksumAlgorithmXxhash128:
+		part.ChecksumXXHASH128 = ch.XXHASH128
+	}
+}
+
 func setPartChecksum(res *s3.UploadPartOutput, alg utils.HashType, sum string) {
 	if sum == "" {
 		return
