@@ -127,12 +127,14 @@ check_for_no_upload_id() {
   if ! check_param_count_v2 "data file, unexpected upload ID, first upload ID" 3 $#; then
     return 1
   fi
-  check_if_element_exists "$1" "$2" "UploadIdMarker"
+  local data_file="$1" second_upload_id="$2" first_upload_id="$3"
+
+  check_if_element_exists "$data_file" "$second_upload_id" "UploadIdMarker"
   if [ "$?" -ne 1 ]; then
-    log 2 "error checking for element, or '$2' actually exists in 'UploadIdMarker' (data: $(cat "$1"))"
+    log 2 "error checking for element, or '$second_upload_id' actually exists in 'UploadIdMarker' (data: $(cat "$data_file"))"
     return 1
   fi
-  if ! check_xml_element "$1" "$3" "Upload" "UploadId"; then
+  if ! check_xml_element "$data_file" "$first_upload_id" "Upload" "UploadId"; then
     log 2 "error checking upload ID"
     return 1
   fi
@@ -140,12 +142,13 @@ check_for_no_upload_id() {
 }
 
 list_multipart_uploads_check_no_upload_id_in_response() {
-  if ! check_param_count_v2 "bucket, upload ID query, second upload ID" 3 $#; then
+  if ! check_param_count_v2 "bucket, upload ID query, first upload ID" 3 $#; then
     return 1
   fi
+  local bucket="$1" second_upload_id="$2" first_upload_id="$3"
   local response
 
-  if ! response=$(send_rest_go_command_callback "200" "check_for_no_upload_id" "-bucketName" "$1" "-query" "uploads&max-uploads=1&upload-id-marker=$2" "--" "$2" "$3" 2>&1); then
+  if ! response=$(send_rest_go_command_callback "200" "check_for_no_upload_id" "-bucketName" "$bucket" "-query" "uploads&max-uploads=1&upload-id-marker=$second_upload_id" "--" "$second_upload_id" "$first_upload_id" 2>&1); then
     log 2 "error sending multipart upload and checking for no upload ID marker in response"
     return 1
   fi
