@@ -317,23 +317,32 @@ send_curl_command_create_bucket_expect_error_callback() {
 }
 
 send_invalid_location_constraint_check_error() {
-  if ! check_param_count_v2 "invalid param" 1 $#; then
+  if ! check_param_count_v2 "invalid param, expected code, expected message" 3 $#; then
     return 1
   fi
-  invalid_location_constraint="$1"
-  if ! send_curl_command_create_bucket_expect_error_callback "400" "InvalidLocationConstraint" "The specified location-constraint is not valid" \
-      "check_location_constraint_param" "-locationConstraint" "$invalid_location_constraint"; then
-    log 2 "error sending curl command and checking callback"
+  local invalid_location_constraint="$1" expected_code="$2" expected_message="$3"
+
+  if [ "$expected_code" == "InvalidLocationConstraint" ]; then
+    if ! send_curl_command_create_bucket_expect_error_callback "400" "$expected_code" "$expected_message" \
+        "check_location_constraint_param" "-locationConstraint" "$invalid_location_constraint" "--" "$invalid_location_constraint"; then
+      log 2 "error sending curl command and checking callback"
+      return 1
+    fi
+  elif ! send_curl_command_create_bucket_expect_error "400" "$expected_code" "$expected_message" \
+        "-locationConstraint" "$invalid_location_constraint"; then
+    log 2 "error sending create bucket command and checking error"
     return 1
   fi
   return 0
 }
 
 check_location_constraint_param() {
-  if ! check_param_count_v2 "file" 1 $#; then
+  if ! check_param_count_v2 "file, invalid constraint" 2 $#; then
     return 1
   fi
-  if ! check_error_parameter "$1" "LocationConstraint" "$invalid_location_constraint"; then
+  local data_file="$1" invalid_constraint="$2"
+
+  if ! check_error_parameter "$data_file" "LocationConstraint" "$invalid_constraint"; then
     log 2 "location constraint mismatch"
     return 1
   fi

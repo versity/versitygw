@@ -129,6 +129,19 @@ check_xml_element_contains() {
   return 0
 }
 
+check_xml_error() {
+  if ! check_param_count_v2 "data source, expected error" 2 $#; then
+    return 1
+  fi
+  local data_source="$1" expected_error="$2"
+
+  if ! check_xml_element "$data_source" "$expected_error" "Error" "Code"; then
+    log 2 "error checking xml error code"
+    return 1
+  fi
+  return 0
+}
+
 check_xml_error_contains() {
   if [ "$#" -ne 3 ]; then
     log 2 "'check_xml_code_error_contains' requires data source, expected error, string"
