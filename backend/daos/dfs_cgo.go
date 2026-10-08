@@ -263,12 +263,16 @@ func (f *dfsFS) Stat(p string) (Info, error) {
 	if err := dfsErrno(C.dfs_stat(f.dfs, parent, cname, &st)); err != nil {
 		return Info{}, err
 	}
-	return Info{
+	info := Info{
 		Name:  name,
 		Size:  int64(C.versitygw_size(&st)),
 		IsDir: C.versitygw_isdir(&st) != 0,
 		Mtime: int64(C.versitygw_mtime(&st)),
-	}, nil
+	}
+	if strings.HasSuffix(p, "/") && !info.IsDir {
+		return Info{}, errNotExist
+	}
+	return info, nil
 }
 
 func (f *dfsFS) SetXattr(obj Object, name string, value []byte) error {

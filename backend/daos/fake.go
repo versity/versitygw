@@ -229,6 +229,16 @@ func (f *Fake) Move(src, dst string) error {
 func (f *Fake) Stat(p string) (Info, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if strings.HasSuffix(p, "/") {
+		n, err := f.walk(p, false)
+		if err != nil {
+			return Info{}, err
+		}
+		if !n.dir {
+			return Info{}, errNotExist
+		}
+		return infoOf(n), nil
+	}
 	n, err := f.walk(p, false)
 	if err != nil {
 		return Info{}, err
