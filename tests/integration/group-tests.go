@@ -335,6 +335,7 @@ func TestListObjectsV2(ts *TestState) {
 	ts.Run(ListObjectsV2_both_start_after_and_continuation_token)
 	ts.Run(ListObjectsV2_start_after_not_in_list)
 	ts.Run(ListObjectsV2_start_after_empty_result)
+	ts.Run(ListObjectsV2_start_after_continuation_token)
 	ts.Run(ListObjectsV2_both_delimiter_and_prefix)
 	ts.Run(ListObjectsV2_single_dir_object_with_delim_and_prefix)
 	ts.Run(ListObjectsV2_truncated_common_prefixes)
@@ -3163,6 +3164,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_both_start_after_and_continuation_token":                            ListObjectsV2_both_start_after_and_continuation_token,
 		"ListObjectsV2_start_after_not_in_list":                                            ListObjectsV2_start_after_not_in_list,
 		"ListObjectsV2_start_after_empty_result":                                           ListObjectsV2_start_after_empty_result,
+		"ListObjectsV2_start_after_continuation_token":                                     ListObjectsV2_start_after_continuation_token,
 		"ListObjectsV2_both_delimiter_and_prefix":                                          ListObjectsV2_both_delimiter_and_prefix,
 		"ListObjectsV2_single_dir_object_with_delim_and_prefix":                            ListObjectsV2_single_dir_object_with_delim_and_prefix,
 		"ListObjectsV2_truncated_common_prefixes":                                          ListObjectsV2_truncated_common_prefixes,

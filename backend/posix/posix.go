@@ -7165,7 +7165,7 @@ func (p *Posix) ListObjectsV2Parametrized(ctx context.Context, input *s3.ListObj
 		Name:                  &bucket,
 		KeyCount:              &count,
 		Delimiter:             backend.GetPtrFromString(delim),
-		ContinuationToken:     backend.GetPtrFromString(marker),
+		ContinuationToken:     backend.GetPtrFromString(backend.GetStringFromPtr(input.ContinuationToken)),
 		NextContinuationToken: backend.GetPtrFromString(results.NextMarker),
 		Prefix:                backend.GetPtrFromString(prefix),
 		StartAfter:            backend.GetPtrFromString(*input.StartAfter),
