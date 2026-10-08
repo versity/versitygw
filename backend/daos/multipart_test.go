@@ -305,6 +305,22 @@ func TestListMultipartUploadsDelimiterPages(t *testing.T) {
 	}
 }
 
+func TestListMultipartUploadsHonorsZero(t *testing.T) {
+	d, _ := newTest(t)
+	startUpload(t, d, "obj")
+	zero := int32(0)
+	page, err := d.ListMultipartUploads(context.Background(), &s3.ListMultipartUploadsInput{
+		Bucket:     backend.GetPtrFromString("bucket"),
+		MaxUploads: &zero,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Uploads) != 0 || len(page.CommonPrefixes) != 0 || !page.IsTruncated || page.MaxUploads != 0 {
+		t.Fatalf("uploads %d prefixes %d truncated %v max %d", len(page.Uploads), len(page.CommonPrefixes), page.IsTruncated, page.MaxUploads)
+	}
+}
+
 func TestListPartsReturnsChecksumAndHonorsZero(t *testing.T) {
 	d, _ := newTest(t)
 	sum, err := hashBytes(types.ChecksumAlgorithmCrc32, []byte("part"))

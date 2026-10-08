@@ -176,10 +176,11 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	// Header parse failures end the request before authorization;
 	// publish them as request records too, with whatever object
 	// identity and operation the malformed headers still carried.
+	partPut := false
 	publishHeaderErr := func(err error, isPut bool) error {
 		target := ctx.Get(hdrTarget)
 		bucket, key, _ := splitTarget(target)
-		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut, false)
+		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut, partPut)
 		return err
 	}
 
@@ -203,6 +204,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	if err != nil {
 		return publishHeaderErr(invalidHeader(hdrTarget, target), isPut)
 	}
+	partPut = partQuery.partPut
 	size, err := parseUint(ctx.Get(hdrSize), 10, 64)
 	if err != nil || size == 0 {
 		return publishHeaderErr(invalidHeader(hdrSize, ctx.Get(hdrSize)), isPut)

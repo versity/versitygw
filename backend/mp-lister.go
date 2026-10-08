@@ -91,6 +91,10 @@ func (l *MultipartUploadLister) Run() (*ListMultipartUploadsPage, error) {
 			return out, nil
 		}
 	}
+	if l.MaxUploads == 0 {
+		out.IsTruncated = startIndex < len(l.Uploads)
+		return out, nil
+	}
 
 	// Common prefix uniqueness tracking.
 	seenCP := make(map[string]struct{})
