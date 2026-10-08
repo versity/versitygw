@@ -200,6 +200,26 @@ func TestDeleteAndDeleteObjects(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("a"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ver := "1"
+	if _, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		Bucket:    backend.GetPtrFromString("bucket"),
+		Key:       backend.GetPtrFromString("a"),
+		VersionId: &ver,
+	}); !errors.Is(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "1")) {
+		t.Fatalf("version = %v", err)
+	}
+	if _, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		Bucket: backend.GetPtrFromString("missing"),
+		Key:    backend.GetPtrFromString("a"),
+	}); !errors.Is(err, s3err.GetBucketErr(s3err.ErrNoSuchBucket, "missing")) {
+		t.Fatalf("bucket = %v", err)
+	}
 	_, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
 		Bucket: backend.GetPtrFromString("bucket"),
 		Key:    backend.GetPtrFromString("keep/"),
@@ -217,7 +237,7 @@ func TestDeleteAndDeleteObjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Deleted) != 1 || len(res.Error) != 1 {
+	if len(res.Deleted) != 2 || len(res.Error) != 0 {
 		t.Fatalf("result deleted %d errors %d", len(res.Deleted), len(res.Error))
 	}
 }
@@ -401,7 +421,7 @@ func TestDeleteSlashKeyDoesNotRemoveSibling(t *testing.T) {
 		Bucket: backend.GetPtrFromString("bucket"),
 		Key:    backend.GetPtrFromString("a/b/"),
 	})
-	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+	if err != nil {
 		t.Fatalf("delete = %v", err)
 	}
 	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{

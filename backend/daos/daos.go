@@ -274,6 +274,9 @@ func (d *Daos) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) (*s3
 		return nil, err
 	}
 	info, err := d.fs.Stat(objectPath(bucket, key))
+	if errors.Is(err, errNotExist) {
+		return &s3.DeleteObjectOutput{}, nil
+	}
 	if err != nil {
 		return nil, d.mapKeyErr(err, key)
 	}
@@ -281,6 +284,9 @@ func (d *Daos) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) (*s3
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err := d.fs.Remove(objectPath(bucket, key), false); err != nil {
+		if errors.Is(err, errNotExist) {
+			return &s3.DeleteObjectOutput{}, nil
+		}
 		return nil, d.mapKeyErr(err, key)
 	}
 	return &s3.DeleteObjectOutput{}, nil

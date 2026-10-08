@@ -775,20 +775,21 @@ func expiredError(ev rcserver.TerminalEvent) error {
 // after the shutdown drain began is dropped rather than published
 // into closed sinks.
 func (t *opsTracker) publishRequest(ctx fiber.Ctx, acct auth.Account,
-	err error, bucket, key string, isPut bool) {
+	err error, bucket, key string, isPut, partPut bool) {
 	if t == nil {
 		return
 	}
 	acct.Access = strings.Clone(acct.Access)
 	emit := &opsEmitter{
-		ops:    t.loadOps(),
-		app:    t.app,
-		acct:   acct,
-		region: strings.Clone(regionFromCtx(ctx)),
-		bucket: strings.Clone(bucket),
-		key:    strings.Clone(key),
-		isPut:  isPut,
-		start:  time.Now(),
+		ops:        t.loadOps(),
+		app:        t.app,
+		acct:       acct,
+		region:     strings.Clone(regionFromCtx(ctx)),
+		bucket:     strings.Clone(bucket),
+		key:        strings.Clone(key),
+		isPut:      isPut,
+		partUpload: partPut,
+		start:      time.Now(),
 	}
 	// The accept-vs-drain boundary decides: a record accepted
 	// before the drain sweep is published by the worker; one

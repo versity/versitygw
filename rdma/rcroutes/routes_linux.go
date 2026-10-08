@@ -89,7 +89,7 @@ type Handler struct {
 // auth adapter calls it so signature failures appear in the access
 // log like they do on the S3 surface.
 func (h *Handler) PublishAuthFailure(ctx fiber.Ctx, err error) {
-	h.ops.publishRequest(ctx, auth.Account{}, err, "", "", false)
+	h.ops.publishRequest(ctx, auth.Account{}, err, "", "", false, false)
 }
 
 // SetOpsServices injects the operational service instances once the
@@ -179,7 +179,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	publishHeaderErr := func(err error, isPut bool) error {
 		target := ctx.Get(hdrTarget)
 		bucket, key, _ := splitTarget(target)
-		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
+		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut, false)
 		return err
 	}
 
@@ -222,7 +222,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 
 	// Authorize through the regular object-access chain.
 	if err := h.authorize(ctx, acct, isRoot, bucket, key, isPut); err != nil {
-		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
+		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut, partQuery.partPut)
 		return err
 	}
 
@@ -237,7 +237,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 		ClientToken: ctx.Get(hdrToken),
 	})
 	if err != nil {
-		h.ops.publishRequest(ctx, acct, mapRcError(err), bucket, key, isPut)
+		h.ops.publishRequest(ctx, acct, mapRcError(err), bucket, key, isPut, partQuery.partPut)
 		return mapRcError(err)
 	}
 
@@ -246,7 +246,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	if !isPut {
 		if err := h.stageGet(ctx, resp.SessionID, bucket, key, offset, size); err != nil {
 			_ = h.svc.FinishPrepare(resp.SessionID, false)
-			h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
+			h.ops.publishRequest(ctx, acct, err, bucket, key, isPut, partQuery.partPut)
 			return err
 		}
 	}
@@ -265,7 +265,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 		// shows, so operator-side accounting matches what the
 		// client saw.
 		apiErr := s3err.GetAPIError(s3err.ErrSlowDown)
-		h.ops.publishRequest(ctx, acct, apiErr, bucket, key, isPut)
+		h.ops.publishRequest(ctx, acct, apiErr, bucket, key, isPut, partQuery.partPut)
 		return apiErr
 	}
 	if partQuery.partPut {
