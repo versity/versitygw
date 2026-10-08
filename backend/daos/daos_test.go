@@ -542,3 +542,17 @@ func TestDeleteKeepsExplicitDirectory(t *testing.T) {
 		t.Fatalf("explicit directory bucket = %v", err)
 	}
 }
+
+func TestSuffixRangeOnEmptyObjectIsInvalid(t *testing.T) {
+	d, _ := newTest(t)
+	put(t, d, "empty", "", "", nil)
+	rng := "bytes=-1"
+	_, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("empty"),
+		Range:  &rng,
+	})
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrInvalidRange)) {
+		t.Fatalf("range = %v", err)
+	}
+}

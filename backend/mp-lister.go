@@ -120,13 +120,15 @@ func (l *MultipartUploadLister) Run() (*ListMultipartUploadsPage, error) {
 			before, _, found := strings.Cut(suffix, l.Delimiter)
 			if found {
 				cpref := l.Prefix + before + l.Delimiter
+				if l.KeyMarker != "" && cpref <= l.KeyMarker {
+					continue
+				}
 				if _, ok := seenCP[cpref]; !ok {
 					seenCP[cpref] = struct{}{}
 					if emitCP(cpref) {
 						out.IsTruncated = l.hasMoreAfter(startIndex+i+1, seenCP)
 						if out.IsTruncated {
 							out.NextKeyMarker = lastKey
-							out.NextUploadIDMarker = up.UploadID
 							return out, nil
 						}
 						break
@@ -206,6 +208,9 @@ func (l *MultipartUploadLister) hasMoreAfter(idx int, seenCP map[string]struct{}
 			return true
 		}
 		cpref := l.Prefix + before + l.Delimiter
+		if l.KeyMarker != "" && cpref <= l.KeyMarker {
+			continue
+		}
 		if _, ok := seenCP[cpref]; ok {
 			continue
 		}

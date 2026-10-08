@@ -660,6 +660,9 @@ func objectRange(spec *string, size int64) (int64, int64, bool, error) {
 	if spec == nil || *spec == "" {
 		return 0, size, false, nil
 	}
+	if size == 0 {
+		return 0, 0, false, s3err.GetAPIError(s3err.ErrInvalidRange)
+	}
 	raw := strings.TrimPrefix(*spec, "bytes=")
 	startText, endText, ok := strings.Cut(raw, "-")
 	if !ok {

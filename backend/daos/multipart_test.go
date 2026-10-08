@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"testing"
 	"time"
 
@@ -264,6 +265,43 @@ func TestListMultipartUploadsResumes(t *testing.T) {
 	got := map[string]bool{page.Uploads[0].UploadID: true, next.Uploads[0].UploadID: true}
 	if !got[first.UploadId] || !got[second.UploadId] || page.Uploads[0].UploadID == next.Uploads[0].UploadID {
 		t.Fatalf("pages %s then %s, want %s and %s", page.Uploads[0].UploadID, next.Uploads[0].UploadID, first.UploadId, second.UploadId)
+	}
+}
+
+func TestListMultipartUploadsDelimiterPages(t *testing.T) {
+	d, _ := newTest(t)
+	startUpload(t, d, "a/x")
+	startUpload(t, d, "a/y")
+	startUpload(t, d, "b")
+	max := int32(1)
+	delim := "/"
+	var keyMarker, uploadMarker string
+	var prefixes, keys []string
+	for pageN := 0; pageN < 5; pageN++ {
+		page, err := d.ListMultipartUploads(context.Background(), &s3.ListMultipartUploadsInput{
+			Bucket:         backend.GetPtrFromString("bucket"),
+			Delimiter:      &delim,
+			KeyMarker:      &keyMarker,
+			UploadIdMarker: &uploadMarker,
+			MaxUploads:     &max,
+		})
+		if err != nil {
+			t.Fatalf("page %d: %v", pageN, err)
+		}
+		for _, prefix := range page.CommonPrefixes {
+			prefixes = append(prefixes, prefix.Prefix)
+		}
+		for _, upload := range page.Uploads {
+			keys = append(keys, upload.Key)
+		}
+		if !page.IsTruncated {
+			break
+		}
+		keyMarker = page.NextKeyMarker
+		uploadMarker = page.NextUploadIDMarker
+	}
+	if !slices.Equal(prefixes, []string{"a/"}) || !slices.Equal(keys, []string{"b"}) {
+		t.Fatalf("prefixes %v keys %v", prefixes, keys)
 	}
 }
 
