@@ -278,6 +278,83 @@ func PutObjectLockConfiguration_invalid_years_days(s *S3Conf) error {
 	})
 }
 
+// PutObjectLockConfiguration_default_retention_missing_period covers a
+// default retention rule with a mode but neither Days nor Years: it is
+// rejected, and the bucket keeps the rule it had.
+func PutObjectLockConfiguration_default_retention_missing_period(s *S3Conf) error {
+	testName := "PutObjectLockConfiguration_default_retention_missing_period"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		putObjectLockConfiguration := func(retention *types.DefaultRetention) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+				Bucket: &bucket,
+				ObjectLockConfiguration: &types.ObjectLockConfiguration{
+					ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+					Rule: &types.ObjectLockRule{
+						DefaultRetention: retention,
+					},
+				},
+			})
+			cancel()
+			return err
+		}
+
+		err := putObjectLockConfiguration(&types.DefaultRetention{
+			Mode: types.ObjectLockRetentionModeGovernance,
+			Days: getPtr(int32(1)),
+		})
+		if err != nil {
+			return err
+		}
+
+		err = putObjectLockConfiguration(&types.DefaultRetention{
+			Mode: types.ObjectLockRetentionModeCompliance,
+		})
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockDefaultRetentionPeriodRequired)); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetObjectLockConfiguration(ctx, &s3.GetObjectLockConfigurationInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		cfg := out.ObjectLockConfiguration
+		if cfg == nil || cfg.Rule == nil || cfg.Rule.DefaultRetention == nil {
+			return fmt.Errorf("expected the default retention rule to be kept, instead got %+v", cfg)
+		}
+		retention := cfg.Rule.DefaultRetention
+		if retention.Mode != types.ObjectLockRetentionModeGovernance || getInt32(retention.Days) != 1 || retention.Years != nil {
+			return fmt.Errorf("expected the default retention to stay %v for 1 day, instead got %v for %v days, %v years",
+				types.ObjectLockRetentionModeGovernance, retention.Mode, getInt32(retention.Days), getInt32(retention.Years))
+		}
+
+		return nil
+	}, withLock())
+}
+
+// PutObjectLockConfiguration_rule_without_default_retention covers a <Rule>
+// element with no <DefaultRetention> in it.
+func PutObjectLockConfiguration_rule_without_default_retention(s *S3Conf) error {
+	testName := "PutObjectLockConfiguration_rule_without_default_retention"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+				Rule:              &types.ObjectLockRule{},
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML))
+	}, withLock())
+}
+
 func PutObjectLockConfiguration_success(s *S3Conf) error {
 	testName := "PutObjectLockConfiguration_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

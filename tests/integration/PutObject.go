@@ -484,6 +484,65 @@ func PutObject_past_retain_until_date(s *S3Conf) error {
 	}, withLock())
 }
 
+// PutObject_object_lock_headers_validation covers invalid Object Lock
+// headers, checked in the order S3 checks them: the mode and the date set
+// together, then the legal hold, the date and the mode values. A header sent
+// empty is invalid.
+func PutObject_object_lock_headers_validation(s *S3Conf) error {
+	testName := "PutObject_object_lock_headers_validation"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		date := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+		past := "2020-01-01T00:00:00Z"
+
+		for _, test := range []struct {
+			name     string
+			headers  map[string]string
+			expected s3err.S3Error
+		}{
+			{
+				name:     "mode without a date",
+				headers:  map[string]string{"x-amz-object-lock-mode": "GOVERNANCE", "x-amz-object-lock-legal-hold": "INVALID"},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockRetainDate, ""),
+			},
+			{
+				name:     "invalid legal hold before a past date",
+				headers:  map[string]string{"x-amz-object-lock-mode": "INVALID", "x-amz-object-lock-retain-until-date": past, "x-amz-object-lock-legal-hold": "on"},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, "on"),
+			},
+			{
+				name:     "empty legal hold",
+				headers:  map[string]string{"x-amz-object-lock-legal-hold": ""},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, ""),
+			},
+			{
+				name:     "past date before an invalid mode",
+				headers:  map[string]string{"x-amz-object-lock-mode": "INVALID", "x-amz-object-lock-retain-until-date": past},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, past),
+			},
+			{
+				name:     "empty mode",
+				headers:  map[string]string{"x-amz-object-lock-mode": "", "x-amz-object-lock-retain-until-date": date},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, ""),
+			},
+		} {
+			req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret,
+				"s3", s.awsRegion, "", nil, time.Now(), test.headers)
+			if err != nil {
+				return err
+			}
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+			if err := checkHTTPResponseApiErr(resp, test.expected); err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
+		}
+
+		return nil
+	}, withLock())
+}
+
 func PutObject_invalid_retain_until_date(s *S3Conf) error {
 	testName := "PutObject_invalid_retain_until_date"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

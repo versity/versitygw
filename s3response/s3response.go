@@ -732,6 +732,12 @@ type CopyObjectInput struct {
 	TaggingDirective          types.TaggingDirective
 }
 
+type GetObjectRetentionResult struct {
+	XMLName         xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Retention"`
+	Mode            types.ObjectLockRetentionMode
+	RetainUntilDate AmzDate
+}
+
 type GetObjectLegalHoldResult struct {
 	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ LegalHold"`
 	Status  types.ObjectLockLegalHoldStatus

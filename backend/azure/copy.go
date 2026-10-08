@@ -147,6 +147,8 @@ func (az *Azure) serverSideCopyObject(
 		}
 		if meta := parseAzMetadata(srcProps.Metadata); meta != nil {
 			delete(meta, string(keyWebsiteRedirect))
+			delete(meta, string(keyObjRetention))
+			delete(meta, string(keyObjLegalHold))
 			opts.Metadata = parseMetadata(meta)
 			clearMetadata = len(meta) == 0
 		}
@@ -279,25 +281,37 @@ func (az *Azure) applyCopyObjectLock(ctx context.Context, bucket, key string, in
 		}
 	}
 
-	if input.ObjectLockMode != "" && input.ObjectLockRetainUntilDate != nil {
-		retention := s3response.PutObjectRetentionInput{
+	// a copy without Object Lock parameters of its own gets the retention of
+	// the bucket's default rule
+	var retention []byte
+	var err error
+	switch {
+	case input.ObjectLockMode != "" && input.ObjectLockRetainUntilDate != nil:
+		retention, err = json.Marshal(s3response.PutObjectRetentionInput{
 			Mode: types.ObjectLockRetentionMode(input.ObjectLockMode),
 			RetainUntilDate: s3response.AmzDate{
 				Time: *input.ObjectLockRetainUntilDate,
 			},
-		}
-
-		retParsed, err := json.Marshal(retention)
+		})
 		if err != nil {
 			return fmt.Errorf("parse object retention: %w", err)
 		}
-		err = az.PutObjectRetention(ctx, bucket, key, "", retParsed)
+	case input.ObjectLockLegalHoldStatus == "" && input.ObjectLockMode == "":
+		retention, err = az.bucketDefaultRetention(ctx, bucket)
 		if err != nil {
-			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
-				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
-			}
-			return azureErrToS3Err(err)
+			return err
 		}
+	}
+	if retention == nil {
+		return nil
+	}
+
+	err = az.PutObjectRetention(ctx, bucket, key, "", retention)
+	if err != nil {
+		if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+			err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+		}
+		return azureErrToS3Err(err)
 	}
 
 	return nil

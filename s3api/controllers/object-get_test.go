@@ -147,12 +147,12 @@ func TestS3ApiController_GetObjectTagging(t *testing.T) {
 }
 
 func TestS3ApiController_GetObjectRetention(t *testing.T) {
+	retainUntil := time.Date(2026, 10, 5, 8, 5, 32, 45000000, time.UTC)
 	retBytes, err := json.Marshal(types.ObjectLockRetention{
-		Mode: types.ObjectLockRetentionModeCompliance,
+		Mode:            types.ObjectLockRetentionModeCompliance,
+		RetainUntilDate: &retainUntil,
 	})
 	assert.NoError(t, err)
-
-	var retention *types.ObjectLockRetention
 
 	tests := []struct {
 		name   string
@@ -214,7 +214,6 @@ func TestS3ApiController_GetObjectRetention(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					Data: retention,
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},
@@ -230,8 +229,9 @@ func TestS3ApiController_GetObjectRetention(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					Data: &types.ObjectLockRetention{
-						Mode: types.ObjectLockRetentionModeCompliance,
+					Data: s3response.GetObjectRetentionResult{
+						Mode:            types.ObjectLockRetentionModeCompliance,
+						RetainUntilDate: s3response.AmzDate{Time: retainUntil},
 					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",

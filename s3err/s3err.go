@@ -154,6 +154,7 @@ const (
 	ErrMissingObjectLockConfiguration
 	ErrMissingObjectLockConfigurationNoSpaces
 	ErrObjectLockConfigurationNotAllowed
+	ErrObjectLockDefaultRetentionPeriodRequired
 	ErrObjectLocked
 	ErrNoSuchBucketPolicy
 	ErrBucketTaggingNotFound
@@ -513,8 +514,8 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrNoSuchObjectLockConfiguration: {
 		Code:           "NoSuchObjectLockConfiguration",
-		Description:    "The specified object does not have a ObjectLock configuration.",
-		HTTPStatusCode: http.StatusBadRequest,
+		Description:    "The specified object does not have a ObjectLock configuration",
+		HTTPStatusCode: http.StatusNotFound,
 	},
 	ErrMissingObjectLockConfiguration: {
 		Code:           "InvalidRequest",
@@ -530,6 +531,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "InvalidBucketState",
 		Description:    "Versioning must be 'Enabled' on the bucket to apply a Object Lock configuration",
 		HTTPStatusCode: http.StatusConflict,
+	},
+	ErrObjectLockDefaultRetentionPeriodRequired: {
+		Code:           "InvalidRequest",
+		Description:    "DefaultRetention must specify a fixed retention (Days or Years) or a DefaultEventHold.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrObjectLocked: {
 		Code:           "AccessDenied",
