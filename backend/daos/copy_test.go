@@ -16,6 +16,7 @@
 package daos
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -264,6 +265,58 @@ func TestCopyKeepsTags(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got["color"] != "blue" {
+		t.Fatalf("tags = %v", got)
+	}
+}
+
+func TestCopyEscapesTagValue(t *testing.T) {
+	d, _ := newTest(t)
+	put(t, d, "src", "tagged", "", nil)
+	if err := d.PutObjectTagging(context.Background(), "bucket", "src", "", map[string]string{"color": "a+b"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := d.CopyObject(context.Background(), s3response.CopyObjectInput{
+		Bucket:     backend.GetPtrFromString("bucket"),
+		Key:        backend.GetPtrFromString("dst"),
+		CopySource: backend.GetPtrFromString("bucket/src"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.GetObjectTagging(context.Background(), "bucket", "dst", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["color"] != "a+b" {
+		t.Fatalf("tags = %v", got)
+	}
+}
+
+func TestDirectoryReplaceClearsTags(t *testing.T) {
+	d, _ := newTest(t)
+	tagging := "color=blue"
+	_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket:  backend.GetPtrFromString("bucket"),
+		Key:     backend.GetPtrFromString("folder/"),
+		Body:    bytes.NewReader(nil),
+		Tagging: &tagging,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("folder/"),
+		Body:   bytes.NewReader(nil),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.GetObjectTagging(context.Background(), "bucket", "folder/", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
 		t.Fatalf("tags = %v", got)
 	}
 }

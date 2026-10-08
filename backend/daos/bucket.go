@@ -491,7 +491,11 @@ func (d *Daos) storeTagHeader(obj Object, tagging *string) error {
 		return err
 	}
 	if tags == nil {
-		return nil
+		err := d.fs.RemoveXattr(obj, attrTags)
+		if errors.Is(err, errNotExist) {
+			return nil
+		}
+		return mapFS(err)
 	}
 	raw, err := json.Marshal(tags)
 	if err != nil {

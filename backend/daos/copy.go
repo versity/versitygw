@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"path"
 	"sort"
 	"strconv"
@@ -292,7 +293,7 @@ func (d *Daos) copyTagging(input s3response.CopyObjectInput, src Object) (*strin
 	}
 	parts := make([]string, 0, len(tags))
 	for key, value := range tags {
-		parts = append(parts, key+"="+value)
+		parts = append(parts, url.QueryEscape(key)+"="+url.QueryEscape(value))
 	}
 	sort.Strings(parts)
 	encoded := strings.Join(parts, "&")
