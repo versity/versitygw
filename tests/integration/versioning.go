@@ -4945,6 +4945,60 @@ func Versioning_Multipart_Upload_conditional_writes_over_delete_marker(s *S3Conf
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_Multipart_Upload_already_completed(s *S3Conf) error {
+	testName := "Versioning_Multipart_Upload_already_completed"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		completeInput := &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{ETag: parts[0].ETag, PartNumber: parts[0].PartNumber},
+				},
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		first, err := s3client.CompleteMultipartUpload(ctx, completeInput)
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		second, err := s3client.CompleteMultipartUpload(ctx, completeInput)
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(first.VersionId) == "" {
+			return fmt.Errorf("expected non-empty versionId")
+		}
+		if getString(second.VersionId) != getString(first.VersionId) {
+			return fmt.Errorf("expected the versionId to be %s, instead got %s",
+				getString(first.VersionId), getString(second.VersionId))
+		}
+		if getString(second.ETag) != getString(first.ETag) {
+			return fmt.Errorf("expected the ETag to be %s, instead got %s",
+				getString(first.ETag), getString(second.ETag))
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_UploadPartCopy_invalid_versionId(s *S3Conf) error {
 	testName := "Versioning_UploadPartCopy_invalid_versionId"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
