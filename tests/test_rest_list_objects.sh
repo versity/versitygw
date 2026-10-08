@@ -169,19 +169,12 @@ source ./tests/drivers/objects_and_versions.sh
 
 # tags: curl,ListObjects,encoding-type,invalid-query
 @test "REST - ListObjects - invalid encoding" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1985"
-  fi
   run objects_versions_invalid_encoding ""
   assert_success
 }
 
 # tags: curl,ListObjects,encoding-type
 @test "REST - ListObjects - encoding success" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1985"
-  fi
-
   run objects_versions_encoding_success "" "ListBucketResult" "Contents"
   assert_success
 }

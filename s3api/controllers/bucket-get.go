@@ -567,6 +567,14 @@ func (c S3ApiController) ListObjectsV2(ctx fiber.Ctx) (*Response, error) {
 			},
 		}, err
 	}
+	encodingType, err := utils.ParseEncodingType(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
 
 	res, err := c.be.ListObjectsV2(ctx.RequestCtx(),
 		&s3.ListObjectsV2Input{
@@ -584,6 +592,10 @@ func (c S3ApiController) ListObjectsV2(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	if encodingType != "" {
+		res = utils.URLEncodeListObjectsV2Result(res, encodingType)
 	}
 
 	return &Response{
@@ -639,6 +651,14 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 			},
 		}, err
 	}
+	encodingType, err := utils.ParseEncodingType(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
 
 	res, err := c.be.ListObjects(ctx.RequestCtx(),
 		&s3.ListObjectsInput{
@@ -662,6 +682,10 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 	// restore it here for every backend.
 	if res.Marker == nil {
 		res.Marker = &marker
+	}
+
+	if encodingType != "" {
+		res = utils.URLEncodeListObjectsResult(res, encodingType)
 	}
 
 	return &Response{

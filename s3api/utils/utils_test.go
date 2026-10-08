@@ -1677,3 +1677,72 @@ func TestSetRegionMismatchHeader(t *testing.T) {
 		})
 	}
 }
+
+func TestParseEncodingType(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  types.EncodingType
+		bad   bool
+		value string
+	}{
+		{name: "absent", query: ""},
+		{name: "url", query: "?encoding-type=url", want: "url"},
+		{name: "upper case, echoed as sent", query: "?encoding-type=URL", want: "URL"},
+		{name: "mixed case, echoed as sent", query: "?encoding-type=uRl", want: "uRl"},
+		{name: "empty value", query: "?encoding-type=", bad: true, value: ""},
+		{name: "bare parameter", query: "?encoding-type", bad: true, value: ""},
+		{name: "other method", query: "?encoding-type=base64", bad: true, value: "base64"},
+		{name: "gibberish", query: "?encoding-type=jdfkllaj", bad: true, value: "jdfkllaj"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := fiberCtxFromURL(t, http.MethodGet, "http://localhost/bucket"+tt.query, http.Header{})
+			encodingType, err := ParseEncodingType(ctx)
+			if tt.bad {
+				assert.Equal(t, s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, tt.value), err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, encodingType)
+		})
+	}
+}
+
+func TestURLEncodeKeyName(t *testing.T) {
+	tests := []struct {
+		name, want string
+	}{
+		{"a+ b.txt", "a%2B+b.txt"},
+		{"dir/sub dir/", "dir/sub+dir/"},
+		{"100%", "100%25"},
+		{"a%2Fb", "a%252Fb"},
+		{"ctl\x01char", "ctl%01char"},
+		{"é", "%C3%A9"},
+		{"plain-key_1.txt", "plain-key_1.txt"},
+		// S3 leaves "*" literal and escapes "~", unlike url.QueryEscape
+		{"a*b~c", "a*b%7Ec"},
+		{" !\"#$%&'()*+,-.:;<=>?@[\\]^_`{|}~", "+%21%22%23%24%25%26%27%28%29*%2B%2C-.%3A%3B%3C%3D%3E%3F%40%5B%5C%5D%5E_%60%7B%7C%7D%7E"},
+	}
+	for _, tt := range tests {
+		got := urlEncodeKeyName(&tt.name)
+		assert.Equal(t, tt.want, *got, tt.name)
+		decoded, err := url.QueryUnescape(*got)
+		assert.NoError(t, err)
+		assert.Equal(t, tt.name, decoded)
+	}
+	assert.Nil(t, urlEncodeKeyName(nil))
+}
+
+func TestURLEncodeListObjectsResultKeepsBackendValues(t *testing.T) {
+	key := "a b"
+	res := s3response.ListObjectsResult{
+		Contents: []s3response.Object{{Key: &key}},
+	}
+
+	encoded := URLEncodeListObjectsResult(res, types.EncodingTypeUrl)
+
+	assert.Equal(t, "a+b", *encoded.Contents[0].Key)
+	assert.Equal(t, "a b", *res.Contents[0].Key)
+	assert.Equal(t, "a b", key)
+}
