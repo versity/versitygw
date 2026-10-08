@@ -229,8 +229,13 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 	hashDir := mpHashDir(bucket, key)
 	uploadDir := path.Join(hashDir, uploadID)
 	claim := path.Join(hashDir, uploadID+"."+strings.Trim(etag, `"`)+inProgressSuffix)
+	var ch s3response.Checksum
 	if _, err := d.fs.Stat(uploadDir); err == nil {
 		if err := d.verifyParts(uploadDir, uploadID, parts); err != nil {
+			return out, "", err
+		}
+		ch, err = d.objectChecksumFromParts(uploadDir, input, parts)
+		if err != nil {
 			return out, "", err
 		}
 		if err := d.fs.Move(uploadDir, claim); err != nil {
@@ -243,6 +248,8 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 	} else if _, statErr := d.fs.Stat(claim); statErr != nil {
 		return out, "", s3err.GetNoSuchUploadErr(uploadID)
 	} else if err := d.verifyParts(claim, uploadID, parts); err != nil {
+		return out, "", err
+	} else if ch, err = d.objectChecksumFromParts(claim, input, parts); err != nil {
 		return out, "", err
 	}
 	tmp := objectPath(bucket, tmpDirName+"/put-"+uuid.NewString())
@@ -271,10 +278,6 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 		return out, "", err
 	}
 	if err := d.copyAttr(claim, obj, attrTags); err != nil {
-		return out, "", err
-	}
-	ch, err := d.objectChecksumFromParts(claim, input, parts)
-	if err != nil {
 		return out, "", err
 	}
 	if err := d.storeChecksums(obj, ch); err != nil {

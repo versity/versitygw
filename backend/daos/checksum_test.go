@@ -323,3 +323,67 @@ func TestUploadPartAllowsOneEmptyRead(t *testing.T) {
 		t.Fatal("missing etag")
 	}
 }
+
+func TestRejectedCompleteLeavesUploadActive(t *testing.T) {
+	d, _ := newTest(t)
+	created, err := d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
+		Bucket:            backend.GetPtrFromString("bucket"),
+		Key:               backend.GetPtrFromString("mp"),
+		ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
+		ChecksumType:      types.ChecksumTypeComposite,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := "part"
+	sum, err := hashBytes(types.ChecksumAlgorithmCrc32, []byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := int32(1)
+	part, err := d.UploadPart(context.Background(), &s3.UploadPartInput{
+		Bucket:        backend.GetPtrFromString("bucket"),
+		Key:           backend.GetPtrFromString("mp"),
+		UploadId:      &created.UploadId,
+		PartNumber:    &n,
+		ContentLength: int64ptr(int64(len(body))),
+		Body:          bytes.NewReader([]byte(body)),
+		ChecksumCRC32: &sum,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = d.CompleteMultipartUpload(context.Background(), &s3.CompleteMultipartUploadInput{
+		Bucket:   backend.GetPtrFromString("bucket"),
+		Key:      backend.GetPtrFromString("mp"),
+		UploadId: &created.UploadId,
+		MultipartUpload: &types.CompletedMultipartUpload{Parts: []types.CompletedPart{{
+			PartNumber: &n,
+			ETag:       part.ETag,
+		}}},
+	})
+	var api s3err.APIError
+	if !errors.As(err, &api) || api.Code != "InvalidRequest" {
+		t.Fatalf("complete = %v", err)
+	}
+	if _, err := d.UploadPart(context.Background(), &s3.UploadPartInput{
+		Bucket:        backend.GetPtrFromString("bucket"),
+		Key:           backend.GetPtrFromString("mp"),
+		UploadId:      &created.UploadId,
+		PartNumber:    &n,
+		ContentLength: int64ptr(int64(len(body))),
+		Body:          bytes.NewReader([]byte(body)),
+		ChecksumCRC32: &sum,
+	}); err != nil {
+		t.Fatalf("replacement part = %v", err)
+	}
+	listed, err := d.ListMultipartUploads(context.Background(), &s3.ListMultipartUploadsInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Uploads) != 1 || listed.Uploads[0].Key != "mp" || listed.Uploads[0].UploadID != created.UploadId {
+		t.Fatalf("uploads = %+v", listed.Uploads)
+	}
+}
