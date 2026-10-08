@@ -558,6 +558,7 @@ func TestListMultipartUploads(ts *TestState) {
 	ts.Run(ListMultipartUploads_keyMarker_not_from_list)
 	ts.Run(ListMultipartUploads_upload_id_marker_with_key_marker)
 	ts.Run(ListMultipartUploads_delimiter_truncated)
+	ts.Run(ListMultipartUploads_upload_id_marker_truncated)
 	ts.Run(ListMultipartUploads_prefix)
 	ts.Run(ListMultipartUploads_both_delimiter_and_prefix)
 	ts.Run(ListMultipartUploads_delimiter_no_matches)
@@ -3331,6 +3332,7 @@ func GetIntTests() IntTests {
 		"ListMultipartUploads_keyMarker_not_from_list":                                     ListMultipartUploads_keyMarker_not_from_list,
 		"ListMultipartUploads_upload_id_marker_with_key_marker":                            ListMultipartUploads_upload_id_marker_with_key_marker,
 		"ListMultipartUploads_delimiter_truncated":                                         ListMultipartUploads_delimiter_truncated,
+		"ListMultipartUploads_upload_id_marker_truncated":                                  ListMultipartUploads_upload_id_marker_truncated,
 		"ListMultipartUploads_prefix":                                                      ListMultipartUploads_prefix,
 		"ListMultipartUploads_both_delimiter_and_prefix":                                   ListMultipartUploads_both_delimiter_and_prefix,
 		"ListMultipartUploads_with_upload_id":                                              ListMultipartUploads_with_upload_id,
