@@ -181,6 +181,7 @@ daostest:
 	fi; \
 	CGO_CFLAGS="$$cflags" CGO_LDFLAGS="$$ldflags" \
 	LD_LIBRARY_PATH="$$libdir$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
+	DAOS_POOL= DAOS_CONT= \
 	$(GOTEST) -count=1 -timeout 180s -tags daos ./backend/daos ./cmd/internal/gwcli; \
 	CGO_CFLAGS="$$cflags" CGO_LDFLAGS="$$ldflags" \
 	$(GOBUILD) -tags daos -o /dev/null ./cmd/versitygw
