@@ -359,6 +359,10 @@ func (d *Daos) putFile(bucket, key string, body []byte, po s3response.PutObjectI
 }
 
 func (d *Daos) putDirectory(bucket, key string, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+	ch, ok, err := checksumForPut(po, nil)
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
+	}
 	p := objectPath(bucket, key)
 	if err := d.mkdirParents(p); err != nil {
 		return s3response.PutObjectOutput{}, d.mapKeyErr(err, key)
@@ -378,9 +382,7 @@ func (d *Daos) putDirectory(bucket, key string, po s3response.PutObjectInput) (s
 		return s3response.PutObjectOutput{}, err
 	}
 	out := s3response.PutObjectOutput{ETag: emptyMD5}
-	if ch, ok, err := checksumForPut(po, nil); err != nil {
-		return s3response.PutObjectOutput{}, err
-	} else if ok {
+	if ok {
 		if err := d.storeChecksums(obj, ch); err != nil {
 			return s3response.PutObjectOutput{}, err
 		}

@@ -107,6 +107,24 @@ func TestPutRejectsBadChecksum(t *testing.T) {
 	}
 }
 
+func TestDirectoryPutBadChecksumLeavesObject(t *testing.T) {
+	d, fs := newTest(t)
+	bad := "00000000"
+	_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket:            backend.GetPtrFromString("bucket"),
+		Key:               backend.GetPtrFromString("folder/"),
+		Body:              bytes.NewReader(nil),
+		ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
+		ChecksumCRC32:     &bad,
+	})
+	if !errors.Is(err, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmCrc32)) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := fs.Stat("bucket/folder"); !errors.Is(err, errNotExist) {
+		t.Fatalf("stat = %v", err)
+	}
+}
+
 func TestMultipartChecksumComposite(t *testing.T) {
 	d, _ := newTest(t)
 	created, err := d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
