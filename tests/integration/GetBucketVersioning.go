@@ -159,8 +159,8 @@ func GetBucketVersioning_with_policy_access(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
-func GetBucketVersioning_with_acl_access(s *S3Conf) error {
-	testName := "GetBucketVersioning_with_acl_access"
+func GetBucketVersioning_acl_grant_access_denied(s *S3Conf) error {
+	testName := "GetBucketVersioning_acl_grant_access_denied"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		testuser := getUser("user")
 		if err := createUsers(s, []user{testuser}); err != nil {
@@ -177,22 +177,14 @@ func GetBucketVersioning_with_acl_access(s *S3Conf) error {
 			return err
 		}
 
+		// An ACL grant never covers the bucket's configuration.
 		userClient := s.getUserClient(testuser)
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		res, err := userClient.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+		_, err = userClient.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
 			Bucket: &bucket,
 		})
 		cancel()
-		if err != nil {
-			return err
-		}
-
-		if res.Status != types.BucketVersioningStatusEnabled {
-			return fmt.Errorf("expected bucket versioning status to be %v, instead got %v",
-				types.BucketVersioningStatusEnabled, res.Status)
-		}
-
-		return nil
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
 	}, withVersioning(types.BucketVersioningStatusEnabled),
 		withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }

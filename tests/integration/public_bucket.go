@@ -2134,7 +2134,7 @@ func PublicBucket_public_acl(s *S3Conf) error {
 					})
 					return err
 				},
-				ExpectedErr: nil,
+				ExpectedErr: s3err.GetAPIError(s3err.ErrAccessDenied),
 			},
 			{
 				Action: "CopyObject",

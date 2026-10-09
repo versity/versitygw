@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -394,15 +395,45 @@ func splitUnique(s, divider string) []string {
 	return result
 }
 
-func verifyACL(acl ACL, access string, permission Permission, disableACL bool) error {
-	if disableACL {
-		// only the bucket owner should have access to the bucket
-		// as bucket ACLs are disabled and no grantee check is necessary
-		if acl.Owner != access {
-			return s3err.GetAPIError(s3err.ErrAccessDenied)
-		}
+// aclActionPermissions maps every action an ACL grant can authorize to the
+// permission that grants it. The gateway keeps no object ACLs, so the
+// bucket's grants stand in for its objects' as well: READ also reads
+// objects, and READ_ACP and WRITE_ACP also cover object ACLs. A grant
+// authorizes nothing else. Bucket configuration, the bucket policy, tagging
+// and object lock settings are the bucket owner's, or whoever a policy
+// grants them to. s3:DeleteObjectVersion is left out because WRITE grants
+// it to the bucket owner alone. READ reads an object but not its
+// attributes, so neither s3:GetObjectAttributes nor
+// s3:GetObjectVersionAttributes is here.
+var aclActionPermissions = map[Action]Permission{
+	ListBucketAction:                 PermissionRead,
+	ListBucketVersionsAction:         PermissionRead,
+	ListBucketMultipartUploadsAction: PermissionRead,
+	GetObjectAction:                  PermissionRead,
+	GetObjectVersionAction:           PermissionRead,
+	PutObjectAction:                  PermissionWrite,
+	DeleteObjectAction:               PermissionWrite,
+	GetBucketAclAction:               PermissionReadAcp,
+	GetObjectAclAction:               PermissionReadAcp,
+	PutBucketAclAction:               PermissionWriteAcp,
+	PutObjectAclAction:               PermissionWriteAcp,
+}
 
-		return nil
+// aclAllows reports whether acl lets access perform action. The bucket
+// owner may perform any action on its own bucket, as an AWS account may.
+// Any other grantee may perform only the actions its grants map to, and
+// none at all while ACLs are disabled.
+func aclAllows(acl ACL, access string, action Action, disableACL bool) bool {
+	if access == acl.Owner {
+		return true
+	}
+	if disableACL {
+		return false
+	}
+
+	permission, ok := aclActionPermissions[action]
+	if !ok {
+		return false
 	}
 
 	grantee := Grantee{
@@ -421,20 +452,9 @@ func verifyACL(acl ACL, access string, permission Permission, disableACL bool) e
 		Type:       types.TypeGroup,
 	}
 
-	isFound := false
-
-	for _, grt := range acl.Grantees {
-		if grt == grantee || grt == granteeFullCtrl || grt == granteeAllUsers {
-			isFound = true
-			break
-		}
-	}
-
-	if isFound {
-		return nil
-	}
-
-	return s3err.GetAPIError(s3err.ErrAccessDenied)
+	return slices.ContainsFunc(acl.Grantees, func(grt Grantee) bool {
+		return grt == grantee || grt == granteeFullCtrl || grt == granteeAllUsers
+	})
 }
 
 // Verifies if the bucket acl grants public access
