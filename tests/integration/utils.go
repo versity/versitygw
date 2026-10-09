@@ -478,7 +478,7 @@ type APIErrorResponse struct {
 	PartNumberRequested         int32                      `xml:"PartNumberRequested,omitempty"`
 	RangeRequested              string                     `xml:"RangeRequested,omitempty"`
 	ActualObjectSize            int64                      `xml:"ActualObjectSize,omitempty"`
-	TagKey                      string                     `xml:"TagKey,omitempty"`
+	TagKey                      *string                    `xml:"TagKey,omitempty"`
 	TagValue                    string                     `xml:"TagValue,omitempty"`
 	Size                        int64                      `xml:"Size,omitempty"`
 	Header                      string                     `xml:"Header,omitempty"`
@@ -896,8 +896,12 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 			compareErrField("ActualObjectSize", err.ActualObjectSize, received.ActualObjectSize),
 		)
 	case s3err.InvalidTagError:
+		// S3 sends the TagKey element even when the key is empty
+		if received.TagKey == nil {
+			return fmt.Errorf("expected error TagKey to be present")
+		}
 		return compareS3ApiErrFields(
-			compareErrField("TagKey", err.TagKey, received.TagKey),
+			compareErrField("TagKey", err.TagKey, *received.TagKey),
 			compareErrField("TagValue", err.TagValue, received.TagValue),
 		)
 	case s3err.KeyTooLongError:
