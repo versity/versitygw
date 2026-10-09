@@ -17,9 +17,11 @@ package s3response
 import (
 	"encoding/xml"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	smithytime "github.com/aws/smithy-go/time"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -296,6 +298,56 @@ func (t *Tagging) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 type DeleteObjects struct {
 	Objects []types.ObjectIdentifier `xml:"Object"`
 	Quiet   bool                     `xml:"Quiet,omitempty"`
+}
+
+// UnmarshalXML parses LastModifiedTime as an HTTP date, the format the AWS
+// SDKs and the AWS CLI send, and falls back to RFC 3339. The SDK type alone
+// accepts RFC 3339 only.
+func (d *DeleteObjects) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
+	type object struct {
+		Key              *string
+		ETag             *string
+		LastModifiedTime *string
+		Size             *int64
+		VersionId        *string
+	}
+	var p struct {
+		Objects []object `xml:"Object"`
+		Quiet   bool     `xml:"Quiet"`
+	}
+	if err := dec.DecodeElement(&p, &start); err != nil {
+		return err
+	}
+
+	var objects []types.ObjectIdentifier
+	for _, o := range p.Objects {
+		obj := types.ObjectIdentifier{
+			Key:       o.Key,
+			ETag:      o.ETag,
+			Size:      o.Size,
+			VersionId: o.VersionId,
+		}
+		if o.LastModifiedTime != nil {
+			lmt, err := parseLastModifiedTime(*o.LastModifiedTime)
+			if err != nil {
+				return err
+			}
+			obj.LastModifiedTime = &lmt
+		}
+		objects = append(objects, obj)
+	}
+
+	d.Objects = objects
+	d.Quiet = p.Quiet
+	return nil
+}
+
+func parseLastModifiedTime(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if t, err := smithytime.ParseHTTPDate(s); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC3339, s)
 }
 
 type DeleteResult struct {
