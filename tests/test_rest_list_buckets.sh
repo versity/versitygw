@@ -54,9 +54,6 @@ export RUN_USERS=true
 
 # tags: curl,ListBuckets,required-headers,Authorization,invalid-header
 @test "REST - invalid authorization scheme" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2489"
-  fi
   run list_buckets_check_authorization_scheme_error
   assert_success
 }

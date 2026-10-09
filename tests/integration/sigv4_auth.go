@@ -65,7 +65,7 @@ func Authentication_unsupported_signature_version(s *S3Conf) error {
 			return err
 		}
 
-		return checkHTTPResponseApiErr(resp, s3err.GetInvalidArgumentErr(s3err.InvalidArgAuthorizationType, "AWS2-HMAC-SHA1"))
+		return checkHTTPResponseApiErr(resp, s3err.GetInvalidArgumentErr(s3err.InvalidArgAuthorizationType, authHdr))
 	})
 }
 
