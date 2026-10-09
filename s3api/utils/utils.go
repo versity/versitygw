@@ -1029,6 +1029,35 @@ func GetQueryParam(ctx fiber.Ctx, key string) *string {
 	return &value
 }
 
+// overridableResponseHeaders are the response-* query parameters GetObject
+// and HeadObject accept to override the response headers
+var overridableResponseHeaders = map[string]struct{}{
+	"response-cache-control":       {},
+	"response-content-disposition": {},
+	"response-content-encoding":    {},
+	"response-content-language":    {},
+	"response-content-type":        {},
+	"response-expires":             {},
+}
+
+// ValidateResponseOverrides rejects any response-* query parameter that isn't
+// one of the overridable response headers. S3 doesn't silently ignore an
+// unknown override, it fails the request with InvalidArgument.
+func ValidateResponseOverrides(ctx fiber.Ctx) error {
+	for key, value := range ctx.Request().URI().QueryArgs().All() {
+		name := string(key)
+		if !strings.HasPrefix(name, "response-") {
+			continue
+		}
+		if _, ok := overridableResponseHeaders[name]; !ok {
+			debuglogger.Logf("invalid response header override query parameter: %q", name)
+			return s3err.GetInvalidArgResponseOverride(name, string(value))
+		}
+	}
+
+	return nil
+}
+
 // ValidateVersionId ensures the versionId query parameter, if specified, isn't
 // empty. S3 rejects both "?versionId=" and the valueless "?versionId" form, and
 // rejects the request if any of the repeated values is empty.

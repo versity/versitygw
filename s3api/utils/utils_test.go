@@ -1826,3 +1826,25 @@ func TestFormatRetainUntilDate(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateResponseOverrides(t *testing.T) {
+	tests := []struct {
+		name    string
+		query   string
+		wantErr error
+	}{
+		{"no query", "", nil},
+		{"unrelated query", "versionId=abc&partNumber=1", nil},
+		{"all overridable headers", "response-cache-control=no-cache&response-content-disposition=inline&response-content-encoding=gzip&response-content-language=en&response-content-type=text%2Fplain&response-expires=0", nil},
+		{"unknown override", "response-invalid=value", s3err.GetInvalidArgResponseOverride("response-invalid", "value")},
+		{"unknown override without a value", "response-invalid", s3err.GetInvalidArgResponseOverride("response-invalid", "")},
+		{"unknown override next to a valid one", "response-content-type=text%2Fplain&response-content-length=10", s3err.GetInvalidArgResponseOverride("response-content-length", "10")},
+		{"only the prefix", "response-=value", s3err.GetInvalidArgResponseOverride("response-", "value")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := fiberCtxFromURL(t, http.MethodGet, "http://localhost/bucket/object?"+tt.query, nil)
+			assert.Equal(t, tt.wantErr, ValidateResponseOverrides(ctx))
+		})
+	}
+}
