@@ -91,6 +91,10 @@ type Posix struct {
 	// there are different filesystems mounted below the bucket level.
 	forceNoTmpFile bool
 
+	// fsync flushes new objects to stable storage before they are
+	// acknowledged
+	fsync bool
+
 	// forceNoCopyFileRange is a flag to disable the use of io.Copy to
 	// reassemble multipart upload parts, which uses copy_file_range on
 	// linux. This is needed for cases where a filesystem that does not
@@ -251,6 +255,11 @@ type PosixOpts struct {
 	ForceNoTmpFile bool
 	// ForceNoCopyFileRange disables the use of io.Copy for multipart uploads parts
 	ForceNoCopyFileRange bool
+	// Fsync flushes each new object's data, metadata and directory entries
+	// to stable storage before the write is acknowledged, so an acknowledged
+	// object survives a crash or power loss. Disabled by default, which
+	// leaves durability to the filesystem's own writeback.
+	Fsync bool
 	// ForceNoObjLockFile is a deprecated compatibility alias for
 	// ObjectLockModeLocal.
 	ForceNoObjLockFile bool
@@ -413,6 +422,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		newDirPerm:           newDirPerm,
 		newFilePerm:          newFilePerm,
 		forceNoTmpFile:       opts.ForceNoTmpFile,
+		fsync:                opts.Fsync,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
 		objectLockMode:       objectLockMode,
 		enableODirect:        opts.EnableODirect,
