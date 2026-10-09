@@ -144,7 +144,7 @@ func ParseAuthorization(authorization, expectedService string) (AuthData, error)
 		return a, &ParseError{Kind: ErrUnsupportedAuthorizationVersion, Value: algo}
 	}
 	if algo != AlgorithmHMACSHA256 {
-		return a, &ParseError{Kind: ErrInvalidAuthorizationType, Value: algo}
+		return a, &ParseError{Kind: ErrInvalidAuthorizationType, Input: authorization, Value: algo}
 	}
 
 	kvPairs := strings.Split(authParts[1], ",")

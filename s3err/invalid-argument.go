@@ -123,7 +123,7 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 		ArgumentName: "x-amz-tagging",
 	},
 	InvalidArgAuthHeader: {
-		Description:  "Authorization header is invalid -- one and only one ' ' (space) required.",
+		Description:  "Authorization header is invalid -- one and only one ' ' (space) required",
 		ArgumentName: "Authorization",
 	},
 	InvalidArgAuthorizationType: {
