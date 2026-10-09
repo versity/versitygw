@@ -16,10 +16,16 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v7
       with:
-        go-version: 'stable'
+        # Go 1.27.2 bumped the export data format to version 5, which
+        # staticcheck 2026.2.1 cannot decode. Go back to 'stable' (and drop
+        # install-go below) once a staticcheck release fixes
+        # https://github.com/dominikh/go-tools/issues/1832
+        go-version: '1.27.1'
       id: go
- 
+
     - name: "staticcheck"
       uses: dominikh/staticcheck-action@v1
       with:
         version: "latest"
+        # the action otherwise installs Go 'stable' over the version above
+        install-go: false
