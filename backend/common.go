@@ -425,8 +425,9 @@ func isValidTagComponent(str string) bool {
 }
 
 // ComputeMultipartETagFromPartETags computes the S3 multipart ETag
-// ("<md5>-<partCount>") from the completed-part ETags.
-func ComputeMultipartETagFromPartETags(parts []types.CompletedPart) (string, error) {
+// ("<md5>-<partCount>") from the completed-part ETags. uploadID is only
+// used to report the upload in an InvalidPart error.
+func ComputeMultipartETagFromPartETags(uploadID string, parts []types.CompletedPart) (string, error) {
 	var partsEtagBytes []byte
 	for _, part := range parts {
 		if part.ETag == nil {
@@ -437,7 +438,7 @@ func ComputeMultipartETagFromPartETags(parts []types.CompletedPart) (string, err
 		}
 		bts, err := getEtagBytes(*part.ETag)
 		if err != nil {
-			return "", s3err.GetAPIError(s3err.ErrInvalidPart)
+			return "", s3err.GetInvalidPartErr(uploadID, *part.PartNumber, *part.ETag)
 		}
 		partsEtagBytes = append(partsEtagBytes, bts...)
 	}

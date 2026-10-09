@@ -2076,3 +2076,314 @@ func AccessControl_bucket_policy_condition_if_match_versioned_delete(s *S3Conf) 
 		return nil
 	})
 }
+
+func AccessControl_owner_deny_only_policy_keeps_access(s *S3Conf) error {
+	testName := "AccessControl_owner_deny_only_policy_keeps_access"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		if err := changeBucketsOwner(s, []string{bucket}, testuser.access); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		obj, deniedObj := "my-obj", "deny-probe/my-obj"
+		if _, err := putObjects(userClient, []string{obj, deniedObj}, bucket); err != nil {
+			return err
+		}
+
+		policy := genPolicyDoc("Deny", `"*"`, `"s3:GetObject"`, fmt.Sprintf(`"arn:aws:s3:::%s/deny-probe/*"`, bucket))
+		if err := putBucketPolicy(userClient, bucket, policy); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetBucketPolicyStatus(ctx, &s3.GetBucketPolicyStatusInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := userClient.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		out.Body.Close()
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &deniedObj,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetExplicitDenyAccessErr(
+			testuser.access, "s3:GetObject", fmt.Sprintf("arn:aws:s3:::%s/%s", bucket, deniedObj), "a resource-based policy",
+		)); err != nil {
+			return err
+		}
+
+		// A malformed replacement is rejected for what it is, and the
+		// policy in place keeps denying.
+		err = putBucketPolicy(userClient, bucket, `{"Statement":[`)
+		if err := checkApiErr(err, getMalformedPolicyError("This policy contains invalid Json")); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = userClient.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &deniedObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		out.Body.Close()
+
+		return nil
+	})
+}
+
+func AccessControl_owner_policy_lockout_protection(s *S3Conf) error {
+	testName := "AccessControl_owner_policy_lockout_protection"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		if err := changeBucketsOwner(s, []string{bucket}, testuser.access); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		policy := genPolicyDoc("Deny", `"*"`, `"s3:*"`, fmt.Sprintf(`["arn:aws:s3:::%s", "arn:aws:s3:::%s/*"]`, bucket, bucket))
+		if err := putBucketPolicy(userClient, bucket, policy); err != nil {
+			return err
+		}
+
+		bucketArn := fmt.Sprintf("arn:aws:s3:::%s", bucket)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetExplicitDenyAccessErr(
+			testuser.access, "s3:ListBucket", bucketArn, "a resource-based policy",
+		)); err != nil {
+			return err
+		}
+
+		// Only the bucket policy APIs are exempt from the owner's own deny.
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetBucketPolicyStatus(ctx, &s3.GetBucketPolicyStatusInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetExplicitDenyAccessErr(
+			testuser.access, "s3:GetBucketPolicyStatus", bucketArn, "a resource-based policy",
+		)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if err := putBucketPolicy(userClient, bucket, policy); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		return err
+	})
+}
+
+func AccessControl_acl_grant_with_bucket_policy(s *S3Conf) error {
+	testName := "AccessControl_acl_grant_with_bucket_policy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser, otheruser := getUser("user"), getUser("user")
+		if err := createUsers(s, []user{testuser, otheruser}); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket:    &bucket,
+			GrantRead: &testuser.access,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// A policy that doesn't name the grantee leaves its ACL grant in
+		// effect.
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, otheruser.access), `"s3:GetObject"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// An explicit deny overrides the ACL grant.
+		policy = genPolicyDoc("Deny", fmt.Sprintf(`"%s"`, testuser.access), `"s3:ListBucket"`, fmt.Sprintf(`"arn:aws:s3:::%s"`, bucket))
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetExplicitDenyAccessErr(
+			testuser.access, "s3:ListBucket", fmt.Sprintf("arn:aws:s3:::%s", bucket), "a resource-based policy",
+		))
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
+func AccessControl_acl_grant_excludes_bucket_configuration(s *S3Conf) error {
+	testName := "AccessControl_acl_grant_excludes_bucket_configuration"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket:           &bucket,
+			GrantFullControl: &testuser.access,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		if _, err := putObjects(userClient, []string{"my-obj"}, bucket); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		policy := genPolicyDoc("Deny", `"*"`, `"s3:*"`, fmt.Sprintf(`"arn:aws:s3:::%s"`, bucket))
+		err = putBucketPolicy(userClient, bucket, policy)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.DeleteBucket(ctx, &s3.DeleteBucketInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}

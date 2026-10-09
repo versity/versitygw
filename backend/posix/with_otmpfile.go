@@ -50,6 +50,7 @@ type tmpfile struct {
 	gid         int
 	newDirPerm  fs.FileMode
 	newFilePerm fs.FileMode
+	fsync       bool
 	// modTime is the modification time the file is published with,
 	// the time it was last written if zero
 	modTime time.Time
@@ -134,6 +135,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		gid:         gid,
 		newDirPerm:  p.newDirPerm,
 		newFilePerm: p.newFilePerm,
+		fsync:       p.fsync,
 	}
 
 	// falloc is best effort, its fine if this fails
@@ -205,6 +207,7 @@ func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, u
 		gid:         gid,
 		newDirPerm:  p.newDirPerm,
 		newFilePerm: p.newFilePerm,
+		fsync:       p.fsync,
 	}
 	// falloc is best effort, its fine if this fails
 	if size > 0 && dofalloc {
@@ -295,6 +298,11 @@ func (tmp *tmpfile) link() error {
 		return fmt.Errorf("set tmpfile modification time: %w", err)
 	}
 
+	err = tmp.syncData()
+	if err != nil {
+		return err
+	}
+
 	procdir, err := os.Open(procfddir)
 	if err != nil {
 		return fmt.Errorf("open proc dir: %w", err)
@@ -346,7 +354,7 @@ func (tmp *tmpfile) link() error {
 		return fmt.Errorf("close tmpfile: %w", err)
 	}
 
-	return nil
+	return tmp.syncNamespace()
 }
 
 func (tmp *tmpfile) fallbackLink() error {
@@ -355,14 +363,21 @@ func (tmp *tmpfile) fallbackLink() error {
 	// reset default file mode because CreateTemp uses 0600
 	tmp.f.Chmod(tmp.newFilePerm)
 
-	err := tmp.f.Close()
+	err := tmp.applyModTime(tempname)
 	if err != nil {
-		return fmt.Errorf("close tmpfile: %w", err)
+		tmp.f.Close()
+		return fmt.Errorf("set tmpfile modification time: %w", err)
 	}
 
-	err = tmp.applyModTime(tempname)
+	err = tmp.syncData()
 	if err != nil {
-		return fmt.Errorf("set tmpfile modification time: %w", err)
+		tmp.f.Close()
+		return err
+	}
+
+	err = tmp.f.Close()
+	if err != nil {
+		return fmt.Errorf("close tmpfile: %w", err)
 	}
 
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
@@ -406,10 +421,12 @@ func (tmp *tmpfile) fallbackLink() error {
 				return fmt.Errorf("recreate parent dir: %w", mkErr)
 			}
 		}
-		return err
+		if err != nil {
+			return err
+		}
 	}
 
-	return nil
+	return tmp.syncNamespace()
 }
 
 func (tmp *tmpfile) cleanup() {

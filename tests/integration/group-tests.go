@@ -590,6 +590,7 @@ func TestCompleteMultipartUpload(ts *TestState) {
 	ts.Run(CompleteMultipartUpload_default_content_type)
 	ts.Run(CompleteMultipartUpload_overwrite_resets_attributes)
 	ts.Run(CompleteMultipartUpload_invalid_ETag)
+	ts.Run(CompleteMultipartUpload_invalid_ETag_error_fields)
 	ts.Run(CompleteMultipartUpload_small_upload_size)
 	ts.Run(CompleteMultipartUpload_empty_parts)
 	ts.Run(CompleteMultipartUpload_missing_part_fields)
@@ -2009,6 +2010,10 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_bucket_policy_condition_if_match_value)
 	ts.Run(AccessControl_bucket_policy_condition_if_match_delete_object)
 	ts.Run(AccessControl_bucket_policy_condition_if_match_versioned_delete)
+	ts.Run(AccessControl_owner_deny_only_policy_keeps_access)
+	ts.Run(AccessControl_owner_policy_lockout_protection)
+	ts.Run(AccessControl_acl_grant_with_bucket_policy)
+	ts.Run(AccessControl_acl_grant_excludes_bucket_configuration)
 }
 
 func TestPublicBuckets(ts *TestState) {
@@ -2054,7 +2059,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(GetBucketVersioning_success)
 	ts.Run(GetBucketVersioning_non_owner_access_denied)
 	ts.Run(GetBucketVersioning_with_policy_access)
-	ts.Run(GetBucketVersioning_with_acl_access)
+	ts.Run(GetBucketVersioning_acl_grant_access_denied)
 	// DeleteBucket action
 	ts.Run(Versioning_DeleteBucket_not_empty)
 	// PutObject action
@@ -3356,6 +3361,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_default_content_type":                                     CompleteMultipartUpload_default_content_type,
 		"CompleteMultipartUpload_overwrite_resets_attributes":                              CompleteMultipartUpload_overwrite_resets_attributes,
 		"CompleteMultipartUpload_invalid_ETag":                                             CompleteMultipartUpload_invalid_ETag,
+		"CompleteMultipartUpload_invalid_ETag_error_fields":                                CompleteMultipartUpload_invalid_ETag_error_fields,
 		"CompleteMultipartUpload_small_upload_size":                                        CompleteMultipartUpload_small_upload_size,
 		"CompleteMultipartUpload_empty_parts":                                              CompleteMultipartUpload_empty_parts,
 		"CompleteMultipartUpload_missing_part_fields":                                      CompleteMultipartUpload_missing_part_fields,
@@ -3700,6 +3706,10 @@ func GetIntTests() IntTests {
 		"AccessControl_bucket_policy_condition_if_match_value":                             AccessControl_bucket_policy_condition_if_match_value,
 		"AccessControl_bucket_policy_condition_if_match_delete_object":                     AccessControl_bucket_policy_condition_if_match_delete_object,
 		"AccessControl_bucket_policy_condition_if_match_versioned_delete":                  AccessControl_bucket_policy_condition_if_match_versioned_delete,
+		"AccessControl_owner_deny_only_policy_keeps_access":                                AccessControl_owner_deny_only_policy_keeps_access,
+		"AccessControl_owner_policy_lockout_protection":                                    AccessControl_owner_policy_lockout_protection,
+		"AccessControl_acl_grant_with_bucket_policy":                                       AccessControl_acl_grant_with_bucket_policy,
+		"AccessControl_acl_grant_excludes_bucket_configuration":                            AccessControl_acl_grant_excludes_bucket_configuration,
 		"PublicBucket_default_private_bucket":                                              PublicBucket_default_private_bucket,
 		"PublicBucket_public_bucket_policy":                                                PublicBucket_public_bucket_policy,
 		"PublicBucket_public_object_policy":                                                PublicBucket_public_object_policy,
@@ -3728,7 +3738,7 @@ func GetIntTests() IntTests {
 		"GetBucketVersioning_success":                                                      GetBucketVersioning_success,
 		"GetBucketVersioning_non_owner_access_denied":                                      GetBucketVersioning_non_owner_access_denied,
 		"GetBucketVersioning_with_policy_access":                                           GetBucketVersioning_with_policy_access,
-		"GetBucketVersioning_with_acl_access":                                              GetBucketVersioning_with_acl_access,
+		"GetBucketVersioning_acl_grant_access_denied":                                      GetBucketVersioning_acl_grant_access_denied,
 		"Versioning_DeleteBucket_not_empty":                                                Versioning_DeleteBucket_not_empty,
 		"Versioning_PutObject_suspended_null_versionId_obj":                                Versioning_PutObject_suspended_null_versionId_obj,
 		"Versioning_PutObject_null_versionId_obj":                                          Versioning_PutObject_null_versionId_obj,
