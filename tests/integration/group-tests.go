@@ -149,6 +149,8 @@ func TestPutBucketTagging(ts *TestState) {
 	ts.Run(PutBucketTagging_invalid_tags)
 	ts.Run(PutBucketTagging_duplicate_keys)
 	ts.Run(PutBucketTagging_tag_count_limit)
+	ts.Run(PutBucketTagging_invalid_tag_error_fields)
+	ts.Run(PutBucketTagging_multibyte_tags)
 	ts.Run(PutBucketTagging_success)
 	ts.Run(PutBucketTagging_success_status)
 }
@@ -179,6 +181,7 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_plain_stores_aws_chunked_content_encoding)
 	ts.Run(PutObject_unsigned_payload_with_aws_chunked_content_encoding)
 	ts.Run(PutObject_tagging)
+	ts.Run(PutObject_tagging_invalid_argument_value)
 	ts.Run(PutObject_missing_object_lock_retention_config)
 	ts.Run(PutObject_with_object_lock)
 	ts.Run(PutObject_missing_bucket_lock)
@@ -437,6 +440,7 @@ func TestPutObjectTagging(ts *TestState) {
 	ts.Run(PutObjectTagging_duplicate_keys)
 	ts.Run(PutObjectTagging_tag_count_limit)
 	ts.Run(PutObjectTagging_invalid_tags)
+	ts.Run(PutObjectTagging_invalid_tag_error_fields)
 	ts.Run(PutObjectTagging_success)
 	ts.Run(PutObjectTagging_empty_version_id)
 }
@@ -3050,6 +3054,8 @@ func GetIntTests() IntTests {
 		"PutBucketTagging_invalid_tags":                                                    PutBucketTagging_invalid_tags,
 		"PutBucketTagging_duplicate_keys":                                                  PutBucketTagging_duplicate_keys,
 		"PutBucketTagging_tag_count_limit":                                                 PutBucketTagging_tag_count_limit,
+		"PutBucketTagging_invalid_tag_error_fields":                                        PutBucketTagging_invalid_tag_error_fields,
+		"PutBucketTagging_multibyte_tags":                                                  PutBucketTagging_multibyte_tags,
 		"PutBucketTagging_success":                                                         PutBucketTagging_success,
 		"PutBucketTagging_success_status":                                                  PutBucketTagging_success_status,
 		"GetBucketTagging_non_existing_bucket":                                             GetBucketTagging_non_existing_bucket,
@@ -3069,6 +3075,7 @@ func GetIntTests() IntTests {
 		"PutObject_plain_stores_aws_chunked_content_encoding":                              PutObject_plain_stores_aws_chunked_content_encoding,
 		"PutObject_unsigned_payload_with_aws_chunked_content_encoding":                     PutObject_unsigned_payload_with_aws_chunked_content_encoding,
 		"PutObject_tagging":                                                                PutObject_tagging,
+		"PutObject_tagging_invalid_argument_value":                                         PutObject_tagging_invalid_argument_value,
 		"PutObject_success":                                                                PutObject_success,
 		"PutObject_default_content_type":                                                   PutObject_default_content_type,
 		"PutObject_overwrite_resets_attributes":                                            PutObject_overwrite_resets_attributes,
@@ -3250,6 +3257,7 @@ func GetIntTests() IntTests {
 		"PutObjectTagging_duplicate_keys":                                                  PutObjectTagging_duplicate_keys,
 		"PutObjectTagging_tag_count_limit":                                                 PutObjectTagging_tag_count_limit,
 		"PutObjectTagging_invalid_tags":                                                    PutObjectTagging_invalid_tags,
+		"PutObjectTagging_invalid_tag_error_fields":                                        PutObjectTagging_invalid_tag_error_fields,
 		"PutObjectTagging_success":                                                         PutObjectTagging_success,
 		"PutObjectTagging_empty_version_id":                                                PutObjectTagging_empty_version_id,
 		"GetObjectTagging_non_existing_object":                                             GetObjectTagging_non_existing_object,

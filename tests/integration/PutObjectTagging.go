@@ -16,8 +16,12 @@ package integration
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -196,6 +200,58 @@ func PutObjectTagging_invalid_tags(s *S3Conf) error {
 			}
 
 			if err := checkApiErr(err, test.err); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func PutObjectTagging_invalid_tag_error_fields(s *S3Conf) error {
+	testName := "PutObjectTagging_invalid_tag_error_fields"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		var overLimit strings.Builder
+		for i := range 10 {
+			fmt.Fprintf(&overLimit, "<Tag><Key>key-%v</Key><Value>value</Value></Tag>", i)
+		}
+		overLimit.WriteString("<Tag><Key></Key><Value>value</Value></Tag>")
+
+		for i, test := range []struct {
+			tagSet string
+			err    s3err.S3Error
+		}{
+			// an empty key is reported in an empty TagKey element
+			{"<Tag><Key></Key><Value>value</Value></Tag>", s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, "", "")},
+			{"<Tag><Key>key</Key><Value>a</Value></Tag><Tag><Key>key</Key><Value>b</Value></Tag>", s3err.GetInvalidTagErr(s3err.ErrDuplicateTagKey, "key", "")},
+			// the tags are validated before the tag count
+			{overLimit.String(), s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, "", "")},
+			// a missing Key or Value element fails ahead of any tag check
+			{"<Tag><Value>value</Value></Tag>", s3err.GetAPIError(s3err.ErrMalformedXML)},
+			{"<Tag><Key>key</Key></Tag>", s3err.GetAPIError(s3err.ErrMalformedXML)},
+		} {
+			body := []byte(`<Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><TagSet>` + test.tagSet + `</TagSet></Tagging>`)
+			sum := md5.Sum(body)
+
+			req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%v/%v?tagging=", bucket, obj), s.awsID, s.awsSecret, "s3", s.awsRegion, "", body, time.Now(), map[string]string{
+				"Content-Md5": base64.StdEncoding.EncodeToString(sum[:]),
+			})
+			if err != nil {
+				return fmt.Errorf("test %v: err signing the request: %w", i+1, err)
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("test %v: err sending request: %w", i+1, err)
+			}
+
+			if err := checkHTTPResponseApiErr(resp, test.err); err != nil {
 				return fmt.Errorf("test %v failed: %w", i+1, err)
 			}
 		}

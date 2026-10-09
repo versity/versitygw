@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1243,10 +1244,10 @@ func TestParseTagging(t *testing.T) {
 			},
 		}
 
-		for range lgth {
+		for i := range lgth {
 			res.TagSet.Tags = append(res.TagSet.Tags, s3response.Tag{
-				Key:   genRandStr(10),
-				Value: genRandStr(20),
+				Key:   "key" + strconv.Itoa(i),
+				Value: "value",
 			})
 		}
 
@@ -1325,6 +1326,17 @@ func TestParseTagging(t *testing.T) {
 			wantErr: s3err.GetAPIError(s3err.ErrObjectTaggingLimited),
 		},
 		{
+			name: "invalid tag over the tag limit",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet>` +
+					strings.Repeat(`<Tag><Key>key</Key><Value>value</Value></Tag>`, 11) +
+					`</TagSet></Tagging>`),
+				limit: TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetInvalidTagErr(s3err.ErrDuplicateTagKey, "key", ""),
+		},
+		{
 			name: "invalid 0 length tag key",
 			args: args{
 				data: s3response.Tagging{
@@ -1335,7 +1347,75 @@ func TestParseTagging(t *testing.T) {
 				limit: TagLimitObject,
 			},
 			want:    nil,
-			wantErr: s3err.GetAPIError(s3err.ErrInvalidTagKey),
+			wantErr: s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, "", ""),
+		},
+		{
+			name: "missing tag key",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet><Tag><Value>value</Value></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
+			name: "missing tag value",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet><Tag><Key>key</Key></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
+			name: "missing tag key after an invalid tag",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet><Tag><Key>key!</Key><Value>value</Value></Tag><Tag><Value>value</Value></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
+			name: "empty tag value",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet><Tag><Key>key</Key><Value/></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    map[string]string{"key": ""},
+			wantErr: nil,
+		},
+		{
+			name: "multibyte tags at the length limits",
+			args: args{
+				data: s3response.Tagging{
+					TagSet: s3response.TagSet{
+						Tags: []s3response.Tag{
+							{Key: strings.Repeat("é", 128), Value: strings.Repeat("中", 256)},
+							{Key: strings.Repeat("𝐀", 64), Value: "value"},
+						},
+					},
+				},
+				limit: TagLimitObject,
+			},
+			want: map[string]string{
+				strings.Repeat("é", 128): strings.Repeat("中", 256),
+				strings.Repeat("𝐀", 64):  "value",
+			},
+			wantErr: nil,
+		},
+		{
+			name: "tag key over 128 UTF-16 code units",
+			args: args{
+				data: s3response.Tagging{
+					TagSet: s3response.TagSet{
+						Tags: []s3response.Tag{{Key: strings.Repeat("𝐀", 65), Value: "value"}},
+					},
+				},
+				limit: TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, strings.Repeat("𝐀", 65), ""),
 		},
 		{
 			name: "invalid long tag key",
@@ -1377,7 +1457,7 @@ func TestParseTagging(t *testing.T) {
 				limit: TagLimitObject,
 			},
 			want:    nil,
-			wantErr: s3err.GetAPIError(s3err.ErrDuplicateTagKey),
+			wantErr: s3err.GetInvalidTagErr(s3err.ErrDuplicateTagKey, "key", ""),
 		},
 	}
 

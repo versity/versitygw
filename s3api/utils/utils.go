@@ -842,67 +842,28 @@ const (
 	TagLimitObject TagLimit = 10
 )
 
-// The tag key/value validation pattern comes from
-// AWS S3 docs
-// https://docs.aws.amazon.com/AmazonS3/latest/API/API_control_Tag.html
-var tagRule = regexp.MustCompile(`^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$`)
-
 // Parses and validates tagging
 func ParseTagging(data []byte, limit TagLimit) (map[string]string, error) {
-	var tagging s3response.Tagging
+	// the tags are decoded as pointers to tell a missing
+	// Key or Value element from an empty one
+	var tagging struct {
+		Tags []types.Tag `xml:"TagSet>Tag"`
+	}
 	err := xml.Unmarshal(data, &tagging)
 	if err != nil {
 		debuglogger.Logf("invalid taggging: %s", data)
 		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
-	tLen := len(tagging.TagSet.Tags)
-	if tLen > int(limit) {
-		switch limit {
-		case TagLimitObject:
-			debuglogger.Logf("bucket tagging length exceeds %v: %v", limit, tLen)
-			return nil, s3err.GetAPIError(s3err.ErrObjectTaggingLimited)
-		case TagLimitBucket:
-			debuglogger.Logf("object tagging length exceeds %v: %v", limit, tLen)
-			return nil, s3err.GetAPIError(s3err.ErrBucketTaggingLimited)
-		}
+	limitErr := s3err.ErrBucketTaggingLimited
+	if limit == TagLimitObject {
+		limitErr = s3err.ErrObjectTaggingLimited
 	}
 
-	tagSet := make(map[string]string, tLen)
-
-	for _, tag := range tagging.TagSet.Tags {
-		// validate tag key length
-		if len(tag.Key) == 0 || len(tag.Key) > 128 {
-			debuglogger.Logf("tag key should 0 < tag.Key <= 128, key: %v", tag.Key)
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, tag.Key, "")
-		}
-
-		// validate tag key string chars
-		if !tagRule.MatchString(tag.Key) {
-			debuglogger.Logf("invalid tag key: %s", tag.Key)
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, tag.Key, "")
-		}
-
-		// validate tag value length
-		if len(tag.Value) > 256 {
-			debuglogger.Logf("invalid long tag value: (length): %v, (value): %v", len(tag.Value), tag.Value)
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagValue, tag.Key, tag.Value)
-		}
-
-		// validate tag value string chars
-		if !tagRule.MatchString(tag.Value) {
-			debuglogger.Logf("invalid tag value: %s", tag.Value)
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagValue, tag.Key, tag.Value)
-		}
-
-		// make sure there are no duplicate keys
-		_, ok := tagSet[tag.Key]
-		if ok {
-			debuglogger.Logf("duplicate tag key: %v", tag.Key)
-			return nil, s3err.GetAPIError(s3err.ErrDuplicateTagKey)
-		}
-
-		tagSet[tag.Key] = tag.Value
+	tagSet, err := backend.ParseTagSet(tagging.Tags, int(limit), limitErr)
+	if err != nil {
+		debuglogger.Logf("invalid tagging: %v", err)
+		return nil, err
 	}
 
 	return tagSet, nil
