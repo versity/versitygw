@@ -190,6 +190,47 @@ func CompleteMultipartUpload_invalid_ETag(s *S3Conf) error {
 		return nil
 	})
 }
+
+func CompleteMultipartUpload_invalid_ETag_error_fields(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_invalid_ETag_error_fields"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			UploadId:   out.UploadId,
+			PartNumber: getPtr(int32(1)),
+			Body:       bytes.NewReader([]byte("dummy")),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// the sdk doesn't expose the InvalidPart error fields, so the
+		// request is signed and sent by hand
+		body := []byte(`<CompleteMultipartUpload><Part><ETag>invalidETag</ETag><PartNumber>1</PartNumber></Part></CompleteMultipartUpload>`)
+		req, err := createSignedReq(http.MethodPost, s.endpoint,
+			fmt.Sprintf("%v/%v?uploadId=%v", bucket, obj, *out.UploadId),
+			s.awsID, s.awsSecret, "s3", s.awsRegion, "", body, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetInvalidPartErr(*out.UploadId, 1, "invalidETag"))
+	})
+}
 func CompleteMultipartUpload_invalid_checksum_type(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_invalid_checksum_type"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
