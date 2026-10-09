@@ -175,6 +175,75 @@ func ListObjectsV2_start_after_empty_result(s *S3Conf) error {
 	})
 }
 
+func ListObjectsV2_start_after_continuation_token(s *S3Conf) error {
+	testName := "ListObjectsV2_start_after_continuation_token"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		contents, err := putObjects(s3client, []string{"foo", "bar", "baz", "quxx"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// start-after alone is not echoed back as a continuation token
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:     &bucket,
+			StartAfter: getPtr("bar"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.ContinuationToken != nil {
+			return fmt.Errorf("expected nil ContinuationToken, instead got %v",
+				*out.ContinuationToken)
+		}
+		if !compareObjects(contents[1:], out.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents[1:], out.Contents)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:  &bucket,
+			MaxKeys: getPtr(int32(1)),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		token := getString(out.NextContinuationToken)
+		if token == "" {
+			return fmt.Errorf("expected non-empty NextContinuationToken")
+		}
+
+		// with both, the request continuation token is echoed back even
+		// when start-after is past it
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            &bucket,
+			ContinuationToken: &token,
+			StartAfter:        getPtr("baz"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(out.ContinuationToken) != token {
+			return fmt.Errorf("expected ContinuationToken to be %v, instead got %v",
+				token, getString(out.ContinuationToken))
+		}
+		if !compareObjects(contents[2:], out.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents[2:], out.Contents)
+		}
+
+		return nil
+	})
+}
+
 func ListObjectsV2_both_delimiter_and_prefix(s *S3Conf) error {
 	testName := "ListObjectsV2_both_delimiter_and_prefix"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

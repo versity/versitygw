@@ -68,9 +68,6 @@ teardown() {
 }
 
 @test "PutBucketWebsite - XML message with empty WebsiteConfiguration struct" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2260"
-  fi
   local bucket_name
 
   setup_versitygw_for_website

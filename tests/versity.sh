@@ -23,7 +23,7 @@ start_versity_process() {
   local versity_app_index="$1" command_array=("${@:2}")
   local log_file_name response process_id
 
-  log_file_name="${TEST_FILE_FOLDER}/versity-${TEST_ID}-${versity_app_index}-$(uuidgen)"
+  log_file_name="$(get_test_log_folder)/versity-${TEST_ID}-${versity_app_index}-$(uuidgen)"
   printf -v "VERSITY_LOG_FILE_${versity_app_index}" '%s' "$log_file_name"
   export VERSITY_LOG_FILE_"${versity_app_index}"
 

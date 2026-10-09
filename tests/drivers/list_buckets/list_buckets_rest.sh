@@ -211,20 +211,24 @@ list_check_buckets_rest_with_prefix() {
 }
 
 list_buckets_check_authorization_scheme_error() {
-  bad_scheme_name="AWS-HMAC-SHA25"
-  if ! send_rest_go_command_expect_error_callback "400" "InvalidArgument" "Unsupported Authorization Type" "parse_and_check_authorization_data" "-authorizationScheme" "$bad_scheme_name"; then
+  local bad_scheme_name="AWS-HMAC-SHA25"
+  if ! send_rest_go_command_expect_error_callback "400" "InvalidArgument" "Unsupported Authorization Type" \
+      "parse_and_check_authorization_data" "-authorizationScheme" "$bad_scheme_name" "--" "$bad_scheme_name"; then
     log 2 "error sending command and checking results"
     return 1
   fi
+  return 0
 }
 
 parse_and_check_authorization_data() {
-  if ! check_param_count_v2 "data file" 1 $#; then
+  if ! check_param_count_v2 "data file, bad scheme name" 2 $#; then
     return 1
   fi
+  local data_file="$1" bad_scheme_name="$2"
+  local argument_name argument_value
   # shellcheck disable=SC2154
-  log 5 "bucket list: $(cat "$1")"
-  if ! argument_name=$(get_element_text "$1" "Error" "ArgumentName"); then
+  log 5 "bucket list: $(cat "$data_file")"
+  if ! argument_name=$(get_element_text "$data_file" "Error" "ArgumentName"); then
     log 2 "error getting argument name"
     return 1
   fi
@@ -232,7 +236,7 @@ parse_and_check_authorization_data() {
     log 2 "expected 'Authorization', was '$argument_name'"
     return 1
   fi
-  if ! argument_value=$(get_element_text "$1" "Error" "ArgumentValue"); then
+  if ! argument_value=$(get_element_text "$data_file" "Error" "ArgumentValue"); then
     log 2 "error getting argument value"
     return 1
   fi

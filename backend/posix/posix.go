@@ -886,10 +886,8 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 			}
 		}
 
-		now := time.Now()
 		defaultLock := auth.BucketLockConfig{
-			Enabled:   true,
-			CreatedAt: &now,
+			Enabled: true,
 		}
 
 		defaultLockParsed, err := json.Marshal(defaultLock)
@@ -2160,13 +2158,17 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		}
 	}
 
-	// Mark an upload with Object Lock parameters, so that each of its parts
-	// is required to carry an integrity check. They are its own lock
-	// headers, or the bucket's default retention rule as of now: a rule set
-	// or removed later doesn't change what the upload's parts need.
+	// An upload without Object Lock parameters of its own gets the retention
+	// of the bucket's default rule as of now: a rule set or removed later
+	// changes neither the object's retention nor what the upload's parts
+	// need.
 	lockParams := mpu.ObjectLockLegalHoldStatus != "" || mpu.ObjectLockMode != ""
 	if !lockParams {
-		lockParams, err = p.bucketHasDefaultRetention(bucket)
+		retention, err := p.bucketDefaultRetention(bucket)
+		if err == nil && retention != nil {
+			lockParams = true
+			err = p.meta.StoreAttribute(nil, bucket, filepath.Join(objdir, uploadID), objectRetentionKey, retention)
+		}
 		if err != nil {
 			// cleanup object if returning error
 			_ = os.RemoveAll(filepath.Join(tmppath, uploadID))
@@ -2175,6 +2177,9 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 			return s3response.InitiateMultipartUploadResult{}, err
 		}
 	}
+
+	// Mark an upload with Object Lock parameters, so that each of its parts
+	// is required to carry an integrity check.
 	if lockParams {
 		err := p.meta.StoreAttribute(nil, bucket, filepath.Join(objdir, uploadID), mpObjectLockKey, []byte{1})
 		if err != nil {
@@ -2475,58 +2480,65 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 				Key:    &object,
 			}, "", nil
 		}
-		// Directory is gone: the concurrent call already completed and cleaned up.
-		// A directory at the object path is the object of the key with a
-		// trailing slash, not the completed upload.
-		if fi, statErr := os.Stat(p.ObjectPath(bucket, object)); statErr == nil && !fi.IsDir() {
-			etag := multipartClaimToken
-			if p.dataIntegrityEtag {
-				etagBytes, etagErr := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
-				if etagErr != nil {
-					return res, "", fmt.Errorf("get object etag: %w", etagErr)
-				}
-				etag = string(etagBytes)
-			}
-			return s3response.CompleteMultipartUploadResult{
-				Bucket: &bucket,
-				ETag:   &etag,
-				Key:    &object,
-			}, "", nil
+		// Directory is gone: a completed upload is linked before its
+		// in-progress directory is removed, so it is the object at this key
+		// carrying this upload ID. No object, or an object written any other
+		// way (a PutObject or another upload), means there is no such upload.
+		// Multipart uploads are never created for keys with a trailing slash,
+		// and a directory at the object path is the object of such a key.
+		if strings.HasSuffix(object, "/") {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		}
+		fi, err := os.Stat(p.ObjectPath(bucket, object))
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		}
+		if isErrNameTooLong(err) {
+			return res, "", s3err.GetKeyTooLongErr(int64(len(object)), 1024)
+		}
+		if err != nil {
+			return res, "", fmt.Errorf("stat object: %w", err)
+		}
+		if fi.IsDir() {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		}
+		mpMetaBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, mpMetaKey)
+		if errors.Is(err, meta.ErrNoSuchKey) || errors.Is(err, fs.ErrNotExist) {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		}
+		if err != nil {
+			return res, "", fmt.Errorf("get object multipart metadata: %w", err)
+		}
+		mpMeta, err := backend.UnmarshalMpUploadMetadata(mpMetaBytes, false)
+		if err != nil {
+			return res, "", fmt.Errorf("parse object multipart metadata: %w", err)
+		}
+		if mpMeta.UploadID != uploadID {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
 		}
 
-		// Last resort: the object stat above may have lost a race with the
-		// concurrent call's link step. Check the mp-metadata xattr, as this
-		// multipart upload may have been finalized and the final object has been created
-		// before or by the racing request
-		if mpMetaBytes, statErr := p.meta.RetrieveAttribute(nil, bucket, object, mpMetaKey); statErr == nil {
-			mpMeta, err := backend.UnmarshalMpUploadMetadata(mpMetaBytes, false)
-			if err != nil {
-				return res, "", fmt.Errorf("parse object multipart metadata: %w", err)
-			}
-
-			// The object may have been overwritten by a newer upload or
-			// it's the result of a completely different multipart upload; only
-			// treat it as our completion if the upload IDs match.
-			if mpMeta.UploadID != uploadID {
-				return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
-			}
-
-			etag := multipartClaimToken
-			if p.dataIntegrityEtag {
-				etagBytes, etagErr := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
-				if etagErr != nil {
-					return res, "", fmt.Errorf("get object etag: %w", etagErr)
-				}
-				etag = string(etagBytes)
-			}
-			return s3response.CompleteMultipartUploadResult{
-				Bucket: &bucket,
-				ETag:   &etag,
-				Key:    &object,
-			}, "", nil
+		etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+		if err != nil {
+			return res, "", fmt.Errorf("get object etag: %w", err)
+		}
+		etag := string(etagBytes)
+		// A retry has to list the parts the upload was completed with. The
+		// data integrity ETag is the object checksum rather than the ETag of
+		// the parts, so only the upload ID is checked in that mode.
+		if !p.dataIntegrityEtag && etag != multipartClaimToken {
+			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
 		}
 
-		return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		versionID, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return res, "", fmt.Errorf("get object version id: %w", err)
+		}
+
+		return s3response.CompleteMultipartUploadResult{
+			Bucket: &bucket,
+			ETag:   &etag,
+			Key:    &object,
+		}, string(versionID), nil
 	}
 	if err != nil {
 		return res, "", fmt.Errorf("rename upload to etag dir: %w", err)
@@ -5063,7 +5075,8 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 }
 
 // putObjectLockSettings sets the legal hold and retention requested with
-// the put on the object that was just published
+// the put on the object that was just published. A put without Object Lock
+// parameters of its own gets the retention of the bucket's default rule.
 func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObjectInput) error {
 	// Set object legal hold
 	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
@@ -5077,25 +5090,32 @@ func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObje
 	}
 
 	// Set object retention
-	if po.ObjectLockMode != "" {
-		retention := types.ObjectLockRetention{
+	var retention []byte
+	var err error
+	switch {
+	case po.ObjectLockMode != "":
+		retention, err = json.Marshal(types.ObjectLockRetention{
 			Mode:            types.ObjectLockRetentionMode(po.ObjectLockMode),
 			RetainUntilDate: po.ObjectLockRetainUntilDate,
-		}
-		retParsed, err := json.Marshal(retention)
+		})
 		if err != nil {
 			return fmt.Errorf("parse object lock retention: %w", err)
 		}
-		err = p.PutObjectRetention(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", retParsed)
+	case po.ObjectLockLegalHoldStatus == "":
+		retention, err = p.bucketDefaultRetention(*po.Bucket)
 		if err != nil {
-			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
-				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
-			}
 			return err
 		}
 	}
+	if retention == nil {
+		return nil
+	}
 
-	return nil
+	err = p.PutObjectRetention(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", retention)
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+		return s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+	}
+	return err
 }
 
 func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (_ *s3.DeleteObjectOutput, err error) {
@@ -5936,35 +5956,40 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 			}
 		}
 
+		legalHold, lockMode, retainUntil := p.objectLockAttrs(nil, bucket, object)
+
 		var length int64 = 0
 		return &s3.GetObjectOutput{
-			ChecksumCRC32:           checksums.CRC32,
-			ChecksumCRC32C:          checksums.CRC32C,
-			ChecksumSHA1:            checksums.SHA1,
-			ChecksumSHA256:          checksums.SHA256,
-			ChecksumCRC64NVME:       checksums.CRC64NVME,
-			ChecksumSHA512:          checksums.SHA512,
-			ChecksumMD5:             checksums.MD5,
-			ChecksumXXHASH64:        checksums.XXHASH64,
-			ChecksumXXHASH3:         checksums.XXHASH3,
-			ChecksumXXHASH128:       checksums.XXHASH128,
-			ChecksumType:            checksums.Type,
-			AcceptRanges:            backend.GetPtrFromString("bytes"),
-			ContentLength:           &length,
-			ContentEncoding:         objMeta.ContentEncoding,
-			ContentType:             objMeta.ContentType,
-			ContentLanguage:         objMeta.ContentLanguage,
-			ContentDisposition:      objMeta.ContentDisposition,
-			CacheControl:            objMeta.CacheControl,
-			ExpiresString:           objMeta.Expires,
-			WebsiteRedirectLocation: objMeta.WebsiteRedirectLocation,
-			ETag:                    &etag,
-			LastModified:            backend.GetTimePtr(fid.ModTime()),
-			Metadata:                objMeta.Metadata,
-			TagCount:                tagCount,
-			ContentRange:            nil,
-			StorageClass:            types.StorageClassStandard,
-			VersionId:               &versionId,
+			ObjectLockLegalHoldStatus: legalHold,
+			ObjectLockMode:            lockMode,
+			ObjectLockRetainUntilDate: retainUntil,
+			ChecksumCRC32:             checksums.CRC32,
+			ChecksumCRC32C:            checksums.CRC32C,
+			ChecksumSHA1:              checksums.SHA1,
+			ChecksumSHA256:            checksums.SHA256,
+			ChecksumCRC64NVME:         checksums.CRC64NVME,
+			ChecksumSHA512:            checksums.SHA512,
+			ChecksumMD5:               checksums.MD5,
+			ChecksumXXHASH64:          checksums.XXHASH64,
+			ChecksumXXHASH3:           checksums.XXHASH3,
+			ChecksumXXHASH128:         checksums.XXHASH128,
+			ChecksumType:              checksums.Type,
+			AcceptRanges:              backend.GetPtrFromString("bytes"),
+			ContentLength:             &length,
+			ContentEncoding:           objMeta.ContentEncoding,
+			ContentType:               objMeta.ContentType,
+			ContentLanguage:           objMeta.ContentLanguage,
+			ContentDisposition:        objMeta.ContentDisposition,
+			CacheControl:              objMeta.CacheControl,
+			ExpiresString:             objMeta.Expires,
+			WebsiteRedirectLocation:   objMeta.WebsiteRedirectLocation,
+			ETag:                      &etag,
+			LastModified:              backend.GetTimePtr(fid.ModTime()),
+			Metadata:                  objMeta.Metadata,
+			TagCount:                  tagCount,
+			ContentRange:              nil,
+			StorageClass:              types.StorageClassStandard,
+			VersionId:                 &versionId,
 		}, nil
 	}
 
@@ -6074,6 +6099,8 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		}
 	}
 
+	legalHold, lockMode, retainUntil := p.objectLockAttrs(f, bucket, object)
+
 	// Buffered full-object responses keep the underlying *os.File for sendfile.
 	body, err := buildGetObjectBody(f, objPath, startOffset, length, objSize, p.enableODirect, p.ioBufferSize)
 	if err != nil {
@@ -6081,35 +6108,38 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	}
 
 	return &s3.GetObjectOutput{
-		AcceptRanges:            backend.GetPtrFromString("bytes"),
-		ContentLength:           &length,
-		ContentEncoding:         objMeta.ContentEncoding,
-		ContentType:             objMeta.ContentType,
-		ContentDisposition:      objMeta.ContentDisposition,
-		ContentLanguage:         objMeta.ContentLanguage,
-		CacheControl:            objMeta.CacheControl,
-		ExpiresString:           objMeta.Expires,
-		WebsiteRedirectLocation: objMeta.WebsiteRedirectLocation,
-		ETag:                    &etag,
-		LastModified:            backend.GetTimePtr(fi.ModTime()),
-		Metadata:                objMeta.Metadata,
-		TagCount:                tagCount,
-		ContentRange:            contentRange,
-		StorageClass:            types.StorageClassStandard,
-		VersionId:               &versionId,
-		Body:                    body,
-		ChecksumCRC32:           checksums.CRC32,
-		ChecksumCRC32C:          checksums.CRC32C,
-		ChecksumSHA1:            checksums.SHA1,
-		ChecksumSHA256:          checksums.SHA256,
-		ChecksumCRC64NVME:       checksums.CRC64NVME,
-		ChecksumSHA512:          checksums.SHA512,
-		ChecksumMD5:             checksums.MD5,
-		ChecksumXXHASH64:        checksums.XXHASH64,
-		ChecksumXXHASH3:         checksums.XXHASH3,
-		ChecksumXXHASH128:       checksums.XXHASH128,
-		ChecksumType:            checksums.Type,
-		PartsCount:              partsCount,
+		ObjectLockLegalHoldStatus: legalHold,
+		ObjectLockMode:            lockMode,
+		ObjectLockRetainUntilDate: retainUntil,
+		AcceptRanges:              backend.GetPtrFromString("bytes"),
+		ContentLength:             &length,
+		ContentEncoding:           objMeta.ContentEncoding,
+		ContentType:               objMeta.ContentType,
+		ContentDisposition:        objMeta.ContentDisposition,
+		ContentLanguage:           objMeta.ContentLanguage,
+		CacheControl:              objMeta.CacheControl,
+		ExpiresString:             objMeta.Expires,
+		WebsiteRedirectLocation:   objMeta.WebsiteRedirectLocation,
+		ETag:                      &etag,
+		LastModified:              backend.GetTimePtr(fi.ModTime()),
+		Metadata:                  objMeta.Metadata,
+		TagCount:                  tagCount,
+		ContentRange:              contentRange,
+		StorageClass:              types.StorageClassStandard,
+		VersionId:                 &versionId,
+		Body:                      body,
+		ChecksumCRC32:             checksums.CRC32,
+		ChecksumCRC32C:            checksums.CRC32C,
+		ChecksumSHA1:              checksums.SHA1,
+		ChecksumSHA256:            checksums.SHA256,
+		ChecksumCRC64NVME:         checksums.CRC64NVME,
+		ChecksumSHA512:            checksums.SHA512,
+		ChecksumMD5:               checksums.MD5,
+		ChecksumXXHASH64:          checksums.XXHASH64,
+		ChecksumXXHASH3:           checksums.XXHASH3,
+		ChecksumXXHASH128:         checksums.XXHASH128,
+		ChecksumType:              checksums.Type,
+		PartsCount:                partsCount,
 	}, nil
 }
 
@@ -6757,6 +6787,19 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 				return s3response.CopyObjectOutput{}, err
 			}
 		}
+
+		// the copy replaces the object, so it gets the Object Lock
+		// settings of a newly written one
+		err = p.putObjectLockSettings(ctx, s3response.PutObjectInput{
+			Bucket:                    &dstBucket,
+			Key:                       &dstObject,
+			ObjectLockRetainUntilDate: input.ObjectLockRetainUntilDate,
+			ObjectLockMode:            input.ObjectLockMode,
+			ObjectLockLegalHoldStatus: input.ObjectLockLegalHoldStatus,
+		})
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
 	} else {
 		contentLength := srcSize
 
@@ -7122,7 +7165,7 @@ func (p *Posix) ListObjectsV2Parametrized(ctx context.Context, input *s3.ListObj
 		Name:                  &bucket,
 		KeyCount:              &count,
 		Delimiter:             backend.GetPtrFromString(delim),
-		ContinuationToken:     backend.GetPtrFromString(marker),
+		ContinuationToken:     backend.GetPtrFromString(backend.GetStringFromPtr(input.ContinuationToken)),
 		NextContinuationToken: backend.GetPtrFromString(results.NextMarker),
 		Prefix:                backend.GetPtrFromString(prefix),
 		StartAfter:            backend.GetPtrFromString(*input.StartAfter),
@@ -7617,24 +7660,56 @@ func (p *Posix) DeleteBucketWebsite(ctx context.Context, bucket string) error {
 	return p.PutBucketWebsite(ctx, bucket, nil)
 }
 
-// bucketHasDefaultRetention reports whether bucket has Object Lock enabled
-// with a default retention rule, which gives every object written to it
-// Object Lock parameters.
-func (p *Posix) bucketHasDefaultRetention(bucket string) (bool, error) {
+// objectLockAttrs returns the legal hold and retention stored on the object
+// at bucket/object, as its GetObject response reports them. One that can't
+// be read is left out.
+func (p *Posix) objectLockAttrs(f *os.File, bucket, object string) (types.ObjectLockLegalHoldStatus, types.ObjectLockMode, *time.Time) {
+	var legalHold types.ObjectLockLegalHoldStatus
+	data, err := p.meta.RetrieveAttribute(f, bucket, object, objectLegalHoldKey)
+	if err == nil && len(data) != 0 {
+		legalHold = types.ObjectLockLegalHoldStatusOff
+		if data[0] == 1 {
+			legalHold = types.ObjectLockLegalHoldStatusOn
+		}
+	}
+
+	var retention types.ObjectLockRetention
+	data, err = p.meta.RetrieveAttribute(f, bucket, object, objectRetentionKey)
+	if err != nil || json.Unmarshal(data, &retention) != nil {
+		return legalHold, "", nil
+	}
+
+	return legalHold, types.ObjectLockMode(retention.Mode), retention.RetainUntilDate
+}
+
+// bucketDefaultRetention returns the retention, as stored on an object, that
+// the bucket's default rule gives an object written now, or nil when the
+// bucket has no default rule.
+func (p *Posix) bucketDefaultRetention(bucket string) ([]byte, error) {
 	cfg, err := p.meta.RetrieveAttribute(nil, bucket, "", bucketLockKey)
 	if errors.Is(err, meta.ErrNoSuchKey) {
-		return false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("get object lock config: %w", err)
+		return nil, fmt.Errorf("get object lock config: %w", err)
 	}
 
 	var bucketLockConfig auth.BucketLockConfig
 	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
-		return false, fmt.Errorf("parse bucket lock config: %w", err)
+		return nil, fmt.Errorf("parse bucket lock config: %w", err)
 	}
 
-	return bucketLockConfig.Enabled && bucketLockConfig.DefaultRetention != nil, nil
+	retention := bucketLockConfig.DefaultObjectRetention(time.Now())
+	if retention == nil {
+		return nil, nil
+	}
+
+	retParsed, err := json.Marshal(retention)
+	if err != nil {
+		return nil, fmt.Errorf("parse object lock retention: %w", err)
+	}
+
+	return retParsed, nil
 }
 
 func (p *Posix) isBucketObjectLockEnabled(bucket string) error {

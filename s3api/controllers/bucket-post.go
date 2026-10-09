@@ -18,6 +18,7 @@ import (
 	"encoding/xml"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -251,11 +252,24 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	objLock, err := utils.ParseObjectLockFields(parsed.Fields)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	// A POST upload is an s3:PutObject on the object named by the form's
 	// key field, so it is authorized against that object's ARN — the same
 	// resource PutObject is — not the bucket's. Tagging the object also
-	// takes s3:PutObjectTagging, but only for a non-empty tag set
-	actions := auth.ObjectUploadActions(tagging, "", "", "")
+	// takes s3:PutObjectTagging, but only for a non-empty tag set, and its
+	// Object Lock fields the lock actions. A POST upload denied several of
+	// them is reported as denied the retention, the legal hold, the
+	// tagging, then s3:PutObject itself.
+	actions := auth.ObjectUploadActions(tagging, string(objLock.LegalHoldStatus), string(objLock.ObjectLockMode), "")
+	slices.Reverse(actions)
 
 	err = c.verifyAccess(ctx,
 		auth.AccessOptions{
@@ -274,6 +288,17 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	// lock fields need a bucket with Object Lock
+	if objLock.LegalHoldStatus != "" || objLock.ObjectLockMode != "" {
+		if _, err := auth.VerifyWriteObjectLock(ctx.RequestCtx(), c.be, bucket, true); err != nil {
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, err
+		}
 	}
 
 	ssec, err := c.parseSSECFields(ctx, parsed.Fields)
@@ -295,33 +320,36 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 	}
 
 	res, err := c.be.PutObject(ctx.RequestCtx(), s3response.PutObjectInput{
-		SSECustomerAlgorithm:    ssec.Algorithm,
-		SSECustomerKey:          ssec.Key,
-		SSECustomerKeyMD5:       ssec.KeyMD5,
-		Bucket:                  &bucket,
-		Key:                     &key,
-		ContentType:             &contentType,
-		ContentEncoding:         &contentEncoding,
-		ContentDisposition:      &contentDisposition,
-		ContentLanguage:         &contentLanguage,
-		CacheControl:            &cacheControl,
-		Expires:                 &expires,
-		WebsiteRedirectLocation: &websiteRedirectLocation,
-		Body:                    parsed.FileRdr,
-		ContentLength:           &parsed.ContentLength,
-		Tagging:                 &tagging,
-		Metadata:                metadata,
-		StorageClass:            types.StorageClass(storageClass),
-		ChecksumCRC32:           utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32]),
-		ChecksumCRC32C:          utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32c]),
-		ChecksumSHA1:            utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha1]),
-		ChecksumSHA256:          utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha256]),
-		ChecksumCRC64NVME:       utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc64nvme]),
-		ChecksumSHA512:          utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha512]),
-		ChecksumMD5:             utils.GetStringPtr(checksums[types.ChecksumAlgorithmMd5]),
-		ChecksumXXHASH64:        utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash64]),
-		ChecksumXXHASH3:         utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash3]),
-		ChecksumXXHASH128:       utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash128]),
+		SSECustomerAlgorithm:      ssec.Algorithm,
+		SSECustomerKey:            ssec.Key,
+		SSECustomerKeyMD5:         ssec.KeyMD5,
+		Bucket:                    &bucket,
+		Key:                       &key,
+		ContentType:               &contentType,
+		ContentEncoding:           &contentEncoding,
+		ContentDisposition:        &contentDisposition,
+		ContentLanguage:           &contentLanguage,
+		CacheControl:              &cacheControl,
+		Expires:                   &expires,
+		WebsiteRedirectLocation:   &websiteRedirectLocation,
+		Body:                      parsed.FileRdr,
+		ContentLength:             &parsed.ContentLength,
+		Tagging:                   &tagging,
+		ObjectLockRetainUntilDate: &objLock.RetainUntilDate,
+		ObjectLockMode:            objLock.ObjectLockMode,
+		ObjectLockLegalHoldStatus: objLock.LegalHoldStatus,
+		Metadata:                  metadata,
+		StorageClass:              types.StorageClass(storageClass),
+		ChecksumCRC32:             utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32]),
+		ChecksumCRC32C:            utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32c]),
+		ChecksumSHA1:              utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha1]),
+		ChecksumSHA256:            utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha256]),
+		ChecksumCRC64NVME:         utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc64nvme]),
+		ChecksumSHA512:            utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha512]),
+		ChecksumMD5:               utils.GetStringPtr(checksums[types.ChecksumAlgorithmMd5]),
+		ChecksumXXHASH64:          utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash64]),
+		ChecksumXXHASH3:           utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash3]),
+		ChecksumXXHASH128:         utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash128]),
 	})
 	if err != nil {
 		return &Response{

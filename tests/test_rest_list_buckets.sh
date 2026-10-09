@@ -55,7 +55,7 @@ export RUN_USERS=true
 # tags: curl,ListBuckets,required-headers,Authorization,invalid-header
 @test "REST - invalid authorization scheme" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1705"
+    skip "https://github.com/versity/versitygw/issues/2489"
   fi
   run list_buckets_check_authorization_scheme_error
   assert_success
@@ -223,19 +223,11 @@ export RUN_USERS=true
 
 # tags: curl,invalid-method
 @test "REST - service route - invalid POST route" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1810"
-  fi
-  run get_file_name
-  assert_success
-  file_name=$output
+  local bucket_name
 
-  run get_bucket_name "$BUCKET_ONE_NAME"
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
-
-  run setup_bucket_and_add_file "$bucket_name" "$file_name"
-  assert_success
 
   run send_rest_go_command_expect_error_with_specific_arg_names_values "405" "MethodNotAllowed" "is not allowed" 4 "Method" "POST" "ResourceType" "SERVICE" "-method" "POST"
   assert_success
@@ -352,15 +344,11 @@ export RUN_USERS=true
 
 # tags: curl,ListBuckets,required-headers,x-amz-date
 @test "REST - ListBuckets - omit date" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1934"
-  fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
+  local bucket_name
+
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
-
-  run setup_bucket "$bucket_name"
-  assert_success
 
   run send_rest_go_command_expect_error "403" "AccessDenied" "AWS authentication requires a valid Date or x-amz-date header" "-omitDate"
   assert_success
@@ -368,15 +356,11 @@ export RUN_USERS=true
 
 # tags: curl,ListBuckets,required-headers,x-amz-date
 @test "REST - ListBuckets - invalid date" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1934"
-  fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
+  local bucket_name
+
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
-
-  run setup_bucket "$bucket_name"
-  assert_success
 
   run send_rest_go_command_expect_error "403" "AccessDenied" "AWS authentication requires a valid Date or x-amz-date header" "-customDate" "ABCDEFG"
   assert_success

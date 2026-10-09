@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -226,7 +225,7 @@ func (c S3ApiController) HeadObject(ctx fiber.Ctx) (*Response, error) {
 			"x-amz-object-lock-legal-hold":        utils.ConvertToStringPtr(res.ObjectLockLegalHoldStatus),
 			"x-amz-storage-class":                 utils.ConvertToStringPtr(res.StorageClass),
 			"x-amz-checksum-type":                 utils.ConvertToStringPtr(res.ChecksumType),
-			"x-amz-object-lock-retain-until-date": utils.FormatDatePtrToString(res.ObjectLockRetainUntilDate, time.RFC3339),
+			"x-amz-object-lock-retain-until-date": utils.FormatRetainUntilDate(res.ObjectLockRetainUntilDate),
 			"x-amz-tagging-count":                 utils.ConvertPtrToStringPtr(res.TagCount),
 			"x-amz-server-side-encryption-customer-algorithm": res.SSECustomerAlgorithm,
 			"x-amz-server-side-encryption-customer-key-MD5":   res.SSECustomerKeyMD5,
