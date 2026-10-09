@@ -385,7 +385,7 @@ send_rest_go_command_expect_error_callback() {
     log 2 "error checking expected header error"
     return 1
   fi
-  if [ "$callback" != "" ] && ! response=$("$callback" "$response_file" "${callback_params[@]}" 2>&1); then
+  if [ "$callback" != "" ] && ! response=$("$callback" "$data_file" "${callback_params[@]}" 2>&1); then
     log 2 "callback error: $response"
     return 1
   fi
