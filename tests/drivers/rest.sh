@@ -34,22 +34,53 @@ check_rest_expected_error() {
   return 0
 }
 
-check_rest_go_expected_error() {
-  if ! check_param_count_v2 "response file, expected http code, expected error code, expected error" 4 $#; then
+check_rest_go_http_response() {
+  if ! check_param_count_v2 "response file, expected http code" 2 $#; then
     return 1
   fi
+  local data_file="$1" expected_http_code="$2"
+  local response status_code
 
-  local response
-  if ! response=$(bypass_continues "$1" 2>&1); then
+  if ! response=$(bypass_continues "$data_file" 2>&1); then
     log 2 "error bypassing continues: $response"
     return 1
   fi
   status_code=$(echo -n "$response" | awk '{print $2}')
-  if [ "$2" != "$status_code" ]; then
-    log 2 "expected curl response '$2', was '$status_code' (response: '$(cat "$1")')"
+  if [ "$expected_http_code" != "$status_code" ]; then
+    log 2 "expected curl response '$expected_http_code', was '$status_code' (response: '$(cat "$data_file")')"
     return 1
   fi
-  if ! check_xml_error_contains "$1" "$3" "$4"; then
+  return 0
+}
+
+check_rest_go_expected_error_code() {
+  if ! check_param_count_v2 "response file, expected http code, expected error code" 3 $#; then
+    return 1
+  fi
+  local data_file="$1" expected_http_code="$2" expected_error_code="$3"
+
+  if ! check_rest_go_http_response "$data_file" "$expected_http_code"; then
+    log 2 "error checking http response"
+    return 1
+  fi
+  if ! check_xml_error "$data_file" "$expected_error_code"; then
+    log 2 "error checking XML error code"
+    return 1
+  fi
+  return 0
+}
+
+check_rest_go_expected_error() {
+  if ! check_param_count_v2 "response file, expected http code, expected error code, expected error" 4 $#; then
+    return 1
+  fi
+  local data_file="$1" expected_http_code="$2" expected_error_code="$3" expected_message="$4"
+
+  if ! check_rest_go_http_response "$data_file" "$expected_http_code"; then
+    log 2 "error checking http response"
+    return 1
+  fi
+  if ! check_xml_error_contains "$data_file" "$expected_error_code" "$expected_message"; then
     log 2 "error checking XML error"
     return 1
   fi
@@ -267,25 +298,9 @@ rest_go_command_perform_send() {
   return 0
 }
 
-send_rest_go_command_expect_error() {
-  if [ $# -lt 3 ]; then
-    log 2 "'send_rest_go_command_expect_error' param count must be 3 or greater, odd (expected HTTP code, expected error code, expected message, go params)"
-    return 1
-  fi
-  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "" "${@:4}"; then
-    log 2 "error sending go command and checking error"
-    return 1
-  fi
-  return 0
-}
-
-send_rest_go_command_expect_error_callback() {
-  if [ $# -lt 4 ]; then
-    log 2 "'send_rest_go_command_expect_error' param count must be 4 or greater, even (expected HTTP code, expected error code, expected message, callback, go params)"
-    return 1
-  fi
-
-  local all_params=("${@:5}") no_callback_params=0 go_param_array=() callback_params=()
+send_rest_go_command_get_response() {
+  local all_params=("$@")
+  local no_callback_params=0 go_param_array=() callback_params=() param
 
   if ! params_file=$(get_file_name 2>&1); then
     log 2 "error getting params file name: $params_file"
@@ -303,11 +318,74 @@ send_rest_go_command_expect_error_callback() {
     return 1
   fi
   response_file="$response"
-  if ! check_rest_go_expected_error "$response_file" "$1" "$2" "$3"; then
+  printf '%s\n' "$response_file"
+  for param in "${callback_params[@]}"; do
+    printf '%s\n' "$param"
+  done
+  return 0
+}
+
+send_rest_go_command_expect_error() {
+  if [ $# -lt 3 ]; then
+    log 2 "'send_rest_go_command_expect_error' param count must be 3 or greater, odd (expected HTTP code, expected error code, expected message, go params)"
+    return 1
+  fi
+  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "" "${@:4}"; then
+    log 2 "error sending go command and checking error"
+    return 1
+  fi
+  return 0
+}
+
+send_rest_go_command_expect_error_code_callback() {
+  if ! check_param_count_gt "expected http code, expected error code, callback, params" 3 $#; then
+    return 1
+  fi
+  local expected_http_code="$1" expected_error_code="$2" callback="$3" params=("${@:4}")
+  local response data_file
+  local -a data_and_callback_params callback_params
+
+  if ! response=$(send_rest_go_command_get_response "${params[@]}" 2>&1); then
+    log 2 "error sending go command and getting response: $response"
+    return 1
+  fi
+  mapfile -t data_and_callback_params <<< "$response"
+  data_file="${data_and_callback_params[0]}"
+  callback_params=("${data_and_callback_params[@]:1}")
+
+  if ! check_rest_go_expected_error_code "$data_file" "$expected_http_code" "$expected_error_code"; then
     log 2 "error checking expected header error"
     return 1
   fi
-  if [ "$4" != "" ] && ! response=$("$4" "$response_file" "${callback_params[@]}" 2>&1); then
+  if [ "$callback" != "" ] && ! response=$("$callback" "$data_file" "${callback_params[@]}" 2>&1); then
+    log 2 "callback error: $response"
+    return 1
+  fi
+  return 0
+}
+
+send_rest_go_command_expect_error_callback() {
+  if [ $# -lt 4 ]; then
+    log 2 "'send_rest_go_command_expect_error' param count must be 4 or greater, even (expected HTTP code, expected error code, expected message, callback, go params)"
+    return 1
+  fi
+  local expected_http_code="$1" expected_error_code="$2" expected_message="$3" callback="$4" params=("${@:5}")
+  local response data_file
+  local -a data_and_callback_params callback_params
+
+  if ! response=$(send_rest_go_command_get_response "${params[@]}" 2>&1); then
+    log 2 "error sending go command and getting response: $response"
+    return 1
+  fi
+  mapfile -t data_and_callback_params <<< "$response"
+  data_file="${data_and_callback_params[0]}"
+  callback_params=("${data_and_callback_params[@]:1}")
+
+  if ! check_rest_go_expected_error "$data_file" "$expected_http_code" "$expected_error_code" "$expected_message"; then
+    log 2 "error checking expected header error"
+    return 1
+  fi
+  if [ "$callback" != "" ] && ! response=$("$callback" "$response_file" "${callback_params[@]}" 2>&1); then
     log 2 "callback error: $response"
     return 1
   fi
@@ -380,39 +458,28 @@ send_rest_go_command_callback() {
     return 1
   fi
 
-  local all_params=("${@:3}") no_callback_params=0 go_param_array=() callback_params=() response
+  local expected_http_code="$1" callback="$2" params=("${@:3}")
+  local response data_file callback_result
+  local -a data_and_callback_params callback_params
 
-  if ! params_file=$(get_file_name 2>&1); then
-    log 2 "error getting params file name: $params_file"
+  if ! response=$(send_rest_go_command_get_response "${params[@]}" 2>&1); then
+    log 2 "error sending go command and getting response: $response"
     return 1
   fi
-  get_go_params "${all_params[@]}" > "$TEST_FILE_FOLDER/$params_file" || no_callback_params=$?
-  mapfile -t go_param_array < "$TEST_FILE_FOLDER/$params_file"
+  mapfile -t data_and_callback_params <<< "$response"
+  data_file="${data_and_callback_params[0]}"
+  callback_params=("${data_and_callback_params[@]:1}")
 
-  if [ "$no_callback_params" -eq 1 ]; then
-    mapfile -t callback_params < <(get_callback_params "${all_params[@]}")
-  fi
-
-  if ! response=$(rest_go_command_perform_send "${go_param_array[@]}" 2>&1); then
-    log 2 "error sending rest go command: $response"
+  status_code=$(awk 'NR==1 {print $2; exit}' "$data_file")
+  if [ "$expected_http_code" != "$status_code" ]; then
+    log 2 "expected curl response '$expected_http_code', was '$status_code' (response: '$(cat "$data_file")')"
     return 1
   fi
-  response_file="$response"
-
-  if ! response=$(bypass_continues "$response_file" 2>&1); then
-    log 2 "error bypassing continues: $response"
-    return 1
-  fi
-  status_code=$(echo -n "$response" | awk '{print $2}')
-  if [ "$1" != "$status_code" ]; then
-    log 2 "expected curl response '$1', was '$status_code' (response: '$(cat "$response_file")')"
-    return 1
-  fi
-  if [ "$2" == "" ]; then
-    echo "$response_file"
+  if [ "$callback" == "" ]; then
+    echo "$data_file"
     return 0
   fi
-  if ! response=$("$2" "$response_file" "${callback_params[@]}" 2>&1); then
+  if ! response=$("$callback" "$data_file" "${callback_params[@]}" 2>&1); then
     log 2 "callback error: $response"
     return 1
   fi
