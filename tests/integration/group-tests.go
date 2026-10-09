@@ -309,6 +309,8 @@ func TestGetObject(ts *TestState) {
 
 func TestListObjects(ts *TestState) {
 	ts.Run(ListObjects_non_existing_bucket)
+	ts.Run(ListObjects_invalid_response_override)
+	ts.Run(ListObjects_invalid_response_override_non_existing_bucket)
 	ts.Run(ListObjects_with_prefix)
 	ts.Run(ListObjects_truncated)
 	ts.Run(ListObjects_paginated)
@@ -3146,6 +3148,8 @@ func GetIntTests() IntTests {
 		"GetObject_empty_object_part_number_1":                                             GetObject_empty_object_part_number_1,
 		"GetObject_empty_version_id":                                                       GetObject_empty_version_id,
 		"ListObjects_non_existing_bucket":                                                  ListObjects_non_existing_bucket,
+		"ListObjects_invalid_response_override":                                            ListObjects_invalid_response_override,
+		"ListObjects_invalid_response_override_non_existing_bucket":                        ListObjects_invalid_response_override_non_existing_bucket,
 		"ListObjects_with_prefix":                                                          ListObjects_with_prefix,
 		"ListObjects_truncated":                                                            ListObjects_truncated,
 		"ListObjects_paginated":                                                            ListObjects_paginated,

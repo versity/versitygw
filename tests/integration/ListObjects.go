@@ -17,6 +17,8 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -36,6 +38,47 @@ func ListObjects_non_existing_bucket(s *S3Conf) error {
 			return err
 		}
 		return nil
+	})
+}
+
+func ListObjects_invalid_response_override(s *S3Conf) error {
+	testName := "ListObjects_invalid_response_override"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// response-* overrides are validated on every action, not only
+		// on GetObject and HeadObject
+		req, err := createSignedReq(http.MethodGet, s.endpoint,
+			fmt.Sprintf("%v?response-invalid=value", bucket),
+			s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetInvalidArgResponseOverride("response-invalid", "value"))
+	})
+}
+
+func ListObjects_invalid_response_override_non_existing_bucket(s *S3Conf) error {
+	testName := "ListObjects_invalid_response_override_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// the overrides are validated before the bucket lookup
+		req, err := createSignedReq(http.MethodGet, s.endpoint,
+			fmt.Sprintf("%v?response-invalid=value", getBucketName()),
+			s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetInvalidArgResponseOverride("response-invalid", "value"))
 	})
 }
 

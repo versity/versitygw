@@ -57,23 +57,6 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid response header override query param",
-			input: testInput{
-				locals: defaultLocals,
-				queries: map[string]string{
-					"response-invalid": "value",
-				},
-			},
-			output: testOutput{
-				response: &Response{
-					MetaOpts: &MetaOptions{
-						BucketOwner: "root",
-					},
-				},
-				err: s3err.GetInvalidArgResponseOverride("response-invalid", "value"),
-			},
-		},
-		{
 			name: "verify access fails",
 			input: testInput{
 				locals: accessDeniedLocals,
