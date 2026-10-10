@@ -840,11 +840,15 @@ type ObjectDeletePreconditions struct {
 }
 
 // EvaluateObjectDeletePreconditions evaluates preconditions for DeleteObject
+// and for each object in DeleteObjects. An If-Match (or ObjectIdentifier ETag)
+// of "*" matches any ETag.
 func EvaluateObjectDeletePreconditions(etag string, modTime time.Time, size int64, preconditions ObjectDeletePreconditions) error {
 	etag = strings.Trim(etag, `"`)
-	ifMatch := preconditions.IfMatch
-	if ifMatch != nil && strings.Trim(*ifMatch, `"`) != etag {
-		return s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)
+	if preconditions.IfMatch != nil {
+		ifMatch := strings.Trim(*preconditions.IfMatch, `"`)
+		if ifMatch != "*" && ifMatch != etag {
+			return s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)
+		}
 	}
 
 	ifMatchTime := preconditions.IfMatchLastModTime

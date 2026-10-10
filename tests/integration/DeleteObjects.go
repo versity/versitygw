@@ -592,6 +592,22 @@ func DeleteObjects_conditional_deletes(s *S3Conf) error {
 			return err
 		}
 
+		// an ETag of "*" matches any ETag
+		if _, err := putObjectAndGetETag(s3client, bucket, obj); err != nil {
+			return err
+		}
+		out, err = deleteObjects(types.ObjectIdentifier{Key: &obj, ETag: getPtr("*")})
+		if err != nil {
+			return err
+		}
+		if len(out.Deleted) != 1 || len(out.Errors) != 0 {
+			return fmt.Errorf("expected %v to be deleted with ETag *, instead got deleted %v, errors %v",
+				obj, out.Deleted, out.Errors)
+		}
+		if err := checkSdkApiErr(headObject(obj), "NotFound"); err != nil {
+			return err
+		}
+
 		return nil
 	})
 }

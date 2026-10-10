@@ -74,6 +74,18 @@ func TestDeleteObjectsHonorsETagPrecondition(t *testing.T) {
 			if _, err := os.Stat(p.ObjectPath(bucket, key)); !os.IsNotExist(err) {
 				t.Fatalf("object still present after matching delete: %v", err)
 			}
+
+			// "*" matches any ETag
+			if _, err := testPut(p, bucket, key, []byte("hello again"), nil, nil); err != nil {
+				t.Fatalf("put object: %v", err)
+			}
+			deleted, errs = deleteWithETag("*")
+			if deleted != 1 || len(errs) != 0 {
+				t.Fatalf("wildcard ETag: want one delete and no errors, got deleted=%d errors=%v", deleted, errs)
+			}
+			if _, err := os.Stat(p.ObjectPath(bucket, key)); !os.IsNotExist(err) {
+				t.Fatalf("object still present after wildcard delete: %v", err)
+			}
 		})
 	}
 }
