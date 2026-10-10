@@ -24,6 +24,7 @@ const (
 	NmpAdditionalMessageIfMatch             NmpAdditionalMessage = "We don't accept the provided value of If-Match header for this API"
 	NmpAdditionalMessageIfNoneMatch         NmpAdditionalMessage = "We don't accept the provided value of If-None-Match header for this API"
 	NmpAdditionalMessageMultipleCondHeaders NmpAdditionalMessage = "Multiple conditional request headers present in the request"
+	NmpAdditionalMessageVersionedDelete     NmpAdditionalMessage = "Conditional delete operations are not allowed when a version ID is included in the request parameters."
 )
 
 // NotImplementedError is returned when a header implies unsupported functionality.

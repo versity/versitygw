@@ -2952,12 +2952,9 @@ func S3IAMAccessControl_condition_if_match_delete_object(s *S3Conf) error {
 	})
 }
 
-// S3IAMAccessControl_condition_if_match_versioned_delete pins the edge of
-// s3:if-match's action set on the identity-policy side, where nothing
-// validates a Condition's key against the action it names. A delete naming
-// a version is authorized as s3:DeleteObjectVersion, which the key doesn't
-// apply to, so it stays absent and a statement demanding it can never be
-// satisfied
+// S3IAMAccessControl_condition_if_match_versioned_delete checks that a
+// delete naming a version and carrying If-Match is rejected before the
+// identity policy is evaluated, whether the policy would deny or allow it.
 func S3IAMAccessControl_condition_if_match_versioned_delete(s *S3Conf) error {
 	testName := "S3IAMAccessControl_condition_if_match_versioned_delete"
 	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
@@ -2979,42 +2976,39 @@ func S3IAMAccessControl_condition_if_match_versioned_delete(s *S3Conf) error {
 
 		// "null" is the version id every object carries until versioning is
 		// enabled, so this is a versioned delete on any backend.
-		deleteVersion := func(ifMatch string) error {
+		deleteVersion := func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			defer cancel()
 			_, err := user.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 				Bucket:    &bucket,
 				Key:       getPtr("obj"),
 				VersionId: getPtr("null"),
-				IfMatch:   &ifMatch,
+				IfMatch:   &etag,
 			})
 			return err
 		}
 
-		if err := checkApiErr(deleteVersion(etag),
-			wantImplicitDeny(user.arn, actS3DeleteObjectVersion, objectArn(bucket, "obj"))); err != nil {
-			return fmt.Errorf("a versioned delete must leave s3:if-match absent: %w", err)
+		wantErr := s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageVersionedDelete)
+		if err := checkApiErr(deleteVersion(), wantErr); err != nil {
+			return fmt.Errorf("a versioned delete the policy denies: %w", err)
 		}
 
-		// Absent, not merely different: the same request satisfies a
-		// statement requiring the key to be absent.
 		if err := putS3IAMUserPolicy(root, user, "p", policyDoc(accessStatement{
 			Effect: "Allow", Action: actS3DeleteObjectVersion, Resource: objectsArn(bucket),
-			Condition: cond("Null", "s3:if-match", "true"),
 		})); err != nil {
 			return err
 		}
+		if err := checkApiErr(deleteVersion(), wantErr); err != nil {
+			return fmt.Errorf("a versioned delete the policy allows: %w", err)
+		}
 
-		// Authorized now, and the header still decides the delete: a
-		// mismatch fails the precondition the policy had no say in.
-		if err := checkApiErr(deleteVersion("0123456789abcdef0123456789abcdef"),
-			s3err.GetAPIError(s3err.ErrPreconditionFailed)); err != nil {
-			return fmt.Errorf("the precondition itself must still be enforced: %w", err)
-		}
-		if err := deleteVersion(etag); err != nil {
-			return fmt.Errorf("a versioned delete naming the object's ETag must be allowed: %w", err)
-		}
-		return nil
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s.GetClient().HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("obj"),
+		})
+		cancel()
+		return err
 	})
 }
 

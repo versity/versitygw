@@ -2048,7 +2048,9 @@ func AccessControl_bucket_policy_condition_if_match_versioned_delete(s *S3Conf) 
 		}
 
 		// "null" is the version id every object carries until versioning is
-		// enabled, so this is a versioned delete on any backend.
+		// enabled, so this is a versioned delete on any backend. A versioned
+		// delete carrying If-Match is rejected before the policy is
+		// evaluated.
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = userClient.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket:    &bucket,
@@ -2057,8 +2059,8 @@ func AccessControl_bucket_policy_condition_if_match_versioned_delete(s *S3Conf) 
 			IfMatch:   &etag,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
-			return fmt.Errorf("a versioned delete must leave s3:if-match absent: %w", err)
+		if err := checkApiErr(err, s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageVersionedDelete)); err != nil {
+			return fmt.Errorf("a versioned delete carrying If-Match must be rejected: %w", err)
 		}
 
 		// The same header on the same object, minus the version, is a plain

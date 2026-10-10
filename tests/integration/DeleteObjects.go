@@ -17,6 +17,8 @@ package integration
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -211,6 +213,108 @@ func DeleteObjects_quiet_mode(s *S3Conf) error {
 		if !compareObjects(contents[2:], res.Contents) {
 			return fmt.Errorf("expected the output to be %v, instead got %v",
 				contents[2:], res.Contents)
+		}
+
+		return nil
+	})
+}
+
+// DeleteObjects_conditional checks that the ETag of each object is a
+// condition of its delete: a stale ETag keeps the object, a missing key
+// fails with NoSuchKey, and an empty ETag or one with a version id is
+// rejected. The checks don't depend on the order of the results.
+func DeleteObjects_conditional(s *S3Conf) error {
+	testName := "DeleteObjects_conditional"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		deleted := []string{"quoted", "unquoted", "wildcard", "quoted-wildcard"}
+		kept := []string{"stale", "empty", "versioned"}
+		contents, err := putObjects(s3client, append(deleted, kept...), bucket)
+		if err != nil {
+			return err
+		}
+		etags := map[string]string{}
+		for _, obj := range contents {
+			etags[getString(obj.Key)] = getString(obj.ETag)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{
+				Objects: []types.ObjectIdentifier{
+					{Key: getPtr("quoted"), ETag: getPtr(etags["quoted"])},
+					{Key: getPtr("unquoted"), ETag: getPtr(strings.Trim(etags["unquoted"], `"`))},
+					{Key: getPtr("wildcard"), ETag: getPtr("*")},
+					{Key: getPtr("quoted-wildcard"), ETag: getPtr(`"*"`)},
+					{Key: getPtr("stale"), ETag: getPtr("00000000000000000000000000000000")},
+					{Key: getPtr("empty"), ETag: getPtr("")},
+					{Key: getPtr("versioned"), VersionId: getPtr("null"), ETag: getPtr(etags["versioned"])},
+					{Key: getPtr("missing"), ETag: getPtr("*")},
+					{Key: getPtr("missing-etag"), ETag: getPtr(etags["quoted"])},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		gotDeleted := map[string]bool{}
+		for _, obj := range out.Deleted {
+			gotDeleted[getString(obj.Key)] = true
+		}
+		if len(gotDeleted) != len(deleted) {
+			return fmt.Errorf("expected the deleted objects to be %v, instead got %v",
+				deleted, gotDeleted)
+		}
+		for _, key := range deleted {
+			if !gotDeleted[key] {
+				return fmt.Errorf("expected %v to be deleted, instead got %v", key, gotDeleted)
+			}
+		}
+
+		wantErrs := map[string]s3err.S3Error{
+			"stale":        s3err.GetAPIError(s3err.ErrPreconditionFailed),
+			"empty":        s3err.GetInvalidArgumentErr(s3err.InvalidArgEmptyETag, ""),
+			"versioned":    s3err.GetAPIError(s3err.ErrNotImplementedFormField),
+			"missing":      s3err.GetAPIError(s3err.ErrNoSuchKey),
+			"missing-etag": s3err.GetAPIError(s3err.ErrNoSuchKey),
+		}
+		if len(out.Errors) != len(wantErrs) {
+			return fmt.Errorf("expected %v errors, instead got %v", len(wantErrs), out.Errors)
+		}
+		for _, e := range out.Errors {
+			key := getString(e.Key)
+			wantErr, ok := wantErrs[key]
+			if !ok {
+				return fmt.Errorf("unexpected error for %v: %v", key, getString(e.Code))
+			}
+			if err := checkDeleteObjectsErr(e, key, wantErr); err != nil {
+				return err
+			}
+			if key == "versioned" && getString(e.VersionId) != "null" {
+				return fmt.Errorf("expected the versioned error to name version null, instead got %v",
+					getString(e.VersionId))
+			}
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		var gotKept []string
+		for _, obj := range res.Contents {
+			gotKept = append(gotKept, getString(obj.Key))
+		}
+		slices.Sort(kept)
+		if !slices.Equal(gotKept, kept) {
+			return fmt.Errorf("expected the remaining objects to be %v, instead got %v",
+				kept, gotKept)
 		}
 
 		return nil
