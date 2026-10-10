@@ -4480,6 +4480,44 @@ func (p *Posix) checkPutPreconditions(bucket, object string, ifMatch, ifNoneMatc
 	return nil
 }
 
+// checkDeletePreconditions evaluates the conditions of a delete of the
+// current version of key. A key with no current version, including one
+// whose current version is a delete marker, fails them with NoSuchKey.
+func (p *Posix) checkDeletePreconditions(bucket, object string, conds backend.ObjectDeletePreconditions) error {
+	if !conds.IsSet() {
+		return nil
+	}
+
+	// the entry at the object path may be the object of the key with or
+	// without the trailing slash
+	fi, err := p.statLiveObject(bucket, object)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if isErrNameTooLong(err) {
+		return s3err.GetKeyTooLongErr(int64(len(object)), 1024)
+	}
+	if err != nil {
+		return fmt.Errorf("stat object: %w", err)
+	}
+
+	// a delete marker keeps the etag of the version it hides
+	isDel, err := p.isObjDeleteMarker(bucket, object)
+	if err != nil {
+		return err
+	}
+	if isDel {
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
+	etag, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+	if err != nil || len(etag) == 0 {
+		etag = []byte(p.defaultEtag)
+	}
+
+	return backend.EvaluateObjectDeletePreconditions(string(etag), fi.ModTime(), fi.Size(), conds)
+}
+
 // snapshotObjVersion copies the current object at bucket/key into the
 // versioning directory before the object is replaced, if versioning is
 // configured for the bucket and there is an object to snapshot.
@@ -5165,13 +5203,18 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		return nil, err
 	}
 
-	evalPreconditions := func(f os.FileInfo, bucket, object string) error {
-		var err error
-		if f == nil {
-			f, err = os.Stat(p.ObjectPath(bucket, object))
-			if err != nil {
-				return nil
-			}
+	conds := backend.ObjectDeletePreconditions{
+		IfMatch:            input.IfMatch,
+		IfMatchLastModTime: input.IfMatchLastModifiedTime,
+		IfMatchSize:        input.IfMatchSize,
+	}
+
+	// evalVersionPreconditions evaluates the conditions against the
+	// version at bucket/object
+	evalVersionPreconditions := func(bucket, object string) error {
+		f, err := os.Stat(p.ObjectPath(bucket, object))
+		if err != nil {
+			return nil
 		}
 
 		b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
@@ -5180,17 +5223,16 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			etag = p.defaultEtag
 		}
 
-		// evaluate preconditions
-		return backend.EvaluateObjectDeletePreconditions(etag, f.ModTime(), f.Size(),
-			backend.ObjectDeletePreconditions{
-				IfMatch:            input.IfMatch,
-				IfMatchLastModTime: input.IfMatchLastModifiedTime,
-				IfMatchSize:        input.IfMatchSize,
-			})
+		return backend.EvaluateObjectDeletePreconditions(etag, f.ModTime(), f.Size(), conds)
 	}
 
 	if p.versioningEnabled() && vStatus != "" {
 		if getString(input.VersionId) == "" {
+			err := p.checkDeletePreconditions(bucket, object, conds)
+			if err != nil {
+				return nil, err
+			}
+
 			// if the versionId is not specified, make the current version a delete marker
 			fi, err := os.Stat(objpath)
 			if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
@@ -5212,11 +5254,6 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			if !isObj {
 				// AWS returns success if the object does not exist
 				return &s3.DeleteObjectOutput{}, nil
-			}
-
-			err = evalPreconditions(fi, bucket, object)
-			if err != nil {
-				return nil, err
 			}
 
 			acct, ok := ctx.Value("account").(auth.Account)
@@ -5306,7 +5343,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 
 			if string(vId) == *input.VersionId {
 				// evaluate preconditions
-				err := evalPreconditions(nil, bucket, object)
+				err := evalVersionPreconditions(bucket, object)
 				if err != nil {
 					return nil, err
 				}
@@ -5443,7 +5480,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				}, nil
 			}
 
-			err = evalPreconditions(nil, versionPath, *input.VersionId)
+			err = evalVersionPreconditions(versionPath, *input.VersionId)
 			if err != nil {
 				return nil, err
 			}
@@ -5478,6 +5515,11 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		return &s3.DeleteObjectOutput{VersionId: input.VersionId}, nil
 	}
 
+	err = p.checkDeletePreconditions(bucket, object, conds)
+	if err != nil {
+		return nil, err
+	}
+
 	fi, err := os.Stat(objpath)
 	if isErrNameTooLong(err) {
 		return nil, s3err.GetKeyTooLongErr(int64(len(object)), 1024)
@@ -5501,11 +5543,6 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		// directory. treat this as a non-existent object.
 		// AWS returns success if the object does not exist
 		return &s3.DeleteObjectOutput{}, nil
-	}
-
-	err = evalPreconditions(fi, bucket, object)
-	if err != nil {
-		return nil, err
 	}
 
 	err = os.Remove(objpath)

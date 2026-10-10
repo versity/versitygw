@@ -1111,39 +1111,36 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 }
 
 func (az *Azure) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
-	if input.IfMatch != nil || input.IfMatchLastModifiedTime != nil || input.IfMatchSize != nil {
-		// evaluate the preconditions before deleting the object
+	conds := backend.ObjectDeletePreconditions{
+		IfMatch:            input.IfMatch,
+		IfMatchLastModTime: input.IfMatchLastModifiedTime,
+		IfMatchSize:        input.IfMatchSize,
+	}
+	if conds.IsSet() {
+		// evaluate the preconditions before deleting the object, a
+		// missing object fails them with NoSuchKey
 		props, err := az.HeadObject(ctx, &s3.HeadObjectInput{
 			Bucket: input.Bucket,
 			Key:    input.Key,
 		})
-		if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
-			// if object doesn't exist, skip preconditions
-			// if unexpected error shows up, return the error
+		if err != nil {
 			return nil, err
 		}
-		if err == nil {
-			var etag string
-			if props.ETag != nil {
-				etag = *props.ETag
-			}
-			var lastMod time.Time
-			if props.LastModified != nil {
-				lastMod = *props.LastModified
-			}
-			var size int64
-			if props.ContentLength != nil {
-				size = *props.ContentLength
-			}
-			err := backend.EvaluateObjectDeletePreconditions(etag, lastMod, size,
-				backend.ObjectDeletePreconditions{
-					IfMatch:            input.IfMatch,
-					IfMatchLastModTime: input.IfMatchLastModifiedTime,
-					IfMatchSize:        input.IfMatchSize,
-				})
-			if err != nil {
-				return nil, err
-			}
+		var etag string
+		if props.ETag != nil {
+			etag = *props.ETag
+		}
+		var lastMod time.Time
+		if props.LastModified != nil {
+			lastMod = *props.LastModified
+		}
+		var size int64
+		if props.ContentLength != nil {
+			size = *props.ContentLength
+		}
+		err = backend.EvaluateObjectDeletePreconditions(etag, lastMod, size, conds)
+		if err != nil {
+			return nil, err
 		}
 	}
 

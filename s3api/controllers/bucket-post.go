@@ -125,6 +125,17 @@ func (c S3ApiController) DeleteObjects(ctx fiber.Ctx) (*Response, error) {
 
 	toDelete := make([]types.ObjectIdentifier, 0, len(dObj.Objects))
 	for i, obj := range dObj.Objects {
+		// The ETag condition of an object is validated ahead of its
+		// authorization. It only applies to the current version, so it
+		// can't be combined with a version id.
+		if obj.ETag != nil {
+			switch {
+			case *obj.ETag == "":
+				checkErrs[i] = s3err.GetInvalidArgumentErr(s3err.InvalidArgEmptyETag, "")
+			case backend.GetStringFromPtr(obj.VersionId) != "":
+				checkErrs[i] = s3err.GetAPIError(s3err.ErrNotImplementedFormField)
+			}
+		}
 		if checkErrs[i] == nil {
 			toDelete = append(toDelete, obj)
 		}

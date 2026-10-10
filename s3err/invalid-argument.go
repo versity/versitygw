@@ -75,6 +75,7 @@ const (
 	InvalidArgSSECRequiresTLS
 	InvalidArgUploadIdWithUploads
 	InvalidArgBucketRegionEndpoint
+	InvalidArgEmptyETag
 )
 
 var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
@@ -205,6 +206,10 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgEmptyVersionId: {
 		Description:  "Version id cannot be the empty string",
 		ArgumentName: "versionId",
+	},
+	InvalidArgEmptyETag: {
+		Description:  "The value provided for the ETag field cannot be empty for this API.",
+		ArgumentName: "ETag",
 	},
 	InvalidArgChecksumPart: {
 		Description:  "Invalid Base64 or multiple checksums present in request",
