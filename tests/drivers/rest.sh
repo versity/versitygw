@@ -471,8 +471,8 @@ send_rest_go_command_callback() {
   callback_params=("${data_and_callback_params[@]:1}")
 
   status_code=$(awk 'NR==1 {print $2; exit}' "$data_file")
-  if [ "$expected_http_code" != "$status_code" ]; then
-    log 2 "expected curl response '$expected_http_code', was '$status_code' (response: '$(cat "$data_file")')"
+  if ! response=$(check_rest_go_http_response "$data_file" "$expected_http_code" 2>&1); then
+    log 2 "error checking http response: $response"
     return 1
   fi
   if [ "$callback" == "" ]; then

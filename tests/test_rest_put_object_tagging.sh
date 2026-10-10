@@ -28,7 +28,7 @@ source ./tests/setup.sh
 @test "REST - PutObjectTagging - content-md5 not required for object tagging" {
   local bucket_name test_file
 
-  run setup_bucket_v3 "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
 
