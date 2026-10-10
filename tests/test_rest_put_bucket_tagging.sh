@@ -82,7 +82,7 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 # tags: curl, PutBucketTagging, tagging, invalid-query
 @test "REST PutBucketTagging - empty tag key" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1583"
+    skip "https://github.com/versity/versitygw/issues/2499"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -94,9 +94,6 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 
 # tags: curl, PutBucketTagging, tagging, invalid-query
 @test "REST PutBucketTagging - returns invalid key" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1583"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -166,9 +163,6 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 
 # tags: curl, PutBucketTagging, tagging, content-md5, invalid-header
 @test "REST - PutBucketTagging - invalid Content-MD5 - invalid Content-MD5 itself returned" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1526"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

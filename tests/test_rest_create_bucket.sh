@@ -177,9 +177,13 @@ export RUN_USERS=true
 
 # tags: curl,CreateBucket,invalid-header,location-constraint
 @test "REST - CreateBucket - location constraint error returns invalid constraint" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1645"
+  if [ "$AWS_REGION" == "us-east-1" ]; then
+    expected_exception="InvalidLocationConstraint"
+    expected_string="location-constraint is not valid"
+  else
+    expected_exception="IllegalLocationConstraintException"
+    expected_string="location constraint is incompatible"
   fi
-  run send_invalid_location_constraint_check_error "abc"
+  run send_invalid_location_constraint_check_error "abc" "$expected_exception" "$expected_string"
   assert_success
 }

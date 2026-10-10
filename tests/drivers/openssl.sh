@@ -133,10 +133,11 @@ send_via_openssl_and_check_code_header() {
   return 0
 }
 
-send_via_openssl_check_code_error_contains() {
-  if ! check_param_count_v2 "command file, expected code, error, message" 4 $#; then
+send_via_openssl_get_xml_data() {
+  if ! check_param_count_v2 "command file, expected HTTP code" 2 $#; then
     return 1
   fi
+  local command_file="$1" expected_http_code="$2"
   local response response_file xml_file
 
   if ! response=$(get_file_names 2 2>&1); then
@@ -145,16 +146,53 @@ send_via_openssl_check_code_error_contains() {
   fi
   read -r response_file xml_file <<< "$response"
 
-  if ! response=$(send_via_openssl_and_check_code "$1" "$2" 2>&1); then
+  if ! response=$(send_via_openssl_and_check_code "$command_file" "$expected_http_code" 2>&1); then
     log 2 "error sending and checking code: $response"
     return 1
   fi
   echo -n "$response" > "$TEST_FILE_FOLDER/$response_file"
-  if ! get_xml_data "$TEST_FILE_FOLDER/$response_file" "$TEST_FILE_FOLDER/$xml_file"; then
-    log 2 "error parsing XML data from result"
+  if ! response=$(get_xml_data "$TEST_FILE_FOLDER/$response_file" "$TEST_FILE_FOLDER/$xml_file" 2>&1); then
+    log 2 "error parsing XML data from result: $response"
     return 1
   fi
-  if ! check_xml_error_contains "$TEST_FILE_FOLDER/$xml_file" "$3" "$4"; then
+  printf '%s\n' "$TEST_FILE_FOLDER/$xml_file"
+  return 0
+}
+
+send_via_openssl_check_code_error() {
+  if ! check_param_count_v2 "command file, expected code, error" 3 $#; then
+    return 1
+  fi
+  local command_file="$1" expected_http_code="$2" expected_error="$3"
+  local response xml_file
+
+  if ! response=$(send_via_openssl_get_xml_data "$command_file" "$expected_http_code" 2>&1); then
+    log 2 "error sending openssl command and getting XML data: $response"
+    return 1
+  fi
+  xml_file="$response"
+
+  if ! check_xml_error "$xml_file" "$expected_error"; then
+    log 2 "error checking XML error code"
+    return 1
+  fi
+  return 0
+}
+
+send_via_openssl_check_code_error_contains() {
+  if ! check_param_count_v2 "command file, expected code, error, message" 4 $#; then
+    return 1
+  fi
+  local command_file="$1" expected_http_code="$2" expected_error="$3" message="$4"
+  local response xml_file
+
+  if ! response=$(send_via_openssl_get_xml_data "$command_file" "$expected_http_code" 2>&1); then
+    log 2 "error sending openssl command and getting XML data: $response"
+    return 1
+  fi
+  xml_file="$response"
+
+  if ! check_xml_error_contains "$xml_file" "$expected_error" "$message"; then
     log 2 "error checking xml error, message"
     return 1
   fi
@@ -199,6 +237,31 @@ send_openssl_go_command_expect_error() {
     return 1
   fi
   if ! send_via_openssl_check_code_error_contains "$TEST_FILE_FOLDER/openssl_command.txt" "$1" "$2" "$3"; then
+    log 2 "error sending via openssl"
+    return 1
+  fi
+  return 0
+}
+
+send_openssl_go_command_expect_error_code() {
+  if ! check_param_count_gt "expected HTTP code, expected error code, params" 3 $#; then
+    return 1
+  fi
+  local http_code="$1" error_code="$2" params=("${@:3}")
+  local result file_name
+
+  if ! result=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $result"
+    return 1
+  fi
+  file_name="$result"
+
+  if ! result=$(go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" \
+      "$AWS_SECRET_ACCESS_KEY" "-url" "$AWS_ENDPOINT_URL" "-awsRegion" "$AWS_REGION" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/$file_name" "${params[@]}" 2>&1); then
+    log 2 "error sending go command and checking error: $result"
+    return 1
+  fi
+  if ! send_via_openssl_check_code_error "$TEST_FILE_FOLDER/$file_name" "$http_code" "$error_code"; then
     log 2 "error sending via openssl"
     return 1
   fi
