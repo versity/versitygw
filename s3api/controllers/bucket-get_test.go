@@ -1196,6 +1196,24 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 			},
 		},
 		{
+			name: "start-after is not supported",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  listResult,
+				queries: map[string]string{
+					"start-after": "my-key",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgStartAfter, ""),
+			},
+		},
+		{
 			name: "invalid max keys",
 			input: testInput{
 				locals: defaultLocals,

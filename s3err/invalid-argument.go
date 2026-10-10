@@ -26,6 +26,7 @@ type InvalidArgErrorCode int
 const (
 	InvalidArgMaxBuckets InvalidArgErrorCode = iota
 	InvalidArgNegativeMaxKeys
+	InvalidArgStartAfter
 	InvalidArgObjectAttributes
 	InvalidArgPartNumber
 	InvalidArgCompleteMpPartNumber
@@ -89,6 +90,10 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgNegativeMaxKeys: {
 		Description:  "max-keys cannot be negative",
 		ArgumentName: "maxKeys",
+	},
+	InvalidArgStartAfter: {
+		Description:  "startAfter only supported in REST.GET.BUCKET with list-type=2",
+		ArgumentName: "start-after",
 	},
 	InvalidArgObjectAttributes: {
 		Description:  "Invalid attribute name specified.",
