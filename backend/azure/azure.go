@@ -1162,8 +1162,11 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 	delResult, errs := []types.DeletedObject{}, []types.Error{}
 	for _, obj := range input.Delete.Objects {
 		_, err := az.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket: input.Bucket,
-			Key:    obj.Key,
+			Bucket:                  input.Bucket,
+			Key:                     obj.Key,
+			IfMatch:                 obj.ETag,
+			IfMatchLastModifiedTime: obj.LastModifiedTime,
+			IfMatchSize:             obj.Size,
 		})
 		if err == nil {
 			delResult = append(delResult, types.DeletedObject{Key: obj.Key})
