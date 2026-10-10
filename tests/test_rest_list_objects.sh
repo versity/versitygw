@@ -122,9 +122,6 @@ source ./tests/drivers/objects_and_versions.sh
 
 # tags: curl,ListObjects,minimal-request
 @test "REST - list objects v1 - no NextMarker without delimiter" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/999"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

@@ -312,6 +312,7 @@ func TestListObjects(ts *TestState) {
 	ts.Run(ListObjects_non_existing_bucket)
 	ts.Run(ListObjects_with_prefix)
 	ts.Run(ListObjects_truncated)
+	ts.Run(ListObjects_truncated_with_delimiter)
 	ts.Run(ListObjects_paginated)
 	ts.Run(ListObjects_invalid_max_keys)
 	ts.Run(ListObjects_max_keys_0)
@@ -3151,6 +3152,7 @@ func GetIntTests() IntTests {
 		"ListObjects_non_existing_bucket":                                                  ListObjects_non_existing_bucket,
 		"ListObjects_with_prefix":                                                          ListObjects_with_prefix,
 		"ListObjects_truncated":                                                            ListObjects_truncated,
+		"ListObjects_truncated_with_delimiter":                                             ListObjects_truncated_with_delimiter,
 		"ListObjects_paginated":                                                            ListObjects_paginated,
 		"ListObjects_invalid_max_keys":                                                     ListObjects_invalid_max_keys,
 		"ListObjects_max_keys_0":                                                           ListObjects_max_keys_0,

@@ -1176,6 +1176,9 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 	emptyMarker := ""
 	listResultEchoed := listResult
 	listResultEchoed.Marker = &emptyMarker
+	// S3 returns NextMarker only when the request has a delimiter
+	listResultNextMarker := listResultEchoed
+	listResultNextMarker.NextMarker = utils.GetStringPtr("my-key")
 	tests := []struct {
 		name   string
 		input  testInput
@@ -1237,6 +1240,45 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 			output: testOutput{
 				response: &Response{
 					Data: listResultEchoed,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
+		{
+			name: "next marker omitted without delimiter",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  listResultNextMarker,
+			},
+			output: testOutput{
+				response: &Response{
+					Data: listResultEchoed,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
+		{
+			name: "next marker returned with delimiter",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  listResultNextMarker,
+				queries: map[string]string{
+					"delimiter": "delim",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: listResultNextMarker,
 					Headers: map[string]*string{
 						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
 					},
