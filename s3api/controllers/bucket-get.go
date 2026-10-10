@@ -22,6 +22,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -612,6 +613,15 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 	region, ok := utils.ContextKeyRegion.Get(ctx).(string)
 	if !ok {
 		region = defaultRegion
+	}
+
+	// start-after is a ListObjectsV2 argument, S3 rejects it on a V1 listing
+	if ctx.Query("start-after") != "" {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetInvalidArgumentErr(s3err.InvalidArgStartAfter, "")
 	}
 
 	err := c.verifyAccess(ctx, auth.AccessOptions{
