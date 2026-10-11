@@ -55,9 +55,14 @@ func (c *captureHTTPClient) Do(req *http.Request) (*http.Response, error) {
 
 func newCaptureProxy(t *testing.T) (*S3Proxy, *captureHTTPClient) {
 	t.Helper()
+	return newCaptureProxyWithRegion(t, "us-east-1")
+}
+
+func newCaptureProxyWithRegion(t *testing.T, region string) (*S3Proxy, *captureHTTPClient) {
+	t.Helper()
 	capture := &captureHTTPClient{}
 	client := s3.New(s3.Options{
-		Region:       "us-east-1",
+		Region:       region,
 		BaseEndpoint: aws.String("http://backend.test"),
 		UsePathStyle: true,
 		Credentials:  credentials.NewStaticCredentialsProvider("access", "secret", ""),
@@ -167,5 +172,47 @@ func TestCreateBucketKeepsBucketInfo(t *testing.T) {
 	}
 	if !strings.Contains(string(capture.body), "Directory") {
 		t.Errorf("CreateBucket with bucket info must forward the configuration, got %q", capture.body)
+	}
+}
+
+// The bucket is created in the backend region, not the gateway region the
+// api layer validated the client's constraint against. A regional endpoint
+// outside us-east-1 rejects a CreateBucket that carries no constraint, so the
+// backend has to add its own even when the api layer sent none.
+func TestCreateBucketSetsBackendRegionConstraint(t *testing.T) {
+	p, capture := newCaptureProxyWithRegion(t, "eu-west-1")
+
+	err := p.CreateBucket(context.Background(), &s3.CreateBucketInput{
+		Bucket:                    aws.String("test-bucket"),
+		CreateBucketConfiguration: &types.CreateBucketConfiguration{},
+	}, []byte{})
+	if err != nil {
+		t.Fatalf("CreateBucket: %v", err)
+	}
+	if !strings.Contains(string(capture.body), "<LocationConstraint>eu-west-1</LocationConstraint>") {
+		t.Errorf("CreateBucket against a regional backend must carry the backend region constraint, got %q", capture.body)
+	}
+}
+
+func TestCreateBucketKeepsTagsAndSetsBackendRegionConstraint(t *testing.T) {
+	p, capture := newCaptureProxyWithRegion(t, "eu-west-1")
+
+	err := p.CreateBucket(context.Background(), &s3.CreateBucketInput{
+		Bucket: aws.String("test-bucket"),
+		CreateBucketConfiguration: &types.CreateBucketConfiguration{
+			Tags: []types.Tag{
+				{Key: aws.String("env"), Value: aws.String("test")},
+			},
+		},
+	}, []byte{})
+	if err != nil {
+		t.Fatalf("CreateBucket: %v", err)
+	}
+	body := string(capture.body)
+	if !strings.Contains(body, "<LocationConstraint>eu-west-1</LocationConstraint>") {
+		t.Errorf("CreateBucket against a regional backend must carry the backend region constraint, got %q", body)
+	}
+	if !strings.Contains(body, "<Key>env</Key>") || !strings.Contains(body, "<Value>test</Value>") {
+		t.Errorf("CreateBucket must keep the requested tags, got %q", body)
 	}
 }
