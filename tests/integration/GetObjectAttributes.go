@@ -275,6 +275,98 @@ func GetObjectAttributes_checksums(s *S3Conf) error {
 	})
 }
 
+func GetObjectAttributes_multipart_parts_count(s *S3Conf) error {
+	testName := "GetObjectAttributes_multipart_parts_count"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		partCount := int32(4)
+		parts, _, err := uploadParts(s3client, 20*1024*1024, int64(partCount), bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			ObjectAttributes: []types.ObjectAttributes{
+				types.ObjectAttributesObjectParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.ObjectParts == nil {
+			return fmt.Errorf("expected non-nil ObjectParts")
+		}
+		if res.ObjectParts.TotalPartsCount == nil {
+			return fmt.Errorf("expected non-nil PartsCount")
+		}
+		if *res.ObjectParts.TotalPartsCount != partCount {
+			return fmt.Errorf("expected PartsCount to be %v, instead got %v",
+				partCount, *res.ObjectParts.TotalPartsCount)
+		}
+
+		// an object that wasn't uploaded in parts has no ObjectParts
+		obj = "my-obj-2"
+		_, err = putObjectWithData(100, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err = s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			ObjectAttributes: []types.ObjectAttributes{
+				types.ObjectAttributesObjectParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.ObjectParts != nil {
+			return fmt.Errorf("expected nil ObjectParts, instead got %+v", *res.ObjectParts)
+		}
+
+		return nil
+	})
+}
+
 func GetObjectAttributes_empty_version_id(s *S3Conf) error {
 	return testEmptyVersionId(s, "GetObjectAttributes_empty_version_id", http.MethodGet, "attributes", nil)
 }

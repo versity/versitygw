@@ -6451,10 +6451,31 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 		return s3response.GetObjectAttributesResponse{}, err
 	}
 
+	// HeadObject reports the parts count only when a part is requested, and
+	// only for objects completed from a multipart upload
+	partNumber := int32(1)
+	part, err := p.HeadObject(withCtxNoSlot(ctx), &s3.HeadObjectInput{
+		Bucket:     input.Bucket,
+		Key:        input.Key,
+		VersionId:  input.VersionId,
+		PartNumber: &partNumber,
+	})
+	if err != nil {
+		return s3response.GetObjectAttributesResponse{}, err
+	}
+
+	var objParts *s3response.ObjectParts
+	if part.PartsCount != nil {
+		objParts = &s3response.ObjectParts{
+			PartsCount: part.PartsCount,
+		}
+	}
+
 	return s3response.GetObjectAttributesResponse{
 		ETag:         backend.TrimEtag(data.ETag),
 		ObjectSize:   data.ContentLength,
 		StorageClass: data.StorageClass,
+		ObjectParts:  objParts,
 		LastModified: data.LastModified,
 		VersionId:    data.VersionId,
 		DeleteMarker: data.DeleteMarker,
