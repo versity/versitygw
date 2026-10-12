@@ -19,11 +19,14 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // MultiListener implements net.Listener and accepts connections from multiple
@@ -352,7 +355,7 @@ func NewMultiAddrTLSListenerWithOptions(network, address string, tlsOpts TLSOpti
 				return nil, fmt.Errorf("failed to set permissions on socket %s: %w", address, err)
 			}
 		}
-		return NewMultiListener(tls.NewListener(ln, config)), nil
+		return NewMultiListener(newTLSListener(ln, config)), nil
 	}
 
 	addrs, err := resolveHostnameAddrs(address)
@@ -369,10 +372,134 @@ func NewMultiAddrTLSListenerWithOptions(network, address string, tlsOpts TLSOpti
 			}
 			return nil, fmt.Errorf("failed to bind TLS listener %s: %w", addr, err)
 		}
-		listeners = append(listeners, tls.NewListener(ln, config))
+		listeners = append(listeners, newTLSListener(ln, config))
 	}
 
 	return NewMultiListener(listeners...), nil
+}
+
+// newTLSListener is tls.NewListener with one addition: a client that sends a
+// plaintext HTTP request to a TLS port gets a 400 that says so, instead of the
+// empty reply it would otherwise see (curl exit code 52).
+func newTLSListener(ln net.Listener, config *tls.Config) net.Listener {
+	return tls.NewListener(&plaintextHTTPListener{Listener: ln}, config)
+}
+
+// plaintextHTTPListener lets the connection under the TLS layer look at the
+// first bytes before the handshake consumes them.
+type plaintextHTTPListener struct {
+	net.Listener
+}
+
+func (l *plaintextHTTPListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &plaintextHTTPConn{Conn: conn}, nil
+}
+
+// errPlaintextHTTPOnTLS aborts the handshake once the client has been told it
+// spoke plaintext HTTP to a TLS port.
+var errPlaintextHTTPOnTLS = errors.New("plaintext HTTP request received on a TLS listener")
+
+// plaintextHTTPDrainTimeout bounds how long the reply waits for the client to
+// finish sending, so a client that keeps the connection open can't hold the
+// server goroutine.
+const plaintextHTTPDrainTimeout = 500 * time.Millisecond
+
+// plaintextHTTPConn holds the first five bytes of a connection back from the
+// TLS handshake. A TLS ClientHello starts with a record type byte (0x16 for
+// TLS 1.0 through 1.3), so a request line in those bytes means the client spoke
+// plaintext HTTP. Without this, the handshake fails and the server, which only
+// sees a read error, closes the connection without a response.
+type plaintextHTTPConn struct {
+	net.Conn
+	prefix  []byte
+	sniffed bool
+}
+
+func (c *plaintextHTTPConn) Read(p []byte) (int, error) {
+	if !c.sniffed {
+		c.sniffed = true
+
+		var hdr [5]byte
+		n, err := io.ReadFull(c.Conn, hdr[:])
+		if n == len(hdr) && looksLikeHTTPRequest(hdr) {
+			writePlaintextHTTPResponse(c.Conn, hdr)
+			return 0, errPlaintextHTTPOnTLS
+		}
+
+		// Hand the sniffed bytes to the handshake and carry a short
+		// read's error over to the next call.
+		c.prefix = hdr[:n]
+		if err != nil && n == 0 {
+			return 0, err
+		}
+	}
+
+	if len(c.prefix) > 0 {
+		n := copy(p, c.prefix)
+		c.prefix = c.prefix[n:]
+		return n, nil
+	}
+
+	return c.Conn.Read(p)
+}
+
+// writePlaintextHTTPResponse answers a client that sent plaintext HTTP to a TLS
+// port. The body is deliberately endpoint-agnostic: the same listener backs the
+// S3, admin, IAM, website and web UI servers, whose error bodies are XML, HTML
+// and JSON, and none of them has seen the request yet.
+func writePlaintextHTTPResponse(conn net.Conn, hdr [5]byte) {
+	body := "Client sent an HTTP request to an HTTPS server.\n" +
+		"This listener serves TLS; retry with https:// instead of http://.\n"
+	head := "HTTP/1.1 400 Bad Request\r\n" +
+		"Date: " + time.Now().UTC().Format(http.TimeFormat) + "\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n" +
+		fmt.Sprintf("Content-Length: %d\r\n", len(body)) +
+		"Connection: close\r\n\r\n"
+
+	if string(hdr[:]) == "HEAD " {
+		// A response to HEAD carries no body, but the length it would
+		// have had.
+		_, _ = io.WriteString(conn, head)
+	} else {
+		_, _ = io.WriteString(conn, head+body)
+	}
+	closePlaintextHTTP(conn)
+}
+
+// closePlaintextHTTP half-closes and drains briefly before closing. Closing with
+// the rest of the client's request still unread sends a RST, which can reach the
+// client before the response that was just written.
+func closePlaintextHTTP(conn net.Conn) {
+	if halfCloser, ok := conn.(interface{ CloseWrite() error }); ok {
+		_ = halfCloser.CloseWrite()
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(plaintextHTTPDrainTimeout)); err == nil {
+		_, _ = io.Copy(io.Discard, conn)
+	}
+	_ = conn.Close()
+}
+
+// looksLikeHTTPRequest reports whether the five bytes crypto/tls took for a
+// record header are the start of an HTTP request line. A TLS handshake record
+// begins with a record type byte (0x16 for TLS 1.0 through 1.3), so an HTTP
+// method token can't collide with one.
+func looksLikeHTTPRequest(hdr [5]byte) bool {
+	for i, b := range hdr {
+		if b == ' ' {
+			// The space ends the method token.
+			return i >= 3
+		}
+		if b < 'A' || b > 'Z' {
+			return false
+		}
+	}
+	// Five uppercase letters are a method longer than four characters,
+	// such as DELETE, OPTIONS or CONNECT.
+	return true
 }
 
 // RequireSecureTransport enforces mTLS or unix socket a unix socket
