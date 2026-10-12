@@ -430,8 +430,8 @@ func (c *plaintextHTTPConn) Read(p []byte) (int, error) {
 			return 0, errPlaintextHTTPOnTLS
 		}
 
-		// Hand the sniffed bytes to the handshake and carry a short
-		// read's error over to the next call.
+		// Hand the sniffed bytes to the handshake. After a short read, the
+		// next read of the connection returns the error again.
 		c.prefix = hdr[:n]
 		if err != nil && n == 0 {
 			return 0, err
