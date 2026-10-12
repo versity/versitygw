@@ -1214,6 +1214,42 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 			},
 		},
 		{
+			name: "empty start-after is not supported",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  listResult,
+				queries: map[string]string{
+					"start-after": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgStartAfter, ""),
+			},
+		},
+		{
+			name: "continuation-token is not supported",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  listResult,
+				queries: map[string]string{
+					"continuation-token": "my-token",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgContinuationToken, ""),
+			},
+		},
+		{
 			name: "invalid max keys",
 			input: testInput{
 				locals: defaultLocals,

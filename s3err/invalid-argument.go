@@ -27,6 +27,7 @@ const (
 	InvalidArgMaxBuckets InvalidArgErrorCode = iota
 	InvalidArgNegativeMaxKeys
 	InvalidArgStartAfter
+	InvalidArgContinuationToken
 	InvalidArgObjectAttributes
 	InvalidArgPartNumber
 	InvalidArgCompleteMpPartNumber
@@ -94,6 +95,10 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgStartAfter: {
 		Description:  "startAfter only supported in REST.GET.BUCKET with list-type=2",
 		ArgumentName: "start-after",
+	},
+	InvalidArgContinuationToken: {
+		Description:  "continuation-token only supported in REST.GET.BUCKET with list-type=2",
+		ArgumentName: "continuation-token",
 	},
 	InvalidArgObjectAttributes: {
 		Description:  "Invalid attribute name specified.",

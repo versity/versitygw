@@ -615,8 +615,17 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 		region = defaultRegion
 	}
 
-	// start-after is a ListObjectsV2 argument, S3 rejects it on a V1 listing
-	if ctx.Query("start-after") != "" {
+	// continuation-token and start-after are ListObjectsV2 arguments, S3
+	// rejects either one on a V1 listing, with or without a value
+	queryArgs := ctx.Request().URI().QueryArgs()
+	if queryArgs.Has("continuation-token") {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetInvalidArgumentErr(s3err.InvalidArgContinuationToken, "")
+	}
+	if queryArgs.Has("start-after") {
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
