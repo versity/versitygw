@@ -453,4 +453,10 @@ complete_multipart_upload_overwrite_part() {
   fi
   local bucket="$1" key="$2" file="$3"
   local response upload_id parts_payload
+
+  if ! response=$(split_file "$file" 2>&1); then
+    log 2 "error splitting file: $response"
+    return 1
+  fi
+  read -r part_one part_two part_three part_four <<< "$response"
 }
