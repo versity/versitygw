@@ -219,6 +219,12 @@ const (
 	defaultIOBufferSize = 1024 * 1024
 )
 
+// zfsSnapDir is the ZFS control directory. A dataset mounted with
+// snapdir=visible exposes it in readdir, but it holds snapshots rather than
+// objects and does not support the metadata xattrs, so the listing walk must
+// skip it like the gateway's own metadata directory.
+const zfsSnapDir = ".zfs"
+
 type odirectPolicy bool
 
 // PosixOpts are the options for the Posix backend
@@ -1602,7 +1608,7 @@ func (p *Posix) ListObjectVersions(ctx context.Context, input *s3.ListObjectVers
 	}
 
 	results, err := backend.WalkVersions(ctx, p.bucketFS(bucket), prefix, delim, keyMarker, versionIdMarker, max,
-		p.fileToObjVersions(bucket), []string{MetaTmpDir})
+		p.fileToObjVersions(bucket), []string{MetaTmpDir, zfsSnapDir})
 	if err != nil {
 		return s3response.ListVersionsResult{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
@@ -7027,7 +7033,7 @@ func (p *Posix) ListObjectsParametrized(ctx context.Context, input *s3.ListObjec
 	}
 
 	results, err := backend.Walk(ctx, p.bucketFS(bucket), prefix, delim, marker, maxkeys,
-		customFileToObj(bucket, true), []string{MetaTmpDir})
+		customFileToObj(bucket, true), []string{MetaTmpDir, zfsSnapDir})
 	if err != nil {
 		return s3response.ListObjectsResult{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
@@ -7212,7 +7218,7 @@ func (p *Posix) ListObjectsV2Parametrized(ctx context.Context, input *s3.ListObj
 	}
 
 	results, err := backend.Walk(ctx, p.bucketFS(bucket), prefix, delim, marker, maxkeys,
-		customFileToObj(bucket, fetchOwner), []string{MetaTmpDir})
+		customFileToObj(bucket, fetchOwner), []string{MetaTmpDir, zfsSnapDir})
 	if err != nil {
 		return s3response.ListObjectsV2Result{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
