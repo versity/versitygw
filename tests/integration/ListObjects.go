@@ -17,6 +17,8 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -246,6 +248,50 @@ func ListObjects_invalid_max_keys(s *S3Conf) error {
 		cancel()
 		if err := checkApiErr(err, s3err.GetInvalidArgNegativeMaxLimiter("max-keys", fmt.Sprint(maxKeys))); err != nil {
 			return err
+		}
+
+		return nil
+	})
+}
+
+// start-after and continuation-token belong to ListObjectsV2, so S3 rejects
+// either one on a V1 listing, with or without a value. The SDK ListObjects
+// input has neither field, so the requests are signed and sent by hand.
+func ListObjects_start_after(s *S3Conf) error {
+	testName := "ListObjects_start_after"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"bar", "baz", "foo"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		startAfterErr := s3err.GetInvalidArgumentErr(s3err.InvalidArgStartAfter, "")
+		contTokenErr := s3err.GetInvalidArgumentErr(s3err.InvalidArgContinuationToken, "")
+		for _, test := range []struct {
+			query    string
+			expected s3err.S3Error
+		}{
+			{"start-after=bar", startAfterErr},
+			{"start-after=", startAfterErr},
+			{"start-after", startAfterErr},
+			{"continuation-token=bar", contTokenErr},
+			{"continuation-token=", contTokenErr},
+		} {
+			req, err := createSignedReq(http.MethodGet, s.endpoint,
+				fmt.Sprintf("%v?%v", bucket, test.query),
+				s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
+			if err != nil {
+				return err
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+
+			if err := checkHTTPResponseApiErr(resp, test.expected); err != nil {
+				return fmt.Errorf("%v: %w", test.query, err)
+			}
 		}
 
 		return nil
