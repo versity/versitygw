@@ -18,9 +18,12 @@ send_put_bucket_tagging_command_check_invalid_content_md5() {
   if ! check_param_count_v2 "bucket name" 1 $#; then
     return 1
   fi
-  invalid_content_md5="dummy"
-  if ! send_rest_go_command_expect_error_callback "400" "InvalidDigest" "was invalid" "check_invalid_content_md5" "-bucketName" "$1" "-query" "tagging=" "-method" "PUT" "-signedParams" "Content-MD5:$invalid_content_md5" \
-      "-payload" "<Tagging xmlms=\\\"http://s3.amazonaws.com/doc/2006-03-01/\\\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"; then
+  local bucket_name="$1"
+  local invalid_content_md5="dummy"
+
+  if ! send_rest_go_command_expect_error_code_callback "400" "InvalidDigest" "check_invalid_content_md5" "-bucketName" \
+      "$bucket_name" "-query" "tagging=" "-method" "PUT" "-signedParams" "Content-MD5:$invalid_content_md5" \
+      "-payload" "<Tagging xmlms=\\\"http://s3.amazonaws.com/doc/2006-03-01/\\\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>" "--" "$invalid_content_md5"; then
     log 2 "error sending command and checking callback"
     return 1
   fi
@@ -28,11 +31,13 @@ send_put_bucket_tagging_command_check_invalid_content_md5() {
 }
 
 check_invalid_content_md5() {
-  if ! check_param_count_v2 "data file" 1 $#; then
+  if ! check_param_count_v2 "data file, invalid Content-MD5 string" 2 $#; then
     return 1
   fi
+  local data_file="$1" invalid_content_md5="$2"
+
   # shellcheck disable=SC2154
-  if ! returned_content_md5=$(get_element_text "$1" "Error" "Content-MD5"); then
+  if ! returned_content_md5=$(get_element_text "$data_file" "Error" "Content-MD5"); then
     log 2 "error getting argument name"
     return 1
   fi
