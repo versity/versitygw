@@ -656,6 +656,12 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	// S3 returns NextMarker only when the request has a delimiter. Without
+	// one, clients use the last key in the response as the next marker.
+	if delimiter == "" {
+		res.NextMarker = nil
+	}
+
 	// S3 echoes the request marker back in the response, and includes the
 	// element even when the request carried no marker. Backends return a nil
 	// pointer for an empty marker, which encoding/xml drops entirely, so
