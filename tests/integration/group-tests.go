@@ -1078,6 +1078,7 @@ func TestPosix(ts *TestState) {
 	ts.Run(PutObject_overwrite_file_obj_with_nested_obj)
 	ts.Run(PutObject_dir_obj_with_data)
 	ts.Run(PutObject_with_slashes)
+	ts.Run(PutObject_windows_reserved_names)
 	ts.Run(CreateMultipartUpload_dir_obj)
 	ts.Run(PutObject_name_too_long)
 	ts.Run(HeadObject_name_too_long)
@@ -1190,6 +1191,7 @@ func TestScoutfs(ts *TestState) {
 	ts.Run(PutObject_overwrite_file_obj_with_nested_obj)
 	ts.Run(PutObject_dir_obj_with_data)
 	ts.Run(PutObject_with_slashes)
+	ts.Run(PutObject_windows_reserved_names)
 	ts.Run(CreateMultipartUpload_dir_obj)
 	ts.Run(PutObject_name_too_long)
 	ts.Run(HeadObject_name_too_long)
@@ -2089,9 +2091,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_CopyObject_to_itself)
 	ts.Run(Versioning_CopyObject_to_itself_from_the_current_version)
 	ts.Run(Versioning_CopyObject_conditional_writes)
-	if !ts.conf.windowsTests {
-		ts.Run(Versioning_CopyObject_special_chars)
-	}
+	ts.Run(Versioning_CopyObject_special_chars)
 	// HeadObject action
 	ts.Run(Versioning_HeadObject_invalid_versionId)
 	if !ts.conf.windowsTests {
@@ -3657,6 +3657,7 @@ func GetIntTests() IntTests {
 		"PutObject_overwrite_file_obj_with_nested_obj":                                     PutObject_overwrite_file_obj_with_nested_obj,
 		"PutObject_dir_obj_with_data":                                                      PutObject_dir_obj_with_data,
 		"PutObject_with_slashes":                                                           PutObject_with_slashes,
+		"PutObject_windows_reserved_names":                                                 PutObject_windows_reserved_names,
 		"PutObject_race_with_delete":                                                       PutObject_race_with_delete,
 		"CreateMultipartUpload_dir_obj":                                                    CreateMultipartUpload_dir_obj,
 		"PutObject_sse_c_not_implemented":                                                  PutObject_sse_c_not_implemented,

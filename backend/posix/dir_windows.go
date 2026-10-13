@@ -57,7 +57,8 @@ const errDirectory = syscall.Errno(267)
 // errInvalidName is Windows ERROR_INVALID_NAME (123): "The filename, directory
 // name, or volume label syntax is incorrect." Windows returns this when a path
 // component exceeds the filesystem name-length limit — the POSIX equivalent is
-// ENAMETOOLONG.
+// ENAMETOOLONG. It also returns it for a name with an invalid character, which
+// a key isn't stored under
 const errInvalidName = syscall.Errno(123)
 
 // errDirNotEmpty is Windows ERROR_DIR_NOT_EMPTY (145): "The directory is not
