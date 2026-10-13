@@ -93,6 +93,15 @@ gateway:
     versioningDir: /mnt/versioning
 ```
 
+Example for POSIX on a ZFS dataset mounted with `snapdir=visible`, where the `.zfs` control directory has to stay out of the listings:
+
+```yaml
+gateway:
+  backend:
+    type: posix
+    args: "--exclude-dirs .zfs /mnt/data"
+```
+
 ## Optional Features
 
 | Feature | Key values |

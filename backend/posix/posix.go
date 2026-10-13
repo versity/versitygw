@@ -150,6 +150,11 @@ type Posix struct {
 	//   multipart composite: "ALGO-<composite-checksum>-<part-count>"
 	dataIntegrityEtag bool
 
+	// skipDirs are the directory names the listing walks never descend
+	// into: the gateway's metadata directory plus PosixOpts.ExcludeDirs.
+	// It is built once in New so all three list operations share it.
+	skipDirs []string
+
 	// objLockSlots are process-local striped slots taken alongside the shared
 	// per-bucket lock files by lockObjectPublish. Channels make local lock
 	// acquisition cancelable while avoiding filesystem lock thrash.
@@ -306,6 +311,32 @@ type PosixOpts struct {
 	// For CRC64NVME full-object checksums, the composable whole-file checksum is
 	// used; other algorithms embed the part count (e.g. "SHA256-<composite>-<N>").
 	DataIntegrityEtag bool
+	// ExcludeDirs lists directory names that the ListObjects, ListObjectsV2
+	// and ListObjectVersions walks never descend into and never report as
+	// objects. Each entry is a single path segment, not a path. Use it for
+	// filesystem control directories that hold something other than object
+	// data, such as ".zfs" on a ZFS dataset mounted with snapdir=visible,
+	// where the metadata xattrs are unsupported and reading them would fail
+	// the whole listing. The gateway's own metadata directory is always
+	// skipped and does not need to be listed here.
+	ExcludeDirs []string
+}
+
+// listingSkipDirs returns the directory names the listing walks skip: the
+// gateway's own metadata directory, which is never bucket content, followed
+// by the configured filesystem-specific control directories. Each configured
+// entry has to be a single, non-empty path segment; anything else could never
+// match a directory entry name and would silently do nothing.
+func listingSkipDirs(excludeDirs []string) ([]string, error) {
+	skipDirs := make([]string, 0, len(excludeDirs)+1)
+	skipDirs = append(skipDirs, MetaTmpDir)
+	for _, dir := range excludeDirs {
+		if dir == "" || strings.ContainsRune(dir, '/') || strings.ContainsRune(dir, filepath.Separator) {
+			return nil, fmt.Errorf("invalid excluded directory %q: must be a single, non-empty path segment", dir)
+		}
+		skipDirs = append(skipDirs, dir)
+	}
+	return skipDirs, nil
 }
 
 // New returns a Posix backend serving buckets from the directories under rootdir.
@@ -315,6 +346,10 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		return nil, err
 	}
 	ioBufferSize := ioBufferSizeOrDefault(opts.IOBufferSize)
+	skipDirs, err := listingSkipDirs(opts.ExcludeDirs)
+	if err != nil {
+		return nil, err
+	}
 	rootdirAbs, err := filepath.Abs(rootdir)
 	if err != nil {
 		return nil, fmt.Errorf("get absolute path of %v: %w", rootdir, err)
@@ -441,6 +476,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 			return &b
 		}},
 		dataIntegrityEtag: opts.DataIntegrityEtag,
+		skipDirs:          skipDirs,
 		objLockSlots:      newObjLockSlots(),
 	}
 	if err := p.verifyObjectLockMode(); err != nil {
@@ -1632,7 +1668,7 @@ func (p *Posix) ListObjectVersions(ctx context.Context, input *s3.ListObjectVers
 	}
 
 	results, err := backend.WalkVersions(ctx, p.bucketFS(bucket), prefix, delim, keyMarker, versionIdMarker, max,
-		p.fileToObjVersions(bucket), []string{MetaTmpDir})
+		p.fileToObjVersions(bucket), p.skipDirs)
 	if err != nil {
 		return s3response.ListVersionsResult{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
@@ -7108,7 +7144,7 @@ func (p *Posix) ListObjectsParametrized(ctx context.Context, input *s3.ListObjec
 	}
 
 	results, err := backend.Walk(ctx, p.bucketFS(bucket), prefix, delim, marker, maxkeys,
-		customFileToObj(bucket, true), []string{MetaTmpDir})
+		customFileToObj(bucket, true), p.skipDirs)
 	if err != nil {
 		return s3response.ListObjectsResult{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
@@ -7293,7 +7329,7 @@ func (p *Posix) ListObjectsV2Parametrized(ctx context.Context, input *s3.ListObj
 	}
 
 	results, err := backend.Walk(ctx, p.bucketFS(bucket), prefix, delim, marker, maxkeys,
-		customFileToObj(bucket, fetchOwner), []string{MetaTmpDir})
+		customFileToObj(bucket, fetchOwner), p.skipDirs)
 	if err != nil {
 		return s3response.ListObjectsV2Result{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
