@@ -372,6 +372,9 @@ func TestDeleteObject(ts *TestState) {
 	ts.Run(DeleteObject_directory_object)
 	ts.Run(DeleteObject_non_empty_dir_obj)
 	ts.Run(DeleteObject_conditional_writes)
+	ts.Run(DeleteObject_conditional_wildcard)
+	ts.Run(DeleteObject_conditional_non_existing_object)
+	ts.Run(DeleteObject_conditional_with_version_id)
 	ts.Run(DeleteObject_success)
 	ts.Run(DeleteObject_success_status_code)
 	ts.Run(DeleteObject_incorrect_expected_bucket_owner)
@@ -385,6 +388,7 @@ func TestDeleteObjects(ts *TestState) {
 	ts.Run(DeleteObjects_non_existing_objects)
 	ts.Run(DeleteObjects_success)
 	ts.Run(DeleteObjects_quiet_mode)
+	ts.Run(DeleteObjects_conditional)
 	ts.Run(DeleteObjects_key_limit)
 	ts.Run(DeleteObjects_invalid_object_keys)
 }
@@ -2143,9 +2147,11 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_DeleteObject_non_existing_objects)
 	ts.Run(Versioning_DeleteObject_suspended)
 	ts.Run(Versioning_DeleteObject_never_versioned_bucket)
+	ts.Run(Versioning_DeleteObject_conditional_delete_marker)
 	ts.Run(Versioning_DeleteObjects_success)
 	ts.Run(Versioning_DeleteObjects_delete_deleteMarkers)
 	ts.Run(Versioning_DeleteObjects_never_versioned_bucket)
+	ts.Run(Versioning_DeleteObjects_conditional)
 	// ListObjectVersions
 	ts.Run(ListObjectVersions_non_existing_bucket)
 	ts.Run(ListObjectVersions_negative_max_keys)
@@ -3191,6 +3197,9 @@ func GetIntTests() IntTests {
 		"DeleteObject_directory_object_noslash":                                            DeleteObject_directory_object_noslash,
 		"DeleteObject_non_empty_dir_obj":                                                   DeleteObject_non_empty_dir_obj,
 		"DeleteObject_conditional_writes":                                                  DeleteObject_conditional_writes,
+		"DeleteObject_conditional_wildcard":                                                DeleteObject_conditional_wildcard,
+		"DeleteObject_conditional_non_existing_object":                                     DeleteObject_conditional_non_existing_object,
+		"DeleteObject_conditional_with_version_id":                                         DeleteObject_conditional_with_version_id,
 		"DeleteObject_name_too_long":                                                       DeleteObject_name_too_long,
 		"CopyObject_overwrite_same_dir_object":                                             CopyObject_overwrite_same_dir_object,
 		"CopyObject_overwrite_same_file_object":                                            CopyObject_overwrite_same_file_object,
@@ -3210,6 +3219,7 @@ func GetIntTests() IntTests {
 		"DeleteObjects_non_existing_objects":                                               DeleteObjects_non_existing_objects,
 		"DeleteObjects_success":                                                            DeleteObjects_success,
 		"DeleteObjects_quiet_mode":                                                         DeleteObjects_quiet_mode,
+		"DeleteObjects_conditional":                                                        DeleteObjects_conditional,
 		"DeleteObjects_key_limit":                                                          DeleteObjects_key_limit,
 		"DeleteObjects_invalid_object_keys":                                                DeleteObjects_invalid_object_keys,
 		"DeleteObjects_iam_mixed_denials_and_success":                                      DeleteObjects_iam_mixed_denials_and_success,
@@ -3810,9 +3820,11 @@ func GetIntTests() IntTests {
 		"Versioning_DeleteObject_non_existing_objects":                                     Versioning_DeleteObject_non_existing_objects,
 		"Versioning_DeleteObject_suspended":                                                Versioning_DeleteObject_suspended,
 		"Versioning_DeleteObject_never_versioned_bucket":                                   Versioning_DeleteObject_never_versioned_bucket,
+		"Versioning_DeleteObject_conditional_delete_marker":                                Versioning_DeleteObject_conditional_delete_marker,
 		"Versioning_DeleteObjects_success":                                                 Versioning_DeleteObjects_success,
 		"Versioning_DeleteObjects_delete_deleteMarkers":                                    Versioning_DeleteObjects_delete_deleteMarkers,
 		"Versioning_DeleteObjects_never_versioned_bucket":                                  Versioning_DeleteObjects_never_versioned_bucket,
+		"Versioning_DeleteObjects_conditional":                                             Versioning_DeleteObjects_conditional,
 		"ListObjectVersions_non_existing_bucket":                                           ListObjectVersions_non_existing_bucket,
 		"ListObjectVersions_negative_max_keys":                                             ListObjectVersions_negative_max_keys,
 		"ListObjectVersions_list_single_object_versions":                                   ListObjectVersions_list_single_object_versions,

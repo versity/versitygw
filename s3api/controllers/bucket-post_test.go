@@ -113,6 +113,19 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 	lockConfig, err := json.Marshal(auth.BucketLockConfig{Enabled: true})
 	assert.NoError(t, err)
 
+	emptyETag := ""
+	etagConditionBody, err := xml.Marshal(s3response.DeleteObjects{
+		Objects: []types.ObjectIdentifier{
+			{Key: utils.GetStringPtr("empty"), ETag: &emptyETag},
+			{Key: utils.GetStringPtr("versioned"), VersionId: utils.GetStringPtr("v1"), ETag: utils.GetStringPtr("etag")},
+			{Key: utils.GetStringPtr("ok"), ETag: utils.GetStringPtr("etag")},
+		},
+	})
+	assert.NoError(t, err)
+
+	emptyETagCode, emptyETagMessage := "InvalidArgument", "The value provided for the ETag field cannot be empty for this API."
+	versionedETagCode, versionedETagMessage := "NotImplemented", "A form field you provided implies functionality that is not implemented"
+
 	legalHoldOn, legalHoldOff := true, false
 	lockedObjectCode := "AccessDenied"
 	lockedObjectMessage := "Access Denied because object protected by object lock."
@@ -386,6 +399,58 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 					// ever reach the backend.
 					assert.Len(t, deleteObjectsInput.Delete.Objects, 1)
 					assert.Equal(t, "ok", *deleteObjectsInput.Delete.Objects[0].Key)
+					return s3response.DeleteResult{
+						Deleted: []types.DeletedObject{{Key: utils.GetStringPtr("ok")}},
+					}, nil
+				}
+			},
+		},
+		{
+			name: "ETag conditions validated ahead of authorization",
+			input: testInput{
+				locals: defaultLocals,
+				body:   etagConditionBody,
+			},
+			output: testOutput{
+				response: &Response{
+					Data: s3response.DeleteResult{
+						Deleted: []types.DeletedObject{
+							{Key: utils.GetStringPtr("ok")},
+						},
+						Error: []types.Error{
+							{Key: utils.GetStringPtr("empty"), Code: &emptyETagCode, Message: &emptyETagMessage},
+							{Key: utils.GetStringPtr("versioned"), VersionId: utils.GetStringPtr("v1"), Code: &versionedETagCode, Message: &versionedETagMessage},
+						},
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+						EventName:   s3event.EventObjectRemovedDeleteObjects,
+						ObjectCount: 3,
+					},
+				},
+			},
+			configureMock: func(be *BackendMock) {
+				// every object but "ok" is locked, which the ETag
+				// errors take precedence over
+				be.GetObjectLockConfigurationFunc = func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+					return lockConfig, nil
+				}
+				be.GetBucketVersioningFunc = func(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
+					return s3response.GetBucketVersioningOutput{}, nil
+				}
+				be.GetObjectRetentionFunc = func(contextMoqParam context.Context, bucket, object, versionId string) ([]byte, error) {
+					return []byte("{}"), nil
+				}
+				be.GetObjectLegalHoldFunc = func(contextMoqParam context.Context, bucket, object, versionId string) (*bool, error) {
+					if object == "ok" {
+						return &legalHoldOff, nil
+					}
+					return &legalHoldOn, nil
+				}
+				be.DeleteObjectsFunc = func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
+					assert.Len(t, deleteObjectsInput.Delete.Objects, 1)
+					assert.Equal(t, "ok", *deleteObjectsInput.Delete.Objects[0].Key)
+					assert.Equal(t, "etag", *deleteObjectsInput.Delete.Objects[0].ETag)
 					return s3response.DeleteResult{
 						Deleted: []types.DeletedObject{{Key: utils.GetStringPtr("ok")}},
 					}, nil

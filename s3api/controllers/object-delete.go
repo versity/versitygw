@@ -23,7 +23,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
 )
 
@@ -145,6 +147,17 @@ func (c S3ApiController) DeleteObject(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	// If-Match only applies to the current version of the object, and is
+	// rejected ahead of authorization when a version is named
+	if versionId != "" && ifMatch != nil {
+		debuglogger.Logf("conditional delete with versionId %q", versionId)
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageVersionedDelete)
 	}
 
 	action := auth.DeleteObjectAction

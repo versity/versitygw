@@ -851,12 +851,22 @@ type ObjectDeletePreconditions struct {
 	IfMatchSize        *int64
 }
 
-// EvaluateObjectDeletePreconditions evaluates preconditions for DeleteObject
+// IsSet reports whether the delete has any condition. A conditional delete
+// of a key with no current version, including one whose current version is
+// a delete marker, fails with NoSuchKey instead of succeeding.
+func (p ObjectDeletePreconditions) IsSet() bool {
+	return p.IfMatch != nil || p.IfMatchLastModTime != nil || p.IfMatchSize != nil
+}
+
+// EvaluateObjectDeletePreconditions evaluates the DeleteObject conditions
+// against an existing object. If-Match "*" matches any object.
 func EvaluateObjectDeletePreconditions(etag string, modTime time.Time, size int64, preconditions ObjectDeletePreconditions) error {
 	etag = strings.Trim(etag, `"`)
-	ifMatch := preconditions.IfMatch
-	if ifMatch != nil && *ifMatch != etag {
-		return s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)
+	if preconditions.IfMatch != nil {
+		ifMatch := strings.Trim(*preconditions.IfMatch, `"`)
+		if ifMatch != "*" && ifMatch != etag {
+			return s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)
+		}
 	}
 
 	ifMatchTime := preconditions.IfMatchLastModTime

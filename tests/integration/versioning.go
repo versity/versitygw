@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -4038,6 +4039,72 @@ func Versioning_DeleteObject_never_versioned_bucket(s *S3Conf) error {
 	})
 }
 
+// Versioning_DeleteObject_conditional_delete_marker checks that a
+// conditional delete of a key whose current version is a delete marker
+// fails with NoSuchKey and creates no other marker, while If-Match "*"
+// on a key with a current version creates one.
+func Versioning_DeleteObject_conditional_delete_marker(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_conditional_delete_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(obj string) error {
+			versions, err := createObjVersions(s3client, bucket, obj, 1)
+			if err != nil {
+				return err
+			}
+			if _, err := createDeleteMarker(s3client, bucket, obj); err != nil {
+				return err
+			}
+
+			// the marker hides the version the etag belongs to
+			for _, ifMatch := range []*string{versions[0].ETag, getPtr("*")} {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+					Bucket:  &bucket,
+					Key:     &obj,
+					IfMatch: ifMatch,
+				})
+				cancel()
+				if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+					return fmt.Errorf("If-Match %v: %w", *ifMatch, err)
+				}
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+				Bucket: &bucket,
+				Prefix: &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if len(res.DeleteMarkers) != 1 {
+				return fmt.Errorf("expected 1 delete marker, instead got %v", len(res.DeleteMarkers))
+			}
+
+			if _, err := createObjVersions(s3client, bucket, obj, 1); err != nil {
+				return err
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:  &bucket,
+				Key:     &obj,
+				IfMatch: getPtr("*"),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if out.DeleteMarker == nil || !*out.DeleteMarker || getString(out.VersionId) == "" {
+				return fmt.Errorf("expected a delete marker to be created, instead got %v, %v",
+					out.DeleteMarker, getString(out.VersionId))
+			}
+
+			return nil
+		})
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_DeleteObjects_success(s *S3Conf) error {
 	testName := "Versioning_DeleteObjects_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -4387,6 +4454,99 @@ func Versioning_DeleteObjects_never_versioned_bucket(s *S3Conf) error {
 			return nil
 		})
 	})
+}
+
+// Versioning_DeleteObjects_conditional checks the ETag conditions of
+// DeleteObjects in a versioned bucket. The checks don't depend on the order
+// of the results.
+func Versioning_DeleteObjects_conditional(s *S3Conf) error {
+	testName := "Versioning_DeleteObjects_conditional"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		versions := map[string]types.ObjectVersion{}
+		for _, obj := range []string{"live", "marked", "versioned", "stale"} {
+			v, err := createObjVersions(s3client, bucket, obj, 1)
+			if err != nil {
+				return err
+			}
+			versions[obj] = v[0]
+		}
+		if _, err := createDeleteMarker(s3client, bucket, "marked"); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{
+				Objects: []types.ObjectIdentifier{
+					{Key: getPtr("live"), ETag: versions["live"].ETag},
+					{Key: getPtr("marked"), ETag: getPtr("*")},
+					{Key: getPtr("missing"), ETag: getPtr("*")},
+					{Key: getPtr("versioned"), VersionId: versions["versioned"].VersionId, ETag: versions["versioned"].ETag},
+					{Key: getPtr("stale"), ETag: getPtr("00000000000000000000000000000000")},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Deleted) != 1 {
+			return fmt.Errorf("expected 1 deleted object, instead got %v", out.Deleted)
+		}
+		del := out.Deleted[0]
+		if getString(del.Key) != "live" || del.DeleteMarker == nil || !*del.DeleteMarker ||
+			getString(del.DeleteMarkerVersionId) == "" || del.VersionId != nil {
+			return fmt.Errorf("expected a delete marker to be created for live, instead got %+v", del)
+		}
+
+		wantErrs := map[string]s3err.S3Error{
+			"marked":    s3err.GetAPIError(s3err.ErrNoSuchKey),
+			"missing":   s3err.GetAPIError(s3err.ErrNoSuchKey),
+			"versioned": s3err.GetAPIError(s3err.ErrNotImplementedFormField),
+			"stale":     s3err.GetAPIError(s3err.ErrPreconditionFailed),
+		}
+		if len(out.Errors) != len(wantErrs) {
+			return fmt.Errorf("expected %v errors, instead got %v", len(wantErrs), out.Errors)
+		}
+		for _, e := range out.Errors {
+			key := getString(e.Key)
+			wantErr, ok := wantErrs[key]
+			if !ok {
+				return fmt.Errorf("unexpected error for %v: %v", key, getString(e.Code))
+			}
+			if err := checkDeleteObjectsErr(e, key, wantErr); err != nil {
+				return err
+			}
+			if key == "versioned" && getString(e.VersionId) != getString(versions["versioned"].VersionId) {
+				return fmt.Errorf("expected the versioned error to name version %v, instead got %v",
+					getString(versions["versioned"].VersionId), getString(e.VersionId))
+			}
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		markers := map[string]int{}
+		for _, dm := range res.DeleteMarkers {
+			markers[getString(dm.Key)]++
+		}
+		if !maps.Equal(markers, map[string]int{"live": 1, "marked": 1}) {
+			return fmt.Errorf("expected one delete marker for live and marked, instead got %v", markers)
+		}
+		if len(res.Versions) != len(versions) {
+			return fmt.Errorf("expected %v versions, instead got %v", len(versions), len(res.Versions))
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_Multipart_Upload_success(s *S3Conf) error {
