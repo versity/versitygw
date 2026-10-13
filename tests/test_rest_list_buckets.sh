@@ -78,9 +78,6 @@ export RUN_USERS=true
 
 # tags: curl,ListBuckets,required-headers,Authorization,x-amz-date,invalid-header
 @test "REST - incorrect year/month/day" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1514"
-  fi
   run list_buckets_check_request_time_too_skewed_error
   assert_success
 }
