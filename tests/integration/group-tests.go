@@ -271,6 +271,7 @@ func TestGetObjectAttributes(ts *TestState) {
 	if !ts.conf.azureTests {
 		ts.Run(GetObjectAttributes_checksums)
 	}
+	ts.Run(GetObjectAttributes_multipart_parts_count)
 	ts.Run(GetObjectAttributes_empty_version_id)
 }
 
@@ -3127,6 +3128,7 @@ func GetIntTests() IntTests {
 		"GetObjectAttributes_empty_attrs":                                                  GetObjectAttributes_empty_attrs,
 		"GetObjectAttributes_existing_object":                                              GetObjectAttributes_existing_object,
 		"GetObjectAttributes_checksums":                                                    GetObjectAttributes_checksums,
+		"GetObjectAttributes_multipart_parts_count":                                        GetObjectAttributes_multipart_parts_count,
 		"GetObjectAttributes_empty_version_id":                                             GetObjectAttributes_empty_version_id,
 		"GetObject_non_existing_key":                                                       GetObject_non_existing_key,
 		"GetObject_directory_object_noslash":                                               GetObject_directory_object_noslash,

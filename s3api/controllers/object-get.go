@@ -388,8 +388,14 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	objAttrs := make([]types.ObjectAttributes, 0, len(attrs))
+	for attr := range attrs {
+		objAttrs = append(objAttrs, types.ObjectAttributes(attr))
+	}
+
 	res, err := c.be.GetObjectAttributes(ctx.RequestCtx(),
 		&s3.GetObjectAttributesInput{
+			ObjectAttributes:     objAttrs,
 			SSECustomerAlgorithm: ssec.Algorithm,
 			SSECustomerKey:       ssec.Key,
 			SSECustomerKeyMD5:    ssec.KeyMD5,
