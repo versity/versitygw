@@ -149,7 +149,7 @@ test_complete_multipart_upload_unneeded_algorithm_parameter() {
   fi
   local checksum_type="$1" algorithm="$2"
   local file_and_bucket bucket_name mp_file_name
-  lcoal -a response_lines
+  local -a response_lines
 
   if ! file_and_bucket=$(setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 2>&1); then
     log 2 "error setting up file and bucket"
@@ -452,11 +452,39 @@ complete_multipart_upload_overwrite_part() {
     return 1
   fi
   local bucket="$1" key="$2" file="$3"
-  local response upload_id parts_payload
+  local response upload_id part_idx etag parts_payload=""
+  local -a parts
 
-  if ! response=$(split_file "$file" 2>&1); then
+  if ! response=$(split_file "$file" 4 2>&1); then
     log 2 "error splitting file: $response"
     return 1
   fi
-  read -r part_one part_two part_three part_four <<< "$response"
+  read -r -a parts <<< "$response"
+  if ! response=$(create_multipart_upload_rest "$bucket" "$key" "" "parse_upload_id" 2>&1); then
+    log 2 "error creating multipart upload: $response"
+    return 1
+  fi
+  upload_id="$response"
+
+  if ! response=$(upload_part_rest "$bucket" "$key" "$upload_id" 1 "${parts[1]}" 2>&1); then
+    log 2 "error uploading part 2 as part 1: $response"
+    return 1
+  fi
+  for ((part_idx=1; part_idx<=${#parts[@]}; part_idx++)); do
+    if ! response=$(upload_part_rest "$bucket" "$key" "$upload_id" "$part_idx" "${parts[$((part_idx-1))]}" 2>&1); then
+      log 2 "error uploading part '$part_idx':  $response"
+      return 1
+    fi
+    etag="$response"
+    parts_payload+="<Part><ETag>$etag</ETag><PartNumber>$part_idx</PartNumber></Part>"
+  done
+  if ! response=$(complete_multipart_upload_rest "$bucket" "$key" "$upload_id" "$parts_payload" 2>&1); then
+    log 2 "error completing multipart upload: $response"
+    return 1
+  fi
+  if ! download_and_compare_file "$file" "$bucket" "$key" "${file}-copy"; then
+    log 2 "error downloading and comparing file"
+    return 1
+  fi
+  return 0
 }

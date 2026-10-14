@@ -377,7 +377,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 
 # tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - incorrect crc32" {
-  run test_complete_multipart_upload_incorrect_checksum "COMPOSITE" "CRC32C"
+  run test_complete_multipart_upload_incorrect_checksum "COMPOSITE" "CRC32"
   assert_success
 }
 
@@ -481,4 +481,6 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   assert_success
   read -r bucket_name file_name <<< "$output"
 
+  run complete_multipart_upload_overwrite_part "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/$file_name"
+  assert_success
 }

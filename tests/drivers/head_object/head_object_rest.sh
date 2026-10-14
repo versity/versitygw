@@ -261,17 +261,24 @@ head_object_check_header_key_and_value() {
 }
 
 check_header_partial_content_response() {
-  if ! check_param_count_v2 "header data, part number, full object size, part size" 4 $#; then
+  if ! check_param_count_v2 "header data, part number, full object size, part one size, part size" 5 $#; then
     return 1
   fi
-  log 5 "header: $(cat "$1")"
-  starting_byte=$((($2-1)*$4))
-  ending_byte=$(($2*$4-1))
-  if [ "$3" -lt "$ending_byte" ]; then
-    ending_byte="$(($3-1))"
+  local header_data="$1" part_number="$2" full_object_size="$3" part_one_size="$4" part_size="$5"
+  local starting_byte ending_byte content_range_string result
+
+  log 5 "header: $(cat "$header_data")"
+  starting_byte=$(((part_number-1)*part_one_size))
+  ending_byte=$((part_number*part_one_size-1))
+  if [ "$full_object_size" -lt "$ending_byte" ]; then
+    ending_byte="$((full_object_size-1))"
   fi
-  content_range_string="bytes $starting_byte-$ending_byte/$3"
-  if ! result=$(check_for_header_key_and_value "$1" "Content-Range" "$content_range_string" 2>&1); then
+  if [ "$part_size" -ne "$((ending_byte-starting_byte+1))" ]; then
+    log 2 "mismatch between part size '$part_size' and byte range '$starting_byte'-'$ending_byte'"
+    return 1
+  fi
+  content_range_string="bytes ${starting_byte}-${ending_byte}/${full_object_size}"
+  if ! result=$(check_for_header_key_and_value "$header_data" "Content-Range" "$content_range_string" 2>&1); then
     log 2 "error checking for header key and value: $result"
     return 1
   fi

@@ -88,16 +88,16 @@ source ./tests/drivers/string.sh
   assert_success
   part_size_one="$output"
 
-  run get_file_size "$part_one"
+  run get_file_size "$part_two"
   assert_success
   part_size_two="$output"
 
   run send_rest_go_command_callback "206" "check_header_partial_content_response" "-bucketName" "$bucket_name" "-objectKey" "$test_file" \
-    "-method" "HEAD" "-query" "partNumber=1" "--" "1" "$file_bytes" "$part_size_one"
+    "-method" "HEAD" "-query" "partNumber=1" "--" "1" "$file_bytes" "$part_size_one" "$part_size_one"
   assert_success
 
   run send_rest_go_command_callback "206" "check_header_partial_content_response" "-bucketName" "$bucket_name" "-objectKey" "$test_file" \
-    "-method" "HEAD" "-query" "partNumber=2" "--" "2" "$file_bytes" "$part_size_two"
+    "-method" "HEAD" "-query" "partNumber=2" "--" "2" "$file_bytes" "$part_size_one" "$part_size_two"
   assert_success
 }
 
