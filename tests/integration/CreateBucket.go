@@ -214,13 +214,6 @@ func CreateBucket_non_default_acl(s *S3Conf) error {
 	grants := []types.Grant{
 		{
 			Grantee: &types.Grantee{
-				ID:   &s.awsID,
-				Type: types.TypeCanonicalUser,
-			},
-			Permission: types.PermissionFullControl,
-		},
-		{
-			Grantee: &types.Grantee{
 				ID:   &testuser1.access,
 				Type: types.TypeCanonicalUser,
 			},
