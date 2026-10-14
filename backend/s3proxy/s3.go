@@ -1222,27 +1222,23 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 		return s3response.GetObjectAttributesResponse{}, handleError(err)
 	}
 
-	parts := s3response.ObjectParts{}
-	objParts := out.ObjectParts
-	if objParts != nil {
+	var parts *s3response.ObjectParts
+	if objParts := out.ObjectParts; objParts != nil {
+		parts = &s3response.ObjectParts{
+			Parts:      objParts.Parts,
+			PartsCount: objParts.TotalPartsCount,
+		}
 		if objParts.PartNumberMarker != nil {
-			partNumberMarker, err := strconv.Atoi(*objParts.PartNumberMarker)
-			if err != nil {
-				parts.PartNumberMarker = partNumberMarker
-			}
-			if objParts.NextPartNumberMarker != nil {
-				nextPartNumberMarker, err := strconv.Atoi(*objParts.NextPartNumberMarker)
-				if err != nil {
-					parts.NextPartNumberMarker = nextPartNumberMarker
-				}
-			}
-			if objParts.IsTruncated != nil {
-				parts.IsTruncated = *objParts.IsTruncated
-			}
-			if objParts.MaxParts != nil {
-				parts.MaxParts = int(*objParts.MaxParts)
-			}
-			parts.Parts = objParts.Parts
+			parts.PartNumberMarker, _ = strconv.Atoi(*objParts.PartNumberMarker)
+		}
+		if objParts.NextPartNumberMarker != nil {
+			parts.NextPartNumberMarker, _ = strconv.Atoi(*objParts.NextPartNumberMarker)
+		}
+		if objParts.MaxParts != nil {
+			parts.MaxParts = int(*objParts.MaxParts)
+		}
+		if objParts.IsTruncated != nil {
+			parts.IsTruncated = *objParts.IsTruncated
 		}
 	}
 
@@ -1251,7 +1247,7 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 		LastModified: out.LastModified,
 		ObjectSize:   out.ObjectSize,
 		StorageClass: out.StorageClass,
-		ObjectParts:  &parts,
+		ObjectParts:  parts,
 		Checksum:     out.Checksum,
 	}, nil
 }

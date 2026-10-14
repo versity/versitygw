@@ -27,8 +27,8 @@ import (
 )
 
 // TestGetObjectAttributesPartsCount checks that GetObjectAttributes reports
-// the parts count of an object completed from a multipart upload, and no
-// object parts for an object that wasn't.
+// the parts count of an object completed from a multipart upload when
+// ObjectParts is requested, and no object parts for an object that wasn't.
 func TestGetObjectAttributesPartsCount(t *testing.T) {
 	for name, mkMeta := range metaModes(t) {
 		t.Run(name, func(t *testing.T) {
@@ -79,9 +79,11 @@ func TestGetObjectAttributesPartsCount(t *testing.T) {
 				t.Fatalf("complete multipart upload: %v", err)
 			}
 
+			partsAttr := []types.ObjectAttributes{types.ObjectAttributesObjectParts}
 			out, err := p.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
-				Bucket: &bucket,
-				Key:    &mpKey,
+				Bucket:           &bucket,
+				Key:              &mpKey,
+				ObjectAttributes: partsAttr,
 			})
 			if err != nil {
 				t.Fatalf("get multipart object attributes: %v", err)
@@ -96,6 +98,19 @@ func TestGetObjectAttributesPartsCount(t *testing.T) {
 				t.Errorf("expected object size %d, got %d", totalSize, got)
 			}
 
+			// the parts count is only looked up when ObjectParts is requested
+			out, err = p.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+				Bucket:           &bucket,
+				Key:              &mpKey,
+				ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesObjectSize},
+			})
+			if err != nil {
+				t.Fatalf("get multipart object size: %v", err)
+			}
+			if out.ObjectParts != nil {
+				t.Errorf("expected no object parts when not requested, got %+v", *out.ObjectParts)
+			}
+
 			key := "obj"
 			_, err = p.PutObject(ctx, s3response.PutObjectInput{
 				Bucket:        &bucket,
@@ -108,8 +123,9 @@ func TestGetObjectAttributesPartsCount(t *testing.T) {
 			}
 
 			out, err = p.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
-				Bucket: &bucket,
-				Key:    &key,
+				Bucket:           &bucket,
+				Key:              &key,
+				ObjectAttributes: partsAttr,
 			})
 			if err != nil {
 				t.Fatalf("get object attributes: %v", err)
