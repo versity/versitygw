@@ -17,14 +17,16 @@
 source ./tests/drivers/rest.sh
 
 check_cors_404_content_type_header_and_bucket_name() {
-  if ! check_param_count_v2 "data file" 1 $#; then
+  if ! check_param_count_v2 "data file, bucket name" 2 $#; then
     return 1
   fi
-  if ! check_for_header_key_and_value "$1" "Content-Type" "application/xml"; then
+  local data_file="$1" bucket_name="$2"
+
+  if ! check_for_header_key_and_value "$data_file" "Content-Type" "application/xml"; then
     log 2 "error checking Content-Type header and value"
     return 1
   fi
-  if ! check_specific_argument_name_and_value "$1"; then
+  if ! check_specific_argument_name_and_value "$data_file" "BucketName" "$bucket_name"; then
     log 2 "error checking BucketName"
     return 1
   fi
@@ -35,10 +37,11 @@ get_bucket_cors_check_404_header_and_bucket_name() {
   if ! check_param_count_v2 "bucket name" 1 $#; then
     return 1
   fi
+  local bucket_name="$1"
+
   # shellcheck disable=SC2034
-  argument_name="BucketName" argument_value="$1"
   if ! send_rest_go_command_expect_error_callback "404" "NoSuchCORSConfiguration" "The CORS configuration does not exist" \
-    "check_cors_404_content_type_header_and_bucket_name" "-bucketName" "$1" "-query" "cors"; then
+    "check_cors_404_content_type_header_and_bucket_name" "-bucketName" "$bucket_name" "-query" "cors" "--" "$bucket_name"; then
       log 2 "error sending get cors command and checking result"
       return 1
   fi

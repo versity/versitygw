@@ -77,6 +77,10 @@ func GetBucketPolicyStatus_success(s *S3Conf) error {
 				policy: genPolicyDoc("Allow", `"*"`, `"s3:ListBucket"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)),
 				status: true,
 			},
+			{
+				policy: genPolicyDoc("Deny", `"*"`, `"s3:GetObject"`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket)),
+				status: false,
+			},
 		} {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{

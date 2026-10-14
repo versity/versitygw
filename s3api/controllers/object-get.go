@@ -19,7 +19,6 @@ import (
 	"math"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -145,12 +144,27 @@ func (c S3ApiController) GetObjectRetention(ctx fiber.Ctx) (*Response, error) {
 	}
 
 	retention, err := auth.ParseObjectLockRetentionOutput(data)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	result := s3response.GetObjectRetentionResult{
+		Mode: retention.Mode,
+	}
+	if retention.RetainUntilDate != nil {
+		result.RetainUntilDate = s3response.AmzDate{Time: *retention.RetainUntilDate}
+	}
+
 	return &Response{
-		Data: retention,
+		Data: result,
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
 		},
-	}, err
+	}, nil
 }
 
 func (c S3ApiController) GetObjectLegalHold(ctx fiber.Ctx) (*Response, error) {
@@ -625,7 +639,7 @@ func (c S3ApiController) GetObject(ctx fiber.Ctx) (*Response, error) {
 			"x-amz-object-lock-legal-hold":        utils.ConvertToStringPtr(res.ObjectLockLegalHoldStatus),
 			"x-amz-storage-class":                 utils.ConvertToStringPtr(res.StorageClass),
 			"x-amz-checksum-type":                 utils.ConvertToStringPtr(res.ChecksumType),
-			"x-amz-object-lock-retain-until-date": utils.FormatDatePtrToString(res.ObjectLockRetainUntilDate, time.RFC3339),
+			"x-amz-object-lock-retain-until-date": utils.FormatRetainUntilDate(res.ObjectLockRetainUntilDate),
 			"Last-Modified":                       utils.FormatDatePtrToString(res.LastModified, timefmt),
 			"x-amz-server-side-encryption-customer-algorithm": res.SSECustomerAlgorithm,
 			"x-amz-server-side-encryption-customer-key-MD5":   res.SSECustomerKeyMD5,

@@ -23,15 +23,11 @@ source ./tests/setup.sh
 
 # tags: curl,cors,GetBucketCors,minimal-request
 @test "REST - GetCors - correct content-type, and returns bucket name" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1842"
-  fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name=$output
+  local bucket_name
 
-  run setup_bucket_v2 "$bucket_name"
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
+  bucket_name="$output"
 
   run get_bucket_cors_check_404_header_and_bucket_name "$bucket_name"
   assert_success

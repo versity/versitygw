@@ -65,9 +65,6 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 
 # tags: curl,multipart,CompleteMultipartUpload,invalid-header,ETag
 @test "REST - complete upload - invalid part" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1008"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

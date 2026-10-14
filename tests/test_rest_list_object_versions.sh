@@ -87,8 +87,10 @@ source ./tests/util/util_time.sh
 
 @test "ListObjectVersions - version ID marker w/o key marker" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2174"
+    skip "https://github.com/versity/versitygw/issues/1808"
   fi
+  local bucket_name file_one file_two
+
   run setup_bucket_and_add_files_v3 "$BUCKET_ONE_NAME" "2"
   assert_success
   read -r bucket_name file_one file_two <<< "$output"

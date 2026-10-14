@@ -26,6 +26,8 @@ type InvalidArgErrorCode int
 const (
 	InvalidArgMaxBuckets InvalidArgErrorCode = iota
 	InvalidArgNegativeMaxKeys
+	InvalidArgStartAfter
+	InvalidArgContinuationToken
 	InvalidArgObjectAttributes
 	InvalidArgPartNumber
 	InvalidArgCompleteMpPartNumber
@@ -75,6 +77,7 @@ const (
 	InvalidArgSSECRequiresTLS
 	InvalidArgUploadIdWithUploads
 	InvalidArgBucketRegionEndpoint
+	InvalidArgEmptyETag
 )
 
 var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
@@ -89,6 +92,14 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgNegativeMaxKeys: {
 		Description:  "max-keys cannot be negative",
 		ArgumentName: "maxKeys",
+	},
+	InvalidArgStartAfter: {
+		Description:  "startAfter only supported in REST.GET.BUCKET with list-type=2",
+		ArgumentName: "start-after",
+	},
+	InvalidArgContinuationToken: {
+		Description:  "continuation-token only supported in REST.GET.BUCKET with list-type=2",
+		ArgumentName: "continuation-token",
 	},
 	InvalidArgObjectAttributes: {
 		Description:  "Invalid attribute name specified.",
@@ -123,7 +134,7 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 		ArgumentName: "x-amz-tagging",
 	},
 	InvalidArgAuthHeader: {
-		Description:  "Authorization header is invalid -- one and only one ' ' (space) required.",
+		Description:  "Authorization header is invalid -- one and only one ' ' (space) required",
 		ArgumentName: "Authorization",
 	},
 	InvalidArgAuthorizationType: {
@@ -205,6 +216,10 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgEmptyVersionId: {
 		Description:  "Version id cannot be the empty string",
 		ArgumentName: "versionId",
+	},
+	InvalidArgEmptyETag: {
+		Description:  "The value provided for the ETag field cannot be empty for this API.",
+		ArgumentName: "ETag",
 	},
 	InvalidArgChecksumPart: {
 		Description:  "Invalid Base64 or multiple checksums present in request",

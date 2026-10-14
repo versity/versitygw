@@ -105,7 +105,7 @@ type AccessOptions struct {
 
 // VerifyAccess decides whether opts.Acc may perform opts.Actions against
 // opts.Bucket/opts.Object, combining the bucket's own resource-based
-// decision (policy, or ACL absent one) with an identity-based decision from
+// decision (its policy and ACL) with an identity-based decision from
 // opts.Iam when it implements PolicyEvaluator. An explicit Deny from either
 // source denies the request outright, even when the other source would
 // otherwise allow it; absent any explicit Deny, each action is allowed by
@@ -268,7 +268,7 @@ func authorizationApplies(opts AccessOptions) bool {
 }
 
 // objectsAccessErrors evaluates every key against the bucket's resource
-// policy (or ACL) and the caller's identity policy, returning one result per
+// policy and ACL and the caller's identity policy, returning one result per
 // key: nil where the key is authorized, and the AWS-shaped denial otherwise.
 // The returned slice always has one entry per key.
 //
@@ -405,46 +405,71 @@ func principalName(acc Account) string {
 	return acc.Access
 }
 
-// verifyResourceAccess checks the bucket's own policy or, absent one, ACL,
-// for every action on each object key, returning decisions[i][j] for
-// objects[i] and opts.Actions[j]. The bucket policy is fetched and parsed
-// once regardless of how many keys there are. ACL evaluation can only ever
-// produce Allow/NoMatch — ACLs have no concept of an explicit deny — and
-// grants a permission on the whole bucket rather than an action on an
-// object, so every key and action shares its verdict.
+// verifyResourceAccess combines the bucket's policy and ACL for every action
+// on each object key, returning decisions[i][j] for objects[i] and
+// opts.Actions[j]. The bucket policy is fetched and parsed once regardless
+// of how many keys there are. An explicit Deny in the policy wins;
+// otherwise the action is allowed when either the policy or the ACL allows
+// it. The ACL can never deny, and it grants on the whole bucket rather than
+// on an object, so its verdict for an action is shared by every key.
+//
+// The bucket owner may always read, replace and delete the bucket's
+// policy, whatever the policy says, as an AWS account's root user may on
+// its own bucket. No policy can lock the owner out of repairing it. Root
+// and admin don't need this, because they bypass policy altogether.
 func verifyResourceAccess(ctx context.Context, be backend.Backend, opts AccessOptions, objects []string, condCtx map[string][]string) ([][]policyDecision, error) {
-	decisions := make([][]policyDecision, len(objects))
-
-	policy, policyErr := be.GetBucketPolicy(ctx, opts.Bucket)
-	if policyErr != nil {
-		if !errors.Is(policyErr, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
-			return nil, policyErr
-		}
-
-		decision := policyDecisionAllow
-		if err := verifyACL(opts.Acl, opts.Acc.Access, opts.AclPermission, opts.DisableACL); err != nil {
-			decision = policyDecisionNoMatch
-		}
-		perAction := slices.Repeat([]policyDecision{decision}, len(opts.Actions))
-		for i := range decisions {
-			decisions[i] = perAction
-		}
-		return decisions, nil
+	policy, err := be.GetBucketPolicy(ctx, opts.Bucket)
+	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
+		return nil, err
 	}
+	hasPolicy := err == nil
 
 	var bp BucketPolicy
-	if err := json.Unmarshal(policy, &bp); err != nil {
-		return nil, fmt.Errorf("failed to parse the bucket policy: %w", err)
+	if hasPolicy {
+		if err := json.Unmarshal(policy, &bp); err != nil {
+			return nil, fmt.Errorf("failed to parse the bucket policy: %w", err)
+		}
 	}
 
+	isOwner := opts.Acc.Access == opts.Acl.Owner
+	aclDecisions := make([]policyDecision, len(opts.Actions))
+	for j, action := range opts.Actions {
+		if aclAllows(opts.Acl, opts.Acc.Access, action, opts.DisableACL) {
+			aclDecisions[j] = policyDecisionAllow
+		}
+	}
+
+	decisions := make([][]policyDecision, len(objects))
 	for i, object := range objects {
+		if !hasPolicy {
+			decisions[i] = aclDecisions
+			continue
+		}
+
 		resource := makePolicyResource(opts.Bucket, object, be.NormalizeObjectKey)
 		decisions[i] = make([]policyDecision, len(opts.Actions))
 		for j, action := range opts.Actions {
-			decisions[i][j] = bp.decisionFor(opts.Acc, action, resource, condCtx, be.NormalizeObjectKey)
+			decision := bp.decisionFor(opts.Acc, action, resource, condCtx, be.NormalizeObjectKey)
+			switch {
+			case isOwner && isBucketPolicyAction(action):
+				decision = policyDecisionAllow
+			case decision == policyDecisionNoMatch:
+				decision = aclDecisions[j]
+			}
+			decisions[i][j] = decision
 		}
 	}
 	return decisions, nil
+}
+
+// isBucketPolicyAction reports whether action reads, replaces or deletes
+// the bucket policy itself.
+func isBucketPolicyAction(action Action) bool {
+	switch action {
+	case GetBucketPolicyAction, PutBucketPolicyAction, DeleteBucketPolicyAction:
+		return true
+	}
+	return false
 }
 
 // identityPolicyDecisions evaluates every action in opts.Actions against
@@ -538,8 +563,8 @@ func VerifyPublicAccess(ctx fiber.Ctx, be backend.Backend, actions []Action, per
 			}
 		}
 
-		// if the action is not in the ACL whitelist the access is denied
-		if _, ok := publicACLAllowedActions[action]; !ok {
+		// an action no ACL grant can authorize is denied
+		if _, ok := aclActionPermissions[action]; !ok {
 			return s3err.GetAPIError(s3err.ErrAccessDenied)
 		}
 		aclFallback = true
@@ -642,20 +667,4 @@ func verifyIdentityOnlyAccess(ctx fiber.Ctx, pe PolicyEvaluator, acc Account, ac
 		return nil
 	}
 	return s3err.GetImplicitDenyAccessErr(principal, string(action), resourceArn)
-}
-
-type PublicACLAllowedActions map[Action]struct{}
-
-// publicACLAllowedActions are the actions a public ACL grant can give an
-// anonymous requester
-var publicACLAllowedActions PublicACLAllowedActions = PublicACLAllowedActions{
-	ListBucketAction:                 struct{}{},
-	PutObjectAction:                  struct{}{},
-	ListBucketMultipartUploadsAction: struct{}{},
-	DeleteObjectAction:               struct{}{},
-	ListBucketVersionsAction:         struct{}{},
-	GetObjectAction:                  struct{}{},
-	GetObjectVersionAction:           struct{}{},
-	GetObjectAttributesAction:        struct{}{},
-	GetObjectAclAction:               struct{}{},
 }

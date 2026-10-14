@@ -16,11 +16,15 @@ package backend
 
 import (
 	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -326,6 +330,53 @@ func TestParseCopySource(t *testing.T) {
 			}
 			if gotVersionId != tt.wantVersionId {
 				t.Errorf("ParseCopySource() gotVersionId = %v, want %v", gotVersionId, tt.wantVersionId)
+			}
+		})
+	}
+}
+
+func TestComputeMultipartETagFromPartETags(t *testing.T) {
+	etag1 := "5d41402abc4b2a76b9719d911017c592"
+	etag2 := "7d793037a0760186574b0282f2f435e7"
+	raw1, _ := hex.DecodeString(etag1)
+	raw2, _ := hex.DecodeString(etag2)
+	sum := md5.Sum(append(raw1, raw2...))
+	wantETag := fmt.Sprintf("\"%s-2\"", hex.EncodeToString(sum[:]))
+
+	part := func(n int32, etag string) types.CompletedPart {
+		return types.CompletedPart{PartNumber: &n, ETag: &etag}
+	}
+
+	tests := []struct {
+		name     string
+		parts    []types.CompletedPart
+		wantETag string
+		wantErr  error
+	}{
+		{
+			name:     "quoted and unquoted part etags",
+			parts:    []types.CompletedPart{part(1, "\""+etag1+"\""), part(2, etag2)},
+			wantETag: wantETag,
+		},
+		{
+			name:    "missing part etag",
+			parts:   []types.CompletedPart{{PartNumber: new(int32)}},
+			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
+			name:    "invalid part etag reports the upload, part and etag",
+			parts:   []types.CompletedPart{part(1, etag1), part(2, "\"invalidETag\"")},
+			wantErr: s3err.GetInvalidPartErr("upload-id", 2, "\"invalidETag\""),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			etag, err := ComputeMultipartETagFromPartETags("upload-id", tt.parts)
+			if !reflect.DeepEqual(err, tt.wantErr) {
+				t.Fatalf("expected error %#v, got %#v", tt.wantErr, err)
+			}
+			if etag != tt.wantETag {
+				t.Fatalf("expected etag %q, got %q", tt.wantETag, etag)
 			}
 		})
 	}

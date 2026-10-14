@@ -33,7 +33,32 @@ import (
 type BucketLockConfig struct {
 	Enabled          bool
 	DefaultRetention *types.DefaultRetention
-	CreatedAt        *time.Time
+}
+
+// DefaultObjectRetention returns the retention the bucket's default rule
+// gives an object written at the given time, or nil when there is no rule.
+// It is stored on the object as if the write had requested it, so changing
+// or removing the rule later leaves the object's retention as it is. A rule
+// without a period, which S3 rejects, gives none.
+func (c BucketLockConfig) DefaultObjectRetention(written time.Time) *types.ObjectLockRetention {
+	if !c.Enabled || c.DefaultRetention == nil {
+		return nil
+	}
+
+	until := written.UTC().Truncate(time.Millisecond)
+	switch {
+	case c.DefaultRetention.Days != nil:
+		until = until.AddDate(0, 0, int(*c.DefaultRetention.Days))
+	case c.DefaultRetention.Years != nil:
+		until = until.AddDate(int(*c.DefaultRetention.Years), 0, 0)
+	default:
+		return nil
+	}
+
+	return &types.ObjectLockRetention{
+		Mode:            c.DefaultRetention.Mode,
+		RetainUntilDate: &until,
+	}
 }
 
 // VerifyWriteObjectLock checks the Object Lock parameters an object write
@@ -125,14 +150,20 @@ func ParseBucketLockConfigurationInput(input []byte) ([]byte, error) {
 		Enabled: lockConfig.ObjectLockEnabled == types.ObjectLockEnabledEnabled,
 	}
 
-	if lockConfig.Rule != nil && lockConfig.Rule.DefaultRetention != nil {
+	if lockConfig.Rule != nil {
 		retention := lockConfig.Rule.DefaultRetention
+		if retention == nil {
+			return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
+		}
 
 		if retention.Mode != types.ObjectLockRetentionModeCompliance && retention.Mode != types.ObjectLockRetentionModeGovernance {
 			return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
 		if retention.Years != nil && retention.Days != nil {
 			return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
+		}
+		if retention.Years == nil && retention.Days == nil {
+			return nil, s3err.GetAPIError(s3err.ErrObjectLockDefaultRetentionPeriodRequired)
 		}
 
 		if retention.Days != nil && *retention.Days <= 0 {
@@ -149,8 +180,6 @@ func ParseBucketLockConfigurationInput(input []byte) ([]byte, error) {
 		}
 
 		config.DefaultRetention = retention
-		now := time.Now()
-		config.CreatedAt = &now
 	}
 
 	return json.Marshal(config)
@@ -195,6 +224,9 @@ func ParseObjectLockRetentionInput(input []byte) (*s3response.PutObjectRetention
 		debuglogger.Logf("invalid object lock retention mode: %s", retention.Mode)
 		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
+
+	// S3 stores the date to the millisecond
+	retention.RetainUntilDate.Time = retention.RetainUntilDate.UTC().Truncate(time.Millisecond)
 
 	return &retention, nil
 }
@@ -441,9 +473,6 @@ type objectLockState struct {
 	// object lock is off, unconfigured, or the write creates a new version
 	// rather than replacing anything.
 	applies bool
-	// defaultRetention is the bucket's default retention, only set when it
-	// is configured and still in force.
-	defaultRetention *types.DefaultRetention
 	// versioningEnabled makes a delete without a version id a new delete
 	// marker, which no retention protects against.
 	versioningEnabled bool
@@ -480,20 +509,6 @@ func loadObjectLockState(ctx context.Context, be backend.Backend, bucket string,
 		return state, nil
 	}
 	state.applies = true
-
-	if bucketLockConfig.DefaultRetention != nil && bucketLockConfig.CreatedAt != nil {
-		expirationDate := *bucketLockConfig.CreatedAt
-		if bucketLockConfig.DefaultRetention.Days != nil {
-			expirationDate = expirationDate.AddDate(0, 0, int(*bucketLockConfig.DefaultRetention.Days))
-		}
-		if bucketLockConfig.DefaultRetention.Years != nil {
-			expirationDate = expirationDate.AddDate(int(*bucketLockConfig.DefaultRetention.Years), 0, 0)
-		}
-
-		if expirationDate.After(time.Now()) {
-			state.defaultRetention = bucketLockConfig.DefaultRetention
-		}
-	}
 
 	vers, err := be.GetBucketVersioning(ctx, bucket)
 	if err == nil && vers.Status != nil {
@@ -546,18 +561,9 @@ func (s objectLockState) checkObject(ctx context.Context, be backend.Backend, ia
 			return err
 		}
 
-		if retention.Mode != "" && retention.RetainUntilDate != nil {
-			// An expired retention protects nothing, and an object's own
-			// retention supersedes the bucket default, so this object is
-			// past its lock. Note this also skips the legal-hold check
-			// below, preserving long-standing behavior; it returns for
-			// this object only, where the same statement previously
-			// short-circuited the caller's whole request and let every
-			// remaining object through unchecked.
-			if retention.RetainUntilDate.Before(time.Now()) {
-				return nil
-			}
-
+		// An expired retention protects nothing, but a legal hold still
+		// does, so it is checked either way.
+		if retention.Mode != "" && retention.RetainUntilDate != nil && retention.RetainUntilDate.After(time.Now()) {
 			if err := s.checkRetentionMode(ctx, be, iam, acc, bucket, key, retention.Mode, bypass, isBucketPublic, condCtx); err != nil {
 				return err
 			}
@@ -581,10 +587,6 @@ func (s objectLockState) checkObject(ctx context.Context, be backend.Backend, ia
 
 	if checkLegalHold && *status {
 		return s3err.GetAPIError(s3err.ErrObjectLocked)
-	}
-
-	if s.defaultRetention != nil {
-		return s.checkRetentionMode(ctx, be, iam, acc, bucket, key, s.defaultRetention.Mode, bypass, isBucketPublic, condCtx)
 	}
 
 	return nil

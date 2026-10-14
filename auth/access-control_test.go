@@ -1299,3 +1299,198 @@ func TestVerifyAccess_NoActionsFailsClosed(t *testing.T) {
 
 	assert.Error(t, err)
 }
+
+// TestVerifyAccess_BucketPolicyAndACL pins how a bucket's policy and ACL
+// combine for a backend with no identity-policy layer: an explicit policy
+// Deny wins, and otherwise each action is allowed by either the policy or
+// the ACL. The owner may do anything the policy doesn't deny, and may
+// always manage the policy itself. Any other grantee may do only what its
+// ACL grant maps to.
+func TestVerifyAccess_BucketPolicyAndACL(t *testing.T) {
+	const bucketArn = "arn:aws:s3:::bucket"
+	grant := func(access string, permission Permission) Grantee {
+		return Grantee{Access: access, Permission: permission, Type: types.TypeCanonicalUser}
+	}
+	acl := ACL{
+		Owner: "owner",
+		Grantees: []Grantee{
+			grant("owner", PermissionFullControl),
+			grant("reader", PermissionRead),
+			grant("writer", PermissionWrite),
+			grant("full", PermissionFullControl),
+		},
+	}
+	denyProbePolicy := `{"Statement":[{"Effect":"Deny","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::bucket/deny-probe/*"}]}`
+	denyAllPolicy := `{"Statement":[{"Effect":"Deny","Principal":"*","Action":"s3:*","Resource":["arn:aws:s3:::bucket","arn:aws:s3:::bucket/*"]}]}`
+	unrelatedPolicy := `{"Statement":[{"Effect":"Allow","Principal":{"AWS":["someone"]},"Action":"s3:GetObject","Resource":"arn:aws:s3:::bucket/*"}]}`
+	denyReaderListPolicy := `{"Statement":[{"Effect":"Deny","Principal":{"AWS":["reader"]},"Action":"s3:ListBucket","Resource":"arn:aws:s3:::bucket"}]}`
+	allowWriterPolicyPolicy := `{"Statement":[{"Effect":"Allow","Principal":{"AWS":["writer"]},"Action":"s3:PutBucketPolicy","Resource":"arn:aws:s3:::bucket"}]}`
+	accessDenied := s3err.GetAPIError(s3err.ErrAccessDenied)
+
+	tests := []struct {
+		name       string
+		policy     string
+		access     string
+		object     string
+		action     Action
+		disableACL bool
+		want       error
+	}{
+		{
+			name:   "owner keeps actions a deny-only policy doesn't name",
+			policy: denyProbePolicy, access: "owner", object: "key", action: GetObjectAction,
+		},
+		{
+			name:   "owner keeps bucket configuration under a deny-only policy",
+			policy: denyProbePolicy, access: "owner", action: GetBucketTaggingAction,
+		},
+		{
+			name:   "owner is bound by an explicit deny",
+			policy: denyProbePolicy, access: "owner", object: "deny-probe/key", action: GetObjectAction,
+			want: s3err.GetExplicitDenyAccessErr("owner", string(GetObjectAction), "arn:aws:s3:::bucket/deny-probe/key", "a resource-based policy"),
+		},
+		{
+			name:   "owner is bound by a deny of every action",
+			policy: denyAllPolicy, access: "owner", action: ListBucketAction,
+			want: s3err.GetExplicitDenyAccessErr("owner", string(ListBucketAction), bucketArn, "a resource-based policy"),
+		},
+		{
+			name:   "owner reads the policy past a deny of every action",
+			policy: denyAllPolicy, access: "owner", action: GetBucketPolicyAction,
+		},
+		{
+			name:   "owner replaces the policy past a deny of every action",
+			policy: denyAllPolicy, access: "owner", action: PutBucketPolicyAction,
+		},
+		{
+			name:   "owner deletes the policy past a deny of every action",
+			policy: denyAllPolicy, access: "owner", action: DeleteBucketPolicyAction,
+		},
+		{
+			name:   "owner's policy status read is bound by a deny of every action",
+			policy: denyAllPolicy, access: "owner", action: GetBucketPolicyStatusAction,
+			want: s3err.GetExplicitDenyAccessErr("owner", string(GetBucketPolicyStatusAction), bucketArn, "a resource-based policy"),
+		},
+		{
+			name:   "owner without any ACL grant",
+			access: "owner", action: PutBucketVersioningAction, disableACL: true,
+		},
+		{
+			name:   "ACL grant counts when the policy doesn't name the grantee",
+			policy: unrelatedPolicy, access: "reader", action: ListBucketAction,
+		},
+		{
+			name:   "ACL grant counts on objects when the policy doesn't name the grantee",
+			policy: unrelatedPolicy, access: "reader", object: "key", action: GetObjectAction,
+		},
+		{
+			name:   "explicit deny overrides an ACL grant",
+			policy: denyReaderListPolicy, access: "reader", action: ListBucketAction,
+			want: s3err.GetExplicitDenyAccessErr("reader", string(ListBucketAction), bucketArn, "a resource-based policy"),
+		},
+		{
+			name:   "READ grants no s3:GetObjectAttributes",
+			access: "reader", object: "key", action: GetObjectAttributesAction,
+			want: accessDenied,
+		},
+		{
+			name:   "READ grants no s3:GetObjectVersionAttributes",
+			access: "reader", object: "key", action: GetObjectVersionAttributesAction,
+			want: accessDenied,
+		},
+		{
+			name:   "READ grants no bucket configuration",
+			access: "reader", action: GetBucketVersioningAction,
+			want: accessDenied,
+		},
+		{
+			name:   "WRITE grants s3:PutObject",
+			access: "writer", object: "key", action: PutObjectAction,
+		},
+		{
+			name:   "WRITE grants s3:DeleteObject",
+			access: "writer", object: "key", action: DeleteObjectAction,
+		},
+		{
+			name:   "WRITE grants no s3:DeleteObjectVersion to a non-owner",
+			access: "writer", object: "key", action: DeleteObjectVersionAction,
+			want: accessDenied,
+		},
+		{
+			name:   "WRITE grants no s3:PutBucketPolicy",
+			access: "writer", action: PutBucketPolicyAction,
+			want: accessDenied,
+		},
+		{
+			name:   "WRITE grants no s3:PutObjectAcl",
+			access: "writer", object: "key", action: PutObjectAclAction,
+			want: accessDenied,
+		},
+		{
+			name:   "WRITE grants no bucket deletion",
+			access: "writer", action: DeleteBucketAction,
+			want: accessDenied,
+		},
+		{
+			name:   "policy grants s3:PutBucketPolicy to a non-owner",
+			policy: allowWriterPolicyPolicy, access: "writer", action: PutBucketPolicyAction,
+		},
+		{
+			name:   "FULL_CONTROL grants s3:PutBucketAcl",
+			access: "full", action: PutBucketAclAction,
+		},
+		{
+			name:   "FULL_CONTROL grants s3:GetObjectAcl",
+			access: "full", object: "key", action: GetObjectAclAction,
+		},
+		{
+			name:   "FULL_CONTROL grants no s3:GetBucketPolicy",
+			access: "full", action: GetBucketPolicyAction,
+			want: accessDenied,
+		},
+		{
+			name:   "FULL_CONTROL grants no s3:DeleteBucketPolicy past an unrelated policy",
+			policy: unrelatedPolicy, access: "full", action: DeleteBucketPolicyAction,
+			want: accessDenied,
+		},
+		{
+			name:   "FULL_CONTROL grants no object tagging",
+			access: "full", object: "key", action: PutObjectTaggingAction,
+			want: accessDenied,
+		},
+		{
+			name:   "disabled ACLs ignore every grant",
+			access: "full", object: "key", action: GetObjectAction, disableACL: true,
+			want: accessDenied,
+		},
+		{
+			name:   "no grant and no policy",
+			access: "stranger", object: "key", action: GetObjectAction,
+			want: accessDenied,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var be backend.Backend = noBucketPolicyBackend{}
+			if tt.policy != "" {
+				be = arnPolicyBackend{policy: tt.policy}
+			}
+
+			err := VerifyAccess(testFiberCtx(t), be, AccessOptions{
+				Acl:        acl,
+				Acc:        Account{Access: tt.access, Role: RoleUser},
+				Bucket:     "bucket",
+				Object:     tt.object,
+				Actions:    []Action{tt.action},
+				DisableACL: tt.disableACL,
+			})
+
+			if tt.want == nil {
+				assert.NoError(t, err)
+			} else {
+				assert.Equal(t, tt.want, err)
+			}
+		})
+	}
+}

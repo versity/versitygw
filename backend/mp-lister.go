@@ -113,7 +113,8 @@ func (l *MultipartUploadLister) Run() (*ListMultipartUploadsPage, error) {
 		return emitted == l.MaxUploads
 	}
 
-	for i, up := range l.Uploads[startIndex:] {
+	for i := startIndex; i < len(l.Uploads); i++ {
+		up := l.Uploads[i]
 		if l.Delimiter != "" {
 			// delimiter check
 			suffix := strings.TrimPrefix(up.Key, l.Prefix)

@@ -34,6 +34,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf16"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -309,9 +310,10 @@ func ParseObjectTags(tagging string) (map[string]string, error) {
 
 	tagSet := make(map[string]string)
 
-	for tagging != "" {
+	// the errors echo the whole header, so 'tagging' is left intact
+	for rest := tagging; rest != ""; {
 		var tag string
-		tag, tagging, _ = strings.Cut(tagging, "&")
+		tag, rest, _ = strings.Cut(rest, "&")
 		// if 'tag' before the first appearance of '&' is empty continue
 		if tag == "" {
 			continue
@@ -321,16 +323,6 @@ func ParseObjectTags(tagging string) (map[string]string, error) {
 		// if key is empty, but "=" is present, return invalid url encoding err
 		if found && key == "" {
 			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, tagging)
-		}
-
-		// return invalid tag key, if the key is longer than 128
-		if len(key) > 128 {
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, key, "")
-		}
-
-		// return invalid tag value, if tag value is longer than 256
-		if len(value) > 256 {
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagValue, key, value)
 		}
 
 		// query unescape tag key
@@ -345,14 +337,9 @@ func ParseObjectTags(tagging string) (map[string]string, error) {
 			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, tagging)
 		}
 
-		// check tag key to be valid
-		if !isValidTagComponent(key) {
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, key, "")
-		}
-
-		// check tag value to be valid
-		if !isValidTagComponent(value) {
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagValue, key, value)
+		// the tag limits apply to the unescaped key and value
+		if err := validateTag(key, value); err != nil {
+			return nil, err
 		}
 
 		// duplicate keys are not allowed: return invalid url encoding err
@@ -362,6 +349,10 @@ func ParseObjectTags(tagging string) (map[string]string, error) {
 		}
 
 		tagSet[key] = value
+	}
+
+	if len(tagSet) > 10 {
+		return nil, s3err.GetAPIError(s3err.ErrObjectTaggingLimited)
 	}
 
 	return tagSet, nil
@@ -374,45 +365,65 @@ func ParseCreateBucketTags(tagging []types.Tag) (map[string]string, error) {
 		return nil, nil
 	}
 
-	tagset := make(map[string]string, len(tagging))
+	return ParseTagSet(tagging, 50, s3err.ErrBucketTaggingLimited)
+}
 
-	if len(tagging) > 50 {
-		return nil, s3err.GetAPIError(s3err.ErrBucketTaggingLimited)
+// ParseTagSet validates the tags of an XML tag set (Tagging or
+// CreateBucketConfiguration) and returns them as a key/value map.
+// limitErr is returned when there are more than limit tags.
+func ParseTagSet(tags []types.Tag, limit int, limitErr s3err.ErrorCode) (map[string]string, error) {
+	// a Tag without a Key or Value element fails the schema
+	// validation, which precedes the checks on the tags
+	for _, tag := range tags {
+		if tag.Key == nil || tag.Value == nil {
+			return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
+		}
 	}
 
-	for _, tag := range tagging {
-		// validate tag key length
-		key := GetStringFromPtr(tag.Key)
-		if len(key) == 0 || len(key) > 128 {
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, key, "")
-		}
+	tagSet := make(map[string]string, len(tags))
 
-		// validate tag key string chars
-		if !isValidTagComponent(key) {
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, key, "")
-		}
-
-		// validate tag value length
-		value := GetStringFromPtr(tag.Value)
-		if len(value) > 256 {
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagValue, key, value)
-		}
-
-		// validate tag value string chars
-		if !isValidTagComponent(value) {
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagValue, key, value)
+	for _, tag := range tags {
+		if err := validateTag(*tag.Key, *tag.Value); err != nil {
+			return nil, err
 		}
 
 		// make sure there are no duplicate keys
-		_, ok := tagset[key]
-		if ok {
-			return nil, s3err.GetAPIError(s3err.ErrDuplicateTagKey)
+		if _, ok := tagSet[*tag.Key]; ok {
+			return nil, s3err.GetInvalidTagErr(s3err.ErrDuplicateTagKey, *tag.Key, "")
 		}
 
-		tagset[key] = value
+		tagSet[*tag.Key] = *tag.Value
 	}
 
-	return tagset, nil
+	// the tag count is only checked once every tag is valid
+	if len(tags) > limit {
+		return nil, s3err.GetAPIError(limitErr)
+	}
+
+	return tagSet, nil
+}
+
+// validateTag validates a tag key and value against the S3 tag rules
+func validateTag(key, value string) error {
+	if l := utf16Len(key); l == 0 || l > 128 || !isValidTagComponent(key) {
+		return s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, key, "")
+	}
+
+	if utf16Len(value) > 256 || !isValidTagComponent(value) {
+		return s3err.GetInvalidTagErr(s3err.ErrInvalidTagValue, key, value)
+	}
+
+	return nil
+}
+
+// utf16Len returns the length of str in UTF-16 code units, the
+// unit S3 measures the tag key and value length limits in
+func utf16Len(str string) int {
+	var l int
+	for _, r := range str {
+		l += utf16.RuneLen(r)
+	}
+	return l
 }
 
 // tag component (key/value) name rule regexp
@@ -425,8 +436,9 @@ func isValidTagComponent(str string) bool {
 }
 
 // ComputeMultipartETagFromPartETags computes the S3 multipart ETag
-// ("<md5>-<partCount>") from the completed-part ETags.
-func ComputeMultipartETagFromPartETags(parts []types.CompletedPart) (string, error) {
+// ("<md5>-<partCount>") from the completed-part ETags. uploadID is only
+// used to report the upload in an InvalidPart error.
+func ComputeMultipartETagFromPartETags(uploadID string, parts []types.CompletedPart) (string, error) {
 	var partsEtagBytes []byte
 	for _, part := range parts {
 		if part.ETag == nil {
@@ -437,7 +449,7 @@ func ComputeMultipartETagFromPartETags(parts []types.CompletedPart) (string, err
 		}
 		bts, err := getEtagBytes(*part.ETag)
 		if err != nil {
-			return "", s3err.GetAPIError(s3err.ErrInvalidPart)
+			return "", s3err.GetInvalidPartErr(uploadID, *part.PartNumber, *part.ETag)
 		}
 		partsEtagBytes = append(partsEtagBytes, bts...)
 	}
@@ -839,12 +851,22 @@ type ObjectDeletePreconditions struct {
 	IfMatchSize        *int64
 }
 
-// EvaluateObjectDeletePreconditions evaluates preconditions for DeleteObject
+// IsSet reports whether the delete has any condition. A conditional delete
+// of a key with no current version, including one whose current version is
+// a delete marker, fails with NoSuchKey instead of succeeding.
+func (p ObjectDeletePreconditions) IsSet() bool {
+	return p.IfMatch != nil || p.IfMatchLastModTime != nil || p.IfMatchSize != nil
+}
+
+// EvaluateObjectDeletePreconditions evaluates the DeleteObject conditions
+// against an existing object. If-Match "*" matches any object.
 func EvaluateObjectDeletePreconditions(etag string, modTime time.Time, size int64, preconditions ObjectDeletePreconditions) error {
 	etag = strings.Trim(etag, `"`)
-	ifMatch := preconditions.IfMatch
-	if ifMatch != nil && *ifMatch != etag {
-		return s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)
+	if preconditions.IfMatch != nil {
+		ifMatch := strings.Trim(*preconditions.IfMatch, `"`)
+		if ifMatch != "*" && ifMatch != etag {
+			return s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)
+		}
 	}
 
 	ifMatchTime := preconditions.IfMatchLastModTime

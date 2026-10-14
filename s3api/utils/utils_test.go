@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1243,10 +1244,10 @@ func TestParseTagging(t *testing.T) {
 			},
 		}
 
-		for range lgth {
+		for i := range lgth {
 			res.TagSet.Tags = append(res.TagSet.Tags, s3response.Tag{
-				Key:   genRandStr(10),
-				Value: genRandStr(20),
+				Key:   "key" + strconv.Itoa(i),
+				Value: "value",
 			})
 		}
 
@@ -1325,6 +1326,17 @@ func TestParseTagging(t *testing.T) {
 			wantErr: s3err.GetAPIError(s3err.ErrObjectTaggingLimited),
 		},
 		{
+			name: "invalid tag over the tag limit",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet>` +
+					strings.Repeat(`<Tag><Key>key</Key><Value>value</Value></Tag>`, 11) +
+					`</TagSet></Tagging>`),
+				limit: TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetInvalidTagErr(s3err.ErrDuplicateTagKey, "key", ""),
+		},
+		{
 			name: "invalid 0 length tag key",
 			args: args{
 				data: s3response.Tagging{
@@ -1335,7 +1347,75 @@ func TestParseTagging(t *testing.T) {
 				limit: TagLimitObject,
 			},
 			want:    nil,
-			wantErr: s3err.GetAPIError(s3err.ErrInvalidTagKey),
+			wantErr: s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, "", ""),
+		},
+		{
+			name: "missing tag key",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet><Tag><Value>value</Value></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
+			name: "missing tag value",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet><Tag><Key>key</Key></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
+			name: "missing tag key after an invalid tag",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet><Tag><Key>key!</Key><Value>value</Value></Tag><Tag><Value>value</Value></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
+			name: "empty tag value",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet><Tag><Key>key</Key><Value/></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    map[string]string{"key": ""},
+			wantErr: nil,
+		},
+		{
+			name: "multibyte tags at the length limits",
+			args: args{
+				data: s3response.Tagging{
+					TagSet: s3response.TagSet{
+						Tags: []s3response.Tag{
+							{Key: strings.Repeat("é", 128), Value: strings.Repeat("中", 256)},
+							{Key: strings.Repeat("𝐀", 64), Value: "value"},
+						},
+					},
+				},
+				limit: TagLimitObject,
+			},
+			want: map[string]string{
+				strings.Repeat("é", 128): strings.Repeat("中", 256),
+				strings.Repeat("𝐀", 64):  "value",
+			},
+			wantErr: nil,
+		},
+		{
+			name: "tag key over 128 UTF-16 code units",
+			args: args{
+				data: s3response.Tagging{
+					TagSet: s3response.TagSet{
+						Tags: []s3response.Tag{{Key: strings.Repeat("𝐀", 65), Value: "value"}},
+					},
+				},
+				limit: TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, strings.Repeat("𝐀", 65), ""),
 		},
 		{
 			name: "invalid long tag key",
@@ -1377,7 +1457,7 @@ func TestParseTagging(t *testing.T) {
 				limit: TagLimitObject,
 			},
 			want:    nil,
-			wantErr: s3err.GetAPIError(s3err.ErrDuplicateTagKey),
+			wantErr: s3err.GetInvalidTagErr(s3err.ErrDuplicateTagKey, "key", ""),
 		},
 	}
 
@@ -1674,6 +1754,155 @@ func TestSetRegionMismatchHeader(t *testing.T) {
 
 			assert.Equal(t, tt.want,
 				string(ctx.Response().Header.Peek("x-amz-bucket-region")))
+		})
+	}
+}
+
+// TestParseObjectLockParams covers the Object Lock parameters of an object
+// write, as headers and as POST form fields alike: the order S3 validates
+// them in, a parameter sent with an empty value, the date formats accepted
+// and the millisecond precision the date is kept to.
+func TestParseObjectLockParams(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	date := future.Format("2006-01-02T15:04:05")
+	past := "2020-01-01T00:00:00Z"
+
+	tests := []struct {
+		name      string
+		params    map[string]string
+		wantErr   error
+		wantMode  types.ObjectLockMode
+		wantHold  types.ObjectLockLegalHoldStatus
+		wantUntil time.Time
+	}{
+		{name: "none", params: map[string]string{}},
+		{
+			name:      "all set",
+			params:    map[string]string{"x-amz-object-lock-mode": "GOVERNANCE", "x-amz-object-lock-retain-until-date": date + "Z", "x-amz-object-lock-legal-hold": "ON"},
+			wantMode:  types.ObjectLockModeGovernance,
+			wantHold:  types.ObjectLockLegalHoldStatusOn,
+			wantUntil: future,
+		},
+		{
+			name:      "date truncated to the millisecond",
+			params:    map[string]string{"x-amz-object-lock-mode": "COMPLIANCE", "x-amz-object-lock-retain-until-date": date + ".123999Z"},
+			wantMode:  types.ObjectLockModeCompliance,
+			wantUntil: future.Add(123 * time.Millisecond),
+		},
+		{
+			name:      "lowercase separator and UTC designator",
+			params:    map[string]string{"x-amz-object-lock-mode": "GOVERNANCE", "x-amz-object-lock-retain-until-date": strings.Replace(date, "T", "t", 1) + "z"},
+			wantMode:  types.ObjectLockModeGovernance,
+			wantUntil: future,
+		},
+		{
+			name:      "date with an offset",
+			params:    map[string]string{"x-amz-object-lock-mode": "GOVERNANCE", "x-amz-object-lock-retain-until-date": future.In(time.FixedZone("", 2*60*60)).Format(time.RFC3339)},
+			wantMode:  types.ObjectLockModeGovernance,
+			wantUntil: future,
+		},
+		{
+			name:     "legal hold off",
+			params:   map[string]string{"x-amz-object-lock-legal-hold": "OFF"},
+			wantHold: types.ObjectLockLegalHoldStatusOff,
+		},
+		{
+			name:    "mode without a date",
+			params:  map[string]string{"x-amz-object-lock-mode": "INVALID", "x-amz-object-lock-legal-hold": "INVALID"},
+			wantErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockRetainDate, ""),
+		},
+		{
+			name:    "date without a mode",
+			params:  map[string]string{"x-amz-object-lock-retain-until-date": past, "x-amz-object-lock-legal-hold": "INVALID"},
+			wantErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockMode, ""),
+		},
+		{
+			name:    "invalid legal hold before the date",
+			params:  map[string]string{"x-amz-object-lock-mode": "INVALID", "x-amz-object-lock-retain-until-date": past, "x-amz-object-lock-legal-hold": "on"},
+			wantErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, "on"),
+		},
+		{
+			name:    "empty legal hold",
+			params:  map[string]string{"x-amz-object-lock-legal-hold": ""},
+			wantErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, ""),
+		},
+		{
+			name:    "invalid date before the mode",
+			params:  map[string]string{"x-amz-object-lock-mode": "INVALID", "x-amz-object-lock-retain-until-date": "2026-10-04"},
+			wantErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgRetainUntilDate, "2026-10-04"),
+		},
+		{
+			name:    "empty date",
+			params:  map[string]string{"x-amz-object-lock-mode": "", "x-amz-object-lock-retain-until-date": ""},
+			wantErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgRetainUntilDate, ""),
+		},
+		{
+			name:    "past date before the mode",
+			params:  map[string]string{"x-amz-object-lock-mode": "INVALID", "x-amz-object-lock-retain-until-date": past},
+			wantErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, past),
+		},
+		{
+			name:    "lowercase mode",
+			params:  map[string]string{"x-amz-object-lock-mode": "governance", "x-amz-object-lock-retain-until-date": date + "Z"},
+			wantErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, "governance"),
+		},
+		{
+			name:    "empty mode",
+			params:  map[string]string{"x-amz-object-lock-mode": "", "x-amz-object-lock-retain-until-date": date + "Z"},
+			wantErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, ""),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := fiber.New().AcquireCtx(&fasthttp.RequestCtx{})
+			for name, value := range tt.params {
+				ctx.Request().Header.Set(name, value)
+			}
+
+			for source, parse := range map[string]func() (*objLockCfg, error){
+				"headers": func() (*objLockCfg, error) { return ParsObjectLockHdrs(ctx) },
+				"fields":  func() (*objLockCfg, error) { return ParseObjectLockFields(tt.params) },
+			} {
+				cfg, err := parse()
+				if tt.wantErr != nil {
+					assert.Equal(t, tt.wantErr, err, source)
+					continue
+				}
+				if assert.NoError(t, err, source) {
+					assert.Equal(t, tt.wantMode, cfg.ObjectLockMode, source)
+					assert.Equal(t, tt.wantHold, cfg.LegalHoldStatus, source)
+					assert.True(t, tt.wantUntil.Equal(cfg.RetainUntilDate), "%s: expected %v, got %v", source, tt.wantUntil, cfg.RetainUntilDate)
+				}
+			}
+		})
+	}
+}
+
+// TestFormatRetainUntilDate covers the retain until date in response
+// headers: UTC, to the millisecond, the milliseconds left out when zero.
+func TestFormatRetainUntilDate(t *testing.T) {
+	assert.Nil(t, FormatRetainUntilDate(nil))
+	assert.Nil(t, FormatRetainUntilDate(&time.Time{}))
+
+	zone := time.FixedZone("", 2*60*60)
+	tests := []struct {
+		name string
+		date time.Time
+		want string
+	}{
+		{name: "whole second", date: time.Date(2026, 10, 4, 13, 28, 21, 0, zone), want: "2026-10-04T11:28:21Z"},
+		{name: "milliseconds", date: time.Date(2026, 10, 4, 11, 28, 21, 500000000, time.UTC), want: "2026-10-04T11:28:21.500Z"},
+		{name: "below a millisecond", date: time.Date(2026, 10, 4, 11, 28, 21, 123999999, time.UTC), want: "2026-10-04T11:28:21.123Z"},
+		{name: "only below a millisecond", date: time.Date(2026, 10, 4, 11, 28, 21, 999999, time.UTC), want: "2026-10-04T11:28:21Z"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FormatRetainUntilDate(&tt.date)
+			if assert.NotNil(t, got) {
+				assert.Equal(t, tt.want, *got)
+			}
 		})
 	}
 }

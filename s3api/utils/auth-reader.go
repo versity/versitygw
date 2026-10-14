@@ -128,7 +128,7 @@ func mapAuthParseError(err *sigv4auth.ParseError) error {
 	case sigv4auth.ErrUnsupportedAuthorizationVersion:
 		return s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationMechanism)
 	case sigv4auth.ErrInvalidAuthorizationType:
-		return s3err.GetInvalidArgumentErr(s3err.InvalidArgAuthorizationType, err.Value)
+		return s3err.GetInvalidArgumentErr(s3err.InvalidArgAuthorizationType, err.Input)
 	case sigv4auth.ErrMissingComponents:
 		return s3err.MalformedAuth.MissingComponents()
 	case sigv4auth.ErrMissingCredential:

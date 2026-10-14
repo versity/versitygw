@@ -53,20 +53,9 @@ func PutObject_special_chars(s *S3Conf) error {
 		"my?key", "my^key", "my{}key", "my%key", "my`key",
 		"my[]key", "my~key", "my<>key", "my|key", "my#key",
 	}
-	if !s.azureTests && !s.windowsTests {
-		// azure and windows cannot handle backslashes in object names:
-		// on Windows, '\' is a path separator so 'my\key' is stored as 'my/key'
+	if !s.azureTests {
+		// azure cannot handle backslashes in object names
 		objnames = append(objnames, "my\\key")
-	}
-	if s.windowsTests {
-		// ':', '?', '<', '>', '|', '*' are not valid filename characters on Windows
-		var filtered []string
-		for _, name := range objnames {
-			if !strings.ContainsAny(name, `:?<>|*`) {
-				filtered = append(filtered, name)
-			}
-		}
-		objnames = filtered
 	}
 
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -149,6 +138,11 @@ func PutObject_tagging(s *S3Conf) error {
 
 		fileObj, dirObj := "file-object", "dir-object/"
 
+		elevenTags := make([]string, 0, 11)
+		for i := range 11 {
+			elevenTags = append(elevenTags, fmt.Sprintf("key%v=val", i))
+		}
+
 		for i, el := range []struct {
 			tagging     string
 			result      map[string]string
@@ -165,10 +159,17 @@ func PutObject_tagging(s *S3Conf) error {
 			{"key1=val1&key2=val2", map[string]string{"key1": "val1", "key2": "val2"}, nil},
 			{"key@=val@", map[string]string{"key@": "val@"}, nil},
 			// invalid url-encoded
-			{"=", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "")},
-			{"key%", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "")},
+			{"=", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "=")},
+			{"key%", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "key%")},
 			// duplicate keys
-			{"key=val&key=val", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "")},
+			{"key=val&key=val", nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, "key=val&key=val")},
+			// the length limits apply to the unescaped key and value
+			{strings.Repeat("k", 126) + "%41%41=val", map[string]string{strings.Repeat("k", 126) + "AA": "val"}, nil},
+			{strings.Repeat("k", 127) + "%41%41=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key=" + strings.Repeat("v", 254) + "%41%41", map[string]string{"key": strings.Repeat("v", 254) + "AA"}, nil},
+			{"key=" + strings.Repeat("v", 255) + "%41%41", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			// tag count limit
+			{strings.Join(elevenTags, "&"), nil, s3err.GetAPIError(s3err.ErrObjectTaggingLimited)},
 			// invalid tag keys
 			{"key?=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key(=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
@@ -210,6 +211,32 @@ func PutObject_tagging(s *S3Conf) error {
 				return fmt.Errorf("test case %v failed for directory object: %w", i+1, err)
 			}
 		}
+		return nil
+	})
+}
+
+func PutObject_tagging_invalid_argument_value(s *S3Conf) error {
+	testName := "PutObject_tagging_invalid_argument_value"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// the error echoes the whole header, not only the failing tag
+		for i, tagging := range []string{"=val", "key=val&=val", "key=a&key=b", "key=val&key%=val"} {
+			req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%v/my-obj", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), map[string]string{
+				"x-amz-tagging": tagging,
+			})
+			if err != nil {
+				return fmt.Errorf("test %v: err signing the request: %w", i+1, err)
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("test %v: err sending request: %w", i+1, err)
+			}
+
+			if err := checkHTTPResponseApiErr(resp, s3err.GetInvalidArgumentErr(s3err.InvalidArgURLEncodedTagging, tagging)); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
 		return nil
 	})
 }
@@ -481,6 +508,65 @@ func PutObject_past_retain_until_date(s *S3Conf) error {
 		}, s3client)
 
 		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, rDate.Format(time.RFC3339)))
+	}, withLock())
+}
+
+// PutObject_object_lock_headers_validation covers invalid Object Lock
+// headers, checked in the order S3 checks them: the mode and the date set
+// together, then the legal hold, the date and the mode values. A header sent
+// empty is invalid.
+func PutObject_object_lock_headers_validation(s *S3Conf) error {
+	testName := "PutObject_object_lock_headers_validation"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		date := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+		past := "2020-01-01T00:00:00Z"
+
+		for _, test := range []struct {
+			name     string
+			headers  map[string]string
+			expected s3err.S3Error
+		}{
+			{
+				name:     "mode without a date",
+				headers:  map[string]string{"x-amz-object-lock-mode": "GOVERNANCE", "x-amz-object-lock-legal-hold": "INVALID"},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgMissingObjectLockRetainDate, ""),
+			},
+			{
+				name:     "invalid legal hold before a past date",
+				headers:  map[string]string{"x-amz-object-lock-mode": "INVALID", "x-amz-object-lock-retain-until-date": past, "x-amz-object-lock-legal-hold": "on"},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, "on"),
+			},
+			{
+				name:     "empty legal hold",
+				headers:  map[string]string{"x-amz-object-lock-legal-hold": ""},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgLegalHoldStatus, ""),
+			},
+			{
+				name:     "past date before an invalid mode",
+				headers:  map[string]string{"x-amz-object-lock-mode": "INVALID", "x-amz-object-lock-retain-until-date": past},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, past),
+			},
+			{
+				name:     "empty mode",
+				headers:  map[string]string{"x-amz-object-lock-mode": "", "x-amz-object-lock-retain-until-date": date},
+				expected: s3err.GetInvalidArgumentErr(s3err.InvalidArgObjectLockMode, ""),
+			},
+		} {
+			req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret,
+				"s3", s.awsRegion, "", nil, time.Now(), test.headers)
+			if err != nil {
+				return err
+			}
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+			if err := checkHTTPResponseApiErr(resp, test.expected); err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
+		}
+
+		return nil
 	}, withLock())
 }
 
@@ -1634,20 +1720,12 @@ func PutObject_false_negative_object_names(s *S3Conf) error {
 			"..%2f..%2f..%2fsecret/file.txt",           // URL-encoded
 			"..%c0%af..%c0%afetc/passwd",               // UTF-8 overlong trick
 			"dir/%c0%ae%c0%ae/%c0%ae%c0%ae/etc/passwd", // overlong UTF-8 encoding
+			".../.../.../target.txt",
+			"dir/%20../file.txt",           // encoded space
+			"..\\u2215..\\u2215etc/passwd", // Unicode division slash
+			"logs/latest -> /etc/passwd",   // symlink attacks
 			//TODO: add this test case in advanced routing
 			// "/etc/passwd" // absolute path injection
-		}
-		if !s.windowsTests {
-			// Windows strips trailing dots from path components, making '...' an
-			// invalid directory name (the filesystem rejects MkdirAll with it).
-			objs = append(objs, ".../.../.../target.txt")
-			objs = append(objs, "dir/%20../file.txt") // encoded space
-			// literal backslashes are treated as path separators on Windows
-			objs = append(objs, "..\\u2215..\\u2215etc/passwd") // Unicode division slash
-			// On Windows, '>' is an invalid filename character. The key
-			// 'logs/latest -> /etc/passwd' creates a directory component
-			// 'latest -> ' (containing '>') which MkdirAll rejects.
-			objs = append(objs, "logs/latest -> /etc/passwd") // symlink attacks
 		}
 
 		sort.Strings(objs)

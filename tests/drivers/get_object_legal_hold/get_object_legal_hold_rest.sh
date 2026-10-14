@@ -15,14 +15,14 @@
 # under the License.
 
 check_legal_hold_without_lock_enabled() {
-  if ! check_param_count_v2 "bucket, key, expected code, expected error" 4 $#; then
+  if ! check_param_count_v2 "bucket, key, expected HTTP code, expected code, expected error" 5 $#; then
     return 1
   fi
   local env_vars
 
   env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2"
 
-  if ! send_rest_command_expect_error "$env_vars" ./tests/rest_scripts/get_object_legal_hold.sh "400" "$3" "$4"; then
+  if ! send_rest_command_expect_error "$env_vars" ./tests/rest_scripts/get_object_legal_hold.sh "$3" "$4" "$5"; then
     log 2 "error sending get object legal hold command, checking error"
     return 1
   fi

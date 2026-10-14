@@ -361,6 +361,142 @@ func S3IAMAccessControl_post_object_tagging_identity_policy(s *S3Conf) error {
 	})
 }
 
+// S3IAMAccessControl_post_object_lock_identity_policy verifies the Object
+// Lock fields of a POST upload need the lock actions on the object:
+// s3:PutObjectRetention for a retention and s3:PutObjectLegalHold for a
+// legal hold of either status. A POST upload denied several actions is
+// denied the retention first, then the legal hold, the tagging and
+// s3:PutObject.
+func S3IAMAccessControl_post_object_lock_identity_policy(s *S3Conf) error {
+	testName := "S3IAMAccessControl_post_object_lock_identity_policy"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		retainUntil := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+		taggingXML := `<Tagging><TagSet><Tag><Key>env</Key><Value>test</Value></Tag></TagSet></Tagging>`
+		retention := map[string]string{
+			"x-amz-object-lock-mode":              "GOVERNANCE",
+			"x-amz-object-lock-retain-until-date": retainUntil,
+		}
+		legalHold := map[string]string{"x-amz-object-lock-legal-hold": "OFF"}
+		tagging := map[string]string{"tagging": taggingXML}
+		all := map[string]string{"tagging": taggingXML, "x-amz-object-lock-legal-hold": "OFF"}
+		for field, value := range retention {
+			all[field] = value
+		}
+
+		cases := []struct {
+			name   string
+			policy string
+			fields map[string]string
+			want   func(principal, resourceArn string) s3err.S3Error
+		}{
+			{
+				name: "retention with s3:PutObject only",
+				policy: policyDoc(accessStatement{
+					Effect: "Allow", Action: actS3PutObject, Resource: objectsArn(bucket),
+				}),
+				fields: retention,
+				want: func(principal, resourceArn string) s3err.S3Error {
+					return wantImplicitDeny(principal, "s3:PutObjectRetention", resourceArn)
+				},
+			},
+			{
+				name: "legal hold with s3:PutObject only",
+				policy: policyDoc(accessStatement{
+					Effect: "Allow", Action: actS3PutObject, Resource: objectsArn(bucket),
+				}),
+				fields: legalHold,
+				want: func(principal, resourceArn string) s3err.S3Error {
+					return wantImplicitDeny(principal, "s3:PutObjectLegalHold", resourceArn)
+				},
+			},
+			{
+				name:   "every field with no permission",
+				fields: all,
+				want: func(principal, resourceArn string) s3err.S3Error {
+					return wantImplicitDeny(principal, "s3:PutObjectRetention", resourceArn)
+				},
+			},
+			{
+				name: "legal hold and tagging with s3:PutObjectRetention only",
+				policy: policyDoc(accessStatement{
+					Effect: "Allow", Action: "s3:PutObjectRetention", Resource: objectsArn(bucket),
+				}),
+				fields: all,
+				want: func(principal, resourceArn string) s3err.S3Error {
+					return wantImplicitDeny(principal, "s3:PutObjectLegalHold", resourceArn)
+				},
+			},
+			{
+				name:   "tagging with no permission",
+				fields: tagging,
+				want: func(principal, resourceArn string) s3err.S3Error {
+					return wantImplicitDeny(principal, actS3PutObjectTagging, resourceArn)
+				},
+			},
+			{
+				name: "every field allowed",
+				policy: policyDoc(accessStatement{
+					Effect:   "Allow",
+					Action:   []string{actS3PutObject, actS3PutObjectTagging, "s3:PutObjectRetention", "s3:PutObjectLegalHold"},
+					Resource: objectsArn(bucket),
+				}),
+				fields: all,
+			},
+		}
+		for _, tc := range cases {
+			if err := func() error {
+				var policies map[string]string
+				if tc.policy != "" {
+					policies = map[string]string{"p": tc.policy}
+				}
+				user, cleanup, err := newS3IAMUser(root, s, policies)
+				if err != nil {
+					return err
+				}
+				defer cleanup()
+
+				var policyConditions []any
+				for field, value := range tc.fields {
+					policyConditions = append(policyConditions, map[string]string{field: value})
+				}
+
+				resp, err := sendPostObject(PostRequestConfig{
+					bucket:           bucket,
+					key:              "obj",
+					s3Conf:           &user.conf,
+					fileContent:      []byte("data"),
+					policyConditions: policyConditions,
+					extraFields:      tc.fields,
+				})
+				if err != nil {
+					return err
+				}
+				if tc.want == nil {
+					return checkPostObjectSuccess(resp)
+				}
+				return checkHTTPResponseApiErr(resp, tc.want(user.arn, objectArn(bucket, "obj")))
+			}(); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		ret, err := s.GetClient().GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    getPtr("obj"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if ret.Retention.Mode != types.ObjectLockRetentionModeGovernance {
+			return fmt.Errorf("expected the retention mode to be %s, instead got %s",
+				types.ObjectLockRetentionModeGovernance, ret.Retention.Mode)
+		}
+		return nil
+	}, withLock())
+}
+
 // S3IAMAccessControl_identity_policy_not_action_and_not_resource verifies
 // NotAction and NotResource grant everything *except* what they name.
 func S3IAMAccessControl_identity_policy_not_action_and_not_resource(s *S3Conf) error {
@@ -2816,12 +2952,9 @@ func S3IAMAccessControl_condition_if_match_delete_object(s *S3Conf) error {
 	})
 }
 
-// S3IAMAccessControl_condition_if_match_versioned_delete pins the edge of
-// s3:if-match's action set on the identity-policy side, where nothing
-// validates a Condition's key against the action it names. A delete naming
-// a version is authorized as s3:DeleteObjectVersion, which the key doesn't
-// apply to, so it stays absent and a statement demanding it can never be
-// satisfied
+// S3IAMAccessControl_condition_if_match_versioned_delete checks that a
+// delete naming a version and carrying If-Match is rejected before the
+// identity policy is evaluated, whether the policy would deny or allow it.
 func S3IAMAccessControl_condition_if_match_versioned_delete(s *S3Conf) error {
 	testName := "S3IAMAccessControl_condition_if_match_versioned_delete"
 	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
@@ -2843,42 +2976,39 @@ func S3IAMAccessControl_condition_if_match_versioned_delete(s *S3Conf) error {
 
 		// "null" is the version id every object carries until versioning is
 		// enabled, so this is a versioned delete on any backend.
-		deleteVersion := func(ifMatch string) error {
+		deleteVersion := func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			defer cancel()
 			_, err := user.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 				Bucket:    &bucket,
 				Key:       getPtr("obj"),
 				VersionId: getPtr("null"),
-				IfMatch:   &ifMatch,
+				IfMatch:   &etag,
 			})
 			return err
 		}
 
-		if err := checkApiErr(deleteVersion(etag),
-			wantImplicitDeny(user.arn, actS3DeleteObjectVersion, objectArn(bucket, "obj"))); err != nil {
-			return fmt.Errorf("a versioned delete must leave s3:if-match absent: %w", err)
+		wantErr := s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageVersionedDelete)
+		if err := checkApiErr(deleteVersion(), wantErr); err != nil {
+			return fmt.Errorf("a versioned delete the policy denies: %w", err)
 		}
 
-		// Absent, not merely different: the same request satisfies a
-		// statement requiring the key to be absent.
 		if err := putS3IAMUserPolicy(root, user, "p", policyDoc(accessStatement{
 			Effect: "Allow", Action: actS3DeleteObjectVersion, Resource: objectsArn(bucket),
-			Condition: cond("Null", "s3:if-match", "true"),
 		})); err != nil {
 			return err
 		}
+		if err := checkApiErr(deleteVersion(), wantErr); err != nil {
+			return fmt.Errorf("a versioned delete the policy allows: %w", err)
+		}
 
-		// Authorized now, and the header still decides the delete: a
-		// mismatch fails the precondition the policy had no say in.
-		if err := checkApiErr(deleteVersion("0123456789abcdef0123456789abcdef"),
-			s3err.GetAPIError(s3err.ErrPreconditionFailed)); err != nil {
-			return fmt.Errorf("the precondition itself must still be enforced: %w", err)
-		}
-		if err := deleteVersion(etag); err != nil {
-			return fmt.Errorf("a versioned delete naming the object's ETag must be allowed: %w", err)
-		}
-		return nil
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s.GetClient().HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("obj"),
+		})
+		cancel()
+		return err
 	})
 }
 

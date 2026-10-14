@@ -17,6 +17,10 @@ package integration
 import (
 	"context"
 	"fmt"
+	"io"
+	"slices"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -108,6 +112,102 @@ func PutObject_with_slashes(s *S3Conf) error {
 		if !compareObjects(objs, res.Contents) {
 			return fmt.Errorf("expected the objects to be %vß, instead got %v",
 				objStrings(objs), objStrings(res.Contents))
+		}
+
+		return nil
+	})
+}
+
+func PutObject_windows_reserved_names(s *S3Conf) error {
+	testName := "PutObject_windows_reserved_names"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// Windows can't name a file after these keys: each one is next to
+		// the key Windows would store it as
+		keys := []string{
+			"question?", "question", "asterisk*", `quote"`, "colon:name", "C:drive",
+			"lt<gt>", "pipe|", "tab\tchar",
+			`back\slash`, "back/slash", `..\..\escape`,
+			"trailingdot.", "trailingdot", "trailingspace ", "trailingspace",
+			"dotdir./file", "dotdir/file", "spacedir /file", "spacedir/file",
+			"CON", "nul.txt", "aux/obj", "com1", "LPT9.log", "CONIN$",
+			"pua\uf03f", "pua?",
+		}
+		for _, key := range keys {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+				Body:   strings.NewReader(key),
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("put %q: %w", key, err)
+			}
+		}
+
+		for _, key := range keys {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			if err != nil {
+				cancel()
+				return fmt.Errorf("get %q: %w", key, err)
+			}
+			body, err := io.ReadAll(out.Body)
+			out.Body.Close()
+			cancel()
+			if err != nil {
+				return fmt.Errorf("read %q: %w", key, err)
+			}
+			if string(body) != key {
+				return fmt.Errorf("expected the body of %q to be the key, instead got %q", key, body)
+			}
+		}
+
+		sort.Strings(keys)
+		var wantContents []string
+		var wantPrefixes []string
+		for _, key := range keys {
+			prefix, _, found := strings.Cut(key, "/")
+			if !found {
+				wantContents = append(wantContents, key)
+			} else if !slices.Contains(wantPrefixes, prefix+"/") {
+				wantPrefixes = append(wantPrefixes, prefix+"/")
+			}
+		}
+
+		for _, delimiter := range []string{"", "/"} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+				Bucket:    &bucket,
+				Delimiter: &delimiter,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			var contents, prefixes []string
+			for _, obj := range res.Contents {
+				contents = append(contents, *obj.Key)
+			}
+			for _, cp := range res.CommonPrefixes {
+				prefixes = append(prefixes, *cp.Prefix)
+			}
+
+			want, wantCps := keys, []string(nil)
+			if delimiter != "" {
+				want, wantCps = wantContents, wantPrefixes
+			}
+			if !slices.Equal(contents, want) {
+				return fmt.Errorf("expected the objects listed with delimiter %q to be %q, instead got %q",
+					delimiter, want, contents)
+			}
+			if !slices.Equal(prefixes, wantCps) {
+				return fmt.Errorf("expected the common prefixes listed with delimiter %q to be %q, instead got %q",
+					delimiter, wantCps, prefixes)
+			}
 		}
 
 		return nil

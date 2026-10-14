@@ -16,9 +16,11 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -98,6 +100,11 @@ func GetObjectLegalHold_unset_config(s *S3Conf) error {
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)); err != nil {
 			return err
+		}
+
+		var respErr *awshttp.ResponseError
+		if !errors.As(err, &respErr) || respErr.HTTPStatusCode() != http.StatusNotFound {
+			return fmt.Errorf("expected status %d, instead got %w", http.StatusNotFound, err)
 		}
 
 		return nil

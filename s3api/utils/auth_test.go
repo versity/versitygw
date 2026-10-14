@@ -16,6 +16,7 @@ package utils
 
 import (
 	"net"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttputil"
 	"github.com/versity/versitygw/internal/sigv4auth"
+	"github.com/versity/versitygw/s3err"
 )
 
 func TestAuthParse(t *testing.T) {
@@ -66,6 +68,19 @@ func TestAuthParse(t *testing.T) {
 				t.Errorf("signature got %v, expected %v", data.Signature, v.sig)
 			}
 		})
+	}
+}
+
+func TestAuthParseUnsupportedType(t *testing.T) {
+	for _, authstr := range []string{
+		"AWS-HMAC-SHA25 Credential=user/20261007/us-east-1/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=4a2a292c73c80d2fe4a4b9e506fe0d1a8209f92dd2dfd32c27c30402e42b473d",
+		"AWS2-HMAC-SHA1   Credential=x,  SignedHeaders=y, Signature=z",
+	} {
+		_, err := ParseAuthorization(authstr)
+		expected := s3err.GetInvalidArgumentErr(s3err.InvalidArgAuthorizationType, authstr)
+		if !reflect.DeepEqual(err, expected) {
+			t.Errorf("got %#v, expected %#v", err, expected)
+		}
 	}
 }
 

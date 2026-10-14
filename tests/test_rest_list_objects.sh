@@ -88,23 +88,11 @@ source ./tests/drivers/objects_and_versions.sh
 
 # tags: curl,ListObjectsV2,bucket-region,x-amz-bucket-region
 @test "REST - ListObjectsV2 - includes bucket header" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1814"
-  fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file test_file_two
 
-  run get_file_name
+  run setup_bucket_and_add_files_v3 "$BUCKET_ONE_NAME" 2
   assert_success
-  test_file="$output"
-
-  run get_file_name
-  assert_success
-  test_file_two="$output"
-
-  run setup_bucket_and_add_files "$bucket_name" "$test_file" "$test_file_two"
-  assert_success
+  read -r bucket_name test_file test_file_two <<< "$output"
 
   run send_rest_go_command_check_header_key_and_value "200" "x-amz-bucket-region" "$AWS_REGION" "-method" "GET" \
     "-bucketName" "$bucket_name" "-query" "list-type=2"
@@ -134,9 +122,6 @@ source ./tests/drivers/objects_and_versions.sh
 
 # tags: curl,ListObjects,minimal-request
 @test "REST - list objects v1 - no NextMarker without delimiter" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/999"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -260,9 +245,6 @@ source ./tests/drivers/objects_and_versions.sh
 
 # tags: curl,ListObjects,start-after,invalid-query
 @test "ListObjectsV1 - start-after - error" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2004"
-  fi
   run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
   assert_success
   read -r bucket_name file_one file_two <<< "$output"
@@ -279,9 +261,6 @@ source ./tests/drivers/objects_and_versions.sh
 
 # tags: curl,ListObjectsV2,start-after,continuation-token
 @test "ListObjectsV1 - start-after - doesn't include continuation token" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2007"
-  fi
   run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
   assert_success
   read -r bucket_name file_one file_two <<< "$output"

@@ -145,6 +145,7 @@ const (
 	ErrInvalidRequest
 	ErrAuthNotSetup
 	ErrNotImplemented
+	ErrNotImplementedFormField
 	ErrPreconditionFailed
 	ErrInvalidObjectState
 	ErrInvalidRange
@@ -154,6 +155,7 @@ const (
 	ErrMissingObjectLockConfiguration
 	ErrMissingObjectLockConfigurationNoSpaces
 	ErrObjectLockConfigurationNotAllowed
+	ErrObjectLockDefaultRetentionPeriodRequired
 	ErrObjectLocked
 	ErrNoSuchBucketPolicy
 	ErrBucketTaggingNotFound
@@ -483,12 +485,17 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrNotImplemented: {
 		Code:           "NotImplemented",
-		Description:    "A header you provided implies functionality that is not implemented.",
+		Description:    "A header you provided implies functionality that is not implemented",
+		HTTPStatusCode: http.StatusNotImplemented,
+	},
+	ErrNotImplementedFormField: {
+		Code:           "NotImplemented",
+		Description:    "A form field you provided implies functionality that is not implemented",
 		HTTPStatusCode: http.StatusNotImplemented,
 	},
 	ErrPreconditionFailed: {
 		Code:           "PreconditionFailed",
-		Description:    "At least one of the pre-conditions you specified did not hold.",
+		Description:    "At least one of the pre-conditions you specified did not hold",
 		HTTPStatusCode: http.StatusPreconditionFailed,
 	},
 	ErrInvalidObjectState: {
@@ -513,8 +520,8 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrNoSuchObjectLockConfiguration: {
 		Code:           "NoSuchObjectLockConfiguration",
-		Description:    "The specified object does not have a ObjectLock configuration.",
-		HTTPStatusCode: http.StatusBadRequest,
+		Description:    "The specified object does not have a ObjectLock configuration",
+		HTTPStatusCode: http.StatusNotFound,
 	},
 	ErrMissingObjectLockConfiguration: {
 		Code:           "InvalidRequest",
@@ -530,6 +537,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "InvalidBucketState",
 		Description:    "Versioning must be 'Enabled' on the bucket to apply a Object Lock configuration",
 		HTTPStatusCode: http.StatusConflict,
+	},
+	ErrObjectLockDefaultRetentionPeriodRequired: {
+		Code:           "InvalidRequest",
+		Description:    "DefaultRetention must specify a fixed retention (Days or Years) or a DefaultEventHold.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrObjectLocked: {
 		Code:           "AccessDenied",

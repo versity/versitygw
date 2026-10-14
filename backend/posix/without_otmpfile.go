@@ -47,6 +47,7 @@ type tmpfile struct {
 	size        int64
 	newDirPerm  fs.FileMode
 	newFilePerm fs.FileMode
+	fsync       bool
 	uid         int
 	gid         int
 	doChown     bool
@@ -109,6 +110,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		uid:         uid,
 		gid:         gid,
 		doChown:     doChown,
+		fsync:       p.fsync,
 	}, nil
 }
 
@@ -120,7 +122,13 @@ func (tmp *tmpfile) link() error {
 	// reset default file mode because CreateTemp uses 0600
 	tmp.f.Chmod(tmp.newFilePerm)
 
-	err := tmp.f.Close()
+	err := tmp.syncData()
+	if err != nil {
+		tmp.f.Close()
+		return err
+	}
+
+	err = tmp.f.Close()
 	if err != nil {
 		return fmt.Errorf("close tmpfile: %w", err)
 	}
@@ -148,7 +156,10 @@ func (tmp *tmpfile) link() error {
 		_ = backend.MkdirAll(filepath.Dir(objPath), tmp.uid, tmp.gid,
 			tmp.doChown, tmp.newDirPerm)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return tmp.syncNamespace()
 }
 
 func (tmp *tmpfile) cleanup() {

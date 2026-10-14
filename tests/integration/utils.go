@@ -478,7 +478,7 @@ type APIErrorResponse struct {
 	PartNumberRequested         int32                      `xml:"PartNumberRequested,omitempty"`
 	RangeRequested              string                     `xml:"RangeRequested,omitempty"`
 	ActualObjectSize            int64                      `xml:"ActualObjectSize,omitempty"`
-	TagKey                      string                     `xml:"TagKey,omitempty"`
+	TagKey                      *string                    `xml:"TagKey,omitempty"`
 	TagValue                    string                     `xml:"TagValue,omitempty"`
 	Size                        int64                      `xml:"Size,omitempty"`
 	Header                      string                     `xml:"Header,omitempty"`
@@ -896,8 +896,12 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 			compareErrField("ActualObjectSize", err.ActualObjectSize, received.ActualObjectSize),
 		)
 	case s3err.InvalidTagError:
+		// S3 sends the TagKey element even when the key is empty
+		if received.TagKey == nil {
+			return fmt.Errorf("expected error TagKey to be present")
+		}
 		return compareS3ApiErrFields(
-			compareErrField("TagKey", err.TagKey, received.TagKey),
+			compareErrField("TagKey", err.TagKey, *received.TagKey),
 			compareErrField("TagValue", err.TagValue, received.TagValue),
 		)
 	case s3err.KeyTooLongError:
@@ -3217,35 +3221,14 @@ func waitOutComplianceRetention(client *s3.Client, bucket string, obj objToDelet
 		return nil
 	}
 
-	// No retention of its own means the object is protected only by the
-	// bucket's default retention. Nothing forbids giving it a short one of
-	// its own — an object-level retention supersedes the bucket default, and
-	// there is no existing retention here to weaken — so that is how such an
-	// object gets released.
-	noRetention := err != nil && checkSdkApiErr(err, "NoSuchObjectLockConfiguration") == nil
-	if err != nil && !noRetention {
+	// No retention: nothing to wait for.
+	if err != nil && checkSdkApiErr(err, "NoSuchObjectLockConfiguration") == nil {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
-	if !noRetention && (out.Retention == nil || out.Retention.RetainUntilDate == nil) {
-		noRetention = true
-	}
-	if noRetention {
-		retDate := time.Now().Add(lockWaitTime)
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-			Bucket:    &bucket,
-			Key:       &obj.key,
-			VersionId: getNonEmptyPtr(obj.versionId),
-			Retention: &types.ObjectLockRetention{
-				Mode:            types.ObjectLockRetentionModeCompliance,
-				RetainUntilDate: &retDate,
-			},
-		})
-		cancel()
-		if err != nil && checkSdkApiErr(err, "NoSuchKey") != nil {
-			return err
-		}
-		time.Sleep(lockWaitTime)
+	if out.Retention == nil || out.Retention.RetainUntilDate == nil {
 		return nil
 	}
 

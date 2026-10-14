@@ -39,6 +39,7 @@ var (
 	nometa               bool
 	forceNoTmpFile       bool
 	forceNoCopyFileRange bool
+	fsync                bool
 	forceNoObjLockFile   bool
 	objectLockMode       string
 	enableODirect        bool
@@ -145,6 +146,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				Destination: &forceNoCopyFileRange,
 			},
 			&cli.BoolFlag{
+				Name:        "fsync",
+				Usage:       "flush each new object's data, metadata and directory entries to stable storage before acknowledging the write (slower; acknowledged objects survive power loss)",
+				EnvVars:     []string{"VGW_FSYNC"},
+				Destination: &fsync,
+			},
+			&cli.BoolFlag{
 				Name:        "disable-object-lock-file",
 				Usage:       "deprecated alias for --object-lock-mode=local",
 				EnvVars:     []string{"VGW_DISABLE_OBJECT_LOCK_FILE"},
@@ -209,6 +216,7 @@ func runPosix(ctx *cli.Context) error {
 		VersioningDir:        versioningDir,
 		ForceNoTmpFile:       forceNoTmpFile,
 		ForceNoCopyFileRange: forceNoCopyFileRange,
+		Fsync:                fsync,
 		ForceNoObjLockFile:   forceNoObjLockFile,
 		ObjectLockMode:       posix.ObjectLockMode(objectLockMode),
 		EnableODirect:        enableODirect,

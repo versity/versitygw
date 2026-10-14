@@ -281,9 +281,10 @@ func (bpi *BucketPolicyItem) isPublicFor(resource string, action Action, condCtx
 }
 
 // isPublic checks if the statement grants public access
-// to ALL users
+// to ALL users. A Deny naming every principal takes access
+// away rather than granting it, so only an Allow counts.
 func (bpi *BucketPolicyItem) isPublic() bool {
-	return bpi.Principals.isPublic()
+	return bpi.Effect == BucketPolicyAccessTypeAllow && bpi.Principals.isPublic()
 }
 
 func getMalformedPolicyError(err error) error {

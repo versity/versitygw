@@ -220,6 +220,19 @@ check_universal_vars() {
       return 1
     fi
   fi
+  if [ -n "$TEST_LOG_FILE" ]; then
+    local test_log_path test_file_dir
+    test_log_path="$(cd "$(dirname "$TEST_LOG_FILE")" && pwd)/$(basename "$TEST_LOG_FILE")"
+    test_file_dir="$(cd "$TEST_FILE_FOLDER" && pwd)"
+
+    case "$test_log_path" in
+      "$test_file_dir"/*)
+        log 1 "TEST_LOG_FILE is inside TEST_FILE_FOLDER"
+        return 1
+        ;;
+    esac
+  fi
+
   export TEST_FILE_FOLDER
   if ! init_command_log; then
     log 1 "error initializing command log"
@@ -408,8 +421,16 @@ check_user_profile_and_add_if_needed() {
   return 0
 }
 
+get_test_log_folder() {
+  if [ -n "$TEST_LOG_FILE" ]; then
+    dirname "$TEST_LOG_FILE"
+    return 0
+  fi
+  printf '%s\n' "${TMPDIR:-/tmp}"
+}
+
 init_command_log() {
-  COMMAND_LOG="$TEST_FILE_FOLDER/command-$(uuidgen).log"
+  COMMAND_LOG="$(get_test_log_folder)/command-$(uuidgen).log"
   log 5 "command log: $COMMAND_LOG"
 
   export COMMAND_LOG

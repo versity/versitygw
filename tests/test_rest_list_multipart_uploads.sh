@@ -110,9 +110,8 @@ source ./tests/setup.sh
 
 # tags: curl,ListMultipartUploads,multipart,uploadId
 @test "REST - ListMultipartUploads - uploadId without key should be ignored" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2150"
-  fi
+  local bucket_name test_file upload_id_one upload_id_two
+
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
   read -r bucket_name test_file <<< "$output"
@@ -125,16 +124,8 @@ source ./tests/setup.sh
   assert_success
   upload_id_two=$output
 
-  local first_upload_id second_upload_id
-  if [[ "$upload_id_one" < "$upload_id_two" ]]; then
-    first_upload_id="$upload_id_one"
-    second_upload_id="$upload_id_two"
-  else
-    first_upload_id="$upload_id_two"
-    second_upload_id="$upload_id_one"
-  fi
-
-  run list_multipart_uploads_check_no_upload_id_in_response "$bucket_name" "$second_upload_id" "$first_upload_id"
+  # NOTE:  upload IDs are ordered by initiation time, not lexicographically, so first created is first returned
+  run list_multipart_uploads_check_no_upload_id_in_response "$bucket_name" "$upload_id_two" "$upload_id_one"
   assert_success
 }
 
