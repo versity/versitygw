@@ -211,6 +211,7 @@ const (
 	ErrVersioningNotConfigured
 	ErrACLsDisabled
 	ErrNoSpaceLeftOnDevice
+	ErrReservedObjectKey
 
 	// Admin api errors
 	ErrAdminAccessDenied
@@ -809,6 +810,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "InsufficientStorage",
 		Description:    "No space left on device.",
 		HTTPStatusCode: http.StatusInsufficientStorage,
+	},
+	ErrReservedObjectKey: {
+		Code:           "ReservedObjectKey",
+		Description:    "Object keys in the .sgwtmp directory are reserved for the gateway's internal use.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 
 	// Admin api errors

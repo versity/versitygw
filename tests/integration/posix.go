@@ -16,6 +16,7 @@ package integration
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"slices"
@@ -645,5 +646,248 @@ func PutObject_race_with_delete(s *S3Conf) error {
 		})
 
 		return eg.Wait()
+	})
+}
+
+// PutObject_reserved_key checks that no key reaches the .sgwtmp directory of
+// a bucket, where its multipart uploads are staged: the parts of an upload at
+// .sgwtmp/multipart/<sha256 of the key>/<upload id>/. A client can't replace
+// the parts of another client's upload, however the key spells their path.
+func PutObject_reserved_key(s *S3Conf) error {
+	testName := "PutObject_reserved_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		partKey := fmt.Sprintf(".sgwtmp/multipart/%x/%v/1", sha256.Sum256([]byte(obj)), *mp.UploadId)
+		for _, key := range []string{
+			partKey,
+			"./" + partKey,
+			"my-dir/../" + partKey,
+			".SGWTMP" + strings.TrimPrefix(partKey, ".sgwtmp"),
+			".sgwtmp/",
+			".sgwtmp/my-obj",
+		} {
+			_, err := putObjectWithData(objDataLen(key, 10), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			}, s3client)
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrReservedObjectKey)); err != nil {
+				return fmt.Errorf("%v: %w", key, err)
+			}
+		}
+
+		// the staged part is the one the client uploaded
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{ETag: parts[0].ETag, PartNumber: parts[0].PartNumber},
+				},
+			},
+		})
+		cancel()
+		return err
+	})
+}
+
+func CreateMultipartUpload_reserved_key(s *S3Conf) error {
+	testName := "CreateMultipartUpload_reserved_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := createMp(s3client, bucket, ".sgwtmp/my-obj")
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrReservedObjectKey))
+	})
+}
+
+func GetObject_reserved_key(s *S3Conf) error {
+	testName := "GetObject_reserved_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		_, _, err = uploadParts(s3client, 100, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		partKey := fmt.Sprintf(".sgwtmp/multipart/%x/%v/1", sha256.Sum256([]byte(obj)), *mp.UploadId)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &partKey,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrReservedObjectKey)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &partKey,
+		})
+		cancel()
+		if err == nil {
+			return fmt.Errorf("expected HeadObject to fail")
+		}
+		if err := checkSdkApiErr(err, "BadRequest"); err != nil {
+			return err
+		}
+
+		return checkAndAbortUpload(s3client, bucket, obj, *mp.UploadId)
+	})
+}
+
+func CopyObject_reserved_key(s *S3Conf) error {
+	testName := "CopyObject_reserved_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		_, _, err = uploadParts(s3client, 100, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+		_, err = putObjects(s3client, []string{"src-obj"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		partKey := fmt.Sprintf(".sgwtmp/multipart/%x/%v/1", sha256.Sum256([]byte(obj)), *mp.UploadId)
+		for _, keys := range [][2]string{
+			{partKey, "dst-obj"},
+			{"src-obj", partKey},
+		} {
+			src, dst := keys[0], keys[1]
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:     &bucket,
+				Key:        &dst,
+				CopySource: getPtr(bucket + "/" + src),
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrReservedObjectKey)); err != nil {
+				return fmt.Errorf("%v to %v: %w", src, dst, err)
+			}
+		}
+
+		return checkAndAbortUpload(s3client, bucket, obj, *mp.UploadId)
+	})
+}
+
+func DeleteObject_reserved_key(s *S3Conf) error {
+	testName := "DeleteObject_reserved_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		partKey := fmt.Sprintf(".sgwtmp/multipart/%x/%v/1", sha256.Sum256([]byte(obj)), *mp.UploadId)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &partKey,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrReservedObjectKey)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{
+				Objects: []types.ObjectIdentifier{{Key: &partKey}},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		expectedErr := s3err.GetAPIError(s3err.ErrReservedObjectKey)
+		if len(out.Deleted) != 0 || len(out.Errors) != 1 ||
+			getString(out.Errors[0].Key) != partKey ||
+			getString(out.Errors[0].Code) != expectedErr.Code ||
+			getString(out.Errors[0].Message) != expectedErr.Description {
+			return fmt.Errorf("expected the deletion of %v to fail with %v, instead got deleted %v and errors %v",
+				partKey, expectedErr.Code, len(out.Deleted), out.Errors)
+		}
+
+		// the staged part is still there
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{ETag: parts[0].ETag, PartNumber: parts[0].PartNumber},
+				},
+			},
+		})
+		cancel()
+		return err
+	})
+}
+
+func ListObjectsV2_reserved_prefix(s *S3Conf) error {
+	testName := "ListObjectsV2_reserved_prefix"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		_, _, err = uploadParts(s3client, 100, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		uploadDir := fmt.Sprintf(".sgwtmp/multipart/%x/%v/", sha256.Sum256([]byte(obj)), *mp.UploadId)
+		for _, prefix := range []string{
+			".sgwtmp/",
+			".sgwtmp/multipart/",
+			uploadDir,
+			".SGWTMP" + strings.TrimPrefix(uploadDir, ".sgwtmp"),
+		} {
+			for _, delimiter := range []string{"", "/"} {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				res, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+					Bucket:    &bucket,
+					Prefix:    &prefix,
+					Delimiter: &delimiter,
+				})
+				cancel()
+				if err != nil {
+					return err
+				}
+				if len(res.Contents) != 0 || len(res.CommonPrefixes) != 0 {
+					return fmt.Errorf("prefix %q delimiter %q: expected nothing to be listed, instead got objects %v and common prefixes %v",
+						prefix, delimiter, objStrings(res.Contents), res.CommonPrefixes)
+				}
+			}
+		}
+
+		return checkAndAbortUpload(s3client, bucket, obj, *mp.UploadId)
 	})
 }
