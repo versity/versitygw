@@ -250,6 +250,7 @@ func TestHeadObject(ts *TestState) {
 	ts.Run(HeadObject_overrides_success)
 	ts.Run(HeadObject_overrides_presign_success)
 	ts.Run(HeadObject_overrides_fail_public)
+	ts.Run(HeadObject_invalid_response_override)
 	ts.Run(HeadObject_range_and_part_number)
 	ts.Run(HeadObject_mp_part_number_exceeds_parts_count)
 	ts.Run(HeadObject_mp_part_number_success)
@@ -298,6 +299,7 @@ func TestGetObject(ts *TestState) {
 	ts.Run(GetObject_overrides_success)
 	ts.Run(GetObject_overrides_presign_success)
 	ts.Run(GetObject_overrides_fail_public)
+	ts.Run(GetObject_invalid_response_override)
 	ts.Run(GetObject_invalid_part_number)
 	ts.Run(GetObject_range_and_part_number)
 	ts.Run(GetObject_mp_part_number_exceeds_parts_count)
@@ -310,6 +312,8 @@ func TestGetObject(ts *TestState) {
 
 func TestListObjects(ts *TestState) {
 	ts.Run(ListObjects_non_existing_bucket)
+	ts.Run(ListObjects_invalid_response_override)
+	ts.Run(ListObjects_invalid_response_override_non_existing_bucket)
 	ts.Run(ListObjects_with_prefix)
 	ts.Run(ListObjects_truncated)
 	ts.Run(ListObjects_truncated_with_delimiter)
@@ -3112,6 +3116,7 @@ func GetIntTests() IntTests {
 		"HeadObject_overrides_success":                                                     HeadObject_overrides_success,
 		"HeadObject_overrides_presign_success":                                             HeadObject_overrides_presign_success,
 		"HeadObject_overrides_fail_public":                                                 HeadObject_overrides_fail_public,
+		"HeadObject_invalid_response_override":                                             HeadObject_invalid_response_override,
 		"HeadObject_range_and_part_number":                                                 HeadObject_range_and_part_number,
 		"HeadObject_mp_part_number_exceeds_parts_count":                                    HeadObject_mp_part_number_exceeds_parts_count,
 		"HeadObject_mp_part_number_success":                                                HeadObject_mp_part_number_success,
@@ -3148,6 +3153,7 @@ func GetIntTests() IntTests {
 		"GetObject_overrides_success":                                                      GetObject_overrides_success,
 		"GetObject_overrides_presign_success":                                              GetObject_overrides_presign_success,
 		"GetObject_overrides_fail_public":                                                  GetObject_overrides_fail_public,
+		"GetObject_invalid_response_override":                                              GetObject_invalid_response_override,
 		"GetObject_invalid_part_number":                                                    GetObject_invalid_part_number,
 		"GetObject_range_and_part_number":                                                  GetObject_range_and_part_number,
 		"GetObject_mp_part_number_exceeds_parts_count":                                     GetObject_mp_part_number_exceeds_parts_count,
@@ -3157,6 +3163,8 @@ func GetIntTests() IntTests {
 		"GetObject_empty_object_part_number_1":                                             GetObject_empty_object_part_number_1,
 		"GetObject_empty_version_id":                                                       GetObject_empty_version_id,
 		"ListObjects_non_existing_bucket":                                                  ListObjects_non_existing_bucket,
+		"ListObjects_invalid_response_override":                                            ListObjects_invalid_response_override,
+		"ListObjects_invalid_response_override_non_existing_bucket":                        ListObjects_invalid_response_override_non_existing_bucket,
 		"ListObjects_with_prefix":                                                          ListObjects_with_prefix,
 		"ListObjects_truncated":                                                            ListObjects_truncated,
 		"ListObjects_truncated_with_delimiter":                                             ListObjects_truncated_with_delimiter,

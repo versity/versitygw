@@ -188,6 +188,10 @@ func New(
 	// path unescapes the url
 	app.Use("*", controllers.WrapMiddleware(middlewares.DecodeURL, l, mm))
 
+	// reject unknown response-* query parameters on every
+	// action, before the bucket lookup and authentication
+	app.Use("*", controllers.WrapMiddleware(middlewares.ValidateResponseOverrides, l, mm))
+
 	// initialize the debug logger in debug mode
 	if debuglogger.IsDebugEnabled() {
 		app.Use("*", middlewares.DebugLogger())
