@@ -2115,6 +2115,12 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 	// associated with this specific multipart upload
 	err = os.MkdirAll(filepath.Join(tmppath, uploadID), p.newDirPerm)
 	if err != nil {
+		if errors.Is(err, syscall.EDQUOT) {
+			return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
+		if errors.Is(err, syscall.ENOSPC) {
+			return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		}
 		return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("create upload temp dir: %w", err)
 	}
 
