@@ -64,17 +64,12 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 }
 
 # tags: curl,multipart,CompleteMultipartUpload,invalid-header,ETag
-@test "REST - complete upload - invalid part" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+@test "REST - complete upload - finish with non-existent part" {
+  local bucket_name large_test_file
 
-  run get_file_name
+  run setup_bucket_and_large_file_v3 "$bucket_name" "$large_test_file"
   assert_success
-  large_test_file="$output"
-
-  run setup_bucket_and_large_file_v2 "$bucket_name" "$large_test_file"
-  assert_success
+  read -r bucket_name large_test_file <<< "$output"
 
   run create_upload_finish_wrong_etag "$bucket_name" "$large_test_file"
   assert_success
@@ -377,7 +372,7 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 
 # tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - composite - incorrect crc32" {
-  run test_complete_multipart_upload_incorrect_checksum "COMPOSITE" "CRC32C"
+  run test_complete_multipart_upload_incorrect_checksum "COMPOSITE" "CRC32"
   assert_success
 }
 
@@ -474,4 +469,62 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 
   run complete_multipart_upload_empty_upload_id "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/$file_name"
   assert_success
+}
+
+@test "REST - multipart overwrite" {
+  local bucket_name file_name
+
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  read -r bucket_name file_name <<< "$output"
+
+  run complete_multipart_upload_overwrite_part "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/$file_name"
+  assert_success
+}
+
+@test "REST - multipart - InvalidPart error returns correct etag" {
+  local bucket_name file_name upload_id parts_payload bad_etag first_etag bad_parts_payload
+
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  read -r bucket_name file_name <<< "$output"
+
+  run multipart_upload_rest_before_completion "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/$file_name" 2
+  assert_success
+  read -r upload_id parts_payload <<< "$output"
+
+  bad_etag="00000000000000000000000000000000"
+  first_etag=${parts_payload#*<ETag>}
+  first_etag=${first_etag%%</ETag>*}
+  bad_parts_payload=${parts_payload/"<ETag>$first_etag</ETag>"/"<ETag>$bad_etag</ETag>"}
+
+  run complete_multipart_upload_expect_invalid_part_error_callback "$bucket_name" "$file_name" "$upload_id" "$bad_parts_payload" "1" "$bad_etag"
+  assert_success
+}
+
+@test "REST - multipart failure, then success" {
+  local bucket_name file_name upload_id parts_payload first_etag bad_parts_payload
+
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  read -r bucket_name file_name <<< "$output"
+
+  run multipart_upload_rest_before_completion "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/$file_name" 2
+  assert_success
+  read -r upload_id parts_payload <<< "$output"
+
+  #first_etag=${parts_payload#*<ETag>}
+  #first_etag=${first_etag%%</ETag>*}
+  #bad_parts_payload=${parts_payload/"<ETag>$first_etag</ETag>"/"<ETag>00000000000000000000000000000000</ETag>"}
+
+  log 5 "parts payload: $parts_payload"
+  second_etag=${parts_payload#*</ETag>}
+  second_etag=${second_etag#*<ETag>}
+  second_etag=${second_etag%%</ETag>*}
+  bad_parts_payload=${parts_payload/"<ETag>$second_etag</ETag>"/"<ETag>00000000000000000000000000000000</ETag>"}
+  log 5 "bad parts payload: $bad_parts_payload"
+
+  run complete_multipart_upload_rest "$bucket_name" "$file_name" "$upload_id" "$bad_parts_payload"
+  assert_failure
+  assert_output -p "fjlkdajkj"
 }

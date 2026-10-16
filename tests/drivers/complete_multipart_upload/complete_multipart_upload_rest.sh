@@ -149,7 +149,7 @@ test_complete_multipart_upload_unneeded_algorithm_parameter() {
   fi
   local checksum_type="$1" algorithm="$2"
   local file_and_bucket bucket_name mp_file_name
-  lcoal -a response_lines
+  local -a response_lines
 
   if ! file_and_bucket=$(setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 2>&1); then
     log 2 "error setting up file and bucket"
@@ -394,18 +394,54 @@ create_upload_part_copy_rest() {
   return 0
 }
 
+check_wrong_etag() {
+  if ! check_param_count_v2 "data file, part number, upload ID, etag" 4 $#; then
+    return 1
+  fi
+  local data_file="$1" part_number="$2" upload_id="$3" etag="$4"
+  local response xml_file
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting XML filename: $response"
+    return 1
+  fi
+  xml_file="$TEST_FILE_FOLDER/$response"
+
+  if ! get_xml_data "$data_file" "$xml_file"; then
+    log 2 "error getting XML data"
+    return 1
+  fi
+  if ! check_xml_element "$xml_file" "InvalidPart" "Code"; then
+    log 2 "code mismatch"
+    return 1
+  fi
+  if ! check_xml_element "$xml_file" "$upload_id" "UploadId"; then
+    log 2 "upload ID mismatch"
+    return 1
+  fi
+  if ! check_xml_element "$xml_file" "$part_number" "PartNumber"; then
+    log 2 "part number mismatch"
+    return 1
+  fi
+  if ! check_xml_element "$xml_file" "$etag" "ETag"; then
+    log 2 "etag mismatch"
+    return 1
+  fi
+  return 0
+}
+
 create_upload_finish_wrong_etag() {
   if ! check_param_count "create_upload_finish_wrong_etag" "bucket, key" 2 $#; then
     return 1
   fi
   local bucket="$1" key="$2"
-  local etag part_number response parts_payload result result_file error_file upload_id
+  local etag part_number response parts_payload result result_file upload_id
 
   if ! response=$(get_file_names 2 2>&1); then
     log 2 "error getting file names: $response"
     return 1
   fi
-  read -r result_file error_file <<< "$response"
+  result_file="$response"
 
   etag="gibberish"
   part_number=1
@@ -424,24 +460,64 @@ create_upload_finish_wrong_etag() {
     log 2 "complete multipart upload returned code $result: $(cat "$TEST_FILE_FOLDER/$result_file")"
     return 1
   fi
-  if ! get_xml_data "$TEST_FILE_FOLDER/$result_file" "$TEST_FILE_FOLDER/$error_file"; then
-    log 2 "error getting XML data"
+  if ! check_wrong_etag "$TEST_FILE_FOLDER/$result_file" "$part_number" "$upload_id" "$etag"; then
+    log 2 "error checking etag in error message"
     return 1
   fi
-  if ! check_xml_element "$TEST_FILE_FOLDER/$error_file" "InvalidPart" "Code"; then
-    log 2 "code mismatch"
+  return 0
+}
+
+complete_multipart_upload_overwrite_part() {
+  if ! check_param_count_v2 "bucket, key, file" 3 $#; then
     return 1
   fi
-  if ! check_xml_element "$TEST_FILE_FOLDER/$error_file" "$upload_id" "UploadId"; then
-    log 2 "upload ID mismatch"
+  local bucket="$1" key="$2" file="$3"
+  local response upload_id part_idx etag parts_payload=""
+  local -a parts
+
+  if ! response=$(split_file "$file" 4 2>&1); then
+    log 2 "error splitting file: $response"
     return 1
   fi
-  if ! check_xml_element "$TEST_FILE_FOLDER/$error_file" "$part_number" "PartNumber"; then
-    log 2 "part number mismatch"
+  read -r -a parts <<< "$response"
+  if ! response=$(create_multipart_upload_rest "$bucket" "$key" "" "parse_upload_id" 2>&1); then
+    log 2 "error creating multipart upload: $response"
     return 1
   fi
-  if ! check_xml_element "$TEST_FILE_FOLDER/$error_file" "$etag" "ETag"; then
-    log 2 "etag mismatch"
+  upload_id="$response"
+
+  if ! response=$(upload_part_rest "$bucket" "$key" "$upload_id" 1 "${parts[1]}" 2>&1); then
+    log 2 "error uploading part 2 as part 1: $response"
+    return 1
+  fi
+  for ((part_idx=1; part_idx<=${#parts[@]}; part_idx++)); do
+    if ! response=$(upload_part_rest "$bucket" "$key" "$upload_id" "$part_idx" "${parts[$((part_idx-1))]}" 2>&1); then
+      log 2 "error uploading part '$part_idx':  $response"
+      return 1
+    fi
+    etag="$response"
+    parts_payload+="<Part><ETag>$etag</ETag><PartNumber>$part_idx</PartNumber></Part>"
+  done
+  if ! response=$(complete_multipart_upload_rest "$bucket" "$key" "$upload_id" "$parts_payload" 2>&1); then
+    log 2 "error completing multipart upload: $response"
+    return 1
+  fi
+  if ! download_and_compare_file "$file" "$bucket" "$key" "${file}-copy"; then
+    log 2 "error downloading and comparing file"
+    return 1
+  fi
+  return 0
+}
+
+complete_multipart_upload_expect_invalid_part_error_callback() {
+  if ! check_param_count_v2 "bucket name, key, upload ID, parts payload, expected part number, expected etag" 6 $#; then
+    return 1
+  fi
+  local bucket_name="$1" key="$2" upload_id="$3" parts_payload="$4" expected_part_number="$5" expected_etag="$6"
+
+  if ! send_rest_command_expect_error_callback "BUCKET_NAME=$bucket_name OBJECT_KEY=$key UPLOAD_ID=$upload_id PARTS=$parts_payload" \
+      "./tests/rest_scripts/complete_multipart_upload.sh" "400" "InvalidPart" "One or more" "check_wrong_etag" "$expected_part_number" "$upload_id" "$expected_etag"; then
+    log 2 "error checking complete multipart upload command"
     return 1
   fi
   return 0
