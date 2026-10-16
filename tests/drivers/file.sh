@@ -556,13 +556,15 @@ split_file_irregular() {
 # param: file location
 # return 0 for success, 1 for error
 split_file() {
-  if ! check_param_count_ge_le "file name, number of pieces, piece size (optional)" 2 3 $#; then
+  if ! check_param_count_v2 "file name, number of pieces" 2 $#; then
     return 1
   fi
+  local file_name="$1" number_of_parts="$2"
+
   # -n l/K : Split into K pieces without breaking lines (or use 'K' for raw bytes)
   # -d     : Use numeric suffixes
   # -a 2   : Allow up to 100 pieces (00-99)
-  if ! error=$(split -a 2 -d -n "$2" "$1" "${1}-" 2>&1); then
+  if ! error=$(split -a 2 -d -n "$number_of_parts" "$file_name" "${file_name}-" 2>&1); then
     log 2 "error splitting file: $error"
     return 1
   fi
@@ -577,6 +579,9 @@ split_file() {
 
   if [ "${#parts[@]}" -eq 0 ]; then
     log 2 "split produced no output files"
+    return 1
+  elif [ "${#parts[@]}" -ne "$number_of_parts" ]; then
+    log 2 "glob mismatch:  expected '$number_of_parts', was '${#parts[@]}"
     return 1
   fi
 

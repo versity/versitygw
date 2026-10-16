@@ -24,18 +24,13 @@ source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
 # tags: curl,GetObjectAttributes,attributes,x-amz-object-attributes,multipart
 @test "REST - get object attributes" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1001"
+    skip "https://github.com/versity/versitygw/issues/925"
   fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+  local bucket_name test_file file_size part_one part_two part_three part_four
 
-  run get_file_name
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" "$test_file"
   assert_success
-  test_file="$output"
-
-  run setup_bucket_and_large_file_v2 "$bucket_name" "$test_file"
-  assert_success
+  read -r bucket_name test_file <<< "$output"
 
   run get_file_size "$TEST_FILE_FOLDER/$test_file"
   assert_success
@@ -43,15 +38,16 @@ source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
 
   run split_file "$TEST_FILE_FOLDER/$test_file" 4
   assert_success
+  read -r part_one part_two part_three part_four <<< "$output"
 
-  run upload_and_check_attributes "$bucket_name" "$test_file" "$file_size"
+  run upload_and_check_attributes "$bucket_name" "$test_file" "$file_size" "$part_one" "$part_two" "$part_three" "$part_four"
   assert_success
 }
 
 # tags: curl,GetObjectAttributes,attributes,x-amz-object-attributes,invalid-header
 @test "REST - attributes - invalid param" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1001"
+    skip "https://github.com/versity/versitygw/issues/925"
   fi
 
   run get_bucket_name "$BUCKET_ONE_NAME"
