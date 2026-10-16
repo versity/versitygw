@@ -362,6 +362,11 @@ func (s *ScoutFS) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 		return nil, err
 	}
 
+	err = s.ValidateObjectKey(bucket, object)
+	if err != nil {
+		return nil, err
+	}
+
 	objPath := s.ObjectPath(bucket, object)
 
 	fi, err := os.Stat(objPath)
@@ -452,6 +457,11 @@ func (s *ScoutFS) RestoreObject(_ context.Context, input *s3.RestoreObjectInput)
 	}
 
 	err = s.DoesBucketExist(bucket)
+	if err != nil {
+		return err
+	}
+
+	err = s.ValidateObjectKey(bucket, object)
 	if err != nil {
 		return err
 	}

@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"path"
 	"slices"
 	"strings"
 	"syscall"
@@ -563,6 +562,21 @@ func shouldSkip(name string, walkstate *walkState) bool {
 	return slices.Contains(walkstate.skipdirs, name)
 }
 
+// inSkipDir reports whether dir, a directory named by the listing prefix, is
+// a skipped directory or inside one. The prefix spells the directory names
+// as the client sent them, which a case-insensitive file system resolves to
+// a skipped directory in any case, so they are matched ignoring case.
+func inSkipDir(dir string, walkstate *walkState) bool {
+	for name := range strings.SplitSeq(dir, pathSeparator) {
+		if slices.ContainsFunc(walkstate.skipdirs, func(skip string) bool {
+			return strings.EqualFold(name, skip)
+		}) {
+			return true
+		}
+	}
+	return false
+}
+
 func addContentEntry(objectName string, dirEntry fs.DirEntry, walkstate *walkState) bool {
 	obj, err := walkstate.getObj(objectName, dirEntry)
 	if err == ErrSkipObj {
@@ -622,8 +636,9 @@ func quickWalk(walkstate *walkState) error {
 	}
 
 	if useRootEntries {
-		// keep fast-path semantics but still honor skipdirs for the prefixed root
-		if !shouldSkip(path.Base(rootDir), walkstate) {
+		// keep fast-path semantics but still honor skipdirs for the prefixed
+		// root and every directory above it
+		if !inSkipDir(rootDir, walkstate) {
 			// Mirror processDir: offer the root directory itself to getObj whenever
 			// its key sorts after the marker, using checkAndMaybeAddCommonPrefix to
 			// handle the delimiter case. This replaces the previous guards that

@@ -589,6 +589,57 @@ func TestWalkStop(t *testing.T) {
 	}
 }
 
+// TestWalkPrefixInSkipDir checks that a prefix naming a skipped directory, or
+// a directory inside one, lists nothing, also when it spells the skipped
+// directory in another case on a case-insensitive file system.
+func TestWalkPrefixInSkipDir(t *testing.T) {
+	fsys := caseFoldFS{fstest.MapFS{
+		".sgwtmp/multipart/hash/upload/1": {},
+		"obj":                             {},
+	}}
+
+	for _, prefix := range []string{
+		".sgwtmp/",
+		".sgwtmp/multipart/",
+		".sgwtmp/multipart/hash/",
+		".sgwtmp/multipart/hash/upload/",
+		".sgwtmp/multipart/hash/upload/1",
+		".SGWTMP/multipart/hash/upload/",
+		".SgwTmp/multipart/",
+	} {
+		for _, delimiter := range []string{"", "/"} {
+			res, err := backend.Walk(context.Background(), fsys, prefix, delimiter, "", 1000,
+				getObj, []string{".sgwtmp"})
+			if err != nil {
+				t.Errorf("prefix %q delimiter %q: walk: %v", prefix, delimiter, err)
+				continue
+			}
+			if len(res.Objects) != 0 || len(res.CommonPrefixes) != 0 {
+				t.Errorf("prefix %q delimiter %q: listed objects %v and common prefixes %v",
+					prefix, delimiter, printObjects(res.Objects), printCommonPrefixes(res.CommonPrefixes))
+			}
+		}
+	}
+}
+
+// caseFoldFS opens the files of a MapFS with lowercase names by names in any
+// case, like a case-insensitive file system.
+type caseFoldFS struct {
+	fstest.MapFS
+}
+
+func (c caseFoldFS) Open(name string) (fs.File, error) {
+	return c.MapFS.Open(strings.ToLower(name))
+}
+
+func (c caseFoldFS) Stat(name string) (fs.FileInfo, error) {
+	return c.MapFS.Stat(strings.ToLower(name))
+}
+
+func (c caseFoldFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	return c.MapFS.ReadDir(strings.ToLower(name))
+}
+
 func TestWalkDirectoryErrorPropagates(t *testing.T) {
 	fSys := fstest.MapFS{
 		"dir/file.txt": {},

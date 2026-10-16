@@ -616,6 +616,32 @@ func (p *Posix) validateVersionId(versionId string) error {
 	return nil
 }
 
+// ValidateObjectKey returns ReservedObjectKey if key can't name an object of
+// bucket. Backends built on Posix that add their own object entry points must
+// check keys with it before resolving them to paths.
+func (p *Posix) ValidateObjectKey(bucket, key string) error {
+	return p.validateObjectName(bucket, p.encodeKey(key))
+}
+
+// validateObjectName returns ReservedObjectKey if object, an object path
+// relative to the bucket directory, resolves to MetaTmpDir or a path in it.
+// The gateway stages multipart uploads and temporary files there, so a key
+// resolving there would read and replace the files of other clients' uploads.
+// The path is resolved like ObjectPath resolves it, so that "./", "x/../" and
+// repeated slashes don't hide the directory, and its name is matched ignoring
+// case, like case-insensitive file systems match it.
+func (p *Posix) validateObjectName(bucket, object string) error {
+	rel, err := filepath.Rel(p.BucketPath(bucket), p.ObjectPath(bucket, object))
+	if err != nil {
+		return fmt.Errorf("resolve object path: %w", err)
+	}
+	dir, _, _ := strings.Cut(filepath.ToSlash(rel), "/")
+	if strings.EqualFold(dir, MetaTmpDir) {
+		return s3err.GetAPIError(s3err.ErrReservedObjectKey)
+	}
+	return nil
+}
+
 // DoesBucketExist returns NoSuchBucket unless bucket names a bucket. Backends
 // built on Posix that add their own entry points must check buckets with it
 // rather than stat the bucket path themselves.
@@ -649,11 +675,15 @@ func (p *Posix) doesBucketExist(bucket string) error {
 	return nil
 }
 
-// doesBucketAndObjectExist checks that bucket exists and, when versionId is
-// empty, that object has a current version. A specific version is looked up
-// once versionId is validated.
+// doesBucketAndObjectExist checks that bucket exists, that object isn't
+// reserved and, when versionId is empty, that object has a current version.
+// A specific version is looked up once versionId is validated.
 func (p *Posix) doesBucketAndObjectExist(bucket, object, versionId string) error {
 	err := p.doesBucketExist(bucket)
+	if err != nil {
+		return err
+	}
+	err = p.validateObjectName(bucket, object)
 	if err != nil {
 		return err
 	}
@@ -2056,6 +2086,11 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		return s3response.InitiateMultipartUploadResult{}, err
 	}
 
+	err = p.ValidateObjectKey(bucket, object)
+	if err != nil {
+		return s3response.InitiateMultipartUploadResult{}, err
+	}
+
 	if strings.HasSuffix(*mpu.Key, "/") {
 		// directory objects can't be uploaded with multipart uploads
 		// because posix directories can't contain data
@@ -2360,6 +2395,11 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	}
 
 	err = p.doesBucketExist(bucket)
+	if err != nil {
+		return res, "", err
+	}
+
+	err = p.validateObjectName(bucket, object)
 	if err != nil {
 		return res, "", err
 	}
@@ -4170,6 +4210,11 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, err
 	}
 
+	err = p.validateObjectName(srcBucket, srcObject)
+	if err != nil {
+		return s3response.CopyPartResult{}, err
+	}
+
 	if upi.ExpectedSourceBucketOwner != nil && *upi.ExpectedSourceBucketOwner != "" {
 		aclData, err := p.meta.RetrieveAttribute(nil, srcBucket, "", aclkey)
 		if err != nil {
@@ -4602,12 +4647,17 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, err
 	}
 
+	object := p.encodeKey(*po.Key)
+	err = p.validateObjectName(*po.Bucket, object)
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
+	}
+
 	tags, err := backend.ParseObjectTags(getString(po.Tagging))
 	if err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
 
-	object := p.encodeKey(*po.Key)
 	name := p.ObjectPath(*po.Bucket, object)
 
 	// Fast-fail precondition check before the request body is staged. This
@@ -5201,6 +5251,11 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	}
 
 	err = p.doesBucketExist(bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	err = p.validateObjectName(bucket, object)
 	if err != nil {
 		return nil, err
 	}
@@ -5890,6 +5945,11 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	}
 
 	object := p.encodeKey(*input.Key)
+	err = p.validateObjectName(bucket, object)
+	if err != nil {
+		return nil, err
+	}
+
 	if versionId != "" {
 		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
 		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
@@ -6239,6 +6299,11 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		return nil, err
 	}
 
+	err = p.validateObjectName(bucket, object)
+	if err != nil {
+		return nil, err
+	}
+
 	if versionId != "" {
 		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
 		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
@@ -6567,6 +6632,11 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		return s3response.CopyObjectOutput{}, err
 	}
 
+	err = p.validateObjectName(dstBucket, dstObject)
+	if err != nil {
+		return s3response.CopyObjectOutput{}, err
+	}
+
 	// The destination's conditional write headers are evaluated before the
 	// source is looked up. Like PutObject's own fast-fail check, this one is
 	// only advisory: the authoritative check is repeated under the object
@@ -6577,6 +6647,11 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	}
 
 	err = p.doesBucketExist(srcBucket)
+	if err != nil {
+		return s3response.CopyObjectOutput{}, err
+	}
+
+	err = p.ValidateObjectKey(srcBucket, srcObject)
 	if err != nil {
 		return s3response.CopyObjectOutput{}, err
 	}
@@ -7378,6 +7453,10 @@ func (p *Posix) GetObjectTagging(ctx context.Context, bucket, object, versionId 
 	}
 
 	object = p.encodeKey(object)
+	err = p.validateObjectName(bucket, object)
+	if err != nil {
+		return nil, err
+	}
 	bucket, object, err = p.objVersionAttrPath(bucket, object, versionId)
 	if err != nil {
 		return nil, err
@@ -7446,6 +7525,10 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 	}
 
 	object = p.encodeKey(object)
+	err = p.validateObjectName(bucket, object)
+	if err != nil {
+		return err
+	}
 	bucket, object, err = p.objVersionAttrPath(bucket, object, versionId)
 	if err != nil {
 		return err

@@ -1093,6 +1093,12 @@ func TestPosix(ts *TestState) {
 	ts.Run(ObjectTagging_trailing_slash_counterpart)
 	ts.Run(ObjectLock_trailing_slash_counterpart)
 	ts.Run(DeleteObject_directory_not_empty)
+	ts.Run(PutObject_reserved_key)
+	ts.Run(CreateMultipartUpload_reserved_key)
+	ts.Run(GetObject_reserved_key)
+	ts.Run(CopyObject_reserved_key)
+	ts.Run(DeleteObject_reserved_key)
+	ts.Run(ListObjectsV2_reserved_prefix)
 	if !ts.conf.windowsTests {
 		ts.Run(PutObject_race_with_delete)
 	}
@@ -1203,6 +1209,12 @@ func TestScoutfs(ts *TestState) {
 	ts.Run(ObjectTagging_trailing_slash_counterpart)
 	ts.Run(ObjectLock_trailing_slash_counterpart)
 	ts.Run(DeleteObject_directory_not_empty)
+	ts.Run(PutObject_reserved_key)
+	ts.Run(CreateMultipartUpload_reserved_key)
+	ts.Run(GetObject_reserved_key)
+	ts.Run(CopyObject_reserved_key)
+	ts.Run(DeleteObject_reserved_key)
+	ts.Run(ListObjectsV2_reserved_prefix)
 	TestSSECTransport(ts)
 }
 
@@ -3661,6 +3673,12 @@ func GetIntTests() IntTests {
 		"PutObject_with_slashes":                                                           PutObject_with_slashes,
 		"PutObject_windows_reserved_names":                                                 PutObject_windows_reserved_names,
 		"PutObject_race_with_delete":                                                       PutObject_race_with_delete,
+		"PutObject_reserved_key":                                                           PutObject_reserved_key,
+		"CreateMultipartUpload_reserved_key":                                               CreateMultipartUpload_reserved_key,
+		"GetObject_reserved_key":                                                           GetObject_reserved_key,
+		"CopyObject_reserved_key":                                                          CopyObject_reserved_key,
+		"DeleteObject_reserved_key":                                                        DeleteObject_reserved_key,
+		"ListObjectsV2_reserved_prefix":                                                    ListObjectsV2_reserved_prefix,
 		"CreateMultipartUpload_dir_obj":                                                    CreateMultipartUpload_dir_obj,
 		"PutObject_sse_c_not_implemented":                                                  PutObject_sse_c_not_implemented,
 		"PutObject_unsupported_sse_not_implemented":                                        PutObject_unsupported_sse_not_implemented,
