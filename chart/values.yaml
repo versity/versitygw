@@ -134,7 +134,7 @@ auth:
 gateway:
   # -- Backend configuration --
   backend:
-    # The storage backend to use. Supported values: posix, scoutfs, s3, azure, plugin
+    # The storage backend to use. Supported values: posix, scoutfs, s3, azure, daos, plugin
     # This maps to the VGW_BACKEND environment variable used by the container entrypoint.
     type: posix
     # Additional arguments passed to the backend
