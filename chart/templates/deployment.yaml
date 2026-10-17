@@ -17,6 +17,9 @@
 {{- $versioningDir := .Values.gateway.backend.versioningDir -}}
 {{- $adminPathPrefix := .Values.admin.pathPrefix | default "" -}}
 {{- $webuiS3Prefix := .Values.webui.s3Prefix | default "" -}}
+{{- if and .Values.gateway.clientIPHeader (not .Values.gateway.trustedProxies) }}
+  {{- fail "gateway.trustedProxies is required when gateway.clientIPHeader is set" }}
+{{- end }}
 {{- /* Safety check: multiple replicas with local state must have persistence enabled */}}
 {{- if and (gt (int .Values.replicaCount) 1) .Values.iam.enabled (eq .Values.iam.type "internal") }}
   {{- fail "replicaCount > 1 cannot use iam.type=internal because the file store does not coordinate concurrent writers; use standalone or another external IAM backend" }}
@@ -221,6 +224,14 @@ spec:
             {{- if .Values.gateway.corsAllowOrigin }}
             - name: VGW_CORS_ALLOW_ORIGIN
               value: {{ .Values.gateway.corsAllowOrigin | quote }}
+            {{- end }}
+            {{- if .Values.gateway.clientIPHeader }}
+            - name: VGW_CLIENT_IP_HEADER
+              value: {{ .Values.gateway.clientIPHeader | quote }}
+            {{- end }}
+            {{- if .Values.gateway.trustedProxies }}
+            - name: VGW_TRUSTED_PROXIES
+              value: {{ .Values.gateway.trustedProxies | quote }}
             {{- end }}
             {{- if .Values.gateway.disableStrictBucketNames }}
             - name: VGW_DISABLE_STRICT_BUCKET_NAMES

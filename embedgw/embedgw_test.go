@@ -257,3 +257,70 @@ func TestRunVersityGWValidatesAdminPathPrefix(t *testing.T) {
 		})
 	}
 }
+
+func TestRunVersityGWValidatesClientIPHeader(t *testing.T) {
+	cfg := Config{
+		RootUserAccess:    "root",
+		RootUserSecret:    "secret",
+		Ports:             []string{"127.0.0.1:0"},
+		MaxConnections:    1,
+		MaxRequests:       1,
+		MultipartMaxParts: 1,
+		Quiet:             true,
+		ClientIPHeader:    "Forwarded",
+	}
+
+	err := RunVersityGW(context.Background(), backend.BackendUnsupported{}, &cfg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid client IP header") {
+		t.Fatalf("error = %q, want substring %q", err, "invalid client IP header")
+	}
+}
+
+// TestRunVersityGWRequiresTrustedProxies pins the review requirement that a
+// configured client IP header cannot silently degrade into trusting every
+// peer.
+func TestRunVersityGWRequiresTrustedProxies(t *testing.T) {
+	cfg := Config{
+		RootUserAccess:    "root",
+		RootUserSecret:    "secret",
+		Ports:             []string{"127.0.0.1:0"},
+		MaxConnections:    1,
+		MaxRequests:       1,
+		MultipartMaxParts: 1,
+		Quiet:             true,
+		ClientIPHeader:    "X-Forwarded-For",
+	}
+
+	err := RunVersityGW(context.Background(), backend.BackendUnsupported{}, &cfg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "trusted-proxies is empty") {
+		t.Fatalf("error = %q, want substring %q", err, "trusted-proxies is empty")
+	}
+}
+
+func TestRunVersityGWRejectsInvalidTrustedProxies(t *testing.T) {
+	cfg := Config{
+		RootUserAccess:    "root",
+		RootUserSecret:    "secret",
+		Ports:             []string{"127.0.0.1:0"},
+		MaxConnections:    1,
+		MaxRequests:       1,
+		MultipartMaxParts: 1,
+		Quiet:             true,
+		ClientIPHeader:    "X-Forwarded-For",
+		TrustedProxies:    "10.0.0.0/8, nope",
+	}
+
+	err := RunVersityGW(context.Background(), backend.BackendUnsupported{}, &cfg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid trusted proxy") {
+		t.Fatalf("error = %q, want substring %q", err, "invalid trusted proxy")
+	}
+}

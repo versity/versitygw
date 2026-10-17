@@ -29,6 +29,7 @@ import (
 	"github.com/versity/versitygw/iamapi/private"
 	"github.com/versity/versitygw/iamapi/storage"
 	"github.com/versity/versitygw/internal/netutil"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/webui"
 )
 
@@ -80,6 +81,20 @@ type IAMConfig struct {
 	// socket permissions. It has no effect on TCP/IP addresses or Linux
 	// abstract namespace sockets.
 	SocketPerm string
+
+	// ClientIPHeader records the client address from this proxy header in the
+	// IAM API and WebUI request logs. Accepted values are "X-Forwarded-For"
+	// and "X-Real-Ip". Empty (the default) keeps the socket peer address. The
+	// header is only honoured from a peer in TrustedProxies, which is
+	// required when this is set.
+	ClientIPHeader string
+	// TrustedProxies lists the comma-separated IP addresses and CIDR prefixes
+	// of the proxies in front of the IAM API. The entry "unix" trusts a peer
+	// connected over a unix domain socket, whose address fasthttp reports as
+	// 0.0.0.0. Required when ClientIPHeader is set: the header is ignored
+	// from any other peer, and startup fails when the header is set with no
+	// trusted proxies.
+	TrustedProxies string
 
 	// PrivatePorts is the list of listening addresses for the standalone
 	// IAM service's private endpoints (derive-signing-key, evaluate-policy, resolve-identity)
@@ -320,8 +335,11 @@ func iamWebUITLSFiles(cfg *IAMConfig) (certFile, keyFile string) {
 }
 
 // newIAMWebUI builds the WebUI server hosted by the IAM service process. It
-// returns nil when no WebuiPorts are configured.
-func newIAMWebUI(cfg *IAMConfig) (*webui.Server, error) {
+// returns nil when no WebuiPorts are configured. clientIPHeader and
+// trustedProxies are the already-parsed client-ip-header settings, so the
+// standalone WebUI request log records the client address like the other
+// servers do.
+func newIAMWebUI(cfg *IAMConfig, clientIPHeader string, trustedProxies utils.TrustedProxies) (*webui.Server, error) {
 	if len(cfg.WebuiPorts) == 0 {
 		return nil, nil
 	}
@@ -371,6 +389,10 @@ func newIAMWebUI(cfg *IAMConfig) (*webui.Server, error) {
 		}
 		webOpts = append(webOpts, webui.WithSocketPerm(os.FileMode(perm)))
 	}
+	if clientIPHeader != "" {
+		webOpts = append(webOpts, webui.WithClientIPHeader(clientIPHeader))
+		webOpts = append(webOpts, webui.WithTrustedProxies(trustedProxies))
+	}
 
 	return webui.NewServer(&webui.ServerConfig{
 		Gateways:      gateways,
@@ -418,6 +440,18 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 		return fmt.Errorf("root secret key is required for IAM API authentication")
 	}
 
+	clientIPHeader, err := utils.NormalizeClientIPHeader(cfg.ClientIPHeader)
+	if err != nil {
+		return err
+	}
+	trustedProxies, err := utils.ParseTrustedProxies(cfg.TrustedProxies)
+	if err != nil {
+		return err
+	}
+	if clientIPHeader != "" && trustedProxies.IsEmpty() {
+		return fmt.Errorf("client-ip-header is set but trusted-proxies is empty: the header would be trusted from every peer")
+	}
+
 	store, err := storage.New(storage.Config{
 		Dir: cfg.IAMDir,
 		Vault: storage.VaultConfig{
@@ -451,6 +485,10 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 	}
 	if cfg.Quiet {
 		opts = append(opts, iamapi.WithQuiet())
+	}
+	if clientIPHeader != "" {
+		opts = append(opts, iamapi.WithClientIPHeader(clientIPHeader))
+		opts = append(opts, iamapi.WithTrustedProxies(trustedProxies))
 	}
 	if cfg.DisableOIDCThumbprintAutoFetch {
 		opts = append(opts, iamapi.WithOIDCThumbprintAutoFetchDisabled())
@@ -512,7 +550,7 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 		}
 	}
 
-	webSrv, err := newIAMWebUI(cfg)
+	webSrv, err := newIAMWebUI(cfg, clientIPHeader, trustedProxies)
 	if err != nil {
 		return fmt.Errorf("init webui: %w", err)
 	}
