@@ -220,6 +220,95 @@ func DeleteObject_conditional_writes(s *S3Conf) error {
 	})
 }
 
+func DeleteObject_conditional_wildcard(s *S3Conf) error {
+	testName := "DeleteObject_conditional_wildcard"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, ifMatch := range []string{"*", `"*"`} {
+			obj := "my-obj"
+			_, err := putObjects(s3client, []string{obj}, bucket)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:  &bucket,
+				Key:     &obj,
+				IfMatch: &ifMatch,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("If-Match %v: %w", ifMatch, err)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err := checkSdkApiErr(err, "NotFound"); err != nil {
+				return fmt.Errorf("If-Match %v: %w", ifMatch, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func DeleteObject_conditional_non_existing_object(s *S3Conf) error {
+	testName := "DeleteObject_conditional_non_existing_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, ifMatch := range []string{"*", "d41d8cd98f00b204e9800998ecf8427e"} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:  &bucket,
+				Key:     getPtr("my-obj"),
+				IfMatch: &ifMatch,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+				return fmt.Errorf("If-Match %v: %w", ifMatch, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func DeleteObject_conditional_with_version_id(s *S3Conf) error {
+	testName := "DeleteObject_conditional_with_version_id"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		res, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		for _, ifMatch := range []*string{res[0].ETag, getPtr("*")} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: getPtr("null"),
+				IfMatch:   ifMatch,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageVersionedDelete)); err != nil {
+				return fmt.Errorf("If-Match %v: %w", *ifMatch, err)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		return err
+	})
+}
+
 func DeleteObject_directory_not_empty(s *S3Conf) error {
 	testName := "DeleteObject_directory_not_empty"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

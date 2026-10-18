@@ -26,6 +26,8 @@ type InvalidArgErrorCode int
 const (
 	InvalidArgMaxBuckets InvalidArgErrorCode = iota
 	InvalidArgNegativeMaxKeys
+	InvalidArgStartAfter
+	InvalidArgContinuationToken
 	InvalidArgObjectAttributes
 	InvalidArgPartNumber
 	InvalidArgCompleteMpPartNumber
@@ -75,6 +77,8 @@ const (
 	InvalidArgSSECRequiresTLS
 	InvalidArgUploadIdWithUploads
 	InvalidArgBucketRegionEndpoint
+	InvalidArgEmptyETag
+	InvalidArgEncodingType
 )
 
 var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
@@ -89,6 +93,14 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgNegativeMaxKeys: {
 		Description:  "max-keys cannot be negative",
 		ArgumentName: "maxKeys",
+	},
+	InvalidArgStartAfter: {
+		Description:  "startAfter only supported in REST.GET.BUCKET with list-type=2",
+		ArgumentName: "start-after",
+	},
+	InvalidArgContinuationToken: {
+		Description:  "continuation-token only supported in REST.GET.BUCKET with list-type=2",
+		ArgumentName: "continuation-token",
 	},
 	InvalidArgObjectAttributes: {
 		Description:  "Invalid attribute name specified.",
@@ -141,6 +153,10 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgAwsChunkedUnsignedPayload: {
 		Description:  "aws-chunked encoding is not supported when x-amz-content-sha256 UNSIGNED-PAYLOAD is supplied.",
 		ArgumentName: "Content-Encoding",
+	},
+	InvalidArgEncodingType: {
+		Description:  "Invalid Encoding Method specified in Request",
+		ArgumentName: "encoding-type",
 	},
 	InvalidArgCopySource: {
 		Description:  "You can only specify a copy source header for copy requests.",
@@ -205,6 +221,10 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	InvalidArgEmptyVersionId: {
 		Description:  "Version id cannot be the empty string",
 		ArgumentName: "versionId",
+	},
+	InvalidArgEmptyETag: {
+		Description:  "The value provided for the ETag field cannot be empty for this API.",
+		ArgumentName: "ETag",
 	},
 	InvalidArgChecksumPart: {
 		Description:  "Invalid Base64 or multiple checksums present in request",

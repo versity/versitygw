@@ -1060,11 +1060,118 @@ func TestS3ApiController_ListObjectsV2(t *testing.T) {
 			{Key: utils.GetStringPtr("my-key")},
 		},
 	}
+	specialKeysV2Result := s3response.ListObjectsV2Result{
+		Name:                  utils.GetStringPtr("name"),
+		Prefix:                utils.GetStringPtr("dir/a+"),
+		StartAfter:            utils.GetStringPtr("dir/a+ 0"),
+		ContinuationToken:     utils.GetStringPtr("dir/a+ 1"),
+		NextContinuationToken: utils.GetStringPtr("dir/a+ b.txt"),
+		Delimiter:             utils.GetStringPtr("/"),
+		Contents: []s3response.Object{
+			{Key: utils.GetStringPtr("dir/a+ b.txt")},
+		},
+		CommonPrefixes: []types.CommonPrefix{
+			{Prefix: utils.GetStringPtr("dir/a+ c/")},
+		},
+	}
+	urlEncodedV2Result := s3response.ListObjectsV2Result{
+		Name:                  utils.GetStringPtr("name"),
+		Prefix:                utils.GetStringPtr("dir/a%2B"),
+		StartAfter:            utils.GetStringPtr("dir/a%2B+0"),
+		ContinuationToken:     utils.GetStringPtr("dir/a+ 1"),
+		NextContinuationToken: utils.GetStringPtr("dir/a+ b.txt"),
+		Delimiter:             utils.GetStringPtr("/"),
+		Contents: []s3response.Object{
+			{Key: utils.GetStringPtr("dir/a%2B+b.txt")},
+		},
+		CommonPrefixes: []types.CommonPrefix{
+			{Prefix: utils.GetStringPtr("dir/a%2B+c/")},
+		},
+		EncodingType: types.EncodingTypeUrl,
+	}
+	urlEncodedV2ResultMixedCase := urlEncodedV2Result
+	urlEncodedV2ResultMixedCase.EncodingType = "uRl"
 	tests := []struct {
 		name   string
 		input  testInput
 		output testOutput
 	}{
+		{
+			name: "invalid encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"encoding-type": "gibberish",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"),
+			},
+		},
+		{
+			name: "empty encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"encoding-type": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, ""),
+			},
+		},
+		{
+			name: "url encoding type in any letter case",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  specialKeysV2Result,
+				queries: map[string]string{
+					"encoding-type": "uRl",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: urlEncodedV2ResultMixedCase,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
+		{
+			name: "url encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  specialKeysV2Result,
+				queries: map[string]string{
+					"encoding-type": "url",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: urlEncodedV2Result,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
 		{
 			name: "verify access fails",
 			input: testInput{
@@ -1176,11 +1283,121 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 	emptyMarker := ""
 	listResultEchoed := listResult
 	listResultEchoed.Marker = &emptyMarker
+	// S3 returns NextMarker only when the request has a delimiter
+	listResultNextMarker := listResultEchoed
+	listResultNextMarker.NextMarker = utils.GetStringPtr("my-key")
+	specialKeysResult := s3response.ListObjectsResult{
+		Name:       utils.GetStringPtr("name"),
+		Prefix:     utils.GetStringPtr("dir/a+"),
+		Marker:     utils.GetStringPtr("dir/a+ 0"),
+		NextMarker: utils.GetStringPtr("dir/a+ b.txt"),
+		Delimiter:  utils.GetStringPtr("/"),
+		Contents: []s3response.Object{
+			{Key: utils.GetStringPtr("dir/a+ b.txt")},
+		},
+		CommonPrefixes: []types.CommonPrefix{
+			{Prefix: utils.GetStringPtr("dir/a+ c/")},
+		},
+	}
+	urlEncodedResult := s3response.ListObjectsResult{
+		Name:       utils.GetStringPtr("name"),
+		Prefix:     utils.GetStringPtr("dir/a%2B"),
+		Marker:     utils.GetStringPtr("dir/a%2B+0"),
+		NextMarker: utils.GetStringPtr("dir/a%2B+b.txt"),
+		Delimiter:  utils.GetStringPtr("/"),
+		Contents: []s3response.Object{
+			{Key: utils.GetStringPtr("dir/a%2B+b.txt")},
+		},
+		CommonPrefixes: []types.CommonPrefix{
+			{Prefix: utils.GetStringPtr("dir/a%2B+c/")},
+		},
+		EncodingType: types.EncodingTypeUrl,
+	}
+	urlEncodedResultMixedCase := urlEncodedResult
+	urlEncodedResultMixedCase.EncodingType = "uRl"
 	tests := []struct {
 		name   string
 		input  testInput
 		output testOutput
 	}{
+		{
+			name: "invalid encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"encoding-type": "gibberish",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"),
+			},
+		},
+		{
+			name: "empty encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"encoding-type": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, ""),
+			},
+		},
+		{
+			name: "url encoding type in any letter case",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  specialKeysResult,
+				queries: map[string]string{
+					"delimiter":     "/",
+					"encoding-type": "uRl",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: urlEncodedResultMixedCase,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
+		{
+			name: "url encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  specialKeysResult,
+				queries: map[string]string{
+					"delimiter":     "/",
+					"encoding-type": "url",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: urlEncodedResult,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
 		{
 			name: "verify access fails",
 			input: testInput{
@@ -1193,6 +1410,60 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "start-after is not supported",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  listResult,
+				queries: map[string]string{
+					"start-after": "my-key",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgStartAfter, ""),
+			},
+		},
+		{
+			name: "empty start-after is not supported",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  listResult,
+				queries: map[string]string{
+					"start-after": "",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgStartAfter, ""),
+			},
+		},
+		{
+			name: "continuation-token is not supported",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  listResult,
+				queries: map[string]string{
+					"continuation-token": "my-token",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgContinuationToken, ""),
 			},
 		},
 		{
@@ -1237,6 +1508,45 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 			output: testOutput{
 				response: &Response{
 					Data: listResultEchoed,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
+		{
+			name: "next marker omitted without delimiter",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  listResultNextMarker,
+			},
+			output: testOutput{
+				response: &Response{
+					Data: listResultEchoed,
+					Headers: map[string]*string{
+						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
+		{
+			name: "next marker returned with delimiter",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  listResultNextMarker,
+				queries: map[string]string{
+					"delimiter": "delim",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: listResultNextMarker,
 					Headers: map[string]*string{
 						"x-amz-bucket-region": utils.GetStringPtr(defaultRegion),
 					},

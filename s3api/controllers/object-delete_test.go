@@ -242,6 +242,26 @@ func TestS3ApiController_DeleteObject(t *testing.T) {
 			},
 		},
 		{
+			name: "If-Match with a versionId is rejected ahead of authorization",
+			input: testInput{
+				locals: accessDeniedLocals,
+				queries: map[string]string{
+					"versionId": "versionId",
+				},
+				headers: map[string]string{
+					"If-Match": "etag",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageVersionedDelete),
+			},
+		},
+		{
 			name: "verify access fails",
 			input: testInput{
 				locals: accessDeniedLocals,
@@ -340,6 +360,7 @@ func TestS3ApiController_DeleteObject(t *testing.T) {
 				ctxInputs{
 					locals:  tt.input.locals,
 					queries: tt.input.queries,
+					headers: tt.input.headers,
 				})
 		})
 	}

@@ -122,9 +122,6 @@ source ./tests/drivers/objects_and_versions.sh
 
 # tags: curl,ListObjects,minimal-request
 @test "REST - list objects v1 - no NextMarker without delimiter" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/999"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -157,19 +154,12 @@ source ./tests/drivers/objects_and_versions.sh
 
 # tags: curl,ListObjects,encoding-type,invalid-query
 @test "REST - ListObjects - invalid encoding" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1985"
-  fi
   run objects_versions_invalid_encoding ""
   assert_success
 }
 
 # tags: curl,ListObjects,encoding-type
 @test "REST - ListObjects - encoding success" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1985"
-  fi
-
   run objects_versions_encoding_success "" "ListBucketResult" "Contents"
   assert_success
 }
@@ -248,9 +238,6 @@ source ./tests/drivers/objects_and_versions.sh
 
 # tags: curl,ListObjects,start-after,invalid-query
 @test "ListObjectsV1 - start-after - error" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2004"
-  fi
   run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
   assert_success
   read -r bucket_name file_one file_two <<< "$output"

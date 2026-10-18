@@ -53,20 +53,9 @@ func PutObject_special_chars(s *S3Conf) error {
 		"my?key", "my^key", "my{}key", "my%key", "my`key",
 		"my[]key", "my~key", "my<>key", "my|key", "my#key",
 	}
-	if !s.azureTests && !s.windowsTests {
-		// azure and windows cannot handle backslashes in object names:
-		// on Windows, '\' is a path separator so 'my\key' is stored as 'my/key'
+	if !s.azureTests {
+		// azure cannot handle backslashes in object names
 		objnames = append(objnames, "my\\key")
-	}
-	if s.windowsTests {
-		// ':', '?', '<', '>', '|', '*' are not valid filename characters on Windows
-		var filtered []string
-		for _, name := range objnames {
-			if !strings.ContainsAny(name, `:?<>|*`) {
-				filtered = append(filtered, name)
-			}
-		}
-		objnames = filtered
 	}
 
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1731,20 +1720,12 @@ func PutObject_false_negative_object_names(s *S3Conf) error {
 			"..%2f..%2f..%2fsecret/file.txt",           // URL-encoded
 			"..%c0%af..%c0%afetc/passwd",               // UTF-8 overlong trick
 			"dir/%c0%ae%c0%ae/%c0%ae%c0%ae/etc/passwd", // overlong UTF-8 encoding
+			".../.../.../target.txt",
+			"dir/%20../file.txt",           // encoded space
+			"..\\u2215..\\u2215etc/passwd", // Unicode division slash
+			"logs/latest -> /etc/passwd",   // symlink attacks
 			//TODO: add this test case in advanced routing
 			// "/etc/passwd" // absolute path injection
-		}
-		if !s.windowsTests {
-			// Windows strips trailing dots from path components, making '...' an
-			// invalid directory name (the filesystem rejects MkdirAll with it).
-			objs = append(objs, ".../.../.../target.txt")
-			objs = append(objs, "dir/%20../file.txt") // encoded space
-			// literal backslashes are treated as path separators on Windows
-			objs = append(objs, "..\\u2215..\\u2215etc/passwd") // Unicode division slash
-			// On Windows, '>' is an invalid filename character. The key
-			// 'logs/latest -> /etc/passwd' creates a directory component
-			// 'latest -> ' (containing '>') which MkdirAll rejects.
-			objs = append(objs, "logs/latest -> /etc/passwd") // symlink attacks
 		}
 
 		sort.Strings(objs)

@@ -204,6 +204,16 @@ func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 		}
 	}
 
+	// the bucket is created in the backend region, which is independent of the
+	// gateway region the client's constraint was validated against; a regional
+	// S3 endpoint outside us-east-1 rejects a CreateBucket without a constraint
+	if region := s.client.Options().Region; region != "" && region != "us-east-1" {
+		if input.CreateBucketConfiguration == nil {
+			input.CreateBucketConfiguration = &types.CreateBucketConfiguration{}
+		}
+		input.CreateBucketConfiguration.LocationConstraint = types.BucketLocationConstraint(region)
+	}
+
 	// drop an empty CreateBucketConfiguration: strict backends (Ceph RGW) reject the empty element
 	if input.CreateBucketConfiguration != nil &&
 		len(input.CreateBucketConfiguration.Tags) == 0 &&

@@ -313,8 +313,10 @@ func TestListObjects(ts *TestState) {
 	ts.Run(ListObjects_non_existing_bucket)
 	ts.Run(ListObjects_with_prefix)
 	ts.Run(ListObjects_truncated)
+	ts.Run(ListObjects_truncated_with_delimiter)
 	ts.Run(ListObjects_paginated)
 	ts.Run(ListObjects_invalid_max_keys)
+	ts.Run(ListObjects_start_after)
 	ts.Run(ListObjects_max_keys_0)
 	ts.Run(ListObjects_exceeding_max_keys)
 	ts.Run(ListObjects_delimiter)
@@ -328,6 +330,7 @@ func TestListObjects(ts *TestState) {
 	ts.Run(ListObjects_mp_masking_with_marker)
 	ts.Run(ListObjects_mp_masking_truncation)
 	ts.Run(ListObjects_mp_masking_delimiter)
+	ts.Run(ListObjects_url_encoding)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(ListObjects_with_checksum)
@@ -348,6 +351,7 @@ func TestListObjectsV2(ts *TestState) {
 	ts.Run(ListObjectsV2_list_all_objs)
 	ts.Run(ListObjectsV2_full_pagination)
 	ts.Run(ListObjectsV2_pagination_with_delimiter)
+	ts.Run(ListObjectsV2_url_encoding)
 	ts.Run(ListObjectsV2_with_owner)
 	ts.Run(ListObjectsV2_non_truncated_common_prefixes)
 	//TODO: remove the condition after implementing checksums in azure
@@ -373,6 +377,9 @@ func TestDeleteObject(ts *TestState) {
 	ts.Run(DeleteObject_directory_object)
 	ts.Run(DeleteObject_non_empty_dir_obj)
 	ts.Run(DeleteObject_conditional_writes)
+	ts.Run(DeleteObject_conditional_wildcard)
+	ts.Run(DeleteObject_conditional_non_existing_object)
+	ts.Run(DeleteObject_conditional_with_version_id)
 	ts.Run(DeleteObject_success)
 	ts.Run(DeleteObject_success_status_code)
 	ts.Run(DeleteObject_incorrect_expected_bucket_owner)
@@ -386,6 +393,7 @@ func TestDeleteObjects(ts *TestState) {
 	ts.Run(DeleteObjects_non_existing_objects)
 	ts.Run(DeleteObjects_success)
 	ts.Run(DeleteObjects_quiet_mode)
+	ts.Run(DeleteObjects_conditional)
 	ts.Run(DeleteObjects_key_limit)
 	ts.Run(DeleteObjects_invalid_object_keys)
 }
@@ -1074,6 +1082,7 @@ func TestPosix(ts *TestState) {
 	ts.Run(PutObject_overwrite_file_obj_with_nested_obj)
 	ts.Run(PutObject_dir_obj_with_data)
 	ts.Run(PutObject_with_slashes)
+	ts.Run(PutObject_windows_reserved_names)
 	ts.Run(CreateMultipartUpload_dir_obj)
 	ts.Run(PutObject_name_too_long)
 	ts.Run(HeadObject_name_too_long)
@@ -1087,6 +1096,12 @@ func TestPosix(ts *TestState) {
 	ts.Run(ObjectTagging_trailing_slash_counterpart)
 	ts.Run(ObjectLock_trailing_slash_counterpart)
 	ts.Run(DeleteObject_directory_not_empty)
+	ts.Run(PutObject_reserved_key)
+	ts.Run(CreateMultipartUpload_reserved_key)
+	ts.Run(GetObject_reserved_key)
+	ts.Run(CopyObject_reserved_key)
+	ts.Run(DeleteObject_reserved_key)
+	ts.Run(ListObjectsV2_reserved_prefix)
 	if !ts.conf.windowsTests {
 		ts.Run(PutObject_race_with_delete)
 	}
@@ -1186,6 +1201,7 @@ func TestScoutfs(ts *TestState) {
 	ts.Run(PutObject_overwrite_file_obj_with_nested_obj)
 	ts.Run(PutObject_dir_obj_with_data)
 	ts.Run(PutObject_with_slashes)
+	ts.Run(PutObject_windows_reserved_names)
 	ts.Run(CreateMultipartUpload_dir_obj)
 	ts.Run(PutObject_name_too_long)
 	ts.Run(HeadObject_name_too_long)
@@ -1196,6 +1212,12 @@ func TestScoutfs(ts *TestState) {
 	ts.Run(ObjectTagging_trailing_slash_counterpart)
 	ts.Run(ObjectLock_trailing_slash_counterpart)
 	ts.Run(DeleteObject_directory_not_empty)
+	ts.Run(PutObject_reserved_key)
+	ts.Run(CreateMultipartUpload_reserved_key)
+	ts.Run(GetObject_reserved_key)
+	ts.Run(CopyObject_reserved_key)
+	ts.Run(DeleteObject_reserved_key)
+	ts.Run(ListObjectsV2_reserved_prefix)
 	TestSSECTransport(ts)
 }
 
@@ -2085,9 +2107,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_CopyObject_to_itself)
 	ts.Run(Versioning_CopyObject_to_itself_from_the_current_version)
 	ts.Run(Versioning_CopyObject_conditional_writes)
-	if !ts.conf.windowsTests {
-		ts.Run(Versioning_CopyObject_special_chars)
-	}
+	ts.Run(Versioning_CopyObject_special_chars)
 	// HeadObject action
 	ts.Run(Versioning_HeadObject_invalid_versionId)
 	if !ts.conf.windowsTests {
@@ -2144,9 +2164,11 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_DeleteObject_non_existing_objects)
 	ts.Run(Versioning_DeleteObject_suspended)
 	ts.Run(Versioning_DeleteObject_never_versioned_bucket)
+	ts.Run(Versioning_DeleteObject_conditional_delete_marker)
 	ts.Run(Versioning_DeleteObjects_success)
 	ts.Run(Versioning_DeleteObjects_delete_deleteMarkers)
 	ts.Run(Versioning_DeleteObjects_never_versioned_bucket)
+	ts.Run(Versioning_DeleteObjects_conditional)
 	// ListObjectVersions
 	ts.Run(ListObjectVersions_non_existing_bucket)
 	ts.Run(ListObjectVersions_negative_max_keys)
@@ -3153,8 +3175,10 @@ func GetIntTests() IntTests {
 		"ListObjects_non_existing_bucket":                                                  ListObjects_non_existing_bucket,
 		"ListObjects_with_prefix":                                                          ListObjects_with_prefix,
 		"ListObjects_truncated":                                                            ListObjects_truncated,
+		"ListObjects_truncated_with_delimiter":                                             ListObjects_truncated_with_delimiter,
 		"ListObjects_paginated":                                                            ListObjects_paginated,
 		"ListObjects_invalid_max_keys":                                                     ListObjects_invalid_max_keys,
+		"ListObjects_start_after":                                                          ListObjects_start_after,
 		"ListObjects_max_keys_0":                                                           ListObjects_max_keys_0,
 		"ListObjects_delimiter":                                                            ListObjects_delimiter,
 		"ListObjects_max_keys_none":                                                        ListObjects_max_keys_none,
@@ -3167,6 +3191,7 @@ func GetIntTests() IntTests {
 		"ListObjects_mp_masking_with_marker":                                               ListObjects_mp_masking_with_marker,
 		"ListObjects_mp_masking_truncation":                                                ListObjects_mp_masking_truncation,
 		"ListObjects_mp_masking_delimiter":                                                 ListObjects_mp_masking_delimiter,
+		"ListObjects_url_encoding":                                                         ListObjects_url_encoding,
 		"ListObjectsV2_non_truncated_common_prefixes":                                      ListObjectsV2_non_truncated_common_prefixes,
 		"ListObjectsV2_invalid_parent_prefix":                                              ListObjectsV2_invalid_parent_prefix,
 		"ListObjectsV2_should_not_list_pending_mps":                                        ListObjectsV2_should_not_list_pending_mps,
@@ -3186,6 +3211,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_list_all_objs":                                                      ListObjectsV2_list_all_objs,
 		"ListObjectsV2_full_pagination":                                                    ListObjectsV2_full_pagination,
 		"ListObjectsV2_pagination_with_delimiter":                                          ListObjectsV2_pagination_with_delimiter,
+		"ListObjectsV2_url_encoding":                                                       ListObjectsV2_url_encoding,
 		"ListObjectsV2_with_owner":                                                         ListObjectsV2_with_owner,
 		"ListObjectsV2_with_checksum":                                                      ListObjectsV2_with_checksum,
 		"ListObjectVersions_VD_success":                                                    ListObjectVersions_VD_success,
@@ -3193,6 +3219,9 @@ func GetIntTests() IntTests {
 		"DeleteObject_directory_object_noslash":                                            DeleteObject_directory_object_noslash,
 		"DeleteObject_non_empty_dir_obj":                                                   DeleteObject_non_empty_dir_obj,
 		"DeleteObject_conditional_writes":                                                  DeleteObject_conditional_writes,
+		"DeleteObject_conditional_wildcard":                                                DeleteObject_conditional_wildcard,
+		"DeleteObject_conditional_non_existing_object":                                     DeleteObject_conditional_non_existing_object,
+		"DeleteObject_conditional_with_version_id":                                         DeleteObject_conditional_with_version_id,
 		"DeleteObject_name_too_long":                                                       DeleteObject_name_too_long,
 		"CopyObject_overwrite_same_dir_object":                                             CopyObject_overwrite_same_dir_object,
 		"CopyObject_overwrite_same_file_object":                                            CopyObject_overwrite_same_file_object,
@@ -3212,6 +3241,7 @@ func GetIntTests() IntTests {
 		"DeleteObjects_non_existing_objects":                                               DeleteObjects_non_existing_objects,
 		"DeleteObjects_success":                                                            DeleteObjects_success,
 		"DeleteObjects_quiet_mode":                                                         DeleteObjects_quiet_mode,
+		"DeleteObjects_conditional":                                                        DeleteObjects_conditional,
 		"DeleteObjects_key_limit":                                                          DeleteObjects_key_limit,
 		"DeleteObjects_invalid_object_keys":                                                DeleteObjects_invalid_object_keys,
 		"DeleteObjects_iam_mixed_denials_and_success":                                      DeleteObjects_iam_mixed_denials_and_success,
@@ -3647,7 +3677,14 @@ func GetIntTests() IntTests {
 		"PutObject_overwrite_file_obj_with_nested_obj":                                     PutObject_overwrite_file_obj_with_nested_obj,
 		"PutObject_dir_obj_with_data":                                                      PutObject_dir_obj_with_data,
 		"PutObject_with_slashes":                                                           PutObject_with_slashes,
+		"PutObject_windows_reserved_names":                                                 PutObject_windows_reserved_names,
 		"PutObject_race_with_delete":                                                       PutObject_race_with_delete,
+		"PutObject_reserved_key":                                                           PutObject_reserved_key,
+		"CreateMultipartUpload_reserved_key":                                               CreateMultipartUpload_reserved_key,
+		"GetObject_reserved_key":                                                           GetObject_reserved_key,
+		"CopyObject_reserved_key":                                                          CopyObject_reserved_key,
+		"DeleteObject_reserved_key":                                                        DeleteObject_reserved_key,
+		"ListObjectsV2_reserved_prefix":                                                    ListObjectsV2_reserved_prefix,
 		"CreateMultipartUpload_dir_obj":                                                    CreateMultipartUpload_dir_obj,
 		"PutObject_sse_c_not_implemented":                                                  PutObject_sse_c_not_implemented,
 		"PutObject_unsupported_sse_not_implemented":                                        PutObject_unsupported_sse_not_implemented,
@@ -3812,9 +3849,11 @@ func GetIntTests() IntTests {
 		"Versioning_DeleteObject_non_existing_objects":                                     Versioning_DeleteObject_non_existing_objects,
 		"Versioning_DeleteObject_suspended":                                                Versioning_DeleteObject_suspended,
 		"Versioning_DeleteObject_never_versioned_bucket":                                   Versioning_DeleteObject_never_versioned_bucket,
+		"Versioning_DeleteObject_conditional_delete_marker":                                Versioning_DeleteObject_conditional_delete_marker,
 		"Versioning_DeleteObjects_success":                                                 Versioning_DeleteObjects_success,
 		"Versioning_DeleteObjects_delete_deleteMarkers":                                    Versioning_DeleteObjects_delete_deleteMarkers,
 		"Versioning_DeleteObjects_never_versioned_bucket":                                  Versioning_DeleteObjects_never_versioned_bucket,
+		"Versioning_DeleteObjects_conditional":                                             Versioning_DeleteObjects_conditional,
 		"ListObjectVersions_non_existing_bucket":                                           ListObjectVersions_non_existing_bucket,
 		"ListObjectVersions_negative_max_keys":                                             ListObjectVersions_negative_max_keys,
 		"ListObjectVersions_list_single_object_versions":                                   ListObjectVersions_list_single_object_versions,

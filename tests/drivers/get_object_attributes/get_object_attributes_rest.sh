@@ -14,20 +14,30 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/complete_multipart_upload/complete_multipart_upload_rest.sh
+
 upload_and_check_attributes() {
-  if ! check_param_count_v2 "bucket, test file, file size" 3 $#; then
+  if ! check_param_count_v2 "bucket, test file, file size, parts one to four" 7 $#; then
     return 1
   fi
-  if ! perform_multipart_upload_rest "$1" "$2" "$TEST_FILE_FOLDER/$2-0" "$TEST_FILE_FOLDER/$2-1" \
-      "$TEST_FILE_FOLDER/$2-2" "$TEST_FILE_FOLDER/$2-3"; then
+  local bucket="$1" test_file="$2" file_size="$3" part_one="$4" part_two="$5" part_three="$6" part_four="$7"
+  local result attributes_file
+
+  if ! perform_multipart_upload_rest "$bucket" "$test_file" "$part_one" "$part_two" "$part_three" "$part_four"; then
     log 2 "error uploading and checking parts"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" ATTRIBUTES="ETag,StorageClass,ObjectParts,ObjectSize" OUTPUT_FILE="$TEST_FILE_FOLDER/attributes.txt" ./tests/rest_scripts/get_object_attributes.sh); then
+  if ! result=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $result"
+    return 1
+  fi
+  attributes_file="$result"
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$bucket" OBJECT_KEY="$test_file" ATTRIBUTES="ETag,StorageClass,ObjectParts,ObjectSize" OUTPUT_FILE="$TEST_FILE_FOLDER/$attributes_file" ./tests/rest_scripts/get_object_attributes.sh 2>&1); then
     log 2 "error listing object attributes: $result"
     return 1
   fi
-  if ! check_attributes_after_upload "$3"; then
+  if ! check_attributes_after_upload "$TEST_FILE_FOLDER/$attributes_file" "$file_size"; then
     log 2 "error checking attributes after upload"
     return 1
   fi
@@ -35,36 +45,44 @@ upload_and_check_attributes() {
 }
 
 check_attributes_after_upload() {
-  if [ $# -ne 1 ]; then
-    log 2 "'check_attributes_after_upload' requires file size"
+  if ! check_param_count_v2 "data file, expected file size" 2 $#; then
     return 1
   fi
-  log 5 "attributes: $(cat "$TEST_FILE_FOLDER/attributes.txt")"
-  if ! object_size=$(xmllint --xpath '//*[local-name()="ObjectSize"]/text()' "$TEST_FILE_FOLDER/attributes.txt" 2>&1); then
-    log 2 "error getting checksum: $object_size"
+  local data_file="$1" expected_size="$2"
+  local response object_size etag parts_count
+
+  log 5 "attributes: $(cat "$data_file")"
+  if ! response=$(xmllint --xpath '//*[local-name()="ObjectSize"]/text()' "$data_file" 2>&1); then
+    log 2 "error getting checksum: $response"
     return 1
   fi
+  object_size="$response"
+
   # shellcheck disable=SC2154
-  if [ "$object_size" != "$1" ]; then
-    log 2 "expected file size of '$file_size', was '$object_size'"
+  if [ "$object_size" != "$expected_size" ]; then
+    log 2 "expected file size of '$expected_size', was '$object_size'"
     return 1
   fi
-  if ! error=$(xmllint --xpath '//*[local-name()="StorageClass"]/text()' "$TEST_FILE_FOLDER/attributes.txt" 2>&1); then
-    log 2 "error getting storage class: $error"
+  if ! response=$(xmllint --xpath '//*[local-name()="StorageClass"]/text()' "$data_file" 2>&1); then
+    log 2 "error getting storage class: $response"
     return 1
   fi
-  if ! etag=$(xmllint --xpath '//*[local-name()="ETag"]/text()' "$TEST_FILE_FOLDER/attributes.txt" 2>&1); then
-    log 2 "error getting etag: $etag"
+
+  if ! response=$(xmllint --xpath '//*[local-name()="ETag"]/text()' "$data_file" 2>&1); then
+    log 2 "error getting etag: $response"
     return 1
   fi
+  etag="$response"
   if ! [[ $etag =~ ^[a-fA-F0-9]{32}-4$ ]]; then
     log 2 "unexpected etag pattern ($etag)"
     return 1
   fi
-  if ! parts_count=$(xmllint --xpath '//*[local-name()="PartsCount"]/text()' "$TEST_FILE_FOLDER/attributes.txt" 2>&1); then
-    log 2 "error getting parts_count: $parts_count"
+
+  if ! response=$(xmllint --xpath '//*[local-name()="PartsCount"]/text()' "$data_file" 2>&1); then
+    log 2 "error getting parts_count: $response"
     return 1
   fi
+  parts_count="$response"
   if [[ $parts_count != 4 ]]; then
     log 2 "unexpected parts count, expected 4, was $parts_count"
     return 1
