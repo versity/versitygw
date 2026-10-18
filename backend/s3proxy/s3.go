@@ -1259,6 +1259,8 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 		StorageClass: out.StorageClass,
 		ObjectParts:  parts,
 		Checksum:     out.Checksum,
+		VersionId:    out.VersionId,
+		DeleteMarker: out.DeleteMarker,
 	}, nil
 }
 

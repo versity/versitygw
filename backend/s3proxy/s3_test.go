@@ -216,3 +216,98 @@ func TestCreateBucketKeepsTagsAndSetsBackendRegionConstraint(t *testing.T) {
 		t.Errorf("CreateBucket must keep the requested tags, got %q", body)
 	}
 }
+
+// stubHTTPClient answers every request with the given headers and body.
+type stubHTTPClient struct {
+	header http.Header
+	body   string
+}
+
+func (c *stubHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     c.header,
+		Body:       io.NopCloser(strings.NewReader(c.body)),
+		Request:    req,
+	}, nil
+}
+
+func newStubProxy(t *testing.T, header http.Header, body string) *S3Proxy {
+	t.Helper()
+	client := s3.New(s3.Options{
+		Region:       "us-east-1",
+		BaseEndpoint: aws.String("http://backend.test"),
+		UsePathStyle: true,
+		Credentials:  credentials.NewStaticCredentialsProvider("access", "secret", ""),
+		HTTPClient:   &stubHTTPClient{header: header, body: body},
+	})
+	p, err := NewWithClient(context.Background(), client, "")
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	return p
+}
+
+func TestGetObjectAttributesMapsResponse(t *testing.T) {
+	header := http.Header{}
+	header.Set("x-amz-version-id", "v1")
+	header.Set("x-amz-delete-marker", "false")
+	p := newStubProxy(t, header, `<?xml version="1.0" encoding="UTF-8"?>
+<GetObjectAttributesResponse>
+  <ETag>abc-3</ETag>
+  <ObjectParts>
+    <PartNumberMarker>1</PartNumberMarker>
+    <NextPartNumberMarker>2</NextPartNumberMarker>
+    <MaxParts>1</MaxParts>
+    <IsTruncated>true</IsTruncated>
+    <PartsCount>3</PartsCount>
+  </ObjectParts>
+  <ObjectSize>30</ObjectSize>
+</GetObjectAttributesResponse>`)
+
+	out, err := p.GetObjectAttributes(context.Background(), &s3.GetObjectAttributesInput{
+		Bucket:           aws.String("test-bucket"),
+		Key:              aws.String("obj"),
+		ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesObjectParts},
+	})
+	if err != nil {
+		t.Fatalf("GetObjectAttributes: %v", err)
+	}
+	if got := aws.ToString(out.VersionId); got != "v1" {
+		t.Errorf("expected version id v1, got %q", got)
+	}
+	if out.DeleteMarker == nil || *out.DeleteMarker {
+		t.Errorf("expected delete marker false, got %v", out.DeleteMarker)
+	}
+	parts := out.ObjectParts
+	if parts == nil {
+		t.Fatal("expected object parts")
+	}
+	if got := aws.ToInt32(parts.PartsCount); got != 3 {
+		t.Errorf("expected parts count 3, got %d", got)
+	}
+	if parts.PartNumberMarker != 1 || parts.NextPartNumberMarker != 2 ||
+		parts.MaxParts != 1 || !parts.IsTruncated {
+		t.Errorf("unexpected object parts %+v", *parts)
+	}
+}
+
+func TestGetObjectAttributesNoObjectParts(t *testing.T) {
+	p := newStubProxy(t, http.Header{}, `<?xml version="1.0" encoding="UTF-8"?>
+<GetObjectAttributesResponse>
+  <ETag>abc</ETag>
+  <ObjectSize>10</ObjectSize>
+</GetObjectAttributesResponse>`)
+
+	out, err := p.GetObjectAttributes(context.Background(), &s3.GetObjectAttributesInput{
+		Bucket:           aws.String("test-bucket"),
+		Key:              aws.String("obj"),
+		ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesObjectParts},
+	})
+	if err != nil {
+		t.Fatalf("GetObjectAttributes: %v", err)
+	}
+	if out.ObjectParts != nil {
+		t.Errorf("expected no object parts, got %+v", *out.ObjectParts)
+	}
+}
