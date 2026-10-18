@@ -43,10 +43,6 @@ source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
 
 # tags: curl,GetObjectAttributes,attributes,x-amz-object-attributes,invalid-header
 @test "REST - attributes - invalid param" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/925"
-  fi
-
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
