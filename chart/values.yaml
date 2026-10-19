@@ -178,6 +178,15 @@ gateway:
   debug: false
   # Access log file path for S3 requests (AWS log format). Empty = disabled.
   accessLog: ""
+  # Proxy header to take the client IP address from for logs: "X-Forwarded-For"
+  # or "X-Real-Ip". Empty = log the connection peer address. Requires
+  # trustedProxies.
+  clientIPHeader: ""
+  # Comma-separated IP addresses and CIDR prefixes of the proxies in front of
+  # the gateway (e.g. "10.0.0.1, 10.0.0.0/24, 2001:db8::/32"); the entry
+  # "unix" trusts a peer connected over a unix socket. The client IP header is
+  # only honoured from these peers, and is required when clientIPHeader is set.
+  trustedProxies: ""
   # Default CORS allowed origin. Empty = CORS disabled.
   # Must include the scheme prefix, e.g. "https://example.com" or "http://example.com".
   corsAllowOrigin: ""
@@ -446,6 +455,15 @@ iamServer:
   maxRequests: 100000
   # Silence stdout request logging.
   quiet: false
+  # Proxy header to take the client IP address from for logs: "X-Forwarded-For"
+  # or "X-Real-Ip". Empty = log the connection peer address. Requires
+  # trustedProxies.
+  clientIPHeader: ""
+  # Comma-separated IP addresses and CIDR prefixes of the proxies in front of
+  # the IAM API (e.g. "10.0.0.1, 10.0.0.0/24, 2001:db8::/32"); the entry
+  # "unix" trusts a peer connected over a unix socket. The client IP header is
+  # only honoured from these peers, and is required when clientIPHeader is set.
+  trustedProxies: ""
   # Debug logger verbosity: "silent" (default), "debug", or "unsafe" -- see
   # gateway.logLevel for details.
   logLevel: silent

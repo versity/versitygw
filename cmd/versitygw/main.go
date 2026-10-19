@@ -48,6 +48,8 @@ var (
 	eventConfigFilePath                           string
 	logWebhookURL, accessLog                      string
 	adminLogFile                                  string
+	clientIPHeader                                string
+	trustedProxies                                string
 	healthPath                                    string
 	virtualDomain                                 string
 	logLevel                                      string
@@ -468,6 +470,18 @@ func initFlags() []cli.Flag {
 			Usage:       "enable admin server access logging to specified file, stdout, stderr, or - for stdout",
 			EnvVars:     []string{"LOGFILE", "VGW_ADMIN_ACCESS_LOG"},
 			Destination: &adminLogFile,
+		},
+		&cli.StringFlag{
+			Name:        "client-ip-header",
+			Usage:       `header to take the client IP for logs from: "X-Forwarded-For" or "X-Real-Ip"; disabled by default; requires --trusted-proxies`,
+			EnvVars:     []string{"VGW_CLIENT_IP_HEADER"},
+			Destination: &clientIPHeader,
+		},
+		&cli.StringFlag{
+			Name:        "trusted-proxies",
+			Usage:       `comma-separated IP addresses and CIDR prefixes of the proxies in front of the gateway, or "unix" to trust a peer connected over a unix socket; the client IP header is only honoured from these peers, and is required when --client-ip-header is set`,
+			EnvVars:     []string{"VGW_TRUSTED_PROXIES"},
+			Destination: &trustedProxies,
 		},
 		&cli.StringFlag{
 			Name:        "log-webhook-url",
@@ -1026,6 +1040,8 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		AccessLog:                   accessLog,
 		LogWebhookURL:               logWebhookURL,
 		AdminLogFile:                adminLogFile,
+		ClientIPHeader:              clientIPHeader,
+		TrustedProxies:              trustedProxies,
 		MetricsService:              metricsService,
 		StatsdServers:               statsdServers,
 		DogstatsServers:             dogstatsServers,
