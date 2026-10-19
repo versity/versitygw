@@ -213,22 +213,36 @@ func CompleteMultipartUpload_invalid_ETag_error_fields(s *S3Conf) error {
 			return err
 		}
 
-		// the sdk doesn't expose the InvalidPart error fields, so the
-		// request is signed and sent by hand
-		body := []byte(`<CompleteMultipartUpload><Part><ETag>invalidETag</ETag><PartNumber>1</PartNumber></Part></CompleteMultipartUpload>`)
-		req, err := createSignedReq(http.MethodPost, s.endpoint,
-			fmt.Sprintf("%v/%v?uploadId=%v", bucket, obj, *out.UploadId),
-			s.awsID, s.awsSecret, "s3", s.awsRegion, "", body, time.Now(), nil)
-		if err != nil {
-			return err
+		// S3 echoes the ETag the client sent, stripped of quotes, and
+		// never the ETag of the stored part
+		for _, test := range []struct {
+			sent   string
+			echoed string
+		}{
+			{"invalidETag", "invalidETag"},
+			{`"00000000000000000000000000000000"`, "00000000000000000000000000000000"},
+		} {
+			// the sdk doesn't expose the InvalidPart error fields, so the
+			// request is signed and sent by hand
+			body := fmt.Appendf(nil, `<CompleteMultipartUpload><Part><ETag>%s</ETag><PartNumber>1</PartNumber></Part></CompleteMultipartUpload>`, test.sent)
+			req, err := createSignedReq(http.MethodPost, s.endpoint,
+				fmt.Sprintf("%v/%v?uploadId=%v", bucket, obj, *out.UploadId),
+				s.awsID, s.awsSecret, "s3", s.awsRegion, "", body, time.Now(), nil)
+			if err != nil {
+				return err
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+
+			if err := checkHTTPResponseApiErr(resp, s3err.GetInvalidPartErr(*out.UploadId, 1, test.echoed)); err != nil {
+				return fmt.Errorf("etag %s: %w", test.sent, err)
+			}
 		}
 
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-
-		return checkHTTPResponseApiErr(resp, s3err.GetInvalidPartErr(*out.UploadId, 1, "invalidETag"))
+		return nil
 	})
 }
 func CompleteMultipartUpload_invalid_checksum_type(s *S3Conf) error {

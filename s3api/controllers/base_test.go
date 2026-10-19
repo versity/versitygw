@@ -572,8 +572,8 @@ func TestProcessController(t *testing.T) {
 
 			// check the status
 			assert.Equal(t, tt.expected.status, ctx.Response().StatusCode())
-			assert.Equal(t, testRequestID, string(ctx.Response().Header.Peek(utils.HeaderAmzRequestID)))
-			assert.Equal(t, testHostID, string(ctx.Response().Header.Peek(utils.HeaderAmzID2)))
+			assert.Equal(t, testRequestID, string(ctx.Response().Header.PeekCanonical([]byte(utils.HeaderAmzRequestID))))
+			assert.Equal(t, testHostID, string(ctx.Response().Header.PeekCanonical([]byte(utils.HeaderAmzID2))))
 
 			// check the response headers to be set
 			if tt.expected.headers != nil {

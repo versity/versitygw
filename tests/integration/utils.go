@@ -532,6 +532,14 @@ func checkHTTPResponseApiErr(resp *http.Response, expected s3err.S3Error) error 
 		return err
 	}
 
+	// the header map canonicalizes names, so a header sent twice under
+	// different casings shows up here as two values
+	for _, name := range []string{"x-amz-request-id", "x-amz-id-2"} {
+		if got := len(resp.Header.Values(name)); got != 1 {
+			return fmt.Errorf("expected exactly one %s header, got %v", name, got)
+		}
+	}
+
 	return compareS3ApiError(expected, &errResp)
 }
 
