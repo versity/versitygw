@@ -140,7 +140,7 @@ get_object_tagging_invalid_version_id() {
   fi
   invalid_version_id="$2"
   if ! send_rest_go_command_expect_error_callback "400" "InvalidArgument" "Invalid version id specified" "check_invalid_version_id_error" \
-      "-bucketName" "$1" "-objectKey" "$2" "-debug" "-logFile" "signature.log" \
+      "-bucketName" "$1" "-objectKey" "$2" \
       "-method" "GET" "-query" "tagging=&versionId=$invalid_version_id" "-tagKey" "key" "-tagValue" "value" "-contentMD5"; then
     log 2 "error tagging object"
     return 1

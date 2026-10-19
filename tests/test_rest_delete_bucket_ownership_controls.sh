@@ -93,9 +93,6 @@ export RUN_USERS=true
 
 # tags: curl,DeleteBucketOwnershipControls,ownershipControls
 @test "REST - DeleteBucketOwnershipControls - BucketName is reported in error" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1493"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

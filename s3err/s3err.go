@@ -145,6 +145,7 @@ const (
 	ErrInvalidRequest
 	ErrAuthNotSetup
 	ErrNotImplemented
+	ErrNotImplementedFormField
 	ErrPreconditionFailed
 	ErrInvalidObjectState
 	ErrInvalidRange
@@ -210,6 +211,7 @@ const (
 	ErrVersioningNotConfigured
 	ErrACLsDisabled
 	ErrNoSpaceLeftOnDevice
+	ErrReservedObjectKey
 
 	// Admin api errors
 	ErrAdminAccessDenied
@@ -484,12 +486,17 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrNotImplemented: {
 		Code:           "NotImplemented",
-		Description:    "A header you provided implies functionality that is not implemented.",
+		Description:    "A header you provided implies functionality that is not implemented",
+		HTTPStatusCode: http.StatusNotImplemented,
+	},
+	ErrNotImplementedFormField: {
+		Code:           "NotImplemented",
+		Description:    "A form field you provided implies functionality that is not implemented",
 		HTTPStatusCode: http.StatusNotImplemented,
 	},
 	ErrPreconditionFailed: {
 		Code:           "PreconditionFailed",
-		Description:    "At least one of the pre-conditions you specified did not hold.",
+		Description:    "At least one of the pre-conditions you specified did not hold",
 		HTTPStatusCode: http.StatusPreconditionFailed,
 	},
 	ErrInvalidObjectState: {
@@ -803,6 +810,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "InsufficientStorage",
 		Description:    "No space left on device.",
 		HTTPStatusCode: http.StatusInsufficientStorage,
+	},
+	ErrReservedObjectKey: {
+		Code:           "ReservedObjectKey",
+		Description:    "Object keys in the .sgwtmp directory are reserved for the gateway's internal use.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 
 	// Admin api errors

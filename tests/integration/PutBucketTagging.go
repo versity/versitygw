@@ -21,6 +21,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -173,6 +174,97 @@ func PutBucketTagging_tag_count_limit(s *S3Conf) error {
 		})
 		cancel()
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrBucketTaggingLimited))
+	})
+}
+
+func PutBucketTagging_invalid_tag_error_fields(s *S3Conf) error {
+	testName := "PutBucketTagging_invalid_tag_error_fields"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		var overLimit strings.Builder
+		for i := range 50 {
+			fmt.Fprintf(&overLimit, "<Tag><Key>key-%v</Key><Value>value</Value></Tag>", i)
+		}
+		overLimit.WriteString("<Tag><Key></Key><Value>value</Value></Tag>")
+
+		for i, test := range []struct {
+			tagSet string
+			err    s3err.S3Error
+		}{
+			// an empty key is reported in an empty TagKey element
+			{"<Tag><Key></Key><Value>value</Value></Tag>", s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, "", "")},
+			{"<Tag><Key/><Value>value</Value></Tag>", s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, "", "")},
+			{"<Tag><Key>key</Key><Value>value</Value></Tag><Tag><Key></Key><Value>value</Value></Tag>", s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, "", "")},
+			{"<Tag><Key>key!</Key><Value>value</Value></Tag>", s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, "key!", "")},
+			{"<Tag><Key>key</Key><Value>value!</Value></Tag>", s3err.GetInvalidTagErr(s3err.ErrInvalidTagValue, "key", "value!")},
+			{"<Tag><Key>key</Key><Value>a</Value></Tag><Tag><Key>key</Key><Value>b</Value></Tag>", s3err.GetInvalidTagErr(s3err.ErrDuplicateTagKey, "key", "")},
+			// the tags are validated before the tag count
+			{overLimit.String(), s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, "", "")},
+			// a missing Key or Value element fails ahead of any tag check
+			{"<Tag><Value>value</Value></Tag>", s3err.GetAPIError(s3err.ErrMalformedXML)},
+			{"<Tag><Key>key</Key></Tag>", s3err.GetAPIError(s3err.ErrMalformedXML)},
+			{"<Tag><Key>key!</Key><Value>value</Value></Tag><Tag><Value>value</Value></Tag>", s3err.GetAPIError(s3err.ErrMalformedXML)},
+		} {
+			body := []byte(`<Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><TagSet>` + test.tagSet + `</TagSet></Tagging>`)
+			sum := md5.Sum(body)
+
+			req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%v?tagging=", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, "", body, time.Now(), map[string]string{
+				"Content-Md5": base64.StdEncoding.EncodeToString(sum[:]),
+			})
+			if err != nil {
+				return fmt.Errorf("test %v: err signing the request: %w", i+1, err)
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("test %v: err sending request: %w", i+1, err)
+			}
+
+			if err := checkHTTPResponseApiErr(resp, test.err); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func PutBucketTagging_multibyte_tags(s *S3Conf) error {
+	testName := "PutBucketTagging_multibyte_tags"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// the length limits count UTF-16 code units: one for "é"
+		// and "中", two for "𝐀", which is outside the BMP
+		for i, test := range []struct {
+			key   string
+			value string
+			err   s3err.S3Error
+		}{
+			{strings.Repeat("é", 128), strings.Repeat("中", 256), nil},
+			{strings.Repeat("𝐀", 64), strings.Repeat("𝐀", 128), nil},
+			{strings.Repeat("é", 129), "value", s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{strings.Repeat("𝐀", 65), "value", s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key", strings.Repeat("𝐀", 129), s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+				Bucket: &bucket,
+				Tagging: &types.Tagging{
+					TagSet: []types.Tag{{Key: &test.key, Value: &test.value}},
+				},
+			})
+			cancel()
+			if test.err == nil {
+				if err != nil {
+					return fmt.Errorf("test %v failed: %w", i+1, err)
+				}
+				continue
+			}
+
+			if err := checkApiErr(err, test.err); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
 	})
 }
 

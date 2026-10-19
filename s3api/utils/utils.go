@@ -842,67 +842,28 @@ const (
 	TagLimitObject TagLimit = 10
 )
 
-// The tag key/value validation pattern comes from
-// AWS S3 docs
-// https://docs.aws.amazon.com/AmazonS3/latest/API/API_control_Tag.html
-var tagRule = regexp.MustCompile(`^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$`)
-
 // Parses and validates tagging
 func ParseTagging(data []byte, limit TagLimit) (map[string]string, error) {
-	var tagging s3response.Tagging
+	// the tags are decoded as pointers to tell a missing
+	// Key or Value element from an empty one
+	var tagging struct {
+		Tags []types.Tag `xml:"TagSet>Tag"`
+	}
 	err := xml.Unmarshal(data, &tagging)
 	if err != nil {
 		debuglogger.Logf("invalid taggging: %s", data)
 		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
-	tLen := len(tagging.TagSet.Tags)
-	if tLen > int(limit) {
-		switch limit {
-		case TagLimitObject:
-			debuglogger.Logf("bucket tagging length exceeds %v: %v", limit, tLen)
-			return nil, s3err.GetAPIError(s3err.ErrObjectTaggingLimited)
-		case TagLimitBucket:
-			debuglogger.Logf("object tagging length exceeds %v: %v", limit, tLen)
-			return nil, s3err.GetAPIError(s3err.ErrBucketTaggingLimited)
-		}
+	limitErr := s3err.ErrBucketTaggingLimited
+	if limit == TagLimitObject {
+		limitErr = s3err.ErrObjectTaggingLimited
 	}
 
-	tagSet := make(map[string]string, tLen)
-
-	for _, tag := range tagging.TagSet.Tags {
-		// validate tag key length
-		if len(tag.Key) == 0 || len(tag.Key) > 128 {
-			debuglogger.Logf("tag key should 0 < tag.Key <= 128, key: %v", tag.Key)
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, tag.Key, "")
-		}
-
-		// validate tag key string chars
-		if !tagRule.MatchString(tag.Key) {
-			debuglogger.Logf("invalid tag key: %s", tag.Key)
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, tag.Key, "")
-		}
-
-		// validate tag value length
-		if len(tag.Value) > 256 {
-			debuglogger.Logf("invalid long tag value: (length): %v, (value): %v", len(tag.Value), tag.Value)
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagValue, tag.Key, tag.Value)
-		}
-
-		// validate tag value string chars
-		if !tagRule.MatchString(tag.Value) {
-			debuglogger.Logf("invalid tag value: %s", tag.Value)
-			return nil, s3err.GetInvalidTagErr(s3err.ErrInvalidTagValue, tag.Key, tag.Value)
-		}
-
-		// make sure there are no duplicate keys
-		_, ok := tagSet[tag.Key]
-		if ok {
-			debuglogger.Logf("duplicate tag key: %v", tag.Key)
-			return nil, s3err.GetAPIError(s3err.ErrDuplicateTagKey)
-		}
-
-		tagSet[tag.Key] = tag.Value
+	tagSet, err := backend.ParseTagSet(tagging.Tags, int(limit), limitErr)
+	if err != nil {
+		debuglogger.Logf("invalid tagging: %v", err)
+		return nil, err
 	}
 
 	return tagSet, nil
@@ -1292,4 +1253,90 @@ func ParseContentEncoding(ctx fiber.Ctx) string {
 	}
 
 	return strings.Join(kept, ",")
+}
+
+// ParseEncodingType validates the encoding-type query parameter of the object
+// listing operations. S3 accepts "url" in any letter case and echoes the value
+// as sent. Any other value, including an empty one, is rejected.
+func ParseEncodingType(ctx fiber.Ctx) (types.EncodingType, error) {
+	if !ctx.Request().URI().QueryArgs().Has("encoding-type") {
+		return "", nil
+	}
+	value := ctx.Query("encoding-type")
+	if !strings.EqualFold(value, string(types.EncodingTypeUrl)) {
+		debuglogger.Logf("invalid encoding-type: %q", value)
+		return "", s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, value)
+	}
+	return types.EncodingType(value), nil
+}
+
+// s3KeyNameEscaper adjusts url.QueryEscape output to the encoding S3 uses for
+// encoding-type=url: "/" and "*" stay literal and "~" is escaped. Every "%" in
+// the QueryEscape output starts a full escape, so "%2A" can only come from "*".
+var s3KeyNameEscaper = strings.NewReplacer("%2F", "/", "%2A", "*", "~", "%7E")
+
+// urlEncodeKeyName encodes a key name the way S3 does for encoding-type=url:
+// as a query component, so a space becomes "+" and "+" becomes "%2B", with "/"
+// and "*" left as is and "~" escaped as "%7E".
+func urlEncodeKeyName(name *string) *string {
+	if name == nil {
+		return nil
+	}
+	encoded := s3KeyNameEscaper.Replace(url.QueryEscape(*name))
+	return &encoded
+}
+
+// urlEncodeCommonPrefixes returns a copy of prefixes with each prefix encoded.
+func urlEncodeCommonPrefixes(prefixes []types.CommonPrefix) []types.CommonPrefix {
+	if prefixes == nil {
+		return nil
+	}
+	encoded := make([]types.CommonPrefix, len(prefixes))
+	for i, cp := range prefixes {
+		cp.Prefix = urlEncodeKeyName(cp.Prefix)
+		encoded[i] = cp
+	}
+	return encoded
+}
+
+// urlEncodeObjectKeys returns a copy of objects with each key encoded.
+func urlEncodeObjectKeys(objects []s3response.Object) []s3response.Object {
+	if objects == nil {
+		return nil
+	}
+	encoded := make([]s3response.Object, len(objects))
+	for i, obj := range objects {
+		obj.Key = urlEncodeKeyName(obj.Key)
+		encoded[i] = obj
+	}
+	return encoded
+}
+
+// URLEncodeListObjectsResult returns res as S3 answers a ListObjects request
+// with encoding-type=url: EncodingType set to the value as sent and the
+// Delimiter, Marker, Prefix, NextMarker, Key and CommonPrefixes values encoded.
+// The backend's values are left untouched.
+func URLEncodeListObjectsResult(res s3response.ListObjectsResult, encodingType types.EncodingType) s3response.ListObjectsResult {
+	res.EncodingType = encodingType
+	res.Delimiter = urlEncodeKeyName(res.Delimiter)
+	res.Marker = urlEncodeKeyName(res.Marker)
+	res.Prefix = urlEncodeKeyName(res.Prefix)
+	res.NextMarker = urlEncodeKeyName(res.NextMarker)
+	res.Contents = urlEncodeObjectKeys(res.Contents)
+	res.CommonPrefixes = urlEncodeCommonPrefixes(res.CommonPrefixes)
+	return res
+}
+
+// URLEncodeListObjectsV2Result returns res as S3 answers a ListObjectsV2
+// request with encoding-type=url: EncodingType set to the value as sent and the
+// Delimiter, Prefix, StartAfter, Key and CommonPrefixes values encoded. The
+// continuation tokens are opaque and stay as they are.
+func URLEncodeListObjectsV2Result(res s3response.ListObjectsV2Result, encodingType types.EncodingType) s3response.ListObjectsV2Result {
+	res.EncodingType = encodingType
+	res.Delimiter = urlEncodeKeyName(res.Delimiter)
+	res.Prefix = urlEncodeKeyName(res.Prefix)
+	res.StartAfter = urlEncodeKeyName(res.StartAfter)
+	res.Contents = urlEncodeObjectKeys(res.Contents)
+	res.CommonPrefixes = urlEncodeCommonPrefixes(res.CommonPrefixes)
+	return res
 }

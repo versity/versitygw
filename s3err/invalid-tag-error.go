@@ -16,8 +16,9 @@ package s3err
 
 import "encoding/xml"
 
-// InvalidTagError is returned when a tag key or value is invalid.
-// Produces <TagKey> and optionally <TagValue> fields in the XML response.
+// InvalidTagError is returned when a tag key or value is invalid, or a tag
+// key is duplicated. Produces a <TagKey> field in the XML response, empty
+// for an empty key, and a <TagValue> field when the value is invalid.
 type InvalidTagError struct {
 	APIError
 	TagKey   string
@@ -29,7 +30,7 @@ func (e InvalidTagError) XMLBody(requestID, hostID string) []byte {
 		XMLName   xml.Name `xml:"Error"`
 		Code      string
 		Message   string
-		TagKey    string `xml:",omitempty"`
+		TagKey    string
 		TagValue  string `xml:",omitempty"`
 		RequestID string `xml:"RequestId,omitempty"`
 		HostID    string `xml:"HostId,omitempty"`
@@ -56,7 +57,7 @@ func (e InvalidTagError) Is(target error) bool {
 }
 
 // GetInvalidTagErr creates an InvalidTagError for the given error code, tag key, and optional tag value.
-// code should be ErrInvalidTagKey or ErrInvalidTagValue.
+// code should be ErrInvalidTagKey, ErrInvalidTagValue or ErrDuplicateTagKey.
 func GetInvalidTagErr(code ErrorCode, tagKey, tagValue string) InvalidTagError {
 	return InvalidTagError{
 		APIError: GetAPIError(code),

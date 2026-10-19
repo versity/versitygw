@@ -22,6 +22,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -567,6 +568,14 @@ func (c S3ApiController) ListObjectsV2(ctx fiber.Ctx) (*Response, error) {
 			},
 		}, err
 	}
+	encodingType, err := utils.ParseEncodingType(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
 
 	res, err := c.be.ListObjectsV2(ctx.RequestCtx(),
 		&s3.ListObjectsV2Input{
@@ -584,6 +593,10 @@ func (c S3ApiController) ListObjectsV2(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	if encodingType != "" {
+		res = utils.URLEncodeListObjectsV2Result(res, encodingType)
 	}
 
 	return &Response{
@@ -614,6 +627,24 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 		region = defaultRegion
 	}
 
+	// continuation-token and start-after are ListObjectsV2 arguments, S3
+	// rejects either one on a V1 listing, with or without a value
+	queryArgs := ctx.Request().URI().QueryArgs()
+	if queryArgs.Has("continuation-token") {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetInvalidArgumentErr(s3err.InvalidArgContinuationToken, "")
+	}
+	if queryArgs.Has("start-after") {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetInvalidArgumentErr(s3err.InvalidArgStartAfter, "")
+	}
+
 	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionRead,
@@ -639,6 +670,14 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 			},
 		}, err
 	}
+	encodingType, err := utils.ParseEncodingType(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
 
 	res, err := c.be.ListObjects(ctx.RequestCtx(),
 		&s3.ListObjectsInput{
@@ -656,12 +695,22 @@ func (c S3ApiController) ListObjects(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	// S3 returns NextMarker only when the request has a delimiter. Without
+	// one, clients use the last key in the response as the next marker.
+	if delimiter == "" {
+		res.NextMarker = nil
+	}
+
 	// S3 echoes the request marker back in the response, and includes the
 	// element even when the request carried no marker. Backends return a nil
 	// pointer for an empty marker, which encoding/xml drops entirely, so
 	// restore it here for every backend.
 	if res.Marker == nil {
 		res.Marker = &marker
+	}
+
+	if encodingType != "" {
+		res = utils.URLEncodeListObjectsResult(res, encodingType)
 	}
 
 	return &Response{

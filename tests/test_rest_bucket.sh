@@ -21,6 +21,7 @@ source ./tests/commands/get_object_lock_configuration.sh
 source ./tests/commands/head_bucket.sh
 source ./tests/commands/list_buckets.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/delete_objects/delete_objects_rest.sh
 source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
 source ./tests/drivers/get_object_lock_config/get_object_lock_config_rest.sh
@@ -140,15 +141,11 @@ export RUN_USERS=true
 
 # tags: curl,minimal-request,GetBucketPolicy
 @test "REST - get policy w/o policy" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/959"
-  fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
+  local bucket_name
+
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
-
-  run setup_bucket_v2 "$bucket_name"
-  assert_success
 
   run get_and_check_no_policy_error "$bucket_name"
   assert_success
@@ -182,9 +179,6 @@ export RUN_USERS=true
 
 # tags: curl,malformed-message,invalid-method
 @test "REST - POST call on root endpoint" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1487"
-  fi
   run delete_object_empty_bucket_check_error
   assert_success
 }

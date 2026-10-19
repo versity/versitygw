@@ -175,11 +175,9 @@ func ListObjects_truncated(s *S3Conf) error {
 				maxKeys, out1.MaxKeys)
 		}
 
-		if out1.NextMarker == nil {
-			return fmt.Errorf("expected non nil next marker")
-		}
-		if *out1.NextMarker != "baz" {
-			return fmt.Errorf("expected next-marker to be baz, instead got %v",
+		// S3 returns NextMarker only when the request has a delimiter
+		if out1.NextMarker != nil {
+			return fmt.Errorf("expected nil next marker, instead got %v",
 				*out1.NextMarker)
 		}
 
@@ -188,10 +186,13 @@ func ListObjects_truncated(s *S3Conf) error {
 				contents[:2], out1.Contents)
 		}
 
+		// without a NextMarker the last key is the marker for the next page
+		marker := out1.Contents[len(out1.Contents)-1].Key
+
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		out2, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
 			Bucket: &bucket,
-			Marker: out1.NextMarker,
+			Marker: marker,
 		})
 		cancel()
 		if err != nil {
@@ -205,11 +206,69 @@ func ListObjects_truncated(s *S3Conf) error {
 			return fmt.Errorf("expected output not to be truncated")
 		}
 
-		if getString(out2.Marker) != getString(out1.NextMarker) {
+		if getString(out2.Marker) != getString(marker) {
 			return fmt.Errorf("expected marker to be %v, instead got %v",
-				getString(out1.NextMarker), getString(out2.Marker))
+				getString(marker), getString(out2.Marker))
 		}
 
+		if !compareObjects(contents[2:], out2.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents[2:], out2.Contents)
+		}
+		return nil
+	})
+}
+
+func ListObjects_truncated_with_delimiter(s *S3Conf) error {
+	testName := "ListObjects_truncated_with_delimiter"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		contents, err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		delim, maxKeys := "/", int32(2)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out1, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:    &bucket,
+			Delimiter: &delim,
+			MaxKeys:   &maxKeys,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out1.IsTruncated == nil || !*out1.IsTruncated {
+			return fmt.Errorf("expected output to be truncated")
+		}
+		if out1.NextMarker == nil {
+			return fmt.Errorf("expected non nil next marker")
+		}
+		if *out1.NextMarker != "baz" {
+			return fmt.Errorf("expected next-marker to be baz, instead got %v",
+				*out1.NextMarker)
+		}
+		if !compareObjects(contents[:2], out1.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents[:2], out1.Contents)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out2, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:    &bucket,
+			Delimiter: &delim,
+			Marker:    out1.NextMarker,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out2.IsTruncated == nil || *out2.IsTruncated {
+			return fmt.Errorf("expected output not to be truncated")
+		}
 		if !compareObjects(contents[2:], out2.Contents) {
 			return fmt.Errorf("expected the output to be %v, instead got %v",
 				contents[2:], out2.Contents)
@@ -230,6 +289,50 @@ func ListObjects_invalid_max_keys(s *S3Conf) error {
 		cancel()
 		if err := checkApiErr(err, s3err.GetInvalidArgNegativeMaxLimiter("max-keys", fmt.Sprint(maxKeys))); err != nil {
 			return err
+		}
+
+		return nil
+	})
+}
+
+// start-after and continuation-token belong to ListObjectsV2, so S3 rejects
+// either one on a V1 listing, with or without a value. The SDK ListObjects
+// input has neither field, so the requests are signed and sent by hand.
+func ListObjects_start_after(s *S3Conf) error {
+	testName := "ListObjects_start_after"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"bar", "baz", "foo"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		startAfterErr := s3err.GetInvalidArgumentErr(s3err.InvalidArgStartAfter, "")
+		contTokenErr := s3err.GetInvalidArgumentErr(s3err.InvalidArgContinuationToken, "")
+		for _, test := range []struct {
+			query    string
+			expected s3err.S3Error
+		}{
+			{"start-after=bar", startAfterErr},
+			{"start-after=", startAfterErr},
+			{"start-after", startAfterErr},
+			{"continuation-token=bar", contTokenErr},
+			{"continuation-token=", contTokenErr},
+		} {
+			req, err := createSignedReq(http.MethodGet, s.endpoint,
+				fmt.Sprintf("%v?%v", bucket, test.query),
+				s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
+			if err != nil {
+				return err
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+
+			if err := checkHTTPResponseApiErr(resp, test.expected); err != nil {
+				return fmt.Errorf("%v: %w", test.query, err)
+			}
 		}
 
 		return nil
@@ -491,10 +594,10 @@ func ListObjects_list_all_objs(s *S3Conf) error {
 
 			allObjects = append(allObjects, out.Contents...)
 
-			if out.NextMarker == nil || !*out.IsTruncated {
+			if !*out.IsTruncated {
 				break
 			}
-			marker = out.NextMarker
+			marker = out.Contents[len(out.Contents)-1].Key
 		}
 
 		if !compareObjects(contents, allObjects) {
@@ -762,17 +865,14 @@ func ListObjects_mp_masking_truncation(s *S3Conf) error {
 			return fmt.Errorf("expected first page objects %v, instead got %v",
 				contents[:2], out1.Contents)
 		}
-		if out1.NextMarker == nil || *out1.NextMarker == "" {
-			return fmt.Errorf("expected non-empty NextMarker")
-		}
-		if *out1.NextMarker != "obj-b" {
-			return fmt.Errorf("expected NextMarker to be obj-b, instead got %v", *out1.NextMarker)
+		if out1.NextMarker != nil {
+			return fmt.Errorf("expected nil NextMarker, instead got %v", *out1.NextMarker)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		out2, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
 			Bucket: &bucket,
-			Marker: out1.NextMarker,
+			Marker: out1.Contents[len(out1.Contents)-1].Key,
 		})
 		cancel()
 		if err != nil {
@@ -833,5 +933,48 @@ func ListObjects_mp_masking_delimiter(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+// ListObjects_url_encoding lists keys that need escaping with
+// encoding-type=url: S3 returns EncodingType and encodes the key names as a
+// query component, with "/" left as is. Any other encoding type is rejected.
+func ListObjects_url_encoding(s *S3Conf) error {
+	testName := "ListObjects_url_encoding"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"a+ b.txt", "dir a/obj"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:       &bucket,
+			Delimiter:    getPtr("/"),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.EncodingType != types.EncodingTypeUrl {
+			return fmt.Errorf("expected the encoding type to be %q, instead got %q",
+				types.EncodingTypeUrl, out.EncodingType)
+		}
+		if len(out.Contents) != 1 || getString(out.Contents[0].Key) != "a%2B+b.txt" {
+			return fmt.Errorf("expected the key %q, instead got %v", "a%2B+b.txt", out.Contents)
+		}
+		if len(out.CommonPrefixes) != 1 || getString(out.CommonPrefixes[0].Prefix) != "dir+a/" {
+			return fmt.Errorf("expected the common prefix %q, instead got %v", "dir+a/", out.CommonPrefixes)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:       &bucket,
+			EncodingType: "gibberish",
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"))
 	})
 }

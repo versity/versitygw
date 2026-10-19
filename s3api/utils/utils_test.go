@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1243,10 +1244,10 @@ func TestParseTagging(t *testing.T) {
 			},
 		}
 
-		for range lgth {
+		for i := range lgth {
 			res.TagSet.Tags = append(res.TagSet.Tags, s3response.Tag{
-				Key:   genRandStr(10),
-				Value: genRandStr(20),
+				Key:   "key" + strconv.Itoa(i),
+				Value: "value",
 			})
 		}
 
@@ -1325,6 +1326,17 @@ func TestParseTagging(t *testing.T) {
 			wantErr: s3err.GetAPIError(s3err.ErrObjectTaggingLimited),
 		},
 		{
+			name: "invalid tag over the tag limit",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet>` +
+					strings.Repeat(`<Tag><Key>key</Key><Value>value</Value></Tag>`, 11) +
+					`</TagSet></Tagging>`),
+				limit: TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetInvalidTagErr(s3err.ErrDuplicateTagKey, "key", ""),
+		},
+		{
 			name: "invalid 0 length tag key",
 			args: args{
 				data: s3response.Tagging{
@@ -1335,7 +1347,75 @@ func TestParseTagging(t *testing.T) {
 				limit: TagLimitObject,
 			},
 			want:    nil,
-			wantErr: s3err.GetAPIError(s3err.ErrInvalidTagKey),
+			wantErr: s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, "", ""),
+		},
+		{
+			name: "missing tag key",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet><Tag><Value>value</Value></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
+			name: "missing tag value",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet><Tag><Key>key</Key></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
+			name: "missing tag key after an invalid tag",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet><Tag><Key>key!</Key><Value>value</Value></Tag><Tag><Value>value</Value></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
+			name: "empty tag value",
+			args: args{
+				overrideXML: []byte(`<Tagging><TagSet><Tag><Key>key</Key><Value/></Tag></TagSet></Tagging>`),
+				limit:       TagLimitObject,
+			},
+			want:    map[string]string{"key": ""},
+			wantErr: nil,
+		},
+		{
+			name: "multibyte tags at the length limits",
+			args: args{
+				data: s3response.Tagging{
+					TagSet: s3response.TagSet{
+						Tags: []s3response.Tag{
+							{Key: strings.Repeat("é", 128), Value: strings.Repeat("中", 256)},
+							{Key: strings.Repeat("𝐀", 64), Value: "value"},
+						},
+					},
+				},
+				limit: TagLimitObject,
+			},
+			want: map[string]string{
+				strings.Repeat("é", 128): strings.Repeat("中", 256),
+				strings.Repeat("𝐀", 64):  "value",
+			},
+			wantErr: nil,
+		},
+		{
+			name: "tag key over 128 UTF-16 code units",
+			args: args{
+				data: s3response.Tagging{
+					TagSet: s3response.TagSet{
+						Tags: []s3response.Tag{{Key: strings.Repeat("𝐀", 65), Value: "value"}},
+					},
+				},
+				limit: TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetInvalidTagErr(s3err.ErrInvalidTagKey, strings.Repeat("𝐀", 65), ""),
 		},
 		{
 			name: "invalid long tag key",
@@ -1377,7 +1457,7 @@ func TestParseTagging(t *testing.T) {
 				limit: TagLimitObject,
 			},
 			want:    nil,
-			wantErr: s3err.GetAPIError(s3err.ErrDuplicateTagKey),
+			wantErr: s3err.GetInvalidTagErr(s3err.ErrDuplicateTagKey, "key", ""),
 		},
 	}
 
@@ -1847,4 +1927,73 @@ func TestValidateResponseOverrides(t *testing.T) {
 			assert.Equal(t, tt.wantErr, ValidateResponseOverrides(ctx))
 		})
 	}
+}
+
+func TestParseEncodingType(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  types.EncodingType
+		bad   bool
+		value string
+	}{
+		{name: "absent", query: ""},
+		{name: "url", query: "?encoding-type=url", want: "url"},
+		{name: "upper case, echoed as sent", query: "?encoding-type=URL", want: "URL"},
+		{name: "mixed case, echoed as sent", query: "?encoding-type=uRl", want: "uRl"},
+		{name: "empty value", query: "?encoding-type=", bad: true, value: ""},
+		{name: "bare parameter", query: "?encoding-type", bad: true, value: ""},
+		{name: "other method", query: "?encoding-type=base64", bad: true, value: "base64"},
+		{name: "gibberish", query: "?encoding-type=jdfkllaj", bad: true, value: "jdfkllaj"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := fiberCtxFromURL(t, http.MethodGet, "http://localhost/bucket"+tt.query, http.Header{})
+			encodingType, err := ParseEncodingType(ctx)
+			if tt.bad {
+				assert.Equal(t, s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, tt.value), err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, encodingType)
+		})
+	}
+}
+
+func TestURLEncodeKeyName(t *testing.T) {
+	tests := []struct {
+		name, want string
+	}{
+		{"a+ b.txt", "a%2B+b.txt"},
+		{"dir/sub dir/", "dir/sub+dir/"},
+		{"100%", "100%25"},
+		{"a%2Fb", "a%252Fb"},
+		{"ctl\x01char", "ctl%01char"},
+		{"é", "%C3%A9"},
+		{"plain-key_1.txt", "plain-key_1.txt"},
+		// S3 leaves "*" literal and escapes "~", unlike url.QueryEscape
+		{"a*b~c", "a*b%7Ec"},
+		{" !\"#$%&'()*+,-.:;<=>?@[\\]^_`{|}~", "+%21%22%23%24%25%26%27%28%29*%2B%2C-.%3A%3B%3C%3D%3E%3F%40%5B%5C%5D%5E_%60%7B%7C%7D%7E"},
+	}
+	for _, tt := range tests {
+		got := urlEncodeKeyName(&tt.name)
+		assert.Equal(t, tt.want, *got, tt.name)
+		decoded, err := url.QueryUnescape(*got)
+		assert.NoError(t, err)
+		assert.Equal(t, tt.name, decoded)
+	}
+	assert.Nil(t, urlEncodeKeyName(nil))
+}
+
+func TestURLEncodeListObjectsResultKeepsBackendValues(t *testing.T) {
+	key := "a b"
+	res := s3response.ListObjectsResult{
+		Contents: []s3response.Object{{Key: &key}},
+	}
+
+	encoded := URLEncodeListObjectsResult(res, types.EncodingTypeUrl)
+
+	assert.Equal(t, "a+b", *encoded.Contents[0].Key)
+	assert.Equal(t, "a b", *res.Contents[0].Key)
+	assert.Equal(t, "a b", key)
 }
