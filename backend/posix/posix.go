@@ -2714,7 +2714,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			return res, "", s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
 		if !backend.AreEtagsSame(etag, *parts[i].ETag) {
-			return res, "", s3err.GetInvalidPartErr(uploadID, *part.PartNumber, etag)
+			return res, "", s3err.GetInvalidPartErr(uploadID, *part.PartNumber, *parts[i].ETag)
 		}
 
 		partChecksum, err := p.retrieveChecksums(nil, bucket, partObjPath)

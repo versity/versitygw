@@ -2000,7 +2000,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 			if zbPartsMap[*part.PartNumber] {
 				expectedETag := blockIDInt32ToBase64(*part.PartNumber)
 				if clientETag != expectedETag {
-					return res, "", s3err.GetInvalidPartErr(*input.UploadId, *part.PartNumber, expectedETag)
+					return res, "", s3err.GetInvalidPartErr(*input.UploadId, *part.PartNumber, clientETag)
 				}
 				// Non-last zero-byte parts violate the minimum part size.
 				if i < last {
@@ -2010,7 +2010,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 				partSizes = append(partSizes, totalSize)
 				continue
 			}
-			return res, "", s3err.GetInvalidPartErr(*input.UploadId, *part.PartNumber, "")
+			return res, "", s3err.GetInvalidPartErr(*input.UploadId, *part.PartNumber, clientETag)
 		}
 
 		if clientETag != *block.Name {
