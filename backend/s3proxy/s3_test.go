@@ -27,9 +27,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-// captureHTTPClient records the request the aws sdk sends and answers 200,
-// so tests can assert on the wire format without a real backend.
+// captureHTTPClient records the request the aws sdk sends and answers 200
+// with respHeader and respBody, so tests can assert on the wire format and
+// on how responses are mapped without a real backend.
 type captureHTTPClient struct {
+	respHeader    http.Header
+	respBody      string
 	body          []byte
 	contentLength int64
 }
@@ -47,8 +50,8 @@ func (c *captureHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	}
 	return &http.Response{
 		StatusCode: http.StatusOK,
-		Header:     http.Header{},
-		Body:       http.NoBody,
+		Header:     c.respHeader,
+		Body:       io.NopCloser(strings.NewReader(c.respBody)),
 		Request:    req,
 	}, nil
 }
@@ -60,7 +63,7 @@ func newCaptureProxy(t *testing.T) (*S3Proxy, *captureHTTPClient) {
 
 func newCaptureProxyWithRegion(t *testing.T, region string) (*S3Proxy, *captureHTTPClient) {
 	t.Helper()
-	capture := &captureHTTPClient{}
+	capture := &captureHTTPClient{respHeader: http.Header{}}
 	client := s3.New(s3.Options{
 		Region:       region,
 		BaseEndpoint: aws.String("http://backend.test"),
@@ -217,42 +220,11 @@ func TestCreateBucketKeepsTagsAndSetsBackendRegionConstraint(t *testing.T) {
 	}
 }
 
-// stubHTTPClient answers every request with the given headers and body.
-type stubHTTPClient struct {
-	header http.Header
-	body   string
-}
-
-func (c *stubHTTPClient) Do(req *http.Request) (*http.Response, error) {
-	return &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     c.header,
-		Body:       io.NopCloser(strings.NewReader(c.body)),
-		Request:    req,
-	}, nil
-}
-
-func newStubProxy(t *testing.T, header http.Header, body string) *S3Proxy {
-	t.Helper()
-	client := s3.New(s3.Options{
-		Region:       "us-east-1",
-		BaseEndpoint: aws.String("http://backend.test"),
-		UsePathStyle: true,
-		Credentials:  credentials.NewStaticCredentialsProvider("access", "secret", ""),
-		HTTPClient:   &stubHTTPClient{header: header, body: body},
-	})
-	p, err := NewWithClient(context.Background(), client, "")
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	return p
-}
-
 func TestGetObjectAttributesMapsResponse(t *testing.T) {
-	header := http.Header{}
-	header.Set("x-amz-version-id", "v1")
-	header.Set("x-amz-delete-marker", "false")
-	p := newStubProxy(t, header, `<?xml version="1.0" encoding="UTF-8"?>
+	p, capture := newCaptureProxy(t)
+	capture.respHeader.Set("x-amz-version-id", "v1")
+	capture.respHeader.Set("x-amz-delete-marker", "false")
+	capture.respBody = `<?xml version="1.0" encoding="UTF-8"?>
 <GetObjectAttributesResponse>
   <ETag>abc-3</ETag>
   <ObjectParts>
@@ -263,7 +235,7 @@ func TestGetObjectAttributesMapsResponse(t *testing.T) {
     <PartsCount>3</PartsCount>
   </ObjectParts>
   <ObjectSize>30</ObjectSize>
-</GetObjectAttributesResponse>`)
+</GetObjectAttributesResponse>`
 
 	out, err := p.GetObjectAttributes(context.Background(), &s3.GetObjectAttributesInput{
 		Bucket:           aws.String("test-bucket"),
@@ -293,11 +265,12 @@ func TestGetObjectAttributesMapsResponse(t *testing.T) {
 }
 
 func TestGetObjectAttributesNoObjectParts(t *testing.T) {
-	p := newStubProxy(t, http.Header{}, `<?xml version="1.0" encoding="UTF-8"?>
+	p, capture := newCaptureProxy(t)
+	capture.respBody = `<?xml version="1.0" encoding="UTF-8"?>
 <GetObjectAttributesResponse>
   <ETag>abc</ETag>
   <ObjectSize>10</ObjectSize>
-</GetObjectAttributesResponse>`)
+</GetObjectAttributesResponse>`
 
 	out, err := p.GetObjectAttributes(context.Background(), &s3.GetObjectAttributesInput{
 		Bucket:           aws.String("test-bucket"),
