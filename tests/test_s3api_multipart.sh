@@ -23,6 +23,7 @@ source ./tests/commands/get_object.sh
 source ./tests/commands/list_multipart_uploads.sh
 source ./tests/commands/put_object.sh
 source ./tests/drivers/file.sh
+source ./tests/drivers/abort_multipart_upload/abort_multipart_upload_s3api.sh
 source ./tests/drivers/complete_multipart_upload/complete_multipart_upload_s3api.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/create_bucket/create_bucket_s3api.sh

@@ -54,17 +54,19 @@ abort_all_multipart_uploads() {
 }
 
 check_abort_access_denied() {
-  if [ $# -ne 5 ]; then
-    log 2 "'check_abort_access_denied' requires bucket, file, username, password"
+  if ! check_param_count_v2 "bucket, key, upload ID, username, password"; then
     return 1
   fi
-  if abort_multipart_upload_with_user "$1" "$2" "$3" "$4" "$5"; then
+  local bucket="$1" key="$2" upload_id="$3" username="$4" password="$5"
+  local response
+
+  if response=$(abort_multipart_upload_with_user "$bucket" "$key" "$upload_id" "$username" "$password" 2>&1); then
     log 2 "abort multipart upload succeeded despite lack of permissions"
     return 1
   fi
   # shellcheck disable=SC2154
-  if [[ "$abort_multipart_upload_error" != *"AccessDenied"* ]]; then
-    log 2 "unexpected abort error:  $abort_multipart_upload_error"
+  if [[ "$response" != *"AccessDenied"* ]]; then
+    log 2 "unexpected abort error:  $response"
     return 1
   fi
   return 0
@@ -73,11 +75,13 @@ check_abort_access_denied() {
 # param: bucket name
 # return 0 for success, 1 for error
 abort_all_multipart_uploads() {
-  if [ $# -ne 1 ]; then
-    log 2 "'abort_all_multipart_uploads' requires bucket name"
+  if ! check_param_count_v2 "bucket" 1 $#; then
     return 1
   fi
-  if ! list_multipart_uploads "$1"; then
+  local bucket="$1"
+  local response
+
+  if ! list_multipart_uploads "$bucket"; then
     log 2 "error listing multipart uploads"
     return 1
   fi
@@ -104,7 +108,7 @@ abort_all_multipart_uploads() {
       return 1
     fi
     log 5 "Aborting multipart upload for key: $key, UploadId: $upload_id"
-    if ! abort_multipart_upload "$1" "$key" "$upload_id"; then
+    if ! abort_multipart_upload "$bucket" "$key" "$upload_id"; then
       log 2 "error aborting multipart upload"
       return 1
     fi

@@ -20,9 +20,11 @@ abort_all_multipart_uploads_rest() {
   if ! check_param_count "abort_all_multipart_uploads_rest" "bucket" 1 $#; then
     return 1
   fi
-  local response uploads upload_data key upload_id
+  local bucket="$1"
+  local response uploads key upload_id
+  local -a upload_data
 
-  if ! response=$(list_multipart_uploads_rest "$1" 2>&1); then
+  if ! response=$(list_multipart_uploads_rest "$bucket" 2>&1); then
     log 2 "error listing multipart uploads: $response"
     return 1
   fi
@@ -55,4 +57,5 @@ abort_all_multipart_uploads_rest() {
       return 1
     fi
   done
+  return 0
 }
