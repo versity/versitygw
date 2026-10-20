@@ -922,6 +922,16 @@ func GetInvalidTrailingChecksumHeaderErr(header string) APIError {
 	}
 }
 
+// GetInvalidDateAttributeErr returns the error for a date in a request body
+// that doesn't parse. value is echoed as the client sent it.
+func GetInvalidDateAttributeErr(value string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("Invalid value for date attribute: %v", value),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
 // Returns checksum type mismatch APIError
 func GetChecksumTypeMismatchErr(expected, actual types.ChecksumAlgorithm) APIError {
 	return APIError{

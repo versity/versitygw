@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"encoding/xml"
+	"errors"
 	"net/http"
 	"net/url"
 	"slices"
@@ -51,11 +52,17 @@ func (c S3ApiController) DeleteObjects(ctx fiber.Ctx) (*Response, error) {
 	err := xml.Unmarshal(ctx.BodyRaw(), &dObj)
 	if err != nil {
 		debuglogger.Logf("error unmarshalling delete objects: %v", err)
+		// The decoder returns an S3 error for a body that is well-formed
+		// XML but carries an invalid value.
+		var s3Err s3err.S3Error
+		if !errors.As(err, &s3Err) {
+			s3Err = s3err.GetAPIError(s3err.ErrInvalidRequest)
+		}
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		}, s3Err
 	}
 
 	// S3 requires at least one object in a DeleteObjects request and

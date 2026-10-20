@@ -17,9 +17,11 @@ package s3response
 import (
 	"encoding/xml"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	smithytime "github.com/aws/smithy-go/time"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -296,6 +298,58 @@ func (t *Tagging) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 type DeleteObjects struct {
 	Objects []types.ObjectIdentifier `xml:"Object"`
 	Quiet   bool                     `xml:"Quiet,omitempty"`
+}
+
+// UnmarshalXML decodes LastModifiedTime as an HTTP date, the form the SDKs
+// send. The SDK type alone decodes it as RFC 3339, which S3 rejects.
+func (d *DeleteObjects) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
+	var p struct {
+		Objects []struct {
+			types.ObjectIdentifier
+			LastModifiedTime *string
+		} `xml:"Object"`
+		Quiet bool
+	}
+	if err := dec.DecodeElement(&p, &start); err != nil {
+		return err
+	}
+
+	// An empty LastModifiedTime is a schema error, and S3 reports it ahead
+	// of an unparseable date in any object. Of the unparseable dates, the
+	// first one in the body is reported, as sent.
+	var dateErr error
+	objects := make([]types.ObjectIdentifier, 0, len(p.Objects))
+	for _, o := range p.Objects {
+		obj := o.ObjectIdentifier
+		if o.LastModifiedTime != nil {
+			if strings.TrimSpace(*o.LastModifiedTime) == "" {
+				return s3err.GetAPIError(s3err.ErrMalformedXML)
+			}
+			lmt, err := parseLastModifiedTime(*o.LastModifiedTime)
+			if err != nil && dateErr == nil {
+				dateErr = s3err.GetInvalidDateAttributeErr(*o.LastModifiedTime)
+			}
+			obj.LastModifiedTime = &lmt
+		}
+		objects = append(objects, obj)
+	}
+	if dateErr != nil {
+		return dateErr
+	}
+
+	d.Objects = objects
+	d.Quiet = p.Quiet
+	return nil
+}
+
+// parseLastModifiedTime accepts the HTTP date forms and, like S3, a numeric
+// zone offset in place of GMT.
+func parseLastModifiedTime(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if t, err := smithytime.ParseHTTPDate(s); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC1123Z, s)
 }
 
 type DeleteResult struct {

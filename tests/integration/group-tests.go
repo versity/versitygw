@@ -393,6 +393,9 @@ func TestDeleteObjects(ts *TestState) {
 	ts.Run(DeleteObjects_success)
 	ts.Run(DeleteObjects_quiet_mode)
 	ts.Run(DeleteObjects_conditional)
+	ts.Run(DeleteObjects_conditional_last_modified_time)
+	ts.Run(DeleteObjects_last_modified_time_formats)
+	ts.Run(DeleteObjects_invalid_last_modified_time)
 	ts.Run(DeleteObjects_key_limit)
 	ts.Run(DeleteObjects_invalid_object_keys)
 }
@@ -3240,6 +3243,9 @@ func GetIntTests() IntTests {
 		"DeleteObjects_success":                                                            DeleteObjects_success,
 		"DeleteObjects_quiet_mode":                                                         DeleteObjects_quiet_mode,
 		"DeleteObjects_conditional":                                                        DeleteObjects_conditional,
+		"DeleteObjects_conditional_last_modified_time":                                     DeleteObjects_conditional_last_modified_time,
+		"DeleteObjects_last_modified_time_formats":                                         DeleteObjects_last_modified_time_formats,
+		"DeleteObjects_invalid_last_modified_time":                                         DeleteObjects_invalid_last_modified_time,
 		"DeleteObjects_key_limit":                                                          DeleteObjects_key_limit,
 		"DeleteObjects_invalid_object_keys":                                                DeleteObjects_invalid_object_keys,
 		"DeleteObjects_iam_mixed_denials_and_success":                                      DeleteObjects_iam_mixed_denials_and_success,

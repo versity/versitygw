@@ -16,14 +16,20 @@ package integration
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/base64"
+	"encoding/xml"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 func DeleteObjects_non_existing_bucket(s *S3Conf) error {
@@ -318,6 +324,206 @@ func DeleteObjects_conditional(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+// DeleteObjects_conditional_last_modified_time checks the LastModifiedTime
+// condition of each object, which the SDKs send as an HTTP date.
+func DeleteObjects_conditional_last_modified_time(s *S3Conf) error {
+	testName := "DeleteObjects_conditional_last_modified_time"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"match", "stale"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("match"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{
+				Objects: []types.ObjectIdentifier{
+					{Key: getPtr("match"), LastModifiedTime: head.LastModified},
+					{Key: getPtr("stale"), LastModifiedTime: getPtr(head.LastModified.AddDate(-1, 0, 0))},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Deleted) != 1 || getString(out.Deleted[0].Key) != "match" {
+			return fmt.Errorf("expected only match to be deleted, instead got %v", out.Deleted)
+		}
+		if len(out.Errors) != 1 {
+			return fmt.Errorf("expected 1 error, instead got %v", out.Errors)
+		}
+		return checkDeleteObjectsErr(out.Errors[0], "stale",
+			s3err.GetAPIError(s3err.ErrPreconditionFailed))
+	})
+}
+
+// DeleteObjects_last_modified_time_formats checks that each date form S3
+// accepts for LastModifiedTime matches the object it names. The SDK only
+// sends IMF-fixdate, so the request is signed and sent by hand.
+func DeleteObjects_last_modified_time_formats(s *S3Conf) error {
+	testName := "DeleteObjects_last_modified_time_formats"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		forms := []struct {
+			key    string
+			format func(time.Time) string
+		}{
+			{"rfc1123", func(t time.Time) string { return t.UTC().Format(http.TimeFormat) }},
+			{"rfc850", func(t time.Time) string { return t.UTC().Format("Monday, 02-Jan-06 15:04:05 GMT") }},
+			{"ansic", func(t time.Time) string { return t.UTC().Format(time.ANSIC) }},
+			{"numeric-offset", func(t time.Time) string {
+				return t.In(time.FixedZone("", 2*60*60)).Format(time.RFC1123Z)
+			}},
+			{"padded", func(t time.Time) string { return "  " + t.UTC().Format(http.TimeFormat) + "  " }},
+		}
+
+		var body strings.Builder
+		body.WriteString("<Delete>")
+		for _, form := range forms {
+			_, err := putObjects(s3client, []string{form.key}, bucket)
+			if err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &form.key,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(&body, "<Object><Key>%v</Key><LastModifiedTime>%v</LastModifiedTime></Object>",
+				form.key, form.format(*head.LastModified))
+		}
+		body.WriteString("</Delete>")
+		sum := md5.Sum([]byte(body.String()))
+
+		req, err := createSignedReq(http.MethodPost, s.endpoint, bucket+"?delete",
+			s.awsID, s.awsSecret, "s3", s.awsRegion, "", []byte(body.String()), time.Now(), map[string]string{
+				"Content-Md5": base64.StdEncoding.EncodeToString(sum[:]),
+			})
+		if err != nil {
+			return err
+		}
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected the response status code to be 200, instead got %v", resp.StatusCode)
+		}
+		var res s3response.DeleteResult
+		if err := xml.NewDecoder(resp.Body).Decode(&res); err != nil {
+			return err
+		}
+		if len(res.Error) != 0 {
+			return fmt.Errorf("expected no errors, instead got %v", res.Error)
+		}
+		if len(res.Deleted) != len(forms) {
+			return fmt.Errorf("expected %v deleted objects, instead got %v", len(forms), len(res.Deleted))
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if len(out.Contents) != 0 {
+			return fmt.Errorf("expected the bucket to be empty, instead got %v objects", len(out.Contents))
+		}
+
+		return nil
+	})
+}
+
+// DeleteObjects_invalid_last_modified_time checks that a LastModifiedTime S3
+// can't parse fails the whole request and deletes nothing.
+func DeleteObjects_invalid_last_modified_time(s *S3Conf) error {
+	testName := "DeleteObjects_invalid_last_modified_time"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// the object's own time, so the condition would hold if RFC 3339
+		// were accepted
+		rfc3339 := head.LastModified.UTC().Format(time.RFC3339)
+		malformed := s3err.GetAPIError(s3err.ErrMalformedXML)
+		for i, test := range []struct {
+			lmts []string
+			err  s3err.S3Error
+		}{
+			{[]string{rfc3339}, s3err.GetInvalidDateAttributeErr(rfc3339)},
+			{[]string{"not a date"}, s3err.GetInvalidDateAttributeErr("not a date")},
+			{[]string{"  not a date  "}, s3err.GetInvalidDateAttributeErr("  not a date  ")},
+			{[]string{"first", "second"}, s3err.GetInvalidDateAttributeErr("first")},
+			{[]string{""}, malformed},
+			{[]string{"   "}, malformed},
+			// the empty value is reported ahead of an earlier invalid date
+			{[]string{"not a date", ""}, malformed},
+		} {
+			var body strings.Builder
+			body.WriteString("<Delete>")
+			for _, lmt := range test.lmts {
+				fmt.Fprintf(&body, "<Object><Key>%v</Key><LastModifiedTime>%v</LastModifiedTime></Object>", obj, lmt)
+			}
+			body.WriteString("</Delete>")
+			sum := md5.Sum([]byte(body.String()))
+
+			req, err := createSignedReq(http.MethodPost, s.endpoint, bucket+"?delete",
+				s.awsID, s.awsSecret, "s3", s.awsRegion, "", []byte(body.String()), time.Now(), map[string]string{
+					"Content-Md5": base64.StdEncoding.EncodeToString(sum[:]),
+				})
+			if err != nil {
+				return err
+			}
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+			if err := checkHTTPResponseApiErr(resp, test.err); err != nil {
+				return fmt.Errorf("test case %d failed: %w", i, err)
+			}
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		return err
 	})
 }
 
