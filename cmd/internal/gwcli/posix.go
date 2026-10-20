@@ -182,6 +182,11 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_DATA_INTEGRITY_ETAG"},
 				Destination: &dataIntegrityEtag,
 			},
+			&cli.StringSliceFlag{
+				Name:    "exclude-dirs",
+				Usage:   "directory names the object listings do not descend into or report as objects (can be specified multiple times); use it for a filesystem control directory that holds something other than object data, such as .zfs on a ZFS dataset mounted with snapdir=visible",
+				EnvVars: []string{"VGW_EXCLUDE_DIRS"},
+			},
 		},
 	}
 }
@@ -226,6 +231,7 @@ func runPosix(ctx *cli.Context) error {
 		CopyObjectThreshold:  CopyObjectThreshold,
 		DefaultEtag:          defaultEtag,
 		DataIntegrityEtag:    dataIntegrityEtag,
+		ExcludeDirs:          ctx.StringSlice("exclude-dirs"),
 	}
 	opts.SetNewDirPerm(fs.FileMode(dirPerms))
 	opts.SetNewFilePerm(fs.FileMode(filePerms))
