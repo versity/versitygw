@@ -48,7 +48,7 @@ type walkState struct {
 	marker     string
 	max        int32
 	getObj     GetObjFunc
-	skipdirs   []string
+	skipDirs   SkipDirs
 
 	// Mutable state
 	cpmap     cpMap
@@ -60,6 +60,27 @@ type walkState struct {
 }
 
 type GetObjFunc func(path string, d fs.DirEntry) (s3response.Object, error)
+
+// SkipDirs names the directories a walk never descends into or reports as
+// objects. Regular files with these names are ordinary objects. Names are
+// matched ignoring case: a case-insensitive file system resolves a name in
+// any case to the same directory, and matching the same way on every file
+// system keeps the listings in agreement with backends that reject object
+// keys through these directories ignoring case.
+type SkipDirs struct {
+	// Root names directories skipped only at the top of the walked file
+	// system, such as the gateway's own metadata directory.
+	Root []string
+	// Any names directories skipped at every depth.
+	Any []string
+}
+
+// skips reports whether a directory named name is skipped. atRoot reports
+// whether the directory is at the top of the walked file system.
+func (s SkipDirs) skips(name string, atRoot bool) bool {
+	match := func(skip string) bool { return strings.EqualFold(name, skip) }
+	return slices.ContainsFunc(s.Any, match) || (atRoot && slices.ContainsFunc(s.Root, match))
+}
 
 var ErrSkipObj = errors.New("skip this object")
 
@@ -93,7 +114,7 @@ func (c cpMap) CpArray() []types.CommonPrefix {
 
 // Walk walks the supplied fs.FS and returns results compatible with list
 // objects responses
-func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj GetObjFunc, skipdirs []string) (WalkResults, error) {
+func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj GetObjFunc, skipDirs SkipDirs) (WalkResults, error) {
 	// if max is 0, it should return empty non-truncated result
 	if max == 0 {
 		return WalkResults{
@@ -109,7 +130,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 		marker:     marker,
 		max:        max,
 		getObj:     getObj,
-		skipdirs:   skipdirs,
+		skipDirs:   skipDirs,
 		cpmap:      cpMap{},
 	}
 
@@ -146,7 +167,7 @@ type GetVersionsFunc func(path, versionIdMarker string, pastVersionIdMarker *boo
 
 // WalkVersions walks the supplied fs.FS and returns results compatible with
 // ListObjectVersions action response
-func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyMarker, versionIdMarker string, max int, getObj GetVersionsFunc, skipdirs []string) (WalkVersioningResults, error) {
+func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyMarker, versionIdMarker string, max int, getObj GetVersionsFunc, skipDirs SkipDirs) (WalkVersioningResults, error) {
 	cpmap := cpMap{}
 	var objects []s3response.ObjectVersion
 	var delMarkers []s3response.DeleteMarkerEntry
@@ -172,7 +193,10 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		if path == "." {
 			return nil
 		}
-		if slices.Contains(skipdirs, d.Name()) {
+		// Only directories are skipped by name. A file with a skipped
+		// name is an ordinary object, and returning SkipDir for a file
+		// would skip the rest of its directory.
+		if d.IsDir() && skipDirs.skips(d.Name(), !strings.Contains(path, pathSeparator)) {
 			return fs.SkipDir
 		}
 
@@ -381,7 +405,7 @@ func readDirEntries(path string, entries []fs.DirEntry, walkstate *walkState) {
 			return
 		}
 
-		if shouldSkip(entries[entriesIndex].Name(), walkstate) {
+		if shouldSkip(path, entries[entriesIndex], walkstate) {
 			entriesIndex++
 			continue
 		}
@@ -444,7 +468,7 @@ func processDir(
 			// if it is a directory, we
 			// need to call recursively to
 			// check for further preceding entries
-			if shouldSkip(entries[entriesIndex].Name(), walkstate) {
+			if shouldSkip(path, entries[entriesIndex], walkstate) {
 				entriesIndex++
 				continue
 			}
@@ -558,21 +582,22 @@ func checkAndMaybeAddCommonPrefix(objectName string, walkstate *walkState,
 	return false
 }
 
-func shouldSkip(name string, walkstate *walkState) bool {
-	return slices.Contains(walkstate.skipdirs, name)
+// shouldSkip reports whether entry, read from the directory path, is a
+// skipped directory. A file with a skipped name is an ordinary object and is
+// not skipped.
+func shouldSkip(path string, entry fs.DirEntry, walkstate *walkState) bool {
+	return entry.IsDir() && walkstate.skipDirs.skips(entry.Name(), path == pathDot)
 }
 
 // inSkipDir reports whether dir, a directory named by the listing prefix, is
-// a skipped directory or inside one. The prefix spells the directory names
-// as the client sent them, which a case-insensitive file system resolves to
-// a skipped directory in any case, so they are matched ignoring case.
+// a skipped directory or inside one.
 func inSkipDir(dir string, walkstate *walkState) bool {
+	i := 0
 	for name := range strings.SplitSeq(dir, pathSeparator) {
-		if slices.ContainsFunc(walkstate.skipdirs, func(skip string) bool {
-			return strings.EqualFold(name, skip)
-		}) {
+		if walkstate.skipDirs.skips(name, i == 0) {
 			return true
 		}
+		i++
 	}
 	return false
 }
@@ -636,7 +661,7 @@ func quickWalk(walkstate *walkState) error {
 	}
 
 	if useRootEntries {
-		// keep fast-path semantics but still honor skipdirs for the prefixed
+		// keep fast-path semantics but still honor skipDirs for the prefixed
 		// root and every directory above it
 		if !inSkipDir(rootDir, walkstate) {
 			// Mirror processDir: offer the root directory itself to getObj whenever

@@ -432,7 +432,7 @@ func TestWalk(t *testing.T) {
 		for _, tc := range tt.cases {
 			res, err := backend.Walk(context.Background(),
 				tt.fsys, tc.prefix, tc.delimiter, tc.marker, tc.maxObjs,
-				tt.getobj, []string{})
+				tt.getobj, backend.SkipDirs{})
 			if err != nil {
 				t.Errorf("%v: walk: %v", tc.name, err)
 			}
@@ -575,7 +575,7 @@ func TestWalkStop(t *testing.T) {
 		_, err = backend.Walk(ctx, s, "", "", "", 1000,
 			func(path string, d fs.DirEntry) (s3response.Object, error) {
 				return s3response.Object{}, nil
-			}, []string{})
+			}, backend.SkipDirs{})
 	})
 
 	select {
@@ -609,7 +609,7 @@ func TestWalkPrefixInSkipDir(t *testing.T) {
 	} {
 		for _, delimiter := range []string{"", "/"} {
 			res, err := backend.Walk(context.Background(), fsys, prefix, delimiter, "", 1000,
-				getObj, []string{".sgwtmp"})
+				getObj, backend.SkipDirs{Root: []string{".sgwtmp"}})
 			if err != nil {
 				t.Errorf("prefix %q delimiter %q: walk: %v", prefix, delimiter, err)
 				continue
@@ -619,6 +619,166 @@ func TestWalkPrefixInSkipDir(t *testing.T) {
 					prefix, delimiter, printObjects(res.Objects), printCommonPrefixes(res.CommonPrefixes))
 			}
 		}
+	}
+}
+
+// skipNameFS has skipped directories, which are never walked, and regular
+// files with skipped names, which are ordinary objects. ".zfs" sorts before
+// the siblings of d/.zfs, so skipping that file the way a directory is skipped
+// would drop the siblings. "a.b" and "c.d" sort after "a" and "c" in readdir
+// order but before "a/" and "c/" as keys, so processDir reaches them through
+// its lookahead: the file a.b is listed and the directory c.d is skipped.
+var skipNameFS = fstest.MapFS{
+	".zfs/snapshot/one/snap.txt": {},
+	"a.b":                        {},
+	"a/x":                        {},
+	"c.d/y":                      {},
+	"c/x":                        {},
+	"d/.zfs":                     {},
+	"d/b.txt":                    {},
+	"d/c.txt":                    {},
+	"top.txt":                    {},
+}
+
+var skipNameDirs = backend.SkipDirs{Any: []string{".zfs", "a.b", "c.d"}}
+
+var skipNameKeys = []string{"a.b", "a/x", "c/x", "d/.zfs", "d/b.txt", "d/c.txt", "top.txt"}
+
+// TestWalkSkipDirsFileNotSkipped checks that Walk skips only directories
+// named in skipdirs, not regular files with the same name.
+func TestWalkSkipDirsFileNotSkipped(t *testing.T) {
+	res, err := backend.Walk(context.Background(), skipNameFS, "", "", "", 1000,
+		getObjSkipDirs, skipNameDirs)
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	var want []s3response.Object
+	for _, key := range skipNameKeys {
+		want = append(want, s3response.Object{Key: backend.GetPtrFromString(key)})
+	}
+	compareResultsOrdered("files named like skipped dirs", res, backend.WalkResults{Objects: want}, t)
+
+	// A prefix inside the directory starts the walk there, and the file
+	// with the skipped name is still listed.
+	res, err = backend.Walk(context.Background(), skipNameFS, "d/", "", "", 1000,
+		getObjSkipDirs, skipNameDirs)
+	if err != nil {
+		t.Fatalf("walk prefix d/: %v", err)
+	}
+	compareResultsOrdered("file named like skipped dir under prefix", res, backend.WalkResults{
+		Objects: []s3response.Object{
+			{Key: backend.GetPtrFromString("d/.zfs")},
+			{Key: backend.GetPtrFromString("d/b.txt")},
+			{Key: backend.GetPtrFromString("d/c.txt")},
+		},
+	}, t)
+}
+
+// TestWalkVersionsSkipDirsFileNotSkipped checks that WalkVersions skips only
+// directories named in skipdirs. It used to return fs.SkipDir for a regular
+// file with a skipped name too, which skips the rest of the file's directory.
+func TestWalkVersionsSkipDirsFileNotSkipped(t *testing.T) {
+	getFileVersions := func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+		if d.IsDir() {
+			return nil, backend.ErrSkipObj
+		}
+		return getVersionsTestFunc(path, versionIdMarker, pastVersionIdMarker, availableObjCount, d)
+	}
+
+	res, err := backend.WalkVersions(context.Background(), skipNameFS, "", "", "", "", 1000,
+		getFileVersions, skipNameDirs)
+	if err != nil {
+		t.Fatalf("WalkVersions: %v", err)
+	}
+	if !compareObjectVersionsOrdered(res.ObjectVersions, makeObjectVersions(skipNameKeys)) {
+		t.Errorf("unexpected ObjectVersions: got %v, want %v",
+			printVersionObjects(res.ObjectVersions), skipNameKeys)
+	}
+}
+
+// rootSkipFS has the gateway's metadata directory at the root, where it is
+// skipped, and directories of the same name further down, where they are
+// ordinary bucket content. It also has a skipped name spelled in another
+// case, which is skipped too, like object requests reject keys through it.
+var rootSkipFS = fstest.MapFS{
+	".sgwtmp/multipart/x": {},
+	".SGWTMP/y":           {},
+	"d/.sgwtmp/x":         {},
+	"e/.SGWTMP/z":         {},
+	"e/.ZFS/snap":         {},
+	"top.txt":             {},
+}
+
+var rootSkipDirs = backend.SkipDirs{Root: []string{".sgwtmp"}, Any: []string{".zfs"}}
+
+var rootSkipKeys = []string{"d/.sgwtmp/x", "e/.SGWTMP/z", "top.txt"}
+
+// TestWalkSkipDirsRootAndCase checks that Walk skips SkipDirs.Root names only
+// at the root, SkipDirs.Any names at any depth, and both ignoring case.
+func TestWalkSkipDirsRootAndCase(t *testing.T) {
+	ctx := context.Background()
+
+	res, err := backend.Walk(ctx, rootSkipFS, "", "", "", 1000, getObjSkipDirs, rootSkipDirs)
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	var want []s3response.Object
+	for _, key := range rootSkipKeys {
+		want = append(want, s3response.Object{Key: backend.GetPtrFromString(key)})
+	}
+	compareResultsOrdered("root and any-depth skip dirs", res, backend.WalkResults{Objects: want}, t)
+
+	res, err = backend.Walk(ctx, rootSkipFS, "", "/", "", 1000, getObjSkipDirs, rootSkipDirs)
+	if err != nil {
+		t.Fatalf("walk with delimiter: %v", err)
+	}
+	compareResultsOrdered("root and any-depth skip dirs with delimiter", res, backend.WalkResults{
+		CommonPrefixes: []types.CommonPrefix{
+			{Prefix: backend.GetPtrFromString("d/")},
+			{Prefix: backend.GetPtrFromString("e/")},
+		},
+		Objects: []s3response.Object{{Key: backend.GetPtrFromString("top.txt")}},
+	}, t)
+
+	for _, tc := range []struct {
+		prefix string
+		keys   []string
+	}{
+		{"d/.sgwtmp/", []string{"d/.sgwtmp/x"}},
+		{"e/.SGWTMP/", []string{"e/.SGWTMP/z"}},
+		{"e/.ZFS/", nil},
+		{".SGWTMP/", nil},
+	} {
+		res, err := backend.Walk(ctx, rootSkipFS, tc.prefix, "", "", 1000, getObjSkipDirs, rootSkipDirs)
+		if err != nil {
+			t.Fatalf("walk prefix %q: %v", tc.prefix, err)
+		}
+		var want []s3response.Object
+		for _, key := range tc.keys {
+			want = append(want, s3response.Object{Key: backend.GetPtrFromString(key)})
+		}
+		compareResultsOrdered("prefix "+tc.prefix, res, backend.WalkResults{Objects: want}, t)
+	}
+}
+
+// TestWalkVersionsSkipDirsRootAndCase checks that WalkVersions applies the
+// same root-only and case-insensitive rules as Walk.
+func TestWalkVersionsSkipDirsRootAndCase(t *testing.T) {
+	getFileVersions := func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+		if d.IsDir() {
+			return nil, backend.ErrSkipObj
+		}
+		return getVersionsTestFunc(path, versionIdMarker, pastVersionIdMarker, availableObjCount, d)
+	}
+
+	res, err := backend.WalkVersions(context.Background(), rootSkipFS, "", "", "", "", 1000,
+		getFileVersions, rootSkipDirs)
+	if err != nil {
+		t.Fatalf("WalkVersions: %v", err)
+	}
+	if !compareObjectVersionsOrdered(res.ObjectVersions, makeObjectVersions(rootSkipKeys)) {
+		t.Errorf("unexpected ObjectVersions: got %v, want %v",
+			printVersionObjects(res.ObjectVersions), rootSkipKeys)
 	}
 }
 
@@ -651,7 +811,7 @@ func TestWalkDirectoryErrorPropagates(t *testing.T) {
 				return s3response.Object{}, fmt.Errorf("boom")
 			}
 			return getObj(path, d)
-		}, []string{})
+		}, backend.SkipDirs{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -672,7 +832,7 @@ func TestWalkDirectoryErrSkipObjContinues(t *testing.T) {
 				return s3response.Object{}, backend.ErrSkipObj
 			}
 			return getObj(path, d)
-		}, []string{})
+		}, backend.SkipDirs{})
 	if err != nil {
 		t.Fatalf("walk: %v", err)
 	}
@@ -854,7 +1014,7 @@ func TestOrderWalk(t *testing.T) {
 		for _, tc := range tt.cases {
 			res, err := backend.Walk(context.Background(),
 				tt.fsys, tc.prefix, tc.delimiter, tc.marker, tc.maxObjs,
-				tt.getobj, []string{})
+				tt.getobj, backend.SkipDirs{})
 			if err != nil {
 				t.Errorf("%v: walk: %v", tc.name, err)
 			}
@@ -1071,7 +1231,7 @@ func TestMarker(t *testing.T) {
 			for i, page := range tc.expected {
 				res, err := backend.Walk(context.Background(),
 					tt.fsys, tc.prefix, tc.delimiter, marker, tc.maxObjs,
-					tt.getobj, []string{})
+					tt.getobj, backend.SkipDirs{})
 				if err != nil {
 					t.Errorf("%v: walk: %v", tc.name, err)
 				}
@@ -1181,7 +1341,7 @@ func TestWalkVersions(t *testing.T) {
 		},
 	}
 
-	res, err := backend.WalkVersions(context.Background(), fsys, "", "", "", "", 1000, getVersionsTestFunc, []string{})
+	res, err := backend.WalkVersions(context.Background(), fsys, "", "", "", "", 1000, getVersionsTestFunc, backend.SkipDirs{})
 	if err != nil {
 		t.Fatalf("walk versions: %v", err)
 	}
@@ -1213,7 +1373,7 @@ func TestOrderWalkVersions(t *testing.T) {
 		},
 	}
 
-	res, err := backend.WalkVersions(context.Background(), fsys, "dir1/", "", "", "", 1000, getVersionsTestFunc, []string{})
+	res, err := backend.WalkVersions(context.Background(), fsys, "dir1/", "", "", "", 1000, getVersionsTestFunc, backend.SkipDirs{})
 	if err != nil {
 		t.Fatalf("order walk versions: %v", err)
 	}
@@ -1367,7 +1527,7 @@ func TestWalkVersionsTruncated(t *testing.T) {
 
 	// Test first page with limit of 5 (should be truncated)
 	maxKeys := 5
-	res1, err := backend.WalkVersions(context.Background(), fsys, "", "", "", "", maxKeys, getVersionsFunc, []string{})
+	res1, err := backend.WalkVersions(context.Background(), fsys, "", "", "", "", maxKeys, getVersionsFunc, backend.SkipDirs{})
 	if err != nil {
 		t.Fatalf("walk versions first page: %v", err)
 	}
@@ -1402,7 +1562,7 @@ func TestWalkVersionsTruncated(t *testing.T) {
 	}
 
 	// Test second page using markers
-	res2, err := backend.WalkVersions(context.Background(), fsys, "", "", res1.NextMarker, res1.NextVersionIdMarker, maxKeys, getVersionsFunc, []string{})
+	res2, err := backend.WalkVersions(context.Background(), fsys, "", "", res1.NextMarker, res1.NextVersionIdMarker, maxKeys, getVersionsFunc, backend.SkipDirs{})
 	if err != nil {
 		t.Fatalf("walk versions second page: %v", err)
 	}
@@ -1420,7 +1580,7 @@ func TestWalkVersionsTruncated(t *testing.T) {
 	// Test third page if needed
 	var res3 backend.WalkVersioningResults
 	if res2.Truncated {
-		res3, err = backend.WalkVersions(context.Background(), fsys, "", "", res2.NextMarker, res2.NextVersionIdMarker, maxKeys, getVersionsFunc, []string{})
+		res3, err = backend.WalkVersions(context.Background(), fsys, "", "", res2.NextMarker, res2.NextVersionIdMarker, maxKeys, getVersionsFunc, backend.SkipDirs{})
 		if err != nil {
 			t.Fatalf("walk versions third page: %v", err)
 		}
@@ -1460,7 +1620,7 @@ func TestWalkVersionsPrefixSkipsParents(t *testing.T) {
 	prefix := "vendor/Backup/vendor/Clients/"
 	delimiter := "/"
 
-	res, err := backend.WalkVersions(context.Background(), fsys, prefix, delimiter, "", "", 1000, getVersionsTestFunc, []string{})
+	res, err := backend.WalkVersions(context.Background(), fsys, prefix, delimiter, "", "", 1000, getVersionsTestFunc, backend.SkipDirs{})
 	if err != nil {
 		t.Fatalf("WalkVersions: %v", err)
 	}
@@ -1493,7 +1653,7 @@ func TestWalkVersionsPrefixNoDelimiterSkipsParents(t *testing.T) {
 
 	prefix := "vendor/Backup/vendor/Clients/"
 
-	res, err := backend.WalkVersions(context.Background(), fsys, prefix, "", "", "", 1000, getVersionsTestFunc, []string{})
+	res, err := backend.WalkVersions(context.Background(), fsys, prefix, "", "", "", 1000, getVersionsTestFunc, backend.SkipDirs{})
 	if err != nil {
 		t.Fatalf("WalkVersions: %v", err)
 	}

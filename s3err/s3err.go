@@ -212,6 +212,7 @@ const (
 	ErrACLsDisabled
 	ErrNoSpaceLeftOnDevice
 	ErrReservedObjectKey
+	ErrExcludedObjectKey
 
 	// Admin api errors
 	ErrAdminAccessDenied
@@ -814,6 +815,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrReservedObjectKey: {
 		Code:           "ReservedObjectKey",
 		Description:    "Object keys in the .sgwtmp directory are reserved for the gateway's internal use.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrExcludedObjectKey: {
+		Code:           "ReservedObjectKey",
+		Description:    "Object keys in a directory excluded from object listings are reserved.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 
