@@ -30,6 +30,7 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/internal/httpctx"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -642,7 +643,7 @@ func TestWebsiteHandlerHeadValidatesObjectName(t *testing.T) {
 		IndexDocument: &s3response.IndexDocument{Suffix: "index.html"},
 	}, nil, true)
 
-	resp := websiteRequestWithHeaders(t, be, http.MethodHead, "/../../private.html", nil)
+	resp := websiteRequestWithHeaders(t, be, http.MethodHead, "/dir/../private.html", nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusBadRequest {
@@ -1179,7 +1180,7 @@ func websiteRequestWithHostAndHeaders(t *testing.T, be backend.Backend, method, 
 func websiteRequestWithDomainHostAndHeaders(t *testing.T, be backend.Backend, domain, method, host, path string, headers map[string]string) *http.Response {
 	t.Helper()
 
-	app := fiber.New(fiber.Config{ServerHeader: "VERSITYGW"})
+	app := fiber.NewWithCustomCtx(httpctx.NewCtx, fiber.Config{ServerHeader: "VERSITYGW"})
 	registerWebsiteRoutes(app, be, domain)
 
 	req := httptest.NewRequest(method, path, nil)

@@ -952,8 +952,8 @@ func GetInt64(n *int64) int64 {
 	return *n
 }
 
-// ValidateCopySource parses and validates the copy-source
-func ValidateCopySource(input string) error {
+// ValidateCopySource parses and validates the copy-source of be
+func ValidateCopySource(input string, be backend.Backend) error {
 	copysource, err := url.QueryUnescape(input)
 	if err != nil {
 		debuglogger.Logf("invalid copy source encoding: %s", input)
@@ -970,10 +970,7 @@ func ValidateCopySource(input string) error {
 	// that is recognized in copy source
 	object, _, _ := strings.Cut(rest, "?versionId=")
 
-	// objects containing '../', '...../' ... are considered valid in AWS
-	// but for the security purposes these should be considered as invalid
-	// in the gateway
-	if !IsObjectNameValid(object) {
+	if !IsObjectNameValid(object, be) {
 		debuglogger.Logf("invalid copy source object: %s", object)
 		return s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, object)
 	}

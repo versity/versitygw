@@ -547,18 +547,12 @@ func DeleteObjects_invalid_object_keys(s *S3Conf) error {
 			return err
 		}
 
-		// Every key resolves outside the bucket or to the bucket itself;
-		// the ones climbing back into it name obj. A request holding any of
-		// them is rejected as a whole, so its valid key isn't deleted
+		// A key made of slashes only names no object. A request holding
+		// one is rejected as a whole, so its valid key isn't deleted
 		// either.
 		for _, key := range []string{
-			".",
-			"..",
 			"/",
-			"../",
-			"../../../etc/passwd",
-			"../" + bucket + "/" + obj,
-			"dir/../../" + bucket + "/" + obj,
+			"//",
 		} {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{

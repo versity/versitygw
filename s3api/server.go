@@ -29,6 +29,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/httpctx"
 	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/controllers"
@@ -116,7 +117,7 @@ func New(
 		server.clientIPHeader = header
 	}
 
-	app := fiber.New(fiber.Config{
+	app := fiber.NewWithCustomCtx(httpctx.NewCtx, fiber.Config{
 		AppName:           "versitygw",
 		ServerHeader:      "VERSITYGW",
 		StreamRequestBody: true,

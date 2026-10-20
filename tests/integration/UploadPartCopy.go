@@ -271,23 +271,6 @@ func UploadPartCopy_invalid_copy_source(s *S3Conf) error {
 				copySource:  "bucket/",
 				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, ""),
 			},
-			// directory navigation object keys
-			{
-				copySource:  "bucket/.",
-				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "."),
-			},
-			{
-				copySource:  "bucket/..",
-				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, ".."),
-			},
-			{
-				copySource:  "bucket/../",
-				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "../"),
-			},
-			{
-				copySource:  "bucket/foo/ba/../../../r/baz",
-				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "foo/ba/../../../r/baz"),
-			},
 		} {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{

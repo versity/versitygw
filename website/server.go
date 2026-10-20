@@ -24,6 +24,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/httpctx"
 	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3api/utils"
@@ -85,7 +86,7 @@ func WithTrustedProxies(trusted utils.TrustedProxies) Option {
 //   - Host "blog.<domain>" resolves to bucket "blog"
 //   - Host "<domain>" (apex, no subdomain) resolves to bucket "<domain>"
 func NewServer(be backend.Backend, domain string, opts ...Option) *Server {
-	app := fiber.New(fiber.Config{
+	app := fiber.NewWithCustomCtx(httpctx.NewCtx, fiber.Config{
 		AppName:      "versitygw-website",
 		ServerHeader: "VERSITYGW",
 	})

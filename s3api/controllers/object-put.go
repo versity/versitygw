@@ -396,7 +396,7 @@ func (c S3ApiController) UploadPartCopy(ctx fiber.Ctx) (*Response, error) {
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := utils.ValidateCopySource(copySource)
+	err := utils.ValidateCopySource(copySource, c.be)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -572,7 +572,7 @@ func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := utils.ValidateCopySource(copySource)
+	err := utils.ValidateCopySource(copySource, c.be)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{

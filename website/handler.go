@@ -212,7 +212,7 @@ func (c *websiteController) resolveRequest(ctx fiber.Ctx) (*websiteRequestInfo, 
 	}
 
 	key := strings.TrimPrefix(ctx.Path(), "/")
-	if err := validateWebsiteNames(bucket, key); err != nil {
+	if err := validateWebsiteNames(bucket, key, c.be); err != nil {
 		return nil, err
 	}
 
@@ -233,11 +233,11 @@ func (c *websiteController) resolveRequest(ctx fiber.Ctx) (*websiteRequestInfo, 
 	}, nil
 }
 
-func validateWebsiteNames(bucket, key string) error {
+func validateWebsiteNames(bucket, key string, be backend.Backend) error {
 	if !utils.IsValidBucketName(bucket) {
 		return s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
 	}
-	if key != "" && !utils.IsObjectNameValid(key) {
+	if key != "" && !utils.IsObjectNameValid(key, be) {
 		return s3err.GetAPIError(s3err.ErrBadRequest)
 	}
 

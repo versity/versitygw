@@ -462,8 +462,11 @@ func AccessControl_copy_object_with_starting_slash_for_user(s *S3Conf) error {
 	})
 }
 
-func AccessControl_policy_normalizes_object_key_for_get_put_delete(s *S3Conf) error {
-	testName := "AccessControl_policy_normalizes_object_key_for_get_put_delete"
+// A user granted only "public/*" can't reach "private.txt" through
+// "public/../private.txt": posix would resolve that key to the private
+// object, so it is rejected before the policy is evaluated.
+func AccessControl_dot_segment_key_rejected_before_policy(s *S3Conf) error {
+	testName := "AccessControl_dot_segment_key_rejected_before_policy"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		privateKey := "private.txt"
 		traversalKey := "public/../" + privateKey
@@ -498,7 +501,7 @@ func AccessControl_policy_normalizes_object_key_for_get_put_delete(s *S3Conf) er
 			Key:    &traversalKey,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
 			return err
 		}
 
@@ -510,7 +513,7 @@ func AccessControl_policy_normalizes_object_key_for_get_put_delete(s *S3Conf) er
 			CopySource: &copySource,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+		if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, traversalKey)); err != nil {
 			return err
 		}
 
@@ -519,7 +522,7 @@ func AccessControl_policy_normalizes_object_key_for_get_put_delete(s *S3Conf) er
 			Key:    &traversalKey,
 			Body:   bytes.NewReader([]byte("overwrite")),
 		}, userClient)
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
 			return err
 		}
 
@@ -548,7 +551,7 @@ func AccessControl_policy_normalizes_object_key_for_get_put_delete(s *S3Conf) er
 			Key:    &traversalKey,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
 			return err
 		}
 

@@ -193,6 +193,11 @@ func (az *Azure) String() string {
 	return "Azure Blob Gateway"
 }
 
+// StoresDotSegmentKeys reports true: a blob name is a plain string.
+func (az *Azure) StoresDotSegmentKeys() bool {
+	return true
+}
+
 func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
 	meta := map[string]*string{
 		string(keyAclCapital): backend.GetPtrFromString(encodeBytes(acl)),

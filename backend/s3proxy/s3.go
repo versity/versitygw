@@ -103,6 +103,11 @@ func (s *S3Proxy) validate(ctx context.Context) error {
 	return nil
 }
 
+// StoresDotSegmentKeys reports true: the keys are passed on to the S3 service.
+func (s *S3Proxy) StoresDotSegmentKeys() bool {
+	return true
+}
+
 func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 	output, err := s.client.ListBuckets(ctx, &s3.ListBucketsInput{
 		ContinuationToken: &input.ContinuationToken,

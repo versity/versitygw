@@ -127,7 +127,7 @@ func PutObject_windows_reserved_names(s *S3Conf) error {
 		keys := []string{
 			"question?", "question", "asterisk*", `quote"`, "colon:name", "C:drive",
 			"lt<gt>", "pipe|", "tab\tchar",
-			`back\slash`, "back/slash", `..\..\escape`,
+			`back\slash`, "back/slash", `dir\..\..\escape`,
 			"trailingdot.", "trailingdot", "trailingspace ", "trailingspace",
 			"dotdir./file", "dotdir/file", "spacedir /file", "spacedir/file",
 			"CON", "nul.txt", "aux/obj", "com1", "LPT9.log", "CONIN$",
@@ -669,8 +669,6 @@ func PutObject_reserved_key(s *S3Conf) error {
 		partKey := fmt.Sprintf(".sgwtmp/multipart/%x/%v/1", sha256.Sum256([]byte(obj)), *mp.UploadId)
 		for _, key := range []string{
 			partKey,
-			"./" + partKey,
-			"my-dir/../" + partKey,
 			".SGWTMP" + strings.TrimPrefix(partKey, ".sgwtmp"),
 			".sgwtmp/",
 			".sgwtmp/my-obj",
@@ -889,5 +887,227 @@ func ListObjectsV2_reserved_prefix(s *S3Conf) error {
 		}
 
 		return checkAndAbortUpload(s3client, bucket, obj, *mp.UploadId)
+	})
+}
+
+// S3 takes "." and ".." segments as part of the key, but posix stores an
+// object at the path of its key, which would resolve them to another
+// object or to a path outside the bucket. Such keys are rejected.
+func PutObject_dot_segment_key(s *S3Conf) error {
+	testName := "PutObject_dot_segment_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		keys := []string{
+			".",
+			"./",
+			"/.",
+			"x/.",
+			"x/..",
+			"a/./b",
+			"./" + obj,
+			"a/../" + obj,
+		}
+		if !s.hostStyle {
+			// without the bucket in the path these climb above its root
+			keys = append(keys, "..", "../", "for/../../bar/", "../"+bucket+"/"+obj)
+		}
+		for _, key := range keys {
+			_, err := putObjectWithData(10, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			}, s3client)
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
+				return fmt.Errorf("%v: %w", key, err)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if res.ContentLength == nil || *res.ContentLength != 0 {
+			return fmt.Errorf("expected %v to keep its empty body, instead got size %v", obj, res.ContentLength)
+		}
+
+		return nil
+	})
+}
+
+func PostObject_dot_segment_key(s *S3Conf) error {
+	testName := "PostObject_dot_segment_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, obj := range []string{
+			".",
+			"..",
+			"./",
+			"/.",
+			"../",
+			"/..",
+			"../.",
+			"a/./b",
+			"a/../b",
+			"../../../.",
+			"../../../etc/passwd",
+			"../../../../tmp/foo",
+			"for/../../bar/",
+			"a/a/a/../../../../../etc/passwd",
+			"/a/../../b/../../c/../../../etc/passwd",
+		} {
+			resp, err := sendPostObject(PostRequestConfig{
+				bucket:      bucket,
+				key:         obj,
+				s3Conf:      s,
+				fileContent: []byte("data"),
+			})
+			if err != nil {
+				return err
+			}
+
+			if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
+				return fmt.Errorf("%v: %w", obj, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func DeleteObjects_dot_segment_key(s *S3Conf) error {
+	testName := "DeleteObjects_dot_segment_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, otherObj := "my-obj", "other-obj"
+		_, err := putObjects(s3client, []string{obj, otherObj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// Every key resolves outside the bucket or to the bucket itself;
+		// the ones climbing back into it name obj. A request holding any of
+		// them is rejected as a whole, so its valid key isn't deleted
+		// either.
+		for _, key := range []string{
+			".",
+			"..",
+			"../",
+			"./" + obj,
+			"a/../" + obj,
+			"../../../etc/passwd",
+			"../" + bucket + "/" + obj,
+			"dir/../../" + bucket + "/" + obj,
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+				Bucket: &bucket,
+				Delete: &types.Delete{
+					Objects: []types.ObjectIdentifier{
+						{Key: &otherObj},
+						{Key: &key},
+					},
+				},
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
+				return fmt.Errorf("key %q: %w", key, err)
+			}
+		}
+
+		for _, key := range []string{obj, otherObj} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("head %v: %w", key, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func CopyObject_dot_segment_copy_source(s *S3Conf) error {
+	testName := "CopyObject_dot_segment_copy_source"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		for _, test := range []struct {
+			copySource string
+			object     string
+		}{
+			{"bucket/.", "."},
+			{"bucket/..", ".."},
+			{"bucket/../", "../"},
+			{"bucket/foo/ba/../../../r/baz", "foo/ba/../../../r/baz"},
+			// would copy obj
+			{bucket + "/a/../" + obj, "a/../" + obj},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:     &bucket,
+				Key:        getPtr("obj"),
+				CopySource: &test.copySource,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, test.object)); err != nil {
+				return fmt.Errorf("%v: %w", test.copySource, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func UploadPartCopy_dot_segment_copy_source(s *S3Conf) error {
+	testName := "UploadPartCopy_dot_segment_copy_source"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		partNumber := int32(1)
+		for _, test := range []struct {
+			copySource string
+			object     string
+		}{
+			{"bucket/.", "."},
+			{"bucket/..", ".."},
+			{"bucket/../", "../"},
+			{"bucket/foo/ba/../../../r/baz", "foo/ba/../../../r/baz"},
+			// would copy obj
+			{bucket + "/a/../" + obj, "a/../" + obj},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:     &bucket,
+				Key:        getPtr("obj"),
+				UploadId:   getPtr("mock-upload-id"),
+				CopySource: &test.copySource,
+				PartNumber: &partNumber,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, test.object)); err != nil {
+				return fmt.Errorf("%v: %w", test.copySource, err)
+			}
+		}
+
+		return nil
 	})
 }

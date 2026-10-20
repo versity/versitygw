@@ -16,6 +16,7 @@ package middlewares
 
 import (
 	"net/url"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/debuglogger"
@@ -24,13 +25,40 @@ import (
 
 // DecodeURL url path unescapes the request url for the gateway
 // to handle some special characters. A malformed escape sequence
-// is rejected with InvalidURI.
+// is rejected with InvalidURI, and so is a path whose ".." segments
+// climb above the root, like S3 rejects it. The "." and ".." segments
+// stay in the path otherwise: S3 takes them as part of the object key.
 func DecodeURL(ctx fiber.Ctx) error {
 	unescp, err := url.PathUnescape(string(ctx.Request().URI().PathOriginal()))
 	if err != nil {
 		debuglogger.Logf("failed to unescape the request path: %v", err)
 		return s3err.GetAPIError(s3err.ErrInvalidURI)
 	}
+	if climbsAboveRoot(unescp) {
+		debuglogger.Logf("the request path climbs above the root: %q", unescp)
+		return s3err.GetAPIError(s3err.ErrInvalidURI)
+	}
 	ctx.Path(unescp)
 	return nil
+}
+
+// climbsAboveRoot reports whether resolving the ".." segments of path
+// climbs above its root. S3 separates the segments at "\" as well as at
+// "/" here, and doesn't count the empty ones, so "/bucket/..\..\key" and
+// "/bucket//../../key" climb above it.
+func climbsAboveRoot(path string) bool {
+	depth := 0
+	for seg := range strings.FieldsFuncSeq(path, func(r rune) bool { return r == '/' || r == '\\' }) {
+		switch seg {
+		case ".":
+		case "..":
+			depth--
+			if depth < 0 {
+				return true
+			}
+		default:
+			depth++
+		}
+	}
+	return false
 }

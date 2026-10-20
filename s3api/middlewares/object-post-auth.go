@@ -23,6 +23,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/internal/sigv4auth"
 	"github.com/versity/versitygw/s3api/utils"
@@ -49,7 +50,7 @@ type PostObjectResult struct {
 	Fields  map[string]string
 }
 
-func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string) fiber.Handler {
+func AuthorizePostObject(be backend.Backend, root RootUserConfig, iam auth.IAMService, region string) fiber.Handler {
 	rootAccount := auth.Account{Access: root.Access, Secret: root.Secret, Role: auth.RoleAdmin}
 
 	return func(ctx fiber.Ctx) error {
@@ -94,7 +95,7 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 			return s3err.PostAuth.MissingField("key")
 		}
 
-		if !utils.IsObjectNameValid(fields["key"]) {
+		if !utils.IsObjectNameValid(fields["key"], be) {
 			debuglogger.Logf("invalid POST object key: %q", fields["key"])
 			return s3err.GetAPIError(s3err.ErrBadRequest)
 		}

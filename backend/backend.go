@@ -31,6 +31,7 @@ type Backend interface {
 	fmt.Stringer
 	Shutdown()
 	NormalizeObjectKey(bucket, object string) string
+	StoresDotSegmentKeys() bool
 
 	// bucket operations
 	ListBuckets(context.Context, s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error)
@@ -117,6 +118,9 @@ func (BackendUnsupported) String() string {
 }
 func (BackendUnsupported) NormalizeObjectKey(_, object string) string {
 	return object
+}
+func (BackendUnsupported) StoresDotSegmentKeys() bool {
+	return false
 }
 func (BackendUnsupported) ListBuckets(context.Context, s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 	return s3response.ListAllMyBucketsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)

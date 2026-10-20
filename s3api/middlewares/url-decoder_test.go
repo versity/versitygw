@@ -20,6 +20,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
+	"github.com/versity/versitygw/internal/httpctx"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -41,6 +42,61 @@ func TestDecodeURL(t *testing.T) {
 			wantPath: "/bucket/my object+key",
 		},
 		{
+			name:     "escaped percent is decoded once",
+			uri:      "/bucket/100%2541",
+			wantPath: "/bucket/100%41",
+		},
+		{
+			name:     "dot segments stay in the key",
+			uri:      "/bucket/./a/../b/.",
+			wantPath: "/bucket/./a/../b/.",
+		},
+		{
+			name:     "escaped dot segments are decoded",
+			uri:      "/bucket/q/%2e%2E/r",
+			wantPath: "/bucket/q/../r",
+		},
+		{
+			name:     "dot dot climbing to the root",
+			uri:      "/bucket/../key",
+			wantPath: "/bucket/../key",
+		},
+		{
+			name:     "empty segments climbed over",
+			uri:      "/bucket/x//../../key",
+			wantPath: "/bucket/x//../../key",
+		},
+		{
+			name:    "dot dot above the root",
+			uri:     "/bucket/../../key",
+			wantErr: s3err.GetAPIError(s3err.ErrInvalidURI),
+		},
+		{
+			name:    "dot dot above the root without a bucket",
+			uri:     "/..",
+			wantErr: s3err.GetAPIError(s3err.ErrInvalidURI),
+		},
+		{
+			name:    "empty segments don't count",
+			uri:     "/bucket//../../key",
+			wantErr: s3err.GetAPIError(s3err.ErrInvalidURI),
+		},
+		{
+			name:     "backslash dot dot climbing to the root",
+			uri:      "/bucket/..%5Ckey",
+			wantPath: "/bucket/..\\key",
+		},
+		{
+			name:    "backslash separated dot dot above the root",
+			uri:     "/bucket/x%5C..%5C..%5C..%5Ckey",
+			wantErr: s3err.GetAPIError(s3err.ErrInvalidURI),
+		},
+		{
+			name:    "escaped dot dot above the root",
+			uri:     "/bucket/.%2e/%2E%2E/key",
+			wantErr: s3err.GetAPIError(s3err.ErrInvalidURI),
+		},
+		{
 			name:    "invalid escape",
 			uri:     "/bucket/(*&^%&())",
 			wantErr: s3err.GetAPIError(s3err.ErrInvalidURI),
@@ -58,7 +114,7 @@ func TestDecodeURL(t *testing.T) {
 			// so the raw uri is set on the fasthttp request directly
 			fctx := &fasthttp.RequestCtx{}
 			fctx.Request.SetRequestURI(tt.uri)
-			app := fiber.New()
+			app := fiber.NewWithCustomCtx(httpctx.NewCtx)
 			ctx := app.AcquireCtx(fctx)
 			defer app.ReleaseCtx(ctx)
 
@@ -70,6 +126,7 @@ func TestDecodeURL(t *testing.T) {
 
 			assert.NoError(t, err)
 			assert.Equal(t, tt.wantPath, ctx.Path())
+			assert.Equal(t, tt.wantPath, string(ctx.Request().URI().PathOriginal()))
 		})
 	}
 }

@@ -328,6 +328,8 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 				err: s3err.GetAPIError(s3err.ErrBadRequest),
 			},
 			configureMock: func(be *BackendMock) {
+				// a backend storing objects as files
+				be.StoresDotSegmentKeysFunc = func() bool { return false }
 				be.DeleteObjectsFunc = func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
 					t.Error("backend DeleteObjects called for a request with an invalid key")
 					return s3response.DeleteResult{}, nil

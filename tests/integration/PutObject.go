@@ -20,6 +20,7 @@ import (
 	"crypto/md5"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -1650,26 +1651,100 @@ func PutObject_invalid_credentials(s *S3Conf) error {
 func PutObject_invalid_object_names(s *S3Conf) error {
 	testName := "PutObject_invalid_object_names"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		for _, obj := range []string{
+		for _, test := range []struct {
+			obj string
+			err s3err.APIError
+		}{
+			// the ".." segments climb above the root of the request path,
+			// with the bucket in the path and without it
+			{"../../x", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			{"../../../.", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			{"../../../etc/passwd", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			{"../../../../tmp/foo", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			{"a/a/a/../../../../../etc/passwd", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			{"/a/../../b/../../c/../../../etc/passwd", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			// empty segments don't count
+			{"x//../../../y", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			// a backslash separates the segments too
+			{"x\\..\\..\\..\\y", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			// slashes only
+			{"/", s3err.GetAPIError(s3err.ErrBadRequest)},
+			{"//", s3err.GetAPIError(s3err.ErrBadRequest)},
+		} {
+			_, err := putObjects(s3client, []string{test.obj}, bucket)
+			if err := checkApiErr(err, test.err); err != nil {
+				return fmt.Errorf("%v: %w", test.obj, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func PutObject_dot_segment_object_names(s *S3Conf) error {
+	testName := "PutObject_dot_segment_object_names"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// S3 takes "." and ".." segments as part of the key, so each
+		// of these is an object of its own
+		objs := []string{
 			".",
-			"..",
 			"./",
 			"/.",
-			"//",
-			"../",
-			"/..",
-			"/..",
-			"../.",
-			"../../../.",
-			"../../../etc/passwd",
-			"../../../../tmp/foo",
-			"for/../../bar/",
-			"a/a/a/../../../../../etc/passwd",
-			"/a/../../b/../../c/../../../etc/passwd",
-		} {
-			_, err := putObjects(s3client, []string{obj}, bucket)
-			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
+			"x/.",
+			"x/..",
+			"a/./b",
+			"a/../b",
+			"x/y/../..",
+		}
+		sort.Strings(objs)
+
+		for _, obj := range objs {
+			_, err := putObjectWithData(0, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+				Body:   strings.NewReader(obj),
+			}, s3client)
+			if err != nil {
+				return fmt.Errorf("put %v: %w", obj, err)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(res.Contents) != len(objs) {
+			return fmt.Errorf("expected %v objects, instead got %v", len(objs), len(res.Contents))
+		}
+		for i, obj := range res.Contents {
+			if *obj.Key != objs[i] {
+				return fmt.Errorf("expected the %vth object name to be %s, instead got %s", i+1, objs[i], *obj.Key)
+			}
+		}
+
+		for _, obj := range objs {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			if err != nil {
+				cancel()
+				return fmt.Errorf("get %v: %w", obj, err)
+			}
+			body, err := io.ReadAll(out.Body)
+			out.Body.Close()
+			cancel()
+			if err != nil {
 				return err
+			}
+			if string(body) != obj {
+				return fmt.Errorf("expected the body of %v to be %q, instead got %q", obj, obj, body)
 			}
 		}
 
@@ -1721,9 +1796,11 @@ func PutObject_false_negative_object_names(s *S3Conf) error {
 			"..%c0%af..%c0%afetc/passwd",               // UTF-8 overlong trick
 			"dir/%c0%ae%c0%ae/%c0%ae%c0%ae/etc/passwd", // overlong UTF-8 encoding
 			".../.../.../target.txt",
-			"dir/%20../file.txt",           // encoded space
-			"..\\u2215..\\u2215etc/passwd", // Unicode division slash
-			"logs/latest -> /etc/passwd",   // symlink attacks
+			"dir/%20../file.txt", // encoded space
+			// the backslash separates segments, so without "dir/" the
+			// ".." would climb above the root of a virtual-hosted path
+			"dir/..\\u2215..\\u2215etc/passwd", // Unicode division slash
+			"logs/latest -> /etc/passwd",       // symlink attacks
 			//TODO: add this test case in advanced routing
 			// "/etc/passwd" // absolute path injection
 		}
