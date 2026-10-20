@@ -15,7 +15,6 @@
 # under the License.
 
 source ./tests/drivers/file.sh
-source ./tests/util/util_multipart_abort.sh
 
 test_s3api_policy_abort_multipart_upload() {
   policy_file="policy_file"
