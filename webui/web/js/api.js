@@ -1211,7 +1211,7 @@ class VersityAPI {
       'PATCH',
       `/${bucketName}/create`,
       {},
-      '',
+      this.createBucketConfiguration(),
       true,  // useAdminEndpoint
       'application/xml',
       headers
@@ -1249,11 +1249,27 @@ class VersityAPI {
       'PUT',
       `/${bucketName}`,
       {},
-      '',
+      this.createBucketConfiguration(),
       false,
       'application/xml',
       headers
     );
+  }
+
+  /**
+   * CreateBucketConfiguration body for CreateBucket. us-east-1 is the global
+   * endpoint and takes no LocationConstraint; any other region requires one
+   * naming it. The gateway only accepts CreateBucket signed for its own
+   * region, so the signing region is the one to name.
+   */
+  createBucketConfiguration() {
+    if (!this.region || this.region === 'us-east-1') {
+      return '';
+    }
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<CreateBucketConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <LocationConstraint>${this.escapeXml(this.region)}</LocationConstraint>
+</CreateBucketConfiguration>`;
   }
 
   /**
