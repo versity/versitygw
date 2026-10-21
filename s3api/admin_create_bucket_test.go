@@ -15,18 +15,11 @@
 package s3api
 
 import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/controllers"
@@ -84,7 +77,7 @@ func TestAdminCreateBucketLocationConstraint(t *testing.T) {
 					body = "<CreateBucketConfiguration><LocationConstraint>" + tt.constraint + "</LocationConstraint></CreateBucketConfiguration>"
 				}
 
-				resp, err := srv.newApp(t).Test(signedAdminCreateBucketRequest(t, "/test-bucket/create", region, body))
+				resp, err := srv.newApp(t).Test(signedAdminRequest(t, "/test-bucket/create", region, body))
 				if err != nil {
 					t.Fatalf("app.Test: %v", err)
 				}
@@ -100,19 +93,4 @@ func TestAdminCreateBucketLocationConstraint(t *testing.T) {
 			})
 		}
 	}
-}
-
-func signedAdminCreateBucketRequest(t *testing.T, path, region, body string) *http.Request {
-	t.Helper()
-	sum := sha256.Sum256([]byte(body))
-	payloadHash := hex.EncodeToString(sum[:])
-
-	req := httptest.NewRequest(http.MethodPatch, "http://localhost"+path, strings.NewReader(body))
-	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
-	req.Header.Set("X-Vgw-Owner", testAdminRoot.Access)
-	creds := aws.Credentials{AccessKeyID: testAdminRoot.Access, SecretAccessKey: testAdminRoot.Secret}
-	if err := v4.NewSigner().SignHTTP(context.Background(), creds, req, payloadHash, "s3", region, time.Now()); err != nil {
-		t.Fatalf("sign request: %v", err)
-	}
-	return req
 }

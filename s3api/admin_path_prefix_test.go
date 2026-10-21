@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,7 +59,7 @@ func TestAdminPathPrefix(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(srv.name+"/"+tt.name, func(t *testing.T) {
 				app := srv.newApp(t, tt.prefix)
-				resp, err := app.Test(signedAdminRequest(t, tt.path))
+				resp, err := app.Test(signedAdminRequest(t, tt.path, "us-east-1", ""))
 				if err != nil {
 					t.Fatalf("app.Test: %v", err)
 				}
@@ -121,15 +122,19 @@ func newTestS3AdminApp(t *testing.T, prefix string) *fiber.App {
 	return srv.app
 }
 
-func signedAdminRequest(t *testing.T, path string) *http.Request {
+// signedAdminRequest returns a PATCH to an admin route, signed with the root
+// credentials for region. X-Vgw-Owner names root, which admin create-bucket
+// requires and the other admin routes ignore.
+func signedAdminRequest(t *testing.T, path, region, body string) *http.Request {
 	t.Helper()
-	sum := sha256.Sum256(nil)
+	sum := sha256.Sum256([]byte(body))
 	payloadHash := hex.EncodeToString(sum[:])
 
-	req := httptest.NewRequest(http.MethodPatch, "http://localhost"+path, nil)
+	req := httptest.NewRequest(http.MethodPatch, "http://localhost"+path, strings.NewReader(body))
 	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
+	req.Header.Set("X-Vgw-Owner", testAdminRoot.Access)
 	creds := aws.Credentials{AccessKeyID: testAdminRoot.Access, SecretAccessKey: testAdminRoot.Secret}
-	if err := v4.NewSigner().SignHTTP(context.Background(), creds, req, payloadHash, "s3", "us-east-1", time.Now()); err != nil {
+	if err := v4.NewSigner().SignHTTP(context.Background(), creds, req, payloadHash, "s3", region, time.Now()); err != nil {
 		t.Fatalf("sign request: %v", err)
 	}
 	return req
