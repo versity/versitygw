@@ -228,14 +228,17 @@ create_and_list_multipart_uploads() {
 }
 
 multipart_upload_before_completion() {
-  if [ $# -ne 4 ]; then
-    log 2 "multipart upload pre-completion requires bucket, key, file, part count"
+  if ! check_param_count_v2 "bucket, key, file, part count" 4 $#; then
     return 1
   fi
-  if ! multipart_upload_before_completion_with_user "$1" "$2" "$3" "$4" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
-    log 2 "error uploading multipart before completion"
+  local bucket="$1" key="$2" file="$3" part_count="$4"
+  local response
+
+  if ! response=$(multipart_upload_before_completion_with_user "$bucket" "$key" "$file" "$part_count" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" 2>&1); then
+    log 2 "error uploading multipart before completion: $response"
     return 1
   fi
+  echo "$response"
   return 0
 }
 
@@ -246,33 +249,39 @@ multipart_upload_before_completion_with_user() {
   if ! check_param_count_v2 "bucket, key, file, part count, username, password" 6 $#; then
     return 1
   fi
+  local bucket="$1" key="$2" file="$3" part_count="$4" username="$5" password="$6"
+  local response upload_id parts idx etag
+  local -a segment_array
 
-  if ! segments=$(split_file "$3" "$4" 2>&1); then
-    log 2 "error splitting file: $segments"
+  if ! response=$(split_file "$file" "$part_count" 2>&1); then
+    log 2 "error splitting file: $response"
     return 1
   fi
-  read -r -a segment_array <<< "$segments"
+  read -r -a segment_array <<< "$response"
 
-  if ! create_multipart_upload_s3api_with_user "$1" "$2" "$5" "$6"; then
-    log 2 "error creating multpart upload"
+  if ! response=$(create_multipart_upload_s3api_with_user "$bucket" "$key" "$username" "$password" 2>&1); then
+    log 2 "error creating multpart upload: $response"
     return 1
   fi
+  upload_id="$response"
 
   parts="["
-  for ((i = 1; i <= $4; i++)); do
+  for ((idx = 1; i <= part_count; i++)); do
     # shellcheck disable=SC2154
-    if ! upload_part_with_user "$1" "$2" "$upload_id" "${segment_array[$((i-1))]}" "$i" "$5" "$6"; then
-      log 2 "error uploading part $i"
+    if ! response=$(upload_part_with_user "$bucket" "$key" "$upload_id" "${segment_array[$((idx-1))]}" "$idx" "$username" "$password" 2>&1); then
+      log 2 "error uploading part '$idx': $response"
       return 1
     fi
-    parts+="{\"ETag\": $etag, \"PartNumber\": $i}"
-    if [[ $i -ne $4 ]]; then
+    etag="$response"
+
+    parts+="{\"ETag\": $etag, \"PartNumber\": $idx}"
+    if [[ $idx -ne $part_count ]]; then
       parts+=","
     fi
   done
   parts+="]"
-
-  export parts
+  printf '%s\n%s\n' "$upload_id" "$parts"
+  return 0
 }
 
 multipart_upload_before_completion_with_params() {

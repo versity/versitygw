@@ -72,6 +72,35 @@ check_abort_access_denied() {
   return 0
 }
 
+abort_returned_upload() {
+  if ! check_param_count_v2 "bucket, upload JSON" 2 $#; then
+    return 1
+  fi
+  local bucket="$1" upload_json="$2"
+  local response upload_id key
+
+  log 5 "UPLOAD: $upload"
+  if ! response=$(echo "$upload_json" | jq -r ".UploadId" 2>&1); then
+    log 2 "error getting upload ID: $response"
+    return 1
+  fi
+  upload_id="$response"
+  log 5 "upload ID: $upload_id"
+
+  if ! response=$(echo "$upload_json" | jq -r ".Key" 2>&1); then
+    log 2 "error getting key: $response"
+    return 1
+  fi
+  key="$response"
+
+  log 5 "Aborting multipart upload for key: $key, UploadId: $upload_id"
+  if ! abort_multipart_upload "$bucket" "$key" "$upload_id"; then
+    log 2 "error aborting multipart upload"
+    return 1
+  fi
+  return 0
+}
+
 # param: bucket name
 # return 0 for success, 1 for error
 abort_all_multipart_uploads() {
@@ -79,57 +108,53 @@ abort_all_multipart_uploads() {
     return 1
   fi
   local bucket="$1"
-  local response
+  local response uploads upload
+  local -a upload_set
 
-  if ! list_multipart_uploads "$bucket"; then
-    log 2 "error listing multipart uploads"
+  if ! response=$(list_multipart_uploads "$bucket" 2>&1); then
+    log 2 "error listing multipart uploads: $response"
     return 1
   fi
+  uploads="$response"
+
   # shellcheck disable=SC2154
   log 5 "UPLOADS: $uploads"
-  if ! upload_set=$(echo "$uploads" | grep -v "InsecureRequestWarning" | jq -c '.Uploads[]' 2>&1); then
-    if [[ $upload_set == *"Cannot iterate over null"* ]]; then
+  if ! response=$(echo "$uploads" | grep -v "InsecureRequestWarning" | jq -c '.Uploads[]' 2>&1); then
+    if [[ $response == *"Cannot iterate over null"* ]]; then
       return 0
     else
-      log 2 "error getting upload set: $upload_set"
+      log 2 "error getting upload set: $response"
       return 1
     fi
   fi
-  log 5 "UPLOAD SET: $upload_set"
+  upload_set="$response"
+
   for upload in $upload_set; do
-    log 5 "UPLOAD: $upload"
-    if ! upload_id=$(echo "$upload" | jq -r ".UploadId" 2>&1); then
-      log 2 "error getting upload ID: $upload_id"
-      return 1
-    fi
-    log 5 "upload ID: $upload_id"
-    if ! key=$(echo "$upload" | jq -r ".Key" 2>&1); then
-      log 2 "error getting key: $key"
-      return 1
-    fi
-    log 5 "Aborting multipart upload for key: $key, UploadId: $upload_id"
-    if ! abort_multipart_upload "$bucket" "$key" "$upload_id"; then
+    if ! abort_returned_upload "$bucket" "$upload"; then
       log 2 "error aborting multipart upload"
       return 1
     fi
   done
+  return 0
 }
 
 # run upload, then abort it
 # params:  bucket, key, local file location, number of parts to split into before uploading
 # return 0 for success, 1 for failure
 run_then_abort_multipart_upload() {
-  if [ $# -ne 4 ]; then
-    log 2 "run then abort multipart upload command missing bucket, key, file, and/or part count"
+  if ! check_param_count_v2 "bucket, key, file, part_count" 4 $#; then
     return 1
   fi
+  local bucket="$1" key="$2" file="$3" part_count="$4"
+  local response upload_id
 
-  if ! multipart_upload_before_completion "$1" "$2" "$3" "$4"; then
+  if ! response=$(multipart_upload_before_completion "$bucket" "$key" "$file" "$part_count"; then
     log 2 "error performing pre-completion multipart upload"
     return 1
   fi
+  mapfile -t upload_id _ <<< "$response"
 
-  if ! abort_multipart_upload "$1" "$2" "$upload_id"; then
+  if ! abort_multipart_upload "$bucket" "$key" "$upload_id"; then
     log 2 "error aborting multipart upload"
     return 1
   fi
