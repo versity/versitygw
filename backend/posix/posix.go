@@ -2450,8 +2450,8 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", err
 	}
 
-	// Rename the upload directory to <uploadId><ETag> to atomically claim
-	// the processing slot. A concurrent call with the same uploadId will compute
+	// Rename the upload directory to <uploadId><ETag> to claim the
+	// processing slot. A concurrent call with the same uploadId will compute
 	// the same ETag, so it will either find the directory still present (still
 	// processing) or gone (already completed) and react accordingly.
 	sum := sha256.Sum256([]byte(key))
@@ -2561,7 +2561,18 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return fmt.Sprintf("\"%s-%s\"", strings.ToUpper(string(checksums.Algorithm)), value), nil
 	}
 
+	// A rename alone does not make the claim exclusive: FreeBSD looks up the
+	// source and the target of a rename separately, and a rename whose source
+	// and target are the same directory succeeds without doing anything. A
+	// call that finds the upload directory before a concurrent call renames it
+	// and the in-progress directory after would claim the slot as well. The
+	// publish lock of the object keeps the claiming renames from overlapping.
+	unlockClaim, err := p.lockObjectPublish(ctx, bucket, object)
+	if err != nil {
+		return res, "", err
+	}
 	err = os.Rename(uploadIDDir, uploadIDInProgress)
+	unlockClaim()
 	if errors.Is(err, fs.ErrNotExist) {
 		// Another call already claimed this slot and is still assembling the object.
 		if _, statErr := os.Stat(uploadIDInProgress); statErr == nil {
