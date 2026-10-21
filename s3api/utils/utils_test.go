@@ -437,6 +437,28 @@ func TestParseMaxLimiter(t *testing.T) {
 	}
 }
 
+func TestValidateLimiterInteger(t *testing.T) {
+	tests := []struct {
+		name    string
+		limiter string
+		lt      LimiterType
+		err     error
+	}{
+		{"empty", "", LimiterTypeMaxParts, nil},
+		{"valid", "23", LimiterTypeMaxParts, nil},
+		{"negative", "-1", LimiterTypeMaxParts, nil},
+		{"above default", "2000", LimiterTypePartNumberMarker, nil},
+		{"not an integer", "bla", LimiterTypePartNumberMarker, s3err.GetInvalidArgMaxLimiter(string(LimiterTypePartNumberMarker), "bla")},
+		{"above int32", "2147483648", LimiterTypeMaxParts, s3err.GetInvalidArgMaxLimiter(string(LimiterTypeMaxParts), "2147483648")},
+		{"versions max keys", "bla", LimiterTypeVersionsMaxKeys, s3err.GetInvalidArgMaxLimiter(string(LimiterTypeMaxKeys), "bla")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.err, ValidateLimiterInteger(tt.limiter, tt.lt))
+		})
+	}
+}
+
 func TestFilterObjectAttributes(t *testing.T) {
 	type args struct {
 		attrs  map[s3response.ObjectAttributes]struct{}

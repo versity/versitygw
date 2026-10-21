@@ -462,6 +462,160 @@ func AccessControl_copy_object_with_starting_slash_for_user(s *S3Conf) error {
 	})
 }
 
+func AccessControl_UploadPartCopy_malformed_upload_id_without_source_access(s *S3Conf) error {
+	testName := "AccessControl_UploadPartCopy_malformed_upload_id_without_source_access"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcBucket := getBucketName()
+		err := setup(s, srcBucket)
+		if err != nil {
+			return err
+		}
+		objs, err := putObjects(s3client, []string{"src-obj"}, srcBucket)
+		if err != nil {
+			return err
+		}
+
+		testuser := getUser("user")
+		err = createUsers(s, []user{testuser})
+		if err != nil {
+			return err
+		}
+		if err := changeBucketsOwner(s, []string{bucket}, testuser.access); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		obj := "my-obj"
+		mp, err := createMp(userClient, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		// The user can't read the source bucket, but a malformed upload
+		// ID is reported first.
+		for i, test := range []struct {
+			uploadId    string
+			expectedErr s3err.S3Error
+		}{
+			{"../invalid-upload", s3err.GetAPIError(s3err.ErrNoSuchUpload)},
+			{*mp.UploadId, s3err.GetAPIError(s3err.ErrAccessDenied)},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				UploadId:   &test.uploadId,
+				PartNumber: getPtr(int32(1)),
+				CopySource: getPtr(srcBucket + "/" + *objs[0].Key),
+			})
+			cancel()
+			if err := checkApiErr(err, test.expectedErr); err != nil {
+				return fmt.Errorf("test case %d: %w", i+1, err)
+			}
+		}
+
+		return teardown(s, srcBucket)
+	})
+}
+
+func AccessControl_multipart_malformed_upload_id_without_access(s *S3Conf) error {
+	testName := "AccessControl_multipart_malformed_upload_id_without_access"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		srcObjs, err := putObjects(s3client, []string{"src-obj"}, bucket)
+		if err != nil {
+			return err
+		}
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		testuser := getUser("user")
+		err = createUsers(s, []user{testuser})
+		if err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		actions := []struct {
+			name string
+			call func(ctx context.Context, uploadId string) error
+		}{
+			{"UploadPart", func(ctx context.Context, uploadId string) error {
+				_, err := userClient.UploadPart(ctx, &s3.UploadPartInput{
+					Bucket:     &bucket,
+					Key:        &obj,
+					UploadId:   &uploadId,
+					PartNumber: getPtr(int32(1)),
+					Body:       strings.NewReader("part data"),
+				})
+				return err
+			}},
+			{"UploadPartCopy", func(ctx context.Context, uploadId string) error {
+				_, err := userClient.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+					Bucket:     &bucket,
+					Key:        &obj,
+					UploadId:   &uploadId,
+					PartNumber: getPtr(int32(1)),
+					CopySource: getPtr(bucket + "/" + *srcObjs[0].Key),
+				})
+				return err
+			}},
+			{"ListParts", func(ctx context.Context, uploadId string) error {
+				_, err := userClient.ListParts(ctx, &s3.ListPartsInput{
+					Bucket:   &bucket,
+					Key:      &obj,
+					UploadId: &uploadId,
+				})
+				return err
+			}},
+			{"CompleteMultipartUpload", func(ctx context.Context, uploadId string) error {
+				_, err := userClient.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+					Bucket:   &bucket,
+					Key:      &obj,
+					UploadId: &uploadId,
+					MultipartUpload: &types.CompletedMultipartUpload{
+						Parts: []types.CompletedPart{
+							{ETag: getPtr("etag"), PartNumber: getPtr(int32(1))},
+						},
+					},
+				})
+				return err
+			}},
+			{"AbortMultipartUpload", func(ctx context.Context, uploadId string) error {
+				_, err := userClient.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+					Bucket:   &bucket,
+					Key:      &obj,
+					UploadId: &uploadId,
+				})
+				return err
+			}},
+		}
+
+		// The user has no access to the bucket, but a malformed upload ID
+		// is reported first.
+		for _, test := range []struct {
+			uploadId    string
+			expectedErr s3err.S3Error
+		}{
+			{"../invalid-upload", s3err.GetAPIError(s3err.ErrNoSuchUpload)},
+			{*mp.UploadId, s3err.GetAPIError(s3err.ErrAccessDenied)},
+		} {
+			for _, action := range actions {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				err := action.call(ctx, test.uploadId)
+				cancel()
+				if err := checkApiErr(err, test.expectedErr); err != nil {
+					return fmt.Errorf("%s with upload id %q: %w", action.name, test.uploadId, err)
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
 // A user granted only "public/*" can't reach "private.txt" through
 // "public/../private.txt": posix would resolve that key to the private
 // object, so it is rejected before the policy is evaluated.

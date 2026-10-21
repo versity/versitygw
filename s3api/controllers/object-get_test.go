@@ -479,6 +479,44 @@ func TestS3ApiController_ListParts(t *testing.T) {
 		output testOutput
 	}{
 		{
+			name: "non integer max parts",
+			input: testInput{
+				locals:       accessDeniedLocals,
+				extraMockErr: s3err.GetNoSuchUploadErr("bad"),
+				queries: map[string]string{
+					"max-parts": "foo",
+					"uploadId":  "bad",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgMaxLimiter(string(utils.LimiterTypeMaxParts), "foo"),
+			},
+		},
+		{
+			name: "malformed upload id",
+			input: testInput{
+				locals:       accessDeniedLocals,
+				extraMockErr: s3err.GetNoSuchUploadErr("bad"),
+				queries: map[string]string{
+					"max-parts": "-1",
+					"uploadId":  "bad",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetNoSuchUploadErr("bad"),
+			},
+		},
+		{
 			name: "verify access fails",
 			input: testInput{
 				locals: accessDeniedLocals,
@@ -567,6 +605,9 @@ func TestS3ApiController_ListParts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			be := &BackendMock{
+				ValidateUploadIDFunc: func(uploadID string) error {
+					return tt.input.extraMockErr
+				},
 				ListPartsFunc: func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResult, error) {
 					if tt.input.headers != nil {
 						assert.Equal(t, "invalid", *listPartsInput.SSECustomerAlgorithm)

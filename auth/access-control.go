@@ -67,8 +67,8 @@ func VerifyObjectCopyAccess(ctx fiber.Ctx, be backend.Backend, copySource string
 		return err
 	}
 
-	var srcBucketAcl ACL
-	if err := json.Unmarshal(srcBucketACLBytes, &srcBucketAcl); err != nil {
+	srcBucketAcl, err := ParseACL(srcBucketACLBytes)
+	if err != nil {
 		return err
 	}
 

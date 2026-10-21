@@ -380,6 +380,45 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 		output testOutput
 	}{
 		{
+			name: "unsupported conditional header",
+			input: testInput{
+				locals: accessDeniedLocals,
+				body:   []byte("invalid_body"),
+				headers: map[string]string{
+					"If-None-Match": "ETag",
+				},
+				queries: map[string]string{
+					"uploadId": "bad",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetNotImplementedErr("If-None-Match", s3err.NmpAdditionalMessageIfNoneMatch),
+			},
+		},
+		{
+			name: "malformed upload id",
+			input: testInput{
+				locals: accessDeniedLocals,
+				body:   []byte("invalid_body"),
+				queries: map[string]string{
+					"uploadId": "bad",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetNoSuchUploadErr("bad"),
+			},
+		},
+		{
 			name: "verify access fails",
 			input: testInput{
 				locals: accessDeniedLocals,
@@ -597,6 +636,12 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			be := &BackendMock{
+				ValidateUploadIDFunc: func(uploadID string) error {
+					if uploadID == "bad" {
+						return s3err.GetNoSuchUploadErr(uploadID)
+					}
+					return nil
+				},
 				CompleteMultipartUploadFunc: func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
 					return tt.input.beRes.(s3response.CompleteMultipartUploadResult), versionId, tt.input.beErr
 				},
@@ -624,6 +669,7 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 					locals:  tt.input.locals,
 					body:    tt.input.body,
 					headers: tt.input.headers,
+					queries: tt.input.queries,
 				})
 		})
 	}

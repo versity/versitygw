@@ -59,6 +59,16 @@ func (b noBucketPolicyBackend) GetBucketAcl(_ context.Context, _ *s3.GetBucketAc
 	return json.Marshal(b.srcAcl)
 }
 
+// noACLBackend is a test stub with no bucket policy whose GetBucketAcl
+// returns no data, as posix does for a bucket with no stored ACL.
+type noACLBackend struct {
+	noBucketPolicyBackend
+}
+
+func (noACLBackend) GetBucketAcl(_ context.Context, _ *s3.GetBucketAclInput) ([]byte, error) {
+	return []byte{}, nil
+}
+
 type publicBucketPolicyBackend struct {
 	backend.BackendUnsupported
 	policy      []byte
@@ -598,6 +608,25 @@ func TestVerifyObjectCopyAccess_LiteralSlashSeparator(t *testing.T) {
 
 	err := VerifyObjectCopyAccess(testFiberCtx(t), be, "src-bucket/src-key", opts)
 	assert.NoError(t, err, "literal slash separator should work")
+}
+
+func TestVerifyObjectCopyAccess_SourceBucketWithoutACL(t *testing.T) {
+	const testUser = "testuser"
+
+	// The source bucket has no stored ACL, as a posix bucket directory
+	// created outside the gateway, so testUser has no grant on it.
+	opts := AccessOptions{
+		Acl:           ACL{Owner: testUser},
+		AclPermission: PermissionWrite,
+		Acc:           Account{Access: testUser, Role: RoleUser},
+		Bucket:        "dst-bucket",
+		Object:        "dst-key",
+		Actions:       []Action{PutObjectAction},
+	}
+
+	err := VerifyObjectCopyAccess(testFiberCtx(t), noACLBackend{}, "src-bucket/src-key", opts)
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, s3err.GetAPIError(s3err.ErrAccessDenied)), "unexpected error: %v", err)
 }
 
 // TestVerifyCreateBucketAccess_RootAndAdminBypass confirms root and admin
