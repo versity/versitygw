@@ -512,7 +512,6 @@ func TestPrepareMismatchedPeerUnsent(t *testing.T) {
 	f.mu.Unlock()
 	cp.probeMu.Lock()
 	cp.probePeer = "127.0.0.1:1"
-	cp.probePeers = nil
 	cp.probeMu.Unlock()
 	if rc := cp.prepareForTest(r); rc != -1 {
 		t.Fatalf("prepare rc=%d, want -1", rc)
@@ -576,6 +575,120 @@ func TestPrepareMismatchedPeerUnsent(t *testing.T) {
 	if !cp.elig.Admitted() {
 		t.Error("admission not positive after re-probe")
 	}
+}
+
+// TestOtherDNSAddressIsNotAdmitted pins the admission contract for
+// a multi-address authority: the probe answers on A, a later
+// resolution lists B first, and neither PREPARE nor READY is sent
+// to B under A's admission.
+func TestOtherDNSAddressIsNotAdmitted(t *testing.T) {
+	ph := http.Header{}
+	ph.Set("X-Amz-Rdma-Protocol", protocolV2)
+	a := newFakeS3(t, 200, ph)
+	b := newFakeS3(t, 200, ph)
+	aAddr := a.ln.Addr().String()
+	bAddr := b.ln.Addr().String()
+
+	savedNetdev := netdevForGidLookup
+	netdevForGidLookup = func(string, int, int) (string, bool) {
+		return "lo", true
+	}
+	savedBind := bindToDevice
+	bindToDevice = func(string) func(string, string, syscall.RawConn) error {
+		return func(string, string, syscall.RawConn) error { return nil }
+	}
+	order := []string{aAddr, bAddr}
+	savedResolve := resolveDest
+	resolveDest = func(context.Context, string) ([]string, error) {
+		return append([]string(nil), order...), nil
+	}
+	t.Cleanup(func() {
+		netdevForGidLookup = savedNetdev
+		bindToDevice = savedBind
+		resolveDest = savedResolve
+	})
+
+	run := func(t *testing.T, call func(*controlPlane, transferReq) int) {
+		t.Helper()
+		order = []string{aAddr, bAddr}
+		cp := newTestCP("http://gw.example:80")
+		r := testReq(2000)
+		r.Endpoint = "http://gw.example:80"
+		r.Bucket = "b"
+		r.Key = "k"
+		r.Nic = "mlx5_0"
+		r.NicPort = 1
+		r.NicGid = 0
+		cp.probeMu.Lock()
+		cp.probeNic = r.Nic
+		cp.probeNicPort = r.NicPort
+		cp.probeNicGid = r.NicGid
+		cp.probeMu.Unlock()
+		pctx, pcancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer pcancel()
+		if err := cp.elig.Probe(pctx); err != nil {
+			t.Fatalf("probe: %v", err)
+		}
+		if !cp.elig.Admitted() {
+			t.Fatal("admission not positive after probe of A")
+		}
+		cp.probeMu.Lock()
+		pin := cp.probePeer
+		cp.probeMu.Unlock()
+		if pin != aAddr {
+			t.Fatalf("admitted peer %q, want %q", pin, aAddr)
+		}
+
+		b.mu.Lock()
+		base := len(b.connBytes)
+		b.mu.Unlock()
+		order = []string{bAddr}
+		if rc := call(cp, r); rc != -1 {
+			t.Fatalf("rc=%d, want -1", rc)
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			b.mu.Lock()
+			n := len(b.connBytes)
+			prepares := len(b.prepareReqs)
+			readies := len(b.readyReqs)
+			pending := 0
+			var got int
+			for c, n := range b.connBytes {
+				got += n
+				select {
+				case <-b.connDone[c]:
+				default:
+					pending++
+				}
+			}
+			b.mu.Unlock()
+			if prepares != 0 || readies != 0 || got != 0 {
+				t.Fatalf("B saw prepares=%d readies=%d bytes=%d",
+					prepares, readies, got)
+			}
+			if n > base && pending == 0 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("B accepted %d connection(s), %d still open", n-base, pending)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if cp.elig.Admitted() {
+			t.Error("admission still positive after dial to B")
+		}
+	}
+	t.Run("prepare", func(t *testing.T) {
+		run(t, func(cp *controlPlane, r transferReq) int {
+			return cp.prepareForTest(r)
+		})
+	})
+	t.Run("ready", func(t *testing.T) {
+		run(t, func(cp *controlPlane, r transferReq) int {
+			return cp.readyRequest(r)
+		})
+	})
 }
 
 // deadPort reserves an ephemeral port and closes its listener so

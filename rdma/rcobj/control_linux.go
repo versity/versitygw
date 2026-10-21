@@ -122,7 +122,6 @@ type controlPlane struct {
 	probeNicPort int
 	probeNicGid  int
 	probePeer    string
-	probePeers   []string
 
 	// lastCaps memoizes the capability advertisement the last
 	// PREPARE response carried (probe evidence for the caller).
@@ -247,20 +246,13 @@ func (cp *controlPlane) signedObjectProbe(ctx context.Context) (uint64, bool, er
 	// answers the probe but declines PREPARE with NotSupported
 	// lets the CLI fall back without admission blocking it first.
 	ok := resp.StatusCode >= 200 && resp.StatusCode < 300
-	// Pin the evidence to the peer that actually answered: every
-	// later admitted exchange re-resolves the authority, so a
-	// different reachable peer means the evidence no longer
-	// describes where the bytes would go.
+	// Pin the evidence to the peer that actually answered. A
+	// later resolution of the same authority can list other
+	// addresses; those did not answer this probe, so they are
+	// not admitted.
 	if ok {
-		host := authorityOf(cp.endpoint)
-		cands, _ := resolveDest(ctx2, host)
 		cp.probeMu.Lock()
 		cp.probePeer = conn.RemoteAddr().String()
-		if len(cands) == 0 {
-			cp.probePeers = []string{cp.probePeer}
-		} else {
-			cp.probePeers = cands
-		}
 		cp.probeMu.Unlock()
 	}
 	gen := cp.probeGen.Add(1)
@@ -651,24 +643,15 @@ func (cp *controlPlane) signingRegion() string {
 }
 
 // peerMatches reports whether the freshly dialed connection
-// reaches a peer the admission evidence covers. An empty pin
-// (no successful probe yet) never matches. Multi-address
-// authorities match any candidate resolved at probe time.
+// reaches the peer that answered the admission probe. An empty
+// pin never matches. Another address of the same authority is
+// not evidence: the probe did not reach it.
 func (cp *controlPlane) peerMatches(conn net.Conn) bool {
 	addr := conn.RemoteAddr().String()
 	cp.probeMu.Lock()
 	pin := cp.probePeer
-	peers := append([]string(nil), cp.probePeers...)
 	cp.probeMu.Unlock()
-	if pin != "" && pin == addr {
-		return true
-	}
-	for _, p := range peers {
-		if p == addr {
-			return true
-		}
-	}
-	return false
+	return pin != "" && pin == addr
 }
 
 // invalidate drops the admission evidence when the transport it
@@ -914,6 +897,12 @@ func (cp *controlPlane) cancel(r transferReq) int {
 	}
 	defer conn.Close()
 	if err := conn.SetDeadline(deadline); err != nil {
+		return -1
+	}
+	// CANCEL is an admitted exchange too: a re-resolution that
+	// landed on a different address must not send under the old pin.
+	if !cp.peerMatches(conn) {
+		cp.invalidate()
 		return -1
 	}
 
