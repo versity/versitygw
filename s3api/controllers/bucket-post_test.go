@@ -93,6 +93,13 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
+	// AWS SDKs and the AWS CLI send LastModifiedTime as an HTTP date.
+	httpDateBody := []byte(`<Delete xmlns="http://s3.amazonaws.com/doc/2006-03-01/">` +
+		`<Object><Key>obj</Key>` +
+		`<LastModifiedTime>Wed, 07 Oct 2026 05:00:00 GMT</LastModifiedTime>` +
+		`</Object></Delete>`)
+	httpDateLMT := time.Date(2026, time.October, 7, 5, 0, 0, 0, time.UTC)
+
 	quietBody, err := xml.Marshal(s3response.DeleteObjects{
 		Objects: []types.ObjectIdentifier{
 			{Key: utils.GetStringPtr("ok")},
@@ -167,6 +174,38 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid last modified time",
+			input: testInput{
+				locals: defaultLocals,
+				body: []byte(`<Delete><Object><Key>obj</Key>` +
+					`<LastModifiedTime>2026-10-07T05:00:00Z</LastModifiedTime></Object></Delete>`),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidDateAttributeErr("2026-10-07T05:00:00Z"),
+			},
+		},
+		{
+			name: "empty last modified time",
+			input: testInput{
+				locals: defaultLocals,
+				body: []byte(`<Delete><Object><Key>obj</Key>` +
+					`<LastModifiedTime></LastModifiedTime></Object></Delete>`),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrMalformedXML),
+			},
+		},
+		{
 			name: "check object access returns error",
 			input: testInput{
 				locals:       defaultLocals,
@@ -210,6 +249,33 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 				body:         validBody,
 				beRes:        validRes,
 				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
+			},
+			output: testOutput{
+				response: &Response{
+					Data: validRes,
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+						EventName:   s3event.EventObjectRemovedDeleteObjects,
+						ObjectCount: 1,
+					},
+				},
+			},
+		},
+		{
+			name: "last modified time as an HTTP date",
+			input: testInput{
+				locals:       defaultLocals,
+				body:         httpDateBody,
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
+			},
+			configureMock: func(be *BackendMock) {
+				be.DeleteObjectsFunc = func(_ context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
+					objs := input.Delete.Objects
+					if len(objs) != 1 || objs[0].LastModifiedTime == nil || !objs[0].LastModifiedTime.Equal(httpDateLMT) {
+						return s3response.DeleteResult{}, s3err.GetAPIError(s3err.ErrInternalError)
+					}
+					return validRes, nil
+				}
 			},
 			output: testOutput{
 				response: &Response{
