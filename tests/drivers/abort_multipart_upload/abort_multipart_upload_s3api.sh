@@ -146,15 +146,15 @@ run_then_abort_multipart_upload() {
     return 1
   fi
   local bucket="$1" key="$2" file="$3" part_count="$4"
-  local response upload_id
+  local response upload_id_and_part_json
 
-  if ! response=$(multipart_upload_before_completion "$bucket" "$key" "$file" "$part_count"; then
-    log 2 "error performing pre-completion multipart upload"
+  if ! response=$(multipart_upload_before_completion "$bucket" "$key" "$file" "$part_count" 2>&1); then
+    log 2 "error performing pre-completion multipart upload: $response"
     return 1
   fi
-  mapfile -t upload_id _ <<< "$response"
+  mapfile -t upload_id_and_part_json <<< "$response"
 
-  if ! abort_multipart_upload "$bucket" "$key" "$upload_id"; then
+  if ! abort_multipart_upload "$bucket" "$key" "${upload_id_and_part_json[0]}"; then
     log 2 "error aborting multipart upload"
     return 1
   fi
