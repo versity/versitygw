@@ -2458,6 +2458,65 @@ type onlyRead struct {
 // be completely aborted on any subsequent failure.
 type CustomCopyFunc func(from *os.File, to *os.File) (bool, error)
 
+// publishedMultipartObject reports whether the object at key was published by
+// the given multipart upload, returning its ETag and version id when it was. A
+// false result with a nil error means the object is absent or belongs to a
+// different write, which callers translate into their own S3 error.
+func (p *Posix) publishedMultipartObject(bucket, object, key, uploadID, claimToken string) (bool, string, string, error) {
+	if strings.HasSuffix(object, "/") {
+		return false, "", "", nil
+	}
+
+	fi, err := os.Stat(p.ObjectPath(bucket, object))
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
+		return false, "", "", nil
+	}
+	if isErrNameTooLong(err) {
+		return false, "", "", s3err.GetKeyTooLongErr(int64(len(key)), 1024)
+	}
+	if err != nil {
+		return false, "", "", fmt.Errorf("stat object: %w", err)
+	}
+	if fi.IsDir() {
+		return false, "", "", nil
+	}
+
+	mpMetaBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, mpMetaKey)
+	if errors.Is(err, meta.ErrNoSuchKey) || errors.Is(err, fs.ErrNotExist) {
+		return false, "", "", nil
+	}
+	if err != nil {
+		return false, "", "", fmt.Errorf("get object multipart metadata: %w", err)
+	}
+
+	mpMeta, err := backend.UnmarshalMpUploadMetadata(mpMetaBytes, false)
+	if err != nil {
+		return false, "", "", fmt.Errorf("parse object multipart metadata: %w", err)
+	}
+	if mpMeta.UploadID != uploadID {
+		return false, "", "", nil
+	}
+
+	etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+	if err != nil {
+		return false, "", "", fmt.Errorf("get object etag: %w", err)
+	}
+	etag := string(etagBytes)
+	// A retry has to list the parts the upload was completed with. The data
+	// integrity ETag is the object checksum rather than the ETag of the parts,
+	// so only the upload ID is checked in that mode.
+	if !p.dataIntegrityEtag && etag != claimToken {
+		return false, "", "", nil
+	}
+
+	versionID, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
+	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+		return false, "", "", fmt.Errorf("get object version id: %w", err)
+	}
+
+	return true, etag, string(versionID), nil
+}
+
 func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.CompleteMultipartUploadInput, customCopy CustomCopyFunc) (_ s3response.CompleteMultipartUploadResult, _ string, err error) {
 	defer backend.MapPermissionErr(&err)
 
@@ -2543,80 +2602,6 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	uploadIDInProgress := filepath.Join(objdirFull, activeUploadName)
 	objdir := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
-	predictDataIntegrityFinalETag := func(uploadName string) (string, error) {
-		checksums, err := p.retrieveChecksums(nil, bucket, filepath.Join(objdir, uploadName))
-		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return "", fmt.Errorf("get mp checksums: %w", err)
-		}
-
-		mpChecksumType := checksums.Type
-		if checksums.Type == "" {
-			checksums.Type = types.ChecksumTypeFullObject
-			checksums.Algorithm = types.ChecksumAlgorithmCrc64nvme
-		}
-
-		var compositeChecksumRdr *utils.CompositeChecksumReader
-		if checksums.Type == types.ChecksumTypeComposite {
-			compositeChecksumRdr, err = utils.NewCompositeChecksumReader(utils.HashType(strings.ToLower(string(checksums.Algorithm))))
-			if err != nil {
-				return "", fmt.Errorf("initialize composite checksum reader: %w", err)
-			}
-		}
-
-		var value string
-		var composableCsum string
-		for i, part := range parts {
-			if part.PartNumber == nil || part.ETag == nil {
-				return "", s3err.GetAPIError(s3err.ErrMalformedXML)
-			}
-
-			partObjPath := filepath.Join(objdir, uploadName, fmt.Sprintf("%v", *part.PartNumber))
-			fi, err := os.Lstat(p.ObjectPath(bucket, partObjPath))
-			if err != nil {
-				return "", s3err.GetInvalidPartErr(uploadID, *part.PartNumber, backend.GetStringFromPtr(part.ETag))
-			}
-
-			switch checksums.Type {
-			case types.ChecksumTypeFullObject:
-				var pcs string
-				if mpChecksumType != "" {
-					pcs = getPartChecksum(checksums.Algorithm, part)
-				} else {
-					crc64nvme, err := p.meta.RetrieveAttribute(nil, bucket, partObjPath, partCrc64nvme)
-					if err != nil {
-						return "", fmt.Errorf("retrieve part internal crc64nvme: %w", err)
-					}
-					pcs = string(crc64nvme)
-				}
-
-				if i == 0 {
-					composableCsum = pcs
-				} else {
-					composableCsum, err = utils.AddCRCChecksum(checksums.Algorithm, composableCsum, pcs, fi.Size())
-					if err != nil {
-						return "", fmt.Errorf("add part %v checksum: %w", *part.PartNumber, err)
-					}
-				}
-			case types.ChecksumTypeComposite:
-				if err := compositeChecksumRdr.Process(getPartChecksum(checksums.Algorithm, part)); err != nil {
-					return "", fmt.Errorf("process %v part checksum: %w", *part.PartNumber, err)
-				}
-			}
-		}
-
-		switch checksums.Type {
-		case types.ChecksumTypeComposite:
-			value = fmt.Sprintf("%s-%v", compositeChecksumRdr.Sum(), len(parts))
-		case types.ChecksumTypeFullObject:
-			value = composableCsum
-		}
-
-		if checksums.Algorithm == "" || value == "" {
-			return multipartClaimToken, nil
-		}
-		return fmt.Sprintf("\"%s-%s\"", strings.ToUpper(string(checksums.Algorithm)), value), nil
-	}
-
 	// A rename alone does not make the claim exclusive: FreeBSD looks up the
 	// source and the target of a rename separately, and a rename whose source
 	// and target are the same directory succeeds without doing anything. A
@@ -2630,81 +2615,34 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	err = os.Rename(uploadIDDir, uploadIDInProgress)
 	unlockClaim()
 	if errors.Is(err, fs.ErrNotExist) {
-		// Another call already claimed this slot and is still assembling the object.
+		published, etag, versionID, pubErr := p.publishedMultipartObject(bucket, object, key, uploadID, multipartClaimToken)
+		if pubErr != nil {
+			return res, "", pubErr
+		}
+
+		// A directory carrying our claim name means either a concurrent call is
+		// still assembling the object or an earlier one died before publishing.
+		// Report success only once the object actually exists: answering 200 for
+		// an upload whose object was never published loses the client's data
+		// silently, since the retry has nothing to fall back on.
 		if _, statErr := os.Stat(uploadIDInProgress); statErr == nil {
-			etag := multipartClaimToken
-			if p.dataIntegrityEtag {
-				etag, err = predictDataIntegrityFinalETag(activeUploadName)
-				if err != nil {
-					return res, "", err
-				}
+			if !published {
+				return res, "", s3err.GetAPIError(s3err.ErrInternalError)
 			}
-			// Still in progress — treat as success for idempotency.
-			return s3response.CompleteMultipartUploadResult{
-				Bucket: &bucket,
-				ETag:   &etag,
-				Key:    &key,
-			}, "", nil
-		}
-		// Directory is gone: a completed upload is linked before its
-		// in-progress directory is removed, so it is the object at this key
-		// carrying this upload ID. No object, or an object written any other
-		// way (a PutObject or another upload), means there is no such upload.
-		// Multipart uploads are never created for keys with a trailing slash,
-		// and a directory at the object path is the object of such a key.
-		if strings.HasSuffix(object, "/") {
+		} else if !published {
+			// Directory is gone and no object carries this upload ID: a completed
+			// upload is linked before its in-progress directory is removed, so the
+			// absence of both means there is no such upload. Multipart uploads are
+			// never created for keys with a trailing slash, and a directory at the
+			// object path is the object of such a key.
 			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
-		}
-		fi, err := os.Stat(p.ObjectPath(bucket, object))
-		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
-		}
-		if isErrNameTooLong(err) {
-			return res, "", s3err.GetKeyTooLongErr(int64(len(key)), 1024)
-		}
-		if err != nil {
-			return res, "", fmt.Errorf("stat object: %w", err)
-		}
-		if fi.IsDir() {
-			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
-		}
-		mpMetaBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, mpMetaKey)
-		if errors.Is(err, meta.ErrNoSuchKey) || errors.Is(err, fs.ErrNotExist) {
-			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
-		}
-		if err != nil {
-			return res, "", fmt.Errorf("get object multipart metadata: %w", err)
-		}
-		mpMeta, err := backend.UnmarshalMpUploadMetadata(mpMetaBytes, false)
-		if err != nil {
-			return res, "", fmt.Errorf("parse object multipart metadata: %w", err)
-		}
-		if mpMeta.UploadID != uploadID {
-			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
-		}
-
-		etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
-		if err != nil {
-			return res, "", fmt.Errorf("get object etag: %w", err)
-		}
-		etag := string(etagBytes)
-		// A retry has to list the parts the upload was completed with. The
-		// data integrity ETag is the object checksum rather than the ETag of
-		// the parts, so only the upload ID is checked in that mode.
-		if !p.dataIntegrityEtag && etag != multipartClaimToken {
-			return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
-		}
-
-		versionID, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return res, "", fmt.Errorf("get object version id: %w", err)
 		}
 
 		return s3response.CompleteMultipartUploadResult{
 			Bucket: &bucket,
 			ETag:   &etag,
 			Key:    &key,
-		}, string(versionID), nil
+		}, versionID, nil
 	}
 	if err != nil {
 		return res, "", fmt.Errorf("rename upload to etag dir: %w", err)

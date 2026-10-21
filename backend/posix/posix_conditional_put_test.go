@@ -33,6 +33,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
@@ -994,5 +995,158 @@ func TestPosixConditionalPutFailureCleanup(t *testing.T) {
 				t.Errorf("unexpected final state after recovery put")
 			}
 		})
+	}
+}
+
+// staleClaimPath renames the upload directory the way an unclean stop during
+// CompleteMultipartUpload leaves it: <uploadId>.<etag>.inprogress.
+func staleClaimPath(t *testing.T, p *Posix, bucket, key, uploadID string, parts []types.CompletedPart) {
+	t.Helper()
+
+	sum := sha256.Sum256([]byte(key))
+	objdirFull := filepath.Join(p.BucketPath(bucket), MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
+
+	token, err := backend.ComputeMultipartETagFromPartETags(uploadID, parts)
+	if err != nil {
+		t.Fatalf("compute multipart etag: %v", err)
+	}
+	active := fmt.Sprintf("%s.%s%s", uploadID, strings.Trim(token, "\""), inProgressSuffix)
+
+	if err := os.Rename(filepath.Join(objdirFull, uploadID), filepath.Join(objdirFull, active)); err != nil {
+		t.Fatalf("simulate interrupted complete: %v", err)
+	}
+}
+
+// TestPosixCompleteMultipartUploadStaleClaimNotReportedAsSuccess covers a
+// gateway that died while assembling a multipart object. The claim directory
+// survives as <uploadId>.<etag>.inprogress with no owner and no published
+// object, so a retried Complete must not answer 200: the client would believe
+// the upload completed while HEAD and GET keep returning 404.
+func TestPosixCompleteMultipartUploadStaleClaimNotReportedAsSuccess(t *testing.T) {
+	for mode, mkMeta := range metaModes(t) {
+		t.Run(mode, func(t *testing.T) {
+			// O_TMPFILE publishing needs link(2), which this sandbox denies.
+			p := newTestPosix(t, noTmpFile(mkMeta))
+			bucket := "testbucket"
+			key := "obj-mp-stale-claim"
+			createTestBucket(t, p, bucket)
+
+			ctx := context.Background()
+			mp, err := p.CreateMultipartUpload(ctx, s3response.CreateMultipartUploadInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			if err != nil {
+				t.Fatalf("create multipart upload: %v", err)
+			}
+			uploadID := mp.UploadId
+
+			data := []byte("stale multipart body")
+			part, err := p.UploadPart(ctx, &s3.UploadPartInput{
+				Bucket:        &bucket,
+				Key:           &key,
+				UploadId:      &uploadID,
+				PartNumber:    aws.Int32(1),
+				ContentLength: aws.Int64(int64(len(data))),
+				Body:          bytes.NewReader(data),
+			})
+			if err != nil {
+				t.Fatalf("upload part: %v", err)
+			}
+
+			parts := []types.CompletedPart{{ETag: part.ETag, PartNumber: aws.Int32(1)}}
+			staleClaimPath(t, p, bucket, key, uploadID, parts)
+
+			res, _, err := p.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+				Bucket:          &bucket,
+				Key:             &key,
+				UploadId:        &uploadID,
+				MultipartUpload: &types.CompletedMultipartUpload{Parts: parts},
+			})
+			if err == nil {
+				t.Fatalf("complete reported success (etag %q) for an upload whose object was never published", aws.ToString(res.ETag))
+			}
+			if _, statErr := os.Stat(p.ObjectPath(bucket, key)); !errors.Is(statErr, fs.ErrNotExist) {
+				t.Fatalf("object exists after the failed complete: %v", statErr)
+			}
+		})
+	}
+}
+
+// TestPosixCompleteMultipartUploadRetryAfterSuccess pins genuine idempotency:
+// once the object is published, completing the same upload again succeeds and
+// reports the published ETag.
+func TestPosixCompleteMultipartUploadRetryAfterSuccess(t *testing.T) {
+	for mode, mkMeta := range metaModes(t) {
+		t.Run(mode, func(t *testing.T) {
+			p := newTestPosix(t, noTmpFile(mkMeta))
+			bucket := "testbucket"
+			key := "obj-mp-retry-after-success"
+			createTestBucket(t, p, bucket)
+
+			ctx := context.Background()
+			mp, err := p.CreateMultipartUpload(ctx, s3response.CreateMultipartUploadInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			if err != nil {
+				t.Fatalf("create multipart upload: %v", err)
+			}
+			uploadID := mp.UploadId
+
+			data := []byte("retry body")
+			part, err := p.UploadPart(ctx, &s3.UploadPartInput{
+				Bucket:        &bucket,
+				Key:           &key,
+				UploadId:      &uploadID,
+				PartNumber:    aws.Int32(1),
+				ContentLength: aws.Int64(int64(len(data))),
+				Body:          bytes.NewReader(data),
+			})
+			if err != nil {
+				t.Fatalf("upload part: %v", err)
+			}
+
+			parts := []types.CompletedPart{{ETag: part.ETag, PartNumber: aws.Int32(1)}}
+			complete := func() (string, error) {
+				res, _, err := p.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+					Bucket:          &bucket,
+					Key:             &key,
+					UploadId:        &uploadID,
+					MultipartUpload: &types.CompletedMultipartUpload{Parts: parts},
+				})
+				if err != nil {
+					return "", err
+				}
+				return aws.ToString(res.ETag), nil
+			}
+
+			first, err := complete()
+			if err != nil {
+				t.Fatalf("first complete: %v", err)
+			}
+			second, err := complete()
+			if err != nil {
+				t.Fatalf("idempotent retry of a completed upload failed: %v", err)
+			}
+			if first != second {
+				t.Fatalf("retry reported etag %q, want the published %q", second, first)
+			}
+
+			got, _ := getTestObject(t, p, bucket, key)
+			if !bytes.Equal(got, data) {
+				t.Fatalf("object bytes changed after the retry")
+			}
+		})
+	}
+}
+
+// noTmpFile keeps the metadata mode but disables O_TMPFILE, whose publish path
+// needs link(2) and fails in sandboxes that deny it.
+func noTmpFile(mk func(*testing.T) (meta.MetadataStorer, PosixOpts)) func(*testing.T) (meta.MetadataStorer, PosixOpts) {
+	return func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		m, opts := mk(t)
+		opts.ForceNoTmpFile = true
+		return m, opts
 	}
 }
