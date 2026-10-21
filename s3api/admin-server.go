@@ -122,6 +122,11 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 	// initialize total requests cap limiter middleware
 	app.Use("*", middlewares.RateLimiter(server.maxRequests, nil, l))
 
+	// the same defaults the s3 server sets: CreateBucket validates its
+	// LocationConstraint against the region in the context, which would
+	// otherwise fall back to us-east-1 on a standalone admin port
+	app.Use("*", middlewares.SetDefaultValues(root, region))
+
 	app.Use("*", controllers.WrapMiddleware(middlewares.DecodeURL, l, nil))
 
 	// initialize the debug logger in debug mode
