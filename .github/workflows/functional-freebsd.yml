@@ -1,0 +1,37 @@
+name: functional tests (freebsd)
+permissions: {}
+on: pull_request
+
+jobs:
+  build:
+    name: RunTestsFreeBSD
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v7
+
+    # GitHub has no FreeBSD runners, so the tests run in a FreeBSD VM booted
+    # under KVM on the Ubuntu runner. The workspace is synced into the VM, and
+    # prepare/run execute there as root under sh with set -eu.
+    - name: Build and Run
+      uses: vmactions/freebsd-vm@v1
+      with:
+        release: '15.1'
+        copyback: false
+        prepare: |
+          pkg install -y bash git gmake
+          GO_VERSION=$(fetch -qo - 'https://go.dev/VERSION?m=text' | head -n 1)
+          fetch -qo /tmp/go.tar.gz "https://go.dev/dl/${GO_VERSION}.freebsd-$(uname -m).tar.gz"
+          tar -C /usr/local -xzf /tmp/go.tar.gz
+          ln -s /usr/local/go/bin/go /usr/local/bin/go
+          pw useradd tester -m
+          chown -R tester .
+          # FreeBSD enables ASLR by default, and binaries built with -race
+          # refuse to start under it.
+          sysctl kern.elf64.aslr.enable=0
+        # Run as a regular user, like the Linux job does.
+        run: |
+          su tester -c 'gmake testbin'
+          su tester -c 'bash ./runtests.sh'
+          su tester -c 'go tool covdata percent -i=/tmp/covdata'
