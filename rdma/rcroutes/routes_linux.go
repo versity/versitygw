@@ -1054,6 +1054,12 @@ func applyPartChecksum(in *s3.UploadPartInput, algo types.ChecksumAlgorithm, bod
 		in.ChecksumSHA512 = &sum
 	case types.ChecksumAlgorithmMd5:
 		in.ChecksumMD5 = &sum
+	case types.ChecksumAlgorithmXxhash64:
+		in.ChecksumXXHASH64 = &sum
+	case types.ChecksumAlgorithmXxhash3:
+		in.ChecksumXXHASH3 = &sum
+	case types.ChecksumAlgorithmXxhash128:
+		in.ChecksumXXHASH128 = &sum
 	}
 }
 
@@ -1073,6 +1079,12 @@ func hashTypeForPartChecksum(algo types.ChecksumAlgorithm) (utils.HashType, bool
 		return utils.HashTypeSha512, true
 	case types.ChecksumAlgorithmMd5:
 		return utils.HashTypeMd5, true
+	case types.ChecksumAlgorithmXxhash64:
+		return utils.HashTypeXXHASH64, true
+	case types.ChecksumAlgorithmXxhash3:
+		return utils.HashTypeXXHASH3, true
+	case types.ChecksumAlgorithmXxhash128:
+		return utils.HashTypeXXHASH128, true
 	default:
 		return "", false
 	}

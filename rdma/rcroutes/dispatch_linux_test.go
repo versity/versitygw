@@ -19,8 +19,6 @@ package rcroutes
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -34,6 +32,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/rdma/rcserver"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -360,38 +359,61 @@ func TestCommitPutPartDispatch(t *testing.T) {
 // digest on UploadPart so the POSIX backend does not reject a
 // missing checksum type.
 func TestCommitPutPartCompositeChecksum(t *testing.T) {
-	be := &fakeBackend{}
-	h := &Handler{be: be, svc: newFixedService(), mpMaxParts: 100}
-
 	body := []byte("part-bytes")
-	sum := sha256.Sum256(body)
-	want := base64.StdEncoding.EncodeToString(sum[:])
-	var gotChecksum *string
-	etag := "\"part-etag\""
-	be.listParts = func(ctx context.Context, in *s3.ListPartsInput) (s3response.ListPartsResult, error) {
-		return s3response.ListPartsResult{
-			ChecksumType:      types.ChecksumTypeComposite,
-			ChecksumAlgorithm: types.ChecksumAlgorithmSha256,
-		}, nil
+	cases := []struct {
+		name  string
+		algo  types.ChecksumAlgorithm
+		ht    utils.HashType
+		field func(*s3.UploadPartInput) *string
+	}{
+		{"sha256", types.ChecksumAlgorithmSha256, utils.HashTypeSha256, func(in *s3.UploadPartInput) *string { return in.ChecksumSHA256 }},
+		{"xxhash64", types.ChecksumAlgorithmXxhash64, utils.HashTypeXXHASH64, func(in *s3.UploadPartInput) *string { return in.ChecksumXXHASH64 }},
+		{"xxhash3", types.ChecksumAlgorithmXxhash3, utils.HashTypeXXHASH3, func(in *s3.UploadPartInput) *string { return in.ChecksumXXHASH3 }},
+		{"xxhash128", types.ChecksumAlgorithmXxhash128, utils.HashTypeXXHASH128, func(in *s3.UploadPartInput) *string { return in.ChecksumXXHASH128 }},
 	}
-	be.uploadPart = func(ctx context.Context, in *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
-		gotChecksum = in.ChecksumSHA256
-		return &s3.UploadPartOutput{ETag: &etag}, nil
-	}
-	svc := h.svc.(*fixedService)
-	h.svc = &viewService{fixedService: svc, buf: body}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			be := &fakeBackend{}
+			h := &Handler{be: be, svc: newFixedService(), mpMaxParts: 100}
+			want := partDigest(t, tc.ht, body)
+			var gotChecksum *string
+			etag := "\"part-etag\""
+			be.listParts = func(ctx context.Context, in *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+				return s3response.ListPartsResult{
+					ChecksumType:      types.ChecksumTypeComposite,
+					ChecksumAlgorithm: tc.algo,
+				}, nil
+			}
+			be.uploadPart = func(ctx context.Context, in *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+				gotChecksum = tc.field(in)
+				return &s3.UploadPartOutput{ETag: &etag}, nil
+			}
+			svc := h.svc.(*fixedService)
+			h.svc = &viewService{fixedService: svc, buf: body}
 
-	var err error
-	inHandler(t, func(c fiber.Ctx) {
-		_, _, _, err = h.commitPut(c, "s1", "bkt", "obj", uint64(len(body)),
-			&partTransfer{UploadID: "up-1", PartNumber: 2})
-	})
+			var err error
+			inHandler(t, func(c fiber.Ctx) {
+				_, _, _, err = h.commitPut(c, "s1", "bkt", "obj", uint64(len(body)),
+					&partTransfer{UploadID: "up-1", PartNumber: 2})
+			})
+			if err != nil {
+				t.Fatalf("composite part commitPut failed: %v", err)
+			}
+			if gotChecksum == nil || *gotChecksum != want {
+				t.Fatalf("%s checksum = %v, want %q", tc.name, gotChecksum, want)
+			}
+		})
+	}
+}
+
+func partDigest(t *testing.T, ht utils.HashType, body []byte) string {
+	t.Helper()
+	h, err := utils.NewHash(ht)
 	if err != nil {
-		t.Fatalf("composite part commitPut failed: %v", err)
+		t.Fatal(err)
 	}
-	if gotChecksum == nil || *gotChecksum != want {
-		t.Fatalf("ChecksumSHA256 = %v, want %q", gotChecksum, want)
-	}
+	_, _ = h.Write(body)
+	return utils.Base64SumString(h.Sum(nil))
 }
 
 // The commitPut return type, named for test readability.
