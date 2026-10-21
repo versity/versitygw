@@ -284,7 +284,7 @@ func benchGetObj(path string, d fs.DirEntry) (s3response.Object, error) {
 // runWalk is a convenience wrapper so each benchmark loop is one line.
 func runWalk(b *testing.B, fsys fs.FS, prefix, delim, marker string, max int32) {
 	b.Helper()
-	_, err := backend.Walk(context.Background(), fsys, prefix, delim, marker, max, benchGetObj, nil)
+	_, err := backend.Walk(context.Background(), fsys, prefix, delim, marker, max, benchGetObj, backend.SkipDirs{})
 	if err != nil {
 		b.Fatalf("Walk: %v", err)
 	}
@@ -320,7 +320,7 @@ func BenchmarkWalkFlatPaged(b *testing.B) {
 		marker := ""
 		for {
 			res, err := backend.Walk(context.Background(),
-				fsys, "", "", marker, 1000, benchGetObj, nil)
+				fsys, "", "", marker, 1000, benchGetObj, backend.SkipDirs{})
 			if err != nil {
 				b.Fatalf("Walk: %v", err)
 			}
@@ -427,7 +427,7 @@ func BenchmarkWalkLargeFlatPaged(b *testing.B) {
 		marker := ""
 		for {
 			res, err := backend.Walk(context.Background(),
-				fsys, "", "", marker, 1000, benchGetObj, nil)
+				fsys, "", "", marker, 1000, benchGetObj, backend.SkipDirs{})
 			if err != nil {
 				b.Fatalf("Walk: %v", err)
 			}

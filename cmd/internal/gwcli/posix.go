@@ -184,7 +184,7 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 			},
 			&cli.StringSliceFlag{
 				Name:    "exclude-dirs",
-				Usage:   "directory names the object listings do not descend into or report as objects (can be specified multiple times); use it for a filesystem control directory that holds something other than object data, such as .zfs on a ZFS dataset mounted with snapdir=visible",
+				Usage:   "directory name, not a path, to hide from object listings and reserve at any depth in a bucket; object keys through it are rejected, and it can't be used as a bucket name (can be specified multiple times)",
 				EnvVars: []string{"VGW_EXCLUDE_DIRS"},
 			},
 		},

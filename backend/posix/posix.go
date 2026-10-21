@@ -150,10 +150,13 @@ type Posix struct {
 	//   multipart composite: "ALGO-<composite-checksum>-<part-count>"
 	dataIntegrityEtag bool
 
-	// skipDirs are the directory names the listing walks never descend
-	// into: the gateway's metadata directory plus PosixOpts.ExcludeDirs.
-	// It is built once in New so all three list operations share it.
-	skipDirs []string
+	// skipDirs are the directories the listing walks never descend into:
+	// the gateway's metadata directory at the bucket root, and the
+	// PosixOpts.ExcludeDirs entries at any depth. It is built once in New
+	// so all three list operations share it, and validateObjectName rejects
+	// keys through the excluded entries so objects can't be read or written
+	// where the listings never show them.
+	skipDirs backend.SkipDirs
 
 	// objLockSlots are process-local striped slots taken alongside the shared
 	// per-bucket lock files by lockObjectPublish. Channels make local lock
@@ -317,26 +320,38 @@ type PosixOpts struct {
 	// filesystem control directories that hold something other than object
 	// data, such as ".zfs" on a ZFS dataset mounted with snapdir=visible,
 	// where the metadata xattrs are unsupported and reading them would fail
-	// the whole listing. The gateway's own metadata directory is always
-	// skipped and does not need to be listed here.
+	// the whole listing. The gateway's own metadata directory at the bucket
+	// root is always skipped and does not need to be listed here.
+	//
+	// Only directories are excluded; a regular file with an excluded name
+	// is still listed. Names are matched ignoring case. Object keys with an
+	// excluded name as one of their directories, at any depth, are rejected
+	// with ReservedObjectKey, so objects there can't be read or written
+	// either. On ZFS that also keeps snapshot contents under .zfs from being
+	// read through the gateway. An excluded name is not a valid bucket name
+	// either, even with relaxed bucket name validation, and a directory with
+	// that name at the gateway root is not listed as a bucket.
 	ExcludeDirs []string
 }
 
-// listingSkipDirs returns the directory names the listing walks skip: the
-// gateway's own metadata directory, which is never bucket content, followed
-// by the configured filesystem-specific control directories. Each configured
-// entry has to be a single, non-empty path segment; anything else could never
+// listingSkipDirs returns the directories the listing walks skip: the
+// gateway's own metadata directory, which only exists at the bucket root and
+// is never bucket content, and the configured filesystem-specific control
+// directories, which are skipped at any depth. Each configured
+// entry has to be a single path segment naming a directory entry, so it can't
+// be empty, contain a separator, or be "." or ".."; anything else could never
 // match a directory entry name and would silently do nothing.
-func listingSkipDirs(excludeDirs []string) ([]string, error) {
-	skipDirs := make([]string, 0, len(excludeDirs)+1)
-	skipDirs = append(skipDirs, MetaTmpDir)
+func listingSkipDirs(excludeDirs []string) (backend.SkipDirs, error) {
 	for _, dir := range excludeDirs {
-		if dir == "" || strings.ContainsRune(dir, '/') || strings.ContainsRune(dir, filepath.Separator) {
-			return nil, fmt.Errorf("invalid excluded directory %q: must be a single, non-empty path segment", dir)
+		if dir == "" || dir == "." || dir == ".." ||
+			strings.ContainsRune(dir, '/') || strings.ContainsRune(dir, filepath.Separator) {
+			return backend.SkipDirs{}, fmt.Errorf("invalid excluded directory %q: must be a single path segment naming a directory entry", dir)
 		}
-		skipDirs = append(skipDirs, dir)
 	}
-	return skipDirs, nil
+	return backend.SkipDirs{
+		Root: []string{MetaTmpDir},
+		Any:  slices.Clone(excludeDirs),
+	}, nil
 }
 
 // New returns a Posix backend serving buckets from the directories under rootdir.
@@ -666,16 +681,49 @@ func (p *Posix) ValidateObjectKey(bucket, key string) error {
 // The path is resolved like ObjectPath resolves it, so that "./", "x/../" and
 // repeated slashes don't hide the directory, and its name is matched ignoring
 // case, like case-insensitive file systems match it.
+//
+// It also returns ReservedObjectKey if a directory in the path, at any depth,
+// is named in PosixOpts.ExcludeDirs. The listings never show objects there,
+// and on ZFS the .zfs directory would otherwise expose snapshot contents
+// under keys that bucket policies on the live keys don't cover. A file with
+// an excluded name is still a valid object, as the listings report it.
 func (p *Posix) validateObjectName(bucket, object string) error {
 	rel, err := filepath.Rel(p.BucketPath(bucket), p.ObjectPath(bucket, object))
 	if err != nil {
 		return fmt.Errorf("resolve object path: %w", err)
 	}
-	dir, _, _ := strings.Cut(filepath.ToSlash(rel), "/")
+	rel = filepath.ToSlash(rel)
+	dir, _, _ := strings.Cut(rel, "/")
 	if strings.EqualFold(dir, MetaTmpDir) {
 		return s3err.GetAPIError(s3err.ErrReservedObjectKey)
 	}
+	if p.inExcludedDir(rel, strings.HasSuffix(object, "/")) {
+		return s3err.GetAPIError(s3err.ErrExcludedObjectKey)
+	}
 	return nil
+}
+
+// inExcludedDir reports whether a directory in rel, a slash-separated path
+// relative to the bucket directory, is named in PosixOpts.ExcludeDirs. The
+// last element of rel is a directory only when isDir is set, as it is for
+// the key of a directory object.
+func (p *Posix) inExcludedDir(rel string, isDir bool) bool {
+	if len(p.skipDirs.Any) == 0 {
+		return false
+	}
+	dirs := strings.Split(rel, "/")
+	if !isDir {
+		dirs = dirs[:len(dirs)-1]
+	}
+	return slices.ContainsFunc(dirs, p.isExcludedName)
+}
+
+// isExcludedName reports whether name is named in PosixOpts.ExcludeDirs,
+// ignoring case.
+func (p *Posix) isExcludedName(name string) bool {
+	return slices.ContainsFunc(p.skipDirs.Any, func(excluded string) bool {
+		return strings.EqualFold(name, excluded)
+	})
 }
 
 // DoesBucketExist returns NoSuchBucket unless bucket names a bucket. Backends
@@ -751,7 +799,7 @@ func (p *Posix) ListBuckets(ctx context.Context, input s3response.ListBucketsInp
 			continue
 		}
 
-		if !utils.IsValidBucketName(fi.Name()) {
+		if !utils.IsValidBucketName(fi.Name()) || p.isExcludedName(fi.Name()) {
 			continue
 		}
 
@@ -823,6 +871,14 @@ func (p *Posix) isBucketValid(bucket string) bool {
 	if bucket == "" || bucket == "." || bucket == ".." || bucket == objLockDir ||
 		filepath.IsAbs(bucket) || strings.ContainsRune(bucket, '/') ||
 		strings.ContainsRune(bucket, os.PathSeparator) {
+		return false
+	}
+
+	// An excluded directory at the root is no bucket either, even with
+	// relaxed bucket names: on ZFS a bucket named .zfs at a dataset root
+	// would serve snapshot contents through keys that have no excluded
+	// element of their own.
+	if p.isExcludedName(bucket) {
 		return false
 	}
 
@@ -8321,6 +8377,10 @@ func (p *Posix) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.
 	}
 
 	for _, fi := range fis {
+		if p.isExcludedName(fi.Name()) {
+			continue
+		}
+
 		aclJSON, err := p.meta.RetrieveAttribute(nil, fi.Name(), "", aclkey)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return buckets, fmt.Errorf("get acl tag: %w", err)
