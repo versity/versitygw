@@ -22,7 +22,7 @@
 package rcobj
 
 /*
-#cgo LDFLAGS: -lhipobj
+#cgo LDFLAGS: -lhipobj -lamdhip64 -lhsa-runtime64 -ldl
 #include <stdlib.h>
 #include <hipobj.h>
 
@@ -42,9 +42,9 @@ extern int rcobjGoReadyRequestTramp(void *ctx, void *req);
 extern int rcobjGoFinishReadyTramp(void *ctx, void *req, void *out);
 extern int rcobjGoCancelTramp(void *ctx, void *req);
 
-// HIP runtime entry points, resolved from the libamdhip64 the
-// library already links; declared with plain prototypes so the
-// cgo build needs no HIP headers.
+// HIP runtime entry points. The wrapper calls these directly, and
+// libhipobj does not re-export them, so the link names libamdhip64.
+// Plain prototypes keep the cgo build from needing HIP headers.
 extern int hipMalloc(void** ptr, size_t size);
 extern int hipFree(void* ptr);
 extern int hipMemcpy(void* dst, const void* src, size_t size,

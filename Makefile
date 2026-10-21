@@ -49,9 +49,13 @@ CUOBJ_CUDA_INC_DIR ?= /usr/local/cuda/include
 HIPOBJ_ENABLED ?=
 HIPOBJ_INC_DIR ?= /usr/include
 HIPOBJ_LIB_DIR ?= /usr/lib
-RCOBJ_RPATH=-Wl,-rpath,$(HIPOBJ_LIB_DIR)
+# The wrapper calls hipMalloc directly. libhipobj does not re-export
+# those symbols, and a static archive does not carry its own
+# dependencies, so the HIP runtime has to be named here.
+HIP_LIB_DIR ?= /opt/rocm/lib
+RCOBJ_RPATH=-Wl,-rpath,$(HIPOBJ_LIB_DIR) -Wl,-rpath,$(HIP_LIB_DIR)
 RCOBJ_CGO_CFLAGS=$(if $(HIPOBJ_ENABLED),-I$(HIPOBJ_INC_DIR),)
-RCOBJ_CGO_LDFLAGS=$(if $(HIPOBJ_ENABLED),-L$(HIPOBJ_LIB_DIR) $(RCOBJ_RPATH) -lhipobj -lstdc++,)
+RCOBJ_CGO_LDFLAGS=$(if $(HIPOBJ_ENABLED),-L$(HIPOBJ_LIB_DIR) -L$(HIP_LIB_DIR) $(RCOBJ_RPATH) -lhipobj -lamdhip64 -lhsa-runtime64 -ldl -lstdc++,)
 CXX ?= g++
 AR ?= ar
 
