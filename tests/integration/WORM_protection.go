@@ -1319,14 +1319,18 @@ func WORMProtection_legal_hold_outlives_expired_retention(s *S3Conf) error {
 	testName := "WORMProtection_legal_hold_outlives_expired_retention"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		retainUntil := time.Now().Add(lockWaitTime)
-		_, err := putObjectWithData(10, &s3.PutObjectInput{
-			Bucket:                    &bucket,
-			Key:                       &obj,
-			ObjectLockMode:            types.ObjectLockModeGovernance,
-			ObjectLockRetainUntilDate: &retainUntil,
-			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
-		}, s3client, withPutObjectChecksumAlgo(types.ChecksumAlgorithmCrc32))
+		var retainUntil time.Time
+		err := retryOnPastRetainDate(func() error {
+			retainUntil = time.Now().Add(lockWaitTime)
+			_, err := putObjectWithData(10, &s3.PutObjectInput{
+				Bucket:                    &bucket,
+				Key:                       &obj,
+				ObjectLockMode:            types.ObjectLockModeGovernance,
+				ObjectLockRetainUntilDate: &retainUntil,
+				ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+			}, s3client, withPutObjectChecksumAlgo(types.ChecksumAlgorithmCrc32))
+			return err
+		})
 		if err != nil {
 			return err
 		}

@@ -3172,21 +3172,24 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 			// A GOVERNANCE retention can be weakened with the bypass
 			// permission and header, so shorten it to a few seconds out
 			// rather than waiting for the original date. The margin absorbs
-			// network delay.
-			retDate := time.Now().Add(lockWaitTime)
+			// network delay, and a stall longer than that is retried.
+			err := retryOnPastRetainDate(func() error {
+				retDate := time.Now().Add(lockWaitTime)
 
-			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-			_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-				Bucket:                    &bucket,
-				Key:                       &obj.key,
-				VersionId:                 getNonEmptyPtr(obj.versionId),
-				BypassGovernanceRetention: getBoolPtr(true),
-				Retention: &types.ObjectLockRetention{
-					Mode:            types.ObjectLockRetentionModeGovernance,
-					RetainUntilDate: &retDate,
-				},
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+					Bucket:                    &bucket,
+					Key:                       &obj.key,
+					VersionId:                 getNonEmptyPtr(obj.versionId),
+					BypassGovernanceRetention: getBoolPtr(true),
+					Retention: &types.ObjectLockRetention{
+						Mode:            types.ObjectLockRetentionModeGovernance,
+						RetainUntilDate: &retDate,
+					},
+				})
+				cancel()
+				return err
 			})
-			cancel()
 
 			// If object was already deleted, ignore the error
 			if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
@@ -3251,6 +3254,26 @@ func waitOutComplianceRetention(client *s3.Client, bucket string, obj objToDelet
 		time.Sleep(wait)
 	}
 	return nil
+}
+
+// retryOnPastRetainDate calls req, a request carrying a retain until date
+// only seconds out, again for as long as the gateway rejects that date as
+// already passed, up to maxRetryAttempts times. A loaded host can stall
+// a request for longer than such a margin, which expires the date in transit,
+// and the gateway then answers InvalidArgument instead of whatever the request
+// was meant to exercise. req must compute its date from time.Now() on
+// every call for a retry to help.
+func retryOnPastRetainDate(req func() error) error {
+	pastDate := s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, "")
+
+	var err error
+	for range maxRetryAttempts {
+		err = req()
+		if checkApiErr(err, pastDate) != nil {
+			return err
+		}
+	}
+	return err
 }
 
 type objectLockMode string
