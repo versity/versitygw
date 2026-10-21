@@ -138,11 +138,12 @@ type GetObjectAttributesResponse struct {
 }
 
 type ObjectParts struct {
-	PartNumberMarker     int
-	NextPartNumberMarker int
-	MaxParts             int
-	IsTruncated          bool
+	PartNumberMarker     int                `xml:",omitempty"`
+	NextPartNumberMarker int                `xml:",omitempty"`
+	MaxParts             int                `xml:",omitempty"`
+	IsTruncated          bool               `xml:",omitempty"`
 	Parts                []types.ObjectPart `xml:"Part"`
+	PartsCount           *int32             `xml:",omitempty"`
 }
 
 // ListMultipartUploadsResponse - s3 api list multipart uploads response.
