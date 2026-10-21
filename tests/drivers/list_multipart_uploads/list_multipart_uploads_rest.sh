@@ -15,6 +15,7 @@
 # under the License.#
 
 source ./tests/drivers/list.sh
+source ./tests/util/util_multipart_before_completion.sh
 
 check_multipart_upload_user_data() {
   if ! check_param_count_v2 "data file, expected upload ID, owner ID, initiator ID" 4 $#; then

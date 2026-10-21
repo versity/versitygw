@@ -54,7 +54,7 @@ abort_all_multipart_uploads() {
 }
 
 check_abort_access_denied() {
-  if ! check_param_count_v2 "bucket, key, upload ID, username, password"; then
+  if ! check_param_count_v2 "bucket, key, upload ID, username, password" 5 $#; then
     return 1
   fi
   local bucket="$1" key="$2" upload_id="$3" username="$4" password="$5"
