@@ -739,3 +739,27 @@ networkPolicy:
   #   kubernetes.io/metadata.name: kube-system
   allowIngressFromPods: {}
   #   svccontroller.k3s.cattle.io/svcname: versitygw
+
+# --- Extra objects ---
+# Additional Kubernetes manifests deployed with the release, for objects this
+# chart does not template itself (e.g. a PersistentVolume for an existing
+# share, a cert-manager CA Issuer for the standalone IAM mTLS certificates, or
+# a Gateway API ListenerSet). Each entry is either a map or a string; both are
+# rendered through `tpl`, so they can reference the release, e.g.
+# '{{ include "versitygw.fullname" . }}' or '{{ .Release.Namespace }}'.
+# Example:
+#   extraObjects:
+#     - apiVersion: cert-manager.io/v1
+#       kind: Issuer
+#       metadata:
+#         name: '{{ include "versitygw.fullname" . }}-selfsigned'
+#       spec:
+#         selfSigned: {}
+#     - |
+#       apiVersion: v1
+#       kind: ConfigMap
+#       metadata:
+#         name: {{ include "versitygw.fullname" . }}-extra
+#       data:
+#         region: {{ .Values.gateway.region | quote }}
+extraObjects: []

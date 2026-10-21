@@ -55,3 +55,9 @@ jobs:
             helm lint chart/ --strict --set auth.existingSecret=root-credentials ${scenario}
             echo "::endgroup::"
           done
+
+      - name: Lint extra objects
+        run: |
+          # one map and one string entry, both referencing the release through tpl
+          helm lint chart/ --strict --set auth.existingSecret=root-credentials \
+            --set-json 'extraObjects=[{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"{{ include \"versitygw.fullname\" . }}-extra"},"data":{"namespace":"{{ .Release.Namespace }}"}},"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {{ .Release.Name }}-string\n"]'
