@@ -28,6 +28,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/internal/sigv4auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -59,7 +60,7 @@ func postObjectTestApp(root RootUserConfig, region string, next fiber.Handler) *
 			return c.Status(500).SendString(err.Error())
 		},
 	})
-	app.Post("/:bucket", chainHandlers(AuthorizePostObject(root, nil, region), next))
+	app.Post("/:bucket", chainHandlers(AuthorizePostObject(backend.New(), root, nil, region), next))
 	return app
 }
 

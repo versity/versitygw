@@ -25,6 +25,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/httpctx"
 	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/middlewares"
@@ -85,7 +86,7 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 		}
 	}
 
-	app := fiber.New(fiber.Config{
+	app := fiber.NewWithCustomCtx(httpctx.NewCtx, fiber.Config{
 		AppName:      "versitygw",
 		ServerHeader: "VERSITYGW",
 		ErrorHandler: globalErrorHandler,

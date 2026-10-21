@@ -1554,45 +1554,54 @@ func TestValidateCopySource(t *testing.T) {
 	tests := []struct {
 		name       string
 		copysource string
+		dotKeys    bool // the backend stores dot segment keys
 		err        error
 	}{
 		// invalid encoding
-		{"invalid encoding 1", "%", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%")},
-		{"invalid encoding 2", "%2", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%2")},
-		{"invalid encoding 3", "%G1", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%G1")},
-		{"invalid encoding 4", "%1Z", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%1Z")},
-		{"invalid encoding 5", "%0H", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%0H")},
-		{"invalid encoding 6", "%XY", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%XY")},
-		{"invalid encoding 7", "%E", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%E")},
-		{"invalid encoding 8", "hello%", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "hello%")},
-		{"invalid encoding 9", "%%", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%%")},
-		{"invalid encoding 10", "%2Gmore", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%2Gmore")},
-		{"invalid encoding 11", "100%%sure", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "100%%sure")},
-		{"invalid encoding 12", "%#00", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%#00")},
-		{"invalid encoding 13", "%0%0", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%0%0")},
-		{"invalid encoding 14", "%?versionId=id", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%?versionId=id")},
+		{"invalid encoding 1", "%", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%")},
+		{"invalid encoding 2", "%2", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%2")},
+		{"invalid encoding 3", "%G1", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%G1")},
+		{"invalid encoding 4", "%1Z", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%1Z")},
+		{"invalid encoding 5", "%0H", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%0H")},
+		{"invalid encoding 6", "%XY", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%XY")},
+		{"invalid encoding 7", "%E", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%E")},
+		{"invalid encoding 8", "hello%", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "hello%")},
+		{"invalid encoding 9", "%%", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%%")},
+		{"invalid encoding 10", "%2Gmore", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%2Gmore")},
+		{"invalid encoding 11", "100%%sure", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "100%%sure")},
+		{"invalid encoding 12", "%#00", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%#00")},
+		{"invalid encoding 13", "%0%0", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%0%0")},
+		{"invalid encoding 14", "%?versionId=id", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, "%?versionId=id")},
 		// invalid bucket name
-		{"invalid bucket name 1", "168.200.1.255/obj/foo", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "168.200.1.255/obj/foo")},
-		{"invalid bucket name 2", "/0000:0db8:85a3:0000:0000:8a2e:0370:7224/smth", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "/0000:0db8:85a3:0000:0000:8a2e:0370:7224/smth")},
-		{"invalid bucket name 3", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "")},
-		{"invalid bucket name 4", "//obj/foo", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "//obj/foo")},
-		{"invalid bucket name 5", "//obj/foo?versionId=id", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "//obj/foo?versionId=id")},
+		{"invalid bucket name 1", "168.200.1.255/obj/foo", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "168.200.1.255/obj/foo")},
+		{"invalid bucket name 2", "/0000:0db8:85a3:0000:0000:8a2e:0370:7224/smth", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "/0000:0db8:85a3:0000:0000:8a2e:0370:7224/smth")},
+		{"invalid bucket name 3", "", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "")},
+		{"invalid bucket name 4", "//obj/foo", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "//obj/foo")},
+		{"invalid bucket name 5", "//obj/foo?versionId=id", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, "//obj/foo?versionId=id")},
 		// invalid object name
-		{"invalid object name 1", "bucket/../foo", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "../foo")},
-		{"invalid object name 2", "bucket/", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "")},
-		{"invalid object name 3", "bucket", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "")},
-		{"invalid object name 4", "bucket/../foo/dir/../../../", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "../foo/dir/../../../")},
-		{"invalid object name 5", "bucket/.?versionId=smth", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, ".")},
+		{"invalid object name 1", "bucket/../foo", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "../foo")},
+		{"invalid object name 2", "bucket/", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "")},
+		{"invalid object name 3", "bucket", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "")},
+		{"invalid object name 4", "bucket/../foo/dir/../../../", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "../foo/dir/../../../")},
+		{"invalid object name 5", "bucket/.?versionId=smth", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, ".")},
+		{"invalid object name 6", "bucket/foo/../bar", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "foo/../bar")},
+		{"invalid object name 7", "bucket/", true, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "")},
 		// success
-		{"no error 1", "bucket/object", nil},
-		{"no error 2", "bucket/object/key", nil},
-		{"no error 3", "bucket/4*&(*&(89765))", nil},
-		{"no error 4", "bucket/foo/../bar", nil},
-		{"no error 5", "bucket/foo/bar/baz?versionId=01BX5ZZKBKACTAV9WEVGEMMVRZ", nil},
+		{"no error 1", "bucket/object", false, nil},
+		{"no error 2", "bucket/object/key", false, nil},
+		{"no error 3", "bucket/4*&(*&(89765))", false, nil},
+		{"no error 4", "bucket/foo/../bar", true, nil},
+		{"no error 5", "bucket/foo/bar/baz?versionId=01BX5ZZKBKACTAV9WEVGEMMVRZ", false, nil},
+		{"no error 6", "bucket/../foo", true, nil},
+		{"no error 7", "bucket/.?versionId=smth", true, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateCopySource(tt.copysource)
+			var be backend.Backend = backend.New()
+			if tt.dotKeys {
+				be = dotSegmentBackend{}
+			}
+			err := ValidateCopySource(tt.copysource, be)
 			assert.Equal(t, tt.err, err)
 		})
 	}

@@ -188,6 +188,9 @@ var _ backend.Backend = &BackendMock{}
 //			ShutdownFunc: func()  {
 //				panic("mock out the Shutdown method")
 //			},
+//			StoresDotSegmentKeysFunc: func() bool {
+//				panic("mock out the StoresDotSegmentKeys method")
+//			},
 //			StringFunc: func() string {
 //				panic("mock out the String method")
 //			},
@@ -368,6 +371,9 @@ type BackendMock struct {
 
 	// ShutdownFunc mocks the Shutdown method.
 	ShutdownFunc func()
+
+	// StoresDotSegmentKeysFunc mocks the StoresDotSegmentKeys method.
+	StoresDotSegmentKeysFunc func() bool
 
 	// StringFunc mocks the String method.
 	StringFunc func() string
@@ -813,6 +819,9 @@ type BackendMock struct {
 		// Shutdown holds details about calls to the Shutdown method.
 		Shutdown []struct {
 		}
+		// StoresDotSegmentKeys holds details about calls to the StoresDotSegmentKeys method.
+		StoresDotSegmentKeys []struct {
+		}
 		// String holds details about calls to the String method.
 		String []struct {
 		}
@@ -886,6 +895,7 @@ type BackendMock struct {
 	lockRestoreObject                 sync.RWMutex
 	lockSelectObjectContent           sync.RWMutex
 	lockShutdown                      sync.RWMutex
+	lockStoresDotSegmentKeys          sync.RWMutex
 	lockString                        sync.RWMutex
 	lockUploadPart                    sync.RWMutex
 	lockUploadPartCopy                sync.RWMutex
@@ -2963,6 +2973,33 @@ func (mock *BackendMock) ShutdownCalls() []struct {
 	mock.lockShutdown.RLock()
 	calls = mock.calls.Shutdown
 	mock.lockShutdown.RUnlock()
+	return calls
+}
+
+// StoresDotSegmentKeys calls StoresDotSegmentKeysFunc.
+func (mock *BackendMock) StoresDotSegmentKeys() bool {
+	if mock.StoresDotSegmentKeysFunc == nil {
+		panic("BackendMock.StoresDotSegmentKeysFunc: method is nil but Backend.StoresDotSegmentKeys was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockStoresDotSegmentKeys.Lock()
+	mock.calls.StoresDotSegmentKeys = append(mock.calls.StoresDotSegmentKeys, callInfo)
+	mock.lockStoresDotSegmentKeys.Unlock()
+	return mock.StoresDotSegmentKeysFunc()
+}
+
+// StoresDotSegmentKeysCalls gets all the calls that were made to StoresDotSegmentKeys.
+// Check the length with:
+//
+//	len(mockedBackend.StoresDotSegmentKeysCalls())
+func (mock *BackendMock) StoresDotSegmentKeysCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockStoresDotSegmentKeys.RLock()
+	calls = mock.calls.StoresDotSegmentKeys
+	mock.lockStoresDotSegmentKeys.RUnlock()
 	return calls
 }
 

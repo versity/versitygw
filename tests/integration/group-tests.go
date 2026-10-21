@@ -222,6 +222,10 @@ func TestPutObject(ts *TestState) {
 	}
 	ts.Run(PutObject_invalid_credentials)
 	ts.Run(PutObject_invalid_object_names)
+	// posix can't store keys holding dot segments, see PutObject_dot_segment_key
+	if ts.conf.azureTests {
+		ts.Run(PutObject_dot_segment_object_names)
+	}
 	ts.Run(PutObject_object_acl_not_supported)
 	ts.Run(PutObject_long_metadata)
 	ts.Run(PutObject_invalid_website_redirect_location)
@@ -1102,6 +1106,11 @@ func TestPosix(ts *TestState) {
 	ts.Run(CopyObject_reserved_key)
 	ts.Run(DeleteObject_reserved_key)
 	ts.Run(ListObjectsV2_reserved_prefix)
+	ts.Run(PutObject_dot_segment_key)
+	ts.Run(PostObject_dot_segment_key)
+	ts.Run(DeleteObjects_dot_segment_key)
+	ts.Run(CopyObject_dot_segment_copy_source)
+	ts.Run(UploadPartCopy_dot_segment_copy_source)
 	if !ts.conf.windowsTests {
 		ts.Run(PutObject_race_with_delete)
 	}
@@ -2015,7 +2024,7 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_CopyObject_with_legal_hold_policy)
 	ts.Run(AccessControl_CopyObject_with_retention_policy)
 	if !ts.conf.azureTests {
-		ts.Run(AccessControl_policy_normalizes_object_key_for_get_put_delete)
+		ts.Run(AccessControl_dot_segment_key_rejected_before_policy)
 	}
 	ts.Run(AccessControl_bucket_policy_condition_ip_allow)
 	ts.Run(AccessControl_bucket_policy_condition_ip_deny_no_match)
@@ -3105,6 +3114,7 @@ func GetIntTests() IntTests {
 		"PutObject_overwrite_multipart_object":                                             PutObject_overwrite_multipart_object,
 		"PutObject_dir_object_overwrite_resets_attributes":                                 PutObject_dir_object_overwrite_resets_attributes,
 		"PutObject_invalid_object_names":                                                   PutObject_invalid_object_names,
+		"PutObject_dot_segment_object_names":                                               PutObject_dot_segment_object_names,
 		"PutObject_object_acl_not_supported":                                               PutObject_object_acl_not_supported,
 		"PutObject_false_negative_object_names":                                            PutObject_false_negative_object_names,
 		"PutObject_racey_success":                                                          PutObject_racey_success,
@@ -3685,6 +3695,11 @@ func GetIntTests() IntTests {
 		"CopyObject_reserved_key":                                                          CopyObject_reserved_key,
 		"DeleteObject_reserved_key":                                                        DeleteObject_reserved_key,
 		"ListObjectsV2_reserved_prefix":                                                    ListObjectsV2_reserved_prefix,
+		"PutObject_dot_segment_key":                                                        PutObject_dot_segment_key,
+		"PostObject_dot_segment_key":                                                       PostObject_dot_segment_key,
+		"DeleteObjects_dot_segment_key":                                                    DeleteObjects_dot_segment_key,
+		"CopyObject_dot_segment_copy_source":                                               CopyObject_dot_segment_copy_source,
+		"UploadPartCopy_dot_segment_copy_source":                                           UploadPartCopy_dot_segment_copy_source,
 		"CreateMultipartUpload_dir_obj":                                                    CreateMultipartUpload_dir_obj,
 		"PutObject_sse_c_not_implemented":                                                  PutObject_sse_c_not_implemented,
 		"PutObject_unsupported_sse_not_implemented":                                        PutObject_unsupported_sse_not_implemented,
@@ -3730,7 +3745,7 @@ func GetIntTests() IntTests {
 		"AccessControl_CopyObject_with_tagging_policy":                                     AccessControl_CopyObject_with_tagging_policy,
 		"AccessControl_CopyObject_with_legal_hold_policy":                                  AccessControl_CopyObject_with_legal_hold_policy,
 		"AccessControl_CopyObject_with_retention_policy":                                   AccessControl_CopyObject_with_retention_policy,
-		"AccessControl_policy_normalizes_object_key_for_get_put_delete":                    AccessControl_policy_normalizes_object_key_for_get_put_delete,
+		"AccessControl_dot_segment_key_rejected_before_policy":                             AccessControl_dot_segment_key_rejected_before_policy,
 		"AccessControl_bucket_policy_condition_ip_allow":                                   AccessControl_bucket_policy_condition_ip_allow,
 		"AccessControl_bucket_policy_condition_ip_deny_no_match":                           AccessControl_bucket_policy_condition_ip_deny_no_match,
 		"AccessControl_bucket_policy_condition_not_ip_address_allow":                       AccessControl_bucket_policy_condition_not_ip_address_allow,

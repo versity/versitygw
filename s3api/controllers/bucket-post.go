@@ -83,11 +83,11 @@ func (c S3ApiController) DeleteObjects(ctx fiber.Ctx) (*Response, error) {
 	}
 
 	// The keys come from the body, so they skip the object name check the
-	// request path gets. A key resolving outside the bucket ("../key") names
-	// a path outside it on a filesystem backend, so the whole request is
+	// request path gets. On a filesystem backend a key holding ".." segments
+	// ("../key") names a path outside the bucket, so the whole request is
 	// rejected before any key is authorized or deleted.
 	for _, obj := range dObj.Objects {
-		if obj.Key == nil || !utils.IsObjectNameValid(*obj.Key) {
+		if obj.Key == nil || !utils.IsObjectNameValid(*obj.Key, c.be) {
 			debuglogger.Logf("delete objects: invalid object key: %q",
 				backend.GetStringFromPtr(obj.Key))
 			return &Response{

@@ -14,11 +14,31 @@
 
 package utils
 
-func IsObjectNameValid(name string) bool {
-	switch clean(name) {
-	case "", ".", "..", "/":
+import (
+	"strings"
+
+	"github.com/versity/versitygw/backend"
+)
+
+// IsObjectNameValid reports whether name can name an object of be. A name
+// made of slashes only can't. S3 takes "." and ".." segments as part of
+// the key, so a name holding them can only when be stores it as a key of
+// its own: a backend storing objects as files would resolve the segments
+// to another object, or to a path outside the bucket.
+func IsObjectNameValid(name string, be backend.Backend) bool {
+	if strings.Trim(name, "/") == "" {
 		return false
 	}
 
-	return isObjectLocal(name)
+	return !hasDotSegment(name) || be.StoresDotSegmentKeys()
+}
+
+// hasDotSegment reports whether name holds a "." or ".." segment.
+func hasDotSegment(name string) bool {
+	for seg := range strings.SplitSeq(name, "/") {
+		if seg == "." || seg == ".." {
+			return true
+		}
+	}
+	return false
 }
