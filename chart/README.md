@@ -119,6 +119,7 @@ gateway:
 | **Debug logging** | `gateway.logLevel` — `silent` (default), `debug` (request/response logging, secrets masked), or `unsafe` (unmasked, local troubleshooting only) |
 | **Pod extension hooks** | `initContainers`, `extraContainers`, `extraVolumes`, `extraVolumeMounts`, `command`, and `shareProcessNamespace` (and the same under `iamServer`) — add sidecars such as a certificate rotator (e.g. spiffe-helper) that signals the gateway with SIGHUP, or an OIDC discovery provider next to the IAM server |
 | **Scheduling** | `nodeSelector`, `affinity`, `tolerations`, and `topologySpreadConstraints` — control pod placement and spread replicas across nodes/zones for high availability |
+| **Extra objects** | `extraObjects` — additional manifests deployed with the release, for objects the chart does not template itself (e.g. a PersistentVolume for an existing share, a cert-manager CA Issuer for the standalone IAM mTLS certificates, or a Gateway API ListenerSet); entries may be maps or strings and are rendered through `tpl` |
 
 ## Serving Under One Hostname
 
