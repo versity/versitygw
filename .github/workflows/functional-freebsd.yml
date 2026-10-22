@@ -19,6 +19,10 @@ jobs:
       with:
         release: '15.1'
         copyback: false
+        # The action defaults to 6 GB, which the race-instrumented gateway and
+        # test client outgrow under --parallel, and the kernel OOM-kills one of
+        # them. The runner has 16 GB; leave the rest for the host and QEMU.
+        mem: '12288'
         prepare: |
           pkg install -y bash git gmake
           GO_VERSION=$(fetch -qo - 'https://go.dev/VERSION?m=text' | head -n 1)
@@ -30,8 +34,23 @@ jobs:
           # FreeBSD enables ASLR by default, and binaries built with -race
           # refuse to start under it.
           sysctl kern.elf64.aslr.enable=0
+          # The VM image is root-on-ZFS, and by default the ARC may grow to
+          # all RAM but 1 GB, caching object data the tests never read back.
+          # It does not shrink fast enough when the tests allocate quickly, so
+          # cap it and leave the memory to the test processes.
+          sysctl vfs.zfs.arc.max=2147483648
         # Run as a regular user, like the Linux job does.
         run: |
           su tester -c 'gmake testbin'
-          su tester -c 'bash ./runtests.sh'
+          if ! su tester -c 'bash ./runtests.sh'; then
+            # A test process that dies with "Killed" was most likely OOM-killed;
+            # the kernel log names it and the memory state shows why.
+            echo "=== kernel log ==="
+            dmesg | tail -n 50 || true
+            echo "=== memory ==="
+            top -b -o res 15 || true
+            swapinfo -h || true
+            sysctl kstat.zfs.misc.arcstats.size kstat.zfs.misc.arcstats.c_max || true
+            exit 1
+          fi
           su tester -c 'go tool covdata percent -i=/tmp/covdata'
