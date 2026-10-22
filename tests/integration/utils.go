@@ -4319,3 +4319,97 @@ func getStoredContentEncoding(s3client *s3.Client, bucket, object string) (strin
 
 	return *out.ContentEncoding, nil
 }
+
+// Settings of the races between uploads and deletes of objects that share
+// their parent directories. A delete only removes a directory that no other
+// object is in, so the workers share their directories in pairs: with more
+// workers to a directory, it would hardly ever be empty.
+const (
+	siblingRaceWorkers    = 32
+	siblingRaceIterations = 50
+)
+
+// siblingRaceKey returns the key of an iteration of a worker: it shares its
+// parent directories with the keys of one other worker, and the top level
+// one with the keys of all workers.
+func siblingRaceKey(worker, iteration int) string {
+	return fmt.Sprintf("race/%d/a/b/c/d/e/w%d-%d", worker/2, worker, iteration)
+}
+
+// raceWorkers runs fn for each iteration of each of the workers, the
+// workers concurrently with each other.
+func raceWorkers(workers, iterations int, fn func(worker, iteration int) error) error {
+	eg := errgroup.Group{}
+	for w := range workers {
+		eg.Go(func() error {
+			for i := range iterations {
+				if err := fn(w, i); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
+}
+
+// siblingRaceData returns the data uploaded at key: it differs per key, so
+// that reading back another object is told apart.
+func siblingRaceData(key string) []byte {
+	return bytes.Repeat([]byte(key+"\n"), 16)
+}
+
+// checkObjectData checks that the object at key holds data. An upload that
+// succeeded must be readable right away.
+func checkObjectData(s3client *s3.Client, bucket, key, versionId string, data []byte) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+	input := &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	}
+	if versionId != "" {
+		input.VersionId = &versionId
+	}
+	out, err := s3client.GetObject(ctx, input)
+	if err != nil {
+		return fmt.Errorf("get %v after a successful upload: %w", key, err)
+	}
+	defer out.Body.Close()
+	got, err := io.ReadAll(out.Body)
+	if err != nil {
+		return fmt.Errorf("read %v: %w", key, err)
+	}
+	if !bytes.Equal(got, data) {
+		return fmt.Errorf("get %v: expected the uploaded data %q, instead got %q", key, data, got)
+	}
+	return nil
+}
+
+// putGetDeleteRace runs workers that each upload an object with upload, read
+// it back and delete it, over and over. keyFn gives the key of an iteration of
+// a worker: the keys are distinct, but share their parent directories. A
+// delete removes the parent directories of its object that hold no other
+// object, while other uploads are about to place their objects there.
+func putGetDeleteRace(s3client *s3.Client, bucket string, keyFn func(worker, iteration int) string, upload func(key string, data []byte) error) error {
+	return raceWorkers(siblingRaceWorkers, siblingRaceIterations, func(w, i int) error {
+		key := keyFn(w, i)
+		data := siblingRaceData(key)
+		if err := upload(key, data); err != nil {
+			return fmt.Errorf("upload %v: %w", key, err)
+		}
+		if err := checkObjectData(s3client, bucket, key, "", data); err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("delete %v: %w", key, err)
+		}
+		return nil
+	})
+}

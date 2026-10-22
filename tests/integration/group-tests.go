@@ -1120,6 +1120,13 @@ func TestPosix(ts *TestState) {
 	ts.Run(UploadPartCopy_dot_segment_copy_source)
 	if !ts.conf.windowsTests {
 		ts.Run(PutObject_race_with_delete)
+		ts.Run(PutObject_race_with_sibling_deletes)
+		ts.Run(PutObject_race_into_new_dirs)
+		ts.Run(CopyObject_race_with_sibling_deletes)
+		ts.Run(CompleteMultipartUpload_race_with_sibling_deletes)
+		if ts.conf.versioningEnabled {
+			ts.Run(PutObject_race_with_sibling_version_deletes)
+		}
 	}
 	// posix specific versioning tests
 	if !ts.conf.versioningEnabled {
@@ -3706,6 +3713,11 @@ func GetIntTests() IntTests {
 		"PutObject_with_slashes":                                                           PutObject_with_slashes,
 		"PutObject_windows_reserved_names":                                                 PutObject_windows_reserved_names,
 		"PutObject_race_with_delete":                                                       PutObject_race_with_delete,
+		"PutObject_race_with_sibling_deletes":                                              PutObject_race_with_sibling_deletes,
+		"PutObject_race_into_new_dirs":                                                     PutObject_race_into_new_dirs,
+		"CopyObject_race_with_sibling_deletes":                                             CopyObject_race_with_sibling_deletes,
+		"CompleteMultipartUpload_race_with_sibling_deletes":                                CompleteMultipartUpload_race_with_sibling_deletes,
+		"PutObject_race_with_sibling_version_deletes":                                      PutObject_race_with_sibling_version_deletes,
 		"PutObject_reserved_key":                                                           PutObject_reserved_key,
 		"CreateMultipartUpload_reserved_key":                                               CreateMultipartUpload_reserved_key,
 		"GetObject_reserved_key":                                                           GetObject_reserved_key,

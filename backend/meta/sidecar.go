@@ -23,6 +23,7 @@ import (
 	"slices"
 	"syscall"
 
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -47,6 +48,10 @@ func NewSideCar(dir string) (SideCar, error) {
 
 	return SideCar{dir: dir}, nil
 }
+
+// maxMetaDirRetries bounds how many times StoreAttribute makes the metadata
+// directory of an object again after a concurrent delete removed it
+const maxMetaDirRetries = 10
 
 // RetrieveAttribute retrieves the value of a specific attribute for an object or a bucket.
 func (s SideCar) RetrieveAttribute(_ *os.File, bucket, object, attribute string) ([]byte, error) {
@@ -75,25 +80,35 @@ func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, va
 	if object == "" {
 		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
 	}
-	err := os.MkdirAll(metadir, 0777)
-	if err != nil {
-		if errors.Is(err, syscall.ENOSPC) {
-			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+	// The metadata directories of objects are removed with the last
+	// attribute under them by deletes of other objects, so metadir can be
+	// removed again before the temp file is made in it.
+	var tempfile *os.File
+	for retries := maxMetaDirRetries; ; retries-- {
+		err := backend.MkdirAll(metadir, 0, 0, false, 0777)
+		if err != nil {
+			if errors.Is(err, syscall.ENOSPC) {
+				return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+			}
+			return fmt.Errorf("failed to create metadata directory: %w", err)
 		}
-		return fmt.Errorf("failed to create metadata directory: %w", err)
+		tempfile, err = os.CreateTemp(metadir, attribute)
+		if errors.Is(err, os.ErrNotExist) && retries > 0 {
+			continue
+		}
+		if err != nil {
+			if errors.Is(err, syscall.ENOSPC) {
+				return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+			}
+			return fmt.Errorf("failed to create temporary file: %w", err)
+		}
+		break
 	}
 
 	attr := filepath.Join(metadir, attribute)
-	tempfile, err := os.CreateTemp(metadir, attribute)
-	if err != nil {
-		if errors.Is(err, syscall.ENOSPC) {
-			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
-		}
-		return fmt.Errorf("failed to create temporary file: %w", err)
-	}
 	defer os.Remove(tempfile.Name())
 
-	_, err = tempfile.Write(value)
+	_, err := tempfile.Write(value)
 	if err != nil {
 		tempfile.Close()
 		if errors.Is(err, syscall.ENOSPC) {

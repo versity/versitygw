@@ -1636,7 +1636,7 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 
 	versionPath = filepath.Join(versionBucketPath, versioningKey)
 
-	err = os.MkdirAll(filepath.Join(versionBucketPath, genObjVersionKey(key)), p.newDirPerm)
+	err = backend.MkdirAll(filepath.Join(versionBucketPath, genObjVersionKey(key)), 0, 0, false, p.newDirPerm)
 	if err != nil {
 		return versionPath, err
 	}
@@ -2205,7 +2205,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 	tmppath := p.ObjectPath(bucket, objdir)
 	// the unique upload id is a directory for all of the parts
 	// associated with this specific multipart upload
-	err = os.MkdirAll(filepath.Join(tmppath, uploadID), p.newDirPerm)
+	err = backend.MkdirAll(filepath.Join(tmppath, uploadID), 0, 0, false, p.newDirPerm)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -3172,7 +3172,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 
 	err = f.link()
 	if err != nil {
-		return res, "", fmt.Errorf("link object in namespace: %w", err)
+		return res, "", publishErr(objname, err)
 	}
 
 	// cleanup tmp dirs
@@ -5016,7 +5016,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			return s3response.PutObjectOutput{}, parentErr
 		}
 	}
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	// A stale handle is a parent directory another client removed: like a
+	// missing one, it is made again when the object is published.
+	if err != nil && !errors.Is(err, fs.ErrNotExist) && !isErrStale(err) {
 		return s3response.PutObjectOutput{}, fmt.Errorf("stat object: %w", err)
 	}
 
@@ -5086,17 +5088,6 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		objsize -= f.size
 		if err := f.File().Truncate(objsize); err != nil {
 			return s3response.PutObjectOutput{}, fmt.Errorf("truncate object to actual size: %w", err)
-		}
-	}
-
-	dir := filepath.Dir(name)
-	if dir != "" {
-		err = p.mkdirAll(dir, uid, gid, doChown)
-		if backend.IsPermissionErr(err) {
-			return s3response.PutObjectOutput{}, fmt.Errorf("make parent dir: %w", err)
-		}
-		if err != nil {
-			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 		}
 	}
 
@@ -5236,17 +5227,8 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	}
 
 	err = f.link()
-	if errors.Is(err, syscall.EEXIST) {
-		return s3response.PutObjectOutput{
-			ETag:      etag,
-			VersionID: versionID,
-		}, nil
-	}
-	if backend.IsPermissionErr(err) {
-		return s3response.PutObjectOutput{}, fmt.Errorf("link object in namespace: %w", err)
-	}
 	if err != nil {
-		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
+		return s3response.PutObjectOutput{}, publishErr(name, err)
 	}
 
 	// Set object tagging
@@ -5284,6 +5266,27 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		Size:              &objsize,
 		ChecksumType:      checksum.Type,
 	}, nil
+}
+
+// publishErr returns the error for a request that failed to publish the
+// object at path name in the namespace
+func publishErr(name string, err error) error {
+	switch {
+	case errors.Is(err, syscall.EDQUOT):
+		return s3err.GetAPIError(s3err.ErrQuotaExceeded)
+	case errors.Is(err, syscall.ENOSPC):
+		return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+	}
+	var apiErr s3err.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr
+	}
+	if !backend.IsPermissionErr(err) {
+		if fi, serr := os.Stat(name); serr == nil && fi.IsDir() {
+			return s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
+		}
+	}
+	return fmt.Errorf("link object in namespace: %w", err)
 }
 
 // putObjectLockSettings sets the legal hold and retention requested with
