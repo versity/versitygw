@@ -102,6 +102,59 @@ func CompleteMultipartUpload_upload_id_path_traversal(s *S3Conf) error {
 	})
 }
 
+func CompleteMultipartUpload_malformed_upload_id(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_malformed_upload_id"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		parts := &types.CompletedMultipartUpload{
+			Parts: []types.CompletedPart{
+				{ETag: getPtr("etag"), PartNumber: getPtr(int32(1))},
+			},
+		}
+
+		// Unsupported conditional headers are reported ahead of a malformed
+		// upload ID, a missing part list, a negative object size or an
+		// invalid checksum type after it.
+		for i, test := range []struct {
+			input       *s3.CompleteMultipartUploadInput
+			expectedErr s3err.S3Error
+		}{
+			{
+				&s3.CompleteMultipartUploadInput{IfNoneMatch: getPtr("etag")},
+				s3err.GetNotImplementedErr("If-None-Match", s3err.NmpAdditionalMessageIfNoneMatch),
+			},
+			{
+				&s3.CompleteMultipartUploadInput{IfMatch: getPtr("*")},
+				s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageIfMatch),
+			},
+			{
+				&s3.CompleteMultipartUploadInput{},
+				s3err.GetAPIError(s3err.ErrNoSuchUpload),
+			},
+			{
+				&s3.CompleteMultipartUploadInput{MultipartUpload: parts, MpuObjectSize: getPtr(int64(-1))},
+				s3err.GetAPIError(s3err.ErrNoSuchUpload),
+			},
+			{
+				&s3.CompleteMultipartUploadInput{MultipartUpload: parts, ChecksumType: types.ChecksumType("invalid")},
+				s3err.GetAPIError(s3err.ErrNoSuchUpload),
+			},
+		} {
+			test.input.Bucket = &bucket
+			test.input.Key = getPtr("my-obj")
+			test.input.UploadId = getPtr("../invalid-upload")
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CompleteMultipartUpload(ctx, test.input)
+			cancel()
+			if err := checkApiErr(err, test.expectedErr); err != nil {
+				return fmt.Errorf("test case %d: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func CompleteMultipartUpload_incorrect_part_number(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_incorrect_part_number"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

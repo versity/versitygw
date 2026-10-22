@@ -248,7 +248,19 @@ func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 	}
 	decodedLength := ctx.Get("X-Amz-Decoded-Content-Length")
 
-	err := c.verifyAccess(ctx,
+	// A malformed upload ID is rejected before access is verified and
+	// before the part number, the x-amz-checksum headers or the body are
+	// checked.
+	err := c.be.ValidateUploadID(uploadId)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = c.verifyAccess(ctx,
 		auth.AccessOptions{
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
@@ -396,7 +408,18 @@ func (c S3ApiController) UploadPartCopy(ctx fiber.Ctx) (*Response, error) {
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := utils.ValidateCopySource(copySource, c.be)
+	// A malformed upload ID is rejected before access is verified and
+	// before the part number or anything about the copy source is checked.
+	err := c.be.ValidateUploadID(uploadId)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = utils.ValidateCopySource(copySource, c.be)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{

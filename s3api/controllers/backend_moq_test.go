@@ -200,6 +200,9 @@ var _ backend.Backend = &BackendMock{}
 //			UploadPartCopyFunc: func(contextMoqParam context.Context, uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
 //				panic("mock out the UploadPartCopy method")
 //			},
+//			ValidateUploadIDFunc: func(uploadID string) error {
+//				panic("mock out the ValidateUploadID method")
+//			},
 //		}
 //
 //		// use mockedBackend in code that requires backend.Backend
@@ -383,6 +386,9 @@ type BackendMock struct {
 
 	// UploadPartCopyFunc mocks the UploadPartCopy method.
 	UploadPartCopyFunc func(contextMoqParam context.Context, uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyPartResult, error)
+
+	// ValidateUploadIDFunc mocks the ValidateUploadID method.
+	ValidateUploadIDFunc func(uploadID string) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -839,6 +845,11 @@ type BackendMock struct {
 			// UploadPartCopyInput is the uploadPartCopyInput argument value.
 			UploadPartCopyInput *s3.UploadPartCopyInput
 		}
+		// ValidateUploadID holds details about calls to the ValidateUploadID method.
+		ValidateUploadID []struct {
+			// UploadID is the uploadID argument value.
+			UploadID string
+		}
 	}
 	lockAbortMultipartUpload          sync.RWMutex
 	lockChangeBucketOwner             sync.RWMutex
@@ -899,6 +910,7 @@ type BackendMock struct {
 	lockString                        sync.RWMutex
 	lockUploadPart                    sync.RWMutex
 	lockUploadPartCopy                sync.RWMutex
+	lockValidateUploadID              sync.RWMutex
 }
 
 // AbortMultipartUpload calls AbortMultipartUploadFunc.
@@ -3099,5 +3111,37 @@ func (mock *BackendMock) UploadPartCopyCalls() []struct {
 	mock.lockUploadPartCopy.RLock()
 	calls = mock.calls.UploadPartCopy
 	mock.lockUploadPartCopy.RUnlock()
+	return calls
+}
+
+// ValidateUploadID calls ValidateUploadIDFunc.
+func (mock *BackendMock) ValidateUploadID(uploadID string) error {
+	if mock.ValidateUploadIDFunc == nil {
+		panic("BackendMock.ValidateUploadIDFunc: method is nil but Backend.ValidateUploadID was just called")
+	}
+	callInfo := struct {
+		UploadID string
+	}{
+		UploadID: uploadID,
+	}
+	mock.lockValidateUploadID.Lock()
+	mock.calls.ValidateUploadID = append(mock.calls.ValidateUploadID, callInfo)
+	mock.lockValidateUploadID.Unlock()
+	return mock.ValidateUploadIDFunc(uploadID)
+}
+
+// ValidateUploadIDCalls gets all the calls that were made to ValidateUploadID.
+// Check the length with:
+//
+//	len(mockedBackend.ValidateUploadIDCalls())
+func (mock *BackendMock) ValidateUploadIDCalls() []struct {
+	UploadID string
+} {
+	var calls []struct {
+		UploadID string
+	}
+	mock.lockValidateUploadID.RLock()
+	calls = mock.calls.ValidateUploadID
+	mock.lockValidateUploadID.RUnlock()
 	return calls
 }

@@ -2713,6 +2713,12 @@ func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {
 	return &acl, nil
 }
 
+// ValidateUploadID returns NoSuchUpload for an upload ID this backend never
+// generates. Upload IDs are UUIDs in canonical form.
+func (az *Azure) ValidateUploadID(uploadID string) error {
+	return backend.ValidateUUIDUploadID(uploadID)
+}
+
 func createMetaTmpPath(obj, uploadId string) string {
 	objNameSum := sha256.Sum256([]byte(obj))
 	return filepath.Join(string(metaTmpMultipartPrefix), uploadId, fmt.Sprintf("%x", objNameSum))

@@ -38,6 +38,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/google/uuid"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
@@ -816,16 +817,8 @@ func EvaluateObjectPutPreconditions(etag string, ifMatch, ifNoneMatch *string, o
 		return nil
 	}
 
-	if ifNoneMatch != nil && ifMatch != nil {
-		return s3err.GetNotImplementedErr("If-Match,If-None-Match", s3err.NmpAdditionalMessageMultipleCondHeaders)
-	}
-
-	if ifNoneMatch != nil && *ifNoneMatch != "*" {
-		return s3err.GetNotImplementedErr("If-None-Match", s3err.NmpAdditionalMessageIfNoneMatch)
-	}
-
-	if ifMatch != nil && *ifMatch == "*" {
-		return s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageIfMatch)
+	if err := ValidateObjectPutPreconditionHeaders(ifMatch, ifNoneMatch); err != nil {
+		return err
 	}
 
 	if ifNoneMatch != nil && objExists {
@@ -840,6 +833,35 @@ func EvaluateObjectPutPreconditions(etag string, ifMatch, ifNoneMatch *string, o
 
 	if ifMatch != nil && *ifMatch != etag {
 		return s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)
+	}
+
+	return nil
+}
+
+// ValidateUUIDUploadID returns NoSuchUpload for an upload ID that isn't a
+// UUID in canonical form, the form uuid.New().String() generates.
+func ValidateUUIDUploadID(uploadID string) error {
+	id, err := uuid.Parse(uploadID)
+	if err != nil || id.String() != uploadID {
+		return s3err.GetNoSuchUploadErr(uploadID)
+	}
+	return nil
+}
+
+// ValidateObjectPutPreconditionHeaders rejects the if-match and
+// if-none-match header combinations and values an object PUT doesn't
+// support. It depends on the headers alone.
+func ValidateObjectPutPreconditionHeaders(ifMatch, ifNoneMatch *string) error {
+	if ifNoneMatch != nil && ifMatch != nil {
+		return s3err.GetNotImplementedErr("If-Match,If-None-Match", s3err.NmpAdditionalMessageMultipleCondHeaders)
+	}
+
+	if ifNoneMatch != nil && *ifNoneMatch != "*" {
+		return s3err.GetNotImplementedErr("If-None-Match", s3err.NmpAdditionalMessageIfNoneMatch)
+	}
+
+	if ifMatch != nil && *ifMatch == "*" {
+		return s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageIfMatch)
 	}
 
 	return nil

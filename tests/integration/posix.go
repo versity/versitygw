@@ -1082,6 +1082,13 @@ func UploadPartCopy_dot_segment_copy_source(s *S3Conf) error {
 			return err
 		}
 
+		// A malformed upload ID would be rejected before the copy source
+		// is checked.
+		mp, err := createMp(s3client, bucket, "obj")
+		if err != nil {
+			return err
+		}
+
 		partNumber := int32(1)
 		for _, test := range []struct {
 			copySource string
@@ -1098,7 +1105,7 @@ func UploadPartCopy_dot_segment_copy_source(s *S3Conf) error {
 			_, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 				Bucket:     &bucket,
 				Key:        getPtr("obj"),
-				UploadId:   getPtr("mock-upload-id"),
+				UploadId:   mp.UploadId,
 				CopySource: &test.copySource,
 				PartNumber: &partNumber,
 			})

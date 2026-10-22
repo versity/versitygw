@@ -144,6 +144,24 @@ func TestS3ApiController_AbortMultipartUpload(t *testing.T) {
 		output testOutput
 	}{
 		{
+			name: "malformed upload id",
+			input: testInput{
+				locals:       accessDeniedLocals,
+				extraMockErr: s3err.GetNoSuchUploadErr("bad"),
+				queries: map[string]string{
+					"uploadId": "bad",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetNoSuchUploadErr("bad"),
+			},
+		},
+		{
 			name: "verify access fails",
 			input: testInput{
 				locals: accessDeniedLocals,
@@ -191,6 +209,9 @@ func TestS3ApiController_AbortMultipartUpload(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			be := &BackendMock{
+				ValidateUploadIDFunc: func(uploadID string) error {
+					return tt.input.extraMockErr
+				},
 				AbortMultipartUploadFunc: func(contextMoqParam context.Context, abortMultipartUploadInput *s3.AbortMultipartUploadInput) error {
 					return tt.input.beErr
 				},
@@ -209,7 +230,8 @@ func TestS3ApiController_AbortMultipartUpload(t *testing.T) {
 				tt.output.response,
 				tt.output.err,
 				ctxInputs{
-					locals: tt.input.locals,
+					locals:  tt.input.locals,
+					queries: tt.input.queries,
 				})
 		})
 	}

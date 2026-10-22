@@ -32,6 +32,7 @@ type Backend interface {
 	Shutdown()
 	NormalizeObjectKey(bucket, object string) string
 	StoresDotSegmentKeys() bool
+	ValidateUploadID(uploadID string) error
 
 	// bucket operations
 	ListBuckets(context.Context, s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error)
@@ -121,6 +122,9 @@ func (BackendUnsupported) NormalizeObjectKey(_, object string) string {
 }
 func (BackendUnsupported) StoresDotSegmentKeys() bool {
 	return false
+}
+func (BackendUnsupported) ValidateUploadID(string) error {
+	return nil
 }
 func (BackendUnsupported) ListBuckets(context.Context, s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 	return s3response.ListAllMyBucketsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)

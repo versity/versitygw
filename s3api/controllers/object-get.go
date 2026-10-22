@@ -263,7 +263,37 @@ func (c S3ApiController) ListParts(ctx fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := c.verifyAccess(ctx, auth.AccessOptions{
+	// A part number marker or max parts that isn't an integer is rejected
+	// first, then a malformed upload ID, both before access is verified.
+	// Negative values are rejected after.
+	err := utils.ValidateLimiterInteger(partNumberMarker, utils.LimiterTypePartNumberMarker)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = utils.ValidateLimiterInteger(maxPartsStr, utils.LimiterTypeMaxParts)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = c.be.ValidateUploadID(uploadId)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionRead,
 		IsRoot:          isRoot,

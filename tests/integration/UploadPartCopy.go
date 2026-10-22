@@ -138,6 +138,44 @@ func UploadPartCopy_upload_id_path_traversal(s *S3Conf) error {
 	})
 }
 
+func UploadPartCopy_malformed_upload_id(s *S3Conf) error {
+	testName := "UploadPartCopy_malformed_upload_id"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objs, err := putObjects(s3client, []string{"src-obj"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// A malformed upload ID is reported ahead of an invalid part
+		// number and of any copy source error.
+		for i, test := range []struct {
+			copySource string
+			partNumber int32
+		}{
+			{bucket + "/" + *objs[0].Key, -10},
+			{bucket, 1},
+			{bucket + "/%ZZ", 1},
+			{"non-existing-bucket/src-obj", 1},
+			{bucket + "/non-existing-obj", 1},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:     &bucket,
+				Key:        getPtr("my-obj"),
+				UploadId:   getPtr("../invalid-upload"),
+				PartNumber: &test.partNumber,
+				CopySource: &test.copySource,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
+				return fmt.Errorf("test case %d: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func UploadPartCopy_incorrect_object_key(s *S3Conf) error {
 	testName := "UploadPartCopy_incorrect_object_key"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -182,13 +220,19 @@ func UploadPartCopy_incorrect_object_key(s *S3Conf) error {
 func UploadPartCopy_invalid_part_number(s *S3Conf) error {
 	testName := "UploadPartCopy_invalid_part_number"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		partNumber := int32(-10)
-		_, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr("bucket/key"),
-			UploadId:   getPtr("uploadId"),
-			Key:        getPtr("non-existing-object-key"),
+			UploadId:   out.UploadId,
+			Key:        &obj,
 			PartNumber: &partNumber,
 		})
 		cancel()
@@ -203,6 +247,12 @@ func UploadPartCopy_invalid_part_number(s *S3Conf) error {
 func UploadPartCopy_invalid_copy_source(s *S3Conf) error {
 	testName := "UploadPartCopy_invalid_copy_source"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
 		partNumber := int32(1)
 		for _, test := range []struct {
 			copySource  string
@@ -275,8 +325,8 @@ func UploadPartCopy_invalid_copy_source(s *S3Conf) error {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 				Bucket:     &bucket,
-				Key:        getPtr("obj"),
-				UploadId:   getPtr("mock-upload-id"),
+				Key:        &obj,
+				UploadId:   out.UploadId,
 				CopySource: &test.copySource,
 				PartNumber: &partNumber,
 			})

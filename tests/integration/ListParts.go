@@ -63,6 +63,44 @@ func ListParts_upload_id_path_traversal(s *S3Conf) error {
 	})
 }
 
+func ListParts_malformed_upload_id(s *S3Conf) error {
+	testName := "ListParts_malformed_upload_id"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// A part number marker that isn't an integer is reported ahead of a
+		// malformed upload ID, a negative one or negative max parts after it.
+		for i, test := range []struct {
+			input       *s3.ListPartsInput
+			expectedErr s3err.S3Error
+		}{
+			{
+				&s3.ListPartsInput{PartNumberMarker: getPtr("invalid")},
+				s3err.GetInvalidArgMaxLimiter("part-number-marker", "invalid"),
+			},
+			{
+				&s3.ListPartsInput{PartNumberMarker: getPtr("-14")},
+				s3err.GetAPIError(s3err.ErrNoSuchUpload),
+			},
+			{
+				&s3.ListPartsInput{MaxParts: getPtr(int32(-3))},
+				s3err.GetAPIError(s3err.ErrNoSuchUpload),
+			},
+		} {
+			test.input.Bucket = &bucket
+			test.input.Key = getPtr("my-obj")
+			test.input.UploadId = getPtr("../invalid-upload")
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.ListParts(ctx, test.input)
+			cancel()
+			if err := checkApiErr(err, test.expectedErr); err != nil {
+				return fmt.Errorf("test case %d: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func ListParts_incorrect_object_key(s *S3Conf) error {
 	testName := "ListParts_incorrect_object_key"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

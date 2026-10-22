@@ -176,14 +176,9 @@ func ParseMaxLimiter(limiter string, lt LimiterType) (int32, error) {
 		return defaultMaxLimiter, nil
 	}
 
-	num, err := strconv.ParseInt(limiter, 10, 32)
+	num, err := parseLimiterInt(limiter, lt)
 	if err != nil {
-		// versions_max_keys follows max-keys error semantics.
-		if lt == LimiterTypeVersionsMaxKeys {
-			lt = LimiterTypeMaxKeys
-		}
-		debuglogger.Logf("invalid %s provided: %s\n", lt, limiter)
-		return 0, s3err.GetInvalidArgMaxLimiter(string(lt), limiter)
+		return 0, err
 	}
 
 	// max-buckets has distinct range rules and errors.
@@ -217,6 +212,30 @@ func ParseMaxLimiter(limiter string, lt LimiterType) (int32, error) {
 		num = int64(defaultMaxLimiter)
 	}
 	return int32(num), nil
+}
+
+// ValidateLimiterInteger returns the InvalidArgument error ParseMaxLimiter
+// gives a limiter that is set but isn't a 32-bit integer, without checking
+// its range.
+func ValidateLimiterInteger(limiter string, lt LimiterType) error {
+	if limiter == "" {
+		return nil
+	}
+	_, err := parseLimiterInt(limiter, lt)
+	return err
+}
+
+func parseLimiterInt(limiter string, lt LimiterType) (int64, error) {
+	num, err := strconv.ParseInt(limiter, 10, 32)
+	if err != nil {
+		// versions_max_keys follows max-keys error semantics.
+		if lt == LimiterTypeVersionsMaxKeys {
+			lt = LimiterTypeMaxKeys
+		}
+		debuglogger.Logf("invalid %s provided: %s\n", lt, limiter)
+		return 0, s3err.GetInvalidArgMaxLimiter(string(lt), limiter)
+	}
+	return num, nil
 }
 
 type CustomHeader struct {

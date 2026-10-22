@@ -2502,7 +2502,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", err
 	}
 
-	if err := validateUploadID(uploadID); err != nil {
+	if err := p.ValidateUploadID(uploadID); err != nil {
 		return res, "", err
 	}
 
@@ -3299,20 +3299,16 @@ func numberOfChecksums(part types.CompletedPart) (int, string) {
 	return counter, builder.String()
 }
 
-// validateUploadID returns NoSuchUpload for an upload ID this backend never
+// ValidateUploadID returns NoSuchUpload for an upload ID this backend never
 // generates. Upload IDs are UUIDs in canonical form, and each one names its
 // upload's directory, so an ID holding a path separator or ".." would
 // otherwise reach a path outside the bucket.
-func validateUploadID(uploadID string) error {
-	id, err := uuid.Parse(uploadID)
-	if err != nil || id.String() != uploadID {
-		return s3err.GetNoSuchUploadErr(uploadID)
-	}
-	return nil
+func (p *Posix) ValidateUploadID(uploadID string) error {
+	return backend.ValidateUUIDUploadID(uploadID)
 }
 
 func (p *Posix) checkUploadIDExists(bucket, object, uploadID string) ([32]byte, error) {
-	if err := validateUploadID(uploadID); err != nil {
+	if err := p.ValidateUploadID(uploadID); err != nil {
 		return [32]byte{}, err
 	}
 
@@ -3569,7 +3565,7 @@ func (p *Posix) AbortMultipartUpload(ctx context.Context, mpu *s3.AbortMultipart
 		return err
 	}
 
-	if err := validateUploadID(uploadID); err != nil {
+	if err := p.ValidateUploadID(uploadID); err != nil {
 		return err
 	}
 
@@ -3938,7 +3934,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 		return nil, err
 	}
 
-	if err := validateUploadID(uploadID); err != nil {
+	if err := p.ValidateUploadID(uploadID); err != nil {
 		return nil, err
 	}
 
@@ -4282,7 +4278,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, err
 	}
 
-	if err := validateUploadID(*upi.UploadId); err != nil {
+	if err := p.ValidateUploadID(*upi.UploadId); err != nil {
 		return s3response.CopyPartResult{}, err
 	}
 

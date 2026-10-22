@@ -507,6 +507,7 @@ func TestUploadPart(ts *TestState) {
 	ts.Run(UploadPart_non_existing_key)
 	ts.Run(UploadPart_non_existing_mp_upload)
 	ts.Run(UploadPart_upload_id_path_traversal)
+	ts.Run(UploadPart_malformed_upload_id)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(UploadPart_multiple_checksum_headers)
@@ -530,6 +531,7 @@ func TestUploadPartCopy(ts *TestState) {
 	ts.Run(UploadPartCopy_non_existing_bucket)
 	ts.Run(UploadPartCopy_incorrect_uploadId)
 	ts.Run(UploadPartCopy_upload_id_path_traversal)
+	ts.Run(UploadPartCopy_malformed_upload_id)
 	ts.Run(UploadPartCopy_incorrect_object_key)
 	ts.Run(UploadPartCopy_invalid_part_number)
 	ts.Run(UploadPartCopy_invalid_copy_source)
@@ -553,6 +555,7 @@ func TestUploadPartCopy(ts *TestState) {
 func TestListParts(ts *TestState) {
 	ts.Run(ListParts_incorrect_uploadId)
 	ts.Run(ListParts_upload_id_path_traversal)
+	ts.Run(ListParts_malformed_upload_id)
 	ts.Run(ListParts_incorrect_object_key)
 	ts.Run(ListParts_invalid_max_parts)
 	ts.Run(ListParts_invalid_part_number_marker)
@@ -603,6 +606,7 @@ func TestAbortMultipartUpload(ts *TestState) {
 func TestCompleteMultipartUpload(ts *TestState) {
 	ts.Run(CompletedMultipartUpload_non_existing_bucket)
 	ts.Run(CompleteMultipartUpload_upload_id_path_traversal)
+	ts.Run(CompleteMultipartUpload_malformed_upload_id)
 	ts.Run(CompleteMultipartUpload_incorrect_part_number)
 	ts.Run(CompleteMultipartUpload_invalid_part_number)
 	ts.Run(CompleteMultipartUpload_default_content_type)
@@ -1185,6 +1189,7 @@ func TestScoutfs(ts *TestState) {
 
 	ts.Run(CompletedMultipartUpload_non_existing_bucket)
 	ts.Run(CompleteMultipartUpload_upload_id_path_traversal)
+	ts.Run(CompleteMultipartUpload_malformed_upload_id)
 	ts.Run(CompleteMultipartUpload_incorrect_part_number)
 	ts.Run(CompleteMultipartUpload_invalid_part_number)
 	ts.Run(CompleteMultipartUpload_invalid_ETag)
@@ -2017,6 +2022,8 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_root_PutBucketAcl)
 	ts.Run(AccessControl_user_PutBucketAcl_with_policy_access)
 	ts.Run(AccessControl_copy_object_with_starting_slash_for_user)
+	ts.Run(AccessControl_UploadPartCopy_malformed_upload_id_without_source_access)
+	ts.Run(AccessControl_multipart_malformed_upload_id_without_access)
 	ts.Run(AccessControl_PutObject_with_tagging_policy)
 	ts.Run(AccessControl_PutObject_with_legal_hold_policy)
 	ts.Run(AccessControl_PutObject_with_retention_policy)
@@ -3341,6 +3348,7 @@ func GetIntTests() IntTests {
 		"UploadPart_non_existing_key":                                                      UploadPart_non_existing_key,
 		"UploadPart_non_existing_mp_upload":                                                UploadPart_non_existing_mp_upload,
 		"UploadPart_upload_id_path_traversal":                                              UploadPart_upload_id_path_traversal,
+		"UploadPart_malformed_upload_id":                                                   UploadPart_malformed_upload_id,
 		"UploadPart_multiple_checksum_headers":                                             UploadPart_multiple_checksum_headers,
 		"UploadPart_invalid_checksum_header":                                               UploadPart_invalid_checksum_header,
 		"UploadPart_checksum_header_and_algo_mismatch":                                     UploadPart_checksum_header_and_algo_mismatch,
@@ -3358,6 +3366,7 @@ func GetIntTests() IntTests {
 		"UploadPartCopy_non_existing_bucket":                                               UploadPartCopy_non_existing_bucket,
 		"UploadPartCopy_incorrect_uploadId":                                                UploadPartCopy_incorrect_uploadId,
 		"UploadPartCopy_upload_id_path_traversal":                                          UploadPartCopy_upload_id_path_traversal,
+		"UploadPartCopy_malformed_upload_id":                                               UploadPartCopy_malformed_upload_id,
 		"UploadPartCopy_incorrect_object_key":                                              UploadPartCopy_incorrect_object_key,
 		"UploadPartCopy_invalid_part_number":                                               UploadPartCopy_invalid_part_number,
 		"UploadPartCopy_invalid_copy_source":                                               UploadPartCopy_invalid_copy_source,
@@ -3376,6 +3385,7 @@ func GetIntTests() IntTests {
 		"UploadPartCopy_data_integrity_etag":                                               UploadPartCopy_data_integrity_etag,
 		"ListParts_incorrect_uploadId":                                                     ListParts_incorrect_uploadId,
 		"ListParts_upload_id_path_traversal":                                               ListParts_upload_id_path_traversal,
+		"ListParts_malformed_upload_id":                                                    ListParts_malformed_upload_id,
 		"ListParts_incorrect_object_key":                                                   ListParts_incorrect_object_key,
 		"ListParts_invalid_max_parts":                                                      ListParts_invalid_max_parts,
 		"ListParts_invalid_part_number_marker":                                             ListParts_invalid_part_number_marker,
@@ -3409,6 +3419,7 @@ func GetIntTests() IntTests {
 		"AbortMultipartUpload_if_match_initiated_time":                                     AbortMultipartUpload_if_match_initiated_time,
 		"CompletedMultipartUpload_non_existing_bucket":                                     CompletedMultipartUpload_non_existing_bucket,
 		"CompleteMultipartUpload_upload_id_path_traversal":                                 CompleteMultipartUpload_upload_id_path_traversal,
+		"CompleteMultipartUpload_malformed_upload_id":                                      CompleteMultipartUpload_malformed_upload_id,
 		"CompleteMultipartUpload_invalid_part_number":                                      CompleteMultipartUpload_invalid_part_number,
 		"CompleteMultipartUpload_default_content_type":                                     CompleteMultipartUpload_default_content_type,
 		"CompleteMultipartUpload_overwrite_resets_attributes":                              CompleteMultipartUpload_overwrite_resets_attributes,
@@ -3742,6 +3753,8 @@ func GetIntTests() IntTests {
 		"AccessControl_root_PutBucketAcl":                                                  AccessControl_root_PutBucketAcl,
 		"AccessControl_user_PutBucketAcl_with_policy_access":                               AccessControl_user_PutBucketAcl_with_policy_access,
 		"AccessControl_copy_object_with_starting_slash_for_user":                           AccessControl_copy_object_with_starting_slash_for_user,
+		"AccessControl_UploadPartCopy_malformed_upload_id_without_source_access":           AccessControl_UploadPartCopy_malformed_upload_id_without_source_access,
+		"AccessControl_multipart_malformed_upload_id_without_access":                       AccessControl_multipart_malformed_upload_id_without_access,
 		"AccessControl_PutObject_with_tagging_policy":                                      AccessControl_PutObject_with_tagging_policy,
 		"AccessControl_PutObject_with_legal_hold_policy":                                   AccessControl_PutObject_with_legal_hold_policy,
 		"AccessControl_PutObject_with_retention_policy":                                    AccessControl_PutObject_with_retention_policy,

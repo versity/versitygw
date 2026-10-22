@@ -24,6 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -290,7 +291,28 @@ func (c S3ApiController) CompleteMultipartUpload(ctx fiber.Ctx) (*Response, erro
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := c.verifyAccess(ctx,
+	// Unsupported conditional headers are rejected first, then a malformed
+	// upload ID, both before access is verified or the body is parsed.
+	ifMatch, ifNoneMatch := utils.ParsePreconditionMatchHeaders(ctx)
+	err := backend.ValidateObjectPutPreconditionHeaders(ifMatch, ifNoneMatch)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = c.be.ValidateUploadID(uploadId)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = c.verifyAccess(ctx,
 		auth.AccessOptions{
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
@@ -379,8 +401,6 @@ func (c S3ApiController) CompleteMultipartUpload(ctx fiber.Ctx) (*Response, erro
 			},
 		}, err
 	}
-
-	ifMatch, ifNoneMatch := utils.ParsePreconditionMatchHeaders(ctx)
 
 	err = auth.CheckObjectAccess(ctx, bucket, acct, []types.ObjectIdentifier{{Key: &key}}, auth.BypassOverwrite, isBucketPublic, c.be, c.iam, true)
 	if err != nil {
