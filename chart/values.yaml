@@ -747,6 +747,15 @@ networkPolicy:
 # a Gateway API ListenerSet). Each entry is either a map or a string; both are
 # rendered through `tpl`, so they can reference the release, e.g.
 # '{{ include "versitygw.fullname" . }}' or '{{ .Release.Namespace }}'.
+# Two things to keep in mind:
+#   - Map entries go through `toYaml` before `tpl`, so a templated value always
+#     renders as a string: minAvailable: '{{ sub .Values.replicaCount 1 }}'
+#     becomes minAvailable: '2', which the API server rejects for a PDB. Use
+#     the string form when a template has to produce a number or boolean.
+#   - Literal braces in the content, e.g. {{ $labels.instance }} in a
+#     PrometheusRule, are run through `tpl` as well and fail with
+#     `undefined variable "$labels"`. Escape them as
+#     {{ "{{" }} $labels.instance {{ "}}" }}.
 # Example:
 #   extraObjects:
 #     - apiVersion: cert-manager.io/v1
