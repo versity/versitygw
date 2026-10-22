@@ -1305,6 +1305,33 @@ func GetObject_overrides_fail_public(s *S3Conf) error {
 	}, withAnonymousClient())
 }
 
+func GetObject_invalid_response_override(s *S3Conf) error {
+	testName := "GetObject_invalid_response_override"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// the sdk only sends the supported overrides, so the request
+		// is signed and sent by hand
+		req, err := createSignedReq(http.MethodGet, s.endpoint,
+			fmt.Sprintf("%v/%v?response-content-type=text%%2Fplain&response-invalid=value", bucket, obj),
+			s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetInvalidArgResponseOverride("response-invalid", "value"))
+	})
+}
+
 func GetObject_invalid_part_number(s *S3Conf) error {
 	testName := "GetObject_invalid_part_number"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

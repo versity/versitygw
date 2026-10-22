@@ -1511,6 +1511,40 @@ func HeadObject_overrides_fail_public(s *S3Conf) error {
 	}, withAnonymousClient())
 }
 
+func HeadObject_invalid_response_override(s *S3Conf) error {
+	testName := "HeadObject_invalid_response_override"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// the sdk only sends the supported overrides, so the request
+		// is signed and sent by hand
+		req, err := createSignedReq(http.MethodHead, s.endpoint,
+			fmt.Sprintf("%v/%v?response-content-type=text%%2Fplain&response-invalid=value", bucket, obj),
+			s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+
+		// HEAD responses carry no body: only the status code is verifiable
+		if resp.StatusCode != http.StatusBadRequest {
+			return fmt.Errorf("expected response status code to be %v, instead got %v",
+				http.StatusBadRequest, resp.StatusCode)
+		}
+
+		return nil
+	})
+}
+
 func HeadObject_empty_version_id(s *S3Conf) error {
 	return testEmptyVersionId(s, "HeadObject_empty_version_id", http.MethodHead, "", nil)
 }
