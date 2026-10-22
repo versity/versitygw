@@ -49,23 +49,29 @@ create_upload_and_test_parts_listing() {
 }
 
 start_multipart_upload_list_check_parts() {
-  if [ $# -ne 3 ]; then
-    log 2 "'start_multipart_upload_and_list_parts' requires bucket, key, original source"
+  if ! check_param_count_v2 "bucket, key, original source" 3 $#; then
     return 1
   fi
-  if ! start_multipart_upload_and_list_parts "$1" "$2" "$3" 4; then
-    log 2 "error starting upload"
-    return 1
-  fi
+  local bucket="$1" key="$2" file="$3"
+  local response parts part_number etag
+  local -a parts_map
 
-  declare -a parts_map
+  if ! response=$(start_multipart_upload_and_list_parts "$bucket" "$key" "$file" 4 2>&1); then
+    log 2 "error starting upload: $response"
+    return 1
+  fi
+  parts="$response"
+
   # shellcheck disable=SC2154
   log 5 "parts: $parts"
   for i in {0..3}; do
-    if ! parse_parts_and_etags "$i"; then
-      log 2 "error parsing part $i"
+    if ! response=$(parse_parts_and_etags "$parts" "$i" 2>&1); then
+      log 2 "error parsing part '$i': $response"
       return 1
     fi
+    read -r part_number etag <<< "$response"
+    parts_map[$part_number]="$etag"
+    log 5 "returned etag: $etag"
   done
   if [[ ${#parts_map[@]} -eq 0 ]]; then
     log 2 "error loading multipart upload parts to check"
@@ -82,40 +88,45 @@ start_multipart_upload_list_check_parts() {
 }
 
 parse_parts_and_etags() {
-  if [ $# -ne 1 ]; then
-    log 2 "'parse_parts_and_etags' requires part id"
+  if ! check_param_count_v2 "parts string, part ID" 2 $#; then
     return 1
   fi
-  local part_number
-  local etag
+  local parts="$1" part_id="$2"
+  local response part part_number etag
+
   # shellcheck disable=SC2154
-  if ! part=$(echo "$parts" | grep -v "InsecureRequestWarning" | jq -r ".[$i]" 2>&1); then
+  if ! response=$(echo "$parts" | grep -v "InsecureRequestWarning" | jq -r ".[$part_id]" 2>&1); then
     log 2 "error getting part: $part"
     return 1
   fi
-  if ! part_number=$(echo "$part" | jq ".PartNumber" 2>&1); then
-    log 2 "error parsing part number: $part_number"
+  part="$response"
+
+  if ! response=$(echo "$part" | jq ".PartNumber" 2>&1); then
+    log 2 "error parsing part number: $response"
     return 1
   fi
-  if [[ $part_number == "" ]]; then
+  part_number="$response"
+  if [ -z "$part_number" ]; then
     log 2 "error:  blank part number"
     return 1
   fi
-  if ! etag=$(echo "$part" | jq ".ETag" 2>&1); then
-    log 2 "error parsing etag: $etag"
+
+  if ! response=$(echo "$part" | jq ".ETag" 2>&1); then
+    log 2 "error parsing etag: $response"
     return 1
   fi
-  if [[ $etag == "" ]]; then
+  etag="$response"
+  if [ -z "$etag" ]; then
     log 2 "error:  blank etag"
     return 1
   fi
   # shellcheck disable=SC2004
-  parts_map[$part_number]=$etag
+  printf '%s %s\n' "$part_number" "$etag"
+  return 0
 }
 
 compare_parts_to_listed_parts() {
-  if [ $# -ne 1 ]; then
-    log 2 "'compare_parts_to_listed_parts' requires part number"
+  if ! check_param_count_v2 "part number" 1 $#; then
     return 1
   fi
   local part_number
@@ -143,21 +154,26 @@ compare_parts_to_listed_parts() {
 # params:  bucket, key, local file location, and parts to split into before upload
 # export parts on success, return 1 for error
 start_multipart_upload_and_list_parts() {
-  if [ $# -ne 4 ]; then
-    log 2 "list multipart upload parts command requires bucket, key, file, and part count"
+  if ! check_param_count_v2 "bucket, key, file, part count" 4 $#; then
     return 1
   fi
+  local bucket="$1" key="$2" file="$3" part_count="$4"
+  local response listed_parts
+  local -a upload_id_and_part_list
 
-  if ! multipart_upload_before_completion "$1" "$2" "$3" "$4"; then
-    log 2 "error performing pre-completion multipart upload"
+  if ! response=$(multipart_upload_before_completion "$bucket" "$key" "$file" "$part_count" 2>&1); then
+    log 2 "error performing pre-completion multipart upload: $response"
     return 1
   fi
+  mapfile -t upload_id_and_part_list <<< "$response"
 
-  if ! list_parts "$1" "$2" "$upload_id"; then
-    log 2 "Error listing multipart upload parts: $listed_parts"
+  if ! response=$(list_parts "$bucket" "$key" "${upload_id_and_part_list[0]}" 2>&1); then
+    log 2 "Error listing multipart upload parts: $response"
     return 1
   fi
-  export listed_parts
+  listed_parts="$response"
+  printf '%s\n' "$listed_parts"
+  return 0
 }
 
 create_list_check_multipart_uploads() {
@@ -258,6 +274,7 @@ multipart_upload_before_completion_with_user() {
     return 1
   fi
   read -r -a segment_array <<< "$response"
+  log 5 "calculated etag: $(openssl dgst -md5 ${segment_array[0]} | awk '{print $NF}')"
 
   if ! response=$(create_multipart_upload_s3api_with_user "$bucket" "$key" "$username" "$password" 2>&1); then
     log 2 "error creating multpart upload: $response"
@@ -266,7 +283,7 @@ multipart_upload_before_completion_with_user() {
   upload_id="$response"
 
   parts="["
-  for ((idx = 1; i <= part_count; i++)); do
+  for ((idx = 1; idx <= part_count; idx++)); do
     # shellcheck disable=SC2154
     if ! response=$(upload_part_with_user "$bucket" "$key" "$upload_id" "${segment_array[$((idx-1))]}" "$idx" "$username" "$password" 2>&1); then
       log 2 "error uploading part '$idx': $response"
@@ -285,36 +302,44 @@ multipart_upload_before_completion_with_user() {
 }
 
 multipart_upload_before_completion_with_params() {
-  if [ $# -ne 10 ]; then
-    log 2 "multipart upload command missing bucket, key, file, part count, content type, metadata, hold status, lock mode, retain until date, tagging"
+  if ! check_param_count_v2 "bucket, key, file, part count, content type, metadata, hold status, lock mode, retain until date, tagging" 10 $#; then
     return 1
   fi
+  local bucket="$1" key="$2" file="$3" part_count="$4" content_type="$5" \
+    metadata="$6" hold_status="$7" lock_mode="$8" retain_until_date="$9" tagging="${10}"
+  local response upload_id parts idx etag
+  local -a segment_array
 
-  if ! segments=$(split_file "$3" "$4" 2>&1); then
+  if ! response=$(split_file "$file" "$part_count" 2>&1); then
     log 2 "error splitting file: $result"
     return 1
   fi
-  read -r -a segment_array <<< "$segments"
+  read -r -a segment_array <<< "$response"
 
-  if ! create_multipart_upload_s3api_params "$1" "$2" "$5" "$6" "$7" "$8" "$9" "${10}"; then
-    log 2 "error creating multpart upload"
+  if ! response=$(create_multipart_upload_s3api_params "$bucket" "$key" "$content_type" "$metadata" "$hold_status" "$lock_mode" \
+      "$retain_until_date" "$tagging" 2>&1); then
+    log 2 "error creating multipart upload: $response"
     return 1
   fi
+  upload_id="$response"
 
   parts="["
-  for ((i = 1; i <= $4; i++)); do
-    if ! upload_part "$1" "$2" "$upload_id" "${segment_array[$((i-1))]}" "$i"; then
-      log 2 "error uploading part $i"
+  for ((idx = 1; idx <= part_count; idx++)); do
+    if ! response=$(upload_part "$bucket" "$key" "$upload_id" "${segment_array[$((idx-1))]}" "$idx" 2>&1); then
+      log 2 "error uploading part '$idx': '$response'"
       return 1
     fi
-    parts+="{\"ETag\": $etag, \"PartNumber\": $i}"
-    if [[ $i -ne $4 ]]; then
+    etag="$response"
+
+    parts+="{\"ETag\": $etag, \"PartNumber\": $idx}"
+    if [[ $idx -ne $part_count ]]; then
       parts+=","
     fi
   done
   parts+="]"
 
-  export parts
+  printf '%s\n%s\n' "$upload_id" "$parts"
+  return 0
 }
 
 multipart_upload_before_completion_custom() {

@@ -73,6 +73,10 @@ export RUN_USERS=true
   assert_success
   local bucket_file="$output"
 
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  local bucket_name="$output"
+
   local expected_content_type="application/zip"
   local expected_meta_key="testkey"
   local expected_meta_val="testValue"
@@ -81,11 +85,11 @@ export RUN_USERS=true
   local expected_tag_key="TestTag"
   local expected_tag_val="TestTagVal"
 
-  run setup_multipart_upload_with_params "$BUCKET_ONE_NAME" "$bucket_file"
+  run setup_multipart_upload_with_params "$bucket_name" "$bucket_file"
   assert_success
   later=${lines[${#lines[@]}-1]}
 
-  run multipart_upload_with_params "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4 \
+  run multipart_upload_with_params "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4 \
     "$expected_content_type" \
     "{\"$expected_meta_key\": \"$expected_meta_val\"}" \
     "$expected_hold_status" \
@@ -96,20 +100,20 @@ export RUN_USERS=true
 
   log 5 "later: $later"
   later="${later/Z/+00:00}"
-  run get_and_verify_metadata "$bucket_file" "$expected_content_type" "$expected_meta_key" "$expected_meta_val" \
+  run get_and_verify_metadata "$bucket_name" "$bucket_file" "$expected_content_type" "$expected_meta_key" "$expected_meta_val" \
     "$expected_hold_status" "$expected_retention_mode" "$later"
   assert_success
 
-  run check_verify_object_tags "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$expected_tag_key" "$expected_tag_val"
+  run check_verify_object_tags "s3api" "$bucket_name" "$bucket_file" "$expected_tag_key" "$expected_tag_val"
   assert_success
 
-  run put_object_legal_hold "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
+  run put_object_legal_hold "s3api" "$bucket_name" "$bucket_file" "OFF"
   assert_success
 
-  run get_and_check_legal_hold "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
+  run get_and_check_legal_hold "s3api" "$bucket_name" "$bucket_file" "OFF"
   assert_success
 
-  run check_file_integrity "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
+  run check_file_integrity "$TEST_FILE_FOLDER/$bucket_file" "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
   assert_success
 }
 
@@ -149,17 +153,21 @@ export RUN_USERS=true
 # test multi-part upload list parts command
 # tags: s3api, multipart, CreateMultipartUpload, ListParts, AbortMultipartUpload
 @test "test-multipart-upload-list-parts" {
-  local bucket_file="bucket-file"
+  run get_file_name
+  assert_success
+  bucket_file="$output"
+
   run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
   assert_success
 
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run start_multipart_upload_list_check_parts "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file"
   assert_success
 
-  run start_multipart_upload_list_check_parts "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file"
-  assert_success
-
-  run run_then_abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file" 4
+  run run_then_abort_multipart_upload "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file" 4
   assert_success
 }
 
