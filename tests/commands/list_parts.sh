@@ -39,3 +39,17 @@ list_parts_with_user() {
   log 5 "listed parts: $listed_parts"
   return 0
 }
+
+list_parts_rest() {
+  if ! check_param_count_gt "bucket name, key, upload ID, callback, other params" 4 $#; then
+    return 1
+  fi
+  local bucket_name="$1" key="$2" upload_id="$3" callback="$4" params=("${@:5}")
+  local response
+
+  if ! response=$(send_rest_go_command_callback "200" "$callback" "-bucketName" "$bucket_name" "-objectKey" "$key" "-query" "uploadId=$upload_id" "${params[@]}" 2>&1); then
+    log 2 "error sending REST ListParts command or checking response: $response"
+    return 1
+  fi
+  return 0
+}

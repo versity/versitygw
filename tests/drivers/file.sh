@@ -162,17 +162,12 @@ setup_bucket_and_large_file_v2() {
   return 0
 }
 
-setup_bucket_and_large_file_v3() {
-  if ! check_param_count_ge_le "bucket env var, file size in MBs (optional)" 1 2 $#; then
+setup_large_file_v3() {
+  if ! check_param_count_le "file_size (optional)" 1 $#; then
     return 1
   fi
-
-  local response bucket_name file_name error
-  if ! response=$(setup_bucket_v3 "$1" 2>&1); then
-    log 2 "error setting up bucket: $response"
-    return 1
-  fi
-  bucket_name="$response"
+  local file_size="$1"
+  local response file_name
 
   if ! response=$(get_file_name 2>&1); then
     log 2 "error getting file name: $response"
@@ -180,10 +175,33 @@ setup_bucket_and_large_file_v3() {
   fi
   file_name="$response"
 
-  if ! error=$(create_large_file "$file_name" "$2" 2>&1); then
-    log 2 "error creating large file: $error"
+  if ! response=$(create_large_file "$file_name" "$file_size" 2>&1); then
+    log 2 "error creating large file: $response"
     return 1
   fi
+  echo "$file_name"
+  return 0
+}
+
+setup_bucket_and_large_file_v3() {
+  if ! check_param_count_ge_le "bucket env var, file size in MBs (optional)" 1 2 $#; then
+    return 1
+  fi
+  local bucket_env_var="$1" file_size="$2"
+  local response bucket_name file_name error
+
+  if ! response=$(setup_bucket_v3 "$bucket_env_var" 2>&1); then
+    log 2 "error setting up bucket: $response"
+    return 1
+  fi
+  bucket_name="$response"
+
+  if ! response=$(setup_large_file_v3 "$file_size" 2>&1); then
+    log 2 "error setting up large file: $response"
+    return 1
+  fi
+  file_name="$response"
+
   echo "$bucket_name $file_name"
   return 0
 }
