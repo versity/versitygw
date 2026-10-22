@@ -25,8 +25,13 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
 )
+
+// maxDirRecreateRetries bounds how many times publishing an object makes its
+// parent directory again after a concurrent delete removed it
+const maxDirRecreateRetries = 10
 
 // odirectAlign covers both 512e and 4Kn logical block sizes for O_DIRECT
 // offsets, lengths, and memory.
@@ -211,4 +216,29 @@ func sleepWithJitter(backoffMs int) {
 	jitter := rand.Intn((maxJitter*2)+1) - maxJitter
 	sleepMs := max(backoffMs+jitter, 1)
 	time.Sleep(time.Duration(sleepMs) * time.Millisecond)
+}
+
+// publishInDir runs publish, which places the object in its parent directory
+// dir, and makes dir when publish finds it missing. The implicit parent
+// directories of objects are removed by deletes of other objects under them
+// without any coordination with uploads, so dir can be removed again before
+// publish places the object in it. Making dir only right before publish keeps
+// the time it spends empty, and removable, short.
+func (tmp *tmpfile) publishInDir(dir string, publish func() error) error {
+	backoffMs := initialBackoffMs
+	for attempt := 0; ; attempt++ {
+		err := publish()
+		if err == nil || !isParentDirGone(err) || attempt == maxDirRecreateRetries {
+			return err
+		}
+		if attempt > 0 {
+			// Add jitter to avoid synchronized retry waves.
+			sleepWithJitter(backoffMs)
+			backoffMs = min(backoffMs*2, maxBackoffMs)
+		}
+		err = backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.doChown, tmp.newDirPerm)
+		if err != nil && !isDirDeletePending(err) {
+			return fmt.Errorf("make parent dir: %w", err)
+		}
+	}
 }

@@ -138,24 +138,9 @@ func (tmp *tmpfile) link() error {
 		return fmt.Errorf("set tmpfile modification time: %w", err)
 	}
 
-	backoffMs := initialBackoffMs
-	for {
-		err = backend.MoveFile(tempname, objPath, tmp.newFilePerm)
-		if !os.IsNotExist(err) {
-			break
-		}
-		// The parent directory may have been concurrently removed; backoff and retry.
-		// Add jitter to avoid synchronized retry waves.
-		sleepWithJitter(backoffMs)
-		backoffMs = min((backoffMs * 2), maxBackoffMs)
-
-		// Best-effort: recreate the parent directory. Ignore errors here;
-		// if recreation fails transiently (e.g. Windows pending-delete on
-		// a recently removed directory), the next MoveFile attempt will
-		// return os.IsNotExist again and we will retry.
-		_ = backend.MkdirAll(filepath.Dir(objPath), tmp.uid, tmp.gid,
-			tmp.doChown, tmp.newDirPerm)
-	}
+	err = tmp.publishInDir(filepath.Dir(objPath), func() error {
+		return backend.MoveFile(tempname, objPath, tmp.newFilePerm)
+	})
 	if err != nil {
 		return err
 	}

@@ -18,6 +18,7 @@ package posix
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -115,4 +116,27 @@ func isErrNotDir(err error) bool {
 // used by another process" on the Remove call.
 func openForRead(name string, useODirect bool) (*os.File, error) {
 	return openDataRead(name, useODirect)
+}
+
+// isParentDirGone reports whether err from placing an entry in a directory
+// means the directory, or one of its parents, is not there.
+func isParentDirGone(err error) bool {
+	if errors.Is(err, fs.ErrNotExist) {
+		return true
+	}
+	var errno syscall.Errno
+	return errors.As(err, &errno) && errno == errDirectory
+}
+
+// isDirDeletePending reports whether err from making a directory means that
+// the delete of a directory at its path hasn't completed yet: Windows keeps a
+// removed directory that is still open until its last handle is closed, and
+// denies access to its path until then.
+func isDirDeletePending(err error) bool {
+	return errors.Is(err, fs.ErrPermission)
+}
+
+// isErrStale reports whether err is a stale file handle. Windows has none.
+func isErrStale(error) bool {
+	return false
 }

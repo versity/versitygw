@@ -236,7 +236,6 @@ func (tmp *tmpfile) falloc() error {
 
 const (
 	maxTmpFileNameRetries = 3
-	maxDirRecreateRetries = 3
 	initialBackoffMs      = 1
 	maxBackoffMs          = 1024 // ~1 second
 )
@@ -282,18 +281,13 @@ func (tmp *tmpfile) link() error {
 
 	dir := filepath.Dir(objPath)
 
-	err := backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.doChown, tmp.newDirPerm)
-	if err != nil {
-		return fmt.Errorf("make parent dir: %w", err)
-	}
-
 	if !tmp.isOTmp {
 		// O_TMPFILE not supported, use fallback
 		return tmp.fallbackLink()
 	}
 
 	// the unnamed file has no path until it's linked
-	err = tmp.applyModTime(filepath.Join(procfddir, tmp.procFDName))
+	err := tmp.applyModTime(filepath.Join(procfddir, tmp.procFDName))
 	if err != nil {
 		return fmt.Errorf("set tmpfile modification time: %w", err)
 	}
@@ -309,44 +303,28 @@ func (tmp *tmpfile) link() error {
 	}
 	defer procdir.Close()
 
-	backoffMs := initialBackoffMs
-	var dirf *os.File
-	for {
-		dirf, err = os.Open(dir)
-		if errors.Is(err, fs.ErrNotExist) {
-			err := backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.doChown, tmp.newDirPerm)
-			if err != nil {
-				return fmt.Errorf("make parent dir: %w", err)
-			}
-			continue
-		}
+	srcFDName := tmp.procFDName
+	if srcFDName == "" {
+		srcFDName = filepath.Base(tmp.f.Name())
+	}
+
+	err = tmp.publishInDir(dir, func() error {
+		dirf, err := os.Open(dir)
 		if err != nil {
 			return fmt.Errorf("open parent dir: %w", err)
 		}
-		srcFDName := tmp.procFDName
-		if srcFDName == "" {
-			srcFDName = filepath.Base(tmp.f.Name())
-		}
+		defer dirf.Close()
+
 		err = linkatOTmpfile(int(procdir.Fd()), int(dirf.Fd()),
 			srcFDName, filepath.Base(objPath))
-		dirf.Close()
-		if errors.Is(err, syscall.ENOENT) {
-			// The directory was removed between open and linkat; backoff and retry.
-			// Add jitter to avoid synchronized retry waves.
-			sleepWithJitter(backoffMs)
-			backoffMs = min((backoffMs * 2), maxBackoffMs)
-
-			mkErr := backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.doChown, tmp.newDirPerm)
-			if mkErr != nil {
-				return fmt.Errorf("make parent dir: %w", mkErr)
-			}
-			continue
-		}
 		if err != nil {
 			return fmt.Errorf("link tmpfile (fd %q as %q): %w",
 				srcFDName, objPath, err)
 		}
-		break
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	err = tmp.f.Close()
@@ -381,49 +359,13 @@ func (tmp *tmpfile) fallbackLink() error {
 	}
 
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
-	dir := filepath.Dir(objPath)
-	err = os.Rename(tempname, objPath)
-	if errors.Is(err, syscall.ENOENT) {
-		// The parent directory was concurrently removed; backoff and retry.
-		backoffMs := initialBackoffMs
-		for range maxDirRecreateRetries {
-			// Add jitter to avoid synchronized retry waves.
-			sleepWithJitter(backoffMs)
-			backoffMs = min((backoffMs * 2), maxBackoffMs)
-
-			err = backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.doChown, tmp.newDirPerm)
-			if err != nil {
-				return fmt.Errorf("recreate parent dir: %w", err)
-			}
-			err = os.Rename(tempname, objPath)
-			if !errors.Is(err, syscall.ENOENT) {
-				break
-			}
-		}
-	}
+	err = tmp.publishInDir(filepath.Dir(objPath), func() error {
+		// rename only works for files within the same filesystem,
+		// MoveFile falls back to copy otherwise
+		return backend.MoveFile(tempname, objPath, tmp.newFilePerm)
+	})
 	if err != nil {
-		// rename only works for files within the same filesystem
-		// if this fails fallback to copy
-		backoffMs := initialBackoffMs
-		for range maxDirRecreateRetries {
-			err = backend.MoveFile(tempname, objPath, tmp.newFilePerm)
-			if !errors.Is(err, syscall.ENOENT) {
-				break
-			}
-
-			// Add jitter to avoid synchronized retry waves.
-			sleepWithJitter(backoffMs)
-			backoffMs = min((backoffMs * 2), maxBackoffMs)
-
-			// The parent directory was concurrently removed; recreate and retry.
-			mkErr := backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.doChown, tmp.newDirPerm)
-			if mkErr != nil {
-				return fmt.Errorf("recreate parent dir: %w", mkErr)
-			}
-		}
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
 	return tmp.syncNamespace()

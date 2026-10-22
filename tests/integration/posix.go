@@ -15,6 +15,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -647,6 +648,184 @@ func PutObject_race_with_delete(s *S3Conf) error {
 
 		return eg.Wait()
 	})
+}
+
+// PutObject_race_with_sibling_deletes uploads, reads back and deletes
+// distinct objects under the same nested prefix concurrently. The uploads
+// stage their data outside of the prefix, so a delete of a sibling object
+// removes the parent directories an upload has just made, or is about to
+// publish its object in. Every upload must succeed and be readable.
+func PutObject_race_with_sibling_deletes(s *S3Conf) error {
+	testName := "PutObject_race_with_sibling_deletes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return putGetDeleteRace(s3client, bucket, siblingRaceKey, func(key string, data []byte) error {
+			_, err := putObjectWithData(int64(len(data)), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+				Body:   bytes.NewReader(data),
+			}, s3client)
+			return err
+		})
+	})
+}
+
+// PutObject_race_into_new_dirs is PutObject_race_with_sibling_deletes with
+// new parent directories for each iteration: the uploads of the workers make
+// the same directories at once, while the deletes of the workers that are
+// ahead remove them.
+func PutObject_race_into_new_dirs(s *S3Conf) error {
+	testName := "PutObject_race_into_new_dirs"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return putGetDeleteRace(s3client, bucket, func(w, i int) string {
+			return fmt.Sprintf("race/%d/a/b/c/d/e/w%d", i, w)
+		}, func(key string, data []byte) error {
+			_, err := putObjectWithData(int64(len(data)), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+				Body:   bytes.NewReader(data),
+			}, s3client)
+			return err
+		})
+	})
+}
+
+// CopyObject_race_with_sibling_deletes is PutObject_race_with_sibling_deletes
+// with the objects made by CopyObject.
+func CopyObject_race_with_sibling_deletes(s *S3Conf) error {
+	testName := "CopyObject_race_with_sibling_deletes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return putGetDeleteRace(s3client, bucket, siblingRaceKey, func(key string, data []byte) error {
+			// the source is outside of the prefix, so that it doesn't keep
+			// the parent directories of the copies in place
+			src := "src/" + key
+			_, err := putObjectWithData(int64(len(data)), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &src,
+				Body:   bytes.NewReader(data),
+			}, s3client)
+			if err != nil {
+				return fmt.Errorf("put copy source: %w", err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:     &bucket,
+				Key:        &key,
+				CopySource: getPtr(bucket + "/" + src),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &src,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("delete copy source: %w", err)
+			}
+			return nil
+		})
+	})
+}
+
+// CompleteMultipartUpload_race_with_sibling_deletes is
+// PutObject_race_with_sibling_deletes with the objects made by multipart
+// uploads.
+func CompleteMultipartUpload_race_with_sibling_deletes(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_race_with_sibling_deletes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return putGetDeleteRace(s3client, bucket, siblingRaceKey, func(key string, data []byte) error {
+			mp, err := createMp(s3client, bucket, key)
+			if err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			part, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
+				Bucket:     &bucket,
+				Key:        &key,
+				UploadId:   mp.UploadId,
+				PartNumber: getPtr(int32(1)),
+				Body:       bytes.NewReader(data),
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("upload part: %w", err)
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+				Bucket:   &bucket,
+				Key:      &key,
+				UploadId: mp.UploadId,
+				MultipartUpload: &types.CompletedMultipartUpload{
+					Parts: []types.CompletedPart{
+						{ETag: part.ETag, PartNumber: getPtr(int32(1))},
+					},
+				},
+			})
+			cancel()
+			return err
+		})
+	})
+}
+
+// PutObject_race_with_sibling_version_deletes races the uploads and the
+// permanent deletes of the versions of distinct objects under the same
+// nested prefix in a versioning-enabled bucket. Overwriting an object moves
+// its previous version into the versioning directory, where the versions of
+// objects share their parent directories too. Deleting a version removes the
+// parent directories that hold no other version, and deleting the latest
+// version of an object restores the previous one in its place.
+func PutObject_race_with_sibling_version_deletes(s *S3Conf) error {
+	testName := "PutObject_race_with_sibling_version_deletes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return raceWorkers(siblingRaceWorkers, siblingRaceIterations/2, func(w, i int) error {
+			key := siblingRaceKey(w, i)
+			var versions []string
+			var datas [][]byte
+			for v := range 2 {
+				data := siblingRaceData(fmt.Sprintf("%v-%d", key, v))
+				out, err := putObjectWithData(int64(len(data)), &s3.PutObjectInput{
+					Bucket: &bucket,
+					Key:    &key,
+					Body:   bytes.NewReader(data),
+				}, s3client)
+				if err != nil {
+					return fmt.Errorf("put %v version %d: %w", key, v, err)
+				}
+				versions = append(versions, getString(out.res.VersionId))
+				datas = append(datas, data)
+			}
+			for v := range versions {
+				err := checkObjectData(s3client, bucket, key, versions[v], datas[v])
+				if err != nil {
+					return fmt.Errorf("version %d: %w", v, err)
+				}
+			}
+			// delete the latest version first, which restores the
+			// previous one in its place
+			for _, v := range []int{1, 0} {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+					Bucket:    &bucket,
+					Key:       &key,
+					VersionId: &versions[v],
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("delete %v version %d: %w", key, v, err)
+				}
+				if v == 1 {
+					err := checkObjectData(s3client, bucket, key, "", datas[0])
+					if err != nil {
+						return fmt.Errorf("restored version: %w", err)
+					}
+				}
+			}
+			return nil
+		})
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 // PutObject_reserved_key checks that no key reaches the .sgwtmp directory of
