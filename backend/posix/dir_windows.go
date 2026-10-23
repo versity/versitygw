@@ -140,3 +140,18 @@ func isDirDeletePending(err error) bool {
 func isErrStale(error) bool {
 	return false
 }
+
+// removeDir removes the directory name if it is empty, and doesn't remove a
+// file, which a concurrent upload may have put in place of the directory.
+// syscall.Rmdir lacks the long path support of os.Remove on Windows, so the
+// type is checked first, which leaves a short window for the file to appear.
+func removeDir(name string) error {
+	fi, err := os.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return &fs.PathError{Op: "rmdir", Path: name, Err: syscall.ENOTDIR}
+	}
+	return os.Remove(name)
+}

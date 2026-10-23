@@ -4329,6 +4329,11 @@ const (
 	siblingRaceIterations = 50
 )
 
+// parentRaceGroupSize is the number of workers that share a parent key in
+// PutObject_race_with_parent_object_deletes: one uploads the object at the
+// key, the rest upload objects under it.
+const parentRaceGroupSize = 2
+
 // siblingRaceKey returns the key of an iteration of a worker: it shares its
 // parent directories with the keys of one other worker, and the top level
 // one with the keys of all workers.
