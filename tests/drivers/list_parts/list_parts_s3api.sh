@@ -38,7 +38,7 @@ list_and_check_part_numbers_and_etags() {
   fi
   for ((part_num=1; part_num<part_length; part_num++)); do
     part_idx=$((part_num-1))
-    if ! response=$(echo "$parts" | jq ".Parts[$part_idx].PartNumber" 2>&1); then
+    if ! response=$(echo "$parts" | jq -r ".Parts[$part_idx].PartNumber" 2>&1); then
       log 2 "error parsing part number: $response"
       return 1
     fi
@@ -48,7 +48,7 @@ list_and_check_part_numbers_and_etags() {
       return 1
     fi
 
-    if ! response=$(echo "$parts" | jq ".Parts[$part_idx].ETag" 2>&1); then
+    if ! response=$(echo "$parts" | jq -r ".Parts[$part_idx].ETag" 2>&1); then
       log 2 "error parsing etag: $response"
       return 1
     fi
