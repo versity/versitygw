@@ -331,7 +331,7 @@ multipart_upload_before_completion_with_user() {
   read -r -a segment_array <<< "$response"
   log 5 "calculated etag: $(openssl dgst -md5 ${segment_array[0]} | awk '{print $NF}')"
 
-  if ! response=$(create_multipart_upload_s3api "$bucket" "$key" "$username" "$password" 2>&1); then
+  if ! response=$(create_multipart_upload_s3api_with_user "$bucket" "$key" "$username" "$password" 2>&1); then
     log 2 "error creating multpart upload: $response"
     return 1
   fi
