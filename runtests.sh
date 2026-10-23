@@ -40,7 +40,9 @@ mkdir /tmp/versioningdir
 # setup tls certificate and key
 ECHO "Generating TLS certificate and key in the cert.pem and key.pem files"
 
-openssl genpkey -algorithm RSA -out key.pem -pkeyopt rsa_keygen_bits:2048
+# ECDSA P-256 rather than RSA: the gateway signs every TLS handshake with
+# this key, and an ECDSA signature costs a fraction of an RSA one.
+openssl genpkey -algorithm EC -out key.pem -pkeyopt ec_paramgen_curve:P-256
 openssl req -new -x509 -key key.pem -out cert.pem -days 365 -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
 
 ECHO "Running the sdk test over http"
@@ -83,7 +85,10 @@ ECHO "Running the sdk test over https"
 
 # run server in background with TLS certificate
 # port: 7071(default)
-GOCOVERDIR=/tmp/https.covdata ./versitygw --cert "$PWD/cert.pem" --key "$PWD/key.pem" -p :7071 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
+# The gateway closes the connection after every response unless keep-alive
+# is enabled, and over TLS each new connection costs a full handshake. The
+# http stages keep the default, the https ones run with keep-alive.
+GOCOVERDIR=/tmp/https.covdata ./versitygw --cert "$PWD/cert.pem" --key "$PWD/key.pem" --keep-alive -p :7071 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
 GW_HTTPS_PID=$!
 
 sleep 1
@@ -151,7 +156,7 @@ kill $GW_VS_PID
 ECHO "Running the sdk test over https against the versioning-enabled gateway"
 # run server in background versioning-enabled
 # port: 7073
-GOCOVERDIR=/tmp/versioning.https.covdata ./versitygw --cert "$PWD/cert.pem" --key "$PWD/key.pem" -p :7073 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG --versioning-dir /tmp/versioningdir /tmp/gw &
+GOCOVERDIR=/tmp/versioning.https.covdata ./versitygw --cert "$PWD/cert.pem" --key "$PWD/key.pem" --keep-alive -p :7073 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG --versioning-dir /tmp/versioningdir /tmp/gw &
 GW_VS_HTTPS_PID=$!
 
 # wait a second for server to start up
