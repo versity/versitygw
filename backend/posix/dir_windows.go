@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/versity/versitygw/s3err"
@@ -139,4 +140,34 @@ func isDirDeletePending(err error) bool {
 // isErrStale reports whether err is a stale file handle. Windows has none.
 func isErrStale(error) bool {
 	return false
+}
+
+// removeDir removes the directory name if it is empty. Unlike os.Remove,
+// which tries DeleteFile first, it never removes a file, which a concurrent
+// upload may have put in place of the directory since the caller looked at
+// it: RemoveDirectoryW fails with ERROR_DIRECTORY for a file.
+func removeDir(name string) error {
+	p, err := syscall.UTF16PtrFromString(extendedLengthPath(name))
+	if err != nil {
+		return err
+	}
+	return syscall.RemoveDirectory(p)
+}
+
+// extendedLengthPath returns the \\?\ form of name, which the Win32 file
+// functions accept beyond MAX_PATH, when its absolute path is too long for
+// them. os makes this form for the paths it passes to them, syscall doesn't.
+func extendedLengthPath(name string) string {
+	path, err := filepath.Abs(name)
+	// Like os, from 248 bytes on: a directory path has to leave room for an
+	// 8.3 file name within MAX_PATH (260).
+	if err != nil || len(path) < 248 ||
+		strings.HasPrefix(path, `\\?\`) || strings.HasPrefix(path, `\\.\`) {
+		return name
+	}
+	if strings.HasPrefix(path, `\\`) {
+		// UNC path: \\server\share\dir is \\?\UNC\server\share\dir
+		return `\\?\UNC\` + path[2:]
+	}
+	return `\\?\` + path
 }
