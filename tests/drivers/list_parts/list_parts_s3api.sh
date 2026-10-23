@@ -36,10 +36,9 @@ list_and_check_part_numbers_and_etags() {
     log 2 "etag/part count mismatch, '${#etags[@]}' etags, but '$part_length' parts"
     return 1
   fi
-  for ((part_num=1; i<${#part_array[@]}; part_num++)); do
+  for ((part_num=1; part_num<part_length; part_num++)); do
     part_idx=$((part_num-1))
-    part=${part_array[$part_idx]}
-    if ! response=$(echo "$part" | jq ".Parts[$part_idx].PartNumber" 2>&1); then
+    if ! response=$(echo "$parts" | jq ".Parts[$part_idx].PartNumber" 2>&1); then
       log 2 "error parsing part number: $response"
       return 1
     fi
@@ -49,7 +48,7 @@ list_and_check_part_numbers_and_etags() {
       return 1
     fi
 
-    if ! response=$(echo "$part" | jq ".Parts[$part_idx].ETag" 2>&1); then
+    if ! response=$(echo "$parts" | jq ".Parts[$part_idx].ETag" 2>&1); then
       log 2 "error parsing etag: $response"
       return 1
     fi
