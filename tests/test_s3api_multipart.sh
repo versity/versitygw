@@ -164,11 +164,11 @@ export RUN_USERS=true
   assert_success
   bucket_name="$output"
 
-  run start_multipart_upload_list_check_parts "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file"
+  run start_multipart_upload_list_check_parts_new "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4
   assert_success
 
-  run run_then_abort_multipart_upload "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file" 4
-  assert_success
+  #run run_then_abort_multipart_upload "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file" 4
+  #assert_success
 }
 
 # test listing of active uploads

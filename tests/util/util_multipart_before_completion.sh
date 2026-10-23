@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/list_parts/list_parts_s3api.sh
+
 create_upload_and_test_parts_listing() {
   if [ $# -ne 5 ]; then
     log 2 "'create_upload_and_test_parts_listing' requires test file, policy_file, user id, username, password"
@@ -84,6 +86,59 @@ start_multipart_upload_list_check_parts() {
       return 1
     fi
   done
+  return 0
+}
+
+start_multipart_upload_list_check_parts_new() {
+  if ! check_param_count_v2 "bucket, key, file, part count" 4 $#; then
+    return 1
+  fi
+  local bucket="$1" key="$2" file="$3" part_count="$4"
+  local part_num segment_idx segment locally_calculated_etag
+  local -a segment_array locally_calculated_etags
+
+  if ! response=$(split_file "$file" "$part_count" 2>&1); then
+    log 2 "error splitting file: $response"
+    return 1
+  fi
+  read -r -a segment_array <<< "$response"
+  log 5 "calculated etag: $(openssl dgst -md5 "${segment_array[0]}" | awk '{print $NF}')"
+
+  if ! response=$(create_multipart_upload_s3api "$bucket" "$key" 2>&1); then
+    log 2 "error creating multpart upload: $response"
+    return 1
+  fi
+  upload_id="$response"
+
+  #parts="["
+  for ((part_num = 1; part_num <= part_count; part_num++)); do
+    segment_idx=$((part_num - 1))
+    segment="${segment_array[$segment_idx]}"
+    locally_calculated_etag="\"$(openssl dgst -md5 "$segment" | awk '{print $NF}')\""
+    # shellcheck disable=SC2154
+    if ! response=$(upload_part "$bucket" "$key" "$upload_id" "$segment" "$part_num" 2>&1); then
+      log 2 "error uploading part '$part_num': $response"
+      return 1
+    fi
+    etag="$response"
+    #etag="${response//\\\"/}"
+    if [ "$etag" != "$locally_calculated_etag" ]; then
+      log 2 "local/returned etag mismatch, expected '$locally_calculated_etag', actual '$etag'"
+      return 1
+    fi
+    locally_calculated_etags+=("$locally_calculated_etag")
+
+    #parts+="{\"ETag\": $etag, \"PartNumber\": $idx}"
+    #if [[ $idx -ne $part_count ]]; then
+    #  parts+=","
+    #fi
+  done
+  if ! list_and_check_part_numbers_and_etags "$bucket" "$key" "$upload_id" "${locally_calculated_etags[@]}"; then
+    log 2 "error listing and checking part numbers and etags"
+    return 1
+  fi
+  #parts+="]"
+  #printf '%s\n%s\n' "$upload_id" "$parts"
   return 0
 }
 
@@ -276,7 +331,7 @@ multipart_upload_before_completion_with_user() {
   read -r -a segment_array <<< "$response"
   log 5 "calculated etag: $(openssl dgst -md5 ${segment_array[0]} | awk '{print $NF}')"
 
-  if ! response=$(create_multipart_upload_s3api_with_user "$bucket" "$key" "$username" "$password" 2>&1); then
+  if ! response=$(create_multipart_upload_s3api "$bucket" "$key" "$username" "$password" 2>&1); then
     log 2 "error creating multpart upload: $response"
     return 1
   fi

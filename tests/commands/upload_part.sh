@@ -40,7 +40,7 @@ upload_part_with_user() {
   fi
   raw_response="$response"
 
-  if ! response=$(echo "$raw_response" | grep -v "InsecureRequestWarning" | jq '.ETag' 2>&1); then
+  if ! response=$(echo "$raw_response" | grep -v "InsecureRequestWarning" | jq -r '.ETag' 2>&1); then
     log 2 "error obtaining etag: $response"
     return 1
   fi

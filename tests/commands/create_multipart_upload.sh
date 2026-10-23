@@ -45,9 +45,10 @@ create_multipart_upload_s3api() {
   if ! check_param_count_v2 "bucket, key" 2 $#; then
     return 1
   fi
+  local bucket="$1" key="$2"
   local response multipart_data upload_id
 
-  if ! response=$(send_command aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2" 2>&1); then
+  if ! response=$(send_command aws --no-verify-ssl s3api create-multipart-upload --bucket "$bucket" --key "$key" 2>&1); then
     log 2 "Error creating multipart upload: $response"
     return 1
   fi
