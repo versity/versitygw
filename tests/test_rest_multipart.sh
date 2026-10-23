@@ -24,8 +24,10 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/create_multipart_upload/create_multipart_upload_rest.sh
 source ./tests/drivers/complete_multipart_upload/complete_multipart_upload_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
+source ./tests/drivers/list_multipart_uploads/list_multipart_uploads_rest.sh
 source ./tests/drivers/put_object/put_object_s3api.sh
 source ./tests/drivers/upload_part/upload_part_rest.sh
+source ./tests/util/util_multipart_before_completion.sh
 
 # tags: curl,multipart,CreateMultipartUpload,AbortMultipartUpload
 @test "REST - multipart upload create then abort" {
