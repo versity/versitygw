@@ -18,6 +18,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -33,11 +34,13 @@ import (
 type captureHTTPClient struct {
 	respHeader    http.Header
 	respBody      string
+	query         url.Values
 	body          []byte
 	contentLength int64
 }
 
 func (c *captureHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	c.query = req.URL.Query()
 	c.contentLength = req.ContentLength
 	if req.Body != nil {
 		b, err := io.ReadAll(req.Body)
@@ -282,5 +285,51 @@ func TestGetObjectAttributesNoObjectParts(t *testing.T) {
 	}
 	if out.ObjectParts != nil {
 		t.Errorf("expected no object parts, got %+v", *out.ObjectParts)
+	}
+}
+
+// S3 rejects an empty versionId with 400 InvalidArgument, so the tagging
+// calls must leave the query parameter out when no version was requested.
+func TestObjectTaggingVersionId(t *testing.T) {
+	ops := []struct {
+		name string
+		call func(p *S3Proxy, versionId string) error
+	}{
+		{"PutObjectTagging", func(p *S3Proxy, versionId string) error {
+			return p.PutObjectTagging(context.Background(), "test-bucket", "obj",
+				versionId, map[string]string{"key": "val"})
+		}},
+		{"GetObjectTagging", func(p *S3Proxy, versionId string) error {
+			_, err := p.GetObjectTagging(context.Background(), "test-bucket", "obj", versionId)
+			return err
+		}},
+		{"DeleteObjectTagging", func(p *S3Proxy, versionId string) error {
+			return p.DeleteObjectTagging(context.Background(), "test-bucket", "obj", versionId)
+		}},
+	}
+
+	for _, op := range ops {
+		t.Run(op.name+" without version id", func(t *testing.T) {
+			p, capture := newCaptureProxy(t)
+			capture.respBody = "<Tagging><TagSet></TagSet></Tagging>"
+
+			if err := op.call(p, ""); err != nil {
+				t.Fatalf("%s: %v", op.name, err)
+			}
+			if capture.query.Has("versionId") {
+				t.Errorf("expected no versionId query parameter, got %q", capture.query.Encode())
+			}
+		})
+		t.Run(op.name+" with version id", func(t *testing.T) {
+			p, capture := newCaptureProxy(t)
+			capture.respBody = "<Tagging><TagSet></TagSet></Tagging>"
+
+			if err := op.call(p, "v1"); err != nil {
+				t.Fatalf("%s: %v", op.name, err)
+			}
+			if got := capture.query.Get("versionId"); got != "v1" {
+				t.Errorf("expected versionId v1, got %q", got)
+			}
+		})
 	}
 }
