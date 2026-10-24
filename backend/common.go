@@ -732,11 +732,13 @@ func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreCond
 	if preconditions.IfNoneMatch != nil {
 		ifNoneMatch = getBoolPtr(*preconditions.IfNoneMatch != "*" && *preconditions.IfNoneMatch != etag)
 	}
+	// the dates are compared in seconds, the precision of Last-Modified, so a
+	// date equal to the object Last-Modified means it hasn't been modified since
 	if preconditions.IfModSince != nil {
-		ifModSince = getBoolPtr(preconditions.IfModSince.UTC().Before(modTime.UTC()))
+		ifModSince = getBoolPtr(preconditions.IfModSince.Unix() < modTime.Unix())
 	}
 	if preconditions.IfUnmodeSince != nil {
-		ifUnmodeSince = getBoolPtr(preconditions.IfUnmodeSince.UTC().After(modTime.UTC()))
+		ifUnmodeSince = getBoolPtr(preconditions.IfUnmodeSince.Unix() >= modTime.Unix())
 	}
 
 	if ifMatch != nil {
