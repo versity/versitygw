@@ -6475,13 +6475,14 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		// if the specified object version is a delete marker, return MethodNotAllowed
 		if isDelMarker {
 			if versionId != "" {
-				return &s3.HeadObjectOutput{
-					DeleteMarker: getBoolPtr(true),
-					LastModified: backend.GetTimePtr(fi.ModTime()),
-				}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+				err = s3err.GetAPIError(s3err.ErrMethodNotAllowed)
 			} else {
-				return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+				err = s3err.GetAPIError(s3err.ErrNoSuchKey)
 			}
+			return &s3.HeadObjectOutput{
+				DeleteMarker: getBoolPtr(true),
+				LastModified: backend.GetTimePtr(fi.ModTime()),
+			}, err
 		}
 	}
 
