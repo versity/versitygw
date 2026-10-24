@@ -1871,6 +1871,15 @@ func Versioning_HeadObject_delete_marker(s *S3Conf) error {
 				return err
 			}
 
+			// the current version of the key is a delete marker
+			var respErr *awshttp.ResponseError
+			if !errors.As(err, &respErr) {
+				return fmt.Errorf("expected an HTTP response error, instead got %w", err)
+			}
+			if dm := respErr.Response.Header.Get("x-amz-delete-marker"); dm != "true" {
+				return fmt.Errorf("%v: expected the x-amz-delete-marker header to be true, instead got %q", obj, dm)
+			}
+
 			return nil
 		})
 	}, withVersioning(types.BucketVersioningStatusEnabled))
