@@ -6472,16 +6472,25 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 			return nil, err
 		}
 
-		// if the specified object version is a delete marker, return MethodNotAllowed
+		// if the current version, or the requested version, is a delete marker,
+		// return NoSuchKey (no versionId) or MethodNotAllowed (versionId)
 		if isDelMarker {
 			if versionId != "" {
 				return &s3.HeadObjectOutput{
 					DeleteMarker: getBoolPtr(true),
+					VersionId:    &versionId,
 					LastModified: backend.GetTimePtr(fi.ModTime()),
 				}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
-			} else {
-				return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 			}
+
+			dmVersionId, err := p.liveObjVersionId(ctx, bucket, object)
+			if err != nil {
+				return nil, err
+			}
+			return &s3.HeadObjectOutput{
+				DeleteMarker: getBoolPtr(true),
+				VersionId:    &dmVersionId,
+			}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 	}
 
