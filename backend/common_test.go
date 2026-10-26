@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -417,6 +418,39 @@ func TestValidateObjectPutPreconditionHeaders(t *testing.T) {
 			err := ValidateObjectPutPreconditionHeaders(tt.ifMatch, tt.ifNoneMatch)
 			if !reflect.DeepEqual(err, tt.wantErr) {
 				t.Fatalf("expected error %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestEvaluatePreconditionsLastModified(t *testing.T) {
+	const etag = "b1946ac92492d2347c6235b4d2611184"
+	// the object modification time has a sub-second part, while the
+	// Last-Modified header and the request dates are in seconds
+	modTime := time.Date(2026, 10, 7, 6, 20, 25, 746772327, time.UTC)
+	lastModified := modTime.Truncate(time.Second)
+	before := lastModified.Add(-time.Second)
+	after := lastModified.Add(time.Second)
+	tm := func(v time.Time) *time.Time { return &v }
+
+	errCond := s3err.GetPreconditionFailedErr(s3err.ConditionIfUnmodifiedSince)
+
+	for _, tc := range []struct {
+		name string
+		pre  PreConditions
+		want error
+	}{
+		{"if-modified-since before", PreConditions{IfModSince: tm(before)}, nil},
+		{"if-modified-since last modified", PreConditions{IfModSince: tm(lastModified)}, errNotModified},
+		{"if-modified-since after", PreConditions{IfModSince: tm(after)}, errNotModified},
+		{"if-unmodified-since before", PreConditions{IfUnmodeSince: tm(before)}, errCond},
+		{"if-unmodified-since last modified", PreConditions{IfUnmodeSince: tm(lastModified)}, nil},
+		{"if-unmodified-since after", PreConditions{IfUnmodeSince: tm(after)}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := EvaluatePreconditions(etag, modTime, tc.pre)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
 			}
 		})
 	}
