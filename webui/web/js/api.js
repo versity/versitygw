@@ -1367,6 +1367,7 @@ class VersityAPI {
       lastModified: response.headers.get('Last-Modified') || '',
       etag: response.headers.get('ETag') || '',
       storageClass: response.headers.get('x-amz-storage-class') || 'STANDARD',
+      restore: response.headers.get('x-amz-restore') || '',
       metadata: this.extractMetadataHeaders(response.headers)
     };
   }
@@ -1960,23 +1961,30 @@ class VersityAPI {
   }
 
   /**
+   * Request a temporary restore of an archived (e.g. GLACIER) object
+   * @param {number|null} days - Days to keep the restored copy; omitted when falsy
+   * @param {string} tier - Standard | Bulk | Expedited
+   */
+  async restoreObject(bucket, key, days, tier = 'Standard') {
+    const daysXml = days ? `\n  <Days>${parseInt(days, 10)}</Days>` : '';
+    const body = `<?xml version="1.0" encoding="UTF-8"?>
+<RestoreRequest xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${daysXml}
+  <GlacierJobParameters>
+    <Tier>${this.escapeXml(tier)}</Tier>
+  </GlacierJobParameters>
+</RestoreRequest>`;
+
+    await this.request('POST', `/${bucket}/${encodeS3Key(key)}`, { restore: '' }, body);
+  }
+
+  /**
    * Restore an old version by copying it to create a new current version
    */
   async restoreObjectVersion(bucket, key, versionId) {
-    const copySource = `/${bucket}/${encodeS3Key(key)}?versionId=${versionId}`;
-
-    const fetchParams = this.buildFetchParams('PUT', `/${bucket}/${encodeS3Key(key)}`, {}, '');
-    fetchParams.headers['x-amz-copy-source'] = copySource;
-
-    const response = await fetch(fetchParams.url, {
-      method: 'PUT',
-      headers: fetchParams.headers,
+    const copySource = `/${bucket}/${encodeS3Key(key)}?versionId=${encodeURIComponent(versionId)}`;
+    await this.request('PUT', `/${bucket}/${encodeS3Key(key)}`, {}, '', false, 'application/xml', {
+      'x-amz-copy-source': copySource,
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Restore failed: ${errorText}`);
-    }
   }
 
   // ============================================

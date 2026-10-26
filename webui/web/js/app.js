@@ -332,7 +332,20 @@ function escapeHtml(text) {
   if (!text) return '';
   const div = document.createElement('div');
   div.textContent = text;
-  return div.innerHTML;
+  return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// For values inside a single-quoted JS string in an inline handler, e.g. onclick="fn('${escapeJsAttr(v)}')"
+function escapeJsAttr(text) {
+  if (text === null || text === undefined) return '';
+  const js = String(text)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+  return escapeHtml(js);
 }
 
 function formatRole(role) {

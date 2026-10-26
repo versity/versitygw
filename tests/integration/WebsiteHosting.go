@@ -735,7 +735,7 @@ func WebsiteHosting_get_cors_headers(s *S3Conf) error {
 		if err := comparePreflightResult(&PreflightResult{
 			Origin:           "https://client.example",
 			Methods:          "GET, HEAD",
-			ExposeHeaders:    "Content-Length, ETag, x-amz-storage-class",
+			ExposeHeaders:    "Content-Length, ETag, x-amz-storage-class, x-amz-restore",
 			MaxAge:           "42",
 			AllowCredentials: "true",
 			Vary:             "Origin, Access-Control-Request-Headers, Access-Control-Request-Method",
@@ -804,7 +804,7 @@ func WebsiteHosting_head_cors_headers(s *S3Conf) error {
 		if err := comparePreflightResult(&PreflightResult{
 			Origin:           "*",
 			Methods:          "HEAD",
-			ExposeHeaders:    "ETag, x-amz-storage-class",
+			ExposeHeaders:    "ETag, x-amz-storage-class, x-amz-restore",
 			AllowCredentials: "false",
 			Vary:             "Origin, Access-Control-Request-Headers, Access-Control-Request-Method",
 		}, corsHeaders); err != nil {
