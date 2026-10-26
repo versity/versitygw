@@ -16,12 +16,16 @@ package posix
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -82,6 +86,88 @@ func TestListObjectsV2ContinuationTokenEcho(t *testing.T) {
 			}
 			if strings.Join(keys, ",") != strings.Join(tt.wantKeys, ",") {
 				t.Fatalf("keys = %v, want %v", keys, tt.wantKeys)
+			}
+		})
+	}
+}
+
+// entryGoneMeta stands in for a shared filesystem on which the directory of
+// one listed entry is being removed by another node: reading that entry's
+// etag fails with errno, as Storage Scale reports it.
+type entryGoneMeta struct {
+	meta.XattrMeta
+	object string
+	errno  syscall.Errno
+}
+
+func (m entryGoneMeta) WithRootDir(rootdir string) meta.MetadataStorer {
+	m.XattrMeta = m.XattrMeta.WithRootDir(rootdir).(meta.XattrMeta)
+	return m
+}
+
+func (m entryGoneMeta) RetrieveAttribute(f *os.File, bucket, object, attribute string) ([]byte, error) {
+	if object == m.object && attribute == etagkey {
+		return nil, fmt.Errorf("xattr.get %v user.etag: %w", object, m.errno)
+	}
+	return m.XattrMeta.RetrieveAttribute(f, bucket, object, attribute)
+}
+
+// TestListObjectsSkipsEntryWhoseDirIsGone checks that ListObjects and
+// ListObjectsV2 skip an entry whose etag read reports that its directory
+// is gone, as they skip an entry that no longer exists, instead of failing
+// the listing.
+func TestListObjectsSkipsEntryWhoseDirIsGone(t *testing.T) {
+	for _, errno := range []syscall.Errno{syscall.ENOTDIR, syscall.ESTALE} {
+		t.Run(errno.Error(), func(t *testing.T) {
+			p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+				return entryGoneMeta{object: "dir/b", errno: errno}, PosixOpts{NewDirPerm: 0755}
+			})
+			bucket := "testbucket"
+			createTestBucket(t, p, bucket)
+
+			ctx := context.Background()
+			for _, key := range []string{"a", "dir/b", "dir/c"} {
+				_, err := p.PutObject(ctx, s3response.PutObjectInput{
+					Bucket:        &bucket,
+					Key:           aws.String(key),
+					Body:          strings.NewReader("data"),
+					ContentLength: aws.Int64(4),
+				})
+				if err != nil {
+					t.Fatalf("put object %q: %v", key, err)
+				}
+			}
+
+			want := "a,dir/c"
+			keys := func(objs []s3response.Object) string {
+				var k []string
+				for _, obj := range objs {
+					k = append(k, aws.ToString(obj.Key))
+				}
+				return strings.Join(k, ",")
+			}
+
+			v1, err := p.ListObjects(ctx, &s3.ListObjectsInput{
+				Bucket:  &bucket,
+				MaxKeys: aws.Int32(1000),
+			})
+			if err != nil {
+				t.Fatalf("list objects: %v", err)
+			}
+			if got := keys(v1.Contents); got != want {
+				t.Fatalf("list objects keys = %v, want %v", got, want)
+			}
+
+			v2, err := p.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+				Bucket:     &bucket,
+				StartAfter: aws.String(""),
+				MaxKeys:    aws.Int32(1000),
+			})
+			if err != nil {
+				t.Fatalf("list objects v2: %v", err)
+			}
+			if got := keys(v2.Contents); got != want {
+				t.Fatalf("list objects v2 keys = %v, want %v", got, want)
 			}
 		})
 	}
