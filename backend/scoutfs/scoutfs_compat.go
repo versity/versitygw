@@ -208,7 +208,8 @@ func (s *ScoutFS) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 	res, err := s.Posix.HeadObject(ctx, input)
 	if err != nil {
-		return nil, err
+		// pass on the delete marker output that comes with the error
+		return res, err
 	}
 
 	if s.glaciermode {
