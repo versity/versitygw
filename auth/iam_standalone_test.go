@@ -59,6 +59,14 @@ func standaloneTestServer(t *testing.T) (store storage.Storer, sockPath string) 
 		t.Fatalf("storage.New: %v", err)
 	}
 
+	return store, serveStandaloneTestStore(t, store)
+}
+
+// serveStandaloneTestStore is standaloneTestServer over a store the caller
+// already holds, so a test can serve a wrapper around it.
+func serveStandaloneTestStore(t *testing.T, store storage.Storer) (sockPath string) {
+	t.Helper()
+
 	p, err := private.New(store, iamapi.RootCredentials{
 		Access: standaloneTestRootAccess,
 		Secret: standaloneTestRootSecret,
@@ -91,7 +99,7 @@ func standaloneTestServer(t *testing.T) (store storage.Storer, sockPath string) 
 		}
 	})
 
-	return store, sockPath
+	return sockPath
 }
 
 func waitForSocket(t *testing.T, path string, errCh <-chan error) {
@@ -200,6 +208,78 @@ func TestIAMServiceStandaloneGetUserAccountUnknownReturnsErrNoSuchUser(t *testin
 	_, err = client.GetUserAccount("AKIADOESNOTEXIST")
 	if !errors.Is(err, ErrNoSuchUser) {
 		t.Errorf("GetUserAccount() error = %v, want ErrNoSuchUser", err)
+	}
+}
+
+// faultyStandaloneStore fails the access-key lookups the IAM service makes,
+// standing in for a storage backend it cannot reach (a sealed Vault, an
+// expired token, a network partition).
+type faultyStandaloneStore struct {
+	storage.Storer
+	err error
+}
+
+func (s faultyStandaloneStore) GetUserByAccessKeyID(context.Context, string) (*types.User, error) {
+	return nil, s.err
+}
+
+func (s faultyStandaloneStore) GetSession(context.Context, string) (*types.Session, error) {
+	return nil, s.err
+}
+
+// TestIAMServiceStandaloneStoreFailureIsNotAMissingUser pins that an IAM
+// service whose storage is down is reported to the S3 request pipeline as the
+// plain error it is. ErrNoSuchUser and ErrInvalidSessionToken become
+// InvalidAccessKeyId and InvalidToken, 403s that tell a client with a valid
+// credential it is revoked and that SDKs do not retry; anything else becomes
+// a 500 they do.
+func TestIAMServiceStandaloneStoreFailureIsNotAMissingUser(t *testing.T) {
+	backing, err := storage.New(storage.Config{Dir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	createStandaloneTestUser(t, backing, "alice", "AKIAALICE", "alicesecret", "")
+	session := createStandaloneTestSession(t, backing, "reader", "ASIASESSION", "sessionsecret", "token")
+
+	sock := serveStandaloneTestStore(t, faultyStandaloneStore{Storer: backing, err: errors.New("vault is sealed")})
+	client := newStandaloneTestClient(t, sock)
+
+	date := time.Now().UTC().Format(sigv4auth.YYYYMMDD)
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{name: "derive user key", call: func() error {
+			_, _, err := client.DeriveSigningKey("AKIAALICE", "", date, "us-east-1", "s3")
+			return err
+		}},
+		{name: "derive session key", call: func() error {
+			_, _, err := client.DeriveSigningKey(session.AccessKeyId, session.SessionToken, date, "us-east-1", "s3")
+			return err
+		}},
+		{name: "evaluate policy", call: func() error {
+			_, err := client.EvaluatePolicy("AKIAALICE", "", []Action{GetObjectAction}, []string{"arn:aws:s3:::bucket/key"}, nil)
+			return err
+		}},
+		{name: "get user account", call: func() error {
+			_, err := client.GetUserAccount("AKIAALICE")
+			return err
+		}},
+		{name: "resolve accounts", call: func() error {
+			_, err := client.ResolveAccounts([]string{"AKIAALICE"})
+			return err
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if err == nil {
+				t.Fatal("call succeeded against a failing store")
+			}
+			if errors.Is(err, ErrNoSuchUser) || errors.Is(err, ErrInvalidSessionToken) {
+				t.Fatalf("store failure reported as a verdict on the credential: %v", err)
+			}
+		})
 	}
 }
 
