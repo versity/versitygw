@@ -32,6 +32,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 
 	failingBeRes := &s3.HeadObjectOutput{
 		LastModified: &tm,
+		VersionId:    utils.GetStringPtr("versionId"),
 	}
 
 	tests := []struct {
@@ -164,6 +165,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 				response: &Response{
 					Headers: map[string]*string{
 						"x-amz-delete-marker": utils.GetStringPtr("true"),
+						"x-amz-version-id":    utils.GetStringPtr("versionId"),
 						"Last-Modified":       utils.GetStringPtr(tm.UTC().Format(timefmt)),
 					},
 					MetaOpts: &MetaOptions{
@@ -171,6 +173,29 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrInvalidAccessKeyID),
+			},
+		},
+		{
+			name: "backend returns error without last modified",
+			input: testInput{
+				locals: defaultLocals,
+				beErr:  s3err.GetAPIError(s3err.ErrNoSuchKey),
+				beRes: &s3.HeadObjectOutput{
+					VersionId: utils.GetStringPtr("versionId"),
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Headers: map[string]*string{
+						"x-amz-delete-marker": utils.GetStringPtr("true"),
+						"x-amz-version-id":    utils.GetStringPtr("versionId"),
+						"Last-Modified":       nil,
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrNoSuchKey),
 			},
 		},
 		{

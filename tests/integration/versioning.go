@@ -1877,7 +1877,10 @@ func Versioning_HeadObject_delete_marker(s *S3Conf) error {
 				return fmt.Errorf("expected an HTTP response error, instead got %w", err)
 			}
 			if dm := respErr.Response.Header.Get("x-amz-delete-marker"); dm != "true" {
-				return fmt.Errorf("%v: expected the x-amz-delete-marker header to be true, instead got %q", obj, dm)
+				return fmt.Errorf("expected the x-amz-delete-marker header to be true, instead got %q", dm)
+			}
+			if vId := respErr.Response.Header.Get("x-amz-version-id"); vId != getString(out.VersionId) {
+				return fmt.Errorf("expected the x-amz-version-id header to be %q, instead got %q", getString(out.VersionId), vId)
 			}
 
 			return nil
