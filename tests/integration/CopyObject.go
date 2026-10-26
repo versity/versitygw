@@ -1212,6 +1212,18 @@ func CopyObject_conditional_reads(s *S3Conf) error {
 		etag := obj.res.ETag
 		etagTrimmed := strings.Trim(*etag, `"`)
 
+		// the object hasn't been modified since its Last-Modified date
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		lastModified := *head.LastModified
+
 		for i, test := range []struct {
 			ifmatch           *string
 			ifnonematch       *string
@@ -1363,6 +1375,9 @@ func CopyObject_conditional_reads(s *S3Conf) error {
 			{nil, getPtr("*"), nil, &after, errMod},
 			{nil, getPtr("*"), nil, &before, errCond},
 			{getPtr("invalid_etag"), getPtr("*"), nil, nil, errCond},
+
+			// if-unmodified-since equal to Last-Modified
+			{nil, nil, nil, &lastModified, nil},
 		} {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{

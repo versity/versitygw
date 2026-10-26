@@ -431,7 +431,7 @@ func TestEvaluatePreconditionsLastModified(t *testing.T) {
 	lastModified := modTime.Truncate(time.Second)
 	before := lastModified.Add(-time.Second)
 	after := lastModified.Add(time.Second)
-	tm := func(t time.Time) *time.Time { return &t }
+	tm := func(v time.Time) *time.Time { return &v }
 
 	errCond := s3err.GetPreconditionFailedErr(s3err.ConditionIfUnmodifiedSince)
 
