@@ -1616,7 +1616,7 @@ func (s *S3Proxy) PutObjectTagging(ctx context.Context, bucket, object, versionI
 	_, err := s.client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
 		Bucket:    &bucket,
 		Key:       &object,
-		VersionId: &versionId,
+		VersionId: backend.GetPtrFromString(versionId),
 		Tagging:   tagging,
 	})
 	return handleError(err)
@@ -1629,7 +1629,7 @@ func (s *S3Proxy) GetObjectTagging(ctx context.Context, bucket, object, versionI
 	output, err := s.client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
 		Bucket:    &bucket,
 		Key:       &object,
-		VersionId: &versionId,
+		VersionId: backend.GetPtrFromString(versionId),
 	})
 	if err != nil {
 		return nil, handleError(err)
@@ -1650,7 +1650,7 @@ func (s *S3Proxy) DeleteObjectTagging(ctx context.Context, bucket, object, versi
 	_, err := s.client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
 		Bucket:    &bucket,
 		Key:       &object,
-		VersionId: &versionId,
+		VersionId: backend.GetPtrFromString(versionId),
 	})
 	return handleError(err)
 }
