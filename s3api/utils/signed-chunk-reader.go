@@ -379,7 +379,8 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 		cr.stash = nil
 	}
 
-	rdr := bufio.NewReader(bytes.NewReader(header))
+	hdrRdr := bytes.NewReader(header)
+	rdr := bufio.NewReader(hdrRdr)
 
 	// After the first chunk each chunk header should start
 	// with "\n\r\n"
@@ -490,19 +491,15 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 	// to avoid duplication because of header stashing
 	cr.addChunkSize(chunkSize)
 
-	// find the index of chunk ending: '\r\n'
-	// skip the first 2 bytes as it is the starting '\r\n'
-	// the first chunk doesn't contain the starting '\r\n', but
-	// anyway, trimming the first 2 bytes doesn't pollute the logic.
-	ind := bytes.Index(header[2:], delimiter)
 	cr.isFirstHeader = false
 
-	// the offset is the found index + 4 - the stash length
-	// where:
-	// ind is the index of '\r\n'
-	// 4 specifies the trimmed 2 bytes plus 2 to shift the index at the end of '\r\n'
-	offset := ind + 4 - stashLen
-	return chunkSize, sig, offset, nil
+	// The chunk data starts right after the header bytes consumed above.
+	// The chunk signature isn't validated until the next header is parsed,
+	// so it may itself contain '\r\n' and the header end can't be found by
+	// searching for the delimiter. The consumed count includes the stashed
+	// bytes, which aren't part of the caller's buffer.
+	consumed := len(header) - hdrRdr.Len() - rdr.Buffered()
+	return chunkSize, sig, consumed - stashLen, nil
 }
 
 // Stashes the header in cr.stash and returns "errskipHeader"
@@ -536,9 +533,11 @@ func (cr *ChunkReader) parseChunkSize(rdr *bufio.Reader, header []byte) (int64, 
 		_, _, _, err := cr.handleRdrErr(err, header)
 		return 0, err
 	}
+	// ParseInt accepts a leading sign, so a negative size has to be
+	// rejected here: it is later used as a slice bound on the read buffer
 	chunkSize, err := strconv.ParseInt(chunkSizeStr, 16, 64)
-	if err != nil {
-		debuglogger.Logf("failed to parse chunk size: (size): %v, (err): %v", chunkSizeStr, err)
+	if err != nil || chunkSize < 0 {
+		debuglogger.Logf("failed to parse chunk size as non-negative hexadecimal int64: (size): %v, (err): %v", chunkSizeStr, err)
 		return 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
 	}
 
