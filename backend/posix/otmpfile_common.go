@@ -236,8 +236,10 @@ func (tmp *tmpfile) publishInDir(dir string, publish func() error) error {
 			sleepWithJitter(backoffMs)
 			backoffMs = min(backoffMs*2, maxBackoffMs)
 		}
+		// MkdirAll gives up when the directories keep disappearing; the
+		// next attempt makes them again after a longer wait.
 		err = backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.doChown, tmp.newDirPerm)
-		if err != nil && !isDirDeletePending(err) {
+		if err != nil && !isParentDirGone(err) && !isDirDeletePending(err) {
 			return fmt.Errorf("make parent dir: %w", err)
 		}
 	}

@@ -5015,6 +5015,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		if parentErr != nil {
 			return s3response.PutObjectOutput{}, parentErr
 		}
+		// No parent is a file: the object is missing, and its parent
+		// directories are made when it is published.
+		err = fs.ErrNotExist
 	}
 	// A stale handle is a parent directory another client removed: like a
 	// missing one, it is made again when the object is published.
@@ -5280,6 +5283,11 @@ func publishErr(name string, err error) error {
 	var apiErr s3err.APIError
 	if errors.As(err, &apiErr) {
 		return apiErr
+	}
+	// The key was a directory when the object was published there, even
+	// if the directory is gone by now.
+	if errors.Is(err, syscall.EISDIR) {
+		return s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 	}
 	if !backend.IsPermissionErr(err) {
 		if fi, serr := os.Stat(name); serr == nil && fi.IsDir() {
@@ -5954,7 +5962,9 @@ func (p *Posix) removeParents(bucket, object string) {
 			break
 		}
 
-		err = os.Remove(p.ObjectPath(bucket, parent))
+		// The parent may have been replaced by an object since its
+		// attribute was checked: remove it only if it is a directory.
+		err = removeDir(p.ObjectPath(bucket, parent))
 		if err != nil {
 			break
 		}
