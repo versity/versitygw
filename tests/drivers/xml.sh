@@ -51,7 +51,11 @@ get_element() {
     log 2 "error building XPath search string"
     return 1
   fi
-  if ! xml_val=$(grep '<[^/][^ >]*>' "$1" | xmllint --xpath "$xpath" - 2>&1); then
+  if ! get_xml_data "$1" "$1.xml"; then
+    log 2 "error getting XML data"
+    return 1
+  fi
+  if ! xml_val=$(xmllint --xpath "$xpath" "$1.xml" 2>&1); then
     log 2 "error getting XML value matching $xpath: $xml_val (file data: $(cat "$1"))"
     return 1
   fi
