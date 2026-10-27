@@ -672,7 +672,11 @@ func quickWalk(walkstate *walkState) error {
 			if fullObjectName > walkstate.marker {
 				if !checkAndMaybeAddCommonPrefix(fullObjectName, walkstate) {
 					rootInfo, err := fs.Stat(walkstate.fileSystem, rootDir)
-					if err != nil {
+					if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+						// The prefix directory was removed concurrently after
+						// it was read, so treat it as empty.
+						return nil
+					} else if err != nil {
 						walkstate.walkErr = fmt.Errorf("stat %q: %w", rootDir, err)
 					} else {
 						dirobj, err := walkstate.getObj(fullObjectName, fs.FileInfoToDirEntry(rootInfo))
