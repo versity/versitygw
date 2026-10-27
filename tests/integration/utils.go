@@ -1889,6 +1889,17 @@ func areMapsSame(mp1, mp2 map[string]string) bool {
 	return true
 }
 
+// sortedBuckets returns a copy of buckets sorted by name, the order
+// ListBuckets lists them in. Bucket names don't sort in the order they're
+// made in: "test-bucket-1000" comes before "test-bucket-999".
+func sortedBuckets(buckets []types.Bucket) []types.Bucket {
+	sorted := slices.Clone(buckets)
+	slices.SortFunc(sorted, func(a, b types.Bucket) int {
+		return strings.Compare(*a.Name, *b.Name)
+	})
+	return sorted
+}
+
 func compareBuckets(list1 []types.Bucket, list2 []types.Bucket, ignore ...string) bool {
 	if len(ignore) > 0 {
 		ignoreSet := make(map[string]struct{}, len(ignore))
