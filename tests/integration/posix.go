@@ -875,6 +875,66 @@ func PutObject_race_with_parent_object_deletes(s *S3Conf) error {
 	})
 }
 
+// ListObjects_race_with_prefix_removal lists prefixes while the only object
+// under each of them is uploaded and deleted over and over. Deleting the
+// object removes the prefix directory, so a listing can read the directory
+// and find it gone right after. A listing must not fail.
+func ListObjects_race_with_prefix_removal(s *S3Conf) error {
+	testName := "ListObjects_race_with_prefix_removal"
+	// a listing fails only if the delete removes the prefix directory
+	// between the listing's read of the directory and its stat of it
+	const iterations = 500
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return raceWorkers(siblingRaceWorkers, iterations, func(w, i int) error {
+			// the workers share a prefix in pairs: one lists it, the
+			// other uploads and deletes the object under it
+			prefix := fmt.Sprintf("race/%d/", w/2)
+			if w%2 == 1 {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+					Bucket: &bucket,
+					Prefix: &prefix,
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("list objects %v: %w", prefix, err)
+				}
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				_, err = s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+					Bucket: &bucket,
+					Prefix: &prefix,
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("list objects v2 %v: %w", prefix, err)
+				}
+				return nil
+			}
+
+			key := fmt.Sprintf("%vobj-%d", prefix, i)
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("put %v: %w", key, err)
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("delete %v: %w", key, err)
+			}
+			return nil
+		})
+	})
+}
+
 // PutObject_reserved_key checks that no key reaches the .sgwtmp directory of
 // a bucket, where its multipart uploads are staged: the parts of an upload at
 // .sgwtmp/multipart/<sha256 of the key>/<upload id>/. A client can't replace
