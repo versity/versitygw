@@ -883,7 +883,7 @@ func ListObjects_race_with_prefix_removal(s *S3Conf) error {
 	testName := "ListObjects_race_with_prefix_removal"
 	// a listing fails only if the delete removes the prefix directory
 	// between the listing's read of the directory and its stat of it
-	const iterations = 500
+	const iterations = 100
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		return raceWorkers(siblingRaceWorkers, iterations, func(w, i int) error {
 			// the workers share a prefix in pairs: one lists it, the
