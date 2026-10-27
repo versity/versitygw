@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/versity/versitygw/iamapi/iamerr"
+	"github.com/versity/versitygw/iamapi/internal/iamutil"
 	"github.com/versity/versitygw/iamapi/types"
 )
 
@@ -750,8 +751,8 @@ func TestInternalStoreSessionCRUDAndExpiry(t *testing.T) {
 		t.Fatalf("GetSession = %#v, want %#v", *got, session)
 	}
 
-	if _, err := store.GetSession(ctx, "ASIAUNKNOWN"); !errors.Is(err, ErrSessionNotFound) {
-		t.Fatalf("GetSession unknown access key err = %v, want ErrSessionNotFound", err)
+	if _, err := store.GetSession(ctx, "ASIAUNKNOWN"); !errors.Is(err, iamutil.ErrSessionNotFound) {
+		t.Fatalf("GetSession unknown access key err = %v, want iamutil.ErrSessionNotFound", err)
 	}
 
 	// A session persists across process restarts (round-trips through the
@@ -772,8 +773,8 @@ func TestInternalStoreSessionCRUDAndExpiry(t *testing.T) {
 	if _, err := reopened.CreateSession(ctx, expired); err != nil {
 		t.Fatalf("CreateSession expired: %v", err)
 	}
-	if _, err := reopened.GetSession(ctx, expired.AccessKeyId); !errors.Is(err, ErrSessionNotFound) {
-		t.Fatalf("GetSession expired err = %v, want ErrSessionNotFound", err)
+	if _, err := reopened.GetSession(ctx, expired.AccessKeyId); !errors.Is(err, iamutil.ErrSessionNotFound) {
+		t.Fatalf("GetSession expired err = %v, want iamutil.ErrSessionNotFound", err)
 	}
 
 	// Creating a new session opportunistically prunes the already-expired

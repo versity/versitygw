@@ -407,6 +407,16 @@ func NoSuchEntityAccessKey(accessKeyID string) Error {
 	return newSenderError("NoSuchEntity", fmt.Sprintf("The Access Key with id %s cannot be found", accessKeyID), http.StatusNotFound)
 }
 
+func IsNoSuchEntity(err error) bool {
+	var apiErr Error
+	return errors.As(err, &apiErr) && apiErr.Code == "NoSuchEntity"
+}
+
+func IsSenderError(err error) bool {
+	var apiErr Error
+	return errors.As(err, &apiErr) && apiErr.Type == TypeSender
+}
+
 func EntityAlreadyExistsRole(roleName string) Error {
 	return newSenderError("EntityAlreadyExists", fmt.Sprintf("Role with name %s already exists.", roleName), http.StatusConflict)
 }

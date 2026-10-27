@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1230,5 +1231,123 @@ func TestPrivateAPIVersionReportsAccountID(t *testing.T) {
 	}
 	if out.AccountID != iamutil.DefaultAccountID {
 		t.Errorf("AccountID = %q, want %q", out.AccountID, iamutil.DefaultAccountID)
+	}
+}
+
+// faultyStore fails the lookups the identity endpoints make with the given
+// errors, standing in for a storage backend that cannot be reached (a sealed
+// Vault, an expired token, a network partition). A nil error leaves that
+// lookup to the real store embedded in it.
+type faultyStore struct {
+	storage.Storer
+
+	userErr    error
+	sessionErr error
+	roleErr    error
+}
+
+func (s faultyStore) GetUserByAccessKeyID(ctx context.Context, accessKeyID string) (*types.User, error) {
+	if s.userErr != nil {
+		return nil, s.userErr
+	}
+	return s.Storer.GetUserByAccessKeyID(ctx, accessKeyID)
+}
+
+func (s faultyStore) GetSession(ctx context.Context, accessKeyID string) (*types.Session, error) {
+	if s.sessionErr != nil {
+		return nil, s.sessionErr
+	}
+	return s.Storer.GetSession(ctx, accessKeyID)
+}
+
+func (s faultyStore) GetRole(ctx context.Context, roleName string) (*types.Role, error) {
+	if s.roleErr != nil {
+		return nil, s.roleErr
+	}
+	return s.Storer.GetRole(ctx, roleName)
+}
+
+// TestPrivateAPIStoreFailureIsServerError pins that a storage backend that
+// cannot answer is reported as a 500 on every endpoint that resolves an
+// access key — never as the NoSuchIdentity/InvalidToken verdicts, which the
+// S3 gateway turns into a non-retryable 403 on a perfectly valid credential.
+// The body must still name the failure, since it is all an operator has to
+// go on.
+func TestPrivateAPIStoreFailureIsServerError(t *testing.T) {
+	errStoreDown := errors.New("503 Service Unavailable: Vault is sealed")
+
+	derive := func(accessKeyID, token string) (string, any) {
+		return DerivePath, DeriveSigningKeyRequest{
+			AccessKeyID:  accessKeyID,
+			SessionToken: token,
+			Date:         time.Now().UTC().Format(sigv4auth.YYYYMMDD),
+			Region:       "us-east-1",
+			Service:      "s3",
+		}
+	}
+	evaluate := func(accessKeyID, token string) (string, any) {
+		return EvaluatePath, EvaluatePolicyRequest{
+			AccessKeyID:  accessKeyID,
+			SessionToken: token,
+			Actions:      []string{"s3:GetObject"},
+			Resources:    []string{"arn:aws:s3:::bucket/key"},
+		}
+	}
+	resolveIdentity := func(accessKeyID, _ string) (string, any) {
+		return ResolveIdentityPath, ResolveIdentityRequest{AccessKeyIDs: []string{accessKeyID}}
+	}
+
+	userDown := faultyStore{userErr: errStoreDown}
+	sessionDown := faultyStore{sessionErr: errStoreDown}
+	roleDown := faultyStore{roleErr: errStoreDown}
+
+	tests := []struct {
+		name        string
+		store       faultyStore
+		request     func(accessKeyID, token string) (string, any)
+		accessKeyID string
+		token       string
+	}{
+		{name: "derive user", store: userDown, request: derive, accessKeyID: "AKIAALICE"},
+		{name: "derive session", store: sessionDown, request: derive, accessKeyID: "ASIASESSION", token: "tok"},
+		{name: "derive session role", store: roleDown, request: derive, accessKeyID: "ASIASESSION", token: "tok"},
+		{name: "evaluate user", store: userDown, request: evaluate, accessKeyID: "AKIAALICE"},
+		{name: "evaluate session", store: sessionDown, request: evaluate, accessKeyID: "ASIASESSION", token: "tok"},
+		{name: "resolve identity user", store: userDown, request: resolveIdentity, accessKeyID: "AKIAALICE"},
+		{name: "resolve identity session", store: sessionDown, request: resolveIdentity, accessKeyID: "ASIASESSION"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, backing := newTestServer(t)
+			createTestUser(t, backing, "alice", "AKIAALICE", "alicesecret", "")
+			role := createTestRole(t, backing, "testrole", "")
+			createTestSessionForRole(t, backing, role, "ASIASESSION", "sessionsecret", "tok", "")
+
+			store := tt.store
+			store.Storer = backing
+			p, err := New(store, testRoot)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			path, req := tt.request(tt.accessKeyID, tt.token)
+			body, _ := json.Marshal(req)
+			resp := doPrivateRequest(t, p, http.MethodPost, path, testRoot.Access, testRoot.Secret, body)
+			raw := readBody(t, resp)
+			if resp.StatusCode != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500; body=%s", resp.StatusCode, raw)
+			}
+
+			var errBody struct{ Error, Code string }
+			if err := json.Unmarshal([]byte(raw), &errBody); err != nil {
+				t.Fatalf("unmarshal error body %s: %v", raw, err)
+			}
+			if errBody.Code != "" {
+				t.Errorf("error code = %q, want none: a coded error is one the gateway acts on as a verdict on the credential", errBody.Code)
+			}
+			if errBody.Error != errStoreDown.Error() {
+				t.Errorf("error = %q, want %q", errBody.Error, errStoreDown)
+			}
+		})
 	}
 }

@@ -15,7 +15,6 @@ package private
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/versity/versitygw/iamapi/iamerr"
@@ -119,8 +118,7 @@ func principalResolves(ctx context.Context, store iamutil.IdentityStore, account
 // itself for anything else, which is a fault in the service rather than a
 // verdict on the principal.
 func ignoreNoSuchEntity(err error) error {
-	var apiErr iamerr.Error
-	if errors.As(err, &apiErr) && apiErr.Code == "NoSuchEntity" {
+	if iamerr.IsNoSuchEntity(err) {
 		return nil
 	}
 	return err

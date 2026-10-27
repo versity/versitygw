@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	vault "github.com/hashicorp/vault-client-go"
 	"github.com/hashicorp/vault-client-go/schema"
@@ -271,6 +272,14 @@ func caseFoldKey(name string) string {
 	return strings.ToLower(name)
 }
 
+// vaultPathPrintable reports whether segment can be part of a Vault path at
+// all. Vault refuses a path holding any rune unicode.IsPrint rejects with a
+// 400, so nothing can have been stored under one, and a lookup of such a name
+// is answered as the entity not existing rather than as Vault failing.
+func vaultPathPrintable(segment string) bool {
+	return strings.IndexFunc(segment, func(r rune) bool { return !unicode.IsPrint(r) }) < 0
+}
+
 func (s *VaultStore) CreateUser(_ context.Context, user types.User) (*types.User, error) {
 	key := caseFoldKey(user.UserName)
 
@@ -361,6 +370,9 @@ func (s *VaultStore) GetUser(_ context.Context, username string) (*types.User, e
 // delete-then-recreate.
 func (s *VaultStore) readUserVersion(username string) (*types.User, int32, error) {
 	key := caseFoldKey(username)
+	if !vaultPathPrintable(key) {
+		return nil, 0, iamerr.NoSuchEntityUser(username)
+	}
 	path := s.usersPath() + "/" + key
 	resp, err := s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...)
 	if err != nil {
@@ -410,6 +422,12 @@ func (s *VaultStore) GetUserByAccessKeyID(ctx context.Context, accessKeyID strin
 	for _, username := range resp.Data.Keys {
 		user, err := s.GetUser(ctx, username)
 		if err != nil {
+			// A user deleted since the listing owns no key anyone is
+			// asking about; reporting its absence as this key's would
+			// disown a valid key that belongs to a later user.
+			if iamerr.IsNoSuchEntity(err) {
+				continue
+			}
 			return nil, err
 		}
 		for _, key := range user.AccessKeys {
@@ -1082,6 +1100,9 @@ func (s *VaultStore) GetRole(_ context.Context, roleName string) (*types.Role, e
 // blind delete-then-recreate.
 func (s *VaultStore) readRoleVersion(roleName string) (*types.Role, int32, error) {
 	key := caseFoldKey(roleName)
+	if !vaultPathPrintable(key) {
+		return nil, 0, iamerr.NoSuchEntityRole(roleName)
+	}
 	path := s.rolesPath() + "/" + key
 	resp, err := s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...)
 	if err != nil {
@@ -1958,7 +1979,7 @@ func (s *VaultStore) activeSessionCountForRole(ctx context.Context, roleArn stri
 	for _, key := range resp.Data.Keys {
 		session, err := s.GetSession(ctx, key)
 		if err != nil {
-			if errors.Is(err, ErrSessionNotFound) {
+			if errors.Is(err, iamutil.ErrSessionNotFound) {
 				continue
 			}
 			return 0, err
@@ -1991,6 +2012,9 @@ func (s *VaultStore) setSessionTTL(path string, expiration time.Time) error {
 }
 
 func (s *VaultStore) GetSession(_ context.Context, accessKeyID string) (*types.Session, error) {
+	if !vaultPathPrintable(accessKeyID) {
+		return nil, iamutil.ErrSessionNotFound
+	}
 	path := s.sessionsPath() + "/" + accessKeyID
 
 	resp, err := s.client.Secrets.KvV2Read(context.Background(), path, s.kvReqOpts...)
@@ -2004,7 +2028,7 @@ func (s *VaultStore) GetSession(_ context.Context, accessKeyID string) (*types.S
 			// Vault doesn't appear to reclaim it on its own once merely
 			// soft-deleted.
 			s.purgeSession(accessKeyID)
-			return nil, ErrSessionNotFound
+			return nil, iamutil.ErrSessionNotFound
 		}
 		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
 			return nil, reauthErr
@@ -2013,7 +2037,7 @@ func (s *VaultStore) GetSession(_ context.Context, accessKeyID string) (*types.S
 		if err != nil {
 			if vault.IsErrorStatus(err, http.StatusNotFound) {
 				s.purgeSession(accessKeyID)
-				return nil, ErrSessionNotFound
+				return nil, iamutil.ErrSessionNotFound
 			}
 			return nil, err
 		}
@@ -2029,7 +2053,7 @@ func (s *VaultStore) GetSession(_ context.Context, accessKeyID string) (*types.S
 	// (should be rare/racy, since setSessionTTL pins Vault's own TTL to
 	// this same value) — purge now rather than waiting on Vault.
 	s.purgeSession(accessKeyID)
-	return nil, ErrSessionNotFound
+	return nil, iamutil.ErrSessionNotFound
 }
 
 // purgeSession permanently deletes accessKeyID's session metadata and
