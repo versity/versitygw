@@ -1124,6 +1124,7 @@ func TestPosix(ts *TestState) {
 		ts.Run(PutObject_race_into_new_dirs)
 		ts.Run(CopyObject_race_with_sibling_deletes)
 		ts.Run(CompleteMultipartUpload_race_with_sibling_deletes)
+		ts.Run(ListObjects_race_with_parent_dir_replaced)
 		if ts.conf.versioningEnabled {
 			ts.Run(PutObject_race_with_sibling_version_deletes)
 		}
@@ -3717,6 +3718,7 @@ func GetIntTests() IntTests {
 		"PutObject_race_into_new_dirs":                                                     PutObject_race_into_new_dirs,
 		"CopyObject_race_with_sibling_deletes":                                             CopyObject_race_with_sibling_deletes,
 		"CompleteMultipartUpload_race_with_sibling_deletes":                                CompleteMultipartUpload_race_with_sibling_deletes,
+		"ListObjects_race_with_parent_dir_replaced":                                        ListObjects_race_with_parent_dir_replaced,
 		"PutObject_race_with_sibling_version_deletes":                                      PutObject_race_with_sibling_version_deletes,
 		"PutObject_reserved_key":                                                           PutObject_reserved_key,
 		"CreateMultipartUpload_reserved_key":                                               CreateMultipartUpload_reserved_key,

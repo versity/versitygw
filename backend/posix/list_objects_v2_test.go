@@ -16,7 +16,9 @@ package posix
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"reflect"
 	"strings"
@@ -25,6 +27,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/s3response"
 )
@@ -117,57 +120,114 @@ func (m entryGoneMeta) RetrieveAttribute(f *os.File, bucket, object, attribute s
 // is gone, as they skip an entry that no longer exists, instead of failing
 // the listing.
 func TestListObjectsSkipsEntryWhoseDirIsGone(t *testing.T) {
+	for _, tc := range []struct {
+		name, object, want string
+	}{
+		// the etag read of an object
+		{"object", "dir/b", "a,dir/c"},
+		// the etag read of a directory, to tell if it's a directory object
+		{"directory", "dir/", "a,dir/b,dir/c"},
+	} {
+		for _, errno := range []syscall.Errno{syscall.ENOTDIR, syscall.ESTALE} {
+			t.Run(tc.name+"/"+errno.Error(), func(t *testing.T) {
+				p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+					return entryGoneMeta{object: tc.object, errno: errno}, PosixOpts{NewDirPerm: 0755}
+				})
+				bucket := "testbucket"
+				createTestBucket(t, p, bucket)
+
+				ctx := context.Background()
+				for _, key := range []string{"a", "dir/b", "dir/c"} {
+					_, err := p.PutObject(ctx, s3response.PutObjectInput{
+						Bucket:        &bucket,
+						Key:           aws.String(key),
+						Body:          strings.NewReader("data"),
+						ContentLength: aws.Int64(4),
+					})
+					if err != nil {
+						t.Fatalf("put object %q: %v", key, err)
+					}
+				}
+
+				want := tc.want
+				keys := func(objs []s3response.Object) string {
+					var k []string
+					for _, obj := range objs {
+						k = append(k, aws.ToString(obj.Key))
+					}
+					return strings.Join(k, ",")
+				}
+
+				v1, err := p.ListObjects(ctx, &s3.ListObjectsInput{
+					Bucket:  &bucket,
+					MaxKeys: aws.Int32(1000),
+				})
+				if err != nil {
+					t.Fatalf("list objects: %v", err)
+				}
+				if got := keys(v1.Contents); got != want {
+					t.Fatalf("list objects keys = %v, want %v", got, want)
+				}
+
+				v2, err := p.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+					Bucket:     &bucket,
+					StartAfter: aws.String(""),
+					MaxKeys:    aws.Int32(1000),
+				})
+				if err != nil {
+					t.Fatalf("list objects v2: %v", err)
+				}
+				if got := keys(v2.Contents); got != want {
+					t.Fatalf("list objects v2 keys = %v, want %v", got, want)
+				}
+			})
+		}
+	}
+}
+
+// infoGoneEntry is a listed entry whose file info read reports that its
+// directory is gone.
+type infoGoneEntry struct {
+	fs.DirEntry
+	errno syscall.Errno
+}
+
+func (e infoGoneEntry) Info() (fs.FileInfo, error) {
+	return nil, &fs.PathError{Op: "lstat", Path: e.Name(), Err: e.errno}
+}
+
+// TestFileToObjSkipsEntryWhoseInfoIsGone checks that FileToObj skips a
+// directory object and an object whose file info read reports that their
+// directory is gone.
+func TestFileToObjSkipsEntryWhoseInfoIsGone(t *testing.T) {
 	for _, errno := range []syscall.Errno{syscall.ENOTDIR, syscall.ESTALE} {
 		t.Run(errno.Error(), func(t *testing.T) {
 			p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
-				return entryGoneMeta{object: "dir/b", errno: errno}, PosixOpts{NewDirPerm: 0755}
+				return meta.XattrMeta{}, PosixOpts{NewDirPerm: 0755}
 			})
 			bucket := "testbucket"
 			createTestBucket(t, p, bucket)
 
 			ctx := context.Background()
-			for _, key := range []string{"a", "dir/b", "dir/c"} {
+			for _, key := range []string{"dir/", "dir/b"} {
 				_, err := p.PutObject(ctx, s3response.PutObjectInput{
 					Bucket:        &bucket,
 					Key:           aws.String(key),
-					Body:          strings.NewReader("data"),
-					ContentLength: aws.Int64(4),
+					Body:          strings.NewReader(""),
+					ContentLength: aws.Int64(0),
 				})
 				if err != nil {
 					t.Fatalf("put object %q: %v", key, err)
 				}
-			}
 
-			want := "a,dir/c"
-			keys := func(objs []s3response.Object) string {
-				var k []string
-				for _, obj := range objs {
-					k = append(k, aws.ToString(obj.Key))
+				fi, err := fs.Stat(p.bucketFS(bucket), strings.TrimSuffix(key, "/"))
+				if err != nil {
+					t.Fatalf("stat %q: %v", key, err)
 				}
-				return strings.Join(k, ",")
-			}
-
-			v1, err := p.ListObjects(ctx, &s3.ListObjectsInput{
-				Bucket:  &bucket,
-				MaxKeys: aws.Int32(1000),
-			})
-			if err != nil {
-				t.Fatalf("list objects: %v", err)
-			}
-			if got := keys(v1.Contents); got != want {
-				t.Fatalf("list objects keys = %v, want %v", got, want)
-			}
-
-			v2, err := p.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-				Bucket:     &bucket,
-				StartAfter: aws.String(""),
-				MaxKeys:    aws.Int32(1000),
-			})
-			if err != nil {
-				t.Fatalf("list objects v2: %v", err)
-			}
-			if got := keys(v2.Contents); got != want {
-				t.Fatalf("list objects v2 keys = %v, want %v", got, want)
+				_, err = p.FileToObj(bucket, false)(key, infoGoneEntry{fs.FileInfoToDirEntry(fi), errno})
+				if !errors.Is(err, backend.ErrSkipObj) {
+					t.Fatalf("file to object %q: expected the entry to be skipped, got %v", key, err)
+				}
 			}
 		})
 	}

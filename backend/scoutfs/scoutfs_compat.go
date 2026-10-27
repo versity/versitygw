@@ -432,7 +432,7 @@ func (s *ScoutFS) glacierFileToObj(bucket string, fetchOwner bool) backend.GetOb
 		// Check if there are any offline exents associated with this file.
 		// If so, we will return the Glacier storage class
 		st, err := scoutfs.StatMore(objPath)
-		if errors.Is(err, fs.ErrNotExist) {
+		if posix.IsEntryGone(err) {
 			return s3response.Object{}, backend.ErrSkipObj
 		}
 		if err != nil {
