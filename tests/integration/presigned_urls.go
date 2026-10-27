@@ -1186,3 +1186,180 @@ func PresignedAuth_CreateMultipartUpload_strips_aws_chunked_content_encoding(s *
 		return nil
 	})
 }
+
+// An absolute-form request-target ("GET http://host/path HTTP/1.1") names the
+// host the request is sent to, whatever the Host header says. S3 serves a
+// presigned url sent that way with its own host.
+func PresignedAuth_absolute_form_request_target(s *S3Conf) error {
+	testName := "PresignedAuth_absolute_form_request_target"
+	return requestTargetHandler(s, testName, func(bucket, _, obj string) error {
+		u, err := presignPathStyleGetObject(s, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		resp, err := sendRawRequest(s, http.MethodGet, u.String(), u.Host, nil)
+		if err != nil {
+			return err
+		}
+
+		return checkObjectResponse(resp, bucket+"/"+obj)
+	})
+}
+
+// A presigned url can't be pointed at another bucket by an absolute-form
+// request-target naming the other bucket's virtual host, with the signed Host
+// header and path left as they are: the host the request is routed to is
+// the one its signature is checked for.
+func PresignedAuth_absolute_form_another_bucket_host(s *S3Conf) error {
+	testName := "PresignedAuth_absolute_form_another_bucket_host"
+	return requestTargetHandler(s, testName, func(bucket, otherBucket, obj string) error {
+		u, err := presignPathStyleGetObject(s, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		target := u.Scheme + "://" + otherBucket + "." + u.Host + u.RequestURI()
+		resp, err := sendRawRequest(s, http.MethodGet, target, u.Host, nil)
+		if err != nil {
+			return err
+		}
+
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
+			return err
+		}
+
+		if !s.hostStyle {
+			return nil
+		}
+
+		// a virtual-hosted-style presigned url can't be pointed at another
+		// bucket's host either
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := s.GetPresignClient().PresignGetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &obj})
+		cancel()
+		if err != nil {
+			return err
+		}
+		vu, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		target = vu.Scheme + "://" + otherBucket + "." + u.Host + vu.RequestURI()
+		resp, err = sendRawRequest(s, http.MethodGet, target, vu.Host, nil)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
+	})
+}
+
+func PresignedAuth_absolute_form_another_host(s *S3Conf) error {
+	testName := "PresignedAuth_absolute_form_another_host"
+	return requestTargetHandler(s, testName, func(bucket, _, obj string) error {
+		u, err := presignPathStyleGetObject(s, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		target := u.Scheme + "://other.example.test" + u.RequestURI()
+		resp, err := sendRawRequest(s, http.MethodGet, target, u.Host, nil)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
+	})
+}
+
+// S3 takes the whole authority of an absolute-form request-target as its
+// host, a userinfo prefix included, so it can't hide the signed host in front
+// of another bucket's one.
+func PresignedAuth_absolute_form_userinfo_host(s *S3Conf) error {
+	testName := "PresignedAuth_absolute_form_userinfo_host"
+	return requestTargetHandler(s, testName, func(bucket, otherBucket, obj string) error {
+		u, err := presignPathStyleGetObject(s, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		host := u.Host + "@" + otherBucket + "." + u.Host
+		target := u.Scheme + "://" + host + u.RequestURI()
+		resp, err := sendRawRequest(s, http.MethodGet, target, u.Host, nil)
+		if err != nil {
+			return err
+		}
+
+		if s.hostStyle {
+			// the host has the virtual domain after a bucket name that
+			// isn't valid
+			return checkHTTPResponseApiErr(resp, s3err.GetBucketErr(s3err.ErrInvalidBucketName, strings.ToLower(u.Host+"@"+otherBucket)))
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
+	})
+}
+
+// S3 takes an absolute-form request-target with an empty host
+// ("http:///path") as having none, and the Host header names the host.
+func PresignedAuth_absolute_form_empty_host(s *S3Conf) error {
+	testName := "PresignedAuth_absolute_form_empty_host"
+	return requestTargetHandler(s, testName, func(bucket, _, obj string) error {
+		u, err := presignPathStyleGetObject(s, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		target := u.Scheme + "://" + u.RequestURI()
+		resp, err := sendRawRequest(s, http.MethodGet, target, u.Host, nil)
+		if err != nil {
+			return err
+		}
+
+		return checkObjectResponse(resp, bucket+"/"+obj)
+	})
+}
+
+func PresignedAuth_absolute_form_non_http_scheme(s *S3Conf) error {
+	testName := "PresignedAuth_absolute_form_non_http_scheme"
+	return requestTargetHandler(s, testName, func(bucket, _, obj string) error {
+		u, err := presignPathStyleGetObject(s, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		target := "ftp://" + u.Host + u.RequestURI()
+		resp, err := sendRawRequest(s, http.MethodGet, target, u.Host, nil)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidURI))
+	})
+}
+
+// An origin-form request-target starting with "//" and another bucket's host
+// can't point a presigned url at that bucket, though the gateway's http
+// server takes a host out of such a target when it has a "://" anywhere,
+// like in its fragment. The request goes to the Host header's host, with the
+// path left after that bucket's host. S3 itself keeps the whole target as
+// the path, and rejects the signature.
+func PresignedAuth_origin_form_another_bucket_host(s *S3Conf) error {
+	testName := "PresignedAuth_origin_form_another_bucket_host"
+	return requestTargetHandler(s, testName, func(bucket, otherBucket, obj string) error {
+		u, err := presignPathStyleGetObject(s, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		target := "//" + otherBucket + "." + u.Host + u.RequestURI() + "#://"
+		resp, err := sendRawRequest(s, http.MethodGet, target, u.Host, nil)
+		if err != nil {
+			return err
+		}
+
+		return checkObjectResponse(resp, bucket+"/"+obj)
+	})
+}
