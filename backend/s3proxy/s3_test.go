@@ -336,7 +336,7 @@ func TestObjectTaggingVersionId(t *testing.T) {
 }
 
 // A bucket that was never versioned answers with an empty
-// VersioningConfiguration, and S3 leaves MFADelete out unless it was
+// VersioningConfiguration, and S3 leaves MfaDelete out unless it was
 // configured. Neither element may then show up in the gateway response.
 func TestGetBucketVersioningOmitsUnsetFields(t *testing.T) {
 	tests := []struct {
@@ -357,7 +357,7 @@ func TestGetBucketVersioningOmitsUnsetFields(t *testing.T) {
 		{
 			name:     "suspended with mfa delete",
 			respBody: `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Suspended</Status><MfaDelete>Disabled</MfaDelete></VersioningConfiguration>`,
-			want:     `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><MFADelete>Disabled</MFADelete><Status>Suspended</Status></VersioningConfiguration>`,
+			want:     `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Suspended</Status><MfaDelete>Disabled</MfaDelete></VersioningConfiguration>`,
 		},
 	}
 
