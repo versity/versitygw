@@ -2223,8 +2223,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		// if we fail, cleanup the container directories
 		// but ignore errors because there might still be
 		// other uploads for the same object name outstanding
-		os.RemoveAll(filepath.Join(tmppath, uploadID))
-		os.Remove(tmppath)
+		_ = p.removeUpload(bucket, object, uploadID)
 		return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("set name attr for upload: %w", err)
 	}
 
@@ -2233,9 +2232,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		err := p.storeObjectTags(bucket, filepath.Join(objdir, uploadID), tags)
 		if err != nil {
 			// cleanup object if returning error
-			os.RemoveAll(filepath.Join(tmppath, uploadID))
-			os.Remove(tmppath)
-			_ = p.meta.DeleteAttributes(bucket, filepath.Join(objdir, uploadID))
+			_ = p.removeUpload(bucket, object, uploadID)
 			return s3response.InitiateMultipartUploadResult{}, err
 		}
 	}
@@ -2253,9 +2250,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		})
 	if err != nil {
 		// cleanup object if returning error
-		os.RemoveAll(filepath.Join(tmppath, uploadID))
-		os.Remove(tmppath)
-		_ = p.meta.DeleteAttributes(bucket, filepath.Join(objdir, uploadID))
+		_ = p.removeUpload(bucket, object, uploadID)
 		return s3response.InitiateMultipartUploadResult{}, err
 	}
 
@@ -2270,9 +2265,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
 			}
 			// cleanup object if returning error
-			os.RemoveAll(filepath.Join(tmppath, uploadID))
-			os.Remove(tmppath)
-			_ = p.meta.DeleteAttributes(bucket, filepath.Join(objdir, uploadID))
+			_ = p.removeUpload(bucket, object, uploadID)
 			return s3response.InitiateMultipartUploadResult{}, err
 		}
 	}
@@ -2286,9 +2279,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		retParsed, err := json.Marshal(retention)
 		if err != nil {
 			// cleanup object if returning error
-			os.RemoveAll(filepath.Join(tmppath, uploadID))
-			os.Remove(tmppath)
-			_ = p.meta.DeleteAttributes(bucket, filepath.Join(objdir, uploadID))
+			_ = p.removeUpload(bucket, object, uploadID)
 			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("parse object lock retention: %w", err)
 		}
 		err = p.isBucketObjectLockEnabled(bucket)
@@ -2300,9 +2291,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
 			}
 			// cleanup object if returning error
-			os.RemoveAll(filepath.Join(tmppath, uploadID))
-			os.Remove(tmppath)
-			_ = p.meta.DeleteAttributes(bucket, filepath.Join(objdir, uploadID))
+			_ = p.removeUpload(bucket, object, uploadID)
 			return s3response.InitiateMultipartUploadResult{}, err
 		}
 	}
@@ -2320,9 +2309,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		}
 		if err != nil {
 			// cleanup object if returning error
-			_ = os.RemoveAll(filepath.Join(tmppath, uploadID))
-			_ = os.Remove(tmppath)
-			_ = p.meta.DeleteAttributes(bucket, filepath.Join(objdir, uploadID))
+			_ = p.removeUpload(bucket, object, uploadID)
 			return s3response.InitiateMultipartUploadResult{}, err
 		}
 	}
@@ -2333,9 +2320,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		err := p.meta.StoreAttribute(nil, bucket, filepath.Join(objdir, uploadID), mpObjectLockKey, []byte{1})
 		if err != nil {
 			// cleanup object if returning error
-			_ = os.RemoveAll(filepath.Join(tmppath, uploadID))
-			_ = os.Remove(tmppath)
-			_ = p.meta.DeleteAttributes(bucket, filepath.Join(objdir, uploadID))
+			_ = p.removeUpload(bucket, object, uploadID)
 			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("store mp object lock: %w", err)
 		}
 	}
@@ -2348,9 +2333,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		})
 		if err != nil {
 			// cleanup object if returning error
-			_ = os.RemoveAll(filepath.Join(tmppath, uploadID))
-			_ = os.Remove(tmppath)
-			_ = p.meta.DeleteAttributes(bucket, filepath.Join(objdir, uploadID))
+			_ = p.removeUpload(bucket, object, uploadID)
 			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("store mp checksum algorithm: %w", err)
 		}
 	}
@@ -2721,10 +2704,22 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", fmt.Errorf("rename metadata for in-progress: %w", err)
 	}
 
-	// Best-effort rename back on failure so a future retry can still complete.
-	// On success, os.RemoveAll below removes uploadIDInProgress so this is a no-op.
-	defer os.Rename(uploadIDInProgress, uploadIDDir)
-	defer p.meta.RenameObject(bucket, newMetaObj, oldMetaObj)
+	// Best-effort rename back on failure so a future retry can still
+	// complete, unless a non-idempotent copy has consumed the parts: the
+	// upload can no longer be retried then and is removed. On success the
+	// upload is removed below.
+	var abortOnErr bool
+	defer func() {
+		if err == nil {
+			return
+		}
+		if abortOnErr {
+			_ = p.removeUpload(bucket, key, activeUploadName)
+			return
+		}
+		p.meta.RenameObject(bucket, newMetaObj, oldMetaObj)
+		os.Rename(uploadIDInProgress, uploadIDDir)
+	}()
 
 	// Fast-fail precondition and directory checks before the parts are
 	// assembled. These are only advisory: the authoritative checks are
@@ -2963,7 +2958,6 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	}
 	defer f.cleanup()
 
-	var abortOnErrSet bool
 	for _, part := range parts {
 		partObjPath := filepath.Join(objdir, activeUploadName, fmt.Sprintf("%v", *part.PartNumber))
 		fullPartPath := p.ObjectPath(bucket, partObjPath)
@@ -2991,17 +2985,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 				// a successful non-idempotent call means we can no longer
 				// retry this upload. any failure needs to abort the complete
 				// upload.
-				if !abortOnErrSet {
-					defer func() {
-						// cleanup tmp dirs
-						os.RemoveAll(filepath.Join(p.BucketPath(bucket), objdir, activeUploadName))
-						// use Remove for objdir in case there are still other
-						// uploads for same object name outstanding, this will
-						// fail if there are any
-						os.Remove(p.ObjectPath(bucket, objdir))
-					}()
-				}
-				abortOnErrSet = true
+				abortOnErr = true
 			}
 		} else {
 			if p.forceNoCopyFileRange {
@@ -3176,10 +3160,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	}
 
 	// cleanup tmp dirs
-	os.RemoveAll(filepath.Join(p.BucketPath(bucket), objdir, activeUploadName))
-	// use Remove for objdir in case there are still other uploads
-	// for same object name outstanding, this will fail if there are any
-	os.Remove(p.ObjectPath(bucket, objdir))
+	_ = p.removeUpload(bucket, key, activeUploadName)
 
 	return s3response.CompleteMultipartUploadResult{
 		Bucket:            &bucket,
@@ -3583,17 +3564,39 @@ func (p *Posix) AbortMultipartUpload(ctx context.Context, mpu *s3.AbortMultipart
 		}
 	}
 
-	err = os.RemoveAll(filepath.Join(objdir, uploadID))
+	return p.removeUpload(bucket, object, uploadID)
+}
+
+// removeUpload removes the directory of the upload uploadName of key with its
+// parts, and the directory of key once no other upload of key remains. The
+// metadata of the removed directories is removed with them: sidecar metadata
+// is stored apart from the directories and would otherwise be left behind.
+func (p *Posix) removeUpload(bucket, key, uploadName string) error {
+	objdir := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sha256.Sum256([]byte(key))))
+	upiddir := filepath.Join(objdir, uploadName)
+
+	err := os.RemoveAll(p.ObjectPath(bucket, upiddir))
 	if err != nil {
 		return fmt.Errorf("remove multipart upload container: %w", err)
 	}
-	os.Remove(objdir)
+	err = p.meta.RemoveObject(bucket, upiddir)
+	if err != nil {
+		debuglogger.Logf("failed to remove multipart upload metadata (%q/%q): %v", bucket, upiddir, err)
+	}
 
-	// Clean up sidecar metadata for the aborted upload.  With xattr this is
-	// a no-op; with sidecar the metadata directory would otherwise be orphaned.
-	uploadMetaPath := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum), uploadID)
-	_ = p.meta.DeleteAttributes(bucket, uploadMetaPath)
-
+	// Remove fails while other uploads of key remain
+	if os.Remove(p.ObjectPath(bucket, objdir)) != nil {
+		return nil
+	}
+	err = p.meta.DeleteAttributes(bucket, objdir)
+	if err != nil {
+		debuglogger.Logf("failed to remove multipart object name metadata (%q/%q): %v", bucket, objdir, err)
+	}
+	// A new upload of key can make the directory again and store the name
+	// of key before the metadata of the removed directory is removed
+	if _, err := os.Stat(p.ObjectPath(bucket, objdir)); err == nil {
+		_ = p.meta.StoreAttribute(nil, bucket, objdir, onameAttr, []byte(key))
+	}
 	return nil
 }
 

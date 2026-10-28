@@ -16,6 +16,9 @@ package meta
 
 import (
 	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -77,5 +80,58 @@ func TestSideCarReplaceObject(t *testing.T) {
 	slices.Sort(attrs)
 	if want := []string{"checksums", "child", "etag"}; !slices.Equal(attrs, want) {
 		t.Errorf("expected the metadata directory entries to be %v, got %v", want, attrs)
+	}
+}
+
+func TestSideCarRemoveObject(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewSideCar(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// no metadata stored for the object
+	if err := s.RemoveObject("bucket", "dir/obj"); err != nil {
+		t.Fatalf("remove object without metadata: %v", err)
+	}
+
+	for _, object := range []string{"", "dir/obj", "dir/obj/1", "dir/obj/1/2", "dir/other"} {
+		if err := s.StoreAttribute(nil, "bucket", object, "etag", []byte(object)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := s.RemoveObject("bucket", "dir/obj"); err != nil {
+		t.Fatalf("remove object: %v", err)
+	}
+
+	for _, object := range []string{"dir/obj", "dir/obj/1", "dir/obj/1/2"} {
+		_, err := s.RetrieveAttribute(nil, "bucket", object, "etag")
+		if !errors.Is(err, ErrNoSuchKey) {
+			t.Errorf("removed object %v: expected ErrNoSuchKey, got %v", object, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "bucket", "dir", "obj")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("expected the object directory to be removed, got %v", err)
+	}
+	for _, object := range []string{"", "dir/other"} {
+		val, err := s.RetrieveAttribute(nil, "bucket", object, "etag")
+		if err != nil {
+			t.Fatalf("kept object %q: %v", object, err)
+		}
+		if string(val) != object {
+			t.Errorf("kept object %q: expected %q, got %q", object, object, val)
+		}
+	}
+
+	// the parent directories left empty are removed up to the bucket
+	if err := s.RemoveObject("bucket", "dir/other"); err != nil {
+		t.Fatalf("remove object: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "bucket", "dir")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("expected the empty parent directory to be removed, got %v", err)
+	}
+	if _, err := s.RetrieveAttribute(nil, "bucket", "", "etag"); err != nil {
+		t.Errorf("bucket attribute: %v", err)
 	}
 }

@@ -143,6 +143,12 @@ func (x XattrMeta) RenameObject(_, _, _ string) error {
 	return nil
 }
 
+// RemoveObject is a no-op for xattr because extended attributes are stored
+// on the inodes and are removed with the files and directories.
+func (x XattrMeta) RemoveObject(_, _ string) error {
+	return nil
+}
+
 // ReplaceObject is a no-op for xattr because extended attributes are stored
 // on the inodes: the replaced file takes its attributes with it, and the new
 // file has only the ones set on it.
