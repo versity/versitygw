@@ -15,6 +15,7 @@ package private
 
 import (
 	"context"
+	"errors"
 
 	"github.com/versity/versitygw/iamapi/internal/iammiddleware"
 	"github.com/versity/versitygw/iamapi/internal/iamutil"
@@ -64,14 +65,19 @@ const (
 // consumer is auth.CheckIfAccountsExist — validating the principals named in
 // a bucket policy or ACL, one batch per PutBucketPolicy/PutBucketAcl.
 // Results are positional: one entry per input, with Found false for keys
-// that don't resolve, rather than an error for the whole batch.
-func resolveIdentityMetadata(ctx context.Context, store iamutil.IdentityStore, accessKeyIDs []string) []identityMetadata {
+// that don't resolve, rather than an error for the whole batch. A store that
+// cannot answer is not a key that doesn't resolve: it fails the whole batch,
+// since any entry reported Found false on its account would be a wrong answer.
+func resolveIdentityMetadata(ctx context.Context, store iamutil.IdentityStore, accessKeyIDs []string) ([]identityMetadata, error) {
 	out := make([]identityMetadata, len(accessKeyIDs))
 	for i, accessKeyID := range accessKeyIDs {
 		if sigv4auth.IsTempAccessKeyID(accessKeyID) {
 			session, err := store.GetSession(ctx, accessKeyID)
-			if err != nil {
+			if errors.Is(err, iamutil.ErrSessionNotFound) {
 				continue
+			}
+			if err != nil {
+				return nil, err
 			}
 			out[i] = identityMetadata{
 				Found:        true,
@@ -82,8 +88,11 @@ func resolveIdentityMetadata(ctx context.Context, store iamutil.IdentityStore, a
 		}
 
 		identity, _, err := iamutil.ResolveUserIdentity(ctx, store, accessKeyID)
-		if err != nil {
+		if errors.Is(err, iamutil.ErrIdentityNotFound) {
 			continue
+		}
+		if err != nil {
+			return nil, err
 		}
 		out[i] = identityMetadata{
 			Found:        true,
@@ -91,7 +100,7 @@ func resolveIdentityMetadata(ctx context.Context, store iamutil.IdentityStore, a
 			PrincipalArn: iammiddleware.CallerArn(*identity),
 		}
 	}
-	return out
+	return out, nil
 }
 
 // identityMetadata is one resolveIdentityMetadata result. The zero value

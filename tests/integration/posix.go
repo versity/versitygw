@@ -908,6 +908,53 @@ func ListObjects_race_with_parent_dir_replaced(s *S3Conf) error {
 	})
 }
 
+// PutObject_race_with_parent_object_deletes uploads, reads back and deletes
+// objects under a key while another worker uploads, reads back and deletes an
+// object at that key itself. A posix directory can't be a file at once, so an
+// upload under the key conflicts with the object at it while that exists, and
+// the other way around while objects are under the key. An upload can't fail
+// otherwise, even when the object it conflicted with is deleted right after
+// the upload looked it up, and an upload that succeeded must be readable.
+func PutObject_race_with_parent_object_deletes(s *S3Conf) error {
+	testName := "PutObject_race_with_parent_object_deletes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return raceWorkers(siblingRaceWorkers, siblingRaceIterations, func(w, i int) error {
+			parent := fmt.Sprintf("race/%d/b", w/parentRaceGroupSize)
+			key, conflict := parent, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
+			if w%parentRaceGroupSize != 0 {
+				key, conflict = fmt.Sprintf("%v/w%d-%d", parent, w, i), s3err.GetAPIError(s3err.ErrObjectParentIsFile)
+			}
+			data := siblingRaceData(key)
+			_, err := putObjectWithData(int64(len(data)), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+				Body:   bytes.NewReader(data),
+			}, s3client)
+			if err != nil {
+				// the object at the parent key, or the objects under it,
+				// were in the way
+				if err := checkApiErr(err, conflict); err != nil {
+					return fmt.Errorf("put %v: %w", key, err)
+				}
+				return nil
+			}
+			if err := checkObjectData(s3client, bucket, key, "", data); err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("delete %v: %w", key, err)
+			}
+			return nil
+		})
+	})
+}
+
 // PutObject_reserved_key checks that no key reaches the .sgwtmp directory of
 // a bucket, where its multipart uploads are staged: the parts of an upload at
 // .sgwtmp/multipart/<sha256 of the key>/<upload id>/. A client can't replace

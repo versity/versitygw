@@ -183,16 +183,27 @@ func resolveIdentity(ctx fiber.Ctx, store iamutil.IdentityStore, authData sigv4a
 
 	identity, secret, err := iamutil.ResolveUserIdentity(ctx, store, authData.Access)
 	if err != nil {
-		return nil, "", iamerr.GetAPIError(iamerr.ErrInvalidClientTokenID)
+		return nil, "", publicResolveError(err)
 	}
 	return identity, secret, nil
 }
 
+// publicResolveError maps iamutil's identity-resolution sentinels onto the
+// control plane's single public-facing error, which deliberately does not
+// distinguish "no such identity" from "wrong token" for an unauthenticated
+// caller. Anything else is the store failing rather than a verdict on the
+// credential, so it passes through for GlobalErrorHandler to render as a
+// retryable InternalFailure.
+func publicResolveError(err error) error {
+	if errors.Is(err, iamutil.ErrIdentityNotFound) || errors.Is(err, iamutil.ErrInvalidSessionToken) {
+		return iamerr.GetAPIError(iamerr.ErrInvalidClientTokenID)
+	}
+	return err
+}
+
 // resolveSessionIdentity extracts the security token from wherever this
 // request carries it and delegates to iamutil.ResolveSessionByToken, mapping
-// its sentinel errors onto the control plane's single public-facing error —
-// which deliberately does not distinguish "no such session" from "wrong
-// token" for an unauthenticated caller.
+// its errors through publicResolveError.
 func resolveSessionIdentity(ctx fiber.Ctx, store iamutil.IdentityStore, authData sigv4auth.AuthData, queryAuth bool) (*types.Identity, string, error) {
 	token := ctx.Get(sigv4auth.HeaderSecurityToken)
 	if queryAuth {
@@ -201,7 +212,7 @@ func resolveSessionIdentity(ctx fiber.Ctx, store iamutil.IdentityStore, authData
 
 	identity, secret, err := iamutil.ResolveSessionByToken(ctx.Context(), store, authData.Access, token)
 	if err != nil {
-		return nil, "", iamerr.GetAPIError(iamerr.ErrInvalidClientTokenID)
+		return nil, "", publicResolveError(err)
 	}
 	return identity, secret, nil
 }

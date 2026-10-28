@@ -13,13 +13,20 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/versity/versitygw/s3err"
 )
 
-// maxMkdirRaceRetries bounds how many times MkdirAll makes a directory
-// again after a concurrent remove took it, or one of its parents, away.
-const maxMkdirRaceRetries = 16
+const (
+	// maxMkdirRaceRetries bounds how many times MkdirAll makes a directory
+	// again after a concurrent remove took it, or one of its parents, away.
+	maxMkdirRaceRetries = 16
+	// mkdirRetryWait is the wait before the second retry, which doubles
+	// with each further retry up to mkdirRetryMaxWait.
+	mkdirRetryWait    = 100 * time.Microsecond
+	mkdirRetryMaxWait = 128 * mkdirRetryWait
+)
 
 // MkdirAll is similar to os.MkdirAll but it will return
 // ErrObjectParentIsFile when appropriate
@@ -81,7 +88,7 @@ func mkdirAll(path string, uid, gid int, doChown bool, dirPerm fs.FileMode, retr
 
 		if errors.Is(err, fs.ErrNotExist) && *retries > 0 {
 			// The parent was removed after it was made, make it again.
-			*retries--
+			takeMkdirRetry(retries)
 			continue
 		}
 
@@ -94,7 +101,7 @@ func mkdirAll(path string, uid, gid int, doChown bool, dirPerm fs.FileMode, retr
 			// stale lookup of it cached.
 			dir, err1 = lstatRevalidated(path)
 			if errors.Is(err1, fs.ErrNotExist) && *retries > 0 {
-				*retries--
+				takeMkdirRetry(retries)
 				continue
 			}
 		}
@@ -116,6 +123,22 @@ func mkdirAll(path string, uid, gid int, doChown bool, dirPerm fs.FileMode, retr
 		}
 	}
 	return nil
+}
+
+// takeMkdirRetry takes a retry from the budget of MkdirAll and waits before
+// it, unless it is the first one. A directory that is being removed is still
+// found by a lookup for a moment after the remove has made it unusable: on
+// Linux, rmdir marks the directory dead before the path to it is gone, and a
+// mkdir in it fails with ENOENT meanwhile. Retrying at once would only repeat
+// that for as long as the remove takes to finish, which a remover that is
+// preempted under load can stretch past the whole budget.
+func takeMkdirRetry(retries *int) {
+	used := maxMkdirRaceRetries - *retries
+	*retries--
+	if used == 0 {
+		return
+	}
+	time.Sleep(min(mkdirRetryWait<<(used-1), mkdirRetryMaxWait))
 }
 
 // lstatRevalidated is os.Lstat for a path that a client caching lookups may

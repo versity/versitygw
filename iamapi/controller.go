@@ -1389,6 +1389,12 @@ func (c IAMApiController) AssumeRoleWithWebIdentity(ctx fiber.Ctx) (*Response, e
 
 	role, err := c.store.GetRole(ctx.Context(), roleName)
 	if err != nil {
+		// The store failing is not the role being absent, and answering
+		// AccessDenied would tell the caller its request is refused rather
+		// than that it can be retried.
+		if !iamerr.IsSenderError(err) {
+			return nil, err
+		}
 		debuglogger.Logf("AssumeRoleWithWebIdentity: role %q not found: %v", roleName, err)
 		return nil, iamerr.AccessDeniedAssumeRoleWithWebIdentity()
 	}
@@ -1434,15 +1440,27 @@ func (c IAMApiController) AssumeRoleWithWebIdentity(ctx fiber.Ctx) (*Response, e
 		RoleSessionName:  roleSessionName,
 	}
 
+	// A Federated principal that names no provider (or is no provider ARN at
+	// all, such as cognito-identity.amazonaws.com) simply doesn't resolve. A
+	// provider the store failed to read is different: evaluation skips any
+	// statement whose principal doesn't resolve, Deny statements included,
+	// so evaluating on would let a Deny that could not be read go unapplied.
+	var lookupErr error
 	lookup := func(federatedArn string) (string, bool) {
 		provider, err := c.store.GetOIDCProvider(ctx.Context(), federatedArn)
 		if err != nil {
+			if !iamerr.IsSenderError(err) && lookupErr == nil {
+				lookupErr = err
+			}
 			return "", false
 		}
 		return provider.Url, true
 	}
 
 	result, providerArn := policy.EvaluateWebIdentityTrust(role.AssumeRolePolicyDocument, lookup, wctx)
+	if lookupErr != nil {
+		return nil, lookupErr
+	}
 	switch result {
 	case policy.NoPrincipal, policy.ExplicitlyDenied:
 		debuglogger.Logf("AssumeRoleWithWebIdentity: role %q trust policy does not authorize this request", roleName)
@@ -1454,6 +1472,9 @@ func (c IAMApiController) AssumeRoleWithWebIdentity(ctx fiber.Ctx) (*Response, e
 
 	provider, err := c.store.GetOIDCProvider(ctx.Context(), providerArn)
 	if err != nil {
+		if !iamerr.IsSenderError(err) {
+			return nil, err
+		}
 		debuglogger.Logf("AssumeRoleWithWebIdentity: matched provider %q vanished before use: %v", providerArn, err)
 		return nil, iamerr.AccessDeniedAssumeRoleWithWebIdentity()
 	}
