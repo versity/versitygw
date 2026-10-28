@@ -201,6 +201,8 @@ func UnsignedStreamingPayloadTrailer_incomplete_body(s *S3Conf) error {
 			// invalid chunk size
 			[]byte("invalid_chunk_size\r\ndummy data\r\n0\r\nx-amz-checksum-crc64nvme:dPVWc2vU1+Q=\r\n\r\n"),
 			[]byte("A\r\ndummy data\r\nJ\r\nx-amz-checksum-crc64nvme:dPVWc2vU1+Q=\r\n\r\n"),
+			// negative chunk size
+			[]byte("-A\r\ndummy data\r\n0\r\nx-amz-checksum-crc64nvme:dPVWc2vU1+Q=\r\n\r\n"),
 		} {
 			reqHeaders := map[string]string{
 				"x-amz-decoded-content-length": "10",

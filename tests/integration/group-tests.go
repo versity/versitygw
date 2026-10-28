@@ -42,6 +42,9 @@ func TestAuthentication(ts *TestState) {
 	ts.Run(Authentication_signature_error_incorrect_secret_key)
 	ts.Run(Authentication_sigv2_not_supported)
 	ts.Run(Authentication_with_expect_header)
+	ts.Run(Authentication_absolute_form_request_target)
+	ts.Run(Authentication_absolute_form_another_bucket_host)
+	ts.Run(Authentication_origin_form_another_bucket_host)
 }
 
 func TestPresignedAuthentication(ts *TestState) {
@@ -77,6 +80,13 @@ func TestPresignedAuthentication(ts *TestState) {
 		ts.Run(PresignedAuth_Put_GetObject_with_UTF8_chars)
 	}
 	ts.Run(PresignedAuth_UploadPart)
+	ts.Run(PresignedAuth_absolute_form_request_target)
+	ts.Run(PresignedAuth_absolute_form_another_bucket_host)
+	ts.Run(PresignedAuth_absolute_form_another_host)
+	ts.Run(PresignedAuth_absolute_form_userinfo_host)
+	ts.Run(PresignedAuth_absolute_form_empty_host)
+	ts.Run(PresignedAuth_absolute_form_non_http_scheme)
+	ts.Run(PresignedAuth_origin_form_another_bucket_host)
 }
 
 func TestCreateBucket(ts *TestState) {
@@ -1124,6 +1134,7 @@ func TestPosix(ts *TestState) {
 		ts.Run(PutObject_race_into_new_dirs)
 		ts.Run(CopyObject_race_with_sibling_deletes)
 		ts.Run(CompleteMultipartUpload_race_with_sibling_deletes)
+		ts.Run(PutObject_race_with_parent_object_deletes)
 		if ts.conf.versioningEnabled {
 			ts.Run(PutObject_race_with_sibling_version_deletes)
 		}
@@ -2517,6 +2528,9 @@ func GetIntTests() IntTests {
 		"Authentication_signature_error_incorrect_secret_key":                              Authentication_signature_error_incorrect_secret_key,
 		"Authentication_sigv2_not_supported":                                               Authentication_sigv2_not_supported,
 		"Authentication_with_expect_header":                                                Authentication_with_expect_header,
+		"Authentication_absolute_form_request_target":                                      Authentication_absolute_form_request_target,
+		"Authentication_absolute_form_another_bucket_host":                                 Authentication_absolute_form_another_bucket_host,
+		"Authentication_origin_form_another_bucket_host":                                   Authentication_origin_form_another_bucket_host,
 		"IAMAuth_invalid_auth_header":                                                      IAMAuth_invalid_auth_header,
 		"IAMAuth_unsupported_signature_version":                                            IAMAuth_unsupported_signature_version,
 		"IAMAuth_malformed_component":                                                      IAMAuth_malformed_component,
@@ -3055,6 +3069,13 @@ func GetIntTests() IntTests {
 		"PresignedAuth_Put_GetObject_with_data":                                            PresignedAuth_Put_GetObject_with_data,
 		"PresignedAuth_Put_GetObject_with_UTF8_chars":                                      PresignedAuth_Put_GetObject_with_UTF8_chars,
 		"PresignedAuth_UploadPart":                                                         PresignedAuth_UploadPart,
+		"PresignedAuth_absolute_form_request_target":                                       PresignedAuth_absolute_form_request_target,
+		"PresignedAuth_absolute_form_another_bucket_host":                                  PresignedAuth_absolute_form_another_bucket_host,
+		"PresignedAuth_absolute_form_another_host":                                         PresignedAuth_absolute_form_another_host,
+		"PresignedAuth_absolute_form_userinfo_host":                                        PresignedAuth_absolute_form_userinfo_host,
+		"PresignedAuth_absolute_form_empty_host":                                           PresignedAuth_absolute_form_empty_host,
+		"PresignedAuth_absolute_form_non_http_scheme":                                      PresignedAuth_absolute_form_non_http_scheme,
+		"PresignedAuth_origin_form_another_bucket_host":                                    PresignedAuth_origin_form_another_bucket_host,
 		"CreateBucket_invalid_bucket_name":                                                 CreateBucket_invalid_bucket_name,
 		"CreateBucket_existing_bucket":                                                     CreateBucket_existing_bucket,
 		"CreateBucket_owned_by_you":                                                        CreateBucket_owned_by_you,
@@ -3717,6 +3738,7 @@ func GetIntTests() IntTests {
 		"PutObject_race_into_new_dirs":                                                     PutObject_race_into_new_dirs,
 		"CopyObject_race_with_sibling_deletes":                                             CopyObject_race_with_sibling_deletes,
 		"CompleteMultipartUpload_race_with_sibling_deletes":                                CompleteMultipartUpload_race_with_sibling_deletes,
+		"PutObject_race_with_parent_object_deletes":                                        PutObject_race_with_parent_object_deletes,
 		"PutObject_race_with_sibling_version_deletes":                                      PutObject_race_with_sibling_version_deletes,
 		"PutObject_reserved_key":                                                           PutObject_reserved_key,
 		"CreateMultipartUpload_reserved_key":                                               CreateMultipartUpload_reserved_key,

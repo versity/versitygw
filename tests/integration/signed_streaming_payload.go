@@ -32,6 +32,9 @@ func SignedStreamingPayload_invalid_encoding(s *S3Conf) error {
 			buffer []byte
 		}{
 			{0, 2, []byte{'j'}}, // invalid chunk size
+			// negative chunk sizes
+			{0, 2, []byte("-1")},
+			{105, 106, []byte("-1")},
 			// missing/invalid delimiters
 			{83, 85, nil},
 			{83, 85, []byte("dd")},

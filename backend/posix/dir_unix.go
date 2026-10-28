@@ -26,8 +26,10 @@ import (
 )
 
 // handleParentDirError returns ErrObjectParentIsFile when a parent of name
-// is a file. A shared filesystem can also fail a lookup with ENOTDIR for a
-// directory that another node is removing; name is treated as missing then.
+// is a file, after a lookup of name failed with ENOTDIR. It returns nil when
+// no parent is a file: the parent that was a file has been removed since, or
+// a shared filesystem failed the lookup for a directory that another node is
+// removing. The caller treats name as missing then.
 func handleParentDirError(name string) error {
 	for dir := filepath.Dir(name); dir != filepath.Dir(dir); dir = filepath.Dir(dir) {
 		fi, err := os.Lstat(dir)
@@ -40,6 +42,13 @@ func handleParentDirError(name string) error {
 		break
 	}
 	return nil
+}
+
+// removeDir removes the directory name if it is empty. Unlike os.Remove it
+// never removes a file, which a concurrent upload may have put in place of
+// the directory since the caller looked at it.
+func removeDir(name string) error {
+	return syscall.Rmdir(name)
 }
 
 // isParentDirGone reports whether err from placing an entry in a directory

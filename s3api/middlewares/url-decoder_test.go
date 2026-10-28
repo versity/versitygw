@@ -106,6 +106,21 @@ func TestDecodeURL(t *testing.T) {
 			uri:     "/bucket/object%2",
 			wantErr: s3err.GetAPIError(s3err.ErrInvalidURI),
 		},
+		{
+			name:     "absolute-form",
+			uri:      "http://s3.example.test/bucket/my%20object",
+			wantPath: "/bucket/my object",
+		},
+		{
+			name:     "absolute-form of an uppercase https scheme",
+			uri:      "HTTPS://s3.example.test/bucket/object",
+			wantPath: "/bucket/object",
+		},
+		{
+			name:    "absolute-form of a non-http scheme",
+			uri:     "ftp://s3.example.test/bucket/object",
+			wantErr: s3err.GetAPIError(s3err.ErrInvalidURI),
+		},
 	}
 
 	for _, tt := range tests {

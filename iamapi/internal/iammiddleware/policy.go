@@ -62,7 +62,10 @@ func VerifyIAMPolicy(store iamutil.IdentityStore, oidcPolicy iamutil.OIDCEndpoin
 		action, _ := iamutil.RequestParam(ctx, "Action")
 		fullAction := iamActionPrefix + action
 
-		resourceArn, resourceTags := resourceForAction(ctx, store, action, oidcPolicy)
+		resourceArn, resourceTags, err := resourceForAction(ctx, store, action, oidcPolicy)
+		if err != nil {
+			return err
+		}
 		reqCtx := policy.RequestContext{
 			Action:    fullAction,
 			Resource:  resourceArn,
@@ -77,7 +80,11 @@ func VerifyIAMPolicy(store iamutil.IdentityStore, oidcPolicy iamutil.OIDCEndpoin
 		// docs require permission on both the source object (checked above,
 		// via UserName) and the target object the user is being moved to.
 		if action == "UpdateUser" {
-			if target := updateUserTargetResource(ctx, store); target != "" {
+			target, err := updateUserTargetResource(ctx, store)
+			if err != nil {
+				return err
+			}
+			if target != "" {
 				targetCtx := reqCtx
 				targetCtx.Resource = target
 				if Authorize(identity, targetCtx) != policy.DecisionAllow {
@@ -166,10 +173,16 @@ func AuthorizeSplit(identity types.Identity, reqCtx policy.RequestContext) (iden
 // request still reaches the controller afterward, which reports the
 // specific NoSuchEntity/MissingValue error if authorization happens to pass
 // on a wildcard grant, or AccessDenied first if it doesn't.
-func resourceForAction(ctx fiber.Ctx, store iamutil.IdentityStore, action string, oidcPolicy iamutil.OIDCEndpointPolicy) (string, []types.Tag) {
+//
+// The store failing to answer is not such a failure and is returned instead.
+// Evaluating it as an unresolved resource would stop every Deny scoped to the
+// real resource's ARN or conditioned on its tags from matching, while a
+// wildcard Allow still would — and the controller may then find the store
+// answering again.
+func resourceForAction(ctx fiber.Ctx, store iamutil.IdentityStore, action string, oidcPolicy iamutil.OIDCEndpointPolicy) (string, []types.Tag, error) {
 	switch action {
 	case "CreateUser":
-		return newUserResource(ctx), nil
+		return newUserResource(ctx), nil, nil
 	case "GetUser", "CreateAccessKey", "UpdateAccessKey", "DeleteAccessKey", "ListAccessKeys":
 		return callerOrNamedUserResource(ctx, store)
 	case "DeleteUser", "UpdateUser", "PutUserPolicy", "GetUserPolicy", "DeleteUserPolicy",
@@ -178,27 +191,37 @@ func resourceForAction(ctx fiber.Ctx, store iamutil.IdentityStore, action string
 	case "GetAccessKeyLastUsed":
 		return accessKeyOwnerResource(ctx, store)
 	case "CreateRole":
-		return newRoleResource(ctx), nil
+		return newRoleResource(ctx), nil, nil
 	case "GetRole", "DeleteRole", "UpdateAssumeRolePolicy", "PutRolePolicy", "GetRolePolicy", "DeleteRolePolicy", "ListRolePolicies",
 		"TagRole", "UntagRole", "ListRoleTags":
 		return existingRoleResource(ctx, store)
 	case "CreateOpenIDConnectProvider":
-		return newOIDCProviderResource(ctx, oidcPolicy), nil
+		return newOIDCProviderResource(ctx, oidcPolicy), nil, nil
 	case "GetOpenIDConnectProvider", "DeleteOpenIDConnectProvider", "AddClientIDToOpenIDConnectProvider",
 		"RemoveClientIDFromOpenIDConnectProvider", "UpdateOpenIDConnectProviderThumbprint",
 		"TagOpenIDConnectProvider", "UntagOpenIDConnectProvider", "ListOpenIDConnectProviderTags":
 		arn, _ := iamutil.RequestParam(ctx, "OpenIDConnectProviderArn")
 		if arn == "" {
-			return "", nil
+			return "", nil, nil
 		}
 		provider, err := store.GetOIDCProvider(ctx.Context(), arn)
 		if err != nil {
-			return arn, nil
+			return arn, nil, unresolvedResourceErr(err)
 		}
-		return arn, provider.Tags
+		return arn, provider.Tags, nil
 	default:
-		return "*", nil
+		return "*", nil, nil
 	}
+}
+
+// unresolvedResourceErr returns nil for a Sender error — the entity does not
+// exist, or its name is malformed — which leaves the resource unresolved for
+// the controller to report, and err itself for the store failing.
+func unresolvedResourceErr(err error) error {
+	if iamerr.IsSenderError(err) {
+		return nil
+	}
+	return err
 }
 
 func newUserResource(ctx fiber.Ctx) string {
@@ -218,16 +241,16 @@ func newUserResource(ctx fiber.Ctx) string {
 // used elsewhere — none of this group's actions actually accept an omitted
 // UserName (the controller layer requires it), so this only guards against
 // a malformed request reaching here.
-func existingUserResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag) {
+func existingUserResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag, error) {
 	userName, ok := iamutil.RequestParam(ctx, "UserName")
 	if !ok || userName == "" {
-		return "", nil
+		return "", nil, nil
 	}
 	user, err := store.GetUser(ctx.Context(), userName)
 	if err != nil {
-		return "", nil
+		return "", nil, unresolvedResourceErr(err)
 	}
-	return user.Arn, user.Tags
+	return user.Arn, user.Tags, nil
 }
 
 // callerOrNamedUserResource resolves the target of the actions that accept
@@ -237,20 +260,20 @@ func existingUserResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, [
 // "operate on the caller's own identity" behavior. A caller with no IAM
 // user of its own (a session, or root) has nothing to resolve, so it falls
 // back to ("", nil), the same lookup-failure fallback used elsewhere.
-func callerOrNamedUserResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag) {
+func callerOrNamedUserResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag, error) {
 	userName, ok := iamutil.RequestParam(ctx, "UserName")
 	if !ok || userName == "" {
 		identity, _ := httpctx.ContextKeyCallerIdentity.Get(ctx).(types.Identity)
 		if identity.User != nil {
-			return identity.User.Arn, identity.User.Tags
+			return identity.User.Arn, identity.User.Tags, nil
 		}
-		return "", nil
+		return "", nil, nil
 	}
 	user, err := store.GetUser(ctx.Context(), userName)
 	if err != nil {
-		return "", nil
+		return "", nil, unresolvedResourceErr(err)
 	}
-	return user.Arn, user.Tags
+	return user.Arn, user.Tags, nil
 }
 
 // accessKeyOwnerResource resolves GetAccessKeyLastUsed's target: unlike the
@@ -258,16 +281,16 @@ func callerOrNamedUserResource(ctx fiber.Ctx, store iamutil.IdentityStore) (stri
 // AccessKeyId being queried, so the resource-level check is against the IAM
 // user that owns that key, matching real IAM's resource-type classification
 // for this action.
-func accessKeyOwnerResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag) {
+func accessKeyOwnerResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag, error) {
 	accessKeyID, ok := iamutil.RequestParam(ctx, "AccessKeyId")
 	if !ok || accessKeyID == "" {
-		return "", nil
+		return "", nil, nil
 	}
 	user, err := store.GetUserByAccessKeyID(ctx.Context(), accessKeyID)
 	if err != nil {
-		return "", nil
+		return "", nil, unresolvedResourceErr(err)
 	}
-	return user.Arn, user.Tags
+	return user.Arn, user.Tags, nil
 }
 
 // updateUserTargetResource resolves the destination ARN an UpdateUser
@@ -277,19 +300,19 @@ func accessKeyOwnerResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string,
 // "" when the request doesn't actually relocate the user (neither NewPath
 // nor NewUserName supplied) or when the source user can't be resolved, the
 // same fallback used elsewhere when a lookup fails.
-func updateUserTargetResource(ctx fiber.Ctx, store iamutil.IdentityStore) string {
+func updateUserTargetResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, error) {
 	newPath, _ := iamutil.RequestParam(ctx, "NewPath")
 	newUserName, _ := iamutil.RequestParam(ctx, "NewUserName")
 	if newPath == "" && newUserName == "" {
-		return ""
+		return "", nil
 	}
 	userName, ok := iamutil.RequestParam(ctx, "UserName")
 	if !ok || userName == "" {
-		return ""
+		return "", nil
 	}
 	user, err := store.GetUser(ctx.Context(), userName)
 	if err != nil {
-		return ""
+		return "", unresolvedResourceErr(err)
 	}
 	finalPath := user.Path
 	if newPath != "" {
@@ -299,7 +322,7 @@ func updateUserTargetResource(ctx fiber.Ctx, store iamutil.IdentityStore) string
 	if newUserName != "" {
 		finalUserName = newUserName
 	}
-	return iamutil.BuildUserArn(iamutil.DefaultAccountID, finalPath, finalUserName)
+	return iamutil.BuildUserArn(iamutil.DefaultAccountID, finalPath, finalUserName), nil
 }
 
 func newRoleResource(ctx fiber.Ctx) string {
@@ -314,16 +337,16 @@ func newRoleResource(ctx fiber.Ctx) string {
 	return iamutil.BuildRoleArn(iamutil.DefaultAccountID, path, roleName)
 }
 
-func existingRoleResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag) {
+func existingRoleResource(ctx fiber.Ctx, store iamutil.IdentityStore) (string, []types.Tag, error) {
 	roleName, ok := iamutil.RequestParam(ctx, "RoleName")
 	if !ok || roleName == "" {
-		return "*", nil
+		return "*", nil, nil
 	}
 	role, err := store.GetRole(ctx.Context(), roleName)
 	if err != nil {
-		return "", nil
+		return "", nil, unresolvedResourceErr(err)
 	}
-	return role.Arn, role.Tags
+	return role.Arn, role.Tags, nil
 }
 
 // newOIDCProviderResource builds the ARN of the provider a

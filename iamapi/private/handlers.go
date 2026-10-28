@@ -116,7 +116,10 @@ func (p *PrivateAPI) handleResolveIdentity(ctx fiber.Ctx) error {
 		return errMalformedRequestBody
 	}
 
-	resolved := resolveIdentityMetadata(ctx.Context(), p.store, req.AccessKeyIDs)
+	resolved, err := resolveIdentityMetadata(ctx.Context(), p.store, req.AccessKeyIDs)
+	if err != nil {
+		return err
+	}
 
 	identities := make([]ResolvedIdentity, len(resolved))
 	for i, r := range resolved {

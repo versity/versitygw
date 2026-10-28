@@ -354,6 +354,7 @@ func parseLastModifiedTime(s string) (time.Time, error) {
 }
 
 type DeleteResult struct {
+	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ DeleteResult" json:"-"`
 	Deleted []types.DeletedObject
 	Error   []types.Error
 }

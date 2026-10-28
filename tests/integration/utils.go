@@ -15,6 +15,7 @@
 package integration
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/hmac"
@@ -23,6 +24,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -37,6 +39,7 @@ import (
 	"math/bits"
 	rnd "math/rand"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -446,6 +449,147 @@ func createPresignedReq(method, endpoint, path, access, secret, region string, d
 	return presigned, nil
 }
 
+// sendRawRequest sends a request to the gateway endpoint with target written
+// to the request line verbatim, which net/http can't do for an absolute-form
+// target ("http://host/path") nor for an origin-form one starting with "//".
+// host is sent as the Host header, whatever host target names.
+func sendRawRequest(s *S3Conf, method, target, host string, header http.Header) (*http.Response, error) {
+	endpoint, err := url.Parse(s.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("parse the endpoint: %w", err)
+	}
+	addr := endpoint.Host
+	if endpoint.Port() == "" {
+		port := "80"
+		if endpoint.Scheme == "https" {
+			port = "443"
+		}
+		addr = net.JoinHostPort(endpoint.Hostname(), port)
+	}
+
+	dialer := &net.Dialer{Timeout: shortTimeout}
+	var conn net.Conn
+	if endpoint.Scheme == "https" {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
+			ServerName:         endpoint.Hostname(),
+			InsecureSkipVerify: s.tlsStatus,
+		})
+	} else {
+		conn, err = dialer.Dial("tcp", addr)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("connect to the endpoint: %w", err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(shortTimeout)); err != nil {
+		return nil, err
+	}
+
+	var req strings.Builder
+	fmt.Fprintf(&req, "%s %s HTTP/1.1\r\nHost: %s\r\n", method, target, host)
+	for key, vals := range header {
+		for _, val := range vals {
+			fmt.Fprintf(&req, "%s: %s\r\n", key, val)
+		}
+	}
+	req.WriteString("Connection: close\r\n\r\n")
+	if _, err := io.WriteString(conn, req.String()); err != nil {
+		return nil, fmt.Errorf("send the request: %w", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: method})
+	if err != nil {
+		return nil, fmt.Errorf("read the response: %w", err)
+	}
+	// the body is read off the connection before it's closed
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read the response body: %w", err)
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+
+	return resp, nil
+}
+
+// requestTargetHandler runs a request-target test with two buckets: bucket,
+// holding the object obj the test signs a request for, and otherBucket,
+// holding the objects a request pointed at otherBucket's host could get
+// instead, at obj and at bucket/obj. The data of each object is its own
+// bucket/key, so the test can tell which object was served.
+func requestTargetHandler(s *S3Conf, testName string, handler func(bucket, otherBucket, obj string) error) error {
+	runF(testName)
+	bucket, otherBucket, obj := getBucketName(), getBucketName(), "my-obj"
+
+	err := setup(s, bucket)
+	if err != nil {
+		failF("%v: failed to create a bucket: %v", testName, err)
+		return fmt.Errorf("%v: failed to create a bucket: %w", testName, err)
+	}
+	err = setup(s, otherBucket)
+	if err != nil {
+		err = errors.Join(err, teardown(s, bucket))
+		failF("%v: failed to create a bucket: %v", testName, err)
+		return fmt.Errorf("%v: failed to create a bucket: %w", testName, err)
+	}
+
+	client := s.GetClient()
+	for _, o := range [][2]string{{bucket, obj}, {otherBucket, obj}, {otherBucket, bucket + "/" + obj}} {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &o[0],
+			Key:    &o[1],
+			Body:   strings.NewReader(o[0] + "/" + o[1]),
+		})
+		cancel()
+		if err != nil {
+			break
+		}
+	}
+	if err == nil {
+		err = handler(bucket, otherBucket, obj)
+	}
+
+	err = errors.Join(err, teardown(s, bucket), teardown(s, otherBucket))
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+	passF(testName)
+	return nil
+}
+
+// presignPathStyleGetObject presigns a path-style GetObject of bucket/obj,
+// whichever addressing style the gateway is tested with.
+func presignPathStyleGetObject(s *S3Conf, bucket, obj string) (*url.URL, error) {
+	client := s3.NewPresignClient(s3.NewFromConfig(s.Config(), func(o *s3.Options) {
+		o.UsePathStyle = true
+	}))
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	req, err := client.PresignGetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &obj})
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+	return url.Parse(req.URL)
+}
+
+// checkObjectResponse checks resp served the object whose data is want.
+func checkObjectResponse(resp *http.Response, want string) error {
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read the response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("expected the response status to be %v, instead got %v: %s", http.StatusOK, resp.StatusCode, body)
+	}
+	if string(body) != want {
+		return fmt.Errorf("expected the object %q to be served, instead got %q", want, body)
+	}
+	return nil
+}
+
 type APIErrorResponse struct {
 	XMLName                     xml.Name `xml:"Error"`
 	Code                        string
@@ -518,14 +662,14 @@ func checkHTTPResponseApiErr(resp *http.Response, expected s3err.S3Error) error 
 
 	resp.Body.Close()
 
+	if resp.StatusCode != apiErr.HTTPStatusCode {
+		return fmt.Errorf("expected response status code to be %v, instead got %v: %s", apiErr.HTTPStatusCode, resp.StatusCode, body)
+	}
+
 	var errResp APIErrorResponse
 	err = xml.Unmarshal(body, &errResp)
 	if err != nil {
 		return err
-	}
-
-	if resp.StatusCode != apiErr.HTTPStatusCode {
-		return fmt.Errorf("expected response status code to be %v, instead got %v", apiErr.HTTPStatusCode, resp.StatusCode)
 	}
 
 	if err := checkRegionMismatchHeader(resp, expected); err != nil {
@@ -1887,6 +2031,17 @@ func areMapsSame(mp1, mp2 map[string]string) bool {
 		}
 	}
 	return true
+}
+
+// sortedBuckets returns a copy of buckets sorted by name, the order
+// ListBuckets lists them in. Bucket names don't sort in the order they're
+// made in: "test-bucket-1000" comes before "test-bucket-999".
+func sortedBuckets(buckets []types.Bucket) []types.Bucket {
+	sorted := slices.Clone(buckets)
+	slices.SortFunc(sorted, func(a, b types.Bucket) int {
+		return strings.Compare(*a.Name, *b.Name)
+	})
+	return sorted
 }
 
 func compareBuckets(list1 []types.Bucket, list2 []types.Bucket, ignore ...string) bool {
@@ -4328,6 +4483,11 @@ const (
 	siblingRaceWorkers    = 32
 	siblingRaceIterations = 50
 )
+
+// parentRaceGroupSize is the number of workers that share a parent key in
+// PutObject_race_with_parent_object_deletes: one uploads the object at the
+// key, the rest upload objects under it.
+const parentRaceGroupSize = 2
 
 // siblingRaceKey returns the key of an iteration of a worker: it shares its
 // parent directories with the keys of one other worker, and the top level
