@@ -7272,6 +7272,14 @@ func (p *Posix) ListObjectsParametrized(ctx context.Context, input *s3.ListObjec
 	}, nil
 }
 
+// IsEntryGone reports whether err from reading a listed entry means the
+// entry was removed after the directory was read: the entry itself is gone
+// (ENOENT), or its directory is being removed, which a shared filesystem can
+// report as ENOTDIR or ESTALE.
+func IsEntryGone(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) || isErrStale(err)
+}
+
 func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 	if !p.isBucketValid(bucket) {
 		return func(string, fs.DirEntry) (s3response.Object, error) {
@@ -7305,7 +7313,7 @@ func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 			// a directory is listed only if it's a directory object
 			// check to see if this is a directory object by checking etag
 			etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, path, etagkey)
-			if errors.Is(err, meta.ErrNoSuchKey) || errors.Is(err, fs.ErrNotExist) {
+			if errors.Is(err, meta.ErrNoSuchKey) || IsEntryGone(err) {
 				return s3response.Object{}, backend.ErrSkipObj
 			}
 			if err != nil {
@@ -7320,7 +7328,7 @@ func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 			}
 
 			fi, err := d.Info()
-			if errors.Is(err, fs.ErrNotExist) {
+			if IsEntryGone(err) {
 				return s3response.Object{}, backend.ErrSkipObj
 			}
 			if err != nil {
@@ -7354,7 +7362,7 @@ func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 
 		// file object, get object info and fill out object data
 		etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, path, etagkey)
-		if errors.Is(err, fs.ErrNotExist) {
+		if IsEntryGone(err) {
 			return s3response.Object{}, backend.ErrSkipObj
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -7369,7 +7377,7 @@ func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 		}
 
 		fi, err := d.Info()
-		if errors.Is(err, fs.ErrNotExist) {
+		if IsEntryGone(err) {
 			return s3response.Object{}, backend.ErrSkipObj
 		}
 		if err != nil {

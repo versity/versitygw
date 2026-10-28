@@ -828,6 +828,86 @@ func PutObject_race_with_sibling_version_deletes(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+// ListObjects_race_with_parent_dir_replaced lists prefixes while, under each
+// of them, "d" is in turn the parent directory of an object and an object
+// itself. Deleting the nested object removes its parent directories and
+// uploading "d" puts a file in their place, so a listing can read a directory
+// and then find a file in the path of its entries. An object that stays under
+// each prefix keeps the prefix directory in place. A listing must not fail,
+// and must list the object that stays.
+func ListObjects_race_with_parent_dir_replaced(s *S3Conf) error {
+	testName := "ListObjects_race_with_parent_dir_replaced"
+	const iterations = 200
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		var anchors []string
+		for w := 0; w < siblingRaceWorkers; w += 2 {
+			anchors = append(anchors, fmt.Sprintf("race/%d/anchor", w/2))
+		}
+		if _, err := putObjects(s3client, anchors, bucket); err != nil {
+			return err
+		}
+
+		return raceWorkers(siblingRaceWorkers, iterations, func(w, i int) error {
+			// the workers share a prefix in pairs: one lists it, the
+			// other turns "d" from a directory into an object and back
+			prefix := fmt.Sprintf("race/%d/", w/2)
+			anchor := prefix + "anchor"
+			isAnchor := func(key *string) bool { return getString(key) == anchor }
+			if w%2 == 1 {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+					Bucket: &bucket,
+					Prefix: &prefix,
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("list objects %v: %w", prefix, err)
+				}
+				if !slices.ContainsFunc(out.Contents, func(o types.Object) bool { return isAnchor(o.Key) }) {
+					return fmt.Errorf("list objects %v: expected %v to be listed", prefix, anchor)
+				}
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				outV2, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+					Bucket: &bucket,
+					Prefix: &prefix,
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("list objects v2 %v: %w", prefix, err)
+				}
+				if !slices.ContainsFunc(outV2.Contents, func(o types.Object) bool { return isAnchor(o.Key) }) {
+					return fmt.Errorf("list objects v2 %v: expected %v to be listed", prefix, anchor)
+				}
+				return nil
+			}
+
+			key := prefix + "d/e/obj"
+			if i%2 == 1 {
+				key = prefix + "d"
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("put %v: %w", key, err)
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("delete %v: %w", key, err)
+			}
+			return nil
+		})
+	})
+}
+
 // PutObject_race_with_parent_object_deletes uploads, reads back and deletes
 // objects under a key while another worker uploads, reads back and deletes an
 // object at that key itself. A posix directory can't be a file at once, so an
