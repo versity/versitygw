@@ -21,25 +21,44 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	vault "github.com/hashicorp/vault-client-go"
 	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/iamapi/internal/iamutil"
 	"github.com/versity/versitygw/iamapi/types"
 )
 
-// newFakeVaultStore returns a VaultStore talking to a Vault whose KV v2
+// newVaultStoreAt returns a VaultStore talking to the Vault at url with a
+// static token. It is built directly, not through NewVault, which starts a
+// background access key index backfill whose requests would race with what a
+// test serves or counts.
+func newVaultStoreAt(t *testing.T, url string) *VaultStore {
+	t.Helper()
+
+	client, err := vault.New(vault.WithAddress(url), vault.WithRequestTimeout(5*time.Second))
+	if err != nil {
+		t.Fatalf("vault client: %v", err)
+	}
+	if err := client.SetToken("root"); err != nil {
+		t.Fatalf("set token: %v", err)
+	}
+	return &VaultStore{
+		client:            client,
+		kvReqOpts:         []vault.RequestOption{vault.WithMountPath("secret")},
+		secretStoragePath: "iam",
+		usage:             newAccessKeyUsageTracker(),
+	}
+}
+
+// newVaultStoreOnHandler returns a VaultStore talking to a Vault whose KV v2
 // engine is answered by handler.
-func newFakeVaultStore(t *testing.T, handler http.HandlerFunc) Storer {
+func newVaultStoreOnHandler(t *testing.T, handler http.HandlerFunc) *VaultStore {
 	t.Helper()
 
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-
-	store, err := NewVault(VaultConfig{EndpointURL: srv.URL, RootToken: "root", MountPath: "secret"})
-	if err != nil {
-		t.Fatalf("NewVault: %v", err)
-	}
-	return store
+	return newVaultStoreAt(t, srv.URL)
 }
 
 func writeVaultJSON(t *testing.T, w http.ResponseWriter, status int, body any) {
@@ -58,12 +77,12 @@ func writeVaultJSON(t *testing.T, w http.ResponseWriter, status int, body any) {
 // because the client retries a sealed Vault's 503 with a backoff that would
 // make the test take seconds; the store treats every non-404 alike.
 func TestVaultStoreFailureIsNotNotFound(t *testing.T) {
-	store := newFakeVaultStore(t, func(w http.ResponseWriter, r *http.Request) {
+	store := newVaultStoreOnHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		writeVaultJSON(t, w, http.StatusForbidden, map[string]any{"errors": []string{"permission denied"}})
 	})
 
 	t.Run("GetUserByAccessKeyID", func(t *testing.T) {
-		_, err := store.GetUserByAccessKeyID(context.Background(), "AKIAALICE")
+		_, err := store.GetUserByAccessKeyID(context.Background(), "AKIA00000000000ALICE")
 		if err == nil {
 			t.Fatal("GetUserByAccessKeyID succeeded against a sealed Vault")
 		}
@@ -84,12 +103,14 @@ func TestVaultStoreFailureIsNotNotFound(t *testing.T) {
 }
 
 // TestVaultGetUserByAccessKeyIDSkipsUsersDeletedMidScan covers a user deleted
-// between the listing and the read of its record: its absence says nothing
+// between the listing and the read of its record, in the scan a lookup falls
+// back to when the access key index has no entry: its absence says nothing
 // about the key being looked for, which belongs to a later user in the scan.
 func TestVaultGetUserByAccessKeyIDSkipsUsersDeletedMidScan(t *testing.T) {
+	const bobKey = "AKIA0000000000000BOB"
 	bob := types.User{
 		UserName:   "bob",
-		AccessKeys: []types.AccessKeyEntry{{AccessKeyId: "AKIABOB", Status: "Active"}},
+		AccessKeys: []types.AccessKeyEntry{{AccessKeyId: bobKey, Status: "Active"}},
 	}
 	bobRecord, err := json.Marshal(bob)
 	if err != nil {
@@ -100,8 +121,23 @@ func TestVaultGetUserByAccessKeyIDSkipsUsersDeletedMidScan(t *testing.T) {
 		t.Fatalf("unmarshal user: %v", err)
 	}
 
-	store := newFakeVaultStore(t, func(w http.ResponseWriter, r *http.Request) {
+	// The user the lookup re-points the index entry at, from what the scan
+	// found.
+	repaired := make(chan string, 1)
+	store := newVaultStoreOnHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		switch path := strings.TrimSuffix(r.URL.Path, "/"); {
+		case strings.Contains(path, "/data/iam/access-keys/") && r.Method == http.MethodGet:
+			writeVaultJSON(t, w, http.StatusNotFound, map[string]any{"errors": []string{}})
+		case strings.HasSuffix(path, "/data/iam/access-keys/"+bobKey) && (r.Method == http.MethodPost || r.Method == http.MethodPut):
+			var req struct {
+				Data map[string]any `json:"data"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Errorf("decode index write: %v", err)
+			}
+			owner, _ := req.Data[accessKeyIndexUserField].(string)
+			repaired <- owner
+			writeVaultJSON(t, w, http.StatusOK, map[string]any{"data": map[string]any{"version": 1}})
 		case strings.HasSuffix(path, "/metadata/iam/users"):
 			writeVaultJSON(t, w, http.StatusOK, map[string]any{"data": map[string]any{"keys": []string{"ghost", "bob"}}})
 		case strings.HasSuffix(path, "/data/iam/users/ghost"):
@@ -117,15 +153,23 @@ func TestVaultGetUserByAccessKeyIDSkipsUsersDeletedMidScan(t *testing.T) {
 		}
 	})
 
-	user, err := store.GetUserByAccessKeyID(context.Background(), "AKIABOB")
+	user, err := store.GetUserByAccessKeyID(context.Background(), bobKey)
 	if err != nil {
 		t.Fatalf("GetUserByAccessKeyID: %v", err)
 	}
 	if user.UserName != "bob" {
 		t.Fatalf("GetUserByAccessKeyID user = %q, want bob", user.UserName)
 	}
+	select {
+	case owner := <-repaired:
+		if owner != "bob" {
+			t.Errorf("index entry repaired to %q, want bob", owner)
+		}
+	default:
+		t.Error("the lookup did not repair the missing index entry")
+	}
 
-	_, err = store.GetUserByAccessKeyID(context.Background(), "AKIAUNKNOWN")
+	_, err = store.GetUserByAccessKeyID(context.Background(), "AKIA000000000UNKNOWN")
 	if !iamerr.IsNoSuchEntity(err) {
 		t.Fatalf("GetUserByAccessKeyID unknown key err = %v, want a NoSuchEntity error", err)
 	}
@@ -137,7 +181,7 @@ func TestVaultGetUserByAccessKeyIDSkipsUsersDeletedMidScan(t *testing.T) {
 // without asking Vault. Reported as Vault failing, an unauthenticated client
 // could turn a junk access key id or role ARN into a retried 500.
 func TestVaultNonPrintableNamesAreNotFound(t *testing.T) {
-	store := newFakeVaultStore(t, func(w http.ResponseWriter, r *http.Request) {
+	store := newVaultStoreOnHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected Vault request %s %s", r.Method, r.URL.Path)
 		writeVaultJSON(t, w, http.StatusBadRequest, map[string]any{"errors": []string{}})
 	})
@@ -155,6 +199,12 @@ func TestVaultNonPrintableNamesAreNotFound(t *testing.T) {
 		}
 		if _, err := store.GetSession(ctx, "ASIA"+string(r)); !errors.Is(err, iamutil.ErrSessionNotFound) {
 			t.Errorf("GetSession(%q) err = %v, want ErrSessionNotFound", "ASIA"+string(r), err)
+		}
+		// Long enough that only the rune can disqualify it, since an access
+		// key id becomes part of the index entry's Vault path.
+		accessKeyID := "AKIA0000000000000000" + string(r)
+		if _, err := store.GetUserByAccessKeyID(ctx, accessKeyID); !iamerr.IsNoSuchEntity(err) {
+			t.Errorf("GetUserByAccessKeyID(%q) err = %v, want a NoSuchEntity error", accessKeyID, err)
 		}
 	}
 }

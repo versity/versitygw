@@ -24,6 +24,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -114,6 +115,13 @@ type VaultStore struct {
 	kvReqOpts         []vault.RequestOption
 	secretStoragePath string
 	creds             schema.AppRoleLoginRequest
+
+	// usage remembers what RecordAccessKeyUsage last recorded, so a use that
+	// needs no recording costs no Vault request.
+	usage *accessKeyUsageTracker
+	// indexDenied is set once Vault refuses the access key index path (see
+	// indexCall); lookups then scan, as they did before the index.
+	indexDenied atomic.Bool
 }
 
 var _ Storer = (*VaultStore)(nil)
@@ -220,13 +228,20 @@ func NewVault(cfg VaultConfig) (Storer, error) {
 		secretStoragePath = "iam"
 	}
 
-	return &VaultStore{
+	store := &VaultStore{
 		client:            client,
 		authReqOpts:       authReqOpts,
 		kvReqOpts:         kvReqOpts,
 		secretStoragePath: secretStoragePath,
 		creds:             creds,
-	}, nil
+		usage:             newAccessKeyUsageTracker(),
+	}
+
+	// Index the access keys of users created before the access key index
+	// existed
+	go store.backfillAccessKeyIndexInBackground()
+
+	return store, nil
 }
 
 // reAuthIfNeeded attempts AppRole re-authentication when vault returns 403.
@@ -398,46 +413,11 @@ func (s *VaultStore) readUserVersion(username string) (*types.User, int32, error
 	return cloneUser(user), kvVersion(resp.Data.Metadata), nil
 }
 
-// GetUserByAccessKeyID has no index to consult (unlike InternalStore's
-// AccessKeyIndex) so it scans every user's access keys, mirroring
-// GetAccessKeyLastUsed's existing linear scan.
-func (s *VaultStore) GetUserByAccessKeyID(ctx context.Context, accessKeyID string) (*types.User, error) {
-	resp, err := s.client.Secrets.KvV2List(context.Background(), s.usersPath(), s.kvReqOpts...)
-	if err != nil {
-		if vault.IsErrorStatus(err, http.StatusNotFound) {
-			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
-		}
-		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
-			return nil, reauthErr
-		}
-		resp, err = s.client.Secrets.KvV2List(context.Background(), s.usersPath(), s.kvReqOpts...)
-		if err != nil {
-			if vault.IsErrorStatus(err, http.StatusNotFound) {
-				return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
-			}
-			return nil, err
-		}
-	}
-
-	for _, username := range resp.Data.Keys {
-		user, err := s.GetUser(ctx, username)
-		if err != nil {
-			// A user deleted since the listing owns no key anyone is
-			// asking about; reporting its absence as this key's would
-			// disown a valid key that belongs to a later user.
-			if iamerr.IsNoSuchEntity(err) {
-				continue
-			}
-			return nil, err
-		}
-		for _, key := range user.AccessKeys {
-			if key.AccessKeyId == accessKeyID {
-				return user, nil
-			}
-		}
-	}
-
-	return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+// GetUserByAccessKeyID resolves accessKeyID through the access key index (see
+// findAccessKeyOwner), so its cost does not depend on how many users exist.
+func (s *VaultStore) GetUserByAccessKeyID(_ context.Context, accessKeyID string) (*types.User, error) {
+	user, _, err := s.findAccessKeyOwner(context.Background(), accessKeyID)
+	return user, err
 }
 
 func (s *VaultStore) ListUsers(ctx context.Context, input ListUsersInput) (*ListUsersOutput, error) {
@@ -552,6 +532,9 @@ func (s *VaultStore) UpdateUser(ctx context.Context, input UpdateUserInput) (*ty
 		if _, err := s.CreateUser(ctx, *user); err != nil {
 			return nil, err
 		}
+		// Re-point the index at the new record before the old one goes away,
+		// so there is no moment at which it names a deleted user.
+		s.indexUserAccessKeys(ctx, *user)
 		if err := s.deleteOldUserAfterRename(originalName); err != nil {
 			return nil, err
 		}
@@ -720,6 +703,14 @@ func (s *VaultStore) CreateAccessKey(ctx context.Context, input CreateAccessKeyI
 		return nil, err
 	}
 
+	// Indexed after the user record holds the key, never before: an entry
+	// for a key that was never stored is harmless but pointless, whereas a
+	// stored key with no entry is exactly what the lookup's scan repairs, so
+	// a failure here is logged and the creation still succeeds.
+	if err := s.putAccessKeyIndex(ctx, input.AccessKeyID, caseFoldKey(input.UserName), 0, false); err != nil {
+		logIndexFailure("write", input.AccessKeyID, err)
+	}
+
 	return &created, nil
 }
 
@@ -751,41 +742,34 @@ func (s *VaultStore) DeleteAccessKey(ctx context.Context, username, accessKeyID 
 		user.AccessKeys = slices.Delete(user.AccessKeys, idx, idx+1)
 		return nil
 	})
-	return err
-}
-
-func (s *VaultStore) GetAccessKeyLastUsed(ctx context.Context, accessKeyID string) (*GetAccessKeyLastUsedOutput, error) {
-	resp, err := s.client.Secrets.KvV2List(context.Background(), s.usersPath(), s.kvReqOpts...)
 	if err != nil {
-		if vault.IsErrorStatus(err, http.StatusNotFound) {
-			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
-		}
-		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
-			return nil, reauthErr
-		}
-		resp, err = s.client.Secrets.KvV2List(context.Background(), s.usersPath(), s.kvReqOpts...)
-		if err != nil {
-			if vault.IsErrorStatus(err, http.StatusNotFound) {
-				return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
-			}
-			return nil, err
-		}
+		return err
 	}
 
-	for _, username := range resp.Data.Keys {
-		user, err := s.GetUser(ctx, username)
-		if err != nil {
-			return nil, err
-		}
-		for _, key := range user.AccessKeys {
-			if key.AccessKeyId == accessKeyID {
-				return &GetAccessKeyLastUsedOutput{
-					UserName:     user.UserName,
-					LastUsedDate: key.LastUsedDate,
-					ServiceName:  key.LastUsedService,
-					Region:       key.LastUsedRegion,
-				}, nil
-			}
+	// Removed after the user record no longer holds the key, so the key is
+	// revoked whether or not this cleanup succeeds: a leftover entry names a
+	// user that does not hold the key, which lookups check for and ignore.
+	s.usage.forget(accessKeyID)
+	if err := s.deleteAccessKeyIndex(accessKeyID); err != nil {
+		logIndexFailure("delete", accessKeyID, err)
+	}
+	return nil
+}
+
+func (s *VaultStore) GetAccessKeyLastUsed(_ context.Context, accessKeyID string) (*GetAccessKeyLastUsedOutput, error) {
+	user, _, err := s.findAccessKeyOwner(context.Background(), accessKeyID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, key := range user.AccessKeys {
+		if key.AccessKeyId == accessKeyID {
+			return &GetAccessKeyLastUsedOutput{
+				UserName:     user.UserName,
+				LastUsedDate: key.LastUsedDate,
+				ServiceName:  key.LastUsedService,
+				Region:       key.LastUsedRegion,
+			}, nil
 		}
 	}
 
@@ -804,68 +788,62 @@ const recordAccessKeyUsageTimeout = 5 * time.Second
 // A failure (including one that exhausts those retries) is only logged,
 // never surfaced: this is purely informational metadata, and a lost update
 // under concurrent use is immaterial.
+//
+// A use that would be coalesced away anyway (see shouldRecordUsage) is
+// recognized from what this process recently confirmed of the key's stored
+// record (see accessKeyUsageTracker), and then costs no goroutine and no
+// Vault request at all.
 func (s *VaultStore) RecordAccessKeyUsage(_ context.Context, accessKeyID, service, region string, when time.Time) error {
+	if !s.usage.begin(accessKeyID, service, region, when) {
+		return nil
+	}
+
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), recordAccessKeyUsageTimeout)
 		defer cancel()
-		if err := s.recordAccessKeyUsage(ctx, accessKeyID, service, region, when); err != nil {
+		rec, err := s.recordAccessKeyUsage(ctx, accessKeyID, service, region, when)
+		s.usage.finish(accessKeyID, service, region, rec, when)
+		if err != nil {
 			debuglogger.Logf("failed to record Vault access key last-used metadata for %q: %v", accessKeyID, err)
 		}
 	}()
 	return nil
 }
 
-func (s *VaultStore) recordAccessKeyUsage(ctx context.Context, accessKeyID, service, region string, when time.Time) error {
-	resp, err := s.client.Secrets.KvV2List(ctx, s.usersPath(), s.kvReqOpts...)
+// recordAccessKeyUsage stores the use unless the key's stored record already
+// makes it redundant, and returns the record that is stored for the key
+// afterwards — nil when that is unknown because the update failed.
+func (s *VaultStore) recordAccessKeyUsage(ctx context.Context, accessKeyID, service, region string, when time.Time) (*usageRecord, error) {
+	user, _, err := s.findAccessKeyOwner(ctx, accessKeyID)
 	if err != nil {
-		if vault.IsErrorStatus(err, http.StatusNotFound) {
-			return iamerr.NoSuchEntityAccessKey(accessKeyID)
-		}
-		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
-			return reauthErr
-		}
-		resp, err = s.client.Secrets.KvV2List(ctx, s.usersPath(), s.kvReqOpts...)
-		if err != nil {
-			if vault.IsErrorStatus(err, http.StatusNotFound) {
-				return iamerr.NoSuchEntityAccessKey(accessKeyID)
-			}
-			return err
-		}
+		return nil, err
 	}
 
-	for _, username := range resp.Data.Keys {
-		user, err := s.GetUser(ctx, username)
-		if err != nil {
-			continue
-		}
-		idx := slices.IndexFunc(user.AccessKeys, func(k types.AccessKeyEntry) bool { return k.AccessKeyId == accessKeyID })
-		if idx == -1 {
-			continue
-		}
-
-		// The user was just read, so the redundant-update check costs
-		// nothing here and saves the read-modify-write below on every
-		// request after the first within the coalescing window.
-		key := user.AccessKeys[idx]
-		if !shouldRecordUsage(key.LastUsedDate, key.LastUsedService, key.LastUsedRegion, service, region, when) {
-			return nil
-		}
-
-		_, err = s.withUserCAS(ctx, username, func(u *types.User) error {
-			for i, key := range u.AccessKeys {
-				if key.AccessKeyId == accessKeyID {
-					u.AccessKeys[i].LastUsedDate = when
-					u.AccessKeys[i].LastUsedService = service
-					u.AccessKeys[i].LastUsedRegion = region
-					return nil
-				}
-			}
-			return iamerr.NoSuchEntityAccessKey(accessKeyID)
-		})
-		return err
+	// The user was just read, so the redundant-update check costs nothing
+	// here and saves the read-modify-write below.
+	idx := slices.IndexFunc(user.AccessKeys, func(k types.AccessKeyEntry) bool { return k.AccessKeyId == accessKeyID })
+	if idx == -1 {
+		return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+	}
+	key := user.AccessKeys[idx]
+	if !shouldRecordUsage(key.LastUsedDate, key.LastUsedService, key.LastUsedRegion, service, region, when) {
+		return &usageRecord{when: key.LastUsedDate, service: key.LastUsedService, region: key.LastUsedRegion}, nil
 	}
 
-	return iamerr.NoSuchEntityAccessKey(accessKeyID)
+	if _, err := s.withUserCAS(ctx, user.UserName, func(u *types.User) error {
+		for i, key := range u.AccessKeys {
+			if key.AccessKeyId == accessKeyID {
+				u.AccessKeys[i].LastUsedDate = when
+				u.AccessKeys[i].LastUsedService = service
+				u.AccessKeys[i].LastUsedRegion = region
+				return nil
+			}
+		}
+		return iamerr.NoSuchEntityAccessKey(accessKeyID)
+	}); err != nil {
+		return nil, err
+	}
+	return &usageRecord{when: when, service: service, region: region}, nil
 }
 
 func (s *VaultStore) ListAccessKeys(ctx context.Context, input ListAccessKeysInput) (*ListAccessKeysOutput, error) {
