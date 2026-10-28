@@ -49,3 +49,33 @@ upload_part_copy_with_range() {
   printf '%s\n' "$etag"
   return 0
 }
+
+upload_part_copy_rest() {
+  if ! check_param_count_v2 "bucket, key, upload ID, part number, part location" 5 $#; then
+    return 1
+  fi
+  local bucket="$1" key="$2" upload_id="$3" part_number="$4" part_location="$5"
+  local response response_file etag
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  response_file="$response"
+
+  if ! response=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$bucket" OBJECT_KEY="$key" PART_NUMBER="$part_number" UPLOAD_ID="$upload_id" PART_LOCATION="$part_location" OUTPUT_FILE="$TEST_FILE_FOLDER/$response_file" ./tests/rest_scripts/upload_part_copy.sh 2>&1); then
+    log 2 "error uploading part number '$part_number': $response"
+    return 1
+  fi
+  if [ "$response" != "200" ]; then
+    log 2 "UploadPartCopy command returned error '$response': $(cat "$TEST_FILE_FOLDER/$response_file")"
+    return 1
+  fi
+  if ! response=$(get_element_text "$TEST_FILE_FOLDER/$response_file" "CopyPartResult" "ETag" 2>&1); then
+    log 2 "error getting etag: $response"
+    return 1
+  fi
+  etag="$response"
+  printf '%s\n' "$etag"
+  return 0
+}

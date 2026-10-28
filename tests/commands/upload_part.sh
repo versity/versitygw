@@ -112,22 +112,28 @@ upload_part_rest_with_checksum() {
   if ! check_param_count_v2 "bucket name, key, upload ID, part number, part, checksum algorithm" 6 $#; then
     return 1
   fi
-  if ! response_file=$(get_file_name 2>&1); then
-    log 2 "error getting file name: $response_file"
+  local bucket_name="$1" key="$2" upload_id="$3" part_number="$4" part="$5" algorithm="$6"
+  local response response_file etag checksum
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
     return 1
   fi
+  response_file="$response"
   # shellcheck disable=SC2154,SC2097,SC2098
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PART_NUMBER="$4" DATA_FILE="$5" CHECKSUM_TYPE="$6" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" OUTPUT_FILE="$TEST_FILE_FOLDER/$response_file" ./tests/rest_scripts/upload_part.sh); then
-    log 2 "error sending upload-part REST command: $result"
+  if ! response=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$bucket_name" OBJECT_KEY="$key" UPLOAD_ID="$upload_id" PART_NUMBER="$part_number" \
+      DATA_FILE="$part" CHECKSUM_TYPE="$algorithm" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" OUTPUT_FILE="$TEST_FILE_FOLDER/$response_file" ./tests/rest_scripts/upload_part.sh); then
+    log 2 "error sending upload-part REST command: $response"
     return 1
   fi
-  if [[ "$result" != "200" ]]; then
-    log 2 "upload-part command returned error $result: $(cat "$TEST_FILE_FOLDER/$response_file")"
+  if [[ "$response" != "200" ]]; then
+    log 2 "upload-part command returned error '$response': $(cat "$TEST_FILE_FOLDER/$response_file")"
     return 1
   fi
   etag=$(grep -i "etag" "$TEST_FILE_FOLDER/$response_file" | awk '{print $2}' | tr -d '\r')
   # shellcheck disable=SC2034
   checksum=$(grep -i "x-amz-checksum-" "$TEST_FILE_FOLDER/$response_file" | awk '{print $2}' | tr -d '\r')
   log 5 "etag:  $etag"
+  printf '%s %s\n' "$etag" "$checksum"
   return 0
 }
