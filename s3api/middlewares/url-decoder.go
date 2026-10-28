@@ -20,15 +20,22 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/httpctx"
 	"github.com/versity/versitygw/s3err"
 )
 
 // DecodeURL url path unescapes the request url for the gateway
 // to handle some special characters. A malformed escape sequence
 // is rejected with InvalidURI, and so is a path whose ".." segments
-// climb above the root, like S3 rejects it. The "." and ".." segments
-// stay in the path otherwise: S3 takes them as part of the object key.
+// climb above the root, or an absolute-form request url of a scheme
+// other than http and https, like S3 rejects them. The "." and ".."
+// segments stay in the path otherwise: S3 takes them as part of the
+// object key.
 func DecodeURL(ctx fiber.Ctx) error {
+	if !httpctx.HasHTTPScheme(ctx) {
+		debuglogger.Logf("the request url is not an http(s) one: %q", ctx.Request().Header.RequestURI())
+		return s3err.GetAPIError(s3err.ErrInvalidURI)
+	}
 	unescp, err := url.PathUnescape(string(ctx.Request().URI().PathOriginal()))
 	if err != nil {
 		debuglogger.Logf("failed to unescape the request path: %v", err)

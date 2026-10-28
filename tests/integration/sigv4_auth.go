@@ -664,3 +664,69 @@ func Authentication_with_expect_header(s *S3Conf) error {
 		return err
 	})
 }
+
+// An absolute-form request-target ("GET http://host/path HTTP/1.1") names the
+// host the request is sent to, whatever the Host header says. S3 serves a
+// signed request sent that way with its own host.
+func Authentication_absolute_form_request_target(s *S3Conf) error {
+	testName := "Authentication_absolute_form_request_target"
+	return requestTargetHandler(s, testName, func(bucket, _, obj string) error {
+		req, err := createSignedReq(http.MethodGet, s.endpoint, bucket+"/"+obj, s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := sendRawRequest(s, http.MethodGet, req.URL.String(), req.URL.Host, req.Header)
+		if err != nil {
+			return err
+		}
+
+		return checkObjectResponse(resp, bucket+"/"+obj)
+	})
+}
+
+// A signed request can't be pointed at another bucket by an absolute-form
+// request-target naming the other bucket's virtual host, with the signed Host
+// header and path left as they are: the host the request is routed to is
+// the one its signature is checked for.
+func Authentication_absolute_form_another_bucket_host(s *S3Conf) error {
+	testName := "Authentication_absolute_form_another_bucket_host"
+	return requestTargetHandler(s, testName, func(bucket, otherBucket, obj string) error {
+		req, err := createSignedReq(http.MethodGet, s.endpoint, bucket+"/"+obj, s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+
+		target := req.URL.Scheme + "://" + otherBucket + "." + req.URL.Host + req.URL.RequestURI()
+		resp, err := sendRawRequest(s, http.MethodGet, target, req.URL.Host, req.Header)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
+	})
+}
+
+// An origin-form request-target starting with "//" and another bucket's host
+// can't point a signed request at that bucket, though the gateway's http
+// server takes a host out of such a target when it has a "://" anywhere,
+// like in its fragment. The request goes to the Host header's host, with the
+// path left after that bucket's host. S3 itself keeps the whole target as
+// the path, and rejects the signature.
+func Authentication_origin_form_another_bucket_host(s *S3Conf) error {
+	testName := "Authentication_origin_form_another_bucket_host"
+	return requestTargetHandler(s, testName, func(bucket, otherBucket, obj string) error {
+		req, err := createSignedReq(http.MethodGet, s.endpoint, bucket+"/"+obj, s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+
+		target := "//" + otherBucket + "." + req.URL.Host + req.URL.RequestURI() + "#://"
+		resp, err := sendRawRequest(s, http.MethodGet, target, req.URL.Host, req.Header)
+		if err != nil {
+			return err
+		}
+
+		return checkObjectResponse(resp, bucket+"/"+obj)
+	})
+}

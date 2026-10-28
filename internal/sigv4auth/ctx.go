@@ -138,7 +138,10 @@ func uriPathFromCtx(ctx fiber.Ctx) string {
 	return path
 }
 
-// hostFromCtx returns ctx's Host header verbatim.
+// hostFromCtx returns the host ctx's request is addressed to, verbatim: the
+// authority of an absolute-form request-target, or else the Host header (see
+// httpctx.RequestHost). HostStyleParser takes a virtual-hosted-style
+// request's bucket out of this same host, so the signature covers it.
 func hostFromCtx(ctx fiber.Ctx) string {
-	return string(ctx.Request().Header.Host())
+	return httpctx.RequestHost(ctx)
 }

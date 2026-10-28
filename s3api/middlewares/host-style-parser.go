@@ -23,10 +23,12 @@ import (
 )
 
 // HostStyleParser is a middleware which parses the bucket name
-// from the 'Host' header and appends in the request URL path
+// from the request host and appends in the request URL path
 func HostStyleParser(virtualDomain string) fiber.Handler {
 	return func(ctx fiber.Ctx) error {
-		host := string(ctx.Request().Host())
+		// the bucket must come from the very host SigV4 signs, else a signed
+		// request could be pointed at another bucket than the one signed for
+		host := strings.ToLower(httpctx.RequestHost(ctx))
 		// the host should match this pattern: '<bucket_name>.<virtual_domain>'
 		bucket, _, found := strings.Cut(host, "."+virtualDomain)
 		if !found || bucket == "" {
