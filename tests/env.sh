@@ -441,16 +441,36 @@ init_command_log() {
   return 0
 }
 
+append_to_main_log_and_print_log_location_on_failure() {
+  local error display_log_path display_log_path
+
+  if ! error=$(cat "${TEST_LOG_FILE}.${TEST_ID}" 2>&1 >> "$TEST_LOG_FILE"); then
+    echo "error appending temp log to main log '$TEST_LOG_FILE': $error" >&2
+    return 1
+  fi
+  # for docker
+  if [ "$BATS_TEST_COMPLETED" != "1" ]; then
+    if [ -n "${HOST_LOG_FOLDER:-}" ]; then
+      case "$TEST_LOG_FILE" in
+        /home/tester/log/*)
+          display_log_path="${HOST_LOG_FOLDER%/}/${TEST_LOG_FILE#/home/tester/log/}"
+          echo "Log info written to '$display_log_path'"
+          ;;
+      esac
+    else
+      echo "Log info written to '$TEST_LOG_FILE'" >&2
+    fi
+  fi
+}
+
 main_log_cleanup() {
+  local error
+
   if [ -f "${TEST_LOG_FILE}.${TEST_ID}" ]; then
     if [ "$LOG_ON_SUCCESS" == "true" ] || [ "$BATS_TEST_COMPLETED" != "1" ]; then
-      if ! error=$(cat "${TEST_LOG_FILE}.${TEST_ID}" 2>&1 >> "$TEST_LOG_FILE"); then
-        echo "error appending temp log to main log '$TEST_LOG_FILE': $error" >&2
+      if ! append_to_main_log_and_print_log_location_on_failure; then
+        echo "error appending to main log and printing if there's a test failure"
         return 1
-      fi
-      # for docker
-      if [ "$BATS_TEST_COMPLETED" != "1" ]; then
-        echo "Log info written to '$TEST_LOG_FILE'" >&2
       fi
     fi
     if ! error=$(rm "${TEST_LOG_FILE}.${TEST_ID}" 2>&1); then

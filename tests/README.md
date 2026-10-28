@@ -90,13 +90,29 @@ To communicate directly with s3, in order to compare the gateway results to dire
 3.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to your secrets and config file, respectively, if not using the defaults.  Example:  `docker build -t <tag> --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" -f tests/Dockerfile_test_bats .`.  Also, default docker parameters, such as `TARGETARCH`, at the top of the Dockerfile can be changed by the user if needed.
 4.  To run the entire suite, run `docker run -it <image name>`.  This is not recommended due to the sheer amount of tests.  To run an individual suite, pass in the name of the suite as defined in `tests/run.sh` (e.g. REST bucket tests -> `docker run -it <image tag or ID> rest-bucket`).  Also, multiple specific suites can be run, if separated by comma.  
 5.  To list all suites available, the `-h` tag can be passed.  Example:  `docker run -t <image tag or ID> -h`.
-6.  By default, the config is placed in the `/home/tester/config` folder inside the container.  Logs are printed to `/home/tester/log`.  To overwrite the config, an `.env` folder can be placed in a mounted host folder, and to view the logs, a mounted folder can also be used.  Example:  `docker run -v $PWD/runtime/config:/home/tester/config -v $PWD/runtime/log:/home/tester/log -t bats_test s3`
+6.  By default, the config is placed in the `/home/tester/config` folder inside the container.  Logs are printed to `/home/tester/log`.  To overwrite and easily be able to change the config, the `.env` and `.secrets` files can be placed in a mounted host folder. To view the logs on the host and keep them persistent, a mounted folder can also be used here.  Example:  `docker run -v $PWD/runtime/config:/home/tester/config -v $PWD/runtime/log:/home/tester/log -t bats_test s3`
 6.  To use tag functionality, the `--tags` parameter can be passed to the container.
 7.  To troubleshoot the Docker container, use `docker run -it --entrypoint /bin/bash <image tag or ID>` to use the shell and examine the container.
 
 ### In Parallel
 
-The script `run_parallel.sh` is provided to allow users to more quickly run tests in parallel on the local machine.  To use this script, first build and tag a docker container with the desired configuration.  Next, run the script with this tag, the desired tests (can find with `./tests/run.sh -l`) separated by comma, the maximum number of parallel jobs (default 4), and the folder to place the logs.
+The script `run_parallel.sh` is provided to allow users to more quickly run tests in parallel on the local machine. To use this script, first build and tag a Docker image with the desired configuration. Run the script with options first, followed by the image tag and the desired tests (find with `./tests/run.sh -l`) separated by comma. Set the suite log directory with `--log-folder <path>` (default `$PWD/runtime/log`). Set the maximum number of concurrent suites with `--max-parallel-jobs <count>` (default 4); the count must be a positive integer.
+
+To also append runner status messages to a file, add `--log-file <path>`, for example: `./tests/run_parallel.sh --log-folder runtime/log --max-parallel-jobs 4 --log-file parallel.log bats_test s3`. Relative paths are resolved under `--log-folder` (this example writes `runtime/log/parallel.log`); absolute paths are used unchanged. The log folder is created automatically, but any additional parent directories in the report path must already exist. Per-suite Docker output continues to be written separately in the specified log folder.
+
+Use `./tests/run_parallel.sh -l` (or `--list`) to list available suites without running Docker.
+
+The manually triggered `Parallel Runner Smoke Test` workflow (`.github/workflows/run-parallel.yml`) checks the runner with real Docker containers and small passing/failing BATS fixtures. It verifies exit codes, config/log mounts, and text/HTML reports without running versitygw or contacting S3. Reports are uploaded as an Actions artifact even when a smoke step fails.
+
+Use `--config-folder <path>` to select the host directory containing the test `.env` file (default `$PWD/runtime/config`). It is mounted at `/home/tester/config` inside each container. For example: `./tests/run_parallel.sh --config-folder "$PWD/runtime/aws-config" bats_test s3`.
+
+Host config and log directories are created if missing and normalized to absolute physical paths before Docker runs. The `HOST_LOG_FOLDER` passed into each container uses this absolute log directory so reported host log locations are unambiguous.
+
+Use `--build-mode <mode>` to choose image preparation: `rebuild` always builds before testing, `build-if-missing` builds only if the image tag is absent, and `use-tag` requires an existing image without building (the default).
+
+Use `all` as the suite argument to run every suite returned by `./tests/run.sh -l`, with a separate container per suite and the configured parallel job limit: `./tests/run_parallel.sh --log-folder runtime/log --max-parallel-jobs 4 --build-mode rebuild bats_test all`. `all` must be used alone, not in a list such as `s3,all`. Suite discovery uses the host checkout, so rebuild the image to ensure it contains the same suites. Discovery failure or an empty suite list stops execution before Docker is invoked.
+
+Add `--html-report index.html` to write an HTML report of runner status messages, durations, and links to every suite's Docker log. As with `--log-file`, relative paths are resolved under `--log-folder` and absolute paths are used unchanged, regardless of option order. An existing HTML report is rejected. For example: `./tests/run_parallel.sh --log-folder runtime/log --max-parallel-jobs 4 --html-report index.html bats_test s3`. This option can be combined with `--log-file` using a different file. Links are relative to the report; keep the report and suite logs together when moving or sharing them. Docker log contents remain plain text.
 
 ## Instructions - Running with docker-compose
 
