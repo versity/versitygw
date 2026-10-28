@@ -422,7 +422,7 @@ under the License.
       const dropdown = document.getElementById('owner-filter-dropdown');
       dropdown.innerHTML = '<div class="custom-dropdown-item selected" data-value="" onclick="selectOwnerFilter(\'\')">All Owners</div>';
       owners.forEach(owner => {
-        dropdown.innerHTML += `<div class="custom-dropdown-item" data-value="${escapeHtml(owner)}" onclick="selectOwnerFilter('${escapeHtml(owner)}')">${escapeHtml(owner)}</div>`;
+        dropdown.innerHTML += `<div class="custom-dropdown-item" data-value="${escapeHtml(owner)}" onclick="selectOwnerFilter('${escapeJsAttr(owner)}')">${escapeHtml(owner)}</div>`;
       });
     }
 
@@ -464,7 +464,7 @@ under the License.
       if (document.getElementById('modal-new-owner-display').dataset.freeText === 'true') return;
       dropdown.innerHTML = '<div class="custom-dropdown-item" data-value="" onclick="selectNewOwner(\'\')">Select a user...</div>';
       options.filter(o => o.value !== currentOwner).forEach(option => {
-        dropdown.innerHTML += `<div class="custom-dropdown-item" data-value="${escapeHtml(option.value)}" onclick="selectNewOwner('${escapeHtml(option.value)}', '${escapeHtml(option.label)}')">${escapeHtml(option.label)}</div>`;
+        dropdown.innerHTML += `<div class="custom-dropdown-item" data-value="${escapeHtml(option.value)}" onclick="selectNewOwner('${escapeJsAttr(option.value)}', '${escapeJsAttr(option.label)}')">${escapeHtml(option.label)}</div>`;
       });
     }
     // Populate bucket owner dropdown (for create bucket modal)
@@ -473,7 +473,7 @@ under the License.
       if (document.getElementById('bucket-owner-display').dataset.freeText === 'true') return;
       dropdown.innerHTML = '<div class="custom-dropdown-item" data-value="" onclick="selectBucketOwner(\'\', \'\')">Select owner...</div>';
       options.forEach(option => {
-        dropdown.innerHTML += `<div class="custom-dropdown-item" data-value="${escapeHtml(option.value)}" onclick="selectBucketOwner('${escapeHtml(option.value)}', '${escapeHtml(option.label)}')">${escapeHtml(option.label)}</div>`;
+        dropdown.innerHTML += `<div class="custom-dropdown-item" data-value="${escapeHtml(option.value)}" onclick="selectBucketOwner('${escapeJsAttr(option.value)}', '${escapeJsAttr(option.label)}')">${escapeHtml(option.label)}</div>`;
       });
     }
 
@@ -657,7 +657,7 @@ under the License.
       // ownership refuses outright, so the whole column is gone on an
       // IAM-managed deployment (see applyIamManagedMode).
       const ownerAction = bucket => `
-              <button onclick="openChangeOwnerModal('${escapeHtml(bucket.name)}', '${escapeHtml(bucket.owner || '')}')" class="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-charcoal-400 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+              <button onclick="openChangeOwnerModal('${escapeJsAttr(bucket.name)}', '${escapeJsAttr(bucket.owner || '')}')" class="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-charcoal-400 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
                 </svg>

@@ -588,8 +588,8 @@ under the License.
           <td class="py-4 px-6 text-sm text-charcoal">${escapeHtml(iamFormatDate(user.CreateDate))}</td>
           <td class="py-4 px-6 text-right">
             <div class="flex items-center justify-end gap-2">
-              <button onclick="openManageUserModal('${escapeHtml(name)}')" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal font-medium rounded-lg transition-colors">Manage</button>
-              <button onclick="openDeleteUserModal('${escapeHtml(name)}')" class="p-2 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+              <button onclick="openManageUserModal('${escapeJsAttr(name)}')" class="px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal font-medium rounded-lg transition-colors">Manage</button>
+              <button onclick="openDeleteUserModal('${escapeJsAttr(name)}')" class="p-2 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
               </button>
             </div>
@@ -751,12 +751,12 @@ under the License.
             <td class="py-3 px-4">${iamStatusBadge(key.Status)}</td>
             <td class="py-3 px-4 text-xs text-charcoal">${escapeHtml(iamFormatDate(key.CreateDate))}</td>
             <td class="py-3 px-4 text-xs text-charcoal" id="last-used-${escapeHtml(id)}">
-              <button onclick="fetchLastUsed('${escapeHtml(id)}')" class="text-accent hover:underline">Check</button>
+              <button onclick="fetchLastUsed('${escapeJsAttr(id)}')" class="text-accent hover:underline">Check</button>
             </td>
             <td class="py-3 px-4 text-right">
               <div class="flex items-center justify-end gap-2">
-                <button onclick="setKeyStatus('${escapeHtml(id)}', '${nextStatus}')" class="px-2.5 py-1 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Make ${nextStatus}</button>
-                <button onclick="deleteAccessKey('${escapeHtml(id)}')" class="p-1.5 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                <button onclick="setKeyStatus('${escapeJsAttr(id)}', '${nextStatus}')" class="px-2.5 py-1 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Make ${nextStatus}</button>
+                <button onclick="deleteAccessKey('${escapeJsAttr(id)}')" class="p-1.5 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                 </button>
               </div>
@@ -900,8 +900,8 @@ under the License.
             <td class="py-3 px-4 text-xs text-charcoal">${size === null ? '-' : size + ' bytes'}</td>
             <td class="py-3 px-4 text-right">
               <div class="flex items-center justify-end gap-2">
-                <button onclick="openUserPolicyEditor('${escapeHtml(name)}')" class="px-2.5 py-1 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Edit</button>
-                <button onclick="deleteUserPolicy('${escapeHtml(name)}')" class="p-1.5 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                <button onclick="openUserPolicyEditor('${escapeJsAttr(name)}')" class="px-2.5 py-1 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">Edit</button>
+                <button onclick="deleteUserPolicy('${escapeJsAttr(name)}')" class="p-1.5 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                 </button>
               </div>

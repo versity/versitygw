@@ -692,7 +692,7 @@ func TestWebsiteHandlerGetAppliesBucketCORS(t *testing.T) {
 	if got := resp.Header.Get("Access-Control-Allow-Methods"); got != "GET, HEAD" {
 		t.Fatalf("Access-Control-Allow-Methods = %q", got)
 	}
-	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "Content-Length, ETag, x-amz-storage-class" {
+	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "Content-Length, ETag, x-amz-storage-class, x-amz-restore" {
 		t.Fatalf("Access-Control-Expose-Headers = %q", got)
 	}
 	if got := resp.Header.Get("Access-Control-Allow-Credentials"); got != "true" {
@@ -744,7 +744,7 @@ func TestWebsiteHandlerHeadAppliesBucketCORS(t *testing.T) {
 	if got := resp.Header.Get("Access-Control-Allow-Methods"); got != "HEAD" {
 		t.Fatalf("Access-Control-Allow-Methods = %q", got)
 	}
-	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "Content-Length, ETag, x-amz-storage-class" {
+	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "Content-Length, ETag, x-amz-storage-class, x-amz-restore" {
 		t.Fatalf("Access-Control-Expose-Headers = %q", got)
 	}
 	if got := readBody(t, resp); got != "" {

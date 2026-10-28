@@ -87,7 +87,7 @@ function iamArnCell(arn) {
   const safe = escapeHtml(arn);
   return `<div class="flex items-center gap-2 min-w-0">
     <span class="font-mono text-xs text-charcoal truncate max-w-[22rem]" title="${safe}">${safe}</span>
-    <button onclick="iamCopy('${safe}', 'ARN')" class="p-1 text-charcoal-300 hover:text-accent hover:bg-accent-50 rounded transition-colors flex-shrink-0" title="Copy ARN">
+    <button onclick="iamCopy('${escapeJsAttr(arn)}', 'ARN')" class="p-1 text-charcoal-300 hover:text-accent hover:bg-accent-50 rounded transition-colors flex-shrink-0" title="Copy ARN">
       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
     </button>
   </div>`;
