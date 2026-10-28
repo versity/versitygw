@@ -224,6 +224,20 @@ func (s SideCar) RenameObject(bucket, oldObject, newObject string) error {
 	return err
 }
 
+// RemoveObject removes the sidecar directory of the object, which holds the
+// metadata of the object and of the paths below it.
+func (s SideCar) RemoveObject(bucket, object string) error {
+	bucket, object = trimVolume(bucket), trimVolume(object)
+	objdir := filepath.Join(s.dir, bucket, object)
+
+	err := os.RemoveAll(objdir)
+	if err != nil {
+		return fmt.Errorf("failed to remove object metadata: %w", err)
+	}
+	s.cleanupEmptyDirs(objdir, bucket, object)
+	return nil
+}
+
 // ReplaceObject removes the attributes of the object other than the ones in
 // keep. The attributes are stored at the object's path, so they would
 // otherwise outlive the replaced file. Directories in the metadata directory
