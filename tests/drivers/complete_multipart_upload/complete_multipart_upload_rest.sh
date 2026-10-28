@@ -104,7 +104,37 @@ calculate_composite_checksum() {
   return 0
 }
 
-test_multipart_upload_with_checksum() {
+perform_multipart_checksum_test_with_bucket_and_file() {
+  if ! check_param_count_v2 "bucket, file, checksum type, algorithm" 4 $#; then
+    return 1
+  fi
+  local bucket_name="$1" mp_file_name="$2" checksum_type="$3" checksum_algorithm="$4"
+
+  if ! response=$(perform_full_multipart_upload_with_checksum_before_completion "$bucket_name" "$mp_file_name" "$checksum_type" "$checksum_algorithm" 2>&1); then
+    log 2 "error performing multipart upload with checksum before completion: $response"
+    return 1
+  fi
+  mapfile -t response_lines<<< "$response"
+  local lowercase_checksum_algorithm="${response_lines[0]}"
+  local upload_id="${response_lines[1]}"
+  local checksum_string="${response_lines[2]}"
+  local payload_parts="${response_lines[3]}"
+  read -r -a checksums <<< "$checksum_string"
+
+  if ! response=$(calculate_multipart_checksum "$1" 2 "$TEST_FILE_FOLDER/$mp_file_name" "$lowercase_checksum_algorithm" "${checksums[@]}" 2>&1); then
+    log 2 "error calculating multipart checksum: $response"
+    return 1
+  fi
+  checksum="$response"
+
+  if ! complete_multipart_upload_with_checksum "$bucket_name" "$mp_file_name" "$TEST_FILE_FOLDER/$mp_file_name" "$upload_id" 2 "$payload_parts" "$1" "$2" "$checksum"; then
+    log 2 "error completing multipart upload with checksum"
+    return 1
+  fi
+  return 0
+}
+
+test_multipart_upload_with_checksum_old() {
   log 6 "test_multipart_upload_with_checksum"
   if ! check_param_count_v2 "checksum type, algorithm" 2 $#; then
     return 1
@@ -138,6 +168,65 @@ test_multipart_upload_with_checksum() {
 
   if ! complete_multipart_upload_with_checksum "$bucket_name" "$mp_file_name" "$TEST_FILE_FOLDER/$mp_file_name" "$upload_id" 2 "$payload_parts" "$1" "$2" "$checksum"; then
     log 2 "error completing multipart upload with checksum"
+    return 1
+  fi
+  echo "$checksum"
+  return 0
+}
+
+test_multipart_upload_with_checksum() {
+  if ! check_param_count_v2 "checksum type, algorithm" 2 $#; then
+    return 1
+  fi
+  local checksum_type="$1" checksum_algorithm="$2"
+  local bucket_name file_name response part_one part_two
+  local -a checksums_and_payload
+
+  if ! response=$(setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error setting up file and bucket"
+    return 1
+  fi
+  read -r bucket_name file_name <<< "$response"
+  log 5 "file name: $file_name, file info:  $(ls -l "$TEST_FILE_FOLDER/$file_name")"
+
+  if ! response=$(split_file "$TEST_FILE_FOLDER/$file_name" 2 2>&1); then
+    log 2 "error splitting file: $response"
+    return 1
+  fi
+  read -r part_one part_two <<< "$response"
+
+  if ! response=$(create_multipart_upload_rest "$bucket_name" "$file_name" "CHECKSUM_TYPE=COMPOSITE CHECKSUM_ALGORITHM=SHA256" "parse_upload_id" 2>&1); then
+    log 2 "error creating multipart upload: $response"
+    return 1
+  fi
+  upload_id="$response"
+
+  if ! response=$(upload_split_file_with_checksum_before_completion "$bucket_name" "$file_name" "$upload_id" "sha256" "$part_one" "$part_two" 2>&1); then
+    log 2 "error uploading parts w/checksums: $response"
+    return 1
+  fi
+  mapfile -t checksums_and_payload <<< "$response"
+  read -r -a checksums <<< "${checksums_and_payload[0]}"
+  log 5 "checksums: ${checksums[*]}"
+
+  if ! list_parts_rest "$bucket_name" "$file_name" "$upload_id" "list_parts_check_checksums" "--" "$bucket_name" "$file_name" "$upload_id" "SHA256" "${checksums[@]}"; then
+    log 2 "error listing parts and checking checksums"
+    return 1
+  fi
+
+  if ! response=$(calculate_multipart_checksum "COMPOSITE" 2 "$TEST_FILE_FOLDER/$file_name" "sha256" "${checksums[@]}" 2>&1); then
+    log 2 "error calculating multipart checksum: $response"
+    return 1
+  fi
+  checksum="$response"
+
+  if ! complete_multipart_upload_rest_with_checksum "$bucket_name" "$file_name" "$upload_id" "${checksums_and_payload[1]}" "COMPOSITE" "SHA256" "$checksum"; then
+    log 2 "error completing multipart upload with checksum"
+    return 1
+  fi
+
+  if ! check_checksum_rest "$bucket_name" "$file_name" "${checksum}" "x-amz-checksum-sha256"; then
+    log 2 "error verifying checksum with HeadObject after upload"
     return 1
   fi
   return 0

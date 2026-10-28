@@ -59,27 +59,29 @@ check_checksum_rest() {
   if ! check_param_count_v2 "bucket, file, expected checksum, header key" 4 $#; then
     return 1
   fi
-  header_key="$4"
+  local bucket="$1" file="$2" expected_checksum="$3" header_key="$4"
+  local response head_checksum
 
-  local response
-  if ! response=$(head_object_rest_expect_success_callback "$1" "$2" "CHECKSUM=true" "parse_head_checksum" 2>&1); then
+  if ! response=$(head_object_rest_expect_success_callback "$bucket" "$file" "CHECKSUM=true" "parse_head_checksum" "$header_key" 2>&1); then
     log 2 "error calling HeadObject command: $response"
     return 1
   fi
 
   head_checksum="$response"
-  if [ "$3" != "$head_checksum" ]; then
-    log 2 "'checksum mismatch (head '$head_checksum', local '$3')"
+  if [ "$expected_checksum" != "$head_checksum" ]; then
+    log 2 "'checksum mismatch (head '$head_checksum', local '$expected_checksum')"
     return 1
   fi
   return 0
 }
 
 parse_head_checksum() {
-  if ! check_param_count_v2 "file" 1 $#; then
+  if ! check_param_count_v2 "file, checksum header key" 2 $#; then
     return 1
   fi
-  head_checksum=$(grep -i "$header_key" "$1" | awk '{print $2}' | sed 's/\r$//')
+  local file="$1" header_key="$2"
+
+  head_checksum=$(grep -i "$header_key" "$file" | awk '{print $2}' | sed 's/\r$//')
   echo "$head_checksum"
   return 0
 }
@@ -160,7 +162,7 @@ head_object_without_and_with_checksum() {
     log 2 "error verifying HeadObject checksum doesn't exist"
     return 1
   fi
-  if ! head_object_rest_expect_success_callback "$1" "$2" "CHECKSUM=true" "parse_head_checksum"; then
+  if ! head_object_rest_expect_success_callback "$1" "$2" "CHECKSUM=true" "parse_head_checksum" "$header_key"; then
     log 2 "error verifying checksum exists"
     return 1
   fi
@@ -172,13 +174,13 @@ check_default_checksum() {
     return 1
   fi
   header_key="x-amz-checksum-crc64nvme"
-  if ! head_object_rest_expect_success_callback "$1" "$2" "CHECKSUM=true" "parse_head_checksum"; then
+  if ! head_object_rest_expect_success_callback "$1" "$2" "CHECKSUM=true" "parse_head_checksum" "$header_key"; then
     log 2 "error verifying HeadObject checksum doesn't exist"
     return 1
   fi
   log 5 "checksum: $head_checksum"
   default_checksum="$head_checksum"
-  if ! head_object_rest_expect_success_callback "$1" "$2" "CHECKSUM_TYPE=crc64nvme CHECKSUM=true" "parse_head_checksum"; then
+  if ! head_object_rest_expect_success_callback "$1" "$2" "CHECKSUM_TYPE=crc64nvme CHECKSUM=true" "parse_head_checksum" "$default_checksum"; then
     log 2 "error verifying HeadObject checksum doesn't exist"
     return 1
   fi

@@ -59,6 +59,31 @@ upload_parts_rest_before_completion() {
   return 0
 }
 
+upload_split_file_with_checksum_before_completion() {
+  if ! check_param_count_gt "bucket, key, upload ID, algorithm, parts" 6 $#; then
+    return 1
+  fi
+  local bucket="$1" key="$2" upload_id="$3" algorithm="$4" parts=("${@:5}")
+
+  parts_payload=""
+  checksums=()
+  for ((part=0;part<"${#parts[@]}";part++)); do
+    part_number=$((part+1))
+    if ! upload_part_rest_with_checksum "$bucket" "$key" "$upload_id" "$part_number" "${parts[$part]}" "$algorithm"; then
+      log 2 "error uploading part $part"
+      return 1
+    fi
+    checksums+=("$checksum")
+    uppercase_checksum_algorithm=$(echo -n "$algorithm" | tr '[:lower:]' '[:upper:]')
+    parts_payload+="<Part><ETag>$etag</ETag><Checksum${uppercase_checksum_algorithm}>${checksum}</Checksum${uppercase_checksum_algorithm}><PartNumber>$part_number</PartNumber></Part>"
+    log 5 "parts payload: $parts_payload"
+  done
+  log 5 "CHECKSUMS:  ${checksums[*]}"
+  echo "${checksums[*]}"
+  echo "$parts_payload"
+  return 0
+}
+
 upload_parts_rest_with_checksum_before_completion() {
   if ! check_param_count_v2 "bucket, key, file, upload ID, part count, algorithm" 6 $#; then
     return 1
