@@ -22,6 +22,7 @@ import (
 	"io/fs"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -817,6 +818,45 @@ func TestWalkDirectoryErrorPropagates(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "directory to object \"dir/\": boom") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// vanishingDirFS fails Stat of a directory with err, as if the directory was
+// removed after it was listed by ReadDir.
+type vanishingDirFS struct {
+	fstest.MapFS
+	dir string
+	err error
+}
+
+func (v vanishingDirFS) Stat(name string) (fs.FileInfo, error) {
+	if name == v.dir {
+		return nil, v.err
+	}
+	return v.MapFS.Stat(name)
+}
+
+func TestWalkPrefixDirRemovedDuringWalk(t *testing.T) {
+	for name, statErr := range map[string]error{
+		"enoent":  fs.ErrNotExist,
+		"enotdir": syscall.ENOTDIR,
+	} {
+		t.Run(name, func(t *testing.T) {
+			fSys := vanishingDirFS{
+				MapFS: fstest.MapFS{"dir/file.txt": {}},
+				dir:   "dir",
+				err:   &fs.PathError{Op: "stat", Path: "dir", Err: statErr},
+			}
+
+			res, err := backend.Walk(context.Background(), fSys, "dir/", "/", "", 1000,
+				getObj, backend.SkipDirs{})
+			if err != nil {
+				t.Fatalf("walk: %v", err)
+			}
+			if len(res.Objects) != 0 || len(res.CommonPrefixes) != 0 {
+				t.Fatalf("expected empty results, got %+v", res)
+			}
+		})
 	}
 }
 

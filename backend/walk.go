@@ -383,7 +383,7 @@ func readDir(path string, walkstate *walkState) {
 		// user-supplied prefix that doesn't exist on disk, or a directory
 		// that was removed concurrently during the walk. In both cases,
 		// treat the subtree as empty rather than surfacing an error.
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if isDirGone(err) {
 			return
 		}
 		walkstate.walkErr = fmt.Errorf("readdir %q: %w", path, err)
@@ -672,7 +672,11 @@ func quickWalk(walkstate *walkState) error {
 			if fullObjectName > walkstate.marker {
 				if !checkAndMaybeAddCommonPrefix(fullObjectName, walkstate) {
 					rootInfo, err := fs.Stat(walkstate.fileSystem, rootDir)
-					if err != nil {
+					if isDirGone(err) {
+						// The prefix directory was removed concurrently after
+						// it was read, so treat it as empty.
+						return nil
+					} else if err != nil {
 						walkstate.walkErr = fmt.Errorf("stat %q: %w", rootDir, err)
 					} else {
 						dirobj, err := walkstate.getObj(fullObjectName, fs.FileInfoToDirEntry(rootInfo))
@@ -700,4 +704,10 @@ func quickWalk(walkstate *walkState) error {
 		walkstate.newMarker = ""
 	}
 	return nil
+}
+
+// isDirGone reports whether err from reading a directory means that the
+// directory isn't there: it never was, or it was removed during the walk.
+func isDirGone(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
 }
