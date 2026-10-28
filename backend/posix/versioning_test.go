@@ -172,3 +172,23 @@ func TestVersioningDeleteMarkerStaleSidecarClearedOnSameKeyReupload(t *testing.T
 	}
 	assert.Equal(t, "two", string(body))
 }
+
+// TestLiveObjVersionIdObjectRemoved verifies that a version id lookup for an
+// object removed after the caller's stat reports NoSuchKey, not an internal
+// error, for both a missing object and a missing parent directory.
+func TestLiveObjVersionIdObjectRemoved(t *testing.T) {
+	t.Chdir(t.TempDir())
+	p := newUnversionedGateway(t)
+
+	if err := os.Mkdir("bucket", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("bucket/file", []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, key := range []string{"gone", "gonedir/gone", "file/child"} {
+		_, err := p.liveObjVersionId(context.Background(), "bucket", key)
+		assert.Equal(t, s3err.GetAPIError(s3err.ErrNoSuchKey), err, key)
+	}
+}

@@ -1383,6 +1383,10 @@ func (p *Posix) liveObjVersionId(ctx context.Context, bucket, object string) (st
 	if err == nil {
 		return string(vId), nil
 	}
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
+		// the object was removed after the caller's stat
+		return "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
 	if !errors.Is(err, meta.ErrNoSuchKey) {
 		return "", fmt.Errorf("get obj versionId: %w", err)
 	}
