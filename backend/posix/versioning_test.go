@@ -175,20 +175,25 @@ func TestVersioningDeleteMarkerStaleSidecarClearedOnSameKeyReupload(t *testing.T
 
 // TestLiveObjVersionIdObjectRemoved verifies that a version id lookup for an
 // object removed after the caller's stat reports NoSuchKey, not an internal
-// error, for both a missing object and a missing parent directory.
+// error: the object is missing, its parent directory is missing, or its
+// parent is now a file (ENOTDIR).
 func TestLiveObjVersionIdObjectRemoved(t *testing.T) {
 	t.Chdir(t.TempDir())
-	p := newUnversionedGateway(t)
-
-	if err := os.Mkdir("bucket", 0o755); err != nil {
-		t.Fatal(err)
+	p, err := New(t.TempDir(), meta.XattrMeta{}, PosixOpts{
+		ValidateBucketNames: true,
+		VersioningDir:       t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("init posix backend: %v", err)
 	}
-	if err := os.WriteFile("bucket/file", []byte("x"), 0o644); err != nil {
+
+	createTestBucket(t, p, "bucket")
+	if err := os.WriteFile(p.ObjectPath("bucket", "file"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	for _, key := range []string{"gone", "gonedir/gone", "file/child"} {
 		_, err := p.liveObjVersionId(context.Background(), "bucket", key)
-		assert.Equal(t, s3err.GetAPIError(s3err.ErrNoSuchKey), err, key)
+		assert.ErrorIs(t, err, s3err.GetAPIError(s3err.ErrNoSuchKey), key)
 	}
 }
