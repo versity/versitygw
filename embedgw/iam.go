@@ -118,6 +118,21 @@ type IAMConfig struct {
 	// unix-socket PrivatePorts address.
 	PrivateSocketPerm string
 
+	// IAM API storage
+	//
+	// The IAM API supports an externally supplied Store or one of the
+	// built-in storage backends, IAMDir and VaultEndpointURL. Store, when
+	// set, takes priority over both built-in backends; otherwise exactly one
+	// of IAMDir and VaultEndpointURL must be set.
+
+	// Store, when non-nil, is used directly as the IAM API's storage backend
+	// for both the public API and the private endpoints, and IAMDir and the
+	// Vault* fields below are ignored. This lets an embedder serve its own
+	// storage.Storer, such as a wrapper around the Vault store, behind the
+	// listeners, TLS and certificate reloading that RunIAMAPI sets up. Both
+	// listeners call it concurrently, so it must be safe for concurrent use.
+	Store storage.Storer
+
 	// IAMDir enables local file-backed IAM API storage. Set to the directory
 	// path where the IAM API user database is stored.
 	IAMDir string
@@ -452,26 +467,29 @@ func RunIAMAPI(ctx context.Context, cfg *IAMConfig) error {
 		return fmt.Errorf("client-ip-header is set but trusted-proxies is empty: the header would be trusted from every peer")
 	}
 
-	store, err := storage.New(storage.Config{
-		Dir: cfg.IAMDir,
-		Vault: storage.VaultConfig{
-			EndpointURL:            cfg.VaultEndpointURL,
-			Namespace:              cfg.VaultNamespace,
-			SecretStoragePath:      cfg.VaultSecretStoragePath,
-			SecretStorageNamespace: cfg.VaultSecretStorageNamespace,
-			AuthMethod:             cfg.VaultAuthMethod,
-			AuthNamespace:          cfg.VaultAuthNamespace,
-			MountPath:              cfg.VaultMountPath,
-			RootToken:              cfg.VaultRootToken,
-			RoleID:                 cfg.VaultRoleID,
-			RoleSecret:             cfg.VaultRoleSecret,
-			ServerCert:             cfg.VaultServerCert,
-			ClientCert:             cfg.VaultClientCert,
-			ClientCertKey:          cfg.VaultClientCertKey,
-		},
-	})
-	if err != nil {
-		return err
+	store := cfg.Store
+	if store == nil {
+		store, err = storage.New(storage.Config{
+			Dir: cfg.IAMDir,
+			Vault: storage.VaultConfig{
+				EndpointURL:            cfg.VaultEndpointURL,
+				Namespace:              cfg.VaultNamespace,
+				SecretStoragePath:      cfg.VaultSecretStoragePath,
+				SecretStorageNamespace: cfg.VaultSecretStorageNamespace,
+				AuthMethod:             cfg.VaultAuthMethod,
+				AuthNamespace:          cfg.VaultAuthNamespace,
+				MountPath:              cfg.VaultMountPath,
+				RootToken:              cfg.VaultRootToken,
+				RoleID:                 cfg.VaultRoleID,
+				RoleSecret:             cfg.VaultRoleSecret,
+				ServerCert:             cfg.VaultServerCert,
+				ClientCert:             cfg.VaultClientCert,
+				ClientCertKey:          cfg.VaultClientCertKey,
+			},
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	opts := []iamapi.Option{
