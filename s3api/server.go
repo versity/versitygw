@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -65,6 +66,7 @@ type S3ApiServer struct {
 	socketPerm       os.FileMode
 	onListen         func()
 	onListenAddrs    func(addrs []net.Addr)
+	listener         atomic.Pointer[netutil.MultiListener]
 }
 
 type routeMount struct {
@@ -447,6 +449,7 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 
 	// Combine all listeners
 	finalListener := netutil.NewMultiListener(listeners...)
+	sa.listener.Store(finalListener)
 
 	if sa.onListen != nil || sa.onListenAddrs != nil {
 		fn, fnAddrs := sa.onListen, sa.onListenAddrs
@@ -468,6 +471,13 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 
 // ShutDown gracefully shuts down the server with a context timeout
 func (sa *S3ApiServer) ShutDown() error {
+	// fasthttp's Shutdown closes only the listeners its Serve has already
+	// registered, and the listen hooks fire before fiber calls Serve. Closing
+	// the listener here makes a ShutDown in that window stop the server too:
+	// Serve's first Accept fails and it returns.
+	if ln := sa.listener.Load(); ln != nil {
+		ln.Close()
+	}
 	return sa.app.ShutdownWithTimeout(shutDownDuration)
 }
 

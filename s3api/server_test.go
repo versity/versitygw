@@ -130,6 +130,29 @@ func TestWithOnListenAddrs(t *testing.T) {
 	}
 }
 
+// TestShutDownFromListenHook shuts the server down from the listen hook,
+// which fiber runs before fasthttp's Serve registers the listener for its
+// own Shutdown to close.
+func TestShutDownFromListenHook(t *testing.T) {
+	var sa *S3ApiServer
+	shutDown := make(chan error, 1)
+	sa, err := newTestS3ApiServer(WithOnListen(func() { shutDown <- sa.ShutDown() }))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	served := make(chan error, 1)
+	go func() { served <- sa.ServeMultiPort([]string{"127.0.0.1:0"}) }()
+
+	select {
+	case <-served:
+	case <-time.After(shutDownDuration + time.Second):
+		t.Fatal("ServeMultiPort() did not return after ShutDown()")
+	}
+	if err := <-shutDown; err != nil {
+		t.Fatalf("ShutDown() error = %v", err)
+	}
+}
+
 func TestWithRouteRegistersBeforeMiddleware(t *testing.T) {
 	const routePath = "/custom/route"
 
