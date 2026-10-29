@@ -179,7 +179,7 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 	buf := []byte{}
 	if !info.IsDir && length > 0 {
 		buf = make([]byte, length)
-		n, err := d.fs.Read(obj, buf, start)
+		n, err := readFull(d.fs, obj, buf, start)
 		if err != nil {
 			return nil, err
 		}
@@ -337,7 +337,7 @@ func (d *Daos) putFile(bucket, key string, body []byte, po s3response.PutObjectI
 		}
 	}()
 	if len(body) > 0 {
-		if _, err := d.fs.Write(obj, body, 0); err != nil {
+		if _, err := writeFull(d.fs, obj, body, 0); err != nil {
 			return s3response.PutObjectOutput{}, mapFS(err)
 		}
 	}
@@ -587,6 +587,43 @@ func mapFS(err error) error {
 		return nil
 	}
 	return fmt.Errorf("dfs: %w", err)
+}
+
+func readFull(fs FS, obj Object, buf []byte, off int64) (int, error) {
+	total := 0
+	for total < len(buf) {
+		n, err := fs.Read(obj, buf[total:], off+int64(total))
+		if n > 0 {
+			total += n
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) && total == len(buf) {
+				return total, nil
+			}
+			return total, err
+		}
+		if n == 0 {
+			return total, io.ErrUnexpectedEOF
+		}
+	}
+	return total, nil
+}
+
+func writeFull(fs FS, obj Object, buf []byte, off int64) (int, error) {
+	total := 0
+	for total < len(buf) {
+		n, err := fs.Write(obj, buf[total:], off+int64(total))
+		if n > 0 {
+			total += n
+		}
+		if err != nil {
+			return total, err
+		}
+		if n == 0 {
+			return total, io.ErrShortWrite
+		}
+	}
+	return total, nil
 }
 
 func objectPath(bucket, key string) string {

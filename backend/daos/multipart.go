@@ -535,7 +535,7 @@ func (d *Daos) copyParts(dst Object, dir string, parts []types.CompletedPart) er
 		for srcOff < info.Size {
 			n, err := d.fs.Read(src, buf, srcOff)
 			if n > 0 {
-				if _, werr := d.fs.Write(dst, buf[:n], destOff); werr != nil {
+				if _, werr := writeFull(d.fs, dst, buf[:n], destOff); werr != nil {
 					d.fs.Release(src)
 					return mapFS(werr)
 				}
@@ -625,7 +625,7 @@ func (d *Daos) writeBody(obj Object, r io.Reader, length *int64) ([]byte, int64,
 			if _, werr := h.Write(chunk[:n]); werr != nil {
 				return nil, off, werr
 			}
-			if _, werr := d.fs.Write(obj, chunk[:n], off); werr != nil {
+			if _, werr := writeFull(d.fs, obj, chunk[:n], off); werr != nil {
 				return nil, off, mapFS(werr)
 			}
 			off += int64(n)

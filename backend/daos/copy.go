@@ -191,7 +191,7 @@ func (d *Daos) UploadPartCopy(_ context.Context, input *s3.UploadPartCopyInput) 
 	body := []byte{}
 	if !info.IsDir && length > 0 {
 		body = make([]byte, length)
-		n, err := d.fs.Read(obj, body, start)
+		n, err := readFull(d.fs, obj, body, start)
 		if err != nil {
 			return out, err
 		}
@@ -241,7 +241,7 @@ func readObjectBytes(fs FS, obj Object, info Info) ([]byte, error) {
 		return []byte{}, nil
 	}
 	body := make([]byte, info.Size)
-	n, err := fs.Read(obj, body, 0)
+	n, err := readFull(fs, obj, body, 0)
 	if err != nil {
 		return nil, err
 	}
