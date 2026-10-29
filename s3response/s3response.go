@@ -647,8 +647,8 @@ func (d DeleteMarkerEntry) MarshalXML(e *xml.Encoder, start xml.StartElement) er
 
 type GetBucketVersioningOutput struct {
 	XMLName   xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ VersioningConfiguration" json:"-"`
-	MFADelete *types.MFADeleteStatus
 	Status    *types.BucketVersioningStatus
+	MFADelete *types.MFADeleteStatus `xml:"MfaDelete"`
 }
 
 type PutObjectRetentionInput struct {

@@ -16,6 +16,7 @@ package s3proxy
 
 import (
 	"context"
+	"encoding/xml"
 	"io"
 	"net/http"
 	"net/url"
@@ -329,6 +330,52 @@ func TestObjectTaggingVersionId(t *testing.T) {
 			}
 			if got := capture.query.Get("versionId"); got != "v1" {
 				t.Errorf("expected versionId v1, got %q", got)
+			}
+		})
+	}
+}
+
+// A bucket that was never versioned answers with an empty
+// VersioningConfiguration, and S3 leaves MfaDelete out unless it was
+// configured. Neither element may then show up in the gateway response.
+func TestGetBucketVersioningOmitsUnsetFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		respBody string
+		want     string
+	}{
+		{
+			name:     "never versioned",
+			respBody: `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>`,
+			want:     `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></VersioningConfiguration>`,
+		},
+		{
+			name:     "enabled",
+			respBody: `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Enabled</Status></VersioningConfiguration>`,
+			want:     `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Enabled</Status></VersioningConfiguration>`,
+		},
+		{
+			name:     "suspended with mfa delete",
+			respBody: `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Suspended</Status><MfaDelete>Disabled</MfaDelete></VersioningConfiguration>`,
+			want:     `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Suspended</Status><MfaDelete>Disabled</MfaDelete></VersioningConfiguration>`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, capture := newCaptureProxy(t)
+			capture.respBody = tt.respBody
+
+			out, err := p.GetBucketVersioning(context.Background(), "test-bucket")
+			if err != nil {
+				t.Fatalf("GetBucketVersioning: %v", err)
+			}
+			got, err := xml.Marshal(out)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if string(got) != tt.want {
+				t.Errorf("expected %s, got %s", tt.want, got)
 			}
 		})
 	}

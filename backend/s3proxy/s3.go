@@ -324,10 +324,15 @@ func (s *S3Proxy) GetBucketVersioning(ctx context.Context, bucket string) (s3res
 		return s3response.GetBucketVersioningOutput{}, handleError(err)
 	}
 
-	return s3response.GetBucketVersioningOutput{
-		Status:    &out.Status,
-		MFADelete: &out.MFADelete,
-	}, nil
+	var res s3response.GetBucketVersioningOutput
+	if out.Status != "" {
+		res.Status = &out.Status
+	}
+	if out.MFADelete != "" {
+		res.MFADelete = &out.MFADelete
+	}
+
+	return res, nil
 }
 
 func (s *S3Proxy) ListObjectVersions(ctx context.Context, input *s3.ListObjectVersionsInput) (s3response.ListVersionsResult, error) {
