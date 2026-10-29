@@ -955,6 +955,76 @@ func PutObject_race_with_parent_object_deletes(s *S3Conf) error {
 	})
 }
 
+// HeadObject_GetObject_race_with_delete reads objects with HeadObject and
+// GetObject while they are uploaded and deleted over and over. With a
+// versioning directory configured, a read looks up the version id of the
+// object after its stat, so a delete can remove the object in between. A
+// read must find the object or answer NoSuchKey, and must not fail otherwise.
+func HeadObject_GetObject_race_with_delete(s *S3Conf) error {
+	testName := "HeadObject_GetObject_race_with_delete"
+	// a read fails only if the delete removes the object between the
+	// read's stat of it and its lookup of the version id
+	const workers, iterations = 16, 200
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return raceWorkers(workers, iterations, func(w, i int) error {
+			// the workers share a key in pairs: one reads it, the other
+			// uploads and deletes it
+			key := fmt.Sprintf("race/%d/obj", w/2)
+			if w%2 == 1 {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+					Bucket: &bucket,
+					Key:    &key,
+				})
+				cancel()
+				if err != nil {
+					if err := checkSdkApiErr(err, "NotFound"); err != nil {
+						return fmt.Errorf("head %v: %w", key, err)
+					}
+				}
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				defer cancel()
+				out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+					Bucket: &bucket,
+					Key:    &key,
+				})
+				if err != nil {
+					if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+						return fmt.Errorf("get %v: %w", key, err)
+					}
+					return nil
+				}
+				defer out.Body.Close()
+				if _, err := io.Copy(io.Discard, out.Body); err != nil {
+					return fmt.Errorf("read %v: %w", key, err)
+				}
+				return nil
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+				Body:   bytes.NewReader(siblingRaceData(key)),
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("put %v: %w", key, err)
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("delete %v: %w", key, err)
+			}
+			return nil
+		})
+	})
+}
+
 // ListObjects_race_with_prefix_removal lists prefixes while the only object
 // under each of them is uploaded and deleted over and over. Deleting the
 // object removes the prefix directory, so a listing can read the directory
