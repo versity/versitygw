@@ -64,9 +64,9 @@ upload_split_file_with_checksum_before_completion() {
     return 1
   fi
   local bucket="$1" key="$2" upload_id="$3" algorithm="$4" parts=("${@:5}")
+  local parts_payload="" uppercase_checksum_algorithm
+  local -a checksums
 
-  parts_payload=""
-  checksums=()
   for ((part=0;part<"${#parts[@]}";part++)); do
     part_number=$((part+1))
     if ! upload_part_rest_with_checksum "$bucket" "$key" "$upload_id" "$part_number" "${parts[$part]}" "$algorithm"; then

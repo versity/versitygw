@@ -80,6 +80,7 @@ parse_head_checksum() {
     return 1
   fi
   local file="$1" header_key="$2"
+  local head_checksum
 
   head_checksum=$(grep -i "$header_key" "$file" | awk '{print $2}' | sed 's/\r$//')
   echo "$head_checksum"

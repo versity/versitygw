@@ -311,6 +311,9 @@ list_parts_check_checksums() {
     return 1
   fi
   local data_file="$1" bucket="$2" key="$3" upload_id="$4" checksum_algorithm="$5" checksums=("${@:6}")
+  local response checksum_idx=0 part_number
+  local -a parts
+
   if ! list_parts_check_parent_fields "$data_file" "$bucket" "$key" "$upload_id" 4 $#; then
     log 2 "error checking parent fields"
     return 1
@@ -323,7 +326,6 @@ list_parts_check_checksums() {
   if [ "${#parts[@]}" -ne "${#checksums[@]}" ]; then
     log 2 "expected '${#checksums[@]}' parts, was '${#parts[@]}'"
   fi
-  checksum_idx=0
   log 5 "checksums: ${checksums[*]}"
   for part in "${parts[@]}"; do
     part_number=$((checksum_idx+1))

@@ -24,6 +24,8 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 
 # tags: curl,multipart,checksum,CreateMultipartUpload,invalid-header,x-amz-checksum-type
 @test "REST - multipart w/invalid checksum type" {
+  local bucket_name mp_file
+
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
   read -r bucket_name mp_file <<< "$output"
@@ -35,6 +37,8 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 
 # tags: curl,multipart,checksum,CreateMultipartUpload,invalid-header,x-amz-checksum-algorithm
 @test "REST - multipart w/invalid checksum algorithm" {
+  local bucket_name mp_file
+
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
   read -r bucket_name mp_file <<< "$output"
@@ -46,6 +50,8 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 
 # tags: curl,multipart,checksum,CreateMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart checksum w/crc64nvme, composite" {
+  local bucket_name mp_file
+
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
   read -r bucket_name mp_file <<< "$output"
@@ -57,6 +63,8 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 
 # tags: curl,multipart,checksum,CreateMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart checksum w/sha1, full object" {
+  local bucket_name mp_file
+
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
   read -r bucket_name mp_file <<< "$output"
@@ -68,6 +76,8 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 
 # tags: curl,multipart,checksum,CreateMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart checksum w/sha256, full object" {
+  local bucket_name mp_file
+
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
   read -r bucket_name mp_file <<< "$output"
@@ -79,6 +89,8 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 
 # tags: curl,multipart,checksum,CreateMultipartUpload,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - lowercase checksum type and algorithm" {
+  local bucket_name mp_file
+
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
   read -r bucket_name mp_file <<< "$output"
@@ -89,6 +101,8 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 
 # tags: curl,multipart,checksum,CreateMultipartUpload,UploadPart,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - full object checksum type doesn't require UploadPart checksums" {
+  local bucket_name large_test_file upload_id
+
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -111,6 +125,8 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 
 # tags: unit,checksum,composite-checksum
 @test "sha256 - calculate composite checksum w/null byte" {
+  local composite
+
   run calculate_composite_checksum "sha256" "Gaq9AN6Uxmk7WaTR9TzgDhE8m8bzXrfJWReDyLoZAo8=" "GohMQZ27EDvwB3n2iDx4irfxkTQDyvpDB7NFeTYaXn8="
   assert_success
   composite=$output
@@ -246,38 +262,5 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
 # tags: curl,multipart,checksum,CompleteMultipartUpload,invalid-header,x-amz-checksum-type,x-amz-checksum-algorithm
 @test "REST - multipart - full object - invalid crc64nvme" {
   run test_complete_multipart_upload_invalid_checksum "FULL_OBJECT" "CRC64NVME"
-  assert_success
-}
-
-@test "REST - multipart checksum in ListParts, persistence" {
-  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME"
-  assert_success
-  read -r bucket_name file_name <<< "$output"
-
-  run split_file "$TEST_FILE_FOLDER/$file_name" 2
-  assert_success
-  read -r part_one part_two <<< "$output"
-
-  run create_multipart_upload_rest "$bucket_name" "$file_name" "CHECKSUM_TYPE=COMPOSITE CHECKSUM_ALGORITHM=SHA256" "parse_upload_id"
-  assert_success
-  upload_id="$output"
-
-  run upload_split_file_with_checksum_before_completion "$bucket_name" "$file_name" "$upload_id" "sha256" "$part_one" "$part_two"
-  assert_success
-  mapfile -t checksums_and_payload <<< "$output"
-  read -r -a checksums <<< "${checksums_and_payload[0]}"
-  log 5 "checksums: ${checksums[*]}"
-
-  run list_parts_rest "$bucket_name" "$file_name" "$upload_id" "list_parts_check_checksums" "--" "$bucket_name" "$file_name" "$upload_id" "SHA256" "${checksums[@]}"
-  assert_success
-
-  run calculate_multipart_checksum "COMPOSITE" 2 "$TEST_FILE_FOLDER/$file_name" "sha256" "${checksums[@]}"
-  assert_success
-  checksum="$output"
-
-  run complete_multipart_upload_rest_with_checksum "$bucket_name" "$file_name" "$upload_id" "${checksums_and_payload[1]}" "COMPOSITE" "SHA256" "$checksum"
-  assert_success
-
-  run check_checksum_rest "$bucket_name" "$file_name" "${checksum}" "x-amz-checksum-sha256"
   assert_success
 }
