@@ -2376,6 +2376,10 @@ func TestUnsignedStreaminPayloadTrailer(ts *TestState) {
 		ts.Run(UnsignedStreamingPayloadTrailer_UploadPart_no_trailer_full_object)
 		ts.Run(UnsignedStreamingPayloadTrailer_UploadPart_trailer_and_mp_algo_mismatch)
 		ts.Run(UnsignedStreamingPayloadTrailer_UploadPart_success_with_trailer)
+		ts.Run(UnsignedStreamingPayloadTrailer_content_md5_with_trailer)
+		ts.Run(UnsignedStreamingPayloadTrailer_content_md5_and_trailer_bad_digest)
+		ts.Run(UnsignedStreamingPayloadTrailer_UploadPart_content_md5_with_trailer)
+		ts.Run(UnsignedStreamingPayloadTrailer_UploadPart_content_md5_mp_algo_mismatch)
 		ts.Run(UnsignedStreamingPayloadTrailer_not_allowed)
 	}
 }
@@ -4017,6 +4021,10 @@ func GetIntTests() IntTests {
 		"UnsignedStreamingPayloadTrailer_UploadPart_no_trailer_full_object":                UnsignedStreamingPayloadTrailer_UploadPart_no_trailer_full_object,
 		"UnsignedStreamingPayloadTrailer_UploadPart_trailer_and_mp_algo_mismatch":          UnsignedStreamingPayloadTrailer_UploadPart_trailer_and_mp_algo_mismatch,
 		"UnsignedStreamingPayloadTrailer_UploadPart_success_with_trailer":                  UnsignedStreamingPayloadTrailer_UploadPart_success_with_trailer,
+		"UnsignedStreamingPayloadTrailer_content_md5_with_trailer":                         UnsignedStreamingPayloadTrailer_content_md5_with_trailer,
+		"UnsignedStreamingPayloadTrailer_content_md5_and_trailer_bad_digest":               UnsignedStreamingPayloadTrailer_content_md5_and_trailer_bad_digest,
+		"UnsignedStreamingPayloadTrailer_UploadPart_content_md5_with_trailer":              UnsignedStreamingPayloadTrailer_UploadPart_content_md5_with_trailer,
+		"UnsignedStreamingPayloadTrailer_UploadPart_content_md5_mp_algo_mismatch":          UnsignedStreamingPayloadTrailer_UploadPart_content_md5_mp_algo_mismatch,
 		"UnsignedStreamingPayloadTrailer_not_allowed":                                      UnsignedStreamingPayloadTrailer_not_allowed,
 		"SignedStreamingPayload_invalid_encoding":                                          SignedStreamingPayload_invalid_encoding,
 		"SignedStreamingPayload_invalid_chunk_size":                                        SignedStreamingPayload_invalid_chunk_size,
