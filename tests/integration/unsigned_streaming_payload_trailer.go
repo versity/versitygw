@@ -759,3 +759,202 @@ func UnsignedStreamingPayloadTrailer_aborted_connection(s *S3Conf) error {
 		return nil
 	})
 }
+
+// UnsignedStreamingPayloadTrailer_content_md5_with_trailer checks that a
+// Content-MD5 header doesn't hide the trailing checksum from the backend:
+// the object has to be stored with the trailer's algorithm and value.
+// x-amz-sdk-checksum-algorithm is intentionally omitted, so the trailer is
+// the only source of the checksum algorithm.
+func UnsignedStreamingPayloadTrailer_content_md5_with_trailer(s *S3Conf) error {
+	testName := "UnsignedStreamingPayloadTrailer_content_md5_with_trailer"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-object"
+
+		for i, test := range []struct {
+			algo  types.ChecksumAlgorithm
+			value string
+		}{
+			{types.ChecksumAlgorithmCrc32, "MSpqpg=="},
+			{types.ChecksumAlgorithmCrc32c, "5if0QQ=="},
+			{types.ChecksumAlgorithmSha1, "L7XhNBn8iSRoZeejJPR27GJOh0A="},
+			{types.ChecksumAlgorithmSha256, "fRpUEnsiJQL1t5tfsIAwYRUqRPkrN+I8ZSe69mXU2po="},
+			{types.ChecksumAlgorithmSha512, "1xakGIVptoqxtt+sF45XARTN8Oo6HMDjFIbD5BJBvGp2Qk6MN6sm8Jb8he+YhsjLY0GH9P3f9kX7CZ8f9UxrjA=="},
+			{types.ChecksumAlgorithmMd5, "esZsDxSN6VGbi9JkMSxNZA=="},
+			{types.ChecksumAlgorithmXxhash64, "GGCUDikCgi0="},
+			{types.ChecksumAlgorithmXxhash3, "WkDcP9RMBS8="},
+			{types.ChecksumAlgorithmXxhash128, "Kq/YOGmlnDE/55jA7aptxg=="},
+		} {
+			csumHdr := checksumHeaderName(test.algo)
+			reqHeaders := map[string]string{
+				"x-amz-decoded-content-length": "7",
+				"x-amz-trailer":                csumHdr,
+				// md5("abcdefg")
+				"Content-Md5": "esZsDxSN6VGbi9JkMSxNZA==",
+			}
+			body := []byte(fmt.Sprintf("7\r\nabcdefg\r\n0\r\n%s:%s\r\n\r\n", csumHdr, test.value))
+
+			headers, apiErr, err := testUnsignedStreamingPayloadTrailerObjectPut(s, bucket, object, body, reqHeaders)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+			if apiErr != nil {
+				return fmt.Errorf("test %v failed: (%s) %s", i+1, apiErr.Code, apiErr.Message)
+			}
+
+			if headers[csumHdr] != test.value {
+				return fmt.Errorf("test %v failed: expected the %s to be %s, instead got %s", i+1, csumHdr, test.value, headers[csumHdr])
+			}
+			// the gateway must not fall back to its default checksum
+			if crc := headers["x-amz-checksum-crc64nvme"]; crc != "" {
+				return fmt.Errorf("test %v failed: expected no x-amz-checksum-crc64nvme, instead got %s", i+1, crc)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:       &bucket,
+				Key:          &object,
+				ChecksumMode: types.ChecksumModeEnabled,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			if got := getString(getHeadObjectChecksum(out, test.algo)); got != test.value {
+				return fmt.Errorf("test %v failed: expected the stored %s checksum to be %s, instead got %s", i+1, test.algo, test.value, got)
+			}
+		}
+
+		return nil
+	})
+}
+
+// UnsignedStreamingPayloadTrailer_content_md5_and_trailer_bad_digest checks
+// that both the Content-MD5 and the trailing checksum are still validated
+// when they are sent together.
+func UnsignedStreamingPayloadTrailer_content_md5_and_trailer_bad_digest(s *S3Conf) error {
+	testName := "UnsignedStreamingPayloadTrailer_content_md5_and_trailer_bad_digest"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-object"
+		// md5("abcdefg")
+		validMd5 := "esZsDxSN6VGbi9JkMSxNZA=="
+		// md5("hello")
+		invalidMd5 := "XUFAKrxLKna5cZ2REBfFkg=="
+
+		for i, test := range []struct {
+			contentMd5 string
+			trailer    string
+			expected   s3err.S3Error
+		}{
+			// correct trailer, incorrect Content-MD5
+			{invalidMd5, "fRpUEnsiJQL1t5tfsIAwYRUqRPkrN+I8ZSe69mXU2po=", s3err.GetBadDigestErr(validMd5, base64ToHexString(invalidMd5))},
+			// correct Content-MD5, incorrect trailer: sha256("hello")
+			{validMd5, "LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=", s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmSha256)},
+		} {
+			reqHeaders := map[string]string{
+				"x-amz-decoded-content-length": "7",
+				"x-amz-trailer":                "x-amz-checksum-sha256",
+				"Content-Md5":                  test.contentMd5,
+			}
+			body := []byte(fmt.Sprintf("7\r\nabcdefg\r\n0\r\nx-amz-checksum-sha256:%s\r\n\r\n", test.trailer))
+
+			_, apiErr, err := testUnsignedStreamingPayloadTrailerObjectPut(s, bucket, object, body, reqHeaders)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			if err := compareS3ApiError(test.expected, apiErr); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// UnsignedStreamingPayloadTrailer_UploadPart_content_md5_with_trailer checks
+// that a part uploaded with both Content-MD5 and a trailing checksum is
+// accepted by a multipart upload created with the same checksum algorithm.
+func UnsignedStreamingPayloadTrailer_UploadPart_content_md5_with_trailer(s *S3Conf) error {
+	testName := "UnsignedStreamingPayloadTrailer_UploadPart_content_md5_with_trailer"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-object"
+
+		for i, test := range []struct {
+			algo  types.ChecksumAlgorithm
+			value string
+		}{
+			{types.ChecksumAlgorithmCrc32, "QWaN2w=="},
+			{types.ChecksumAlgorithmCrc32c, "R/I7iQ=="},
+			{types.ChecksumAlgorithmCrc64nvme, "dPVWc2vU1+Q="},
+			{types.ChecksumAlgorithmSha1, "YR/1TvTYOJz5gtqVFoBJBtmTibY="},
+			{types.ChecksumAlgorithmSha256, "eXuwq/95jXIAr3aF3KeQHt/8Ur8mUA1b2XKCZY7iQVI="},
+			{types.ChecksumAlgorithmSha512, "6tQCd6X50h2wXt5deAY0eKF5Xb1LLbSvkZt+Bqczz8bd1+rH+VYZSgWhjOG4zJ41K0kLmDQxuDyOeHMKqKQGNA=="},
+			{types.ChecksumAlgorithmMd5, "Mb+5cwrlGvc5U7pyDIZg1w=="},
+			{types.ChecksumAlgorithmXxhash64, "vYOmFpsGXtY="},
+			{types.ChecksumAlgorithmXxhash3, "9J6xx21X+f8="},
+			{types.ChecksumAlgorithmXxhash128, "menoCZOCZ2Acv4XMxaUR9w=="},
+		} {
+			// with and without a checksum algorithm on mp initialization
+			for _, mpOpts := range [][]mpOpt{{withChecksum(test.algo)}, nil} {
+				mp, err := createMp(s3client, bucket, object, mpOpts...)
+				if err != nil {
+					return fmt.Errorf("test %v failed: %w", i+1, err)
+				}
+
+				csumHdr := checksumHeaderName(test.algo)
+				reqHeaders := map[string]string{
+					"x-amz-decoded-content-length": "10",
+					"x-amz-trailer":                csumHdr,
+					// md5("dummy data")
+					"Content-Md5": "Mb+5cwrlGvc5U7pyDIZg1w==",
+				}
+				body := []byte(fmt.Sprintf("A\r\ndummy data\r\n0\r\n%s:%s\r\n\r\n", csumHdr, test.value))
+
+				headers, apiErr, err := testUnsignedStreamingPayloadTrailerUploadPart(s, bucket, object, mp.UploadId, body, reqHeaders)
+				if err != nil {
+					return fmt.Errorf("test %v failed: %w", i+1, err)
+				}
+				if apiErr != nil {
+					return fmt.Errorf("test %v failed: (%s) %s", i+1, apiErr.Code, apiErr.Message)
+				}
+
+				if headers[csumHdr] != test.value {
+					return fmt.Errorf("test %v failed: expected the %s to be %s, instead got %s", i+1, csumHdr, test.value, headers[csumHdr])
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
+// UnsignedStreamingPayloadTrailer_UploadPart_content_md5_mp_algo_mismatch
+// checks that adding Content-MD5 doesn't bypass the check of the trailing
+// checksum algorithm against the multipart upload checksum algorithm.
+func UnsignedStreamingPayloadTrailer_UploadPart_content_md5_mp_algo_mismatch(s *S3Conf) error {
+	testName := "UnsignedStreamingPayloadTrailer_UploadPart_content_md5_mp_algo_mismatch"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-object"
+		mp, err := createMp(s3client, bucket, object, withChecksumType(types.ChecksumTypeFullObject), withChecksum(types.ChecksumAlgorithmCrc32))
+		if err != nil {
+			return err
+		}
+
+		reqHeaders := map[string]string{
+			"x-amz-decoded-content-length": "7",
+			"x-amz-trailer":                "x-amz-checksum-sha256",
+			// md5("abcdefg")
+			"Content-Md5": "esZsDxSN6VGbi9JkMSxNZA==",
+		}
+
+		body := []byte("7\r\nabcdefg\r\n0\r\nx-amz-checksum-sha256:fRpUEnsiJQL1t5tfsIAwYRUqRPkrN+I8ZSe69mXU2po=\r\n\r\n")
+
+		_, apiErr, err := testUnsignedStreamingPayloadTrailerUploadPart(s, bucket, object, mp.UploadId, body, reqHeaders)
+		if err != nil {
+			return err
+		}
+
+		return compareS3ApiError(s3err.GetChecksumTypeMismatchErr(types.ChecksumAlgorithmCrc32, types.ChecksumAlgorithmSha256), apiErr)
+	})
+}

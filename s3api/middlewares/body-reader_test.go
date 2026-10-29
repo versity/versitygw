@@ -23,39 +23,48 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/stretchr/testify/require"
 	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 )
 
 func TestNewChecksumReader_PreservesMetadataThroughHashReader(t *testing.T) {
-	payload := "hello"
-	sha := sha256.Sum256([]byte(payload))
-	trailer := base64.StdEncoding.EncodeToString(sha[:])
-	body := fmt.Sprintf("%x\r\n%s\r\n0\r\nx-amz-checksum-sha256:%s\r\n\r\n", len(payload), payload, trailer)
+	const payload = "hello"
+	b64 := func(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
+	sha, otherSha := sha256.Sum256([]byte(payload)), sha256.Sum256([]byte("other"))
+	md, otherMd := md5.Sum([]byte(payload)), md5.Sum([]byte("other"))
 
-	newReader := func(t *testing.T, payload string) io.Reader {
+	// stacks the readers the way the middlewares do: the chunk reader
+	// first, then the Content-MD5 hash reader on top of it
+	newReader := func(t *testing.T, contentMD5, trailer string) ChecksumReader {
+		body := fmt.Sprintf("%x\r\n%s\r\n0\r\nx-amz-checksum-sha256:%s\r\n\r\n", len(payload), payload, trailer)
 		chunk, err := utils.NewUnsignedChunkReader(strings.NewReader(body), "x-amz-checksum-sha256", int64(len(payload)))
 		require.NoError(t, err)
-		md5sum := md5.Sum([]byte(payload))
-		outer, err := utils.NewHashReader(chunk, base64.StdEncoding.EncodeToString(md5sum[:]), utils.HashTypeContentMD5)
+		md5Rdr, err := utils.NewHashReader(chunk, contentMD5, utils.HashTypeContentMD5)
 		require.NoError(t, err)
-		return NewChecksumReader(chunk, outer)
+		cr, ok := NewChecksumReader(chunk, md5Rdr).(ChecksumReader)
+		require.True(t, ok)
+		return cr
 	}
 
 	t.Run("metadata preserved", func(t *testing.T) {
-		rdr := newReader(t, payload)
-		cr, ok := rdr.(ChecksumReader)
-		require.True(t, ok)
+		cr := newReader(t, b64(md[:]), b64(sha[:]))
+		// the backends check the algorithm before reading the body
+		require.Equal(t, "sha256", cr.Algorithm())
 		data, err := io.ReadAll(cr)
 		require.NoError(t, err)
 		require.Equal(t, payload, string(data))
-		require.Equal(t, "sha256", cr.Algorithm())
-		require.Equal(t, trailer, cr.Checksum())
+		require.Equal(t, b64(sha[:]), cr.Checksum())
 	})
 
-	t.Run("md5 mismatch still propagates", func(t *testing.T) {
-		rdr := newReader(t, "other")
-		_, err := io.ReadAll(rdr)
-		require.Error(t, err)
+	t.Run("content-md5 mismatch", func(t *testing.T) {
+		_, err := io.ReadAll(newReader(t, b64(otherMd[:]), b64(sha[:])))
+		require.ErrorIs(t, err, s3err.GetAPIError(s3err.ErrBadDigest))
+	})
+
+	t.Run("trailing checksum mismatch", func(t *testing.T) {
+		_, err := io.ReadAll(newReader(t, b64(md[:]), b64(otherSha[:])))
+		require.ErrorIs(t, err, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmSha256))
 	})
 }
