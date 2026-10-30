@@ -103,9 +103,6 @@ source ./tests/drivers/string.sh
 
 # tags: curl,HeadObject,invalid-query
 @test "REST - HeadObject - invalid request header type" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2075"
-  fi
   run setup_bucket_and_add_file_v3 "$BUCKET_ONE_NAME"
   assert_success
   read -r bucket_name file_name <<< "$output"
