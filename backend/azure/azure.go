@@ -513,6 +513,28 @@ func (az *Azure) DeleteBucketTagging(ctx context.Context, bucket string) error {
 	return az.PutBucketTagging(ctx, bucket, nil)
 }
 
+// notModifiedCounts returns the tag count, and with partNumber the parts
+// count of a multipart object, that a 304 repeats from the 200.
+func notModifiedCounts(resp blob.GetPropertiesResponse, partNumber *int32) (tagCount, partsCount *int32, err error) {
+	if resp.TagCount != nil {
+		tc := int32(*resp.TagCount)
+		tagCount = &tc
+	}
+	if partNumber == nil {
+		return tagCount, nil, nil
+	}
+	mpMetaStr, ok := resp.Metadata[string(keyMpMetadata)]
+	if !ok || mpMetaStr == nil {
+		return tagCount, nil, nil
+	}
+	mpMeta, err := backend.UnmarshalMpUploadMetadata([]byte(*mpMetaStr), true)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse object multipart metadata: %w", err)
+	}
+	pc := int32(len(mpMeta.Parts))
+	return tagCount, &pc, nil
+}
+
 func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
@@ -536,6 +558,28 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 				IfModSince:    input.IfModifiedSince,
 				IfUnmodeSince: input.IfUnmodifiedSince,
 			})
+		if errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+			// the 304 carries the object's metadata from the 200, but no content
+			tagCount, partsCount, err := notModifiedCounts(resp, input.PartNumber)
+			if err != nil {
+				return nil, err
+			}
+			if tagCount == nil {
+				// the 200 sends a zero tag count too
+				tagCount = new(int32)
+			}
+			return &s3.GetObjectOutput{
+				CacheControl:            resp.CacheControl,
+				ExpiresString:           resp.Metadata[string(keyExpires)],
+				WebsiteRedirectLocation: resp.Metadata[string(keyWebsiteRedirect)],
+				ETag:                    backend.GetPtrFromString(convertAzureEtag(resp.ETag)),
+				LastModified:            resp.LastModified,
+				Metadata:                parseAndFilterAzMetadata(resp.Metadata),
+				TagCount:                tagCount,
+				StorageClass:            types.StorageClassStandard,
+				PartsCount:              partsCount,
+			}, s3err.GetAPIError(s3err.ErrNotModified)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -668,6 +712,24 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 				IfModSince:    input.IfModifiedSince,
 				IfUnmodeSince: input.IfUnmodifiedSince,
 			})
+		if errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+			// the 304 carries the object's metadata from the 200
+			tagCount, partsCount, err := notModifiedCounts(resp, input.PartNumber)
+			if err != nil {
+				return nil, err
+			}
+			return &s3.HeadObjectOutput{
+				CacheControl:            resp.CacheControl,
+				ExpiresString:           resp.Metadata[string(keyExpires)],
+				WebsiteRedirectLocation: resp.Metadata[string(keyWebsiteRedirect)],
+				ETag:                    backend.GetPtrFromString(convertAzureEtag(resp.ETag)),
+				LastModified:            resp.LastModified,
+				Metadata:                parseAndFilterAzMetadata(resp.Metadata),
+				TagCount:                tagCount,
+				StorageClass:            types.StorageClassStandard,
+				PartsCount:              partsCount,
+			}, s3err.GetAPIError(s3err.ErrNotModified)
+		}
 		if err != nil {
 			return nil, err
 		}

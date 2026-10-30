@@ -308,6 +308,12 @@ func ProcessController(ctx fiber.Ctx, controller Controller, s3action string, sv
 			})
 		}
 
+		if serr, ok := err.(s3err.S3Error); ok && serr.StatusCode() == http.StatusNotModified {
+			// a 304 has no content, so it carries no Content-Type (RFC 9110 section 15.4.5)
+			ctx.Status(http.StatusNotModified)
+			return nil
+		}
+
 		// set content type to application/xml
 		ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
 

@@ -372,6 +372,10 @@ func HeadObject_dir_with_range(s *S3Conf) error {
 	return headObject_zero_len_with_range_helper(testName, "my-dir/", s)
 }
 
+func HeadObject_not_modified_headers(s *S3Conf) error {
+	return notModifiedHeadersTest(s, "HeadObject_not_modified_headers", true)
+}
+
 func HeadObject_conditional_reads(s *S3Conf) error {
 	testName := "HeadObject_conditional_reads"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

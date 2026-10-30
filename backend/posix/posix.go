@@ -6032,6 +6032,37 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 	}, nil
 }
 
+// notModifiedCounts returns what a 304 repeats from the 200 but GetObject and
+// HeadObject have not read when they evaluate the preconditions: the tag
+// count, and with partNumber the parts count of a multipart object.
+func (p *Posix) notModifiedCounts(bucket, object, versionId string, partNumber *int32) (tagCount, partsCount *int32, err error) {
+	tags, err := p.getAttrTags(bucket, object, versionId)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(tags) != 0 {
+		tc := int32(len(tags))
+		tagCount = &tc
+	}
+	if partNumber == nil {
+		return tagCount, nil, nil
+	}
+
+	mpMetaBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, mpMetaKey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return tagCount, nil, nil
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("retrieve mp metadata: %w", err)
+	}
+	mpMeta, err := backend.UnmarshalMpUploadMetadata(mpMetaBytes, false)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse object multipart metadata: %w", err)
+	}
+	pc := int32(len(mpMeta.Parts))
+	return tagCount, &pc, nil
+}
+
 func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
@@ -6162,6 +6193,32 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		IfModSince:    input.IfModifiedSince,
 		IfUnmodeSince: input.IfUnmodifiedSince,
 	})
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+		// the 304 carries the object's metadata from the 200, but no content
+		if p.versioningEnabled() && versionId == "" {
+			versionId, err = p.liveObjVersionId(ctx, bucket, object)
+			if err != nil {
+				return nil, err
+			}
+		}
+		tagCount, partsCount, err := p.notModifiedCounts(bucket, object, versionId, input.PartNumber)
+		if err != nil {
+			return nil, err
+		}
+		objMeta := p.loadObjectMetaProperties(nil, bucket, object, &fid)
+		return &s3.GetObjectOutput{
+			CacheControl:            objMeta.CacheControl,
+			ExpiresString:           objMeta.Expires,
+			WebsiteRedirectLocation: objMeta.WebsiteRedirectLocation,
+			ETag:                    &etag,
+			LastModified:            backend.GetTimePtr(fid.ModTime()),
+			Metadata:                objMeta.Metadata,
+			TagCount:                tagCount,
+			StorageClass:            types.StorageClassStandard,
+			VersionId:               &versionId,
+			PartsCount:              partsCount,
+		}, s3err.GetAPIError(s3err.ErrNotModified)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -6533,6 +6590,25 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		IfModSince:    input.IfModifiedSince,
 		IfUnmodeSince: input.IfUnmodifiedSince,
 	})
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+		// the 304 carries the object's metadata from the 200
+		tagCount, partsCount, err := p.notModifiedCounts(bucket, object, versionId, input.PartNumber)
+		if err != nil {
+			return nil, err
+		}
+		return &s3.HeadObjectOutput{
+			CacheControl:            objMeta.CacheControl,
+			ExpiresString:           objMeta.Expires,
+			WebsiteRedirectLocation: objMeta.WebsiteRedirectLocation,
+			ETag:                    &etag,
+			LastModified:            backend.GetTimePtr(fi.ModTime()),
+			Metadata:                objMeta.Metadata,
+			TagCount:                tagCount,
+			StorageClass:            types.StorageClassStandard,
+			VersionId:               &versionId,
+			PartsCount:              partsCount,
+		}, s3err.GetAPIError(s3err.ErrNotModified)
+	}
 	if err != nil {
 		return nil, err
 	}

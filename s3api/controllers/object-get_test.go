@@ -788,6 +788,38 @@ func TestS3ApiController_GetObject(t *testing.T) {
 	cLength := int64(11)
 	rdr := io.NopCloser(strings.NewReader("hello world"))
 	delMarker := true
+	// a 304 output carries the 200's fields, content ones included; the
+	// controller keeps only those a 304 repeats
+	tagCount, partsCount := int32(2), int32(3)
+	notModifiedRes := &s3.GetObjectOutput{
+		ETag:                    utils.GetStringPtr(`"etag"`),
+		LastModified:            &tm,
+		CacheControl:            utils.GetStringPtr("max-age=60"),
+		ExpiresString:           utils.GetStringPtr("Thu, 01 Jan 2099 00:00:00 GMT"),
+		VersionId:               utils.GetStringPtr("versionId"),
+		StorageClass:            types.StorageClassStandard,
+		WebsiteRedirectLocation: utils.GetStringPtr("/redirect"),
+		TagCount:                &tagCount,
+		PartsCount:              &partsCount,
+		ContentType:             utils.GetStringPtr("text/plain"),
+		ContentLength:           &cLength,
+		ContentLanguage:         utils.GetStringPtr("en"),
+		AcceptRanges:            utils.GetStringPtr("bytes"),
+		ChecksumCRC32:           utils.GetStringPtr("crc32"),
+	}
+	notModifiedHeaders := func(cacheControl, expires string) map[string]*string {
+		return map[string]*string{
+			"ETag":                            utils.GetStringPtr(`"etag"`),
+			"Last-Modified":                   utils.GetStringPtr(tm.UTC().Format(timefmt)),
+			"Cache-Control":                   utils.GetStringPtr(cacheControl),
+			"Expires":                         utils.GetStringPtr(expires),
+			"x-amz-version-id":                utils.GetStringPtr("versionId"),
+			"x-amz-storage-class":             utils.GetStringPtr("STANDARD"),
+			"x-amz-website-redirect-location": utils.GetStringPtr("/redirect"),
+			"x-amz-tagging-count":             utils.GetStringPtr("2"),
+			"x-amz-mp-parts-count":            utils.GetStringPtr("3"),
+		}
+	}
 
 	tests := []struct {
 		name   string
@@ -906,20 +938,62 @@ func TestS3ApiController_GetObject(t *testing.T) {
 			name: "backend returns not modified",
 			input: testInput{
 				locals: defaultLocals,
-				beErr:  s3err.GetNotModifiedErr(`"etag"`, tm),
+				beErr:  s3err.GetAPIError(s3err.ErrNotModified),
+				beRes:  notModifiedRes,
+			},
+			output: testOutput{
+				response: &Response{
+					Headers:  notModifiedHeaders("max-age=60", "Thu, 01 Jan 2099 00:00:00 GMT"),
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetAPIError(s3err.ErrNotModified),
+			},
+		},
+		{
+			name: "backend returns not modified with response overrides",
+			input: testInput{
+				queries: map[string]string{
+					"response-cache-control": "no-cache",
+					"response-expires":       "Fri, 01 Jan 2100 00:00:00 GMT",
+				},
+				locals: defaultLocals,
+				beErr:  s3err.GetAPIError(s3err.ErrNotModified),
+				beRes:  notModifiedRes,
+			},
+			output: testOutput{
+				response: &Response{
+					Headers:  notModifiedHeaders("no-cache", "Fri, 01 Jan 2100 00:00:00 GMT"),
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetAPIError(s3err.ErrNotModified),
+			},
+		},
+		{
+			name: "backend returns not modified without output",
+			input: testInput{
+				locals: defaultLocals,
+				beErr:  s3err.GetAPIError(s3err.ErrNotModified),
 				beRes:  (*s3.GetObjectOutput)(nil),
 			},
 			output: testOutput{
 				response: &Response{
-					Headers: map[string]*string{
-						"ETag":          utils.GetStringPtr(`"etag"`),
-						"Last-Modified": utils.GetStringPtr(tm.UTC().Format(timefmt)),
-					},
-					MetaOpts: &MetaOptions{
-						BucketOwner: "root",
-					},
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
 				},
-				err: s3err.GetNotModifiedErr(`"etag"`, tm),
+				err: s3err.GetAPIError(s3err.ErrNotModified),
+			},
+		},
+		{
+			name: "backend returns error with an output that is not a delete marker",
+			input: testInput{
+				locals: defaultLocals,
+				beErr:  s3err.GetAPIError(s3err.ErrInvalidAccessKeyID),
+				beRes:  &s3.GetObjectOutput{LastModified: &tm},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidAccessKeyID),
 			},
 		},
 		{

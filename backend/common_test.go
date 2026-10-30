@@ -434,8 +434,6 @@ func TestEvaluatePreconditionsLastModified(t *testing.T) {
 	tm := func(v time.Time) *time.Time { return &v }
 
 	errCond := s3err.GetPreconditionFailedErr(s3err.ConditionIfUnmodifiedSince)
-	errMod := s3err.GetNotModifiedErr(etag, modTime)
-	ifNoneMatch := etag
 
 	for _, tc := range []struct {
 		name string
@@ -443,9 +441,8 @@ func TestEvaluatePreconditionsLastModified(t *testing.T) {
 		want error
 	}{
 		{"if-modified-since before", PreConditions{IfModSince: tm(before)}, nil},
-		{"if-modified-since last modified", PreConditions{IfModSince: tm(lastModified)}, errMod},
-		{"if-modified-since after", PreConditions{IfModSince: tm(after)}, errMod},
-		{"if-none-match etag", PreConditions{IfNoneMatch: &ifNoneMatch}, errMod},
+		{"if-modified-since last modified", PreConditions{IfModSince: tm(lastModified)}, errNotModified},
+		{"if-modified-since after", PreConditions{IfModSince: tm(after)}, errNotModified},
 		{"if-unmodified-since before", PreConditions{IfUnmodeSince: tm(before)}, errCond},
 		{"if-unmodified-since last modified", PreConditions{IfUnmodeSince: tm(lastModified)}, nil},
 		{"if-unmodified-since after", PreConditions{IfUnmodeSince: tm(after)}, nil},

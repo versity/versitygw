@@ -253,6 +253,7 @@ func TestHeadObject(ts *TestState) {
 	ts.Run(HeadObject_zero_len_with_range)
 	ts.Run(HeadObject_dir_with_range)
 	ts.Run(HeadObject_conditional_reads)
+	ts.Run(HeadObject_not_modified_headers)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(HeadObject_not_enabled_checksum_mode)
@@ -298,6 +299,7 @@ func TestGetObject(ts *TestState) {
 	ts.Run(GetObject_invalid_parent)
 	ts.Sync(GetObject_large_object)
 	ts.Run(GetObject_conditional_reads)
+	ts.Run(GetObject_not_modified_headers)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(GetObject_not_enabled_checksum_mode)
@@ -2155,6 +2157,7 @@ func TestVersioning(ts *TestState) {
 	}
 	ts.Run(Versioning_HeadObject_invalid_parent)
 	ts.Run(Versioning_HeadObject_success)
+	ts.Run(Versioning_not_modified_version_id)
 	ts.Run(Versioning_HeadObject_dir_object_versions)
 	ts.Run(Versioning_HeadObject_without_versionId)
 	ts.Run(Versioning_HeadObject_null_version_without_versionId)
@@ -3175,6 +3178,7 @@ func GetIntTests() IntTests {
 		"HeadObject_zero_len_with_range":                                                   HeadObject_zero_len_with_range,
 		"HeadObject_dir_with_range":                                                        HeadObject_dir_with_range,
 		"HeadObject_conditional_reads":                                                     HeadObject_conditional_reads,
+		"HeadObject_not_modified_headers":                                                  HeadObject_not_modified_headers,
 		"HeadObject_not_enabled_checksum_mode":                                             HeadObject_not_enabled_checksum_mode,
 		"HeadObject_checksums":                                                             HeadObject_checksums,
 		"HeadObject_ranged_with_checksum_mode":                                             HeadObject_ranged_with_checksum_mode,
@@ -3207,6 +3211,7 @@ func GetIntTests() IntTests {
 		"GetObject_invalid_parent":                                                         GetObject_invalid_parent,
 		"GetObject_large_object":                                                           GetObject_large_object,
 		"GetObject_conditional_reads":                                                      GetObject_conditional_reads,
+		"GetObject_not_modified_headers":                                                   GetObject_not_modified_headers,
 		"GetObject_not_enabled_checksum_mode":                                              GetObject_not_enabled_checksum_mode,
 		"GetObject_checksums":                                                              GetObject_checksums,
 		"GetObject_dir_object_checksum":                                                    GetObject_dir_object_checksum,
@@ -3884,6 +3889,7 @@ func GetIntTests() IntTests {
 		"Versioning_HeadObject_non_existing_object_version":                                Versioning_HeadObject_non_existing_object_version,
 		"Versioning_HeadObject_invalid_parent":                                             Versioning_HeadObject_invalid_parent,
 		"Versioning_HeadObject_success":                                                    Versioning_HeadObject_success,
+		"Versioning_not_modified_version_id":                                               Versioning_not_modified_version_id,
 		"Versioning_HeadObject_dir_object_versions":                                        Versioning_HeadObject_dir_object_versions,
 		"Versioning_HeadObject_without_versionId":                                          Versioning_HeadObject_without_versionId,
 		"Versioning_HeadObject_null_versionId_obj":                                         Versioning_HeadObject_null_versionId_obj,

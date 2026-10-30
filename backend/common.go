@@ -103,6 +103,10 @@ func TrimEtag(etag *string) *string {
 	return GetPtrFromString(strings.Trim(*etag, "\""))
 }
 
+var (
+	errNotModified = s3err.GetAPIError(s3err.ErrNotModified)
+)
+
 // ParseObjectRange parses input range header and returns startoffset, length, isValid
 // and error. If no endoffset specified, then length is set to the object size
 // for invalid inputs, it returns isValid=false and error=nil
@@ -718,9 +722,6 @@ func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreCond
 		return nil
 	}
 
-	// a 304 response carries the object's ETag as is, with its quotes
-	notModified := s3err.GetNotModifiedErr(etag, modTime)
-
 	etag = strings.Trim(etag, `"`)
 
 	// convert all conditions to *bool to evaluate the conditions
@@ -751,7 +752,7 @@ func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreCond
 			if ifNoneMatch != nil {
 				// if `if-none-match` doesn't match return NotModified
 				if !*ifNoneMatch {
-					return notModified
+					return errNotModified
 				}
 
 				// if both `if-match` and `if-none-match` match, return no error
@@ -760,7 +761,7 @@ func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreCond
 
 			// if `if-match` matches but `if-modified-since` is false return NotModified
 			if ifModSince != nil && !*ifModSince {
-				return notModified
+				return errNotModified
 			}
 
 			// ignore `if-unmodified-since` as `if-match` is true
@@ -786,7 +787,7 @@ func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreCond
 			}
 
 			// in all other cases when `if-none-match` is false return NotModified
-			return notModified
+			return errNotModified
 		}
 	}
 
@@ -798,7 +799,7 @@ func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreCond
 		}
 
 		// if only `if-modified-since` is false, return NotModified
-		return notModified
+		return errNotModified
 	}
 
 	// if `if-unmodified-since` is false return PreconditionFailed

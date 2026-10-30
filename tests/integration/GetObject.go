@@ -377,6 +377,10 @@ func GetObject_large_object(s *S3Conf) error {
 	})
 }
 
+func GetObject_not_modified_headers(s *S3Conf) error {
+	return notModifiedHeadersTest(s, "GetObject_not_modified_headers", false)
+}
+
 func GetObject_conditional_reads(s *S3Conf) error {
 	testName := "GetObject_conditional_reads"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
