@@ -262,7 +262,10 @@ if ! kill -0 $IAM_PID; then
 	exit 1
 fi
 
+# The tests change access keys and policies and expect the very next request
+# to see the change, which a cached signing key or policy decision would hide.
 GOCOVERDIR=/tmp/s3iamgw.covdata ./versitygw -p :7082 -a user -s pass \
+	--iam-cache-disable \
 	--iam-standalone-endpoint 127.0.0.1:7081 \
 	--iam-standalone-client-cert /tmp/s3iamcerts/gw-client.pem \
 	--iam-standalone-client-cert-key /tmp/s3iamcerts/gw-client.key \

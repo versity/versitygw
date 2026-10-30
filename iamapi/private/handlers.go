@@ -16,6 +16,7 @@ package private
 import (
 	"encoding/json"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -65,6 +66,7 @@ func (p *PrivateAPI) handleDeriveSigningKey(ctx fiber.Ctx) error {
 	// and it still belongs to the role it was minted against.
 	if identity.Session != nil {
 		resp.RoleArn = identity.Session.RoleArn
+		resp.Expiration = identity.Session.Expiration
 	}
 
 	return ctx.JSON(resp)
@@ -214,8 +216,19 @@ func (p *PrivateAPI) handleEvaluatePolicy(ctx fiber.Ctx) error {
 		resp.HasSessionPolicy = true
 		resp.SessionDecisions = sessionDecisions
 	}
+	resp.ConditionKeys, resp.Cacheable = policy.ConditionKeys(evaluatedPolicies(*identity))
 
 	return ctx.JSON(resp)
+}
+
+// evaluatedPolicies returns every policy document AuthorizeSplit evaluates
+// for identity: its identity policies and, for a session, its session
+// policy.
+func evaluatedPolicies(identity types.Identity) []types.PolicyEntry {
+	if identity.Session == nil || identity.SessionPolicy == "" {
+		return identity.IdentityPolicies
+	}
+	return append(slices.Clip(identity.IdentityPolicies), types.PolicyEntry{PolicyDocument: identity.SessionPolicy})
 }
 
 // conditionContextFor combines the request-derived condition keys the S3
@@ -245,7 +258,7 @@ func conditionContextFor(identity types.Identity, requestKeys map[string][]strin
 // isIdentityConditionKey reports whether key names the caller or the
 // resource, and so may only be set by this service. Matching is
 // case-insensitive because policy condition-key lookup is
-// (iamapi/policy.lookupContextValues) — a caller must not be able to smuggle
+// (condition.LookupContextValues) — a caller must not be able to smuggle
 // "AWS:PrincipalArn" past a case-sensitive filter.
 func isIdentityConditionKey(key string) bool {
 	for _, prefix := range iammiddleware.IdentityConditionKeyPrefixes {

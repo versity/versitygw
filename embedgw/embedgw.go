@@ -194,7 +194,8 @@ type Config struct {
 	// API is unavailable.
 	//
 	// The IAMCache fields below apply to all backends except single-account
-	// mode and IAMService.
+	// mode and IAMService. The standalone IAM service backend uses
+	// IAMCacheDisable and IAMCacheTTL only, see the IAM Cache section.
 
 	// IAMService, when non-nil, is used directly as the gateway's IAM
 	// backend, bypassing all other IAM Backend fields below.
@@ -339,17 +340,31 @@ type Config struct {
 	StandaloneDefaultUserID    int
 	StandaloneDefaultGroupID   int
 	StandaloneDefaultProjectID int
+	// StandalonePolicyCacheTTL is the time-to-live in seconds of a cached
+	// identity-policy decision, and so how long a policy change made on the
+	// IAM service can take to apply here. A decision is reused only for the
+	// same identity, actions and resource, and only while the request's
+	// values agree on every condition key the identity's policies read.
+	// Zero disables the policy cache, as does IAMCacheDisable.
+	StandalonePolicyCacheTTL int
 
 	// IAM Cache
 	//
 	// The gateway maintains an in-memory cache of IAM account lookups to
 	// reduce load on the external IAM backend. The cache applies to all
 	// backends except single-account mode. All fields are optional.
+	//
+	// The standalone IAM service backend caches derived signing keys
+	// instead of accounts, together with identity-policy decisions (see
+	// StandalonePolicyCacheTTL). Its caches are bounded in size rather than
+	// pruned, so IAMCachePrune does not apply to it.
 
 	// IAMCacheDisable disables the in-memory IAM account cache. By default,
-	// accounts are cached to reduce backend lookup frequency.
+	// accounts are cached to reduce backend lookup frequency. With the
+	// standalone IAM service backend it disables both of its caches.
 	IAMCacheDisable bool
-	// IAMCacheTTL is the time-to-live in seconds for cached IAM entries.
+	// IAMCacheTTL is the time-to-live in seconds for cached IAM entries. It
+	// is also how long a deactivated or deleted access key can keep working.
 	IAMCacheTTL int
 	// IAMCachePrune is the interval in seconds between cache prune runs that
 	// remove expired entries.
@@ -632,6 +647,7 @@ func (c *Config) IamOpts() *auth.Opts {
 		StandaloneDefaultGroupID:    c.StandaloneDefaultGroupID,
 		StandaloneDefaultProjectID:  c.StandaloneDefaultProjectID,
 		StandaloneRegion:            c.Region,
+		StandalonePolicyCacheTTL:    c.StandalonePolicyCacheTTL,
 	}
 }
 

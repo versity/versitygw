@@ -93,6 +93,7 @@ var (
 	standaloneDefaultUserID                       int
 	standaloneDefaultGroupID                      int
 	standaloneDefaultProjectID                    int
+	standalonePolicyCacheTTL                      int
 	iamDebug                                      bool
 	webuiPorts                                    []string
 	webuiCertFile, webuiKeyFile                   string
@@ -904,6 +905,13 @@ func initFlags() []cli.Flag {
 			Destination: &standaloneDefaultProjectID,
 		},
 		&cli.IntFlag{
+			Name:        "iam-standalone-policy-cache-ttl",
+			Usage:       "how long the standalone IAM backend reuses an identity-policy decision, and so how long a policy change can take to apply (seconds, 0 disables; --iam-cache-disable also disables it)",
+			EnvVars:     []string{"VGW_IAM_STANDALONE_POLICY_CACHE_TTL"},
+			Value:       5,
+			Destination: &standalonePolicyCacheTTL,
+		},
+		&cli.IntFlag{
 			Name:        "mp-max-parts",
 			Usage:       "maximum number of parts allowed in a multipart upload",
 			EnvVars:     []string{"VGW_MP_MAX_PARTS"},
@@ -1037,6 +1045,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		StandaloneDefaultUserID:     standaloneDefaultUserID,
 		StandaloneDefaultGroupID:    standaloneDefaultGroupID,
 		StandaloneDefaultProjectID:  standaloneDefaultProjectID,
+		StandalonePolicyCacheTTL:    standalonePolicyCacheTTL,
 		AccessLog:                   accessLog,
 		LogWebhookURL:               logWebhookURL,
 		AdminLogFile:                adminLogFile,

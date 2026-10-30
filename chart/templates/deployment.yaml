@@ -335,6 +335,8 @@ spec:
               value: {{ .Values.iam.standalone.defaultGid | quote }}
             - name: VGW_IAM_STANDALONE_DEFAULT_PROJECT_ID
               value: {{ .Values.iam.standalone.defaultProjectId | quote }}
+            - name: VGW_IAM_STANDALONE_POLICY_CACHE_TTL
+              value: {{ .Values.iam.standalone.policyCacheTtl | quote }}
             {{- end }}
             {{- if .Values.iam.cacheDisable }}
             - name: VGW_IAM_CACHE_DISABLE

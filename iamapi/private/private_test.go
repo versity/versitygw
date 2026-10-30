@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -1349,5 +1350,134 @@ func TestPrivateAPIStoreFailureIsServerError(t *testing.T) {
 				t.Errorf("error = %q, want %q", errBody.Error, errStoreDown)
 			}
 		})
+	}
+}
+
+// TestPrivateAPIDeriveSigningKeyReportsSessionExpiration covers how long a
+// gateway may reuse a derived key: until the session expires, and for a
+// user for as long as the gateway chooses.
+func TestPrivateAPIDeriveSigningKeyReportsSessionExpiration(t *testing.T) {
+	p, store := newTestServer(t)
+	createTestUser(t, store, "alice", "AKIAALICE", "alicesecret", "")
+	role := createTestRole(t, store, "reader", "")
+	session := createTestSessionForRole(t, store, role, "ASIAREADER", "sessionsecret", "tok", "")
+
+	tests := []struct {
+		name string
+		req  DeriveSigningKeyRequest
+		want time.Time
+	}{
+		{name: "user", req: DeriveSigningKeyRequest{AccessKeyID: "AKIAALICE"}},
+		{name: "session", req: DeriveSigningKeyRequest{AccessKeyID: session.AccessKeyId, SessionToken: session.SessionToken}, want: session.Expiration},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.req.Date = time.Now().UTC().Format(sigv4auth.YYYYMMDD)
+			tt.req.Region = "us-east-1"
+			tt.req.Service = "s3"
+			body, _ := json.Marshal(tt.req)
+
+			resp := doPrivateRequest(t, p, http.MethodPost, DerivePath, testRoot.Access, testRoot.Secret, body)
+			raw := readBody(t, resp)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, body=%s", resp.StatusCode, raw)
+			}
+			if tt.want.IsZero() && strings.Contains(raw, "expiration") {
+				t.Errorf("response for a user carries an expiration: %s", raw)
+			}
+
+			var out DeriveSigningKeyResponse
+			if err := json.Unmarshal([]byte(raw), &out); err != nil {
+				t.Fatalf("unmarshal %s: %v", raw, err)
+			}
+			if !out.Expiration.Equal(tt.want) {
+				t.Errorf("Expiration = %v, want %v", out.Expiration, tt.want)
+			}
+		})
+	}
+}
+
+// TestPrivateAPIEvaluatePolicyReportsConditionKeys covers what a gateway
+// needs to reuse a decision: the condition keys it depends on, drawn from
+// every policy the identity is evaluated against.
+func TestPrivateAPIEvaluatePolicyReportsConditionKeys(t *testing.T) {
+	sessionPolicy := `{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::b/${aws:UserAgent}/*"}}`
+
+	tests := []struct {
+		name string
+		// userPolicy is attached to a user; rolePolicy to a role whose
+		// session carries sessionPolicy, when rolePolicy is set instead.
+		userPolicy string
+		rolePolicy string
+		wantKeys   []string
+	}{
+		{name: "unconditional policy", userPolicy: `{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"s3:*","Resource":"*"}}`},
+		{name: "no policy"},
+		{
+			name: "conditions and variables",
+			userPolicy: `{"Version":"2012-10-17","Statement":[` +
+				`{"Effect":"Allow","Action":"s3:ListBucket","Resource":"*","Condition":{"StringLike":{"s3:prefix":"${aws:username}/*"}}},` +
+				`{"Effect":"Deny","Action":"s3:*","Resource":"*","Condition":{"NotIpAddress":{"aws:SourceIp":"10.0.0.0/8"}}}]}`,
+			wantKeys: []string{"aws:SourceIp", "aws:username", "s3:prefix"},
+		},
+		{
+			name:       "role and session policies",
+			rolePolicy: `{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"s3:*","Resource":"*","Condition":{"Bool":{"aws:SecureTransport":"true"}}}}`,
+			wantKeys:   []string{"aws:SecureTransport", "aws:UserAgent"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, store := newTestServer(t)
+			req := EvaluatePolicyRequest{
+				Actions:   []string{"s3:GetObject"},
+				Resources: []string{"arn:aws:s3:::b/k"},
+			}
+			if tt.rolePolicy != "" {
+				role := createTestRole(t, store, "reader", tt.rolePolicy)
+				session := createTestSessionForRole(t, store, role, "ASIAREADER", "sessionsecret", "tok", sessionPolicy)
+				req.AccessKeyID, req.SessionToken = session.AccessKeyId, session.SessionToken
+			} else {
+				createTestUser(t, store, "alice", "AKIAALICE", "alicesecret", tt.userPolicy)
+				req.AccessKeyID = "AKIAALICE"
+			}
+
+			out := evaluateAs(t, p, req)
+			if !out.Cacheable {
+				t.Error("Cacheable = false, want true")
+			}
+			if !slices.Equal(out.ConditionKeys, tt.wantKeys) {
+				t.Errorf("ConditionKeys = %q, want %q", out.ConditionKeys, tt.wantKeys)
+			}
+		})
+	}
+}
+
+// TestPrivateAPIEvaluatePolicyUnreadablePolicyNotCacheable covers a stored
+// policy that no longer parses: it denies everything, and nothing can be
+// said about which keys it reads.
+func TestPrivateAPIEvaluatePolicyUnreadablePolicyNotCacheable(t *testing.T) {
+	p, store := newTestServer(t)
+	createTestUser(t, store, "alice", "AKIAALICE", "alicesecret", "")
+	// Written straight to the store, past the validation PutUserPolicy does
+	// at the control plane, as a document stored before it existed would be.
+	if err := store.PutUserPolicy(context.Background(), storage.PutUserPolicyInput{
+		UserName:       "alice",
+		PolicyName:     "Legacy",
+		PolicyDocument: `{"Version":"2012-10-17","Statement":`,
+	}); err != nil {
+		t.Fatalf("PutUserPolicy: %v", err)
+	}
+
+	out := evaluateAs(t, p, EvaluatePolicyRequest{
+		AccessKeyID: "AKIAALICE",
+		Actions:     []string{"s3:GetObject"},
+		Resources:   []string{"arn:aws:s3:::b/k"},
+	})
+	if out.Decisions[0][0] != DecisionDeny {
+		t.Errorf("decision = %q, want %q", out.Decisions[0][0], DecisionDeny)
+	}
+	if out.Cacheable {
+		t.Error("Cacheable = true for an unreadable policy")
 	}
 }

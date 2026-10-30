@@ -487,7 +487,7 @@ func identityPolicyDecisions(pe PolicyEvaluator, opts AccessOptions, objects []s
 
 	eval, err := pe.EvaluatePolicy(opts.Acc.Access, opts.Acc.SessionToken, opts.Actions, resources, condition)
 	if err != nil {
-		return PolicyEvaluation{}, err
+		return PolicyEvaluation{}, credentialError(err, opts.Acc.Access)
 	}
 
 	if err := checkDecisionMatrix(eval.Decisions, len(resources), len(opts.Actions)); err != nil {
@@ -499,6 +499,22 @@ func identityPolicyDecisions(pe PolicyEvaluator, opts AccessOptions, objects []s
 		}
 	}
 	return eval, nil
+}
+
+// credentialError answers a policy evaluation that found the caller's
+// credential gone the way authentication answers one: InvalidAccessKeyId
+// for an access key that no longer exists or is inactive, and InvalidToken
+// for a session token that no longer matches. The request authenticated
+// with a signing key cached from before the change. Any other error is
+// returned as it is.
+func credentialError(err error, access string) error {
+	switch {
+	case errors.Is(err, ErrNoSuchUser):
+		return s3err.GetInvalidAccessKeyIdErr(access)
+	case errors.Is(err, ErrInvalidSessionToken):
+		return s3err.GetAPIError(s3err.ErrInvalidToken)
+	}
+	return err
 }
 
 // checkDecisionMatrix confirms matrix holds a decision for every resource

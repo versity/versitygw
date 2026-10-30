@@ -15,6 +15,8 @@
 package policy
 
 import (
+	"maps"
+	"slices"
 	"testing"
 
 	"github.com/versity/versitygw/iamapi/types"
@@ -264,5 +266,128 @@ func TestEvaluateIdentityPolicies(t *testing.T) {
 				t.Fatalf("EvaluateIdentityPolicies() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestConditionKeys(t *testing.T) {
+	tests := []struct {
+		name      string
+		documents []types.PolicyEntry
+		want      []string
+		wantOK    bool
+	}{
+		{
+			name:   "no documents",
+			want:   nil,
+			wantOK: true,
+		},
+		{
+			name:      "no conditions or variables",
+			documents: policyEntries(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:*","Resource":"*"}]}`),
+			want:      nil,
+			wantOK:    true,
+		},
+		{
+			name: "condition keys from every statement, whatever it covers",
+			documents: policyEntries(
+				`{"Version":"2012-10-17","Statement":[`+
+					`{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{"IpAddress":{"aws:SourceIp":"10.0.0.0/8"}}},`+
+					`{"Effect":"Deny","Action":"s3:PutObject","Resource":"*","Condition":{"Bool":{"aws:SecureTransport":"false"}}}]}`,
+				`{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"s3:ListBucket","Resource":"*","Condition":{"StringLike":{"s3:prefix":"home/*"}}}}`,
+			),
+			want:   []string{"aws:SecureTransport", "aws:SourceIp", "s3:prefix"},
+			wantOK: true,
+		},
+		{
+			name: "variables in Resource, NotResource and condition values",
+			documents: policyEntries(
+				`{"Version":"2012-10-17","Statement":[` +
+					`{"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::b/${aws:username}/*"},` +
+					`{"Effect":"Deny","Action":"s3:GetObject","NotResource":"arn:aws:s3:::b/${aws:userid}/*"},` +
+					`{"Effect":"Allow","Action":"s3:ListBucket","Resource":"*","Condition":{"StringEquals":{"aws:Referer":"${aws:UserAgent}"}}}]}`,
+			),
+			want:   []string{"aws:Referer", "aws:UserAgent", "aws:userid", "aws:username"},
+			wantOK: true,
+		},
+		{
+			name: "duplicates removed, spelling kept",
+			documents: policyEntries(
+				`{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"s3:*","Resource":"*","Condition":{"IpAddress":{"aws:SourceIp":"10.0.0.0/8"}}}}`,
+				`{"Version":"2012-10-17","Statement":{"Effect":"Deny","Action":"s3:*","Resource":"*","Condition":{"NotIpAddress":{"aws:SourceIp":"10.0.0.0/8","AWS:SOURCEIP":"10.1.0.0/16"}}}}`,
+			),
+			want:   []string{"AWS:SOURCEIP", "aws:SourceIp"},
+			wantOK: true,
+		},
+		{
+			name:      "unparseable document",
+			documents: policyEntries(`{"Version":"2012-10-17","Statement":`),
+			wantOK:    false,
+		},
+		{
+			name:      "document failing validation",
+			documents: policyEntries(`{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"s3:*","NotAction":"s3:Get*","Resource":"*"}}`),
+			wantOK:    false,
+		},
+		{
+			name:      "unrecognized condition operator",
+			documents: policyEntries(`{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"s3:*","Resource":"*","Condition":{"StringSortOf":{"s3:prefix":"a"}}}}`),
+			wantOK:    false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := ConditionKeys(tt.documents)
+			if ok != tt.wantOK {
+				t.Fatalf("ConditionKeys ok = %v, want %v", ok, tt.wantOK)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ConditionKeys = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestConditionKeysDecideEvaluation checks the property callers rely on:
+// contexts that agree on every key ConditionKeys reports get the same
+// decision, while a reported key can change it.
+func TestConditionKeysDecideEvaluation(t *testing.T) {
+	documents := policyEntries(
+		`{"Version":"2012-10-17","Statement":[` +
+			`{"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::b","Condition":{"StringLike":{"s3:prefix":"${aws:username}/*"}}},` +
+			`{"Effect":"Deny","Action":"s3:*","Resource":"*","Condition":{"NotIpAddress":{"aws:sourceip":"10.0.0.0/8"}}}]}`,
+	)
+	keys, ok := ConditionKeys(documents)
+	if !ok {
+		t.Fatal("ConditionKeys: not ok")
+	}
+	if want := []string{"aws:sourceip", "aws:username", "s3:prefix"}; !slices.Equal(keys, want) {
+		t.Fatalf("ConditionKeys = %q, want %q", keys, want)
+	}
+
+	base := map[string][]string{
+		"aws:username": {"alice"},
+		"s3:prefix":    {"alice/docs"},
+		"aws:SourceIp": {"10.1.2.3"},
+	}
+	evaluate := func(extra map[string][]string) Decision {
+		condCtx := maps.Clone(base)
+		maps.Copy(condCtx, extra)
+		return EvaluateIdentityPolicies(documents, RequestContext{Action: "s3:ListBucket", Resource: "arn:aws:s3:::b", Condition: condCtx})
+	}
+
+	want := evaluate(nil)
+	if want != DecisionAllow {
+		t.Fatalf("baseline decision = %v, want allow", want)
+	}
+	// Keys the documents never read change nothing.
+	if got := evaluate(map[string][]string{"aws:CurrentTime": {"2030-01-01T00:00:00Z"}, "aws:UserAgent": {"other"}}); got != want {
+		t.Errorf("decision with unreferenced keys changed = %v, want %v", got, want)
+	}
+	// Each reported key can.
+	if got := evaluate(map[string][]string{"s3:prefix": {"bob/docs"}}); got != DecisionNoMatch {
+		t.Errorf("decision with another prefix = %v, want no match", got)
+	}
+	if got := evaluate(map[string][]string{"aws:SourceIp": {"192.0.2.1"}}); got != DecisionDeny {
+		t.Errorf("decision from another network = %v, want deny", got)
 	}
 }
