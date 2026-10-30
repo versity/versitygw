@@ -199,6 +199,26 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 			},
 		},
 		{
+			name: "backend returns not modified",
+			input: testInput{
+				locals: defaultLocals,
+				beErr:  s3err.GetNotModifiedErr(`"etag"`, tm),
+				beRes:  (*s3.HeadObjectOutput)(nil),
+			},
+			output: testOutput{
+				response: &Response{
+					Headers: map[string]*string{
+						"ETag":          utils.GetStringPtr(`"etag"`),
+						"Last-Modified": utils.GetStringPtr(tm.UTC().Format(timefmt)),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetNotModifiedErr(`"etag"`, tm),
+			},
+		},
+		{
 			name: "successful response",
 			input: testInput{
 				queries: map[string]string{

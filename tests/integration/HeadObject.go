@@ -584,6 +584,11 @@ func HeadObject_conditional_reads(s *S3Conf) error {
 				if err := checkSdkApiErr(err, *test.err); err != nil {
 					return fmt.Errorf("test case %d failed: %w", i, err)
 				}
+				if test.err == errMod {
+					if err := checkNotModifiedValidators(err, *etag, lastModified); err != nil {
+						return fmt.Errorf("test case %d failed: %w", i, err)
+					}
+				}
 			}
 		}
 

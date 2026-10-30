@@ -590,6 +590,11 @@ func GetObject_conditional_reads(s *S3Conf) error {
 				if err := checkApiErr(err, apiErr); err != nil {
 					return fmt.Errorf("test case %d failed: %w", i, err)
 				}
+				if apiErr == errMod {
+					if err := checkNotModifiedValidators(err, *etag, lastModified); err != nil {
+						return fmt.Errorf("test case %d failed: %w", i, err)
+					}
+				}
 			}
 		}
 

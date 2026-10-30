@@ -1174,6 +1174,24 @@ func checkSdkApiErr(err error, code string) error {
 	return err
 }
 
+// checkNotModifiedValidators checks that a 304 Not Modified response carries
+// the object's ETag and Last-Modified.
+func checkNotModifiedValidators(err error, etag string, lastModified time.Time) error {
+	var respErr *awshttp.ResponseError
+	if !errors.As(err, &respErr) {
+		return fmt.Errorf("expected an HTTP response error, instead got %w", err)
+	}
+	if got := respErr.Response.Header.Get("ETag"); got != etag {
+		return fmt.Errorf("expected the ETag header to be %q, instead got %q", etag, got)
+	}
+	got, perr := http.ParseTime(respErr.Response.Header.Get("Last-Modified"))
+	if perr != nil || !got.Equal(lastModified) {
+		return fmt.Errorf("expected the Last-Modified header to be %v, instead got %q",
+			lastModified, respErr.Response.Header.Get("Last-Modified"))
+	}
+	return nil
+}
+
 func checkIAMApiErr(err error, expected iamerr.APIError) error {
 	if err == nil {
 		return fmt.Errorf("expected IAM API error, instead got nil")
