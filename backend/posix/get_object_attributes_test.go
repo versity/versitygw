@@ -17,12 +17,17 @@ package posix
 import (
 	"bytes"
 	"context"
+	"errors"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/meta"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -135,6 +140,87 @@ func TestGetObjectAttributesPartsCount(t *testing.T) {
 			}
 			if got := aws.ToInt64(out.ObjectSize); got != 4 {
 				t.Errorf("expected object size 4, got %d", got)
+			}
+		})
+	}
+}
+
+// removeOnEtagReadMeta runs remove, once it is set, on the next etag read
+// of object: GetObject reads the etag between its stat of the object and
+// its open of it.
+type removeOnEtagReadMeta struct {
+	meta.XattrMeta
+	object string
+	remove *func()
+}
+
+func (m removeOnEtagReadMeta) RetrieveAttribute(f *os.File, bucket, object, attribute string) ([]byte, error) {
+	if object == m.object && attribute == etagkey && *m.remove != nil {
+		remove := *m.remove
+		*m.remove = nil
+		remove()
+	}
+	return m.XattrMeta.RetrieveAttribute(f, bucket, object, attribute)
+}
+
+// TestGetObjectRemovedBeforeOpen checks that GetObject answers NoSuchKey
+// when the object is deleted after its stat of the object and before its
+// open of it, also when the delete removes the object's directory and an
+// upload puts an object in its place, which fails the open with ENOTDIR.
+func TestGetObjectRemovedBeforeOpen(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		replaceDir bool
+	}{
+		{"object removed", false},
+		{"directory replaced by object", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var remove func()
+			p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+				return removeOnEtagReadMeta{object: "dir/obj", remove: &remove}, PosixOpts{NewDirPerm: 0755}
+			})
+			bucket := "testbucket"
+			createTestBucket(t, p, bucket)
+
+			ctx := context.Background()
+			_, err := p.PutObject(ctx, s3response.PutObjectInput{
+				Bucket:        &bucket,
+				Key:           aws.String("dir/obj"),
+				Body:          strings.NewReader("data"),
+				ContentLength: aws.Int64(4),
+			})
+			if err != nil {
+				t.Fatalf("put object: %v", err)
+			}
+
+			remove = func() {
+				if err := os.Remove(p.ObjectPath(bucket, "dir/obj")); err != nil {
+					t.Errorf("remove object: %v", err)
+				}
+				if !tc.replaceDir {
+					return
+				}
+				if err := os.Remove(p.ObjectPath(bucket, "dir")); err != nil {
+					t.Errorf("remove object directory: %v", err)
+				}
+				if err := os.WriteFile(p.ObjectPath(bucket, "dir"), []byte("data"), 0644); err != nil {
+					t.Errorf("put object in place of the directory: %v", err)
+				}
+			}
+
+			out, err := p.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    aws.String("dir/obj"),
+			})
+			if err == nil {
+				out.Body.Close()
+			}
+			if remove != nil {
+				t.Fatal("get object did not read the object etag")
+			}
+			if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+				t.Fatalf("get object: expected NoSuchKey, got %v", err)
 			}
 		})
 	}

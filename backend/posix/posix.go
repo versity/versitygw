@@ -6241,7 +6241,12 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	// DeleteObject can call os.Remove on this file while the GET response body
 	// is still being streamed. On POSIX, os.Open is sufficient.
 	f, err := openForRead(objPath, p.enableODirect)
-	if errors.Is(err, fs.ErrNotExist) {
+	if IsEntryGone(err) {
+		// the object was removed after the stat above, or its directory
+		// was, which a shared filesystem can report as ENOTDIR or ESTALE
+		if versionId != "" {
+			return nil, s3err.GetNoSuchVersionErr(*input.Key, versionId)
+		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
