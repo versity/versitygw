@@ -34,18 +34,19 @@ get_and_verify_metadata_value() {
 }
 
 get_and_verify_metadata() {
-  if ! check_param_count_v2 "bucket file, expected content type, expected metadata key, expected metadata val, expected hold status, expected retention mode, expected retention date" 7 $#; then
+  if ! check_param_count_v2 "bucket name, bucket file, expected content type, expected metadata key, expected metadata val, expected hold status, expected retention mode, expected retention date" 8 $#; then
     return 1
   fi
-  local bucket_file="$1"
-  local expected_content_type="$2"
-  local expected_metadata_key="$3"
-  local expected_metadata_val="$4"
-  local expected_hold_status="$5"
-  local expected_retention_mode="$6"
-  local expected_retention_date="$7"
+  local bucket_name="$1"
+  local bucket_file="$2"
+  local expected_content_type="$3"
+  local expected_metadata_key="$4"
+  local expected_metadata_val="$5"
+  local expected_hold_status="$6"
+  local expected_retention_mode="$7"
+  local expected_retention_date="$8"
 
-  if ! head_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file"; then
+  if ! head_object "s3api" "$bucket_name" "$bucket_file"; then
     log 2 "error retrieving metadata"
     return 1
   fi

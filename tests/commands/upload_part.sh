@@ -30,16 +30,23 @@ upload_part_with_user() {
   if ! check_param_count_v2 "bucket, key, upload ID, file name, part number, username, password" 7 $#; then
     return 1
   fi
-  local etag_json
-  if ! etag_json=$(AWS_ACCESS_KEY_ID="$6" AWS_SECRET_ACCESS_KEY="$7" send_command aws --no-verify-ssl s3api upload-part --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --body "$4" 2>&1); then
-    log 2 "Error uploading part $5: $etag_json"
+  local bucket="$1" key="$2" upload_id="$3" file_name="$4" part_number="$5" username="$6" password="$7"
+  local response raw_response etag
+
+  if ! response=$(AWS_ACCESS_KEY_ID="$username" AWS_SECRET_ACCESS_KEY="$password" send_command aws --no-verify-ssl s3api upload-part \
+      --bucket "$bucket" --key "$key" --upload-id "$upload_id" --part-number "$part_number" --body "$file_name" 2>&1); then
+    log 2 "Error uploading part '$part_number': '$response'"
     return 1
   fi
-  if ! etag=$(echo "$etag_json" | grep -v "InsecureRequestWarning" | jq '.ETag' 2>&1); then
-    log 2 "error obtaining etag: $etag"
+  raw_response="$response"
+
+  if ! response=$(echo "$raw_response" | grep -v "InsecureRequestWarning" | jq -r '.ETag' 2>&1); then
+    log 2 "error obtaining etag: $response"
     return 1
   fi
-  export etag
+  etag="$response"
+  echo "$etag"
+  return 0
 }
 
 upload_part_rest() {
