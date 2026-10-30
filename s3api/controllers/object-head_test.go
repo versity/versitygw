@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -30,9 +31,43 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	tm := time.Now()
 	cLength := int64(100)
 
+	delMarker := true
 	failingBeRes := &s3.HeadObjectOutput{
+		DeleteMarker: &delMarker,
 		LastModified: &tm,
 		VersionId:    utils.GetStringPtr("versionId"),
+	}
+	// a 304 output carries the 200's fields, content ones included; the
+	// controller keeps only those a 304 repeats
+	tagCount, partsCount := int32(2), int32(3)
+	notModifiedRes := &s3.HeadObjectOutput{
+		ETag:                    utils.GetStringPtr(`"etag"`),
+		LastModified:            &tm,
+		CacheControl:            utils.GetStringPtr("max-age=60"),
+		ExpiresString:           utils.GetStringPtr("Thu, 01 Jan 2099 00:00:00 GMT"),
+		VersionId:               utils.GetStringPtr("versionId"),
+		StorageClass:            types.StorageClassStandard,
+		WebsiteRedirectLocation: utils.GetStringPtr("/redirect"),
+		TagCount:                &tagCount,
+		PartsCount:              &partsCount,
+		ContentType:             utils.GetStringPtr("text/plain"),
+		ContentLength:           &cLength,
+		ContentLanguage:         utils.GetStringPtr("en"),
+		AcceptRanges:            utils.GetStringPtr("bytes"),
+		ChecksumCRC32:           utils.GetStringPtr("crc32"),
+	}
+	notModifiedHeaders := func(cacheControl, expires string) map[string]*string {
+		return map[string]*string{
+			"ETag":                            utils.GetStringPtr(`"etag"`),
+			"Last-Modified":                   utils.GetStringPtr(tm.UTC().Format(timefmt)),
+			"Cache-Control":                   utils.GetStringPtr(cacheControl),
+			"Expires":                         utils.GetStringPtr(expires),
+			"x-amz-version-id":                utils.GetStringPtr("versionId"),
+			"x-amz-storage-class":             utils.GetStringPtr("STANDARD"),
+			"x-amz-website-redirect-location": utils.GetStringPtr("/redirect"),
+			"x-amz-tagging-count":             utils.GetStringPtr("2"),
+			"x-amz-mp-parts-count":            utils.GetStringPtr("3"),
+		}
 	}
 
 	tests := []struct {
@@ -181,7 +216,8 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 				locals: defaultLocals,
 				beErr:  s3err.GetAPIError(s3err.ErrNoSuchKey),
 				beRes: &s3.HeadObjectOutput{
-					VersionId: utils.GetStringPtr("versionId"),
+					DeleteMarker: &delMarker,
+					VersionId:    utils.GetStringPtr("versionId"),
 				},
 			},
 			output: testOutput{
@@ -196,6 +232,68 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrNoSuchKey),
+			},
+		},
+		{
+			name: "backend returns not modified",
+			input: testInput{
+				locals: defaultLocals,
+				beErr:  s3err.GetAPIError(s3err.ErrNotModified),
+				beRes:  notModifiedRes,
+			},
+			output: testOutput{
+				response: &Response{
+					Headers:  notModifiedHeaders("max-age=60", "Thu, 01 Jan 2099 00:00:00 GMT"),
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetAPIError(s3err.ErrNotModified),
+			},
+		},
+		{
+			name: "backend returns not modified with response overrides",
+			input: testInput{
+				queries: map[string]string{
+					"response-cache-control": "no-cache",
+					"response-expires":       "Fri, 01 Jan 2100 00:00:00 GMT",
+				},
+				locals: defaultLocals,
+				beErr:  s3err.GetAPIError(s3err.ErrNotModified),
+				beRes:  notModifiedRes,
+			},
+			output: testOutput{
+				response: &Response{
+					Headers:  notModifiedHeaders("no-cache", "Fri, 01 Jan 2100 00:00:00 GMT"),
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetAPIError(s3err.ErrNotModified),
+			},
+		},
+		{
+			name: "backend returns not modified without output",
+			input: testInput{
+				locals: defaultLocals,
+				beErr:  s3err.GetAPIError(s3err.ErrNotModified),
+				beRes:  (*s3.HeadObjectOutput)(nil),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetAPIError(s3err.ErrNotModified),
+			},
+		},
+		{
+			name: "backend returns error with an output that is not a delete marker",
+			input: testInput{
+				locals: defaultLocals,
+				beErr:  s3err.GetAPIError(s3err.ErrInvalidAccessKeyID),
+				beRes:  &s3.HeadObjectOutput{LastModified: &tm},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidAccessKeyID),
 			},
 		},
 		{

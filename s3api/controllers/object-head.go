@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -164,7 +165,23 @@ func (c S3ApiController) HeadObject(ctx fiber.Ctx) (*Response, error) {
 		})
 	if err != nil {
 		var headers map[string]*string
-		if res != nil {
+		switch {
+		case res != nil && errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)):
+			// a 304 repeats the 200's headers that describe the object,
+			// but none about its content (RFC 9110 section 15.4.5)
+			utils.SetMetaHeaders(ctx, res.Metadata)
+			headers = map[string]*string{
+				"ETag":                            res.ETag,
+				"Last-Modified":                   utils.FormatDatePtrToString(res.LastModified, timefmt),
+				"Cache-Control":                   utils.ApplyOverride(res.CacheControl, responseOverrides["Cache-Control"]),
+				"Expires":                         utils.ApplyOverride(res.ExpiresString, responseOverrides["Expires"]),
+				"x-amz-version-id":                res.VersionId,
+				"x-amz-storage-class":             utils.ConvertToStringPtr(res.StorageClass),
+				"x-amz-website-redirect-location": res.WebsiteRedirectLocation,
+				"x-amz-tagging-count":             utils.ConvertPtrToStringPtr(res.TagCount),
+				"x-amz-mp-parts-count":            utils.ConvertPtrToStringPtr(res.PartsCount),
+			}
+		case res != nil && res.DeleteMarker != nil && *res.DeleteMarker:
 			headers = map[string]*string{
 				"x-amz-delete-marker": utils.GetStringPtr("true"),
 				"x-amz-version-id":    res.VersionId,

@@ -35,6 +35,7 @@ import (
 	"hash/crc32"
 	"hash/crc64"
 	"io"
+	"maps"
 	"math/big"
 	"math/bits"
 	rnd "math/rand"
@@ -51,6 +52,7 @@ import (
 	"unicode"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -1172,6 +1174,200 @@ func checkSdkApiErr(err error, code string) error {
 		return nil
 	}
 	return err
+}
+
+// checkNotModifiedValidators checks that a 304 Not Modified response carries
+// the object's ETag and Last-Modified.
+func checkNotModifiedValidators(err error, etag string, lastModified time.Time) error {
+	var respErr *awshttp.ResponseError
+	if !errors.As(err, &respErr) {
+		return fmt.Errorf("expected an HTTP response error, instead got %w", err)
+	}
+	if got := respErr.Response.Header.Get("ETag"); got != etag {
+		return fmt.Errorf("expected the ETag header to be %q, instead got %q", etag, got)
+	}
+	got, perr := http.ParseTime(respErr.Response.Header.Get("Last-Modified"))
+	if perr != nil || !got.Equal(lastModified) {
+		return fmt.Errorf("expected the Last-Modified header to be %v, instead got %q",
+			lastModified, respErr.Response.Header.Get("Last-Modified"))
+	}
+	// a 304 has no content, so it carries no Content-Type
+	if ct := respErr.Response.Header.Get("Content-Type"); ct != "" {
+		return fmt.Errorf("expected no Content-Type header, instead got %q", ct)
+	}
+	return nil
+}
+
+// perResponseHeaders differ between any two responses, whatever the object.
+var perResponseHeaders = []string{"Date", "X-Amz-Request-Id", "X-Amz-Id-2", "Server",
+	"Connection", "Keep-Alive", "Transfer-Encoding"}
+
+// notModifiedHeaderKeys are the 200's headers a 304 repeats, with
+// x-amz-meta-* headers: those describing the object, not its content.
+// The keys are canonical, as in http.Header.
+var notModifiedHeaderKeys = []string{"Etag", "Last-Modified", "Cache-Control", "Expires",
+	"X-Amz-Version-Id", "X-Amz-Storage-Class", "X-Amz-Website-Redirect-Location",
+	"X-Amz-Tagging-Count", "X-Amz-Mp-Parts-Count"}
+
+// checkNotModifiedHeaders checks that err is a 304 Not Modified carrying
+// exactly the headers in notModifiedHeaderKeys and the x-amz-meta-* headers
+// of ok200, the 200 to the same request, with the same values.
+func checkNotModifiedHeaders(err error, ok200 http.Header) error {
+	var respErr *awshttp.ResponseError
+	if !errors.As(err, &respErr) || respErr.HTTPStatusCode() != http.StatusNotModified {
+		return fmt.Errorf("expected a 304 Not Modified response, instead got %v", err)
+	}
+	got, want := respErr.Response.Header.Clone(), http.Header{}
+	for _, key := range perResponseHeaders {
+		got.Del(key)
+	}
+	for key, values := range ok200 {
+		if slices.Contains(notModifiedHeaderKeys, key) || strings.HasPrefix(key, "X-Amz-Meta-") {
+			want[key] = values
+		}
+	}
+	keys := map[string]bool{}
+	for key := range want {
+		keys[key] = true
+	}
+	for key := range got {
+		keys[key] = true
+	}
+	for _, key := range slices.Sorted(maps.Keys(keys)) {
+		if !slices.Equal(want[key], got[key]) {
+			return fmt.Errorf("expected the 304's %s header to be %q, as the 200 sends it, instead got %q",
+				key, want[key], got[key])
+		}
+	}
+	return nil
+}
+
+// notModifiedHeadersCase is one request a 304 answers: an object read, with
+// the read's options.
+type notModifiedHeadersCase struct {
+	key          string
+	versionId    *string
+	partNumber   *int32
+	cacheControl *string
+	expires      *time.Time
+}
+
+// notModifiedHeaders runs GetObject or HeadObject for each case, once
+// without a condition and once with the object's ETag in If-None-Match, and
+// checks that the 304 carries the 200's headers that describe the object.
+func notModifiedHeaders(s3client *s3.Client, bucket string, head bool, cases []notModifiedHeadersCase) error {
+	for i, c := range cases {
+		// read returns the raw headers of the response, and the ETag
+		read := func(ifNoneMatch *string) (http.Header, *string, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
+			var etag *string
+			var md middleware.Metadata
+			if head {
+				out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+					Bucket:               &bucket,
+					Key:                  &c.key,
+					VersionId:            c.versionId,
+					PartNumber:           c.partNumber,
+					ResponseCacheControl: c.cacheControl,
+					ResponseExpires:      c.expires,
+					ChecksumMode:         types.ChecksumModeEnabled,
+					IfNoneMatch:          ifNoneMatch,
+				})
+				if err != nil {
+					return nil, nil, err
+				}
+				etag, md = out.ETag, out.ResultMetadata
+			} else {
+				out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+					Bucket:               &bucket,
+					Key:                  &c.key,
+					VersionId:            c.versionId,
+					PartNumber:           c.partNumber,
+					ResponseCacheControl: c.cacheControl,
+					ResponseExpires:      c.expires,
+					ChecksumMode:         types.ChecksumModeEnabled,
+					IfNoneMatch:          ifNoneMatch,
+				})
+				if err != nil {
+					return nil, nil, err
+				}
+				out.Body.Close()
+				etag, md = out.ETag, out.ResultMetadata
+			}
+			raw, ok := awsmiddleware.GetRawResponse(md).(*smithyhttp.Response)
+			if !ok {
+				return nil, nil, fmt.Errorf("no raw response in the result metadata")
+			}
+			return raw.Header, etag, nil
+		}
+
+		ok200, etag, err := read(nil)
+		if err != nil {
+			return fmt.Errorf("case %d: %w", i, err)
+		}
+		_, _, err = read(etag)
+		if err := checkNotModifiedHeaders(err, ok200); err != nil {
+			return fmt.Errorf("case %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// notModifiedHeadersTest checks the headers of a GetObject or HeadObject
+// answered with 304 Not Modified, for an object with metadata and for a part
+// of a multipart object.
+func notModifiedHeadersTest(s *S3Conf, testName string, head bool) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, mpObj := "my-obj", "my-mp-obj"
+		expires := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Second)
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:                  &bucket,
+			Key:                     &obj,
+			CacheControl:            getPtr("max-age=60"),
+			Expires:                 &expires,
+			ContentType:             getPtr("text/plain"),
+			ContentLanguage:         getPtr("en"),
+			ContentDisposition:      getPtr("inline"),
+			WebsiteRedirectLocation: getPtr("/redirect"),
+			Tagging:                 getPtr("key=value"),
+			Metadata:                map[string]string{"foo": "bar"},
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		mp, err := createMp(s3client, bucket, mpObj)
+		if err != nil {
+			return err
+		}
+		parts, _, err := uploadParts(s3client, 10*1024*1024, 2, bucket, mpObj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+		compParts := make([]types.CompletedPart, len(parts))
+		for i, p := range parts {
+			compParts[i] = types.CompletedPart{ETag: p.ETag, PartNumber: p.PartNumber}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:          &bucket,
+			Key:             &mpObj,
+			UploadId:        mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{Parts: compParts},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		overrideExpires := expires.Add(time.Hour)
+		return notModifiedHeaders(s3client, bucket, head, []notModifiedHeadersCase{
+			{key: obj},
+			{key: obj, cacheControl: getPtr("no-cache"), expires: &overrideExpires},
+			{key: mpObj, partNumber: getPtr(int32(1))},
+		})
+	})
 }
 
 func checkIAMApiErr(err error, expected iamerr.APIError) error {

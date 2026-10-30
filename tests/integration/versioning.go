@@ -1540,6 +1540,41 @@ func Versioning_HeadObject_invalid_parent(s *S3Conf) error {
 	})
 }
 
+// Versioning_not_modified_version_id checks that a 304 Not Modified to a
+// GetObject or HeadObject carries the x-amz-version-id of the version it
+// validated, the live one or the one requested.
+func Versioning_not_modified_version_id(s *S3Conf) error {
+	testName := "Versioning_not_modified_version_id"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		first, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		_, err = putObjectWithData(20, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		cases := []notModifiedHeadersCase{
+			{key: obj},
+			{key: obj, versionId: first.res.VersionId},
+		}
+		for _, head := range []bool{false, true} {
+			if err := notModifiedHeaders(s3client, bucket, head, cases); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_HeadObject_success(s *S3Conf) error {
 	testName := "Versioning_HeadObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
