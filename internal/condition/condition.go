@@ -386,7 +386,7 @@ func Evaluate(raw json.RawMessage, ctxVars map[string][]string, version string) 
 	for operator, kvs := range block {
 		op, _ := ParseOperatorName(operator) // Parse already validated every operator name
 		for key, expected := range kvs {
-			actual, present := lookupContextValues(ctxVars, key)
+			actual, present := LookupContextValues(ctxVars, key)
 			if version == version2012 && conditionVariableOperators[op.Base] {
 				expected = substituteConditionValues(expected, ctxVars)
 			}
@@ -404,13 +404,13 @@ func Evaluate(raw json.RawMessage, ctxVars map[string][]string, version string) 
 // specific policy type's Version constants.
 const version2012 = "2012-10-17"
 
-// lookupContextValues retrieves ctxVars[key], matching key
+// LookupContextValues retrieves ctxVars[key], matching key
 // case-insensitively: AWS documents condition (and policy-variable) key
 // *names* as case-insensitive - "aws:SourceIp" and "AWS:SOURCEIP" name the
 // same key - even though the values held under that key remain
 // case-sensitive. An exact match is tried first so the common case doesn't
 // pay for a map scan.
-func lookupContextValues(ctxVars map[string][]string, key string) ([]string, bool) {
+func LookupContextValues(ctxVars map[string][]string, key string) ([]string, bool) {
 	if v, ok := ctxVars[key]; ok {
 		return v, true
 	}
@@ -439,12 +439,50 @@ func SubstitutePolicyVariables(s string, ctxVars map[string][]string) string {
 	}
 	return policyVariablePattern.ReplaceAllStringFunc(s, func(match string) string {
 		key := match[2 : len(match)-1]
-		values, ok := lookupContextValues(ctxVars, key)
+		values, ok := LookupContextValues(ctxVars, key)
 		if !ok || len(values) != 1 {
 			return match
 		}
 		return values[0]
 	})
+}
+
+// PolicyVariableKeys returns the context key every ${key} placeholder in s
+// names, in order of appearance — the keys SubstitutePolicyVariables would
+// read to expand s.
+func PolicyVariableKeys(s string) []string {
+	if !strings.Contains(s, "${") {
+		return nil
+	}
+	var keys []string
+	for _, match := range policyVariablePattern.FindAllStringSubmatch(s, -1) {
+		keys = append(keys, match[1])
+	}
+	return keys
+}
+
+// ReferencedKeys returns every context key the Condition block raw can read
+// when it is evaluated: each key it tests, and each key a ${...} policy
+// variable in one of its values names. A variable counts whether or not its
+// operator and the document's version would actually expand it, so the
+// result may name keys an evaluation never reads, but it never misses one
+// that it does. An absent or empty block reads nothing. The error is Parse's.
+func ReferencedKeys(raw json.RawMessage) ([]string, error) {
+	block, err := Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	var keys []string
+	for _, kvs := range block {
+		for key, values := range kvs {
+			keys = append(keys, key)
+			for _, value := range values {
+				keys = append(keys, PolicyVariableKeys(value)...)
+			}
+		}
+	}
+	return keys, nil
 }
 
 // substituteConditionValues applies SubstitutePolicyVariables to every

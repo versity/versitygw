@@ -13,6 +13,8 @@
 
 package private
 
+import "time"
+
 // DeriveSigningKeyRequest is the derive-signing-key request body. Date,
 // Region, and Service are the request's credential-scope components
 // (yyyymmdd/region/service), matching sigv4auth.DeriveKey's parameters.
@@ -37,10 +39,16 @@ type DeriveSigningKeyRequest struct {
 // session's arn:aws:sts::…:assumed-role/<role>/<session>. RoleArn is that
 // session's role ARN and is set only for a session, because a bucket policy
 // Principal naming a role matches every session of it
+//
+// Expiration is when a session stops authenticating, and is set only for a
+// session. A gateway that reuses the derived key must stop at Expiration.
+// An older service leaves it out, and a gateway then does not reuse a
+// session's key at all.
 type DeriveSigningKeyResponse struct {
-	DerivedKey   []byte `json:"derivedKey"`
-	PrincipalArn string `json:"principalArn,omitempty"`
-	RoleArn      string `json:"roleArn,omitempty"`
+	DerivedKey   []byte    `json:"derivedKey"`
+	PrincipalArn string    `json:"principalArn,omitempty"`
+	RoleArn      string    `json:"roleArn,omitempty"`
+	Expiration   time.Time `json:"expiration,omitzero"`
 }
 
 // ResolvePrincipalsRequest asks whether each string is a principal an S3
@@ -140,11 +148,22 @@ const (
 // policy filters *everything*, including permissions the S3 gateway's own
 // bucket policy grants, which this service knows nothing about. See
 // iammiddleware.AuthorizeSplit.
+//
+// Cacheable says whether the result can be reused for other requests, and
+// ConditionKeys which request condition keys it depends on. When Cacheable is
+// set, the same identity asking about the same actions and resources gets the
+// same answer whenever the request's values for every key in ConditionKeys
+// are the same, until the identity's policies change. The keys match
+// case-insensitively, and an empty list means the result depends on none.
+// An older service leaves both out, and the zero Cacheable then keeps a
+// gateway from reusing anything.
 type EvaluatePolicyResponse struct {
 	Decisions        [][]string `json:"decisions"`
 	SessionDecisions [][]string `json:"sessionDecisions,omitempty"`
 	HasSessionPolicy bool       `json:"hasSessionPolicy,omitempty"`
 	PrincipalArn     string     `json:"principalArn,omitempty"`
+	Cacheable        bool       `json:"cacheable,omitempty"`
+	ConditionKeys    []string   `json:"conditionKeys,omitempty"`
 }
 
 // VersionResponse is the version endpoint's body.

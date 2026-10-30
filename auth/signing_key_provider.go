@@ -79,6 +79,10 @@ type PolicyEvaluation struct {
 // from the request (aws:SourceIp, aws:CurrentTime, aws:SecureTransport, …);
 // the identity-derived keys are filled in by the implementation, which is
 // the only side that knows who the access key belongs to.
+//
+// Like SigningKeyProvider, it returns ErrNoSuchUser or ErrInvalidSessionToken
+// when the caller's credential no longer resolves, which can happen after
+// the request authenticated with a cached signing key.
 type PolicyEvaluator interface {
 	EvaluatePolicy(access, sessionToken string, actions []Action, resources []string, condition map[string][]string) (PolicyEvaluation, error)
 }

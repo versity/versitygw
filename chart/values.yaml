@@ -350,7 +350,9 @@ iam:
   type: internal
   # Disable IAM result caching.
   cacheDisable: false
-  # IAM cache entry TTL in seconds.
+  # IAM cache entry TTL in seconds. With iam.type: standalone it is how long
+  # a derived signing key is reused, and so how long a deactivated or deleted
+  # access key can keep working.
   cacheTtl: 120
   # IAM cache cleanup interval in seconds.
   cachePrune: 3600
@@ -402,6 +404,10 @@ iam:
     defaultUid: 0
     defaultGid: 0
     defaultProjectId: 0
+    # How long, in seconds, an identity-policy decision is reused, and so how
+    # long a policy change can take to apply. 0 disables the policy cache, as
+    # does iam.cacheDisable.
+    policyCacheTtl: 5
     # mTLS client identity presented to the standalone IAM service's private
     # endpoint. Required together with the peer trusting this certificate.
     certificate:

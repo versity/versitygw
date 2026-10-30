@@ -16,6 +16,8 @@ package policy
 
 import (
 	"encoding/json"
+	"maps"
+	"slices"
 
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/iamapi/types"
@@ -138,6 +140,48 @@ func EvaluateIdentityPolicies(documents []types.PolicyEntry, reqCtx RequestConte
 		return DecisionAllow
 	}
 	return DecisionNoMatch
+}
+
+// ConditionKeys returns, sorted and without duplicates, every context key
+// EvaluateIdentityPolicies can read while evaluating documents: the keys a
+// statement's Condition block tests, and the keys a ${...} policy variable
+// in a Resource, NotResource or Condition value names. Every statement
+// counts, whatever action and resource it covers, so the result can name
+// keys a particular evaluation never reads, but never misses one it does.
+// Keys are returned as the documents spell them; like any context key, they
+// match case-insensitively.
+//
+// Two evaluations of documents for the same action and resource therefore
+// reach the same decision whenever their contexts agree on every returned
+// key, which is what lets a caller reuse a decision.
+//
+// ok is false when a document fails to parse or validate, since nothing can
+// be said about what such a document reads.
+func ConditionKeys(documents []types.PolicyEntry) (keys []string, ok bool) {
+	seen := map[string]bool{}
+	for _, entry := range documents {
+		var doc Document
+		if err := json.Unmarshal([]byte(entry.PolicyDocument), &doc); err != nil {
+			return nil, false
+		}
+		if err := doc.Validate(); err != nil {
+			return nil, false
+		}
+
+		for _, stmt := range doc.Statement {
+			stmtKeys, err := condition.ReferencedKeys(stmt.Condition)
+			if err != nil {
+				return nil, false
+			}
+			for _, pattern := range slices.Concat(stmt.Resource, stmt.NotResource) {
+				stmtKeys = append(stmtKeys, condition.PolicyVariableKeys(pattern)...)
+			}
+			for _, key := range stmtKeys {
+				seen[key] = true
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(seen)), true
 }
 
 // statementCoversResource reports whether stmt's Resource/NotResource

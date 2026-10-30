@@ -15,7 +15,9 @@
 package condition
 
 import (
+	"encoding/json"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -782,6 +784,59 @@ func TestParseIPOrCIDR(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := ParseIPOrCIDR(tt.s); got != tt.want {
 				t.Errorf("ParseIPOrCIDR(%q) = %v, want %v", tt.s, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPolicyVariableKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want []string
+	}{
+		{"no variable", "arn:aws:s3:::bucket/*", nil},
+		{"one variable", "arn:aws:s3:::bucket/${aws:username}/*", []string{"aws:username"}},
+		{"several in order", "${s3:prefix}/${aws:SourceIp}/${s3:prefix}", []string{"s3:prefix", "aws:SourceIp", "s3:prefix"}},
+		{"unterminated placeholder", "arn:aws:s3:::bucket/${aws:username", nil},
+		{"special-character escape is not a key", "arn:aws:s3:::bucket/${*}", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PolicyVariableKeys(tt.s); !slices.Equal(got, tt.want) {
+				t.Errorf("PolicyVariableKeys(%q) = %q, want %q", tt.s, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReferencedKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    []string
+		wantErr bool
+	}{
+		{name: "absent block", raw: "", want: nil},
+		{name: "null block", raw: "null", want: nil},
+		{name: "tested keys across operators", raw: `{"IpAddress":{"aws:SourceIp":"10.0.0.0/8"},"Bool":{"aws:SecureTransport":"true"}}`, want: []string{"aws:SecureTransport", "aws:SourceIp"}},
+		{name: "several keys under one operator", raw: `{"StringEquals":{"s3:prefix":"a","s3:delimiter":"/"}}`, want: []string{"s3:delimiter", "s3:prefix"}},
+		{name: "qualified and IfExists operators", raw: `{"ForAnyValue:StringLikeIfExists":{"aws:TagKeys":"x*"},"Null":{"aws:Referer":"true"}}`, want: []string{"aws:Referer", "aws:TagKeys"}},
+		{name: "variables in values", raw: `{"StringLike":{"s3:prefix":["home/${aws:username}/*","${aws:UserAgent}"]}}`, want: []string{"aws:UserAgent", "aws:username", "s3:prefix"}},
+		{name: "variables counted even where they are never expanded", raw: `{"NumericLessThan":{"s3:max-keys":"${aws:EpochTime}"}}`, want: []string{"aws:EpochTime", "s3:max-keys"}},
+		{name: "key spelling kept", raw: `{"IpAddress":{"AWS:SOURCEIP":"10.0.0.0/8"}}`, want: []string{"AWS:SOURCEIP"}},
+		{name: "unrecognized operator", raw: `{"StringSortOf":{"s3:prefix":"a"}}`, wantErr: true},
+		{name: "malformed JSON", raw: `{"StringEquals":`, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReferencedKeys(json.RawMessage(tt.raw))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ReferencedKeys(%s) error = %v, wantErr %v", tt.raw, err, tt.wantErr)
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ReferencedKeys(%s) = %q, want %q", tt.raw, got, tt.want)
 			}
 		})
 	}
