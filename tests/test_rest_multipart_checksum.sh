@@ -264,3 +264,13 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   run test_complete_multipart_upload_invalid_checksum "FULL_OBJECT" "CRC64NVME"
   assert_success
 }
+
+@test "REST - multipart - checksum changes midway - composite/sha256" {
+  run test_multipart_upload_with_checksum_part_replacement "COMPOSITE" "sha256"
+  assert_success
+}
+
+@test "REST - multipart - checksum changes midway - full object/crc64nvme" {
+  run test_multipart_upload_with_checksum_part_replacement "COMPOSITE" "sha256"
+  assert_success
+}

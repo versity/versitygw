@@ -329,13 +329,14 @@ list_parts_check_checksums() {
     return 1
   fi
   log 5 "checksums: ${checksums[*]}"
+  uppercase_algorithm=${checksum_algorithm^^}
   for part in "${parts[@]}"; do
     part_number=$((checksum_idx+1))
     if ! check_xml_element_inside_string "$part" "$part_number" "Part" "PartNumber"; then
       log 2 "error checking part number"
       return 1
     fi
-    if ! check_xml_element_inside_string "$part" "${checksums[$checksum_idx]}" "Part" "Checksum${checksum_algorithm}"; then
+    if ! check_xml_element_inside_string "$part" "${checksums[$checksum_idx]}" "Part" "Checksum${uppercase_algorithm}"; then
       log 2 "error checking checksum for part '$((checksum_idx+1))'"
       return 1
     fi
