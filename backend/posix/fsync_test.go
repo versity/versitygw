@@ -142,15 +142,18 @@ func TestFsyncFailureFailsThePut(t *testing.T) {
 // returns, and that a PUT without them still costs a single flush.
 func TestFsyncPutObjectMeta(t *testing.T) {
 	cases := []struct {
-		name  string
-		input func(in *s3response.PutObjectInput)
-		files int
+		name    string
+		input   func(in *s3response.PutObjectInput)
+		files   int
+		lockCfg string
 	}{
-		{"plain", func(*s3response.PutObjectInput) {}, 1},
-		{"tagging", func(in *s3response.PutObjectInput) { in.Tagging = aws.String("k=v") }, 2},
+		{"plain", func(*s3response.PutObjectInput) {}, 1, ""},
+		{"tagging", func(in *s3response.PutObjectInput) { in.Tagging = aws.String("k=v") }, 2, ""},
 		{"legal hold", func(in *s3response.PutObjectInput) {
 			in.ObjectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOn
-		}, 2},
+		}, 2, ""},
+		{"default retention", func(*s3response.PutObjectInput) {}, 2,
+			`{"Enabled":true,"DefaultRetention":{"Mode":"GOVERNANCE","Days":1}}`},
 	}
 	for _, tc := range cases {
 		for _, fsync := range []bool{false, true} {
@@ -176,6 +179,13 @@ func TestFsyncPutObjectMeta(t *testing.T) {
 				}, []byte{})
 				if err != nil {
 					t.Fatalf("create bucket: %v", err)
+				}
+
+				if tc.lockCfg != "" {
+					err = p.PutObjectLockConfiguration(context.Background(), bucket, []byte(tc.lockCfg))
+					if err != nil {
+						t.Fatalf("put object lock config: %v", err)
+					}
 				}
 
 				files, _ := recordSyncs(t)
