@@ -24,6 +24,8 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/s3response"
 )
@@ -132,5 +134,80 @@ func TestFsyncFailureFailsThePut(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, bucket, "object")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("object was published after a failed fsync: %v", err)
+	}
+}
+
+// TestFsyncPutObjectMeta checks that with Fsync set the tags and Object Lock
+// settings written after the object is published are flushed before the PUT
+// returns, and that a PUT without them still costs a single flush.
+func TestFsyncPutObjectMeta(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   func(in *s3response.PutObjectInput)
+		files   int
+		lockCfg string
+	}{
+		{"plain", func(*s3response.PutObjectInput) {}, 1, ""},
+		{"tagging", func(in *s3response.PutObjectInput) { in.Tagging = aws.String("k=v") }, 2, ""},
+		{"legal hold", func(in *s3response.PutObjectInput) {
+			in.ObjectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOn
+		}, 2, ""},
+		{"default retention", func(*s3response.PutObjectInput) {}, 2,
+			`{"Enabled":true,"DefaultRetention":{"Mode":"GOVERNANCE","Days":1}}`},
+	}
+	for _, tc := range cases {
+		for _, fsync := range []bool{false, true} {
+			name := tc.name
+			if fsync {
+				name += "/fsync"
+			}
+			t.Run(name, func(t *testing.T) {
+				root := t.TempDir()
+				p, err := New(root, meta.XattrMeta{}, PosixOpts{
+					AbsolutePaths: true,
+					Fsync:         fsync,
+					VersioningDir: t.TempDir(),
+				})
+				if err != nil {
+					t.Fatalf("new posix: %v", err)
+				}
+				bucket := "bucket"
+				err = p.CreateBucket(context.Background(), &s3.CreateBucketInput{
+					Bucket:                     &bucket,
+					ObjectLockEnabledForBucket: aws.Bool(true),
+					CreateBucketConfiguration:  &types.CreateBucketConfiguration{},
+				}, []byte{})
+				if err != nil {
+					t.Fatalf("create bucket: %v", err)
+				}
+
+				if tc.lockCfg != "" {
+					err = p.PutObjectLockConfiguration(context.Background(), bucket, []byte(tc.lockCfg))
+					if err != nil {
+						t.Fatalf("put object lock config: %v", err)
+					}
+				}
+
+				files, _ := recordSyncs(t)
+				in := s3response.PutObjectInput{
+					Bucket:        &bucket,
+					Key:           aws.String("object"),
+					Body:          strings.NewReader("hello"),
+					ContentLength: aws.Int64(5),
+				}
+				tc.input(&in)
+				if _, err := p.PutObject(context.Background(), in); err != nil {
+					t.Fatalf("put object: %v", err)
+				}
+
+				want := 0
+				if fsync {
+					want = tc.files
+				}
+				if *files != want {
+					t.Fatalf("synced %d files, want %d", *files, want)
+				}
+			})
+		}
 	}
 }

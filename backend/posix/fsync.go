@@ -70,3 +70,21 @@ func (tmp *tmpfile) syncNamespace() error {
 		dir = parent
 	}
 }
+
+// syncObjectMeta flushes the attributes written to an object after it was
+// published (tags, legal hold and retention), which the data sync before the
+// publish does not cover.
+func (p *Posix) syncObjectMeta(bucket, object string) error {
+	if !p.fsync {
+		return nil
+	}
+	f, err := os.Open(filepath.Join(p.BucketPath(bucket), object))
+	if err != nil {
+		return fmt.Errorf("open object for fsync: %w", err)
+	}
+	defer f.Close()
+	if err := syncFile(f); err != nil {
+		return fmt.Errorf("fsync object metadata: %w", err)
+	}
+	return nil
+}

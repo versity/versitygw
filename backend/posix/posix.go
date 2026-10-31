@@ -4976,9 +4976,14 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			}
 		}
 
-		err = p.putObjectLockSettings(ctx, po)
+		locked, err := p.putObjectLockSettings(ctx, po)
 		if err != nil {
 			return s3response.PutObjectOutput{}, err
+		}
+		if tags != nil || locked {
+			if err := p.syncObjectMeta(*po.Bucket, object); err != nil {
+				return s3response.PutObjectOutput{}, err
+			}
 		}
 
 		return s3response.PutObjectOutput{
@@ -5255,9 +5260,14 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		}
 	}
 
-	err = p.putObjectLockSettings(ctx, po)
+	locked, err := p.putObjectLockSettings(ctx, po)
 	if err != nil {
 		return s3response.PutObjectOutput{}, err
+	}
+	if tags != nil || locked {
+		if err := p.syncObjectMeta(*po.Bucket, object); err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
 	}
 
 	return s3response.PutObjectOutput{
@@ -5307,7 +5317,9 @@ func publishErr(name string, err error) error {
 // putObjectLockSettings sets the legal hold and retention requested with
 // the put on the object that was just published. A put without Object Lock
 // parameters of its own gets the retention of the bucket's default rule.
-func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObjectInput) error {
+func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObjectInput) (bool, error) {
+	written := false
+
 	// Set object legal hold
 	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
 		err := p.PutObjectLegalHold(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", true)
@@ -5315,8 +5327,9 @@ func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObje
 			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
 				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
 			}
-			return err
+			return written, err
 		}
+		written = true
 	}
 
 	// Set object retention
@@ -5329,23 +5342,23 @@ func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObje
 			RetainUntilDate: po.ObjectLockRetainUntilDate,
 		})
 		if err != nil {
-			return fmt.Errorf("parse object lock retention: %w", err)
+			return written, fmt.Errorf("parse object lock retention: %w", err)
 		}
 	case po.ObjectLockLegalHoldStatus == "":
 		retention, err = p.bucketDefaultRetention(*po.Bucket)
 		if err != nil {
-			return err
+			return written, err
 		}
 	}
 	if retention == nil {
-		return nil
+		return written, nil
 	}
 
 	err = p.PutObjectRetention(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", retention)
 	if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
-		return s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+		return written, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
 	}
-	return err
+	return written || err == nil, err
 }
 
 func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (_ *s3.DeleteObjectOutput, err error) {
@@ -7082,7 +7095,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 		// the copy replaces the object, so it gets the Object Lock
 		// settings of a newly written one
-		err = p.putObjectLockSettings(ctx, s3response.PutObjectInput{
+		locked, err := p.putObjectLockSettings(ctx, s3response.PutObjectInput{
 			Bucket:                    &dstBucket,
 			Key:                       &dstKey,
 			ObjectLockRetainUntilDate: input.ObjectLockRetainUntilDate,
@@ -7091,6 +7104,11 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		})
 		if err != nil {
 			return s3response.CopyObjectOutput{}, err
+		}
+		if input.TaggingDirective == types.TaggingDirectiveReplace || locked {
+			if err := p.syncObjectMeta(dstBucket, dstObject); err != nil {
+				return s3response.CopyObjectOutput{}, err
+			}
 		}
 	} else {
 		contentLength := srcSize
