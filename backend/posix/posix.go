@@ -25,6 +25,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -4976,14 +4977,15 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			}
 		}
 
-		locked, err := p.putObjectLockSettings(ctx, po)
+		err = p.putObjectLockSettings(ctx, po)
 		if err != nil {
 			return s3response.PutObjectOutput{}, err
 		}
-		if tags != nil || locked {
-			if err := p.syncObjectMeta(*po.Bucket, object); err != nil {
-				return s3response.PutObjectOutput{}, err
-			}
+
+		// A directory object has no staged file to carry these attributes
+		// before it is visible, so flush them here.
+		if err := p.syncObjectMeta(*po.Bucket, object); err != nil {
+			return s3response.PutObjectOutput{}, err
 		}
 
 		return s3response.PutObjectOutput{
@@ -5241,33 +5243,17 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		versionID = ""
 	}
 
-	err = f.link()
-	if err != nil {
-		return s3response.PutObjectOutput{}, publishErr(name, err)
-	}
-
-	// Set object tagging
-	if tags != nil {
-		err := p.PutObjectTagging(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", tags)
-		if errors.Is(err, fs.ErrNotExist) {
-			return s3response.PutObjectOutput{
-				ETag:      etag,
-				VersionID: versionID,
-			}, nil
-		}
-		if err != nil {
-			return s3response.PutObjectOutput{}, err
-		}
-	}
-
-	locked, err := p.putObjectLockSettings(ctx, po)
+	// Tags and Object Lock settings go on the staged file with the rest, so
+	// the object is never visible without them and a failure here publishes
+	// nothing. link flushes the file, and with it these attributes.
+	err = p.storeStagedPutAttrs(f.File(), po, object, tags)
 	if err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
-	if tags != nil || locked {
-		if err := p.syncObjectMeta(*po.Bucket, object); err != nil {
-			return s3response.PutObjectOutput{}, err
-		}
+
+	err = f.link()
+	if err != nil {
+		return s3response.PutObjectOutput{}, publishErr(name, err)
 	}
 
 	return s3response.PutObjectOutput{
@@ -5286,6 +5272,15 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		Size:              &objsize,
 		ChecksumType:      checksum.Type,
 	}, nil
+}
+
+// tagsQuery encodes tags as the URL query string of a Tagging header.
+func tagsQuery(tags map[string]string) string {
+	v := make(url.Values, len(tags))
+	for k, val := range tags {
+		v.Set(k, val)
+	}
+	return v.Encode()
 }
 
 // publishErr returns the error for a request that failed to publish the
@@ -5314,12 +5309,70 @@ func publishErr(name string, err error) error {
 	return fmt.Errorf("link object in namespace: %w", err)
 }
 
+// storeStagedPutAttrs stores the tags, legal hold and retention of a put on
+// the staged file, before it is published. It resolves them as
+// putObjectLockSettings does for an object already in place.
+func (p *Posix) storeStagedPutAttrs(f *os.File, po s3response.PutObjectInput, object string, tags map[string]string) error {
+	if tags != nil {
+		b, err := json.Marshal(tags)
+		if err != nil {
+			return fmt.Errorf("marshal tags: %w", err)
+		}
+		err = p.meta.StoreAttribute(f, *po.Bucket, object, tagHdr, b)
+		if err != nil {
+			return fmt.Errorf("set tags: %w", err)
+		}
+	}
+
+	legalHold := po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn
+	var retention []byte
+	var err error
+	switch {
+	case po.ObjectLockMode != "":
+		retention, err = json.Marshal(types.ObjectLockRetention{
+			Mode:            types.ObjectLockRetentionMode(po.ObjectLockMode),
+			RetainUntilDate: po.ObjectLockRetainUntilDate,
+		})
+		if err != nil {
+			return fmt.Errorf("parse object lock retention: %w", err)
+		}
+	case po.ObjectLockLegalHoldStatus == "":
+		retention, err = p.bucketDefaultRetention(*po.Bucket)
+		if err != nil {
+			return err
+		}
+	}
+	if !legalHold && retention == nil {
+		return nil
+	}
+
+	err = p.isBucketObjectLockEnabled(*po.Bucket)
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+		return s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+	}
+	if err != nil {
+		return err
+	}
+
+	if legalHold {
+		err = p.meta.StoreAttribute(f, *po.Bucket, object, objectLegalHoldKey, []byte{1})
+		if err != nil {
+			return fmt.Errorf("set object legal hold: %w", err)
+		}
+	}
+	if retention != nil {
+		err = p.meta.StoreAttribute(f, *po.Bucket, object, objectRetentionKey, retention)
+		if err != nil {
+			return fmt.Errorf("set object lock config: %w", err)
+		}
+	}
+	return nil
+}
+
 // putObjectLockSettings sets the legal hold and retention requested with
 // the put on the object that was just published. A put without Object Lock
 // parameters of its own gets the retention of the bucket's default rule.
-func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObjectInput) (bool, error) {
-	written := false
-
+func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObjectInput) error {
 	// Set object legal hold
 	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
 		err := p.PutObjectLegalHold(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", true)
@@ -5327,9 +5380,8 @@ func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObje
 			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
 				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
 			}
-			return written, err
+			return err
 		}
-		written = true
 	}
 
 	// Set object retention
@@ -5342,23 +5394,23 @@ func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObje
 			RetainUntilDate: po.ObjectLockRetainUntilDate,
 		})
 		if err != nil {
-			return written, fmt.Errorf("parse object lock retention: %w", err)
+			return fmt.Errorf("parse object lock retention: %w", err)
 		}
 	case po.ObjectLockLegalHoldStatus == "":
 		retention, err = p.bucketDefaultRetention(*po.Bucket)
 		if err != nil {
-			return written, err
+			return err
 		}
 	}
 	if retention == nil {
-		return written, nil
+		return nil
 	}
 
 	err = p.PutObjectRetention(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", retention)
 	if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
-		return written, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+		return s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
 	}
-	return written || err == nil, err
+	return err
 }
 
 func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (_ *s3.DeleteObjectOutput, err error) {
@@ -7095,7 +7147,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 		// the copy replaces the object, so it gets the Object Lock
 		// settings of a newly written one
-		locked, err := p.putObjectLockSettings(ctx, s3response.PutObjectInput{
+		err = p.putObjectLockSettings(ctx, s3response.PutObjectInput{
 			Bucket:                    &dstBucket,
 			Key:                       &dstKey,
 			ObjectLockRetainUntilDate: input.ObjectLockRetainUntilDate,
@@ -7105,10 +7157,11 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		if err != nil {
 			return s3response.CopyObjectOutput{}, err
 		}
-		if input.TaggingDirective == types.TaggingDirectiveReplace || locked {
-			if err := p.syncObjectMeta(dstBucket, dstObject); err != nil {
-				return s3response.CopyObjectOutput{}, err
-			}
+
+		// The object is rewritten in place, so nothing flushes these
+		// attributes before it is acknowledged.
+		if err := p.syncObjectMeta(dstBucket, dstObject); err != nil {
+			return s3response.CopyObjectOutput{}, err
 		}
 	} else {
 		contentLength := srcSize
@@ -7170,30 +7223,26 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 			putObjectInput.Tagging = input.Tagging
 		}
 
-		// read the source tagging before the destination is written, as a
-		// self copy replaces the source object's metadata
-		var srcTagging []byte
-		var hasSrcTagging bool
+		// with tagging directive "COPY" the source tags go in with the put
+		// (read before the destination is written, as a self copy replaces
+		// the source object's metadata), so they are stored with the rest
 		if input.TaggingDirective == types.TaggingDirectiveCopy {
 			tagging, err := p.meta.RetrieveAttribute(nil, srcBucket, srcObject, tagHdr)
 			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 				return s3response.CopyObjectOutput{}, fmt.Errorf("get source object tagging: %w", err)
 			}
-			srcTagging, hasSrcTagging = tagging, err == nil
+			if err == nil {
+				var srcTags map[string]string
+				if err := json.Unmarshal(tagging, &srcTags); err != nil {
+					return s3response.CopyObjectOutput{}, fmt.Errorf("parse source object tagging: %w", err)
+				}
+				putObjectInput.Tagging = backend.GetPtrFromString(tagsQuery(srcTags))
+			}
 		}
 
 		res, err := p.PutObject(withCtxNoSlot(ctx), putObjectInput)
 		if err != nil {
 			return s3response.CopyObjectOutput{}, err
-		}
-
-		// the source tagging is stored after the destination object creation,
-		// if tagging directive is "COPY"
-		if hasSrcTagging {
-			err := p.meta.StoreAttribute(nil, dstBucket, dstObject, tagHdr, srcTagging)
-			if err != nil {
-				return s3response.CopyObjectOutput{}, fmt.Errorf("set destination object tagging: %w", err)
-			}
 		}
 
 		etag = res.ETag

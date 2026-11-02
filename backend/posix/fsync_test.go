@@ -19,9 +19,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -137,23 +139,102 @@ func TestFsyncFailureFailsThePut(t *testing.T) {
 	}
 }
 
-// TestFsyncPutObjectMeta checks that with Fsync set the tags and Object Lock
-// settings written after the object is published are flushed before the PUT
-// returns, and that a PUT without them still costs a single flush.
+// newFsyncMetaPosix returns a gateway with an Object Lock bucket "bucket" and
+// the given default retention rule, if any.
+func newFsyncMetaPosix(t *testing.T, fsync bool, lockCfg string) (*Posix, string) {
+	t.Helper()
+	p, err := New(t.TempDir(), meta.XattrMeta{}, PosixOpts{
+		AbsolutePaths:       true,
+		Fsync:               fsync,
+		VersioningDir:       t.TempDir(),
+		CopyObjectThreshold: 1 << 20,
+	})
+	if err != nil {
+		t.Fatalf("new posix: %v", err)
+	}
+	bucket := "bucket"
+	err = p.CreateBucket(context.Background(), &s3.CreateBucketInput{
+		Bucket:                     &bucket,
+		ObjectLockEnabledForBucket: aws.Bool(true),
+		CreateBucketConfiguration:  &types.CreateBucketConfiguration{},
+	}, []byte{})
+	if err != nil {
+		t.Fatalf("create bucket: %v", err)
+	}
+	if lockCfg != "" {
+		err = p.PutObjectLockConfiguration(context.Background(), bucket, []byte(lockCfg))
+		if err != nil {
+			t.Fatalf("put object lock config: %v", err)
+		}
+	}
+	return p, bucket
+}
+
+var metaAttrs = []string{tagHdr, objectLegalHoldKey, objectRetentionKey}
+
+// recordAttrsAtSync replaces the sync hooks for one test. It returns the
+// number of file syncs and, for the last file sync and the last sync of the
+// directory object dirObject, which of the tag, legal hold and retention
+// attributes were already stored then. A file is looked at through the handle
+// being synced, as a staged file has no path yet.
+func recordAttrsAtSync(t *testing.T, p *Posix, bucket, object, dirObject string) (files *int, atFile, atDir map[string]bool) {
+	t.Helper()
+	origFile, origDir := syncFile, syncDir
+	t.Cleanup(func() { syncFile, syncDir = origFile, origDir })
+	files, atFile, atDir = new(int), map[string]bool{}, map[string]bool{}
+	syncFile = func(f *os.File) error {
+		*files++
+		for _, k := range metaAttrs {
+			_, err := p.meta.RetrieveAttribute(f, bucket, object, k)
+			atFile[k] = err == nil
+		}
+		return origFile(f)
+	}
+	syncDir = func(dir string) error {
+		if dirObject != "" && dir == p.ObjectPath(bucket, dirObject) {
+			for _, k := range metaAttrs {
+				_, err := p.meta.RetrieveAttribute(nil, bucket, dirObject, k)
+				atDir[k] = err == nil
+			}
+		}
+		return origDir(dir)
+	}
+	return files, atFile, atDir
+}
+
+func wantAttrs(tag, hold, retention bool) map[string]bool {
+	return map[string]bool{tagHdr: tag, objectLegalHoldKey: hold, objectRetentionKey: retention}
+}
+
+// TestFsyncPutObjectMeta checks that the tags and Object Lock settings of a
+// PUT are on the file when it is flushed, which is before it is published,
+// that they cost no flush of their own, and that nothing is flushed without
+// Fsync.
 func TestFsyncPutObjectMeta(t *testing.T) {
+	const defaultRetention = `{"Enabled":true,"DefaultRetention":{"Mode":"GOVERNANCE","Days":1}}`
 	cases := []struct {
 		name    string
 		input   func(in *s3response.PutObjectInput)
-		files   int
 		lockCfg string
+		want    map[string]bool
 	}{
-		{"plain", func(*s3response.PutObjectInput) {}, 1, ""},
-		{"tagging", func(in *s3response.PutObjectInput) { in.Tagging = aws.String("k=v") }, 2, ""},
+		{"plain", func(*s3response.PutObjectInput) {}, "", wantAttrs(false, false, false)},
+		{"tagging", func(in *s3response.PutObjectInput) { in.Tagging = aws.String("k=v") }, "",
+			wantAttrs(true, false, false)},
 		{"legal hold", func(in *s3response.PutObjectInput) {
 			in.ObjectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOn
-		}, 2, ""},
-		{"default retention", func(*s3response.PutObjectInput) {}, 2,
-			`{"Enabled":true,"DefaultRetention":{"Mode":"GOVERNANCE","Days":1}}`},
+		}, "", wantAttrs(false, true, false)},
+		{"retention", func(in *s3response.PutObjectInput) {
+			in.ObjectLockMode = types.ObjectLockModeGovernance
+			in.ObjectLockRetainUntilDate = aws.Time(time.Now().Add(time.Hour))
+		}, "", wantAttrs(false, false, true)},
+		{"default retention", func(*s3response.PutObjectInput) {}, defaultRetention, wantAttrs(false, false, true)},
+		{"all", func(in *s3response.PutObjectInput) {
+			in.Tagging = aws.String("k=v")
+			in.ObjectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOn
+			in.ObjectLockMode = types.ObjectLockModeGovernance
+			in.ObjectLockRetainUntilDate = aws.Time(time.Now().Add(time.Hour))
+		}, "", wantAttrs(true, true, true)},
 	}
 	for _, tc := range cases {
 		for _, fsync := range []bool{false, true} {
@@ -162,33 +243,9 @@ func TestFsyncPutObjectMeta(t *testing.T) {
 				name += "/fsync"
 			}
 			t.Run(name, func(t *testing.T) {
-				root := t.TempDir()
-				p, err := New(root, meta.XattrMeta{}, PosixOpts{
-					AbsolutePaths: true,
-					Fsync:         fsync,
-					VersioningDir: t.TempDir(),
-				})
-				if err != nil {
-					t.Fatalf("new posix: %v", err)
-				}
-				bucket := "bucket"
-				err = p.CreateBucket(context.Background(), &s3.CreateBucketInput{
-					Bucket:                     &bucket,
-					ObjectLockEnabledForBucket: aws.Bool(true),
-					CreateBucketConfiguration:  &types.CreateBucketConfiguration{},
-				}, []byte{})
-				if err != nil {
-					t.Fatalf("create bucket: %v", err)
-				}
+				p, bucket := newFsyncMetaPosix(t, fsync, tc.lockCfg)
+				files, atFile, _ := recordAttrsAtSync(t, p, bucket, "object", "")
 
-				if tc.lockCfg != "" {
-					err = p.PutObjectLockConfiguration(context.Background(), bucket, []byte(tc.lockCfg))
-					if err != nil {
-						t.Fatalf("put object lock config: %v", err)
-					}
-				}
-
-				files, _ := recordSyncs(t)
 				in := s3response.PutObjectInput{
 					Bucket:        &bucket,
 					Key:           aws.String("object"),
@@ -200,14 +257,123 @@ func TestFsyncPutObjectMeta(t *testing.T) {
 					t.Fatalf("put object: %v", err)
 				}
 
-				want := 0
-				if fsync {
-					want = tc.files
+				if !fsync {
+					if *files != 0 {
+						t.Fatalf("synced %d files without fsync", *files)
+					}
+					return
 				}
-				if *files != want {
-					t.Fatalf("synced %d files, want %d", *files, want)
+				if *files != 1 {
+					t.Fatalf("synced %d files, want 1", *files)
+				}
+				if !reflect.DeepEqual(atFile, tc.want) {
+					t.Fatalf("attributes at the flush: got %v, want %v", atFile, tc.want)
 				}
 			})
 		}
 	}
+}
+
+// TestFsyncPutDirectoryObjectMeta checks the same for a directory object,
+// which has no staged file: its attributes are flushed before the PUT returns.
+func TestFsyncPutDirectoryObjectMeta(t *testing.T) {
+	p, bucket := newFsyncMetaPosix(t, true, "")
+	_, _, atDir := recordAttrsAtSync(t, p, bucket, "dir/", "dir")
+
+	_, err := p.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket:                    &bucket,
+		Key:                       aws.String("dir/"),
+		Body:                      strings.NewReader(""),
+		ContentLength:             aws.Int64(0),
+		Tagging:                   aws.String("k=v"),
+		ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+	})
+	if err != nil {
+		t.Fatalf("put directory object: %v", err)
+	}
+	if want := wantAttrs(true, true, false); !reflect.DeepEqual(atDir, want) {
+		t.Fatalf("attributes at the last directory flush: got %v, want %v", atDir, want)
+	}
+}
+
+// TestFsyncCopyObjectMeta checks CopyObject: the source tags that the default
+// directive copies are on the file when it is flushed, and a copy onto itself
+// that only replaces the metadata is flushed too.
+func TestFsyncCopyObjectMeta(t *testing.T) {
+	p, bucket := newFsyncMetaPosix(t, true, "")
+	_, err := p.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket:        &bucket,
+		Key:           aws.String("src"),
+		Body:          strings.NewReader("hello"),
+		ContentLength: aws.Int64(5),
+		Tagging:       aws.String("k=v"),
+	})
+	if err != nil {
+		t.Fatalf("put source: %v", err)
+	}
+
+	t.Run("copy tagging", func(t *testing.T) {
+		files, atFile, _ := recordAttrsAtSync(t, p, bucket, "dst", "")
+		_, err := p.CopyObject(context.Background(), s3response.CopyObjectInput{
+			Bucket:              &bucket,
+			Key:                 aws.String("dst"),
+			CopySource:          aws.String(bucket + "/src"),
+			ExpectedBucketOwner: aws.String(""),
+			MetadataDirective:   types.MetadataDirectiveCopy,
+			TaggingDirective:    types.TaggingDirectiveCopy,
+		})
+		if err != nil {
+			t.Fatalf("copy: %v", err)
+		}
+		if *files != 1 {
+			t.Fatalf("synced %d files, want 1", *files)
+		}
+		if want := wantAttrs(true, false, false); !reflect.DeepEqual(atFile, want) {
+			t.Fatalf("attributes at the flush: got %v, want %v", atFile, want)
+		}
+		tags, err := p.GetObjectTagging(context.Background(), bucket, "dst", "")
+		if err != nil || tags["k"] != "v" {
+			t.Fatalf("destination tags: got %v, %v", tags, err)
+		}
+	})
+
+	t.Run("replace tagging", func(t *testing.T) {
+		files, atFile, _ := recordAttrsAtSync(t, p, bucket, "dst2", "")
+		_, err := p.CopyObject(context.Background(), s3response.CopyObjectInput{
+			Bucket:              &bucket,
+			Key:                 aws.String("dst2"),
+			CopySource:          aws.String(bucket + "/src"),
+			ExpectedBucketOwner: aws.String(""),
+			MetadataDirective:   types.MetadataDirectiveCopy,
+			TaggingDirective:    types.TaggingDirectiveReplace,
+			Tagging:             aws.String("a=b"),
+		})
+		if err != nil {
+			t.Fatalf("copy: %v", err)
+		}
+		if *files != 1 {
+			t.Fatalf("synced %d files, want 1", *files)
+		}
+		if want := wantAttrs(true, false, false); !reflect.DeepEqual(atFile, want) {
+			t.Fatalf("attributes at the flush: got %v, want %v", atFile, want)
+		}
+	})
+
+	t.Run("self copy replacing metadata", func(t *testing.T) {
+		files, _, _ := recordAttrsAtSync(t, p, bucket, "src", "")
+		_, err := p.CopyObject(context.Background(), s3response.CopyObjectInput{
+			Bucket:              &bucket,
+			Key:                 aws.String("src"),
+			CopySource:          aws.String(bucket + "/src"),
+			ExpectedBucketOwner: aws.String(""),
+			MetadataDirective:   types.MetadataDirectiveReplace,
+			Metadata:            map[string]string{"m": "1"},
+		})
+		if err != nil {
+			t.Fatalf("copy: %v", err)
+		}
+		if *files < 1 {
+			t.Fatal("the in-place metadata rewrite was not flushed")
+		}
+	})
 }
