@@ -39,6 +39,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/google/uuid"
+	"github.com/pkg/xattr"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
@@ -656,11 +657,51 @@ func MoveFile(source, destination string, perm os.FileMode) error {
 		return fmt.Errorf("copy data: %w", err)
 	}
 
+	// The staged file carries the object's attributes (etag, checksums, tags,
+	// Object Lock), which rename keeps and a copy does not.
+	err = copyUserXattrs(sourceFile, destFile)
+	if err != nil {
+		return fmt.Errorf("copy attributes: %w", err)
+	}
+
+	// Make the copy durable before the only other copy is removed.
+	err = destFile.Sync()
+	if err != nil {
+		return fmt.Errorf("sync destination: %w", err)
+	}
+
 	err = os.Remove(source)
 	if err != nil {
 		return fmt.Errorf("remove source: %w", err)
 	}
 
+	return nil
+}
+
+// copyUserXattrs copies the user extended attributes of src onto dst. A
+// filesystem without xattr support has none to copy.
+func copyUserXattrs(src, dst *os.File) error {
+	attrs, err := xattr.FList(src)
+	if err != nil {
+		if errors.Is(err, syscall.ENOTSUP) {
+			return nil
+		}
+		return fmt.Errorf("list: %w", err)
+	}
+	for _, attr := range attrs {
+		// kernel-managed namespaces are not ours to copy; FreeBSD lists
+		// user attributes without a prefix
+		if strings.HasPrefix(attr, "system.") || strings.HasPrefix(attr, "security.") || strings.HasPrefix(attr, "trusted.") {
+			continue
+		}
+		value, err := xattr.FGet(src, attr)
+		if err != nil {
+			return fmt.Errorf("get %q: %w", attr, err)
+		}
+		if err := xattr.FSet(dst, attr, value); err != nil {
+			return fmt.Errorf("set %q: %w", attr, err)
+		}
+	}
 	return nil
 }
 

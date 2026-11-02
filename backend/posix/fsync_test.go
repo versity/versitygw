@@ -407,6 +407,14 @@ func TestFsyncPutDirectoryObjectNested(t *testing.T) {
 // Object Lock, which is rewritten in place. The replaced metadata is on the
 // object at the last flush.
 func TestFsyncSelfCopyInPlace(t *testing.T) {
+	t.Run("metadata and tags", func(t *testing.T) { testFsyncSelfCopyInPlace(t, true) })
+	// Replacing only the metadata must be flushed too, whether or not the
+	// tags change.
+	t.Run("metadata only", func(t *testing.T) { testFsyncSelfCopyInPlace(t, false) })
+}
+
+func testFsyncSelfCopyInPlace(t *testing.T, replaceTags bool) {
+	t.Helper()
 	p, err := New(t.TempDir(), meta.XattrMeta{}, PosixOpts{
 		AbsolutePaths:       true,
 		Fsync:               true,
@@ -446,23 +454,26 @@ func TestFsyncSelfCopyInPlace(t *testing.T) {
 		return origFile(f)
 	}
 
-	_, err = p.CopyObject(context.Background(), s3response.CopyObjectInput{
+	in := s3response.CopyObjectInput{
 		Bucket:              &bucket,
 		Key:                 aws.String("src"),
 		CopySource:          aws.String(bucket + "/src"),
 		ExpectedBucketOwner: aws.String(""),
 		MetadataDirective:   types.MetadataDirectiveReplace,
 		Metadata:            map[string]string{"m": "1"},
-		TaggingDirective:    types.TaggingDirectiveReplace,
-		Tagging:             aws.String("k=v"),
-	})
+	}
+	if replaceTags {
+		in.TaggingDirective = types.TaggingDirectiveReplace
+		in.Tagging = aws.String("k=v")
+	}
+	_, err = p.CopyObject(context.Background(), in)
 	if err != nil {
 		t.Fatalf("copy: %v", err)
 	}
 	if files < 1 {
 		t.Fatal("the in-place rewrite was not flushed")
 	}
-	if !tagAtSync || !metaAtSync {
+	if !metaAtSync || (replaceTags && !tagAtSync) {
 		t.Fatalf("at the last flush: tags stored %v, metadata stored %v", tagAtSync, metaAtSync)
 	}
 }
