@@ -454,7 +454,7 @@ create_file_single_char() {
     log 2 "error creating new file: $error"
     return 1
   fi
-  if ! error=$(dd if=/dev/zero bs=1 count="$2" | tr '\0' "$3" > "$TEST_FILE_FOLDER/$1" 2>&1); then
+  if ! error=$({ dd if=/dev/zero bs=1 count="$2" | tr '\0' "$3" > "$TEST_FILE_FOLDER/$1"; } 2>&1); then
     log 2 "error adding data to file: $error"
     return 1
   fi
