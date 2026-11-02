@@ -42,13 +42,16 @@ abort_multipart_upload_rest() {
 }
 
 abort_multipart_upload_with_user() {
-  if [ $# -ne 5 ]; then
-    log 2 "'abort multipart upload' command requires bucket, key, upload ID, username, password"
+  if ! check_param_count_v2 "bucket, key, upload ID, username, password" 5 $#; then
     return 1
   fi
-  if ! abort_multipart_upload_error=$(AWS_ACCESS_KEY_ID="$4" AWS_SECRET_ACCESS_KEY="$5" send_command aws --no-verify-ssl s3api abort-multipart-upload --bucket "$1" --key "$2" --upload-id "$3" 2>&1); then
-    log 2 "Error aborting upload: $abort_multipart_upload_error"
-    export abort_multipart_upload_error
+  local bucket="$1" key="$2" upload_id="$3" username="$4" password="$5"
+  local response
+
+  if ! response=$(AWS_ACCESS_KEY_ID="$username" AWS_SECRET_ACCESS_KEY="$password" send_command aws \
+      --no-verify-ssl s3api abort-multipart-upload --bucket "$bucket" --key "$key" --upload-id "$upload_id" 2>&1); then
+    log 2 "Error aborting upload: $response"
+    printf '%s\n' "$response"
     return 1
   fi
   return 0
