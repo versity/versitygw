@@ -30,6 +30,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -689,9 +690,8 @@ func copyUserXattrs(src, dst *os.File) error {
 		return fmt.Errorf("list: %w", err)
 	}
 	for _, attr := range attrs {
-		// kernel-managed namespaces are not ours to copy; FreeBSD lists
-		// user attributes without a prefix
-		if strings.HasPrefix(attr, "system.") || strings.HasPrefix(attr, "security.") || strings.HasPrefix(attr, "trusted.") {
+		// the gateway's own attributes; FreeBSD lists the user namespace unprefixed
+		if runtime.GOOS != "freebsd" && !strings.HasPrefix(attr, "user.") {
 			continue
 		}
 		value, err := xattr.FGet(src, attr)
