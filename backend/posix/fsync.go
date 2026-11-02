@@ -74,7 +74,8 @@ func (tmp *tmpfile) syncNamespace() error {
 // syncObjectMeta flushes the attributes written to an object that is already
 // in place, which no data sync before a publish covers: those of a directory
 // object and those of an object rewritten in place. With sidecar metadata the
-// attributes live in other files, which this does not flush.
+// attributes live in other files, which this does not flush, and the data and
+// its sidecar are not updated atomically, so a crash can leave them out of step.
 func (p *Posix) syncObjectMeta(bucket, object string) error {
 	if !p.fsync {
 		return nil
@@ -85,10 +86,20 @@ func (p *Posix) syncObjectMeta(bucket, object string) error {
 		return fmt.Errorf("stat object for fsync: %w", err)
 	}
 	if fi.IsDir() {
-		if err := syncDir(path); err != nil {
-			return fmt.Errorf("fsync object metadata: %w", err)
+		// The directory may have been created for this request, along with
+		// its parents, so flush each up to and including the bucket.
+		stop := filepath.Clean(p.BucketPath(bucket))
+		dir := filepath.Clean(path)
+		for {
+			if err := syncDir(dir); err != nil {
+				return fmt.Errorf("fsync object metadata: %w", err)
+			}
+			parent := filepath.Dir(dir)
+			if dir == stop || parent == dir {
+				return nil
+			}
+			dir = parent
 		}
-		return nil
 	}
 	// FlushFileBuffers needs a handle that can write, which os.Open on
 	// Windows is not.

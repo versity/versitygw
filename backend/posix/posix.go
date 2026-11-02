@@ -2234,7 +2234,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 
 	// set object tagging
 	if tags != nil {
-		err := p.storeObjectTags(bucket, filepath.Join(objdir, uploadID), tags)
+		err := p.storeObjectTags(nil, bucket, filepath.Join(objdir, uploadID), tags)
 		if err != nil {
 			// cleanup object if returning error
 			_ = p.removeUpload(bucket, object, uploadID)
@@ -5309,24 +5309,11 @@ func publishErr(name string, err error) error {
 	return fmt.Errorf("link object in namespace: %w", err)
 }
 
-// storeStagedPutAttrs stores the tags, legal hold and retention of a put on
-// the staged file, before it is published. It resolves them as
-// putObjectLockSettings does for an object already in place.
-func (p *Posix) storeStagedPutAttrs(f *os.File, po s3response.PutObjectInput, object string, tags map[string]string) error {
-	if tags != nil {
-		b, err := json.Marshal(tags)
-		if err != nil {
-			return fmt.Errorf("marshal tags: %w", err)
-		}
-		err = p.meta.StoreAttribute(f, *po.Bucket, object, tagHdr, b)
-		if err != nil {
-			return fmt.Errorf("set tags: %w", err)
-		}
-	}
-
-	legalHold := po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn
-	var retention []byte
-	var err error
+// objectLockSettings resolves the legal hold and retention a put asks for. A
+// put without Object Lock parameters of its own gets the retention of the
+// bucket's default rule. The retention is nil if there is none.
+func (p *Posix) objectLockSettings(po s3response.PutObjectInput) (legalHold bool, retention []byte, err error) {
+	legalHold = po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn
 	switch {
 	case po.ObjectLockMode != "":
 		retention, err = json.Marshal(types.ObjectLockRetention{
@@ -5334,26 +5321,42 @@ func (p *Posix) storeStagedPutAttrs(f *os.File, po s3response.PutObjectInput, ob
 			RetainUntilDate: po.ObjectLockRetainUntilDate,
 		})
 		if err != nil {
-			return fmt.Errorf("parse object lock retention: %w", err)
+			return false, nil, fmt.Errorf("parse object lock retention: %w", err)
 		}
 	case po.ObjectLockLegalHoldStatus == "":
 		retention, err = p.bucketDefaultRetention(*po.Bucket)
 		if err != nil {
-			return err
+			return false, nil, err
 		}
 	}
-	if !legalHold && retention == nil {
-		return nil
-	}
+	return legalHold, retention, nil
+}
 
-	err = p.isBucketObjectLockEnabled(*po.Bucket)
-	if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
-		return s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
-	}
+// storeStagedPutAttrs stores the tags, legal hold and retention of a put on
+// the staged file, before it is published. It resolves the Object Lock
+// settings as putObjectLockSettings does for an object already in place, and
+// checks them before anything is stored, so a rejected put stores nothing.
+func (p *Posix) storeStagedPutAttrs(f *os.File, po s3response.PutObjectInput, object string, tags map[string]string) error {
+	legalHold, retention, err := p.objectLockSettings(po)
 	if err != nil {
 		return err
 	}
+	if legalHold || retention != nil {
+		err = p.isBucketObjectLockEnabled(*po.Bucket)
+		if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+			return s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+		}
+		if err != nil {
+			return err
+		}
+	}
 
+	if tags != nil {
+		err = p.storeObjectTags(f, *po.Bucket, object, tags)
+		if err != nil {
+			return fmt.Errorf("set tags: %w", err)
+		}
+	}
 	if legalHold {
 		err = p.meta.StoreAttribute(f, *po.Bucket, object, objectLegalHoldKey, []byte{1})
 		if err != nil {
@@ -5370,11 +5373,14 @@ func (p *Posix) storeStagedPutAttrs(f *os.File, po s3response.PutObjectInput, ob
 }
 
 // putObjectLockSettings sets the legal hold and retention requested with
-// the put on the object that was just published. A put without Object Lock
-// parameters of its own gets the retention of the bucket's default rule.
+// the put on the object that was just published.
 func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObjectInput) error {
-	// Set object legal hold
-	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
+	legalHold, retention, err := p.objectLockSettings(po)
+	if err != nil {
+		return err
+	}
+
+	if legalHold {
 		err := p.PutObjectLegalHold(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", true)
 		if err != nil {
 			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
@@ -5384,24 +5390,6 @@ func (p *Posix) putObjectLockSettings(ctx context.Context, po s3response.PutObje
 		}
 	}
 
-	// Set object retention
-	var retention []byte
-	var err error
-	switch {
-	case po.ObjectLockMode != "":
-		retention, err = json.Marshal(types.ObjectLockRetention{
-			Mode:            types.ObjectLockRetentionMode(po.ObjectLockMode),
-			RetainUntilDate: po.ObjectLockRetainUntilDate,
-		})
-		if err != nil {
-			return fmt.Errorf("parse object lock retention: %w", err)
-		}
-	case po.ObjectLockLegalHoldStatus == "":
-		retention, err = p.bucketDefaultRetention(*po.Bucket)
-		if err != nil {
-			return err
-		}
-	}
 	if retention == nil {
 		return nil
 	}
@@ -7787,7 +7775,7 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 		return nil
 	}
 
-	err = p.storeObjectTags(bucket, object, tags)
+	err = p.storeObjectTags(nil, bucket, object, tags)
 	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return s3err.GetNoSuchVersionErr(object, versionId)
@@ -7801,14 +7789,15 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 	return nil
 }
 
-// storeObjectTags stores tags as the tagging attribute of bucket/object
-func (p *Posix) storeObjectTags(bucket, object string, tags map[string]string) error {
+// storeObjectTags stores tags as the tagging attribute of bucket/object, or
+// of f if it is not nil
+func (p *Posix) storeObjectTags(f *os.File, bucket, object string, tags map[string]string) error {
 	b, err := json.Marshal(tags)
 	if err != nil {
 		return fmt.Errorf("marshal tags: %w", err)
 	}
 
-	return p.meta.StoreAttribute(nil, bucket, object, tagHdr, b)
+	return p.meta.StoreAttribute(f, bucket, object, tagHdr, b)
 }
 
 func (p *Posix) DeleteObjectTagging(ctx context.Context, bucket, object, versionId string) error {

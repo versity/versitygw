@@ -377,3 +377,92 @@ func TestFsyncCopyObjectMeta(t *testing.T) {
 		}
 	})
 }
+
+// TestFsyncPutDirectoryObjectNested checks that the parent directories created
+// for a nested directory object are flushed up to the bucket.
+func TestFsyncPutDirectoryObjectNested(t *testing.T) {
+	p, bucket := newFsyncMetaPosix(t, true, "")
+	_, dirs := recordSyncs(t)
+
+	_, err := p.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket:        &bucket,
+		Key:           aws.String("a/b/dir/"),
+		Body:          strings.NewReader(""),
+		ContentLength: aws.Int64(0),
+		Tagging:       aws.String("k=v"),
+	})
+	if err != nil {
+		t.Fatalf("put directory object: %v", err)
+	}
+	for _, d := range []string{"a/b/dir", "a/b", "a", ""} {
+		want := filepath.Clean(filepath.Join(p.BucketPath(bucket), d))
+		if !slices.Contains(*dirs, want) {
+			t.Errorf("directory %q was not flushed; flushed: %v", want, *dirs)
+		}
+	}
+}
+
+// TestFsyncSelfCopyInPlace checks a copy onto itself that replaces the metadata
+// and tags, in a gateway without a versioning directory and a bucket without
+// Object Lock, which is rewritten in place. The replaced metadata is on the
+// object at the last flush.
+func TestFsyncSelfCopyInPlace(t *testing.T) {
+	p, err := New(t.TempDir(), meta.XattrMeta{}, PosixOpts{
+		AbsolutePaths:       true,
+		Fsync:               true,
+		CopyObjectThreshold: 1 << 20,
+	})
+	if err != nil {
+		t.Fatalf("new posix: %v", err)
+	}
+	bucket := "plain"
+	err = p.CreateBucket(context.Background(), &s3.CreateBucketInput{
+		Bucket:                    &bucket,
+		CreateBucketConfiguration: &types.CreateBucketConfiguration{},
+	}, []byte{})
+	if err != nil {
+		t.Fatalf("create bucket: %v", err)
+	}
+	_, err = p.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket:        &bucket,
+		Key:           aws.String("src"),
+		Body:          strings.NewReader("hello"),
+		ContentLength: aws.Int64(5),
+	})
+	if err != nil {
+		t.Fatalf("put source: %v", err)
+	}
+
+	origFile := syncFile
+	t.Cleanup(func() { syncFile = origFile })
+	var files int
+	var tagAtSync, metaAtSync bool
+	syncFile = func(f *os.File) error {
+		files++
+		_, err := p.meta.RetrieveAttribute(f, bucket, "src", tagHdr)
+		tagAtSync = err == nil
+		_, err = p.meta.RetrieveAttribute(f, bucket, "src", metadataHdr)
+		metaAtSync = err == nil
+		return origFile(f)
+	}
+
+	_, err = p.CopyObject(context.Background(), s3response.CopyObjectInput{
+		Bucket:              &bucket,
+		Key:                 aws.String("src"),
+		CopySource:          aws.String(bucket + "/src"),
+		ExpectedBucketOwner: aws.String(""),
+		MetadataDirective:   types.MetadataDirectiveReplace,
+		Metadata:            map[string]string{"m": "1"},
+		TaggingDirective:    types.TaggingDirectiveReplace,
+		Tagging:             aws.String("k=v"),
+	})
+	if err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	if files < 1 {
+		t.Fatal("the in-place rewrite was not flushed")
+	}
+	if !tagAtSync || !metaAtSync {
+		t.Fatalf("at the last flush: tags stored %v, metadata stored %v", tagAtSync, metaAtSync)
+	}
+}
