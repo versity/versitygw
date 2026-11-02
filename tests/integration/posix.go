@@ -1025,6 +1025,70 @@ func HeadObject_GetObject_race_with_delete(s *S3Conf) error {
 	})
 }
 
+// DeleteObject_race_with_delete deletes each object through several
+// requests at once. Deleting an absent key succeeds, so every request must
+// succeed, whether it removes the object or finds it removed by another,
+// and the object must be gone afterwards.
+func DeleteObject_race_with_delete(s *S3Conf) error {
+	testName := "DeleteObject_race_with_delete"
+	// a delete fails only if another delete removes the object between
+	// the delete's stat of it and its unlink
+	const groups, deleters, iterations = 8, 4, 50
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return raceWorkers(groups, iterations, func(g, i int) error {
+			// the keys have no prefix, so that no delete removes the
+			// directory of a key being uploaded; every other group
+			// deletes directory objects
+			key := fmt.Sprintf("race-%d-obj-%d", g, i)
+			if g%2 == 1 {
+				key += "/"
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("put %v: %w", key, err)
+			}
+
+			eg := errgroup.Group{}
+			for range deleters {
+				eg.Go(func() error {
+					ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+					defer cancel()
+					_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+						Bucket: &bucket,
+						Key:    &key,
+					})
+					if err != nil {
+						return fmt.Errorf("delete %v: %w", key, err)
+					}
+					return nil
+				})
+			}
+			if err := eg.Wait(); err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
+			_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			if err == nil {
+				return fmt.Errorf("%v exists after it was deleted", key)
+			}
+			if err := checkSdkApiErr(err, "NotFound"); err != nil {
+				return fmt.Errorf("head %v after delete: %w", key, err)
+			}
+			return nil
+		})
+	})
+}
+
 // ListObjects_race_with_prefix_removal lists prefixes while the only object
 // under each of them is uploaded and deleted over and over. Deleting the
 // object removes the prefix directory, so a listing can read the directory

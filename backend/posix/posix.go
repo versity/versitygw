@@ -5733,8 +5733,10 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	}
 
 	err = os.Remove(objpath)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
+		// another delete removed the object after the stat.
+		// AWS returns success if the object does not exist
+		return &s3.DeleteObjectOutput{}, nil
 	}
 	if isErrDirNotEmpty(err) {
 		// If the directory object has been uploaded explicitly
