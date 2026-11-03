@@ -2451,6 +2451,43 @@ func putBucketVersioningStatus(client *s3.Client, bucket string, status types.Bu
 	return err
 }
 
+// checkBucketVersioningStatus verifies the bucket reports the expected
+// versioning status.
+func checkBucketVersioningStatus(client *s3.Client, bucket string, expected types.BucketVersioningStatus) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	res, err := client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+		Bucket: &bucket,
+	})
+	cancel()
+	if err != nil {
+		return err
+	}
+
+	if res.Status != expected {
+		return fmt.Errorf("expected the bucket versioning status to be %v, instead got %v",
+			expected, res.Status)
+	}
+
+	return nil
+}
+
+// checkErrStatusCode verifies the HTTP status code of a failed request.
+// checkApiErr compares against the gateway's own error table, so a wrong
+// status code in that table can only be caught by a hard-coded expectation.
+func checkErrStatusCode(err error, expected int) error {
+	var respErr *awshttp.ResponseError
+	if !errors.As(err, &respErr) {
+		return fmt.Errorf("expected an http response error, instead got %v", err)
+	}
+
+	if respErr.HTTPStatusCode() != expected {
+		return fmt.Errorf("expected response status code to be %v, instead got %v",
+			expected, respErr.HTTPStatusCode())
+	}
+
+	return nil
+}
+
 func checkWORMProtection(s *S3Conf, client *s3.Client, bucket, object string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	_, err := client.PutObject(ctx, &s3.PutObjectInput{
