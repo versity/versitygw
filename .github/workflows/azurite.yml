@@ -32,7 +32,26 @@ jobs:
         run: |
           make
           ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow --azure
-  
+
+      - name: Run gateway IAM tests with the Azure IAM service
+        env:
+          AWS_ACCESS_KEY_ID: user
+          AWS_SECRET_ACCESS_KEY: pass
+          AWS_REGION: us-east-1
+        run: |
+          set -a; . ./.env.dev; set +a
+          # the azure backend gateway creates the IAM container
+          aws --endpoint-url http://127.0.0.1:7070 s3 mb s3://vgwiam
+          mkdir -p /tmp/aziamgw
+          # trust the self-signed Azurite certificate; the path must be
+          # absolute as the posix backend changes to its root directory
+          SSL_CERT_FILE=$PWD/tests/certs/azurite.pem ./versitygw -p :7072 -a user -s pass \
+            --az-iam-account $AZ_ACCOUNT_NAME --az-iam-access-key $AZ_ACCOUNT_KEY \
+            --az-iam-url https://127.0.0.1:10000/$AZ_ACCOUNT_NAME --az-iam-container vgwiam \
+            posix /tmp/aziamgw &
+          timeout 30 bash -c 'until curl -s -o /dev/null http://127.0.0.1:7072/; do sleep 1; done'
+          ./versitygw test -a user -s pass -e http://127.0.0.1:7072 gw-iam
+
       - name: Shut down services
         run: |
           docker compose -f tests/docker-compose.yml --env-file .env.dev --project-directory . down azurite azuritegw

@@ -46,9 +46,10 @@ type IAMServiceAzure struct {
 	// gateway instance, avoiding needless ETag conflicts between them.
 	sync.Mutex
 
-	container string
-	rootAcc   Account
-	client    *azblob.Client
+	container  string
+	rootAcc    Account
+	client     *azblob.Client
+	retryDelay time.Duration
 }
 
 var _ IAMService = &IAMServiceAzure{}
@@ -73,9 +74,10 @@ func NewAzure(rootAcc Account, accountName, accountKey, serviceURL, sasToken, co
 	}
 
 	return &IAMServiceAzure{
-		container: container,
-		rootAcc:   rootAcc,
-		client:    client,
+		container:  container,
+		rootAcc:    rootAcc,
+		client:     client,
+		retryDelay: azureIAMRetryDelay,
 	}, nil
 }
 
@@ -181,7 +183,7 @@ func (s *IAMServiceAzure) storeIAM(update func(conf *iAMConfig) error) error {
 		if attempt > 0 {
 			// wait a random, growing time so that instances racing
 			// for the blob stop colliding at every attempt
-			time.Sleep(rand.N(azureIAMRetryDelay << (attempt - 1)))
+			time.Sleep(rand.N(s.retryDelay << (attempt - 1)))
 		}
 
 		conf, etag, err := s.getAccounts()
