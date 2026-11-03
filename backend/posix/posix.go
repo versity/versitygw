@@ -6035,6 +6035,14 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 }
 
 func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	return p.GetObjectWithPreReadFunc(ctx, input, nil)
+}
+
+// GetObjectWithPreReadFunc is GetObject with a hook that can reject the
+// read. preRead gets the opened object file after the preconditions, the
+// range and the part number pass, so their errors come first. A nil
+// preRead is skipped. Directory objects have no data and skip it too.
+func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjectInput, preRead func(f *os.File) error) (*s3.GetObjectOutput, error) {
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
@@ -6328,6 +6336,14 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 
 		if isValid {
 			contentRange = backend.GetPtrFromString(fmt.Sprintf("bytes %v-%v/%v", start, start+lgth-1, objSize))
+		}
+	}
+
+	if preRead != nil {
+		err = preRead(f)
+		if err != nil {
+			f.Close()
+			return nil, err
 		}
 	}
 
