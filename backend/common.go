@@ -29,6 +29,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -615,8 +616,9 @@ func (f *FileSectionReadCloser) Close() error {
 	return f.F.Close()
 }
 
-// MoveFile moves a file from source to destination.
-func MoveFile(source, destination string, perm os.FileMode) error {
+// MoveFile moves a file from source to destination. When the move has to fall
+// back to a copy, fsync makes the copy durable before the source is removed.
+func MoveFile(source, destination string, perm os.FileMode, fsync bool) error {
 	// We use Rename as the atomic operation for object puts. The upload is
 	// written to a temp file to not conflict with any other simultaneous
 	// uploads. The final operation is to move the temp file into place for
@@ -628,9 +630,11 @@ func MoveFile(source, destination string, perm os.FileMode) error {
 	}
 
 	// Rename can fail if the source and destination are not on the same
-	// filesystem. The fallback is to copy the file and then remove the source.
-	// We need to be careful that the desination does not exist before copying
-	// to prevent any other simultaneous writes to the file.
+	// filesystem. The fallback is to copy the file next to the destination
+	// under a hidden temporary name, with its attributes, and then rename the
+	// copy into place. The destination therefore never appears without the
+	// attributes (such as Object Lock) that the staged file carries, and
+	// simultaneous writers cannot interleave.
 	sourceFile, err := os.Open(source)
 	if err != nil {
 		return fmt.Errorf("open source: %w", err)
@@ -638,20 +642,26 @@ func MoveFile(source, destination string, perm os.FileMode) error {
 	defer sourceFile.Close()
 
 	var destFile *os.File
-	for {
-		destFile, err = os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
+	var tmpName string
+	for retries := 1; ; retries++ {
+		tmpName = filepath.Join(filepath.Dir(destination),
+			fmt.Sprintf(".%s.sgwtmp.%d", filepath.Base(destination), time.Now().UnixNano()))
+		destFile, err = os.OpenFile(tmpName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
+		if errors.Is(err, fs.ErrExist) && retries < 10 {
+			continue
+		}
 		if err != nil {
-			if errors.Is(err, fs.ErrExist) {
-				if removeErr := os.Remove(destination); removeErr != nil {
-					return fmt.Errorf("remove existing destination: %w", removeErr)
-				}
-				continue
-			}
-			return fmt.Errorf("create destination: %w", err)
+			return fmt.Errorf("create temporary destination: %w", err)
 		}
 		break
 	}
-	defer destFile.Close()
+	published := false
+	defer func() {
+		destFile.Close()
+		if !published {
+			os.Remove(tmpName)
+		}
+	}()
 
 	_, err = io.Copy(destFile, sourceFile)
 	if err != nil {
@@ -665,11 +675,19 @@ func MoveFile(source, destination string, perm os.FileMode) error {
 		return fmt.Errorf("copy attributes: %w", err)
 	}
 
-	// Make the copy durable before the only other copy is removed.
-	err = destFile.Sync()
-	if err != nil {
-		return fmt.Errorf("sync destination: %w", err)
+	if fsync {
+		// Make the copy durable before the only other copy is removed.
+		err = destFile.Sync()
+		if err != nil {
+			return fmt.Errorf("sync destination: %w", err)
+		}
 	}
+
+	err = os.Rename(tmpName, destination)
+	if err != nil {
+		return fmt.Errorf("publish destination: %w", err)
+	}
+	published = true
 
 	err = os.Remove(source)
 	if err != nil {

@@ -19,6 +19,7 @@ package backend
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -30,6 +31,14 @@ import (
 // TestMoveFileAcrossFilesystems checks that the copy fallback keeps the data
 // and the user attributes of the staged file, and removes it.
 func TestMoveFileAcrossFilesystems(t *testing.T) {
+	for _, fsync := range []bool{false, true} {
+		t.Run(fmt.Sprintf("fsync=%v", fsync), func(t *testing.T) {
+			testMoveFileAcrossFilesystems(t, fsync)
+		})
+	}
+}
+
+func testMoveFileAcrossFilesystems(t *testing.T, fsync bool) {
 	srcDir, err := os.MkdirTemp("/dev/shm", "movefile")
 	if err != nil {
 		t.Skipf("no /dev/shm: %v", err)
@@ -60,7 +69,7 @@ func TestMoveFileAcrossFilesystems(t *testing.T) {
 		t.Skipf("directories are on the same filesystem (rename: %v)", err)
 	}
 
-	if err := MoveFile(src, dst, 0o644); err != nil {
+	if err := MoveFile(src, dst, 0o644, fsync); err != nil {
 		t.Fatalf("MoveFile: %v", err)
 	}
 	got, err := os.ReadFile(dst)
@@ -73,5 +82,15 @@ func TestMoveFileAcrossFilesystems(t *testing.T) {
 	}
 	if _, err := os.Stat(src); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("source still exists: %v", err)
+	}
+	// the hidden copy used to publish the object must not be left behind
+	entries, err := os.ReadDir(dstDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Name() != "object" && e.Name() != "probe" {
+			t.Fatalf("unexpected leftover %q in destination directory", e.Name())
+		}
 	}
 }

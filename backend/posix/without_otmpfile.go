@@ -139,7 +139,7 @@ func (tmp *tmpfile) link() error {
 	}
 
 	err = tmp.publishInDir(filepath.Dir(objPath), func() error {
-		return backend.MoveFile(tempname, objPath, tmp.newFilePerm)
+		return backend.MoveFile(tempname, objPath, tmp.newFilePerm, tmp.fsync)
 	})
 	if err != nil {
 		return err
