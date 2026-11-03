@@ -1347,6 +1347,257 @@ func headObjectETag(client *s3.Client, bucket, key string) (string, error) {
 	return getString(res.ETag), nil
 }
 
+// testCopySourcePreconditions puts a copy source object and sends a copy of it
+// to path, a CopyObject or an UploadPartCopy request URI, for every
+// x-amz-copy-source-if-* precondition combination. S3 never answers a copy
+// with 304 NotModified: a failed precondition is a 412 PreconditionFailed
+// naming the copy-source header that decided it.
+func testCopySourcePreconditions(s *S3Conf, s3client *s3.Client, bucket, path string) error {
+	key := "my-obj"
+	obj, err := putObjectWithData(10, &s3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	}, s3client)
+	if err != nil {
+		return err
+	}
+
+	// sleep one second to get dates before and after
+	// the object creation
+	time.Sleep(time.Second * 1)
+
+	before := time.Now().AddDate(0, 0, -3)
+	after := time.Now()
+	// a date in the future is ignored
+	future := time.Now().AddDate(0, 0, 3)
+	etag := obj.res.ETag
+	etagTrimmed := strings.Trim(*etag, `"`)
+
+	// the object hasn't been modified since its Last-Modified date
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	cancel()
+	if err != nil {
+		return err
+	}
+	lastModified := *head.LastModified
+
+	errIfMatch := s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfMatch)
+	errIfNoneMatch := s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfNoneMatch)
+	errIfModSince := s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfModifiedSince)
+	errIfUnmodSince := s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfUnmodifiedSince)
+
+	for i, test := range []struct {
+		ifmatch           *string
+		ifnonematch       *string
+		ifmodifiedsince   *time.Time
+		ifunmodifiedsince *time.Time
+		err               s3err.S3Error
+	}{
+		// all the cases when preconditions are either empty, true or false
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, &before, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, &after, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, nil, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, &before, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, &after, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, nil, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, &before, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, &after, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, nil, errIfMatch},
+
+		{getPtr("invalid_etag"), etag, &before, &before, errIfMatch},
+		{getPtr("invalid_etag"), etag, &before, &after, errIfMatch},
+		{getPtr("invalid_etag"), etag, &before, nil, errIfMatch},
+		{getPtr("invalid_etag"), etag, &after, &before, errIfMatch},
+		{getPtr("invalid_etag"), etag, &after, &after, errIfMatch},
+		{getPtr("invalid_etag"), etag, &after, nil, errIfMatch},
+		{getPtr("invalid_etag"), etag, nil, &before, errIfMatch},
+		{getPtr("invalid_etag"), etag, nil, &after, errIfMatch},
+		{getPtr("invalid_etag"), etag, nil, nil, errIfMatch},
+
+		{getPtr("invalid_etag"), nil, &before, &before, errIfMatch},
+		{getPtr("invalid_etag"), nil, &before, &after, errIfMatch},
+		{getPtr("invalid_etag"), nil, &before, nil, errIfMatch},
+		{getPtr("invalid_etag"), nil, &after, &before, errIfMatch},
+		{getPtr("invalid_etag"), nil, &after, &after, errIfMatch},
+		{getPtr("invalid_etag"), nil, &after, nil, errIfMatch},
+		{getPtr("invalid_etag"), nil, nil, &before, errIfMatch},
+		{getPtr("invalid_etag"), nil, nil, &after, errIfMatch},
+		{getPtr("invalid_etag"), nil, nil, nil, errIfMatch},
+
+		{etag, getPtr("invalid_etag"), &before, &before, nil},
+		{etag, getPtr("invalid_etag"), &before, &after, nil},
+		{etag, getPtr("invalid_etag"), &before, nil, nil},
+		{etag, getPtr("invalid_etag"), &after, &before, nil},
+		{etag, getPtr("invalid_etag"), &after, &after, nil},
+		{etag, getPtr("invalid_etag"), &after, nil, nil},
+		{etag, getPtr("invalid_etag"), nil, &before, nil},
+		{etag, getPtr("invalid_etag"), nil, &after, nil},
+		{etag, getPtr("invalid_etag"), nil, nil, nil},
+
+		{etag, etag, &before, &before, errIfNoneMatch},
+		{etag, etag, &before, &after, errIfNoneMatch},
+		{etag, etag, &before, nil, errIfNoneMatch},
+		{etag, etag, &after, &before, errIfNoneMatch},
+		{etag, etag, &after, &after, errIfNoneMatch},
+		{etag, etag, &after, nil, errIfNoneMatch},
+		{etag, etag, nil, &before, errIfNoneMatch},
+		{etag, etag, nil, &after, errIfNoneMatch},
+		{etag, etag, nil, nil, errIfNoneMatch},
+
+		{etag, nil, &before, &before, nil},
+		{etag, nil, &before, &after, nil},
+		{etag, nil, &before, nil, nil},
+		{etag, nil, &after, &before, errIfModSince},
+		{etag, nil, &after, &after, errIfModSince},
+		{etag, nil, &after, nil, errIfModSince},
+		{etag, nil, nil, &before, nil},
+		{etag, nil, nil, &after, nil},
+		{etag, nil, nil, nil, nil},
+
+		{nil, getPtr("invalid_etag"), &before, &before, errIfUnmodSince},
+		{nil, getPtr("invalid_etag"), &before, &after, nil},
+		{nil, getPtr("invalid_etag"), &before, nil, nil},
+		{nil, getPtr("invalid_etag"), &after, &before, errIfUnmodSince},
+		{nil, getPtr("invalid_etag"), &after, &after, nil},
+		{nil, getPtr("invalid_etag"), &after, nil, nil},
+		{nil, getPtr("invalid_etag"), nil, &before, errIfUnmodSince},
+		{nil, getPtr("invalid_etag"), nil, &after, nil},
+		{nil, getPtr("invalid_etag"), nil, nil, nil},
+
+		{nil, etag, &before, &before, errIfUnmodSince},
+		{nil, etag, &before, &after, errIfNoneMatch},
+		{nil, etag, &before, nil, errIfNoneMatch},
+		{nil, etag, &after, &before, errIfUnmodSince},
+		{nil, etag, &after, &after, errIfNoneMatch},
+		{nil, etag, &after, nil, errIfNoneMatch},
+		{nil, etag, nil, &before, errIfUnmodSince},
+		{nil, etag, nil, &after, errIfNoneMatch},
+		{nil, etag, nil, nil, errIfNoneMatch},
+
+		{nil, nil, &before, &before, errIfUnmodSince},
+		{nil, nil, &before, &after, nil},
+		{nil, nil, &before, nil, nil},
+		{nil, nil, &after, &before, errIfUnmodSince},
+		{nil, nil, &after, &after, errIfModSince},
+		{nil, nil, &after, nil, errIfModSince},
+		{nil, nil, nil, &before, errIfUnmodSince},
+		{nil, nil, nil, &after, nil},
+		{nil, nil, nil, nil, nil},
+
+		// if-match, if-non-match without quotes
+		{&etagTrimmed, getPtr("invalid_etag"), &before, &before, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), &before, &after, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), &before, nil, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), &after, &before, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), &after, &after, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), &after, nil, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), nil, &before, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), nil, &after, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), nil, nil, nil},
+
+		{&etagTrimmed, &etagTrimmed, &before, &before, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, &before, &after, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, &before, nil, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, &after, &before, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, &after, &after, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, &after, nil, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, nil, &before, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, nil, &after, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, nil, nil, errIfNoneMatch},
+
+		{&etagTrimmed, nil, &before, &before, nil},
+		{&etagTrimmed, nil, &before, &after, nil},
+		{&etagTrimmed, nil, &before, nil, nil},
+		{&etagTrimmed, nil, &after, &before, errIfModSince},
+		{&etagTrimmed, nil, &after, &after, errIfModSince},
+		{&etagTrimmed, nil, &after, nil, errIfModSince},
+		{&etagTrimmed, nil, nil, &before, nil},
+		{&etagTrimmed, nil, nil, &after, nil},
+		{&etagTrimmed, nil, nil, nil, nil},
+
+		{nil, &etagTrimmed, &before, &before, errIfUnmodSince},
+		{nil, &etagTrimmed, &before, &after, errIfNoneMatch},
+		{nil, &etagTrimmed, &before, nil, errIfNoneMatch},
+		{nil, &etagTrimmed, &after, &before, errIfUnmodSince},
+		{nil, &etagTrimmed, &after, &after, errIfNoneMatch},
+		{nil, &etagTrimmed, &after, nil, errIfNoneMatch},
+		{nil, &etagTrimmed, nil, &before, errIfUnmodSince},
+		{nil, &etagTrimmed, nil, &after, errIfNoneMatch},
+		{nil, &etagTrimmed, nil, nil, errIfNoneMatch},
+
+		// if-match and if-none-match with asterisk
+		{getPtr("*"), nil, nil, nil, nil},
+		{getPtr("*"), nil, &after, nil, errIfModSince},
+		{getPtr("*"), getPtr("invalid_etag"), nil, nil, nil},
+		{getPtr("*"), etag, nil, nil, errIfNoneMatch},
+		{getPtr("*"), getPtr("*"), nil, nil, errIfNoneMatch},
+		{getPtr("*"), getPtr("*"), nil, &before, errIfNoneMatch},
+		{nil, getPtr("*"), nil, nil, errIfNoneMatch},
+		{nil, getPtr("*"), &before, nil, errIfNoneMatch},
+		{nil, getPtr("*"), nil, &after, errIfNoneMatch},
+		{nil, getPtr("*"), nil, &before, errIfUnmodSince},
+		{getPtr("invalid_etag"), getPtr("*"), nil, nil, errIfMatch},
+
+		// dates equal to Last-Modified
+		{nil, nil, nil, &lastModified, nil},
+		{nil, nil, &lastModified, nil, errIfModSince},
+
+		// a future if-modified-since is ignored
+		{nil, nil, &future, nil, nil},
+		{etag, nil, &future, nil, nil},
+		{nil, etag, &future, nil, errIfNoneMatch},
+	} {
+		headers := map[string]string{
+			"X-Amz-Copy-Source": fmt.Sprintf("%s/%s", bucket, key),
+		}
+		if test.ifmatch != nil {
+			headers["X-Amz-Copy-Source-If-Match"] = *test.ifmatch
+		}
+		if test.ifnonematch != nil {
+			headers["X-Amz-Copy-Source-If-None-Match"] = *test.ifnonematch
+		}
+		if test.ifmodifiedsince != nil {
+			headers["X-Amz-Copy-Source-If-Modified-Since"] = test.ifmodifiedsince.UTC().Format(http.TimeFormat)
+		}
+		if test.ifunmodifiedsince != nil {
+			headers["X-Amz-Copy-Source-If-Unmodified-Since"] = test.ifunmodifiedsince.UTC().Format(http.TimeFormat)
+		}
+
+		req, err := createSignedReq(http.MethodPut, s.endpoint, path, s.awsID, s.awsSecret,
+			"s3", s.awsRegion, "", nil, time.Now(), headers)
+		if err != nil {
+			return fmt.Errorf("test case %d: %w", i, err)
+		}
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("test case %d: %w", i, err)
+		}
+
+		if test.err != nil {
+			if err := checkHTTPResponseApiErr(resp, test.err); err != nil {
+				return fmt.Errorf("test case %d failed: %w", i, err)
+			}
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("test case %d: %w", i, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("test case %d failed: expected the copy to succeed, instead got %v: %s",
+				i, resp.StatusCode, body)
+		}
+	}
+
+	return nil
+}
+
 func listObjects(client *s3.Client, bucket, prefix, delimiter string, maxKeys int32) ([]types.Object, []types.CommonPrefix, error) {
 	var contents []types.Object
 	var commonPrefixes []types.CommonPrefix

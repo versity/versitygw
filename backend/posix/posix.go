@@ -4422,7 +4422,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		srcEtag = p.defaultEtag
 	}
 
-	err = backend.EvaluatePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
+	err = backend.EvaluateCopySourcePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
 		IfMatch:       upi.CopySourceIfMatch,
 		IfNoneMatch:   upi.CopySourceIfNoneMatch,
 		IfModSince:    upi.CopySourceIfModifiedSince,
@@ -6914,7 +6914,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		srcEtag = p.defaultEtag
 	}
 
-	err = backend.EvaluatePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
+	err = backend.EvaluateCopySourcePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
 		IfMatch:       input.CopySourceIfMatch,
 		IfNoneMatch:   input.CopySourceIfNoneMatch,
 		IfModSince:    input.CopySourceIfModifiedSince,

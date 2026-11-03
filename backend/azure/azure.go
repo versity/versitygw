@@ -1242,16 +1242,24 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 	}
 
 	if !areNils(input.CopySourceIfMatch, input.CopySourceIfNoneMatch) || !areNils(input.CopySourceIfModifiedSince, input.CopySourceIfUnmodifiedSince) {
-		_, err = az.HeadObject(ctx, &s3.HeadObjectInput{
-			Bucket:            &srcBucket,
-			Key:               &srcObj,
-			IfMatch:           input.CopySourceIfMatch,
-			IfNoneMatch:       input.CopySourceIfNoneMatch,
-			IfModifiedSince:   input.CopySourceIfModifiedSince,
-			IfUnmodifiedSince: input.CopySourceIfUnmodifiedSince,
+		srcHead, err := az.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &srcBucket,
+			Key:    &srcObj,
 		})
 		if err != nil {
 			return s3response.CopyObjectOutput{}, err
+		}
+		if srcHead.LastModified != nil {
+			err = backend.EvaluateCopySourcePreconditions(getString(srcHead.ETag), *srcHead.LastModified,
+				backend.PreConditions{
+					IfMatch:       input.CopySourceIfMatch,
+					IfNoneMatch:   input.CopySourceIfNoneMatch,
+					IfModSince:    input.CopySourceIfModifiedSince,
+					IfUnmodeSince: input.CopySourceIfUnmodifiedSince,
+				})
+			if err != nil {
+				return s3response.CopyObjectOutput{}, err
+			}
 		}
 	}
 
