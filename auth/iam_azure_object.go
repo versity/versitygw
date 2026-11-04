@@ -108,9 +108,14 @@ func (s *IAMServiceAzure) CreateAccount(account Account) error {
 		return ErrUserExists
 	}
 
-	return s.storeIAM(func(conf *iAMConfig) error {
-		_, ok := conf.AccessAccounts[account.Access]
+	return s.storeIAM(func(conf *iAMConfig, retrying bool) error {
+		existing, ok := conf.AccessAccounts[account.Access]
 		if ok {
+			if retrying && existing == account {
+				// an earlier attempt stored the account, but its
+				// response was lost and the SDK retry got a conflict
+				return errNoChange
+			}
 			return ErrUserExists
 		}
 		conf.AccessAccounts[account.Access] = account
@@ -142,7 +147,7 @@ func (s *IAMServiceAzure) ResolveAccounts(accessKeyIDs []string) ([]string, erro
 }
 
 func (s *IAMServiceAzure) UpdateUserAccount(access string, props MutableProps) error {
-	return s.storeIAM(func(conf *iAMConfig) error {
+	return s.storeIAM(func(conf *iAMConfig, _ bool) error {
 		acc, ok := conf.AccessAccounts[access]
 		if !ok {
 			return ErrNoSuchUser
@@ -157,7 +162,7 @@ func (s *IAMServiceAzure) UpdateUserAccount(access string, props MutableProps) e
 // DeleteUserAccount deletes the specified user account. Deleting a
 // missing account is not an error, like the internal IAM service.
 func (s *IAMServiceAzure) DeleteUserAccount(access string) error {
-	return s.storeIAM(func(conf *iAMConfig) error {
+	return s.storeIAM(func(conf *iAMConfig, _ bool) error {
 		_, ok := conf.AccessAccounts[access]
 		if !ok {
 			return errNoChange
@@ -200,8 +205,9 @@ func (s *IAMServiceAzure) Shutdown() error {
 
 // storeIAM reads the accounts, applies update and writes them back only
 // if the blob has not changed in between. When another gateway instance
-// updated it first, the update is applied again to the fresh data.
-func (s *IAMServiceAzure) storeIAM(update func(conf *iAMConfig) error) error {
+// updated it first, the update is applied again to the fresh data, with
+// retrying set.
+func (s *IAMServiceAzure) storeIAM(update func(conf *iAMConfig, retrying bool) error) error {
 	s.Lock()
 	defer s.Unlock()
 
@@ -217,7 +223,7 @@ func (s *IAMServiceAzure) storeIAM(update func(conf *iAMConfig) error) error {
 			return err
 		}
 
-		err = update(&conf)
+		err = update(&conf, attempt > 0)
 		if errors.Is(err, errNoChange) {
 			return nil
 		}

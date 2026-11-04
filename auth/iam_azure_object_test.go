@@ -273,6 +273,40 @@ func TestIAMServiceAzureRetriesOnConflict(t *testing.T) {
 	assert.Equal(t, RoleUserPlus, accs["alice"].Role)
 }
 
+func TestIAMServiceAzureCreateWithLostResponse(t *testing.T) {
+	alice := Account{Access: "alice", Secret: "alicesecret", Role: RoleUser}
+	f := &fakeBlob{}
+	f.beforePut = func(f *fakeBlob) {
+		// the first Put Blob was stored, but its response was lost, so
+		// the one seen here is the SDK retry and fails its condition
+		if f.puts == 1 {
+			f.addAccount(alice)
+		}
+	}
+	s := newTestAzureIAM(t, f)
+
+	assert.NoError(t, s.CreateAccount(alice))
+	assert.Equal(t, 1, f.putCount())
+	assert.Equal(t, map[string]Account{"alice": alice}, f.accounts(t))
+}
+
+func TestIAMServiceAzureCreateRacingSameAccess(t *testing.T) {
+	alice := Account{Access: "alice", Secret: "alicesecret", Role: RoleUser}
+	other := Account{Access: "alice", Secret: "othersecret", Role: RoleUser}
+	f := &fakeBlob{}
+	f.beforePut = func(f *fakeBlob) {
+		// another instance creates a different account with the same
+		// access key in between
+		if f.puts == 1 {
+			f.addAccount(other)
+		}
+	}
+	s := newTestAzureIAM(t, f)
+
+	assert.Equal(t, ErrUserExists, s.CreateAccount(alice))
+	assert.Equal(t, map[string]Account{"alice": other}, f.accounts(t))
+}
+
 func TestIAMServiceAzureGivesUpAfterMaxRetries(t *testing.T) {
 	f := &fakeBlob{}
 	f.addAccount(Account{Access: "alice", Role: RoleUser})
