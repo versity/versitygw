@@ -40,7 +40,6 @@ import (
 //
 // Updates are conditional on the blob ETag, so concurrent updates from
 // multiple load balanced gateway instances do not overwrite each other.
-
 type IAMServiceAzure struct {
 	// This mutex serializes updates from multiple requests to this
 	// gateway instance, avoiding needless ETag conflicts between them.
