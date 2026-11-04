@@ -64,6 +64,9 @@ jobs:
           path: download
 
       - name: Restore Go dependencies
+        env:
+          GOPROXY: "off"
+          GOSUMDB: "off"
         run: |
           mkdir -p "$(go env GOPATH)"
           tar -xzf download/go-mod-cache.tar.gz \
