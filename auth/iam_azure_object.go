@@ -30,6 +30,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/internal/azblobclient"
 )
 
@@ -211,6 +212,7 @@ func (s *IAMServiceAzure) storeIAM(update func(conf *iAMConfig, retrying bool) e
 	s.Lock()
 	defer s.Unlock()
 
+	var lastErr error
 	for attempt := range azureIAMMaxAttempts {
 		if attempt > 0 {
 			// wait a random, growing time so that instances racing
@@ -233,12 +235,15 @@ func (s *IAMServiceAzure) storeIAM(update func(conf *iAMConfig, retrying bool) e
 
 		err = s.storeAccts(conf, etag)
 		if bloberror.HasCode(err, bloberror.ConditionNotMet, bloberror.BlobAlreadyExists) {
+			lastErr = err
+			debuglogger.IAMLogf("azure IAM: %v changed concurrently, retrying (attempt %d/%d)",
+				iamFile, attempt+1, azureIAMMaxAttempts)
 			continue
 		}
 		return err
 	}
 
-	return fmt.Errorf("store accounts in %v: too many concurrent updates", iamFile)
+	return fmt.Errorf("too many concurrent updates: %w", lastErr)
 }
 
 // getAccounts returns the stored accounts and the ETag of the blob they
