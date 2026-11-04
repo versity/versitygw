@@ -129,18 +129,9 @@ func New(accountName, accountKey, serviceURL, sasToken string, copyObjectThresho
 		return nil, err
 	}
 
-	svcURL := creds.ServiceURL
-	if creds.SASToken != "" {
-		// NOTE: the SAS client has always kept the service URL as
-		// given, without the default endpoint, so with a SAS token and
-		// no --url the container and blob URLs built from it are
-		// relative. Kept as is to preserve the existing behavior.
-		svcURL = serviceURL
-	}
-
 	return &Azure{
 		client:              client,
-		serviceURL:          svcURL,
+		serviceURL:          creds.ServiceURL,
 		sharedkeyCreds:      creds.SharedKey,
 		defaultCreds:        creds.Default,
 		sasToken:            creds.SASToken,
