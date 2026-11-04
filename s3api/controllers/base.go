@@ -44,6 +44,7 @@ type S3ApiController struct {
 	disableACL     bool
 	virtualDomain  string
 	disableSSECTLS bool
+	streamComplete bool
 }
 
 const (

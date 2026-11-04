@@ -411,32 +411,35 @@ func (c S3ApiController) CompleteMultipartUpload(ctx fiber.Ctx) (*Response, erro
 		}, err
 	}
 
-	res, versid, err := c.be.CompleteMultipartUpload(ctx.RequestCtx(),
-		&s3.CompleteMultipartUploadInput{
-			SSECustomerAlgorithm: ssec.Algorithm,
-			SSECustomerKey:       ssec.Key,
-			SSECustomerKeyMD5:    ssec.KeyMD5,
-			Bucket:               &bucket,
-			Key:                  &key,
-			UploadId:             &uploadId,
-			MultipartUpload: &types.CompletedMultipartUpload{
-				Parts: body.Parts,
-			},
-			MpuObjectSize:     mpuObjectSize,
-			ChecksumCRC32:     utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32]),
-			ChecksumCRC32C:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32c]),
-			ChecksumSHA1:      utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha1]),
-			ChecksumSHA256:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha256]),
-			ChecksumCRC64NVME: utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc64nvme]),
-			ChecksumSHA512:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha512]),
-			ChecksumMD5:       utils.GetStringPtr(checksums[types.ChecksumAlgorithmMd5]),
-			ChecksumXXHASH64:  utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash64]),
-			ChecksumXXHASH3:   utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash3]),
-			ChecksumXXHASH128: utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash128]),
-			ChecksumType:      checksumType,
-			IfMatch:           ifMatch,
-			IfNoneMatch:       ifNoneMatch,
-		})
+	input := &s3.CompleteMultipartUploadInput{
+		SSECustomerAlgorithm: ssec.Algorithm,
+		SSECustomerKey:       ssec.Key,
+		SSECustomerKeyMD5:    ssec.KeyMD5,
+		Bucket:               &bucket,
+		Key:                  &key,
+		UploadId:             &uploadId,
+		MultipartUpload: &types.CompletedMultipartUpload{
+			Parts: body.Parts,
+		},
+		MpuObjectSize:     mpuObjectSize,
+		ChecksumCRC32:     utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32]),
+		ChecksumCRC32C:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32c]),
+		ChecksumSHA1:      utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha1]),
+		ChecksumSHA256:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha256]),
+		ChecksumCRC64NVME: utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc64nvme]),
+		ChecksumSHA512:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha512]),
+		ChecksumMD5:       utils.GetStringPtr(checksums[types.ChecksumAlgorithmMd5]),
+		ChecksumXXHASH64:  utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash64]),
+		ChecksumXXHASH3:   utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash3]),
+		ChecksumXXHASH128: utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash128]),
+		ChecksumType:      checksumType,
+		IfMatch:           ifMatch,
+		IfNoneMatch:       ifNoneMatch,
+	}
+	if c.streamComplete {
+		return c.streamCompleteMultipartUpload(ctx, input, acct, parsedAcl.Owner)
+	}
+	res, versid, err := c.be.CompleteMultipartUpload(ctx.RequestCtx(), input)
 	if err == nil {
 		objUrl := utils.GenerateObjectLocation(ctx, c.virtualDomain, bucket, key)
 		res.Location = &objUrl
