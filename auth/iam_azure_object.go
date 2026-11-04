@@ -17,6 +17,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -52,6 +53,10 @@ type IAMServiceAzure struct {
 }
 
 var _ IAMService = &IAMServiceAzure{}
+
+// errNoChange is returned by a storeIAM update to report that the
+// accounts already are as requested, so there is nothing to store.
+var errNoChange = errors.New("no change")
 
 const (
 	// azureIAMMaxAttempts is how many times an update is attempted with
@@ -149,10 +154,14 @@ func (s *IAMServiceAzure) UpdateUserAccount(access string, props MutableProps) e
 	})
 }
 
-// DeleteUserAccount deletes the specified user account. Does not check if
-// account exists, like the internal IAM service.
+// DeleteUserAccount deletes the specified user account. Deleting a
+// missing account is not an error, like the internal IAM service.
 func (s *IAMServiceAzure) DeleteUserAccount(access string) error {
 	return s.storeIAM(func(conf *iAMConfig) error {
+		_, ok := conf.AccessAccounts[access]
+		if !ok {
+			return errNoChange
+		}
 		delete(conf.AccessAccounts, access)
 		return nil
 	})
@@ -209,6 +218,9 @@ func (s *IAMServiceAzure) storeIAM(update func(conf *iAMConfig) error) error {
 		}
 
 		err = update(&conf)
+		if errors.Is(err, errNoChange) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}

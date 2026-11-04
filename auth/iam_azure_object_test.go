@@ -231,6 +231,15 @@ func TestIAMServiceAzureAccounts(t *testing.T) {
 	assert.Equal(t, map[string]Account{"alice": alice}, f.accounts(t))
 }
 
+func TestIAMServiceAzureDeleteMissingAccountDoesNotStore(t *testing.T) {
+	f := &fakeBlob{}
+	f.addAccount(Account{Access: "alice", Role: RoleUser})
+	s := newTestAzureIAM(t, f)
+
+	assert.NoError(t, s.DeleteUserAccount("bob"))
+	assert.Equal(t, 0, f.putCount())
+}
+
 func TestIAMServiceAzureRetriesWhenBlobCreatedConcurrently(t *testing.T) {
 	f := &fakeBlob{}
 	f.beforePut = func(f *fakeBlob) {
