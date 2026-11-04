@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -149,9 +150,38 @@ func newTestAzureIAM(t *testing.T, f *fakeBlob) *IAMServiceAzure {
 	return s
 }
 
-func TestNewAzureRequiresContainer(t *testing.T) {
-	_, err := NewAzure(Account{Access: "root"}, "acct", "", "", "", "")
-	assert.Error(t, err)
+func TestNewAzureValidatesOptions(t *testing.T) {
+	tests := []struct {
+		name                         string
+		account, key, url, container string
+		wantErr                      string
+	}{
+		{
+			name:    "missing container",
+			account: "acct",
+			wantErr: "container",
+		},
+		{
+			name:      "missing account and url",
+			container: "iam",
+			wantErr:   "storage account or service URL",
+		},
+		{
+			// the url avoids the missing account and url check
+			name:      "key without account",
+			key:       "secret",
+			url:       "http://127.0.0.1:1/acct",
+			container: "iam",
+			wantErr:   "requires a storage account name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewAzure(Account{Access: "root"}, tt.account, tt.key, tt.url, "", tt.container)
+			assert.ErrorContains(t, err, tt.wantErr)
+		})
+	}
 }
 
 func TestIAMServiceAzureAccounts(t *testing.T) {
@@ -247,8 +277,19 @@ func TestIAMServiceAzureGivesUpAfterMaxRetries(t *testing.T) {
 	assert.NotContains(t, f.accounts(t), "bob")
 }
 
+func TestNewAzureFailsWhenContainerIsMissing(t *testing.T) {
+	srv := httptest.NewServer(&fakeBlob{noContainer: true})
+	t.Cleanup(srv.Close)
+
+	key := base64.StdEncoding.EncodeToString([]byte("testkey"))
+	_, err := NewAzure(Account{Access: "root"}, "acct", key, srv.URL+"/acct", "", "iam")
+	assert.True(t, bloberror.HasCode(err, bloberror.ContainerNotFound))
+}
+
 func TestIAMServiceAzureMissingContainerIsNotAMissingUser(t *testing.T) {
-	s := newTestAzureIAM(t, &fakeBlob{noContainer: true})
+	f := &fakeBlob{}
+	s := newTestAzureIAM(t, f)
+	f.noContainer = true // the container is deleted while the gateway runs
 
 	_, err := s.GetUserAccount("alice")
 	assert.Error(t, err)

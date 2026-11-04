@@ -67,17 +67,32 @@ func NewAzure(rootAcc Account, accountName, accountKey, serviceURL, sasToken, co
 		return nil, fmt.Errorf("must provide azure IAM service container")
 	}
 
+	if accountName == "" && serviceURL == "" {
+		return nil, fmt.Errorf("must provide azure IAM storage account or service URL")
+	}
+
+	if accountKey != "" && accountName == "" {
+		return nil, fmt.Errorf("azure IAM access key requires a storage account name")
+	}
+
 	client, _, err := azblobclient.New(accountName, accountKey, serviceURL, sasToken)
 	if err != nil {
 		return nil, fmt.Errorf("init azure IAM: %w", err)
 	}
 
-	return &IAMServiceAzure{
+	s := &IAMServiceAzure{
 		container:  container,
 		rootAcc:    rootAcc,
 		client:     client,
 		retryDelay: azureIAMRetryDelay,
-	}, nil
+	}
+
+	_, _, err = s.getAccounts()
+	if err != nil {
+		return nil, fmt.Errorf("azure IAM: read accounts from container %q: %w", container, err)
+	}
+
+	return s, nil
 }
 
 func (s *IAMServiceAzure) CreateAccount(account Account) error {
