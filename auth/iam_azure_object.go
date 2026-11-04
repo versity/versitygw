@@ -60,6 +60,9 @@ const (
 	// azureIAMRetryDelay is the upper bound of the random wait before
 	// the first retry, doubled at each further retry.
 	azureIAMRetryDelay = 10 * time.Millisecond
+	// azureIAMTimeout bounds each request to Azure, including the SDK
+	// retries, so that an unresponsive service does not hang the gateway.
+	azureIAMTimeout = 30 * time.Second
 )
 
 func NewAzure(rootAcc Account, accountName, accountKey, serviceURL, sasToken, container string) (*IAMServiceAzure, error) {
@@ -223,7 +226,10 @@ func (s *IAMServiceAzure) storeIAM(update func(conf *iAMConfig) error) error {
 // getAccounts returns the stored accounts and the ETag of the blob they
 // were read from, or a nil ETag if the blob does not exist yet.
 func (s *IAMServiceAzure) getAccounts() (iAMConfig, *azcore.ETag, error) {
-	resp, err := s.client.DownloadStream(context.Background(), s.container, iamFile, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), azureIAMTimeout)
+	defer cancel()
+
+	resp, err := s.client.DownloadStream(ctx, s.container, iamFile, nil)
 	if err != nil {
 		// if the blob does not exist yet,
 		// init empty accounts struct and return that
@@ -264,7 +270,10 @@ func (s *IAMServiceAzure) storeAccts(conf iAMConfig, etag *azcore.ETag) error {
 		cond = &blob.ModifiedAccessConditions{IfNoneMatch: to.Ptr(azcore.ETagAny)}
 	}
 
-	_, err = s.client.UploadBuffer(context.Background(), s.container, iamFile, b,
+	ctx, cancel := context.WithTimeout(context.Background(), azureIAMTimeout)
+	defer cancel()
+
+	_, err = s.client.UploadBuffer(ctx, s.container, iamFile, b,
 		&azblob.UploadBufferOptions{
 			AccessConditions: &blob.AccessConditions{ModifiedAccessConditions: cond},
 		})
