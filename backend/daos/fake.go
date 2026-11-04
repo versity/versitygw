@@ -336,7 +336,7 @@ func (f *Fake) walk(p string, mkdir bool) (*node, error) {
 			continue
 		}
 		if len(part) > maxComponent {
-			return nil, errNameLong
+			return nil, componentTooLong{size: int64(len(part)), max: int64(maxComponent)}
 		}
 		if !cur.dir {
 			return nil, errNotDir
@@ -361,7 +361,7 @@ func (f *Fake) parent(p string, mkdir bool) (*node, string, error) {
 	}
 	dir, base := path.Split(p)
 	if len(base) > maxComponent {
-		return nil, "", errNameLong
+		return nil, "", componentTooLong{size: int64(len(base)), max: int64(maxComponent)}
 	}
 	parent, err := f.walk(dir, mkdir)
 	if err != nil {
@@ -376,8 +376,6 @@ func (f *Fake) parent(p string, mkdir bool) (*node, string, error) {
 func infoOf(n *node) Info {
 	return Info{Name: n.name, Size: int64(len(n.data)), IsDir: n.dir, Mtime: n.mtime}
 }
-
-const maxComponent = 255
 
 func clean(p string) string {
 	p = path.Clean("/" + p)

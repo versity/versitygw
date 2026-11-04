@@ -404,6 +404,17 @@ func TestPutLongComponentIsKeyTooLong(t *testing.T) {
 	if !errors.As(err, &long) {
 		t.Fatalf("put = %v", err)
 	}
+	if long.Size != int64(maxComponent+1) || long.MaxSizeAllowed != int64(maxComponent) {
+		t.Fatalf("size %d max %d", long.Size, long.MaxSizeAllowed)
+	}
+	_, err = d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString(strings.Repeat("b", maxComponent+1) + "/child"),
+		Body:   bytes.NewReader([]byte("x")),
+	})
+	if !errors.As(err, &long) || long.Size != int64(maxComponent+1) {
+		t.Fatalf("parent put = %v size %d", err, long.Size)
+	}
 }
 
 func TestDeleteSlashKeyDoesNotRemoveSibling(t *testing.T) {
@@ -495,8 +506,8 @@ func TestReservedTempKeyIsRejected(t *testing.T) {
 	}
 }
 
-func TestDeletePrunesImplicitParents(t *testing.T) {
-	d, _ := newTest(t)
+func TestDeleteKeepsImplicitParents(t *testing.T) {
+	d, fs := newTest(t)
 	put(t, d, "a/b/c", "nested", "", nil)
 	put(t, d, "a/keep", "stay", "", nil)
 	if _, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
@@ -505,8 +516,8 @@ func TestDeletePrunesImplicitParents(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.DeleteBucket(context.Background(), "bucket"); !errors.Is(err, s3err.GetBucketErr(s3err.ErrBucketNotEmpty, "bucket")) {
-		t.Fatalf("bucket with sibling = %v", err)
+	if _, err := fs.Stat("bucket/a/b"); err != nil {
+		t.Fatalf("parent = %v", err)
 	}
 	if _, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
 		Bucket: backend.GetPtrFromString("bucket"),
@@ -514,8 +525,26 @@ func TestDeletePrunesImplicitParents(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.DeleteBucket(context.Background(), "bucket"); err != nil {
+	if _, err := fs.Stat("bucket/a"); err != nil {
+		t.Fatalf("ancestor = %v", err)
+	}
+	if err := d.DeleteBucket(context.Background(), "bucket"); !errors.Is(err, s3err.GetBucketErr(s3err.ErrBucketNotEmpty, "bucket")) {
+		t.Fatalf("bucket = %v", err)
+	}
+	if err := fs.Mkdir("bucket/plain"); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := fs.Open("bucket/plain/child", openCreate|openWrite); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("plain/child"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fs.Stat("bucket/plain"); err != nil {
+		t.Fatalf("unmarked dir = %v", err)
 	}
 }
 

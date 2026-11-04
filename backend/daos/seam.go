@@ -14,7 +14,12 @@
 
 package daos
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"syscall"
+)
 
 const (
 	openRead = 1 << iota
@@ -29,13 +34,69 @@ const (
 )
 
 var (
-	errExist    = errors.New("daos: file exists")
-	errNotExist = errors.New("daos: no such file or directory")
-	errNotDir   = errors.New("daos: not a directory")
-	errIsDir    = errors.New("daos: is a directory")
-	errNotEmpty = errors.New("daos: directory not empty")
-	errNameLong = errors.New("daos: name too long")
+	errExist       = errors.New("daos: file exists")
+	errNotExist    = errors.New("daos: no such file or directory")
+	errNotDir      = errors.New("daos: not a directory")
+	errIsDir       = errors.New("daos: is a directory")
+	errNotEmpty    = errors.New("daos: directory not empty")
+	errNameLong    = errors.New("daos: name too long")
+	errInvalid     = errors.New("daos: invalid argument")
+	errFileOverDir = errors.New("daos: file over directory")
 )
+
+const maxComponent = 255
+
+type componentTooLong struct {
+	size int64
+	max  int64
+}
+
+func (e componentTooLong) Error() string {
+	return "daos: component too long"
+}
+
+func firstLongComponent(path string) (componentTooLong, bool) {
+	for _, part := range strings.Split(clean(path), "/") {
+		if part != "" && len(part) > maxComponent {
+			return componentTooLong{size: int64(len(part)), max: int64(maxComponent)}, true
+		}
+	}
+	return componentTooLong{}, false
+}
+
+func pathErr(path string, err error) error {
+	if err == nil || !errors.Is(err, errNameLong) {
+		return err
+	}
+	if long, ok := firstLongComponent(path); ok {
+		return long
+	}
+	return err
+}
+
+func errnoSentinel(rc int) error {
+	if rc == 0 {
+		return nil
+	}
+	switch syscall.Errno(rc) {
+	case syscall.ENOENT, syscall.ENODATA:
+		return errNotExist
+	case syscall.EEXIST:
+		return errExist
+	case syscall.ENOTDIR:
+		return errNotDir
+	case syscall.EISDIR:
+		return errIsDir
+	case syscall.ENOTEMPTY:
+		return errNotEmpty
+	case syscall.ENAMETOOLONG:
+		return errNameLong
+	case syscall.EINVAL:
+		return errInvalid
+	default:
+		return fmt.Errorf("dfs errno %d", rc)
+	}
+}
 
 // Object is an open DFS object. The cgo implementation wraps dfs_obj_t.
 // The fake used by tests is another implementation.

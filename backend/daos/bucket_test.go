@@ -81,6 +81,10 @@ func TestCreateFailureRemovesTheDirectory(t *testing.T) {
 	if err == nil {
 		t.Fatal("create succeeded")
 	}
+	var long s3err.KeyTooLongError
+	if errors.As(err, &long) {
+		t.Fatalf("xattr length reported as key too long: %v", err)
+	}
 	if _, statErr := fs.Stat("wide"); !errors.Is(statErr, errNotExist) {
 		t.Fatalf("wide stat = %v", statErr)
 	}

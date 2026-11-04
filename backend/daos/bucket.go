@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -142,8 +143,8 @@ func (d *Daos) DeleteBucket(_ context.Context, bucket string) error {
 		}
 		return s3err.GetBucketErr(s3err.ErrBucketNotEmpty, bucket)
 	}
-	if err := d.fs.Remove(objectPath(bucket, tmpDirName), true); err != nil && !errors.Is(err, errNotExist) {
-		return mapFS(err)
+	if err := d.clearTemporary(bucket); err != nil {
+		return err
 	}
 	if err := d.fs.Remove(bucket, false); err != nil {
 		if errors.Is(err, errNotEmpty) {
@@ -152,6 +153,69 @@ func (d *Daos) DeleteBucket(_ context.Context, bucket string) error {
 		return mapFS(err)
 	}
 	return nil
+}
+
+func (d *Daos) clearTemporary(bucket string) error {
+	if err := d.refuseUploads(bucket); err != nil {
+		return err
+	}
+	tmp := objectPath(bucket, tmpDirName)
+	ents, err := d.fs.ReadDir(tmp)
+	if errors.Is(err, errNotExist) {
+		return nil
+	}
+	if err != nil {
+		return mapFS(err)
+	}
+	for _, ent := range ents {
+		if ent.Name == "multipart" || ent.IsDir {
+			continue
+		}
+		if !strings.HasPrefix(ent.Name, "put-") {
+			continue
+		}
+		if err := d.removeEmpty(bucket, path.Join(tmp, ent.Name)); err != nil {
+			return err
+		}
+	}
+	return d.removeEmpty(bucket, tmp)
+}
+
+func (d *Daos) refuseUploads(bucket string) error {
+	mp := objectPath(bucket, mpDirName)
+	hashes, err := d.fs.ReadDir(mp)
+	if errors.Is(err, errNotExist) {
+		return nil
+	}
+	if err != nil {
+		return mapFS(err)
+	}
+	for _, hash := range hashes {
+		kids, err := d.fs.ReadDir(path.Join(mp, hash.Name))
+		if err != nil {
+			return mapFS(err)
+		}
+		if len(kids) > 0 {
+			return s3err.GetBucketErr(s3err.ErrBucketNotEmpty, bucket)
+		}
+	}
+	for _, hash := range hashes {
+		if err := d.removeEmpty(bucket, path.Join(mp, hash.Name)); err != nil {
+			return err
+		}
+	}
+	return d.removeEmpty(bucket, mp)
+}
+
+func (d *Daos) removeEmpty(bucket, p string) error {
+	err := d.fs.Remove(p, false)
+	if err == nil || errors.Is(err, errNotExist) {
+		return nil
+	}
+	if errors.Is(err, errNotEmpty) {
+		return s3err.GetBucketErr(s3err.ErrBucketNotEmpty, bucket)
+	}
+	return mapFS(err)
 }
 
 func (d *Daos) HeadBucket(_ context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {

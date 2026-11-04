@@ -78,16 +78,15 @@ int versitygw_move(dfs_t *dfs, dfs_obj_t *src_parent, const char *src,
 */
 import "C"
 import (
-	"fmt"
+	"errors"
 	"path"
 	"strings"
-	"sync"
-	"syscall"
 	"unsafe"
 )
 
 type dfsFS struct {
 	dfs *C.dfs_t
+	ref initRef
 }
 
 type dfsObj struct {
@@ -97,26 +96,9 @@ type dfsObj struct {
 
 func (dfsObj) isObject() {}
 
-var (
-	dfsMu sync.Mutex
-	dfsUp bool
-)
-
-func ensureDFS() error {
-	dfsMu.Lock()
-	defer dfsMu.Unlock()
-	if dfsUp {
-		return nil
-	}
-	if err := dfsErrno(C.dfs_init()); err != nil {
-		return err
-	}
-	dfsUp = true
-	return nil
-}
-
 func openContainer(pool, sys, cont string) (*dfsFS, error) {
-	if err := ensureDFS(); err != nil {
+	ref, err := acquireInit(func() error { return dfsErrno(C.dfs_init()) })
+	if err != nil {
 		return nil, err
 	}
 	cpool := C.CString(pool)
@@ -131,24 +113,26 @@ func openContainer(pool, sys, cont string) (*dfsFS, error) {
 	var dfs *C.dfs_t
 	rc := C.dfs_connect(cpool, csys, ccont, C.O_RDWR, nil, &dfs)
 	if err := dfsErrno(rc); err != nil {
-		return nil, err
+		rel := ref.release(nil, func() error { return dfsErrno(C.dfs_fini()) })
+		return nil, errors.Join(err, rel)
 	}
-	return &dfsFS{dfs: dfs}, nil
+	return &dfsFS{dfs: dfs, ref: ref}, nil
 }
 
 func (f *dfsFS) Close() error {
-	if f == nil || f.dfs == nil {
+	if f == nil {
 		return nil
 	}
-	rc := C.dfs_disconnect(f.dfs)
+	dfs := f.dfs
 	f.dfs = nil
-	dfsMu.Lock()
-	if dfsUp {
-		C.dfs_fini()
-		dfsUp = false
-	}
-	dfsMu.Unlock()
-	return dfsErrno(rc)
+	return f.ref.release(func() error {
+		if dfs == nil {
+			return nil
+		}
+		return dfsErrno(C.dfs_disconnect(dfs))
+	}, func() error {
+		return dfsErrno(C.dfs_fini())
+	})
 }
 
 func (f *dfsFS) Open(p string, flags int) (Object, error) {
@@ -159,7 +143,7 @@ func (f *dfsFS) Open(p string, flags int) (Object, error) {
 	defer C.free(unsafe.Pointer(cpath))
 	var obj *C.dfs_obj_t
 	rc := C.dfs_lookup(f.dfs, cpath, openMode(flags), &obj, nil, nil)
-	if err := dfsErrno(rc); err != nil {
+	if err := pathErr(p, dfsErrno(rc)); err != nil {
 		return nil, err
 	}
 	return &dfsObj{fs: f, obj: obj}, nil
@@ -175,7 +159,7 @@ func (f *dfsFS) openCreate(p string, flags int) (Object, error) {
 	defer C.free(unsafe.Pointer(cname))
 	var obj *C.dfs_obj_t
 	rc := C.dfs_open(f.dfs, parent, cname, C.S_IFREG|0644, openMode(flags), 0, 0, nil, &obj)
-	if err := dfsErrno(rc); err != nil {
+	if err := pathErr(p, dfsErrno(rc)); err != nil {
 		return nil, err
 	}
 	return &dfsObj{fs: f, obj: obj}, nil
@@ -214,7 +198,7 @@ func (f *dfsFS) Mkdir(p string) error {
 	defer release()
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
-	return dfsErrno(C.dfs_mkdir(f.dfs, parent, cname, 0755, 0))
+	return pathErr(p, dfsErrno(C.dfs_mkdir(f.dfs, parent, cname, 0755, 0)))
 }
 
 func (f *dfsFS) Remove(p string, force bool) error {
@@ -229,7 +213,7 @@ func (f *dfsFS) Remove(p string, force bool) error {
 	if force {
 		forceInt = 1
 	}
-	return dfsErrno(C.versitygw_remove(f.dfs, parent, cname, forceInt))
+	return pathErr(p, dfsErrno(C.versitygw_remove(f.dfs, parent, cname, forceInt)))
 }
 
 func (f *dfsFS) Move(src, dst string) error {
@@ -247,7 +231,23 @@ func (f *dfsFS) Move(src, dst string) error {
 	defer C.free(unsafe.Pointer(csn))
 	cdn := C.CString(dn)
 	defer C.free(unsafe.Pointer(cdn))
-	return dfsErrno(C.versitygw_move(f.dfs, sp, csn, dp, cdn))
+	err = dfsErrno(C.versitygw_move(f.dfs, sp, csn, dp, cdn))
+	if errors.Is(err, errInvalid) {
+		return f.fileOverDir(src, dst)
+	}
+	return pathErr(dst, pathErr(src, err))
+}
+
+func (f *dfsFS) fileOverDir(src, dst string) error {
+	dstInfo, err := f.Stat(dst)
+	if err != nil || !dstInfo.IsDir {
+		return errInvalid
+	}
+	srcInfo, err := f.Stat(src)
+	if err == nil && srcInfo.IsDir {
+		return errInvalid
+	}
+	return errFileOverDir
 }
 
 func (f *dfsFS) Stat(p string) (Info, error) {
@@ -259,7 +259,7 @@ func (f *dfsFS) Stat(p string) (Info, error) {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
 	var st C.struct_stat
-	if err := dfsErrno(C.dfs_stat(f.dfs, parent, cname, &st)); err != nil {
+	if err := pathErr(p, dfsErrno(C.dfs_stat(f.dfs, parent, cname, &st))); err != nil {
 		return Info{}, err
 	}
 	info := Info{
@@ -385,7 +385,7 @@ func (f *dfsFS) parent(p string, flags C.int) (parent *C.dfs_obj_t, name string,
 	cdir := C.CString(absPath(dir))
 	defer C.free(unsafe.Pointer(cdir))
 	rc := C.dfs_lookup(f.dfs, cdir, flags, &parent, nil, nil)
-	if err = dfsErrno(rc); err != nil {
+	if err = pathErr(dir, dfsErrno(rc)); err != nil {
 		return nil, "", release, err
 	}
 	held := parent
@@ -419,23 +419,5 @@ func openMode(flags int) C.int {
 }
 
 func dfsErrno(rc C.int) error {
-	if rc == 0 {
-		return nil
-	}
-	switch syscall.Errno(rc) {
-	case syscall.ENOENT, syscall.ENODATA:
-		return errNotExist
-	case syscall.EEXIST:
-		return errExist
-	case syscall.ENOTDIR:
-		return errNotDir
-	case syscall.EISDIR:
-		return errIsDir
-	case syscall.ENOTEMPTY:
-		return errNotEmpty
-	case syscall.ENAMETOOLONG:
-		return errNameLong
-	default:
-		return fmt.Errorf("dfs errno %d", int(rc))
-	}
+	return errnoSentinel(int(rc))
 }

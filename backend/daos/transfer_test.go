@@ -51,6 +51,12 @@ func (s stallReadFS) Read(Object, []byte, int64) (int, error) {
 	return 0, nil
 }
 
+type stallWriteFS struct{ FS }
+
+func (s stallWriteFS) Write(Object, []byte, int64) (int, error) {
+	return 0, nil
+}
+
 func TestShortTransferStillMovesTheWholeObject(t *testing.T) {
 	d, fs := newTest(t)
 	d.fs = cappedFS{FS: fs, n: 4096}
@@ -113,6 +119,19 @@ func TestStalledReadIsNotAShortObject(t *testing.T) {
 		Key:    backend.GetPtrFromString("obj"),
 	})
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestStalledWriteIsNotASuccessfulPut(t *testing.T) {
+	d, fs := newTest(t)
+	d.fs = stallWriteFS{fs}
+	_, err := d.PutObject(context.Background(), s3response.PutObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("obj"),
+		Body:   bytes.NewReader([]byte("hello")),
+	})
+	if !errors.Is(err, io.ErrShortWrite) {
 		t.Fatalf("got %v", err)
 	}
 }
