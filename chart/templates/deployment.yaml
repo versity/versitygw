@@ -15,6 +15,8 @@
 {{- $iamPersistence := .Values.iam.persistence | default dict -}}
 {{- $sidecarDir := .Values.gateway.backend.sidecarDir -}}
 {{- $versioningDir := .Values.gateway.backend.versioningDir -}}
+{{- /* toString: --set reads an all-digit container name as a number */}}
+{{- $metaContainer := .Values.gateway.backend.metaContainer | default "" | toString -}}
 {{- $adminPathPrefix := .Values.admin.pathPrefix | default "" -}}
 {{- $webuiS3Prefix := .Values.webui.s3Prefix | default "" -}}
 {{- if and .Values.gateway.clientIPHeader (not .Values.gateway.trustedProxies) }}
@@ -43,6 +45,13 @@
 {{- end }}
 {{- if and .Values.gateway.backend.versioningDir (not (or (eq .Values.gateway.backend.type "posix") (eq .Values.gateway.backend.type "scoutfs"))) }}
   {{- fail "gateway.backend.versioningDir is only supported with the posix and scoutfs backends" }}
+{{- end }}
+{{- if and $metaContainer (ne .Values.gateway.backend.type "azure") }}
+  {{- fail "gateway.backend.metaContainer is only supported with the azure backend" }}
+{{- end }}
+{{- /* Azure rejects other names at startup, which would leave the pod crash looping */}}
+{{- if and $metaContainer (or (lt (len $metaContainer) 3) (gt (len $metaContainer) 63) (not (regexMatch "^[a-z0-9]+(-[a-z0-9]+)*$" $metaContainer))) }}
+  {{- fail "gateway.backend.metaContainer must be a valid Azure container name: 3 to 63 lowercase letters, digits and hyphens, starting and ending with a letter or digit, with no consecutive hyphens" }}
 {{- end }}
 {{- /* Bucket deletion removes <dir>/<bucket> in these directories, so nesting one in another loses data */}}
 {{- if and $sidecarDir (include "versitygw.pathsOverlap" (list $sidecarDir "/mnt/data")) }}
@@ -179,6 +188,10 @@ spec:
             {{- if .Values.gateway.backend.versioningDir }}
             - name: VGW_VERSIONING_DIR
               value: {{ .Values.gateway.backend.versioningDir | quote }}
+            {{- end }}
+            {{- if $metaContainer }}
+            - name: AZ_META_CONTAINER
+              value: {{ $metaContainer | quote }}
             {{- end }}
             # Root credentials — sourced from a Kubernetes Secret
             - name: ROOT_ACCESS_KEY_ID

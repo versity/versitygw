@@ -41,6 +41,9 @@ func azErrToS3err(azErr *azcore.ResponseError) s3err.APIError {
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	case "TagsTooLarge":
 		return s3err.GetAPIError(s3err.ErrInvalidTagValue)
+	case "MetadataTooLarge":
+		// Azure limits the metadata of a container or a blob to 8 KiB
+		return s3err.GetAPIError(s3err.ErrMetadataTooLarge)
 	case "Requested Range Not Satisfiable":
 		return s3err.GetAPIError(s3err.ErrInvalidRange)
 	case "AuthorizationPermissionMismatch":
