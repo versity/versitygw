@@ -20,6 +20,9 @@
 {{- if and .Values.gateway.clientIPHeader (not .Values.gateway.trustedProxies) }}
   {{- fail "gateway.trustedProxies is required when gateway.clientIPHeader is set" }}
 {{- end }}
+{{- if and .Values.iam.enabled (not (has .Values.iam.type (list "internal" "standalone"))) }}
+  {{- fail "iam.type must be either internal or standalone; configure other IAM backends through extraEnv with iam.enabled=false" }}
+{{- end }}
 {{- /* Safety check: multiple replicas with local state must have persistence enabled */}}
 {{- if and (gt (int .Values.replicaCount) 1) .Values.iam.enabled (eq .Values.iam.type "internal") }}
   {{- fail "replicaCount > 1 cannot use iam.type=internal because the file store does not coordinate concurrent writers; use standalone or another external IAM backend" }}

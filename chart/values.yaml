@@ -346,7 +346,8 @@ iam:
   #   endpoint. See `iamServer` below to optionally deploy that service from
   #   this same chart, or point `iam.standalone.endpoint` at an externally
   #   managed one.
-  # Other values remain available for IAM backends configured through extraEnv.
+  # Other IAM backends (S3, Azure Blob Storage, LDAP, Vault, FreeIPA) are
+  # configured through extraEnv with iam.enabled=false; see extraEnv below.
   type: internal
   # Disable IAM result caching.
   cacheDisable: false
@@ -631,6 +632,22 @@ iamServer:
 #       value: "kafka:9092"
 #     - name: VGW_IAM_LDAP_URL
 #       value: "ldap://ldap.example.com"
+# Example (Azure Blob Storage IAM, with iam.enabled=false): accounts are kept in
+# a users.json blob of an existing container. Use a storage account that the
+# azure backend does not expose, as it lists every container as a bucket.
+# Without an access key or SAS token the gateway uses DefaultAzureCredential,
+# e.g. AKS workload identity, whose identity needs the "Storage Blob Data
+# Contributor" role on the container.
+#   extraEnv:
+#     - name: VGW_IAM_AZURE_CONTAINER
+#       value: "vgwiam"
+#     - name: VGW_IAM_AZURE_ACCOUNT_NAME
+#       value: "vgwiamaccount"
+#     - name: VGW_IAM_AZURE_ACCESS_KEY
+#       valueFrom:
+#         secretKeyRef:
+#           name: vgw-azure-iam
+#           key: accountKey
 extraEnv: []
 
 # --- Pod extension hooks (gateway Deployment) ---
