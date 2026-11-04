@@ -19,7 +19,6 @@ package azblobclient
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -54,16 +53,6 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 			return nil, Credentials{}, fmt.Errorf("init client: %w", err)
 		}
 		return client, Credentials{ServiceURL: url, SASToken: sasToken}, nil
-	}
-
-	if accountName == "" {
-		// if account name not provided, try to get from env var
-		// NOTE: AZURE_CLIENT_ID holds the client ID of an Entra ID
-		// identity, not a storage account name. It is read by
-		// DefaultAzureCredential on its own, and pairing it with an
-		// account key below cannot produce a valid shared key.
-		// Kept as is to preserve the azure backend behavior.
-		accountName = os.Getenv("AZURE_CLIENT_ID")
 	}
 
 	if accountName == "" || accountKey == "" {
