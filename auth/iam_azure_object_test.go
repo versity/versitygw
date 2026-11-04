@@ -243,7 +243,7 @@ func TestIAMServiceAzureGivesUpAfterMaxRetries(t *testing.T) {
 	s := newTestAzureIAM(t, f)
 
 	assert.Error(t, s.CreateAccount(Account{Access: "bob", Role: RoleUser}))
-	assert.Equal(t, azureIAMMaxRetries, f.putCount())
+	assert.Equal(t, azureIAMMaxAttempts, f.putCount())
 	assert.NotContains(t, f.accounts(t), "bob")
 }
 

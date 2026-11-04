@@ -54,9 +54,9 @@ type IAMServiceAzure struct {
 var _ IAMService = &IAMServiceAzure{}
 
 const (
-	// azureIAMMaxRetries is how many times an update is retried with
+	// azureIAMMaxAttempts is how many times an update is attempted with
 	// fresh data after losing a race with another gateway instance.
-	azureIAMMaxRetries = 10
+	azureIAMMaxAttempts = 10
 	// azureIAMRetryDelay is the upper bound of the random wait before
 	// the first retry, doubled at each further retry.
 	azureIAMRetryDelay = 10 * time.Millisecond
@@ -178,7 +178,7 @@ func (s *IAMServiceAzure) storeIAM(update func(conf *iAMConfig) error) error {
 	s.Lock()
 	defer s.Unlock()
 
-	for attempt := range azureIAMMaxRetries {
+	for attempt := range azureIAMMaxAttempts {
 		if attempt > 0 {
 			// wait a random, growing time so that instances racing
 			// for the blob stop colliding at every attempt
