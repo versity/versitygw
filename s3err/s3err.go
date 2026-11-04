@@ -187,6 +187,7 @@ const (
 	ErrCORSForbidden
 	ErrMissingCORSOrigin
 	ErrCORSIsNotEnabled
+	ErrCORSRulesLimited
 	ErrNoSuchWebsiteConfiguration
 	ErrInvalidWebsiteRedirectProtocol
 	ErrInvalidRedirectLocation
@@ -700,6 +701,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "CORSResponse: CORS is not enabled for this bucket.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
+	ErrCORSRulesLimited: {
+		Code:           "InvalidRequest",
+		Description:    "The number of CORS rules should not exceed allowed limit of 100 rules.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
 	ErrNoSuchWebsiteConfiguration: {
 		Code:           "NoSuchWebsiteConfiguration",
 		Description:    "The specified bucket does not have a website configuration",
@@ -1018,6 +1024,22 @@ func GetMultipleWildcardCORSOriginErr(origin string) APIError {
 	return APIError{
 		Code:           "InvalidRequest",
 		Description:    fmt.Sprintf(`AllowedOrigin "%s" can not have more than one wildcard.`, origin),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetMultipleWildcardCORSHeaderErr(header string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf(`AllowedHeader "%s" can not have more than one wildcard.`, header),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetWildcardCORSExposeHeaderErr(header string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf(`ExposeHeader "%s" contains wildcard. We currently do not support wildcard for ExposeHeader.`, header),
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }
