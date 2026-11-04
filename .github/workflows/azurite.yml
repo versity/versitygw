@@ -48,9 +48,18 @@ jobs:
           SSL_CERT_FILE=$PWD/tests/certs/azurite.pem ./versitygw -p :7072 -a user -s pass \
             --iam-azure-account $AZ_ACCOUNT_NAME --iam-azure-access-key $AZ_ACCOUNT_KEY \
             --iam-azure-url https://127.0.0.1:10000/$AZ_ACCOUNT_NAME --iam-azure-container vgwiam \
-            posix /tmp/aziamgw &
+            posix /tmp/aziamgw > /tmp/aziamgw.log 2>&1 &
+          GW_PID=$!
+          trap 'kill $GW_PID 2>/dev/null || true' EXIT
           timeout 30 bash -c 'until curl -s -o /dev/null http://127.0.0.1:7072/; do sleep 1; done'
           ./versitygw test -a user -s pass -e http://127.0.0.1:7072 gw-iam
+          # gw-iam passes with any IAM service, so check that the accounts
+          # were really stored in the Azure container
+          aws --endpoint-url http://127.0.0.1:7070 s3api head-object --bucket vgwiam --key users.json
+
+      - name: Show the Azure IAM gateway log
+        if: failure()
+        run: cat /tmp/aziamgw.log || true
 
       - name: Shut down services
         run: |
