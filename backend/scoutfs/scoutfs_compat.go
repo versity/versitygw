@@ -206,12 +206,14 @@ func (s *ScoutFS) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 }
 
 func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
-	res, err := s.Posix.HeadObject(ctx, input)
-	if err != nil {
+	res, headErr := s.Posix.HeadObject(ctx, input)
+	notModified := res != nil && errors.Is(headErr, s3err.GetAPIError(s3err.ErrNotModified))
+	if headErr != nil && !notModified {
 		// pass on the delete marker output that comes with the error
-		return res, err
+		return res, headErr
 	}
 
+	// a 304's output gets the glacier storage class too, as the 200 does
 	if s.glaciermode {
 		objPath := s.ObjectPath(*input.Bucket, *input.Key)
 
@@ -247,7 +249,8 @@ func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 		res.StorageClass = stclass
 	}
 
-	return res, nil
+	// nil, or NotModified with the output a 304 carries
+	return res, headErr
 }
 
 func (s *ScoutFS) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {

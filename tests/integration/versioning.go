@@ -1540,6 +1540,41 @@ func Versioning_HeadObject_invalid_parent(s *S3Conf) error {
 	})
 }
 
+// Versioning_not_modified_version_id checks that a 304 Not Modified to a
+// GetObject or HeadObject carries the x-amz-version-id of the version it
+// validated, the live one or the one requested.
+func Versioning_not_modified_version_id(s *S3Conf) error {
+	testName := "Versioning_not_modified_version_id"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		first, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		_, err = putObjectWithData(20, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		cases := []notModifiedHeadersCase{
+			{key: obj},
+			{key: obj, versionId: first.res.VersionId},
+		}
+		for _, head := range []bool{false, true} {
+			if err := notModifiedHeaders(s3client, bucket, head, cases); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_HeadObject_success(s *S3Conf) error {
 	testName := "Versioning_HeadObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -6994,6 +7029,39 @@ func Versioning_WORM_PutObject_new_version_lock_settings(s *S3Conf) error {
 		if cur.ObjectLockRetainUntilDate != nil {
 			return fmt.Errorf("expected nil object lock retain until date, instead got %v",
 				*cur.ObjectLockRetainUntilDate)
+		}
+
+		// the first version, now non-current, keeps its own lock settings
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		old, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: first.res.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if old.ObjectLockLegalHoldStatus != types.ObjectLockLegalHoldStatusOn {
+			return fmt.Errorf("expected the first version's legal hold status to be %q, instead got %q",
+				types.ObjectLockLegalHoldStatusOn, old.ObjectLockLegalHoldStatus)
+		}
+		if old.ObjectLockMode != types.ObjectLockModeGovernance {
+			return fmt.Errorf("expected the first version's object lock mode to be %q, instead got %q",
+				types.ObjectLockModeGovernance, old.ObjectLockMode)
+		}
+		if old.ObjectLockRetainUntilDate == nil || old.ObjectLockRetainUntilDate.Unix() != rDate.Unix() {
+			return fmt.Errorf("expected the first version's retain until date to be %v, instead got %v",
+				rDate.UTC(), old.ObjectLockRetainUntilDate)
+		}
+		// and a 304 for it carries them, as the 200 does
+		for _, head := range []bool{true, false} {
+			err = notModifiedHeaders(s3client, bucket, head, []notModifiedHeadersCase{
+				{key: obj, versionId: first.res.VersionId},
+			})
+			if err != nil {
+				return err
+			}
 		}
 
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{
