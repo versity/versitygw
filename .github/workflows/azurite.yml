@@ -46,8 +46,8 @@ jobs:
           # trust the self-signed Azurite certificate; the path must be
           # absolute as the posix backend changes to its root directory
           SSL_CERT_FILE=$PWD/tests/certs/azurite.pem ./versitygw -p :7072 -a user -s pass \
-            --az-iam-account $AZ_ACCOUNT_NAME --az-iam-access-key $AZ_ACCOUNT_KEY \
-            --az-iam-url https://127.0.0.1:10000/$AZ_ACCOUNT_NAME --az-iam-container vgwiam \
+            --iam-azure-account $AZ_ACCOUNT_NAME --iam-azure-access-key $AZ_ACCOUNT_KEY \
+            --iam-azure-url https://127.0.0.1:10000/$AZ_ACCOUNT_NAME --iam-azure-container vgwiam \
             posix /tmp/aziamgw &
           timeout 30 bash -c 'until curl -s -o /dev/null http://127.0.0.1:7072/; do sleep 1; done'
           ./versitygw test -a user -s pass -e http://127.0.0.1:7072 gw-iam
