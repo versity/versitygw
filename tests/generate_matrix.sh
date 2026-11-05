@@ -72,6 +72,16 @@ while IFS= read -r f; do
   check_for_and_load_test_file_and_params "$f"
 done < <(find tests -name 'test_*.sh' | sort)
 
+unit_files=()
+for file in "${files[@]}"; do
+  if grep -Eq '^[[:space:]]*source[[:space:]]+["\047]?(\./)?tests/setup_unit\.sh["\047]?([[:space:]]|$)' "$file"; then
+    unit_files+=("$file")
+  fi
+done
+
+unit_files_json=$(jq -cn --args '$ARGS.positional' "${unit_files[@]}")
+
+
 files_json_arr=$(printf '%s\n' "${files[@]}"   | jq -R . | jq -s .)
 regions_json_arr=$(printf '%s\n' "${regions[@]}" | jq -R . | jq -s .)
 iam_types_json_arr=$(printf '%s\n' "${iam_types[@]}" | jq -R . | jq -s .)
@@ -81,6 +91,7 @@ matrix_json=$(
     --argjson files   "$files_json_arr" \
     --argjson regions "$regions_json_arr" \
     --argjson iam_types "$iam_types_json_arr" \
+    --argjson unit_files "$unit_files_json" \
     '
     {
       include:
@@ -95,7 +106,7 @@ matrix_json=$(
                 RECREATE_BUCKETS: "true",
                 DELETE_BUCKETS_AFTER_TEST: "true"
               },
-              {
+              (if ($unit_files | index($files[$i])) == null then {
                 desc: ("Run " + $files[$i] + ", static, " + $regions[$i] + " region, " + $iam_types[$i] + " IAM type"),
                 RUN_SET: $files[$i],
                 AWS_REGION: $regions[$i],
@@ -103,7 +114,7 @@ matrix_json=$(
                 BACKEND: "posix",
                 RECREATE_BUCKETS: "false",
                 DELETE_BUCKETS_AFTER_TEST: "false"
-              }
+              } else empty end)
             ]
         ] | add
     }
