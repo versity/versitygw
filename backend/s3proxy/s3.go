@@ -108,6 +108,12 @@ func (s *S3Proxy) StoresDotSegmentKeys() bool {
 	return true
 }
 
+// ListBuckets lists the upstream buckets, filtering each upstream page to
+// the ones the caller may list. MaxBuckets and the continuation token pass
+// to the upstream listing unchanged, so a filtered page can come back short
+// with the upstream token, which is still a valid page. Without a meta
+// bucket no ACLs are stored, so every bucket is listed to every caller and
+// input.IsVisible is never called.
 func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 	output, err := s.client.ListBuckets(ctx, &s3.ListBucketsInput{
 		ContinuationToken: &input.ContinuationToken,
@@ -141,7 +147,14 @@ func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsI
 			return s3response.ListAllMyBucketsResult{}, err
 		}
 
-		if acl.Owner == input.Owner {
+		listed := acl.Owner == input.Owner
+		if !listed && input.IsVisible != nil {
+			listed, err = input.IsVisible(ctx, *b.Name, data)
+			if err != nil {
+				return s3response.ListAllMyBucketsResult{}, err
+			}
+		}
+		if listed {
 			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
 				Name:         *b.Name,
 				CreationDate: *b.CreationDate,

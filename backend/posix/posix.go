@@ -795,52 +795,39 @@ func (p *Posix) ListBuckets(ctx context.Context, input s3response.ListBucketsInp
 
 	var buckets []s3response.ListAllMyBucketsEntry
 	for _, fi := range fis {
-		if !strings.HasPrefix(fi.Name(), input.Prefix) {
+		name := fi.Name()
+		if !strings.HasPrefix(name, input.Prefix) {
 			continue
 		}
 
-		if !utils.IsValidBucketName(fi.Name()) || p.isExcludedName(fi.Name()) {
+		if !utils.IsValidBucketName(name) || p.isExcludedName(name) {
 			continue
 		}
 
+		if name <= input.ContinuationToken {
+			continue
+		}
+
+		listed, err := p.isBucketListed(ctx, name, input)
+		if err != nil {
+			return s3response.ListAllMyBucketsResult{}, err
+		}
+		if !listed {
+			continue
+		}
+
+		// The page is full and another bucket follows it, so the
+		// listing continues after the page's last bucket. A page that
+		// ends with the last listed bucket carries no token, as in S3.
 		if len(buckets) == int(input.MaxBuckets) {
 			cToken = buckets[len(buckets)-1].Name
 			break
 		}
 
-		if fi.Name() <= input.ContinuationToken {
-			continue
-		}
-
-		// return all the buckets for admin users
-		if input.IsAdmin {
-			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name:         fi.Name(),
-				CreationDate: fi.ModTime(),
-			})
-			continue
-		}
-
-		aclJSON, err := p.meta.RetrieveAttribute(nil, fi.Name(), "", aclkey)
-		if errors.Is(err, meta.ErrNoSuchKey) {
-			// skip buckets without acl tag
-			continue
-		}
-		if err != nil {
-			return s3response.ListAllMyBucketsResult{}, fmt.Errorf("get acl tag: %w", err)
-		}
-
-		acl, err := auth.ParseACL(aclJSON)
-		if err != nil {
-			return s3response.ListAllMyBucketsResult{}, err
-		}
-
-		if acl.Owner == input.Owner {
-			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name:         fi.Name(),
-				CreationDate: fi.ModTime(),
-			})
-		}
+		buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+			Name:         name,
+			CreationDate: fi.ModTime(),
+		})
 	}
 
 	return s3response.ListAllMyBucketsResult{
@@ -853,6 +840,40 @@ func (p *Posix) ListBuckets(ctx context.Context, input s3response.ListBucketsInp
 		Prefix:            input.Prefix,
 		ContinuationToken: cToken,
 	}, nil
+}
+
+// isBucketListed reports whether ListBuckets lists bucket for input: every
+// bucket for an admin, and otherwise each one owned by input.Owner or
+// accepted by input.IsVisible. A bucket without an ACL is never listed to a
+// non-admin.
+func (p *Posix) isBucketListed(ctx context.Context, bucket string, input s3response.ListBucketsInput) (bool, error) {
+	if input.IsAdmin {
+		return true, nil
+	}
+
+	aclJSON, err := p.meta.RetrieveAttribute(nil, bucket, "", aclkey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("get acl tag: %w", err)
+	}
+
+	acl, err := auth.ParseACL(aclJSON)
+	if err != nil {
+		return false, err
+	}
+	if acl.Owner == input.Owner {
+		return true, nil
+	}
+	if input.IsVisible == nil {
+		return false, nil
+	}
+
+	// The listing already holds an action slot, so a backend call made on
+	// its behalf must not wait for another: enough concurrent listings
+	// would otherwise take every slot and wait on each other.
+	return input.IsVisible(withCtxNoSlot(ctx), bucket, aclJSON)
 }
 
 // IsBucketValid reports whether bucket may be used as a bucket name by this

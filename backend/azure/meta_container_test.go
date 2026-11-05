@@ -496,6 +496,41 @@ func TestListBucketsWithMetaContainer(t *testing.T) {
 	}
 }
 
+// The ListBuckets visibility callback gets the acl from wherever it is
+// stored, and only for the buckets the caller doesn't own.
+func TestListBucketsVisibilityWithMetaContainer(t *testing.T) {
+	az, st := newFakeAzure(t, testMetaContainer)
+	st.addContainer("legacy", map[string]string{"Acl": encodeBytes(aclJSON(t, "bob"))})
+	st.addContainer("new", nil)
+	st.putBlob(testMetaContainer, "vgw-meta-acl-new", aclJSON(t, "bob"))
+	st.addContainer("own", nil)
+	st.putBlob(testMetaContainer, "vgw-meta-acl-own", aclJSON(t, "alice"))
+
+	acls := map[string]string{}
+	res, err := az.ListBuckets(context.Background(), s3response.ListBucketsInput{
+		Owner: "alice",
+		IsVisible: func(_ context.Context, bucket string, acl []byte) (bool, error) {
+			acls[bucket] = string(acl)
+			return bucket == "new", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("list buckets: %v", err)
+	}
+
+	var names []string
+	for _, b := range res.Buckets.Bucket {
+		names = append(names, b.Name)
+	}
+	if want := []string{"new", "own"}; !slices.Equal(names, want) {
+		t.Errorf("buckets = %v, want %v", names, want)
+	}
+	want := map[string]string{"legacy": string(aclJSON(t, "bob")), "new": string(aclJSON(t, "bob"))}
+	if !maps.Equal(acls, want) {
+		t.Errorf("callback acls = %v, want %v", acls, want)
+	}
+}
+
 func TestMetaContainerIsClosed(t *testing.T) {
 	az, st := newFakeAzure(t, testMetaContainer)
 	st.addContainer("bkt", nil)
