@@ -75,6 +75,39 @@ func TestIpaIAMServiceGetUserAccountNotFound(t *testing.T) {
 	}
 }
 
+func TestIpaIAMServiceLoginRetrySendsBodyAgain(t *testing.T) {
+	transport := &retryTransport{}
+	ipa := &IpaIAMService{
+		client:   http.Client{Transport: transport},
+		host:     "https://ipa.example.test",
+		username: "admin",
+		password: "secret",
+	}
+
+	assert.NoError(t, ipa.login())
+	assert.Equal(t, 2, transport.calls)
+	if assert.Len(t, transport.bodies, 2) {
+		assert.Equal(t, "password=secret&user=admin", transport.bodies[1])
+	}
+}
+
+func TestIpaIAMServiceRPCInternalRetrySendsBodyAgain(t *testing.T) {
+	transport := &retryTransport{
+		respBody: `{"result": {"result": null, "value": "", "summary": null}, "error": null, "id": 1, "principal": "admin@EXAMPLE.TEST", "version": "4.13.1"}`,
+	}
+	ipa := &IpaIAMService{
+		client: http.Client{Transport: transport},
+		host:   "https://ipa.example.test",
+	}
+
+	_, err := ipa.rpcInternal(`{"method":"user_show","params":[["admin"],{}]}`)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, transport.calls)
+	if assert.Len(t, transport.bodies, 2) {
+		assert.Equal(t, `{"method":"user_show","params":[["admin"],{}]}`, transport.bodies[1])
+	}
+}
+
 // newFakeIpaIAMService returns an IpaIAMService talking to a fake FreeIPA
 // server that answers each JSON-RPC method with the given response body.
 func newFakeIpaIAMService(t *testing.T, responses map[string]string) *IpaIAMService {
@@ -112,9 +145,9 @@ func newFakeIpaIAMService(t *testing.T, responses map[string]string) *IpaIAMServ
 // the body of every attempt, so a retry that reuses a spent request shows up
 // as an empty body.
 type retryTransport struct {
-	calls  int
-	bodies []string
-	body   string
+	calls    int
+	bodies   []string
+	respBody string
 }
 
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -141,36 +174,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		StatusCode: http.StatusOK,
 		Status:     "200 OK",
 		Header:     make(http.Header),
-		Body:       io.NopCloser(strings.NewReader(t.body)),
+		Body:       io.NopCloser(strings.NewReader(t.respBody)),
 		Request:    req,
 	}, nil
-}
-
-func TestIpaIAMServiceLoginRetrySendsBodyAgain(t *testing.T) {
-	transport := &retryTransport{}
-	ipa := &IpaIAMService{
-		client:   http.Client{Transport: transport},
-		host:     "https://ipa.example.test",
-		username: "admin",
-		password: "secret",
-	}
-
-	assert.NoError(t, ipa.login())
-	assert.Equal(t, 2, transport.calls)
-	assert.Equal(t, "password=secret&user=admin", transport.bodies[1])
-}
-
-func TestIpaIAMServiceRPCInternalRetrySendsBodyAgain(t *testing.T) {
-	transport := &retryTransport{
-		body: `{"result": {"result": null, "value": "", "summary": null}, "error": null, "id": 1, "principal": "admin@EXAMPLE.TEST", "version": "4.13.1"}`,
-	}
-	ipa := &IpaIAMService{
-		client: http.Client{Transport: transport},
-		host:   "https://ipa.example.test",
-	}
-
-	_, err := ipa.rpcInternal(`{"method":"user_show","params":[["admin"],{}]}`)
-	assert.NoError(t, err)
-	assert.Equal(t, 2, transport.calls)
-	assert.Equal(t, `{"method":"user_show","params":[["admin"],{}]}`, transport.bodies[1])
 }
