@@ -140,7 +140,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 
 	// falloc is best effort, its fine if this fails
 	if size > 0 && dofalloc {
-		tmp.falloc()
+		p.falloc(tmp)
 	}
 
 	if doChown {
@@ -211,7 +211,7 @@ func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, u
 	}
 	// falloc is best effort, its fine if this fails
 	if size > 0 && dofalloc {
-		tmp.falloc()
+		p.falloc(tmp)
 	}
 
 	if doChown {
@@ -226,12 +226,18 @@ func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, u
 	return tmp, nil
 }
 
-func (tmp *tmpfile) falloc() error {
-	err := syscall.Fallocate(int(tmp.f.Fd()), 0, 0, tmp.size)
-	if err != nil {
-		return fmt.Errorf("fallocate: %w", err)
+// fallocate is swapped out by tests to simulate unsupported filesystems.
+var fallocate = syscall.Fallocate
+
+// falloc preallocates tmp, skipping bucket paths that rejected fallocate.
+func (p *Posix) falloc(tmp *tmpfile) {
+	if _, ok := p.fallocUnsupported.Load(tmp.bucket); ok {
+		return
 	}
-	return nil
+	err := fallocate(int(tmp.f.Fd()), 0, 0, tmp.size)
+	if errors.Is(err, syscall.EOPNOTSUPP) || errors.Is(err, syscall.ENOSYS) {
+		p.fallocUnsupported.Store(tmp.bucket, struct{}{})
+	}
 }
 
 const (

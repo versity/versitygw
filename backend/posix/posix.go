@@ -95,6 +95,10 @@ type Posix struct {
 	// acknowledged
 	fsync bool
 
+	// fallocUnsupported holds bucket paths whose filesystem rejected
+	// fallocate; per path since buckets can be on different filesystems.
+	fallocUnsupported sync.Map
+
 	// forceNoCopyFileRange is a flag to disable the use of io.Copy to
 	// reassemble multipart upload parts, which uses copy_file_range on
 	// linux. This is needed for cases where a filesystem that does not
