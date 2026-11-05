@@ -18,8 +18,11 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -103,4 +106,71 @@ func newFakeIpaIAMService(t *testing.T, responses map[string]string) *IpaIAMServ
 		kraTransportKey: &key.PublicKey,
 		rootAcc:         Account{Access: "root"},
 	}
+}
+
+// retryTransport fails the first attempt with a retryable error and records
+// the body of every attempt, so a retry that reuses a spent request shows up
+// as an empty body.
+type retryTransport struct {
+	calls  int
+	bodies []string
+	body   string
+}
+
+func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.calls++
+
+	var body string
+	if req.Body != nil {
+		b, err := io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		body = string(b)
+	}
+	t.bodies = append(t.bodies, body)
+
+	if t.calls == 1 {
+		return nil, io.EOF
+	}
+	if req.ContentLength > 0 && int64(len(body)) != req.ContentLength {
+		return nil, fmt.Errorf("http: ContentLength=%d with Body length %d",
+			req.ContentLength, len(body))
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(t.body)),
+		Request:    req,
+	}, nil
+}
+
+func TestIpaIAMServiceLoginRetrySendsBodyAgain(t *testing.T) {
+	transport := &retryTransport{}
+	ipa := &IpaIAMService{
+		client:   http.Client{Transport: transport},
+		host:     "https://ipa.example.test",
+		username: "admin",
+		password: "secret",
+	}
+
+	assert.NoError(t, ipa.login())
+	assert.Equal(t, 2, transport.calls)
+	assert.Equal(t, "password=secret&user=admin", transport.bodies[1])
+}
+
+func TestIpaIAMServiceRPCInternalRetrySendsBodyAgain(t *testing.T) {
+	transport := &retryTransport{
+		body: `{"result": {"result": null, "value": "", "summary": null}, "error": null, "id": 1, "principal": "admin@EXAMPLE.TEST", "version": "4.13.1"}`,
+	}
+	ipa := &IpaIAMService{
+		client: http.Client{Transport: transport},
+		host:   "https://ipa.example.test",
+	}
+
+	_, err := ipa.rpcInternal(`{"method":"user_show","params":[["admin"],{}]}`)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, transport.calls)
+	assert.Equal(t, `{"method":"user_show","params":[["admin"],{}]}`, transport.bodies[1])
 }

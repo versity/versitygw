@@ -281,19 +281,24 @@ func (ipa *IpaIAMService) login() error {
 	form.Set("user", ipa.username)
 	form.Set("password", ipa.password)
 
-	req, err := http.NewRequest(
-		"POST",
-		fmt.Sprintf("%s/ipa/session/login_password", ipa.host),
-		strings.NewReader(form.Encode()))
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("referer", fmt.Sprintf("%s/ipa", ipa.host))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	loginURL := fmt.Sprintf("%s/ipa/session/login_password", ipa.host)
 
 	var resp *http.Response
+	var err error
 	for i := range requestRetries {
+		// A request body can be read only once, so every attempt needs a
+		// fresh request; reusing one leaves the retry with an empty body.
+		req, reqErr := http.NewRequest(
+			"POST",
+			loginURL,
+			strings.NewReader(form.Encode()))
+		if reqErr != nil {
+			return reqErr
+		}
+
+		req.Header.Set("referer", fmt.Sprintf("%s/ipa", ipa.host))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 		resp, err = ipa.client.Do(req)
 		if err == nil {
 			break
@@ -303,11 +308,11 @@ func (ipa *IpaIAMService) login() error {
 			time.Sleep(time.Second * time.Duration(i+1))
 			continue
 		}
-		return fmt.Errorf("login POST to %s failed: %w", req.URL, err)
+		return fmt.Errorf("login POST to %s failed: %w", loginURL, err)
 	}
 	if err != nil {
 		return fmt.Errorf("login POST to %s failed after retries: %w",
-			req.URL, err)
+			loginURL, err)
 	}
 
 	defer resp.Body.Close()
@@ -360,19 +365,22 @@ func (ipa *IpaIAMService) rpc(req rpcRequest, value any) error {
 }
 
 func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
-	httpReq, err := http.NewRequest("POST",
-		fmt.Sprintf("%s/ipa/session/json", ipa.host),
-		strings.NewReader(req))
-	if err != nil {
-		return rpcResponse{}, err
-	}
-
 	debuglogger.IAMLogf("IPA request: %v", req)
-	httpReq.Header.Set("referer", fmt.Sprintf("%s/ipa", ipa.host))
-	httpReq.Header.Set("Content-Type", "application/json")
+	rpcURL := fmt.Sprintf("%s/ipa/session/json", ipa.host)
 
 	var httpResp *http.Response
+	var err error
 	for i := range requestRetries {
+		// A request body can be read only once, so every attempt needs a
+		// fresh request; reusing one leaves the retry with an empty body.
+		httpReq, reqErr := http.NewRequest("POST", rpcURL, strings.NewReader(req))
+		if reqErr != nil {
+			return rpcResponse{}, reqErr
+		}
+
+		httpReq.Header.Set("referer", fmt.Sprintf("%s/ipa", ipa.host))
+		httpReq.Header.Set("Content-Type", "application/json")
+
 		httpResp, err = ipa.client.Do(httpReq)
 		if err == nil {
 			break
@@ -383,12 +391,12 @@ func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 			continue
 		}
 		return rpcResponse{}, fmt.Errorf("ipa request to %s failed: %w",
-			httpReq.URL, err)
+			rpcURL, err)
 	}
 	if err != nil {
 		return rpcResponse{},
 			fmt.Errorf("ipa request to %s failed after retries: %w",
-				httpReq.URL, err)
+				rpcURL, err)
 	}
 
 	defer httpResp.Body.Close()
