@@ -618,7 +618,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrSuspendedVersioningNotAllowed: {
 		Code:           "InvalidBucketState",
 		Description:    "An Object Lock configuration is present on this bucket, so the versioning state cannot be changed.",
-		HTTPStatusCode: http.StatusBadRequest,
+		HTTPStatusCode: http.StatusConflict,
 	},
 	ErrMissingRequestBody: {
 		Code:           "MissingRequestBodyError",

@@ -5528,9 +5528,39 @@ func Versioning_status_switch_to_suspended_with_object_lock(s *S3Conf) error {
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrSuspendedVersioningNotAllowed)); err != nil {
 			return err
 		}
+		if err := checkErrStatusCode(err, http.StatusConflict); err != nil {
+			return err
+		}
 
-		return nil
+		return checkBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
 	}, withLock())
+}
+
+func Versioning_status_switch_to_suspended_with_object_lock_enabled_later(s *S3Conf) error {
+	testName := "Versioning_status_switch_to_suspended_with_object_lock_enabled_later"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrSuspendedVersioningNotAllowed)); err != nil {
+			return err
+		}
+		if err := checkErrStatusCode(err, http.StatusConflict); err != nil {
+			return err
+		}
+
+		return checkBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_PutObjectRetention_invalid_versionId(s *S3Conf) error {

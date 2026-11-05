@@ -2241,6 +2241,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_object_lock_not_enabled_on_bucket_creation)
 	ts.Run(Versioning_Enable_object_lock)
 	ts.Run(Versioning_status_switch_to_suspended_with_object_lock)
+	ts.Run(Versioning_status_switch_to_suspended_with_object_lock_enabled_later)
 	// Object-Lock Retention
 	ts.Run(Versioning_PutObjectRetention_invalid_versionId)
 	ts.Run(Versioning_PutObjectRetention_non_existing_object_version)
@@ -3965,6 +3966,7 @@ func GetIntTests() IntTests {
 		"Versioning_object_lock_not_enabled_on_bucket_creation":                            Versioning_object_lock_not_enabled_on_bucket_creation,
 		"Versioning_Enable_object_lock":                                                    Versioning_Enable_object_lock,
 		"Versioning_status_switch_to_suspended_with_object_lock":                           Versioning_status_switch_to_suspended_with_object_lock,
+		"Versioning_status_switch_to_suspended_with_object_lock_enabled_later":             Versioning_status_switch_to_suspended_with_object_lock_enabled_later,
 		"Versioning_PutObjectRetention_invalid_versionId":                                  Versioning_PutObjectRetention_invalid_versionId,
 		"Versioning_PutObjectRetention_non_existing_object_version":                        Versioning_PutObjectRetention_non_existing_object_version,
 		"Versioning_GetObjectRetention_invalid_versionId":                                  Versioning_GetObjectRetention_invalid_versionId,
