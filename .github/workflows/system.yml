@@ -175,6 +175,9 @@ jobs:
           sudo chmod 600 /home/tester/test-files/.env
 
       - name: Build and run
+        env:
+          GOPROXY: "off"
+          GOSUMDB: "off"
         run: |
           set -euo pipefail
           
