@@ -20,9 +20,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -106,6 +110,21 @@ func TestIpaIAMServiceRPCInternalRetrySendsBodyAgain(t *testing.T) {
 	if assert.Len(t, transport.bodies, 2) {
 		assert.Equal(t, `{"method":"user_show","params":[["admin"],{}]}`, transport.bodies[1])
 	}
+}
+
+func TestIsRetryable(t *testing.T) {
+	wrap := func(err error) error {
+		return &url.Error{Op: "Post", URL: "https://ipa.example.test", Err: err}
+	}
+	reset := wrap(&net.OpError{Op: "read", Net: "tcp",
+		Err: os.NewSyscallError("read", syscall.ECONNRESET)})
+	refused := wrap(&net.OpError{Op: "dial", Net: "tcp",
+		Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)})
+
+	assert.True(t, isRetryable(wrap(io.EOF)), "EOF")
+	assert.True(t, isRetryable(reset), "connection reset")
+	assert.False(t, isRetryable(refused), "connection refused")
+	assert.False(t, isRetryable(nil), "nil")
 }
 
 // newFakeIpaIAMService returns an IpaIAMService talking to a fake FreeIPA

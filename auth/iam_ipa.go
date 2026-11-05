@@ -305,9 +305,7 @@ func (ipa *IpaIAMService) login() error {
 		}
 		// Check for transient network errors
 		if isRetryable(err) {
-			// No point sleeping after the last attempt: it will not be
-			// retried. Skipping the sleep keeps a login or RPC that fails
-			// on every attempt from waiting out an unused backoff.
+			// Don't sleep after the last attempt; no retry follows it.
 			if i < requestRetries-1 {
 				time.Sleep(time.Second * time.Duration(i+1))
 			}
@@ -392,9 +390,7 @@ func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 		}
 		// Check for transient network errors
 		if isRetryable(err) {
-			// No point sleeping after the last attempt: it will not be
-			// retried. Skipping the sleep keeps a login or RPC that fails
-			// on every attempt from waiting out an unused backoff.
+			// Don't sleep after the last attempt; no retry follows it.
 			if i < requestRetries-1 {
 				time.Sleep(time.Second * time.Duration(i+1))
 			}
@@ -456,10 +452,8 @@ func isRetryable(err error) bool {
 		return false
 	}
 
-	// client.Do wraps transport errors in *url.Error, so type assertions
-	// on *net.OpError never fire; errors.Is matches the wrapped syscall
-	// error instead. Retrying is safe here because every call these loops
-	// make is a login or a read.
+	// client.Do wraps transport errors in *url.Error, so match through the
+	// chain. Retrying is safe: every call these loops make is a login or a read.
 	if errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) {
 		return true
 	}
