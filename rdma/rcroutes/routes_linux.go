@@ -89,7 +89,7 @@ type Handler struct {
 // auth adapter calls it so signature failures appear in the access
 // log like they do on the S3 surface.
 func (h *Handler) PublishAuthFailure(ctx fiber.Ctx, err error) {
-	h.ops.publishRequest(ctx, auth.Account{}, err, "", "", false)
+	h.ops.publishRequest(ctx, auth.Account{}, err, "", "", false, false)
 }
 
 // SetOpsServices injects the operational service instances once the
@@ -176,10 +176,11 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	// Header parse failures end the request before authorization;
 	// publish them as request records too, with whatever object
 	// identity and operation the malformed headers still carried.
+	partPut := false
 	publishHeaderErr := func(err error, isPut bool) error {
 		target := ctx.Get(hdrTarget)
 		bucket, key, _ := splitTarget(target)
-		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
+		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut, partPut)
 		return err
 	}
 
@@ -197,6 +198,13 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	if !ok {
 		return publishHeaderErr(invalidHeader(hdrTarget, target), isPut)
 	}
+	// A query other than a part upload must not fall through to the
+	// object key. Reject it before the session exists.
+	partQuery, err := classifyRCTarget(isPut, target)
+	if err != nil {
+		return publishHeaderErr(invalidHeader(hdrTarget, target), isPut)
+	}
+	partPut = partQuery.partPut
 	size, err := parseUint(ctx.Get(hdrSize), 10, 64)
 	if err != nil || size == 0 {
 		return publishHeaderErr(invalidHeader(hdrSize, ctx.Get(hdrSize)), isPut)
@@ -216,7 +224,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 
 	// Authorize through the regular object-access chain.
 	if err := h.authorize(ctx, acct, isRoot, bucket, key, isPut); err != nil {
-		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
+		h.ops.publishRequest(ctx, acct, err, bucket, key, isPut, partQuery.partPut)
 		return err
 	}
 
@@ -231,7 +239,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 		ClientToken: ctx.Get(hdrToken),
 	})
 	if err != nil {
-		h.ops.publishRequest(ctx, acct, mapRcError(err), bucket, key, isPut)
+		h.ops.publishRequest(ctx, acct, mapRcError(err), bucket, key, isPut, partQuery.partPut)
 		return mapRcError(err)
 	}
 
@@ -240,7 +248,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	if !isPut {
 		if err := h.stageGet(ctx, resp.SessionID, bucket, key, offset, size); err != nil {
 			_ = h.svc.FinishPrepare(resp.SessionID, false)
-			h.ops.publishRequest(ctx, acct, err, bucket, key, isPut)
+			h.ops.publishRequest(ctx, acct, err, bucket, key, isPut, partQuery.partPut)
 			return err
 		}
 	}
@@ -259,8 +267,11 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 		// shows, so operator-side accounting matches what the
 		// client saw.
 		apiErr := s3err.GetAPIError(s3err.ErrSlowDown)
-		h.ops.publishRequest(ctx, acct, apiErr, bucket, key, isPut)
+		h.ops.publishRequest(ctx, acct, apiErr, bucket, key, isPut, partQuery.partPut)
 		return apiErr
+	}
+	if partQuery.partPut {
+		h.ops.markPartUpload(resp.SessionID)
 	}
 	if err := h.svc.FinishPrepare(resp.SessionID, true); err != nil {
 		// The finalization failed. Exactly one publication
@@ -439,6 +450,13 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 	publish := func(err error, bytes int64) {
 		h.ops.publishReserved(sessionID, rsv, err, bytes)
 	}
+	partQuery, qerr := classifyRCTarget(info.Op == 1, info.Target)
+	if qerr != nil {
+		err := invalidHeader(hdrTarget, info.Target)
+		publish(mapRcError(err), 0)
+		_ = h.svc.Cancel(sessionID, principal)
+		return err
+	}
 	if err := h.authorize(ctx, acct, isRoot, bucket, key, info.Op == 1); err != nil {
 		// Permission revoked mid-session: publish the real
 		// denial - not an expiry - as the outcome, release the
@@ -524,16 +542,17 @@ func (h *Handler) readyCore(ctx fiber.Ctx) error {
 		// finalizer retires exactly at that point; a failure
 		// *before* the borrow still falls back to the
 		// finalizer path below.
-		put, viewDone, committed, err := h.commitPut(ctx, sessionID, bucket, key, sizeOf(resp))
+		put, viewDone, committed, err := h.commitPut(ctx, sessionID, bucket, key, sizeOf(resp), partQuery)
 		if viewDone {
 			finalized = true
 		}
-		if put != nil {
+		if put != nil && !partQuery.partPut {
 			// The backend committed the object. Record the
 			// fact before anything else can fail: the audit
 			// record and creation event must reflect the
 			// commit even when the native finalizer below
-			// errors out.
+			// errors out. A part upload does not create the
+			// object, so it does not take this path.
 			rsv.emit.markCommitted(put.ETag, put.VersionID)
 		}
 		if err != nil {
@@ -584,7 +603,7 @@ func sizeOf(resp *rcserver.ReadyResponse) uint64 {
 // panic-safe defer releases the view if the handler unwinds before
 // FinishPut runs.
 func (h *Handler) commitPut(ctx fiber.Ctx, sessionID, bucket, key string,
-	size uint64) (put *s3response.PutObjectOutput, viewDone bool, committed int64, err error) {
+	size uint64, part rcTargetQuery) (put *s3response.PutObjectOutput, viewDone bool, committed int64, err error) {
 	view, err := h.svc.GetPutData(sessionID)
 	if err != nil {
 		return nil, false, 0, mapRcError(err)
@@ -603,6 +622,30 @@ func (h *Handler) commitPut(ctx fiber.Ctx, sessionID, bucket, key string,
 	contentLength := int64(len(view.Buf))
 	putCtx, stopSvc := svcCtx(ctx.RequestCtx(), h.svc.Context())
 	defer stopSvc()
+	if part.partPut {
+		out, upErr := h.be.UploadPart(putCtx, &s3.UploadPartInput{
+			Bucket:        &bucket,
+			Key:           &key,
+			UploadId:      &part.uploadID,
+			PartNumber:    &part.number,
+			ContentLength: &contentLength,
+			Body:          bytes.NewReader(view.Buf),
+		})
+		if upErr != nil {
+			return nil, true, 0, upErr
+		}
+		etag := ""
+		if out != nil && out.ETag != nil {
+			etag = *out.ETag
+		}
+		committed = contentLength
+		stored := &s3response.PutObjectOutput{ETag: etag}
+		if finErr := h.svc.FinishPut(*view, true, etag, ""); finErr != nil {
+			return stored, true, committed, mapRcError(finErr)
+		}
+		putDone = true
+		return stored, true, committed, nil
+	}
 	res, err := h.be.PutObject(putCtx, s3response.PutObjectInput{
 		Bucket:        &bucket,
 		Key:           &key,

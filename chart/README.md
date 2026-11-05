@@ -71,6 +71,7 @@ The `gateway.backend.type` value selects the storage backend. Use `gateway.backe
 | [scoutfs](https://github.com/versity/versitygw/wiki/ScoutFS-Backend) | [ScoutFS](https://scoutfs.org/) high-performance filesystem | `/mnt/scoutfs` |
 | [s3](https://github.com/versity/versitygw/wiki/S3-Backend) | Proxy to an existing S3-compatible object store | `--access KEY --secret SECRET --endpoint https://s3.example.com` |
 | [azure](https://github.com/versity/versitygw/wiki/AzureBlob-Backend) | Azure Blob Storage | `--account myaccount --key mykey` |
+| daos | One existing DAOS pool and one existing POSIX container. The published image does not link libdfs, so this backend needs a build with `-tags daos`. | `--pool POOL --container CONTAINER` |
 | [plugin](https://github.com/versity/versitygw/wiki/Plugin-Backend) | Custom backend via shared library plugin | `/path/to/plugin.so` |
 
 Example for POSIX with sidecar metadata:

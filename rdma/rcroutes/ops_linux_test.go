@@ -26,8 +26,10 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/valyala/fasthttp"
 
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/rdma/rcserver"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3log"
@@ -130,6 +132,20 @@ func TestOpsTrackerUnregister(t *testing.T) {
 	tr.onTerminal(rcserver.TerminalEvent{SessionID: "sess-5"})
 	if got := len(tr.sessions); got != 0 {
 		t.Fatalf("terminal resurrected entry: %d", got)
+	}
+}
+
+func TestMarkPartUpload(t *testing.T) {
+	var nilTracker *opsTracker
+	nilTracker.markPartUpload("missing")
+
+	tr := newOpsTracker(0)
+	tr.markPartUpload("missing")
+	tr.register("sess-part", auth.Account{Access: "ak"}, "us-east-1",
+		"bkt", "obj", true, time.Now())
+	tr.markPartUpload("sess-part")
+	if !tr.sessions["sess-part"].emit.partUpload {
+		t.Fatal("part upload flag was not set")
 	}
 }
 
@@ -405,5 +421,45 @@ func TestOpsTrackerAdmissionAtomicUnderConcurrency(t *testing.T) {
 	}
 	if got := tr.pubPending.Load(); got != 8 {
 		t.Fatalf("pending credits = %d, want 8", got)
+	}
+}
+
+type captureMetrics struct {
+	mu     sync.Mutex
+	action string
+}
+
+func (m *captureMetrics) Send(fiber.Ctx, error, string, int64, int) {}
+
+func (m *captureMetrics) SendWithBucket(_ fiber.Ctx, _ error, action string, _ int64, _ int, _ string) {
+	m.mu.Lock()
+	m.action = action
+	m.mu.Unlock()
+}
+
+func (m *captureMetrics) Close() {}
+
+func TestPublishRequestPartUpload(t *testing.T) {
+	tr := newOpsTracker(0)
+	defer tr.Shutdown()
+	got := &captureMetrics{}
+	tr.SetOpsServices(OpsServices{Metrics: got})
+	fctx := &fasthttp.RequestCtx{}
+	ctx := tr.app.AcquireCtx(fctx)
+	defer tr.app.ReleaseCtx(ctx)
+	tr.publishRequest(ctx, auth.Account{Access: "ak"}, s3err.GetAPIError(s3err.ErrSlowDown), "b", "k", true, true)
+	deadline := time.Now().Add(2 * time.Second)
+	var action string
+	for time.Now().Before(deadline) {
+		got.mu.Lock()
+		action = got.action
+		got.mu.Unlock()
+		if action != "" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if action != metrics.ActionUploadPart {
+		t.Fatalf("action = %q", action)
 	}
 }
