@@ -35,9 +35,28 @@ complete_multipart_upload_rest() {
   if ! check_param_count_gt "bucket, key, upload ID, parts, additional params" 4 $#; then
     return 1
   fi
-  env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2 UPLOAD_ID=$3 PARTS=$4 $5"
+  local bucket="$1" key="$2" upload_id="$3" parts_payload="$4" params=("${@:5}")
+  local env_vars
+
+  env_vars="BUCKET_NAME=$bucket OBJECT_KEY=$key UPLOAD_ID=$upload_id PARTS=$parts_payload ${params[*]}"
   if ! send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/complete_multipart_upload.sh" "200"; then
-    log 2 "error sending REST command and checking error"
+    log 2 "error with REST CompleteMultipartUpload command"
+    return 1
+  fi
+  return 0
+}
+
+complete_multipart_upload_rest_with_checksum() {
+  if ! check_param_count_gt "bucket, key, upload ID, parts payload, checksum type, checksum algorithm, checksum" 7 $#; then
+    return 1
+  fi
+  local bucket="$1" key="$2" upload_id="$3" parts_payload="$4" checksum_type="$5" checksum_algorithm="$6" checksum="$7"
+  local env_vars
+
+  local env_vars="BUCKET_NAME=$bucket OBJECT_KEY=$key UPLOAD_ID=$upload_id PARTS=$parts_payload \
+    CHECKSUM_TYPE=$checksum_type CHECKSUM_ALGORITHM=$checksum_algorithm CHECKSUM_HASH=$checksum"
+  if ! send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/complete_multipart_upload.sh" "200"; then
+    log 2 "error with REST CompleteMultipartUpload checksum command"
     return 1
   fi
   return 0

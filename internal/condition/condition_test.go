@@ -841,3 +841,161 @@ func TestReferencedKeys(t *testing.T) {
 		})
 	}
 }
+
+func TestEvaluateAssuming(t *testing.T) {
+	listKeys := []string{"s3:prefix", "s3:delimiter", "s3:max-keys"}
+	request := map[string][]string{
+		"aws:SourceIp":        {"10.0.0.5"},
+		"aws:SecureTransport": {"true"},
+	}
+
+	tests := []struct {
+		name    string
+		raw     string
+		ctxVars map[string][]string
+		version string
+		unknown []string
+		assume  bool
+		want    bool
+		wantErr bool
+	}{
+		{name: "unknown key assumed true", raw: `{"StringLike":{"s3:prefix":"team-a/*"}}`, unknown: listKeys, assume: true, want: true},
+		{name: "unknown key assumed false", raw: `{"StringLike":{"s3:prefix":"team-a/*"}}`, unknown: listKeys, assume: false, want: false},
+		{name: "unknown key matched case-insensitively", raw: `{"StringEquals":{"S3:PREFIX":"a"}}`, unknown: listKeys, assume: true, want: true},
+		{name: "unknown key list matched case-insensitively", raw: `{"StringEquals":{"s3:prefix":"a"}}`, unknown: []string{"S3:Prefix"}, assume: false, want: false},
+		{name: "negated operator on unknown key assumed false", raw: `{"StringNotLike":{"s3:prefix":"private/*"}}`, unknown: listKeys, assume: false, want: false},
+		{name: "IfExists on unknown key assumed false", raw: `{"StringEqualsIfExists":{"s3:delimiter":"/"}}`, unknown: listKeys, assume: false, want: false},
+		{name: "IfExists on unknown key assumed true", raw: `{"StringEqualsIfExists":{"s3:delimiter":"/"}}`, unknown: listKeys, assume: true, want: true},
+		{name: "Null on unknown key assumed false", raw: `{"Null":{"s3:prefix":"true"}}`, unknown: listKeys, assume: false, want: false},
+		{name: "Null on unknown key assumed true", raw: `{"Null":{"s3:prefix":"false"}}`, unknown: listKeys, assume: true, want: true},
+		{name: "qualified operator on unknown key", raw: `{"ForAllValues:StringLike":{"s3:prefix":["a/*"]}}`, unknown: listKeys, assume: false, want: false},
+		{name: "numeric operator on unknown key", raw: `{"NumericLessThanEquals":{"s3:max-keys":"10"}}`, unknown: listKeys, assume: true, want: true},
+		{
+			name:    "known key still evaluated, matching",
+			raw:     `{"StringLike":{"s3:prefix":"team-a/*"},"IpAddress":{"aws:SourceIp":"10.0.0.0/24"}}`,
+			ctxVars: request, unknown: listKeys, assume: true, want: true,
+		},
+		{
+			name:    "known key still evaluated, not matching",
+			raw:     `{"StringLike":{"s3:prefix":"team-a/*"},"IpAddress":{"aws:SourceIp":"192.168.0.0/24"}}`,
+			ctxVars: request, unknown: listKeys, assume: true, want: false,
+		},
+		{
+			name:    "known and unknown keys under one operator",
+			raw:     `{"StringEquals":{"s3:prefix":"a","aws:SecureTransport":"false"}}`,
+			ctxVars: request, unknown: listKeys, assume: true, want: false,
+		},
+		{
+			name:    "assumed false fails the block even when known keys match",
+			raw:     `{"StringLike":{"s3:prefix":"team-a/*"},"Bool":{"aws:SecureTransport":"true"}}`,
+			ctxVars: request, unknown: listKeys, assume: false, want: false,
+		},
+		{
+			name:    "unknown key ignores a value in ctxVars",
+			raw:     `{"StringEquals":{"s3:prefix":"a"}}`,
+			ctxVars: map[string][]string{"s3:prefix": {"b"}}, unknown: listKeys, assume: true, want: true,
+		},
+		{
+			name:    "policy variable naming an unknown key",
+			raw:     `{"StringEquals":{"aws:UserAgent":"${s3:prefix}"}}`,
+			ctxVars: map[string][]string{"aws:UserAgent": {"cli"}}, version: testVersion2012,
+			unknown: listKeys, assume: true, want: true,
+		},
+		{
+			name:    "policy variable left literal is known",
+			raw:     `{"StringEquals":{"aws:UserAgent":"${s3:prefix}"}}`,
+			ctxVars: map[string][]string{"aws:UserAgent": {"cli"}},
+			unknown: listKeys, assume: true, want: false,
+		},
+		// A known value beside one naming an unknown key settles the clause
+		// when it matches, as in S3.
+		{
+			name:    "known value matching a positive operator holds",
+			raw:     `{"StringEquals":{"aws:SecureTransport":["true","${s3:prefix}"]}}`,
+			ctxVars: request, version: testVersion2012, unknown: listKeys, assume: false, want: true,
+		},
+		{
+			name:    "known value matching a qualified positive operator holds",
+			raw:     `{"ForAllValues:StringEquals":{"aws:SecureTransport":["${s3:prefix}","true"]}}`,
+			ctxVars: request, version: testVersion2012, unknown: listKeys, assume: false, want: true,
+		},
+		{
+			name:    "known value not matching a positive operator leaves it assumed false",
+			raw:     `{"StringEquals":{"aws:SecureTransport":["false","${s3:prefix}"]}}`,
+			ctxVars: request, version: testVersion2012, unknown: listKeys, assume: false, want: false,
+		},
+		{
+			name:    "known value not matching a positive operator leaves it assumed true",
+			raw:     `{"StringEquals":{"aws:SecureTransport":["false","${s3:prefix}"]}}`,
+			ctxVars: request, version: testVersion2012, unknown: listKeys, assume: true, want: true,
+		},
+		{
+			name:    "known value matching a Not operator fails it",
+			raw:     `{"StringNotEquals":{"aws:SecureTransport":["true","${s3:prefix}"]}}`,
+			ctxVars: request, version: testVersion2012, unknown: listKeys, assume: true, want: false,
+		},
+		{
+			name:    "known value not matching a Not operator leaves it assumed false",
+			raw:     `{"StringNotEquals":{"aws:SecureTransport":["false","${s3:prefix}"]}}`,
+			ctxVars: request, version: testVersion2012, unknown: listKeys, assume: false, want: false,
+		},
+		{
+			name:    "known value not matching a Not operator leaves it assumed true",
+			raw:     `{"StringNotEquals":{"aws:SecureTransport":["false","${s3:prefix}"]}}`,
+			ctxVars: request, version: testVersion2012, unknown: listKeys, assume: true, want: true,
+		},
+		{
+			name:    "value naming known and unknown keys is unknown",
+			raw:     `{"StringEquals":{"aws:SecureTransport":["${aws:SecureTransport}${s3:prefix}"]}}`,
+			ctxVars: request, version: testVersion2012, unknown: listKeys, assume: false, want: false,
+		},
+		{
+			name:    "absent key fails a positive operator whatever its values",
+			raw:     `{"StringEquals":{"aws:UserAgent":"${s3:prefix}"}}`,
+			ctxVars: request, version: testVersion2012, unknown: listKeys, assume: true, want: false,
+		},
+		{
+			name:    "absent key satisfies a Not operator whatever its values",
+			raw:     `{"StringNotEquals":{"aws:UserAgent":"${s3:prefix}"}}`,
+			ctxVars: request, version: testVersion2012, unknown: listKeys, assume: false, want: true,
+		},
+		{
+			name:    "absent key satisfies IfExists whatever its values",
+			raw:     `{"StringEqualsIfExists":{"aws:UserAgent":"${s3:prefix}"}}`,
+			ctxVars: request, version: testVersion2012, unknown: listKeys, assume: false, want: true,
+		},
+		{name: "no unknown keys behaves like Evaluate", raw: `{"StringEquals":{"s3:prefix":"a"}}`, assume: true, want: false},
+		{name: "empty condition matches", raw: ``, unknown: listKeys, assume: false, want: true},
+		{name: "unrecognized operator is not evaluable", raw: `{"StringFoo":{"s3:prefix":"a"}}`, unknown: listKeys, assume: true, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched, ok := EvaluateAssuming([]byte(tt.raw), tt.ctxVars, tt.version, tt.unknown, tt.assume)
+			if ok != !tt.wantErr {
+				t.Fatalf("EvaluateAssuming() ok = %v, want %v", ok, !tt.wantErr)
+			}
+			if ok && matched != tt.want {
+				t.Errorf("EvaluateAssuming() matched = %v, want %v", matched, tt.want)
+			}
+		})
+	}
+}
+
+// TestEvaluateTreatsListKeysAsAbsent pins Evaluate's own behavior for the
+// keys EvaluateAssuming can mark unknown: Evaluate has no such mode, so an
+// absent key is absent.
+func TestEvaluateTreatsListKeysAsAbsent(t *testing.T) {
+	runEvalCondTests(t, []evalCondTest{
+		{name: "absent key fails a positive operator", raw: `{"StringLike":{"s3:prefix":"team-a/*"}}`, want: false},
+		{name: "absent key satisfies a negated operator", raw: `{"StringNotLike":{"s3:prefix":"team-a/*"}}`, want: true},
+		{name: "absent key satisfies IfExists", raw: `{"StringLikeIfExists":{"s3:prefix":"team-a/*"}}`, want: true},
+		{name: "absent key satisfies Null true", raw: `{"Null":{"s3:prefix":"true"}}`, want: true},
+		{
+			name:    "present key evaluated",
+			raw:     `{"StringLike":{"s3:prefix":"team-a/*"}}`,
+			ctxVars: map[string][]string{"s3:prefix": {"team-a/x"}},
+			want:    true,
+		},
+	})
+}

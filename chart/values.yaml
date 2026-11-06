@@ -147,10 +147,29 @@ gateway:
     # the chart mounts this path from persistent storage and exports VGW_VERSIONING_DIR.
     # Must not overlap /mnt/data or sidecarDir.
     versioningDir: ""
+    # Optional container for the azure backend to store bucket ACLs, policies,
+    # CORS, website and tagging configuration in, one blob per setting. Without
+    # it they go in the bucket's container metadata, which Azure limits to 8KB
+    # in total, so a large bucket policy fails with MetadataTooLarge. When set,
+    # the chart exports AZ_META_CONTAINER.
+    # - The gateway creates the container at startup if it does not exist. The
+    #   Azure credentials need to read, write and delete blobs in it, and to
+    #   create it unless it is created beforehand.
+    # - Choose a name that is not an existing bucket. The gateway refuses to
+    #   start with a bucket as its meta container.
+    # - Existing buckets keep working: a setting is read from the container
+    #   metadata until it is next written.
+    # - Keep the value on every upgrade. Clearing or renaming it hides the
+    #   settings already stored there, so buckets lose their owners and policies.
+    # - Turn it on with strategy.type=Recreate (see the chart README).
+    # - Needs a versitygw image newer than v1.10.0. Older images ignore it.
+    metaContainer: ""
     # for s3 backend:
     # args: "--access 0123456 --secret 0xdeadbeef --endpoint http://s3.example.com"
     # for azure backend:
-    # args: ""--account 0123456 --access-key 0xdeadbeef"
+    # args: "--account 0123456 --access-key 0xdeadbeef"
+    # for azure backend with a meta container for bucket settings:
+    # metaContainer: "vgw-meta"
     # for posix backend with sidecar metadata:
     # sidecarDir: "/mnt/metadata"
     # for posix or scoutfs backend with object versioning:
@@ -192,6 +211,19 @@ gateway:
   corsAllowOrigin: ""
   # Disable strict S3 bucket naming validation.
   disableStrictBucketNames: false
+  # Which buckets ListBuckets returns to users that are neither root nor an
+  # admin, with an IAM backend that has no identity policies (iam.type:
+  # internal, or LDAP/Vault/IPA/S3 IAM configured through extraEnv). Root and
+  # admin users always list every bucket.
+  #   owned      -- only the buckets the user owns, as in AWS (default)
+  #   accessible -- also buckets whose ACL or bucket policy grants the user
+  #                 s3:ListBucket, on all or part of the bucket; public grants
+  #                 (Principal "*", the AllUsers ACL group) don't count. Reads
+  #                 the policy of every bucket the user doesn't own on each
+  #                 listing, so it is slower with many buckets.
+  #   all        -- every bucket. Listing a bucket grants nothing else on it.
+  # Must be owned with iam.type: standalone, which lists buckets as S3 does.
+  listBucketsScope: owned
 
 # --- Admin API server ---
 admin:

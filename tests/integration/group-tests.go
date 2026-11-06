@@ -253,6 +253,7 @@ func TestHeadObject(ts *TestState) {
 	ts.Run(HeadObject_zero_len_with_range)
 	ts.Run(HeadObject_dir_with_range)
 	ts.Run(HeadObject_conditional_reads)
+	ts.Run(HeadObject_not_modified_headers)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(HeadObject_not_enabled_checksum_mode)
@@ -298,6 +299,7 @@ func TestGetObject(ts *TestState) {
 	ts.Run(GetObject_invalid_parent)
 	ts.Sync(GetObject_large_object)
 	ts.Run(GetObject_conditional_reads)
+	ts.Run(GetObject_not_modified_headers)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(GetObject_not_enabled_checksum_mode)
@@ -753,6 +755,9 @@ func TestPutBucketCors(ts *TestState) {
 	ts.Run(PutBucketCors_invalid_allowed_origins)
 	ts.Run(PutBucketCors_invalid_method)
 	ts.Run(PutBucketCors_invalid_header)
+	ts.Run(PutBucketCors_multiple_wildcard_allowed_header)
+	ts.Run(PutBucketCors_wildcard_expose_header)
+	ts.Run(PutBucketCors_rules_limit)
 	ts.Run(PutBucketCors_md5)
 	ts.Run(PutBucketCors_success)
 }
@@ -2157,6 +2162,7 @@ func TestVersioning(ts *TestState) {
 	}
 	ts.Run(Versioning_HeadObject_invalid_parent)
 	ts.Run(Versioning_HeadObject_success)
+	ts.Run(Versioning_not_modified_version_id)
 	ts.Run(Versioning_HeadObject_dir_object_versions)
 	ts.Run(Versioning_HeadObject_without_versionId)
 	ts.Run(Versioning_HeadObject_null_version_without_versionId)
@@ -2239,6 +2245,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_object_lock_not_enabled_on_bucket_creation)
 	ts.Run(Versioning_Enable_object_lock)
 	ts.Run(Versioning_status_switch_to_suspended_with_object_lock)
+	ts.Run(Versioning_status_switch_to_suspended_with_object_lock_enabled_later)
 	// Object-Lock Retention
 	ts.Run(Versioning_PutObjectRetention_invalid_versionId)
 	ts.Run(Versioning_PutObjectRetention_non_existing_object_version)
@@ -2408,6 +2415,26 @@ func TestSignedStreaminPayloadTrailer(ts *TestState) {
 func TestNoAclMode(ts *TestState) {
 	ts.Run(NoAclMode_CreateBucket_with_acl)
 	ts.Run(NoAclMode_PutBucketAcl)
+}
+
+// TestListBucketsAccessible runs against a gateway started with
+// --list-buckets-scope accessible.
+func TestListBucketsAccessible(ts *TestState) {
+	ts.Run(ListBucketsAccessible_policy_shared_bucket)
+	ts.Run(ListBucketsAccessible_acl_shared_bucket)
+	ts.Run(ListBucketsAccessible_public_bucket_hidden)
+	ts.Run(ListBucketsAccessible_deny_hides_bucket)
+	ts.Run(ListBucketsAccessible_prefix_scoped_grant)
+	ts.Run(ListBucketsAccessible_pagination)
+	ts.Run(ListBucketsAccessible_root_and_admin_unchanged)
+}
+
+// TestListBucketsAll runs against a gateway started with
+// --list-buckets-scope all.
+func TestListBucketsAll(ts *TestState) {
+	ts.Run(ListBucketsAll_user_lists_every_bucket)
+	ts.Run(ListBucketsAll_pagination)
+	ts.Run(ListBucketsAll_root_and_admin_unchanged)
 }
 
 func TestDataIntegrityETag(ts *TestState) {
@@ -3177,6 +3204,7 @@ func GetIntTests() IntTests {
 		"HeadObject_zero_len_with_range":                                                   HeadObject_zero_len_with_range,
 		"HeadObject_dir_with_range":                                                        HeadObject_dir_with_range,
 		"HeadObject_conditional_reads":                                                     HeadObject_conditional_reads,
+		"HeadObject_not_modified_headers":                                                  HeadObject_not_modified_headers,
 		"HeadObject_not_enabled_checksum_mode":                                             HeadObject_not_enabled_checksum_mode,
 		"HeadObject_checksums":                                                             HeadObject_checksums,
 		"HeadObject_ranged_with_checksum_mode":                                             HeadObject_ranged_with_checksum_mode,
@@ -3209,6 +3237,7 @@ func GetIntTests() IntTests {
 		"GetObject_invalid_parent":                                                         GetObject_invalid_parent,
 		"GetObject_large_object":                                                           GetObject_large_object,
 		"GetObject_conditional_reads":                                                      GetObject_conditional_reads,
+		"GetObject_not_modified_headers":                                                   GetObject_not_modified_headers,
 		"GetObject_not_enabled_checksum_mode":                                              GetObject_not_enabled_checksum_mode,
 		"GetObject_checksums":                                                              GetObject_checksums,
 		"GetObject_dir_object_checksum":                                                    GetObject_dir_object_checksum,
@@ -3564,6 +3593,9 @@ func GetIntTests() IntTests {
 		"PutBucketCors_invalid_allowed_origins":                                            PutBucketCors_invalid_allowed_origins,
 		"PutBucketCors_invalid_method":                                                     PutBucketCors_invalid_method,
 		"PutBucketCors_invalid_header":                                                     PutBucketCors_invalid_header,
+		"PutBucketCors_multiple_wildcard_allowed_header":                                   PutBucketCors_multiple_wildcard_allowed_header,
+		"PutBucketCors_wildcard_expose_header":                                             PutBucketCors_wildcard_expose_header,
+		"PutBucketCors_rules_limit":                                                        PutBucketCors_rules_limit,
 		"PutBucketCors_md5":                                                                PutBucketCors_md5,
 		"GetBucketCors_non_existing_bucket":                                                GetBucketCors_non_existing_bucket,
 		"GetBucketCors_no_such_bucket_cors":                                                GetBucketCors_no_such_bucket_cors,
@@ -3888,6 +3920,7 @@ func GetIntTests() IntTests {
 		"Versioning_HeadObject_non_existing_object_version":                                Versioning_HeadObject_non_existing_object_version,
 		"Versioning_HeadObject_invalid_parent":                                             Versioning_HeadObject_invalid_parent,
 		"Versioning_HeadObject_success":                                                    Versioning_HeadObject_success,
+		"Versioning_not_modified_version_id":                                               Versioning_not_modified_version_id,
 		"Versioning_HeadObject_dir_object_versions":                                        Versioning_HeadObject_dir_object_versions,
 		"Versioning_HeadObject_without_versionId":                                          Versioning_HeadObject_without_versionId,
 		"Versioning_HeadObject_null_versionId_obj":                                         Versioning_HeadObject_null_versionId_obj,
@@ -3961,6 +3994,7 @@ func GetIntTests() IntTests {
 		"Versioning_object_lock_not_enabled_on_bucket_creation":                            Versioning_object_lock_not_enabled_on_bucket_creation,
 		"Versioning_Enable_object_lock":                                                    Versioning_Enable_object_lock,
 		"Versioning_status_switch_to_suspended_with_object_lock":                           Versioning_status_switch_to_suspended_with_object_lock,
+		"Versioning_status_switch_to_suspended_with_object_lock_enabled_later":             Versioning_status_switch_to_suspended_with_object_lock_enabled_later,
 		"Versioning_PutObjectRetention_invalid_versionId":                                  Versioning_PutObjectRetention_invalid_versionId,
 		"Versioning_PutObjectRetention_non_existing_object_version":                        Versioning_PutObjectRetention_non_existing_object_version,
 		"Versioning_GetObjectRetention_invalid_versionId":                                  Versioning_GetObjectRetention_invalid_versionId,
@@ -4041,6 +4075,16 @@ func GetIntTests() IntTests {
 		"SignedStreamingPayloadTrailer_success":                                            SignedStreamingPayloadTrailer_success,
 		"NoAclMode_CreateBucket_with_acl":                                                  NoAclMode_CreateBucket_with_acl,
 		"NoAclMode_PutBucketAcl":                                                           NoAclMode_PutBucketAcl,
+		"ListBucketsAccessible_policy_shared_bucket":                                       ListBucketsAccessible_policy_shared_bucket,
+		"ListBucketsAccessible_acl_shared_bucket":                                          ListBucketsAccessible_acl_shared_bucket,
+		"ListBucketsAccessible_public_bucket_hidden":                                       ListBucketsAccessible_public_bucket_hidden,
+		"ListBucketsAccessible_deny_hides_bucket":                                          ListBucketsAccessible_deny_hides_bucket,
+		"ListBucketsAccessible_prefix_scoped_grant":                                        ListBucketsAccessible_prefix_scoped_grant,
+		"ListBucketsAccessible_pagination":                                                 ListBucketsAccessible_pagination,
+		"ListBucketsAccessible_root_and_admin_unchanged":                                   ListBucketsAccessible_root_and_admin_unchanged,
+		"ListBucketsAll_user_lists_every_bucket":                                           ListBucketsAll_user_lists_every_bucket,
+		"ListBucketsAll_pagination":                                                        ListBucketsAll_pagination,
+		"ListBucketsAll_root_and_admin_unchanged":                                          ListBucketsAll_root_and_admin_unchanged,
 		"Server_large_http_header":                                                         Server_large_http_header,
 		"PostObject_invalid_content_type":                                                  PostObject_invalid_content_type,
 		"PostObject_missing_boundary":                                                      PostObject_missing_boundary,

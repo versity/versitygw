@@ -114,6 +114,7 @@ var (
 	websiteCertFile, websiteKeyFile        string
 	websiteNoTLS                           bool
 	disableACLs                            bool
+	listBucketsScope                       string
 	mpMaxParts                             int
 	socketPerm                             string
 	rdmaIP                                 string
@@ -512,6 +513,16 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_DISABLE_ACL"},
 			Destination: &disableACLs,
 			Aliases:     []string{"noacl"},
+		},
+		&cli.StringFlag{
+			Name: "list-buckets-scope",
+			Usage: "which buckets ListBuckets returns to non-admin users of an IAM backend without identity policies (internal, LDAP, Vault, IPA, S3): " +
+				"owned (their own buckets, as in AWS), " +
+				"accessible (also buckets whose ACL or bucket policy grants them s3:ListBucket on at least part of the bucket, ignoring public grants; reads the policy of each bucket they don't own on every listing), " +
+				"or all (every bucket). Only owned is allowed with the standalone IAM service",
+			EnvVars:     []string{"VGW_LIST_BUCKETS_SCOPE"},
+			Value:       string(auth.ListBucketsScopeOwned),
+			Destination: &listBucketsScope,
 		},
 		&cli.StringFlag{
 			Name:        "access-log",
@@ -1213,6 +1224,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		Readonly:                    readonly,
 		KeepAlive:                   keepAlive,
 		DisableACLs:                 disableACLs,
+		ListBucketsScope:            listBucketsScope,
 		DisableStrictBucketNames:    gwcli.DisableStrictBucketNames,
 		VirtualDomain:               virtualDomain,
 		HealthPath:                  healthPath,

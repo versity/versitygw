@@ -147,6 +147,22 @@ type Config struct {
 	// bucket ACLs. PutBucketAcl returns AccessControlListNotSupported.
 	// Prefer bucket policies over ACLs when this is enabled.
 	DisableACLs bool
+	// ListBucketsScope is which buckets ListBuckets returns to an account
+	// that is neither root nor an admin, under an IAM backend without
+	// identity policies (internal, LDAP, Vault, IPA, S3):
+	//
+	//   "owned"      -- the buckets it owns, as in AWS (the default, also when empty)
+	//   "accessible" -- also each bucket whose ACL or bucket policy grants it
+	//                   s3:ListBucket, on at least part of the bucket
+	//   "all"        -- every bucket, as admins see them
+	//
+	// Grants to everyone, a bucket policy Principal of "*" or an ACL grant to
+	// the AllUsers group, never make a bucket visible under "accessible". It
+	// reads the bucket policy of each bucket the caller doesn't own on every
+	// ListBuckets call, which the other scopes don't. The standalone IAM
+	// service lists buckets as S3 does, so RunVersityGW fails with any scope
+	// but "owned" for it.
+	ListBucketsScope string
 	// DisableSSECTLS disables the HTTPS requirement for SSE-C requests.
 	DisableSSECTLS bool
 	// DisableStrictBucketNames allows legacy or non-DNS-compliant bucket
@@ -713,6 +729,10 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	if cfg.MultipartMaxParts < 1 {
 		return fmt.Errorf("mp-max-parts must be positive")
 	}
+	listBucketsScope, err := auth.ParseListBucketsScope(cfg.ListBucketsScope)
+	if err != nil {
+		return err
+	}
 
 	clientIPHeader, err := utils.NormalizeClientIPHeader(cfg.ClientIPHeader)
 	if err != nil {
@@ -861,6 +881,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	if cfg.DisableACLs {
 		opts = append(opts, s3api.WithDisableACL())
 	}
+	opts = append(opts, s3api.WithListBucketsScope(listBucketsScope))
 	if cfg.DisableSSECTLS {
 		opts = append(opts, s3api.WithDisableSSECTLS())
 	}
@@ -882,6 +903,14 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		if err != nil {
 			return fmt.Errorf("setup iam: %w", err)
 		}
+	}
+	// Checked against the IAM service itself, since a caller may supply one
+	// prebuilt.
+	if err := auth.ValidateListBucketsScope(iam, listBucketsScope); err != nil {
+		if cfg.IAMService == nil {
+			iam.Shutdown()
+		}
+		return err
 	}
 
 	loggers, err := s3log.InitLogger(&s3log.LogConfig{

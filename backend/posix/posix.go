@@ -95,6 +95,10 @@ type Posix struct {
 	// acknowledged
 	fsync bool
 
+	// fallocUnsupported holds bucket paths whose filesystem rejected
+	// fallocate; per path since buckets can be on different filesystems.
+	fallocUnsupported sync.Map
+
 	// forceNoCopyFileRange is a flag to disable the use of io.Copy to
 	// reassemble multipart upload parts, which uses copy_file_range on
 	// linux. This is needed for cases where a filesystem that does not
@@ -795,52 +799,39 @@ func (p *Posix) ListBuckets(ctx context.Context, input s3response.ListBucketsInp
 
 	var buckets []s3response.ListAllMyBucketsEntry
 	for _, fi := range fis {
-		if !strings.HasPrefix(fi.Name(), input.Prefix) {
+		name := fi.Name()
+		if !strings.HasPrefix(name, input.Prefix) {
 			continue
 		}
 
-		if !utils.IsValidBucketName(fi.Name()) || p.isExcludedName(fi.Name()) {
+		if !utils.IsValidBucketName(name) || p.isExcludedName(name) {
 			continue
 		}
 
+		if name <= input.ContinuationToken {
+			continue
+		}
+
+		listed, err := p.isBucketListed(ctx, name, input)
+		if err != nil {
+			return s3response.ListAllMyBucketsResult{}, err
+		}
+		if !listed {
+			continue
+		}
+
+		// The page is full and another bucket follows it, so the
+		// listing continues after the page's last bucket. A page that
+		// ends with the last listed bucket carries no token, as in S3.
 		if len(buckets) == int(input.MaxBuckets) {
 			cToken = buckets[len(buckets)-1].Name
 			break
 		}
 
-		if fi.Name() <= input.ContinuationToken {
-			continue
-		}
-
-		// return all the buckets for admin users
-		if input.IsAdmin {
-			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name:         fi.Name(),
-				CreationDate: fi.ModTime(),
-			})
-			continue
-		}
-
-		aclJSON, err := p.meta.RetrieveAttribute(nil, fi.Name(), "", aclkey)
-		if errors.Is(err, meta.ErrNoSuchKey) {
-			// skip buckets without acl tag
-			continue
-		}
-		if err != nil {
-			return s3response.ListAllMyBucketsResult{}, fmt.Errorf("get acl tag: %w", err)
-		}
-
-		acl, err := auth.ParseACL(aclJSON)
-		if err != nil {
-			return s3response.ListAllMyBucketsResult{}, err
-		}
-
-		if acl.Owner == input.Owner {
-			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name:         fi.Name(),
-				CreationDate: fi.ModTime(),
-			})
-		}
+		buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+			Name:         name,
+			CreationDate: fi.ModTime(),
+		})
 	}
 
 	return s3response.ListAllMyBucketsResult{
@@ -853,6 +844,40 @@ func (p *Posix) ListBuckets(ctx context.Context, input s3response.ListBucketsInp
 		Prefix:            input.Prefix,
 		ContinuationToken: cToken,
 	}, nil
+}
+
+// isBucketListed reports whether ListBuckets lists bucket for input: every
+// bucket for an admin, and otherwise each one owned by input.Owner or
+// accepted by input.IsVisible. A bucket without an ACL is never listed to a
+// non-admin.
+func (p *Posix) isBucketListed(ctx context.Context, bucket string, input s3response.ListBucketsInput) (bool, error) {
+	if input.IsAdmin {
+		return true, nil
+	}
+
+	aclJSON, err := p.meta.RetrieveAttribute(nil, bucket, "", aclkey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("get acl tag: %w", err)
+	}
+
+	acl, err := auth.ParseACL(aclJSON)
+	if err != nil {
+		return false, err
+	}
+	if acl.Owner == input.Owner {
+		return true, nil
+	}
+	if input.IsVisible == nil {
+		return false, nil
+	}
+
+	// The listing already holds an action slot, so a backend call made on
+	// its behalf must not wait for another: enough concurrent listings
+	// would otherwise take every slot and wait on each other.
+	return input.IsVisible(withCtxNoSlot(ctx), bucket, aclJSON)
 }
 
 // IsBucketValid reports whether bucket may be used as a bucket name by this
@@ -4422,7 +4447,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		srcEtag = p.defaultEtag
 	}
 
-	err = backend.EvaluatePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
+	err = backend.EvaluateCopySourcePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
 		IfMatch:       upi.CopySourceIfMatch,
 		IfNoneMatch:   upi.CopySourceIfNoneMatch,
 		IfModSince:    upi.CopySourceIfModifiedSince,
@@ -6034,7 +6059,46 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 	}, nil
 }
 
+// notModifiedCounts returns what a 304 repeats from the 200 but GetObject and
+// HeadObject have not read when they evaluate the preconditions: the tag
+// count, and with partNumber the parts count of a multipart object.
+func (p *Posix) notModifiedCounts(bucket, object, versionId string, partNumber *int32) (tagCount, partsCount *int32, err error) {
+	tags, err := p.getAttrTags(bucket, object, versionId)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(tags) != 0 {
+		tc := int32(len(tags))
+		tagCount = &tc
+	}
+	if partNumber == nil {
+		return tagCount, nil, nil
+	}
+
+	mpMetaBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, mpMetaKey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return tagCount, nil, nil
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("retrieve mp metadata: %w", err)
+	}
+	mpMeta, err := backend.UnmarshalMpUploadMetadata(mpMetaBytes, false)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse object multipart metadata: %w", err)
+	}
+	pc := int32(len(mpMeta.Parts))
+	return tagCount, &pc, nil
+}
+
 func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	return p.GetObjectWithPreReadFunc(ctx, input, nil)
+}
+
+// GetObjectWithPreReadFunc is GetObject with a hook that can reject the
+// read. preRead gets the opened object file after the preconditions, the
+// range and the part number pass, so their errors come first. A nil
+// preRead is skipped. Directory objects have no data and skip it too.
+func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjectInput, preRead func(f *os.File) error) (*s3.GetObjectOutput, error) {
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
@@ -6164,6 +6228,36 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		IfModSince:    input.IfModifiedSince,
 		IfUnmodeSince: input.IfUnmodifiedSince,
 	})
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+		// the 304 carries the object's metadata from the 200, but no content
+		if p.versioningEnabled() && versionId == "" {
+			versionId, err = p.liveObjVersionId(ctx, bucket, object)
+			if err != nil {
+				return nil, err
+			}
+		}
+		tagCount, partsCount, err := p.notModifiedCounts(bucket, object, versionId, input.PartNumber)
+		if err != nil {
+			return nil, err
+		}
+		objMeta := p.loadObjectMetaProperties(nil, bucket, object, &fid)
+		legalHold, lockMode, retainUntil := p.objectLockAttrs(nil, bucket, object)
+		return &s3.GetObjectOutput{
+			ObjectLockLegalHoldStatus: legalHold,
+			ObjectLockMode:            lockMode,
+			ObjectLockRetainUntilDate: retainUntil,
+			CacheControl:              objMeta.CacheControl,
+			ExpiresString:             objMeta.Expires,
+			WebsiteRedirectLocation:   objMeta.WebsiteRedirectLocation,
+			ETag:                      &etag,
+			LastModified:              backend.GetTimePtr(fid.ModTime()),
+			Metadata:                  objMeta.Metadata,
+			TagCount:                  tagCount,
+			StorageClass:              types.StorageClassStandard,
+			VersionId:                 &versionId,
+			PartsCount:                partsCount,
+		}, s3err.GetAPIError(s3err.ErrNotModified)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -6328,6 +6422,14 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 
 		if isValid {
 			contentRange = backend.GetPtrFromString(fmt.Sprintf("bytes %v-%v/%v", start, start+lgth-1, objSize))
+		}
+	}
+
+	if preRead != nil {
+		err = preRead(f)
+		if err != nil {
+			f.Close()
+			return nil, err
 		}
 	}
 
@@ -6542,6 +6644,29 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		IfModSince:    input.IfModifiedSince,
 		IfUnmodeSince: input.IfUnmodifiedSince,
 	})
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+		// the 304 carries the object's metadata from the 200
+		tagCount, partsCount, err := p.notModifiedCounts(bucket, object, versionId, input.PartNumber)
+		if err != nil {
+			return nil, err
+		}
+		legalHold, lockMode, retainUntil := p.objectLockAttrs(nil, bucket, object)
+		return &s3.HeadObjectOutput{
+			ObjectLockLegalHoldStatus: legalHold,
+			ObjectLockMode:            lockMode,
+			ObjectLockRetainUntilDate: retainUntil,
+			CacheControl:              objMeta.CacheControl,
+			ExpiresString:             objMeta.Expires,
+			WebsiteRedirectLocation:   objMeta.WebsiteRedirectLocation,
+			ETag:                      &etag,
+			LastModified:              backend.GetTimePtr(fi.ModTime()),
+			Metadata:                  objMeta.Metadata,
+			TagCount:                  tagCount,
+			StorageClass:              types.StorageClassStandard,
+			VersionId:                 &versionId,
+			PartsCount:                partsCount,
+		}, s3err.GetAPIError(s3err.ErrNotModified)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -6605,26 +6730,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		}
 	}
 
-	var objectLockLegalHoldStatus types.ObjectLockLegalHoldStatus
-	status, err := p.GetObjectLegalHold(withCtxNoSlot(ctx), bucket, *input.Key, versionId)
-	if err == nil {
-		if *status {
-			objectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOn
-		} else {
-			objectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOff
-		}
-	}
-
-	var objectLockMode types.ObjectLockMode
-	var objectLockRetainUntilDate *time.Time
-	retention, err := p.GetObjectRetention(withCtxNoSlot(ctx), bucket, *input.Key, versionId)
-	if err == nil {
-		var config types.ObjectLockRetention
-		if err := json.Unmarshal(retention, &config); err == nil {
-			objectLockMode = types.ObjectLockMode(config.Mode)
-			objectLockRetainUntilDate = config.RetainUntilDate
-		}
-	}
+	objectLockLegalHoldStatus, objectLockMode, objectLockRetainUntilDate := p.objectLockAttrs(nil, bucket, object)
 
 	var checksums s3response.Checksum
 	// Return checksums only when the full object is requested
@@ -6914,7 +7020,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		srcEtag = p.defaultEtag
 	}
 
-	err = backend.EvaluatePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
+	err = backend.EvaluateCopySourcePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
 		IfMatch:       input.CopySourceIfMatch,
 		IfNoneMatch:   input.CopySourceIfNoneMatch,
 		IfModSince:    input.CopySourceIfModifiedSince,
@@ -7981,7 +8087,7 @@ func (p *Posix) DeleteBucketWebsite(ctx context.Context, bucket string) error {
 }
 
 // objectLockAttrs returns the legal hold and retention stored on the object
-// at bucket/object, as its GetObject response reports them. One that can't
+// at bucket/object, as GetObject and HeadObject report them. One that can't
 // be read is left out.
 func (p *Posix) objectLockAttrs(f *os.File, bucket, object string) (types.ObjectLockLegalHoldStatus, types.ObjectLockMode, *time.Time) {
 	var legalHold types.ObjectLockLegalHoldStatus

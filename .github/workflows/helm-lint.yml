@@ -47,6 +47,24 @@ jobs:
             "--set iam.enabled=true --set iam.persistence.enabled=true --set iam.dir=/var/lib/versitygw/iam --set persistence.enabled=false"
             # internal IAM on an existing PVC
             "--set iam.enabled=true --set iam.persistence.enabled=true --set iam.persistence.create=false --set iam.persistence.claimName=versitygw-iam"
+            # internal IAM listing buckets shared through ACLs and bucket policies
+            "--set iam.enabled=true --set gateway.listBucketsScope=accessible"
+          )
+
+          for scenario in "${scenarios[@]}"; do
+            echo "::group::helm lint --set ${scenario}"
+            # shellcheck disable=SC2086
+            helm lint chart/ --strict --set auth.existingSecret=root-credentials ${scenario}
+            echo "::endgroup::"
+          done
+
+      - name: Lint backend configurations
+        run: |
+          scenarios=(
+            # stateless azure backend with a meta container, scaled out
+            "--set gateway.backend.type=azure --set gateway.backend.args=--account=myaccount --set gateway.backend.metaContainer=vgw-meta --set persistence.enabled=false --set replicaCount=2"
+            # an all-digit container name, which --set reads as a number
+            "--set gateway.backend.type=azure --set gateway.backend.args=--account=myaccount --set gateway.backend.metaContainer=123 --set persistence.enabled=false"
           )
 
           for scenario in "${scenarios[@]}"; do

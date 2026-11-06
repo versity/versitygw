@@ -26,7 +26,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -206,12 +205,14 @@ func (s *ScoutFS) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 }
 
 func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
-	res, err := s.Posix.HeadObject(ctx, input)
-	if err != nil {
+	res, headErr := s.Posix.HeadObject(ctx, input)
+	notModified := res != nil && errors.Is(headErr, s3err.GetAPIError(s3err.ErrNotModified))
+	if headErr != nil && !notModified {
 		// pass on the delete marker output that comes with the error
-		return res, err
+		return res, headErr
 	}
 
+	// a 304's output gets the glacier storage class too, as the 200 does
 	if s.glaciermode {
 		objPath := s.ObjectPath(*input.Bucket, *input.Key)
 
@@ -247,7 +248,8 @@ func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 		res.StorageClass = stclass
 	}
 
-	return res, nil
+	// nil, or NotModified with the output a 304 carries
+	return res, headErr
 }
 
 func (s *ScoutFS) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
@@ -347,60 +349,24 @@ func (s *ScoutFS) isBucketValid(bucket string) bool {
 }
 
 func (s *ScoutFS) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
-	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
-		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+	if !s.glaciermode {
+		return s.Posix.GetObject(ctx, input)
 	}
 
-	bucket := *input.Bucket
-	object := *input.Key
-
-	if !s.isBucketValid(bucket) {
-		return nil, s3err.GetBucketErr(s3err.ErrInvalidBucketName, bucket)
-	}
-
-	err := s.DoesBucketExist(bucket)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.ValidateObjectKey(bucket, object)
-	if err != nil {
-		return nil, err
-	}
-
-	objPath := s.ObjectPath(bucket, object)
-
-	fi, err := os.Stat(objPath)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-	}
-	if errors.Is(err, syscall.ENAMETOOLONG) {
-		return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("stat object: %w", err)
-	}
-
-	if strings.HasSuffix(object, "/") && !fi.IsDir() {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-	}
-
-	if s.glaciermode {
-		// Check if there are any offline exents associated with this file.
-		// If so, we will return the InvalidObjectState error.
-		st, err := scoutfs.StatMore(objPath)
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-		}
+	// An object with offline extents is archived and can't be read until
+	// it is restored. S3 checks this last, after the preconditions, the
+	// range and the part number, so a matching If-None-Match still gets
+	// 304 Not Modified. The opened file is the requested version.
+	return s.Posix.GetObjectWithPreReadFunc(ctx, input, func(f *os.File) error {
+		st, err := scoutfs.FStatMore(f)
 		if err != nil {
-			return nil, fmt.Errorf("stat more: %w", err)
+			return fmt.Errorf("stat more: %w", err)
 		}
 		if st.Offline_blocks != 0 {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidObjectState)
+			return s3err.GetAPIError(s3err.ErrInvalidObjectState)
 		}
-	}
-
-	return s.Posix.GetObject(ctx, input)
+		return nil
+	})
 }
 
 func (s *ScoutFS) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {

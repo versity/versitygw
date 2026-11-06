@@ -59,28 +59,57 @@ upload_parts_rest_before_completion() {
   return 0
 }
 
+upload_split_file_with_checksum_before_completion() {
+  if ! check_param_count_gt "bucket, key, upload ID, algorithm, parts" 6 $#; then
+    return 1
+  fi
+  local bucket="$1" key="$2" upload_id="$3" algorithm="$4" parts=("${@:5}")
+  local parts_payload="" uppercase_checksum_algorithm etag checksum
+  local -a checksums
+
+  uppercase_checksum_algorithm=${algorithm^^}
+  for ((part=0;part<"${#parts[@]}";part++)); do
+    part_number=$((part+1))
+    if ! response=$(upload_part_rest_with_checksum "$bucket" "$key" "$upload_id" "$part_number" "${parts[$part]}" "$algorithm" 2>&1); then
+      log 2 "error uploading part '$part': $response"
+      return 1
+    fi
+    read -r etag checksum <<< "$response"
+
+    checksums+=("$checksum")
+    parts_payload+="<Part><ETag>$etag</ETag><Checksum${uppercase_checksum_algorithm}>${checksum}</Checksum${uppercase_checksum_algorithm}><PartNumber>$part_number</PartNumber></Part>"
+    log 5 "parts payload: $parts_payload"
+  done
+  log 5 "CHECKSUMS:  ${checksums[*]}"
+  echo "${checksums[*]}"
+  echo "$parts_payload"
+  return 0
+}
+
 upload_parts_rest_with_checksum_before_completion() {
   if ! check_param_count_v2 "bucket, key, file, upload ID, part count, algorithm" 6 $#; then
     return 1
   fi
-  log 5 "file: $3, part count: $5"
-  log 5 "file info: $(ls -l "$3")"
-  if ! segments=$(split_file "$3" "$5" 2>&1); then
+  local bucket="$1" key="$2" file="$3" upload_id="$4" part_count="$5" algorithm="$6"
+  local response parts_payload="" part part_number uppercase_checksum_algorithm
+  local -a segment_array checksums
+
+  if ! response=$(split_file "$file" "$part_count" 2>&1); then
     log 2 "error splitting file"
     return 1
   fi
-  read -r -a segment_array <<< "$segments"
+  read -r -a segment_array <<< "$response"
 
-  parts_payload=""
-  checksums=()
-  for ((part=0;part<"$5";part++)); do
+  uppercase_checksum_algorithm=${algorithm^^}
+  for ((part=0;part<part_count;part++)); do
     part_number=$((part+1))
-    if ! upload_part_rest_with_checksum "$1" "$2" "$4" "$part_number" "${segment_array[$part]}" "$6"; then
-      log 2 "error uploading part $part"
+    if ! response=$(upload_part_rest_with_checksum "$bucket" "$key" "$upload_id" "$part_number" "${segment_array[$part]}" "$algorithm" 2>&1); then
+      log 2 "error uploading part '$part_number': $response"
       return 1
     fi
+    read -r etag checksum <<< "$response"
+
     checksums+=("$checksum")
-    uppercase_checksum_algorithm=$(echo -n "$6" | tr '[:lower:]' '[:upper:]')
     parts_payload+="<Part><ETag>$etag</ETag><Checksum${uppercase_checksum_algorithm}>${checksum}</Checksum${uppercase_checksum_algorithm}><PartNumber>$part_number</PartNumber></Part>"
     log 5 "parts payload: $parts_payload"
   done
