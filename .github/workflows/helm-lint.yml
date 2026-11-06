@@ -68,7 +68,7 @@ jobs:
             # account key from a Secret, several replicas on the azure backend
             "--set iam.enabled=true --set iam.type=azure --set iam.azure.container=vgwiam --set iam.azure.account=acct --set iam.azure.credentials.existingSecret=az-iam --set iam.azure.credentials.accessKeyKey=key --set replicaCount=3 --set persistence.enabled=false --set gateway.backend.type=azure"
             # default credentials (e.g. workload identity) with an explicit URL
-            "--set iam.enabled=true --set iam.type=azure --set iam.azure.container=vgwiam --set iam.azure.url=https://acct.blob.core.windows.net/ --set serviceAccount.annotations.azure\\.workload\\.identity/client-id=00000000-0000-0000-0000-000000000000 --set podLabels.azure\\.workload\\.identity/use=true"
+            "--set iam.enabled=true --set iam.type=azure --set iam.azure.container=vgwiam --set iam.azure.url=https://acct.blob.core.windows.net/ --set serviceAccount.annotations.azure\\.workload\\.identity/client-id=00000000-0000-0000-0000-000000000000 --set-string podLabels.azure\\.workload\\.identity/use=true"
           )
 
           for scenario in "${scenarios[@]}"; do
