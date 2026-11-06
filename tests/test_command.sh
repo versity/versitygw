@@ -42,6 +42,55 @@ source ./tests/setup_unit.sh
   assert_success
 }
 
+# tags: unit
+@test "run parallel - appends status to file and stdout" {
+  local runner_log="$BATS_TEST_TMPDIR/runner log.txt" contents
+  printf '%s\n' "existing entry" > "$runner_log"
+
+  run bash -c '
+    docker() {
+      if [ "$1" == "image" ]; then return 0; fi
+      printf "%s\n" "suite output"
+      return 7
+    }
+    export -f docker
+    bash ./tests/run_parallel.sh fake-image failing-suite 1 "$1" --log-file "$2"
+  ' bash "$BATS_TEST_TMPDIR" "$runner_log"
+
+  assert_failure 1
+  assert_output -p "started (pid:"
+  assert_output -p "finished with status '7'"
+  assert_output -p "log file:"
+  assert_output -p "duration:"
+  contents=$(<"$runner_log")
+  assert_equal "$contents" "$(printf 'existing entry\n%s' "$output")"
+}
+
+# tags: unit
+@test "run parallel - log-file requires a path" {
+  run ./tests/run_parallel.sh fake-image failing-suite --log-file
+
+  assert_failure 1
+  assert_output -p "--log-file requires a file path"
+}
+
+# tags: unit
+@test "run parallel - lists available suites" {
+  local expected
+
+  run ./tests/run.sh -l
+  assert_success
+  expected="$output"
+
+  run ./tests/run_parallel.sh -l
+  assert_success
+  assert_output "$expected"
+
+  run ./tests/run_parallel.sh --list
+  assert_success
+  assert_output "$expected"
+}
+
 @test "Run parallel test, print log on failure" {
   local fake_bin log_folder matching_logs
 

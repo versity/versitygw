@@ -98,6 +98,10 @@ To communicate directly with s3, in order to compare the gateway results to dire
 
 The script `run_parallel.sh` is provided to allow users to more quickly run tests in parallel on the local machine.  To use this script, first build and tag a docker container with the desired configuration.  Next, run the script with this tag, the desired tests (can find with `./tests/run.sh -l`) separated by comma, the maximum number of parallel jobs (default 4), and the folder to place the logs.
 
+To also append runner status messages to a file, add `--log-file <path>`, for example: `./tests/run_parallel.sh bats_test s3 4 runtime/log --log-file runtime/parallel.log`. The parent directory must exist. Per-suite Docker output continues to be written separately in the specified log folder.
+
+Use `./tests/run_parallel.sh -l` (or `--list`) to list available suites without running Docker.
+
 ## Instructions - Running with docker-compose
 
 A file named `docker-compose-bats.yml` is provided in the root folder.  A few configurations are provided, and you can also create your own provided you have a secrets and config file:

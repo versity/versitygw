@@ -20,6 +20,14 @@ DEFAULT_MAX_PARALLEL_JOBS=4
 DEFAULT_DOCKER_LOG_FOLDER="$PWD/runtime/log"
 DOCKERFILE="tests/Dockerfile_test_bats"
 
+print_message() {
+  if [ -n "${runner_log_file:-}" ]; then
+    printf '%s\n' "$1" | tee -a "$runner_log_file"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
 check_for_finished_processes() {
   if ! check_param_count_v2 "pid array ref, suite array ref, time array ref, log array ref" 4 $#; then
     return 1
@@ -34,10 +42,10 @@ check_for_finished_processes() {
       wait "$pid"
       status=$?
       run_end_time=$(date +%s)
-      printf '%s\n' "'$pid' (${suites_ref[$pid]}) finished with status '$status' (duration: $((run_end_time-${times_ref[$pid]}))s)"
+      print_message "'$pid' (${suites_ref[$pid]}) finished with status '$status' (duration: $((run_end_time-${times_ref[$pid]}))s)"
       if [ "$status" -ne 0 ]; then
         test_failure=1
-        printf 'log file:  %s\n' "${logs_ref[$pid]}"
+        print_message "log file:  ${logs_ref[$pid]}"
       fi
       unset "pids_ref[$pid]"
       unset "suites_ref[$pid]"
@@ -67,7 +75,7 @@ run_tests() {
     log_name="$docker_log_folder/${test_suite}-${timestamp}.log"
     docker run -v "$PWD/runtime/config:/home/tester/config" -v "$docker_log_folder:/home/tester/log" -t "$image_tag" "$test_suite" > "$log_name" &
     pid=$!
-    printf '%s\n' "'$test_suite' started (pid: '$pid')"
+    print_message "'$test_suite' started (pid: '$pid')"
     pids[$pid]=$pid
     # shellcheck disable=SC2034
     suites[$pid]=$test_suite
@@ -84,10 +92,13 @@ run_tests() {
 }
 
 usage() {
-  printf '%s\n' "Usage: $0 <docker image tag> <test suites> [max parallel jobs] [log folder] [--rebuild|--build-if-missing|--use-tag]"
+  printf '%s\n' "Usage: $0 -l|--list"
+  printf '%s\n' "Usage: $0 <docker image tag> <test suites> [max parallel jobs] [log folder] [--rebuild|--build-if-missing|--use-tag] [--log-file <path>]"
+  printf '%s\n' "  -l, --list          List available test suites without running Docker."
   printf '%s\n' "  --rebuild           Rebuild the Docker image before testing."
   printf '%s\n' "  --build-if-missing  Build the Docker image only if the tag does not exist."
   printf '%s\n' "  --use-tag           Use the provided tag without building (default)."
+  printf '%s\n' "  --log-file <path>   Append runner status messages to a file as well as stdout."
 }
 
 build_container() {
@@ -116,7 +127,7 @@ prepare_container() {
       ;;
     use-tag)
       if ! docker image inspect "$image_tag" >/dev/null 2>&1; then
-        echo "image tagged '$image_tag' doesn't exist"
+        print_message "image tagged '$image_tag' doesn't exist"
         return 1
       fi
       ;;
@@ -127,6 +138,11 @@ prepare_container() {
       ;;
   esac
 }
+
+if [ "$1" == "-l" ] || [ "$1" == "--list" ]; then
+  ./tests/run.sh -l
+  exit $?
+fi
 
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
   usage
@@ -145,11 +161,20 @@ test_list="$2"
 max_parallel_jobs="$DEFAULT_MAX_PARALLEL_JOBS"
 docker_log_folder="$DEFAULT_DOCKER_LOG_FOLDER"
 build_mode="use-tag"
+runner_log_file=""
 docker_log_folder_set=false
 shift 2
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --log-file)
+      if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
+        echo "--log-file requires a file path" >&2
+        exit 1
+      fi
+      runner_log_file="$2"
+      shift
+      ;;
     --rebuild)
       build_mode="rebuild"
       ;;
@@ -183,12 +208,17 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+if [ -n "$runner_log_file" ] && ! { : >> "$runner_log_file"; }; then
+  echo "unable to write runner log file '$runner_log_file'" >&2
+  exit 1
+fi
+
 if ! prepare_container "$image_tag" "$build_mode"; then
   exit 1
 fi
 
 if ! mkdir -p "$docker_log_folder"; then
-  echo "unable to create docker log folder '$docker_log_folder'"
+  print_message "unable to create docker log folder '$docker_log_folder'"
   exit 1
 fi
 
@@ -197,6 +227,6 @@ run_tests "$image_tag" "$test_list" "$max_parallel_jobs" "$docker_log_folder"
 
 end_time=$(date +%s)
 duration=$((end_time-start_time))
-printf '%s\n' "duration: ${duration}s"
+print_message "duration: ${duration}s"
 
 exit "$test_failure"
