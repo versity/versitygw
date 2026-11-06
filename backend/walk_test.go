@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -679,11 +680,11 @@ func TestWalkSkipDirsFileNotSkipped(t *testing.T) {
 // directories named in skipdirs. It used to return fs.SkipDir for a regular
 // file with a skipped name too, which skips the rest of the file's directory.
 func TestWalkVersionsSkipDirsFileNotSkipped(t *testing.T) {
-	getFileVersions := func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+	getFileVersions := func(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
 		if d.IsDir() {
 			return nil, backend.ErrSkipObj
 		}
-		return getVersionsTestFunc(path, versionIdMarker, pastVersionIdMarker, availableObjCount, d)
+		return getVersionsTestFunc(path, versionIdMarker, availableObjCount, d)
 	}
 
 	res, err := backend.WalkVersions(context.Background(), skipNameFS, "", "", "", "", 1000,
@@ -765,11 +766,11 @@ func TestWalkSkipDirsRootAndCase(t *testing.T) {
 // TestWalkVersionsSkipDirsRootAndCase checks that WalkVersions applies the
 // same root-only and case-insensitive rules as Walk.
 func TestWalkVersionsSkipDirsRootAndCase(t *testing.T) {
-	getFileVersions := func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+	getFileVersions := func(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
 		if d.IsDir() {
 			return nil, backend.ErrSkipObj
 		}
-		return getVersionsTestFunc(path, versionIdMarker, pastVersionIdMarker, availableObjCount, d)
+		return getVersionsTestFunc(path, versionIdMarker, availableObjCount, d)
 	}
 
 	res, err := backend.WalkVersions(context.Background(), rootSkipFS, "", "", "", "", 1000,
@@ -1341,10 +1342,10 @@ func comparePrefixesOrdered(a, b []types.CommonPrefix) bool {
 // returns a single latest version for each file or directory encountered.
 // Directories are reported with a trailing delimiter in the key to match the
 // behavior of the non-versioned Walk tests where directory objects are listed.
-func getVersionsTestFunc(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+func getVersionsTestFunc(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
 	// If we have no available slots left, signal truncation (should be rare in these tests)
 	if availableObjCount <= 0 {
-		return &backend.ObjVersionFuncResult{Truncated: true, NextVersionIdMarker: ""}, nil
+		return &backend.ObjVersionFuncResult{Truncated: true}, nil
 	}
 
 	key := path
@@ -1354,7 +1355,10 @@ func getVersionsTestFunc(path, versionIdMarker string, pastVersionIdMarker *bool
 	ver := "v1"
 	latest := true
 	ov := s3response.ObjectVersion{Key: &key, VersionId: &ver, IsLatest: &latest}
-	return &backend.ObjVersionFuncResult{ObjectVersions: []s3response.ObjectVersion{ov}}, nil
+	return &backend.ObjVersionFuncResult{
+		ObjectVersions:      []s3response.ObjectVersion{ov},
+		NextVersionIdMarker: ver,
+	}, nil
 }
 
 // TestWalkVersions mirrors TestWalk but exercises WalkVersions and validates
@@ -1494,35 +1498,27 @@ func createMultiVersionFunc(files map[string]int) backend.GetVersionsFunc {
 		versionedFiles[path] = versions
 	}
 
-	return func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
-		if availableObjCount <= 0 {
-			return &backend.ObjVersionFuncResult{Truncated: true}, nil
-		}
-
+	return func(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
 		// Handle directories - just return a single directory version
+		versions, exists := versionedFiles[path]
 		if d.IsDir() {
 			key := path + "/"
 			ver := "v1"
 			latest := true
-			ov := s3response.ObjectVersion{Key: &key, VersionId: &ver, IsLatest: &latest}
-			return &backend.ObjVersionFuncResult{ObjectVersions: []s3response.ObjectVersion{ov}}, nil
-		}
-
-		// Get versions for this file
-		versions, exists := versionedFiles[path]
-		if !exists {
+			versions = []s3response.ObjectVersion{{Key: &key, VersionId: &ver, IsLatest: &latest}}
+		} else if !exists {
 			// No versions for this file, skip it
 			return &backend.ObjVersionFuncResult{}, backend.ErrSkipObj
 		}
 
-		// Handle version ID marker pagination
+		// Handle version ID marker pagination: list the versions after
+		// the marker, none of them if the marker isn't found
 		startIdx := 0
-		if versionIdMarker != "" && !*pastVersionIdMarker {
-			// Find the starting position after the marker
+		if versionIdMarker != "" {
+			startIdx = len(versions)
 			for i, version := range versions {
 				if *version.VersionId == versionIdMarker {
 					startIdx = i + 1
-					*pastVersionIdMarker = true
 					break
 				}
 			}
@@ -1533,11 +1529,9 @@ func createMultiVersionFunc(files map[string]int) backend.GetVersionsFunc {
 
 		result := &backend.ObjVersionFuncResult{
 			ObjectVersions: versions[startIdx:endIdx],
+			Truncated:      endIdx < len(versions),
 		}
-
-		// Check if we need to truncate
-		if endIdx < len(versions) {
-			result.Truncated = true
+		if endIdx > startIdx {
 			result.NextVersionIdMarker = *versions[endIdx-1].VersionId
 		}
 
@@ -1638,6 +1632,199 @@ func TestWalkVersionsTruncated(t *testing.T) {
 	expectedTotal := versionCounts["foo"] + versionCounts["bar"] + versionCounts["baz"]
 	if totalVersions != expectedTotal {
 		t.Errorf("total versions mismatch: expected %d, got %d", expectedTotal, totalVersions)
+	}
+}
+
+// TestWalkVersionsMarkers checks where a page starts from the key and the
+// version id markers, which common prefixes it lists, and that it's
+// truncated only when something follows it.
+func TestWalkVersionsMarkers(t *testing.T) {
+	fsys := fstest.MapFS{
+		"a":   {},
+		"b":   {},
+		"c":   {},
+		"d/x": {},
+		"d/y": {},
+		"e":   {},
+	}
+	// the versions are listed latest first, and "d/" has the version v1
+	getVersionsFunc := createMultiVersionFunc(map[string]int{
+		"a":   3,
+		"b":   1,
+		"c":   2,
+		"d/x": 1,
+		"d/y": 1,
+		"e":   1,
+	})
+
+	tests := []struct {
+		name            string
+		delimiter       string
+		keyMarker       string
+		versionIdMarker string
+		max             int
+		versions        []string
+		commonPrefixes  []string
+		truncated       bool
+		nextMarker      string
+		nextVersionId   string
+	}{
+		{
+			name:       "key marker only",
+			keyMarker:  "a",
+			max:        1,
+			versions:   []string{"b@v1"},
+			truncated:  true,
+			nextMarker: "b", nextVersionId: "v1",
+		},
+		{
+			name:      "last key as key marker",
+			keyMarker: "e",
+			max:       1000,
+		},
+		{
+			name:            "key and version id markers",
+			keyMarker:       "a",
+			versionIdMarker: "v2",
+			max:             2,
+			versions:        []string{"a@v1", "b@v1"},
+			truncated:       true,
+			nextMarker:      "b", nextVersionId: "v1",
+		},
+		{
+			name:            "version id marker of a missing key marker",
+			keyMarker:       "aa",
+			versionIdMarker: "v2",
+			max:             1000,
+			versions:        []string{"b@v1", "c@v2", "c@v1", "d/@v1", "d/x@v1", "d/y@v1", "e@v1"},
+		},
+		{
+			name:            "missing version id marker",
+			keyMarker:       "a",
+			versionIdMarker: "v9",
+			max:             1000,
+			versions:        []string{"b@v1", "c@v2", "c@v1", "d/@v1", "d/x@v1", "d/y@v1", "e@v1"},
+		},
+		{
+			name:      "directory key marker",
+			keyMarker: "d/",
+			max:       1000,
+			versions:  []string{"d/x@v1", "d/y@v1", "e@v1"},
+		},
+		{
+			name: "page ends at the last version",
+			max:  11,
+			versions: []string{"a@v3", "a@v2", "a@v1", "b@v1", "c@v2", "c@v1",
+				"d/@v1", "d/x@v1", "d/y@v1", "e@v1"},
+		},
+		{
+			name:       "page ends at the last version of a key",
+			max:        4,
+			versions:   []string{"a@v3", "a@v2", "a@v1", "b@v1"},
+			truncated:  true,
+			nextMarker: "b", nextVersionId: "v1",
+		},
+		{
+			name: "zero max keys",
+			max:  0,
+		},
+		{
+			name:            "common prefix ends the page",
+			delimiter:       "/",
+			keyMarker:       "c",
+			versionIdMarker: "v1",
+			max:             1,
+			commonPrefixes:  []string{"d/"},
+			truncated:       true,
+			nextMarker:      "d/",
+		},
+		{
+			name:            "common prefix ends the listing",
+			delimiter:       "/",
+			keyMarker:       "c",
+			versionIdMarker: "v1",
+			max:             2,
+			versions:        []string{"e@v1"},
+			commonPrefixes:  []string{"d/"},
+		},
+		{
+			name:           "key marker before a common prefix",
+			delimiter:      "/",
+			keyMarker:      "d",
+			max:            1000,
+			versions:       []string{"e@v1"},
+			commonPrefixes: []string{"d/"},
+		},
+		{
+			name:      "common prefix as key marker",
+			delimiter: "/",
+			keyMarker: "d/",
+			max:       1000,
+			versions:  []string{"e@v1"},
+		},
+		{
+			name:      "key marker under a common prefix",
+			delimiter: "/",
+			keyMarker: "d/x",
+			max:       1000,
+			versions:  []string{"e@v1"},
+		},
+		{
+			name:            "common prefix of a delimiter other than slash ends the page",
+			delimiter:       "x",
+			keyMarker:       "c",
+			versionIdMarker: "v1",
+			max:             2,
+			versions:        []string{"d/@v1"},
+			commonPrefixes:  []string{"d/x"},
+			truncated:       true,
+			nextMarker:      "d/x",
+		},
+		{
+			name:      "common prefix of a delimiter other than slash as key marker",
+			delimiter: "x",
+			keyMarker: "d/x",
+			max:       1000,
+			versions:  []string{"d/y@v1", "e@v1"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := backend.WalkVersions(context.Background(), fsys, "", tc.delimiter,
+				tc.keyMarker, tc.versionIdMarker, tc.max, getVersionsFunc, backend.SkipDirs{})
+			if err != nil {
+				t.Fatalf("walk versions: %v", err)
+			}
+
+			var versions []string
+			for _, v := range res.ObjectVersions {
+				versions = append(versions, *v.Key+"@"+*v.VersionId)
+			}
+			if !slices.Equal(versions, tc.versions) {
+				t.Errorf("expected the versions %v, instead got %v", tc.versions, versions)
+			}
+			var commonPrefixes []string
+			for _, cp := range res.CommonPrefixes {
+				commonPrefixes = append(commonPrefixes, *cp.Prefix)
+			}
+			if !slices.Equal(commonPrefixes, tc.commonPrefixes) {
+				t.Errorf("expected the common prefixes %v, instead got %v",
+					tc.commonPrefixes, commonPrefixes)
+			}
+			if res.Truncated != tc.truncated {
+				t.Errorf("expected the truncation to be %v, instead got %v",
+					tc.truncated, res.Truncated)
+			}
+			if res.NextMarker != tc.nextMarker {
+				t.Errorf("expected the next marker %q, instead got %q",
+					tc.nextMarker, res.NextMarker)
+			}
+			if res.NextVersionIdMarker != tc.nextVersionId {
+				t.Errorf("expected the next version id marker %q, instead got %q",
+					tc.nextVersionId, res.NextVersionIdMarker)
+			}
+		})
 	}
 }
 

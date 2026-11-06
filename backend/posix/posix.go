@@ -1766,8 +1766,8 @@ func (p *Posix) ListObjectVersions(ctx context.Context, input *s3.ListObjectVers
 		KeyMarker:           &keyMarker,
 		MaxKeys:             input.MaxKeys,
 		Name:                input.Bucket,
-		NextKeyMarker:       &results.NextMarker,
-		NextVersionIdMarker: &results.NextVersionIdMarker,
+		NextKeyMarker:       backend.GetPtrFromString(results.NextMarker),
+		NextVersionIdMarker: backend.GetPtrFromString(results.NextVersionIdMarker),
 		Prefix:              &prefix,
 		VersionIdMarker:     &versionIdMarker,
 		Versions:            results.ObjectVersions,
@@ -1851,16 +1851,20 @@ func (p *Posix) checkCopySourceDeleteMarker(bucket, object, versionId string) er
 // Converts the file to object version. Finds all the object versions,
 // delete markers from the versioning directory and returns
 func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
-	return func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+	return func(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
 		var objects []s3response.ObjectVersion
 		var delMarkers []s3response.DeleteMarkerEntry
-		// if the number of available objects is 0, return truncated response
-		if availableObjCount <= 0 {
+		var lastVersionId string
+		pastVersionIdMarker := versionIdMarker == ""
+		// result returns the listed versions. The listing is truncated
+		// when a version is left out because the listing is full.
+		result := func(truncated bool) *backend.ObjVersionFuncResult {
 			return &backend.ObjVersionFuncResult{
-				ObjectVersions: objects,
-				DelMarkers:     delMarkers,
-				Truncated:      true,
-			}, nil
+				ObjectVersions:      objects,
+				DelMarkers:          delMarkers,
+				NextVersionIdMarker: lastVersionId,
+				Truncated:           truncated,
+			}
 		}
 		// a directory is listed under the key with the trailing slash
 		key := path
@@ -1894,9 +1898,13 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 		}
 		// the version id marker is the version listed last, so the
 		// listing continues with the version following it
-		if !*pastVersionIdMarker {
-			*pastVersionIdMarker = versionId == versionIdMarker
+		if !pastVersionIdMarker {
+			pastVersionIdMarker = versionId == versionIdMarker
 		} else {
+			if availableObjCount == 0 {
+				return result(true), nil
+			}
+
 			fi, err := d.Info()
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil, backend.ErrSkipObj
@@ -1944,41 +1952,25 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 			}
 
 			availableObjCount--
-			if availableObjCount == 0 {
-				return &backend.ObjVersionFuncResult{
-					ObjectVersions:      objects,
-					DelMarkers:          delMarkers,
-					Truncated:           true,
-					NextVersionIdMarker: versionId,
-				}, nil
-			}
+			lastVersionId = versionId
 		}
 
 		if !p.versioningEnabled() {
-			return &backend.ObjVersionFuncResult{
-				ObjectVersions: objects,
-				DelMarkers:     delMarkers,
-			}, nil
+			return result(false), nil
 		}
 
 		// List all the versions of the object in the versioning directory
 		versionPath := p.genObjVersionPath(bucket, p.encodeKey(key))
 		dirEnts, err := os.ReadDir(versionPath)
 		if errors.Is(err, fs.ErrNotExist) {
-			return &backend.ObjVersionFuncResult{
-				ObjectVersions: objects,
-				DelMarkers:     delMarkers,
-			}, nil
+			return result(false), nil
 		}
 		if err != nil {
 			return nil, fmt.Errorf("read version dir: %w", err)
 		}
 
 		if len(dirEnts) == 0 {
-			return &backend.ObjVersionFuncResult{
-				ObjectVersions: objects,
-				DelMarkers:     delMarkers,
-			}, nil
+			return result(false), nil
 		}
 
 		// First find the null versionId object(if exists)
@@ -2049,12 +2041,15 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 		// addNullVersion lists the null version at its place in the
 		// version history, or continues the listing after it when it's
 		// the version id marker. It returns the truncated result when
-		// the null version fills up the listing.
+		// the listing is full before the null version.
 		addNullVersion := func() *backend.ObjVersionFuncResult {
 			isNullVersionIdObjAdded = true
-			if !*pastVersionIdMarker {
-				*pastVersionIdMarker = versionIdMarker == nullVersionId
+			if !pastVersionIdMarker {
+				pastVersionIdMarker = versionIdMarker == nullVersionId
 				return nil
+			}
+			if availableObjCount == 0 {
+				return result(true)
 			}
 
 			if nullVersionIdObj != nil {
@@ -2064,14 +2059,8 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				delMarkers = append(delMarkers, *nullObjDelMarker)
 			}
 
-			if availableObjCount--; availableObjCount == 0 {
-				return &backend.ObjVersionFuncResult{
-					ObjectVersions:      objects,
-					DelMarkers:          delMarkers,
-					Truncated:           true,
-					NextVersionIdMarker: nullVersionId,
-				}
-			}
+			availableObjCount--
+			lastVersionId = nullVersionId
 			return nil
 		}
 
@@ -2102,11 +2091,12 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 			versionId := f.Name()
 			size := f.Size()
 
-			if !*pastVersionIdMarker {
-				if versionId == versionIdMarker {
-					*pastVersionIdMarker = true
-				}
+			if !pastVersionIdMarker {
+				pastVersionIdMarker = versionId == versionIdMarker
 				continue
+			}
+			if availableObjCount == 0 {
+				return result(true), nil
 			}
 
 			etagBytes, err := p.meta.RetrieveAttribute(nil, versionPath, versionId, etagkey)
@@ -2151,16 +2141,8 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				})
 			}
 
-			// if the available object count reaches to 0, return truncated response with nextVersionIdMarker
 			availableObjCount--
-			if availableObjCount == 0 {
-				return &backend.ObjVersionFuncResult{
-					ObjectVersions:      objects,
-					DelMarkers:          delMarkers,
-					Truncated:           true,
-					NextVersionIdMarker: versionId,
-				}, nil
-			}
+			lastVersionId = versionId
 		}
 
 		// If null versionId object is found but not yet pushed,
@@ -2171,10 +2153,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 			}
 		}
 
-		return &backend.ObjVersionFuncResult{
-			ObjectVersions: objects,
-			DelMarkers:     delMarkers,
-		}, nil
+		return result(false), nil
 	}
 }
 
