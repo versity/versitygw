@@ -384,6 +384,7 @@ func TestListObjectsV2(ts *TestState) {
 // VD stands for Versioning Disabled
 func TestListObjectVersions_VD(ts *TestState) {
 	ts.Run(ListObjectVersions_VD_success)
+	ts.Run(ListObjectVersions_VD_key_marker)
 }
 
 func TestDeleteObject(ts *TestState) {
@@ -2226,6 +2227,8 @@ func TestVersioning(ts *TestState) {
 	ts.Run(ListObjectVersions_with_delete_markers)
 	ts.Run(ListObjectVersions_containing_null_versionId_obj)
 	ts.Run(ListObjectVersions_paginate_null_version)
+	ts.Run(ListObjectVersions_key_marker)
+	ts.Run(ListObjectVersions_paginate)
 	ts.Run(ListObjectVersions_single_null_versionId_object)
 	ts.Run(ListObjectVersions_checksum)
 	// Multipart upload
@@ -3300,6 +3303,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_with_owner":                                                         ListObjectsV2_with_owner,
 		"ListObjectsV2_with_checksum":                                                      ListObjectsV2_with_checksum,
 		"ListObjectVersions_VD_success":                                                    ListObjectVersions_VD_success,
+		"ListObjectVersions_VD_key_marker":                                                 ListObjectVersions_VD_key_marker,
 		"DeleteObject_non_existing_object":                                                 DeleteObject_non_existing_object,
 		"DeleteObject_directory_object_noslash":                                            DeleteObject_directory_object_noslash,
 		"DeleteObject_non_empty_dir_obj":                                                   DeleteObject_non_empty_dir_obj,
@@ -3976,6 +3980,8 @@ func GetIntTests() IntTests {
 		"ListObjectVersions_with_delete_markers":                                           ListObjectVersions_with_delete_markers,
 		"ListObjectVersions_containing_null_versionId_obj":                                 ListObjectVersions_containing_null_versionId_obj,
 		"ListObjectVersions_paginate_null_version":                                         ListObjectVersions_paginate_null_version,
+		"ListObjectVersions_key_marker":                                                    ListObjectVersions_key_marker,
+		"ListObjectVersions_paginate":                                                      ListObjectVersions_paginate,
 		"ListObjectVersions_single_null_versionId_object":                                  ListObjectVersions_single_null_versionId_object,
 		"ListObjectVersions_checksum":                                                      ListObjectVersions_checksum,
 		"Versioning_Multipart_Upload_success":                                              Versioning_Multipart_Upload_success,
