@@ -243,6 +243,16 @@ func initTestCommands() []*cli.Command {
 			Action: getAction(integration.TestNoAclMode),
 		},
 		{
+			Name:   "list-buckets-accessible",
+			Usage:  "Tests ListBuckets on a gateway started with --list-buckets-scope accessible",
+			Action: getAction(integration.TestListBucketsAccessible),
+		},
+		{
+			Name:   "list-buckets-all",
+			Usage:  "Tests ListBuckets on a gateway started with --list-buckets-scope all",
+			Action: getAction(integration.TestListBucketsAll),
+		},
+		{
 			Name:   "data-integrity-etag",
 			Usage:  "Tests checksum-derived ETag behavior",
 			Action: getAction(integration.TestDataIntegrityETag),

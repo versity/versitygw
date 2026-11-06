@@ -29,28 +29,29 @@ import (
 )
 
 type S3ApiRouter struct {
-	WithAdmSrv      bool
-	app             *fiber.App
-	be              backend.Backend
-	iam             auth.IAMService
-	logger          s3log.AuditLogger
-	aLogger         s3log.AuditLogger
-	evs             s3event.S3EventSender
-	mm              metrics.Manager
-	root            middlewares.RootUserConfig
-	Ctrl            controllers.S3ApiController
-	readonly        bool
-	disableACL      bool
-	region          string
-	virtualDomain   string
-	corsAllowOrigin string
-	mpMaxParts      int
-	disableSSECTLS  bool
-	adminPathPrefix string
+	WithAdmSrv       bool
+	app              *fiber.App
+	be               backend.Backend
+	iam              auth.IAMService
+	logger           s3log.AuditLogger
+	aLogger          s3log.AuditLogger
+	evs              s3event.S3EventSender
+	mm               metrics.Manager
+	root             middlewares.RootUserConfig
+	Ctrl             controllers.S3ApiController
+	readonly         bool
+	disableACL       bool
+	listBucketsScope auth.ListBucketsScope
+	region           string
+	virtualDomain    string
+	corsAllowOrigin  string
+	mpMaxParts       int
+	disableSSECTLS   bool
+	adminPathPrefix  string
 }
 
 func (sa *S3ApiRouter) Init() {
-	ctrl := controllers.New(sa.be, sa.iam, sa.logger, sa.evs, sa.mm, sa.readonly, sa.disableACL, sa.virtualDomain, sa.mpMaxParts, sa.disableSSECTLS)
+	ctrl := controllers.New(sa.be, sa.iam, sa.logger, sa.evs, sa.mm, sa.readonly, sa.disableACL, sa.virtualDomain, sa.mpMaxParts, sa.listBucketsScope, sa.disableSSECTLS)
 	sa.Ctrl = ctrl
 	// initialize global host-style parser middleware if virtual domain is specified
 	if sa.virtualDomain != "" {

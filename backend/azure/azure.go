@@ -352,34 +352,29 @@ outer:
 			if az.isMetaContainer(*v.Name) {
 				continue
 			}
-			// If we've already filled MaxBuckets, there is a next page — set token and stop
-			if input.MaxBuckets > 0 && int32(len(buckets)) == input.MaxBuckets {
-				cToken = buckets[len(buckets)-1].Name
-				break outer
-			}
 			// Skip items at or before the continuation token (client-side "start after")
 			if input.ContinuationToken != "" && *v.Name <= input.ContinuationToken {
 				continue
 			}
-			if input.IsAdmin {
-				buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-					Name: *v.Name,
-					// TODO: using modification date here instead of creation, is that ok?
-					CreationDate: *v.Properties.LastModified,
-				})
-			} else {
-				acl, err := az.listedBucketAcl(ctx, *v.Name, v.Metadata)
-				if err != nil {
-					return result, err
-				}
-				if acl.Owner == input.Owner {
-					buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-						Name: *v.Name,
-						// TODO: using modification date here instead of creation, is that ok?
-						CreationDate: *v.Properties.LastModified,
-					})
-				}
+			listed, err := az.isContainerListed(ctx, v, input)
+			if err != nil {
+				return result, err
 			}
+			if !listed {
+				continue
+			}
+			// The page is full and another bucket follows it, so set the
+			// token and stop. A page ending with the last listed bucket
+			// carries no token, as in S3.
+			if input.MaxBuckets > 0 && int32(len(buckets)) == input.MaxBuckets {
+				cToken = buckets[len(buckets)-1].Name
+				break outer
+			}
+			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+				Name: *v.Name,
+				// TODO: using modification date here instead of creation, is that ok?
+				CreationDate: *v.Properties.LastModified,
+			})
 		}
 	}
 
@@ -3075,21 +3070,34 @@ func removeLegacyMeta(ctx context.Context, client *container.Client, mdmap map[s
 // listedBucketAcl returns the acl of a bucket from a container listing,
 // whose metadata carries lowercase keys.
 func (az *Azure) listedBucketAcl(ctx context.Context, bucket string, meta map[string]*string) (*auth.ACL, error) {
+	data, err := az.listedBucketAclJSON(ctx, bucket, meta)
+	if err != nil {
+		return nil, err
+	}
+
+	acl, err := auth.ParseACL(data)
+	if err != nil {
+		return nil, err
+	}
+	return &acl, nil
+}
+
+// listedBucketAclJSON returns the stored acl JSON of a bucket from a
+// container listing, whose metadata carries lowercase keys, or an empty
+// value when it has none. With a meta container its blob is read, falling
+// back to the container metadata as getBucketMeta does.
+func (az *Azure) listedBucketAclJSON(ctx context.Context, bucket string, meta map[string]*string) ([]byte, error) {
 	if az.metaContainer != "" {
 		data, err := az.getMetaBlob(ctx, bucket, metaAcl)
 		if err == nil {
-			acl, err := auth.ParseACL(data)
-			if err != nil {
-				return nil, err
-			}
-			return &acl, nil
+			return data, nil
 		}
 		if !bloberror.HasCode(err, bloberror.BlobNotFound) {
 			return nil, err
 		}
 	}
 
-	return getAclFromMetadata(meta, keyAclLower)
+	return getAclJSONFromMetadata(meta, keyAclLower)
 }
 
 // initBucketMeta writes every setting of a newly created bucket to the meta
@@ -3185,23 +3193,41 @@ func (az *Azure) evaluateWritePreconditions(ctx context.Context, bucket, object,
 	return backend.EvaluateObjectPutPreconditions(etag, ifMatch, ifNoneMatch, !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)))
 }
 
-func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {
+// getAclJSONFromMetadata returns the stored ACL JSON under key, or nil when
+// there is none.
+func getAclJSONFromMetadata(meta map[string]*string, key key) ([]byte, error) {
 	data, ok := meta[string(key)]
 	if !ok {
-		return &auth.ACL{}, nil
+		return nil, nil
 	}
 
-	value, err := decodeString(*data)
+	return decodeString(*data)
+}
+
+// isContainerListed reports whether ListBuckets lists the container item
+// for input: every container for an admin, and otherwise each one owned by
+// input.Owner or accepted by input.IsVisible.
+func (az *Azure) isContainerListed(ctx context.Context, item *service.ContainerItem, input s3response.ListBucketsInput) (bool, error) {
+	if input.IsAdmin {
+		return true, nil
+	}
+
+	aclJSON, err := az.listedBucketAclJSON(ctx, *item.Name, item.Metadata)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-
-	acl, err := auth.ParseACL(value)
+	acl, err := auth.ParseACL(aclJSON)
 	if err != nil {
-		return nil, err
+		return false, err
+	}
+	if acl.Owner == input.Owner {
+		return true, nil
+	}
+	if input.IsVisible == nil {
+		return false, nil
 	}
 
-	return &acl, nil
+	return input.IsVisible(ctx, *item.Name, aclJSON)
 }
 
 // ValidateUploadID returns NoSuchUpload for an upload ID this backend never

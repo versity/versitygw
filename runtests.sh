@@ -234,6 +234,46 @@ fi
 # kill off server
 kill $GW_NO_ACL_PID
 
+ECHO "Running list-buckets-scope accessible integration tests"
+# port: 7076
+GOCOVERDIR=/tmp/covdata ./versitygw -p :7076 -a user -s pass --list-buckets-scope accessible --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
+GW_LB_ACCESSIBLE_PID=$!
+
+sleep 1
+
+if ! kill -0 $GW_LB_ACCESSIBLE_PID; then
+	echo "list-buckets-scope accessible server no longer running"
+	exit 1
+fi
+
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7076 list-buckets-accessible; then
+	echo "list-buckets-scope accessible integration tests failed"
+	kill $GW_LB_ACCESSIBLE_PID
+	exit 1
+fi
+
+kill $GW_LB_ACCESSIBLE_PID
+
+ECHO "Running list-buckets-scope all integration tests"
+# port: 7077
+GOCOVERDIR=/tmp/covdata ./versitygw -p :7077 -a user -s pass --list-buckets-scope all --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
+GW_LB_ALL_PID=$!
+
+sleep 1
+
+if ! kill -0 $GW_LB_ALL_PID; then
+	echo "list-buckets-scope all server no longer running"
+	exit 1
+fi
+
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7077 list-buckets-all; then
+	echo "list-buckets-scope all integration tests failed"
+	kill $GW_LB_ALL_PID
+	exit 1
+fi
+
+kill $GW_LB_ALL_PID
+
 ECHO "Running the s3 + standalone IAM access control tests"
 # This stage is the only one that runs two versitygw processes at once: a
 # standalone IAM service holding every user, policy and secret, and an s3

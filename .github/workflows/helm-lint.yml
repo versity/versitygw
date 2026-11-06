@@ -47,6 +47,8 @@ jobs:
             "--set iam.enabled=true --set iam.persistence.enabled=true --set iam.dir=/var/lib/versitygw/iam --set persistence.enabled=false"
             # internal IAM on an existing PVC
             "--set iam.enabled=true --set iam.persistence.enabled=true --set iam.persistence.create=false --set iam.persistence.claimName=versitygw-iam"
+            # internal IAM listing buckets shared through ACLs and bucket policies
+            "--set iam.enabled=true --set gateway.listBucketsScope=accessible"
           )
 
           for scenario in "${scenarios[@]}"; do

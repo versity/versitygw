@@ -109,6 +109,10 @@ func New(
 		opt(server)
 	}
 
+	if err := auth.ValidateListBucketsScope(iam, server.Router.listBucketsScope); err != nil {
+		return nil, err
+	}
+
 	// validate the header once here, so the request path can compare it
 	// directly instead of re-normalizing on every request
 	if server.clientIPHeader != "" {
@@ -396,6 +400,14 @@ func WithSocketPerm(perm os.FileMode) Option {
 // bucket/object ACL headers
 func WithDisableACL() Option {
 	return func(s *S3ApiServer) { s.Router.disableACL = true }
+}
+
+// WithListBucketsScope sets which buckets ListBuckets returns to an account
+// that is neither root nor an admin. New rejects any scope but
+// auth.ListBucketsScopeOwned with an IAM service that evaluates identity
+// policies or fixes bucket ownership.
+func WithListBucketsScope(scope auth.ListBucketsScope) Option {
+	return func(s *S3ApiServer) { s.Router.listBucketsScope = scope }
 }
 
 // WithOnListen registers a callback that is invoked once the server is bound

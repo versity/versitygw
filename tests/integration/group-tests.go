@@ -2416,6 +2416,26 @@ func TestNoAclMode(ts *TestState) {
 	ts.Run(NoAclMode_PutBucketAcl)
 }
 
+// TestListBucketsAccessible runs against a gateway started with
+// --list-buckets-scope accessible.
+func TestListBucketsAccessible(ts *TestState) {
+	ts.Run(ListBucketsAccessible_policy_shared_bucket)
+	ts.Run(ListBucketsAccessible_acl_shared_bucket)
+	ts.Run(ListBucketsAccessible_public_bucket_hidden)
+	ts.Run(ListBucketsAccessible_deny_hides_bucket)
+	ts.Run(ListBucketsAccessible_prefix_scoped_grant)
+	ts.Run(ListBucketsAccessible_pagination)
+	ts.Run(ListBucketsAccessible_root_and_admin_unchanged)
+}
+
+// TestListBucketsAll runs against a gateway started with
+// --list-buckets-scope all.
+func TestListBucketsAll(ts *TestState) {
+	ts.Run(ListBucketsAll_user_lists_every_bucket)
+	ts.Run(ListBucketsAll_pagination)
+	ts.Run(ListBucketsAll_root_and_admin_unchanged)
+}
+
 func TestDataIntegrityETag(ts *TestState) {
 	ts.Run(PutObject_data_integrity_etag)
 	ts.Run(PutObject_dir_object_data_integrity_etag)
@@ -4053,6 +4073,16 @@ func GetIntTests() IntTests {
 		"SignedStreamingPayloadTrailer_success":                                            SignedStreamingPayloadTrailer_success,
 		"NoAclMode_CreateBucket_with_acl":                                                  NoAclMode_CreateBucket_with_acl,
 		"NoAclMode_PutBucketAcl":                                                           NoAclMode_PutBucketAcl,
+		"ListBucketsAccessible_policy_shared_bucket":                                       ListBucketsAccessible_policy_shared_bucket,
+		"ListBucketsAccessible_acl_shared_bucket":                                          ListBucketsAccessible_acl_shared_bucket,
+		"ListBucketsAccessible_public_bucket_hidden":                                       ListBucketsAccessible_public_bucket_hidden,
+		"ListBucketsAccessible_deny_hides_bucket":                                          ListBucketsAccessible_deny_hides_bucket,
+		"ListBucketsAccessible_prefix_scoped_grant":                                        ListBucketsAccessible_prefix_scoped_grant,
+		"ListBucketsAccessible_pagination":                                                 ListBucketsAccessible_pagination,
+		"ListBucketsAccessible_root_and_admin_unchanged":                                   ListBucketsAccessible_root_and_admin_unchanged,
+		"ListBucketsAll_user_lists_every_bucket":                                           ListBucketsAll_user_lists_every_bucket,
+		"ListBucketsAll_pagination":                                                        ListBucketsAll_pagination,
+		"ListBucketsAll_root_and_admin_unchanged":                                          ListBucketsAll_root_and_admin_unchanged,
 		"Server_large_http_header":                                                         Server_large_http_header,
 		"PostObject_invalid_content_type":                                                  PostObject_invalid_content_type,
 		"PostObject_missing_boundary":                                                      PostObject_missing_boundary,

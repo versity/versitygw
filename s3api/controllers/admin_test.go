@@ -692,7 +692,7 @@ func TestAdminController_CreateBucket(t *testing.T) {
 				},
 			}
 
-			s3api := New(be, iam, nil, nil, nil, false, false, "", 10000)
+			s3api := New(be, iam, nil, nil, nil, false, false, "", 10000, auth.ListBucketsScopeOwned)
 
 			ctrl := AdminController{
 				iam:   iam,
