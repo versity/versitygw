@@ -15,9 +15,12 @@
 package azblobclient
 
 import (
+	"context"
 	"encoding/base64"
+	"net"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -85,5 +88,33 @@ func TestNew(t *testing.T) {
 				assert.Equal(t, tt.account, creds.SharedKey.AccountName())
 			}
 		})
+	}
+}
+
+func TestNewKeepsSASOutOfTransportErrors(t *testing.T) {
+	// without retries the transport error is returned at once; with them
+	// the test would wait for the SDK retry delays
+	retryOptions = policy.RetryOptions{MaxRetries: -1}
+	t.Cleanup(func() { retryOptions = policy.RetryOptions{} })
+
+	// a port nothing listens on, so the request fails with a transport
+	// error carrying its URL
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if !assert.NoError(t, err) {
+		return
+	}
+	endpoint := "http://" + l.Addr().String() + "/acct"
+	l.Close()
+
+	client, _, err := New("", "", endpoint, "sv=2024-01-01&sig=SECRETSIGNATURE")
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	_, err = client.DownloadStream(context.Background(), "iam", "users.json", nil)
+	if assert.Error(t, err) {
+		// the URL is still reported, only its query is removed
+		assert.Contains(t, err.Error(), "/acct/iam/users.json")
+		assert.NotContains(t, err.Error(), "SECRETSIGNATURE")
 	}
 }

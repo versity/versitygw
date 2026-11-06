@@ -18,11 +18,35 @@
 package azblobclient
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 )
+
+// stripQueryFromURLErrors removes the query, which can hold a SAS token,
+// from the URL of transport errors.
+type stripQueryFromURLErrors struct{}
+
+func (stripQueryFromURLErrors) Do(req *policy.Request) (*http.Response, error) {
+	resp, err := req.Next()
+	var uerr *url.Error
+	if errors.As(err, &uerr) {
+		if u, perr := url.Parse(uerr.URL); perr == nil {
+			u.RawQuery = ""
+			uerr.URL = u.String()
+		}
+	}
+	return resp, err
+}
+
+// retryOptions configures the retries of the clients returned by New. The
+// zero value keeps the SDK defaults; tests change it to fail fast.
+var retryOptions policy.RetryOptions
 
 // Credentials describes how a client returned by New authenticates.
 // Exactly one of SASToken, SharedKey and Default is set.
@@ -40,19 +64,26 @@ type Credentials struct {
 // DefaultAzureCredential chain (environment, workload identity,
 // managed identity, Azure CLI, ...) is used.
 func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, Credentials, error) {
-	url := serviceURL
+	svcURL := serviceURL
 	if serviceURL == "" && accountName != "" {
 		// if not otherwise specified, use the typical form:
 		// http(s)://<account>.blob.core.windows.net/
-		url = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
+		svcURL = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
+	}
+
+	opts := &azblob.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Retry:           retryOptions,
+			PerCallPolicies: []policy.Policy{stripQueryFromURLErrors{}},
+		},
 	}
 
 	if sasToken != "" {
-		client, err := azblob.NewClientWithNoCredential(url+"?"+sasToken, nil)
+		client, err := azblob.NewClientWithNoCredential(svcURL+"?"+sasToken, opts)
 		if err != nil {
 			return nil, Credentials{}, fmt.Errorf("init client: %w", err)
 		}
-		return client, Credentials{ServiceURL: url, SASToken: sasToken}, nil
+		return client, Credentials{ServiceURL: svcURL, SASToken: sasToken}, nil
 	}
 
 	if accountName == "" || accountKey == "" {
@@ -60,11 +91,11 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 		if err != nil {
 			return nil, Credentials{}, fmt.Errorf("init default credentials: %w", err)
 		}
-		client, err := azblob.NewClient(url, cred, nil)
+		client, err := azblob.NewClient(svcURL, cred, opts)
 		if err != nil {
 			return nil, Credentials{}, fmt.Errorf("init client: %w", err)
 		}
-		return client, Credentials{ServiceURL: url, Default: cred}, nil
+		return client, Credentials{ServiceURL: svcURL, Default: cred}, nil
 	}
 
 	cred, err := azblob.NewSharedKeyCredential(accountName, accountKey)
@@ -72,10 +103,10 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 		return nil, Credentials{}, fmt.Errorf("init credentials: %w", err)
 	}
 
-	client, err := azblob.NewClientWithSharedKeyCredential(url, cred, nil)
+	client, err := azblob.NewClientWithSharedKeyCredential(svcURL, cred, opts)
 	if err != nil {
 		return nil, Credentials{}, fmt.Errorf("init client: %w", err)
 	}
 
-	return client, Credentials{ServiceURL: url, SharedKey: cred}, nil
+	return client, Credentials{ServiceURL: svcURL, SharedKey: cred}, nil
 }
