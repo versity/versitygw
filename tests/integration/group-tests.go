@@ -1275,7 +1275,7 @@ func TestGatewayIAM(ts *TestState) {
 	ts.Run(IAM_CreateBucket_empty_owner_header)
 	ts.Run(IAM_CreateBucket_non_existing_user)
 	ts.Run(IAM_CreateBucket_success)
-	ts.Run(IAM_concurrent_user_updates)
+	ts.Sync(IAM_concurrent_user_updates)
 }
 
 func TestIAMAuth(ts *TestState) {
