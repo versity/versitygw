@@ -187,6 +187,138 @@ func PutBucketCors_invalid_header(s *S3Conf) error {
 	})
 }
 
+func PutBucketCors_multiple_wildcard_allowed_header(s *S3Conf) error {
+	testName := "PutBucketCors_multiple_wildcard_allowed_header"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i, test := range []struct {
+			headers     []string
+			expectedErr s3err.APIError
+		}{
+			{[]string{"x-*-meta-*"}, s3err.GetMultipleWildcardCORSHeaderErr("x-*-meta-*")},
+			{[]string{"Content-Type", "**"}, s3err.GetMultipleWildcardCORSHeaderErr("**")},
+			// the wildcard check runs before the character check
+			{[]string{"bad *-*"}, s3err.GetMultipleWildcardCORSHeaderErr("bad *-*")},
+			{[]string{"x-*-*", "bad header"}, s3err.GetMultipleWildcardCORSHeaderErr("x-*-*")},
+			{[]string{"bad header", "x-*-*"}, s3err.GetInvalidCORSHeaderErr("bad header")},
+		} {
+			err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+				Bucket: &bucket,
+				CORSConfiguration: &types.CORSConfiguration{
+					CORSRules: []types.CORSRule{
+						{
+							AllowedOrigins: []string{"http://origin.com"},
+							AllowedMethods: []string{http.MethodGet},
+							AllowedHeaders: test.headers,
+						},
+					},
+				},
+			})
+			if err := checkApiErr(err, test.expectedErr); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func PutBucketCors_wildcard_expose_header(s *S3Conf) error {
+	testName := "PutBucketCors_wildcard_expose_header"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i, test := range []struct {
+			allowedHeaders []string
+			exposeHeaders  []string
+			expectedErr    s3err.APIError
+		}{
+			{nil, []string{"*"}, s3err.GetWildcardCORSExposeHeaderErr("*")},
+			{nil, []string{"ETag", "x-amz-*"}, s3err.GetWildcardCORSExposeHeaderErr("x-amz-*")},
+			{nil, []string{"x-*-meta-*"}, s3err.GetWildcardCORSExposeHeaderErr("x-*-meta-*")},
+			// the wildcard check runs before the character check
+			{nil, []string{"bad *"}, s3err.GetWildcardCORSExposeHeaderErr("bad *")},
+			{nil, []string{"bad header", "x-*"}, s3err.GetInvalidCORSHeaderErr("bad header")},
+			// allowed headers are checked before expose headers
+			{[]string{"bad header"}, []string{"*"}, s3err.GetInvalidCORSHeaderErr("bad header")},
+			{[]string{"x-*-*"}, []string{"*"}, s3err.GetMultipleWildcardCORSHeaderErr("x-*-*")},
+		} {
+			err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+				Bucket: &bucket,
+				CORSConfiguration: &types.CORSConfiguration{
+					CORSRules: []types.CORSRule{
+						{
+							AllowedOrigins: []string{"http://origin.com"},
+							AllowedMethods: []string{http.MethodGet},
+							AllowedHeaders: test.allowedHeaders,
+							ExposeHeaders:  test.exposeHeaders,
+						},
+					},
+				},
+			})
+			if err := checkApiErr(err, test.expectedErr); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func PutBucketCors_rules_limit(s *S3Conf) error {
+	testName := "PutBucketCors_rules_limit"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		newRules := func(count int) []types.CORSRule {
+			rules := make([]types.CORSRule, count)
+			for i := range rules {
+				rules[i] = types.CORSRule{
+					AllowedOrigins: []string{fmt.Sprintf("http://origin-%d.com", i)},
+					AllowedMethods: []string{http.MethodGet},
+				}
+			}
+			return rules
+		}
+
+		invalidMethodRules := newRules(101)
+		invalidMethodRules[0].AllowedMethods = []string{http.MethodPatch}
+
+		emptyOriginsRules := newRules(101)
+		emptyOriginsRules[100].AllowedOrigins = []string{}
+
+		for i, test := range []struct {
+			rules       []types.CORSRule
+			expectedErr s3err.APIError
+		}{
+			{newRules(101), s3err.GetAPIError(s3err.ErrCORSRulesLimited)},
+			// the rules limit is checked before the rule values
+			{invalidMethodRules, s3err.GetAPIError(s3err.ErrCORSRulesLimited)},
+			// a schema violation is reported before the rules limit
+			{emptyOriginsRules, s3err.GetAPIError(s3err.ErrMalformedXML)},
+		} {
+			err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+				Bucket: &bucket,
+				CORSConfiguration: &types.CORSConfiguration{
+					CORSRules: test.rules,
+				},
+			})
+			if err := checkApiErr(err, test.expectedErr); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		// a 100-rule config exceeds the ~4KB of xattr space ext4 gives
+		// the posix backend, so exactly 100 rules is only checked with
+		// sidecar metadata
+		if !s.sidecarTests {
+			return nil
+		}
+
+		return putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: newRules(100),
+			},
+		})
+	})
+}
+
 func PutBucketCors_md5(s *S3Conf) error {
 	testName := "PutBucketCors_md5"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

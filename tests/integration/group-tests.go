@@ -755,6 +755,9 @@ func TestPutBucketCors(ts *TestState) {
 	ts.Run(PutBucketCors_invalid_allowed_origins)
 	ts.Run(PutBucketCors_invalid_method)
 	ts.Run(PutBucketCors_invalid_header)
+	ts.Run(PutBucketCors_multiple_wildcard_allowed_header)
+	ts.Run(PutBucketCors_wildcard_expose_header)
+	ts.Run(PutBucketCors_rules_limit)
 	ts.Run(PutBucketCors_md5)
 	ts.Run(PutBucketCors_success)
 }
@@ -3569,6 +3572,9 @@ func GetIntTests() IntTests {
 		"PutBucketCors_invalid_allowed_origins":                                            PutBucketCors_invalid_allowed_origins,
 		"PutBucketCors_invalid_method":                                                     PutBucketCors_invalid_method,
 		"PutBucketCors_invalid_header":                                                     PutBucketCors_invalid_header,
+		"PutBucketCors_multiple_wildcard_allowed_header":                                   PutBucketCors_multiple_wildcard_allowed_header,
+		"PutBucketCors_wildcard_expose_header":                                             PutBucketCors_wildcard_expose_header,
+		"PutBucketCors_rules_limit":                                                        PutBucketCors_rules_limit,
 		"PutBucketCors_md5":                                                                PutBucketCors_md5,
 		"GetBucketCors_non_existing_bucket":                                                GetBucketCors_non_existing_bucket,
 		"GetBucketCors_no_such_bucket_cors":                                                GetBucketCors_no_such_bucket_cors,
