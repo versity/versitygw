@@ -378,6 +378,8 @@ iam:
   #   endpoint. See `iamServer` below to optionally deploy that service from
   #   this same chart, or point `iam.standalone.endpoint` at an externally
   #   managed one.
+  # - azure: accounts in a users.json blob of an Azure Blob Storage container,
+  #   shared by every gateway replica. See `azure` below.
   # Other values remain available for IAM backends configured through extraEnv.
   type: internal
   # Disable IAM result caching.
@@ -462,6 +464,40 @@ iam:
       #   group: cert-manager.io
       #   kind: ClusterIssuer
       #   name: internal-ca
+  # --- azure (iam.type: azure) ---
+  # Accounts are stored in a users.json blob of an Azure Blob Storage
+  # container, with conditional writes so that concurrent updates from
+  # several replicas are not lost. The container must already exist; the
+  # gateway reads it at startup and fails if it cannot.
+  #
+  # The azure backend exposes every container of its storage account as a
+  # bucket, so the IAM container must be in a storage account that the
+  # backend does not use. Otherwise any user who can create buckets can read
+  # the stored credentials, or create the IAM container before you do and
+  # write a users.json with their own admin account.
+  azure:
+    # Container holding users.json. Required.
+    container: ""
+    # Storage account name. Required unless url is set.
+    account: ""
+    # Blob service URL. Defaults to https://<account>.blob.core.windows.net/;
+    # set it for Azurite or other custom endpoints.
+    url: ""
+    # Secret holding the storage account key or a SAS token. Credentials are
+    # only taken from a Secret, so they never land in the Helm release
+    # history. Leave existingSecret empty to use DefaultAzureCredential, e.g.
+    # AKS workload identity through
+    # serviceAccount.annotations["azure.workload.identity/client-id"] and
+    # podLabels["azure.workload.identity/use"]: "true". That identity needs
+    # data access to the container, such as the "Storage Blob Data
+    # Contributor" role.
+    credentials:
+      existingSecret: ""
+      # Key of the storage account key in existingSecret; requires account.
+      accessKeyKey: ""
+      # Key of the SAS token in existingSecret; takes precedence over
+      # accessKeyKey.
+      sasTokenKey: ""
 
 # --- Standalone IAM API Server ---
 # Deploys a separate `versitygw iam` server as its own Deployment and public/

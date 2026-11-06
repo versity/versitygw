@@ -5,6 +5,11 @@
 {{- $iamServerPrivate := $iamServer.private | default dict -}}
 {{- $iamServerPrivateEnabled := $iamServerPrivate.enabled | default false -}}
 {{- $iamServerAuth := $iamServer.auth | default dict -}}
+{{- $iamAzure := .Values.iam.azure | default dict -}}
+{{- $iamAzureURL := $iamAzure.url | default "" -}}
+{{- $iamAzureContainer := $iamAzure.container | default "" -}}
+{{- $iamAzureAccount := $iamAzure.account | default "" -}}
+{{- $iamAzureCredentials := $iamAzure.credentials | default dict -}}
 {{- $iamStandalone := .Values.iam.standalone | default dict -}}
 {{- $iamStandaloneEndpoint := $iamStandalone.endpoint | default "" -}}
 {{- $iamStandaloneCredentials := $iamStandalone.credentials | default dict -}}
@@ -97,6 +102,21 @@
 {{- end }}
 {{- if and $internalIAM $iamPersistence.enabled (not (dig "create" true $iamPersistence)) (not $iamPersistence.claimName) }}
   {{- fail "iam.persistence.claimName is required when iam.persistence.create is false" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "azure") (not $iamAzureContainer) }}
+  {{- fail "iam.type=azure requires iam.azure.container" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "azure") (not $iamAzureAccount) (not $iamAzureURL) }}
+  {{- fail "iam.type=azure requires iam.azure.account or iam.azure.url" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "azure") $iamAzureCredentials.existingSecret (not (or $iamAzureCredentials.accessKeyKey $iamAzureCredentials.sasTokenKey)) }}
+  {{- fail "iam.azure.credentials.accessKeyKey or sasTokenKey is required when credentials.existingSecret is set" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "azure") (not $iamAzureCredentials.existingSecret) (or $iamAzureCredentials.accessKeyKey $iamAzureCredentials.sasTokenKey) }}
+  {{- fail "iam.azure.credentials.existingSecret is required when accessKeyKey or sasTokenKey is set" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "azure") $iamAzureCredentials.accessKeyKey (not $iamAzureAccount) }}
+  {{- fail "iam.azure.credentials.accessKeyKey requires iam.azure.account" }}
 {{- end }}
 {{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (not .Values.iam.standalone.endpoint) (not $iamServerEnabled) }}
   {{- fail "iam.type=standalone requires either iam.standalone.endpoint or iamServer.enabled=true" }}
@@ -321,6 +341,31 @@ spec:
             {{- if eq .Values.iam.type "internal" }}
             - name: VGW_IAM_DIR
               value: {{ $iamDir | quote }}
+            {{- else if eq .Values.iam.type "azure" }}
+            - name: VGW_IAM_AZURE_CONTAINER
+              value: {{ $iamAzureContainer | quote }}
+            {{- if $iamAzureAccount }}
+            - name: VGW_IAM_AZURE_ACCOUNT_NAME
+              value: {{ $iamAzureAccount | quote }}
+            {{- end }}
+            {{- if $iamAzureURL }}
+            - name: VGW_IAM_AZURE_ENDPOINT
+              value: {{ $iamAzureURL | quote }}
+            {{- end }}
+            {{- if and $iamAzureCredentials.existingSecret $iamAzureCredentials.accessKeyKey }}
+            - name: VGW_IAM_AZURE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $iamAzureCredentials.existingSecret }}
+                  key: {{ $iamAzureCredentials.accessKeyKey }}
+            {{- end }}
+            {{- if and $iamAzureCredentials.existingSecret $iamAzureCredentials.sasTokenKey }}
+            - name: VGW_IAM_AZURE_SAS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $iamAzureCredentials.existingSecret }}
+                  key: {{ $iamAzureCredentials.sasTokenKey }}
+            {{- end }}
             {{- else if eq .Values.iam.type "standalone" }}
             - name: VGW_IAM_STANDALONE_ENDPOINT
               value: {{ include "versitygw.standaloneIAMEndpoint" . | quote }}

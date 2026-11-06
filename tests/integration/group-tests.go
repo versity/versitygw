@@ -1276,6 +1276,7 @@ func TestGatewayIAM(ts *TestState) {
 	ts.Run(IAM_CreateBucket_empty_owner_header)
 	ts.Run(IAM_CreateBucket_non_existing_user)
 	ts.Run(IAM_CreateBucket_success)
+	ts.Sync(IAM_concurrent_user_updates)
 }
 
 func TestIAMAuth(ts *TestState) {
@@ -3824,6 +3825,7 @@ func GetIntTests() IntTests {
 		"IAM_CreateBucket_empty_owner_header":                                              IAM_CreateBucket_empty_owner_header,
 		"IAM_CreateBucket_non_existing_user":                                               IAM_CreateBucket_non_existing_user,
 		"IAM_CreateBucket_success":                                                         IAM_CreateBucket_success,
+		"IAM_concurrent_user_updates":                                                      IAM_concurrent_user_updates,
 		"AccessControl_default_ACL_user_access_denied":                                     AccessControl_default_ACL_user_access_denied,
 		"AccessControl_default_ACL_userplus_access_denied":                                 AccessControl_default_ACL_userplus_access_denied,
 		"AccessControl_default_ACL_admin_successful_access":                                AccessControl_default_ACL_admin_successful_access,

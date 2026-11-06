@@ -89,6 +89,9 @@ var (
 	s3IamRegion, s3IamBucket               string
 	s3IamEndpoint                          string
 	s3IamSslNoVerify                       bool
+	azIamAccount, azIamKey                 string
+	azIamSASToken, azIamURL                string
+	azIamContainer                         string
 	iamCacheDisable                        bool
 	iamCacheTTL                            int
 	iamCachePrune                          int
@@ -802,6 +805,36 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_S3_IAM_NO_VERIFY"},
 			Destination: &s3IamSslNoVerify,
 		},
+		&cli.StringFlag{
+			Name:        "iam-azure-account",
+			Usage:       "azure IAM storage account name",
+			EnvVars:     []string{"VGW_IAM_AZURE_ACCOUNT_NAME"},
+			Destination: &azIamAccount,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-access-key",
+			Usage:       "azure IAM storage account key",
+			EnvVars:     []string{"VGW_IAM_AZURE_ACCESS_KEY"},
+			Destination: &azIamKey,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-sas-token",
+			Usage:       "azure IAM SAS token",
+			EnvVars:     []string{"VGW_IAM_AZURE_SAS_TOKEN"},
+			Destination: &azIamSASToken,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-url",
+			Usage:       "azure IAM blob service URL, defaults to https://<account>.blob.core.windows.net/ (set it for Azurite or custom endpoints)",
+			EnvVars:     []string{"VGW_IAM_AZURE_ENDPOINT"},
+			Destination: &azIamURL,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-container",
+			Usage:       "azure IAM container, enables the azure blob IAM service",
+			EnvVars:     []string{"VGW_IAM_AZURE_CONTAINER"},
+			Destination: &azIamContainer,
+		},
 		&cli.BoolFlag{
 			Name:        "iam-cache-disable",
 			Usage:       "disable local iam cache",
@@ -1228,6 +1261,11 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		S3IAMBucket:                 s3IamBucket,
 		S3IAMEndpoint:               s3IamEndpoint,
 		S3IAMDisableSSLVerify:       s3IamSslNoVerify,
+		AzureIAMAccount:             azIamAccount,
+		AzureIAMKey:                 azIamKey,
+		AzureIAMSASToken:            azIamSASToken,
+		AzureIAMURL:                 azIamURL,
+		AzureIAMContainer:           azIamContainer,
 		IAMCacheDisable:             iamCacheDisable,
 		IAMCacheTTL:                 iamCacheTTL,
 		IAMCachePrune:               iamCachePrune,

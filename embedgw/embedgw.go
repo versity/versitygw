@@ -201,6 +201,7 @@ type Config struct {
 	//   IAMDir                -- local directory
 	//   LDAPServerURL         -- LDAP
 	//   S3IAMEndpoint         -- S3-backed
+	//   AzureIAMContainer     -- Azure Blob Storage-backed
 	//   VaultEndpointURL      -- HashiCorp Vault
 	//   IpaHost               -- FreeIPA
 	//
@@ -304,6 +305,24 @@ type Config struct {
 	// S3-backed IAM connection. Use only in development or trusted internal
 	// environments.
 	S3IAMDisableSSLVerify bool
+
+	// Azure Blob Storage-backed IAM backend. Activated when
+	// AzureIAMContainer is non-empty. Credentials follow the same rules as
+	// the azure backend: a SAS token, else an account name and key, else
+	// DefaultAzureCredential (environment, workload or managed identity).
+
+	// AzureIAMAccount is the storage account name.
+	AzureIAMAccount string
+	// AzureIAMKey is the storage account key.
+	AzureIAMKey string
+	// AzureIAMSASToken is a SAS token granting access to the container.
+	AzureIAMSASToken string
+	// AzureIAMURL is the blob service URL. Defaults to
+	// https://<account>.blob.core.windows.net/ when empty.
+	AzureIAMURL string
+	// AzureIAMContainer is the container that stores IAM account data.
+	// It must already exist.
+	AzureIAMContainer string
 
 	// FreeIPA IAM backend. Activated when IpaHost is non-empty.
 
@@ -645,6 +664,11 @@ func (c *Config) IamOpts() *auth.Opts {
 		S3Bucket:                    c.S3IAMBucket,
 		S3Endpoint:                  c.S3IAMEndpoint,
 		S3DisableSSlVerfiy:          c.S3IAMDisableSSLVerify,
+		AzureAccount:                c.AzureIAMAccount,
+		AzureKey:                    c.AzureIAMKey,
+		AzureSASToken:               c.AzureIAMSASToken,
+		AzureURL:                    c.AzureIAMURL,
+		AzureContainer:              c.AzureIAMContainer,
 		CacheDisable:                c.IAMCacheDisable,
 		CacheTTL:                    c.IAMCacheTTL,
 		CachePrune:                  c.IAMCachePrune,

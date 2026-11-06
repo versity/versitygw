@@ -26,7 +26,6 @@ import (
 	"io"
 	"math"
 	"net/url"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -49,6 +48,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/azblobclient"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -169,64 +169,17 @@ func New(ctx context.Context, accountName, accountKey, serviceURL, sasToken stri
 }
 
 func newAzure(accountName, accountKey, serviceURL, sasToken string, copyObjectThreshold int64, copySASVersion string) (*Azure, error) {
-	url := serviceURL
-	if serviceURL == "" && accountName != "" {
-		// if not otherwise specified, use the typical form:
-		// http(s)://<account>.blob.core.windows.net/
-		url = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
-	}
-
-	if sasToken != "" {
-		client, err := azblob.NewClientWithNoCredential(url+"?"+sasToken, nil)
-		if err != nil {
-			return nil, fmt.Errorf("init client: %w", err)
-		}
-		return &Azure{
-			client:              client,
-			serviceURL:          serviceURL,
-			sasToken:            sasToken,
-			copyObjectThreshold: copyObjectThreshold,
-			copySASVersion:      copySASVersion,
-		}, nil
-	}
-
-	if accountName == "" {
-		// if account name not provided, try to get from env var
-		accountName = os.Getenv("AZURE_CLIENT_ID")
-	}
-
-	if accountName == "" || accountKey == "" {
-		cred, err := azidentity.NewDefaultAzureCredential(nil)
-		if err != nil {
-			return nil, fmt.Errorf("init default credentials: %w", err)
-		}
-		client, err := azblob.NewClient(url, cred, nil)
-		if err != nil {
-			return nil, fmt.Errorf("init client: %w", err)
-		}
-		return &Azure{
-			client:              client,
-			serviceURL:          url,
-			defaultCreds:        cred,
-			copyObjectThreshold: copyObjectThreshold,
-			copySASVersion:      copySASVersion,
-		}, nil
-	}
-
-	cred, err := azblob.NewSharedKeyCredential(accountName, accountKey)
+	client, creds, err := azblobclient.New(accountName, accountKey, serviceURL, sasToken)
 	if err != nil {
-		return nil, fmt.Errorf("init credentials: %w", err)
-	}
-
-	client, err := azblob.NewClientWithSharedKeyCredential(url, cred, nil)
-	if err != nil {
-		return nil, fmt.Errorf("init client: %w", err)
+		return nil, err
 	}
 
 	return &Azure{
 		client:              client,
-		serviceURL:          url,
-		sharedkeyCreds:      cred,
+		serviceURL:          creds.ServiceURL,
+		sharedkeyCreds:      creds.SharedKey,
+		defaultCreds:        creds.Default,
+		sasToken:            creds.SASToken,
 		copyObjectThreshold: copyObjectThreshold,
 		copySASVersion:      copySASVersion,
 	}, nil
