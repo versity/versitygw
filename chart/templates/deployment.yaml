@@ -96,6 +96,9 @@
 {{- if and .Values.iam.enabled (eq .Values.iam.type "azure") $iamAzureCredentials.existingSecret (not (or $iamAzureCredentials.accessKeyKey $iamAzureCredentials.sasTokenKey)) }}
   {{- fail "iam.azure.credentials.accessKeyKey or sasTokenKey is required when credentials.existingSecret is set" }}
 {{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "azure") (not $iamAzureCredentials.existingSecret) (or $iamAzureCredentials.accessKeyKey $iamAzureCredentials.sasTokenKey) }}
+  {{- fail "iam.azure.credentials.existingSecret is required when accessKeyKey or sasTokenKey is set" }}
+{{- end }}
 {{- if and .Values.iam.enabled (eq .Values.iam.type "azure") $iamAzureCredentials.accessKeyKey (not $iamAzureAccount) }}
   {{- fail "iam.azure.credentials.accessKeyKey requires iam.azure.account" }}
 {{- end }}
