@@ -688,6 +688,57 @@ under the License.
     </div>
   </div>
 
+  <!-- Bucket Size Modal -->
+  <div id="bucket-size-modal" class="modal hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeBucketSizeModal()"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100">
+          <div class="min-w-0">
+            <h2 class="text-xl font-semibold text-charcoal">Bucket Size</h2>
+            <p id="bucket-size-bucket-name" class="text-sm text-charcoal-300 mt-1 font-mono truncate"></p>
+          </div>
+          <button onclick="closeBucketSizeModal()" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="p-6 space-y-4">
+          <div id="bucket-size-status" class="flex items-start gap-3 border rounded-lg p-3 text-sm">
+            <span id="bucket-size-status-icon" class="flex-shrink-0"></span>
+            <p id="bucket-size-status-text"></p>
+          </div>
+          <div class="space-y-3">
+            <div class="flex items-start justify-between py-2 border-b border-gray-100">
+              <span class="text-charcoal-300">Total Size</span>
+              <div class="text-right">
+                <p id="bucket-size-total" class="text-charcoal font-semibold">-</p>
+                <p id="bucket-size-bytes" class="text-xs text-charcoal-300 font-mono"></p>
+              </div>
+            </div>
+            <div class="flex items-center justify-between py-2 border-b border-gray-100">
+              <span class="text-charcoal-300">Objects</span>
+              <span id="bucket-size-count" class="text-charcoal font-mono">-</span>
+            </div>
+          </div>
+          <p class="text-xs text-charcoal-300">Adds up the current version of every object. Noncurrent versions and incomplete multipart uploads are not counted.</p>
+        </div>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+          <button id="bucket-size-stop-btn" onclick="stopBucketSizeCalculation()" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+            Stop
+          </button>
+          <button id="bucket-size-recalculate-btn" onclick="calculateBucketSize()" class="hidden px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+            Recalculate
+          </button>
+          <button onclick="closeBucketSizeModal()" class="px-4 py-2.5 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Presigned URL modal -->
   <div id="presigned-url-modal" class="hidden fixed inset-0 z-50">
     <div class="modal-backdrop absolute inset-0" onclick="closeModal('presigned-url-modal')"></div>
@@ -1465,6 +1516,11 @@ under the License.
               <button onclick="event.stopPropagation(); openBucketInfoModal('${escapeJsAttr(name)}')" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-charcoal-400 hover:text-charcoal hover:bg-gray-100 rounded transition-colors" title="Bucket info">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+              </button>
+              <button onclick="event.stopPropagation(); openBucketSizeModal('${escapeJsAttr(name)}')" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-charcoal-400 hover:text-charcoal hover:bg-gray-100 rounded transition-colors" title="Calculate bucket size">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
                 </svg>
               </button>
               <button onclick="event.stopPropagation(); openBucketPolicyModal('${escapeJsAttr(name)}')" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-charcoal-400 hover:text-charcoal hover:bg-gray-100 rounded transition-colors" title="Manage policy">
@@ -3783,7 +3839,7 @@ under the License.
     function formatSize(bytes) {
       if (bytes === 0) return '0 B';
       const k = 1024;
-      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
       const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
@@ -5000,6 +5056,114 @@ under the License.
       document.getElementById('multipart-list').classList.add('hidden');
       document.getElementById('multipart-empty').classList.add('hidden');
       await loadMultipartUploads();
+    }
+
+    // ============================================
+    // Bucket Size Modal
+    // ============================================
+
+    let bucketSizeBucket = null;
+    let bucketSizeAbortController = null;
+
+    function openBucketSizeModal(bucketName) {
+      bucketSizeBucket = bucketName;
+      document.getElementById('bucket-size-bucket-name').textContent = bucketName;
+      openModal('bucket-size-modal');
+      calculateBucketSize();
+    }
+
+    function closeBucketSizeModal() {
+      stopBucketSizeCalculation();
+      closeModal('bucket-size-modal');
+    }
+
+    function stopBucketSizeCalculation() {
+      if (bucketSizeAbortController) bucketSizeAbortController.abort();
+    }
+
+    // S3 has no bucket size API, so this lists every object and adds up the
+    // sizes, one request per 1000 objects.
+    async function calculateBucketSize() {
+      stopBucketSizeCalculation();
+      const controller = new AbortController();
+      bucketSizeAbortController = controller;
+      const bucket = bucketSizeBucket;
+      const modal = document.getElementById('bucket-size-modal');
+      const runningMessage = 'Listing every object in the bucket. Large buckets can take a while.';
+      const startedAt = performance.now();
+
+      // BigInt keeps the total exact past 2^53 bytes (8 PiB).
+      let totalBytes = 0n;
+      let objectCount = 0;
+      renderBucketSize('running', totalBytes, objectCount, runningMessage);
+
+      try {
+        let continuationToken = null;
+        do {
+          const result = await api.listObjectsV2(bucket, '', '', 1000, continuationToken, controller.signal);
+          for (const obj of result.contents) totalBytes += BigInt(obj.size);
+          objectCount += result.contents.length;
+          if (result.isTruncated && !result.continuationToken) {
+            throw new Error('the listing is truncated but has no continuation token');
+          }
+          continuationToken = result.isTruncated ? result.continuationToken : null;
+
+          // Escape and the back button hide the modal without calling
+          // closeBucketSizeModal().
+          if (modal.classList.contains('hidden')) controller.abort();
+          controller.signal.throwIfAborted();
+          renderBucketSize('running', totalBytes, objectCount, runningMessage);
+        } while (continuationToken);
+
+        const seconds = ((performance.now() - startedAt) / 1000).toFixed(1);
+        renderBucketSize('done', totalBytes, objectCount, `Finished in ${seconds}s.`);
+      } catch (error) {
+        // A newer calculation owns the modal now.
+        if (bucketSizeAbortController !== controller) return;
+
+        if (error.name === 'AbortError') {
+          renderBucketSize('stopped', totalBytes, objectCount, 'Stopped. The totals are partial.');
+          return;
+        }
+        console.error('Error calculating bucket size:', error);
+        const partial = objectCount > 0 ? ' The totals are partial.' : '';
+        renderBucketSize('error', totalBytes, objectCount, `Failed: ${error.message}${partial}`);
+      }
+    }
+
+    function renderBucketSize(state, totalBytes, objectCount, message) {
+      const styles = {
+        running: {
+          box: 'bg-blue-50 border-blue-200 text-blue-800',
+          icon: '<svg class="animate-spin w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>'
+        },
+        done: {
+          box: 'bg-green-50 border-green-200 text-green-800',
+          icon: '<svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
+        },
+        stopped: {
+          box: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+          icon: '<svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>'
+        },
+        error: {
+          box: 'bg-red-50 border-red-200 text-red-800',
+          icon: '<svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
+        }
+      };
+      document.getElementById('bucket-size-status').className = `flex items-start gap-3 border rounded-lg p-3 text-sm ${styles[state].box}`;
+      document.getElementById('bucket-size-status-icon').innerHTML = styles[state].icon;
+      document.getElementById('bucket-size-status-text').textContent = message;
+
+      // Until the first page arrives, or if it never does, there is nothing
+      // to show yet; an empty bucket still reads "0 B".
+      const known = state === 'done' || objectCount > 0;
+      document.getElementById('bucket-size-total').textContent = known ? formatSize(Number(totalBytes)) : '-';
+      document.getElementById('bucket-size-bytes').textContent = known && totalBytes >= 1024n ? `${totalBytes.toLocaleString()} bytes` : '';
+      document.getElementById('bucket-size-count').textContent = known ? objectCount.toLocaleString() : '-';
+
+      const running = state === 'running';
+      document.getElementById('bucket-size-stop-btn').classList.toggle('hidden', !running);
+      document.getElementById('bucket-size-recalculate-btn').classList.toggle('hidden', running);
     }
 
     // ============================================
