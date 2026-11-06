@@ -56,6 +56,22 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Lint backend configurations
+        run: |
+          scenarios=(
+            # stateless azure backend with a meta container, scaled out
+            "--set gateway.backend.type=azure --set gateway.backend.args=--account=myaccount --set gateway.backend.metaContainer=vgw-meta --set persistence.enabled=false --set replicaCount=2"
+            # an all-digit container name, which --set reads as a number
+            "--set gateway.backend.type=azure --set gateway.backend.args=--account=myaccount --set gateway.backend.metaContainer=123 --set persistence.enabled=false"
+          )
+
+          for scenario in "${scenarios[@]}"; do
+            echo "::group::helm lint --set ${scenario}"
+            # shellcheck disable=SC2086
+            helm lint chart/ --strict --set auth.existingSecret=root-credentials ${scenario}
+            echo "::endgroup::"
+          done
+
       - name: Lint extra objects
         run: |
           # one map and one string entry, both referencing the release through tpl

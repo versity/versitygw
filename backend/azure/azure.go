@@ -39,6 +39,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
@@ -87,6 +88,27 @@ const (
 	defaultListingMaxKeys = 1000
 )
 
+// bucketMeta is a bucket setting that is stored as a blob in the meta
+// container when one is configured, instead of in the container metadata,
+// which Azure limits to 8 KiB in total.
+type bucketMeta struct {
+	// key holds the setting in the container metadata: without a meta
+	// container, and on buckets written before one was configured
+	key key
+	// prefix followed by the bucket name is the blob name in the meta container
+	prefix string
+}
+
+var (
+	metaAcl     = bucketMeta{key: keyAclCapital, prefix: "vgw-meta-acl-"}
+	metaPolicy  = bucketMeta{key: keyPolicy, prefix: "vgw-meta-policy-"}
+	metaCors    = bucketMeta{key: keyCors, prefix: "vgw-meta-cors-"}
+	metaWebsite = bucketMeta{key: keyWebsite, prefix: "vgw-meta-website-"}
+	metaTags    = bucketMeta{key: keyTags, prefix: "vgw-meta-tags-"}
+
+	allBucketMeta = []bucketMeta{metaAcl, metaPolicy, metaCors, metaWebsite, metaTags}
+)
+
 func (key) Table() map[string]struct{} {
 	return map[string]struct{}{
 		"acl":                {},
@@ -119,11 +141,34 @@ type Azure struct {
 	// endpoints that lag the SDK's SAS version (e.g. Azurite) can verify the
 	// signature; production leaves it unset.
 	copySASVersion string
+	// metaContainer, when set, holds the bucket settings listed in
+	// allBucketMeta as blobs. It is hidden from bucket listings and closed
+	// to S3 requests.
+	metaContainer string
 }
 
 var _ backend.Backend = &Azure{}
 
-func New(accountName, accountKey, serviceURL, sasToken string, copyObjectThreshold int64, copySASVersion string) (*Azure, error) {
+// New returns an Azure backend. A non-empty metaContainer is created if it
+// does not exist yet.
+func New(ctx context.Context, accountName, accountKey, serviceURL, sasToken string, copyObjectThreshold int64, copySASVersion, metaContainer string) (*Azure, error) {
+	az, err := newAzure(accountName, accountKey, serviceURL, sasToken, copyObjectThreshold, copySASVersion)
+	if err != nil {
+		return nil, err
+	}
+	if metaContainer == "" {
+		return az, nil
+	}
+
+	az.metaContainer = metaContainer
+	if err := az.createMetaContainer(ctx); err != nil {
+		return nil, fmt.Errorf("init meta container %q: %w", metaContainer, err)
+	}
+
+	return az, nil
+}
+
+func newAzure(accountName, accountKey, serviceURL, sasToken string, copyObjectThreshold int64, copySASVersion string) (*Azure, error) {
 	url := serviceURL
 	if serviceURL == "" && accountName != "" {
 		// if not otherwise specified, use the typical form:
@@ -199,9 +244,15 @@ func (az *Azure) StoresDotSegmentKeys() bool {
 }
 
 func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
+	if az.isMetaContainer(*input.Bucket) {
+		return s3err.GetBucketErr(s3err.ErrBucketAlreadyExists, *input.Bucket)
+	}
+
 	meta := map[string]*string{
-		string(keyAclCapital): backend.GetPtrFromString(encodeBytes(acl)),
-		string(keyOwnership):  backend.GetPtrFromString(encodeBytes([]byte(input.ObjectOwnership))),
+		string(keyOwnership): backend.GetPtrFromString(encodeBytes([]byte(input.ObjectOwnership))),
+	}
+	if az.metaContainer == "" {
+		meta[string(keyAclCapital)] = backend.GetPtrFromString(encodeBytes(acl))
 	}
 
 	acct, ok := ctx.Value("bucket-owner").(auth.Account)
@@ -227,18 +278,21 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 		return err
 	}
 
+	var tags []byte
 	if tagging != nil {
-		tags, err := json.Marshal(tagging)
+		tags, err = json.Marshal(tagging)
 		if err != nil {
 			return fmt.Errorf("marshal tags: %w", err)
 		}
 
-		meta[string(keyTags)] = backend.GetPtrFromString(encodeBytes(tags))
+		if az.metaContainer == "" {
+			meta[string(keyTags)] = backend.GetPtrFromString(encodeBytes(tags))
+		}
 	}
 
 	_, err = az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
 	if errors.Is(s3err.GetAPIError(s3err.ErrBucketAlreadyExists), azureErrToS3Err(err)) {
-		aclBytes, err := az.getContainerMetaData(ctx, *input.Bucket, string(keyAclCapital))
+		aclBytes, err := az.getBucketMeta(ctx, *input.Bucket, metaAcl)
 		if err != nil {
 			return err
 		}
@@ -253,7 +307,24 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 		}
 		return s3err.GetBucketErr(s3err.ErrBucketAlreadyExists, *input.Bucket)
 	}
-	return azureErrToS3Err(err)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	if az.metaContainer != "" {
+		err := az.initBucketMeta(ctx, *input.Bucket, acl, tags)
+		if err != nil {
+			// a bucket without its acl would be left ownerless, so it is
+			// removed even when the request is canceled
+			_, derr := az.client.DeleteContainer(context.WithoutCancel(ctx), *input.Bucket, nil)
+			if derr != nil {
+				return fmt.Errorf("%w; remove bucket %q left without an acl: %w", err, *input.Bucket, derr)
+			}
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (az *Azure) ListBuckets(ctx context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
@@ -278,6 +349,9 @@ outer:
 			return result, azureErrToS3Err(err)
 		}
 		for _, v := range resp.ContainerItems {
+			if az.isMetaContainer(*v.Name) {
+				continue
+			}
 			// If we've already filled MaxBuckets, there is a next page — set token and stop
 			if input.MaxBuckets > 0 && int32(len(buckets)) == input.MaxBuckets {
 				cToken = buckets[len(buckets)-1].Name
@@ -294,7 +368,7 @@ outer:
 					CreationDate: *v.Properties.LastModified,
 				})
 			} else {
-				acl, err := getAclFromMetadata(v.Metadata, keyAclLower)
+				acl, err := az.listedBucketAcl(ctx, *v.Name, v.Metadata)
 				if err != nil {
 					return result, err
 				}
@@ -317,6 +391,9 @@ outer:
 }
 
 func (az *Azure) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	_, err := az.getContainerMetaData(ctx, *input.Bucket, "any")
 	if err != nil {
 		return nil, azureErrToS3Err(err)
@@ -326,6 +403,9 @@ func (az *Azure) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3
 }
 
 func (az *Azure) DeleteBucket(ctx context.Context, bucket string) error {
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	pager := az.client.NewListBlobsFlatPager(bucket, nil)
 
 	for pager.More() {
@@ -341,15 +421,49 @@ func (az *Azure) DeleteBucket(ctx context.Context, bucket string) error {
 			}
 		}
 	}
-	_, err := az.client.DeleteContainer(ctx, bucket, nil)
-	return azureErrToS3Err(err)
+	resp, err := az.client.DeleteContainer(ctx, bucket, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	if az.metaContainer != "" {
+		// Azure refuses to recreate a deleted container for at least 30
+		// seconds, so the blobs of a new bucket of the same name are written
+		// well after the delete. Only older blobs are removed, which keeps a
+		// late cleanup from removing the new bucket's settings. Date has
+		// whole seconds, and the extra second covers the delete itself.
+		var unmodifiedSince *time.Time
+		if resp.Date != nil {
+			cutoff := resp.Date.Add(time.Second)
+			unmodifiedSince = &cutoff
+		}
+
+		// The bucket is gone, so the blobs are removed even when the request
+		// is canceled, and a failure is not reported. A blob left behind is
+		// replaced when a bucket of the same name is created.
+		cleanupCtx := context.WithoutCancel(ctx)
+		for _, m := range allBucketMeta {
+			err := az.deleteMetaBlob(cleanupCtx, bucket, m, unmodifiedSince)
+			if err != nil {
+				debuglogger.Logf("delete bucket %q meta blob: %v", bucket, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (az *Azure) PutBucketOwnershipControls(ctx context.Context, bucket string, ownership types.ObjectOwnership) error {
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	return az.setContainerMetaData(ctx, bucket, string(keyOwnership), []byte(ownership))
 }
 
 func (az *Azure) GetBucketOwnershipControls(ctx context.Context, bucket string) (types.ObjectOwnership, error) {
+	if az.isMetaContainer(bucket) {
+		return "", s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	var ownship types.ObjectOwnership
 	ownership, err := az.getContainerMetaData(ctx, bucket, string(keyOwnership))
 	if err != nil {
@@ -363,10 +477,16 @@ func (az *Azure) GetBucketOwnershipControls(ctx context.Context, bucket string) 
 }
 
 func (az *Azure) DeleteBucketOwnershipControls(ctx context.Context, bucket string) error {
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	return az.deleteContainerMetaData(ctx, bucket, string(keyOwnership))
 }
 
 func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+	if az.isMetaContainer(*po.Bucket) {
+		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if backend.HasSSEC(po.SSECustomerAlgorithm, po.SSECustomerKey, po.SSECustomerKeyMD5) {
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
@@ -478,8 +598,11 @@ func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s
 }
 
 func (az *Azure) PutBucketTagging(ctx context.Context, bucket string, tags map[string]string) error {
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if tags == nil {
-		return az.deleteContainerMetaData(ctx, bucket, string(keyTags))
+		return az.deleteBucketMeta(ctx, bucket, metaTags)
 	}
 
 	tagsJson, err := json.Marshal(tags)
@@ -487,11 +610,14 @@ func (az *Azure) PutBucketTagging(ctx context.Context, bucket string, tags map[s
 		return err
 	}
 
-	return az.setContainerMetaData(ctx, bucket, string(keyTags), tagsJson)
+	return az.setBucketMeta(ctx, bucket, metaTags, tagsJson)
 }
 
 func (az *Azure) GetBucketTagging(ctx context.Context, bucket string) (map[string]string, error) {
-	tagsJson, err := az.getContainerMetaData(ctx, bucket, string(keyTags))
+	if az.isMetaContainer(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+	tagsJson, err := az.getBucketMeta(ctx, bucket, metaTags)
 	if err != nil {
 		return nil, err
 	}
@@ -536,6 +662,9 @@ func notModifiedCounts(resp blob.GetPropertiesResponse, partNumber *int32) (tagC
 }
 
 func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
@@ -694,6 +823,9 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 }
 
 func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
@@ -1041,11 +1173,14 @@ loop:
 }
 
 func (az *Azure) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return s3response.ListObjectsResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	// Retrieve the bucket acl to get the bucket owner
 	// All the objects in the bucket are owner by the bucket owner
-	aclBytes, err := az.getContainerMetaData(ctx, *input.Bucket, string(keyAclCapital))
+	aclBytes, err := az.getBucketMeta(ctx, *input.Bucket, metaAcl)
 	if err != nil {
-		return s3response.ListObjectsResult{}, azureErrToS3Err(err)
+		return s3response.ListObjectsResult{}, err
 	}
 
 	acl, err := auth.ParseACL(aclBytes)
@@ -1114,11 +1249,14 @@ func (az *Azure) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s
 }
 
 func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return s3response.ListObjectsV2Result{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	// Retrieve the bucket acl to get the bucket owner
 	// All the objects in the bucket are owner by the bucket owner
-	aclBytes, err := az.getContainerMetaData(ctx, *input.Bucket, string(keyAclCapital))
+	aclBytes, err := az.getBucketMeta(ctx, *input.Bucket, metaAcl)
 	if err != nil {
-		return s3response.ListObjectsV2Result{}, azureErrToS3Err(err)
+		return s3response.ListObjectsV2Result{}, err
 	}
 
 	acl, err := auth.ParseACL(aclBytes)
@@ -1207,6 +1345,9 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 }
 
 func (az *Azure) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	conds := backend.ObjectDeletePreconditions{
 		IfMatch:            input.IfMatch,
 		IfMatchLastModTime: input.IfMatchLastModifiedTime,
@@ -1252,6 +1393,9 @@ func (az *Azure) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) 
 }
 
 func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return s3response.DeleteResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	delResult, errs := []types.DeletedObject{}, []types.Error{}
 	for _, obj := range input.Delete.Objects {
 		_, err := az.DeleteObject(ctx, &s3.DeleteObjectInput{
@@ -1275,6 +1419,9 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 }
 
 func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5,
 		input.CopySourceSSECustomerAlgorithm, input.CopySourceSSECustomerKey, input.CopySourceSSECustomerKeyMD5) {
 		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
@@ -1288,6 +1435,9 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 	srcBucket, srcObj, _, err := backend.ParseCopySource(*input.CopySource)
 	if err != nil {
 		return s3response.CopyObjectOutput{}, err
+	}
+	if az.isMetaContainer(srcBucket) {
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 
 	// the destination's conditional write headers are evaluated before the
@@ -1506,6 +1656,9 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 }
 
 func (az *Azure) PutObjectTagging(ctx context.Context, bucket, object, _ string, tags map[string]string) error {
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	client, err := az.getBlobClient(bucket, object)
 	if err != nil {
 		return err
@@ -1520,6 +1673,9 @@ func (az *Azure) PutObjectTagging(ctx context.Context, bucket, object, _ string,
 }
 
 func (az *Azure) GetObjectTagging(ctx context.Context, bucket, object, _ string) (map[string]string, error) {
+	if az.isMetaContainer(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	client, err := az.getBlobClient(bucket, object)
 	if err != nil {
 		return nil, err
@@ -1534,6 +1690,9 @@ func (az *Azure) GetObjectTagging(ctx context.Context, bucket, object, _ string)
 }
 
 func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object, _ string) error {
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	client, err := az.getBlobClient(bucket, object)
 	if err != nil {
 		return err
@@ -1548,6 +1707,9 @@ func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object, _ stri
 }
 
 func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
 		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
@@ -1657,6 +1819,9 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.Cre
 
 // Each part is translated into an uncommitted block in a newly created blob in staging area
 func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
@@ -1718,9 +1883,20 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3
 }
 
 func (az *Azure) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5,
 		input.CopySourceSSECustomerAlgorithm, input.CopySourceSSECustomerKey, input.CopySourceSSECustomerKeyMD5) {
 		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
+	srcBucket, _, _, err := backend.ParseCopySource(*input.CopySource)
+	if err != nil {
+		return s3response.CopyPartResult{}, err
+	}
+	if az.isMetaContainer(srcBucket) {
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 
 	client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
@@ -1752,6 +1928,9 @@ func (az *Azure) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInp
 
 // Lists all uncommitted parts from the blob
 func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return s3response.ListPartsResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	err := az.checkIfMpExists(ctx, *input.Bucket, *input.Key, *input.UploadId)
 	if err != nil {
 		return s3response.ListPartsResult{}, err
@@ -1846,6 +2025,9 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 	var bucket string
 	if input.Bucket != nil {
 		bucket = *input.Bucket
+	}
+	if az.isMetaContainer(bucket) {
+		return s3response.ListMultipartUploadsResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 
 	client, err := az.getContainerClient(bucket)
@@ -1945,6 +2127,9 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 // Deletes the block blob with committed/uncommitted blocks
 // Cleans up the initiated multipart upload in .sgwtmp namespace
 func (az *Azure) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
+	if az.isMetaContainer(*input.Bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	tmpPath := createMetaTmpPath(*input.Key, *input.UploadId)
 
 	if input.IfMatchInitiatedTime != nil {
@@ -1987,6 +2172,9 @@ func (az *Azure) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultip
 // Deletes the multipart upload 'blob' from .sgwtmp namespace
 // It indicates the end of the multipart upload
 func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
+	if az.isMetaContainer(*input.Bucket) {
+		return s3response.CompleteMultipartUploadResult{}, "", s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	var res s3response.CompleteMultipartUploadResult
 
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
@@ -2182,23 +2370,35 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 }
 
 func (az *Azure) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
-	return az.setContainerMetaData(ctx, bucket, string(keyAclCapital), data)
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+	return az.setBucketMeta(ctx, bucket, metaAcl, data)
 }
 
 func (az *Azure) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
-	return az.getContainerMetaData(ctx, *input.Bucket, string(keyAclCapital))
+	if az.isMetaContainer(*input.Bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+	return az.getBucketMeta(ctx, *input.Bucket, metaAcl)
 }
 
 func (az *Azure) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if policy == nil {
-		return az.deleteContainerMetaData(ctx, bucket, string(keyPolicy))
+		return az.deleteBucketMeta(ctx, bucket, metaPolicy)
 	}
 
-	return az.setContainerMetaData(ctx, bucket, string(keyPolicy), policy)
+	return az.setBucketMeta(ctx, bucket, metaPolicy, policy)
 }
 
 func (az *Azure) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error) {
-	p, err := az.getContainerMetaData(ctx, bucket, string(keyPolicy))
+	if az.isMetaContainer(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+	p, err := az.getBucketMeta(ctx, bucket, metaPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -2213,15 +2413,21 @@ func (az *Azure) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 }
 
 func (az *Azure) PutBucketCors(ctx context.Context, bucket string, cors []byte) error {
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if cors == nil {
-		return az.deleteContainerMetaData(ctx, bucket, string(keyCors))
+		return az.deleteBucketMeta(ctx, bucket, metaCors)
 	}
 
-	return az.setContainerMetaData(ctx, bucket, string(keyCors), cors)
+	return az.setBucketMeta(ctx, bucket, metaCors, cors)
 }
 
 func (az *Azure) GetBucketCors(ctx context.Context, bucket string) ([]byte, error) {
-	p, err := az.getContainerMetaData(ctx, bucket, string(keyCors))
+	if az.isMetaContainer(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+	p, err := az.getBucketMeta(ctx, bucket, metaCors)
 	if err != nil {
 		return nil, err
 	}
@@ -2236,8 +2442,11 @@ func (az *Azure) DeleteBucketCors(ctx context.Context, bucket string) error {
 }
 
 func (az *Azure) PutBucketWebsite(ctx context.Context, bucket string, website []byte) error {
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if website == nil {
-		return az.deleteContainerMetaData(ctx, bucket, string(keyWebsite))
+		return az.deleteBucketMeta(ctx, bucket, metaWebsite)
 	}
 
 	encoded, err := backend.MarshalWebsiteConfig(website, true)
@@ -2245,11 +2454,14 @@ func (az *Azure) PutBucketWebsite(ctx context.Context, bucket string, website []
 		return err
 	}
 
-	return az.setContainerMetaData(ctx, bucket, string(keyWebsite), encoded)
+	return az.setBucketMeta(ctx, bucket, metaWebsite, encoded)
 }
 
 func (az *Azure) GetBucketWebsite(ctx context.Context, bucket string) ([]byte, error) {
-	website, err := az.getContainerMetaData(ctx, bucket, string(keyWebsite))
+	if az.isMetaContainer(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+	website, err := az.getBucketMeta(ctx, bucket, metaWebsite)
 	if err != nil {
 		return nil, err
 	}
@@ -2270,10 +2482,16 @@ func (az *Azure) DeleteBucketWebsite(ctx context.Context, bucket string) error {
 }
 
 func (az *Azure) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	return az.setContainerMetaData(ctx, bucket, string(keyBucketLock), config)
 }
 
 func (az *Azure) GetObjectLockConfiguration(ctx context.Context, bucket string) ([]byte, error) {
+	if az.isMetaContainer(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	cfg, err := az.getContainerMetaData(ctx, bucket, string(keyBucketLock))
 	if err != nil {
 		return nil, err
@@ -2287,6 +2505,9 @@ func (az *Azure) GetObjectLockConfiguration(ctx context.Context, bucket string) 
 }
 
 func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, versionId string, retention []byte) error {
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	err := az.isBucketObjectLockEnabled(ctx, bucket)
 	if err != nil {
 		return err
@@ -2320,6 +2541,9 @@ func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, version
 }
 
 func (az *Azure) GetObjectRetention(ctx context.Context, bucket, object, versionId string) ([]byte, error) {
+	if az.isMetaContainer(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	client, err := az.getBlobClient(bucket, object)
 	if err != nil {
 		return nil, err
@@ -2343,6 +2567,9 @@ func (az *Azure) GetObjectRetention(ctx context.Context, bucket, object, version
 }
 
 func (az *Azure) PutObjectLegalHold(ctx context.Context, bucket, object, versionId string, status bool) error {
+	if az.isMetaContainer(bucket) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	err := az.isBucketObjectLockEnabled(ctx, bucket)
 	if err != nil {
 		return err
@@ -2383,6 +2610,9 @@ func (az *Azure) PutObjectLegalHold(ctx context.Context, bucket, object, version
 }
 
 func (az *Azure) GetObjectLegalHold(ctx context.Context, bucket, object, versionId string) (*bool, error) {
+	if az.isMetaContainer(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	client, err := az.getBlobClient(bucket, object)
 	if err != nil {
 		return nil, err
@@ -2425,7 +2655,10 @@ func (az *Azure) ListBucketsAndOwners(ctx context.Context) (buckets []s3response
 			return buckets, azureErrToS3Err(err)
 		}
 		for _, v := range resp.ContainerItems {
-			acl, err := getAclFromMetadata(v.Metadata, keyAclLower)
+			if az.isMetaContainer(*v.Name) {
+				continue
+			}
+			acl, err := az.listedBucketAcl(ctx, *v.Name, v.Metadata)
 			if err != nil {
 				return buckets, err
 			}
@@ -2672,82 +2905,262 @@ func decodeString(str string) ([]byte, error) {
 	return decoded, nil
 }
 
-func (az *Azure) getContainerMetaData(ctx context.Context, bucket, key string) ([]byte, error) {
+// containerMetadata returns a client for the bucket container and the
+// container metadata, or NoSuchBucket.
+func (az *Azure) containerMetadata(ctx context.Context, bucket string) (*container.Client, map[string]*string, error) {
 	client, err := az.getContainerClient(bucket)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	props, err := client.GetProperties(ctx, nil)
 	if err != nil {
-		return nil, azureErrToS3Err(err)
-	}
-
-	if props.Metadata == nil {
-		return []byte{}, nil
-	}
-
-	data, ok := props.Metadata[key]
-	if !ok {
-		return []byte{}, nil
-	}
-
-	value, err := decodeString(*data)
-	if err != nil {
-		return nil, err
-	}
-
-	return value, nil
-}
-
-func (az *Azure) setContainerMetaData(ctx context.Context, bucket, key string, value []byte) error {
-	client, err := az.getContainerClient(bucket)
-	if err != nil {
-		return err
-	}
-
-	props, err := client.GetProperties(ctx, nil)
-	if err != nil {
-		return azureErrToS3Err(err)
+		return nil, nil, azureErrToS3Err(err)
 	}
 
 	mdmap := props.Metadata
 	if mdmap == nil {
 		mdmap = make(map[string]*string)
+	}
+
+	return client, mdmap, nil
+}
+
+func (az *Azure) getContainerMetaData(ctx context.Context, bucket, key string) ([]byte, error) {
+	_, mdmap, err := az.containerMetadata(ctx, bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	return metadataValue(mdmap, key)
+}
+
+func (az *Azure) setContainerMetaData(ctx context.Context, bucket, key string, value []byte) error {
+	client, mdmap, err := az.containerMetadata(ctx, bucket)
+	if err != nil {
+		return err
 	}
 
 	str := encodeBytes(value)
 	mdmap[key] = backend.GetPtrFromString(str)
 
 	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: mdmap})
-	if err != nil {
-		return err
-	}
-	return nil
+	return azureErrToS3Err(err)
 }
 
 func (az *Azure) deleteContainerMetaData(ctx context.Context, bucket, key string) error {
-	client, err := az.getContainerClient(bucket)
+	client, mdmap, err := az.containerMetadata(ctx, bucket)
 	if err != nil {
 		return err
-	}
-
-	props, err := client.GetProperties(ctx, nil)
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
-	mdmap := props.Metadata
-	if mdmap == nil {
-		mdmap = make(map[string]*string)
 	}
 
 	delete(mdmap, key)
 
 	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: mdmap})
+	return azureErrToS3Err(err)
+}
+
+// metadataValue decodes the container metadata value under key, or returns
+// an empty value if the key is not set.
+func metadataValue(mdmap map[string]*string, key string) ([]byte, error) {
+	data, ok := mdmap[key]
+	if !ok {
+		return []byte{}, nil
+	}
+
+	return decodeString(*data)
+}
+
+// isMetaContainer reports whether bucket is the meta container.
+func (az *Azure) isMetaContainer(bucket string) bool {
+	return az.metaContainer != "" && bucket == az.metaContainer
+}
+
+// createMetaContainer creates the meta container if it does not exist. The
+// existence check comes first so that credentials which may not create
+// containers still work with one that already exists. An existing bucket is
+// refused: its owner could have stored objects named like the settings of
+// other buckets, which the gateway would then apply.
+func (az *Azure) createMetaContainer(ctx context.Context) error {
+	client, err := az.getContainerClient(az.metaContainer)
 	if err != nil {
 		return err
 	}
+
+	props, err := client.GetProperties(ctx, nil)
+	if err == nil {
+		// the gateway creates every bucket with at least one of these keys
+		for _, k := range []key{keyAclCapital, keyOwnership} {
+			if _, ok := props.Metadata[string(k)]; ok {
+				return errors.New("the container is a bucket")
+			}
+		}
+		return nil
+	}
+	if !bloberror.HasCode(err, bloberror.ContainerNotFound) {
+		return err
+	}
+
+	_, err = client.Create(ctx, nil)
+	if bloberror.HasCode(err, bloberror.ContainerAlreadyExists) {
+		return nil
+	}
+	return err
+}
+
+// getBucketMeta returns the bucket setting m, or an empty value if it is not
+// set. With a meta container its blob is read, falling back to the container
+// metadata for a setting not written since the meta container was
+// configured. An empty blob is a setting that is not set.
+func (az *Azure) getBucketMeta(ctx context.Context, bucket string, m bucketMeta) ([]byte, error) {
+	if az.metaContainer != "" {
+		data, err := az.getMetaBlob(ctx, bucket, m)
+		if err == nil {
+			return data, nil
+		}
+		if !bloberror.HasCode(err, bloberror.BlobNotFound) {
+			return nil, err
+		}
+	}
+
+	return az.getContainerMetaData(ctx, bucket, string(m.key))
+}
+
+// setBucketMeta stores the bucket setting m. With a meta container it is
+// written to its blob, and a copy in the container metadata from before
+// the meta container was configured is removed. The blob goes first: it
+// hides that copy even if removing it fails.
+func (az *Azure) setBucketMeta(ctx context.Context, bucket string, m bucketMeta, value []byte) error {
+	if az.metaContainer == "" {
+		return az.setContainerMetaData(ctx, bucket, string(m.key), value)
+	}
+
+	client, mdmap, err := az.containerMetadata(ctx, bucket)
+	if err != nil {
+		return err
+	}
+
+	err = az.putMetaBlob(ctx, bucket, m, value)
+	if err != nil {
+		return err
+	}
+
+	return removeLegacyMeta(ctx, client, mdmap, m)
+}
+
+// deleteBucketMeta removes the bucket setting m. With a meta container it
+// stores an empty blob rather than removing the blob, so a read stops at the
+// blob instead of also looking up the container metadata, and a copy left in
+// the container metadata is never served again.
+func (az *Azure) deleteBucketMeta(ctx context.Context, bucket string, m bucketMeta) error {
+	if az.metaContainer == "" {
+		return az.deleteContainerMetaData(ctx, bucket, string(m.key))
+	}
+
+	return az.setBucketMeta(ctx, bucket, m, nil)
+}
+
+// removeLegacyMeta removes the setting m from the container metadata mdmap
+// of the container behind client, if it is there.
+func removeLegacyMeta(ctx context.Context, client *container.Client, mdmap map[string]*string, m bucketMeta) error {
+	if _, ok := mdmap[string(m.key)]; !ok {
+		return nil
+	}
+
+	delete(mdmap, string(m.key))
+	_, err := client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: mdmap})
+	return azureErrToS3Err(err)
+}
+
+// listedBucketAcl returns the acl of a bucket from a container listing,
+// whose metadata carries lowercase keys.
+func (az *Azure) listedBucketAcl(ctx context.Context, bucket string, meta map[string]*string) (*auth.ACL, error) {
+	if az.metaContainer != "" {
+		data, err := az.getMetaBlob(ctx, bucket, metaAcl)
+		if err == nil {
+			acl, err := auth.ParseACL(data)
+			if err != nil {
+				return nil, err
+			}
+			return &acl, nil
+		}
+		if !bloberror.HasCode(err, bloberror.BlobNotFound) {
+			return nil, err
+		}
+	}
+
+	return getAclFromMetadata(meta, keyAclLower)
+}
+
+// initBucketMeta writes every setting of a newly created bucket to the meta
+// container, the ones it does not have as empty blobs. This also replaces
+// the settings that a deleted bucket of the same name can leave behind.
+func (az *Azure) initBucketMeta(ctx context.Context, bucket string, acl, tags []byte) error {
+	for _, m := range []bucketMeta{metaPolicy, metaCors, metaWebsite} {
+		err := az.putMetaBlob(ctx, bucket, m, nil)
+		if err != nil {
+			return err
+		}
+	}
+
+	err := az.putMetaBlob(ctx, bucket, metaAcl, acl)
+	if err != nil {
+		return err
+	}
+
+	return az.putMetaBlob(ctx, bucket, metaTags, tags)
+}
+
+// getMetaBlob reads the blob of the setting m of bucket. Like putMetaBlob and
+// deleteMetaBlob, it does not map errors to S3 errors: they are not about the
+// bucket in the request, and a missing meta container must not read as
+// NoSuchBucket.
+func (az *Azure) getMetaBlob(ctx context.Context, bucket string, m bucketMeta) ([]byte, error) {
+	name := m.prefix + bucket
+	resp, err := az.client.DownloadStream(ctx, az.metaContainer, name, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get meta blob %q: %w", name, err)
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read meta blob %q: %w", name, err)
+	}
+
+	return data, nil
+}
+
+func (az *Azure) putMetaBlob(ctx context.Context, bucket string, m bucketMeta, value []byte) error {
+	name := m.prefix + bucket
+	_, err := az.client.UploadBuffer(ctx, az.metaContainer, name, value, nil)
+	if err != nil {
+		return fmt.Errorf("put meta blob %q: %w", name, err)
+	}
+
+	return nil
+}
+
+// deleteMetaBlob removes the blob of the setting m of bucket. With a non-nil
+// unmodifiedSince, a blob written after that time is kept.
+func (az *Azure) deleteMetaBlob(ctx context.Context, bucket string, m bucketMeta, unmodifiedSince *time.Time) error {
+	name := m.prefix + bucket
+	var opts *blob.DeleteOptions
+	if unmodifiedSince != nil {
+		opts = &blob.DeleteOptions{
+			AccessConditions: &blob.AccessConditions{
+				ModifiedAccessConditions: &blob.ModifiedAccessConditions{
+					IfUnmodifiedSince: unmodifiedSince,
+				},
+			},
+		}
+	}
+
+	_, err := az.client.DeleteBlob(ctx, az.metaContainer, name, opts)
+	if err != nil && !bloberror.HasCode(err, bloberror.BlobNotFound, bloberror.ConditionNotMet) {
+		return fmt.Errorf("delete meta blob %q: %w", name, err)
+	}
+
 	return nil
 }
 
