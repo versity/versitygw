@@ -368,7 +368,7 @@ func (tmp *tmpfile) fallbackLink() error {
 	err = tmp.publishInDir(filepath.Dir(objPath), func() error {
 		// rename only works for files within the same filesystem,
 		// MoveFile falls back to copy otherwise
-		return backend.MoveFile(tempname, objPath, tmp.newFilePerm)
+		return backend.MoveFile(tempname, objPath, tmp.newFilePerm, tmp.fsync)
 	})
 	if err != nil {
 		return err
