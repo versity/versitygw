@@ -102,6 +102,15 @@ gateway:
     args: "--exclude-dirs .zfs /mnt/data"
 ```
 
+Example for POSIX on a filesystem without `O_TMPFILE` support, where temp subdirectories reduce directory contention between concurrent uploads:
+
+```yaml
+gateway:
+  backend:
+    type: posix
+    args: "--tmp-subdirs 16 /mnt/data"
+```
+
 ### Azure meta container
 
 The azure backend stores each bucket's ACL, policy, CORS, website and tagging configuration in the bucket's container metadata, which Azure limits to 8KB in total. A large bucket policy, for example one with many prefix-scoped statements, then fails with `MetadataTooLarge`. Set `gateway.backend.metaContainer` to store these settings as blobs in a dedicated container instead:

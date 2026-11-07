@@ -32,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -98,6 +99,11 @@ type Posix struct {
 	// fallocUnsupported holds bucket paths whose filesystem rejected
 	// fallocate; per path since buckets can be on different filesystems.
 	fallocUnsupported sync.Map
+
+	// tmpSubdirs is PosixOpts.TmpSubdirs.
+	tmpSubdirs int
+	// tmpSubdirSeq picks temp subdirectories round-robin.
+	tmpSubdirSeq atomic.Uint64
 
 	// forceNoCopyFileRange is a flag to disable the use of io.Copy to
 	// reassemble multipart upload parts, which uses copy_file_range on
@@ -269,6 +275,10 @@ type PosixOpts struct {
 	// ForceNoTmpFile disables the use of O_TMPFILE even if the filesystem
 	// supports it
 	ForceNoTmpFile bool
+	// TmpSubdirs creates named temp files in this many subdirectories of
+	// .sgwtmp, so concurrent creates do not contend for one directory lock.
+	// 0 disables it. No effect when O_TMPFILE is used.
+	TmpSubdirs int
 	// ForceNoCopyFileRange disables the use of io.Copy for multipart uploads parts
 	ForceNoCopyFileRange bool
 	// Fsync flushes each new object's data, metadata and directory entries
@@ -378,6 +388,11 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		return nil, fmt.Errorf("sidecar directory cannot be inside the gateway root directory")
 	}
 
+	if opts.TmpSubdirs < 0 || opts.TmpSubdirs > MaxTmpSubdirs {
+		return nil, fmt.Errorf("temp subdirs %d out of range [0, %d]",
+			opts.TmpSubdirs, MaxTmpSubdirs)
+	}
+
 	// A storer that keeps metadata on the object files (xattr) resolves
 	// bucket names the same way this backend does: relative to the working
 	// directory by default, under the absolute root with AbsolutePaths.
@@ -481,6 +496,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		newFilePerm:          newFilePerm,
 		forceNoTmpFile:       opts.ForceNoTmpFile,
 		fsync:                opts.Fsync,
+		tmpSubdirs:           opts.TmpSubdirs,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
 		objectLockMode:       objectLockMode,
 		enableODirect:        opts.EnableODirect,
@@ -1086,6 +1102,32 @@ func (p *Posix) removePartialBucket(bucket string) {
 	}
 }
 
+// MaxTmpSubdirs is the upper bound of PosixOpts.TmpSubdirs.
+const MaxTmpSubdirs = 256
+
+// tmpSubdir returns the subdirectory of .sgwtmp dir for the next temp file.
+// Subdirectories are only removed with their bucket, so a create never races
+// the removal of an empty one.
+func (p *Posix) tmpSubdir(dir string) string {
+	if p.tmpSubdirs <= 1 {
+		return dir
+	}
+	n := p.tmpSubdirSeq.Add(1) % uint64(p.tmpSubdirs)
+	return filepath.Join(dir, strconv.FormatUint(n, 10))
+}
+
+// partStagingDirs returns the directories a part's temp file uses: dir for
+// the O_TMPFILE attempt, the key's multipart directory as before, and named
+// for named-temp staging, the bucket's .sgwtmp so the part spreads over the
+// temp subdirectories like other uploads. named is empty when they are off.
+func (p *Posix) partStagingDirs(bucket, objdir string) (dir, named string) {
+	dir = p.ObjectPath(bucket, objdir)
+	if p.tmpSubdirs > 1 {
+		return dir, p.ObjectPath(bucket, MetaTmpDir)
+	}
+	return dir, ""
+}
+
 // mkdirAll is backend.MkdirAll with this backend's directory permissions and
 // the same chown annotation CreateBucket uses: an EPERM here is the
 // --chuid/--chgid misconfiguration, not a filesystem problem. Only EPERM is
@@ -1640,7 +1682,7 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 	versionBucketPath := filepath.Join(p.versioningDir, bucket)
 	versioningKey := filepath.Join(genObjVersionKey(key), versionId)
 	versionTmpPath := filepath.Join(versionBucketPath, MetaTmpDir)
-	f, err := p.openTmpFile(versionTmpPath, versionBucketPath, versioningKey,
+	f, err := p.openTmpFile(versionTmpPath, "", versionBucketPath, versioningKey,
 		size, acc, doFalloc, p.forceNoTmpFile, odirectNotAllowed)
 	if err != nil {
 		return versionPath, err
@@ -2953,7 +2995,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		finalEtag = fmt.Sprintf("\"%s-%s\"", strings.ToUpper(string(checksums.Algorithm)), value)
 	}
 
-	f, err := p.openTmpFile(p.ObjectPath(bucket, MetaTmpDir), bucket, object,
+	f, err := p.openTmpFile(p.ObjectPath(bucket, MetaTmpDir), "", bucket, object,
 		totalsize, acct, skipFalloc, p.forceNoTmpFile, odirectNotAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
@@ -3975,7 +4017,8 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 
 	partPath := filepath.Join(mpPath, fmt.Sprintf("%v", *part))
 
-	f, err := p.openTmpFile(p.ObjectPath(bucket, objdir),
+	pdir, pnamed := p.partStagingDirs(bucket, objdir)
+	f, err := p.openTmpFile(pdir, pnamed,
 		bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile, odirectAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
@@ -4436,7 +4479,8 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, err
 	}
 
-	f, err := p.openTmpFile(p.ObjectPath(*upi.Bucket, objdir),
+	pdir, pnamed := p.partStagingDirs(*upi.Bucket, objdir)
+	f, err := p.openTmpFile(pdir, pnamed,
 		*upi.Bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile, odirectNotAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
@@ -5036,7 +5080,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, fmt.Errorf("stat object: %w", err)
 	}
 
-	f, err := p.openTmpFile(p.ObjectPath(*po.Bucket, MetaTmpDir),
+	f, err := p.openTmpFile(p.ObjectPath(*po.Bucket, MetaTmpDir), "",
 		*po.Bucket, object, contentLength, acct, doFalloc, p.forceNoTmpFile, odirectAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
@@ -5602,7 +5646,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					acct = auth.Account{}
 				}
 
-				f, err := p.openTmpFile(p.ObjectPath(bucket, MetaTmpDir),
+				f, err := p.openTmpFile(p.ObjectPath(bucket, MetaTmpDir), "",
 					bucket, object, srcObjVersion.Size(), acct, doFalloc,
 					p.forceNoTmpFile, odirectNotAllowed)
 				if err != nil {
