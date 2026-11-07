@@ -132,6 +132,10 @@ type Posix struct {
 	// stored (e.g. files placed on the filesystem outside of versitygw).
 	defaultEtag string
 
+	// detectStaleEtag replaces the stored etag and checksums of objects
+	// changed outside of the gateway, see PosixOpts.DetectStaleEtag
+	detectStaleEtag bool
+
 	// actionLimiter limits the number of concurrently running POSIX actions.
 	// The primary goal is to bound OS thread growth: when goroutines block in
 	// filesystem syscalls, the Go scheduler may spawn additional OS threads to
@@ -209,6 +213,7 @@ const (
 	ownershipkey        = "ownership"
 	etagkey             = "etag"
 	checksumsKey        = "checksums"
+	etagStatKey         = "etag-stat"
 	policykey           = "policy"
 	bucketLockKey       = "bucket-lock"
 	objectRetentionKey  = "object-retention"
@@ -340,6 +345,14 @@ type PosixOpts struct {
 	// attribute (e.g. files placed on the filesystem outside of versitygw).
 	// When empty, such objects are served with an empty ETag.
 	DefaultEtag string
+	// DetectStaleEtag makes the gateway notice objects whose content was
+	// changed outside of it, for example over NFS or SMB on the same
+	// directory. The size and modification time of an object are stored
+	// with its etag when the gateway writes it. When the object no longer
+	// has them, its stored etag and checksums are not returned: the etag is
+	// made from the size and modification time instead, and the object has
+	// no checksums. Objects written before this was enabled are not checked.
+	DetectStaleEtag bool
 	// IOBufferSize sets the buffer size (in bytes) for copy/read paths that use
 	// io.CopyBuffer or buffered readers. Defaults to 1MiB when unset or invalid.
 	IOBufferSize int
@@ -530,6 +543,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		actionLimiter:        semaphore.NewWeighted(int64(concurrencyOrDefault(opts.Concurrency))),
 		copyObjectThreshold:  opts.CopyObjectThreshold,
 		defaultEtag:          opts.DefaultEtag,
+		detectStaleEtag:      opts.DetectStaleEtag,
 		ioBufferSize:         ioBufferSize,
 		ioBufferPool: sync.Pool{New: func() any {
 			b := alignedBuffer(ioBufferSize)
@@ -1515,6 +1529,7 @@ func isRemovableAttr(attr string) bool {
 var dirObjectAttrs = []string{
 	etagkey,
 	checksumsKey,
+	etagStatKey,
 	contentTypeHdr,
 	contentEncHdr,
 	contentLangHdr,
@@ -1980,6 +1995,9 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 					return nil, fmt.Errorf("get checksum: %w", err)
 				}
+				if e, stale := p.staleEtag(nil, bucket, path, fi); stale {
+					etag = e
+				}
 
 				objects = append(objects, s3response.ObjectVersion{
 					ETag:              &etag,
@@ -2055,6 +2073,11 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				// note: meta.ErrNoSuchKey will return etagBytes = []byte{}
 				// so this will just set etag to "" if its not already set
 				etag := string(etagBytes)
+				// the version holds the content of the object when it was
+				// archived, which may have been changed outside of the gateway
+				if e, stale := p.staleEtag(nil, versionPath, nullVersionId, nf); stale {
+					etag = e
+				}
 				size := nf.Size()
 				// Retrieve checksum
 				checksum, err := p.retrieveChecksums(nil, versionPath, nullVersionId)
@@ -2170,6 +2193,9 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				checksum, err := p.retrieveChecksums(nil, versionPath, versionId)
 				if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 					return nil, fmt.Errorf("get checksum: %w", err)
+				}
+				if e, stale := p.staleEtag(nil, versionPath, versionId, f); stale {
+					etag = e
 				}
 				objects = append(objects, s3response.ObjectVersion{
 					ETag:              &etag,
@@ -3190,6 +3216,11 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	err = p.meta.StoreAttribute(f.File(), bucket, object, etagkey, []byte(finalEtag))
 	if err != nil {
 		return res, "", fmt.Errorf("set etag attr: %w", err)
+	}
+
+	err = p.storeEtagStat(f, bucket, object)
+	if err != nil {
+		return res, "", err
 	}
 
 	// Store multipart upload metadata on the final object so that GetObject /
@@ -4468,6 +4499,9 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	if err != nil || srcEtag == "" {
 		srcEtag = p.defaultEtag
 	}
+	if e, stale := p.staleEtag(srcf, srcBucket, srcObject, fi); stale {
+		srcEtag = e
+	}
 
 	err = backend.EvaluateCopySourcePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
 		IfMatch:       upi.CopySourceIfMatch,
@@ -4669,7 +4703,7 @@ func (p *Posix) checkPutPreconditions(bucket, object string, ifMatch, ifNoneMatc
 
 	// the etag at the object path may be the one of the key with or
 	// without the trailing slash
-	_, err := p.statLiveObject(bucket, object)
+	fi, err := p.statLiveObject(bucket, object)
 	if errors.Is(err, fs.ErrNotExist) {
 		return backend.EvaluateObjectPutPreconditions("", ifMatch, ifNoneMatch, false)
 	}
@@ -4685,6 +4719,9 @@ func (p *Posix) checkPutPreconditions(bucket, object string, ifMatch, ifNoneMatc
 	}
 
 	etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+	if e, stale := p.staleEtag(nil, bucket, object, fi); stale && err == nil {
+		etagBytes = []byte(e)
+	}
 	if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, meta.ErrNoSuchKey) {
 		return backend.EvaluateObjectPutPreconditions(string(etagBytes), ifMatch, ifNoneMatch, err == nil)
 	}
@@ -4725,6 +4762,9 @@ func (p *Posix) checkDeletePreconditions(bucket, object string, conds backend.Ob
 	etag, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	if err != nil || len(etag) == 0 {
 		etag = []byte(p.defaultEtag)
+	}
+	if e, stale := p.staleEtag(nil, bucket, object, fi); stale {
+		etag = []byte(e)
 	}
 
 	return backend.EvaluateObjectDeletePreconditions(string(etag), fi.ModTime(), fi.Size(), conds)
@@ -5255,6 +5295,11 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, fmt.Errorf("set etag attr: %w", err)
 	}
 
+	err = p.storeEtagStat(f, *po.Bucket, object)
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
+	}
+
 	err = p.storeObjectMetaProperties(f.File(), *po.Bucket, object,
 		metaProperties{
 			ContentType:             po.ContentType,
@@ -5455,6 +5500,9 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		etag := string(b)
 		if err != nil || etag == "" {
 			etag = p.defaultEtag
+		}
+		if e, stale := p.staleEtag(nil, bucket, object, f); stale {
+			etag = e
 		}
 
 		return backend.EvaluateObjectDeletePreconditions(etag, f.ModTime(), f.Size(), conds)
@@ -6353,6 +6401,9 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 	if etag == "" {
 		etag = p.defaultEtag
 	}
+	if e, stale := p.staleEtag(nil, bucket, object, fid); stale {
+		etag = e
+	}
 
 	// evaluate preconditions
 	err = backend.EvaluatePreconditions(etag, fi.ModTime(), backend.PreConditions{
@@ -6738,6 +6789,9 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	if err != nil || etag == "" {
 		etag = p.defaultEtag
 	}
+	if e, stale := p.staleEtag(nil, bucket, object, fi); stale {
+		etag = e
+	}
 
 	// evaluate preconditions
 	err = backend.EvaluatePreconditions(etag, fi.ModTime(), backend.PreConditions{
@@ -7121,6 +7175,9 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	if err != nil || srcEtag == "" {
 		srcEtag = p.defaultEtag
 	}
+	if e, stale := p.staleEtag(f, srcBucket, srcObject, fi); stale {
+		srcEtag = e
+	}
 
 	err = backend.EvaluateCopySourcePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
 		IfMatch:       input.CopySourceIfMatch,
@@ -7255,6 +7312,9 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 		b, _ := p.meta.RetrieveAttribute(nil, dstBucket, dstObject, etagkey)
 		etag = string(b)
+		if e, stale := p.staleEtag(nil, dstBucket, dstObject, nil); stale {
+			etag = e
+		}
 		vId, _ := p.meta.RetrieveAttribute(nil, dstBucket, dstObject, versionIdKey)
 		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
@@ -7607,6 +7667,9 @@ func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 
 		size := fi.Size()
 		mtime := fi.ModTime()
+		if e, stale := p.staleEtag(nil, bucket, path, fi); stale {
+			etag = e
+		}
 
 		return s3response.Object{
 			ETag:              &etag,
@@ -8683,7 +8746,14 @@ func (p *Posix) storeChecksums(f *os.File, bucket, object string, chs s3response
 	return p.meta.StoreAttribute(f, bucket, object, checksumsKey, checksums)
 }
 
+// retrieveChecksums returns the checksums stored for the object, or
+// meta.ErrNoSuchKey when it has none or they belong to content that was
+// changed outside of the gateway.
 func (p *Posix) retrieveChecksums(f *os.File, bucket, object string) (checksums s3response.Checksum, err error) {
+	if _, stale := p.staleEtag(f, bucket, object, nil); stale {
+		return checksums, meta.ErrNoSuchKey
+	}
+
 	checksumsAtr, err := p.meta.RetrieveAttribute(f, bucket, object, checksumsKey)
 	if err != nil {
 		return checksums, err
@@ -8691,6 +8761,71 @@ func (p *Posix) retrieveChecksums(f *os.File, bucket, object string) (checksums 
 
 	err = json.Unmarshal(checksumsAtr, &checksums)
 	return checksums, err
+}
+
+// etagStat is the value of etagStatKey for an object of the given size and
+// modification time.
+func etagStat(size int64, mtime time.Time) string {
+	return fmt.Sprintf("%d:%d", size, mtime.UnixNano())
+}
+
+// storeEtagStat records the size and modification time of the object being
+// written in f next to its etag, when detectStaleEtag is set. It is called
+// once the data and the etag are written.
+func (p *Posix) storeEtagStat(f *tmpfile, bucket, object string) error {
+	if !p.detectStaleEtag {
+		return nil
+	}
+	// The object is published with the modification time set with
+	// setModTime: set it now so that the time recorded is the one the
+	// filesystem keeps, at the resolution it has.
+	err := f.applyModTime(f.File().Name())
+	if err != nil {
+		return fmt.Errorf("set tmpfile modification time: %w", err)
+	}
+	fi, err := f.File().Stat()
+	if err != nil {
+		return fmt.Errorf("stat tmpfile: %w", err)
+	}
+	err = p.meta.StoreAttribute(f.File(), bucket, object, etagStatKey,
+		[]byte(etagStat(fi.Size(), fi.ModTime())))
+	if err != nil {
+		return fmt.Errorf("set etag stat attr: %w", err)
+	}
+	return nil
+}
+
+// staleEtag reports whether the etag and checksums stored for the object at
+// bucket/object were recorded for content it no longer has, and returns the
+// etag to use instead, made from its size and modification time. fi is the
+// object's file info, or nil to stat it, f its open file or nil. Objects
+// without a recorded size and modification time, such as those written
+// before detectStaleEtag was set, and directories are never stale.
+func (p *Posix) staleEtag(f *os.File, bucket, object string, fi fs.FileInfo) (string, bool) {
+	if !p.detectStaleEtag {
+		return "", false
+	}
+	if fi == nil {
+		var err error
+		if f != nil {
+			fi, err = f.Stat()
+		} else {
+			fi, err = os.Stat(p.ObjectPath(bucket, object))
+		}
+		if err != nil {
+			return "", false
+		}
+	}
+	if !fi.Mode().IsRegular() {
+		return "", false
+	}
+	b, err := p.meta.RetrieveAttribute(f, bucket, object, etagStatKey)
+	if err != nil || string(b) == etagStat(fi.Size(), fi.ModTime()) {
+		return "", false
+	}
+	// The "-" keeps clients from taking the etag for the MD5 of the content,
+	// as they do not for the etags of multipart uploads.
+	return fmt.Sprintf("\"%x-%x\"", fi.ModTime().UnixNano(), fi.Size()), true
 }
 
 func getString(str *string) string {
