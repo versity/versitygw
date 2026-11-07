@@ -79,6 +79,7 @@ int versitygw_move(dfs_t *dfs, dfs_obj_t *src_parent, const char *src,
 import "C"
 import (
 	"errors"
+	"fmt"
 	"path"
 	"strings"
 	"unsafe"
