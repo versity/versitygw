@@ -65,7 +65,7 @@ func firstLongComponent(path string) (componentTooLong, bool) {
 }
 
 func pathErr(path string, err error) error {
-	if err == nil || !errors.Is(err, errNameLong) {
+	if err == nil || (!errors.Is(err, errNameLong) && !errors.Is(err, errInvalid)) {
 		return err
 	}
 	if long, ok := firstLongComponent(path); ok {

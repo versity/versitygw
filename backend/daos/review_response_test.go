@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"path"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -58,6 +59,18 @@ func TestErrnoInvalidStaysDistinct(t *testing.T) {
 	}
 	if errors.Is(errnoSentinel(int(syscall.EINVAL)), errFileOverDir) {
 		t.Fatal("EINVAL became a directory conflict")
+	}
+}
+
+func TestPathErrMapsInvalidLongComponent(t *testing.T) {
+	long := strings.Repeat("a", maxComponent+1)
+	err := pathErr(long, errInvalid)
+	var got componentTooLong
+	if !errors.As(err, &got) || got.size != int64(maxComponent+1) || got.max != int64(maxComponent) {
+		t.Fatalf("long = %v", err)
+	}
+	if !errors.Is(pathErr("short", errInvalid), errInvalid) {
+		t.Fatal("a short name lost EINVAL")
 	}
 }
 

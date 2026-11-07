@@ -234,6 +234,9 @@ func (f *dfsFS) Move(src, dst string) error {
 	defer C.free(unsafe.Pointer(cdn))
 	err = dfsErrno(C.versitygw_move(f.dfs, sp, csn, dp, cdn))
 	if errors.Is(err, errInvalid) {
+		if mapped := pathErr(dst, pathErr(src, err)); !errors.Is(mapped, errInvalid) {
+			return mapped
+		}
 		return f.fileOverDir(src, dst)
 	}
 	return pathErr(dst, pathErr(src, err))
