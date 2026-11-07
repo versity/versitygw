@@ -47,6 +47,7 @@ var (
 	actionsConcurrency   int
 	ioBufferSize         int
 	defaultEtag          string
+	detectStaleEtag      bool
 	dataIntegrityEtag    bool
 )
 
@@ -184,6 +185,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				Destination: &defaultEtag,
 			},
 			&cli.BoolFlag{
+				Name:        "detect-stale-etag",
+				Usage:       "record the size and modification time of objects with their ETag, and do not return the stored ETag and checksums of objects changed outside of versitygw (e.g. over NFS or SMB)",
+				EnvVars:     []string{"VGW_DETECT_STALE_ETAG"},
+				Destination: &detectStaleEtag,
+			},
+			&cli.BoolFlag{
 				Name:        "data-integrity-etag",
 				Usage:       "use data-integrity checksum-derived ETags instead of MD5-based ETags (PUT object ETag, multipart part ETags, and completed multipart object ETag)",
 				EnvVars:     []string{"VGW_DATA_INTEGRITY_ETAG"},
@@ -238,6 +245,7 @@ func runPosix(ctx *cli.Context) error {
 		IOBufferSize:         ioBufferSize,
 		CopyObjectThreshold:  CopyObjectThreshold,
 		DefaultEtag:          defaultEtag,
+		DetectStaleEtag:      detectStaleEtag,
 		DataIntegrityEtag:    dataIntegrityEtag,
 		ExcludeDirs:          ctx.StringSlice("exclude-dirs"),
 	}
