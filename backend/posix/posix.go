@@ -91,6 +91,11 @@ type Posix struct {
 	// there are different filesystems mounted below the bucket level.
 	forceNoTmpFile bool
 
+	// inheritDefaultACL makes the temporary file of a new object in the
+	// directory the object is published in, so that the directory's default
+	// ACL applies to it, see PosixOpts.InheritDefaultACL
+	inheritDefaultACL bool
+
 	// fsync flushes new objects to stable storage before they are
 	// acknowledged
 	fsync bool
@@ -269,6 +274,16 @@ type PosixOpts struct {
 	// ForceNoTmpFile disables the use of O_TMPFILE even if the filesystem
 	// supports it
 	ForceNoTmpFile bool
+	// InheritDefaultACL makes the O_TMPFILE of a new object in the directory
+	// the object is published in instead of the bucket's metadata directory,
+	// so that the directory's default ACL applies to the object the same way
+	// it does to a file created there over NFS or SMB. When the directory
+	// does not exist yet, the file is made in its closest existing parent,
+	// whose default ACL the directory inherits when it is made. An object
+	// that replaces an existing file is still a new inode: the ACL and the
+	// extended attributes set on the replaced file are not kept. It has no
+	// effect when O_TMPFILE is disabled or not supported, or outside Linux.
+	InheritDefaultACL bool
 	// ForceNoCopyFileRange disables the use of io.Copy for multipart uploads parts
 	ForceNoCopyFileRange bool
 	// Fsync flushes each new object's data, metadata and directory entries
@@ -480,6 +495,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		newDirPerm:           newDirPerm,
 		newFilePerm:          newFilePerm,
 		forceNoTmpFile:       opts.ForceNoTmpFile,
+		inheritDefaultACL:    opts.InheritDefaultACL,
 		fsync:                opts.Fsync,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
 		objectLockMode:       objectLockMode,
@@ -1091,6 +1107,36 @@ func (p *Posix) removePartialBucket(bucket string) {
 // --chuid/--chgid misconfiguration, not a filesystem problem. Only EPERM is
 // rewritten, so callers matching on EROFS or ErrObjectParentIsFile are
 // unaffected.
+// openObjectTmpFile opens the temporary file that link() publishes as the
+// object obj in bucket. It is made in the bucket's MetaTmpDir, or with
+// inheritDefaultACL as an O_TMPFILE in the directory obj is published in.
+func (p *Posix) openObjectTmpFile(bucket, obj string, size int64, acct auth.Account, dofalloc bool, allowODirect odirectPolicy) (*tmpfile, error) {
+	tmpDir := p.ObjectPath(bucket, MetaTmpDir)
+	if !p.inheritDefaultACL || p.forceNoTmpFile {
+		return p.openTmpFile(tmpDir, bucket, obj, size, acct, dofalloc, p.forceNoTmpFile, allowODirect)
+	}
+	objDir := closestDir(p.BucketPath(bucket), filepath.Dir(filepath.Join(p.BucketPath(bucket), obj)))
+	return p.openTmpFileIn(objDir, tmpDir, bucket, obj, size, acct, dofalloc, allowODirect)
+}
+
+// closestDir returns dir, or its closest parent below and including
+// bucketPath that exists, when dir does not exist yet. The directories
+// between them are made when the object is published and inherit the
+// default ACL of that parent.
+func closestDir(bucketPath, dir string) string {
+	for {
+		fi, err := os.Stat(dir)
+		if err == nil && fi.IsDir() {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if dir == bucketPath || parent == dir || len(parent) < len(bucketPath) {
+			return bucketPath
+		}
+		dir = parent
+	}
+}
+
 func (p *Posix) mkdirAll(path string, uid, gid int, doChown bool) error {
 	err := backend.MkdirAll(path, uid, gid, doChown, p.newDirPerm)
 	if doChown && errors.Is(err, syscall.EPERM) {
@@ -2953,8 +2999,8 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		finalEtag = fmt.Sprintf("\"%s-%s\"", strings.ToUpper(string(checksums.Algorithm)), value)
 	}
 
-	f, err := p.openTmpFile(p.ObjectPath(bucket, MetaTmpDir), bucket, object,
-		totalsize, acct, skipFalloc, p.forceNoTmpFile, odirectNotAllowed)
+	f, err := p.openObjectTmpFile(bucket, object,
+		totalsize, acct, skipFalloc, odirectNotAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return res, "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -5036,8 +5082,8 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, fmt.Errorf("stat object: %w", err)
 	}
 
-	f, err := p.openTmpFile(p.ObjectPath(*po.Bucket, MetaTmpDir),
-		*po.Bucket, object, contentLength, acct, doFalloc, p.forceNoTmpFile, odirectAllowed)
+	f, err := p.openObjectTmpFile(*po.Bucket, object, contentLength,
+		acct, doFalloc, odirectAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(po.Body)
@@ -5602,9 +5648,8 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					acct = auth.Account{}
 				}
 
-				f, err := p.openTmpFile(p.ObjectPath(bucket, MetaTmpDir),
-					bucket, object, srcObjVersion.Size(), acct, doFalloc,
-					p.forceNoTmpFile, odirectNotAllowed)
+				f, err := p.openObjectTmpFile(bucket, object,
+					srcObjVersion.Size(), acct, doFalloc, odirectNotAllowed)
 				if err != nil {
 					return nil, fmt.Errorf("open tmp file: %w", err)
 				}

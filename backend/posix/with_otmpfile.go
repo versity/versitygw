@@ -60,15 +60,22 @@ type tmpfile struct {
 // later publishes as obj within bucket. bucket is a bucket name or, for the
 // versioning code, the absolute path of a bucket's versioning directory.
 func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, dofalloc bool, forceNoTmpFile bool, allowODirect odirectPolicy) (*tmpfile, error) {
+	if forceNoTmpFile {
+		uid, gid, doChown := p.getChownIDs(acct)
+		return p.openMkTemp(dir, p.BucketPath(bucket), obj, size, dofalloc, uid, gid, doChown, allowODirect)
+	}
+	return p.openTmpFileIn(dir, dir, bucket, obj, size, acct, dofalloc, allowODirect)
+}
+
+// openTmpFileIn opens an O_TMPFILE in otmpDir, or a named temporary file in
+// tmpDir when the filesystem does not support O_TMPFILE. A named file is
+// never made in otmpDir, where it could be listed before it is published.
+func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, acct auth.Account, dofalloc bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
 
 	// The tmpfile keeps the bucket directory's path so that link() and its
 	// fallbacks address it the same way as every other bucket path.
 	bucket = p.BucketPath(bucket)
-
-	if forceNoTmpFile {
-		return p.openMkTemp(dir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
-	}
 
 	// O_TMPFILE allows for a file handle to an unnamed file in the filesystem.
 	// This can help reduce contention within the namespace (parent directories),
@@ -85,7 +92,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 
 	filePerm := uint32(p.newFilePerm.Perm())
 
-	fd, err := unix.Open(dir, openFlags, filePerm)
+	fd, err := unix.Open(otmpDir, openFlags, filePerm)
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
 			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
@@ -94,7 +101,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		if p.enableODirect && bool(allowODirect) && isODirectUnsupportedOpenErr(err) {
 			warnODirectUnsupportedOnce("openTmpFile", err)
 
-			fd, err = unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, filePerm)
+			fd, err = unix.Open(otmpDir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, filePerm)
 			if err == nil {
 				useODirect = false
 			} else if errors.Is(err, syscall.EROFS) {
@@ -104,7 +111,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 
 		if err != nil {
 			// O_TMPFILE not supported, try fallback
-			return p.openMkTemp(dir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
+			return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 		}
 	}
 
@@ -116,10 +123,12 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	// configured mode explicitly so new objects get the same permissions
 	// regardless of umask, and regardless of whether this or the CreateTemp
 	// fallback path (which also chmods) created the file.
-	err = f.Chmod(p.newFilePerm)
-	if err != nil {
-		f.Close()
-		return nil, fmt.Errorf("set temp file mode: %w", err)
+	if !p.keepInheritedMode(otmpDir) {
+		err = f.Chmod(p.newFilePerm)
+		if err != nil {
+			f.Close()
+			return nil, fmt.Errorf("set temp file mode: %w", err)
+		}
 	}
 
 	tmp := &tmpfile{
@@ -152,6 +161,21 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	}
 
 	return tmp, nil
+}
+
+// keepInheritedMode reports whether an O_TMPFILE made in dir keeps the mode
+// it was created with instead of being set to newFilePerm. With
+// inheritDefaultACL, a file made in a directory that has a default ACL gets
+// its owner, group (or mask) and other permissions from that ACL, limited by
+// the newFilePerm it was created with. Setting newFilePerm afterwards could
+// only grant more than the directory allows, which a file made there over
+// NFS or SMB does not get.
+func (p *Posix) keepInheritedMode(dir string) bool {
+	if !p.inheritDefaultACL {
+		return false
+	}
+	sz, err := unix.Getxattr(dir, "system.posix_acl_default", nil)
+	return err == nil && sz > 0
 }
 
 func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, uid, gid int, doChown bool, allowODirect odirectPolicy) (*tmpfile, error) {

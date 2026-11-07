@@ -114,6 +114,12 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	}, nil
 }
 
+// openTmpFileIn opens the temporary file in tmpDir: O_TMPFILE, and with
+// it otmpDir, is only used on Linux.
+func (p *Posix) openTmpFileIn(_, tmpDir, bucket, obj string, size int64, acct auth.Account, dofalloc bool, allowODirect odirectPolicy) (*tmpfile, error) {
+	return p.openTmpFile(tmpDir, bucket, obj, size, acct, dofalloc, false, allowODirect)
+}
+
 func (tmp *tmpfile) link() error {
 	tempname := tmp.f.Name()
 
