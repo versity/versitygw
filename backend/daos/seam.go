@@ -116,17 +116,24 @@ type Info struct {
 // implementation is cgo, built only with the daos tag. The fake is the other.
 type FS interface {
 	Open(path string, flags int) (Object, error)
+	OpenRel(parent Object, name string, flags int) (Object, error)
 	Read(obj Object, buf []byte, off int64) (int, error)
 	Write(obj Object, buf []byte, off int64) (int, error)
+	ChunkSize(obj Object) (int64, error)
 	Mkdir(path string) error
+	MkdirRel(parent Object, name string) error
 	Remove(path string, force bool) error
 	Move(src, dst string) error
 	Stat(path string) (Info, error)
+	StatRel(parent Object, name string) (Info, error)
 	SetXattr(obj Object, name string, value []byte) error
 	GetXattr(obj Object, name string) ([]byte, error)
 	RemoveXattr(obj Object, name string) error
 	ReadDir(path string) ([]Info, error)
+	ReadDirObj(obj Object) ([]Info, error)
 	Release(obj Object) error
 	StatObj(obj Object) (Info, error)
+	SetOclass(obj Object, oclass string) error
+	SetChunkSize(obj Object, n int64) error
 	Close() error
 }

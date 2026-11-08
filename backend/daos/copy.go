@@ -107,7 +107,12 @@ func (d *Daos) CopyObject(_ context.Context, input s3response.CopyObjectInput) (
 		}
 		putOut, err = d.putDirectory(dstBucket, dstKey, po)
 	} else {
-		putOut, err = d.putFile(dstBucket, dstKey, body, po)
+		if info.IsDir || info.Size <= 0 {
+			putOut, err = d.putFile(dstBucket, dstKey, bytes.NewReader(nil), po)
+		} else {
+			src := &dfsBodyReader{fs: d.fs, obj: obj, rem: info.Size, off: 0}
+			putOut, err = d.putFile(dstBucket, dstKey, src, po)
+		}
 	}
 	if err != nil {
 		return out, err
@@ -188,20 +193,18 @@ func (d *Daos) UploadPartCopy(_ context.Context, input *s3.UploadPartCopyInput) 
 	if err != nil {
 		return out, err
 	}
-	body := []byte{}
-	if !info.IsDir && length > 0 {
-		body = make([]byte, length)
-		n, err := readFull(d.fs, obj, body, start)
-		if err != nil {
-			return out, err
-		}
-		body = body[:n]
-	}
 	stored, err := d.loadChecksumsAt(uploadDir)
 	if err != nil {
 		return out, err
 	}
-	reader := bytes.NewReader(body)
+	var buffered []byte
+	if !info.IsDir && length > 0 {
+		buffered = make([]byte, length)
+		if _, err := readFull(d.fs, obj, buffered, start); err != nil {
+			return out, err
+		}
+	}
+	reader := bytes.NewReader(buffered)
 	var hashed partHash
 	hashed.body = reader
 	if stored.Type != "" {
@@ -216,7 +219,7 @@ func (d *Daos) UploadPartCopy(_ context.Context, input *s3.UploadPartCopyInput) 
 			return out, err
 		}
 	}
-	nlen := int64(len(body))
+	nlen := int64(len(buffered))
 	etag, err := d.writePart(uploadDir, *input.PartNumber, reader, &nlen, stored, hashed)
 	if err != nil {
 		return out, err

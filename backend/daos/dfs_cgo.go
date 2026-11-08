@@ -18,6 +18,7 @@ package daos
 
 /*
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -74,6 +75,13 @@ int versitygw_move(dfs_t *dfs, dfs_obj_t *src_parent, const char *src,
 		   dfs_obj_t *dst_parent, const char *dst) {
 	daos_obj_id_t oid;
 	return dfs_move(dfs, src_parent, src, dst_parent, dst, &oid);
+}
+
+int versitygw_set_oclass(dfs_t *dfs, dfs_obj_t *obj, const char *name) {
+	daos_oclass_id_t cid = (daos_oclass_id_t)daos_oclass_name2id(name);
+	if (cid == OC_UNKNOWN)
+		return EINVAL;
+	return dfs_obj_set_oclass(dfs, obj, 0, cid);
 }
 */
 import "C"
@@ -150,6 +158,27 @@ func (f *dfsFS) Open(p string, flags int) (Object, error) {
 	return &dfsObj{fs: f, obj: obj}, nil
 }
 
+func (f *dfsFS) OpenRel(parent Object, name string, flags int) (Object, error) {
+	p := parent.(*dfsObj)
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	var obj *C.dfs_obj_t
+	rc := C.dfs_lookup_rel(f.dfs, p.obj, cname, openMode(flags), &obj, nil, nil)
+	if err := pathErr(name, dfsErrno(rc)); err != nil {
+		return nil, err
+	}
+	return &dfsObj{fs: f, obj: obj}, nil
+}
+
+func (f *dfsFS) ChunkSize(obj Object) (int64, error) {
+	o := obj.(*dfsObj)
+	var sz C.daos_size_t
+	if err := dfsErrno(C.dfs_get_chunk_size(o.obj, &sz)); err != nil {
+		return 0, err
+	}
+	return int64(sz), nil
+}
+
 func (f *dfsFS) openCreate(p string, flags int) (Object, error) {
 	parent, name, release, err := f.parent(p, C.O_RDWR)
 	if err != nil {
@@ -200,6 +229,13 @@ func (f *dfsFS) Mkdir(p string) error {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
 	return pathErr(p, dfsErrno(C.dfs_mkdir(f.dfs, parent, cname, 0755, 0)))
+}
+
+func (f *dfsFS) MkdirRel(parent Object, name string) error {
+	p := parent.(*dfsObj)
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	return pathErr(name, dfsErrno(C.dfs_mkdir(f.dfs, p.obj, cname, 0755, 0)))
 }
 
 func (f *dfsFS) Remove(p string, force bool) error {
@@ -278,6 +314,22 @@ func (f *dfsFS) Stat(p string) (Info, error) {
 	return info, nil
 }
 
+func (f *dfsFS) StatRel(parent Object, name string) (Info, error) {
+	p := parent.(*dfsObj)
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	var st C.struct_stat
+	if err := pathErr(name, dfsErrno(C.dfs_stat(f.dfs, p.obj, cname, &st))); err != nil {
+		return Info{}, err
+	}
+	return Info{
+		Name:  name,
+		Size:  int64(C.versitygw_size(&st)),
+		IsDir: C.versitygw_isdir(&st) != 0,
+		Mtime: int64(C.versitygw_mtime(&st)),
+	}, nil
+}
+
 func (f *dfsFS) SetXattr(obj Object, name string, value []byte) error {
 	if len(name) > maxXattrName || len(value) > maxXattrLen {
 		return errNameLong
@@ -324,6 +376,14 @@ func (f *dfsFS) ReadDir(p string) ([]Info, error) {
 		return nil, err
 	}
 	defer f.Release(obj)
+	return f.readDirObj(obj)
+}
+
+func (f *dfsFS) ReadDirObj(obj Object) ([]Info, error) {
+	return f.readDirObj(obj)
+}
+
+func (f *dfsFS) readDirObj(obj Object) ([]Info, error) {
 	o := obj.(*dfsObj)
 	var anchor C.daos_anchor_t
 	var out []Info
@@ -339,11 +399,7 @@ func (f *dfsFS) ReadDir(p string) ([]Info, error) {
 			if name == "" || name == "." || name == ".." {
 				continue
 			}
-			info, err := f.Stat(path.Join(p, name))
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, info)
+			out = append(out, Info{Name: name, IsDir: dirs[i].d_type == C.DT_DIR})
 		}
 		if C.versitygw_anchor_eof(&anchor) != 0 || nr == 0 {
 			break
@@ -373,6 +429,18 @@ func (f *dfsFS) StatObj(obj Object) (Info, error) {
 		IsDir: C.versitygw_isdir(&st) != 0,
 		Mtime: int64(C.versitygw_mtime(&st)),
 	}, nil
+}
+
+func (f *dfsFS) SetOclass(obj Object, oclass string) error {
+	o := obj.(*dfsObj)
+	cname := C.CString(oclass)
+	defer C.free(unsafe.Pointer(cname))
+	return dfsErrno(C.versitygw_set_oclass(f.dfs, o.obj, cname))
+}
+
+func (f *dfsFS) SetChunkSize(obj Object, n int64) error {
+	o := obj.(*dfsObj)
+	return dfsErrno(C.dfs_obj_set_chunk_size(f.dfs, o.obj, 0, C.daos_size_t(n)))
 }
 
 func (f *dfsFS) parent(p string, flags C.int) (parent *C.dfs_obj_t, name string, release func(), err error) {

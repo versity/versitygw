@@ -25,14 +25,74 @@ import (
 // source object's attributes, which is the behavior the publish path relies
 // on. It does not model overlapping renames.
 type Fake struct {
-	mu           sync.Mutex
-	root         *node
-	failMove     bool
-	failMoveAt   int
-	moveCount    int
-	plantBefore  string
-	bytesRead    int64
-	bytesWritten int64
+	mu            sync.Mutex
+	root          *node
+	failMove      bool
+	failMoveAt    int
+	moveCount     int
+	plantBefore   string
+	bytesRead     int64
+	bytesWritten  int64
+	fullOpens     int
+	handles       int
+	maxRead       int
+	chunk         int64
+	writeLens     []int
+	openTrace     []string
+	oclassSet     []string
+	chunkSizesSet []int64
+}
+
+// SetChunkSize makes ChunkSize report n. Tests use it to exercise
+// chunk-aligned buffering.
+func (f *Fake) SetDefaultChunk(n int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.chunk = n
+}
+
+// CapRead makes Read return at most n bytes per call. Tests use it to
+// exercise short-read accumulation. Zero disables the cap.
+func (f *Fake) CapRead(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.maxRead = n
+}
+
+// FullOpens is how many full-path Open calls have been made. Tests use it
+// to prove a code path resolves entries relative to a held handle instead.
+func (f *Fake) FullOpens() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.fullOpens
+}
+
+// Handles is the number of objects currently held open and not released.
+func (f *Fake) Handles() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.handles
+}
+
+// WriteLens returns the lengths of every Write call, in order.
+func (f *Fake) WriteLens() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int(nil), f.writeLens...)
+}
+
+// OclassCalls returns the object class names passed to SetOclass, in order.
+func (f *Fake) OclassCalls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.oclassSet...)
+}
+
+// ChunkSizeCalls returns the chunk sizes passed to SetChunkSize, in order.
+func (f *Fake) ChunkSizeCalls() []int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int64(nil), f.chunkSizesSet...)
 }
 
 type node struct {
@@ -78,9 +138,46 @@ func (f *Fake) Open(p string, flags int) (Object, error) {
 	} else if flags&openExcl != 0 && flags&openCreate != 0 {
 		return nil, errExist
 	}
-	if n.dir && flags&openWrite != 0 {
-		return nil, errIsDir
+	// Directories may be opened for write: updating a directory
+	// (creating a child) needs a writable handle. Read and write on
+	// the directory itself still fail below.
+	f.fullOpens++
+	f.handles++
+	f.openTrace = append(f.openTrace, p)
+	return fakeObj{n}, nil
+}
+
+func (f *Fake) OpenRel(parent Object, name string, flags int) (Object, error) {
+	p, ok := parent.(fakeObj)
+	if !ok {
+		return nil, errInvalid
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	obj, err := f.openNode(p.n, name, flags)
+	if err == nil {
+		f.handles++
+	}
+	return obj, err
+}
+
+func (f *Fake) openNode(parent *node, name string, flags int) (Object, error) {
+	n, ok := parent.kids[name]
+	if !ok {
+		if flags&openCreate == 0 {
+			return nil, errNotExist
+		}
+		if !parent.dir {
+			return nil, errNotDir
+		}
+		n = &node{name: name, mtime: now(), xattr: map[string][]byte{}}
+		parent.kids[name] = n
+	} else if flags&openExcl != 0 && flags&openCreate != 0 {
+		return nil, errExist
+	}
+	// Same as the full-path open above: writable directory handles are
+	// allowed so children can be created through them.
+	f.handles++
 	return fakeObj{n}, nil
 }
 
@@ -95,6 +192,9 @@ func (f *Fake) Read(obj Object, buf []byte, off int64) (int, error) {
 		return 0, nil
 	}
 	nread := copy(buf, n.data[off:])
+	if f.maxRead > 0 && nread > f.maxRead {
+		nread = f.maxRead
+	}
 	f.bytesRead += int64(nread)
 	return nread, nil
 }
@@ -123,6 +223,7 @@ func (f *Fake) Write(obj Object, buf []byte, off int64) (int, error) {
 	copy(n.data[off:], buf)
 	n.mtime = now()
 	f.bytesWritten += int64(len(buf))
+	f.writeLens = append(f.writeLens, len(buf))
 	return len(buf), nil
 }
 
@@ -133,6 +234,46 @@ func (f *Fake) BytesWritten() int64 {
 	return f.bytesWritten
 }
 
+func (f *Fake) ChunkSize(Object) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.chunk == 0 {
+		return 1 << 20, nil
+	}
+	return f.chunk, nil
+}
+
+// ResetCounters clears the open counters and trace. Tests call it between
+// phases to isolate the calls of one operation.
+func (f *Fake) ResetCounters() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fullOpens = 0
+	f.handles = 0
+	f.openTrace = nil
+}
+
+// OpenTrace returns the full paths opened by path-based Open, in order.
+func (f *Fake) OpenTrace() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.openTrace...)
+}
+
+// PlantFile creates a regular file at the given clean path, bypassing the
+// S3 layer. Tests use it to model a file sitting where a directory is
+// expected.
+func (f *Fake) PlantFile(p string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	parent, base, err := f.parent(p, true)
+	if err != nil {
+		return err
+	}
+	parent.kids[base] = &node{name: base, mtime: now(), xattr: map[string][]byte{}}
+	return nil
+}
+
 func (f *Fake) Mkdir(p string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -140,10 +281,27 @@ func (f *Fake) Mkdir(p string) error {
 	if err != nil {
 		return err
 	}
+	return f.mkdirNode(parent, base)
+}
+
+func (f *Fake) MkdirRel(parent Object, name string) error {
+	p, ok := parent.(fakeObj)
+	if !ok {
+		return errInvalid
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.mkdirNode(p.n, name)
+}
+
+func (f *Fake) mkdirNode(parent *node, base string) error {
 	if kid, ok := parent.kids[base]; ok {
 		if kid.dir {
 			return errExist
 		}
+		return errNotDir
+	}
+	if !parent.dir {
 		return errNotDir
 	}
 	parent.kids[base] = &node{name: base, dir: true, kids: map[string]*node{}, mtime: now(), xattr: map[string][]byte{}}
@@ -262,6 +420,20 @@ func (f *Fake) Stat(p string) (Info, error) {
 	return infoOf(n), nil
 }
 
+func (f *Fake) StatRel(parent Object, name string) (Info, error) {
+	p, ok := parent.(fakeObj)
+	if !ok {
+		return Info{}, errInvalid
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := p.n.kids[name]
+	if !ok {
+		return Info{}, errNotExist
+	}
+	return infoOf(n), nil
+}
+
 func (f *Fake) SetXattr(obj Object, name string, value []byte) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -308,19 +480,63 @@ func (f *Fake) ReadDir(p string) ([]Info, error) {
 	if !n.dir {
 		return nil, errNotDir
 	}
+	return f.kidsOf(n), nil
+}
+
+func (f *Fake) ReadDirObj(obj Object) ([]Info, error) {
+	p, ok := obj.(fakeObj)
+	if !ok {
+		return nil, errInvalid
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !p.n.dir {
+		return nil, errNotDir
+	}
+	return f.kidsOf(p.n), nil
+}
+
+func (f *Fake) kidsOf(n *node) []Info {
 	out := make([]Info, 0, len(n.kids))
 	for _, kid := range n.kids {
 		out = append(out, infoOf(kid))
 	}
-	return out, nil
+	return out
 }
 
-func (f *Fake) Release(Object) error { return nil }
+func (f *Fake) Release(Object) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.handles > 0 {
+		f.handles--
+	}
+	return nil
+}
 
 func (f *Fake) StatObj(obj Object) (Info, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return infoOf(obj.(fakeObj).n), nil
+}
+
+func (f *Fake) SetOclass(obj Object, oclass string) error {
+	if _, ok := obj.(fakeObj); !ok {
+		return errInvalid
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.oclassSet = append(f.oclassSet, oclass)
+	return nil
+}
+
+func (f *Fake) SetChunkSize(obj Object, n int64) error {
+	if _, ok := obj.(fakeObj); !ok {
+		return errInvalid
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.chunkSizesSet = append(f.chunkSizesSet, n)
+	return nil
 }
 
 func (f *Fake) Close() error { return nil }

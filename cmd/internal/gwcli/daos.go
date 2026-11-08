@@ -47,6 +47,16 @@ This command does not create pools or containers.`,
 				Usage:   "DAOS system name (empty uses the default system)",
 				EnvVars: []string{"VGW_DAOS_SYS_NAME"},
 			},
+			&cli.StringFlag{
+				Name:    "oclass",
+				Usage:   "object class for new bucket directories (empty uses the library default)",
+				EnvVars: []string{"VGW_DAOS_OCLASS"},
+			},
+			&cli.Int64Flag{
+				Name:    "chunk-size",
+				Usage:   "chunk size in bytes for new bucket directories (0 uses the library default)",
+				EnvVars: []string{"VGW_DAOS_CHUNK_SIZE"},
+			},
 		},
 	}
 }
@@ -62,6 +72,7 @@ func runDaos(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("init daos: %w", err)
 	}
+	be.SetBucketDefaults(ctx.String("oclass"), ctx.Int64("chunk-size"))
 
 	return RunGateway(ctx.Context, be)
 }

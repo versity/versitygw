@@ -17,13 +17,14 @@ package daos
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -45,6 +46,7 @@ const (
 	attrDisposition = "content-disposition"
 	attrCacheCtl    = "cache-control"
 	attrExpires     = "expires"
+	attrPacked      = "meta.v1"
 	emptyMD5        = "\"d41d8cd98f00b204e9800998ecf8427e\""
 )
 
@@ -53,6 +55,10 @@ const (
 type Daos struct {
 	backend.BackendUnsupported
 	fs FS
+	// bucket defaults applied to new bucket directories; empty values
+	// keep the library defaults.
+	oclass    string
+	chunkSize int64
 }
 
 var _ backend.Backend = &Daos{}
@@ -61,6 +67,13 @@ var _ backend.Backend = &Daos{}
 // dfs_connect. The command-line constructor stays New.
 func NewWithFS(fs FS) *Daos {
 	return &Daos{fs: fs}
+}
+
+// SetBucketDefaults configures the object class and chunk size applied to
+// bucket directories created after this call. Empty values change nothing.
+func (d *Daos) SetBucketDefaults(oclass string, chunkSize int64) {
+	d.oclass = oclass
+	d.chunkSize = chunkSize
 }
 
 func (d *Daos) String() string {
@@ -129,17 +142,31 @@ func (d *Daos) PutObject(_ context.Context, po s3response.PutObjectInput) (s3res
 	if err := d.bucketExists(bucket); err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
-	body, err := readBody(po.Body)
-	if err != nil {
-		return s3response.PutObjectOutput{}, err
-	}
 	if strings.HasSuffix(key, "/") {
-		if len(body) != 0 {
+		if !emptyBody(po.Body) {
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
 		}
 		return d.putDirectory(bucket, key, po)
 	}
-	return d.putFile(bucket, key, body, po)
+	return d.putFile(bucket, key, po.Body, po)
+}
+
+// emptyBody reports whether the body carries no bytes. A nil body is
+// empty. A directory object must not carry data, so one byte is enough
+// to reject it; the caller never consumes the stream in that case.
+func emptyBody(r io.Reader) bool {
+	if r == nil {
+		return true
+	}
+	var probe [1]byte
+	n, err := r.Read(probe[:])
+	if err == io.EOF {
+		return true
+	}
+	if err != nil {
+		return true
+	}
+	return n == 0
 }
 
 func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
@@ -151,16 +178,16 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 	}
 	bucket := awsString(input.Bucket)
 	key := awsString(input.Key)
-	if err := d.bucketExists(bucket); err != nil {
+	if err := validBucketName(bucket); err != nil {
 		return nil, err
 	}
 	info, obj, err := d.openLive(bucket, key, openRead)
 	if err != nil {
 		return nil, err
 	}
-	defer d.fs.Release(obj)
 	etag, meta, headers, err := d.attrs(obj)
 	if err != nil {
+		d.fs.Release(obj)
 		return nil, err
 	}
 	mod := time.Unix(info.Mtime, 0).UTC()
@@ -170,24 +197,26 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 		IfModSince:    input.IfModifiedSince,
 		IfUnmodeSince: input.IfUnmodifiedSince,
 	}); err != nil {
+		d.fs.Release(obj)
 		return nil, err
 	}
 	start, length, ranged, err := objectRange(input.Range, info.Size)
 	if err != nil {
+		d.fs.Release(obj)
 		return nil, err
 	}
-	buf := []byte{}
-	if !info.IsDir && length > 0 {
-		buf = make([]byte, length)
-		n, err := readFull(d.fs, obj, buf, start)
-		if err != nil {
-			return nil, err
-		}
-		buf = buf[:n]
+	body := io.ReadCloser(&dfsBodyReader{fs: d.fs, obj: obj, rem: length, off: start})
+	if info.IsDir {
+		body = io.NopCloser(bytes.NewReader(nil))
+		d.fs.Release(obj)
 	}
-	n64 := int64(len(buf))
+	ch, err := d.loadChecksums(obj)
+	if err != nil {
+		return nil, err
+	}
+	n64 := length
 	out := &s3.GetObjectOutput{
-		Body:                    io.NopCloser(bytes.NewReader(buf)),
+		Body:                    body,
 		ContentLength:           &n64,
 		ETag:                    &etag,
 		ContentType:             strPtr(headers.ctype),
@@ -201,15 +230,55 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 		WebsiteRedirectLocation: strPtr(headers.redirect),
 	}
 	if ranged {
-		cr := fmt.Sprintf("bytes %d-%d/%d", start, start+int64(len(buf))-1, info.Size)
+		cr := fmt.Sprintf("bytes %d-%d/%d", start, start+length-1, info.Size)
 		out.ContentRange = &cr
 	}
-	if ch, err := d.loadChecksums(obj); err != nil {
-		return nil, err
-	} else {
-		fillGetChecksum(out, ch)
-	}
+	fillGetChecksum(out, ch)
 	return out, nil
+}
+
+// dfsBodyReader streams object bytes from an open handle and releases the
+// handle when the response body closes. A zero read while bytes are still
+// owed latches ErrUnexpectedEOF, the same condition readFull detects.
+type dfsBodyReader struct {
+	fs  FS
+	obj Object
+	off int64
+	rem int64
+	err error
+}
+
+func (r *dfsBodyReader) Read(p []byte) (int, error) {
+	if r.err != nil {
+		return 0, r.err
+	}
+	if r.rem <= 0 {
+		return 0, io.EOF
+	}
+	if int64(len(p)) > r.rem {
+		p = p[:r.rem]
+	}
+	n, err := r.fs.Read(r.obj, p, r.off)
+	if n > 0 {
+		r.off += int64(n)
+		r.rem -= int64(n)
+	}
+	if err != nil && !errors.Is(err, io.EOF) {
+		r.err = err
+		return n, err
+	}
+	if n == 0 && r.rem > 0 {
+		r.err = io.ErrUnexpectedEOF
+		return 0, r.err
+	}
+	if r.rem == 0 {
+		return n, io.EOF
+	}
+	return n, nil
+}
+
+func (r *dfsBodyReader) Close() error {
+	return r.fs.Release(r.obj)
 }
 
 func (d *Daos) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
@@ -317,9 +386,7 @@ func (d *Daos) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) 
 	return result, nil
 }
 
-func (d *Daos) putFile(bucket, key string, body []byte, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
-	sum := md5.Sum(body)
-	etag := "\"" + hex.EncodeToString(sum[:]) + "\""
+func (d *Daos) putFile(bucket, key string, body io.Reader, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 	tmp := objectPath(bucket, tmpDirName+"/put-"+uuid.NewString())
 	if err := d.mkdirParents(tmp); err != nil {
 		return s3response.PutObjectOutput{}, err
@@ -335,11 +402,19 @@ func (d *Daos) putFile(bucket, key string, body []byte, po s3response.PutObjectI
 			d.fs.Remove(tmp, false)
 		}
 	}()
-	if len(body) > 0 {
-		if _, err := writeFull(d.fs, obj, body, 0); err != nil {
-			return s3response.PutObjectOutput{}, mapFS(err)
-		}
+	sink, err := newChecksumSink(po)
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
 	}
+	if body == nil {
+		body = bytes.NewReader(nil)
+	}
+	wrapped := io.TeeReader(body, sink)
+	sum, _, err := d.writeBody(obj, wrapped, nil)
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
+	}
+	etag := "\"" + hex.EncodeToString(sum[:]) + "\""
 	if err := d.storeAttrs(obj, etag, po, false); err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
@@ -347,7 +422,7 @@ func (d *Daos) putFile(bucket, key string, body []byte, po s3response.PutObjectI
 		return s3response.PutObjectOutput{}, err
 	}
 	out := s3response.PutObjectOutput{ETag: etag}
-	if ch, ok, err := checksumForPut(po, body); err != nil {
+	if ch, ok, err := sink.checksum(po); err != nil {
 		return s3response.PutObjectOutput{}, err
 	} else if ok {
 		if err := d.storeChecksums(obj, ch); err != nil {
@@ -400,11 +475,11 @@ func (d *Daos) putDirectory(bucket, key string, po s3response.PutObjectInput) (s
 }
 
 func (d *Daos) storeAttrs(obj Object, etag string, po s3response.PutObjectInput, dir bool) error {
-	pairs := [][2]string{{attrETag, etag}}
+	packed := attrMap{attrETag: etag}
 	if dir {
-		pairs = append(pairs, [2]string{attrContentType, backend.DirContentType})
+		packed[attrContentType] = backend.DirContentType
 	} else if awsString(po.ContentType) != "" {
-		pairs = append(pairs, [2]string{attrContentType, awsString(po.ContentType)})
+		packed[attrContentType] = awsString(po.ContentType)
 	}
 	for _, pair := range []struct{ name, val string }{
 		{attrEncoding, awsString(po.ContentEncoding)},
@@ -415,7 +490,7 @@ func (d *Daos) storeAttrs(obj Object, etag string, po s3response.PutObjectInput,
 		{attrRedirect, awsString(po.WebsiteRedirectLocation)},
 	} {
 		if dir || pair.val != "" {
-			pairs = append(pairs, [2]string{pair.name, pair.val})
+			packed[pair.name] = pair.val
 		}
 	}
 	if dir || len(po.Metadata) > 0 {
@@ -427,16 +502,73 @@ func (d *Daos) storeAttrs(obj Object, etag string, po s3response.PutObjectInput,
 		if err != nil {
 			return fmt.Errorf("marshal metadata: %w", err)
 		}
-		if err := d.fs.SetXattr(obj, attrMetadata, raw); err != nil {
-			return mapFS(err)
-		}
+		packed[attrMetadata] = string(raw)
 	}
-	for _, pair := range pairs {
-		if err := d.fs.SetXattr(obj, pair[0], []byte(pair[1])); err != nil {
-			return mapFS(err)
-		}
+	raw, err := marshalAttrs(packed)
+	if err != nil {
+		return err
 	}
-	return nil
+	return mapFS(d.fs.SetXattr(obj, attrPacked, raw))
+}
+
+// attrMap is the nine object attributes, packed into one xattr.
+type attrMap map[string]string
+
+func marshalAttrs(m attrMap) ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte(1)
+	if len(m) > 255 {
+		return nil, fmt.Errorf("too many attributes")
+	}
+	buf.WriteByte(byte(len(m)))
+	for _, name := range sortedAttrNames(m) {
+		val := m[name]
+		if len(name) > 0xFFFF || len(val) > 0xFFFFFFFF {
+			return nil, fmt.Errorf("attribute too large")
+		}
+		var hdr [6]byte
+		binary.BigEndian.PutUint16(hdr[:2], uint16(len(name)))
+		binary.BigEndian.PutUint32(hdr[2:], uint32(len(val)))
+		buf.Write(hdr[:])
+		buf.WriteString(name)
+		buf.WriteString(val)
+	}
+	return buf.Bytes(), nil
+}
+
+func unmarshalAttrs(raw []byte) (attrMap, error) {
+	m := attrMap{}
+	if len(raw) < 2 {
+		return nil, fmt.Errorf("short packed attributes")
+	}
+	if raw[0] != 1 {
+		return nil, fmt.Errorf("unknown packed attributes version %d", raw[0])
+	}
+	count := int(raw[1])
+	pos := 2
+	for i := 0; i < count; i++ {
+		if pos+6 > len(raw) {
+			return nil, fmt.Errorf("truncated packed attributes")
+		}
+		nameLen := int(binary.BigEndian.Uint16(raw[pos : pos+2]))
+		valLen := int(binary.BigEndian.Uint32(raw[pos+2 : pos+6]))
+		pos += 6
+		if pos+nameLen+valLen > len(raw) {
+			return nil, fmt.Errorf("truncated packed attributes")
+		}
+		m[string(raw[pos:pos+nameLen])] = string(raw[pos+nameLen : pos+nameLen+valLen])
+		pos += nameLen + valLen
+	}
+	return m, nil
+}
+
+func sortedAttrNames(m attrMap) []string {
+	names := make([]string, 0, len(m))
+	for name := range m {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 type objHeaders struct {
@@ -445,60 +577,59 @@ type objHeaders struct {
 
 func (d *Daos) attrs(obj Object) (string, map[string]string, objHeaders, error) {
 	var headers objHeaders
-	etagb, err := d.fs.GetXattr(obj, attrETag)
-	if err != nil && !errors.Is(err, errNotExist) {
-		return "", nil, headers, mapFS(err)
-	}
-	headers.ctype, err = d.attrString(obj, attrContentType)
-	if err != nil {
-		return "", nil, headers, err
-	}
-	headers.encoding, err = d.attrString(obj, attrEncoding)
-	if err != nil {
-		return "", nil, headers, err
-	}
-	headers.language, err = d.attrString(obj, attrLanguage)
-	if err != nil {
-		return "", nil, headers, err
-	}
-	headers.disposition, err = d.attrString(obj, attrDisposition)
-	if err != nil {
-		return "", nil, headers, err
-	}
-	headers.cache, err = d.attrString(obj, attrCacheCtl)
-	if err != nil {
-		return "", nil, headers, err
-	}
-	headers.expires, err = d.attrString(obj, attrExpires)
-	if err != nil {
-		return "", nil, headers, err
-	}
-	headers.redirect, err = d.attrString(obj, attrRedirect)
+	m, err := d.loadAttrs(obj)
 	if err != nil {
 		return "", nil, headers, err
 	}
 	var meta map[string]string
-	raw, err := d.fs.GetXattr(obj, attrMetadata)
-	if err != nil && !errors.Is(err, errNotExist) {
-		return "", nil, headers, mapFS(err)
-	}
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &meta); err != nil {
+	if raw, ok := m[attrMetadata]; ok && len(raw) > 0 {
+		if err := json.Unmarshal([]byte(raw), &meta); err != nil {
 			return "", nil, headers, fmt.Errorf("parse metadata: %w", err)
 		}
 	}
-	return string(etagb), meta, headers, nil
+	headers.ctype = m[attrContentType]
+	headers.encoding = m[attrEncoding]
+	headers.language = m[attrLanguage]
+	headers.disposition = m[attrDisposition]
+	headers.cache = m[attrCacheCtl]
+	headers.expires = m[attrExpires]
+	headers.redirect = m[attrRedirect]
+	return m[attrETag], meta, headers, nil
 }
 
-func (d *Daos) attrString(obj Object, name string) (string, error) {
-	b, err := d.fs.GetXattr(obj, name)
-	if errors.Is(err, errNotExist) {
-		return "", nil
+// loadAttrs reads the packed attribute blob, falling back to the
+// per-attribute xattrs written before the packed format existed.
+func (d *Daos) loadAttrs(obj Object) (attrMap, error) {
+	raw, err := d.fs.GetXattr(obj, attrPacked)
+	if err == nil {
+		return unmarshalAttrs(raw)
 	}
-	if err != nil {
-		return "", mapFS(err)
+	if !errors.Is(err, errNotExist) {
+		return nil, mapFS(err)
 	}
-	return string(b), nil
+	m := attrMap{}
+	for _, name := range attrNames {
+		b, gerr := d.fs.GetXattr(obj, name)
+		if gerr != nil && !errors.Is(gerr, errNotExist) {
+			return nil, mapFS(gerr)
+		}
+		if len(b) > 0 {
+			m[name] = string(b)
+		}
+	}
+	return m, nil
+}
+
+var attrNames = []string{
+	attrETag,
+	attrContentType,
+	attrEncoding,
+	attrLanguage,
+	attrDisposition,
+	attrCacheCtl,
+	attrExpires,
+	attrRedirect,
+	attrMetadata,
 }
 
 func strPtr(v string) *string {
@@ -512,7 +643,7 @@ func (d *Daos) openLive(bucket, key string, flags int) (Info, Object, error) {
 	p := objectPath(bucket, key)
 	obj, err := d.fs.Open(p, flags)
 	if err != nil {
-		return Info{}, nil, d.mapKeyErr(err, key)
+		return Info{}, nil, d.mapOpenErr(err, bucket, key)
 	}
 	info, err := d.fs.StatObj(obj)
 	if err != nil {
@@ -525,6 +656,23 @@ func (d *Daos) openLive(bucket, key string, flags int) (Info, Object, error) {
 		return Info{}, nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	return info, obj, nil
+}
+
+// mapOpenErr classifies an open failure: a missing or non-directory
+// bucket is NoSuchBucket; with the bucket present, errNotExist is
+// NoSuchKey and errNotDir keeps mapKeyErr's parent-is-file mapping.
+func (d *Daos) mapOpenErr(err error, bucket, key string) error {
+	if !errors.Is(err, errNotExist) && !errors.Is(err, errNotDir) {
+		return d.mapKeyErr(err, key)
+	}
+	if berr := validBucketName(bucket); berr != nil {
+		return berr
+	}
+	binfo, serr := d.fs.Stat(bucket)
+	if serr != nil || !binfo.IsDir {
+		return s3err.GetBucketErr(s3err.ErrNoSuchBucket, bucket)
+	}
+	return d.mapKeyErr(err, key)
 }
 
 func (d *Daos) bucketExists(bucket string) error {
@@ -546,21 +694,42 @@ func (d *Daos) mkdirParents(p string) error {
 	if dir == "" || dir == "." {
 		return nil
 	}
-	cur := ""
-	for _, part := range strings.Split(dir, "/") {
+	var open []Object
+	defer func() {
+		for _, obj := range open {
+			d.fs.Release(obj)
+		}
+	}()
+	// Parents are opened for write: dfs_mkdir updates the parent
+	// directory, and a read-only handle rejects the update server-side.
+	cur, err := d.fs.Open("", openWrite)
+	if err != nil {
+		return mapFS(err)
+	}
+	open = append(open, cur)
+	for _, part := range strings.Split(clean(dir), "/") {
 		if part == "" {
 			continue
 		}
-		if cur == "" {
-			cur = part
-		} else {
-			cur += "/" + part
+		next, oerr := d.fs.OpenRel(cur, part, openWrite)
+		if errors.Is(oerr, errNotExist) {
+			if mkerr := d.fs.MkdirRel(cur, part); mkerr != nil && !errors.Is(mkerr, errExist) {
+				return mapFS(mkerr)
+			}
+			next, oerr = d.fs.OpenRel(cur, part, openWrite)
 		}
-		err := d.fs.Mkdir(cur)
-		if err == nil || errors.Is(err, errExist) {
-			continue
+		if oerr != nil {
+			return mapFS(oerr)
 		}
-		return mapFS(err)
+		open = append(open, next)
+		info, serr := d.fs.StatObj(next)
+		if serr != nil {
+			return mapFS(serr)
+		}
+		if !info.IsDir {
+			return errNotDir
+		}
+		cur = next
 	}
 	return nil
 }

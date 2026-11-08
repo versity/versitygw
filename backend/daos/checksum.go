@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
 	"path"
@@ -522,6 +523,51 @@ func checksumForPut(po s3response.PutObjectInput, body []byte) (s3response.Check
 	}
 	if expected != "" && awsString(sumField(ch, algo)) != expected {
 		return s3response.Checksum{}, false, s3err.GetChecksumBadDigestErr(algo)
+	}
+	return ch, true, nil
+}
+
+// checksumSink hashes the object body while it is written, replacing the
+// whole-body checksumForPut pass for streamed PUTs.
+type checksumSink struct {
+	hash hash.Hash
+	algo types.ChecksumAlgorithm
+}
+
+func newChecksumSink(po s3response.PutObjectInput) (*checksumSink, error) {
+	algo := po.ChecksumAlgorithm
+	if algo == "" {
+		algo, _ = putHeaderChecksum(po)
+	}
+	if algo == "" {
+		return &checksumSink{}, nil
+	}
+	h, err := utils.NewHash(utils.HashType(strings.ToLower(string(algo))))
+	if err != nil {
+		return nil, err
+	}
+	return &checksumSink{hash: h, algo: algo}, nil
+}
+
+func (s *checksumSink) Write(p []byte) (int, error) {
+	if s.hash == nil {
+		return len(p), nil
+	}
+	return s.hash.Write(p)
+}
+
+// checksum returns the computed whole-object checksum. It validates the
+// expected header sum the same way checksumForPut does.
+func (s *checksumSink) checksum(po s3response.PutObjectInput) (s3response.Checksum, bool, error) {
+	if s.hash == nil {
+		return s3response.Checksum{}, false, nil
+	}
+	sum := utils.Base64SumString(s.hash.Sum(nil))
+	ch := s3response.Checksum{Algorithm: s.algo, Type: types.ChecksumTypeFullObject}
+	ch.SetSum(s.algo, &sum)
+	expected := putExpectedSum(po, s.algo)
+	if expected != "" && sum != expected {
+		return s3response.Checksum{}, false, s3err.GetChecksumBadDigestErr(s.algo)
 	}
 	return ch, true, nil
 }

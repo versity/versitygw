@@ -114,10 +114,14 @@ func TestStalledReadIsNotAShortObject(t *testing.T) {
 	d, fs := newTest(t)
 	put(t, d, "obj", "hello", "text/plain", nil)
 	d.fs = stallReadFS{fs}
-	_, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+	out, err := d.GetObject(context.Background(), &s3.GetObjectInput{
 		Bucket: backend.GetPtrFromString("bucket"),
 		Key:    backend.GetPtrFromString("obj"),
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.ReadAll(out.Body)
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("got %v", err)
 	}

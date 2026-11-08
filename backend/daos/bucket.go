@@ -90,6 +90,16 @@ func (d *Daos) finishCreate(bucket string, acl []byte, ownership types.ObjectOwn
 		return mapFS(err)
 	}
 	defer d.fs.Release(obj)
+	if d.oclass != "" {
+		if err := d.fs.SetOclass(obj, d.oclass); err != nil {
+			return mapFS(err)
+		}
+	}
+	if d.chunkSize > 0 {
+		if err := d.fs.SetChunkSize(obj, d.chunkSize); err != nil {
+			return mapFS(err)
+		}
+	}
 	if err := d.fs.SetXattr(obj, attrACL, acl); err != nil {
 		return mapFS(err)
 	}

@@ -384,10 +384,7 @@ func (d *Daos) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respons
 		if err != nil || pn <= marker {
 			continue
 		}
-		etagb, err := d.xattr(path.Join(dir, ent.Name), attrETag)
-		if err != nil && !errors.Is(err, errNotExist) {
-			return out, mapFS(err)
-		}
+		etag, mtime := d.partSummary(path.Join(dir, ent.Name))
 		ch, err := d.loadChecksumsAt(path.Join(dir, ent.Name))
 		if err != nil {
 			return out, err
@@ -397,9 +394,9 @@ func (d *Daos) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respons
 		}
 		part := s3response.Part{
 			PartNumber:   pn,
-			ETag:         string(etagb),
+			ETag:         etag,
 			Size:         ent.Size,
-			LastModified: time.Unix(ent.Mtime, 0).UTC(),
+			LastModified: time.Unix(mtime, 0).UTC(),
 		}
 		fillPartChecksum(&part, ch)
 		parts = append(parts, part)
@@ -520,7 +517,16 @@ func (d *Daos) ListMultipartUploads(_ context.Context, input *s3.ListMultipartUp
 
 func (d *Daos) copyParts(dst Object, dir string, parts []types.CompletedPart) error {
 	var destOff int64
-	buf := make([]byte, 32*1024)
+	size, err := d.fs.ChunkSize(dst)
+	if err != nil {
+		return mapFS(err)
+	}
+	if size < 256*1024 {
+		size = 256 * 1024
+	} else if size > 4*1024*1024 {
+		size = 4 * 1024 * 1024
+	}
+	buf := make([]byte, size)
 	for _, part := range parts {
 		pp := path.Join(dir, strconv.FormatInt(int64(*part.PartNumber), 10))
 		info, err := d.fs.Stat(pp)
@@ -533,7 +539,11 @@ func (d *Daos) copyParts(dst Object, dir string, parts []types.CompletedPart) er
 		}
 		var srcOff int64
 		for srcOff < info.Size {
-			n, err := d.fs.Read(src, buf, srcOff)
+			end := srcOff + int64(len(buf))
+			if end > info.Size {
+				end = info.Size
+			}
+			n, err := readFull(d.fs, src, buf[:end-srcOff], srcOff)
 			if n > 0 {
 				if _, werr := writeFull(d.fs, dst, buf[:n], destOff); werr != nil {
 					d.fs.Release(src)
@@ -542,18 +552,16 @@ func (d *Daos) copyParts(dst Object, dir string, parts []types.CompletedPart) er
 				srcOff += int64(n)
 				destOff += int64(n)
 			}
-			if err != nil && !errors.Is(err, io.EOF) {
+			if err != nil {
 				d.fs.Release(src)
 				return mapFS(err)
 			}
 			if n == 0 {
-				break
+				d.fs.Release(src)
+				return fmt.Errorf("short part copy: %d of %d", srcOff, info.Size)
 			}
 		}
 		d.fs.Release(src)
-		if srcOff != info.Size {
-			return fmt.Errorf("short part copy: %d of %d", srcOff, info.Size)
-		}
 	}
 	return nil
 }
@@ -604,31 +612,54 @@ func (d *Daos) writeBody(obj Object, r io.Reader, length *int64) ([]byte, int64,
 		sum := md5.Sum(nil)
 		return sum[:], 0, nil
 	}
+	size, err := d.fs.ChunkSize(obj)
+	if err != nil {
+		return nil, 0, mapFS(err)
+	}
+	if size < 256*1024 {
+		size = 256 * 1024
+	} else if size > 4*1024*1024 {
+		size = 4 * 1024 * 1024
+	}
 	h := md5.New()
-	buf := make([]byte, 32*1024)
+	buf := make([]byte, size)
+	filled := 0
 	var off int64
 	var emptyReads int
 	want := int64(-1)
 	if length != nil {
 		want = *length
 	}
+	flush := func(end int) error {
+		if end == 0 {
+			return nil
+		}
+		if _, werr := h.Write(buf[:end]); werr != nil {
+			return werr
+		}
+		if _, werr := writeFull(d.fs, obj, buf[:end], off); werr != nil {
+			return mapFS(werr)
+		}
+		off += int64(end)
+		return nil
+	}
 	for {
-		chunk := buf
-		if want >= 0 && off < want && int64(len(chunk)) > want-off {
-			chunk = chunk[:want-off]
+		chunk := buf[filled:]
+		if want >= 0 && off+int64(filled) < want && int64(len(chunk)) > want-off-int64(filled) {
+			chunk = chunk[:want-off-int64(filled)]
 		}
 		n, err := r.Read(chunk)
 		if n > 0 {
-			if want >= 0 && off+int64(n) > want {
+			filled += n
+			if want >= 0 && off+int64(filled) > want {
 				return nil, off, s3err.GetAPIError(s3err.ErrInvalidRequest)
 			}
-			if _, werr := h.Write(chunk[:n]); werr != nil {
-				return nil, off, werr
+			if filled == len(buf) {
+				if ferr := flush(filled); ferr != nil {
+					return nil, off, ferr
+				}
+				filled = 0
 			}
-			if _, werr := writeFull(d.fs, obj, chunk[:n], off); werr != nil {
-				return nil, off, mapFS(werr)
-			}
-			off += int64(n)
 		}
 		if err == io.EOF {
 			break
@@ -645,6 +676,9 @@ func (d *Daos) writeBody(obj Object, r io.Reader, length *int64) ([]byte, int64,
 		}
 		emptyReads = 0
 	}
+	if ferr := flush(filled); ferr != nil {
+		return nil, off, ferr
+	}
 	if want >= 0 && off != want {
 		return nil, off, io.ErrUnexpectedEOF
 	}
@@ -658,23 +692,49 @@ func (d *Daos) loadUserAttrs(p string) (s3response.PutObjectInput, error) {
 		return po, mapFS(err)
 	}
 	defer d.fs.Release(obj)
-	po.ContentType = optionalString(d.fs, obj, attrContentType)
-	po.ContentEncoding = optionalString(d.fs, obj, attrEncoding)
-	po.ContentLanguage = optionalString(d.fs, obj, attrLanguage)
-	po.ContentDisposition = optionalString(d.fs, obj, attrDisposition)
-	po.CacheControl = optionalString(d.fs, obj, attrCacheCtl)
-	po.Expires = optionalString(d.fs, obj, attrExpires)
-	po.WebsiteRedirectLocation = optionalString(d.fs, obj, attrRedirect)
-	raw, err := d.fs.GetXattr(obj, attrMetadata)
-	if err != nil && !errors.Is(err, errNotExist) {
-		return po, mapFS(err)
+	m, err := d.loadAttrs(obj)
+	if err != nil {
+		return po, err
 	}
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &po.Metadata); err != nil {
+	po.ContentType = ptrIfSet(m[attrContentType])
+	po.ContentEncoding = ptrIfSet(m[attrEncoding])
+	po.ContentLanguage = ptrIfSet(m[attrLanguage])
+	po.ContentDisposition = ptrIfSet(m[attrDisposition])
+	po.CacheControl = ptrIfSet(m[attrCacheCtl])
+	po.Expires = ptrIfSet(m[attrExpires])
+	po.WebsiteRedirectLocation = ptrIfSet(m[attrRedirect])
+	if raw, ok := m[attrMetadata]; ok && len(raw) > 0 {
+		if err := json.Unmarshal([]byte(raw), &po.Metadata); err != nil {
 			return po, fmt.Errorf("parse metadata: %w", err)
 		}
 	}
 	return po, nil
+}
+
+func ptrIfSet(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
+// partSummary returns the etag and mtime of a stored part, reading the
+// packed attributes in one xattr fetch.
+func (d *Daos) partSummary(p string) (string, int64) {
+	obj, err := d.fs.Open(p, openRead)
+	if err != nil {
+		return "", 0
+	}
+	defer d.fs.Release(obj)
+	m, err := d.loadAttrs(obj)
+	if err != nil {
+		return "", 0
+	}
+	info, err := d.fs.StatObj(obj)
+	if err != nil {
+		return m[attrETag], 0
+	}
+	return m[attrETag], info.Mtime
 }
 
 func (d *Daos) setXattr(p, name string, value []byte) error {

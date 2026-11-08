@@ -98,7 +98,7 @@ func (f *bucketFile) Close() error {
 
 func (f *bucketFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	if f.kids == nil {
-		infos, err := f.dfs.ReadDir(f.full)
+		infos, err := f.dfs.ReadDirObj(f.obj)
 		if err != nil {
 			return nil, fsErr("readdir", f.full, err)
 		}
