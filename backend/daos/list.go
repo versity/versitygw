@@ -83,7 +83,7 @@ func (d *Daos) walk(ctx context.Context, bucket, prefix, delim, marker string, m
 		return backend.WalkResults{}, err
 	}
 	getObj := d.fileToObj(bucket, fetchOwner)
-	results, err := backend.Walk(ctx, bucketFS{dfs: d.fs, bucket: bucket}, prefix, delim, marker, max, getObj.get, []string{tmpDirName})
+	results, err := backend.Walk(ctx, bucketFS{dfs: d.fs, bucket: bucket}, prefix, delim, marker, max, getObj.get, backend.SkipDirs{Root: []string{tmpDirName}})
 	getObj.Release()
 	if err != nil {
 		return backend.WalkResults{}, err

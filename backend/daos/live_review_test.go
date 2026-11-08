@@ -248,7 +248,7 @@ func TestLiveMultipartCompletes(t *testing.T) {
 		{PartNumber: &p1, ETag: &e1},
 		{PartNumber: &p2, ETag: &e2},
 	}
-	wantETag, err := backend.ComputeMultipartETagFromPartETags(completed)
+	wantETag, err := backend.ComputeMultipartETagFromPartETags(created.UploadId, completed)
 	if err != nil {
 		t.Fatal(err)
 	}

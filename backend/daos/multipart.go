@@ -218,7 +218,7 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 		return out, "", s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 	parts := input.MultipartUpload.Parts
-	etag, err := backend.ComputeMultipartETagFromPartETags(parts)
+	etag, err := backend.ComputeMultipartETagFromPartETags(uploadID, parts)
 	if err != nil {
 		return out, "", err
 	}
