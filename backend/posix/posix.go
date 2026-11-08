@@ -6194,14 +6194,59 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 		}
 	}
 
-	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+	// Open a file object before reading its ETag. PutObject stores the ETag
+	// on the staged inode and links that inode over the object's name, so a
+	// path read of the attribute and a later open can see two versions: the
+	// response would carry the first version's ETag and the second version's
+	// body, and If-Match would be decided on the ETag that is not the body's.
+	// XattrMeta reads attributes with FGet when given the open file, which
+	// keeps the ETag, the preconditions and the body on one inode. A directory
+	// object has no data file; its attributes stay path-based.
+	var f *os.File
+	fi := fid
+	closeFile := func() {}
+	if !fid.IsDir() {
+		// openForRead opens with FILE_SHARE_DELETE on Windows so that a concurrent
+		// DeleteObject can call os.Remove on this file while the GET response body
+		// is still being streamed. On POSIX, os.Open is sufficient.
+		f, err = openForRead(objPath, p.enableODirect)
+		if IsEntryGone(err) {
+			// the object was removed after the stat above, or its directory
+			// was, which a shared filesystem can report as ENOTDIR or ESTALE.
+			if getString(input.VersionId) != "" {
+				return nil, s3err.GetNoSuchVersionErr(*input.Key, versionId)
+			}
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("open object: %w", err)
+		}
+		closeFile = func() { f.Close() }
+		defer func() { closeFile() }()
+
+		fi, err = f.Stat()
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
+			if versionId != "" {
+				return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
+			}
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if isErrNameTooLong(err) {
+			return nil, s3err.GetKeyTooLongErr(int64(len(*input.Key)), 1024)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("stat object: %w", err)
+		}
+	}
+
+	b, err := p.meta.RetrieveAttribute(f, bucket, object, etagkey)
 	etag := string(b)
 	if err != nil || etag == "" {
 		etag = p.defaultEtag
 	}
 
 	// evaluate preconditions
-	err = backend.EvaluatePreconditions(etag, fid.ModTime(), backend.PreConditions{
+	err = backend.EvaluatePreconditions(etag, fi.ModTime(), backend.PreConditions{
 		IfMatch:       input.IfMatch,
 		IfNoneMatch:   input.IfNoneMatch,
 		IfModSince:    input.IfModifiedSince,
@@ -6219,8 +6264,8 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 		if err != nil {
 			return nil, err
 		}
-		objMeta := p.loadObjectMetaProperties(nil, bucket, object, &fid)
-		legalHold, lockMode, retainUntil := p.objectLockAttrs(nil, bucket, object)
+		objMeta := p.loadObjectMetaProperties(f, bucket, object, &fi)
+		legalHold, lockMode, retainUntil := p.objectLockAttrs(f, bucket, object)
 		return &s3.GetObjectOutput{
 			ObjectLockLegalHoldStatus: legalHold,
 			ObjectLockMode:            lockMode,
@@ -6229,7 +6274,7 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 			ExpiresString:             objMeta.Expires,
 			WebsiteRedirectLocation:   objMeta.WebsiteRedirectLocation,
 			ETag:                      &etag,
-			LastModified:              backend.GetTimePtr(fid.ModTime()),
+			LastModified:              backend.GetTimePtr(fi.ModTime()),
 			Metadata:                  objMeta.Metadata,
 			TagCount:                  tagCount,
 			StorageClass:              types.StorageClassStandard,
@@ -6312,38 +6357,6 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 		}, nil
 	}
 
-	// openForRead opens with FILE_SHARE_DELETE on Windows so that a concurrent
-	// DeleteObject can call os.Remove on this file while the GET response body
-	// is still being streamed. On POSIX, os.Open is sufficient.
-	f, err := openForRead(objPath, p.enableODirect)
-	if IsEntryGone(err) {
-		// the object was removed after the stat above, or its directory
-		// was, which a shared filesystem can report as ENOTDIR or ESTALE.
-		// versionId may hold the live object's version by now, so check
-		// whether the request named a version.
-		if getString(input.VersionId) != "" {
-			return nil, s3err.GetNoSuchVersionErr(*input.Key, versionId)
-		}
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("open object: %w", err)
-	}
-
-	fi, err := f.Stat()
-	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-		if versionId != "" {
-			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
-		}
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-	}
-	if isErrNameTooLong(err) {
-		return nil, s3err.GetKeyTooLongErr(int64(len(*input.Key)), 1024)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("stat object: %w", err)
-	}
-
 	objSize := fi.Size()
 	if fi.IsDir() {
 		objSize = 0
@@ -6358,7 +6371,7 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 	// object with no Content-Range; any other partNumber is out of range.
 	// Both range read and partNumber can't be used together.
 	if input.PartNumber != nil {
-		mpMetaBytes, metaErr := p.meta.RetrieveAttribute(nil, bucket, object, mpMetaKey)
+		mpMetaBytes, metaErr := p.meta.RetrieveAttribute(f, bucket, object, mpMetaKey)
 		if metaErr == nil {
 			mpMeta, err := backend.UnmarshalMpUploadMetadata(mpMetaBytes, false)
 			if err != nil {
@@ -6407,7 +6420,6 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 	if preRead != nil {
 		err = preRead(f)
 		if err != nil {
-			f.Close()
 			return nil, err
 		}
 	}
@@ -6415,7 +6427,10 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 	objMeta := p.loadObjectMetaProperties(f, bucket, object, &fi)
 
 	var tagCount *int32
-	tags, err := p.getAttrTags(bucket, object, versionId)
+	// A version id looked up for the response is not one the request named.
+	// The object disappearing after the open is NoSuchKey unless the request
+	// named a version, the same as an open that finds the object gone.
+	tags, err := p.getAttrTags(bucket, object, getString(input.VersionId))
 	if err != nil {
 		return nil, err
 	}
@@ -6440,6 +6455,8 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 	if err != nil {
 		return nil, fmt.Errorf("build get object body: %w", err)
 	}
+	// The body owns the file and closes it when the response is consumed.
+	closeFile = func() {}
 
 	return &s3.GetObjectOutput{
 		ObjectLockLegalHoldStatus: legalHold,
