@@ -98,7 +98,10 @@ func (d *Daos) CopyObject(_ context.Context, input s3response.CopyObjectInput) (
 	po.Tagging = tagging
 	var putOut s3response.PutObjectOutput
 	if strings.HasSuffix(dstKey, "/") {
-		if info.IsDir || info.Size > 0 {
+		// A directory source copies as an empty directory marker, the
+		// same as the POSIX backend; only a non-empty regular object
+		// cannot land on a directory key.
+		if !info.IsDir && info.Size > 0 {
 			return out, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
 		}
 		putOut, err = d.putDirectory(dstBucket, dstKey, po)
