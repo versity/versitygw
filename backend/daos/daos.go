@@ -143,8 +143,8 @@ func (d *Daos) PutObject(_ context.Context, po s3response.PutObjectInput) (s3res
 		return s3response.PutObjectOutput{}, err
 	}
 	if strings.HasSuffix(key, "/") {
-		if !emptyBody(po.Body) {
-			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
+		if err := emptyBody(po.Body); err != nil {
+			return s3response.PutObjectOutput{}, err
 		}
 		return d.putDirectory(bucket, key, po)
 	}
@@ -154,19 +154,25 @@ func (d *Daos) PutObject(_ context.Context, po s3response.PutObjectInput) (s3res
 // emptyBody reports whether the body carries no bytes. A nil body is
 // empty. A directory object must not carry data, so one byte is enough
 // to reject it; the caller never consumes the stream in that case.
-func emptyBody(r io.Reader) bool {
+// Read errors other than EOF fail the request: a truncated body must
+// not publish a directory object.
+func emptyBody(r io.Reader) error {
 	if r == nil {
-		return true
+		return nil
 	}
 	var probe [1]byte
-	n, err := r.Read(probe[:])
-	if err == io.EOF {
-		return true
+	for {
+		n, err := r.Read(probe[:])
+		if n > 0 {
+			return s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
+		}
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
 	}
-	if err != nil {
-		return true
-	}
-	return n == 0
 }
 
 func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
@@ -208,11 +214,14 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 	body := io.ReadCloser(&dfsBodyReader{fs: d.fs, obj: obj, rem: length, off: start})
 	if info.IsDir {
 		body = io.NopCloser(bytes.NewReader(nil))
-		d.fs.Release(obj)
 	}
 	ch, err := d.loadChecksums(obj)
 	if err != nil {
+		d.fs.Release(obj)
 		return nil, err
+	}
+	if info.IsDir {
+		d.fs.Release(obj)
 	}
 	n64 := length
 	out := &s3.GetObjectOutput{

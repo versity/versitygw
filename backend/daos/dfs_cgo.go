@@ -389,8 +389,9 @@ func (f *dfsFS) readDirObj(obj Object) ([]Info, error) {
 	var out []Info
 	for {
 		var dirs [64]C.struct_dirent
+		var stats [64]C.struct_stat
 		nr := C.uint32_t(len(dirs))
-		rc := C.dfs_readdir(f.dfs, o.obj, &anchor, &nr, &dirs[0])
+		rc := C.dfs_readdirplus(f.dfs, o.obj, &anchor, &nr, &dirs[0], &stats[0])
 		if err := dfsErrno(rc); err != nil {
 			return nil, err
 		}
@@ -399,7 +400,14 @@ func (f *dfsFS) readDirObj(obj Object) ([]Info, error) {
 			if name == "" || name == "." || name == ".." {
 				continue
 			}
-			out = append(out, Info{Name: name, IsDir: dirs[i].d_type == C.DT_DIR})
+			out = append(out, Info{
+				Name:  name,
+				IsDir: dirs[i].d_type == C.DT_DIR,
+				Size:  int64(stats[i].st_size),
+				// glibc exposes st_mtime only as a macro; read the
+				// underlying timespec directly.
+				Mtime: int64(stats[i].st_mtim.tv_sec),
+			})
 		}
 		if C.versitygw_anchor_eof(&anchor) != 0 || nr == 0 {
 			break

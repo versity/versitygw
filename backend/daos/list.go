@@ -145,7 +145,14 @@ func (r *objResolver) get(objPath string, entry fs.DirEntry) (s3response.Object,
 		}
 		return s3response.Object{}, mapFS(err)
 	}
-	etag, info := d.relSummary(parent, base)
+	etag, info, rerr := d.relSummary(parent, base)
+	if rerr != nil {
+		if errors.Is(rerr, errNotExist) {
+			// The entry vanished between enumeration and lookup.
+			return s3response.Object{}, backend.ErrSkipObj
+		}
+		return s3response.Object{}, mapFS(rerr)
+	}
 	if etag == "" {
 		if entry.IsDir() {
 			return s3response.Object{}, backend.ErrSkipObj
@@ -177,21 +184,21 @@ func (r *objResolver) get(objPath string, entry fs.DirEntry) (s3response.Object,
 // relSummary opens one entry relative to its parent and reads the packed
 // attributes and stat in two calls. A missing etag means the entry is not
 // an object.
-func (d *Daos) relSummary(parent Object, name string) (string, Info) {
+func (d *Daos) relSummary(parent Object, name string) (string, Info, error) {
 	obj, err := d.fs.OpenRel(parent, name, openRead)
 	if err != nil {
-		return "", Info{}
+		return "", Info{}, err
 	}
 	defer d.fs.Release(obj)
 	info, err := d.fs.StatObj(obj)
 	if err != nil {
-		return "", Info{}
+		return "", Info{}, err
 	}
 	etag := ""
 	if m, err := d.loadAttrs(obj); err == nil {
 		etag = m[attrETag]
 	}
-	return etag, info
+	return etag, info, nil
 }
 
 func maxKeys(v *int32) int32 {

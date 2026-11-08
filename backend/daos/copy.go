@@ -90,10 +90,6 @@ func (d *Daos) CopyObject(_ context.Context, input s3response.CopyObjectInput) (
 		input.MetadataDirective != types.MetadataDirectiveReplace {
 		return out, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 	}
-	body, err := readObjectBytes(d.fs, obj, info)
-	if err != nil {
-		return out, err
-	}
 	tagging, err := d.copyTagging(input, obj)
 	if err != nil {
 		return out, err
@@ -102,7 +98,7 @@ func (d *Daos) CopyObject(_ context.Context, input s3response.CopyObjectInput) (
 	po.Tagging = tagging
 	var putOut s3response.PutObjectOutput
 	if strings.HasSuffix(dstKey, "/") {
-		if len(body) != 0 {
+		if info.IsDir || info.Size > 0 {
 			return out, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
 		}
 		putOut, err = d.putDirectory(dstBucket, dstKey, po)
@@ -237,18 +233,6 @@ func (d *Daos) UploadPartCopy(_ context.Context, input *s3.UploadPartCopyInput) 
 		setCopyPartChecksum(&res, hashed.userAlg, hashed.userSum())
 	}
 	return res, nil
-}
-
-func readObjectBytes(fs FS, obj Object, info Info) ([]byte, error) {
-	if info.IsDir || info.Size <= 0 {
-		return []byte{}, nil
-	}
-	body := make([]byte, info.Size)
-	n, err := readFull(fs, obj, body, 0)
-	if err != nil {
-		return nil, err
-	}
-	return body[:n], nil
 }
 
 func putInputFromCopy(input s3response.CopyObjectInput, meta map[string]string, headers objHeaders) s3response.PutObjectInput {
