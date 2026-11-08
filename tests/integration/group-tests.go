@@ -2350,6 +2350,7 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_invalid_tagging)
 	ts.Run(PostObject_success_with_tagging)
 	ts.Run(PostObject_success_double_dash_boundary)
+	ts.Run(PostObject_file_without_filename)
 	ts.Run(PostObject_object_lock_success)
 	ts.Run(PostObject_object_lock_invalid_fields)
 	ts.Run(PostObject_object_lock_missing_bucket_config)
@@ -4131,6 +4132,7 @@ func GetIntTests() IntTests {
 		"PostObject_multiple_checksum_headers":                                             PostObject_multiple_checksum_headers,
 		"PostObject_checksums_success":                                                     PostObject_checksums_success,
 		"PostObject_success_double_dash_boundary":                                          PostObject_success_double_dash_boundary,
+		"PostObject_file_without_filename":                                                 PostObject_file_without_filename,
 		"PostObject_object_lock_success":                                                   PostObject_object_lock_success,
 		"PostObject_object_lock_invalid_fields":                                            PostObject_object_lock_invalid_fields,
 		"PostObject_object_lock_missing_bucket_config":                                     PostObject_object_lock_missing_bucket_config,

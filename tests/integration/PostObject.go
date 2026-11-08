@@ -22,6 +22,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"strings"
 	"time"
 
@@ -1675,6 +1676,88 @@ func PostObject_success_double_dash_boundary(s *S3Conf) error {
 		}
 		if !bytes.Equal(gotData, objData) {
 			return fmt.Errorf("expected object data %q, got %q", objData, gotData)
+		}
+
+		return nil
+	})
+}
+
+// PostObject_file_without_filename posts the file part with no filename and
+// with an empty one, which S3 takes as text content.
+func PostObject_file_without_filename(s *S3Conf) error {
+	testName := "PostObject_file_without_filename"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, test := range []struct {
+			key         string
+			disposition string
+		}{
+			{"no-filename", `form-data; name="file"`},
+			{"empty-filename", `form-data; name="file"; filename=""`},
+		} {
+			objData := []byte("hello world")
+			signingDate := time.Now().UTC()
+
+			fields := buildSignedPostFields(bucket, test.key, s.awsID, s.awsRegion, signingDate)
+			policy, err := encodePostPolicy([]any{}, time.Now().UTC().Add(10*time.Minute), fields, make(map[string]struct{}))
+			if err != nil {
+				return err
+			}
+			fields["policy"] = policy
+			fields["x-amz-signature"] = signPostPolicy(policy, signingDate.Format("20060102"), s.awsRegion, s.awsSecret)
+
+			var buf bytes.Buffer
+			w := multipart.NewWriter(&buf)
+			for k, v := range fields {
+				if err := w.WriteField(k, v); err != nil {
+					return err
+				}
+			}
+
+			fw, err := w.CreatePart(textproto.MIMEHeader{"Content-Disposition": {test.disposition}})
+			if err != nil {
+				return err
+			}
+			if _, err = fw.Write(objData); err != nil {
+				return err
+			}
+			if err := w.Close(); err != nil {
+				return err
+			}
+
+			req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/%s", s.endpoint, bucket), bytes.NewReader(buf.Bytes()))
+			if err != nil {
+				return err
+			}
+			req.Header.Set("Content-Type", w.FormDataContentType())
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+			resp.Body.Close()
+
+			if resp.StatusCode != http.StatusNoContent {
+				return fmt.Errorf("%s: expected status 204, got %d", test.key, resp.StatusCode)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &test.key,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			gotData, err := io.ReadAll(res.Body)
+			res.Body.Close()
+			if err != nil {
+				return err
+			}
+			if !bytes.Equal(gotData, objData) {
+				return fmt.Errorf("%s: expected object data %q, got %q", test.key, objData, gotData)
+			}
 		}
 
 		return nil
