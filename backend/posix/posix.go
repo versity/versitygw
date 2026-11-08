@@ -6427,10 +6427,7 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 	objMeta := p.loadObjectMetaProperties(f, bucket, object, &fi)
 
 	var tagCount *int32
-	// A version id looked up for the response is not one the request named.
-	// The object disappearing after the open is NoSuchKey unless the request
-	// named a version, the same as an open that finds the object gone.
-	tags, err := p.getAttrTags(bucket, object, getString(input.VersionId))
+	tags, err := p.getAttrTags(bucket, object, versionId)
 	if err != nil {
 		return nil, err
 	}
