@@ -29,7 +29,9 @@ import (
 )
 
 // stripQueryFromURLErrors removes the query, which can hold a SAS token,
-// from the URL of transport errors.
+// from the URL of transport errors. The service client and the
+// per-container and per-blob clients must all run it: those clients are
+// built outside New.
 type stripQueryFromURLErrors struct{}
 
 func (stripQueryFromURLErrors) Do(req *policy.Request) (*http.Response, error) {
@@ -44,9 +46,20 @@ func (stripQueryFromURLErrors) Do(req *policy.Request) (*http.Response, error) {
 	return resp, err
 }
 
-// retryOptions configures the retries of the clients returned by New. The
-// zero value keeps the SDK defaults; tests change it to fail fast.
+// retryOptions configures the retries of clients built with ClientOptions.
+// The zero value keeps the SDK defaults; tests change it to fail fast.
 var retryOptions policy.RetryOptions
+
+// ClientOptions returns the options every blob client must use so a SAS
+// token in the request URL cannot reach a transport error. The zero Retry
+// value keeps the SDK defaults; tests in this package set retryOptions to
+// fail fast.
+func ClientOptions() policy.ClientOptions {
+	return policy.ClientOptions{
+		Retry:           retryOptions,
+		PerCallPolicies: []policy.Policy{stripQueryFromURLErrors{}},
+	}
+}
 
 // Credentials describes how a client returned by New authenticates.
 // Exactly one of SASToken, SharedKey and Default is set.
@@ -71,12 +84,7 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 		svcURL = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
 	}
 
-	opts := &azblob.ClientOptions{
-		ClientOptions: policy.ClientOptions{
-			Retry:           retryOptions,
-			PerCallPolicies: []policy.Policy{stripQueryFromURLErrors{}},
-		},
-	}
+	opts := &azblob.ClientOptions{ClientOptions: ClientOptions()}
 
 	if sasToken != "" {
 		client, err := azblob.NewClientWithNoCredential(svcURL+"?"+sasToken, opts)
