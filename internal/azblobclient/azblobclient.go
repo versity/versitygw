@@ -29,9 +29,7 @@ import (
 )
 
 // stripQueryFromURLErrors removes the query, which can hold a SAS token,
-// from the URL of transport errors. The service client and the
-// per-container and per-blob clients must all run it: those clients are
-// built outside New.
+// from the URL of transport errors.
 type stripQueryFromURLErrors struct{}
 
 func (stripQueryFromURLErrors) Do(req *policy.Request) (*http.Response, error) {
@@ -44,21 +42,6 @@ func (stripQueryFromURLErrors) Do(req *policy.Request) (*http.Response, error) {
 		}
 	}
 	return resp, err
-}
-
-// retryOptions configures the retries of clients built with ClientOptions.
-// The zero value keeps the SDK defaults; tests change it to fail fast.
-var retryOptions policy.RetryOptions
-
-// ClientOptions returns the options every blob client must use so a SAS
-// token in the request URL cannot reach a transport error. The zero Retry
-// value keeps the SDK defaults; tests in this package set retryOptions to
-// fail fast.
-func ClientOptions() policy.ClientOptions {
-	return policy.ClientOptions{
-		Retry:           retryOptions,
-		PerCallPolicies: []policy.Policy{stripQueryFromURLErrors{}},
-	}
 }
 
 // Credentials describes how a client returned by New authenticates.
@@ -84,9 +67,20 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 		svcURL = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
 	}
 
-	opts := &azblob.ClientOptions{ClientOptions: ClientOptions()}
+	opts := &azblob.ClientOptions{ClientOptions: policy.ClientOptions{
+		PerCallPolicies: []policy.Policy{stripQueryFromURLErrors{}},
+	}}
 
 	if sasToken != "" {
+		// Reject invalid queries before request construction can echo the token.
+		for i := 0; i < len(sasToken); i++ {
+			if sasToken[i] < 0x20 || sasToken[i] == 0x7f {
+				return nil, Credentials{}, errors.New("invalid SAS token")
+			}
+		}
+		if _, err := url.ParseQuery(sasToken); err != nil {
+			return nil, Credentials{}, errors.New("invalid SAS token")
+		}
 		client, err := azblob.NewClientWithNoCredential(svcURL+"?"+sasToken, opts)
 		if err != nil {
 			return nil, Credentials{}, fmt.Errorf("init client: %w", err)

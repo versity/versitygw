@@ -2685,41 +2685,15 @@ func (az *Azure) getBlobURL(cntr, blb string) string {
 }
 
 func (az *Azure) getBlobClient(cntr, blb string) (*blob.Client, error) {
-	blobURL := az.getBlobURL(cntr, blb)
-	// Same per-call policy as the service client: a transport error's URL
-	// otherwise includes the SAS query.
-	opts := &blob.ClientOptions{ClientOptions: azblobclient.ClientOptions()}
-	if az.defaultCreds != nil {
-		return blob.NewClient(blobURL, az.defaultCreds, opts)
-	}
-	if az.sasToken != "" {
-		return blob.NewClientWithNoCredential(blobURL+"?"+az.sasToken, opts)
-	}
-	return blob.NewClientWithSharedKeyCredential(blobURL, az.sharedkeyCreds, opts)
+	return az.client.ServiceClient().NewContainerClient(cntr).NewBlobClient(blb), nil
 }
 
 func (az *Azure) getContainerClient(cntr string) (*container.Client, error) {
-	containerURL := az.getContainerURL(cntr)
-	opts := &container.ClientOptions{ClientOptions: azblobclient.ClientOptions()}
-	if az.defaultCreds != nil {
-		return container.NewClient(containerURL, az.defaultCreds, opts)
-	}
-	if az.sasToken != "" {
-		return container.NewClientWithNoCredential(containerURL+"?"+az.sasToken, opts)
-	}
-	return container.NewClientWithSharedKeyCredential(containerURL, az.sharedkeyCreds, opts)
+	return az.client.ServiceClient().NewContainerClient(cntr), nil
 }
 
 func (az *Azure) getBlockBlobClient(cntr, blb string) (*blockblob.Client, error) {
-	blobURL := az.getBlobURL(cntr, blb)
-	opts := &blockblob.ClientOptions{ClientOptions: azblobclient.ClientOptions()}
-	if az.defaultCreds != nil {
-		return blockblob.NewClient(blobURL, az.defaultCreds, opts)
-	}
-	if az.sasToken != "" {
-		return blockblob.NewClientWithNoCredential(blobURL+"?"+az.sasToken, opts)
-	}
-	return blockblob.NewClientWithSharedKeyCredential(blobURL, az.sharedkeyCreds, opts)
+	return az.client.ServiceClient().NewContainerClient(cntr).NewBlockBlobClient(blb), nil
 }
 
 func parseMetadata(m map[string]string) map[string]*string {

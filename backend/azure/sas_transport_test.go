@@ -19,6 +19,8 @@ import (
 	"net"
 	"strings"
 	"testing"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
 // TestPerClientTransportErrorsOmitSAS reproduces a transport failure of the
@@ -38,7 +40,7 @@ func TestPerClientTransportErrorsOmitSAS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := policy.WithRetryOptions(context.Background(), policy.RetryOptions{MaxRetries: -1})
 	checks := []struct {
 		name string
 		call func() error

@@ -92,11 +92,6 @@ func TestNew(t *testing.T) {
 }
 
 func TestNewKeepsSASOutOfTransportErrors(t *testing.T) {
-	// without retries the transport error is returned at once; with them
-	// the test would wait for the SDK retry delays
-	retryOptions = policy.RetryOptions{MaxRetries: -1}
-	t.Cleanup(func() { retryOptions = policy.RetryOptions{} })
-
 	// a port nothing listens on, so the request fails with a transport
 	// error carrying its URL
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -111,10 +106,23 @@ func TestNewKeepsSASOutOfTransportErrors(t *testing.T) {
 		return
 	}
 
-	_, err = client.DownloadStream(context.Background(), "iam", "users.json", nil)
+	_, err = client.DownloadStream(policy.WithRetryOptions(context.Background(), policy.RetryOptions{MaxRetries: -1}), "iam", "users.json", nil)
 	if assert.Error(t, err) {
 		// the URL is still reported, only its query is removed
 		assert.Contains(t, err.Error(), "/acct/iam/users.json")
 		assert.NotContains(t, err.Error(), "SECRETSIGNATURE")
+	}
+}
+
+func TestNewRejectsInvalidSASWithoutLeakingToken(t *testing.T) {
+	for _, token := range []string{"sig=SECRET\n", "sig=SECRET\r", "sig=SECRET\x00", "sig=SECRET\x7f", "sig=SECRET%zz", "sig=SECRET;bad"} {
+		t.Run(token, func(t *testing.T) {
+			client, creds, err := New("", "", "http://localhost/acct", token)
+			assert.Nil(t, client)
+			assert.Empty(t, creds)
+			if assert.Error(t, err) {
+				assert.NotContains(t, err.Error(), "SECRET")
+			}
+		})
 	}
 }
