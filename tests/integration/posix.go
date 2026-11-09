@@ -17,7 +17,9 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"slices"
@@ -1019,6 +1021,61 @@ func HeadObject_GetObject_race_with_delete(s *S3Conf) error {
 			cancel()
 			if err != nil {
 				return fmt.Errorf("delete %v: %w", key, err)
+			}
+			return nil
+		})
+	})
+}
+
+// GetObject_etag_race_with_put reads objects with GetObject while they are
+// overwritten over and over. The ETag of a PutObject is the MD5 of its body,
+// so the ETag of a read must be the MD5 of the body it returns: a read that
+// takes the ETag from one version of the object and the body from another
+// fails. The sidecar metadata is not stored on the object's inode, so this
+// check does not apply to it.
+func GetObject_etag_race_with_put(s *S3Conf) error {
+	testName := "GetObject_etag_race_with_put"
+	const workers, iterations = 16, 100
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return raceWorkers(workers, iterations, func(w, i int) error {
+			key := fmt.Sprintf("race/%d/obj", w/2)
+			if w%2 == 0 {
+				body := fmt.Appendf(nil, "%s version %d-%d\n", key, w, i)
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				defer cancel()
+				_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+					Bucket: &bucket,
+					Key:    &key,
+					Body:   bytes.NewReader(body),
+				})
+				if err != nil {
+					return fmt.Errorf("put %v: %w", key, err)
+				}
+				return nil
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
+			out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			if err != nil {
+				// the writer of the pair may not have uploaded yet
+				if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+					return fmt.Errorf("get %v: %w", key, err)
+				}
+				return nil
+			}
+			defer out.Body.Close()
+			body, err := io.ReadAll(out.Body)
+			if err != nil {
+				return fmt.Errorf("read %v: %w", key, err)
+			}
+			sum := md5.Sum(body)
+			want := fmt.Sprintf("%q", hex.EncodeToString(sum[:]))
+			if got := aws.ToString(out.ETag); got != want {
+				return fmt.Errorf("get %v: etag %v does not belong to the body returned, want %v", key, got, want)
 			}
 			return nil
 		})

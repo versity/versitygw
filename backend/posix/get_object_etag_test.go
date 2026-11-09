@@ -20,22 +20,31 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
-// stalePathEtagMeta returns a different ETag for a path read of the object
-// than for a read on the open file. The path read stands for the ETag of the
-// inode the name pointed at before a PUT linked a new one; the read on the
-// open file returns the ETag stored on the inode that was opened.
+// stalePathEtagMeta returns a different value for a path read of an
+// attribute of the object than for a read on the open file. The path read
+// stands for the attribute of the inode the name pointed at before a PUT
+// linked a new one; the read on the open file returns the attribute stored
+// on the inode that was opened. It diverges for the attributes in stale, and
+// fails a read on the open file of failAttr with failErr.
 type stalePathEtagMeta struct {
 	meta.XattrMeta
 	object   string
 	pathEtag string
+	stale    map[string][]byte
+	failAttr string
+	failErr  error
 }
 
 func (m stalePathEtagMeta) WithRootDir(rootdir string) meta.MetadataStorer {
@@ -44,8 +53,16 @@ func (m stalePathEtagMeta) WithRootDir(rootdir string) meta.MetadataStorer {
 }
 
 func (m stalePathEtagMeta) RetrieveAttribute(f *os.File, bucket, object, attribute string) ([]byte, error) {
-	if f == nil && object == m.object && attribute == etagkey {
+	if f == nil && object == m.object && attribute == etagkey && m.pathEtag != "" {
 		return []byte(m.pathEtag), nil
+	}
+	if f == nil && object == m.object {
+		if b, ok := m.stale[attribute]; ok {
+			return b, nil
+		}
+	}
+	if f != nil && m.failErr != nil && attribute == m.failAttr {
+		return nil, m.failErr
 	}
 	return m.XattrMeta.RetrieveAttribute(f, bucket, object, attribute)
 }
@@ -130,4 +147,184 @@ func TestGetObjectETagMatchesOpenedFile(t *testing.T) {
 			t.Fatalf("304 output = %+v, want etag %q", out, inodeEtag)
 		}
 	})
+}
+
+// TestGetObjectAttributesMatchOpenedFile checks that the version id and the
+// parts count of a GET, and of its 304, come from the inode that was opened
+// and not from a path read that a PUT can have redirected to another inode.
+func TestGetObjectAttributesMatchOpenedFile(t *testing.T) {
+	const (
+		bucket = "testbucket"
+		key    = "obj"
+	)
+	staleMp, err := backend.MarshalMpUploadMetadata(backend.MpUploadMetadata{UploadID: "stale", Parts: []int64{4}}, false)
+	if err != nil {
+		t.Fatalf("marshal stale mp metadata: %v", err)
+	}
+	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		return stalePathEtagMeta{
+			object: key,
+			stale: map[string][]byte{
+				versionIdKey: []byte("stale-version"),
+				mpMetaKey:    staleMp,
+			},
+		}, PosixOpts{NewDirPerm: 0755, VersioningDir: t.TempDir()}
+	})
+	createTestBucket(t, p, bucket)
+	ctx := context.Background()
+	if err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled); err != nil {
+		t.Fatalf("put bucket versioning: %v", err)
+	}
+	res, err := testPut(p, bucket, key, []byte("aaaabbbb"), nil, nil)
+	if err != nil {
+		t.Fatalf("put object: %v", err)
+	}
+	// make the object look multipart with two parts of 4 bytes
+	mp, err := backend.MarshalMpUploadMetadata(backend.MpUploadMetadata{UploadID: "id", Parts: []int64{4, 8}}, false)
+	if err != nil {
+		t.Fatalf("marshal mp metadata: %v", err)
+	}
+	if err := p.meta.StoreAttribute(nil, bucket, key, mpMetaKey, mp); err != nil {
+		t.Fatalf("store mp metadata: %v", err)
+	}
+
+	t.Run("version id", func(t *testing.T) {
+		out, err := p.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		if err != nil {
+			t.Fatalf("get object: %v", err)
+		}
+		out.Body.Close()
+		if got := aws.ToString(out.VersionId); got != res.VersionID {
+			t.Fatalf("version id = %q, want the opened object's %q", got, res.VersionID)
+		}
+	})
+
+	t.Run("version id of a 304", func(t *testing.T) {
+		out, err := p.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:      aws.String(bucket),
+			Key:         aws.String(key),
+			IfNoneMatch: aws.String(trimEtag(res.ETag)),
+		})
+		if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+			t.Fatalf("get object: %v, want not modified", err)
+		}
+		if got := aws.ToString(out.VersionId); got != res.VersionID {
+			t.Fatalf("304 version id = %q, want the opened object's %q", got, res.VersionID)
+		}
+	})
+
+	t.Run("part number", func(t *testing.T) {
+		out, err := p.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:     aws.String(bucket),
+			Key:        aws.String(key),
+			PartNumber: aws.Int32(2),
+		})
+		if err != nil {
+			t.Fatalf("get part 2: %v", err)
+		}
+		defer out.Body.Close()
+		data, err := io.ReadAll(out.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if string(data) != "bbbb" || aws.ToInt32(out.PartsCount) != 2 {
+			t.Fatalf("part 2 = %q of %d parts, want bbbb of 2 parts", data, aws.ToInt32(out.PartsCount))
+		}
+	})
+
+	t.Run("parts count of a 304", func(t *testing.T) {
+		out, err := p.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:      aws.String(bucket),
+			Key:         aws.String(key),
+			PartNumber:  aws.Int32(1),
+			IfNoneMatch: aws.String(trimEtag(res.ETag)),
+		})
+		if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+			t.Fatalf("get object: %v, want not modified", err)
+		}
+		if got := aws.ToInt32(out.PartsCount); got != 2 {
+			t.Fatalf("304 parts count = %d, want 2", got)
+		}
+	})
+}
+
+// TestGetObjectETagReadError checks that an error reading the ETag of the
+// opened object other than a missing attribute fails the GET instead of
+// serving the object with the default ETag.
+func TestGetObjectETagReadError(t *testing.T) {
+	const (
+		bucket = "testbucket"
+		key    = "obj"
+	)
+	readErr := errors.New("etag read failed")
+	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		return stalePathEtagMeta{object: key, failAttr: etagkey, failErr: readErr}, PosixOpts{NewDirPerm: 0755}
+	})
+	createTestBucket(t, p, bucket)
+	if _, err := testPut(p, bucket, key, []byte("data"), nil, nil); err != nil {
+		t.Fatalf("put object: %v", err)
+	}
+	out, err := p.GetObject(context.Background(), &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+	if err == nil {
+		out.Body.Close()
+	}
+	if !errors.Is(err, readErr) {
+		t.Fatalf("get object: %v, want %v", err, readErr)
+	}
+}
+
+// TestGetObjectVersionMovedAfterLookup checks that a GET of a version that
+// was the live object when the request looked up its version id, and was
+// moved to the versioning directory by a PUT before the open, returns that
+// version's bytes and not the new live object's.
+func TestGetObjectVersionMovedAfterLookup(t *testing.T) {
+	const (
+		bucket = "testbucket"
+		key    = "obj"
+	)
+	var replace func()
+	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		return removeAfterReadMeta{object: key, attribute: versionIdKey, remove: &replace},
+			PosixOpts{NewDirPerm: 0755, VersioningDir: t.TempDir()}
+	})
+	createTestBucket(t, p, bucket)
+	ctx := context.Background()
+	if err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled); err != nil {
+		t.Fatalf("put bucket versioning: %v", err)
+	}
+	first, err := testPut(p, bucket, key, []byte("first"), nil, nil)
+	if err != nil {
+		t.Fatalf("put first: %v", err)
+	}
+
+	replace = func() {
+		_, err := p.PutObject(ctx, s3response.PutObjectInput{
+			Bucket:        aws.String(bucket),
+			Key:           aws.String(key),
+			Body:          strings.NewReader("second"),
+			ContentLength: aws.Int64(6),
+		})
+		if err != nil {
+			t.Errorf("put second: %v", err)
+		}
+	}
+	out, err := p.GetObject(ctx, &s3.GetObjectInput{
+		Bucket:    aws.String(bucket),
+		Key:       aws.String(key),
+		VersionId: aws.String(first.VersionID),
+	})
+	if err != nil {
+		t.Fatalf("get first version: %v", err)
+	}
+	defer out.Body.Close()
+	if replace != nil {
+		t.Fatal("get object did not look up the version id")
+	}
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(data) != "first" || aws.ToString(out.VersionId) != first.VersionID {
+		t.Fatalf("got %q of version %q, want %q of version %q", data, aws.ToString(out.VersionId), "first", first.VersionID)
+	}
 }

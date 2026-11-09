@@ -1400,10 +1400,11 @@ func (p *Posix) isBucketVersioningSuspended(s types.BucketVersioningStatus) bool
 }
 
 // liveObjVersionId returns the version id to report for the current version
-// of bucket/object, read from f when the caller has the object open so the id
-// belongs to the same inode as the body. An object with no versionId attribute is the null
-// version, but only a bucket with versioning configured has versions at all:
-// in a bucket that was never versioned the object has no version id.
+// of bucket/object, read from f when the caller has the object open so the
+// id belongs to the same inode as the body. An object with no versionId
+// attribute is the null version, but only a bucket with versioning
+// configured has versions at all: in a bucket that was never versioned the
+// object has no version id.
 func (p *Posix) liveObjVersionId(ctx context.Context, f *os.File, bucket, object string) (string, error) {
 	vId, err := p.meta.RetrieveAttribute(f, bucket, object, versionIdKey)
 	if err == nil {
@@ -6116,6 +6117,7 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 	}
 
 	requestedVersionId := versionId
+	origBucket := bucket
 	object := p.encodeKey(*input.Key)
 	err = p.validateObjectName(bucket, object)
 	if err != nil {
@@ -6206,6 +6208,15 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 			f.Close()
 		}
 	}()
+	// goneErr is what a read answers when the object was removed after the
+	// stat above. It names a version only when the request named one, not
+	// when the version id was looked up for the live object.
+	goneErr := func() error {
+		if requestedVersionId != "" {
+			return s3err.GetNoSuchVersionErr(*input.Key, requestedVersionId)
+		}
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
 	if !fid.IsDir() {
 		// openForRead opens with FILE_SHARE_DELETE on Windows so that a concurrent
 		// DeleteObject can call os.Remove on this file while the GET response body
@@ -6214,13 +6225,39 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 		if IsEntryGone(err) {
 			// the object was removed after the stat above, or its directory
 			// was, which a shared filesystem can report as ENOTDIR or ESTALE.
-			if versionId != "" {
-				return nil, s3err.GetNoSuchVersionErr(*input.Key, versionId)
-			}
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+			return nil, goneErr()
 		}
 		if err != nil {
 			return nil, fmt.Errorf("open object: %w", err)
+		}
+
+		if requestedVersionId != "" && bucket == origBucket {
+			// the name resolved to the live object from the versionId it had
+			// when it was read by path; a PUT can have linked a new inode
+			// since, so check the id of the inode just opened
+			vId, err := p.meta.RetrieveAttribute(f, bucket, object, versionIdKey)
+			if errors.Is(err, meta.ErrNoSuchKey) {
+				vId, err = []byte(nullVersionId), nil
+			}
+			if err != nil {
+				return nil, fmt.Errorf("get obj versionId: %w", err)
+			}
+			if string(vId) != requestedVersionId {
+				// the requested version was moved to the versioning
+				// directory, read it from there
+				f.Close()
+				f = nil
+				bucket = filepath.Join(p.versioningDir, bucket)
+				object = filepath.Join(genObjVersionKey(object), requestedVersionId)
+				objPath = p.ObjectPath(bucket, object)
+				f, err = openForRead(objPath, p.enableODirect)
+				if IsEntryGone(err) {
+					return nil, goneErr()
+				}
+				if err != nil {
+					return nil, fmt.Errorf("open object: %w", err)
+				}
+			}
 		}
 
 		fi, err = f.Stat()
@@ -6230,6 +6267,11 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 	}
 
 	b, err := p.meta.RetrieveAttribute(f, bucket, object, etagkey)
+	if IsEntryGone(err) {
+		// a directory object has no open file, so its attribute is read by
+		// path and the delete can come between the stat and this read
+		return nil, goneErr()
+	}
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return nil, fmt.Errorf("get object etag: %w", err)
 	}
