@@ -31,6 +31,7 @@ import (
 	"github.com/aws/smithy-go"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/internal/novaluesclient"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -65,11 +66,15 @@ type S3Proxy struct {
 
 var _ backend.Backend = &S3Proxy{}
 
+// NewWithClient uses a copy of client whose HTTP client does not see the
+// values of the backend call's context; see package novaluesclient.
 func NewWithClient(ctx context.Context, client *s3.Client, metaBucket string) (*S3Proxy, error) {
 	s := &S3Proxy{
 		metaBucket: metaBucket,
 	}
-	s.client = client
+	s.client = s3.New(client.Options(), func(o *s3.Options) {
+		o.HTTPClient = novaluesclient.Wrap(o.HTTPClient)
+	})
 	return s, s.validate(ctx)
 }
 

@@ -19,7 +19,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -28,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"github.com/versity/versitygw/internal/novaluesclient"
 )
 
 func (s *S3Proxy) getClientWithCtx(ctx context.Context) (*s3.Client, error) {
@@ -62,11 +62,15 @@ func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Con
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: s.sslSkipVerify},
 		Proxy:           http.ProxyFromEnvironment,
 	}
-	client := &http.Client{Transport: requestContextTransport{tr}}
+	client := &http.Client{Transport: tr}
 
 	opts := []func(*config.LoadOptions) error{
 		config.WithRegion(s.awsRegion),
-		config.WithHTTPClient(client),
+		// Keeps net/http from reading values of the backend call's context,
+		// the *fasthttp.RequestCtx, after the call has returned. Wrapped here
+		// rather than on the S3 client only, so the requests of the
+		// credential providers are covered too. See package novaluesclient.
+		config.WithHTTPClient(novaluesclient.Wrap(client)),
 	}
 
 	if access != "" {
@@ -102,62 +106,6 @@ func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Con
 	}
 
 	return config.LoadDefaultConfig(ctx, opts...)
-}
-
-// requestContextTransport limits what the transport's own goroutines can
-// read from the context of the backend call.
-//
-// The gateway hands backends the *fasthttp.RequestCtx of the request, and
-// fasthttp resets and reuses it for the next request once the handler
-// returns, so its Value must not be called after that (#2309). net/http
-// reads the request's context on connection goroutines that can outlive
-// RoundTrip: it unregisters the request's context from its parent after the
-// response body is done, and a dial it started keeps going after another
-// connection served the request.
-type requestContextTransport struct {
-	http.RoundTripper
-}
-
-func (t requestContextTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	ctx := &roundTripContext{Context: req.Context(), values: context.WithoutCancel(req.Context())}
-	defer ctx.end()
-	return t.RoundTripper.RoundTrip(req.WithContext(ctx))
-}
-
-// CloseIdleConnections lets http.Client.CloseIdleConnections reach the
-// wrapped transport.
-func (t requestContextTransport) CloseIdleConnections() {
-	if c, ok := t.RoundTripper.(interface{ CloseIdleConnections() }); ok {
-		c.CloseIdleConnections()
-	}
-}
-
-// roundTripContext has the deadline and cancellation of its parent, and the
-// parent's values until end is called. Lookups of the context package's own
-// cancellation key stop at context.WithoutCancel, so the contexts net/http
-// derives from it are unregistered without a lookup in the parent.
-type roundTripContext struct {
-	context.Context
-	values context.Context
-
-	mu    sync.RWMutex
-	ended bool
-}
-
-func (c *roundTripContext) Value(key any) any {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.ended {
-		return nil
-	}
-	return c.values.Value(key)
-}
-
-// end waits for lookups in progress and makes later ones return nil.
-func (c *roundTripContext) end() {
-	c.mu.Lock()
-	c.ended = true
-	c.mu.Unlock()
 }
 
 // gcsIgnoredHeadersKey is the context key for headers temporarily removed
