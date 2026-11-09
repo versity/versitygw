@@ -136,11 +136,12 @@ run_tests() {
 
 usage() {
   printf '%s\n' "Usage: $0 -l|--list"
-  printf '%s\n' "Usage: $0 <docker image tag> <test suites> [max parallel jobs] [log folder] [--rebuild|--build-if-missing|--use-tag] [--log-file <path>] [--html-report <path>]"
+  printf '%s\n' "Usage: $0 <docker image tag> <test suites> [--log-folder <path>] [--max-parallel-jobs <count>] [--build-mode <mode>] [--log-file <path>] [--html-report <path>]"
   printf '%s\n' "  -l, --list          List available test suites without running Docker."
-  printf '%s\n' "  --rebuild           Rebuild the Docker image before testing."
-  printf '%s\n' "  --build-if-missing  Build the Docker image only if the tag does not exist."
-  printf '%s\n' "  --use-tag           Use the provided tag without building (default)."
+  printf '%s\n' "  all                Use as the test suites argument to run every discovered suite."
+  printf '%s\n' "  --log-folder <path> Directory for suite logs (default: $DEFAULT_DOCKER_LOG_FOLDER)."
+  printf '%s\n' "  --max-parallel-jobs <count> Maximum concurrent suites (default: $DEFAULT_MAX_PARALLEL_JOBS)."
+  printf '%s\n' "  --build-mode <mode> rebuild: always build; build-if-missing: build only if absent; use-tag: use existing image (default)."
   printf '%s\n' "  --log-file <path>   Append runner status messages to a file as well as stdout."
   printf '%s\n' "  --html-report <path> Write an HTML status report with links to suite logs (overwrites)."
 }
@@ -208,11 +209,26 @@ build_mode="use-tag"
 runner_log_file=""
 html_report_file=""
 html_report_ready=false
-docker_log_folder_set=false
 shift 2
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --log-folder)
+      if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
+        echo "--log-folder requires a directory path" >&2
+        exit 1
+      fi
+      docker_log_folder="$2"
+      shift
+      ;;
+    --max-parallel-jobs)
+      if [ $# -lt 2 ] || ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
+        echo "--max-parallel-jobs requires a positive integer" >&2
+        exit 1
+      fi
+      max_parallel_jobs="$2"
+      shift
+      ;;
     --html-report)
       if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
         echo "--html-report requires a file path" >&2
@@ -229,38 +245,46 @@ while [ $# -gt 0 ]; do
       runner_log_file="$2"
       shift
       ;;
-    --rebuild)
-      build_mode="rebuild"
-      ;;
-    --build-if-missing)
-      build_mode="build-if-missing"
-      ;;
-    --use-tag)
-      build_mode="use-tag"
+    --build-mode)
+      case "${2:-}" in
+        rebuild|build-if-missing|use-tag) build_mode="$2" ;;
+        *)
+          echo "--build-mode requires rebuild, build-if-missing, or use-tag" >&2
+          exit 1
+          ;;
+      esac
+      shift
       ;;
     -h|--help)
       usage
       exit 0
       ;;
+    --*)
+      echo "unknown option '$1'" >&2
+      exit 1
+      ;;
     *)
-      if [[ "$1" =~ ^[0-9]+$ ]]; then
-        if [ "$1" -le 0 ]; then
-          echo "max parallel jobs must be at least 1"
-          exit 1
-        fi
-        max_parallel_jobs="$1"
-      elif [ "$docker_log_folder_set" == "false" ]; then
-        docker_log_folder="$1"
-        docker_log_folder_set=true
-      else
-        echo "unknown option or extra parameter '$1'"
-        usage
-        exit 1
-      fi
+      echo "unknown option or extra parameter '$1'"
+      usage
+      exit 1
       ;;
   esac
   shift
 done
+
+if [ "$test_list" == "all" ]; then
+  if ! test_list=$(./tests/run.sh -l); then
+    echo "unable to list test suites" >&2
+    exit 1
+  fi
+  if [[ "$test_list" != *[![:space:]]* ]]; then
+    echo "no test suites found" >&2
+    exit 1
+  fi
+elif [[ ",$test_list," == *,all,* ]]; then
+  echo "all must be used alone, not combined with other suites" >&2
+  exit 1
+fi
 
 if [ -n "$runner_log_file" ] && ! { : >> "$runner_log_file"; }; then
   echo "unable to write runner log file '$runner_log_file'" >&2
@@ -272,6 +296,10 @@ if [ -n "$html_report_file" ]; then
     exit 1
   fi
   html_report_file="$html_report_dir/$(basename "$html_report_file")"
+  if [ -f "$html_report_file" ]; then
+    echo "html report file '$html_report_file' already exists"
+    exit 1
+  fi
   if [ -n "$runner_log_file" ] && [ "$runner_log_file" -ef "$html_report_file" ]; then
     echo "HTML report and text log must be different files" >&2
     exit 1

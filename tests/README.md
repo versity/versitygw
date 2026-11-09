@@ -96,13 +96,17 @@ To communicate directly with s3, in order to compare the gateway results to dire
 
 ### In Parallel
 
-The script `run_parallel.sh` is provided to allow users to more quickly run tests in parallel on the local machine.  To use this script, first build and tag a docker container with the desired configuration.  Next, run the script with this tag, the desired tests (can find with `./tests/run.sh -l`) separated by comma, the maximum number of parallel jobs (default 4), and the folder to place the logs.
+The script `run_parallel.sh` is provided to allow users to more quickly run tests in parallel on the local machine. To use this script, first build and tag a Docker image with the desired configuration. Next, run the script with this tag and the desired tests (find with `./tests/run.sh -l`) separated by comma. Set the suite log directory with `--log-folder <path>` (default `$PWD/runtime/log`). Set the maximum number of concurrent suites with `--max-parallel-jobs <count>` (default 4); the count must be a positive integer.
 
-To also append runner status messages to a file, add `--log-file <path>`, for example: `./tests/run_parallel.sh bats_test s3 4 runtime/log --log-file runtime/parallel.log`. The parent directory must exist. Per-suite Docker output continues to be written separately in the specified log folder.
+To also append runner status messages to a file, add `--log-file <path>`, for example: `./tests/run_parallel.sh bats_test s3 --log-folder runtime/log --max-parallel-jobs 4 --log-file runtime/parallel.log`. The parent directory must exist. Per-suite Docker output continues to be written separately in the specified log folder.
 
 Use `./tests/run_parallel.sh -l` (or `--list`) to list available suites without running Docker.
 
-Add `--html-report runtime/log/index.html` to write an HTML report of runner status messages, durations, and links to every suite's Docker log. The report's parent directory must exist, and an existing report is overwritten. For example: `./tests/run_parallel.sh bats_test s3 4 runtime/log --html-report runtime/log/index.html`. This option can be combined with `--log-file` using a different file. Links are relative to the report; keep the report and suite logs together when moving or sharing them. Docker log contents remain plain text.
+Use `--build-mode <mode>` to choose image preparation: `rebuild` always builds before testing, `build-if-missing` builds only if the image tag is absent, and `use-tag` requires an existing image without building (the default).
+
+Use `all` as the suite argument to run every suite returned by `./tests/run.sh -l`, with a separate container per suite and the configured parallel job limit: `./tests/run_parallel.sh bats_test all --log-folder runtime/log --max-parallel-jobs 4 --build-mode rebuild`. `all` must be used alone, not in a list such as `s3,all`. Suite discovery uses the host checkout, so rebuild the image to ensure it contains the same suites. Discovery failure or an empty suite list stops execution before Docker is invoked.
+
+Add `--html-report runtime/log/index.html` to write an HTML report of runner status messages, durations, and links to every suite's Docker log. The report's parent directory must exist, and an existing report is overwritten. For example: `./tests/run_parallel.sh bats_test s3 --log-folder runtime/log --max-parallel-jobs 4 --html-report runtime/log/index.html`. This option can be combined with `--log-file` using a different file. Links are relative to the report; keep the report and suite logs together when moving or sharing them. Docker log contents remain plain text.
 
 ## Instructions - Running with docker-compose
 
