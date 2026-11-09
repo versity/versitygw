@@ -28,10 +28,10 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-// stalePathEtagMeta is the window a GET has when it reads the ETag by path
-// and opens the body afterwards. A path read still sees the ETag of the
-// object that the name used to point at; a read on the opened file sees the
-// ETag stored on the inode that was opened, which is the inode of the body.
+// stalePathEtagMeta returns a different ETag for a path read of the object
+// than for a read on the open file. The path read stands for the ETag of the
+// inode the name pointed at before a PUT linked a new one; the read on the
+// open file returns the ETag stored on the inode that was opened.
 type stalePathEtagMeta struct {
 	meta.XattrMeta
 	object   string
@@ -73,7 +73,7 @@ func TestGetObjectETagMatchesOpenedFile(t *testing.T) {
 		t.Fatalf("put etag = %q, want the inode etag distinct from %q", inodeEtag, pathEtag)
 	}
 
-	t.Run("etag is the opened object's", func(t *testing.T) {
+	t.Run("etag of the opened object", func(t *testing.T) {
 		data, etag := getTestObject(t, p, bucket, key)
 		if !bytes.Equal(data, []byte(body)) {
 			t.Fatalf("body = %q, want %q", data, body)
@@ -83,7 +83,7 @@ func TestGetObjectETagMatchesOpenedFile(t *testing.T) {
 		}
 	})
 
-	t.Run("if-match of the opened object", func(t *testing.T) {
+	t.Run("if-match with the opened object etag", func(t *testing.T) {
 		out, err := p.GetObject(context.Background(), &s3.GetObjectInput{
 			Bucket:  aws.String(bucket),
 			Key:     aws.String(key),
@@ -102,7 +102,7 @@ func TestGetObjectETagMatchesOpenedFile(t *testing.T) {
 		}
 	})
 
-	t.Run("if-match of the path etag", func(t *testing.T) {
+	t.Run("if-match with the path etag", func(t *testing.T) {
 		out, err := p.GetObject(context.Background(), &s3.GetObjectInput{
 			Bucket:  aws.String(bucket),
 			Key:     aws.String(key),
@@ -114,6 +114,20 @@ func TestGetObjectETagMatchesOpenedFile(t *testing.T) {
 		want := s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)
 		if !errors.Is(err, want) {
 			t.Fatalf("get with If-Match of the replaced object: %v, want %v", err, want)
+		}
+	})
+
+	t.Run("if-none-match with the opened object etag", func(t *testing.T) {
+		out, err := p.GetObject(context.Background(), &s3.GetObjectInput{
+			Bucket:      aws.String(bucket),
+			Key:         aws.String(key),
+			IfNoneMatch: aws.String(trimEtag(inodeEtag)),
+		})
+		if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+			t.Fatalf("get with If-None-Match of the opened object: %v, want not modified", err)
+		}
+		if out == nil || aws.ToString(out.ETag) != inodeEtag {
+			t.Fatalf("304 output = %+v, want etag %q", out, inodeEtag)
 		}
 	})
 }

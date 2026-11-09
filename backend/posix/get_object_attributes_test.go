@@ -177,19 +177,15 @@ func TestGetObjectRemovedBeforeOpen(t *testing.T) {
 		replaceDir                bool
 		versioned, requestVersion bool
 	}{
-		{"object removed", false, false, false},
-		{"directory replaced by object", true, false, false},
-		{"versioned directory replaced by object", true, true, false},
+		{"object removed", false, true, false},
+		{"directory replaced by object", true, true, false},
+		{"requested version removed", false, true, true},
 		{"requested version directory replaced by object", true, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// remove the object after the last read GetObject does before
-			// its open: the version id of the live object when the bucket
-			// is versioned and the request names no version, else the etag
-			attribute := etagkey
-			if tc.versioned && !tc.requestVersion {
-				attribute = versionIdKey
-			}
+			// remove the object after the delete marker check, the last read
+			// GetObject does before its open (the attributes are read after it)
+			attribute := deleteMarkerKey
 			var remove func()
 			p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
 				opts := PosixOpts{NewDirPerm: 0755}
