@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -72,14 +73,14 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 	}}
 
 	if sasToken != "" {
+		// A token copied with its leading "?" would otherwise be sent twice.
+		sasToken = strings.TrimPrefix(sasToken, "?")
 		// Reject invalid queries before request construction can echo the token.
-		for i := 0; i < len(sasToken); i++ {
-			if sasToken[i] < 0x20 || sasToken[i] == 0x7f {
-				return nil, Credentials{}, errors.New("invalid SAS token")
-			}
+		if strings.ContainsFunc(sasToken, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+			return nil, Credentials{}, errors.New("invalid SAS token: contains a control character")
 		}
 		if _, err := url.ParseQuery(sasToken); err != nil {
-			return nil, Credentials{}, errors.New("invalid SAS token")
+			return nil, Credentials{}, errors.New("invalid SAS token: malformed query")
 		}
 		client, err := azblob.NewClientWithNoCredential(svcURL+"?"+sasToken, opts)
 		if err != nil {

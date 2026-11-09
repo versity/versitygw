@@ -115,14 +115,30 @@ func TestNewKeepsSASOutOfTransportErrors(t *testing.T) {
 }
 
 func TestNewRejectsInvalidSASWithoutLeakingToken(t *testing.T) {
-	for _, token := range []string{"sig=SECRET\n", "sig=SECRET\r", "sig=SECRET\x00", "sig=SECRET\x7f", "sig=SECRET%zz", "sig=SECRET;bad"} {
-		t.Run(token, func(t *testing.T) {
-			client, creds, err := New("", "", "http://localhost/acct", token)
+	for _, tt := range []struct{ name, token string }{
+		{"newline", "sig=SECRET\n"},
+		{"carriage return", "sig=SECRET\r"},
+		{"nul", "sig=SECRET\x00"},
+		{"del", "sig=SECRET\x7f"},
+		{"bad escape", "sig=SECRET%zz"},
+		{"semicolon", "sig=SECRET;bad"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client, creds, err := New("", "", "http://localhost/acct", tt.token)
 			assert.Nil(t, client)
 			assert.Empty(t, creds)
 			if assert.Error(t, err) {
 				assert.NotContains(t, err.Error(), "SECRET")
 			}
 		})
+	}
+}
+
+func TestNewTrimsLeadingQuestionMarkFromSAS(t *testing.T) {
+	client, creds, err := New("", "", "http://localhost/acct", "?sv=2024-01-01&sig=abc")
+	if assert.NoError(t, err) {
+		assert.NotNil(t, client)
+		assert.Equal(t, "sv=2024-01-01&sig=abc", creds.SASToken)
+		assert.NotContains(t, client.URL(), "??")
 	}
 }
