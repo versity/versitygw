@@ -17,14 +17,13 @@ package integration
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -1027,23 +1026,37 @@ func HeadObject_GetObject_race_with_delete(s *S3Conf) error {
 	})
 }
 
-// GetObject_etag_race_with_put reads objects with GetObject while they are
-// overwritten over and over. The ETag of a PutObject is the MD5 of its body,
-// so the ETag of a read must be the MD5 of the body it returns: a read that
-// takes the ETag from one version of the object and the body from another
-// fails. The sidecar metadata is not stored on the object's inode, so this
-// check does not apply to it.
+// GetObject_etag_race_with_put reads one object with GetObject while it is
+// overwritten over and over. The ETag returned by every PutObject is recorded
+// with the body it was uploaded with, without assuming how the gateway
+// computes it (it is not the MD5 of the body with --data-integrity-etag).
+// A read that takes the ETag from one version of the object and the body
+// from another is told apart: the body of every read must be the body
+// recorded for the ETag of that read. Every other read sends the ETag of the
+// previous read as If-Match: it either fails the precondition, or it returns
+// that very ETag and the body recorded for it. The sidecar metadata is not
+// stored on the object's inode, so this check does not apply to it.
 func GetObject_etag_race_with_put(s *S3Conf) error {
 	testName := "GetObject_etag_race_with_put"
-	const workers, iterations = 16, 100
+	const writers, readers, iterations = 4, 4, 100
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		return raceWorkers(workers, iterations, func(w, i int) error {
-			key := fmt.Sprintf("race/%d/obj", w/2)
-			if w%2 == 0 {
+		key := "race/obj"
+
+		type read struct {
+			etag string
+			body []byte
+		}
+		var mu sync.Mutex
+		bodies := map[string][]byte{}
+		var reads []read
+		prev := make([]string, readers)
+
+		err := raceWorkers(writers+readers, iterations, func(w, i int) error {
+			if w < writers {
 				body := fmt.Appendf(nil, "%s version %d-%d\n", key, w, i)
 				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 				defer cancel()
-				_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				out, err := s3client.PutObject(ctx, &s3.PutObjectInput{
 					Bucket: &bucket,
 					Key:    &key,
 					Body:   bytes.NewReader(body),
@@ -1051,17 +1064,32 @@ func GetObject_etag_race_with_put(s *S3Conf) error {
 				if err != nil {
 					return fmt.Errorf("put %v: %w", key, err)
 				}
+				mu.Lock()
+				bodies[aws.ToString(out.ETag)] = body
+				mu.Unlock()
 				return nil
 			}
 
+			// each reader is one worker, so prev[r] is not shared
+			r := w - writers
+			input := &s3.GetObjectInput{Bucket: &bucket, Key: &key}
+			ifMatch := i%2 == 1 && prev[r] != ""
+			if ifMatch {
+				input.IfMatch = &prev[r]
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			defer cancel()
-			out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
-				Bucket: &bucket,
-				Key:    &key,
-			})
+			out, err := s3client.GetObject(ctx, input)
 			if err != nil {
-				// the writer of the pair may not have uploaded yet
+				if ifMatch {
+					// the object was overwritten since the previous read
+					if err := checkSdkApiErr(err, "PreconditionFailed"); err != nil {
+						return fmt.Errorf("get %v if-match %v: %w", key, prev[r], err)
+					}
+					prev[r] = ""
+					return nil
+				}
+				// no writer may have uploaded yet
 				if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
 					return fmt.Errorf("get %v: %w", key, err)
 				}
@@ -1072,13 +1100,31 @@ func GetObject_etag_race_with_put(s *S3Conf) error {
 			if err != nil {
 				return fmt.Errorf("read %v: %w", key, err)
 			}
-			sum := md5.Sum(body)
-			want := fmt.Sprintf("%q", hex.EncodeToString(sum[:]))
-			if got := aws.ToString(out.ETag); got != want {
-				return fmt.Errorf("get %v: etag %v does not belong to the body returned, want %v", key, got, want)
+			etag := aws.ToString(out.ETag)
+			if ifMatch && etag != prev[r] {
+				return fmt.Errorf("get %v if-match %v: returned etag %v", key, prev[r], etag)
 			}
+			prev[r] = etag
+			mu.Lock()
+			reads = append(reads, read{etag: etag, body: body})
+			mu.Unlock()
 			return nil
 		})
+		if err != nil {
+			return err
+		}
+
+		// the writers are done, so every etag a read returned is recorded
+		for _, rd := range reads {
+			want, ok := bodies[rd.etag]
+			if !ok {
+				return fmt.Errorf("get %v: etag %v was not returned by any put", key, rd.etag)
+			}
+			if !bytes.Equal(rd.body, want) {
+				return fmt.Errorf("get %v: etag %v does not belong to the body returned: got %q, want %q", key, rd.etag, rd.body, want)
+			}
+		}
+		return nil
 	})
 }
 

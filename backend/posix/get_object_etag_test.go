@@ -328,3 +328,113 @@ func TestGetObjectVersionMovedAfterLookup(t *testing.T) {
 		t.Fatalf("got %q of version %q, want %q of version %q", data, aws.ToString(out.VersionId), "first", first.VersionID)
 	}
 }
+
+// beforeReadMeta runs run, once it is set, right before the next read of
+// attribute of object, so that the object is changed between the open of the
+// object and that read.
+type beforeReadMeta struct {
+	meta.XattrMeta
+	object    string
+	attribute string
+	run       *func()
+}
+
+func (m beforeReadMeta) RetrieveAttribute(f *os.File, bucket, object, attribute string) ([]byte, error) {
+	if object == m.object && attribute == m.attribute && *m.run != nil {
+		run := *m.run
+		*m.run = nil
+		run()
+	}
+	return m.XattrMeta.RetrieveAttribute(f, bucket, object, attribute)
+}
+
+// TestGetObjectLiveVersionIdFromOpenedFile checks that a GET without a
+// version id of a versioned bucket reports the version id of the object it
+// opened, for the 200 and for the 304, when the object is replaced after the
+// open and before the version id is read: a version id read by path would be
+// the new object's. When the object is removed there, the answer is
+// NoSuchKey.
+func TestGetObjectLiveVersionIdFromOpenedFile(t *testing.T) {
+	const (
+		bucket = "testbucket"
+		key    = "obj"
+	)
+	for _, tc := range []struct {
+		name        string
+		remove      bool
+		notModified bool
+	}{
+		{"replaced 200", false, false},
+		{"replaced 304", false, true},
+		{"removed 200", true, false},
+		{"removed 304", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var change func()
+			p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+				return beforeReadMeta{object: key, attribute: versionIdKey, run: &change},
+					PosixOpts{NewDirPerm: 0755, VersioningDir: t.TempDir()}
+			})
+			createTestBucket(t, p, bucket)
+			ctx := context.Background()
+			if err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled); err != nil {
+				t.Fatalf("put bucket versioning: %v", err)
+			}
+			first, err := testPut(p, bucket, key, []byte("first"), nil, nil)
+			if err != nil {
+				t.Fatalf("put first: %v", err)
+			}
+
+			change = func() {
+				if tc.remove {
+					if err := os.Remove(p.ObjectPath(bucket, key)); err != nil {
+						t.Errorf("remove object: %v", err)
+					}
+					return
+				}
+				if _, err := testPut(p, bucket, key, []byte("second"), nil, nil); err != nil {
+					t.Errorf("put second: %v", err)
+				}
+			}
+			input := &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)}
+			if tc.notModified {
+				input.IfNoneMatch = aws.String(trimEtag(first.ETag))
+			}
+			out, err := p.GetObject(ctx, input)
+			if change != nil {
+				t.Fatal("get object did not read the version id")
+			}
+			if tc.remove {
+				// the object's tags and attributes are read by path, so a
+				// removed object is a 404, never a 200 or 304 of a removed one
+				if err == nil {
+					out.Body.Close()
+				}
+				if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+					t.Fatalf("get object: expected NoSuchKey, got %v", err)
+				}
+				return
+			}
+			if tc.notModified {
+				if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+					t.Fatalf("get object: expected NotModified, got %v", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("get object: %v", err)
+				}
+				defer out.Body.Close()
+				data, err := io.ReadAll(out.Body)
+				if err != nil {
+					t.Fatalf("read body: %v", err)
+				}
+				if string(data) != "first" {
+					t.Fatalf("got body %q, want %q", data, "first")
+				}
+			}
+			if got := aws.ToString(out.VersionId); got != first.VersionID {
+				t.Fatalf("got version id %q, want %q of the opened object", got, first.VersionID)
+			}
+		})
+	}
+}

@@ -67,7 +67,7 @@ if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow --paral
 	exit 1
 fi
 # posix tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 posix; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 posix $SIDECAR_TEST_FLAG; then
 	echo "posix tests failed"
 	kill $GW_PID
 	exit 1
@@ -107,7 +107,7 @@ if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071
 	exit 1
 fi
 # posix tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 posix; then
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 posix $SIDECAR_TEST_FLAG; then
 	echo "posix tests failed"
 	kill $GW_HTTPS_PID
 	exit 1
@@ -144,7 +144,7 @@ if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 full-flow -vs --p
 	exit 1
 fi
 # posix tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 posix -vs; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 posix -vs $SIDECAR_TEST_FLAG; then
 	echo "versiongin-enabled posix tests failed"
 	kill $GW_VS_PID
 	exit 1
@@ -176,7 +176,7 @@ if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073
 	exit 1
 fi
 # posix tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073 posix -vs; then
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073 posix -vs $SIDECAR_TEST_FLAG; then
 	echo "versiongin-enabled posix tests failed"
 	kill $GW_VS_HTTPS_PID
 	exit 1
