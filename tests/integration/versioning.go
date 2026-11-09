@@ -7571,7 +7571,7 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 				return nil
 			}
 
-			policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectAttributes"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectAttributes", "s3:GetObject"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
 			err = putBucketPolicy(s3client, bucket, policy)
 			if err != nil {
 				return err
@@ -7589,7 +7589,7 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 				return err
 			}
 
-			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectVersionAttributes"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectVersionAttributes", "s3:GetObjectVersion"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
 			err = putBucketPolicy(s3client, bucket, policy)
 			if err != nil {
 				return err

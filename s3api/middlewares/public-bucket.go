@@ -36,7 +36,6 @@ var objectVersionActions = map[auth.Action]auth.Action{
 	auth.GetObjectTaggingAction:    auth.GetObjectVersionTaggingAction,
 	auth.PutObjectTaggingAction:    auth.PutObjectVersionTaggingAction,
 	auth.DeleteObjectTaggingAction: auth.DeleteObjectVersionTaggingAction,
-	auth.GetObjectAttributesAction: auth.GetObjectVersionAttributesAction,
 }
 
 // AuthorizePublicBucketAccess checks if the bucket grants public
@@ -86,6 +85,10 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 		// attribute it sets on the object, and the bucket has to grant
 		// every one of them publicly.
 		switch s3action {
+		case metrics.ActionGetObjectAttributes:
+			// Reading an object's attributes takes read access to the
+			// object itself too, granted publicly as well.
+			actions = auth.ObjectAttributesActions(ctx.Query("versionId"))
 		case metrics.ActionPutObject:
 			if err := verifyAnonymousUploadLock(ctx, be, bucket); err != nil {
 				return err
