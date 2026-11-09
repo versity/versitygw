@@ -31,10 +31,10 @@
 //     s.done is atomic (fasthttp v1.77 server.go); re-check this when
 //     bumping fasthttp.
 //   - The context net/http derives for a request cannot find a cancelable
-//     ancestor through Value, so context.Cause of the parent is not
-//     propagated to it, and the context package starts a goroutine per
-//     round trip to forward cancellation. This is not hit today because the
-//     root of the backend call's context is the RequestCtx.
+//     ancestor through Value, so it does not register with one and
+//     context.Cause of the parent is not propagated to it. Neither changes
+//     anything today: the root is the RequestCtx, which is not a cancelCtx,
+//     so net/http already forwarded cancellation with a goroutine.
 //   - Request-context values are not needed inside net/http. The one
 //     exception, an httptrace.ClientTrace, is carried over. If SDK metrics
 //     are ever enabled, smithy-go's trace hooks capture the request context
