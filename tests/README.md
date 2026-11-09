@@ -90,7 +90,7 @@ To communicate directly with s3, in order to compare the gateway results to dire
 3.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to your secrets and config file, respectively, if not using the defaults.  Example:  `docker build -t <tag> --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" -f tests/Dockerfile_test_bats .`.  Also, default docker parameters, such as `TARGETARCH`, at the top of the Dockerfile can be changed by the user if needed.
 4.  To run the entire suite, run `docker run -it <image name>`.  This is not recommended due to the sheer amount of tests.  To run an individual suite, pass in the name of the suite as defined in `tests/run.sh` (e.g. REST bucket tests -> `docker run -it <image tag or ID> rest-bucket`).  Also, multiple specific suites can be run, if separated by comma.  
 5.  To list all suites available, the `-h` tag can be passed.  Example:  `docker run -t <image tag or ID> -h`.
-6.  By default, the config is placed in the `/home/tester/config` folder inside the container.  Logs are printed to `/home/tester/log`.  To overwrite the config, an `.env` folder can be placed in a mounted host folder, and to view the logs, a mounted folder can also be used.  Example:  `docker run -v $PWD/runtime/config:/home/tester/config -v $PWD/runtime/log:/home/tester/log -t bats_test s3`
+6.  By default, the config is placed in the `/home/tester/config` folder inside the container.  Logs are printed to `/home/tester/log`.  To overwrite and easily be able to change the config, the `.env` and `.secrets` files can be placed in a mounted host folder. To view the logs on the host and keep them persistent, a mounted folder can also be used here.  Example:  `docker run -v $PWD/runtime/config:/home/tester/config -v $PWD/runtime/log:/home/tester/log -t bats_test s3`
 6.  To use tag functionality, the `--tags` parameter can be passed to the container.
 7.  To troubleshoot the Docker container, use `docker run -it --entrypoint /bin/bash <image tag or ID>` to use the shell and examine the container.
 
@@ -101,6 +101,8 @@ The script `run_parallel.sh` is provided to allow users to more quickly run test
 To also append runner status messages to a file, add `--log-file <path>`, for example: `./tests/run_parallel.sh bats_test s3 4 runtime/log --log-file runtime/parallel.log`. The parent directory must exist. Per-suite Docker output continues to be written separately in the specified log folder.
 
 Use `./tests/run_parallel.sh -l` (or `--list`) to list available suites without running Docker.
+
+Add `--html-report runtime/log/index.html` to write an HTML report of runner status messages, durations, and links to every suite's Docker log. The report's parent directory must exist, and an existing report is overwritten. For example: `./tests/run_parallel.sh bats_test s3 4 runtime/log --html-report runtime/log/index.html`. This option can be combined with `--log-file` using a different file. Links are relative to the report; keep the report and suite logs together when moving or sharing them. Docker log contents remain plain text.
 
 ## Instructions - Running with docker-compose
 

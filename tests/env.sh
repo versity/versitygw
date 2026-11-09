@@ -450,7 +450,16 @@ main_log_cleanup() {
       fi
       # for docker
       if [ "$BATS_TEST_COMPLETED" != "1" ]; then
-        echo "Log info written to '$TEST_LOG_FILE'" >&2
+        if [ -n "${HOST_LOG_FOLDER:-}" ]; then
+          case "$TEST_LOG_FILE" in
+            /home/tester/log/*)
+              display_log_path="${HOST_LOG_FOLDER%/}/${TEST_LOG_FILE#/home/tester/log/}"
+              echo "Log info written to '$display_log_path'"
+              ;;
+          esac
+        else
+          echo "Log info written to '$TEST_LOG_FILE'" >&2
+        fi
       fi
     fi
     if ! error=$(rm "${TEST_LOG_FILE}.${TEST_ID}" 2>&1); then

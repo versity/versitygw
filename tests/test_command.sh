@@ -91,6 +91,44 @@ source ./tests/setup_unit.sh
   assert_output "$expected"
 }
 
+# tags: unit
+@test "run parallel - HTML report escapes messages and links every suite log" {
+  local report="$BATS_TEST_TMPDIR/reports/index.html" contents
+  mkdir -p "$BATS_TEST_TMPDIR/reports"
+  report="$(cd "$BATS_TEST_TMPDIR/reports" && pwd -P)/index.html"
+
+  run bash -c '
+    docker() {
+      if [ "$1" == "image" ]; then return 0; fi
+      for arg in "$@"; do if [ "$arg" == "-t" ]; then return 99; fi; done
+      printf "%s\n" "suite output"
+      if [ "${!#}" == "failing-suite" ]; then return 7; fi
+    }
+    export -f docker
+    bash ./tests/run_parallel.sh fake-image "pass&<suite>,failing-suite" 1 "$1/suite logs" --html-report "$2"
+  ' bash "$BATS_TEST_TMPDIR" "$report"
+
+  assert_failure 1
+  assert_output -p "HTML report: $report"
+  contents=$(<"$report")
+  [[ "$contents" == *"pass&amp;&lt;suite&gt;"* ]]
+  [[ "$contents" != *"pass&<suite>"* ]]
+  [[ "$contents" == *"finished with status &#39;0&#39;"* ]]
+  [[ "$contents" == *"finished with status &#39;7&#39;"* ]]
+  [[ "$contents" == *'href="../suite%20logs/pass%26%3Csuite%3E-'* ]]
+  [[ "$contents" == *'href="../suite%20logs/failing-suite-'* ]]
+  [[ "$contents" == *"duration:"* ]]
+  [[ "$contents" == *"</ul></body></html>" ]]
+}
+
+# tags: unit
+@test "run parallel - html-report requires a path" {
+  run ./tests/run_parallel.sh fake-image failing-suite --html-report
+
+  assert_failure 1
+  assert_output -p "--html-report requires a file path"
+}
+
 @test "Run parallel test, print log on failure" {
   local fake_bin log_folder matching_logs
 

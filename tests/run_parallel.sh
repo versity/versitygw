@@ -26,6 +26,49 @@ print_message() {
   else
     printf '%s\n' "$1"
   fi
+  if [ "${html_report_ready:-false}" == "true" ]; then
+    write_html_message "$@"
+  fi
+}
+
+html_escape() {
+  local text="$1"
+  text=${text//&/'&amp;'}
+  text=${text//</'&lt;'}
+  text=${text//>/'&gt;'}
+  text=${text//\"/'&quot;'}
+  text=${text//\'/'&#39;'}
+  printf '%s' "$text"
+}
+
+html_log_url() {
+  local log_path="$1" common="$html_report_dir" prefix="" relative char encoded=""
+  local LC_ALL=C
+  log_path="$(cd "$(dirname "$log_path")" && pwd -P)/$(basename "$log_path")"
+  while [[ "$log_path" != "$common/"* ]] && [ "$common" != "/" ]; do
+    common=$(dirname "$common")
+    prefix+="../"
+  done
+  relative="$prefix${log_path#"${common%/}/"}"
+  while [ -n "$relative" ]; do
+    char=${relative:0:1}
+    relative=${relative:1}
+    case "$char" in
+      [a-zA-Z0-9./_~-]) encoded+="$char" ;;
+      *) printf -v char '%%%02X' "'$char"; encoded+="$char" ;;
+    esac
+  done
+  printf '%s' "$encoded"
+}
+
+write_html_message() {
+  {
+    printf '<li>%s' "$(html_escape "$1")"
+    if [ -n "${2:-}" ]; then
+      printf ' <a href="%s">Docker log: %s</a>' "$(html_log_url "$2")" "$(html_escape "$2")"
+    fi
+    printf '</li>\n'
+  } >> "$html_report_file"
 }
 
 check_for_finished_processes() {
@@ -42,7 +85,7 @@ check_for_finished_processes() {
       wait "$pid"
       status=$?
       run_end_time=$(date +%s)
-      print_message "'$pid' (${suites_ref[$pid]}) finished with status '$status' (duration: $((run_end_time-${times_ref[$pid]}))s)"
+      print_message "'$pid' (${suites_ref[$pid]}) finished with status '$status' (duration: $((run_end_time-${times_ref[$pid]}))s)" "${logs_ref[$pid]}"
       if [ "$status" -ne 0 ]; then
         test_failure=1
         print_message "log file:  ${logs_ref[$pid]}"
@@ -73,7 +116,7 @@ run_tests() {
       check_for_finished_processes "pids" "suites" "times" "logs"
     done
     log_name="$docker_log_folder/${test_suite}-${timestamp}.log"
-    docker run -v "$PWD/runtime/config:/home/tester/config" -v "$docker_log_folder:/home/tester/log" -t "$image_tag" "$test_suite" > "$log_name" &
+    docker run -v "$PWD/runtime/config:/home/tester/config" -e "HOST_LOG_FOLDER=$docker_log_folder" -v "$docker_log_folder:/home/tester/log" "$image_tag" "$test_suite" > "$log_name" 2>&1 &
     pid=$!
     print_message "'$test_suite' started (pid: '$pid')"
     pids[$pid]=$pid
@@ -93,12 +136,13 @@ run_tests() {
 
 usage() {
   printf '%s\n' "Usage: $0 -l|--list"
-  printf '%s\n' "Usage: $0 <docker image tag> <test suites> [max parallel jobs] [log folder] [--rebuild|--build-if-missing|--use-tag] [--log-file <path>]"
+  printf '%s\n' "Usage: $0 <docker image tag> <test suites> [max parallel jobs] [log folder] [--rebuild|--build-if-missing|--use-tag] [--log-file <path>] [--html-report <path>]"
   printf '%s\n' "  -l, --list          List available test suites without running Docker."
   printf '%s\n' "  --rebuild           Rebuild the Docker image before testing."
   printf '%s\n' "  --build-if-missing  Build the Docker image only if the tag does not exist."
   printf '%s\n' "  --use-tag           Use the provided tag without building (default)."
   printf '%s\n' "  --log-file <path>   Append runner status messages to a file as well as stdout."
+  printf '%s\n' "  --html-report <path> Write an HTML status report with links to suite logs (overwrites)."
 }
 
 build_container() {
@@ -162,11 +206,21 @@ max_parallel_jobs="$DEFAULT_MAX_PARALLEL_JOBS"
 docker_log_folder="$DEFAULT_DOCKER_LOG_FOLDER"
 build_mode="use-tag"
 runner_log_file=""
+html_report_file=""
+html_report_ready=false
 docker_log_folder_set=false
 shift 2
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --html-report)
+      if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
+        echo "--html-report requires a file path" >&2
+        exit 1
+      fi
+      html_report_file="$2"
+      shift
+      ;;
     --log-file)
       if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
         echo "--log-file requires a file path" >&2
@@ -211,6 +265,23 @@ done
 if [ -n "$runner_log_file" ] && ! { : >> "$runner_log_file"; }; then
   echo "unable to write runner log file '$runner_log_file'" >&2
   exit 1
+fi
+
+if [ -n "$html_report_file" ]; then
+  if ! html_report_dir=$(cd "$(dirname "$html_report_file")" && pwd -P); then
+    exit 1
+  fi
+  html_report_file="$html_report_dir/$(basename "$html_report_file")"
+  if [ -n "$runner_log_file" ] && [ "$runner_log_file" -ef "$html_report_file" ]; then
+    echo "HTML report and text log must be different files" >&2
+    exit 1
+  fi
+  if ! printf '%s\n' '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Parallel Test Report</title></head><body><h1>Parallel Test Report</h1><ul>' > "$html_report_file"; then
+    exit 1
+  fi
+  html_report_ready=true
+  trap 'printf "%s\n" "</ul></body></html>" >> "$html_report_file"' EXIT
+  print_message "HTML report: $html_report_file"
 fi
 
 if ! prepare_container "$image_tag" "$build_mode"; then
