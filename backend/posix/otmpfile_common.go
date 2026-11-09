@@ -252,8 +252,8 @@ func (tmp *tmpfile) publishInDir(dir string, publish func() error) error {
 // openTmpFile opens a temporary file in dir (a filesystem path) that link()
 // later publishes as obj within bucket. bucket is a bucket name or, for the
 // versioning code, the absolute path of a bucket's versioning directory.
-func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, dofalloc, forceNoTmpFile bool, allowODirect odirectPolicy) (*tmpfile, error) {
-	return p.openTmpFileIn(dir, dir, bucket, obj, size, acct, dofalloc, forceNoTmpFile, false, allowODirect)
+func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, dofalloc bool, allowODirect odirectPolicy) (*tmpfile, error) {
+	return p.openTmpFileIn(dir, dir, bucket, obj, size, acct, dofalloc, false, allowODirect)
 }
 
 // openObjectTmpFile opens the temporary file that link() publishes as the
@@ -263,19 +263,19 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 func (p *Posix) openObjectTmpFile(bucket, obj string, size int64, acct auth.Account, dofalloc bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	tmpDir := p.ObjectPath(bucket, MetaTmpDir)
 	if !p.inheritDefaultACL {
-		return p.openTmpFile(tmpDir, bucket, obj, size, acct, dofalloc, p.forceNoTmpFile, allowODirect)
+		return p.openTmpFile(tmpDir, bucket, obj, size, acct, dofalloc, allowODirect)
 	}
 	objDir := filepath.Dir(filepath.Join(p.BucketPath(bucket), obj))
-	return p.openTmpFileIn(objDir, tmpDir, bucket, obj, size, acct, dofalloc, p.forceNoTmpFile, true, allowODirect)
+	return p.openTmpFileIn(objDir, tmpDir, bucket, obj, size, acct, dofalloc, true, allowODirect)
 }
 
 // closestDir returns dir when it is a directory, or else its closest parent
 // that is, up to bucketPath, which is returned as is. dir must be
-// bucketPath or below it. The directories between them are made when the object is published
-// and inherit the default ACL of the parent returned. A path component that
-// is a file is skipped the same way as a missing one: the publish fails
-// later with the error it already returns for that case. Any other error,
-// such as EACCES, is returned.
+// bucketPath or below it. The directories between them are made when the
+// object is published and inherit the default ACL of the parent returned. A
+// path component that is a file, or a stale handle, is skipped the same way
+// as a missing one: the publish fails later with the error it already
+// returns for that case. Any other error, such as EACCES, is returned.
 func closestDir(bucketPath, dir string) (string, error) {
 	rel, err := filepath.Rel(bucketPath, dir)
 	if err != nil {
@@ -290,7 +290,8 @@ func closestDir(bucketPath, dir string) (string, error) {
 		if (err == nil && fi.IsDir()) || rel == "." {
 			return path, nil
 		}
-		if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
+		if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) &&
+			!errors.Is(err, syscall.ESTALE) {
 			return "", fmt.Errorf("stat %v: %w", path, err)
 		}
 		rel = filepath.Dir(rel)

@@ -75,14 +75,14 @@ var openat = unix.Openat
 // supported falls back to the named file then: any other error is returned,
 // so that a full or read-only filesystem, a quota or a permission error in
 // that directory is reported, not hidden by a file made somewhere else.
-func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, acct auth.Account, dofalloc, forceNoTmpFile, inherit bool, allowODirect odirectPolicy) (*tmpfile, error) {
+func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, acct auth.Account, dofalloc, inherit bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
 
 	// The tmpfile keeps the bucket directory's path so that link() and its
 	// fallbacks address it the same way as every other bucket path.
 	bucket = p.BucketPath(bucket)
 
-	if forceNoTmpFile {
+	if p.forceNoTmpFile {
 		return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 	}
 
@@ -220,9 +220,11 @@ func (p *Posix) openInheritingTmpFile(bucketPath, dir string, allowODirect odire
 }
 
 // openTmpFileInDir opens an O_TMPFILE in dir and reports whether dir has a
-// default ACL.
+// default ACL. The directory is opened with O_PATH, which needs no read
+// permission on it: an O_TMPFILE needs only write and search permission, so
+// a directory the gateway can't list, but can write to, is supported.
 func (p *Posix) openTmpFileInDir(dir string, allowODirect odirectPolicy) (fd int, useODirect, hasACL bool, err error) {
-	dirfd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	dirfd, err := unix.Open(dir, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return -1, false, false, err
 	}
@@ -232,7 +234,7 @@ func (p *Posix) openTmpFileInDir(dir string, allowODirect odirectPolicy) (fd int
 	if err != nil {
 		return -1, false, false, err
 	}
-	hasACL, err = hasDefaultACLFd(dirfd)
+	hasACL, err = hasDefaultACLFd(dirfd, dir)
 	if err != nil {
 		unix.Close(fd)
 		return -1, false, false, fmt.Errorf("get default ACL of %v: %w", dir, err)
@@ -414,13 +416,15 @@ func (tmp *tmpfile) link() error {
 	}
 
 	err = tmp.publishInDir(dir, func() error {
-		dirf, err := os.Open(dir)
+		// O_PATH: linkat() and renameat() need write and search
+		// permission on the directory, not read permission
+		dirfd, err := unix.Open(dir, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 		if err != nil {
-			return fmt.Errorf("open parent dir: %w", err)
+			return fmt.Errorf("open parent dir: %w", &fs.PathError{Op: "open", Path: dir, Err: err})
 		}
-		defer dirf.Close()
+		defer unix.Close(dirfd)
 
-		err = linkatOTmpfile(int(procdir.Fd()), int(dirf.Fd()),
+		err = linkatOTmpfile(int(procdir.Fd()), dirfd,
 			srcFDName, filepath.Base(objPath))
 		if err != nil {
 			return fmt.Errorf("link tmpfile (fd %q as %q): %w",

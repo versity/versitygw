@@ -449,7 +449,7 @@ func TestInheritDefaultACLTempFiles(t *testing.T) {
 		{aclOther, 0, 0xffffffff},
 	}))
 
-	f, err := p.openTmpFile(dir, bucket, "part", 0, auth.Account{}, false, false, odirectNotAllowed)
+	f, err := p.openTmpFile(dir, bucket, "part", 0, auth.Account{}, false, odirectNotAllowed)
 	if err != nil {
 		t.Fatalf("open tmp file: %v", err)
 	}
@@ -504,6 +504,105 @@ func TestInheritDefaultACLKeepsDir(t *testing.T) {
 				t.Errorf("dir without a default ACL was not removed: %v", err)
 			}
 		})
+	}
+}
+
+// TestInheritDefaultACLBucketACL checks that with a default ACL on the bucket
+// directory, which mkdir copies to every directory the gateway makes, those
+// directories are still removed with their last object, and that only a
+// directory with an ACL of its own is kept.
+func TestInheritDefaultACLBucketACL(t *testing.T) {
+	ctx := context.Background()
+	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		return meta.XattrMeta{}, PosixOpts{AbsolutePaths: true, InheritDefaultACL: true}
+	})
+	bucket := "bucket"
+	createTestBucket(t, p, bucket)
+	bucketPath := p.BucketPath(bucket)
+	setDefaultACL(t, bucketPath, testDefaultACL())
+	share := filepath.Join(bucketPath, "team", "share")
+	if err := os.MkdirAll(share, 0o755); err != nil {
+		t.Fatalf("make dir: %v", err)
+	}
+	setDefaultACL(t, share, encodeACL(readOnlyOwnerACL()))
+
+	for _, key := range []string{"a/b/c/object", "team/share/object"} {
+		if err := putTestObject(t, p, bucket, key, "x"); err != nil {
+			t.Fatalf("put %v: %v", key, err)
+		}
+		_, err := p.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: aws.String(key)})
+		if err != nil {
+			t.Fatalf("delete %v: %v", key, err)
+		}
+	}
+
+	if _, err := os.Stat(filepath.Join(bucketPath, "a")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("dir with the bucket's default ACL was not removed: %v", err)
+	}
+	if _, err := os.Stat(share); err != nil {
+		t.Errorf("dir with its own default ACL was not kept: %v", err)
+	}
+	if err := putTestObject(t, p, bucket, "a", "x"); err != nil {
+		t.Errorf("put a: %v", err)
+	}
+}
+
+// TestInheritDefaultACLWithoutOTmpfileRemovesDir checks that without
+// O_TMPFILE, when the option has no effect, a directory with a default ACL
+// is removed with its last object as it is without the option.
+func TestInheritDefaultACLWithoutOTmpfileRemovesDir(t *testing.T) {
+	ctx := context.Background()
+	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		return meta.XattrMeta{}, PosixOpts{AbsolutePaths: true, InheritDefaultACL: true, ForceNoTmpFile: true}
+	})
+	bucket, key := "bucket", "share/object"
+	createTestBucket(t, p, bucket)
+	share := filepath.Join(p.BucketPath(bucket), "share")
+	if err := os.Mkdir(share, 0o755); err != nil {
+		t.Fatalf("make dir: %v", err)
+	}
+	setDefaultACL(t, share, testDefaultACL())
+	if err := putTestObject(t, p, bucket, key, "x"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	_, err := p.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: &key})
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := os.Stat(share); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("dir with a default ACL was not removed: %v", err)
+	}
+}
+
+// TestInheritDefaultACLWriteOnlyDir checks that an object can be put in a
+// directory the gateway can write to but not read, as it can without the
+// option: an O_TMPFILE needs no read permission on its directory. Run as a
+// user other than root, which can read any directory.
+func TestInheritDefaultACLWriteOnlyDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read any directory")
+	}
+	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		return meta.XattrMeta{}, PosixOpts{AbsolutePaths: true, InheritDefaultACL: true}
+	})
+	bucket, key := "bucket", "dropbox/object"
+	createTestBucket(t, p, bucket)
+	dir := filepath.Join(p.BucketPath(bucket), "dropbox")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("make dir: %v", err)
+	}
+	skipWithoutOTmpfile(t, dir)
+	setDefaultACL(t, dir, testDefaultACL())
+	if err := os.Chmod(dir, 0o333); err != nil {
+		t.Fatalf("chmod dir: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+
+	if err := putTestObject(t, p, bucket, key, "x"); err != nil {
+		t.Fatalf("put in a write-only dir: %v", err)
+	}
+	if !hasNamedUser(t, filepath.Join(dir, "object"), aclTestUID) {
+		t.Errorf("object did not get the default ACL of its directory")
 	}
 }
 

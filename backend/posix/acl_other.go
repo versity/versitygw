@@ -16,8 +16,9 @@
 
 package posix
 
-// hasDefaultACL reports whether the directory path has a default ACL. Default
-// ACLs are only looked at on Linux, where InheritDefaultACL applies.
-func hasDefaultACL(string) (bool, error) {
+// ownDefaultACL reports whether the directory path has a default ACL other
+// than the one of its parent. Default ACLs are only looked at on Linux, where
+// InheritDefaultACL applies.
+func ownDefaultACL(string) (bool, error) {
 	return false, nil
 }

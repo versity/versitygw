@@ -61,7 +61,7 @@ type tmpfile struct {
 // or, for the versioning code, the absolute path of a bucket's versioning
 // directory. O_TMPFILE, and with it the directory it would be made in and
 // the inheritance of its default ACL, is only used on Linux.
-func (p *Posix) openTmpFileIn(_, dir, bucket, obj string, size int64, acct auth.Account, _, _, _ bool, allowODirect odirectPolicy) (*tmpfile, error) {
+func (p *Posix) openTmpFileIn(_, dir, bucket, obj string, size int64, acct auth.Account, _, _ bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
 
 	// The tmpfile keeps the bucket directory's path so that link() addresses

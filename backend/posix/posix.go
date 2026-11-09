@@ -291,8 +291,10 @@ type PosixOpts struct {
 	// most r--, so the group and named entries of the ACL don't get write
 	// permission unless NewFilePerm has it, as 0664 or 0666 does. The object
 	// also gets the directory's group when the directory is setgid, unless
-	// ChownGID sets it. A directory with a default ACL is not removed when
-	// its last object is deleted.
+	// ChownGID sets it. A directory whose default ACL differs from its
+	// parent's is not removed when its last object is deleted. Like any
+	// empty directory, it is then still listed as a common prefix, and a PUT
+	// of an object with its name fails.
 	//
 	// An object that replaces an existing file is still a new inode: the ACL
 	// and the extended attributes set on the replaced file are not kept. It
@@ -489,8 +491,10 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 
 	// Without O_TMPFILE the temporary file of a new object is made in the
 	// bucket's metadata directory, where no default ACL applies to it.
-	if opts.InheritDefaultACL && (opts.ForceNoTmpFile || runtime.GOOS != "linux") {
-		fmt.Println("Warning: --inherit-default-acl has no effect with --disable-otmp or outside Linux")
+	inheritDefaultACL := opts.InheritDefaultACL
+	if inheritDefaultACL && (opts.ForceNoTmpFile || runtime.GOOS != "linux") {
+		fmt.Println("Warning: --inherit-default-acl has no effect with --disableotmp or outside Linux")
+		inheritDefaultACL = false
 	}
 
 	newDirPerm := defaultNewDirPerm
@@ -516,7 +520,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		newDirPerm:           newDirPerm,
 		newFilePerm:          newFilePerm,
 		forceNoTmpFile:       opts.ForceNoTmpFile,
-		inheritDefaultACL:    opts.InheritDefaultACL,
+		inheritDefaultACL:    inheritDefaultACL,
 		fsync:                opts.Fsync,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
 		objectLockMode:       objectLockMode,
@@ -1678,7 +1682,7 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 	versioningKey := filepath.Join(genObjVersionKey(key), versionId)
 	versionTmpPath := filepath.Join(versionBucketPath, MetaTmpDir)
 	f, err := p.openTmpFile(versionTmpPath, versionBucketPath, versioningKey,
-		size, acc, doFalloc, p.forceNoTmpFile, odirectNotAllowed)
+		size, acc, doFalloc, odirectNotAllowed)
 	if err != nil {
 		return versionPath, err
 	}
@@ -4013,7 +4017,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	partPath := filepath.Join(mpPath, fmt.Sprintf("%v", *part))
 
 	f, err := p.openTmpFile(p.ObjectPath(bucket, objdir),
-		bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile, odirectAllowed)
+		bucket, partPath, length, acct, doFalloc, odirectAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(r)
@@ -4474,7 +4478,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}
 
 	f, err := p.openTmpFile(p.ObjectPath(*upi.Bucket, objdir),
-		*upi.Bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile, odirectNotAllowed)
+		*upi.Bucket, partPath, length, acct, doFalloc, odirectNotAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -6012,12 +6016,14 @@ func (p *Posix) removeParents(bucket, object string) {
 		}
 
 		if p.inheritDefaultACL {
-			// a directory with a default ACL was made, or given that
-			// ACL, by an administrator for the files in it: keep it
-			// for the next object, which would otherwise be made in a
-			// new directory without the ACL. Keep it too when the ACL
+			// a directory with a default ACL other than its parent's
+			// was given that ACL by an administrator for the files in
+			// it: keep it for the next object, which would otherwise
+			// be made in a new directory with the parent's ACL. A
+			// directory with its parent's ACL, which mkdir copies to
+			// every new directory, is removed. Keep it too when an ACL
 			// can't be read.
-			keep, err := hasDefaultACL(p.ObjectPath(bucket, parent))
+			keep, err := ownDefaultACL(p.ObjectPath(bucket, parent))
 			if keep || err != nil {
 				break
 			}
