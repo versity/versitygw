@@ -220,6 +220,130 @@ func TestMultipartParserRecognizesFilenameOnlyFilePart(t *testing.T) {
 	}
 }
 
+func TestMultipartParserSkipsPreamble(t *testing.T) {
+	t.Parallel()
+
+	for name, preamble := range map[string]string{
+		"text":       "This is the preamble.\r\n",
+		"blank line": "\r\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			body := preamble + strings.Join([]string{
+				"--abc\r\n",
+				"Content-Disposition: form-data; name=\"key\"\r\n",
+				"\r\n",
+				"value\r\n",
+				"--abc\r\n",
+				"Content-Disposition: form-data; name=\"file\"\r\n",
+				"\r\n",
+				"payload",
+				"\r\n--abc--\r\n",
+			}, "")
+
+			got, err := newMultipartParserForTest(t, body, "abc").Parse()
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if got.Fields["key"] != "value" {
+				t.Fatalf("unexpected key field: %q", got.Fields["key"])
+			}
+		})
+	}
+}
+
+func TestMultipartParserJoinsFoldedHeaders(t *testing.T) {
+	t.Parallel()
+
+	body := strings.Join([]string{
+		"--abc\r\n",
+		"Content-Disposition: form-data;\r\n",
+		" name=\"key\"\r\n",
+		"\r\n",
+		"value\r\n",
+		"--abc\r\n",
+		"Content-Disposition: form-data;\r\n",
+		"\tname=\"file\"; filename=\"note.txt\"\r\n",
+		"\r\n",
+		"payload",
+		"\r\n--abc--\r\n",
+	}, "")
+
+	got, err := newMultipartParserForTest(t, body, "abc").Parse()
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got.Fields["key"] != "value" {
+		t.Fatalf("unexpected key field: %q", got.Fields["key"])
+	}
+
+	fileData, err := io.ReadAll(got.FileRdr)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(fileData) != "payload" {
+		t.Fatalf("unexpected file data: %q", fileData)
+	}
+}
+
+func TestMultipartParserIgnoresFieldsAfterFile(t *testing.T) {
+	t.Parallel()
+
+	body := strings.Join([]string{
+		"--abc\r\n",
+		"Content-Disposition: form-data; name=\"file\"; filename=\"note.txt\"\r\n",
+		"\r\n",
+		"payload",
+		"\r\n--abc\r\n",
+		"Content-Disposition: form-data; name=\"content-type\"\r\n",
+		"\r\n",
+		"text/plain",
+		"\r\n--abc--\r\n",
+	}, "")
+
+	got, err := newMultipartParserForTest(t, body, "abc").Parse()
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if _, ok := got.Fields["content-type"]; ok {
+		t.Fatalf("unexpected field after the file: %q", got.Fields["content-type"])
+	}
+
+	fileData, err := io.ReadAll(got.FileRdr)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(fileData) != "payload" {
+		t.Fatalf("unexpected file data: %q", fileData)
+	}
+}
+
+// preDataForm is a form with a field of padding bytes before the file.
+func preDataForm(padding int) string {
+	return "--abc\r\n" +
+		"Content-Disposition: form-data; name=\"x-ignore-padding\"\r\n" +
+		"\r\n" +
+		strings.Repeat("a", padding) +
+		"\r\n--abc\r\n" +
+		"Content-Disposition: form-data; name=\"file\"\r\n" +
+		"\r\n" +
+		"payload" +
+		"\r\n--abc--\r\n"
+}
+
+// preDataPaddingAtLimit puts preDataForm's bytes before the file content at
+// exactly maxPreDataLength.
+var preDataPaddingAtLimit = maxPreDataLength - (len(preDataForm(0)) - len("payload\r\n--abc--\r\n"))
+
+func TestMultipartParserAcceptsDataBeforeFileAtLimit(t *testing.T) {
+	t.Parallel()
+
+	if _, err := newMultipartParserForTest(t, preDataForm(preDataPaddingAtLimit), "abc").Parse(); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+}
+
 func TestMultipartParserParseErrors(t *testing.T) {
 	t.Parallel()
 
@@ -293,6 +417,16 @@ func TestMultipartParserParseErrors(t *testing.T) {
 				"--abc--\r\n",
 			}, ""),
 			want: s3err.GetInvalidArgumentErr(s3err.InvalidArgPOSTFileRequired, "0"),
+		},
+		{
+			name: "data before the file over the limit",
+			body: preDataForm(preDataPaddingAtLimit + 1),
+			want: s3err.GetAPIError(s3err.ErrMaxPostPreDataLengthExceeded),
+		},
+		{
+			name: "header line over the limit, without a newline",
+			body: "--abc\r\nContent-Disposition: " + strings.Repeat("a", 1<<20),
+			want: s3err.GetAPIError(s3err.ErrMaxPostPreDataLengthExceeded),
 		},
 		{
 			name: "line without crlf terminator",

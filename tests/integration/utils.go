@@ -42,6 +42,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os/exec"
 	"slices"
@@ -4527,11 +4528,22 @@ func getSigningKey(secret, yearMonthDay, region string) []byte {
 }
 
 // buildPostObjectBody builds a multipart/form-data body for a POST object request.
-// Fields are written first (in the order provided)
+// Fields are written first, except those named in fieldsAfterFile, which
+// follow the file part in that order. A nil fileHeader sends the file as
+// upload.bin.
 // Returns (body bytes, boundary string, error).
-func buildPostObjectBody(fields, extraFields map[string]string, fileContent []byte) ([]byte, string, error) {
+func buildPostObjectBody(fields, extraFields map[string]string, fileContent []byte, fileHeader textproto.MIMEHeader, fieldsAfterFile []string) ([]byte, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
+
+	afterFile := map[string]string{}
+	writeField := func(key, value string) error {
+		if slices.Contains(fieldsAfterFile, key) {
+			afterFile[key] = value
+			return nil
+		}
+		return w.WriteField(key, value)
+	}
 
 	for key, value := range fields {
 		v, ok := extraFields[key]
@@ -4542,23 +4554,37 @@ func buildPostObjectBody(fields, extraFields map[string]string, fileContent []by
 			}
 			value = v
 		}
-		if err := w.WriteField(key, value); err != nil {
+		if err := writeField(key, value); err != nil {
 			return nil, "", err
 		}
 	}
 
 	for key, value := range extraFields {
-		if err := w.WriteField(key, value); err != nil {
+		if err := writeField(key, value); err != nil {
 			return nil, "", err
 		}
 	}
 
-	fw, err := w.CreateFormFile("file", "upload.bin")
+	var fw io.Writer
+	var err error
+	if fileHeader == nil {
+		fw, err = w.CreateFormFile("file", "upload.bin")
+	} else {
+		fw, err = w.CreatePart(fileHeader)
+	}
 	if err != nil {
 		return nil, "", err
 	}
 	if _, err = fw.Write(fileContent); err != nil {
 		return nil, "", err
+	}
+
+	for _, key := range fieldsAfterFile {
+		if value, ok := afterFile[key]; ok {
+			if err := w.WriteField(key, value); err != nil {
+				return nil, "", err
+			}
+		}
 	}
 
 	if err := w.Close(); err != nil {
@@ -4633,6 +4659,8 @@ type PostRequestConfig struct {
 	secret               string
 	region               string
 	extraFields          map[string]string
+	fieldsAfterFile      []string
+	fileHeader           textproto.MIMEHeader
 	fileContent          []byte
 	rawPolicy            *string
 	date                 time.Time
@@ -4716,7 +4744,7 @@ func newPostObjectRequest(input PostRequestConfig) (*http.Request, map[string]st
 	fields["policy"] = policy
 	fields["x-amz-signature"] = signPostPolicy(policy, input.date.Format("20060102"), input.region, input.secret)
 
-	body, boundary, err := buildPostObjectBody(fields, input.extraFields, input.fileContent)
+	body, boundary, err := buildPostObjectBody(fields, input.extraFields, input.fileContent, input.fileHeader, input.fieldsAfterFile)
 	if err != nil {
 		return nil, nil, err
 	}

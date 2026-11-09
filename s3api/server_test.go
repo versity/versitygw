@@ -353,10 +353,9 @@ func TestRequestAddressIgnoresProxyHeaders(t *testing.T) {
 	}
 }
 
-// POST Object reads its multipart body as a stream, in the order the client
-// sent the parts, so the body must reach the handlers as it was sent, even
-// with a file part that has no filename, which S3 takes as text content.
-func TestMultipartBodyReachesHandlersAsSent(t *testing.T) {
+// POST Object reads its multipart body as a stream, so fasthttp must not
+// parse the form first.
+func TestMultipartBodyIsStreamed(t *testing.T) {
 	server, err := newTestS3ApiServer(
 		WithQuiet(),
 		WithRoute(http.MethodPost, "/form", func(ctx fiber.Ctx) error {

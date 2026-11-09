@@ -124,6 +124,7 @@ const (
 	ErrObjectTaggingLimited
 	ErrCannotParseHTTPRequest
 	ErrMalformedPOSTRequest
+	ErrMaxPostPreDataLengthExceeded
 	ErrEntityTooSmall
 	ErrEntityTooLarge
 	ErrMalformedXML
@@ -394,6 +395,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrMalformedPOSTRequest: {
 		Code:           "MalformedPOSTRequest",
 		Description:    "The body of your POST request is not well-formed multipart/form-data.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMaxPostPreDataLengthExceeded: {
+		Code:           "MaxPostPreDataLengthExceeded",
+		Description:    "Your POST request fields preceding the upload file were too large.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrEntityTooSmall: {

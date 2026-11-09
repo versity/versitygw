@@ -20,6 +20,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -1170,7 +1171,7 @@ func PostObject_should_ignore_anything_after_file(s *S3Conf) error {
 		fields["x-amz-signature"] = signPostPolicy(policy, signingDate.Format("20060102"), s.awsRegion, s.awsSecret)
 
 		objData := []byte("dummy data")
-		body, boundary, err := buildPostObjectBody(fields, map[string]string{}, objData)
+		body, boundary, err := buildPostObjectBody(fields, map[string]string{}, objData, nil, nil)
 		if err != nil {
 			return err
 		}
@@ -1687,77 +1688,159 @@ func PostObject_success_double_dash_boundary(s *S3Conf) error {
 func PostObject_file_without_filename(s *S3Conf) error {
 	testName := "PostObject_file_without_filename"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		for _, test := range []struct {
-			key         string
-			disposition string
-		}{
-			{"no-filename", `form-data; name="file"`},
-			{"empty-filename", `form-data; name="file"; filename=""`},
+		for key, disposition := range map[string]string{
+			"no-filename":    `form-data; name="file"`,
+			"empty-filename": `form-data; name="file"; filename=""`,
 		} {
-			objData := []byte("hello world")
-			signingDate := time.Now().UTC()
-
-			fields := buildSignedPostFields(bucket, test.key, s.awsID, s.awsRegion, signingDate)
-			policy, err := encodePostPolicy([]any{}, time.Now().UTC().Add(10*time.Minute), fields, make(map[string]struct{}))
-			if err != nil {
-				return err
-			}
-			fields["policy"] = policy
-			fields["x-amz-signature"] = signPostPolicy(policy, signingDate.Format("20060102"), s.awsRegion, s.awsSecret)
-
-			var buf bytes.Buffer
-			w := multipart.NewWriter(&buf)
-			for k, v := range fields {
-				if err := w.WriteField(k, v); err != nil {
-					return err
-				}
-			}
-
-			fw, err := w.CreatePart(textproto.MIMEHeader{"Content-Disposition": {test.disposition}})
-			if err != nil {
-				return err
-			}
-			if _, err = fw.Write(objData); err != nil {
-				return err
-			}
-			if err := w.Close(); err != nil {
-				return err
-			}
-
-			req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/%s", s.endpoint, bucket), bytes.NewReader(buf.Bytes()))
-			if err != nil {
-				return err
-			}
-			req.Header.Set("Content-Type", w.FormDataContentType())
-
-			resp, err := s.httpClient.Do(req)
-			if err != nil {
-				return err
-			}
-			resp.Body.Close()
-
-			if resp.StatusCode != http.StatusNoContent {
-				return fmt.Errorf("%s: expected status 204, got %d", test.key, resp.StatusCode)
-			}
-
-			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-			res, err := s3client.GetObject(ctx, &s3.GetObjectInput{
-				Bucket: &bucket,
-				Key:    &test.key,
+			data := []byte("hello world")
+			resp, err := sendPostObject(PostRequestConfig{
+				bucket:      bucket,
+				key:         key,
+				s3Conf:      s,
+				fileContent: data,
+				fileHeader:  textproto.MIMEHeader{"Content-Disposition": {disposition}},
 			})
-			cancel()
 			if err != nil {
 				return err
 			}
+			if err := checkPostObjectSuccess(resp); err != nil {
+				return fmt.Errorf("%s: %w", key, err)
+			}
+			if err := checkObjectData(s3client, bucket, key, "", data); err != nil {
+				return err
+			}
+		}
 
-			gotData, err := io.ReadAll(res.Body)
-			res.Body.Close()
-			if err != nil {
-				return err
+		return nil
+	})
+}
+
+// PostObject_file_before_key posts the key after the file part. S3 reads no
+// field after the file, so the form has no key.
+func PostObject_file_before_key(s *S3Conf) error {
+	testName := "PostObject_file_before_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		resp, err := sendPostObject(PostRequestConfig{
+			bucket:          bucket,
+			key:             "my-obj",
+			s3Conf:          s,
+			fileContent:     []byte("data"),
+			fieldsAfterFile: []string{"key"},
+		})
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.PostAuth.MissingField("key"))
+	})
+}
+
+// PostObject_ignores_fields_after_file posts a content-type after the file
+// part. The policy does not allow it, so the upload succeeds only if it is
+// ignored, and the object holds the file alone.
+func PostObject_ignores_fields_after_file(s *S3Conf) error {
+	testName := "PostObject_ignores_fields_after_file"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key, data := "my-obj", []byte("data")
+		resp, err := sendPostObject(PostRequestConfig{
+			bucket:          bucket,
+			key:             key,
+			s3Conf:          s,
+			fileContent:     data,
+			extraFields:     map[string]string{"content-type": "text/plain"},
+			fieldsAfterFile: []string{"content-type"},
+		})
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return err
+		}
+
+		return checkObjectData(s3client, bucket, key, "", data)
+	})
+}
+
+// PostObject_preamble_and_folded_header posts a body with a preamble before
+// the first boundary and the file part's Content-Disposition folded over two
+// lines.
+func PostObject_preamble_and_folded_header(s *S3Conf) error {
+	testName := "PostObject_preamble_and_folded_header"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key, data := "my-obj", []byte("data")
+		req, _, err := newPostObjectRequest(PostRequestConfig{
+			bucket:      bucket,
+			key:         key,
+			s3Conf:      s,
+			fileContent: data,
+			fileHeader:  textproto.MIMEHeader{"Content-Disposition": {"form-data;\r\n name=\"file\"; filename=\"upload.bin\""}},
+		})
+		if err != nil {
+			return err
+		}
+
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			return err
+		}
+		body = append([]byte("\r\nThis is the preamble.\r\n"), body...)
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		req.ContentLength = int64(len(body))
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return err
+		}
+
+		return checkObjectData(s3client, bucket, key, "", data)
+	})
+}
+
+// PostObject_data_before_file_limit checks S3's 20 KB limit on the bytes
+// before the file content: a form at the limit is stored, one a byte over it
+// is refused.
+func PostObject_data_before_file_limit(s *S3Conf) error {
+	testName := "PostObject_data_before_file_limit"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		data := []byte("data")
+		cfg := func(padding int) PostRequestConfig {
+			return PostRequestConfig{
+				bucket:      bucket,
+				key:         "my-obj",
+				s3Conf:      s,
+				fileContent: data,
+				extraFields: map[string]string{"x-ignore-padding": strings.Repeat("a", padding)},
 			}
-			if !bytes.Equal(gotData, objData) {
-				return fmt.Errorf("%s: expected object data %q, got %q", test.key, objData, gotData)
-			}
+		}
+
+		req, _, err := newPostObjectRequest(cfg(0))
+		if err != nil {
+			return err
+		}
+		_, params, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
+		if err != nil {
+			return err
+		}
+		trailer := "\r\n--" + params["boundary"] + "--\r\n"
+		padding := 20<<10 - (int(req.ContentLength) - len(data) - len(trailer))
+
+		resp, err := sendPostObject(cfg(padding))
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("at the limit: %w", err)
+		}
+
+		resp, err = sendPostObject(cfg(padding + 1))
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMaxPostPreDataLengthExceeded)); err != nil {
+			return fmt.Errorf("over the limit: %w", err)
 		}
 
 		return nil

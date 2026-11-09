@@ -27,7 +27,11 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-const finalBoundaryDelimiterLen = 8 // len("\r\n--") + len("--\r\n")
+const (
+	finalBoundaryDelimiterLen = 8 // len("\r\n--") + len("--\r\n")
+	// maxPreDataLength is S3's limit on the bytes before the file content.
+	maxPreDataLength = 20 << 10
+)
 
 // MultipartParser parses S3 browser-based POST multipart/form-data in a streaming way.
 // It buffers regular form fields, but it does not buffer the file part.
@@ -85,8 +89,8 @@ type MpParseResult struct {
 //   - a streaming file reader
 //   - file content length
 //
-// The returned file reader MUST be read until EOF, otherwise final-boundary
-// validation is not triggered.
+// The returned file reader MUST be read until EOF, otherwise the boundary
+// that ends the file is not checked.
 func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 	fields := make(map[string]string)
 
@@ -136,7 +140,7 @@ func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 
 			fr := &finalFileReader{
 				r:       mp.br,
-				trailer: []byte("\r\n--" + mp.boundary + "--\r\n"),
+				trailer: []byte("\r\n--" + mp.boundary),
 			}
 
 			return &MpParseResult{
@@ -163,27 +167,29 @@ func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 	}
 }
 
+// expectInitialBoundary skips the preamble: the lines before the first
+// boundary (RFC 2046).
 func (mp *MultipartParser) expectInitialBoundary() error {
-	line, _, err := mp.readLine()
-	if err != nil {
-		return s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
-	}
-
 	want := "--" + mp.boundary
-	if line != want {
-		debuglogger.Logf("unexpected initial multipart boundary: got %q want %q", line, want)
-		return s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
+	for {
+		line, _, err := mp.readLine()
+		if err != nil {
+			return err
+		}
+		if line == want {
+			return nil
+		}
 	}
-	return nil
 }
 
 func (mp *MultipartParser) readHeaders() (map[string]string, error) {
 	headers := make(map[string]string)
+	var key string
 
 	for {
 		line, _, err := mp.readLine()
 		if err != nil {
-			return nil, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
+			return nil, err
 		}
 
 		// Blank line terminates headers.
@@ -191,15 +197,20 @@ func (mp *MultipartParser) readHeaders() (map[string]string, error) {
 			return headers, nil
 		}
 
-		key, value, ok := strings.Cut(line, ":")
+		// A line that starts with whitespace continues the header before it.
+		if key != "" && (line[0] == ' ' || line[0] == '\t') {
+			headers[key] += " " + strings.TrimSpace(line)
+			continue
+		}
+
+		name, value, ok := strings.Cut(line, ":")
 		if !ok {
 			debuglogger.Logf("invalid multipart header line: %q", line)
 			return nil, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
 		}
 
-		key = textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(key))
-		value = strings.TrimSpace(value)
-		headers[key] = value
+		key = textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(name))
+		headers[key] = strings.TrimSpace(value)
 	}
 }
 
@@ -235,21 +246,36 @@ func (mp *MultipartParser) readFieldValue() (string, error) {
 
 // readLine reads one CRLF-terminated line, counts consumed bytes,
 // returns the line without trailing CRLF, and also the raw bytes including CRLF.
+// Every line comes before the file content, so maxPreDataLength bounds it.
 func (mp *MultipartParser) readLine() (string, []byte, error) {
-	s, err := mp.br.ReadString('\n')
-	if err != nil {
-		debuglogger.Logf("failed to read multipart line: %v", err)
-		return "", nil, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
+	var raw []byte
+	for {
+		chunk, err := mp.br.ReadSlice('\n')
+		raw = append(raw, chunk...)
+		if mp.bytesRead+int64(len(raw)) > maxPreDataLength {
+			debuglogger.Logf("multipart data before the file exceeds %d bytes", maxPreDataLength)
+			return "", nil, s3err.GetAPIError(s3err.ErrMaxPostPreDataLengthExceeded)
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if err != nil {
+			debuglogger.Logf("failed to read multipart line: %v", err)
+			return "", nil, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
+		}
+		break
 	}
 
-	mp.bytesRead += int64(len(s))
+	mp.bytesRead += int64(len(raw))
+
+	s := string(raw)
 
 	if !strings.HasSuffix(s, "\r\n") {
 		debuglogger.Logf("multipart line is not CRLF-terminated: %q", s)
 		return "", nil, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
 	}
 
-	return strings.TrimSuffix(s, "\r\n"), []byte(s), nil
+	return strings.TrimSuffix(s, "\r\n"), raw, nil
 }
 
 func trimTrailingCRLF(buf *bytes.Buffer) {
@@ -259,11 +285,12 @@ func trimTrailingCRLF(buf *bytes.Buffer) {
 	}
 }
 
-// finalFileReader streams file bytes until it reaches the final multipart boundary:
+// finalFileReader streams file bytes until the boundary that ends the file part:
 //
-//	\r\n--<boundary>--\r\n
+//	\r\n--<boundary>
 //
-// Any epilogue bytes after that final boundary are ignored.
+// What follows it is ignored: the closing "--", any fields after the file,
+// and the epilogue.
 type finalFileReader struct {
 	r *bufio.Reader
 	// trailer is the exact byte sequence that terminates the file part.
