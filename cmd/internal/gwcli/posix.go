@@ -186,7 +186,7 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 			},
 			&cli.BoolFlag{
 				Name:        "detect-stale-etag",
-				Usage:       "record the size and modification time of objects with their ETag, and do not return the stored ETag and checksums of objects changed outside of versitygw (e.g. over NFS or SMB)",
+				Usage:       "record the size and modification time of objects with their ETag, and do not return the stored ETag, checksums and part sizes of objects changed outside of versitygw (e.g. over NFS or SMB); needs xattr metadata",
 				EnvVars:     []string{"VGW_DETECT_STALE_ETAG"},
 				Destination: &detectStaleEtag,
 			},
