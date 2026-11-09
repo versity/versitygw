@@ -142,7 +142,7 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 			},
 			&cli.BoolFlag{
 				Name:        "inherit-default-acl",
-				Usage:       "make new objects in the directory they are published in, so that its default ACL applies to them (needs O_TMPFILE, Linux only)",
+				Usage:       "new objects inherit the default ACL of their directory, whose group and other permissions --file-perms then limits instead of setting (needs O_TMPFILE, Linux only)",
 				EnvVars:     []string{"VGW_INHERIT_DEFAULT_ACL"},
 				Destination: &inheritDefaultACL,
 			},

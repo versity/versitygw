@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -279,10 +280,24 @@ type PosixOpts struct {
 	// so that the directory's default ACL applies to the object the same way
 	// it does to a file created there over NFS or SMB. When the directory
 	// does not exist yet, the file is made in its closest existing parent,
-	// whose default ACL the directory inherits when it is made. An object
-	// that replaces an existing file is still a new inode: the ACL and the
-	// extended attributes set on the replaced file are not kept. It has no
-	// effect when O_TMPFILE is disabled or not supported, or outside Linux.
+	// whose default ACL the directory inherits when it is made. The
+	// directory is chosen when the upload starts: one made by someone else
+	// while the object is uploaded doesn't give the object its ACL.
+	//
+	// When the directory has a default ACL, the owner permissions of the
+	// object are still set to NewFilePerm, but its group (or mask) and other
+	// permissions are those the ACL gives it, which the kernel limits to the
+	// NewFilePerm it is created with. With the default 0644 the mask is at
+	// most r--, so the group and named entries of the ACL don't get write
+	// permission unless NewFilePerm has it, as 0664 or 0666 does. The object
+	// also gets the directory's group when the directory is setgid, unless
+	// ChownGID sets it. A directory with a default ACL is not removed when
+	// its last object is deleted.
+	//
+	// An object that replaces an existing file is still a new inode: the ACL
+	// and the extended attributes set on the replaced file are not kept. It
+	// has no effect when O_TMPFILE is disabled or not supported, or outside
+	// Linux.
 	InheritDefaultACL bool
 	// ForceNoCopyFileRange disables the use of io.Copy for multipart uploads parts
 	ForceNoCopyFileRange bool
@@ -470,6 +485,12 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		fmt.Printf("Warning: --chuid/--chgid requested, but the gateway runs as euid %v/egid %v: "+
 			"writes for any account with a different uid/gid will fail unless this process can chown\n",
 			euid, egid)
+	}
+
+	// Without O_TMPFILE the temporary file of a new object is made in the
+	// bucket's metadata directory, where no default ACL applies to it.
+	if opts.InheritDefaultACL && (opts.ForceNoTmpFile || runtime.GOOS != "linux") {
+		fmt.Println("Warning: --inherit-default-acl has no effect with --disable-otmp or outside Linux")
 	}
 
 	newDirPerm := defaultNewDirPerm
@@ -1107,36 +1128,6 @@ func (p *Posix) removePartialBucket(bucket string) {
 // --chuid/--chgid misconfiguration, not a filesystem problem. Only EPERM is
 // rewritten, so callers matching on EROFS or ErrObjectParentIsFile are
 // unaffected.
-// openObjectTmpFile opens the temporary file that link() publishes as the
-// object obj in bucket. It is made in the bucket's MetaTmpDir, or with
-// inheritDefaultACL as an O_TMPFILE in the directory obj is published in.
-func (p *Posix) openObjectTmpFile(bucket, obj string, size int64, acct auth.Account, dofalloc bool, allowODirect odirectPolicy) (*tmpfile, error) {
-	tmpDir := p.ObjectPath(bucket, MetaTmpDir)
-	if !p.inheritDefaultACL || p.forceNoTmpFile {
-		return p.openTmpFile(tmpDir, bucket, obj, size, acct, dofalloc, p.forceNoTmpFile, allowODirect)
-	}
-	objDir := closestDir(p.BucketPath(bucket), filepath.Dir(filepath.Join(p.BucketPath(bucket), obj)))
-	return p.openTmpFileIn(objDir, tmpDir, bucket, obj, size, acct, dofalloc, allowODirect)
-}
-
-// closestDir returns dir, or its closest parent below and including
-// bucketPath that exists, when dir does not exist yet. The directories
-// between them are made when the object is published and inherit the
-// default ACL of that parent.
-func closestDir(bucketPath, dir string) string {
-	for {
-		fi, err := os.Stat(dir)
-		if err == nil && fi.IsDir() {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if dir == bucketPath || parent == dir || len(parent) < len(bucketPath) {
-			return bucketPath
-		}
-		dir = parent
-	}
-}
-
 func (p *Posix) mkdirAll(path string, uid, gid int, doChown bool) error {
 	err := backend.MkdirAll(path, uid, gid, doChown, p.newDirPerm)
 	if doChown && errors.Is(err, syscall.EPERM) {
@@ -6018,6 +6009,18 @@ func (p *Posix) removeParents(bucket, object string) {
 			// uploaded with a put object, so stop here and leave this
 			// directory in place.
 			break
+		}
+
+		if p.inheritDefaultACL {
+			// a directory with a default ACL was made, or given that
+			// ACL, by an administrator for the files in it: keep it
+			// for the next object, which would otherwise be made in a
+			// new directory without the ACL. Keep it too when the ACL
+			// can't be read.
+			keep, err := hasDefaultACL(p.ObjectPath(bucket, parent))
+			if keep || err != nil {
+				break
+			}
 		}
 
 		// The parent may have been replaced by an object since its

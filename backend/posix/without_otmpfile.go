@@ -56,10 +56,12 @@ type tmpfile struct {
 	modTime time.Time
 }
 
-// openTmpFile opens a temporary file in dir (a filesystem path) that link()
-// later publishes as obj within bucket. bucket is a bucket name or, for the
-// versioning code, the absolute path of a bucket's versioning directory.
-func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, _ bool, _ bool, allowODirect odirectPolicy) (*tmpfile, error) {
+// openTmpFileIn opens a named temporary file in dir (a filesystem path)
+// that link() later publishes as obj within bucket. bucket is a bucket name
+// or, for the versioning code, the absolute path of a bucket's versioning
+// directory. O_TMPFILE, and with it the directory it would be made in and
+// the inheritance of its default ACL, is only used on Linux.
+func (p *Posix) openTmpFileIn(_, dir, bucket, obj string, size int64, acct auth.Account, _, _, _ bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
 
 	// The tmpfile keeps the bucket directory's path so that link() addresses
@@ -112,12 +114,6 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		doChown:     doChown,
 		fsync:       p.fsync,
 	}, nil
-}
-
-// openTmpFileIn opens the temporary file in tmpDir: O_TMPFILE, and with
-// it otmpDir, is only used on Linux.
-func (p *Posix) openTmpFileIn(_, tmpDir, bucket, obj string, size int64, acct auth.Account, dofalloc bool, allowODirect odirectPolicy) (*tmpfile, error) {
-	return p.openTmpFile(tmpDir, bucket, obj, size, acct, dofalloc, false, allowODirect)
 }
 
 func (tmp *tmpfile) link() error {
