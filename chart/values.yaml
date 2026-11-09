@@ -179,6 +179,11 @@ gateway:
   port: 7070
   # The AWS region string returned to clients.
   region: us-east-1
+  # Accept requests signed for any region, not only gateway.region, and
+  # CreateBucket requests with any location constraint. Useful when clients
+  # are configured with different regions. gateway.region is still the region
+  # returned to clients.
+  allowAnyRegion: false
   # Enable virtual-host-style bucket addressing (e.g. bucket.example.com).
   # Set to your domain (e.g. "example.com") to enable.
   virtualDomain: ""

@@ -57,6 +57,7 @@ type S3ApiServer struct {
 	health           string
 	maxConnections   int
 	maxRequests      int
+	allowAnyRegion   bool
 	webuiMountPrefix string
 	webuiSrvCfg      *webui.ServerConfig
 	clientIPHeader   string
@@ -208,7 +209,7 @@ func New(
 	}
 
 	// initilaze the default value setter middleware
-	app.Use("*", middlewares.SetDefaultValues(root, region))
+	app.Use("*", middlewares.SetDefaultValues(root, region, server.allowAnyRegion))
 
 	// initialize the 'DecodeURL' middleware which
 	// path unescapes the url
@@ -307,6 +308,13 @@ func WithMpMaxParts(n int) Option {
 // WithDisableSSECTLS disables the TLS requirement for SSE-C requests.
 func WithDisableSSECTLS() Option {
 	return func(s *S3ApiServer) { s.Router.disableSSECTLS = true }
+}
+
+// WithAllowAnyRegion accepts requests signed for any region, not just the
+// gateway region, and CreateBucket requests with any location constraint.
+// The gateway still reports its own region to clients.
+func WithAllowAnyRegion() Option {
+	return func(s *S3ApiServer) { s.allowAnyRegion = true }
 }
 
 // WithHostStyle enabled host-style bucket addressing on the server

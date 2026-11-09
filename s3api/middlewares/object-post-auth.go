@@ -163,7 +163,7 @@ func AuthorizePostObject(be backend.Backend, root RootUserConfig, iam auth.IAMSe
 				return err
 			}
 
-			if region != creds.Region {
+			if !utils.ContextKeyAnyRegion.IsSet(ctx) && region != creds.Region {
 				debuglogger.Logf("incorrect POST object credential region: got %q want %q", creds.Region, region)
 				return s3err.PostAuth.IncorrectRegion(credentialStr, region, creds.Region)
 			}

@@ -23,6 +23,7 @@ type ContextKey = httpctx.ContextKey
 
 const (
 	ContextKeyRegion           = httpctx.ContextKeyRegion
+	ContextKeyAnyRegion        = httpctx.ContextKeyAnyRegion
 	ContextKeyStartTime        = httpctx.ContextKeyStartTime
 	ContextKeyIsRoot           = httpctx.ContextKeyIsRoot
 	ContextKeyRootAccessKey    = httpctx.ContextKeyRootAccessKey
