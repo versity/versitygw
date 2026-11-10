@@ -29,12 +29,12 @@ const (
 	mkdirRetryMaxWait = 128 * mkdirRetryWait
 )
 
-// mkdir and lstat are os.Mkdir and os.Lstat, replaced in tests to reproduce
-// what shared filesystems report while another node removes a directory.
-// Tests that replace them must not run in parallel.
+// osMkdir and osLstat are os.Mkdir and os.Lstat, replaced in tests to
+// reproduce what shared filesystems report while another node removes a
+// directory. Tests that replace them must not run in parallel.
 var (
-	mkdir = os.Mkdir
-	lstat = os.Lstat
+	osMkdir = os.Mkdir
+	osLstat = os.Lstat
 )
 
 // MkdirAll is similar to os.MkdirAll but it will return
@@ -90,7 +90,7 @@ func mkdirAll(path string, uid, gid int, doChown bool, dirPerm fs.FileMode, retr
 		}
 
 		// Parent now exists; invoke Mkdir and use its result.
-		err = mkdir(path, dirPerm)
+		err = osMkdir(path, dirPerm)
 		if err == nil {
 			break
 		}
@@ -103,30 +103,31 @@ func mkdirAll(path string, uid, gid int, doChown bool, dirPerm fs.FileMode, retr
 
 		// Handle arguments like "foo/." by
 		// double-checking that directory doesn't exist.
-		dir, err1 := lstat(path)
+		dir, err1 := osLstat(path)
 		if errors.Is(err, fs.ErrExist) && errors.Is(err1, fs.ErrNotExist) {
 			// Mkdir saw a directory that Lstat doesn't: it was removed
 			// right after another writer made it, or this client has a
 			// stale lookup of it cached.
 			dir, err1 = lstatRevalidated(path)
-			if errors.Is(err1, fs.ErrNotExist) && *retries > 0 {
-				takeMkdirRetry(retries)
-				continue
-			}
 		}
-		if errors.Is(err, fs.ErrExist) && isParentGone(err1) {
-			// Mkdir found path, so its parents were directories then, and
-			// one of them has been removed since: IBM Storage Scale reports
-			// a directory that another node is removing as ENOTDIR, and NFS
-			// a removed one as ESTALE. Make the parents again. If a file
-			// has taken the place of one, the stat of it on the next pass
-			// returns ErrObjectParentIsFile.
+		// Mkdir found path, so unless path ends in a separator, its
+		// parents were directories then, and a lookup that fails on one
+		// of them now means it has been removed since: IBM Storage Scale
+		// reports a directory that another node is removing as ENOTDIR,
+		// and NFS a removed one as ESTALE. With a trailing separator
+		// ("file/") the two calls give these answers for a file at path,
+		// with nothing removed, so that isn't retried.
+		parentGone := i == len(path) && isNotDirOrStale(err1)
+		if errors.Is(err, fs.ErrExist) && (errors.Is(err1, fs.ErrNotExist) || parentGone) {
 			if *retries == 0 {
-				// Return the Lstat error rather than the EEXIST:
-				// publishInDir takes it as the parent being gone and
-				// retries after a longer wait.
+				// Return the lookup error rather than the EEXIST, so
+				// callers can tell a path that vanished from one that
+				// exists.
 				return err1
 			}
+			// Make the parents again. If a file has taken the place of
+			// one, the stat of it on the next pass returns
+			// ErrObjectParentIsFile.
 			takeMkdirRetry(retries)
 			continue
 		}
@@ -174,12 +175,12 @@ func lstatRevalidated(path string) (fs.FileInfo, error) {
 	if d, err := os.Open(filepath.Dir(path)); err == nil {
 		d.Close()
 	}
-	return lstat(path)
+	return osLstat(path)
 }
 
-// isParentGone reports whether err from a lookup of a path means that a
-// parent directory of it isn't there anymore, either as ENOTDIR or as a
-// stale handle (ESTALE).
-func isParentGone(err error) bool {
+// isNotDirOrStale reports whether err is ENOTDIR or a stale handle (ESTALE):
+// what a lookup of a path returns when a parent directory of it isn't a
+// directory anymore. A parent that is missing (ENOENT) is not included.
+func isNotDirOrStale(err error) bool {
 	return errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ESTALE)
 }
