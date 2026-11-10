@@ -75,6 +75,8 @@ func (f *Fake) Handles() int {
 }
 
 // WriteLens returns the lengths of every Write call, in order.
+// Writes to the temporary root (.sgwtmp) are excluded: that root
+// carries staging files and recovery records, not object bodies.
 func (f *Fake) WriteLens() []int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -96,10 +98,13 @@ func (f *Fake) ChunkSizeCalls() []int64 {
 }
 
 type node struct {
-	name    string
-	dir     bool
-	data    []byte
-	mtime   int64
+	name  string
+	dir   bool
+	data  []byte
+	mtime int64
+	// tmp marks nodes under the temporary root (.sgwtmp): staging
+	// and record files, excluded from the object-body counters.
+	tmp     bool
 	xattr   map[string][]byte
 	kids    map[string]*node
 	deleted bool
@@ -133,7 +138,7 @@ func (f *Fake) Open(p string, flags int) (Object, error) {
 		if _, ok := parent.kids[base]; ok {
 			return nil, errExist
 		}
-		n = &node{name: base, mtime: now(), xattr: map[string][]byte{}}
+		n = &node{name: base, mtime: now(), xattr: map[string][]byte{}, tmp: isRecordName(p)}
 		parent.kids[base] = n
 	} else if flags&openExcl != 0 && flags&openCreate != 0 {
 		return nil, errExist
@@ -222,8 +227,10 @@ func (f *Fake) Write(obj Object, buf []byte, off int64) (int, error) {
 	}
 	copy(n.data[off:], buf)
 	n.mtime = now()
-	f.bytesWritten += int64(len(buf))
-	f.writeLens = append(f.writeLens, len(buf))
+	if !n.tmp {
+		f.bytesWritten += int64(len(buf))
+		f.writeLens = append(f.writeLens, len(buf))
+	}
 	return len(buf), nil
 }
 
@@ -599,3 +606,12 @@ func clean(p string) string {
 }
 
 func errorsIs(err, target error) bool { return err == target }
+
+// isRecordName reports whether p is a durable recovery record
+// (op-<uuid>) under the temporary root. Record writes are
+// bookkeeping, not object bodies, so the write counters skip them;
+// staging files carry real object bytes and stay counted.
+func isRecordName(p string) bool {
+	base := path.Base(p)
+	return strings.HasPrefix(base, "op-") && strings.Contains("/"+p+"/", "/.sgwtmp/")
+}

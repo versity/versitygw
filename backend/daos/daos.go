@@ -17,7 +17,6 @@ package daos
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -31,7 +30,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/google/uuid"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
@@ -60,6 +58,9 @@ type Daos struct {
 	// keep the library defaults.
 	oclass    string
 	chunkSize int64
+	// coord serializes publication and tracks reader lifetimes for
+	// this gateway process. See coordinator.go.
+	coord *coord
 }
 
 var _ backend.Backend = &Daos{}
@@ -67,7 +68,11 @@ var _ backend.Backend = &Daos{}
 // NewWithFS builds a backend on an already-open seam. It does not call
 // dfs_connect. The command-line constructor stays New.
 func NewWithFS(fs FS) *Daos {
-	return &Daos{fs: fs}
+	c := newCoord()
+	// The startup scan classifies recovery residue before any
+	// admission gate opens; it never restores anything.
+	_ = c.classifyResidue(fs)
+	return &Daos{fs: fs, coord: c}
 }
 
 // SetBucketDefaults configures the object class and chunk size applied to
@@ -188,13 +193,17 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 	if err := validBucketName(bucket); err != nil {
 		return nil, err
 	}
-	info, obj, err := d.openLive(bucket, key, openRead)
+	info, obj, lease, err := d.openLive(bucket, key, openRead)
 	if err != nil {
 		return nil, err
 	}
+	release := func() {
+		lease.release(d.fs)
+		d.fs.Release(obj)
+	}
 	etag, meta, headers, err := d.attrs(obj)
 	if err != nil {
-		d.fs.Release(obj)
+		release()
 		return nil, err
 	}
 	mod := time.Unix(info.Mtime, 0).UTC()
@@ -204,21 +213,29 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 		IfModSince:    input.IfModifiedSince,
 		IfUnmodeSince: input.IfUnmodifiedSince,
 	}); err != nil {
-		d.fs.Release(obj)
+		release()
 		return nil, err
 	}
 	start, length, ranged, err := objectRange(input.Range, info.Size)
 	if err != nil {
-		d.fs.Release(obj)
+		release()
 		return nil, err
 	}
-	body := io.ReadCloser(&dfsBodyReader{fs: d.fs, obj: obj, rem: length, off: start})
+	var body io.ReadCloser
 	if info.IsDir {
+		// A directory body carries no bytes and owns no lease.
+		release()
 		body = io.NopCloser(bytes.NewReader(nil))
+	} else {
+		body = io.ReadCloser(&dfsBodyReader{fs: d.fs, obj: obj, lease: lease, rem: length, off: start})
 	}
 	ch, err := d.loadChecksums(obj)
 	if err != nil {
-		d.fs.Release(obj)
+		if info.IsDir {
+			d.fs.Release(obj)
+		} else {
+			body.Close()
+		}
 		return nil, err
 	}
 	if info.IsDir {
@@ -247,15 +264,18 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 	return out, nil
 }
 
-// dfsBodyReader streams object bytes from an open handle and releases the
-// handle when the response body closes. A zero read while bytes are still
-// owed latches ErrUnexpectedEOF, the same condition readFull detects.
+// dfsBodyReader streams object bytes from an open handle and
+// releases the handle - and the reader lease pinning its
+// generation - when the response body closes. A zero read while
+// bytes are still owed latches ErrUnexpectedEOF, the same condition
+// readFull detects.
 type dfsBodyReader struct {
-	fs  FS
-	obj Object
-	off int64
-	rem int64
-	err error
+	fs    FS
+	obj   Object
+	lease *readerLease
+	off   int64
+	rem   int64
+	err   error
 }
 
 func (r *dfsBodyReader) Read(p []byte) (int, error) {
@@ -288,6 +308,7 @@ func (r *dfsBodyReader) Read(p []byte) (int, error) {
 }
 
 func (r *dfsBodyReader) Close() error {
+	r.lease.release(r.fs)
 	return r.fs.Release(r.obj)
 }
 
@@ -300,11 +321,14 @@ func (d *Daos) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.Hea
 	if err := d.bucketExists(bucket); err != nil {
 		return nil, err
 	}
-	info, obj, err := d.openLive(bucket, key, openRead)
+	info, obj, lease, err := d.openLive(bucket, key, openRead)
 	if err != nil {
 		return nil, err
 	}
-	defer d.fs.Release(obj)
+	defer func() {
+		lease.release(d.fs)
+		d.fs.Release(obj)
+	}()
 	etag, meta, headers, err := d.attrs(obj)
 	if err != nil {
 		return nil, err
@@ -349,7 +373,9 @@ func (d *Daos) checkDestPreconditions(bucket, key string, ifMatch, ifNoneMatch *
 	}
 	_, err := d.fs.Stat(objectPath(bucket, key))
 	if errors.Is(err, errNotExist) {
-		return nil
+		// A missing destination still evaluates: If-Match against a
+		// missing object is NoSuchKey, per the shared evaluator.
+		return backend.EvaluateObjectPutPreconditions("", ifMatch, ifNoneMatch, false)
 	}
 	if err != nil {
 		return d.mapKeyErr(err, key)
@@ -391,6 +417,15 @@ func (d *Daos) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) (*s3
 	if strings.HasSuffix(key, "/") != info.IsDir {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	// A regular file is retired rather than removed: an open GET
+	// reader keeps its bytes, and the delete is still acknowledged
+	// now. Directories keep the nonrecursive remove below.
+	if !info.IsDir {
+		if err := d.deleteFile(bucket, key); err != nil {
+			return nil, err
+		}
+		return &s3.DeleteObjectOutput{}, nil
+	}
 	if err := d.fs.Remove(objectPath(bucket, key), false); err != nil {
 		if errors.Is(err, errNotExist) {
 			return &s3.DeleteObjectOutput{}, nil
@@ -423,8 +458,20 @@ func (d *Daos) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) 
 	return result, nil
 }
 
+// putFile stages the body and publishes it unconditionally.
 func (d *Daos) putFile(bucket, key string, body io.Reader, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
-	tmp := objectPath(bucket, tmpDirName+"/put-"+uuid.NewString())
+	return d.putFileConds(bucket, key, body, po, nil, nil)
+}
+
+// putFileConds stages the body outside the guard, then publishes it
+// through the guarded helper; the destination conditions of a copy
+// are evaluated inside that critical section, against the
+// destination it observes.
+func (d *Daos) putFileConds(bucket, key string, body io.Reader, po s3response.PutObjectInput, ifMatch, ifNoneMatch *string) (s3response.PutObjectOutput, error) {
+	// The operation record binds the target before staging exists,
+	// so a stop mid-staging still leaves a classifiable record.
+	opID := newOpID()
+	tmp := objectPath(bucket, tmpDirName+"/put-"+opID)
 	if err := d.mkdirParents(tmp); err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
@@ -467,29 +514,33 @@ func (d *Daos) putFile(bucket, key string, body io.Reader, po s3response.PutObje
 		}
 		fillPutChecksum(&out, ch)
 	}
-	dst := objectPath(bucket, key)
-	if err := d.mkdirParents(dst); err != nil {
-		return s3response.PutObjectOutput{}, d.mapKeyErr(err, key)
-	}
-	// Publishing over an existing object would punch the object a lazy
-	// GET reader may still stream from, because dfs_move removes the
-	// old entry. Retire the old object first: the rename keeps the
-	// object id, so an open handle stays readable. The per-key slot
-	// means the key's next publish removes any earlier retired object,
-	// and the bucket's temporary cleanup catches the rest. A directory
-	// at the destination is never retired; the publish itself must
-	// fail on it with a file-over-directory conflict.
-	if info, err := d.fs.Stat(dst); err == nil && !info.IsDir {
-		if merr := d.fs.Move(dst, retirePath(bucket, key)); merr != nil {
-			return s3response.PutObjectOutput{}, d.mapKeyErr(merr, key)
-		}
-		defer func() { _ = d.fs.Remove(retirePath(bucket, key), false) }()
-	}
-	if err := d.fs.Move(tmp, dst); err != nil {
-		return s3response.PutObjectOutput{}, d.mapKeyErr(err, key)
+	// Publication is the guarded step: condition evaluation, retire,
+	// publish, and rollback run in one critical section shared by
+	// every destination writer. Unconditional PUTs pass nil
+	// conditions; the guard itself is what closes the race.
+	if _, err := d.publish(bucket, key, tmp, ifMatch, ifNoneMatch, recKindPut, opID); err != nil {
+		return s3response.PutObjectOutput{}, err
 	}
 	moved = true
 	return out, nil
+}
+
+// reclaimIfIdle removes a just-committed retiree that never had a
+// reader. Reader-pinned retirees wait for their last lease. It
+// reports whether the retiree (and with it the operation record) is
+// fully disposed of.
+func (d *Daos) reclaimIfIdle(bucket, key string) bool {
+	rp := d.coord.idleRetire(bucket, key)
+	if rp == "" {
+		return false
+	}
+	if err := d.fs.Remove(rp, false); err != nil && !errors.Is(err, errNotExist) {
+		// The retiree survived removal: keep the record so the
+		// restart scan classifies it instead of treating it as
+		// disposable.
+		return false
+	}
+	return true
 }
 
 func (d *Daos) putDirectory(bucket, key string, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
@@ -690,28 +741,39 @@ func strPtr(v string) *string {
 	return &v
 }
 
-func (d *Daos) openLive(bucket, key string, flags int) (Info, Object, error) {
+// openLive resolves the live object and acquires a reader lease on
+// its generation. The namespace mutex covers open through metadata
+// capture, so the lease and the bytes always belong to the same
+// generation. Release happens when the caller's stream closes (the
+// body reader) or immediately on error.
+func (d *Daos) openLive(bucket, key string, flags int) (Info, Object, *readerLease, error) {
+	d.coord.ns.mu.Lock()
+	defer d.coord.ns.mu.Unlock()
 	p := objectPath(bucket, key)
 	obj, err := d.fs.Open(p, flags)
 	if err != nil {
-		return Info{}, nil, d.mapOpenErr(err, bucket, key)
+		return Info{}, nil, nil, d.mapOpenErr(err, bucket, key)
 	}
 	info, err := d.fs.StatObj(obj)
 	if err != nil {
 		d.fs.Release(obj)
-		return Info{}, nil, mapFS(err)
+		return Info{}, nil, nil, mapFS(err)
 	}
 	wantDir := strings.HasSuffix(key, "/")
 	if wantDir != info.IsDir {
 		d.fs.Release(obj)
-		return Info{}, nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		return Info{}, nil, nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	// libdfs reports a nonzero size on a directory (the size of its
 	// internal entry struct); an S3 directory object is always empty.
 	if info.IsDir {
 		info.Size = 0
 	}
-	return info, obj, nil
+	var lease *readerLease
+	if !info.IsDir {
+		lease = d.coord.acquire(bucket, key)
+	}
+	return info, obj, lease, nil
 }
 
 // mapOpenErr classifies an open failure: a missing or non-directory
@@ -856,15 +918,6 @@ func writeFull(fs FS, obj Object, buf []byte, off int64) (int, error) {
 
 func objectPath(bucket, key string) string {
 	return bucket + "/" + strings.TrimPrefix(key, "/")
-}
-
-// retirePath names the per-key slot under the temporary directory where
-// an object being replaced waits out any reader still streaming from its
-// open handle. The sha256 of the key keeps the name bounded regardless
-// of key length.
-func retirePath(bucket, key string) string {
-	sum := sha256.Sum256([]byte(key))
-	return objectPath(bucket, tmpDirName+"/retire-"+hex.EncodeToString(sum[:8]))
 }
 
 func reservedKey(key string) error {
