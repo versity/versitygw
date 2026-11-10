@@ -404,6 +404,53 @@ func TestDetectStaleEtagSelfCopy(t *testing.T) {
 	assert.Equal(t, "application/x-replaced", aws.ToString(h.ContentType))
 }
 
+// TestDetectStaleEtagUploadPartCopy checks that a part copied from a stale
+// source gets the checksum of the source's current content, not the one
+// stored for its old content, so that the object completed from it has the
+// right checksum.
+func TestDetectStaleEtagUploadPartCopy(t *testing.T) {
+	ctx := context.Background()
+	p := newStaleEtagPosix(t, true, false)
+	bucket, src, dst, ref := "testbucket", "src", "dst", "ref"
+	createTestBucket(t, p, bucket)
+	_, err := testPut(p, bucket, src, []byte("version-one"), nil, nil)
+	require.NoError(t, err)
+	rewrite(t, p.ObjectPath(bucket, src), "version-two-longer", time.Now().Add(time.Minute))
+	require.True(t, isStaleEtag(aws.ToString(headEtag(t, p, bucket, src).ETag)))
+
+	// the checksum of the current content
+	_, err = testPut(p, bucket, ref, []byte("version-two-longer"), nil, nil)
+	require.NoError(t, err)
+	want := aws.ToString(headEtag(t, p, bucket, ref).ChecksumCRC64NVME)
+	require.NotEmpty(t, want)
+
+	mp, err := p.CreateMultipartUpload(ctx, s3response.CreateMultipartUploadInput{
+		Bucket:            &bucket,
+		Key:               &dst,
+		ChecksumAlgorithm: types.ChecksumAlgorithmCrc64nvme,
+		ChecksumType:      types.ChecksumTypeFullObject,
+	})
+	require.NoError(t, err)
+	part, err := p.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+		Bucket:          &bucket,
+		Key:             &dst,
+		UploadId:        &mp.UploadId,
+		PartNumber:      aws.Int32(1),
+		CopySource:      aws.String(bucket + "/" + src),
+		CopySourceRange: aws.String(""),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, want, aws.ToString(part.ChecksumCRC64NVME))
+
+	_, _, err = p.CompleteMultipartUpload(ctx, completeTestUploadInput(bucket, dst, mp.UploadId, []types.CompletedPart{{
+		PartNumber:        aws.Int32(1),
+		ETag:              part.ETag,
+		ChecksumCRC64NVME: part.ChecksumCRC64NVME,
+	}}))
+	require.NoError(t, err)
+	assert.Equal(t, want, aws.ToString(headEtag(t, p, bucket, dst).ChecksumCRC64NVME))
+}
+
 // TestDetectStaleEtagRace checks that objects written only through the
 // gateway are never served as stale while they are replaced concurrently,
 // and that a stale etag is never served with checksums.
@@ -482,12 +529,15 @@ func TestStaleEtagUnrecorded(t *testing.T) {
 }
 
 // TestDetectStaleEtagSidecar checks that the option is refused with sidecar
-// metadata, which isn't kept on the inode it describes.
+// metadata, which isn't kept on the inode it describes, and without
+// metadata.
 func TestDetectStaleEtagSidecar(t *testing.T) {
 	sc, err := meta.NewSideCar(t.TempDir())
 	require.NoError(t, err)
-	_, err = New(t.TempDir(), sc, PosixOpts{DetectStaleEtag: true})
-	assert.ErrorContains(t, err, "extended attributes")
-	_, err = New(t.TempDir(), sc, PosixOpts{})
-	assert.NoError(t, err)
+	for _, ms := range []meta.MetadataStorer{sc, meta.NoMeta{}} {
+		_, err = New(t.TempDir(), ms, PosixOpts{DetectStaleEtag: true})
+		assert.ErrorContains(t, err, "needs xattr metadata")
+		_, err = New(t.TempDir(), ms, PosixOpts{})
+		assert.NoError(t, err)
+	}
 }
