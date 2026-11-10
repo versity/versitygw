@@ -7201,12 +7201,19 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 					return s3response.CopyObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
 				}
 
-				_, err = hashReader.Read(nil)
+				// read the whole object: a single Read hashes only
+				// the bytes read into its buffer
+				_, err = io.Copy(io.Discard, hashReader)
 				if err != nil {
 					return s3response.CopyObjectOutput{}, fmt.Errorf("read err: %w", err)
 				}
 
-				checksums = s3response.Checksum{}
+				// The new checksum replaces the stored one, so it is
+				// a FULL_OBJECT checksum of the given algorithm
+				checksums = s3response.Checksum{
+					Algorithm: input.ChecksumAlgorithm,
+					Type:      types.ChecksumTypeFullObject,
+				}
 
 				sum := hashReader.Sum()
 				switch hashReader.Type() {
