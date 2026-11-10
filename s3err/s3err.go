@@ -399,7 +399,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrMaxPostPreDataLengthExceeded: {
 		Code:           "MaxPostPreDataLengthExceeded",
-		Description:    "Your POST request fields preceding the upload file were too large.",
+		Description:    "Your POST request fields preceeding the upload file was too large.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrEntityTooSmall: {

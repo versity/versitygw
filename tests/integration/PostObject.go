@@ -1839,7 +1839,7 @@ func PostObject_data_before_file_limit(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMaxPostPreDataLengthExceeded)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetMaxPostPreDataLengthExceededErr(20<<10)); err != nil {
 			return fmt.Errorf("over the limit: %w", err)
 		}
 

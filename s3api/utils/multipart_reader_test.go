@@ -455,6 +455,32 @@ func TestMultipartParserParseErrors(t *testing.T) {
 	}
 }
 
+// TestMultipartParserPreDataLimitErrorBody checks the response S3 sends for
+// fields before the file that are too large: its message, typo included, and
+// the MaxPostPreDataLengthBytes element.
+func TestMultipartParserPreDataLimitErrorBody(t *testing.T) {
+	t.Parallel()
+
+	_, err := newMultipartParserForTest(t, preDataForm(preDataPaddingAtLimit+1), "abc").Parse()
+
+	var s3Err s3err.S3Error
+	if !errors.As(err, &s3Err) {
+		t.Fatalf("expected an s3 error, got %v", err)
+	}
+
+	want := `<?xml version="1.0" encoding="UTF-8"?>` + "\n" +
+		`<Error>` +
+		`<Code>MaxPostPreDataLengthExceeded</Code>` +
+		`<Message>Your POST request fields preceeding the upload file was too large.</Message>` +
+		`<MaxPostPreDataLengthBytes>20480</MaxPostPreDataLengthBytes>` +
+		`<RequestId>req</RequestId>` +
+		`<HostId>host</HostId>` +
+		`</Error>`
+	if got := string(s3Err.XMLBody("req", "host")); got != want {
+		t.Fatalf("unexpected error body:\n got: %s\nwant: %s", got, want)
+	}
+}
+
 func TestMultipartParserFileReaderRequiresFinalBoundary(t *testing.T) {
 	t.Parallel()
 

@@ -254,7 +254,7 @@ func (mp *MultipartParser) readLine() (string, []byte, error) {
 		raw = append(raw, chunk...)
 		if mp.bytesRead+int64(len(raw)) > maxPreDataLength {
 			debuglogger.Logf("multipart data before the file exceeds %d bytes", maxPreDataLength)
-			return "", nil, s3err.GetAPIError(s3err.ErrMaxPostPreDataLengthExceeded)
+			return "", nil, s3err.GetMaxPostPreDataLengthExceededErr(maxPreDataLength)
 		}
 		if err == bufio.ErrBufferFull {
 			continue

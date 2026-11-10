@@ -610,6 +610,7 @@ type APIErrorResponse struct {
 	ProposedSize                int64                      `xml:"ProposedSize,omitempty"`
 	MaxSizeAllowed              int64                      `xml:"MaxSizeAllowed,omitempty"`
 	MinSizeAllowed              int64                      `xml:"MinSizeAllowed,omitempty"`
+	MaxPostPreDataLengthBytes   int64                      `xml:"MaxPostPreDataLengthBytes,omitempty"`
 	ServerTime                  string                     `xml:"ServerTime,omitempty"`
 	XAmzExpires                 int                        `xml:"X-Amz-Expires,omitempty"`
 	Expires                     string                     `xml:"Expires,omitempty"`
@@ -1064,6 +1065,8 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 			compareErrField("Size", err.Size, received.Size),
 			compareErrField("MaxSizeAllowed", err.MaxSizeAllowed, received.MaxSizeAllowed),
 		)
+	case s3err.MaxPostPreDataLengthExceededError:
+		return compareErrField("MaxPostPreDataLengthBytes", err.MaxPostPreDataLengthBytes, received.MaxPostPreDataLengthBytes)
 	case s3err.MetadataTooLargeError:
 		return compareS3ApiErrFields(
 			compareErrField("Size", int64(err.Size), received.Size),
