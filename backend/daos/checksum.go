@@ -120,6 +120,23 @@ func fillPutChecksum(out *s3response.PutObjectOutput, ch s3response.Checksum) {
 	out.ChecksumXXHASH128 = ch.XXHASH128
 }
 
+// fillCopyResultChecksum copies the checksum fields of a successful
+// destination put onto a copy result, so the copy response reports the
+// same checksum it stored.
+func fillCopyResultChecksum(res *s3response.CopyObjectResult, put s3response.PutObjectOutput) {
+	res.ChecksumType = put.ChecksumType
+	res.ChecksumCRC32 = put.ChecksumCRC32
+	res.ChecksumCRC32C = put.ChecksumCRC32C
+	res.ChecksumSHA1 = put.ChecksumSHA1
+	res.ChecksumSHA256 = put.ChecksumSHA256
+	res.ChecksumCRC64NVME = put.ChecksumCRC64NVME
+	res.ChecksumSHA512 = put.ChecksumSHA512
+	res.ChecksumMD5 = put.ChecksumMD5
+	res.ChecksumXXHASH64 = put.ChecksumXXHASH64
+	res.ChecksumXXHASH3 = put.ChecksumXXHASH3
+	res.ChecksumXXHASH128 = put.ChecksumXXHASH128
+}
+
 func fillGetChecksum(out *s3.GetObjectOutput, ch s3response.Checksum) {
 	out.ChecksumType = ch.Type
 	out.ChecksumCRC32 = ch.CRC32

@@ -69,6 +69,9 @@ func (d *Daos) CopyObject(_ context.Context, input s3response.CopyObjectInput) (
 	if err := d.bucketExists(dstBucket); err != nil {
 		return out, err
 	}
+	if err := d.checkDestPreconditions(dstBucket, dstKey, input.IfMatch, input.IfNoneMatch); err != nil {
+		return out, err
+	}
 	info, obj, err := d.openLive(srcBucket, srcKey, openRead)
 	if err != nil {
 		return out, err
@@ -122,11 +125,16 @@ func (d *Daos) CopyObject(_ context.Context, input s3response.CopyObjectInput) (
 	}
 	etag := putOut.ETag
 	written := time.Unix(dstInfo.Mtime, 0).UTC()
+	res := s3response.CopyObjectResult{
+		ETag:         &etag,
+		LastModified: &written,
+	}
+	// The copy response carries the same checksum the destination put
+	// computed; without it a client that asked for one cannot confirm
+	// it from the result alone.
+	fillCopyResultChecksum(&res, putOut)
 	return s3response.CopyObjectOutput{
-		CopyObjectResult: &s3response.CopyObjectResult{
-			ETag:         &etag,
-			LastModified: &written,
-		},
+		CopyObjectResult: &res,
 	}, nil
 }
 
@@ -296,6 +304,9 @@ func unsupportedCopy(in s3response.CopyObjectInput) bool {
 	if in.ObjectLockMode != "" || in.ObjectLockLegalHoldStatus != "" || lockDateSet(in.ObjectLockRetainUntilDate) {
 		return true
 	}
+	// Destination write conditions need the object at the destination
+	// key; they are evaluated rather than rejected, so they do not
+	// belong here.
 	if in.ACL != "" || in.ServerSideEncryption != "" || (in.StorageClass != "" && in.StorageClass != types.StorageClassStandard) {
 		return true
 	}
