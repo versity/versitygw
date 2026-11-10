@@ -167,6 +167,7 @@ func TestGetObjectAttributesMatchOpenedFile(t *testing.T) {
 			stale: map[string][]byte{
 				versionIdKey: []byte("stale-version"),
 				mpMetaKey:    staleMp,
+				cacheCtrlHdr: []byte("stale-cache"),
 			},
 		}, PosixOpts{NewDirPerm: 0755, VersioningDir: t.TempDir()}
 	})
@@ -188,6 +189,10 @@ func TestGetObjectAttributesMatchOpenedFile(t *testing.T) {
 		t.Fatalf("store mp metadata: %v", err)
 	}
 
+	if err := p.meta.StoreAttribute(nil, bucket, key, cacheCtrlHdr, []byte("max-age=60")); err != nil {
+		t.Fatal(err)
+	}
+
 	t.Run("version id", func(t *testing.T) {
 		out, err := p.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
 		if err != nil {
@@ -207,6 +212,9 @@ func TestGetObjectAttributesMatchOpenedFile(t *testing.T) {
 		})
 		if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
 			t.Fatalf("get object: %v, want not modified", err)
+		}
+		if got := aws.ToString(out.CacheControl); got != "max-age=60" {
+			t.Fatalf("304 CacheControl = %q", got)
 		}
 		if got := aws.ToString(out.VersionId); got != res.VersionID {
 			t.Fatalf("304 version id = %q, want the opened object's %q", got, res.VersionID)
@@ -436,5 +444,43 @@ func TestGetObjectLiveVersionIdFromOpenedFile(t *testing.T) {
 				t.Fatalf("got version id %q, want %q of the opened object", got, first.VersionID)
 			}
 		})
+	}
+}
+
+func TestGetObjectDeleteMarkerMovedAfterLookup(t *testing.T) {
+	const bucket, key = "testbucket", "obj"
+	var replace func()
+	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		return beforeReadMeta{object: key, attribute: deleteMarkerKey, run: &replace}, PosixOpts{NewDirPerm: 0755, VersioningDir: t.TempDir()}
+	})
+	createTestBucket(t, p, bucket)
+	ctx := context.Background()
+	if err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPut(p, bucket, key, []byte("hidden"), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := p.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replace = func() {
+		if _, err := testPut(p, bucket, key, []byte("new"), nil, nil); err != nil {
+			t.Error(err)
+		}
+	}
+	out, err := p.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key), VersionId: marker.VersionId})
+	if out != nil && out.Body != nil {
+		out.Body.Close()
+	}
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed)) {
+		t.Fatalf("get marker: %v, want MethodNotAllowed", err)
+	}
+	if out == nil || !aws.ToBool(out.DeleteMarker) || out.LastModified == nil {
+		t.Fatalf("marker output = %+v", out)
+	}
+	if replace != nil {
+		t.Fatal("delete marker lookup did not run")
 	}
 }

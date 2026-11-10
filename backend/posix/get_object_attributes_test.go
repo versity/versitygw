@@ -165,12 +165,12 @@ func (m removeAfterReadMeta) RetrieveAttribute(f *os.File, bucket, object, attri
 	return b, err
 }
 
-// TestGetObjectRemovedBeforeOpen checks that GetObject answers NoSuchKey
-// when the object is deleted after its stat of the object and before its
-// open of it, also when the delete removes the object's directory and an
-// upload puts an object in its place, which fails the open with ENOTDIR.
-// It answers NoSuchVersion only when the request names a version, not when
-// it looked up the version of the live object.
+// TestGetObjectRemovedBeforeOpen removes the object after the delete-marker
+// check. File objects then fail to open, including with ENOTDIR when their
+// parent directory is replaced by a file. Directory objects are never opened;
+// their next path-based attribute read detects the removal instead.
+// The response is NoSuchVersion only when the request names a version,
+// otherwise NoSuchKey, including in a versioned bucket.
 func TestGetObjectRemovedBeforeOpen(t *testing.T) {
 	for _, tc := range []struct {
 		name           string

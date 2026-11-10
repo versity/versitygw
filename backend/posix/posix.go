@@ -6264,6 +6264,19 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 		if err != nil {
 			return nil, fmt.Errorf("stat object: %w", err)
 		}
+
+		if requestedVersionId != "" && bucket != origBucket {
+			_, err := p.meta.RetrieveAttribute(f, bucket, object, deleteMarkerKey)
+			if err == nil {
+				return &s3.GetObjectOutput{
+					DeleteMarker: getBoolPtr(true),
+					LastModified: backend.GetTimePtr(fi.ModTime()),
+				}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+			}
+			if !errors.Is(err, meta.ErrNoSuchKey) {
+				return nil, fmt.Errorf("get object delete-marker: %w", err)
+			}
+		}
 	}
 
 	b, err := p.meta.RetrieveAttribute(f, bucket, object, etagkey)
