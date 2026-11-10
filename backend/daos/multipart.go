@@ -230,13 +230,6 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 	claim := path.Join(hashDir, uploadID+"."+strings.Trim(etag, `"`)+inProgressSuffix)
 	var ch s3response.Checksum
 	if _, err := d.fs.Stat(uploadDir); err == nil {
-		if err := d.verifyParts(uploadDir, uploadID, parts); err != nil {
-			return out, "", err
-		}
-		ch, err = d.objectChecksumFromParts(uploadDir, input, parts)
-		if err != nil {
-			return out, "", err
-		}
 		if err := d.fs.Move(uploadDir, claim); err != nil {
 			if _, statErr := d.fs.Stat(claim); statErr != nil {
 				return out, "", s3err.GetNoSuchUploadErr(uploadID)
@@ -246,9 +239,21 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 		return out, "", mapFS(err)
 	} else if _, statErr := d.fs.Stat(claim); statErr != nil {
 		return out, "", s3err.GetNoSuchUploadErr(uploadID)
-	} else if err := d.verifyParts(claim, uploadID, parts); err != nil {
-		return out, "", err
-	} else if ch, err = d.objectChecksumFromParts(claim, input, parts); err != nil {
+	}
+	// Both paths converge on the claim. An upload part can only be
+	// written under the upload directory's own name, so verifying and
+	// hashing under the claim means the bytes assembled are the bytes
+	// validated, even if a part was replaced while the upload was
+	// still addressable.
+	if uerr := d.verifyParts(claim, uploadID, parts); uerr != nil {
+		// A rejection after claiming must not strand the upload
+		// under a name UploadPart cannot reach: restore the upload
+		// directory when the claim is still ours to move back.
+		_ = d.fs.Move(claim, uploadDir)
+		return out, "", uerr
+	}
+	if ch, err = d.objectChecksumFromParts(claim, input, parts); err != nil {
+		_ = d.fs.Move(claim, uploadDir)
 		return out, "", err
 	}
 	tmp := objectPath(bucket, tmpDirName+"/put-"+uuid.NewString())
@@ -567,7 +572,7 @@ func (d *Daos) copyParts(dst Object, dir string, parts []types.CompletedPart) er
 }
 
 func (d *Daos) verifyParts(dir, uploadID string, parts []types.CompletedPart) error {
-	for _, part := range parts {
+	for i, part := range parts {
 		pp := path.Join(dir, strconv.FormatInt(int64(*part.PartNumber), 10))
 		got, err := d.xattr(pp, attrETag)
 		if errors.Is(err, errNotExist) {
@@ -578,6 +583,17 @@ func (d *Daos) verifyParts(dir, uploadID string, parts []types.CompletedPart) er
 		}
 		if !backend.AreEtagsSame(string(got), awsString(part.ETag)) {
 			return s3err.GetInvalidPartErr(uploadID, *part.PartNumber, awsString(part.ETag))
+		}
+		// Every part but the last must meet the minimum size; only
+		// the stored part knows its size, the controller does not.
+		if i < len(parts)-1 {
+			info, err := d.fs.Stat(pp)
+			if err != nil {
+				return mapFS(err)
+			}
+			if info.Size < backend.MinPartSize {
+				return s3err.GetEntityTooSmallErr(info.Size, backend.MinPartSize)
+			}
 		}
 	}
 	return nil
