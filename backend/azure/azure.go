@@ -2230,7 +2230,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 			return res, "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCompleteMpPartNumber, fmt.Sprint(*part.PartNumber))
 		}
 		if *part.PartNumber <= partNumber {
-			return res, "", s3err.GetAPIError(s3err.ErrInvalidPartOrder)
+			return res, "", s3err.GetInvalidPartOrderErr(*input.UploadId)
 		}
 		partNumber = *part.PartNumber
 

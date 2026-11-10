@@ -594,7 +594,18 @@ func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 		}
 	}
 
-	return res, versionid, handleError(err)
+	err = handleError(err)
+	var apiErr s3err.APIError
+	if errors.As(err, &apiErr) && apiErr.Code == s3err.GetAPIError(s3err.ErrInvalidPartOrder).Code {
+		// the sdk drops the UploadId element of the upstream error, and it
+		// is the one the request was sent with
+		return res, versionid, s3err.InvalidPartOrderError{
+			APIError: apiErr,
+			UploadId: aws.ToString(input.UploadId),
+		}
+	}
+
+	return res, versionid, err
 }
 
 func (s *S3Proxy) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
