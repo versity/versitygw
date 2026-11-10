@@ -65,19 +65,29 @@ func (d *Daos) CreateMultipartUpload(_ context.Context, input s3response.CreateM
 	}
 	uploadID := uuid.NewString()
 	uploadDir := path.Join(mpHashDir(bucket, key), uploadID)
+	// The durable session record exists before any session artifact:
+	// a stop mid-lifecycle leaves a classifiable record, and the
+	// claim alias policy has ownership from the start.
+	if err := d.writeRecord(recordForUpload(bucket, key, uploadID)); err != nil {
+		return out, err
+	}
 	if err := d.mkdirParents(uploadDir); err != nil {
+		d.removeRecord(bucket, uploadID)
 		return out, err
 	}
 	if err := d.fs.Mkdir(uploadDir); err != nil {
+		d.removeRecord(bucket, uploadID)
 		return out, mapFS(err)
 	}
 	if err := d.setXattr(path.Dir(uploadDir), attrObjName, []byte(key)); err != nil {
 		_ = d.fs.Remove(uploadDir, true)
+		d.removeRecord(bucket, uploadID)
 		return out, err
 	}
 	obj, err := d.fs.Open(uploadDir, openRead)
 	if err != nil {
 		_ = d.fs.Remove(uploadDir, true)
+		d.removeRecord(bucket, uploadID)
 		return out, mapFS(err)
 	}
 	err = d.storeAttrs(obj, "", putInputFromCreate(input), false)
@@ -93,6 +103,7 @@ func (d *Daos) CreateMultipartUpload(_ context.Context, input s3response.CreateM
 	d.fs.Release(obj)
 	if err != nil {
 		_ = d.fs.Remove(uploadDir, true)
+		d.removeRecord(bucket, uploadID)
 		return out, err
 	}
 	return s3response.InitiateMultipartUploadResult{
@@ -121,6 +132,16 @@ func (d *Daos) UploadPart(_ context.Context, input *s3.UploadPartInput) (*s3.Upl
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
+	// A quarantined session refuses part writes until reconciliation.
+	if d.coord.uploadHeld(bucket, key, uploadID) {
+		return nil, d.coord.quarantineUpload(bucket, key, uploadID, nil)
+	}
+	// The session guard covers the whole part write, including the
+	// parent-handle resolution inside the publishing Move, so a
+	// concurrent completion cannot claim the directory mid-write and
+	// an abort cannot remove it.
+	unlock := d.coord.uploads.lock(uploadID)
+	defer unlock()
 	uploadDir, err := d.uploadDirReady(bucket, key, uploadID)
 	if err != nil {
 		return nil, err
@@ -225,12 +246,27 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 	if err := partOrder(parts); err != nil {
 		return out, "", err
 	}
+	// A quarantined session (unresolved claim alias) refuses every
+	// mutation until reconciliation; the durable record identifies it.
+	if d.coord.uploadHeld(bucket, key, uploadID) {
+		return out, "", d.coord.quarantineUpload(bucket, key, uploadID, nil)
+	}
+	// The session guard serializes this completion against part
+	// writes, competing completions, and abort: the whole claim ->
+	// verify -> assemble -> publish -> cleanup runs under it.
+	unlock := d.coord.uploads.lock(uploadID)
+	defer unlock()
 	hashDir := mpHashDir(bucket, key)
 	uploadDir := path.Join(hashDir, uploadID)
 	claim := path.Join(hashDir, uploadID+"."+strings.Trim(etag, `"`)+inProgressSuffix)
 	var ch s3response.Checksum
 	if _, err := d.fs.Stat(uploadDir); err == nil {
 		if err := d.fs.Move(uploadDir, claim); err != nil {
+			// A failed claim Move may have left both names: that
+			// alias is never guessed at. Quarantine the session.
+			if aerr := d.ambiguousAfter(err, uploadDir, claim, recordForUpload(bucket, key, uploadID)); aerr != nil {
+				return out, "", aerr
+			}
 			if _, statErr := d.fs.Stat(claim); statErr != nil {
 				return out, "", s3err.GetNoSuchUploadErr(uploadID)
 			}
@@ -249,14 +285,19 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 		// A rejection after claiming must not strand the upload
 		// under a name UploadPart cannot reach: restore the upload
 		// directory when the claim is still ours to move back.
-		_ = d.fs.Move(claim, uploadDir)
+		if rerr := d.fs.Move(claim, uploadDir); rerr != nil {
+			return out, "", d.coord.quarantineUpload(bucket, key, uploadID, []string{claim, uploadDir})
+		}
 		return out, "", uerr
 	}
 	if ch, err = d.objectChecksumFromParts(claim, input, parts); err != nil {
-		_ = d.fs.Move(claim, uploadDir)
+		if rerr := d.fs.Move(claim, uploadDir); rerr != nil {
+			return out, "", d.coord.quarantineUpload(bucket, key, uploadID, []string{claim, uploadDir})
+		}
 		return out, "", err
 	}
-	tmp := objectPath(bucket, tmpDirName+"/put-"+uuid.NewString())
+	opID := newOpID()
+	tmp := objectPath(bucket, tmpDirName+"/put-"+opID)
 	if err := d.mkdirParents(tmp); err != nil {
 		return out, "", err
 	}
@@ -290,15 +331,19 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 	if _, err := d.fs.Stat(claim); err != nil {
 		return out, "", s3err.GetNoSuchUploadErr(uploadID)
 	}
-	dst := objectPath(bucket, key)
-	if err := d.mkdirParents(dst); err != nil {
-		return out, "", d.mapKeyErr(err, key)
-	}
-	if err := d.fs.Move(tmp, dst); err != nil {
-		return out, "", d.mapKeyErr(err, key)
+	// Publication goes through the guarded helper like every other
+	// destination writer; the session guard is already held, and the
+	// helper takes the namespace mutex inside.
+	if _, err := d.publish(bucket, key, tmp, nil, nil, recKindMPUPublish, opID); err != nil {
+		// The assembled object is safe in staging; put the upload
+		// back if the claim is still ours, so a retry can run.
+		_ = d.fs.Move(claim, uploadDir)
+		return out, "", err
 	}
 	published = true
 	_ = d.fs.Remove(claim, true)
+	d.removeRecord(bucket, uploadID)
+	d.reclaimIfIdle(bucket, key)
 	result := s3response.CompleteMultipartUploadResult{
 		Bucket: &bucket,
 		Key:    &key,
@@ -318,6 +363,14 @@ func (d *Daos) AbortMultipartUpload(_ context.Context, input *s3.AbortMultipartU
 	if err := validUploadID(uploadID); err != nil {
 		return err
 	}
+	// Abort is a destructive session participant: it holds the same
+	// guard so it cannot remove a claim mid-assembly, and a
+	// quarantined session refuses it until reconciliation.
+	if d.coord.uploadHeld(bucket, key, uploadID) {
+		return d.coord.quarantineUpload(bucket, key, uploadID, nil)
+	}
+	unlock := d.coord.uploads.lock(uploadID)
+	defer unlock()
 	hashDir := mpHashDir(bucket, key)
 	removed := false
 	if err := d.fs.Remove(path.Join(hashDir, uploadID), true); err == nil {
@@ -347,6 +400,9 @@ func (d *Daos) AbortMultipartUpload(_ context.Context, input *s3.AbortMultipartU
 	if !removed {
 		return s3err.GetNoSuchUploadErr(uploadID)
 	}
+	// The session tree is gone: the durable session record goes with
+	// it. Artifact-last - the record never outlives its artifacts.
+	d.removeRecord(bucket, uploadID)
 	return nil
 }
 

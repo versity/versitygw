@@ -69,14 +69,16 @@ func (d *Daos) CopyObject(_ context.Context, input s3response.CopyObjectInput) (
 	if err := d.bucketExists(dstBucket); err != nil {
 		return out, err
 	}
-	if err := d.checkDestPreconditions(dstBucket, dstKey, input.IfMatch, input.IfNoneMatch); err != nil {
-		return out, err
-	}
-	info, obj, err := d.openLive(srcBucket, srcKey, openRead)
+	// Destination conditions are evaluated inside the guarded
+	// publish, against the destination as observed there.
+	info, obj, srcLease, err := d.openLive(srcBucket, srcKey, openRead)
 	if err != nil {
 		return out, err
 	}
-	defer d.fs.Release(obj)
+	defer func() {
+		srcLease.release(d.fs)
+		d.fs.Release(obj)
+	}()
 	srcETag, meta, headers, err := d.attrs(obj)
 	if err != nil {
 		return out, err
@@ -110,10 +112,10 @@ func (d *Daos) CopyObject(_ context.Context, input s3response.CopyObjectInput) (
 		putOut, err = d.putDirectory(dstBucket, dstKey, po)
 	} else {
 		if info.IsDir || info.Size <= 0 {
-			putOut, err = d.putFile(dstBucket, dstKey, bytes.NewReader(nil), po)
+			putOut, err = d.putFileConds(dstBucket, dstKey, bytes.NewReader(nil), po, input.IfMatch, input.IfNoneMatch)
 		} else {
-			src := &dfsBodyReader{fs: d.fs, obj: obj, rem: info.Size, off: 0}
-			putOut, err = d.putFile(dstBucket, dstKey, src, po)
+			src := &dfsBodyReader{fs: d.fs, obj: obj, lease: srcLease, rem: info.Size, off: 0}
+			putOut, err = d.putFileConds(dstBucket, dstKey, src, po, input.IfMatch, input.IfNoneMatch)
 		}
 	}
 	if err != nil {
@@ -176,14 +178,22 @@ func (d *Daos) UploadPartCopy(_ context.Context, input *s3.UploadPartCopyInput) 
 	if err != nil {
 		return out, err
 	}
+	// Part-copy participates in the session guard through the same
+	// stripe as UploadPart: writePart's publishing Move and the
+	// readiness checks run under it.
+	unlock := d.coord.uploads.lock(uploadID)
+	defer unlock()
 	if err := d.bucketExists(srcBucket); err != nil {
 		return out, err
 	}
-	info, obj, err := d.openLive(srcBucket, srcKey, openRead)
+	info, obj, srcLease, err := d.openLive(srcBucket, srcKey, openRead)
 	if err != nil {
 		return out, err
 	}
-	defer d.fs.Release(obj)
+	defer func() {
+		srcLease.release(d.fs)
+		d.fs.Release(obj)
+	}()
 	srcETag, _, _, err := d.attrs(obj)
 	if err != nil {
 		return out, err
