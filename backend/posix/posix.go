@@ -419,9 +419,9 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 	// Whether an object is stale is decided from the attributes and the
 	// file info of the same open file. Only extended attributes are kept
 	// on the inode they describe: a sidecar file describes whatever file
-	// is at the object's path.
+	// is at the object's path, and without metadata nothing is recorded.
 	if _, ok := ms.(meta.XattrMeta); opts.DetectStaleEtag && !ok {
-		return nil, fmt.Errorf("detecting stale etags needs the metadata in extended attributes, not in a sidecar directory")
+		return nil, fmt.Errorf("detecting stale etags needs xattr metadata (not --sidecar or --nometa)")
 	}
 	ioBufferSize := ioBufferSizeOrDefault(opts.IOBufferSize)
 	skipDirs, err := listingSkipDirs(opts.ExcludeDirs)
@@ -4529,7 +4529,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 			fi = sfi
 		}
 	}
-	srcEtag, _, _ := p.objectEtag(srcf, srcBucket, srcObject, fi)
+	srcEtag, srcStale, _ := p.objectEtag(srcf, srcBucket, srcObject, fi)
 
 	err = backend.EvaluateCopySourcePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
 		IfMatch:       upi.CopySourceIfMatch,
@@ -4567,9 +4567,14 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, fmt.Errorf("retrieve mp checksums: %w", err)
 	}
 
-	checksums, err := p.retrieveChecksums(nil, srcBucket, srcObject)
-	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-		return s3response.CopyPartResult{}, fmt.Errorf("retrieve object part checksums: %w", err)
+	// The checksums of a source changed outside of the gateway (stale) are
+	// those of its old content: compute the part checksum from the data.
+	var checksums s3response.Checksum
+	if !srcStale {
+		checksums, err = p.retrieveChecksums(srcf, srcBucket, srcObject)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return s3response.CopyPartResult{}, fmt.Errorf("retrieve object part checksums: %w", err)
+		}
 	}
 
 	// TODO: Should the checksum be recalculated or just copied ?
@@ -8924,7 +8929,26 @@ func (p *Posix) etagStale(f *os.File, bucket, object string, fi fs.FileInfo) boo
 // was, it returns the etag to list it with and that file's info, whose size
 // and modification time the entry lists, and its stored checksums don't
 // apply.
+//
+// The size and modification time recorded for the entry are first read by
+// path and compared with fi, so that an unchanged file is not opened. Only
+// a mismatch, or a symlink, is confirmed on the file opened, from its own
+// attributes and fstat, so that no entry is reported stale from two
+// different files. An entry reported fresh from two different files would
+// need the new one to have the recorded size and modification time to the
+// nanosecond.
 func (p *Posix) staleEntry(path, bucket, object string, fi fs.FileInfo) (string, fs.FileInfo, bool) {
+	if !p.detectStaleEtag {
+		return "", fi, false
+	}
+	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagStatKey)
+	if err != nil {
+		// nothing recorded: never stale
+		return "", fi, false
+	}
+	if fi.Mode().IsRegular() && string(b) == etagStat(fi.Size(), fi.ModTime()) {
+		return "", fi, false
+	}
 	f, ffi := p.openForEtag(path, fi)
 	if f == nil {
 		return "", fi, false
