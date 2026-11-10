@@ -41,6 +41,14 @@ func TestNew(t *testing.T) {
 			wantSAS: true,
 		},
 		{
+			name:    "question mark only falls back to account and key",
+			account: "acct",
+			key:     key,
+			sas:     "?",
+			wantURL: "https://acct.blob.core.windows.net/",
+			wantKey: true,
+		},
+		{
 			name:    "account and key",
 			account: "acct",
 			key:     key,

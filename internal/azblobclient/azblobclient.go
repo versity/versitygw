@@ -72,9 +72,9 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 		PerCallPolicies: []policy.Policy{stripQueryFromURLErrors{}},
 	}}
 
+	// A token copied with its leading "?" would otherwise be sent twice.
+	sasToken = strings.TrimPrefix(sasToken, "?")
 	if sasToken != "" {
-		// A token copied with its leading "?" would otherwise be sent twice.
-		sasToken = strings.TrimPrefix(sasToken, "?")
 		// Reject invalid queries before request construction can echo the token.
 		if strings.ContainsFunc(sasToken, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 			return nil, Credentials{}, errors.New("invalid SAS token: contains a control character")
