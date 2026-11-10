@@ -401,8 +401,10 @@ func (f *dfsFS) readDirObj(obj Object) ([]Info, error) {
 				continue
 			}
 			out = append(out, Info{
-				Name:  name,
-				IsDir: dirs[i].d_type == C.DT_DIR,
+				Name: name,
+				// dfs_readdirplus fills only d_name in the dirent;
+				// the type lives in the accompanying struct stat.
+				IsDir: C.versitygw_isdir(&stats[i]) != 0,
 				Size:  int64(stats[i].st_size),
 				// glibc exposes st_mtime only as a macro; read the
 				// underlying timespec directly.
