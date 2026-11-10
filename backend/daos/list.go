@@ -198,6 +198,11 @@ func (d *Daos) relSummary(parent Object, name string) (string, Info, error) {
 	if m, err := d.loadAttrs(obj); err == nil {
 		etag = m[attrETag]
 	}
+	// libdfs reports a nonzero size on a directory (the size of its
+	// internal entry struct); an S3 directory object is always empty.
+	if info.IsDir {
+		info.Size = 0
+	}
 	return etag, info, nil
 }
 

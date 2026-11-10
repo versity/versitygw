@@ -17,6 +17,7 @@ package daos
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -338,6 +339,33 @@ func (d *Daos) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.Hea
 	return out, nil
 }
 
+// checkDestPreconditions evaluates the destination conditions of a copy
+// against the object currently at the destination key, if any. A missing
+// destination satisfies both conditions; the shared evaluator handles the
+// present cases.
+func (d *Daos) checkDestPreconditions(bucket, key string, ifMatch, ifNoneMatch *string) error {
+	if ifMatch == nil && ifNoneMatch == nil {
+		return nil
+	}
+	_, err := d.fs.Stat(objectPath(bucket, key))
+	if errors.Is(err, errNotExist) {
+		return nil
+	}
+	if err != nil {
+		return d.mapKeyErr(err, key)
+	}
+	obj, err := d.fs.Open(objectPath(bucket, key), openRead)
+	if err != nil {
+		return d.mapKeyErr(err, key)
+	}
+	defer d.fs.Release(obj)
+	etag, _, _, err := d.attrs(obj)
+	if err != nil {
+		return err
+	}
+	return backend.EvaluateObjectPutPreconditions(etag, ifMatch, ifNoneMatch, true)
+}
+
 func (d *Daos) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
 	if input.IfMatch != nil || input.IfMatchLastModifiedTime != nil || input.IfMatchSize != nil {
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
@@ -442,6 +470,18 @@ func (d *Daos) putFile(bucket, key string, body io.Reader, po s3response.PutObje
 	dst := objectPath(bucket, key)
 	if err := d.mkdirParents(dst); err != nil {
 		return s3response.PutObjectOutput{}, d.mapKeyErr(err, key)
+	}
+	// Publishing over an existing object would punch the object a lazy
+	// GET reader may still stream from, because dfs_move removes the
+	// old entry. Retire the old object first: the rename keeps the
+	// object id, so an open handle stays readable. The per-key slot
+	// means the key's next publish removes any earlier retired object,
+	// and the bucket's temporary cleanup catches the rest.
+	if _, err := d.fs.Stat(dst); err == nil {
+		if merr := d.fs.Move(dst, retirePath(bucket, key)); merr != nil {
+			return s3response.PutObjectOutput{}, d.mapKeyErr(merr, key)
+		}
+		defer func() { _ = d.fs.Remove(retirePath(bucket, key), false) }()
 	}
 	if err := d.fs.Move(tmp, dst); err != nil {
 		return s3response.PutObjectOutput{}, d.mapKeyErr(err, key)
@@ -664,6 +704,11 @@ func (d *Daos) openLive(bucket, key string, flags int) (Info, Object, error) {
 		d.fs.Release(obj)
 		return Info{}, nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	// libdfs reports a nonzero size on a directory (the size of its
+	// internal entry struct); an S3 directory object is always empty.
+	if info.IsDir {
+		info.Size = 0
+	}
 	return info, obj, nil
 }
 
@@ -811,9 +856,21 @@ func objectPath(bucket, key string) string {
 	return bucket + "/" + strings.TrimPrefix(key, "/")
 }
 
+// retirePath names the per-key slot under the temporary directory where
+// an object being replaced waits out any reader still streaming from its
+// open handle. The sha256 of the key keeps the name bounded regardless
+// of key length.
+func retirePath(bucket, key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return objectPath(bucket, tmpDirName+"/retire-"+hex.EncodeToString(sum[:8]))
+}
+
 func reservedKey(key string) error {
 	for _, part := range strings.Split(clean(key), "/") {
-		if part == tmpDirName {
+		// Case variants must be rejected too: the shared walker skips
+		// the temporary root directory case-insensitively, so an
+		// accepted variant would land in a directory listings hide.
+		if strings.EqualFold(part, tmpDirName) {
 			return s3err.GetAPIError(s3err.ErrInvalidRequest)
 		}
 	}

@@ -148,7 +148,9 @@ func (d *Daos) DeleteBucket(_ context.Context, bucket string) error {
 		return mapFS(err)
 	}
 	for _, ent := range ents {
-		if ent.Name == tmpDirName {
+		// The walker skips the temporary root case-insensitively, so
+		// match that here: any case variant of the name is temporary.
+		if strings.EqualFold(ent.Name, tmpDirName) {
 			continue
 		}
 		return s3err.GetBucketErr(s3err.ErrBucketNotEmpty, bucket)
@@ -181,7 +183,10 @@ func (d *Daos) clearTemporary(bucket string) error {
 		if ent.Name == "multipart" || ent.IsDir {
 			continue
 		}
-		if !strings.HasPrefix(ent.Name, "put-") {
+		// Retired objects wait for the same key's next publish or
+		// this cleanup; anything still streaming from one keeps its
+		// bytes until then.
+		if !strings.HasPrefix(ent.Name, "put-") && !strings.HasPrefix(ent.Name, "retire-") {
 			continue
 		}
 		if err := d.removeEmpty(bucket, path.Join(tmp, ent.Name)); err != nil {
