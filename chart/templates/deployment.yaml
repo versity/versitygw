@@ -236,6 +236,10 @@ spec:
               value: ":{{ .Values.gateway.port }}"
             - name: VGW_REGION
               value: {{ .Values.gateway.region | quote }}
+            {{- if .Values.gateway.allowAnyRegion }}
+            - name: VGW_ALLOW_ANY_REGION
+              value: "true"
+            {{- end }}
             - name: VGW_HEALTH
               value: "/_/health"
             {{- if .Values.gateway.virtualDomain }}

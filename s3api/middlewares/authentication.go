@@ -85,7 +85,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 			return err
 		}
 
-		if authData.Region != region && !(allowDefaultRegion && authData.Region == defaultRegion) {
+		if !utils.ContextKeyAnyRegion.IsSet(ctx) && authData.Region != region && !(allowDefaultRegion && authData.Region == defaultRegion) {
 			return s3err.MalformedAuth.IncorrectRegion(region, authData.Region)
 		}
 

@@ -35,6 +35,7 @@ var (
 	ports                                         []string
 	admPorts                                      []string
 	region                                        string
+	allowAnyRegion                                bool
 	maxConnections, maxRequests                   int
 	adminMaxConnections, adminMaxRequests         int
 	corsAllowOrigin                               string
@@ -334,6 +335,12 @@ func initFlags() []cli.Flag {
 			Value:       "us-east-1",
 			Destination: &region,
 			Aliases:     []string{"r"},
+		},
+		&cli.BoolFlag{
+			Name:        "allow-any-region",
+			Usage:       "accept requests signed for any region, not only the gateway region",
+			EnvVars:     []string{"VGW_ALLOW_ANY_REGION"},
+			Destination: &allowAnyRegion,
 		},
 		&cli.IntFlag{
 			Name:        "max-connections",
@@ -1017,6 +1024,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		RootUserAccess:              gwcli.RootUserAccess,
 		RootUserSecret:              gwcli.RootUserSecret,
 		Region:                      region,
+		AllowAnyRegion:              allowAnyRegion,
 		Ports:                       ports,
 		AdminPorts:                  admPorts,
 		MaxConnections:              maxConnections,

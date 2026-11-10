@@ -60,6 +60,10 @@ type Config struct {
 	// Region is the AWS region name reported to S3 clients (e.g. "us-east-1").
 	// Defaults to "us-east-1" when empty.
 	Region string
+	// AllowAnyRegion accepts requests signed for any region, not just Region,
+	// and CreateBucket requests with any location constraint. Region is still
+	// the region reported to clients.
+	AllowAnyRegion bool
 
 	// Ports is the list of S3 API listening addresses. Each entry can be
 	// "host:port" to bind a specific interface, or ":port" to bind all
@@ -872,6 +876,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	if cfg.Readonly {
 		opts = append(opts, s3api.WithReadOnly())
 	}
+	if cfg.AllowAnyRegion {
+		opts = append(opts, s3api.WithAllowAnyRegion())
+	}
 	if cfg.VirtualDomain != "" {
 		opts = append(opts, s3api.WithHostStyle(cfg.VirtualDomain))
 	}
@@ -1066,6 +1073,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		}
 		if cfg.AdminPathPrefix != "" {
 			admOpts = append(admOpts, s3api.WithAdminPathPrefix(cfg.AdminPathPrefix))
+		}
+		if cfg.AllowAnyRegion {
+			admOpts = append(admOpts, s3api.WithAdminAllowAnyRegion())
 		}
 		if clientIPHeader != "" {
 			admOpts = append(admOpts, s3api.WithAdminClientIPHeader(clientIPHeader))
