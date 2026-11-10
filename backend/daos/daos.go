@@ -223,8 +223,9 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 	}
 	var body io.ReadCloser
 	if info.IsDir {
-		// A directory body carries no bytes and owns no lease.
-		release()
+		// A directory body carries no bytes and owns no lease; the
+		// lease and object release happen after the checksum lookup,
+		// which still reads the open object handle.
 		body = io.NopCloser(bytes.NewReader(nil))
 	} else {
 		body = io.ReadCloser(&dfsBodyReader{fs: d.fs, obj: obj, lease: lease, rem: length, off: start})
@@ -232,14 +233,14 @@ func (d *Daos) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetOb
 	ch, err := d.loadChecksums(obj)
 	if err != nil {
 		if info.IsDir {
-			d.fs.Release(obj)
+			release()
 		} else {
 			body.Close()
 		}
 		return nil, err
 	}
 	if info.IsDir {
-		d.fs.Release(obj)
+		release()
 	}
 	n64 := length
 	out := &s3.GetObjectOutput{
