@@ -231,7 +231,7 @@ func TestLiveMultipartCompletes(t *testing.T) {
 	}
 	p1 := int32(1)
 	p2 := int32(2)
-	e1 := uploadLivePart(t, be, bucket, key, created.UploadId, p1, "hello")
+	e1 := uploadLivePart(t, be, bucket, key, created.UploadId, p1, strings.Repeat("a", backend.MinPartSize))
 	e2 := uploadLivePart(t, be, bucket, key, created.UploadId, p2, "world")
 	listed, err := be.ListParts(ctx, &s3.ListPartsInput{
 		Bucket:   backend.GetPtrFromString(bucket),
@@ -276,7 +276,7 @@ func TestLiveMultipartCompletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(body) != "helloworld" || awsString(got.ContentType) != ctype || got.Metadata["origin"] != "lab" {
+	if !strings.HasPrefix(string(body), strings.Repeat("a", backend.MinPartSize)) || !strings.HasSuffix(string(body), "world") || awsString(got.ContentType) != ctype || got.Metadata["origin"] != "lab" {
 		t.Fatalf("object %q type %q meta %v", body, awsString(got.ContentType), got.Metadata)
 	}
 	if _, err := be.ListParts(ctx, &s3.ListPartsInput{

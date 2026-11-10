@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,7 +42,7 @@ func TestMultipartCopiesPartBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e1 := uploadPart(t, d, "photos/a.jpg", created.UploadId, 1, "hello")
+	e1 := uploadPart(t, d, "photos/a.jpg", created.UploadId, 1, strings.Repeat("a", backend.MinPartSize))
 	e2 := uploadPart(t, d, "photos/a.jpg", created.UploadId, 2, "world")
 	listed, err := d.ListMultipartUploads(context.Background(), &s3.ListMultipartUploadsInput{
 		Bucket: backend.GetPtrFromString("bucket"),
@@ -85,7 +86,8 @@ func TestMultipartCopiesPartBytes(t *testing.T) {
 	if version != "" || awsString(done.ETag) != wantETag {
 		t.Fatalf("complete version %q etag %q want %q", version, awsString(done.ETag), wantETag)
 	}
-	if fs.BytesRead()-readBefore != 10 || fs.BytesWritten()-wroteBefore != 10 {
+	total := int64(backend.MinPartSize + 5)
+	if fs.BytesRead()-readBefore != total || fs.BytesWritten()-wroteBefore != total {
 		t.Fatalf("copied read %d write %d", fs.BytesRead()-readBefore, fs.BytesWritten()-wroteBefore)
 	}
 	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
@@ -96,8 +98,8 @@ func TestMultipartCopiesPartBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := io.ReadAll(got.Body)
-	if string(body) != "helloworld" || awsString(got.ContentType) != ctype || got.Metadata["origin"] != "lab" {
-		t.Fatalf("object %q type %q meta %v", body, awsString(got.ContentType), got.Metadata)
+	if !strings.HasPrefix(string(body), strings.Repeat("a", backend.MinPartSize)) || !strings.HasSuffix(string(body), "world") || awsString(got.ContentType) != ctype || got.Metadata["origin"] != "lab" {
+		t.Fatalf("object type %q meta %v len %d", awsString(got.ContentType), got.Metadata, len(body))
 	}
 	objects, err := d.ListObjects(context.Background(), &s3.ListObjectsInput{
 		Bucket:  backend.GetPtrFromString("bucket"),
