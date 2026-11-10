@@ -476,8 +476,10 @@ func (d *Daos) putFile(bucket, key string, body io.Reader, po s3response.PutObje
 	// old entry. Retire the old object first: the rename keeps the
 	// object id, so an open handle stays readable. The per-key slot
 	// means the key's next publish removes any earlier retired object,
-	// and the bucket's temporary cleanup catches the rest.
-	if _, err := d.fs.Stat(dst); err == nil {
+	// and the bucket's temporary cleanup catches the rest. A directory
+	// at the destination is never retired; the publish itself must
+	// fail on it with a file-over-directory conflict.
+	if info, err := d.fs.Stat(dst); err == nil && !info.IsDir {
 		if merr := d.fs.Move(dst, retirePath(bucket, key)); merr != nil {
 			return s3response.PutObjectOutput{}, d.mapKeyErr(merr, key)
 		}
