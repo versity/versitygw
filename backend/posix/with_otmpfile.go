@@ -234,7 +234,7 @@ func (p *Posix) openTmpFileInDir(dir string, allowODirect odirectPolicy) (fd int
 	if err != nil {
 		return -1, false, false, err
 	}
-	hasACL, err = hasDefaultACLFd(dirfd, dir)
+	hasACL, err = hasDefaultACLFd(dirfd)
 	if err != nil {
 		unix.Close(fd)
 		return -1, false, false, fmt.Errorf("get default ACL of %v: %w", dir, err)
@@ -415,21 +415,35 @@ func (tmp *tmpfile) link() error {
 		srcFDName = filepath.Base(tmp.f.Name())
 	}
 
+	var syncd *os.File
 	err = tmp.publishInDir(dir, func() error {
-		// O_PATH: linkat() and renameat() need write and search
-		// permission on the directory, not read permission
-		dirfd, err := unix.Open(dir, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+		d, err := tmp.openDirForSync(dir)
 		if err != nil {
-			return fmt.Errorf("open parent dir: %w", &fs.PathError{Op: "open", Path: dir, Err: err})
+			return fmt.Errorf("open parent dir: %w", err)
 		}
-		defer unix.Close(dirfd)
+		var dirfd int
+		if d != nil {
+			dirfd = int(d.Fd())
+		} else {
+			// O_PATH: linkat() and renameat() need write and search
+			// permission on the directory, not read permission
+			dirfd, err = unix.Open(dir, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+			if err != nil {
+				return fmt.Errorf("open parent dir: %w", &fs.PathError{Op: "open", Path: dir, Err: err})
+			}
+			defer unix.Close(dirfd)
+		}
 
 		err = linkatOTmpfile(int(procdir.Fd()), dirfd,
 			srcFDName, filepath.Base(objPath))
 		if err != nil {
+			if d != nil {
+				d.Close()
+			}
 			return fmt.Errorf("link tmpfile (fd %q as %q): %w",
 				srcFDName, objPath, err)
 		}
+		syncd = d
 		return nil
 	})
 	if err != nil {
@@ -438,10 +452,13 @@ func (tmp *tmpfile) link() error {
 
 	err = tmp.f.Close()
 	if err != nil {
+		if syncd != nil {
+			syncd.Close()
+		}
 		return fmt.Errorf("close tmpfile: %w", err)
 	}
 
-	return tmp.syncNamespace()
+	return tmp.syncNamespace(syncd)
 }
 
 func (tmp *tmpfile) fallbackLink() error {
@@ -468,16 +485,29 @@ func (tmp *tmpfile) fallbackLink() error {
 	}
 
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
+	var syncd *os.File
 	err = tmp.publishInDir(filepath.Dir(objPath), func() error {
+		d, err := tmp.openDirForSync(filepath.Dir(objPath))
+		if err != nil {
+			return fmt.Errorf("open parent dir: %w", err)
+		}
 		// rename only works for files within the same filesystem,
 		// MoveFile falls back to copy otherwise
-		return backend.MoveFile(tempname, objPath, tmp.newFilePerm)
+		err = backend.MoveFile(tempname, objPath, tmp.newFilePerm)
+		if err != nil {
+			if d != nil {
+				d.Close()
+			}
+			return err
+		}
+		syncd = d
+		return nil
 	})
 	if err != nil {
 		return err
 	}
 
-	return tmp.syncNamespace()
+	return tmp.syncNamespace(syncd)
 }
 
 func (tmp *tmpfile) cleanup() {

@@ -37,14 +37,10 @@ func hasDefaultACL(path string) (bool, error) {
 
 // hasDefaultACLFd reports whether the directory opened as fd, which may be an
 // O_PATH handle, has a default ACL. fgetxattr() doesn't work on an O_PATH
-// handle, so the ACL is read through the handle's /proc entry, or through
-// dir, the path the handle was opened with, when /proc is not mounted.
-func hasDefaultACLFd(fd int, dir string) (bool, error) {
-	ok, err := hasDefaultACL(filepath.Join(procfddir, strconv.Itoa(fd)))
-	if errors.Is(err, unix.ENOENT) {
-		return hasDefaultACL(dir)
-	}
-	return ok, err
+// handle, so the ACL is read through the handle's /proc entry, which link()
+// needs as well to publish an O_TMPFILE.
+func hasDefaultACLFd(fd int) (bool, error) {
+	return hasDefaultACL(filepath.Join(procfddir, strconv.Itoa(fd)))
 }
 
 // ownDefaultACL reports whether the directory path has a default ACL other

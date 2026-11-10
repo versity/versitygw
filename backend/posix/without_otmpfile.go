@@ -140,13 +140,26 @@ func (tmp *tmpfile) link() error {
 		return fmt.Errorf("set tmpfile modification time: %w", err)
 	}
 
+	var syncd *os.File
 	err = tmp.publishInDir(filepath.Dir(objPath), func() error {
-		return backend.MoveFile(tempname, objPath, tmp.newFilePerm)
+		d, err := tmp.openDirForSync(filepath.Dir(objPath))
+		if err != nil {
+			return fmt.Errorf("open parent dir: %w", err)
+		}
+		err = backend.MoveFile(tempname, objPath, tmp.newFilePerm)
+		if err != nil {
+			if d != nil {
+				d.Close()
+			}
+			return err
+		}
+		syncd = d
+		return nil
 	})
 	if err != nil {
 		return err
 	}
-	return tmp.syncNamespace()
+	return tmp.syncNamespace(syncd)
 }
 
 func (tmp *tmpfile) cleanup() {

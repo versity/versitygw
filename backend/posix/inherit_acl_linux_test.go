@@ -574,35 +574,66 @@ func TestInheritDefaultACLWithoutOTmpfileRemovesDir(t *testing.T) {
 	}
 }
 
-// TestInheritDefaultACLWriteOnlyDir checks that an object can be put in a
-// directory the gateway can write to but not read, as it can without the
-// option: an O_TMPFILE needs no read permission on its directory. Run as a
-// user other than root, which can read any directory.
+// TestInheritDefaultACLWriteOnlyDir checks that objects can be put in a
+// directory the gateway can write to but not read, with and without the
+// option: neither an O_TMPFILE nor its linkat() needs read permission on the
+// directory. The first PUT in a new bucket makes a named temporary file, as
+// .sgwtmp doesn't exist yet, and the second one an O_TMPFILE. With Fsync,
+// which can't sync a directory it can't read, the PUTs fail before the
+// objects are published. Run as a user other than root, which can read any
+// directory.
 func TestInheritDefaultACLWriteOnlyDir(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can read any directory")
 	}
-	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
-		return meta.XattrMeta{}, PosixOpts{AbsolutePaths: true, InheritDefaultACL: true}
-	})
-	bucket, key := "bucket", "dropbox/object"
-	createTestBucket(t, p, bucket)
-	dir := filepath.Join(p.BucketPath(bucket), "dropbox")
-	if err := os.Mkdir(dir, 0o755); err != nil {
-		t.Fatalf("make dir: %v", err)
-	}
-	skipWithoutOTmpfile(t, dir)
-	setDefaultACL(t, dir, testDefaultACL())
-	if err := os.Chmod(dir, 0o333); err != nil {
-		t.Fatalf("chmod dir: %v", err)
-	}
-	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	for _, inherit := range []bool{false, true} {
+		for _, fsync := range []bool{false, true} {
+			name := "default"
+			if inherit {
+				name = "inherit"
+			}
+			if fsync {
+				name += "/fsync"
+			}
+			t.Run(name, func(t *testing.T) {
+				p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+					return meta.XattrMeta{}, PosixOpts{AbsolutePaths: true, InheritDefaultACL: inherit, Fsync: fsync}
+				})
+				bucket := "bucket"
+				createTestBucket(t, p, bucket)
+				dir := filepath.Join(p.BucketPath(bucket), "dropbox")
+				if err := os.Mkdir(dir, 0o755); err != nil {
+					t.Fatalf("make dir: %v", err)
+				}
+				skipWithoutOTmpfile(t, dir)
+				setDefaultACL(t, dir, testDefaultACL())
+				if err := os.Chmod(dir, 0o333); err != nil {
+					t.Fatalf("chmod dir: %v", err)
+				}
+				t.Cleanup(func() { os.Chmod(dir, 0o755) })
 
-	if err := putTestObject(t, p, bucket, key, "x"); err != nil {
-		t.Fatalf("put in a write-only dir: %v", err)
-	}
-	if !hasNamedUser(t, filepath.Join(dir, "object"), aclTestUID) {
-		t.Errorf("object did not get the default ACL of its directory")
+				for _, name := range []string{"first", "second"} {
+					err := putTestObject(t, p, bucket, "dropbox/"+name, "x")
+					path := filepath.Join(dir, name)
+					_, statErr := os.Stat(path)
+					if fsync {
+						if err == nil {
+							t.Errorf("%v put succeeded with fsync in a write-only dir", name)
+						}
+						if !errors.Is(statErr, os.ErrNotExist) {
+							t.Errorf("%v object published by a failed put: %v", name, statErr)
+						}
+						continue
+					}
+					if err != nil {
+						t.Fatalf("%v put in a write-only dir: %v", name, err)
+					}
+					if acl := hasNamedUser(t, path, aclTestUID); acl != inherit {
+						t.Errorf("%v object has the default ACL: %v, want %v", name, acl, inherit)
+					}
+				}
+			})
+		}
 	}
 }
 
