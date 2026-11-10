@@ -102,6 +102,70 @@ func TestHeadObjectDeleteMarker(t *testing.T) {
 	}
 }
 
+// TestDetectStaleEtag checks that DetectStaleEtag reaches the posix backend:
+// an object rewritten in place outside the gateway gets an ETag made from its
+// size and modification time, and a PUT through the gateway stores a current
+// ETag again.
+func TestDetectStaleEtag(t *testing.T) {
+	// New() chdirs into the gateway root; restore the original working
+	// directory when the test completes.
+	t.Chdir(t.TempDir())
+
+	root := t.TempDir()
+	s, err := New(root, ScoutfsOpts{ValidateBucketNames: true, DetectStaleEtag: true})
+	if err != nil {
+		t.Fatalf("init scoutfs backend: %v", err)
+	}
+	t.Cleanup(s.Shutdown)
+
+	ctx := context.Background()
+	bucket, key := "bucket", "object"
+	err = s.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket:                    &bucket,
+		CreateBucketConfiguration: &types.CreateBucketConfiguration{},
+	}, []byte{})
+	if err != nil {
+		t.Fatalf("create bucket: %v", err)
+	}
+	put := func(body string) string {
+		t.Helper()
+		out, err := s.PutObject(ctx, s3response.PutObjectInput{
+			Bucket:        &bucket,
+			Key:           &key,
+			Body:          strings.NewReader(body),
+			ContentLength: aws.Int64(int64(len(body))),
+		})
+		if err != nil {
+			t.Fatalf("put object: %v", err)
+		}
+		return strings.Trim(out.ETag, `"`)
+	}
+	head := func() string {
+		t.Helper()
+		res, err := s.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &bucket, Key: &key})
+		if err != nil {
+			t.Fatalf("head object: %v", err)
+		}
+		return strings.Trim(aws.ToString(res.ETag), `"`)
+	}
+
+	etag := put("data")
+	assert.Equal(t, etag, head())
+
+	// rewrite the file in place, keeping its inode and attributes
+	err = os.WriteFile(filepath.Join(root, bucket, key), []byte("changed data"), 0o644)
+	if err != nil {
+		t.Fatalf("rewrite object: %v", err)
+	}
+	stale := head()
+	assert.Contains(t, stale, "-s")
+	assert.NotEqual(t, etag, stale)
+
+	etag = put("new data")
+	assert.Equal(t, etag, head())
+	assert.NotContains(t, etag, "-s")
+}
+
 // TestGetObjectGlacierOffline checks a glacier mode GetObject of an offline
 // object on a real ScoutFS filesystem. Like S3 for an archived object, it
 // evaluates the preconditions, the range and the part number before it

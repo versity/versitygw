@@ -66,6 +66,10 @@ type ScoutfsOpts struct {
 	// attribute (e.g. files placed on the filesystem outside of versitygw).
 	// When empty, such objects are served with an empty ETag.
 	DefaultEtag string
+	// DetectStaleEtag makes the gateway notice objects whose content was
+	// changed outside of it, and stop returning their stored etag,
+	// checksums and multipart part sizes, see posix.PosixOpts.DetectStaleEtag.
+	DetectStaleEtag bool
 	// DataIntegrityEtag, when enabled, replaces the standard MD5-based ETag
 	// with a checksum-derived value that embeds the algorithm name and checksum
 	// (e.g. "CRC64NVME-<base64>"). For multipart uploads, part ETags become
