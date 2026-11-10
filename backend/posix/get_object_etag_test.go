@@ -447,6 +447,9 @@ func TestGetObjectLiveVersionIdFromOpenedFile(t *testing.T) {
 	}
 }
 
+// TestGetObjectDeleteMarkerMovedAfterLookup checks that a GET of a version
+// that is a delete marker still answers with the marker when it is moved to
+// the versioning dir between the lookup and the delete-marker check.
 func TestGetObjectDeleteMarkerMovedAfterLookup(t *testing.T) {
 	const bucket, key = "testbucket", "obj"
 	var replace func()

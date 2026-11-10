@@ -6217,6 +6217,7 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 		}
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	reopened := false
 	if !fid.IsDir() {
 		// openForRead opens with FILE_SHARE_DELETE on Windows so that a concurrent
 		// DeleteObject can call os.Remove on this file while the GET response body
@@ -6247,6 +6248,7 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 				// directory, read it from there
 				f.Close()
 				f = nil
+				reopened = true
 				bucket = filepath.Join(p.versioningDir, bucket)
 				object = filepath.Join(genObjVersionKey(object), requestedVersionId)
 				objPath = p.ObjectPath(bucket, object)
@@ -6265,13 +6267,18 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 			return nil, fmt.Errorf("stat object: %w", err)
 		}
 
-		if requestedVersionId != "" && bucket != origBucket {
+		if reopened {
+			// the version was moved after the lookup, so the delete-marker
+			// check made then no longer covers the file just opened
 			_, err := p.meta.RetrieveAttribute(f, bucket, object, deleteMarkerKey)
 			if err == nil {
 				return &s3.GetObjectOutput{
 					DeleteMarker: getBoolPtr(true),
 					LastModified: backend.GetTimePtr(fi.ModTime()),
 				}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+			}
+			if IsEntryGone(err) {
+				return nil, goneErr()
 			}
 			if !errors.Is(err, meta.ErrNoSuchKey) {
 				return nil, fmt.Errorf("get object delete-marker: %w", err)
