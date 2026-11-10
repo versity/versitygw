@@ -80,14 +80,19 @@ type MpParseResult struct {
 	Fields map[string]string
 	// FileRdr streams the file payload without buffering the entire part in memory.
 	FileRdr MpFileReader
-	// ContentLength is the expected byte length of the file payload only.
-	ContentLength int64
+	// ProposedSize is the size of the file payload the request proposes: its
+	// Content-Length less the bytes before the file content and the closing
+	// boundary. A form that ends with the file proposes the file's size. A form
+	// with anything after the file (fields, an epilogue) proposes more, as the
+	// file ends at the first boundary: its own size is only known once it is
+	// read, see ContentLengthRangeReader.
+	ProposedSize int64
 }
 
 // Parse parses all non-file fields and returns:
 //   - form values
 //   - a streaming file reader
-//   - file content length
+//   - the size of the file the request proposes
 //
 // The returned file reader MUST be read until EOF, otherwise the boundary
 // that ends the file is not checked.
@@ -132,10 +137,10 @@ func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 		// At this point, headers + blank line have already been consumed,
 		// so bytesRead points exactly at the first byte of file content.
 		if isFilePart {
-			fileContentLength := mp.requestContentLength - mp.bytesRead - int64(len(mp.boundary)) - finalBoundaryDelimiterLen
-			if fileContentLength < 0 {
-				debuglogger.Logf("calculated negative multipart file content-length: %d", fileContentLength)
-				return nil, fmt.Errorf("calculated negative file content-length: %d", fileContentLength)
+			proposedSize := mp.requestContentLength - mp.bytesRead - int64(len(mp.boundary)) - finalBoundaryDelimiterLen
+			if proposedSize < 0 {
+				debuglogger.Logf("calculated negative multipart file content-length: %d", proposedSize)
+				return nil, fmt.Errorf("calculated negative file content-length: %d", proposedSize)
 			}
 
 			fr := &finalFileReader{
@@ -144,9 +149,9 @@ func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 			}
 
 			return &MpParseResult{
-				Fields:        fields,
-				FileRdr:       fr,
-				ContentLength: fileContentLength,
+				Fields:       fields,
+				FileRdr:      fr,
+				ProposedSize: proposedSize,
 			}, nil
 		}
 

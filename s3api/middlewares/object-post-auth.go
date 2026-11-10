@@ -43,7 +43,10 @@ const (
 )
 
 type PostObjectResult struct {
-	ContentLength int64
+	// ProposedSize is the size of the file the request proposes. It is not
+	// the file's size when the form has anything after the file, see
+	// utils.MpParseResult.
+	ProposedSize int64
 	// FileRdr streams the file payload. Length() reports the exact number of
 	// file-content bytes read after the backend has consumed the body.
 	FileRdr utils.MpFileReader
@@ -208,9 +211,9 @@ func AuthorizePostObject(be backend.Backend, root RootUserConfig, iam auth.IAMSe
 
 		utils.ContextKeyObjectPostResult.Set(ctx,
 			PostObjectResult{
-				Fields:        fields,
-				FileRdr:       result.FileRdr,
-				ContentLength: result.ContentLength,
+				Fields:       fields,
+				FileRdr:      result.FileRdr,
+				ProposedSize: result.ProposedSize,
 			},
 		)
 

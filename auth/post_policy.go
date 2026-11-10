@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -42,10 +43,9 @@ type POSTPolicy struct {
 // PostPolicyEvalInput is all the data required to evaluate the policy.
 // Fields should contain already-expanded form values.
 type PostPolicyEvalInput struct {
-	Bucket        string
-	Key           string
-	ContentLength int64
-	Fields        map[string]string
+	Bucket string
+	Key    string
+	Fields map[string]string
 }
 
 // postPolicyCondition is the internal contract shared by all supported
@@ -148,6 +148,9 @@ func (p *POSTPolicy) validate() error {
 
 // Evaluate returns nil if the input satisfies the policy.
 // Otherwise it returns a deny reason.
+//
+// The size of the file is not part of the input: it is only known once the
+// file is read, so ContentLengthRange gives the sizes to check it against.
 func (p *POSTPolicy) Evaluate(in PostPolicyEvalInput) error {
 	// Every submitted form field must be present in conditions, except:
 	// x-amz-signature, file, policy, and x-ignore-*.
@@ -180,6 +183,20 @@ func (p *POSTPolicy) Evaluate(in PostPolicyEvalInput) error {
 	}
 
 	return nil
+}
+
+// ContentLengthRange returns the sizes the policy allows the file: the highest
+// min and the lowest max of its content-length-range conditions. A policy with
+// none allows any size.
+func (p *POSTPolicy) ContentLengthRange() (lo, hi int64) {
+	lo, hi = 0, math.MaxInt64
+	for _, cond := range p.conditions {
+		if c, ok := cond.(contentLengthRangeCondition); ok {
+			lo, hi = max(lo, c.min), min(hi, c.max)
+		}
+	}
+
+	return lo, hi
 }
 
 // exactCondition represents either an object-form condition or an "eq" array
@@ -290,22 +307,14 @@ func (c contentLengthRangeCondition) isBucketCondition() bool {
 	return false
 }
 
-// validate accepts any parsed range and leaves size enforcement to match.
+// validate accepts any parsed range: the size is checked as the file is read.
 func (c contentLengthRangeCondition) validate() error {
 	return nil
 }
 
-// match rejects uploads whose content length falls outside the allowed range.
-func (c contentLengthRangeCondition) match(in PostPolicyEvalInput) error {
-	if in.ContentLength > c.max {
-		debuglogger.Logf("POST policy content length %d exceeds max %d", in.ContentLength, c.max)
-		return s3err.GetEntityTooLargeErr(in.ContentLength, c.max)
-	}
-	if in.ContentLength < c.min {
-		debuglogger.Logf("POST policy content length %d is smaller than min %d", in.ContentLength, c.min)
-		return s3err.GetEntityTooSmallErr(in.ContentLength, c.min)
-	}
-
+// match has nothing to check: the size of the file is not a form field.
+// ContentLengthRange gives the range it is checked against, once it is read.
+func (c contentLengthRangeCondition) match(PostPolicyEvalInput) error {
 	return nil
 }
 

@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -656,9 +657,9 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 					},
 					utils.ContextKeyRegion: "us-east-1",
 					utils.ContextKeyObjectPostResult: middlewares.PostObjectResult{
-						Fields:        baseFields,
-						FileRdr:       newMockFileReader("payload"),
-						ContentLength: int64(len("payload")),
+						Fields:       baseFields,
+						FileRdr:      newMockFileReader("payload"),
+						ProposedSize: int64(len("payload")),
 					},
 				},
 			},
@@ -681,8 +682,8 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						"file":            "ignored",
 						"x-amz-signature": "ignored",
 					},
-					FileRdr:       newMockFileReader("payload"),
-					ContentLength: int64(len("payload")),
+					FileRdr:      newMockFileReader("payload"),
+					ProposedSize: int64(len("payload")),
 				}),
 			},
 			output: testOutput{
@@ -705,8 +706,8 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						"x-amz-signature": "ignored",
 						"unexpected":      "value",
 					},
-					FileRdr:       newMockFileReader("payload"),
-					ContentLength: int64(len("payload")),
+					FileRdr:      newMockFileReader("payload"),
+					ProposedSize: int64(len("payload")),
 				}),
 			},
 			output: testOutput{
@@ -733,8 +734,8 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						"x-amz-signature": "ignored",
 						"tagging":         "invalid-xml",
 					},
-					FileRdr:       newMockFileReader("payload"),
-					ContentLength: int64(len("payload")),
+					FileRdr:      newMockFileReader("payload"),
+					ProposedSize: int64(len("payload")),
 				}),
 			},
 			output: testOutput{
@@ -761,8 +762,8 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						"x-amz-signature":      "ignored",
 						"x-amz-checksum-crc32": "invalid_base64_string",
 					},
-					FileRdr:       newMockFileReader("payload"),
-					ContentLength: int64(len("payload")),
+					FileRdr:      newMockFileReader("payload"),
+					ProposedSize: int64(len("payload")),
 				}),
 			},
 			output: testOutput{
@@ -789,8 +790,8 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						"x-amz-signature": "ignored",
 						"x-amz-meta-big":  strings.Repeat("a", 2050),
 					},
-					FileRdr:       newMockFileReader("payload"),
-					ContentLength: int64(len("payload")),
+					FileRdr:      newMockFileReader("payload"),
+					ProposedSize: int64(len("payload")),
 				}),
 			},
 			output: testOutput{
@@ -809,9 +810,9 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 				// legal hold on every object
 				extraMockResp: []byte(`{"Enabled":true}`),
 				locals: postObjectLocalsForTest(middlewares.PostObjectResult{
-					Fields:        baseFields,
-					FileRdr:       newMockFileReader("payload"),
-					ContentLength: int64(len("payload")),
+					Fields:       baseFields,
+					FileRdr:      newMockFileReader("payload"),
+					ProposedSize: int64(len("payload")),
 				}),
 			},
 			output: testOutput{
@@ -828,9 +829,9 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 			input: testInput{
 				beErr: s3err.GetAPIError(s3err.ErrNoSuchBucket),
 				locals: postObjectLocalsForTest(middlewares.PostObjectResult{
-					Fields:        baseFields,
-					FileRdr:       newMockFileReader("payload"),
-					ContentLength: int64(len("payload")),
+					Fields:       baseFields,
+					FileRdr:      newMockFileReader("payload"),
+					ProposedSize: int64(len("payload")),
 				}),
 			},
 			output: testOutput{
@@ -861,8 +862,8 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						"x-amz-signature":         "ignored",
 						"success_action_redirect": "https://client.example/upload-complete",
 					},
-					FileRdr:       newMockFileReader("payload"),
-					ContentLength: int64(len("payload")),
+					FileRdr:      newMockFileReader("payload"),
+					ProposedSize: int64(len("payload")),
 				}),
 			},
 			output: testOutput{
@@ -922,8 +923,8 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						"expires":               "Fri, 21 Mar 2026 00:00:00 GMT",
 						"x-amz-storage-class":   string(types.StorageClassGlacier),
 					},
-					FileRdr:       newMockFileReader("payload"),
-					ContentLength: int64(len("payload")),
+					FileRdr:      newMockFileReader("payload"),
+					ProposedSize: int64(len("payload")),
 				}),
 			},
 			output: testOutput{
@@ -968,9 +969,9 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 					ETag: "etag-123",
 				},
 				locals: postObjectLocalsForTest(middlewares.PostObjectResult{
-					Fields:        baseFields,
-					FileRdr:       newMockFileReader("payload"),
-					ContentLength: int64(len("payload")),
+					Fields:       baseFields,
+					FileRdr:      newMockFileReader("payload"),
+					ProposedSize: int64(len("payload")),
 				}),
 			},
 			output: testOutput{
@@ -1014,8 +1015,8 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 						}),
 						"file": "ignored",
 					},
-					FileRdr:       newMockFileReader("payload"),
-					ContentLength: int64(len("payload")),
+					FileRdr:      newMockFileReader("payload"),
+					ProposedSize: int64(len("payload")),
 				}),
 			},
 			output: testOutput{
@@ -1106,4 +1107,333 @@ func TestS3ApiController_POSTObject(t *testing.T) {
 			)
 		})
 	}
+}
+
+// TestS3ApiController_POSTObject_FileSize covers the size of the file: the
+// backend gets the size the request proposes as its length, and the file is
+// checked against the policy's content-length-range as the backend reads it.
+func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
+	const redirect = "https://client.example/upload-complete"
+
+	redirected := &Response{
+		Headers: map[string]*string{
+			"Location": utils.GetStringPtr(redirect + "?bucket=bucket&etag=etag-123&key=uploads%2Fphoto.jpg"),
+		},
+		MetaOpts: &MetaOptions{
+			BucketOwner:   "root",
+			ContentLength: int64(len("payload")),
+			ObjectETag:    utils.GetStringPtr("etag-123"),
+			ObjectSize:    int64(len("payload")),
+			EventName:     s3event.EventObjectCreatedPost,
+			Status:        http.StatusSeeOther,
+		},
+	}
+	failed := &Response{
+		MetaOpts: &MetaOptions{
+			BucketOwner: "root",
+		},
+	}
+
+	// fields are the form fields of an upload with a policy that has the
+	// conditions
+	fields := func(conditions ...any) map[string]string {
+		b, err := json.Marshal(map[string]any{
+			"expiration": time.Now().Add(15 * time.Minute).UTC().Format(time.RFC3339),
+			"conditions": append([]any{
+				map[string]string{"bucket": "bucket"},
+				[]any{"starts-with", "$key", "uploads/"},
+				[]any{"eq", "$success_action_redirect", redirect},
+			}, conditions...),
+		})
+		assert.NoError(t, err)
+
+		return map[string]string{
+			"key":                     "uploads/photo.jpg",
+			"file":                    "ignored",
+			"x-amz-signature":         "ignored",
+			"success_action_redirect": redirect,
+			"policy":                  base64.StdEncoding.EncodeToString(b),
+		}
+	}
+	sizeRange := func(lo, hi int) []any {
+		return []any{[]any{"content-length-range", lo, hi}}
+	}
+
+	type putFunc func(s3response.PutObjectInput) (s3response.PutObjectOutput, error)
+
+	// readsFile is a backend that reads the file to its end, like posix, and
+	// gives the error of the read as it is
+	readsFile := func(in s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+		if _, err := io.ReadAll(in.Body); err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
+
+		return s3response.PutObjectOutput{ETag: "etag-123"}, nil
+	}
+	// wrapsReadErr is one that wraps the error of the read, like the S3 proxy
+	// and Azure backends
+	wrapsReadErr := func(in s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+		out, err := readsFile(in)
+		if err != nil {
+			return out, fmt.Errorf("put object: %w", err)
+		}
+
+		return out, nil
+	}
+	// failsAfterFile is one that reads the file to its end and fails with err
+	failsAfterFile := func(err error) putFunc {
+		return func(in s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+			_, _ = io.ReadAll(in.Body)
+
+			return s3response.PutObjectOutput{}, err
+		}
+	}
+	// the file is longer than what the test's reads get from it
+	longFile := func() *mockMpFileReader {
+		return &mockMpFileReader{r: io.MultiReader(
+			strings.NewReader("payload"),
+			strings.NewReader(strings.Repeat("x", 4<<10)),
+		)}
+	}
+
+	s3ProxyErr := fmt.Errorf("put object: http: ContentLength=%d with Body length %d", 200, len("payload"))
+	internalErr := errors.New("write object data: input/output error")
+
+	tests := []struct {
+		name         string
+		fields       map[string]string
+		file         *mockMpFileReader
+		proposedSize int64
+		put          putFunc
+		// wantLength is the length the backend gets, if it is reached
+		wantLength int64
+		wantRes    *Response
+		wantErr    error
+	}{
+		{
+			name:         "file in the range",
+			fields:       fields(sizeRange(1, 7)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: int64(len("payload")),
+			put:          readsFile,
+			wantLength:   int64(len("payload")),
+			wantRes:      redirected,
+		},
+		{
+			name:         "no content-length-range",
+			fields:       fields(),
+			file:         newMockFileReader("payload"),
+			proposedSize: int64(len("payload")),
+			put:          readsFile,
+			wantLength:   int64(len("payload")),
+			wantRes:      redirected,
+		},
+		{
+			// the form has a field or an epilogue after the file: the file is
+			// shorter than the request proposes, and in the range
+			name:         "file shorter than the request proposes",
+			fields:       fields(sizeRange(7, 7)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: 200,
+			put:          readsFile,
+			wantLength:   200,
+			wantRes:      redirected,
+		},
+		{
+			name:         "file over the max",
+			fields:       fields(sizeRange(1, 5)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: int64(len("payload")),
+			put:          readsFile,
+			wantLength:   int64(len("payload")),
+			wantRes:      failed,
+			wantErr:      s3err.GetEntityTooLargeErr(int64(len("payload")), 5),
+		},
+		{
+			name:         "file over the max, with the error wrapped by the backend",
+			fields:       fields(sizeRange(1, 5)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: int64(len("payload")),
+			put:          wrapsReadErr,
+			wantLength:   int64(len("payload")),
+			wantRes:      failed,
+			wantErr:      s3err.GetEntityTooLargeErr(int64(len("payload")), 5),
+		},
+		{
+			// the size reported is the file's, not the form's
+			name:         "file over the max, with a field after it",
+			fields:       fields(sizeRange(1, 5)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: 200,
+			put:          readsFile,
+			wantLength:   200,
+			wantRes:      failed,
+			wantErr:      s3err.GetEntityTooLargeErr(int64(len("payload")), 5),
+		},
+		{
+			// the file is refused as soon as it passes the max, without
+			// reading the rest of it, so the size reported is the request's
+			name:         "file far over the max",
+			fields:       fields(sizeRange(1, 5)...),
+			file:         longFile(),
+			proposedSize: 1 << 30,
+			put:          readsFile,
+			wantLength:   1 << 30,
+			wantRes:      failed,
+			wantErr:      s3err.GetEntityTooLargeErr(1<<30, 5),
+		},
+		{
+			name:         "file under the min",
+			fields:       fields(sizeRange(10, 100)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: int64(len("payload")),
+			put:          readsFile,
+			wantLength:   int64(len("payload")),
+			wantRes:      failed,
+			wantErr:      s3err.GetEntityTooSmallErr(int64(len("payload")), 10),
+		},
+		{
+			name:         "file under the min, with the error wrapped by the backend",
+			fields:       fields(sizeRange(10, 100)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: int64(len("payload")),
+			put:          wrapsReadErr,
+			wantLength:   int64(len("payload")),
+			wantRes:      failed,
+			wantErr:      s3err.GetEntityTooSmallErr(int64(len("payload")), 10),
+		},
+		{
+			// the file is under the min though the form is not
+			name:         "file under the min, with a field after it",
+			fields:       fields(sizeRange(10, 100)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: 200,
+			put:          readsFile,
+			wantLength:   200,
+			wantRes:      failed,
+			wantErr:      s3err.GetEntityTooSmallErr(int64(len("payload")), 10),
+		},
+		{
+			// the form ends before the boundary of the file: the error of the
+			// file's reader is the one to report
+			name:   "file cut short, with the error wrapped by the backend",
+			fields: fields(),
+			file: &mockMpFileReader{r: &dataThenErrForTest{
+				data: "payl",
+				err:  s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
+			}},
+			proposedSize: int64(len("payload")),
+			put:          wrapsReadErr,
+			wantLength:   int64(len("payload")),
+			wantRes:      failed,
+			wantErr:      s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
+		},
+		{
+			// a backend that fails on a body shorter than the length it is
+			// given, like the S3 proxy
+			name:         "backend fails on a file shorter than the request proposes",
+			fields:       fields(),
+			file:         newMockFileReader("payload"),
+			proposedSize: 200,
+			put:          failsAfterFile(s3ProxyErr),
+			wantLength:   200,
+			wantRes:      failed,
+			wantErr:      s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
+		},
+		{
+			name:         "backend S3 error on a file shorter than the request proposes",
+			fields:       fields(),
+			file:         newMockFileReader("payload"),
+			proposedSize: 200,
+			put:          failsAfterFile(s3err.GetAPIError(s3err.ErrNoSuchBucket)),
+			wantLength:   200,
+			wantRes:      failed,
+			wantErr:      s3err.GetAPIError(s3err.ErrNoSuchBucket),
+		},
+		{
+			name:         "backend fails on a file as long as the request proposes",
+			fields:       fields(),
+			file:         newMockFileReader("payload"),
+			proposedSize: int64(len("payload")),
+			put:          failsAfterFile(internalErr),
+			wantLength:   int64(len("payload")),
+			wantRes:      failed,
+			wantErr:      internalErr,
+		},
+		{
+			name:         "backend fails before the file ends",
+			fields:       fields(),
+			file:         longFile(),
+			proposedSize: 200,
+			put: func(s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+				return s3response.PutObjectOutput{}, internalErr
+			},
+			wantLength: 200,
+			wantRes:    failed,
+			wantErr:    internalErr,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotLength int64
+			be := &BackendMock{
+				PutObjectFunc: func(_ context.Context, in s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+					gotLength = *in.ContentLength
+
+					return tt.put(in)
+				},
+				GetBucketPolicyFunc: func(context.Context, string) ([]byte, error) {
+					return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+				},
+				GetBucketVersioningFunc: func(context.Context, string) (s3response.GetBucketVersioningOutput, error) {
+					return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+				},
+				GetObjectLockConfigurationFunc: func(context.Context, string) ([]byte, error) {
+					return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+				},
+				GetObjectRetentionFunc: func(context.Context, string, string, string) ([]byte, error) {
+					return nil, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)
+				},
+				GetObjectLegalHoldFunc: func(context.Context, string, string, string) (*bool, error) {
+					legalHold := true
+					return &legalHold, nil
+				},
+			}
+
+			testController(
+				t,
+				S3ApiController{be: be}.POSTObject,
+				tt.wantRes,
+				tt.wantErr,
+				ctxInputs{
+					locals: map[utils.ContextKey]any{
+						utils.ContextKeyIsRoot:           true,
+						utils.ContextKeyParsedAcl:        auth.ACL{Owner: "root"},
+						utils.ContextKeyAccount:          auth.Account{Access: "root", Role: auth.RoleAdmin},
+						utils.ContextKeyRegion:           "us-east-1",
+						utils.ContextKeyObjectPostResult: middlewares.PostObjectResult{Fields: tt.fields, FileRdr: tt.file, ProposedSize: tt.proposedSize},
+					},
+				},
+			)
+
+			assert.Equal(t, tt.wantLength, gotLength, "the length the backend is given")
+		})
+	}
+}
+
+// dataThenErrForTest gives data, then fails with err.
+type dataThenErrForTest struct {
+	data string
+	err  error
+}
+
+func (r *dataThenErrForTest) Read(p []byte) (int, error) {
+	if r.data == "" {
+		return 0, r.err
+	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+
+	return n, nil
 }

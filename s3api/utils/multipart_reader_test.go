@@ -140,8 +140,8 @@ func TestMultipartParserParseSuccess(t *testing.T) {
 	if got.Fields["x-amz-meta-color"] != "blue,green" {
 		t.Fatalf("unexpected merged metadata field: %q", got.Fields["x-amz-meta-color"])
 	}
-	if got.ContentLength != int64(len("file-body-123")) {
-		t.Fatalf("unexpected file content-length: got %d want %d", got.ContentLength, len("file-body-123"))
+	if got.ProposedSize != int64(len("file-body-123")) {
+		t.Fatalf("unexpected proposed file size: got %d want %d", got.ProposedSize, len("file-body-123"))
 	}
 
 	fileData, err := io.ReadAll(got.FileRdr)
@@ -207,8 +207,8 @@ func TestMultipartParserRecognizesFilenameOnlyFilePart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if got.ContentLength != 3 {
-		t.Fatalf("unexpected file content-length: got %d want 3", got.ContentLength)
+	if got.ProposedSize != 3 {
+		t.Fatalf("unexpected proposed file size: got %d want 3", got.ProposedSize)
 	}
 
 	fileData, err := io.ReadAll(got.FileRdr)
@@ -310,12 +310,22 @@ func TestMultipartParserIgnoresFieldsAfterFile(t *testing.T) {
 		t.Fatalf("unexpected field after the file: %q", got.Fields["content-type"])
 	}
 
+	// The request proposes the field after the file as part of it: the
+	// proposed size is more than the file's own.
+	if got.ProposedSize <= int64(len("payload")) {
+		t.Fatalf("expected a proposed size over %d, got %d", len("payload"), got.ProposedSize)
+	}
+
 	fileData, err := io.ReadAll(got.FileRdr)
 	if err != nil {
 		t.Fatalf("read file: %v", err)
 	}
 	if string(fileData) != "payload" {
 		t.Fatalf("unexpected file data: %q", fileData)
+	}
+	// the file ends at the first boundary: what is read is the file alone
+	if got.FileRdr.Length() != int64(len("payload")) {
+		t.Fatalf("unexpected file length: got %d want %d", got.FileRdr.Length(), len("payload"))
 	}
 }
 
