@@ -1160,9 +1160,13 @@ func PostObject_should_ignore_anything_after_file(s *S3Conf) error {
 	testName := "PostObject_should_ignore_anything_after_file"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		key := "test-object"
+		objData := []byte("dummy data")
 		signingDate := time.Now().UTC()
 		fields := buildSignedPostFields(bucket, key, s.awsID, s.awsRegion, signingDate)
-		policy, err := encodePostPolicy([]any{}, time.Now().UTC().Add(time.Minute*10), fields, make(map[string]struct{}))
+		// the policy allows the file's size and no more, so the size checked
+		// is the file's, not the body's with the tail
+		conditions := []any{[]any{"content-length-range", 1, len(objData)}}
+		policy, err := encodePostPolicy(conditions, time.Now().UTC().Add(time.Minute*10), fields, make(map[string]struct{}))
 		if err != nil {
 			return err
 		}
@@ -1170,7 +1174,6 @@ func PostObject_should_ignore_anything_after_file(s *S3Conf) error {
 		fields["policy"] = policy
 		fields["x-amz-signature"] = signPostPolicy(policy, signingDate.Format("20060102"), s.awsRegion, s.awsSecret)
 
-		objData := []byte("dummy data")
 		body, boundary, err := buildPostObjectBody(fields, map[string]string{}, objData, nil, nil)
 		if err != nil {
 			return err
@@ -1737,18 +1740,20 @@ func PostObject_file_before_key(s *S3Conf) error {
 
 // PostObject_ignores_fields_after_file posts a content-type after the file
 // part. The policy does not allow it, so the upload succeeds only if it is
-// ignored, and the object holds the file alone.
+// ignored, and the object holds the file alone. The policy also allows the
+// file's size and no more, so the size checked is the file's, not the form's.
 func PostObject_ignores_fields_after_file(s *S3Conf) error {
 	testName := "PostObject_ignores_fields_after_file"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		key, data := "my-obj", []byte("data")
 		resp, err := sendPostObject(PostRequestConfig{
-			bucket:          bucket,
-			key:             key,
-			s3Conf:          s,
-			fileContent:     data,
-			extraFields:     map[string]string{"content-type": "text/plain"},
-			fieldsAfterFile: []string{"content-type"},
+			bucket:           bucket,
+			key:              key,
+			s3Conf:           s,
+			fileContent:      data,
+			extraFields:      map[string]string{"content-type": "text/plain"},
+			fieldsAfterFile:  []string{"content-type"},
+			policyConditions: []any{[]any{"content-length-range", 1, len(data)}},
 		})
 		if err != nil {
 			return err
@@ -1758,6 +1763,84 @@ func PostObject_ignores_fields_after_file(s *S3Conf) error {
 		}
 
 		return checkObjectData(s3client, bucket, key, "", data)
+	})
+}
+
+// PostObject_content_length_range_fields_after_file posts a content-type after
+// a file that is out of the size range the policy allows. The size in the
+// error is the file's, not the form's, which holds the field as well.
+func PostObject_content_length_range_fields_after_file(s *S3Conf) error {
+	testName := "PostObject_content_length_range_fields_after_file"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		cfg := func(data string, lo, hi int) PostRequestConfig {
+			return PostRequestConfig{
+				bucket:           bucket,
+				key:              "my-obj",
+				s3Conf:           s,
+				fileContent:      []byte(data),
+				extraFields:      map[string]string{"content-type": "text/plain"},
+				fieldsAfterFile:  []string{"content-type"},
+				policyConditions: []any{[]any{"content-length-range", lo, hi}},
+			}
+		}
+
+		resp, err := sendPostObject(cfg("hello world", 0, 5))
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, s3err.GetEntityTooLargeErr(int64(len("hello world")), 5)); err != nil {
+			return fmt.Errorf("over the max: %w", err)
+		}
+
+		resp, err = sendPostObject(cfg("hi", 3, 100))
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, s3err.GetEntityTooSmallErr(int64(len("hi")), 3)); err != nil {
+			return fmt.Errorf("under the min: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// PostObject_content_length_range_large_file posts a file that takes many
+// reads of the body. One in the size range the policy allows is stored, and
+// one over it is refused with the size of the file.
+func PostObject_content_length_range_large_file(s *S3Conf) error {
+	testName := "PostObject_content_length_range_large_file"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key, data := "my-obj", bytes.Repeat([]byte("0123456789abcdef"), 4<<10)
+		cfg := func(lo, hi int) PostRequestConfig {
+			return PostRequestConfig{
+				bucket:           bucket,
+				key:              key,
+				s3Conf:           s,
+				fileContent:      data,
+				policyConditions: []any{[]any{"content-length-range", lo, hi}},
+			}
+		}
+
+		resp, err := sendPostObject(cfg(len(data), len(data)))
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("in the range: %w", err)
+		}
+		if err := checkObjectData(s3client, bucket, key, "", data); err != nil {
+			return err
+		}
+
+		resp, err = sendPostObject(cfg(0, 5))
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, s3err.GetEntityTooLargeErr(int64(len(data)), 5)); err != nil {
+			return fmt.Errorf("over the max: %w", err)
+		}
+
+		return nil
 	})
 }
 

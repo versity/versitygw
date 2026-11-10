@@ -2354,6 +2354,8 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_file_without_filename)
 	ts.Run(PostObject_file_before_key)
 	ts.Run(PostObject_ignores_fields_after_file)
+	ts.Run(PostObject_content_length_range_fields_after_file)
+	ts.Run(PostObject_content_length_range_large_file)
 	ts.Run(PostObject_preamble_and_folded_header)
 	ts.Run(PostObject_data_before_file_limit)
 	ts.Run(PostObject_object_lock_success)
@@ -4141,6 +4143,8 @@ func GetIntTests() IntTests {
 		"PostObject_file_without_filename":                                                 PostObject_file_without_filename,
 		"PostObject_file_before_key":                                                       PostObject_file_before_key,
 		"PostObject_ignores_fields_after_file":                                             PostObject_ignores_fields_after_file,
+		"PostObject_content_length_range_fields_after_file":                                PostObject_content_length_range_fields_after_file,
+		"PostObject_content_length_range_large_file":                                       PostObject_content_length_range_large_file,
 		"PostObject_preamble_and_folded_header":                                            PostObject_preamble_and_folded_header,
 		"PostObject_data_before_file_limit":                                                PostObject_data_before_file_limit,
 		"PostObject_object_lock_success":                                                   PostObject_object_lock_success,
