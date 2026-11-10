@@ -186,8 +186,28 @@ func (d *Daos) clearTemporary(bucket string) error {
 		// Retired objects wait for the same key's next publish or
 		// this cleanup; anything still streaming from one keeps its
 		// bytes until then.
-		if !strings.HasPrefix(ent.Name, "put-") && !strings.HasPrefix(ent.Name, "retire-") {
+		//
+		// Durable operation records (op-) follow the record
+		// protocol: cleanup removes one only when no protected
+		// artifact remains. The publisher drops records itself once
+		// their artifacts are gone, so an op- entry still present
+		// here means either an in-flight operation or a
+		// reader-pinned retiree - both stay.
+		if !strings.HasPrefix(ent.Name, "put-") && !strings.HasPrefix(ent.Name, "retire-") && !strings.HasPrefix(ent.Name, "op-") {
 			continue
+		}
+		if strings.HasPrefix(ent.Name, "op-") && d.coord != nil && d.coord.recordProtected(bucket) {
+			continue
+		}
+		// A retiree with an outstanding reader keeps its bytes: the
+		// lease releases them. Cleanup must not punch what a GET is
+		// still streaming, and a bucket with such a retiree - or any
+		// unresolved recovery state - is not empty.
+		if strings.HasPrefix(ent.Name, "retire-") && d.coord != nil && d.coord.retireePinned(bucket, path.Join(tmp, ent.Name)) {
+			return s3err.GetBucketErr(s3err.ErrBucketNotEmpty, bucket)
+		}
+		if d.coord != nil && d.coord.held(bucket, "") && d.coord.bucketHeld(bucket) {
+			return s3err.GetBucketErr(s3err.ErrBucketNotEmpty, bucket)
 		}
 		if err := d.removeEmpty(bucket, path.Join(tmp, ent.Name)); err != nil {
 			return err
@@ -548,9 +568,10 @@ func (d *Daos) objectAttrPath(bucket, object string) (string, error) {
 	if object == "" {
 		return "", s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
-	if _, obj, err := d.openLive(bucket, object, openRead); err != nil {
+	if _, obj, lease, err := d.openLive(bucket, object, openRead); err != nil {
 		return "", err
 	} else {
+		lease.release(d.fs)
 		d.fs.Release(obj)
 	}
 	return objectPath(bucket, object), nil
