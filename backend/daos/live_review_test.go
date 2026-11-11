@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -33,6 +34,26 @@ import (
 	"github.com/versity/versitygw/s3response"
 )
 
+// holdLibraryRef opens one container connection and never closes it for
+// the process lifetime. The DAOS client tears its network stack down when
+// the last dfs_init reference closes, and cycling that full teardown once
+// per test aborts inside the client library on some runs. The open
+// connection carries its own reference, so keeping it open keeps every
+// per-test close short of the last one.
+var (
+	retainOnce  sync.Once
+	retainedFS  *dfsFS
+	retainedErr error
+)
+
+func holdLibraryRef(pool, sys, cont string) error {
+	retainOnce.Do(func() {
+		fs, err := openContainer(pool, sys, cont)
+		retainedFS, retainedErr = fs, err
+	})
+	return retainedErr
+}
+
 func openLive(t *testing.T) (string, *Daos) {
 	t.Helper()
 	pool := os.Getenv("DAOS_POOL")
@@ -41,6 +62,9 @@ func openLive(t *testing.T) (string, *Daos) {
 		t.Skip("DAOS_POOL and DAOS_CONT are required")
 	}
 	sys := os.Getenv("DAOS_SYS")
+	if err := holdLibraryRef(pool, sys, cont); err != nil {
+		t.Fatal(err)
+	}
 	bucket := "vgw-live-" + uuid.NewString()
 	fs, err := openContainer(pool, sys, cont)
 	if err != nil {
