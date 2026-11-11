@@ -192,6 +192,12 @@ func initTestCommands() []*cli.Command {
 					Aliases:     []string{"vs"},
 				},
 				&cli.BoolFlag{
+					Name:        "sidecar-test-mode",
+					Usage:       "Skips tests that are not supported by Sidecar",
+					Destination: &sidecarTests,
+					Aliases:     []string{"sidecar"},
+				},
+				&cli.BoolFlag{
 					Name:        "windows-test-mode",
 					Usage:       "Skips tests that are not supported on Windows",
 					Destination: &windowsTests,
@@ -241,6 +247,16 @@ func initTestCommands() []*cli.Command {
 			Name:   "noacl",
 			Usage:  "Tests gateway in ACL-disabled mode",
 			Action: getAction(integration.TestNoAclMode),
+		},
+		{
+			Name:   "list-buckets-accessible",
+			Usage:  "Tests ListBuckets on a gateway started with --list-buckets-scope accessible",
+			Action: getAction(integration.TestListBucketsAccessible),
+		},
+		{
+			Name:   "list-buckets-all",
+			Usage:  "Tests ListBuckets on a gateway started with --list-buckets-scope all",
+			Action: getAction(integration.TestListBucketsAll),
 		},
 		{
 			Name:   "data-integrity-etag",

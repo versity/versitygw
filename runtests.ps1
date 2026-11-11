@@ -172,3 +172,24 @@ Invoke-GwTest -Description "No ACL integration tests" -GatewayProc $gwNoAclProc 
     -TestArgs @("--allow-insecure", "-a", "user", "-s", "pass", "-e", "http://127.0.0.1:7074", "noacl")
 
 Stop-Process -Id $gwNoAclProc.Id -Force -ErrorAction SilentlyContinue
+
+# ---------------------------------------------------------------------------
+# 6. ListBuckets scopes (ports 7076, 7077)
+# ---------------------------------------------------------------------------
+foreach ($lbScope in @(@{ Scope = "accessible"; Port = "7076" }, @{ Scope = "all"; Port = "7077" })) {
+    Write-Host "Running list-buckets-scope $($lbScope.Scope) integration tests"
+    $gwLbProc = Start-Gateway -CoverDir $tmpCovdata `
+        -GwArgs @("-p", ":$($lbScope.Port)", "-a", "user", "-s", "pass", "--list-buckets-scope", $lbScope.Scope,
+                  "--iam-dir", $tmpGw, "posix", "--sidecar", $tmpSidecar, $tmpGw)
+    Start-Sleep -Seconds 1
+
+    if ($gwLbProc.HasExited) {
+        Write-Host "list-buckets-scope $($lbScope.Scope) server no longer running"
+        exit 1
+    }
+
+    Invoke-GwTest -Description "list-buckets-scope $($lbScope.Scope) integration tests" -GatewayProc $gwLbProc `
+        -TestArgs @("-a", "user", "-s", "pass", "-e", "http://127.0.0.1:$($lbScope.Port)", "list-buckets-$($lbScope.Scope)")
+
+    Stop-Process -Id $gwLbProc.Id -Force -ErrorAction SilentlyContinue
+}

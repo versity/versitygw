@@ -47,6 +47,26 @@ jobs:
             "--set iam.enabled=true --set iam.persistence.enabled=true --set iam.dir=/var/lib/versitygw/iam --set persistence.enabled=false"
             # internal IAM on an existing PVC
             "--set iam.enabled=true --set iam.persistence.enabled=true --set iam.persistence.create=false --set iam.persistence.claimName=versitygw-iam"
+            # internal IAM listing buckets shared through ACLs and bucket policies
+            "--set iam.enabled=true --set gateway.listBucketsScope=accessible"
+            # requests signed for any region
+            "--set gateway.allowAnyRegion=true"
+          )
+
+          for scenario in "${scenarios[@]}"; do
+            echo "::group::helm lint --set ${scenario}"
+            # shellcheck disable=SC2086
+            helm lint chart/ --strict --set auth.existingSecret=root-credentials ${scenario}
+            echo "::endgroup::"
+          done
+
+      - name: Lint backend configurations
+        run: |
+          scenarios=(
+            # stateless azure backend with a meta container, scaled out
+            "--set gateway.backend.type=azure --set gateway.backend.args=--account=myaccount --set gateway.backend.metaContainer=vgw-meta --set persistence.enabled=false --set replicaCount=2"
+            # an all-digit container name, which --set reads as a number
+            "--set gateway.backend.type=azure --set gateway.backend.args=--account=myaccount --set gateway.backend.metaContainer=123 --set persistence.enabled=false"
           )
 
           for scenario in "${scenarios[@]}"; do
@@ -61,3 +81,19 @@ jobs:
           # one map and one string entry, both referencing the release through tpl
           helm lint chart/ --strict --set auth.existingSecret=root-credentials \
             --set-json 'extraObjects=[{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"{{ include \"versitygw.fullname\" . }}-extra"},"data":{"namespace":"{{ .Release.Namespace }}"}},"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {{ .Release.Name }}-string\n"]'
+
+      - name: Lint Azure IAM configurations
+        run: |
+          scenarios=(
+            # account key from a Secret, several replicas on the azure backend
+            "--set iam.enabled=true --set iam.type=azure --set iam.azure.container=vgwiam --set iam.azure.account=acct --set iam.azure.credentials.existingSecret=az-iam --set iam.azure.credentials.accessKeyKey=key --set replicaCount=3 --set persistence.enabled=false --set gateway.backend.type=azure"
+            # default credentials (e.g. workload identity) with an explicit URL
+            "--set iam.enabled=true --set iam.type=azure --set iam.azure.container=vgwiam --set iam.azure.url=https://acct.blob.core.windows.net/ --set serviceAccount.annotations.azure\\.workload\\.identity/client-id=00000000-0000-0000-0000-000000000000 --set-string podLabels.azure\\.workload\\.identity/use=true"
+          )
+
+          for scenario in "${scenarios[@]}"; do
+            echo "::group::helm lint --set ${scenario}"
+            # shellcheck disable=SC2086
+            helm lint chart/ --strict --set auth.existingSecret=root-credentials ${scenario}
+            echo "::endgroup::"
+          done

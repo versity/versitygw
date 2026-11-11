@@ -45,9 +45,10 @@ create_multipart_upload_s3api() {
   if ! check_param_count_v2 "bucket, key" 2 $#; then
     return 1
   fi
+  local bucket="$1" key="$2"
   local response multipart_data upload_id
 
-  if ! response=$(send_command aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2" 2>&1); then
+  if ! response=$(send_command aws --no-verify-ssl s3api create-multipart-upload --bucket "$bucket" --key "$key" 2>&1); then
     log 2 "Error creating multipart upload: $response"
     return 1
   fi
@@ -90,22 +91,28 @@ create_multipart_upload_s3api_params() {
     object lock mode, object lock retain until date, and tagging" 8 $#; then
     return 1
   fi
-  local multipart_data
-  multipart_data=$(send_command aws --no-verify-ssl s3api create-multipart-upload \
-    --bucket "$1" \
-    --key "$2" \
-    --content-type "$3" \
-    --metadata "$4" \
-    --object-lock-legal-hold-status "$5" \
-    --object-lock-mode "$6" \
-    --object-lock-retain-until-date "$7" \
-    --tagging "$8" 2>&1) || local create_result=$?
-  if [[ $create_result -ne 0 ]]; then
-    log 2 "error creating multipart upload with params: $multipart_data"
+  local bucket="$1" key="$2" content_type="$3" metadata="$4" legal_hold_status="$5" object_lock_mode="$6" \
+    retain_until_date="$7" tagging="$8"
+  local response upload_id
+
+  if ! response=$(send_command aws --no-verify-ssl s3api create-multipart-upload \
+      --bucket "$bucket" \
+      --key "$key" \
+      --content-type "$content_type" \
+      --metadata "$metadata" \
+      --object-lock-legal-hold-status "$legal_hold_status" \
+      --object-lock-mode "$object_lock_mode" \
+      --object-lock-retain-until-date "$retain_until_date" \
+      --tagging "$tagging" 2>&1); then
+    log 2 "error creating multipart upload with params: $response"
     return 1
   fi
-  upload_id=$(echo "$multipart_data" | grep -v "InsecureRequestWarning" | jq '.UploadId')
-  upload_id="${upload_id//\"/}"
+  if ! response=$(echo "$response" | grep -v "InsecureRequestWarning" | jq '.UploadId' 2>&1); then
+    log 2 "error retrieving upload ID: $response"
+    return 1
+  fi
+  upload_id="${response//\"/}"
+  printf '%s\n' "$upload_id"
   return 0
 }
 

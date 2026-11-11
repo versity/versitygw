@@ -57,6 +57,7 @@ type S3ApiServer struct {
 	health           string
 	maxConnections   int
 	maxRequests      int
+	allowAnyRegion   bool
 	webuiMountPrefix string
 	webuiSrvCfg      *webui.ServerConfig
 	clientIPHeader   string
@@ -107,6 +108,10 @@ func New(
 
 	for _, opt := range opts {
 		opt(server)
+	}
+
+	if err := auth.ValidateListBucketsScope(iam, server.Router.listBucketsScope); err != nil {
+		return nil, err
 	}
 
 	// validate the header once here, so the request path can compare it
@@ -204,7 +209,7 @@ func New(
 	}
 
 	// initilaze the default value setter middleware
-	app.Use("*", middlewares.SetDefaultValues(root, region))
+	app.Use("*", middlewares.SetDefaultValues(root, region, server.allowAnyRegion))
 
 	// initialize the 'DecodeURL' middleware which
 	// path unescapes the url
@@ -305,6 +310,13 @@ func WithDisableSSECTLS() Option {
 	return func(s *S3ApiServer) { s.Router.disableSSECTLS = true }
 }
 
+// WithAllowAnyRegion accepts requests signed for any region, not just the
+// gateway region, and CreateBucket requests with any location constraint.
+// The gateway still reports its own region to clients.
+func WithAllowAnyRegion() Option {
+	return func(s *S3ApiServer) { s.allowAnyRegion = true }
+}
+
 // WithHostStyle enabled host-style bucket addressing on the server
 func WithHostStyle(virtualDomain string) Option {
 	return func(s *S3ApiServer) {
@@ -396,6 +408,14 @@ func WithSocketPerm(perm os.FileMode) Option {
 // bucket/object ACL headers
 func WithDisableACL() Option {
 	return func(s *S3ApiServer) { s.Router.disableACL = true }
+}
+
+// WithListBucketsScope sets which buckets ListBuckets returns to an account
+// that is neither root nor an admin. New rejects any scope but
+// auth.ListBucketsScopeOwned with an IAM service that evaluates identity
+// policies or fixes bucket ownership.
+func WithListBucketsScope(scope auth.ListBucketsScope) Option {
+	return func(s *S3ApiServer) { s.Router.listBucketsScope = scope }
 }
 
 // WithOnListen registers a callback that is invoked once the server is bound

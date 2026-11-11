@@ -213,7 +213,23 @@ send_rest_command_expect_success() {
   if ! check_param_count_v2 "env vars, script, response code" 3 $#; then
     return 1
   fi
+  local env_vars="$1" script="$2" response_code="$3"
   local response response_lines response_code output_file
+
+  if ! send_rest_command_expect_success_callback "$env_vars" "$script" "$response_code"; then
+    log 2 "error sending REST command and expecting success response code"
+    return 1
+  fi
+  return 0
+}
+
+send_rest_command_expect_success_callback() {
+  if ! check_param_count_gt "env vars, script, response code, callback fn (optional), callback params (optional)" 3 $#; then
+    return 1
+  fi
+  local env_vars="$1" script="$2" expected_response_code="$3" callback="$4" callback_params=("${@:5}")
+  local response output_file response_code callback_response
+  local -a env_array
 
   if ! response=$(send_rest_command "$1" "$2" 2>&1); then
     log 2 "error sending REST command: $response"
@@ -223,49 +239,15 @@ send_rest_command_expect_success() {
   response_code="${response_lines[0]}"
   output_file="${response_lines[1]}"
 
-  if [ "$response_code" != "$3" ]; then
-    log 2 "expected '$3', was '$response_code' ($(cat "$output_file"))"
+  if [ "$response_code" != "$expected_response_code" ]; then
+    log 2 "expected '$expected_response_code', was '$response_code' ($(cat "$output_file"))"
     return 1
   fi
-  return 0
-}
-
-send_rest_command_expect_success_callback() {
-  if ! check_param_count_v2 "env vars, script, response code, callback fn" 4 $#; then
-    return 1
-  fi
-  local response output_file_name output_file env_array=() http_response response_code callback_response
-
-  if ! response=$(get_file_name 2>&1); then
-    log 2 "error generating output file name: $output_file_name"
-    return 1
-  fi
-  output_file_name="$response"
-
-  output_file="$TEST_FILE_FOLDER/$output_file_name"
-  local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$output_file")
-  if [ "$1" != "" ]; then
-    IFS=' ' read -r -a env_vars <<< "$1"
-    env_array+=("${env_vars[@]}")
-  fi
-  log 5 "command: ${env_array[*]} $2"
-  # shellcheck disable=SC2068
-  if ! response=$(${env_array[@]} "$2" 2>&1); then
-    log 2 "error sending command: $response"
-    return 1
-  fi
-  http_response="$response"
-
-  response_code="$(echo "$http_response" | tail -n 1)"
-  if [ "$response_code" != "$3" ]; then
-    log 2 "expected '$3', was '$response_code' ($(cat "$output_file"))"
-    return 1
-  fi
-  if [ "$4" == "" ]; then
+  if [ -z "$callback" ]; then
     cat "$output_file"
     return 0
   fi
-  if ! callback_response=$("$4" "$output_file" 2>&1); then
+  if ! callback_response=$("$callback" "$output_file" "${callback_params[@]}" 2>&1); then
     log 2 "callback error: $callback_response"
     return 1
   fi

@@ -36,6 +36,7 @@ calculate_multipart_checksum() {
     log 2 "unrecognized checksum type: '$checksum_type'"
     return 1
   fi
+  log 5 "data file, algorithm: $data_file, $lowercase_algorithm"
   if ! response=$(DATA_FILE="$data_file" CHECKSUM_TYPE="$lowercase_algorithm" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
     log 2 "error calculating checksum: $response"
     return 1
@@ -59,8 +60,8 @@ complete_multipart_upload_with_checksum() {
   response_file="$response"
 
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$bucket" OBJECT_KEY="$key" UPLOAD_ID="$upload_id" PARTS="$parts_payload" CHECKSUM_TYPE="$checksum_type" \
-      CHECKSUM_ALGORITHM="$checksum_algorithm" CHECKSUM_HASH="$checksum" OUTPUT_FILE="$TEST_FILE_FOLDER/$response_file" ./tests/rest_scripts/complete_multipart_upload.sh); then
-    log 2 "error completing multipart upload"
+      CHECKSUM_ALGORITHM="$checksum_algorithm" CHECKSUM_HASH="$checksum" OUTPUT_FILE="$TEST_FILE_FOLDER/$response_file" ./tests/rest_scripts/complete_multipart_upload.sh 2>&1); then
+    log 2 "error completing multipart upload: $response"
     return 1
   fi
   if [ "$result" != "200" ]; then
@@ -104,40 +105,110 @@ calculate_composite_checksum() {
   return 0
 }
 
-test_multipart_upload_with_checksum() {
-  log 6 "test_multipart_upload_with_checksum"
-  if ! check_param_count_v2 "checksum type, algorithm" 2 $#; then
+calculate_final_checksum_finish_multipart_and_check_head_object_checksum() {
+  if ! check_param_count_gt "checksum type, algorithm, data file, bucket name, key, upload ID, parts payload, checksums" 9 $#; then
     return 1
   fi
-  local checksum_type="$1" checksum_algorithm="$2"
-  local file_and_bucket bucket_name mp_file_name response checksum
+  local checksum_type="$1" checksum_algorithm="$2" data_file="$3" bucket_name="$4" key="$5" upload_id="$6" parts_payload="$7" checksums=("${@:8}")
+  local response checksum
 
-  if ! file_and_bucket=$(setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME" 2>&1); then
-    log 2 "error setting up file and bucket"
-    return 1
-  fi
-  read -r bucket_name mp_file_name <<< "$file_and_bucket"
-  log 5 "file name: $mp_file_name, file info:  $(ls -l "$TEST_FILE_FOLDER/$mp_file_name")"
-
-  if ! response=$(perform_full_multipart_upload_with_checksum_before_completion "$bucket_name" "$mp_file_name" "$checksum_type" "$checksum_algorithm" 2>&1); then
-    log 2 "error performing multipart upload with checksum before completion: $response"
-    return 1
-  fi
-  mapfile -t response_lines<<< "$response"
-  local lowercase_checksum_algorithm="${response_lines[0]}"
-  local upload_id="${response_lines[1]}"
-  local checksum_string="${response_lines[2]}"
-  local payload_parts="${response_lines[3]}"
-  read -r -a checksums <<< "$checksum_string"
-
-  if ! response=$(calculate_multipart_checksum "$1" 2 "$TEST_FILE_FOLDER/$mp_file_name" "$lowercase_checksum_algorithm" "${checksums[@]}" 2>&1); then
+  if ! response=$(calculate_multipart_checksum "$checksum_type" ${#checksums[@]} "$data_file" "$checksum_algorithm" "${checksums[@]}" 2>&1); then
     log 2 "error calculating multipart checksum: $response"
     return 1
   fi
   checksum="$response"
+  log 5 "calculated checksum: $checksum"
 
-  if ! complete_multipart_upload_with_checksum "$bucket_name" "$mp_file_name" "$TEST_FILE_FOLDER/$mp_file_name" "$upload_id" 2 "$payload_parts" "$1" "$2" "$checksum"; then
+  if ! complete_multipart_upload_rest_with_checksum "$bucket_name" "$key" "$upload_id" "$parts_payload" "$checksum_type" "$checksum_algorithm" "$checksum"; then
     log 2 "error completing multipart upload with checksum"
+    return 1
+  fi
+
+  if ! check_checksum_rest "$bucket_name" "$key" "$checksum" "x-amz-checksum-${checksum_algorithm}"; then
+    log 2 "error verifying checksum with HeadObject after upload"
+    return 1
+  fi
+  return 0
+}
+
+test_multipart_upload_with_checksum() {
+  if ! check_param_count_v2 "checksum type, algorithm" 2 $#; then
+    return 1
+  fi
+  local checksum_type="$1" checksum_algorithm="$2"
+  local response bucket_name file_name upload_id part_one part_two
+  local -a checksums_and_payload checksums
+
+  if ! response=$(start_two_part_multipart_upload_with_checksum "$checksum_type" "$checksum_algorithm" 2>&1); then
+    log 2 "error starting multipart upload: $response"
+    return 1
+  fi
+  read -r bucket_name file_name upload_id part_one part_two <<< "$response"
+
+  if ! response=$(upload_split_file_with_checksum_before_completion "$bucket_name" "$file_name" "$upload_id" "$checksum_algorithm" "$part_one" "$part_two" 2>&1); then
+    log 2 "error uploading parts w/checksums: $response"
+    return 1
+  fi
+  mapfile -t checksums_and_payload <<< "$response"
+  read -r -a checksums <<< "${checksums_and_payload[0]}"
+  log 5 "checksums: ${checksums[*]}"
+
+  if ! list_parts_rest "$bucket_name" "$file_name" "$upload_id" "list_parts_check_checksums" "--" "$bucket_name" "$file_name" "$upload_id" "$checksum_algorithm" "${checksums[@]}"; then
+    log 2 "error listing parts and checking checksums"
+    return 1
+  fi
+  if ! calculate_final_checksum_finish_multipart_and_check_head_object_checksum "$checksum_type" "$checksum_algorithm" "$TEST_FILE_FOLDER/$file_name" \
+      "$bucket_name" "$file_name" "$upload_id" "${checksums_and_payload[1]}" "${checksums[@]}"; then
+    log 2 "error calculating checksum, completing multipart, and/or verifying checksum with HeadObject"
+    return 1
+  fi
+  return 0
+}
+
+test_multipart_upload_with_checksum_part_replacement() {
+  if ! check_param_count_v2 "checksum type, algorithm" 2 $#; then
+    return 1
+  fi
+  local checksum_type="$1" checksum_algorithm="$2"
+  local response bucket_name file_name upload_id part_one part_two
+  local -a checksums_and_payload flipped_checksums checksums
+
+  if ! response=$(start_two_part_multipart_upload_with_checksum "$checksum_type" "$checksum_algorithm" 2>&1); then
+    log 2 "error starting multipart upload: $response"
+    return 1
+  fi
+  read -r bucket_name file_name upload_id part_one part_two <<< "$response"
+
+  if ! response=$(upload_split_file_with_checksum_before_completion "$bucket_name" "$file_name" "$upload_id" "$checksum_algorithm" "$part_two" "$part_one" 2>&1); then
+    log 2 "error uploading parts w/checksums: $response"
+    return 1
+  fi
+  mapfile -t checksums_and_payload <<< "$response"
+  read -r -a flipped_checksums <<< "${checksums_and_payload[0]}"
+  log 5 "checksums: ${flipped_checksums[*]}"
+
+  if ! list_parts_rest "$bucket_name" "$file_name" "$upload_id" "list_parts_check_checksums" "--" "$bucket_name" "$file_name" "$upload_id" "$checksum_algorithm" "${flipped_checksums[@]}"; then
+    log 2 "error listing parts and checking checksums"
+    return 1
+  fi
+
+  if ! response=$(upload_split_file_with_checksum_before_completion "$bucket_name" "$file_name" "$upload_id" "$checksum_algorithm" "$part_one" "$part_two" 2>&1); then
+    log 2 "error uploading parts w/checksums: $response"
+    return 1
+  fi
+  mapfile -t checksums_and_payload <<< "$response"
+  read -r -a checksums <<< "${checksums_and_payload[0]}"
+  log 5 "checksums: ${checksums[*]}"
+
+  if [ "${flipped_checksums[0]}" != "${checksums[1]}" ]; then
+    log 2 "expected checksum mismatch (first set, idx 0 is '${flipped_checksums[0]}', second, idx 1 is '${checksums[1]}'"
+  elif [ "${flipped_checksums[1]}" != "${checksums[0]}" ]; then
+    log 2 "expected checksum mismatch (first set, idx 1 is '${flipped_checksums[1]}', second, idx 0 is '${checksums[0]}'"
+  fi
+
+  if ! calculate_final_checksum_finish_multipart_and_check_head_object_checksum "$checksum_type" "$checksum_algorithm" "$TEST_FILE_FOLDER/$file_name" \
+      "$bucket_name" "$file_name" "$upload_id" "${checksums_and_payload[1]}" "${checksums[@]}"; then
+    log 2 "error calculating checksum, completing multipart, and/or verifying checksum with HeadObject"
     return 1
   fi
   return 0

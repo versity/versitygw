@@ -44,6 +44,10 @@ type S3ApiController struct {
 	disableACL     bool
 	virtualDomain  string
 	disableSSECTLS bool
+	// listBucketsScope is which buckets ListBuckets returns to an account
+	// that is neither root nor an admin. The zero value is
+	// auth.ListBucketsScopeOwned.
+	listBucketsScope auth.ListBucketsScope
 }
 
 const (
@@ -65,19 +69,20 @@ var (
 	xmlhdr = []byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 )
 
-func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly, disableACL bool, virtualDomain string, mpMaxParts int, disableSSECTLS ...bool) S3ApiController {
+func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly, disableACL bool, virtualDomain string, mpMaxParts int, listBucketsScope auth.ListBucketsScope, disableSSECTLS ...bool) S3ApiController {
 	disableSSECTransportEnforcement := len(disableSSECTLS) > 0 && disableSSECTLS[0]
 	return S3ApiController{
-		be:             be,
-		iam:            iam,
-		logger:         logger,
-		evSender:       evs,
-		readonly:       readonly,
-		mm:             mm,
-		disableACL:     disableACL,
-		virtualDomain:  virtualDomain,
-		mpMaxParts:     mpMaxParts,
-		disableSSECTLS: disableSSECTransportEnforcement,
+		be:               be,
+		iam:              iam,
+		logger:           logger,
+		evSender:         evs,
+		readonly:         readonly,
+		mm:               mm,
+		disableACL:       disableACL,
+		virtualDomain:    virtualDomain,
+		mpMaxParts:       mpMaxParts,
+		disableSSECTLS:   disableSSECTransportEnforcement,
+		listBucketsScope: listBucketsScope,
 	}
 }
 
@@ -306,6 +311,12 @@ func ProcessController(ctx fiber.Ctx, controller Controller, s3action string, sv
 				BucketOwner: opts.BucketOwner,
 				ObjectSize:  opts.ObjectSize,
 			})
+		}
+
+		if serr, ok := err.(s3err.S3Error); ok && serr.StatusCode() == http.StatusNotModified {
+			// a 304 has no content, so it carries no Content-Type (RFC 9110 section 15.4.5)
+			ctx.Status(http.StatusNotModified)
+			return nil
 		}
 
 		// set content type to application/xml

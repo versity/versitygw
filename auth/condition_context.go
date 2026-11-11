@@ -34,6 +34,39 @@ import (
 // the keys whose applicability AWS defines per action. Pass nil where no
 // such key can apply.
 func requestConditionContext(ctx fiber.Ctx, actions []Action) map[string][]string {
+	condCtx := globalConditionContext(ctx)
+	if prefix := ctx.Query("prefix"); prefix != "" {
+		condCtx["s3:prefix"] = []string{prefix}
+	}
+	if delim := ctx.Query("delimiter"); delim != "" {
+		condCtx["s3:delimiter"] = []string{delim}
+	}
+	if maxKeys := ctx.Query("max-keys"); maxKeys != "" {
+		condCtx["s3:max-keys"] = []string{maxKeys}
+	}
+	if acl := ctx.Get("X-Amz-Acl"); acl != "" {
+		condCtx["s3:x-amz-acl"] = []string{acl}
+	}
+	if versionID := ctx.Query("versionId"); versionID != "" {
+		condCtx["s3:VersionId"] = []string{versionID}
+	}
+	addConditionalWriteKeys(ctx, actions, condCtx)
+
+	return condCtx
+}
+
+// ListBucketsConditionContext builds the condition keys a ListBuckets
+// request supplies to the checks deciding which buckets it lists: only the
+// aws:* keys describing the request itself. None of the s3:* keys apply. In
+// particular ListBuckets' own ?prefix= names a bucket-name prefix, not the
+// object prefix s3:prefix means.
+func ListBucketsConditionContext(ctx fiber.Ctx) map[string][]string {
+	return globalConditionContext(ctx)
+}
+
+// globalConditionContext builds the aws:* keys describing the request
+// itself, the part of requestConditionContext that every request has.
+func globalConditionContext(ctx fiber.Ctx) map[string][]string {
 	now := time.Now().UTC()
 	condCtx := map[string][]string{
 		"aws:CurrentTime":     {now.Format(time.RFC3339)},
@@ -53,22 +86,6 @@ func requestConditionContext(ctx fiber.Ctx, actions []Action) map[string][]strin
 	if ref := ctx.Get("Referer"); ref != "" {
 		condCtx["aws:Referer"] = []string{ref}
 	}
-	if prefix := ctx.Query("prefix"); prefix != "" {
-		condCtx["s3:prefix"] = []string{prefix}
-	}
-	if delim := ctx.Query("delimiter"); delim != "" {
-		condCtx["s3:delimiter"] = []string{delim}
-	}
-	if maxKeys := ctx.Query("max-keys"); maxKeys != "" {
-		condCtx["s3:max-keys"] = []string{maxKeys}
-	}
-	if acl := ctx.Get("X-Amz-Acl"); acl != "" {
-		condCtx["s3:x-amz-acl"] = []string{acl}
-	}
-	if versionID := ctx.Query("versionId"); versionID != "" {
-		condCtx["s3:VersionId"] = []string{versionID}
-	}
-	addConditionalWriteKeys(ctx, actions, condCtx)
 
 	return condCtx
 }

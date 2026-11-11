@@ -15,6 +15,7 @@
 package s3response
 
 import (
+	"context"
 	"encoding/xml"
 	"io"
 	"strings"
@@ -386,6 +387,16 @@ type ListBucketsInput struct {
 	ContinuationToken string
 	Prefix            string
 	MaxBuckets        int32
+	// IsVisible, when set, decides whether a bucket whose ACL names an
+	// owner other than Owner is listed too. The backend calls it inside its
+	// listing loop, so MaxBuckets and the continuation token count only the
+	// buckets it lists, and passes the bucket's stored ACL (the JSON
+	// auth.ParseACL reads) along with the context any backend call it makes
+	// must use: a backend holding a resource for the whole listing, such as
+	// a concurrency slot, can mark that context so nested calls don't wait
+	// on it. An error fails the listing. When nil, only the buckets Owner
+	// owns are listed. IsAdmin lists every bucket without calling it.
+	IsVisible func(ctx context.Context, bucket string, acl []byte) (bool, error)
 }
 
 type ListAllMyBucketsResult struct {

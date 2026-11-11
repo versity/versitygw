@@ -23,6 +23,7 @@ type ContextKey string
 
 const (
 	ContextKeyRegion           ContextKey = "region"
+	ContextKeyAnyRegion        ContextKey = "any-region"
 	ContextKeyStartTime        ContextKey = "start-time"
 	ContextKeyIsRoot           ContextKey = "is-root"
 	ContextKeyRootAccessKey    ContextKey = "root-access-key"

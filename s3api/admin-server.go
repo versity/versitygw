@@ -45,6 +45,7 @@ type S3AdminServer struct {
 	maxRequests     int
 	socketPerm      os.FileMode
 	pathPrefix      string
+	allowAnyRegion  bool
 	clientIPHeader  string
 	trustedProxies  utils.TrustedProxies
 	// clientIPHeaderErr holds an invalid WithAdminClientIPHeader value; the
@@ -126,7 +127,7 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 	// the same defaults the s3 server sets: CreateBucket validates its
 	// LocationConstraint against the region in the context, which would
 	// otherwise fall back to us-east-1 on a standalone admin port
-	app.Use("*", middlewares.SetDefaultValues(root, region))
+	app.Use("*", middlewares.SetDefaultValues(root, region, server.allowAnyRegion))
 
 	app.Use("*", controllers.WrapMiddleware(middlewares.DecodeURL, l, nil))
 
@@ -204,6 +205,12 @@ func WithAdminSocketPerm(perm os.FileMode) AdminOpt {
 // (e.g. "/admin").
 func WithAdminPathPrefix(prefix string) AdminOpt {
 	return func(s *S3AdminServer) { s.pathPrefix = prefix }
+}
+
+// WithAdminAllowAnyRegion is WithAllowAnyRegion for the standalone admin
+// server.
+func WithAdminAllowAnyRegion() AdminOpt {
+	return func(s *S3AdminServer) { s.allowAnyRegion = true }
 }
 
 // WithAdminRoute registers a route on the standalone admin server,

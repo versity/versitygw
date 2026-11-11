@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -377,6 +378,35 @@ var conditionVariableOperators = map[string]bool{
 // yet recognize. Callers MUST treat ok=false as "cannot rule out a hidden
 // Deny" and deny the whole evaluation, never as a non-match.
 func Evaluate(raw json.RawMessage, ctxVars map[string][]string, version string) (matched bool, ok bool) {
+	return evaluate(raw, ctxVars, version, nil, false)
+}
+
+// EvaluateAssuming is Evaluate for a request that is only partly known.
+// Every operator/key clause that tests one of unknownKeys is taken to
+// evaluate to assume rather than being tested against ctxVars, whatever its
+// operator: IfExists, Null and the ForAllValues/ForAnyValue qualifiers
+// included. A clause with a value that names one of unknownKeys as a ${...}
+// policy variable Evaluate would substitute is evaluated with its other
+// values first, and taken to evaluate to assume only when they leave it
+// open. A value list matches when any of its values does, so more values
+// can only make a positive operator hold and a Not operator fail: a known
+// value that makes a positive operator hold, or a Not operator fail,
+// settles the clause whatever the unknown values turn out to be. Neither
+// does a clause depend on its values when its key is absent from ctxVars
+// or has no values there. Key names match case-insensitively, as
+// LookupContextValues matches them. Every other clause is evaluated exactly
+// as Evaluate evaluates it, and ok has Evaluate's meaning.
+//
+// A caller deciding whether a statement could apply to a request it can't
+// fully describe picks the assumption that errs to the safe side of the
+// statement's effect.
+func EvaluateAssuming(raw json.RawMessage, ctxVars map[string][]string, version string, unknownKeys []string, assume bool) (matched bool, ok bool) {
+	return evaluate(raw, ctxVars, version, unknownKeys, assume)
+}
+
+// evaluate is Evaluate and EvaluateAssuming. With no unknownKeys, assume is
+// never read.
+func evaluate(raw json.RawMessage, ctxVars map[string][]string, version string, unknownKeys []string, assume bool) (matched bool, ok bool) {
 	block, err := Parse(raw)
 	if err != nil {
 		debuglogger.Logf("policy condition block failed to parse: %v", err)
@@ -385,17 +415,59 @@ func Evaluate(raw json.RawMessage, ctxVars map[string][]string, version string) 
 
 	for operator, kvs := range block {
 		op, _ := ParseOperatorName(operator) // Parse already validated every operator name
+		substitutes := version == version2012 && conditionVariableOperators[op.Base]
 		for key, expected := range kvs {
+			if len(unknownKeys) > 0 && containsFold(unknownKeys, key) {
+				if !assume {
+					return false, true
+				}
+				continue
+			}
+
+			var droppedUnknown bool
+			if substitutes && len(unknownKeys) > 0 {
+				expected, droppedUnknown = withoutUnknownValues(expected, unknownKeys)
+			}
 			actual, present := LookupContextValues(ctxVars, key)
-			if version == version2012 && conditionVariableOperators[op.Base] {
+			if substitutes {
 				expected = substituteConditionValues(expected, ctxVars)
 			}
-			if !evaluateConditionKey(op, expected, actual, present) {
+			holds := evaluateConditionKey(op, expected, actual, present)
+			if droppedUnknown && len(actual) > 0 && holds == conditionRegistry[op.Base].negate {
+				// the known values leave the clause open, so the unknown
+				// ones decide it
+				holds = assume
+			}
+			if !holds {
 				return false, true
 			}
 		}
 	}
 	return true, true
+}
+
+// withoutUnknownValues returns values without those naming one of
+// unknownKeys as a ${...} policy variable, and whether it dropped any.
+func withoutUnknownValues(values Values, unknownKeys []string) (Values, bool) {
+	known := make(Values, 0, len(values))
+	for _, value := range values {
+		if !slices.ContainsFunc(PolicyVariableKeys(value), func(key string) bool {
+			return containsFold(unknownKeys, key)
+		}) {
+			known = append(known, value)
+		}
+	}
+	return known, len(known) < len(values)
+}
+
+// containsFold reports whether keys holds key, ignoring case.
+func containsFold(keys []string, key string) bool {
+	for _, k := range keys {
+		if strings.EqualFold(k, key) {
+			return true
+		}
+	}
+	return false
 }
 
 // version2012 is AWS's "2012-10-17" policy-document version string, the

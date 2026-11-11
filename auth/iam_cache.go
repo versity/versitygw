@@ -47,7 +47,12 @@ type icache struct {
 }
 
 func (i *icache) set(k string, v Account) {
+	// k can alias a Fiber request buffer (Immutable is off), and so can
+	// v.Access when a backend echoes the requested key. Cache entries outlive
+	// the request, so keep our own copies.
+	k = strings.Clone(k)
 	cpy := v
+	cpy.Access = strings.Clone(cpy.Access)
 	i.Lock()
 	i.items[k] = item{
 		exp:   time.Now().Add(i.expire),
@@ -64,21 +69,6 @@ func (i *icache) get(k string) (Account, bool) {
 		return Account{}, false
 	}
 	return v.value, true
-}
-
-func (i *icache) update(k string, props MutableProps) {
-	i.Lock()
-	defer i.Unlock()
-
-	item, found := i.items[k]
-	if found {
-		updateAcc(&item.value, props)
-
-		// refresh the expiration date
-		item.exp = time.Now().Add(i.expire)
-
-		i.items[k] = item
-	}
 }
 
 func (i *icache) Delete(k string) {
@@ -132,23 +122,16 @@ func NewCache(service IAMService, expireTime, cleanupInterval time.Duration) *IA
 	return i
 }
 
-// CreateAccount send create to IAM service and creates an account cache entry
+// CreateAccount sends create to the IAM service and invalidates any cache
+// entry for the access key, so the next lookup caches the account as stored
+// by the service rather than as submitted in the request.
 func (c *IAMCache) CreateAccount(account Account) error {
 	err := c.service.CreateAccount(account)
 	if err != nil {
 		return err
 	}
 
-	// we need a copy of account to be able to store beyond the
-	// lifetime of the request, otherwise Fiber will reuse and corrupt
-	// these entries
-	acct := Account{
-		Access: strings.Clone(account.Access),
-		Secret: strings.Clone(account.Secret),
-		Role:   Role(strings.Clone(string(account.Role))),
-	}
-
-	c.iamcache.set(acct.Access, acct)
+	c.iamcache.Delete(account.Access)
 	return nil
 }
 
@@ -203,13 +186,15 @@ func (c *IAMCache) DeleteUserAccount(access string) error {
 	return nil
 }
 
+// UpdateUserAccount invalidates the cached entry after a successful update so
+// the next lookup reads the full account from the underlying service.
 func (c *IAMCache) UpdateUserAccount(access string, props MutableProps) error {
 	err := c.service.UpdateUserAccount(access, props)
 	if err != nil {
 		return err
 	}
 
-	c.iamcache.update(access, props)
+	c.iamcache.Delete(access)
 	return nil
 }
 

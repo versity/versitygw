@@ -665,12 +665,16 @@ func (c S3ApiController) CreateBucket(ctx fiber.Ctx) (*Response, error) {
 		region = defaultRegion
 	}
 
-	if err := utils.ValidateLocationConstraint(body.LocationConstraint, region); err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: bucketOwner.Access,
-			},
-		}, err
+	// clients name the region they are configured for as the constraint,
+	// so when any signing region is accepted, any constraint is too
+	if !utils.ContextKeyAnyRegion.IsSet(ctx) {
+		if err := utils.ValidateLocationConstraint(body.LocationConstraint, region); err != nil {
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: bucketOwner.Access,
+				},
+			}, err
+		}
 	}
 
 	defACL := auth.ACL{

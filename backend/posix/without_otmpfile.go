@@ -56,10 +56,12 @@ type tmpfile struct {
 	modTime time.Time
 }
 
-// openTmpFile opens a temporary file in dir (a filesystem path) that link()
-// later publishes as obj within bucket. bucket is a bucket name or, for the
-// versioning code, the absolute path of a bucket's versioning directory.
-func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, _ bool, _ bool, allowODirect odirectPolicy) (*tmpfile, error) {
+// openTmpFileIn opens a named temporary file in dir (a filesystem path)
+// that link() later publishes as obj within bucket. bucket is a bucket name
+// or, for the versioning code, the absolute path of a bucket's versioning
+// directory. O_TMPFILE, and with it the directory it would be made in and
+// the inheritance of its default ACL, is only used on Linux.
+func (p *Posix) openTmpFileIn(_, dir, bucket, obj string, size int64, acct auth.Account, _, _ bool, allowODirect odirectPolicy) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
 
 	// The tmpfile keeps the bucket directory's path so that link() addresses
@@ -138,13 +140,26 @@ func (tmp *tmpfile) link() error {
 		return fmt.Errorf("set tmpfile modification time: %w", err)
 	}
 
+	var syncd *os.File
 	err = tmp.publishInDir(filepath.Dir(objPath), func() error {
-		return backend.MoveFile(tempname, objPath, tmp.newFilePerm, tmp.fsync)
+		d, err := tmp.openDirForSync(filepath.Dir(objPath))
+		if err != nil {
+			return fmt.Errorf("open parent dir: %w", err)
+		}
+		err = backend.MoveFile(tempname, objPath, tmp.newFilePerm, tmp.fsync)
+		if err != nil {
+			if d != nil {
+				d.Close()
+			}
+			return err
+		}
+		syncd = d
+		return nil
 	})
 	if err != nil {
 		return err
 	}
-	return tmp.syncNamespace()
+	return tmp.syncNamespace(syncd)
 }
 
 func (tmp *tmpfile) cleanup() {

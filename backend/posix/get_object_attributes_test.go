@@ -17,12 +17,17 @@ package posix
 import (
 	"bytes"
 	"context"
+	"errors"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/meta"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -135,6 +140,118 @@ func TestGetObjectAttributesPartsCount(t *testing.T) {
 			}
 			if got := aws.ToInt64(out.ObjectSize); got != 4 {
 				t.Errorf("expected object size 4, got %d", got)
+			}
+		})
+	}
+}
+
+// removeAfterReadMeta runs remove, once it is set, after the next read of
+// attribute of object, so that the object is removed between that read and
+// what the caller does next.
+type removeAfterReadMeta struct {
+	meta.XattrMeta
+	object    string
+	attribute string
+	remove    *func()
+}
+
+func (m removeAfterReadMeta) RetrieveAttribute(f *os.File, bucket, object, attribute string) ([]byte, error) {
+	b, err := m.XattrMeta.RetrieveAttribute(f, bucket, object, attribute)
+	if object == m.object && attribute == m.attribute && *m.remove != nil {
+		remove := *m.remove
+		*m.remove = nil
+		remove()
+	}
+	return b, err
+}
+
+// TestGetObjectRemovedBeforeOpen removes the object after the delete-marker
+// check. File objects then fail to open, including with ENOTDIR when their
+// parent directory is replaced by a file. Directory objects are never opened;
+// their next path-based attribute read detects the removal instead.
+// The response is NoSuchVersion only when the request names a version,
+// otherwise NoSuchKey, including in a versioned bucket.
+func TestGetObjectRemovedBeforeOpen(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		replaceDir     bool
+		requestVersion bool
+		dirObject      bool
+	}{
+		{"object removed", false, false, false},
+		{"directory replaced by object", true, false, false},
+		{"requested version removed", false, true, false},
+		{"requested version directory replaced by object", true, true, false},
+		{"directory object removed", false, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// remove the object after the delete marker check, the last read
+			// GetObject does before its open (the attributes are read after it)
+			attribute := deleteMarkerKey
+			key := "dir/obj"
+			if tc.dirObject {
+				key = "dir/"
+			}
+			var remove func()
+			p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+				opts := PosixOpts{NewDirPerm: 0755, VersioningDir: t.TempDir()}
+				return removeAfterReadMeta{object: key, attribute: attribute, remove: &remove}, opts
+			})
+			bucket := "testbucket"
+			createTestBucket(t, p, bucket)
+
+			ctx := context.Background()
+			err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled)
+			if err != nil {
+				t.Fatalf("put bucket versioning: %v", err)
+			}
+			content := "data"
+			if tc.dirObject {
+				content = ""
+			}
+			put, err := p.PutObject(ctx, s3response.PutObjectInput{
+				Bucket:        &bucket,
+				Key:           aws.String(key),
+				Body:          strings.NewReader(content),
+				ContentLength: aws.Int64(int64(len(content))),
+			})
+			if err != nil {
+				t.Fatalf("put object: %v", err)
+			}
+
+			remove = func() {
+				if err := os.Remove(p.ObjectPath(bucket, key)); err != nil {
+					t.Errorf("remove object: %v", err)
+				}
+				if !tc.replaceDir || tc.dirObject {
+					return
+				}
+				if err := os.Remove(p.ObjectPath(bucket, "dir")); err != nil {
+					t.Errorf("remove object directory: %v", err)
+				}
+				if err := os.WriteFile(p.ObjectPath(bucket, "dir"), []byte("data"), 0644); err != nil {
+					t.Errorf("put object in place of the directory: %v", err)
+				}
+			}
+
+			input := &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    aws.String(key),
+			}
+			want := s3err.GetAPIError(s3err.ErrNoSuchKey)
+			if tc.requestVersion {
+				input.VersionId = &put.VersionID
+				want = s3err.GetAPIError(s3err.ErrNoSuchVersion)
+			}
+			out, err := p.GetObject(ctx, input)
+			if err == nil {
+				out.Body.Close()
+			}
+			if remove != nil {
+				t.Fatalf("get object did not read the object %v", attribute)
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("get object: expected %v, got %v", want.Code, err)
 			}
 		})
 	}

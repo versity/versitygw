@@ -1,9 +1,15 @@
 {{- $gatewayLogLevel := default "silent" .Values.gateway.logLevel -}}
+{{- $listBucketsScope := default "owned" .Values.gateway.listBucketsScope -}}
 {{- $iamServer := .Values.iamServer | default dict -}}
 {{- $iamServerEnabled := $iamServer.enabled | default false -}}
 {{- $iamServerPrivate := $iamServer.private | default dict -}}
 {{- $iamServerPrivateEnabled := $iamServerPrivate.enabled | default false -}}
 {{- $iamServerAuth := $iamServer.auth | default dict -}}
+{{- $iamAzure := .Values.iam.azure | default dict -}}
+{{- $iamAzureURL := $iamAzure.url | default "" -}}
+{{- $iamAzureContainer := $iamAzure.container | default "" -}}
+{{- $iamAzureAccount := $iamAzure.account | default "" -}}
+{{- $iamAzureCredentials := $iamAzure.credentials | default dict -}}
 {{- $iamStandalone := .Values.iam.standalone | default dict -}}
 {{- $iamStandaloneEndpoint := $iamStandalone.endpoint | default "" -}}
 {{- $iamStandaloneCredentials := $iamStandalone.credentials | default dict -}}
@@ -15,6 +21,8 @@
 {{- $iamPersistence := .Values.iam.persistence | default dict -}}
 {{- $sidecarDir := .Values.gateway.backend.sidecarDir -}}
 {{- $versioningDir := .Values.gateway.backend.versioningDir -}}
+{{- /* toString: --set reads an all-digit container name as a number */}}
+{{- $metaContainer := .Values.gateway.backend.metaContainer | default "" | toString -}}
 {{- $adminPathPrefix := .Values.admin.pathPrefix | default "" -}}
 {{- $webuiS3Prefix := .Values.webui.s3Prefix | default "" -}}
 {{- if and .Values.gateway.clientIPHeader (not .Values.gateway.trustedProxies) }}
@@ -44,6 +52,13 @@
 {{- if and .Values.gateway.backend.versioningDir (not (or (eq .Values.gateway.backend.type "posix") (eq .Values.gateway.backend.type "scoutfs"))) }}
   {{- fail "gateway.backend.versioningDir is only supported with the posix and scoutfs backends" }}
 {{- end }}
+{{- if and $metaContainer (ne .Values.gateway.backend.type "azure") }}
+  {{- fail "gateway.backend.metaContainer is only supported with the azure backend" }}
+{{- end }}
+{{- /* Azure rejects other names at startup, which would leave the pod crash looping */}}
+{{- if and $metaContainer (or (lt (len $metaContainer) 3) (gt (len $metaContainer) 63) (not (regexMatch "^[a-z0-9]+(-[a-z0-9]+)*$" $metaContainer))) }}
+  {{- fail "gateway.backend.metaContainer must be a valid Azure container name: 3 to 63 lowercase letters, digits and hyphens, starting and ending with a letter or digit, with no consecutive hyphens" }}
+{{- end }}
 {{- /* Bucket deletion removes <dir>/<bucket> in these directories, so nesting one in another loses data */}}
 {{- if and $sidecarDir (include "versitygw.pathsOverlap" (list $sidecarDir "/mnt/data")) }}
   {{- fail "gateway.backend.sidecarDir must not overlap the backend data mount /mnt/data" }}
@@ -56,6 +71,12 @@
 {{- end }}
 {{- if not (or (eq $gatewayLogLevel "silent") (eq $gatewayLogLevel "debug") (eq $gatewayLogLevel "unsafe")) }}
   {{- fail "gateway.logLevel must be one of silent, debug, or unsafe" }}
+{{- end }}
+{{- if not (or (eq $listBucketsScope "owned") (eq $listBucketsScope "accessible") (eq $listBucketsScope "all")) }}
+  {{- fail "gateway.listBucketsScope must be one of owned, accessible, or all" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (ne $listBucketsScope "owned") }}
+  {{- fail "gateway.listBucketsScope must be owned with iam.type=standalone: the standalone IAM service lists buckets as S3 does, granted by s3:ListAllMyBuckets" }}
 {{- end }}
 {{- if and $adminPathPrefix (or (not (regexMatch "^/[A-Za-z0-9._~-]+$" $adminPathPrefix)) (eq $adminPathPrefix "/.") (eq $adminPathPrefix "/..")) }}
   {{- fail "admin.pathPrefix must be \"/\" followed by a single segment of letters, digits, '-', '.', '_' or '~', other than '.' or '..' (e.g. /admin)" }}
@@ -81,6 +102,21 @@
 {{- end }}
 {{- if and $internalIAM $iamPersistence.enabled (not (dig "create" true $iamPersistence)) (not $iamPersistence.claimName) }}
   {{- fail "iam.persistence.claimName is required when iam.persistence.create is false" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "azure") (not $iamAzureContainer) }}
+  {{- fail "iam.type=azure requires iam.azure.container" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "azure") (not $iamAzureAccount) (not $iamAzureURL) }}
+  {{- fail "iam.type=azure requires iam.azure.account or iam.azure.url" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "azure") $iamAzureCredentials.existingSecret (not (or $iamAzureCredentials.accessKeyKey $iamAzureCredentials.sasTokenKey)) }}
+  {{- fail "iam.azure.credentials.accessKeyKey or sasTokenKey is required when credentials.existingSecret is set" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "azure") (not $iamAzureCredentials.existingSecret) (or $iamAzureCredentials.accessKeyKey $iamAzureCredentials.sasTokenKey) }}
+  {{- fail "iam.azure.credentials.existingSecret is required when accessKeyKey or sasTokenKey is set" }}
+{{- end }}
+{{- if and .Values.iam.enabled (eq .Values.iam.type "azure") $iamAzureCredentials.accessKeyKey (not $iamAzureAccount) }}
+  {{- fail "iam.azure.credentials.accessKeyKey requires iam.azure.account" }}
 {{- end }}
 {{- if and .Values.iam.enabled (eq .Values.iam.type "standalone") (not .Values.iam.standalone.endpoint) (not $iamServerEnabled) }}
   {{- fail "iam.type=standalone requires either iam.standalone.endpoint or iamServer.enabled=true" }}
@@ -180,6 +216,10 @@ spec:
             - name: VGW_VERSIONING_DIR
               value: {{ .Values.gateway.backend.versioningDir | quote }}
             {{- end }}
+            {{- if $metaContainer }}
+            - name: AZ_META_CONTAINER
+              value: {{ $metaContainer | quote }}
+            {{- end }}
             # Root credentials — sourced from a Kubernetes Secret
             - name: ROOT_ACCESS_KEY_ID
               valueFrom:
@@ -196,6 +236,10 @@ spec:
               value: ":{{ .Values.gateway.port }}"
             - name: VGW_REGION
               value: {{ .Values.gateway.region | quote }}
+            {{- if .Values.gateway.allowAnyRegion }}
+            - name: VGW_ALLOW_ANY_REGION
+              value: "true"
+            {{- end }}
             - name: VGW_HEALTH
               value: "/_/health"
             {{- if .Values.gateway.virtualDomain }}
@@ -236,6 +280,10 @@ spec:
             {{- if .Values.gateway.disableStrictBucketNames }}
             - name: VGW_DISABLE_STRICT_BUCKET_NAMES
               value: "true"
+            {{- end }}
+            {{- if ne $listBucketsScope "owned" }}
+            - name: VGW_LIST_BUCKETS_SCOPE
+              value: {{ $listBucketsScope | quote }}
             {{- end }}
             # Admin API server
             {{- if .Values.admin.enabled }}
@@ -297,6 +345,31 @@ spec:
             {{- if eq .Values.iam.type "internal" }}
             - name: VGW_IAM_DIR
               value: {{ $iamDir | quote }}
+            {{- else if eq .Values.iam.type "azure" }}
+            - name: VGW_IAM_AZURE_CONTAINER
+              value: {{ $iamAzureContainer | quote }}
+            {{- if $iamAzureAccount }}
+            - name: VGW_IAM_AZURE_ACCOUNT_NAME
+              value: {{ $iamAzureAccount | quote }}
+            {{- end }}
+            {{- if $iamAzureURL }}
+            - name: VGW_IAM_AZURE_ENDPOINT
+              value: {{ $iamAzureURL | quote }}
+            {{- end }}
+            {{- if and $iamAzureCredentials.existingSecret $iamAzureCredentials.accessKeyKey }}
+            - name: VGW_IAM_AZURE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $iamAzureCredentials.existingSecret }}
+                  key: {{ $iamAzureCredentials.accessKeyKey }}
+            {{- end }}
+            {{- if and $iamAzureCredentials.existingSecret $iamAzureCredentials.sasTokenKey }}
+            - name: VGW_IAM_AZURE_SAS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $iamAzureCredentials.existingSecret }}
+                  key: {{ $iamAzureCredentials.sasTokenKey }}
+            {{- end }}
             {{- else if eq .Values.iam.type "standalone" }}
             - name: VGW_IAM_STANDALONE_ENDPOINT
               value: {{ include "versitygw.standaloneIAMEndpoint" . | quote }}

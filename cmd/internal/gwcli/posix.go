@@ -38,6 +38,7 @@ var (
 	sidecar              string
 	nometa               bool
 	forceNoTmpFile       bool
+	inheritDefaultACL    bool
 	forceNoCopyFileRange bool
 	fsync                bool
 	forceNoObjLockFile   bool
@@ -140,6 +141,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				Destination: &forceNoTmpFile,
 			},
 			&cli.BoolFlag{
+				Name:        "inherit-default-acl",
+				Usage:       "new objects inherit the default ACL of their directory, whose group and other permissions --file-perms then limits instead of setting (needs O_TMPFILE, Linux only)",
+				EnvVars:     []string{"VGW_INHERIT_DEFAULT_ACL"},
+				Destination: &inheritDefaultACL,
+			},
+			&cli.BoolFlag{
 				Name:        "disable-copy-file-range",
 				Usage:       "explicitly copy multipart upload parts instead of using copy_file_range (which may hang with some NFS servers)",
 				EnvVars:     []string{"VGW_DISABLE_COPY_FILE_RANGE"},
@@ -220,6 +227,7 @@ func runPosix(ctx *cli.Context) error {
 		BucketLinks:          bucketlinks,
 		VersioningDir:        versioningDir,
 		ForceNoTmpFile:       forceNoTmpFile,
+		InheritDefaultACL:    inheritDefaultACL,
 		ForceNoCopyFileRange: forceNoCopyFileRange,
 		Fsync:                fsync,
 		ForceNoObjLockFile:   forceNoObjLockFile,
