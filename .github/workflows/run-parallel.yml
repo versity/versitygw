@@ -1,7 +1,6 @@
 name: Parallel Runner Smoke Test
 
-on:
-  workflow_dispatch:
+on: pull_request
 
 permissions:
   contents: read
