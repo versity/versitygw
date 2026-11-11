@@ -6098,7 +6098,7 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 // HeadObject have not read when they evaluate the preconditions: the tag
 // count, and with partNumber the parts count of a multipart object.
 func (p *Posix) notModifiedCounts(f *os.File, bucket, object, versionId string, partNumber *int32) (tagCount, partsCount *int32, err error) {
-	tags, err := p.getAttrTags(bucket, object, versionId)
+	tags, err := p.getAttrTags(f, bucket, object, versionId)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -6412,7 +6412,7 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 		objMeta := p.loadObjectMetaProperties(nil, bucket, object, &fid)
 
 		var tagCount *int32
-		tags, err := p.getAttrTags(bucket, object, requestedVersionId)
+		tags, err := p.getAttrTags(f, bucket, object, requestedVersionId)
 		if err != nil {
 			return nil, err
 		}
@@ -6536,7 +6536,7 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 	objMeta := p.loadObjectMetaProperties(f, bucket, object, &fi)
 
 	var tagCount *int32
-	tags, err := p.getAttrTags(bucket, object, requestedVersionId)
+	tags, err := p.getAttrTags(f, bucket, object, requestedVersionId)
 	if err != nil {
 		return nil, err
 	}
@@ -6844,7 +6844,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	var tagCount *int32
-	tags, err := p.getAttrTags(bucket, object, versionId)
+	tags, err := p.getAttrTags(nil, bucket, object, versionId)
 	if err != nil {
 		return nil, err
 	}
@@ -7794,7 +7794,7 @@ func (p *Posix) GetBucketTagging(ctx context.Context, bucket string) (map[string
 		return nil, err
 	}
 
-	tags, err := p.getAttrTags(bucket, "", "")
+	tags, err := p.getAttrTags(nil, bucket, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -7848,12 +7848,12 @@ func (p *Posix) GetObjectTagging(ctx context.Context, bucket, object, versionId 
 		return nil, err
 	}
 
-	return p.getAttrTags(bucket, object, versionId)
+	return p.getAttrTags(nil, bucket, object, versionId)
 }
 
-func (p *Posix) getAttrTags(bucket, object, versionId string) (map[string]string, error) {
+func (p *Posix) getAttrTags(f *os.File, bucket, object, versionId string) (map[string]string, error) {
 	tags := make(map[string]string)
-	b, err := p.meta.RetrieveAttribute(nil, bucket, object, tagHdr)
+	b, err := p.meta.RetrieveAttribute(f, bucket, object, tagHdr)
 	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return nil, s3err.GetNoSuchVersionErr(object, versionId)
