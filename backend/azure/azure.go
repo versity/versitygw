@@ -2685,36 +2685,15 @@ func (az *Azure) getBlobURL(cntr, blb string) string {
 }
 
 func (az *Azure) getBlobClient(cntr, blb string) (*blob.Client, error) {
-	blobURL := az.getBlobURL(cntr, blb)
-	if az.defaultCreds != nil {
-		return blob.NewClient(blobURL, az.defaultCreds, nil)
-	}
-	if az.sasToken != "" {
-		return blob.NewClientWithNoCredential(blobURL+"?"+az.sasToken, nil)
-	}
-	return blob.NewClientWithSharedKeyCredential(blobURL, az.sharedkeyCreds, nil)
+	return az.client.ServiceClient().NewContainerClient(cntr).NewBlobClient(blb), nil
 }
 
 func (az *Azure) getContainerClient(cntr string) (*container.Client, error) {
-	containerURL := az.getContainerURL(cntr)
-	if az.defaultCreds != nil {
-		return container.NewClient(containerURL, az.defaultCreds, nil)
-	}
-	if az.sasToken != "" {
-		return container.NewClientWithNoCredential(containerURL+"?"+az.sasToken, nil)
-	}
-	return container.NewClientWithSharedKeyCredential(containerURL, az.sharedkeyCreds, nil)
+	return az.client.ServiceClient().NewContainerClient(cntr), nil
 }
 
 func (az *Azure) getBlockBlobClient(cntr, blb string) (*blockblob.Client, error) {
-	blobURL := az.getBlobURL(cntr, blb)
-	if az.defaultCreds != nil {
-		return blockblob.NewClient(blobURL, az.defaultCreds, nil)
-	}
-	if az.sasToken != "" {
-		return blockblob.NewClientWithNoCredential(blobURL+"?"+az.sasToken, nil)
-	}
-	return blockblob.NewClientWithSharedKeyCredential(blobURL, az.sharedkeyCreds, nil)
+	return az.client.ServiceClient().NewContainerClient(cntr).NewBlockBlobClient(blb), nil
 }
 
 func parseMetadata(m map[string]string) map[string]*string {

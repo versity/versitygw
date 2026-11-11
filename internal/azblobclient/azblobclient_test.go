@@ -41,6 +41,14 @@ func TestNew(t *testing.T) {
 			wantSAS: true,
 		},
 		{
+			name:    "question mark only falls back to account and key",
+			account: "acct",
+			key:     key,
+			sas:     "?",
+			wantURL: "https://acct.blob.core.windows.net/",
+			wantKey: true,
+		},
+		{
 			name:    "account and key",
 			account: "acct",
 			key:     key,
@@ -92,11 +100,6 @@ func TestNew(t *testing.T) {
 }
 
 func TestNewKeepsSASOutOfTransportErrors(t *testing.T) {
-	// without retries the transport error is returned at once; with them
-	// the test would wait for the SDK retry delays
-	retryOptions = policy.RetryOptions{MaxRetries: -1}
-	t.Cleanup(func() { retryOptions = policy.RetryOptions{} })
-
 	// a port nothing listens on, so the request fails with a transport
 	// error carrying its URL
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -111,10 +114,39 @@ func TestNewKeepsSASOutOfTransportErrors(t *testing.T) {
 		return
 	}
 
-	_, err = client.DownloadStream(context.Background(), "iam", "users.json", nil)
+	_, err = client.DownloadStream(policy.WithRetryOptions(context.Background(), policy.RetryOptions{MaxRetries: -1}), "iam", "users.json", nil)
 	if assert.Error(t, err) {
 		// the URL is still reported, only its query is removed
 		assert.Contains(t, err.Error(), "/acct/iam/users.json")
 		assert.NotContains(t, err.Error(), "SECRETSIGNATURE")
+	}
+}
+
+func TestNewRejectsInvalidSASWithoutLeakingToken(t *testing.T) {
+	for _, tt := range []struct{ name, token string }{
+		{"newline", "sig=SECRET\n"},
+		{"carriage return", "sig=SECRET\r"},
+		{"nul", "sig=SECRET\x00"},
+		{"del", "sig=SECRET\x7f"},
+		{"bad escape", "sig=SECRET%zz"},
+		{"semicolon", "sig=SECRET;bad"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client, creds, err := New("", "", "http://localhost/acct", tt.token)
+			assert.Nil(t, client)
+			assert.Empty(t, creds)
+			if assert.Error(t, err) {
+				assert.NotContains(t, err.Error(), "SECRET")
+			}
+		})
+	}
+}
+
+func TestNewTrimsLeadingQuestionMarkFromSAS(t *testing.T) {
+	client, creds, err := New("", "", "http://localhost/acct", "?sv=2024-01-01&sig=abc")
+	if assert.NoError(t, err) {
+		assert.NotNil(t, client)
+		assert.Equal(t, "sv=2024-01-01&sig=abc", creds.SASToken)
+		assert.NotContains(t, client.URL(), "??")
 	}
 }

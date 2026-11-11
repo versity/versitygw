@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -43,10 +44,6 @@ func (stripQueryFromURLErrors) Do(req *policy.Request) (*http.Response, error) {
 	}
 	return resp, err
 }
-
-// retryOptions configures the retries of the clients returned by New. The
-// zero value keeps the SDK defaults; tests change it to fail fast.
-var retryOptions policy.RetryOptions
 
 // Credentials describes how a client returned by New authenticates.
 // Exactly one of SASToken, SharedKey and Default is set.
@@ -71,14 +68,20 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 		svcURL = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
 	}
 
-	opts := &azblob.ClientOptions{
-		ClientOptions: policy.ClientOptions{
-			Retry:           retryOptions,
-			PerCallPolicies: []policy.Policy{stripQueryFromURLErrors{}},
-		},
-	}
+	opts := &azblob.ClientOptions{ClientOptions: policy.ClientOptions{
+		PerCallPolicies: []policy.Policy{stripQueryFromURLErrors{}},
+	}}
 
+	// A token copied with its leading "?" would otherwise be sent twice.
+	sasToken = strings.TrimPrefix(sasToken, "?")
 	if sasToken != "" {
+		// Reject invalid queries before request construction can echo the token.
+		if strings.ContainsFunc(sasToken, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+			return nil, Credentials{}, errors.New("invalid SAS token: contains a control character")
+		}
+		if _, err := url.ParseQuery(sasToken); err != nil {
+			return nil, Credentials{}, errors.New("invalid SAS token: malformed query")
+		}
 		client, err := azblob.NewClientWithNoCredential(svcURL+"?"+sasToken, opts)
 		if err != nil {
 			return nil, Credentials{}, fmt.Errorf("init client: %w", err)
