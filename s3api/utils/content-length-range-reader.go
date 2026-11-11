@@ -69,17 +69,22 @@ func NewContentLengthRangeReader(r io.Reader, minSize, maxSize, proposedSize int
 }
 
 // ContentLength is the length to give a backend for the file: the size the
-// request proposes, and not more than the max. The request can propose any
-// size, and a backend can reserve the length it gets before it reads the file.
-// The reader gives no more than max bytes, so this is still at least as long
-// as the file.
+// request proposes, and not more than one byte over the max. The request can
+// propose any size, and a backend can reserve the length it gets before it
+// reads the file.
 //
-// It is at least 1 when the request proposes bytes. A backend that sends the
-// length it is given, as the S3 proxy does, takes a length of 0 for an empty
-// file and never reads the one it has, which would let a file over a max of
-// zero through.
+// The length is one over the max, so that the reader fails a file over the max
+// before the backend has read as many bytes as it expects. A backend that
+// sends the length it is given, as the S3 proxy does, otherwise sends a
+// complete request with the first max bytes of the file, and the upstream
+// stores them before the reader refuses the rest.
+//
+// A policy can have a max under zero, and then no file fits. The length is
+// still at least 1 when the request proposes bytes: a backend that takes a
+// length of 0 as an empty file, as the S3 proxy does, does not read the file,
+// and the reader would not refuse it.
 func (r *ContentLengthRangeReader) ContentLength() int64 {
-	return min(r.proposed, max(r.max, 1))
+	return min(r.proposed, max(r.max+1, 1))
 }
 
 func (r *ContentLengthRangeReader) Read(p []byte) (int, error) {

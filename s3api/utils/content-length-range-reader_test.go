@@ -258,6 +258,75 @@ func TestContentLengthRangeReaderOverMax(t *testing.T) {
 	})
 }
 
+// A backend that sends the length it is given as a request reads that many
+// bytes and no more. A file over the max must fail before it has read them
+// all: if it did not, the backend would send a complete request with the file
+// cut at the max.
+func TestContentLengthRangeReaderFailsWithinContentLength(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name      string
+		size, max int64
+	}{
+		{"a file over a small max", 11, 5},
+		{"a file over a max of a few reads", 9000, 4096},
+		{"a file over a large max", 100000, 65536},
+		{"a file of one byte over a max of zero", 1, 0},
+		{"a file over a max of zero", 7, 0},
+		{"a file over a max under zero", 7, -1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			rdr := NewContentLengthRangeReader(strings.NewReader(strings.Repeat("x", int(tt.size))), 0, tt.max, tt.size)
+			_, err := io.CopyN(io.Discard, rdr, rdr.ContentLength())
+
+			tooLargeErr(t, err)
+		})
+	}
+
+	t.Run("a file at the max", func(t *testing.T) {
+		t.Parallel()
+
+		rdr := NewContentLengthRangeReader(strings.NewReader("hello"), 0, 5, 5)
+		if _, err := io.CopyN(io.Discard, rdr, rdr.ContentLength()); err != nil {
+			t.Fatalf("expected the file to be read, got %v", err)
+		}
+	})
+}
+
+func TestContentLengthRangeReaderContentLength(t *testing.T) {
+	t.Parallel()
+
+	const fiveGiB = 5 << 30
+
+	for _, tt := range []struct {
+		name          string
+		max, proposed int64
+		want          int64
+	}{
+		{"a proposal in the range", 100, 7, 7},
+		{"a proposal as large as the max", 7, 7, 7},
+		{"a proposal over the max", 5, 11, 6},
+		{"a proposal over a max of zero", 0, 7, 1},
+		{"an empty file", 0, 0, 0},
+		{"a proposal over a max under zero", -1, 7, 1},
+		{"an empty file, with a max under zero", -1, 0, 0},
+		{"a proposal over what S3 takes, with no max", math.MaxInt64, fiveGiB + 1000, fiveGiB + 1},
+		{"a proposal over what S3 takes, with a max of it", fiveGiB, 2 * fiveGiB, fiveGiB + 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			rdr := NewContentLengthRangeReader(strings.NewReader(""), 0, tt.max, tt.proposed)
+			if got := rdr.ContentLength(); got != tt.want {
+				t.Fatalf("got %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestContentLengthRangeReaderUnderMin(t *testing.T) {
 	t.Parallel()
 
