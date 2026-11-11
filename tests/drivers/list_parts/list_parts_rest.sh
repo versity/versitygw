@@ -311,8 +311,7 @@ list_parts_check_checksums() {
     return 1
   fi
   local data_file="$1" bucket="$2" key="$3" upload_id="$4" checksum_algorithm="$5" checksums=("${@:6}")
-  checksum_algorithm=${checksum_algorithm^^}
-  local response checksum_idx=0 part_number
+  local response checksum_idx=0 part_number uppercase_algorithm
   local -a parts
 
   if ! list_parts_check_parent_fields "$data_file" "$bucket" "$key" "$upload_id"; then
@@ -329,13 +328,14 @@ list_parts_check_checksums() {
     return 1
   fi
   log 5 "checksums: ${checksums[*]}"
+  uppercase_algorithm=${checksum_algorithm^^}
   for part in "${parts[@]}"; do
     part_number=$((checksum_idx+1))
     if ! check_xml_element_inside_string "$part" "$part_number" "Part" "PartNumber"; then
       log 2 "error checking part number"
       return 1
     fi
-    if ! check_xml_element_inside_string "$part" "${checksums[$checksum_idx]}" "Part" "Checksum${checksum_algorithm}"; then
+    if ! check_xml_element_inside_string "$part" "${checksums[$checksum_idx]}" "Part" "Checksum${uppercase_algorithm}"; then
       log 2 "error checking checksum for part '$((checksum_idx+1))'"
       return 1
     fi
