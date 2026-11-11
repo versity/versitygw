@@ -350,10 +350,13 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 	file := utils.NewContentLengthRangeReader(parsed.FileRdr, minSize, maxSize, parsed.ProposedSize)
 	contentLength := file.ContentLength()
 
-	// A backend takes a length of 0 for an empty file, and the S3 proxy does
-	// not read the file it has: the reader reads it here, so that it refuses
-	// an empty file under the min. The file is empty, so this costs nothing.
-	if contentLength == 0 {
+	// A file as long as a length under the min is under the min, and a
+	// backend must not store it before the reader refuses it. The S3 proxy
+	// sends the file with that length, and the upstream stores it when the
+	// body is complete. For a length of 0 it does not read the file at all.
+	// The reader reads the file here instead and fails at its end, or at the
+	// max. The file is not kept.
+	if contentLength < minSize {
 		if _, err := io.Copy(io.Discard, file); err != nil {
 			return &Response{
 				MetaOpts: &MetaOptions{

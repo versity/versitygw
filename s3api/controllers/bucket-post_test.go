@@ -1171,14 +1171,17 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 
 		return s3response.PutObjectOutput{ETag: "etag-123"}, nil
 	}
-	// skipsEmptyFile is one that does not read the file when it is given a
-	// length of 0, as the S3 proxy sends an empty body, and else reads it
-	skipsEmptyFile := func(in s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
-		if *in.ContentLength == 0 {
-			return s3response.PutObjectOutput{ETag: "etag-123"}, nil
+	// sendsLength is a backend that reads the length it is given and no more,
+	// and stores the file when it has them, as the S3 proxy does: it sends
+	// the length as the Content-Length of a request, which the upstream
+	// stores when its body is complete. It does not read the file at all for
+	// a length of 0. It fails on a file shorter than the length.
+	sendsLength := func(in s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+		if _, err := io.CopyN(io.Discard, in.Body, *in.ContentLength); err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("put object: %w", err)
 		}
 
-		return readsFile(in)
+		return s3response.PutObjectOutput{ETag: "etag-123"}, nil
 	}
 	// wrapsReadErr is one that wraps the error of the read, like the S3 proxy
 	// and Azure backends
@@ -1321,13 +1324,13 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			wantErr:      s3err.GetEntityTooLargeErr(int64(len("payload")), 0),
 		},
 		{
-			// a backend that does not read an empty file stores it: the
+			// the backend does not read an empty file and would store it: the
 			// controller reads it, so that the reader refuses it
 			name:         "empty file under the min, with a backend that does not read it",
 			fields:       fields(sizeRange(1, 100)...),
 			file:         newMockFileReader(""),
 			proposedSize: 0,
-			put:          skipsEmptyFile,
+			put:          sendsLength,
 			wantLength:   0,
 			wantRes:      failed,
 			wantErr:      s3err.GetEntityTooSmallErr(0, 1),
@@ -1337,7 +1340,7 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			fields:       fields(sizeRange(0, 100)...),
 			file:         newMockFileReader(""),
 			proposedSize: 0,
-			put:          skipsEmptyFile,
+			put:          sendsLength,
 			wantLength:   0,
 			wantRes: &Response{
 				Headers: redirected.Headers,
@@ -1352,12 +1355,23 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			},
 		},
 		{
+			name:         "file as long as the min, with a backend that stores the length it is given",
+			fields:       fields(sizeRange(7, 100)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: int64(len("payload")),
+			put:          sendsLength,
+			wantLength:   int64(len("payload")),
+			wantRes:      redirected,
+		},
+		{
+			// the backend gets as many bytes as the file has, and would store
+			// them before the reader sees that the file ends under the min:
+			// it does not get the file
 			name:         "file under the min",
 			fields:       fields(sizeRange(10, 100)...),
 			file:         newMockFileReader("payload"),
 			proposedSize: int64(len("payload")),
-			put:          readsFile,
-			wantLength:   int64(len("payload")),
+			put:          sendsLength,
 			wantRes:      failed,
 			wantErr:      s3err.GetEntityTooSmallErr(int64(len("payload")), 10),
 		},
@@ -1365,9 +1379,9 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			name:         "file under the min, with the error wrapped by the backend",
 			fields:       fields(sizeRange(10, 100)...),
 			file:         newMockFileReader("payload"),
-			proposedSize: int64(len("payload")),
+			proposedSize: 200,
 			put:          wrapsReadErr,
-			wantLength:   int64(len("payload")),
+			wantLength:   101,
 			wantRes:      failed,
 			wantErr:      s3err.GetEntityTooSmallErr(int64(len("payload")), 10),
 		},
@@ -1458,11 +1472,15 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotLength int64
+			var stored bool
 			be := &BackendMock{
 				PutObjectFunc: func(_ context.Context, in s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 					gotLength = *in.ContentLength
 
-					return tt.put(in)
+					out, err := tt.put(in)
+					stored = stored || err == nil
+
+					return out, err
 				},
 				GetBucketPolicyFunc: func(context.Context, string) ([]byte, error) {
 					return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
@@ -1499,6 +1517,7 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			)
 
 			assert.Equal(t, tt.wantLength, gotLength, "the length the backend is given")
+			assert.Equal(t, tt.wantErr == nil, stored, "the backend stores the file only if the upload succeeds")
 		})
 	}
 }

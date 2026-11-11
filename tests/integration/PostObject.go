@@ -1844,6 +1844,50 @@ func PostObject_content_length_range_large_file(s *S3Conf) error {
 	})
 }
 
+// PostObject_content_length_range_under_min_keeps_object posts a file under
+// the min of the size range to a key that holds an object, and an empty one.
+// Both are refused and the object stays as it was. A gateway that sends the
+// file to its backend before it sees that the file ends under the min would
+// replace the object.
+func PostObject_content_length_range_under_min_keeps_object(s *S3Conf) error {
+	testName := "PostObject_content_length_range_under_min_keeps_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key, original := "my-obj", []byte("the object that is kept")
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+			Body:   bytes.NewReader(original),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		for _, data := range [][]byte{[]byte("short"), {}} {
+			resp, err := sendPostObject(PostRequestConfig{
+				bucket:           bucket,
+				key:              key,
+				s3Conf:           s,
+				fileContent:      data,
+				policyConditions: []any{[]any{"content-length-range", 10, 100}},
+			})
+			if err != nil {
+				return err
+			}
+			if err := checkHTTPResponseApiErr(resp, s3err.GetEntityTooSmallErr(int64(len(data)), 10)); err != nil {
+				return fmt.Errorf("file of %d bytes: %w", len(data), err)
+			}
+			if err := checkObjectData(s3client, bucket, key, "", original); err != nil {
+				return fmt.Errorf("file of %d bytes: %w", len(data), err)
+			}
+		}
+
+		return nil
+	})
+}
+
 // PostObject_preamble_and_folded_header posts a body with a preamble before
 // the first boundary and the file part's Content-Disposition folded over two
 // lines.
