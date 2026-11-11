@@ -54,7 +54,7 @@ source ./tests/setup_unit.sh
       return 7
     }
     export -f docker
-    bash ./tests/run_parallel.sh fake-image failing-suite --log-folder "$1" --max-parallel-jobs 1 --log-file "$2"
+    bash ./tests/run_parallel.sh --log-folder "$1" --max-parallel-jobs 1 --log-file "$2" fake-image failing-suite
   ' bash "$BATS_TEST_TMPDIR" "$runner_log"
 
   assert_failure 1
@@ -68,22 +68,50 @@ source ./tests/setup_unit.sh
 
 # tags: unit
 @test "run parallel - log-file requires a path" {
-  run ./tests/run_parallel.sh fake-image failing-suite --log-file
+  run ./tests/run_parallel.sh --log-file
 
   assert_failure 1
   assert_output -p "--log-file requires a file path"
 }
 
 # tags: unit
+@test "run parallel - resolves relative reports under log-folder in either option order" {
+  local order folder contents
+
+  for order in before after; do
+    folder="$BATS_TEST_TMPDIR/$order/new logs"
+    run bash -c '
+      docker() { return 0; }
+      export -f docker
+      if [ "$1" == "before" ]; then
+        options=(--log-folder "$2" --log-file parallel.log --html-report index.html)
+      else
+        options=(--log-file parallel.log --html-report index.html --log-folder "$2")
+      fi
+      bash ./tests/run_parallel.sh "${options[@]}" fake-image suite
+    ' bash "$order" "$folder"
+
+    assert_success
+    assert [ -f "$folder/parallel.log" ]
+    assert [ -f "$folder/index.html" ]
+    contents=$(<"$folder/parallel.log")
+    assert_equal "$contents" "$output"
+    contents=$(<"$folder/index.html")
+    [[ "$contents" == *'href="suite-'* ]]
+    [[ "$contents" == *"</ul></body></html>" ]]
+  done
+}
+
+# tags: unit
 @test "run parallel - log-folder requires a path and help shows default" {
   local path
 
-  run ./tests/run_parallel.sh fake-image suite --log-folder
+  run ./tests/run_parallel.sh --log-folder
   assert_failure 1
   assert_output "--log-folder requires a directory path"
 
   for path in "" --build-mode; do
-    run ./tests/run_parallel.sh fake-image suite --log-folder "$path"
+    run ./tests/run_parallel.sh --log-folder "$path" fake-image suite
     assert_failure 1
     assert_output "--log-folder requires a directory path"
   done
@@ -97,14 +125,59 @@ source ./tests/setup_unit.sh
 @test "run parallel - validates build-mode" {
   local mode
 
-  run ./tests/run_parallel.sh fake-image suite --build-mode
+  run ./tests/run_parallel.sh --build-mode
   assert_failure 1
   assert_output "--build-mode requires rebuild, build-if-missing, or use-tag"
 
   for mode in "" invalid --log-file; do
-    run ./tests/run_parallel.sh fake-image suite --build-mode "$mode"
+    run ./tests/run_parallel.sh --build-mode "$mode" fake-image suite
     assert_failure 1
     assert_output "--build-mode requires rebuild, build-if-missing, or use-tag"
+  done
+}
+
+# tags: unit
+@test "run parallel - config-folder requires a path and help shows default" {
+  local path
+
+  run ./tests/run_parallel.sh --config-folder
+  assert_failure 1
+  assert_output "--config-folder requires a directory path"
+
+  for path in "" --build-mode; do
+    run ./tests/run_parallel.sh --config-folder "$path" fake-image suite
+    assert_failure 1
+    assert_output "--config-folder requires a directory path"
+  done
+
+  run ./tests/run_parallel.sh --help
+  assert_success
+  assert_output -p "--config-folder <path> Host configuration directory (default: $PWD/runtime/config)."
+}
+
+# tags: unit
+@test "run parallel - mounts the default or custom host config folder" {
+  local mode expected trace="$BATS_TEST_TMPDIR/docker-mounts"
+
+  for mode in default custom; do
+    expected="$PWD/runtime/config"
+    if [ "$mode" == "custom" ]; then expected="$BATS_TEST_TMPDIR/custom config"; fi
+    run bash -c '
+      trace="$1"
+      docker() {
+        if [ "$1" == "image" ]; then return 0; fi
+        printf "%s\n" "$@" > "$trace"
+      }
+      export -f docker
+      export trace
+      options=()
+      if [ "$3" == "custom" ]; then options=(--config-folder "$4"); fi
+      bash ./tests/run_parallel.sh "${options[@]}" --log-folder "$2" fake-image suite
+    ' bash "$trace" "$BATS_TEST_TMPDIR" "$mode" "$expected"
+
+    assert_success
+    run command grep -Fx -- "$expected:/home/tester/config" "$trace"
+    assert_success
   done
 }
 
@@ -125,7 +198,7 @@ source ./tests/setup_unit.sh
       }
       export -f docker
       export trace inspect_status
-      bash ./tests/run_parallel.sh fake-image suite --log-folder "$3" --build-mode "$4"
+      bash ./tests/run_parallel.sh --log-folder "$3" --build-mode "$4" fake-image suite
     ' bash "$trace" "$inspect_status" "$BATS_TEST_TMPDIR" "$mode"
 
     if [ "$mode:$inspect_status" == "use-tag:1" ]; then
@@ -147,12 +220,12 @@ source ./tests/setup_unit.sh
 @test "run parallel - max-parallel-jobs requires a positive integer" {
   local count
 
-  run ./tests/run_parallel.sh fake-image failing-suite --max-parallel-jobs
+  run ./tests/run_parallel.sh --max-parallel-jobs
   assert_failure 1
   assert_output "--max-parallel-jobs requires a positive integer"
 
   for count in "" 0 -1 1.5 invalid --build-mode; do
-    run ./tests/run_parallel.sh fake-image failing-suite --max-parallel-jobs "$count"
+    run ./tests/run_parallel.sh --max-parallel-jobs "$count" fake-image failing-suite
     assert_failure 1
     assert_output "--max-parallel-jobs requires a positive integer"
   done
@@ -176,6 +249,21 @@ source ./tests/setup_unit.sh
 }
 
 # tags: unit
+@test "run parallel - requires two positional arguments after options" {
+  run ./tests/run_parallel.sh --build-mode use-tag
+  assert_failure 1
+  assert_output -p "expected image tag and test suites after options"
+
+  run ./tests/run_parallel.sh --build-mode use-tag fake-image
+  assert_failure 1
+  assert_output -p "expected image tag and test suites after options"
+
+  run ./tests/run_parallel.sh fake-image suite --max-parallel-jobs 2
+  assert_failure 1
+  assert_output -p "expected image tag and test suites after options"
+}
+
+# tags: unit
 @test "run parallel - HTML report escapes messages and links every suite log" {
   local report="$BATS_TEST_TMPDIR/reports/index.html" contents
   mkdir -p "$BATS_TEST_TMPDIR/reports"
@@ -189,7 +277,7 @@ source ./tests/setup_unit.sh
       if [ "${!#}" == "failing-suite" ]; then return 7; fi
     }
     export -f docker
-    bash ./tests/run_parallel.sh fake-image "pass&<suite>,failing-suite" --log-folder "$1/suite logs" --max-parallel-jobs 1 --html-report "$2"
+    bash ./tests/run_parallel.sh --log-folder "$1/suite logs" --max-parallel-jobs 1 --html-report "$2" fake-image "pass&<suite>,failing-suite"
   ' bash "$BATS_TEST_TMPDIR" "$report"
 
   assert_failure 1
@@ -207,7 +295,7 @@ source ./tests/setup_unit.sh
 
 # tags: unit
 @test "run parallel - html-report requires a path" {
-  run ./tests/run_parallel.sh fake-image failing-suite --html-report
+  run ./tests/run_parallel.sh --html-report
 
   assert_failure 1
   assert_output -p "--html-report requires a file path"
@@ -218,7 +306,7 @@ source ./tests/setup_unit.sh
   local suites
 
   for suites in s3,all all,s3 s3,all,rest; do
-    run ./tests/run_parallel.sh fake-image "$suites" --build-mode rebuild
+    run ./tests/run_parallel.sh --build-mode rebuild fake-image "$suites"
     assert_failure 1
     assert_output "all must be used alone, not combined with other suites"
   done
@@ -237,7 +325,7 @@ source ./tests/setup_unit.sh
         printf "   \n"
       }
       docker() { touch "$marker"; }
-      set -- fake-image all --build-mode rebuild
+      set -- --build-mode rebuild fake-image all
       source ./tests/run_parallel.sh
     ' bash "$mode" "$marker"
 
@@ -273,7 +361,7 @@ exit 1
 EOF
   chmod +x "$fake_bin/docker"
 
-  PATH="$fake_bin:$PATH" run ./tests/run_parallel.sh "fake-image" "failing-suite" --log-folder "$log_folder" --max-parallel-jobs 1 --build-mode use-tag
+  PATH="$fake_bin:$PATH" run ./tests/run_parallel.sh --log-folder "$log_folder" --max-parallel-jobs 1 --build-mode use-tag "fake-image" "failing-suite"
 
   assert_failure
   assert_output -p "finished with status '7'"

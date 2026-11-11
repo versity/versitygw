@@ -16,8 +16,11 @@
 
 source ./tests/drivers/params.sh
 
+CONTAINER_CONFIG_FOLDER=/home/tester/config
+CONTAINER_LOG_FOLDER=/home/tester/log
 DEFAULT_MAX_PARALLEL_JOBS=4
-DEFAULT_DOCKER_LOG_FOLDER="$PWD/runtime/log"
+DEFAULT_HOST_LOG_FOLDER="$PWD/runtime/log"
+DEFAULT_HOST_CONFIG_FOLDER="$PWD/runtime/config"
 DOCKERFILE="tests/Dockerfile_test_bats"
 
 print_message() {
@@ -116,7 +119,7 @@ run_tests() {
       check_for_finished_processes "pids" "suites" "times" "logs"
     done
     log_name="$docker_log_folder/${test_suite}-${timestamp}.log"
-    docker run -v "$PWD/runtime/config:/home/tester/config" -e "HOST_LOG_FOLDER=$docker_log_folder" -v "$docker_log_folder:/home/tester/log" "$image_tag" "$test_suite" > "$log_name" 2>&1 &
+    docker run -v "$host_config_folder:$CONTAINER_CONFIG_FOLDER" -e "HOST_LOG_FOLDER=$docker_log_folder" -v "$docker_log_folder:$CONTAINER_LOG_FOLDER" "$image_tag" "$test_suite" > "$log_name" 2>&1 &
     pid=$!
     print_message "'$test_suite' started (pid: '$pid')"
     pids[$pid]=$pid
@@ -136,14 +139,15 @@ run_tests() {
 
 usage() {
   printf '%s\n' "Usage: $0 -l|--list"
-  printf '%s\n' "Usage: $0 <docker image tag> <test suites> [--log-folder <path>] [--max-parallel-jobs <count>] [--build-mode <mode>] [--log-file <path>] [--html-report <path>]"
+  printf '%s\n' "Usage: $0 [--config-folder <path>] [--log-folder <path>] [--max-parallel-jobs <count>] [--build-mode <mode>] [--log-file <path>] [--html-report <path>] <docker image tag> <test suites>"
   printf '%s\n' "  -l, --list          List available test suites without running Docker."
   printf '%s\n' "  all                Use as the test suites argument to run every discovered suite."
-  printf '%s\n' "  --log-folder <path> Directory for suite logs (default: $DEFAULT_DOCKER_LOG_FOLDER)."
+  printf '%s\n' "  --config-folder <path> Host configuration directory (default: $DEFAULT_HOST_CONFIG_FOLDER)."
+  printf '%s\n' "  --log-folder <path> Directory for suite logs (default: $DEFAULT_HOST_LOG_FOLDER)."
   printf '%s\n' "  --max-parallel-jobs <count> Maximum concurrent suites (default: $DEFAULT_MAX_PARALLEL_JOBS)."
   printf '%s\n' "  --build-mode <mode> rebuild: always build; build-if-missing: build only if absent; use-tag: use existing image (default)."
-  printf '%s\n' "  --log-file <path>   Append runner status messages to a file as well as stdout."
-  printf '%s\n' "  --html-report <path> Write an HTML status report with links to suite logs (overwrites)."
+  printf '%s\n' "  --log-file <path>   Append runner status messages; relative paths use --log-folder."
+  printf '%s\n' "  --html-report <path> Write a new HTML report; relative paths use --log-folder."
 }
 
 build_container() {
@@ -184,148 +188,173 @@ prepare_container() {
   esac
 }
 
-if [ "$1" == "-l" ] || [ "$1" == "--list" ]; then
-  ./tests/run.sh -l
-  exit $?
-fi
+parse_options() {
+  # Keep shared configuration and report state global for helpers and the EXIT trap.
+  max_parallel_jobs="$DEFAULT_MAX_PARALLEL_JOBS"
+  docker_log_folder="$DEFAULT_HOST_LOG_FOLDER"
+  host_config_folder="$DEFAULT_HOST_CONFIG_FOLDER"
+  build_mode="use-tag"
+  runner_log_file=""
+  html_report_file=""
+  html_report_ready=false
 
-if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
-  usage
-  exit 0
-fi
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --config-folder)
+        if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
+          echo "--config-folder requires a directory path" >&2
+          return 1
+        fi
+        host_config_folder="$2"
+        shift
+        ;;
+      --log-folder)
+        if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
+          echo "--log-folder requires a directory path" >&2
+          return 1
+        fi
+        docker_log_folder="$2"
+        shift
+        ;;
+      --max-parallel-jobs)
+        if [ $# -lt 2 ] || ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
+          echo "--max-parallel-jobs requires a positive integer" >&2
+          return 1
+        fi
+        max_parallel_jobs="$2"
+        shift
+        ;;
+      --html-report)
+        if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
+          echo "--html-report requires a file path" >&2
+          return 1
+        fi
+        html_report_file="$2"
+        shift
+        ;;
+      --log-file)
+        if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
+          echo "--log-file requires a file path" >&2
+          return 1
+        fi
+        runner_log_file="$2"
+        shift
+        ;;
+      --build-mode)
+        case "${2:-}" in
+          rebuild|build-if-missing|use-tag) build_mode="$2" ;;
+          *)
+            echo "--build-mode requires rebuild, build-if-missing, or use-tag" >&2
+            return 1
+            ;;
+        esac
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      -l|--list)
+        ./tests/run.sh -l
+        exit $?
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        echo "unknown option '$1'" >&2
+        return 1
+        ;;
+      *)
+        break
+        ;;
+    esac
+    shift
+  done
 
-if [ $# -lt 2 ]; then
-  usage
-  exit 1
-fi
-
-start_time=$(date +%s)
-
-image_tag="$1"
-test_list="$2"
-max_parallel_jobs="$DEFAULT_MAX_PARALLEL_JOBS"
-docker_log_folder="$DEFAULT_DOCKER_LOG_FOLDER"
-build_mode="use-tag"
-runner_log_file=""
-html_report_file=""
-html_report_ready=false
-shift 2
-
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --log-folder)
-      if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
-        echo "--log-folder requires a directory path" >&2
-        exit 1
-      fi
-      docker_log_folder="$2"
-      shift
-      ;;
-    --max-parallel-jobs)
-      if [ $# -lt 2 ] || ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
-        echo "--max-parallel-jobs requires a positive integer" >&2
-        exit 1
-      fi
-      max_parallel_jobs="$2"
-      shift
-      ;;
-    --html-report)
-      if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
-        echo "--html-report requires a file path" >&2
-        exit 1
-      fi
-      html_report_file="$2"
-      shift
-      ;;
-    --log-file)
-      if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then
-        echo "--log-file requires a file path" >&2
-        exit 1
-      fi
-      runner_log_file="$2"
-      shift
-      ;;
-    --build-mode)
-      case "${2:-}" in
-        rebuild|build-if-missing|use-tag) build_mode="$2" ;;
-        *)
-          echo "--build-mode requires rebuild, build-if-missing, or use-tag" >&2
-          exit 1
-          ;;
-      esac
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    --*)
-      echo "unknown option '$1'" >&2
-      exit 1
-      ;;
-    *)
-      echo "unknown option or extra parameter '$1'"
-      usage
-      exit 1
-      ;;
-  esac
-  shift
-done
-
-if [ "$test_list" == "all" ]; then
-  if ! test_list=$(./tests/run.sh -l); then
-    echo "unable to list test suites" >&2
-    exit 1
+  if [ $# -ne 2 ] || [ -z "$1" ] || [ -z "$2" ]; then
+    echo "expected image tag and test suites after options" >&2
+    usage
+    return 1
   fi
-  if [[ "$test_list" != *[![:space:]]* ]]; then
-    echo "no test suites found" >&2
-    exit 1
+  image_tag="$1"
+  test_list="$2"
+}
+
+resolve_test_suites() {
+  if [ "$test_list" == "all" ]; then
+    if ! test_list=$(./tests/run.sh -l); then
+      echo "unable to list test suites" >&2
+      return 1
+    fi
+    if [[ "$test_list" != *[![:space:]]* ]]; then
+      echo "no test suites found" >&2
+      return 1
+    fi
+  elif [[ ",$test_list," == *,all,* ]]; then
+    echo "all must be used alone, not combined with other suites" >&2
+    return 1
   fi
-elif [[ ",$test_list," == *,all,* ]]; then
-  echo "all must be used alone, not combined with other suites" >&2
-  exit 1
-fi
+  return 0
+}
 
-if [ -n "$runner_log_file" ] && ! { : >> "$runner_log_file"; }; then
-  echo "unable to write runner log file '$runner_log_file'" >&2
-  exit 1
-fi
-
-if [ -n "$html_report_file" ]; then
-  if ! html_report_dir=$(cd "$(dirname "$html_report_file")" && pwd -P); then
-    exit 1
+initialize_reports() {
+  if [ -n "$runner_log_file" ] && [[ "$runner_log_file" != /* ]]; then
+    runner_log_file="${docker_log_folder%/}/$runner_log_file"
   fi
-  html_report_file="$html_report_dir/$(basename "$html_report_file")"
-  if [ -f "$html_report_file" ]; then
-    echo "html report file '$html_report_file' already exists"
-    exit 1
+  if [ -n "$html_report_file" ] && [[ "$html_report_file" != /* ]]; then
+    html_report_file="${docker_log_folder%/}/$html_report_file"
   fi
-  if [ -n "$runner_log_file" ] && [ "$runner_log_file" -ef "$html_report_file" ]; then
-    echo "HTML report and text log must be different files" >&2
-    exit 1
+  if [ -n "$runner_log_file" ] && ! { : >> "$runner_log_file"; }; then
+    echo "unable to write runner log file '$runner_log_file'" >&2
+    return 1
   fi
-  if ! printf '%s\n' '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Parallel Test Report</title></head><body><h1>Parallel Test Report</h1><ul>' > "$html_report_file"; then
-    exit 1
+
+  if [ -n "$html_report_file" ]; then
+    if ! html_report_dir=$(cd "$(dirname "$html_report_file")" && pwd -P); then
+      return 1
+    fi
+    html_report_file="$html_report_dir/$(basename "$html_report_file")"
+    if [ -f "$html_report_file" ]; then
+      echo "html report file '$html_report_file' already exists"
+      return 1
+    fi
+    if [ -n "$runner_log_file" ] && [ "$runner_log_file" -ef "$html_report_file" ]; then
+      echo "HTML report and text log must be different files" >&2
+      return 1
+    fi
+    if ! printf '%s\n' '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Parallel Test Report</title></head><body><h1>Parallel Test Report</h1><ul>' > "$html_report_file"; then
+      return 1
+    fi
+    html_report_ready=true
+    trap 'printf "%s\n" "</ul></body></html>" >> "$html_report_file"' EXIT
+    print_message "HTML report: $html_report_file"
   fi
-  html_report_ready=true
-  trap 'printf "%s\n" "</ul></body></html>" >> "$html_report_file"' EXIT
-  print_message "HTML report: $html_report_file"
-fi
+}
 
-if ! prepare_container "$image_tag" "$build_mode"; then
-  exit 1
-fi
+main() {
+  local start_time end_time duration
+  start_time=$(date +%s)
 
-if ! mkdir -p "$docker_log_folder"; then
-  print_message "unable to create docker log folder '$docker_log_folder'"
-  exit 1
-fi
+  parse_options "$@" || return $?
+  resolve_test_suites || return $?
 
-test_failure=0
-run_tests "$image_tag" "$test_list" "$max_parallel_jobs" "$docker_log_folder"
+  if ! mkdir -p "$docker_log_folder"; then
+    print_message "unable to create docker log folder '$docker_log_folder'"
+    return 1
+  fi
+  initialize_reports || return $?
+  prepare_container "$image_tag" "$build_mode" || return 1
 
-end_time=$(date +%s)
-duration=$((end_time-start_time))
-print_message "duration: ${duration}s"
+  test_failure=0
+  run_tests "$image_tag" "$test_list" "$max_parallel_jobs" "$docker_log_folder"
 
-exit "$test_failure"
+  end_time=$(date +%s)
+  duration=$((end_time-start_time))
+  print_message "duration: ${duration}s"
+
+  return "$test_failure"
+}
+
+main "$@"

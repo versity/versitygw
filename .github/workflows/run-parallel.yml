@@ -1,0 +1,68 @@
+name: Parallel Runner Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build smoke-test image
+        run: |
+          docker build -t parallel-runner-smoke -f tests/fixtures/run_parallel/Dockerfile tests/fixtures/run_parallel
+
+      - name: Prepare mounted directories
+        run: |
+          mkdir -p runtime/parallel-smoke/config runtime/parallel-smoke/log
+          touch runtime/parallel-smoke/config/.env
+
+      - name: Verify successful run
+        run: |
+          ./tests/run_parallel.sh \
+            --config-folder "$PWD/runtime/parallel-smoke/config" \
+            --log-folder "$PWD/runtime/parallel-smoke/log" \
+            --max-parallel-jobs 2 \
+            --log-file runner.log \
+            --html-report passing.html \
+            parallel-runner-smoke pass-suite
+          test -s runtime/parallel-smoke/log/fixture.log
+          test -s runtime/parallel-smoke/log/passing.html
+          grep -q "finished with status '0'" runtime/parallel-smoke/log/runner.log
+
+      - name: Verify failing suite and reports
+        run: |
+          if ./tests/run_parallel.sh \
+            --config-folder "$PWD/runtime/parallel-smoke/config" \
+            --log-folder "$PWD/runtime/parallel-smoke/log" \
+            --max-parallel-jobs 2 \
+            --log-file runner.log \
+            --html-report mixed.html \
+            parallel-runner-smoke pass-suite,fail-suite; then
+            echo "Expected the runner to fail for fail-suite" >&2
+            exit 1
+          else
+            status=$?
+            test "$status" -eq 1
+          fi
+          grep -q "finished with status '1'" runtime/parallel-smoke/log/runner.log
+          grep -q 'log file:' runtime/parallel-smoke/log/runner.log
+          grep -q 'href="pass-suite-' runtime/parallel-smoke/log/mixed.html
+          grep -q 'href="fail-suite-' runtime/parallel-smoke/log/mixed.html
+          grep -q '</ul></body></html>' runtime/parallel-smoke/log/mixed.html
+          logs=(runtime/parallel-smoke/log/fail-suite-*.log)
+          test "${#logs[@]}" -eq 1
+          grep -q 'not ok 1 fail-suite' "${logs[0]}"
+
+      - name: Upload smoke-test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: parallel-runner-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/parallel-smoke/log/
+          retention-days: 7
