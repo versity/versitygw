@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -90,6 +91,11 @@ type Posix struct {
 	// if the filesystem supports it. This is needed for cases where
 	// there are different filesystems mounted below the bucket level.
 	forceNoTmpFile bool
+
+	// inheritDefaultACL makes the temporary file of a new object in the
+	// directory the object is published in, so that the directory's default
+	// ACL applies to it, see PosixOpts.InheritDefaultACL
+	inheritDefaultACL bool
 
 	// fsync flushes new objects to stable storage before they are
 	// acknowledged
@@ -269,6 +275,32 @@ type PosixOpts struct {
 	// ForceNoTmpFile disables the use of O_TMPFILE even if the filesystem
 	// supports it
 	ForceNoTmpFile bool
+	// InheritDefaultACL makes the O_TMPFILE of a new object in the directory
+	// the object is published in instead of the bucket's metadata directory,
+	// so that the directory's default ACL applies to the object the same way
+	// it does to a file created there over NFS or SMB. When the directory
+	// does not exist yet, the file is made in its closest existing parent,
+	// whose default ACL the directory inherits when it is made. The
+	// directory is chosen when the upload starts: one made by someone else
+	// while the object is uploaded doesn't give the object its ACL.
+	//
+	// When the directory has a default ACL, the owner permissions of the
+	// object are still set to NewFilePerm, but its group (or mask) and other
+	// permissions are those the ACL gives it, which the kernel limits to the
+	// NewFilePerm it is created with. With the default 0644 the mask is at
+	// most r--, so the group and named entries of the ACL don't get write
+	// permission unless NewFilePerm has it, as 0664 or 0666 does. The object
+	// also gets the directory's group when the directory is setgid, unless
+	// ChownGID sets it. A directory whose default ACL differs from its
+	// parent's is not removed when its last object is deleted. Like any
+	// empty directory, it is then still listed as a common prefix, and a PUT
+	// of an object with its name fails.
+	//
+	// An object that replaces an existing file is still a new inode: the ACL
+	// and the extended attributes set on the replaced file are not kept. It
+	// has no effect when O_TMPFILE is disabled or not supported, or outside
+	// Linux.
+	InheritDefaultACL bool
 	// ForceNoCopyFileRange disables the use of io.Copy for multipart uploads parts
 	ForceNoCopyFileRange bool
 	// Fsync flushes each new object's data, metadata and directory entries
@@ -457,6 +489,14 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 			euid, egid)
 	}
 
+	// Without O_TMPFILE the temporary file of a new object is made in the
+	// bucket's metadata directory, where no default ACL applies to it.
+	inheritDefaultACL := opts.InheritDefaultACL
+	if inheritDefaultACL && (opts.ForceNoTmpFile || runtime.GOOS != "linux") {
+		fmt.Println("Warning: --inherit-default-acl has no effect with --disableotmp or outside Linux")
+		inheritDefaultACL = false
+	}
+
 	newDirPerm := defaultNewDirPerm
 	if opts.newDirPermSet {
 		newDirPerm = opts.NewDirPerm.Perm()
@@ -480,6 +520,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		newDirPerm:           newDirPerm,
 		newFilePerm:          newFilePerm,
 		forceNoTmpFile:       opts.ForceNoTmpFile,
+		inheritDefaultACL:    inheritDefaultACL,
 		fsync:                opts.Fsync,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
 		objectLockMode:       objectLockMode,
@@ -1643,7 +1684,7 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 	versioningKey := filepath.Join(genObjVersionKey(key), versionId)
 	versionTmpPath := filepath.Join(versionBucketPath, MetaTmpDir)
 	f, err := p.openTmpFile(versionTmpPath, versionBucketPath, versioningKey,
-		size, acc, doFalloc, p.forceNoTmpFile, odirectNotAllowed)
+		size, acc, doFalloc, odirectNotAllowed)
 	if err != nil {
 		return versionPath, err
 	}
@@ -2955,8 +2996,8 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		finalEtag = fmt.Sprintf("\"%s-%s\"", strings.ToUpper(string(checksums.Algorithm)), value)
 	}
 
-	f, err := p.openTmpFile(p.ObjectPath(bucket, MetaTmpDir), bucket, object,
-		totalsize, acct, skipFalloc, p.forceNoTmpFile, odirectNotAllowed)
+	f, err := p.openObjectTmpFile(bucket, object,
+		totalsize, acct, skipFalloc, odirectNotAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return res, "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -3978,7 +4019,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	partPath := filepath.Join(mpPath, fmt.Sprintf("%v", *part))
 
 	f, err := p.openTmpFile(p.ObjectPath(bucket, objdir),
-		bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile, odirectAllowed)
+		bucket, partPath, length, acct, doFalloc, odirectAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(r)
@@ -4439,7 +4480,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}
 
 	f, err := p.openTmpFile(p.ObjectPath(*upi.Bucket, objdir),
-		*upi.Bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile, odirectNotAllowed)
+		*upi.Bucket, partPath, length, acct, doFalloc, odirectNotAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -5038,8 +5079,8 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, fmt.Errorf("stat object: %w", err)
 	}
 
-	f, err := p.openTmpFile(p.ObjectPath(*po.Bucket, MetaTmpDir),
-		*po.Bucket, object, contentLength, acct, doFalloc, p.forceNoTmpFile, odirectAllowed)
+	f, err := p.openObjectTmpFile(*po.Bucket, object, contentLength,
+		acct, doFalloc, odirectAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(po.Body)
@@ -5604,9 +5645,8 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					acct = auth.Account{}
 				}
 
-				f, err := p.openTmpFile(p.ObjectPath(bucket, MetaTmpDir),
-					bucket, object, srcObjVersion.Size(), acct, doFalloc,
-					p.forceNoTmpFile, odirectNotAllowed)
+				f, err := p.openObjectTmpFile(bucket, object,
+					srcObjVersion.Size(), acct, doFalloc, odirectNotAllowed)
 				if err != nil {
 					return nil, fmt.Errorf("open tmp file: %w", err)
 				}
@@ -5975,6 +6015,20 @@ func (p *Posix) removeParents(bucket, object string) {
 			// uploaded with a put object, so stop here and leave this
 			// directory in place.
 			break
+		}
+
+		if p.inheritDefaultACL {
+			// a directory with a default ACL other than its parent's
+			// was given that ACL by an administrator for the files in
+			// it: keep it for the next object, which would otherwise
+			// be made in a new directory with the parent's ACL. A
+			// directory with its parent's ACL, which mkdir copies to
+			// every new directory, is removed. Keep it too when an ACL
+			// can't be read.
+			keep, err := ownDefaultACL(p.ObjectPath(bucket, parent))
+			if keep || err != nil {
+				break
+			}
 		}
 
 		// The parent may have been replaced by an object since its
