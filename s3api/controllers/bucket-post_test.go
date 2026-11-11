@@ -1229,14 +1229,26 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			wantRes:      redirected,
 		},
 		{
+			// a request can claim any size, and a backend can reserve what it
+			// is given: it gets no more than S3 takes in one upload
+			name:         "no content-length-range, a request that proposes over 5 GiB",
+			fields:       fields(),
+			file:         newMockFileReader("payload"),
+			proposedSize: 6 << 30,
+			put:          readsFile,
+			wantLength:   5 << 30,
+			wantRes:      redirected,
+		},
+		{
 			// the form has a field or an epilogue after the file: the file is
-			// shorter than the request proposes, and in the range
+			// shorter than the request proposes, and in the range. The backend
+			// gets the max, which the file cannot pass.
 			name:         "file shorter than the request proposes",
 			fields:       fields(sizeRange(7, 7)...),
 			file:         newMockFileReader("payload"),
 			proposedSize: 200,
 			put:          readsFile,
-			wantLength:   200,
+			wantLength:   7,
 			wantRes:      redirected,
 		},
 		{
@@ -1245,7 +1257,7 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			file:         newMockFileReader("payload"),
 			proposedSize: int64(len("payload")),
 			put:          readsFile,
-			wantLength:   int64(len("payload")),
+			wantLength:   5,
 			wantRes:      failed,
 			wantErr:      s3err.GetEntityTooLargeErr(int64(len("payload")), 5),
 		},
@@ -1255,7 +1267,7 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			file:         newMockFileReader("payload"),
 			proposedSize: int64(len("payload")),
 			put:          wrapsReadErr,
-			wantLength:   int64(len("payload")),
+			wantLength:   5,
 			wantRes:      failed,
 			wantErr:      s3err.GetEntityTooLargeErr(int64(len("payload")), 5),
 		},
@@ -1266,21 +1278,34 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			file:         newMockFileReader("payload"),
 			proposedSize: 200,
 			put:          readsFile,
-			wantLength:   200,
+			wantLength:   5,
 			wantRes:      failed,
 			wantErr:      s3err.GetEntityTooLargeErr(int64(len("payload")), 5),
 		},
 		{
 			// the file is refused as soon as it passes the max, without
-			// reading the rest of it, so the size reported is the request's
+			// reading the rest of it, so the size reported is the request's.
+			// The backend gets the max, not the size the request claims.
 			name:         "file far over the max",
 			fields:       fields(sizeRange(1, 5)...),
 			file:         longFile(),
 			proposedSize: 1 << 30,
 			put:          readsFile,
-			wantLength:   1 << 30,
+			wantLength:   5,
 			wantRes:      failed,
 			wantErr:      s3err.GetEntityTooLargeErr(1<<30, 5),
+		},
+		{
+			// a backend takes a length of 0 for an empty file and does not
+			// read the file it has: it gets 1, and the reader refuses the file
+			name:         "file over a max of zero",
+			fields:       fields(sizeRange(0, 0)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: int64(len("payload")),
+			put:          readsFile,
+			wantLength:   1,
+			wantRes:      failed,
+			wantErr:      s3err.GetEntityTooLargeErr(int64(len("payload")), 0),
 		},
 		{
 			name:         "file under the min",
@@ -1309,7 +1334,7 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			file:         newMockFileReader("payload"),
 			proposedSize: 200,
 			put:          readsFile,
-			wantLength:   200,
+			wantLength:   100,
 			wantRes:      failed,
 			wantErr:      s3err.GetEntityTooSmallErr(int64(len("payload")), 10),
 		},

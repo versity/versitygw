@@ -347,6 +347,7 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 	// The file is read as the backend takes it, and refused if its size is out
 	// of the range the policy allows.
 	file := utils.NewContentLengthRangeReader(parsed.FileRdr, minSize, maxSize, parsed.ProposedSize)
+	contentLength := file.ContentLength()
 
 	res, err := c.be.PutObject(ctx.RequestCtx(), s3response.PutObjectInput{
 		SSECustomerAlgorithm:      ssec.Algorithm,
@@ -362,7 +363,7 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 		Expires:                   &expires,
 		WebsiteRedirectLocation:   &websiteRedirectLocation,
 		Body:                      file,
-		ContentLength:             &parsed.ProposedSize,
+		ContentLength:             &contentLength,
 		Tagging:                   &tagging,
 		ObjectLockRetainUntilDate: &objLock.RetainUntilDate,
 		ObjectLockMode:            objLock.ObjectLockMode,
@@ -385,7 +386,7 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, postObjectPutErr(file, parsed.ProposedSize, err)
+		}, postObjectPutErr(file, contentLength, err)
 	}
 
 	if successActionRedirect, ok := parsed.Fields["success_action_redirect"]; ok {
@@ -464,21 +465,21 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 
 // postObjectPutErr returns the error to report for a file that the backend
 // failed to put with err.
-func postObjectPutErr(file *utils.ContentLengthRangeReader, proposedSize int64, err error) error {
+func postObjectPutErr(file *utils.ContentLengthRangeReader, contentLength int64, err error) error {
 	// The error the reader failed the file with is the one to report: the S3
 	// proxy and Azure backends wrap it, which makes it an internal error.
 	if readErr := file.Err(); readErr != nil {
 		return readErr
 	}
 
-	// The backend got the size the request proposes as the length of the file,
-	// which is more than the file has when the form has data after it. S3 takes
-	// such a form, but a backend that sends the length it is given, as the S3
-	// proxy does as the Content-Length, fails on a body that ends before it,
-	// with an error that is not an S3 error, so an internal one. An S3 error is
-	// the answer of the backend, and goes out as it is.
-	if _, ok := err.(s3err.S3Error); !ok && file.EndedBefore(proposedSize) {
-		debuglogger.Logf("backend failed a file that ends before the %d bytes it was given: %v", proposedSize, err)
+	// The backend got contentLength as the length of the file, which is more
+	// than the file has when the form has data after it. S3 takes such a form,
+	// but a backend that sends the length it is given, as the S3 proxy does as
+	// the Content-Length, fails on a body that ends before it, with an error
+	// that is not an S3 error, so an internal one. An S3 error is the answer of
+	// the backend, and goes out as it is.
+	if _, ok := err.(s3err.S3Error); !ok && file.EndedBefore(contentLength) {
+		debuglogger.Logf("backend failed a file that ends before the %d bytes it was given: %v", contentLength, err)
 		return s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
 	}
 
