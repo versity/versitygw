@@ -511,6 +511,11 @@ func parseCondition(raw json.RawMessage) (postPolicyCondition, error) {
 			return nil, err
 		}
 
+		if min < 0 || max < 0 {
+			debuglogger.Logf("POST policy content-length-range has a negative size: %s", string(raw))
+			return nil, s3err.InvalidPolicyDocument.InvalidJSON()
+		}
+
 		return contentLengthRangeCondition{min: min, max: max}, nil
 	default:
 		debuglogger.Logf("unknown POST policy operation: %s", op)

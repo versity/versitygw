@@ -274,7 +274,6 @@ func TestContentLengthRangeReaderFailsWithinContentLength(t *testing.T) {
 		{"a file over a large max", 100000, 65536},
 		{"a file of one byte over a max of zero", 1, 0},
 		{"a file over a max of zero", 7, 0},
-		{"a file over a max under zero", 7, -1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -311,8 +310,6 @@ func TestContentLengthRangeReaderContentLength(t *testing.T) {
 		{"a proposal over the max", 5, 11, 6},
 		{"a proposal over a max of zero", 0, 7, 1},
 		{"an empty file", 0, 0, 0},
-		{"a proposal over a max under zero", -1, 7, 1},
-		{"an empty file, with a max under zero", -1, 0, 0},
 		{"a proposal over what S3 takes, with no max", math.MaxInt64, fiveGiB + 1000, fiveGiB + 1},
 		{"a proposal over what S3 takes, with a max of it", fiveGiB, 2 * fiveGiB, fiveGiB + 1},
 	} {

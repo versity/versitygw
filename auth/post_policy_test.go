@@ -104,6 +104,12 @@ func TestParsePOSTPolicyBase64_ConcreteParseErrors(t *testing.T) {
 		[]any{"content-length-range", "abc", 10},
 	}, false)
 
+	rangePolicy := func(lo, hi any) string {
+		return encodePolicyForTest(t, time.Now().Add(5*time.Minute), []any{
+			[]any{"content-length-range", lo, hi},
+		}, false)
+	}
+
 	tests := []struct {
 		name     string
 		encoded  string
@@ -209,6 +215,26 @@ func TestParsePOSTPolicyBase64_ConcreteParseErrors(t *testing.T) {
 			name:     "content-length-range with invalid quoted int",
 			encoded:  badQuotedRangeEncoded,
 			expected: s3err.InvalidPolicyDocument.InvalidJSON(),
+		},
+		{
+			name:     "content-length-range with a negative max",
+			encoded:  rangePolicy(0, -1),
+			expected: s3err.InvalidPolicyDocument.InvalidJSON(),
+		},
+		{
+			name:     "content-length-range with a negative min",
+			encoded:  rangePolicy(-5, 100),
+			expected: s3err.InvalidPolicyDocument.InvalidJSON(),
+		},
+		{
+			name:     "content-length-range with a negative quoted max",
+			encoded:  rangePolicy("0", "-1"),
+			expected: s3err.InvalidPolicyDocument.InvalidJSON(),
+		},
+		{
+			name:     "content-length-range with a min and a max of zero",
+			encoded:  rangePolicy(0, 0),
+			expected: nil,
 		},
 	}
 
