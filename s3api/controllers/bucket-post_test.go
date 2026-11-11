@@ -1171,6 +1171,15 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 
 		return s3response.PutObjectOutput{ETag: "etag-123"}, nil
 	}
+	// skipsEmptyFile is one that does not read the file when it is given a
+	// length of 0, as the S3 proxy sends an empty body, and else reads it
+	skipsEmptyFile := func(in s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+		if *in.ContentLength == 0 {
+			return s3response.PutObjectOutput{ETag: "etag-123"}, nil
+		}
+
+		return readsFile(in)
+	}
 	// wrapsReadErr is one that wraps the error of the read, like the S3 proxy
 	// and Azure backends
 	wrapsReadErr := func(in s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
@@ -1310,6 +1319,37 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			wantLength:   1,
 			wantRes:      failed,
 			wantErr:      s3err.GetEntityTooLargeErr(int64(len("payload")), 0),
+		},
+		{
+			// a backend that does not read an empty file stores it: the
+			// controller reads it, so that the reader refuses it
+			name:         "empty file under the min, with a backend that does not read it",
+			fields:       fields(sizeRange(1, 100)...),
+			file:         newMockFileReader(""),
+			proposedSize: 0,
+			put:          skipsEmptyFile,
+			wantLength:   0,
+			wantRes:      failed,
+			wantErr:      s3err.GetEntityTooSmallErr(0, 1),
+		},
+		{
+			name:         "empty file in the range, with a backend that does not read it",
+			fields:       fields(sizeRange(0, 100)...),
+			file:         newMockFileReader(""),
+			proposedSize: 0,
+			put:          skipsEmptyFile,
+			wantLength:   0,
+			wantRes: &Response{
+				Headers: redirected.Headers,
+				MetaOpts: &MetaOptions{
+					BucketOwner:   "root",
+					ContentLength: 0,
+					ObjectETag:    utils.GetStringPtr("etag-123"),
+					ObjectSize:    0,
+					EventName:     s3event.EventObjectCreatedPost,
+					Status:        http.StatusSeeOther,
+				},
+			},
 		},
 		{
 			name:         "file under the min",

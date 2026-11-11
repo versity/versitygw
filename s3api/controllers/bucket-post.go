@@ -17,6 +17,7 @@ package controllers
 import (
 	"encoding/xml"
 	"errors"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -348,6 +349,19 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 	// of the range the policy allows.
 	file := utils.NewContentLengthRangeReader(parsed.FileRdr, minSize, maxSize, parsed.ProposedSize)
 	contentLength := file.ContentLength()
+
+	// A backend takes a length of 0 for an empty file, and the S3 proxy does
+	// not read the file it has: the reader reads it here, so that it refuses
+	// an empty file under the min. The file is empty, so this costs nothing.
+	if contentLength == 0 {
+		if _, err := io.Copy(io.Discard, file); err != nil {
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, err
+		}
+	}
 
 	res, err := c.be.PutObject(ctx.RequestCtx(), s3response.PutObjectInput{
 		SSECustomerAlgorithm:      ssec.Algorithm,
