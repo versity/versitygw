@@ -65,6 +65,32 @@ func (f *dataThenErrReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+// chunkReader gives data in reads of at most n bytes.
+type chunkReader struct {
+	data string
+	n    int
+}
+
+func (c *chunkReader) Read(p []byte) (int, error) {
+	if c.data == "" {
+		return 0, io.EOF
+	}
+	k := copy(p[:min(len(p), c.n)], c.data)
+	c.data = c.data[k:]
+
+	return k, nil
+}
+
+// noMoreThan fails the test if got has more than max bytes: the reader of a
+// file over the max must not give the bytes over it to the backend.
+func noMoreThan(t *testing.T, got []byte, max int) {
+	t.Helper()
+
+	if len(got) > max {
+		t.Fatalf("read %d bytes of a file for a max of %d", len(got), max)
+	}
+}
+
 func tooLargeErr(t *testing.T, err error) s3err.EntityTooLargeError {
 	t.Helper()
 
@@ -129,8 +155,9 @@ func TestContentLengthRangeReaderOverMax(t *testing.T) {
 		t.Parallel()
 
 		rdr := NewContentLengthRangeReader(strings.NewReader("hello"), 0, 4, 5)
-		_, err := io.ReadAll(rdr)
+		got, err := io.ReadAll(rdr)
 
+		noMoreThan(t, got, 4)
 		tooLarge := tooLargeErr(t, err)
 		if tooLarge.ProposedSize != 5 || tooLarge.MaxSizeAllowed != 4 {
 			t.Fatalf("unexpected sizes: proposed %d max %d, want 5 and 4", tooLarge.ProposedSize, tooLarge.MaxSizeAllowed)
@@ -165,8 +192,9 @@ func TestContentLengthRangeReaderOverMax(t *testing.T) {
 
 		src := &endlessReader{}
 		rdr := NewContentLengthRangeReader(src, 0, 10, 1<<30)
-		_, err := io.ReadAll(rdr)
+		got, err := io.ReadAll(rdr)
 
+		noMoreThan(t, got, 10)
 		// the file goes on, so the size reported is the one the request proposes
 		tooLarge := tooLargeErr(t, err)
 		if tooLarge.ProposedSize != 1<<30 || tooLarge.MaxSizeAllowed != 10 {
@@ -189,12 +217,27 @@ func TestContentLengthRangeReaderOverMax(t *testing.T) {
 		}
 	})
 
+	// the max falls inside a read: the bytes of that read are not given
+	t.Run("a file that crosses the max in a read", func(t *testing.T) {
+		t.Parallel()
+
+		rdr := NewContentLengthRangeReader(&chunkReader{data: "hello world", n: 4}, 0, 6, 11)
+		got, err := io.ReadAll(rdr)
+
+		noMoreThan(t, got, 6)
+		tooLarge := tooLargeErr(t, err)
+		if tooLarge.ProposedSize != 11 || tooLarge.MaxSizeAllowed != 6 {
+			t.Fatalf("unexpected sizes: proposed %d max %d, want 11 and 6", tooLarge.ProposedSize, tooLarge.MaxSizeAllowed)
+		}
+	})
+
 	t.Run("a max of zero", func(t *testing.T) {
 		t.Parallel()
 
 		rdr := NewContentLengthRangeReader(strings.NewReader("a"), 0, 0, 1)
-		_, err := io.ReadAll(rdr)
+		got, err := io.ReadAll(rdr)
 
+		noMoreThan(t, got, 0)
 		tooLarge := tooLargeErr(t, err)
 		if tooLarge.ProposedSize != 1 || tooLarge.MaxSizeAllowed != 0 {
 			t.Fatalf("unexpected sizes: proposed %d max %d, want 1 and 0", tooLarge.ProposedSize, tooLarge.MaxSizeAllowed)
@@ -205,8 +248,9 @@ func TestContentLengthRangeReaderOverMax(t *testing.T) {
 		t.Parallel()
 
 		rdr := NewContentLengthRangeReader(&eofWithDataReader{data: []byte("hello")}, 0, 4, 5)
-		_, err := io.ReadAll(rdr)
+		got, err := io.ReadAll(rdr)
 
+		noMoreThan(t, got, 4)
 		tooLarge := tooLargeErr(t, err)
 		if tooLarge.ProposedSize != 5 {
 			t.Fatalf("unexpected proposed size: got %d want 5", tooLarge.ProposedSize)
