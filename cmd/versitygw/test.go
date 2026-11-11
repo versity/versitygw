@@ -192,6 +192,12 @@ func initTestCommands() []*cli.Command {
 					Aliases:     []string{"vs"},
 				},
 				&cli.BoolFlag{
+					Name:        "sidecar-test-mode",
+					Usage:       "Skips tests that are not supported by Sidecar",
+					Destination: &sidecarTests,
+					Aliases:     []string{"sidecar"},
+				},
+				&cli.BoolFlag{
 					Name:        "windows-test-mode",
 					Usage:       "Skips tests that are not supported on Windows",
 					Destination: &windowsTests,

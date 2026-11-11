@@ -165,64 +165,65 @@ func (m removeAfterReadMeta) RetrieveAttribute(f *os.File, bucket, object, attri
 	return b, err
 }
 
-// TestGetObjectRemovedBeforeOpen checks that GetObject answers NoSuchKey
-// when the object is deleted after its stat of the object and before its
-// open of it, also when the delete removes the object's directory and an
-// upload puts an object in its place, which fails the open with ENOTDIR.
-// It answers NoSuchVersion only when the request names a version, not when
-// it looked up the version of the live object.
+// TestGetObjectRemovedBeforeOpen removes the object after the delete-marker
+// check. File objects then fail to open, including with ENOTDIR when their
+// parent directory is replaced by a file. Directory objects are never opened;
+// their next path-based attribute read detects the removal instead.
+// The response is NoSuchVersion only when the request names a version,
+// otherwise NoSuchKey, including in a versioned bucket.
 func TestGetObjectRemovedBeforeOpen(t *testing.T) {
 	for _, tc := range []struct {
-		name                      string
-		replaceDir                bool
-		versioned, requestVersion bool
+		name           string
+		replaceDir     bool
+		requestVersion bool
+		dirObject      bool
 	}{
 		{"object removed", false, false, false},
 		{"directory replaced by object", true, false, false},
-		{"versioned directory replaced by object", true, true, false},
-		{"requested version directory replaced by object", true, true, true},
+		{"requested version removed", false, true, false},
+		{"requested version directory replaced by object", true, true, false},
+		{"directory object removed", false, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// remove the object after the last read GetObject does before
-			// its open: the version id of the live object when the bucket
-			// is versioned and the request names no version, else the etag
-			attribute := etagkey
-			if tc.versioned && !tc.requestVersion {
-				attribute = versionIdKey
+			// remove the object after the delete marker check, the last read
+			// GetObject does before its open (the attributes are read after it)
+			attribute := deleteMarkerKey
+			key := "dir/obj"
+			if tc.dirObject {
+				key = "dir/"
 			}
 			var remove func()
 			p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
-				opts := PosixOpts{NewDirPerm: 0755}
-				if tc.versioned {
-					opts.VersioningDir = t.TempDir()
-				}
-				return removeAfterReadMeta{object: "dir/obj", attribute: attribute, remove: &remove}, opts
+				opts := PosixOpts{NewDirPerm: 0755, VersioningDir: t.TempDir()}
+				return removeAfterReadMeta{object: key, attribute: attribute, remove: &remove}, opts
 			})
 			bucket := "testbucket"
 			createTestBucket(t, p, bucket)
 
 			ctx := context.Background()
-			if tc.versioned {
-				err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled)
-				if err != nil {
-					t.Fatalf("put bucket versioning: %v", err)
-				}
+			err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled)
+			if err != nil {
+				t.Fatalf("put bucket versioning: %v", err)
+			}
+			content := "data"
+			if tc.dirObject {
+				content = ""
 			}
 			put, err := p.PutObject(ctx, s3response.PutObjectInput{
 				Bucket:        &bucket,
-				Key:           aws.String("dir/obj"),
-				Body:          strings.NewReader("data"),
-				ContentLength: aws.Int64(4),
+				Key:           aws.String(key),
+				Body:          strings.NewReader(content),
+				ContentLength: aws.Int64(int64(len(content))),
 			})
 			if err != nil {
 				t.Fatalf("put object: %v", err)
 			}
 
 			remove = func() {
-				if err := os.Remove(p.ObjectPath(bucket, "dir/obj")); err != nil {
+				if err := os.Remove(p.ObjectPath(bucket, key)); err != nil {
 					t.Errorf("remove object: %v", err)
 				}
-				if !tc.replaceDir {
+				if !tc.replaceDir || tc.dirObject {
 					return
 				}
 				if err := os.Remove(p.ObjectPath(bucket, "dir")); err != nil {
@@ -235,7 +236,7 @@ func TestGetObjectRemovedBeforeOpen(t *testing.T) {
 
 			input := &s3.GetObjectInput{
 				Bucket: &bucket,
-				Key:    aws.String("dir/obj"),
+				Key:    aws.String(key),
 			}
 			want := s3err.GetAPIError(s3err.ErrNoSuchKey)
 			if tc.requestVersion {
