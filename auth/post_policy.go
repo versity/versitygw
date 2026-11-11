@@ -511,6 +511,9 @@ func parseCondition(raw json.RawMessage) (postPolicyCondition, error) {
 			return nil, err
 		}
 
+		// S3 refuses a negative number but takes a quoted one. Both are refused
+		// here: no file fits a max under zero, and taking it would need a floor
+		// on the length given to a backend.
 		if min < 0 || max < 0 {
 			debuglogger.Logf("POST policy content-length-range has a negative size: %s", string(raw))
 			return nil, s3err.InvalidPolicyDocument.InvalidJSON()

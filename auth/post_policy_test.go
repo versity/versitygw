@@ -227,7 +227,7 @@ func TestParsePOSTPolicyBase64_ConcreteParseErrors(t *testing.T) {
 			expected: s3err.InvalidPolicyDocument.InvalidJSON(),
 		},
 		{
-			name:     "content-length-range with a negative quoted max",
+			name:     "content-length-range with a negative quoted max, which S3 takes and this refuses",
 			encoded:  rangePolicy("0", "-1"),
 			expected: s3err.InvalidPolicyDocument.InvalidJSON(),
 		},

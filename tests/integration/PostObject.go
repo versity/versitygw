@@ -1888,6 +1888,58 @@ func PostObject_content_length_range_under_min_keeps_object(s *S3Conf) error {
 	})
 }
 
+// PostObject_content_length_range_body_without_final_crlf posts a body that
+// ends with "--boundary--" and no CRLF, with a file whose size is the min of
+// the size range. The request proposes two bytes less than the file has, which
+// is under the min. The request is refused, and the object at the key stays as
+// it was: it is not replaced with an empty one.
+func PostObject_content_length_range_body_without_final_crlf(s *S3Conf) error {
+	testName := "PostObject_content_length_range_body_without_final_crlf"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key, original, data := "my-obj", []byte("the object that is kept"), []byte("0123456789a")
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+			Body:   bytes.NewReader(original),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		req, _, err := newPostObjectRequest(PostRequestConfig{
+			bucket:           bucket,
+			key:              key,
+			s3Conf:           s,
+			fileContent:      data,
+			policyConditions: []any{[]any{"content-length-range", len(data), 100}},
+		})
+		if err != nil {
+			return err
+		}
+
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			return err
+		}
+		body = bytes.TrimSuffix(body, []byte("\r\n"))
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		req.ContentLength = int64(len(body))
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)); err != nil {
+			return err
+		}
+
+		return checkObjectData(s3client, bucket, key, "", original)
+	})
+}
+
 // PostObject_preamble_and_folded_header posts a body with a preamble before
 // the first boundary and the file part's Content-Disposition folded over two
 // lines.

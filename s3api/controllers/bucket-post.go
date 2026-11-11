@@ -357,13 +357,19 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 	// The reader reads the file here instead and fails at its end, or at the
 	// max. The file is not kept.
 	if contentLength < minSize {
-		if _, err := io.Copy(io.Discard, file); err != nil {
-			return &Response{
-				MetaOpts: &MetaOptions{
-					BucketOwner: parsedAcl.Owner,
-				},
-			}, err
+		_, err := io.Copy(io.Discard, file)
+		if err == nil {
+			// The request proposes less than the file has, as for a body
+			// without the final CRLF, and the file is in the range. It is
+			// read, so the backend cannot get it.
+			err = s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
 		}
+
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
 	}
 
 	res, err := c.be.PutObject(ctx.RequestCtx(), s3response.PutObjectInput{

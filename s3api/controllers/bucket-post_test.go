@@ -1364,6 +1364,18 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			wantRes:      redirected,
 		},
 		{
+			// the request proposes less than the file has, as for a body
+			// without the final CRLF, and the file is in the range: the file is
+			// read to refuse it, so the backend cannot get it
+			name:         "file in the range, with a proposal under the min",
+			fields:       fields(sizeRange(6, 100)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: 5,
+			put:          readsFile,
+			wantRes:      failed,
+			wantErr:      s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
+		},
+		{
 			// the backend gets as many bytes as the file has, and would store
 			// them before the reader sees that the file ends under the min:
 			// it does not get the file
