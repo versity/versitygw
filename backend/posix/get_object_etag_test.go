@@ -150,9 +150,10 @@ func TestGetObjectETagMatchesOpenedFile(t *testing.T) {
 	})
 }
 
-// TestGetObjectAttributesMatchOpenedFile checks that the version id and the
-// parts count of a GET, and of its 304, come from the inode that was opened
-// and not from a path read that a PUT can have redirected to another inode.
+// TestGetObjectAttributesMatchOpenedFile checks that the version id, the tag
+// count and the parts count of a GET, and of its 304, come from the inode
+// that was opened and not from a path read that a PUT can have redirected to
+// another inode.
 func TestGetObjectAttributesMatchOpenedFile(t *testing.T) {
 	const (
 		bucket = "testbucket"
@@ -169,6 +170,7 @@ func TestGetObjectAttributesMatchOpenedFile(t *testing.T) {
 				versionIdKey: []byte("stale-version"),
 				mpMetaKey:    staleMp,
 				cacheCtrlHdr: []byte("stale-cache"),
+				tagHdr:       []byte(`{"stale":"tag"}`),
 			},
 		}, PosixOpts{NewDirPerm: 0755, VersioningDir: t.TempDir()}
 	})
@@ -192,6 +194,11 @@ func TestGetObjectAttributesMatchOpenedFile(t *testing.T) {
 
 	if err := p.meta.StoreAttribute(nil, bucket, key, cacheCtrlHdr, []byte("max-age=60")); err != nil {
 		t.Fatal(err)
+	}
+
+	// the opened object has 2 tags, the stale path value 1
+	if err := p.meta.StoreAttribute(nil, bucket, key, tagHdr, []byte(`{"a":"1","b":"2"}`)); err != nil {
+		t.Fatalf("store tags: %v", err)
 	}
 
 	t.Run("version id", func(t *testing.T) {
@@ -219,6 +226,31 @@ func TestGetObjectAttributesMatchOpenedFile(t *testing.T) {
 		}
 		if got := aws.ToString(out.VersionId); got != res.VersionID {
 			t.Fatalf("304 version id = %q, want the opened object's %q", got, res.VersionID)
+		}
+	})
+
+	t.Run("tag count", func(t *testing.T) {
+		out, err := p.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		if err != nil {
+			t.Fatalf("get object: %v", err)
+		}
+		out.Body.Close()
+		if got := aws.ToInt32(out.TagCount); got != 2 {
+			t.Fatalf("tag count = %d, want the opened object's 2", got)
+		}
+	})
+
+	t.Run("tag count of a 304", func(t *testing.T) {
+		out, err := p.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:      aws.String(bucket),
+			Key:         aws.String(key),
+			IfNoneMatch: aws.String(trimEtag(res.ETag)),
+		})
+		if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+			t.Fatalf("get object: %v, want not modified", err)
+		}
+		if got := aws.ToInt32(out.TagCount); got != 2 {
+			t.Fatalf("304 tag count = %d, want the opened object's 2", got)
 		}
 	})
 
@@ -361,8 +393,8 @@ func (m beforeReadMeta) RetrieveAttribute(f *os.File, bucket, object, attribute 
 // version id of a versioned bucket reports the version id of the object it
 // opened, for the 200 and for the 304, when the object is replaced after the
 // open and before the version id is read: a version id read by path would be
-// the new object's. When the object is removed there, the answer is
-// NoSuchKey.
+// the new object's. The tag count is the opened object's as well. Removing
+// the object after the open also preserves the opened object's response.
 func TestGetObjectLiveVersionIdFromOpenedFile(t *testing.T) {
 	const (
 		bucket = "testbucket"
@@ -389,7 +421,14 @@ func TestGetObjectLiveVersionIdFromOpenedFile(t *testing.T) {
 			if err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled); err != nil {
 				t.Fatalf("put bucket versioning: %v", err)
 			}
-			first, err := testPut(p, bucket, key, []byte("first"), nil, nil)
+			// only the opened object is tagged
+			first, err := p.PutObject(ctx, s3response.PutObjectInput{
+				Bucket:        aws.String(bucket),
+				Key:           aws.String(key),
+				Body:          strings.NewReader("first"),
+				ContentLength: aws.Int64(5),
+				Tagging:       aws.String("k=v"),
+			})
 			if err != nil {
 				t.Fatalf("put first: %v", err)
 			}
@@ -410,19 +449,11 @@ func TestGetObjectLiveVersionIdFromOpenedFile(t *testing.T) {
 				input.IfNoneMatch = aws.String(trimEtag(first.ETag))
 			}
 			out, err := p.GetObject(ctx, input)
+			if out != nil && out.Body != nil {
+				defer out.Body.Close()
+			}
 			if change != nil {
 				t.Fatal("get object did not read the version id")
-			}
-			if tc.remove {
-				// the object's tags and attributes are read by path, so a
-				// removed object is a 404, never a 200 or 304 of a removed one
-				if err == nil {
-					out.Body.Close()
-				}
-				if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
-					t.Fatalf("get object: expected NoSuchKey, got %v", err)
-				}
-				return
 			}
 			if tc.notModified {
 				if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
@@ -432,7 +463,6 @@ func TestGetObjectLiveVersionIdFromOpenedFile(t *testing.T) {
 				if err != nil {
 					t.Fatalf("get object: %v", err)
 				}
-				defer out.Body.Close()
 				data, err := io.ReadAll(out.Body)
 				if err != nil {
 					t.Fatalf("read body: %v", err)
@@ -443,6 +473,9 @@ func TestGetObjectLiveVersionIdFromOpenedFile(t *testing.T) {
 			}
 			if got := aws.ToString(out.VersionId); got != first.VersionID {
 				t.Fatalf("got version id %q, want %q of the opened object", got, first.VersionID)
+			}
+			if got := aws.ToInt32(out.TagCount); got != 1 {
+				t.Fatalf("got tag count %d, want 1 of the opened object", got)
 			}
 		})
 	}

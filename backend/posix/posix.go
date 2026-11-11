@@ -2320,7 +2320,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 
 	// set object tagging
 	if tags != nil {
-		err := p.storeObjectTags(bucket, filepath.Join(objdir, uploadID), tags)
+		err := p.storeObjectTags(nil, bucket, filepath.Join(objdir, uploadID), tags)
 		if err != nil {
 			// cleanup object if returning error
 			_ = p.removeUpload(bucket, object, uploadID)
@@ -4823,7 +4823,15 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 	return p.PutObjectWithPostFunc(ctx, po, func(*os.File) error { return nil })
 }
 
-func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObjectInput, postprocess func(f *os.File) error) (_ s3response.PutObjectOutput, err error) {
+func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObjectInput, postprocess func(f *os.File) error) (s3response.PutObjectOutput, error) {
+	return p.putObject(ctx, po, nil, postprocess)
+}
+
+// putObject is PutObjectWithPostFunc, with copiedTags, when not nil, used as
+// the object's tags instead of po.Tagging. CopyObject passes the source
+// object's stored tags this way, so they are not validated again as if a
+// client had sent them.
+func (p *Posix) putObject(ctx context.Context, po s3response.PutObjectInput, copiedTags map[string]string, postprocess func(f *os.File) error) (_ s3response.PutObjectOutput, err error) {
 	defer backend.MapPermissionErr(&err)
 
 	if backend.HasSSEC(po.SSECustomerAlgorithm, po.SSECustomerKey, po.SSECustomerKeyMD5) {
@@ -4852,9 +4860,12 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, err
 	}
 
-	tags, err := backend.ParseObjectTags(getString(po.Tagging))
-	if err != nil {
-		return s3response.PutObjectOutput{}, err
+	tags := copiedTags
+	if tags == nil {
+		tags, err = backend.ParseObjectTags(getString(po.Tagging))
+		if err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
 	}
 
 	name := p.ObjectPath(*po.Bucket, object)
@@ -5317,6 +5328,16 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		}
 	}
 
+	// The tags go on the staged file so that the object is published with
+	// them: stored by path after the link, a GET could see the new object
+	// untagged, or a competing PUT's object could get these tags.
+	if tags != nil {
+		err := p.storeObjectTags(f.File(), *po.Bucket, object, tags)
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("set tags: %w", err)
+		}
+	}
+
 	// "null" identifies the current object internally while versioning is
 	// suspended, but S3 omits the version ID from the PutObject response.
 	if versionID == nullVersionId {
@@ -5326,20 +5347,6 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	err = f.link()
 	if err != nil {
 		return s3response.PutObjectOutput{}, publishErr(name, err)
-	}
-
-	// Set object tagging
-	if tags != nil {
-		err := p.PutObjectTagging(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", tags)
-		if errors.Is(err, fs.ErrNotExist) {
-			return s3response.PutObjectOutput{
-				ETag:      etag,
-				VersionID: versionID,
-			}, nil
-		}
-		if err != nil {
-			return s3response.PutObjectOutput{}, err
-		}
 	}
 
 	err = p.putObjectLockSettings(ctx, po)
@@ -6138,7 +6145,7 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 // HeadObject have not read when they evaluate the preconditions: the tag
 // count, and with partNumber the parts count of a multipart object.
 func (p *Posix) notModifiedCounts(f *os.File, bucket, object, versionId string, partNumber *int32) (tagCount, partsCount *int32, err error) {
-	tags, err := p.getAttrTags(bucket, object, versionId)
+	tags, err := p.getAttrTags(f, bucket, object, versionId)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -6463,7 +6470,7 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 		objMeta := p.loadObjectMetaProperties(nil, bucket, object, &fid)
 
 		var tagCount *int32
-		tags, err := p.getAttrTags(bucket, object, requestedVersionId)
+		tags, err := p.getAttrTags(f, bucket, object, requestedVersionId)
 		if err != nil {
 			return nil, err
 		}
@@ -6587,7 +6594,7 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 	objMeta := p.loadObjectMetaProperties(f, bucket, object, &fi)
 
 	var tagCount *int32
-	tags, err := p.getAttrTags(bucket, object, requestedVersionId)
+	tags, err := p.getAttrTags(f, bucket, object, requestedVersionId)
 	if err != nil {
 		return nil, err
 	}
@@ -6895,7 +6902,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	var tagCount *int32
-	tags, err := p.getAttrTags(bucket, object, versionId)
+	tags, err := p.getAttrTags(nil, bucket, object, versionId)
 	if err != nil {
 		return nil, err
 	}
@@ -7468,7 +7475,7 @@ func (p *Posix) CopyObjectWithPreReadFunc(ctx context.Context, input s3response.
 
 		// load and pass the source object meta properties, if metadata directive is "COPY"
 		if input.MetadataDirective != types.MetadataDirectiveReplace {
-			metaProps := p.loadObjectMetaProperties(nil, srcBucket, srcObject, &fi)
+			metaProps := p.loadObjectMetaProperties(f, srcBucket, srcObject, &fi)
 			putObjectInput.ContentEncoding = metaProps.ContentEncoding
 			putObjectInput.ContentDisposition = metaProps.ContentDisposition
 			putObjectInput.ContentLanguage = metaProps.ContentLanguage
@@ -7483,30 +7490,25 @@ func (p *Posix) CopyObjectWithPreReadFunc(ctx context.Context, input s3response.
 			putObjectInput.Tagging = input.Tagging
 		}
 
-		// read the source tagging before the destination is written, as a
-		// self copy replaces the source object's metadata
-		var srcTagging []byte
-		var hasSrcTagging bool
+		// read the tags of the opened source before the destination is
+		// written, as a self copy replaces the source object's metadata, and
+		// pass them to PutObject so the destination is published with them
+		var srcTags map[string]string
 		if input.TaggingDirective == types.TaggingDirectiveCopy {
-			tagging, err := p.meta.RetrieveAttribute(nil, srcBucket, srcObject, tagHdr)
+			tagging, err := p.meta.RetrieveAttribute(f, srcBucket, srcObject, tagHdr)
 			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 				return s3response.CopyObjectOutput{}, fmt.Errorf("get source object tagging: %w", err)
 			}
-			srcTagging, hasSrcTagging = tagging, err == nil
+			if err == nil {
+				if err := json.Unmarshal(tagging, &srcTags); err != nil {
+					return s3response.CopyObjectOutput{}, fmt.Errorf("unmarshal source object tagging: %w", err)
+				}
+			}
 		}
 
-		res, err := p.PutObject(withCtxNoSlot(ctx), putObjectInput)
+		res, err := p.putObject(ctx, putObjectInput, srcTags, func(*os.File) error { return nil })
 		if err != nil {
 			return s3response.CopyObjectOutput{}, err
-		}
-
-		// the source tagging is stored after the destination object creation,
-		// if tagging directive is "COPY"
-		if hasSrcTagging {
-			err := p.meta.StoreAttribute(nil, dstBucket, dstObject, tagHdr, srcTagging)
-			if err != nil {
-				return s3response.CopyObjectOutput{}, fmt.Errorf("set destination object tagging: %w", err)
-			}
 		}
 
 		etag = res.ETag
@@ -7908,7 +7910,7 @@ func (p *Posix) GetBucketTagging(ctx context.Context, bucket string) (map[string
 		return nil, err
 	}
 
-	tags, err := p.getAttrTags(bucket, "", "")
+	tags, err := p.getAttrTags(nil, bucket, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -7962,13 +7964,13 @@ func (p *Posix) GetObjectTagging(ctx context.Context, bucket, object, versionId 
 		return nil, err
 	}
 
-	return p.getAttrTags(bucket, object, versionId)
+	return p.getAttrTags(nil, bucket, object, versionId)
 }
 
-func (p *Posix) getAttrTags(bucket, object, versionId string) (map[string]string, error) {
+func (p *Posix) getAttrTags(f *os.File, bucket, object, versionId string) (map[string]string, error) {
 	tags := make(map[string]string)
-	b, err := p.meta.RetrieveAttribute(nil, bucket, object, tagHdr)
-	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
+	b, err := p.meta.RetrieveAttribute(f, bucket, object, tagHdr)
+	if IsEntryGone(err) {
 		if versionId != "" {
 			return nil, s3err.GetNoSuchVersionErr(object, versionId)
 		}
@@ -8051,7 +8053,7 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 		return nil
 	}
 
-	err = p.storeObjectTags(bucket, object, tags)
+	err = p.storeObjectTags(nil, bucket, object, tags)
 	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		if versionId != "" {
 			return s3err.GetNoSuchVersionErr(object, versionId)
@@ -8065,14 +8067,15 @@ func (p *Posix) PutObjectTagging(ctx context.Context, bucket, object, versionId 
 	return nil
 }
 
-// storeObjectTags stores tags as the tagging attribute of bucket/object
-func (p *Posix) storeObjectTags(bucket, object string, tags map[string]string) error {
+// storeObjectTags stores tags as the tagging attribute of bucket/object, on
+// f when it is not nil
+func (p *Posix) storeObjectTags(f *os.File, bucket, object string, tags map[string]string) error {
 	b, err := json.Marshal(tags)
 	if err != nil {
 		return fmt.Errorf("marshal tags: %w", err)
 	}
 
-	return p.meta.StoreAttribute(nil, bucket, object, tagHdr, b)
+	return p.meta.StoreAttribute(f, bucket, object, tagHdr, b)
 }
 
 func (p *Posix) DeleteObjectTagging(ctx context.Context, bucket, object, versionId string) error {
