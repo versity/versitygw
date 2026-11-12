@@ -98,6 +98,26 @@ type Config struct {
 	// Should not exceed MaxConnections; if it does, a warning is logged.
 	MaxRequests int
 
+	// IngressBandwidthLimit caps the aggregate bytes per second the S3 API
+	// server reads from all client connections on this gateway instance.
+	// Excess traffic is delayed, not rejected; OS receive buffers may accept
+	// bytes before backpressure. 0 means unlimited; nonzero values must be
+	// between 64KiB/s and 1TiB/s.
+	IngressBandwidthLimit int64
+	// IngressBandwidthBurst is the maximum bytes transferred back-to-back
+	// after an idle period. 0 selects a default of 10ms of traffic, between
+	// 64KiB and 1MiB. If set, it must be 32KiB to 2GiB-1.
+	IngressBandwidthBurst int64
+	// EgressBandwidthLimit caps the aggregate bytes per second the S3 API
+	// server writes to all client connections on this gateway instance.
+	// Excess traffic is delayed, not rejected. 0 means unlimited; nonzero
+	// values must be between 64KiB/s and 1TiB/s.
+	EgressBandwidthLimit int64
+	// EgressBandwidthBurst is the maximum bytes transferred back-to-back
+	// after an idle period. 0 selects a default of 10ms of traffic, between
+	// 64KiB and 1MiB. If set, it must be 32KiB to 2GiB-1.
+	EgressBandwidthBurst int64
+
 	// AdminMaxConnections is the maximum concurrent TCP connections for the
 	// separate admin server. Only used when AdminPorts is non-empty.
 	AdminMaxConnections int
@@ -851,6 +871,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	opts := []s3api.Option{
 		s3api.WithConcurrencyLimiter(cfg.MaxConnections, cfg.MaxRequests),
 		s3api.WithMpMaxParts(cfg.MultipartMaxParts),
+		s3api.WithBandwidthLimit(
+			cfg.IngressBandwidthLimit, cfg.IngressBandwidthBurst,
+			cfg.EgressBandwidthLimit, cfg.EgressBandwidthBurst),
 	}
 	if cfg.SocketPerm != "" {
 		opts = append(opts, s3api.WithSocketPerm(parsedSocketPerm))
@@ -1264,7 +1287,10 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	}
 
 	if !cfg.Quiet {
-		cfg.printBanner()
+		bannerCfg := *cfg
+		bannerCfg.IngressBandwidthLimit, bannerCfg.IngressBandwidthBurst,
+			bannerCfg.EgressBandwidthLimit, bannerCfg.EgressBandwidthBurst = srv.BandwidthLimits()
+		bannerCfg.printBanner()
 	}
 
 	servers := 1
@@ -1567,6 +1593,13 @@ func (cfg Config) printBanner() {
 		lines = append(lines, leftText("  "+u))
 	}
 
+	if cfg.IngressBandwidthLimit > 0 || cfg.EgressBandwidthLimit > 0 {
+		lines = append(lines, centerText(""), leftText("Bandwidth limits per gateway instance:"))
+		lines = append(lines,
+			leftText("  ingress: "+formatBandwidth(cfg.IngressBandwidthLimit, cfg.IngressBandwidthBurst)),
+			leftText("  egress: "+formatBandwidth(cfg.EgressBandwidthLimit, cfg.EgressBandwidthBurst)))
+	}
+
 	if len(cfg.AdminPorts) > 0 {
 		lines = append(lines, centerText(""), leftText("Admin service listening on:"))
 		for _, addrPort := range allAdmInterfaces {
@@ -1733,6 +1766,26 @@ func (cfg Config) printBanner() {
 		fmt.Printf("│%-*s│\n", columnWidth-2, line)
 	}
 	fmt.Println("└" + strings.Repeat("─", columnWidth-2) + "┘")
+}
+
+func formatBandwidth(rate, burst int64) string {
+	if rate == 0 {
+		return "unlimited"
+	}
+	byteRate := formatBandwidthQuantity(float64(rate), []string{"B/s", "KB/s", "MB/s", "GB/s", "TB/s"}, 1000)
+	bitRate := formatBandwidthQuantity(float64(rate)*8, []string{"bit/s", "Kbit/s", "Mbit/s", "Gbit/s", "Tbit/s"}, 1000)
+	burstSize := formatBandwidthQuantity(float64(burst), []string{"B", "KiB", "MiB", "GiB"}, 1024)
+	return fmt.Sprintf("%s (%s), burst %s", byteRate, bitRate, burstSize)
+}
+
+func formatBandwidthQuantity(value float64, units []string, base float64) string {
+	unit := 0
+	for value >= base && unit < len(units)-1 {
+		value /= base
+		unit++
+	}
+	number := strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", value), "0"), ".")
+	return fmt.Sprintf("%s %s", number, units[unit])
 }
 
 func centerText(text string) string {

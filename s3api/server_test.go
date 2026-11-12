@@ -30,11 +30,17 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/internal/bwlimit"
 	"github.com/versity/versitygw/internal/netutil"
+	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/middlewares"
 )
 
 func newTestS3ApiServer(opts ...Option) (*S3ApiServer, error) {
+	return newTestS3ApiServerWithMetrics(nil, opts...)
+}
+
+func newTestS3ApiServerWithMetrics(mm metrics.Manager, opts ...Option) (*S3ApiServer, error) {
 	allOpts := append([]Option{WithConcurrencyLimiter(10, 10)}, opts...)
 
 	return New(
@@ -45,7 +51,7 @@ func newTestS3ApiServer(opts ...Option) (*S3ApiServer, error) {
 		nil,
 		nil,
 		nil,
-		nil,
+		mm,
 		allOpts...,
 	)
 }
@@ -83,6 +89,37 @@ func TestS3ApiServer_Serve(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := tt.sa.ServeMultiPort([]string{tt.port}); (err != nil) != tt.wantErr {
 				t.Errorf("S3ApiServer.Serve() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestWithBandwidthLimitValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		opt     Option
+		wantErr string
+	}{
+		{"unlimited", WithBandwidthLimit(0, 0, 0, 0), ""},
+		{"minimum rate", WithBandwidthLimit(bwlimit.MinRate, 0, bwlimit.MinRate, 0), ""},
+		{"maximum rate", WithBandwidthLimit(bwlimit.MaxRate, 0, bwlimit.MaxRate, 0), ""},
+		{"negative rate", WithBandwidthLimit(0, 0, -1, 0), "egress bandwidth rate must not be negative"},
+		{"rate below minimum", WithBandwidthLimit(bwlimit.MinRate-1, 0, 0, 0), "ingress bandwidth rate must be at least"},
+		{"rate above maximum", WithBandwidthLimit(0, 0, bwlimit.MaxRate+1, 0), "egress bandwidth rate must not exceed"},
+		{"burst without rate", WithBandwidthLimit(0, 1<<20, 0, 0), "ingress bandwidth burst requires a non-zero rate"},
+		{"burst below minimum", WithBandwidthLimit(0, 0, 1<<20, 1024), "egress bandwidth burst must be at least"},
+		{"burst above maximum", WithBandwidthLimit(0, 0, 1<<30, 1<<31), "egress bandwidth burst must not exceed"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := newTestS3ApiServer(tt.opt)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("New() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("New() error = %v, want substring %q", err, tt.wantErr)
 			}
 		})
 	}
