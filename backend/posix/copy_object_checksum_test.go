@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"hash/crc32"
 	"os"
 	"path/filepath"
@@ -32,6 +33,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend/meta"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -263,6 +265,95 @@ func TestCopyObjectSelfChecksumChangedUnderLock(t *testing.T) {
 				}
 				if got := aws.ToString(stored.SHA256); got != want {
 					t.Errorf("stored checksum = %q, want the new data's %q", got, want)
+				}
+			})
+		}
+	}
+}
+
+// deleteOnceMeta deletes the object with DeleteObject once, when the
+// attribute named at is first read or deleted.
+type deleteOnceMeta struct {
+	meta.MetadataStorer
+	t      *testing.T
+	p      *Posix
+	bucket string
+	key    string
+	at     string
+	done   bool
+}
+
+func (m *deleteOnceMeta) deleteObject(attribute string) {
+	if m.done || attribute != m.at {
+		return
+	}
+	m.done = true
+	_, err := m.p.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: &m.bucket, Key: &m.key})
+	if err != nil {
+		m.t.Fatalf("delete object: %v", err)
+	}
+}
+
+func (m *deleteOnceMeta) RetrieveAttribute(f *os.File, bucket, object, attribute string) ([]byte, error) {
+	m.deleteObject(attribute)
+	return m.MetadataStorer.RetrieveAttribute(f, bucket, object, attribute)
+}
+
+func (m *deleteOnceMeta) DeleteAttribute(bucket, object, attribute string) error {
+	err := m.MetadataStorer.DeleteAttribute(bucket, object, attribute)
+	m.deleteObject(attribute)
+	return err
+}
+
+// TestCopyObjectSelfDeleted checks that a self copy of an object deleted
+// meanwhile, before the publish lock is taken or under it, returns
+// NoSuchKey.
+func TestCopyObjectSelfDeleted(t *testing.T) {
+	for mode, mkMeta := range metaModes(t) {
+		for _, tc := range []struct {
+			name string
+			// the object is deleted when this attribute is first
+			// read or deleted
+			at   string
+			algo types.ChecksumAlgorithm
+		}{
+			// the stored checksum is read before the lock is taken
+			{name: "before the lock", at: checksumsKey, algo: types.ChecksumAlgorithmSha256},
+			// the object metadata is deleted first under the lock
+			{name: "under the lock", at: metadataHdr, algo: types.ChecksumAlgorithmSha256},
+			{name: "under the lock without a checksum", at: metadataHdr},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				ctx := context.Background()
+				p := newTestPosix(t, mkMeta)
+				p.copyObjectThreshold = 4 << 20
+				bucket, key := "bucket", "object"
+				createTestBucket(t, p, bucket)
+				putSelfCopySource(t, p, bucket, key, []byte("data"))
+
+				storer := p.meta
+				p.meta = &deleteOnceMeta{
+					MetadataStorer: storer, t: t, p: p,
+					bucket: bucket, key: key, at: tc.at,
+				}
+
+				_, err := p.CopyObject(ctx, s3response.CopyObjectInput{
+					Bucket:              &bucket,
+					Key:                 &key,
+					CopySource:          aws.String(bucket + "/" + key),
+					ExpectedBucketOwner: aws.String(""),
+					MetadataDirective:   types.MetadataDirectiveReplace,
+					ChecksumAlgorithm:   tc.algo,
+					ContentType:         aws.String("text/plain"),
+					Metadata:            map[string]string{"key": "value"},
+				})
+				if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+					t.Fatalf("self copy of a deleted object: got %v, want NoSuchKey", err)
+				}
+				// with sidecar metadata the copy must not leave
+				// attributes of the deleted object behind
+				if attrs, _ := storer.ListAttributes(bucket, key); len(attrs) != 0 {
+					t.Errorf("attributes left for the deleted object: %v", attrs)
 				}
 			})
 		}

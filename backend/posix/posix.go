@@ -7184,11 +7184,37 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		// The object is rewritten in place rather than through PutObject,
 		// so the authoritative precondition check is made here, under the
 		// publish lock that competing writers to the key take.
-		unlock, err := p.lockObjectPublish(ctx, dstBucket, dstObject)
-		if err != nil {
-			return s3response.CopyObjectOutput{}, err
+		unlock, lockErr := p.lockObjectPublish(ctx, dstBucket, dstObject)
+		if lockErr != nil {
+			return s3response.CopyObjectOutput{}, lockErr
 		}
 		defer unlock()
+
+		// A delete doesn't take the publish lock, so the object can be
+		// removed at any step of the rewrite. A step that fails because
+		// of it gets an error of the filesystem or metadata store, so a
+		// failure with the object gone is reported as NoSuchKey. With
+		// path-based metadata (sidecar), the steps before the failure
+		// may have stored attributes for the deleted object, so they
+		// are removed as DeleteObject does. A write of the key stores
+		// its attributes under this lock, so it can't lose them here.
+		defer func() {
+			var apiErr s3err.APIError
+			if err == nil || errors.As(err, &apiErr) {
+				return
+			}
+			_, serr := os.Stat(dstObjdPath)
+			if !errors.Is(serr, fs.ErrNotExist) && !isErrNotDir(serr) {
+				return
+			}
+			err = s3err.GetAPIError(s3err.ErrNoSuchKey)
+			derr := p.meta.DeleteAttributes(dstBucket, dstObject)
+			if derr != nil && !errors.Is(derr, meta.ErrNoSuchKey) &&
+				!errors.Is(derr, fs.ErrNotExist) {
+				debuglogger.Logf("delete attributes of deleted object %v/%v: %v",
+					dstBucket, dstObject, derr)
+			}
+		}()
 
 		err = p.checkPutPreconditions(dstBucket, dstObject, input.IfMatch, input.IfNoneMatch)
 		if err != nil {
