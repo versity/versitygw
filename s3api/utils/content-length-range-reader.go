@@ -66,7 +66,8 @@ var _ io.Reader = (*ContentLengthRangeReader)(nil)
 // NewContentLengthRangeReader returns a reader of the file r, which fails with
 // EntityTooLarge when the file has more than maxSize bytes and EntityTooSmall
 // when it has less than minSize. proposedSize is the size the request proposes
-// for the file.
+// for the file. If r is an MpFileReader, it tells the size of a file that is
+// refused when it can do so without waiting for the client.
 func NewContentLengthRangeReader(r io.Reader, minSize, maxSize, proposedSize int64) *ContentLengthRangeReader {
 	return &ContentLengthRangeReader{
 		r:        r,
@@ -163,19 +164,18 @@ func (r *ContentLengthRangeReader) lookForEnd() error {
 	}
 }
 
-// refusedSize is the size to report for a file over the max. The rest of the
-// file is not read to measure it: it is the file's own size if one more read
-// finds its end, and else the size the request proposes, which is the file's
-// for a form that ends with it.
+// refusedSize is the size to report for a file over the max: its own if the end
+// of it is in the bytes the reader of it holds, and else the size the request
+// proposes, which is the file's for a form that ends with it. The rest of the
+// file is not read to measure it: the client may be slow to send it.
 func (r *ContentLengthRangeReader) refusedSize() int64 {
-	var b [1]byte
-	n, err := r.r.Read(b[:])
-	read := r.read.Add(int64(n))
-	if errors.Is(err, io.EOF) {
-		return read
+	if f, ok := r.r.(MpFileReader); ok {
+		if size, ok := f.BufferedSize(); ok {
+			return size
+		}
 	}
 
-	return max(r.proposed, read)
+	return max(r.proposed, r.read.Load())
 }
 
 func (r *ContentLengthRangeReader) fail(err error) error {

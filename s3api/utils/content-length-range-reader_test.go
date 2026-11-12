@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/versity/versitygw/s3err"
 )
@@ -629,12 +630,62 @@ func TestContentLengthRangeReaderReportsTheFileSize(t *testing.T) {
 		rdr := NewContentLengthRangeReader(&endlessReader{}, 0, 10, 4)
 		_, err := rdr.Read(make([]byte, 64))
 
-		// the 64 bytes of the read and the one that looked for the end
+		// the 64 bytes of the read: the end of the file is not looked for
 		tooLarge := tooLargeErr(t, err)
-		if tooLarge.ProposedSize != 65 {
-			t.Fatalf("unexpected proposed size: got %d want 65", tooLarge.ProposedSize)
+		if tooLarge.ProposedSize != 64 {
+			t.Fatalf("unexpected proposed size: got %d want 64", tooLarge.ProposedSize)
 		}
 	})
+}
+
+// A client can pause right after the byte that crosses the max. The file is
+// refused at once, without a wait for the client to send the rest of the form.
+func TestContentLengthRangeReaderDoesNotWaitForTheClient(t *testing.T) {
+	t.Parallel()
+
+	const (
+		fileSize = 20000
+		trailer  = "\r\n--abc"
+	)
+	head := "--abc\r\n" +
+		"Content-Disposition: form-data; name=\"file\"\r\n" +
+		"\r\n"
+	declared := int64(len(head) + fileSize + len("\r\n--abc--\r\n"))
+
+	// The client has sent the file and no boundary after it. The parser holds
+	// back the last bytes of what it has, as they can start the boundary, so
+	// the max falls on the last byte it gives.
+	pr, pw := io.Pipe()
+	go func() { _, _ = pw.Write([]byte(head + strings.Repeat("x", fileSize))) }()
+	t.Cleanup(func() { pw.Close() })
+
+	parser, err := NewMultipartParser(pr, "abc", declared)
+	if err != nil {
+		t.Fatalf("new multipart parser: %v", err)
+	}
+	form, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	rdr := NewContentLengthRangeReader(form.FileRdr, 0, int64(fileSize-len(trailer)), form.ProposedSize)
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.ReadAll(rdr)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		// the file is not seen to its end: the size is the one the request
+		// proposes, which is the file's for a form that ends with it
+		tooLarge := tooLargeErr(t, err)
+		if tooLarge.ProposedSize != fileSize {
+			t.Fatalf("unexpected proposed size: got %d want %d", tooLarge.ProposedSize, fileSize)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("waited for the client to send more before refusing the file")
+	}
 }
 
 func TestContentLengthRangeReaderMaxIsWhatS3Takes(t *testing.T) {
