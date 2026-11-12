@@ -344,6 +344,12 @@ main() {
     print_message "unable to create docker log folder '$docker_log_folder'"
     return 1
   fi
+  if ! mkdir -p "$host_config_folder"; then
+    print_message "unable to create host config folder '$host_config_folder'"
+    return 1
+  fi
+  docker_log_folder=$(cd -- "$docker_log_folder" && pwd -P) || return 1
+  host_config_folder=$(cd -- "$host_config_folder" && pwd -P) || return 1
   initialize_reports || return $?
   prepare_container "$image_tag" "$build_mode" || return 1
 

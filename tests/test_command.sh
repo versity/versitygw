@@ -162,6 +162,8 @@ source ./tests/setup_unit.sh
   for mode in default custom; do
     expected="$PWD/runtime/config"
     if [ "$mode" == "custom" ]; then expected="$BATS_TEST_TMPDIR/custom config"; fi
+    mkdir -p "$expected"
+    expected="$(cd "$expected" && pwd -P)"
     run bash -c '
       trace="$1"
       docker() {
@@ -179,6 +181,37 @@ source ./tests/setup_unit.sh
     run command grep -Fx -- "$expected:/home/tester/config" "$trace"
     assert_success
   done
+}
+
+# tags: unit
+@test "run parallel - normalizes host mounts and HOST_LOG_FOLDER" {
+  local root trace="$BATS_TEST_TMPDIR/docker-paths"
+  root="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
+  ln -s "$PWD/tests" "$root/tests"
+  mkdir -p "$root/actual config"
+  ln -s "$root/actual config" "$root/config link"
+
+  run bash -c '
+    trace="$1/docker-paths"
+    docker() {
+      if [ "$1" == "image" ]; then return 0; fi
+      printf "%s\n" "$@" > "$trace"
+    }
+    export -f docker
+    export trace
+    cd "$1"
+    bash ./tests/run_parallel.sh --config-folder "./config link" \
+      --log-folder "./new logs" --log-file runner.log fake-image suite
+  ' bash "$root"
+
+  assert_success
+  run command grep -Fx -- "$root/actual config:/home/tester/config" "$trace"
+  assert_success
+  run command grep -Fx -- "$root/new logs:/home/tester/log" "$trace"
+  assert_success
+  run command grep -Fx -- "HOST_LOG_FOLDER=$root/new logs" "$trace"
+  assert_success
+  assert [ -s "$root/new logs/runner.log" ]
 }
 
 # tags: unit

@@ -106,6 +106,8 @@ The manually triggered `Parallel Runner Smoke Test` workflow (`.github/workflows
 
 Use `--config-folder <path>` to select the host directory containing the test `.env` file (default `$PWD/runtime/config`). It is mounted at `/home/tester/config` inside each container. For example: `./tests/run_parallel.sh --config-folder "$PWD/runtime/aws-config" bats_test s3`.
 
+Host config and log directories are created if missing and normalized to absolute physical paths before Docker runs. The `HOST_LOG_FOLDER` passed into each container uses this absolute log directory so reported host log locations are unambiguous.
+
 Use `--build-mode <mode>` to choose image preparation: `rebuild` always builds before testing, `build-if-missing` builds only if the image tag is absent, and `use-tag` requires an existing image without building (the default).
 
 Use `all` as the suite argument to run every suite returned by `./tests/run.sh -l`, with a separate container per suite and the configured parallel job limit: `./tests/run_parallel.sh --log-folder runtime/log --max-parallel-jobs 4 --build-mode rebuild bats_test all`. `all` must be used alone, not in a list such as `s3,all`. Suite discovery uses the host checkout, so rebuild the image to ensure it contains the same suites. Discovery failure or an empty suite list stops execution before Docker is invoked.
