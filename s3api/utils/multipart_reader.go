@@ -86,9 +86,9 @@ type MpParseResult struct {
 	// FileRdr streams the file payload without buffering the entire part in memory.
 	FileRdr MpFileReader
 	// ProposedSize is the size of the file payload the request proposes. It is
-	// the file's own size when the boundary that ends the file is already in the
-	// bytes the parser has read, whatever follows it. Otherwise it is the
-	// Content-Length less the bytes before the file content and the closing
+	// the file's own size when the boundary that ends the file is in the bytes
+	// the parser reads ahead of the file, whatever follows it. Otherwise it is
+	// the Content-Length less the bytes before the file content and the closing
 	// boundary with its CRLF: the file's size for a form that ends with the
 	// file and that boundary, and more for a form with anything after the file
 	// (fields, an epilogue), as the file ends at the first boundary. A form that
@@ -103,8 +103,9 @@ type MpParseResult struct {
 //   - a streaming file reader
 //   - the size of the file the request proposes
 //
-// The returned file reader MUST be read until EOF, otherwise the boundary
-// that ends the file is not checked.
+// It reads ahead of the file for as many bytes as its buffer holds, and waits
+// for the client to send them. The returned file reader MUST be read until EOF,
+// otherwise the boundary that ends the file is not checked.
 func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 	fields := make(map[string]string)
 
@@ -151,16 +152,18 @@ func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 				trailer: []byte("\r\n--" + mp.boundary),
 			}
 
-			// An empty file is followed by its boundary at once. Read as many bytes
-			// as the boundary has, which the client sends next whatever the file
-			// is, so that the size of an empty file is exact wherever the reads of
-			// the body ended. The next read returns an error if there is one.
-			_, _ = mp.br.Peek(len(fr.trailer))
+			// Read ahead of the file for as many bytes as the buffer holds, or as the
+			// request has left if that is less. The client sends them whatever the
+			// file is. With them, the end of a small file is in the bytes read
+			// wherever the reads of the body ended: its size does not depend on the
+			// length of the fields before it, or on when the client sends its bytes.
+			// The next read returns an error if there is one.
+			_, _ = mp.br.Peek(int(min(int64(mp.br.Size()), mp.requestContentLength-mp.bytesRead)))
 
 			proposedSize, ok := fr.BufferedSize()
 			if !ok {
-				// A form that ends with less than the closing boundary and its
-				// CRLF can leave less than nothing for a short file.
+				// A form that ends within the file has no closing boundary, and can
+				// leave less than nothing for the file.
 				proposedSize = max(0, mp.requestContentLength-mp.bytesRead-int64(len(mp.boundary))-finalBoundaryDelimiterLen)
 			}
 

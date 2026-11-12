@@ -2360,6 +2360,7 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_content_length_range_body_without_final_crlf)
 	ts.Run(PostObject_short_closing_boundary_keeps_object)
 	ts.Run(PostObject_small_file_with_short_closing_boundary)
+	ts.Run(PostObject_small_file_with_field_after_file)
 	ts.Run(PostObject_empty_file_with_field_after_file)
 	ts.Run(PostObject_preamble_and_folded_header)
 	ts.Run(PostObject_data_before_file_limit)
@@ -4154,6 +4155,7 @@ func GetIntTests() IntTests {
 		"PostObject_content_length_range_body_without_final_crlf":                          PostObject_content_length_range_body_without_final_crlf,
 		"PostObject_short_closing_boundary_keeps_object":                                   PostObject_short_closing_boundary_keeps_object,
 		"PostObject_small_file_with_short_closing_boundary":                                PostObject_small_file_with_short_closing_boundary,
+		"PostObject_small_file_with_field_after_file":                                      PostObject_small_file_with_field_after_file,
 		"PostObject_empty_file_with_field_after_file":                                      PostObject_empty_file_with_field_after_file,
 		"PostObject_preamble_and_folded_header":                                            PostObject_preamble_and_folded_header,
 		"PostObject_data_before_file_limit":                                                PostObject_data_before_file_limit,

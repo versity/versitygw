@@ -4778,9 +4778,9 @@ func newPostObjectRequest(input PostRequestConfig) (*http.Request, map[string]st
 // newPostObjectRequestClosing returns the request for input with a body that
 // ends with closing(boundary), in place of the final boundary and its CRLF. It
 // also returns the body in two parts, to send with a pause between them. The
-// first part ends as many bytes after the start of the content of the file as
-// the boundary has: that is as far as the gateway reads ahead of the file. For
-// a file that is not empty, the second part holds the end of the boundary.
+// first part ends within the bytes that the gateway reads ahead of the file: as
+// many bytes after the start of the content of the file as the boundary has.
+// The second holds the rest of the form.
 func newPostObjectRequestClosing(input PostRequestConfig, closing func(boundary string) string) (*http.Request, [2][]byte, error) {
 	var parts [2][]byte
 

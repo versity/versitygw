@@ -3,10 +3,12 @@ package utils
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/versity/versitygw/s3err"
 )
@@ -331,10 +333,10 @@ func TestMultipartParserIgnoresFieldsAfterFile(t *testing.T) {
 }
 
 // ProposedSize is the size of the file when the boundary that ends it is in the
-// bytes the parser has already read, whatever follows the file. Past them, it is
-// what the request's Content-Length leaves for the file: the file's own size
-// for a form that ends with "--boundary--" and a CRLF, and a different one for
-// a form that has anything else after the file.
+// bytes the parser reads ahead of the file, whatever follows the file. Past
+// them, it is what the request's Content-Length leaves for the file: the file's
+// own size for a form that ends with "--boundary--" and a CRLF, and a different
+// one for a form that has anything else after the file.
 func TestMultipartParserProposedSize(t *testing.T) {
 	t.Parallel()
 
@@ -398,36 +400,29 @@ func TestMultipartParserProposedSize(t *testing.T) {
 		})
 	}
 
-	// A form that ends with less than the closing boundary and its CRLF leaves
-	// less than nothing for a file that is short: the proposal is 0, and a
-	// file that is not empty is refused when it is read. The reads of the body
-	// end before the end of the file.
-	t.Run("a short file whose end has not been read, with a boundary and no closing dashes", func(t *testing.T) {
+	// A form that ends within the file has no boundary after it, so it leaves
+	// less than the closing boundary for the file: the proposal is 0 and not
+	// less, and the file fails when it is read.
+	t.Run("a form that ends within the file", func(t *testing.T) {
 		t.Parallel()
 
-		for _, content := range []string{"", "a", "abc"} {
-			body := formHead + content + "\r\n--abc"
-			src := &chunkedReader{data: []byte(body), steps: slices.Repeat([]int{1}, len(body))}
-			src.steps[0] = len(formHead)
-			mp, err := NewMultipartParser(src, "abc", int64(len(body)))
-			if err != nil {
-				t.Fatalf("new multipart parser: %v", err)
-			}
-			got, err := mp.Parse()
-			if err != nil {
-				t.Fatalf("parse: %v", err)
-			}
-			if got.ProposedSize != 0 {
-				t.Fatalf("unexpected proposed size for a file of %d bytes: got %d want 0", len(content), got.ProposedSize)
-			}
+		got, err := newMultipartParserForTest(t, formHead+"abc", "abc").Parse()
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if got.ProposedSize != 0 {
+			t.Fatalf("unexpected proposed size: got %d want 0", got.ProposedSize)
+		}
+		if _, err := io.ReadAll(got.FileRdr); !errors.Is(err, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)) {
+			t.Fatalf("expected malformed post request, got %v", err)
 		}
 	})
 
-	// The reads of the body end before the end of the file.
-	t.Run("a small file whose end has not been read", func(t *testing.T) {
+	// The reads of the body end before the end of a file past the buffer.
+	t.Run("a large file whose end has not been read", func(t *testing.T) {
 		t.Parallel()
 
-		body := formHead + small + field + closing
+		body := formHead + large + field + closing
 		src := &chunkedReader{data: []byte(body), steps: slices.Repeat([]int{3}, len(body))}
 		src.steps[0] = len(formHead)
 		mp, err := NewMultipartParser(src, "abc", int64(len(body)))
@@ -438,47 +433,198 @@ func TestMultipartParserProposedSize(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		if want := int64(len(small) + len(field)); got.ProposedSize != want {
+		if want := int64(len(large) + len(field)); got.ProposedSize != want {
 			t.Fatalf("unexpected proposed size: got %d want %d", got.ProposedSize, want)
 		}
 	})
 }
 
-// The boundary of an empty file follows the headers of its part. Its size is
-// 0 wherever the reads of the body end, which is where the parser's buffer ends:
-// a boundary that ends in the next read is read as well.
-func TestMultipartParserSizesEmptyFileWhereverReadsEnd(t *testing.T) {
+// A field after the file makes the size that the request proposes more than the
+// file's, and a body without the final CRLF makes it less. The size of a small
+// file is its own all the same. Where the reads of the body end depends on the
+// length of the fields before the file and on how the client's bytes arrive, and
+// the size must not.
+func TestMultipartParserSizesSmallFileWhereverReadsEnd(t *testing.T) {
 	t.Parallel()
 
 	const field = "\r\n--abc\r\n" +
 		"Content-Disposition: form-data; name=\"submit\"\r\n" +
 		"\r\n" +
-		"Upload" +
-		"\r\n--abc--\r\n"
+		"Upload"
 
-	for _, readSize := range []int{4096, 1000, 100, 7} {
-		for padding := 4096 - 300; padding <= 4096+300; padding++ {
-			body := preDataForm(padding)
-			body = body[:len(body)-len("payload\r\n--abc--\r\n")] + field
+	for _, closing := range []struct{ name, tail string }{
+		{"a field after the file", field + "\r\n--abc--\r\n"},
+		{"no final CRLF", "\r\n--abc--"},
+	} {
+		for _, size := range []int{0, 1, 1000, 3000} {
+			t.Run(fmt.Sprintf("%s, a file of %d bytes", closing.name, size), func(t *testing.T) {
+				t.Parallel()
 
-			src := &chunkedReader{data: []byte(body), steps: slices.Repeat([]int{readSize}, len(body))}
-			mp, err := NewMultipartParser(src, "abc", int64(len(body)))
-			if err != nil {
-				t.Fatalf("new multipart parser: %v", err)
-			}
-			got, err := mp.Parse()
+				content := strings.Repeat("x", size)
+				const maxPadding = 4400
+				for _, readSize := range []int{4096, 100} {
+					var wrong []int
+					for padding := 0; padding <= maxPadding; padding++ {
+						body := paddedForm(padding, content, closing.tail)
+						mp, err := NewMultipartParser(&chunkReader{data: body, n: readSize}, "abc", int64(len(body)))
+						if err != nil {
+							t.Fatalf("new multipart parser: %v", err)
+						}
+						got, err := mp.Parse()
+						if err != nil {
+							t.Fatalf("parse: %v", err)
+						}
+						if got.ProposedSize != int64(size) {
+							wrong = append(wrong, padding)
+						}
+					}
+					if len(wrong) > 0 {
+						t.Fatalf("reads of %d bytes: for %d of %d sizes of the data before the file, the proposed size is not %d: the first is %d",
+							readSize, len(wrong), maxPadding+1, size, wrong[0])
+					}
+				}
+			})
+		}
+	}
+}
+
+// The parser reads ahead of the file for as many bytes as its buffer holds. The
+// size of a file is its own if the boundary that ends it is in them, and the
+// size that the request proposes if it is not, wherever the file is in the form.
+func TestMultipartParserSizeAtTheEdgeOfTheBuffer(t *testing.T) {
+	t.Parallel()
+
+	const (
+		trailer = "\r\n--abc"
+		field   = "\r\n--abc\r\n" +
+			"Content-Disposition: form-data; name=\"submit\"\r\n" +
+			"\r\n" +
+			"Upload"
+	)
+	window := newMultipartParserForTest(t, "", "abc").br.Size()
+
+	for _, padding := range []int{0, 1, 100, 4095, 4096, 5000, 8191, 8192} {
+		for _, tt := range []struct {
+			name string
+			size int
+			want int64
+		}{
+			{"the boundary ends in the buffer", window - len(trailer), int64(window - len(trailer))},
+			{"the boundary ends past the buffer", window - len(trailer) + 1, int64(window - len(trailer) + 1 + len(field))},
+		} {
+			body := paddedForm(padding, strings.Repeat("x", tt.size), field+"\r\n--abc--\r\n")
+			got, err := newMultipartParserForTest(t, body, "abc").Parse()
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
-			if got.ProposedSize != 0 {
-				t.Fatalf("reads of %d bytes, %d bytes of padding: unexpected proposed size: got %d want 0", readSize, padding, got.ProposedSize)
+			if got.ProposedSize != tt.want {
+				t.Fatalf("%s, %d bytes of data before the file: unexpected proposed size: got %d want %d", tt.name, padding, got.ProposedSize, tt.want)
 			}
 		}
 	}
 }
 
-// preDataForm is a form with a field of padding bytes before the file.
-func preDataForm(padding int) string {
+type parseResult struct {
+	got *MpParseResult
+	err error
+}
+
+// startParse starts the parse of a form of length bytes, which the test sends
+// through the pipe it returns. The pipe stays open, as the connection of a
+// client that waits for the answer does.
+func startParse(t *testing.T, length int) (*io.PipeWriter, <-chan parseResult) {
+	t.Helper()
+
+	pr, pw := io.Pipe()
+	t.Cleanup(func() { pw.Close() })
+
+	mp, err := NewMultipartParser(pr, "abc", int64(length))
+	if err != nil {
+		t.Fatalf("new multipart parser: %v", err)
+	}
+	done := make(chan parseResult, 1)
+	go func() {
+		got, err := mp.Parse()
+		done <- parseResult{got, err}
+	}()
+
+	return pw, done
+}
+
+// parsedWithin returns the result of a parse, and fails the test if the parser
+// does not return in time.
+func parsedWithin(t *testing.T, done <-chan parseResult, wait time.Duration) *MpParseResult {
+	t.Helper()
+
+	select {
+	case res := <-done:
+		if res.err != nil {
+			t.Fatalf("parse: %v", res.err)
+		}
+
+		return res.got
+	case <-time.After(wait):
+		t.Fatal("the parser waits for bytes that it does not need")
+
+		return nil
+	}
+}
+
+// The parser waits for the bytes it reads ahead of the file, which the client
+// sends anyway, so that the size of a small file does not depend on when they
+// arrive. It waits for no more than that: a large file does not make it wait
+// for the rest of the file.
+func TestMultipartParserWaitsOnlyForTheBytesItReadsAhead(t *testing.T) {
+	t.Parallel()
+
+	head := len(postForm("", ""))
+
+	t.Run("the end of a small file that the client sends later", func(t *testing.T) {
+		t.Parallel()
+
+		body := postForm("hello world", fieldAfterFile)
+		sent := head + len("\r\n--abc")
+		pw, done := startParse(t, len(body))
+
+		// Write returns when the parser has read what it wrote.
+		if _, err := pw.Write([]byte(body[:sent])); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		select {
+		case <-done:
+			t.Fatal("returned before the client sent the end of the file")
+		case <-time.After(200 * time.Millisecond):
+		}
+		if _, err := pw.Write([]byte(body[sent:])); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+
+		got := parsedWithin(t, done, 5*time.Second)
+		if got.ProposedSize != int64(len("hello world")) {
+			t.Fatalf("unexpected proposed size: got %d want %d", got.ProposedSize, len("hello world"))
+		}
+	})
+
+	t.Run("a large file", func(t *testing.T) {
+		t.Parallel()
+
+		content := strings.Repeat("x", 20000)
+		body := postForm(content, "\r\n--abc--\r\n")
+		pw, done := startParse(t, len(body))
+
+		// the client sends more than the buffer holds, and nothing after that
+		go func() { _, _ = pw.Write([]byte(body[:head+5000])) }()
+
+		got := parsedWithin(t, done, 5*time.Second)
+		if got.ProposedSize != int64(len(content)) {
+			t.Fatalf("unexpected proposed size: got %d want %d", got.ProposedSize, len(content))
+		}
+	})
+}
+
+// paddedForm is a form with a field of padding bytes before the file, whose
+// content is followed by tail.
+func paddedForm(padding int, content, tail string) string {
 	return "--abc\r\n" +
 		"Content-Disposition: form-data; name=\"x-ignore-padding\"\r\n" +
 		"\r\n" +
@@ -486,8 +632,12 @@ func preDataForm(padding int) string {
 		"\r\n--abc\r\n" +
 		"Content-Disposition: form-data; name=\"file\"\r\n" +
 		"\r\n" +
-		"payload" +
-		"\r\n--abc--\r\n"
+		content + tail
+}
+
+// preDataForm is a form with a field of padding bytes before the file.
+func preDataForm(padding int) string {
+	return paddedForm(padding, "payload", "\r\n--abc--\r\n")
 }
 
 // preDataPaddingAtLimit puts preDataForm's bytes before the file content at
