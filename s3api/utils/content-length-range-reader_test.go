@@ -399,9 +399,40 @@ const fieldAfterFile = "\r\n--abc\r\n" +
 func TestContentLengthRangeReaderReportsTheFileSize(t *testing.T) {
 	t.Parallel()
 
-	// the proposal of a form with a field after the file is the size of the
-	// file and the field, which is not what is refused
+	// The proposal of a form with a field after the file is the size of the
+	// file and the field, when the end of the file has not been read as the form
+	// is parsed. It is not what is refused: the file is, and the reader has its
+	// end by the time it passes the max.
 	t.Run("a file with a field after it", func(t *testing.T) {
+		t.Parallel()
+
+		// the reads of the body end right after the boundary's length of bytes
+		// that the parser reads past the headers
+		head := postForm("", "")
+		body := postForm("hello world", fieldAfterFile)
+		parsed, err := NewMultipartParser(&chunkedReader{data: []byte(body), steps: []int{len(head), len("\r\n--abc")}}, "abc", int64(len(body)))
+		if err != nil {
+			t.Fatalf("new multipart parser: %v", err)
+		}
+		form, err := parsed.Parse()
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if form.ProposedSize <= int64(len("hello world")) {
+			t.Fatalf("expected a proposed size over the file's, got %d", form.ProposedSize)
+		}
+
+		rdr := NewContentLengthRangeReader(form.FileRdr, 0, 5, form.ProposedSize)
+		_, err = io.ReadAll(rdr)
+
+		tooLarge := tooLargeErr(t, err)
+		if tooLarge.ProposedSize != int64(len("hello world")) || tooLarge.MaxSizeAllowed != 5 {
+			t.Fatalf("unexpected sizes: proposed %d max %d, want %d and 5", tooLarge.ProposedSize, tooLarge.MaxSizeAllowed, len("hello world"))
+		}
+	})
+
+	// the end of the file is in the bytes the parser has read
+	t.Run("a small file with a field after it", func(t *testing.T) {
 		t.Parallel()
 
 		body := postForm("hello world", fieldAfterFile)
@@ -413,8 +444,8 @@ func TestContentLengthRangeReaderReportsTheFileSize(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		if form.ProposedSize <= int64(len("hello world")) {
-			t.Fatalf("expected a proposed size over the file's, got %d", form.ProposedSize)
+		if form.ProposedSize != int64(len("hello world")) {
+			t.Fatalf("unexpected proposed size: got %d want %d", form.ProposedSize, len("hello world"))
 		}
 
 		rdr := NewContentLengthRangeReader(form.FileRdr, 0, 5, form.ProposedSize)

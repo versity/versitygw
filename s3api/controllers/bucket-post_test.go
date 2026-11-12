@@ -567,6 +567,10 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 type mockMpFileReader struct {
 	r         io.Reader
 	bytesRead int64
+	// size is the size of the file if its end is in the bytes the reader
+	// holds, as for a small file in the parser's buffer, and negative if the
+	// file goes on past them.
+	size int64
 }
 
 func (m *mockMpFileReader) Read(p []byte) (int, error) {
@@ -577,8 +581,10 @@ func (m *mockMpFileReader) Read(p []byte) (int, error) {
 
 func (m *mockMpFileReader) Length() int64 { return m.bytesRead }
 
+func (m *mockMpFileReader) BufferedSize() (int64, bool) { return m.size, m.size >= 0 }
+
 func newMockFileReader(content string) *mockMpFileReader {
-	return &mockMpFileReader{r: strings.NewReader(content)}
+	return &mockMpFileReader{r: strings.NewReader(content), size: int64(len(content))}
 }
 
 func TestS3ApiController_POSTObject(t *testing.T) {
@@ -1206,7 +1212,7 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 		return &mockMpFileReader{r: io.MultiReader(
 			strings.NewReader("payload"),
 			strings.NewReader(strings.Repeat("x", 4<<10)),
-		)}
+		), size: -1}
 	}
 
 	s3ProxyErr := fmt.Errorf("put object: http: ContentLength=%d with Body length %d", 200, len("payload"))
@@ -1416,7 +1422,7 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			file: &mockMpFileReader{r: &dataThenErrForTest{
 				data: "payl",
 				err:  s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
-			}},
+			}, size: -1},
 			proposedSize: int64(len("payload")),
 			put:          wrapsReadErr,
 			wantLength:   int64(len("payload")),

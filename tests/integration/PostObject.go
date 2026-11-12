@@ -1890,13 +1890,15 @@ func PostObject_content_length_range_under_min_keeps_object(s *S3Conf) error {
 
 // PostObject_content_length_range_body_without_final_crlf posts a body that
 // ends with "--boundary--" and no CRLF, with a file whose size is the min of
-// the size range. The request proposes two bytes less than the file has, which
-// is under the min. The request is refused, and the object at the key stays as
-// it was: it is not replaced with an empty one.
+// the size range. The file is too large for its end to be in the bytes the
+// gateway reads first, so the length that the request proposes is not known to
+// be wrong. It is two bytes less than the file has, which is under the min. The
+// request is refused, and the object at the key stays as it was: it is not
+// replaced with an empty one.
 func PostObject_content_length_range_body_without_final_crlf(s *S3Conf) error {
 	testName := "PostObject_content_length_range_body_without_final_crlf"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		key, original, data := "my-obj", []byte("the object that is kept"), []byte("0123456789a")
+		key, original, data := "my-obj", []byte("the object that is kept"), bytes.Repeat([]byte("0123456789a"), 1000)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
@@ -1914,7 +1916,7 @@ func PostObject_content_length_range_body_without_final_crlf(s *S3Conf) error {
 			key:              key,
 			s3Conf:           s,
 			fileContent:      data,
-			policyConditions: []any{[]any{"content-length-range", len(data), 100}},
+			policyConditions: []any{[]any{"content-length-range", len(data), len(data)}},
 		})
 		if err != nil {
 			return err
@@ -1937,6 +1939,53 @@ func PostObject_content_length_range_body_without_final_crlf(s *S3Conf) error {
 		}
 
 		return checkObjectData(s3client, bucket, key, "", original)
+	})
+}
+
+// PostObject_empty_file_with_field_after_file posts an empty file with a field
+// after it, as the submit button of a form is, to a key and to a key that ends
+// in a slash. The boundary that ends the file follows its headers, so the
+// length that the gateway gives the backend is 0 and not the size of the field.
+// A backend refuses data for a key that ends in a slash. The gateway reads the
+// body in parts, whose ends fall at different places in the form. So the key
+// that ends in a slash is posted with data before the file of many sizes, for
+// the end of a part to fall before, in and after the boundary.
+func PostObject_empty_file_with_field_after_file(s *S3Conf) error {
+	testName := "PostObject_empty_file_with_field_after_file"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		post := func(key string, padding int) error {
+			resp, err := sendPostObject(PostRequestConfig{
+				bucket: bucket,
+				key:    key,
+				s3Conf: s,
+				extraFields: map[string]string{
+					"submit":           "Upload to Amazon S3",
+					"x-ignore-padding": strings.Repeat("a", padding),
+				},
+				fieldsAfterFile: []string{"submit"},
+			})
+			if err != nil {
+				return err
+			}
+			if err := checkPostObjectSuccess(resp); err != nil {
+				return err
+			}
+
+			return checkObjectData(s3client, bucket, key, "", nil)
+		}
+
+		for _, key := range []string{"my-obj", "my-dir/"} {
+			if err := post(key, 0); err != nil {
+				return fmt.Errorf("%s: %w", key, err)
+			}
+		}
+		for padding := 3500; padding <= 8500; padding += 32 {
+			if err := post("my-dir/", padding); err != nil {
+				return fmt.Errorf("%d bytes of data before the file: %w", padding, err)
+			}
+		}
+
+		return nil
 	})
 }
 

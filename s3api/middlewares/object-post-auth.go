@@ -44,8 +44,7 @@ const (
 
 type PostObjectResult struct {
 	// ProposedSize is the size of the file the request proposes. It is not
-	// the file's size when the form has anything after the file, see
-	// utils.MpParseResult.
+	// always the file's size, see utils.MpParseResult.
 	ProposedSize int64
 	// FileRdr streams the file payload. Length() reports the exact number of
 	// file-content bytes read after the backend has consumed the body.

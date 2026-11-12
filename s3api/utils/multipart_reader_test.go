@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -310,10 +311,10 @@ func TestMultipartParserIgnoresFieldsAfterFile(t *testing.T) {
 		t.Fatalf("unexpected field after the file: %q", got.Fields["content-type"])
 	}
 
-	// The request proposes the field after the file as part of it: the
-	// proposed size is more than the file's own.
-	if got.ProposedSize <= int64(len("payload")) {
-		t.Fatalf("expected a proposed size over %d, got %d", len("payload"), got.ProposedSize)
+	// the end of the file is in the bytes read: the field after it is not part
+	// of the size proposed
+	if got.ProposedSize != int64(len("payload")) {
+		t.Fatalf("unexpected proposed size: got %d want %d", got.ProposedSize, len("payload"))
 	}
 
 	fileData, err := io.ReadAll(got.FileRdr)
@@ -326,6 +327,128 @@ func TestMultipartParserIgnoresFieldsAfterFile(t *testing.T) {
 	// the file ends at the first boundary: what is read is the file alone
 	if got.FileRdr.Length() != int64(len("payload")) {
 		t.Fatalf("unexpected file length: got %d want %d", got.FileRdr.Length(), len("payload"))
+	}
+}
+
+// ProposedSize is the size of the file when the boundary that ends it is in the
+// bytes the parser has already read, whatever follows the file. Past them, it is
+// what the request's Content-Length leaves for the file: the file's own size
+// for a form that ends with "--boundary--" and a CRLF, and a different one for
+// a form that has anything else after the file.
+func TestMultipartParserProposedSize(t *testing.T) {
+	t.Parallel()
+
+	const (
+		closing = "\r\n--abc--\r\n"
+		field   = "\r\n--abc\r\n" +
+			"Content-Disposition: form-data; name=\"submit\"\r\n" +
+			"\r\n" +
+			"Upload"
+		formHead = "--abc\r\n" +
+			"Content-Disposition: form-data; name=\"key\"\r\n" +
+			"\r\n" +
+			"uploads/photo.jpg\r\n" +
+			"--abc\r\n" +
+			"Content-Disposition: form-data; name=\"file\"\r\n" +
+			"\r\n"
+		small = "payload"
+	)
+	// a file that is past the parser's buffer
+	large := strings.Repeat("x", 8<<10)
+
+	for _, tt := range []struct {
+		name    string
+		content string
+		after   string
+		want    int64
+	}{
+		{"an empty file", "", closing, 0},
+		{"an empty file, with a field after it", "", field + closing, 0},
+		{"an empty file, with a boundary and no closing dashes", "", "\r\n--abc", 0},
+		{"a small file", small, closing, int64(len(small))},
+		{"a small file, with a field after it", small, field + closing, int64(len(small))},
+		{"a small file, with two fields after it", small, field + field + closing, int64(len(small))},
+		{"a small file, with an epilogue", small, closing + "epilogue\r\n", int64(len(small))},
+		{"a small file, with no final CRLF", small, "\r\n--abc--", int64(len(small))},
+		{"a small file, with a boundary and no closing dashes", small, "\r\n--abc", int64(len(small))},
+		{"a large file", large, closing, int64(len(large))},
+		{"a large file, with a field after it", large, field + closing, int64(len(large) + len(field))},
+		{"a large file, with no final CRLF", large, "\r\n--abc--", int64(len(large) - 2)},
+		{"a large file, with a boundary and no closing dashes", large, "\r\n--abc", int64(len(large) - 4)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := newMultipartParserForTest(t, formHead+tt.content+tt.after, "abc").Parse()
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if got.ProposedSize != tt.want {
+				t.Fatalf("unexpected proposed size: got %d want %d", got.ProposedSize, tt.want)
+			}
+
+			// the file is the same whatever the size proposed
+			fileData, err := io.ReadAll(got.FileRdr)
+			if err != nil {
+				t.Fatalf("read file: %v", err)
+			}
+			if string(fileData) != tt.content {
+				t.Fatalf("unexpected file data: got %d bytes want %d", len(fileData), len(tt.content))
+			}
+		})
+	}
+
+	// The reads of the body end before the end of the file.
+	t.Run("a small file whose end has not been read", func(t *testing.T) {
+		t.Parallel()
+
+		body := formHead + small + field + closing
+		src := &chunkedReader{data: []byte(body), steps: slices.Repeat([]int{3}, len(body))}
+		src.steps[0] = len(formHead)
+		mp, err := NewMultipartParser(src, "abc", int64(len(body)))
+		if err != nil {
+			t.Fatalf("new multipart parser: %v", err)
+		}
+		got, err := mp.Parse()
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if want := int64(len(small) + len(field)); got.ProposedSize != want {
+			t.Fatalf("unexpected proposed size: got %d want %d", got.ProposedSize, want)
+		}
+	})
+}
+
+// The boundary of an empty file follows the headers of its part. Its size is
+// 0 wherever the reads of the body end, which is where the parser's buffer ends:
+// a boundary that ends in the next read is read as well.
+func TestMultipartParserSizesEmptyFileWhereverReadsEnd(t *testing.T) {
+	t.Parallel()
+
+	const field = "\r\n--abc\r\n" +
+		"Content-Disposition: form-data; name=\"submit\"\r\n" +
+		"\r\n" +
+		"Upload" +
+		"\r\n--abc--\r\n"
+
+	for _, readSize := range []int{4096, 1000, 100, 7} {
+		for padding := 4096 - 300; padding <= 4096+300; padding++ {
+			body := preDataForm(padding)
+			body = body[:len(body)-len("payload\r\n--abc--\r\n")] + field
+
+			src := &chunkedReader{data: []byte(body), steps: slices.Repeat([]int{readSize}, len(body))}
+			mp, err := NewMultipartParser(src, "abc", int64(len(body)))
+			if err != nil {
+				t.Fatalf("new multipart parser: %v", err)
+			}
+			got, err := mp.Parse()
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if got.ProposedSize != 0 {
+				t.Fatalf("reads of %d bytes, %d bytes of padding: unexpected proposed size: got %d want 0", readSize, padding, got.ProposedSize)
+			}
+		}
 	}
 }
 
@@ -645,6 +768,127 @@ func TestFinalFileReaderLengthIncrementalReads(t *testing.T) {
 	if int64(total) != r.Length() {
 		t.Fatalf("total bytes returned by Read (%d) does not match Length() (%d)", total, r.Length())
 	}
+}
+
+// countingReader counts the reads of its source.
+type countingReader struct {
+	r     io.Reader
+	reads int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	c.reads++
+
+	return c.r.Read(p)
+}
+
+func TestFinalFileReaderBufferedSize(t *testing.T) {
+	t.Parallel()
+
+	const trailer = "\r\n--abc"
+
+	// newReader returns a reader of src, whose buffer has been filled by one
+	// read of it
+	newReader := func(t *testing.T, src io.Reader) *finalFileReader {
+		t.Helper()
+
+		r := &finalFileReader{r: bufio.NewReader(src), trailer: []byte(trailer)}
+		if _, err := r.r.Peek(1); err != nil {
+			t.Fatalf("fill the buffer: %v", err)
+		}
+
+		return r
+	}
+	check := func(t *testing.T, r *finalFileReader, want int64, wantOK bool) {
+		t.Helper()
+
+		if got, ok := r.BufferedSize(); got != want || ok != wantOK {
+			t.Fatalf("unexpected buffered size: got %d, %v want %d, %v", got, ok, want, wantOK)
+		}
+	}
+
+	t.Run("the boundary is in the buffer of the source", func(t *testing.T) {
+		t.Parallel()
+
+		check(t, newReader(t, strings.NewReader("hello"+trailer+"--\r\n")), 5, true)
+	})
+
+	t.Run("an empty file", func(t *testing.T) {
+		t.Parallel()
+
+		check(t, newReader(t, strings.NewReader(trailer+"--\r\n")), 0, true)
+	})
+
+	t.Run("the first boundary ends the file", func(t *testing.T) {
+		t.Parallel()
+
+		check(t, newReader(t, strings.NewReader("hello"+trailer+" field"+trailer+"--\r\n")), 5, true)
+	})
+
+	t.Run("no boundary yet", func(t *testing.T) {
+		t.Parallel()
+
+		check(t, newReader(t, strings.NewReader("hello")), 0, false)
+		check(t, newReader(t, strings.NewReader("hello\r\n--ab")), 0, false)
+	})
+
+	t.Run("part of the file is read", func(t *testing.T) {
+		t.Parallel()
+
+		r := newReader(t, strings.NewReader("hello"+trailer+"--\r\n"))
+		if n, err := r.Read(make([]byte, 2)); n != 2 || err != nil {
+			t.Fatalf("read: %d, %v", n, err)
+		}
+		check(t, r, 5, true)
+
+		// the boundary is in the bytes the reader holds, and not in its source
+		if _, err := r.Read(make([]byte, 1)); err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		check(t, r, 5, true)
+	})
+
+	t.Run("the boundary is split between the bytes held and the buffer", func(t *testing.T) {
+		t.Parallel()
+
+		r := newReader(t, strings.NewReader("-abc--\r\n"))
+		r.buf = []byte("hello\r\n-")
+		check(t, r, 5, true)
+	})
+
+	t.Run("the file is read to its end", func(t *testing.T) {
+		t.Parallel()
+
+		r := newReader(t, strings.NewReader("hello"+trailer+"--\r\n"))
+		if _, err := io.ReadAll(r); err != nil {
+			t.Fatalf("read all: %v", err)
+		}
+		check(t, r, 5, true)
+	})
+
+	t.Run("the file failed", func(t *testing.T) {
+		t.Parallel()
+
+		r := newReader(t, strings.NewReader("hello"))
+		if _, err := io.ReadAll(r); err == nil {
+			t.Fatal("expected the file to fail")
+		}
+		check(t, r, 0, false)
+	})
+
+	t.Run("it does not read the source", func(t *testing.T) {
+		t.Parallel()
+
+		src := &countingReader{r: strings.NewReader("hello")}
+		r := newReader(t, src)
+		reads := src.reads
+
+		check(t, r, 0, false)
+		check(t, r, 0, false)
+		if src.reads != reads {
+			t.Fatalf("read the source %d times to tell the size", src.reads-reads)
+		}
+	})
 }
 
 func TestMultipartParserFileReaderLength(t *testing.T) {

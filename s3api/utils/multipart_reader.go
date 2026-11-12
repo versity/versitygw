@@ -21,6 +21,7 @@ import (
 	"io"
 	"mime"
 	"net/textproto"
+	"slices"
 	"strings"
 
 	"github.com/versity/versitygw/debuglogger"
@@ -73,6 +74,10 @@ func NewMultipartParser(body io.Reader, boundary string, requestContentLength in
 type MpFileReader interface {
 	io.Reader
 	Length() int64
+	// BufferedSize returns the size of the file if the boundary that ends it
+	// is already in the bytes the reader holds. It does not read more, and so
+	// does not wait for the client.
+	BufferedSize() (int64, bool)
 }
 
 type MpParseResult struct {
@@ -80,12 +85,16 @@ type MpParseResult struct {
 	Fields map[string]string
 	// FileRdr streams the file payload without buffering the entire part in memory.
 	FileRdr MpFileReader
-	// ProposedSize is the size of the file payload the request proposes: its
+	// ProposedSize is the size of the file payload the request proposes. It is
+	// the file's own size when the boundary that ends the file is already in the
+	// bytes the parser has read, whatever follows it. Otherwise it is the
 	// Content-Length less the bytes before the file content and the closing
-	// boundary. A form that ends with the file proposes the file's size. A form
-	// with anything after the file (fields, an epilogue) proposes more, as the
-	// file ends at the first boundary: its own size is only known once it is
-	// read, see ContentLengthRangeReader.
+	// boundary with its CRLF: the file's size for a form that ends with the
+	// file and that boundary, and more for a form with anything after the file
+	// (fields, an epilogue), as the file ends at the first boundary. A form that
+	// ends with "--boundary--" and no CRLF proposes two bytes less than the
+	// file has, and one that ends with "--boundary" four. The size of the file is
+	// only known once it is read, see ContentLengthRangeReader.
 	ProposedSize int64
 }
 
@@ -137,15 +146,24 @@ func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 		// At this point, headers + blank line have already been consumed,
 		// so bytesRead points exactly at the first byte of file content.
 		if isFilePart {
-			proposedSize := mp.requestContentLength - mp.bytesRead - int64(len(mp.boundary)) - finalBoundaryDelimiterLen
-			if proposedSize < 0 {
-				debuglogger.Logf("calculated negative multipart file content-length: %d", proposedSize)
-				return nil, fmt.Errorf("calculated negative file content-length: %d", proposedSize)
-			}
-
 			fr := &finalFileReader{
 				r:       mp.br,
 				trailer: []byte("\r\n--" + mp.boundary),
+			}
+
+			// An empty file is followed by its boundary at once. Read as many bytes
+			// as the boundary has, which the client sends next whatever the file
+			// is, so that the size of an empty file is exact wherever the reads of
+			// the body ended. The next read returns an error if there is one.
+			_, _ = mp.br.Peek(len(fr.trailer))
+
+			proposedSize, ok := fr.BufferedSize()
+			if !ok {
+				proposedSize = mp.requestContentLength - mp.bytesRead - int64(len(mp.boundary)) - finalBoundaryDelimiterLen
+				if proposedSize < 0 {
+					debuglogger.Logf("calculated negative multipart file content-length: %d", proposedSize)
+					return nil, fmt.Errorf("calculated negative file content-length: %d", proposedSize)
+				}
 			}
 
 			return &MpParseResult{
@@ -379,4 +397,33 @@ func (r *finalFileReader) Read(p []byte) (int, error) {
 // Multipart boundary and delimiter bytes are never counted.
 func (r *finalFileReader) Length() int64 {
 	return r.bytesRead
+}
+
+// BufferedSize returns the size of the file if the boundary that ends it is in
+// the bytes this reader holds, or in the buffer of the reader it reads from. It
+// does not read more.
+func (r *finalFileReader) BufferedSize() (int64, bool) {
+	if r.done {
+		return r.bytesRead, true
+	}
+	if r.failed != nil {
+		return 0, false
+	}
+
+	held := r.buf
+	if n := r.r.Buffered(); n > 0 {
+		pending, _ := r.r.Peek(n)
+		if len(held) == 0 {
+			held = pending
+		} else {
+			// the boundary can start in r.buf and end in the bytes pending
+			held = slices.Concat(held, pending)
+		}
+	}
+
+	if idx := bytes.Index(held, r.trailer); idx >= 0 {
+		return r.bytesRead + int64(idx), true
+	}
+
+	return 0, false
 }
