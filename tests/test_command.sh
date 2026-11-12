@@ -373,11 +373,12 @@ source ./tests/setup_unit.sh
 }
 
 @test "Run parallel test, print log on failure" {
-  local fake_bin log_folder matching_logs
+  local fake_bin config_folder log_folder matching_logs
 
   fake_bin="$TEST_FILE_FOLDER/bin"
+  config_folder="$BATS_TEST_TMPDIR/config"
   log_folder="$TEST_FILE_FOLDER/run_parallel_logs"
-  mkdir -p "$fake_bin" "$log_folder"
+  mkdir -p "$fake_bin" "$config_folder" "$log_folder"
 
   cat > "$fake_bin/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -394,7 +395,7 @@ exit 1
 EOF
   chmod +x "$fake_bin/docker"
 
-  PATH="$fake_bin:$PATH" run ./tests/run_parallel.sh --log-folder "$log_folder" --max-parallel-jobs 1 --build-mode use-tag "fake-image" "failing-suite"
+  PATH="$fake_bin:$PATH" run ./tests/run_parallel.sh --config-folder "$config_folder" --log-folder "$log_folder" --max-parallel-jobs 1 --build-mode use-tag "fake-image" "failing-suite"
 
   assert_failure
   assert_output -p "finished with status '7'"
