@@ -159,11 +159,9 @@ func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 
 			proposedSize, ok := fr.BufferedSize()
 			if !ok {
-				proposedSize = mp.requestContentLength - mp.bytesRead - int64(len(mp.boundary)) - finalBoundaryDelimiterLen
-				if proposedSize < 0 {
-					debuglogger.Logf("calculated negative multipart file content-length: %d", proposedSize)
-					return nil, fmt.Errorf("calculated negative file content-length: %d", proposedSize)
-				}
+				// A form that ends with less than the closing boundary and its
+				// CRLF can leave less than nothing for a short file.
+				proposedSize = max(0, mp.requestContentLength-mp.bytesRead-int64(len(mp.boundary))-finalBoundaryDelimiterLen)
 			}
 
 			return &MpParseResult{

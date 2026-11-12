@@ -1942,6 +1942,139 @@ func PostObject_content_length_range_body_without_final_crlf(s *S3Conf) error {
 	})
 }
 
+// postObjectClosings are the ends of a body that S3 takes though they are not
+// the final boundary and its CRLF. missing is how many bytes of that boundary
+// and CRLF the end lacks: the request proposes that many bytes less than the
+// file has.
+var postObjectClosings = []struct {
+	name    string
+	missing int
+	closing func(boundary string) string
+}{
+	{"no closing dashes", 4, func(boundary string) string { return "\r\n--" + boundary }},
+	{"no final CRLF", 2, func(boundary string) string { return "\r\n--" + boundary + "--" }},
+}
+
+// putObjectBytes stores data at key, for a test that refuses an upload to it
+// and checks that the object is as it was.
+func putObjectBytes(s3client *s3.Client, bucket, key string, data []byte) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+
+	_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+		Body:   bytes.NewReader(data),
+	})
+
+	return err
+}
+
+// PostObject_short_closing_boundary_keeps_object posts a body that ends with
+// "--boundary" and no closing dashes, or with "--boundary--" and no CRLF, to a
+// key that holds an object. The length that the request proposes for the file
+// is less than the file has. The gateway cannot tell that from a form that ends
+// with the file when the end of the file is not in the bytes it has read: the
+// file is large, or the client sends the end of the form after a pause. A
+// backend that sends the length it is given would store the file cut short, or
+// an empty one for a length of 0. The request is refused, and the object stays
+// as it was.
+func PostObject_short_closing_boundary_keeps_object(s *S3Conf) error {
+	testName := "PostObject_short_closing_boundary_keeps_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key, original := "my-obj", []byte("the object that is kept")
+		if err := putObjectBytes(s3client, bucket, key, original); err != nil {
+			return err
+		}
+
+		for _, closing := range postObjectClosings {
+			for _, tt := range []struct {
+				name    string
+				size    int
+				inParts bool
+			}{
+				{"a large file", 16 << 10, false},
+				{"a file that the request proposes 0 bytes for, sent after a pause", closing.missing, true},
+				{"a file that the request proposes 1 byte for, sent after a pause", closing.missing + 1, true},
+			} {
+				name := tt.name + ", " + closing.name
+				cfg := PostRequestConfig{
+					bucket:      bucket,
+					key:         key,
+					s3Conf:      s,
+					fileContent: bytes.Repeat([]byte("a"), tt.size),
+				}
+				if tt.inParts {
+					// the gateway handles the request once it has read 8 KiB
+					cfg.extraFields = map[string]string{"x-ignore-padding": strings.Repeat("a", 9<<10)}
+				}
+				req, parts, err := newPostObjectRequestClosing(cfg, closing.closing)
+				if err != nil {
+					return fmt.Errorf("%s: %w", name, err)
+				}
+
+				var resp *http.Response
+				if tt.inParts {
+					resp, err = sendInParts(s, req, parts)
+				} else {
+					resp, err = s.httpClient.Do(req)
+				}
+				if err != nil {
+					return fmt.Errorf("%s: %w", name, err)
+				}
+				if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)); err != nil {
+					return fmt.Errorf("%s: %w", name, err)
+				}
+				if err := checkObjectData(s3client, bucket, key, "", original); err != nil {
+					return fmt.Errorf("%s: %w", name, err)
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
+// PostObject_small_file_with_short_closing_boundary posts a small file in a
+// body that ends with "--boundary" and no closing dashes, or with
+// "--boundary--" and no CRLF. The boundary that ends the file is in the bytes
+// the gateway reads first, so the length that it gives the backend is the file's
+// own size, and S3 stores the whole file.
+func PostObject_small_file_with_short_closing_boundary(s *S3Conf) error {
+	testName := "PostObject_small_file_with_short_closing_boundary"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, closing := range postObjectClosings {
+			for _, size := range []int{0, 1, closing.missing, closing.missing + 1} {
+				key := fmt.Sprintf("%s-%d", strings.ReplaceAll(closing.name, " ", "-"), size)
+				data := bytes.Repeat([]byte("a"), size)
+
+				req, _, err := newPostObjectRequestClosing(PostRequestConfig{
+					bucket:      bucket,
+					key:         key,
+					s3Conf:      s,
+					fileContent: data,
+				}, closing.closing)
+				if err != nil {
+					return fmt.Errorf("%s: %w", key, err)
+				}
+
+				resp, err := s.httpClient.Do(req)
+				if err != nil {
+					return fmt.Errorf("%s: %w", key, err)
+				}
+				if err := checkPostObjectSuccess(resp); err != nil {
+					return fmt.Errorf("%s: %w", key, err)
+				}
+				if err := checkObjectData(s3client, bucket, key, "", data); err != nil {
+					return fmt.Errorf("%s: %w", key, err)
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
 // PostObject_empty_file_with_field_after_file posts an empty file with a field
 // after it, as the submit button of a form is, to a key and to a key that ends
 // in a slash. The boundary that ends the file follows its headers, so the

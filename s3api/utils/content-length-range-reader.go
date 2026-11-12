@@ -31,6 +31,14 @@ import (
 // file is read. A file over the max is refused as soon as more than that is
 // read, without reading the rest of it, and one under the min when it ends.
 //
+// A backend is given ContentLength as the length of the file, which is only
+// what the request proposes. The file can be longer, as for a body that ends
+// with "--boundary" and no closing dashes. A backend that sends the length it
+// is given as a request has sent a complete one once it has read that many
+// bytes, and the upstream stores them. So the reader checks that the file ends
+// at that length before it gives the last bytes of it, and fails it if it does
+// not.
+//
 // Once the reader fails it fails every read the same way. A backend can wrap
 // the error it gets from a read, so Err has the one to report.
 type ContentLengthRangeReader struct {
@@ -87,12 +95,18 @@ func (r *ContentLengthRangeReader) Read(p []byte) (int, error) {
 		return 0, err
 	}
 
-	n, err := r.r.Read(p)
+	var n int
+	var err error
+	if r.eof.Load() {
+		// lookForEnd found the end of the file
+		err = io.EOF
+	} else {
+		n, err = r.r.Read(p)
+	}
 	read := r.read.Add(int64(n))
 
-	if read > r.max {
-		debuglogger.Logf("POST object file is over the allowed %d bytes", r.max)
-		return 0, r.fail(s3err.GetEntityTooLargeErr(r.refusedSize(), r.max))
+	if err := r.tooLong(read); err != nil {
+		return 0, r.fail(err)
 	}
 
 	switch {
@@ -104,9 +118,49 @@ func (r *ContentLengthRangeReader) Read(p []byte) (int, error) {
 		}
 	case err != nil:
 		r.fail(err)
+	case n > 0 && read == r.ContentLength():
+		// A backend can stop here, with a complete request sent. The bytes of
+		// this read are not given unless the file ends here.
+		if err := r.lookForEnd(); err != nil {
+			return 0, err
+		}
 	}
 
 	return n, err
+}
+
+// tooLong returns the error for a file of read bytes if it is too long: over
+// the max, or past the length given to the backend.
+func (r *ContentLengthRangeReader) tooLong(read int64) error {
+	switch {
+	case read > r.max:
+		debuglogger.Logf("POST object file is over the allowed %d bytes", r.max)
+		return s3err.GetEntityTooLargeErr(r.refusedSize(), r.max)
+	case read > r.ContentLength():
+		debuglogger.Logf("POST object file is over the %d bytes the request proposes", r.ContentLength())
+		return s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
+	}
+
+	return nil
+}
+
+// lookForEnd checks that the file ends at the length given to the backend, by
+// reading one byte past it. It fails the reader if the file goes on. That byte
+// is never given to the backend.
+func (r *ContentLengthRangeReader) lookForEnd() error {
+	var b [1]byte
+	n, err := io.ReadFull(r.r, b[:])
+	read := r.read.Add(int64(n))
+
+	switch {
+	case n > 0:
+		return r.fail(r.tooLong(read))
+	case errors.Is(err, io.EOF):
+		r.eof.Store(true)
+		return nil
+	default:
+		return r.fail(err)
+	}
 }
 
 // refusedSize is the size to report for a file over the max. The rest of the
@@ -131,8 +185,9 @@ func (r *ContentLengthRangeReader) fail(err error) error {
 }
 
 // Err returns the error the reader failed with: EntityTooLarge or
-// EntityTooSmall for a file out of its range, or the error of the reader of
-// the file. It is nil if the reader did not fail.
+// EntityTooSmall for a file out of its range, MalformedPOSTRequest for one
+// that goes on past the length given to the backend, or the error of the
+// reader of the file. It is nil if the reader did not fail.
 func (r *ContentLengthRangeReader) Err() error {
 	if err := r.err.Load(); err != nil {
 		return *err

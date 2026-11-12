@@ -295,6 +295,147 @@ func TestContentLengthRangeReaderFailsWithinContentLength(t *testing.T) {
 	})
 }
 
+// fileSources gives the same file to a reader in the ways a body can come.
+var fileSources = map[string]func(string) io.Reader{
+	"in one read":           func(s string) io.Reader { return strings.NewReader(s) },
+	"in small reads":        func(s string) io.Reader { return &chunkReader{data: s, n: 3} },
+	"a byte at a time":      func(s string) io.Reader { return &oneByteReader{data: []byte(s)} },
+	"the end with the data": func(s string) io.Reader { return &eofWithDataReader{data: []byte(s)} },
+}
+
+// A request can propose less than the file has: a body that ends with
+// "--boundary" and no closing "--" has a file four bytes over the proposal, and
+// one that ends with "--boundary--" and no CRLF two bytes over. A backend that
+// sends the length it is given as a request has sent a complete one once it has
+// read that many bytes, and the upstream stores them. So the reader looks for
+// more at that length, and fails before it gives the last bytes of it.
+func TestContentLengthRangeReaderFailsOnFileOverProposal(t *testing.T) {
+	t.Parallel()
+
+	malformed := s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
+
+	for _, tt := range []struct {
+		name           string
+		size, proposed int
+	}{
+		{"a file a byte over the proposal", 5, 4},
+		{"a file two bytes over the proposal", 5, 3},
+		{"a file four bytes over the proposal", 5, 1},
+		{"a file over the proposal by all of it", 5, 0},
+		{"a file of many reads, two bytes over", 9000, 8998},
+		{"a file of many reads, four bytes over", 9000, 8996},
+	} {
+		for source, newSource := range fileSources {
+			t.Run(tt.name+", "+source, func(t *testing.T) {
+				t.Parallel()
+
+				data := strings.Repeat("x", tt.size)
+
+				// a backend that stops at the length it is given
+				rdr := NewContentLengthRangeReader(newSource(data), 0, 1<<20, int64(tt.proposed))
+				n, err := io.CopyN(io.Discard, rdr, rdr.ContentLength())
+				if tt.proposed > 0 {
+					if !errors.Is(err, malformed) {
+						t.Fatalf("expected MalformedPOSTRequest at the length, got %v", err)
+					}
+					if n >= rdr.ContentLength() {
+						t.Fatalf("gave %d bytes, the whole length of %d", n, rdr.ContentLength())
+					}
+					if rdr.Err() != err {
+						t.Fatalf("expected Err to be the error of the read, got %v", rdr.Err())
+					}
+				}
+
+				// one that reads to the end of the file
+				rdr = NewContentLengthRangeReader(newSource(data), 0, 1<<20, int64(tt.proposed))
+				got, err := io.ReadAll(rdr)
+				if !errors.Is(err, malformed) {
+					t.Fatalf("expected MalformedPOSTRequest at the end, got %v", err)
+				}
+				if int64(len(got)) >= max(rdr.ContentLength(), 1) {
+					t.Fatalf("gave %d bytes, the whole length of %d", len(got), rdr.ContentLength())
+				}
+			})
+		}
+	}
+
+	// the file is over the max as well, which S3 reports
+	t.Run("a file over the max, with a proposal as long as the max", func(t *testing.T) {
+		t.Parallel()
+
+		rdr := NewContentLengthRangeReader(strings.NewReader("payload"), 0, 5, 5)
+		n, err := io.CopyN(io.Discard, rdr, rdr.ContentLength())
+
+		tooLarge := tooLargeErr(t, err)
+		if tooLarge.MaxSizeAllowed != 5 {
+			t.Fatalf("unexpected max: got %d want 5", tooLarge.MaxSizeAllowed)
+		}
+		if n >= rdr.ContentLength() {
+			t.Fatalf("gave %d bytes, the whole length of %d", n, rdr.ContentLength())
+		}
+	})
+
+	t.Run("the error of the read that looks for the end", func(t *testing.T) {
+		t.Parallel()
+
+		boom := errors.New("connection reset")
+		rdr := NewContentLengthRangeReader(&dataThenErrReader{data: "abc", err: boom}, 0, 10, 3)
+		n, err := io.CopyN(io.Discard, rdr, rdr.ContentLength())
+
+		if err != boom || rdr.Err() != boom {
+			t.Fatalf("expected the error as it is, got %v and %v", err, rdr.Err())
+		}
+		if n != 0 {
+			t.Fatalf("expected no bytes with the error, got %d", n)
+		}
+	})
+}
+
+// A file that ends at the length it is proposed has all of it given, and the
+// look for its end takes nothing from it.
+func TestContentLengthRangeReaderGivesFileThatEndsAtProposal(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name   string
+		data   string
+		lo, hi int64
+	}{
+		{"a file", "hello", 1, 100},
+		{"a file at the min", "hello", 5, 100},
+		{"a file at the max", "hello", 1, 5},
+		{"a file of many reads", strings.Repeat("x", 9000), 0, 1 << 20},
+		{"an empty file", "", 0, 100},
+	} {
+		for source, newSource := range fileSources {
+			t.Run(tt.name+", "+source, func(t *testing.T) {
+				t.Parallel()
+
+				size := int64(len(tt.data))
+
+				// a backend that stops at the length it is given
+				rdr := NewContentLengthRangeReader(newSource(tt.data), tt.lo, tt.hi, size)
+				if n, err := io.CopyN(io.Discard, rdr, rdr.ContentLength()); n != size || err != nil {
+					t.Fatalf("expected the file, got %d bytes and %v", n, err)
+				}
+				if _, err := rdr.Read(make([]byte, 8)); err != io.EOF {
+					t.Fatalf("expected the end after the file, got %v", err)
+				}
+				if rdr.Err() != nil || rdr.EndedBefore(size) {
+					t.Fatalf("expected a file that ended as proposed, got %v", rdr.Err())
+				}
+
+				// one that reads to the end of the file
+				rdr = NewContentLengthRangeReader(newSource(tt.data), tt.lo, tt.hi, size)
+				got, err := io.ReadAll(rdr)
+				if err != nil || string(got) != tt.data {
+					t.Fatalf("expected the file, got %d bytes and %v", len(got), err)
+				}
+			})
+		}
+	}
+}
+
 func TestContentLengthRangeReaderContentLength(t *testing.T) {
 	t.Parallel()
 
@@ -542,7 +683,7 @@ func TestContentLengthRangeReaderErr(t *testing.T) {
 		t.Parallel()
 
 		boom := errors.New("connection reset")
-		rdr := NewContentLengthRangeReader(&dataThenErrReader{data: "abc", err: boom}, 0, 10, 3)
+		rdr := NewContentLengthRangeReader(&dataThenErrReader{data: "abc", err: boom}, 0, 10, 10)
 		got, err := io.ReadAll(rdr)
 
 		if err != boom || string(got) != "abc" {

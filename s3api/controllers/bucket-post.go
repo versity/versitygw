@@ -350,26 +350,21 @@ func (c S3ApiController) POSTObject(ctx fiber.Ctx) (*Response, error) {
 	file := utils.NewContentLengthRangeReader(parsed.FileRdr, minSize, maxSize, parsed.ProposedSize)
 	contentLength := file.ContentLength()
 
-	// A file as long as a length under the min is under the min, and a
-	// backend must not store it before the reader refuses it. The S3 proxy
-	// sends the file with that length, and the upstream stores it when the
-	// body is complete. For a length of 0 it does not read the file at all.
-	// The reader reads the file here instead and fails at its end, or at the
-	// max. The file is not kept.
-	if contentLength < minSize {
-		_, err := io.Copy(io.Discard, file)
-		if err == nil {
-			// The request proposes less than the file has, as for a body
-			// without the final CRLF, and the file is in the range. It is
-			// read, so the backend cannot get it.
-			err = s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
+	// A backend that sends the length it is given as a request, as the S3
+	// proxy does, does not read the file for a length of 0: it sends an empty
+	// body, which the upstream stores. For a length under the min it sends a
+	// complete request with a file that is under the min, if the file ends there.
+	// So the file is read here, before the backend gets it, in both cases. The
+	// reader fails a file that is under the min, goes on past the length or is
+	// over the max. The file is not kept.
+	if contentLength == 0 || contentLength < minSize {
+		if _, err := io.Copy(io.Discard, file); err != nil {
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, err
 		}
-
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
 	}
 
 	res, err := c.be.PutObject(ctx.RequestCtx(), s3response.PutObjectInput{

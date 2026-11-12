@@ -398,6 +398,31 @@ func TestMultipartParserProposedSize(t *testing.T) {
 		})
 	}
 
+	// A form that ends with less than the closing boundary and its CRLF leaves
+	// less than nothing for a file that is short: the proposal is 0, and a
+	// file that is not empty is refused when it is read. The reads of the body
+	// end before the end of the file.
+	t.Run("a short file whose end has not been read, with a boundary and no closing dashes", func(t *testing.T) {
+		t.Parallel()
+
+		for _, content := range []string{"", "a", "abc"} {
+			body := formHead + content + "\r\n--abc"
+			src := &chunkedReader{data: []byte(body), steps: slices.Repeat([]int{1}, len(body))}
+			src.steps[0] = len(formHead)
+			mp, err := NewMultipartParser(src, "abc", int64(len(body)))
+			if err != nil {
+				t.Fatalf("new multipart parser: %v", err)
+			}
+			got, err := mp.Parse()
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if got.ProposedSize != 0 {
+				t.Fatalf("unexpected proposed size for a file of %d bytes: got %d want 0", len(content), got.ProposedSize)
+			}
+		}
+	})
+
 	// The reads of the body end before the end of the file.
 	t.Run("a small file whose end has not been read", func(t *testing.T) {
 		t.Parallel()

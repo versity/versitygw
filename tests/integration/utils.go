@@ -39,6 +39,7 @@ import (
 	"math/big"
 	"math/bits"
 	rnd "math/rand"
+	"mime"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -4772,6 +4773,65 @@ func newPostObjectRequest(input PostRequestConfig) (*http.Request, map[string]st
 	req.ContentLength = int64(len(body))
 
 	return req, fields, nil
+}
+
+// newPostObjectRequestClosing returns the request for input with a body that
+// ends with closing(boundary), in place of the final boundary and its CRLF. It
+// also returns the body in two parts, to send with a pause between them. The
+// first part ends as many bytes after the start of the content of the file as
+// the boundary has: that is as far as the gateway reads ahead of the file. For
+// a file that is not empty, the second part holds the end of the boundary.
+func newPostObjectRequestClosing(input PostRequestConfig, closing func(boundary string) string) (*http.Request, [2][]byte, error) {
+	var parts [2][]byte
+
+	req, _, err := newPostObjectRequest(input)
+	if err != nil {
+		return nil, parts, err
+	}
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, parts, err
+	}
+
+	_, params, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
+	if err != nil {
+		return nil, parts, err
+	}
+	boundary := params["boundary"]
+
+	body, ok := bytes.CutSuffix(body, []byte("\r\n--"+boundary+"--\r\n"))
+	if !ok {
+		return nil, parts, fmt.Errorf("the form does not end with its final boundary")
+	}
+	split := len(body) - len(input.fileContent) + len("\r\n--"+boundary)
+	body = append(body, closing(boundary)...)
+
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+
+	return req, [2][]byte{body[:split], body[split:]}, nil
+}
+
+// sendInParts sends req with its body in two writes and a pause between them,
+// as a client does that is slow to send the end of the form. The gateway reads
+// the first 8 KiB of a body before it handles the request, so the first part
+// must be longer than that for the gateway to handle the request before it has
+// the second.
+func sendInParts(s *S3Conf, req *http.Request, parts [2][]byte) (*http.Response, error) {
+	pr, pw := io.Pipe()
+	req.Body = pr
+
+	go func() {
+		_, err := pw.Write(parts[0])
+		if err == nil {
+			time.Sleep(time.Second)
+			_, err = pw.Write(parts[1])
+		}
+		pw.CloseWithError(err)
+	}()
+
+	return s.httpClient.Do(req)
 }
 
 func getEtagBytes(etag string) ([]byte, error) {

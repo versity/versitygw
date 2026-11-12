@@ -1382,6 +1382,85 @@ func TestS3ApiController_POSTObject_FileSize(t *testing.T) {
 			wantErr:      s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
 		},
 		{
+			// the request proposes less than the file has, as for a body that
+			// ends with "--boundary" and no closing "--". A backend that sends
+			// the length it is given has sent a complete request once it has
+			// read it, and the upstream stores the file cut short: the reader
+			// fails before it gives the last byte of the length.
+			name:         "file longer than the request proposes, with a backend that stops at the length",
+			fields:       fields(sizeRange(0, 100)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: 5,
+			put:          sendsLength,
+			wantLength:   5,
+			wantRes:      failed,
+			wantErr:      s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
+		},
+		{
+			name:         "file longer than the request proposes, with a backend that reads the file to its end",
+			fields:       fields(sizeRange(0, 100)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: 5,
+			put:          readsFile,
+			wantLength:   5,
+			wantRes:      failed,
+			wantErr:      s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
+		},
+		{
+			name:         "file longer than the request proposes, with the error wrapped by the backend",
+			fields:       fields(sizeRange(0, 100)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: 5,
+			put:          wrapsReadErr,
+			wantLength:   5,
+			wantRes:      failed,
+			wantErr:      s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
+		},
+		{
+			// the file is over the max as well, which S3 reports
+			name:         "file over the max, with a proposal as long as the max",
+			fields:       fields(sizeRange(0, 5)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: 5,
+			put:          sendsLength,
+			wantLength:   5,
+			wantRes:      failed,
+			wantErr:      s3err.GetEntityTooLargeErr(int64(len("payload")), 5),
+		},
+		{
+			// a backend does not read a file it is given a length of 0 for: the
+			// controller reads it, so that a file that is not empty never
+			// reaches the backend as an empty one
+			name:         "file with a proposal of 0, with a backend that does not read it",
+			fields:       fields(sizeRange(0, 100)...),
+			file:         newMockFileReader("payload"),
+			proposedSize: 0,
+			put:          sendsLength,
+			wantRes:      failed,
+			wantErr:      s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
+		},
+		{
+			name:         "file with a proposal of 0, with no size range",
+			fields:       fields(),
+			file:         newMockFileReader("payload"),
+			proposedSize: 0,
+			put:          sendsLength,
+			wantRes:      failed,
+			wantErr:      s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
+		},
+		{
+			// the file cannot be read to see that it is empty
+			name:   "empty file with a proposal of 0, cut short",
+			fields: fields(),
+			file: &mockMpFileReader{r: &dataThenErrForTest{
+				err: s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
+			}, size: -1},
+			proposedSize: 0,
+			put:          sendsLength,
+			wantRes:      failed,
+			wantErr:      s3err.GetAPIError(s3err.ErrMalformedPOSTRequest),
+		},
+		{
 			// the backend gets as many bytes as the file has, and would store
 			// them before the reader sees that the file ends under the min:
 			// it does not get the file
