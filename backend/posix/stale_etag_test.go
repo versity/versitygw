@@ -17,6 +17,7 @@ package posix
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -540,4 +541,126 @@ func TestDetectStaleEtagSidecar(t *testing.T) {
 		_, err = New(t.TempDir(), ms, PosixOpts{})
 		assert.NoError(t, err)
 	}
+}
+
+// failEtagStatMeta fails to store etag-stat while fail is set: the value
+// reserveEtagStat stores before an object is published when reserved is set,
+// and the one recordEtagStat stores after otherwise.
+type failEtagStatMeta struct {
+	meta.MetadataStorer
+	fail, reserved *atomic.Bool
+}
+
+func (m failEtagStatMeta) StoreAttribute(f *os.File, bucket, object, attribute string, value []byte) error {
+	if attribute == etagStatKey && m.fail.Load() &&
+		(string(value) == etagStatReserved) == m.reserved.Load() {
+		return errors.New("etag-stat store failed")
+	}
+	return m.MetadataStorer.StoreAttribute(f, bucket, object, attribute, value)
+}
+
+// TestDetectStaleEtagRecordFails checks that a write whose etag-stat can't be
+// stored fails, instead of reporting success for an object that is never
+// seen as stale. When the space for it can't be reserved, the write fails
+// before the object is replaced. When the record fails after, the object is
+// published by then.
+func TestDetectStaleEtagRecordFails(t *testing.T) {
+	ctx := context.Background()
+	bucket, key := "testbucket", "obj"
+	setup := func(t *testing.T, reserved bool) (*Posix, []s3response.PutObjectOutput) {
+		p := newStaleEtagPosix(t, true, true)
+		fail, res := &atomic.Bool{}, &atomic.Bool{}
+		res.Store(reserved)
+		p.meta = failEtagStatMeta{MetadataStorer: p.meta, fail: fail, reserved: res}
+		createTestBucket(t, p, bucket)
+		require.NoError(t, p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled))
+		var puts []s3response.PutObjectOutput
+		for _, body := range []string{"v1", "v2"} {
+			put, err := testPut(p, bucket, key, []byte(body), nil, nil)
+			require.NoError(t, err)
+			puts = append(puts, put)
+		}
+		fail.Store(true)
+		return p, puts
+	}
+	versions := func(t *testing.T, p *Posix) int {
+		out, err := p.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{Bucket: &bucket, Prefix: &key, MaxKeys: aws.Int32(1000)})
+		require.NoError(t, err)
+		return len(out.Versions)
+	}
+	exists := func(p *Posix, object string) bool {
+		_, err := p.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &bucket, Key: &object})
+		return err == nil
+	}
+	deleteLatest := func(p *Posix, puts []s3response.PutObjectOutput) error {
+		_, err := p.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket, Key: &key, VersionId: &puts[1].VersionID,
+		})
+		return err
+	}
+
+	t.Run("reserve fails", func(t *testing.T) {
+		t.Run("PutObject", func(t *testing.T) {
+			p, _ := setup(t, true)
+			_, err := testPut(p, bucket, "new", []byte("new"), nil, nil)
+			assert.ErrorContains(t, err, "etag-stat store failed")
+			assert.False(t, exists(p, "new"))
+		})
+		t.Run("archived version", func(t *testing.T) {
+			p, puts := setup(t, true)
+			_, err := testPut(p, bucket, key, []byte("v3"), nil, nil)
+			assert.ErrorContains(t, err, "etag-stat store failed")
+			// the object and its versions are left as they were
+			assert.Equal(t, puts[1].ETag, aws.ToString(headEtag(t, p, bucket, key).ETag))
+			assert.Equal(t, 2, versions(t, p))
+		})
+		t.Run("CompleteMultipartUpload", func(t *testing.T) {
+			p, _ := setup(t, true)
+			_, complete := testCompleteMultipart(t, p, bucket, "mp", []byte("multipart"), nil, nil)
+			_, err := complete()
+			assert.ErrorContains(t, err, "etag-stat store failed")
+			assert.False(t, exists(p, "mp"))
+		})
+		t.Run("restored version", func(t *testing.T) {
+			p, puts := setup(t, true)
+			assert.ErrorContains(t, deleteLatest(p, puts), "etag-stat store failed")
+			// the deleted version is already removed, so the restore
+			// is still completed: the older version is the object, and
+			// is listed once
+			assert.Equal(t, puts[0].ETag, aws.ToString(headEtag(t, p, bucket, key).ETag))
+			assert.Equal(t, 1, versions(t, p))
+		})
+	})
+
+	t.Run("record fails", func(t *testing.T) {
+		t.Run("PutObject", func(t *testing.T) {
+			p, _ := setup(t, false)
+			_, err := testPut(p, bucket, "new", []byte("new"), nil, nil)
+			assert.ErrorContains(t, err, "etag-stat store failed")
+			// published by then, with the reserved etag-stat
+			assert.False(t, isStaleEtag(aws.ToString(headEtag(t, p, bucket, "new").ETag)))
+		})
+		t.Run("archived version", func(t *testing.T) {
+			p, puts := setup(t, false)
+			_, err := testPut(p, bucket, key, []byte("v3"), nil, nil)
+			assert.ErrorContains(t, err, "etag-stat store failed")
+			assert.Equal(t, puts[1].ETag, aws.ToString(headEtag(t, p, bucket, key).ETag))
+			assert.Equal(t, 2, versions(t, p))
+		})
+		t.Run("CompleteMultipartUpload", func(t *testing.T) {
+			p, _ := setup(t, false)
+			_, complete := testCompleteMultipart(t, p, bucket, "mp", []byte("multipart"), nil, nil)
+			_, err := complete()
+			assert.ErrorContains(t, err, "etag-stat store failed")
+			assert.True(t, exists(p, "mp"))
+		})
+		t.Run("restored version", func(t *testing.T) {
+			p, puts := setup(t, false)
+			assert.ErrorContains(t, deleteLatest(p, puts), "etag-stat store failed")
+			// the restore is still completed: the older version is the
+			// object, and is listed once
+			assert.Equal(t, puts[0].ETag, aws.ToString(headEtag(t, p, bucket, key).ETag))
+			assert.Equal(t, 1, versions(t, p))
+		})
+	})
 }
