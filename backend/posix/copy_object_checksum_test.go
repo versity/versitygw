@@ -31,6 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -152,6 +153,122 @@ func TestCopyObjectSelfChecksumAlgorithm(t *testing.T) {
 	}
 }
 
+// changeUnderLockMeta runs change once, after the self copy deletes the
+// object metadata, which is its first step under the publish lock.
+type changeUnderLockMeta struct {
+	meta.MetadataStorer
+	change func()
+}
+
+func (m *changeUnderLockMeta) DeleteAttribute(bucket, object, attribute string) error {
+	err := m.MetadataStorer.DeleteAttribute(bucket, object, attribute)
+	if attribute == metadataHdr && m.change != nil {
+		m.change()
+		m.change = nil
+	}
+	return err
+}
+
+// TestCopyObjectSelfChecksumChangedUnderLock checks that a self copy with a
+// new checksum algorithm doesn't keep the checksum it computed before the
+// publish lock when the object is replaced or rewritten in place after it
+// was read, and stores and returns the checksum of the new data instead.
+func TestCopyObjectSelfChecksumChangedUnderLock(t *testing.T) {
+	changes := []struct {
+		name   string
+		change func(t *testing.T, path string, data []byte)
+	}{
+		{
+			// another file with the size and modification time read
+			name: "replaced",
+			change: func(t *testing.T, path string, data []byte) {
+				fi, err := os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				tmp := path + ".new"
+				if err := os.WriteFile(tmp, data, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chtimes(tmp, time.Now(), fi.ModTime()); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Rename(tmp, path); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "written in place",
+			change: func(t *testing.T, path string, data []byte) {
+				fi, err := os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, data, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chtimes(path, time.Now(), fi.ModTime().Add(time.Second)); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+
+	for mode, mkMeta := range metaModes(t) {
+		for _, c := range changes {
+			t.Run(mode+"/"+c.name, func(t *testing.T) {
+				oldData := make([]byte, 1<<20)
+				newData := make([]byte, len(oldData))
+				if _, err := rand.Read(oldData); err != nil {
+					t.Fatalf("random data: %v", err)
+				}
+				if _, err := rand.Read(newData); err != nil {
+					t.Fatalf("random data: %v", err)
+				}
+
+				ctx := context.Background()
+				p := newTestPosix(t, mkMeta)
+				p.copyObjectThreshold = 4 << 20
+				bucket, key := "bucket", "object"
+				createTestBucket(t, p, bucket)
+				putSelfCopySource(t, p, bucket, key, oldData)
+
+				path := p.ObjectPath(bucket, key)
+				p.meta = &changeUnderLockMeta{
+					MetadataStorer: p.meta,
+					change:         func() { c.change(t, path, newData) },
+				}
+
+				res, err := p.CopyObject(ctx, s3response.CopyObjectInput{
+					Bucket:              &bucket,
+					Key:                 &key,
+					CopySource:          aws.String(bucket + "/" + key),
+					ExpectedBucketOwner: aws.String(""),
+					MetadataDirective:   types.MetadataDirectiveReplace,
+					ChecksumAlgorithm:   types.ChecksumAlgorithmSha256,
+				})
+				if err != nil {
+					t.Fatalf("copy object: %v", err)
+				}
+
+				newSum := sha256.Sum256(newData)
+				want := base64.StdEncoding.EncodeToString(newSum[:])
+				if got := aws.ToString(res.CopyObjectResult.ChecksumSHA256); got != want {
+					t.Errorf("copy checksum = %q, want the new data's %q", got, want)
+				}
+				stored, err := p.retrieveChecksums(nil, bucket, key)
+				if err != nil {
+					t.Fatalf("retrieve checksums: %v", err)
+				}
+				if got := aws.ToString(stored.SHA256); got != want {
+					t.Errorf("stored checksum = %q, want the new data's %q", got, want)
+				}
+			})
+		}
+	}
+}
+
 func putSelfCopySource(t *testing.T, p *Posix, bucket, key string, body []byte) {
 	t.Helper()
 	if _, err := testPut(p, bucket, key, body, nil, nil); err != nil {
@@ -214,9 +331,9 @@ func TestSameObjectData(t *testing.T) {
 	if err := os.WriteFile(path, []byte("first"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, read, err := hashObjectPath(path, types.ChecksumAlgorithmCrc32)
+	read, err := os.Stat(path)
 	if err != nil {
-		t.Fatalf("hash object: %v", err)
+		t.Fatal(err)
 	}
 	same := func() bool {
 		fi, err := os.Stat(path)
@@ -260,9 +377,9 @@ func TestSameObjectData(t *testing.T) {
 	if err := os.Mkdir(objDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, read, err = hashObjectPath(objDir+"/", types.ChecksumAlgorithmCrc32)
+	read, err = os.Stat(objDir)
 	if err != nil {
-		t.Fatalf("hash directory object: %v", err)
+		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(objDir, "child"), nil, 0o644); err != nil {
 		t.Fatal(err)

@@ -7163,20 +7163,21 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	// write, so only unversioned buckets are rewritten in place.
 	versioned := p.versioningEnabled() && vStatus != ""
 	if selfCopy && !versioned {
-		// A checksum in a new algorithm is computed from the object
-		// before the publish lock is taken, as PutObject stages its data
-		// before it, so that reading the object doesn't hold up writes
-		// to other keys. It is used under the lock only if the object is
-		// still the file that was read.
+		// A checksum in a new algorithm is computed from the source
+		// file opened above before the publish lock is taken, as
+		// PutObject stages its data before it, so that reading the
+		// object doesn't hold up writes to other keys. It is used under
+		// the lock only if the object is still the file that was read.
 		var readSum string
 		var readInfo fs.FileInfo
 		if input.ChecksumAlgorithm != "" {
 			stored, err := p.retrieveChecksums(nil, dstBucket, dstObject)
 			if err != nil || stored.Algorithm != input.ChecksumAlgorithm {
-				readSum, readInfo, err = hashObjectPath(dstObjdPath, input.ChecksumAlgorithm)
+				readSum, err = hashObjectFile(f, fi, input.ChecksumAlgorithm)
 				if err != nil {
 					return s3response.CopyObjectOutput{}, err
 				}
+				readInfo = fi
 			}
 		}
 
@@ -8720,22 +8721,6 @@ func (p *Posix) retrieveChecksums(f *os.File, bucket, object string) (checksums 
 
 	err = json.Unmarshal(checksumsAtr, &checksums)
 	return checksums, err
-}
-
-// hashObjectPath returns the checksum in algorithm algo of the object file,
-// or directory, at path, and the file info of the file it read.
-func hashObjectPath(path string, algo types.ChecksumAlgorithm) (string, fs.FileInfo, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", nil, fmt.Errorf("open obj file: %w", err)
-	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return "", nil, fmt.Errorf("stat obj file: %w", err)
-	}
-	sum, err := hashObjectFile(f, fi, algo)
-	return sum, fi, err
 }
 
 // hashObjectFile returns the checksum in algorithm algo of the content of
