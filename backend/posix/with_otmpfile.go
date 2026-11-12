@@ -29,8 +29,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pkg/xattr"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/s3err"
 	"golang.org/x/sys/unix"
 )
@@ -86,6 +88,12 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 		return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 	}
 
+	// A bucket whose filesystem can't set xattrs on an O_TMPFILE goes
+	// straight to the named file, without opening an O_TMPFILE first.
+	if v, ok := p.otmpXattr.Load(bucket); ok && !v.(bool) {
+		return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
+	}
+
 	// O_TMPFILE allows for a file handle to an unnamed file in the filesystem.
 	// This can help reduce contention within the namespace (parent directories),
 	// etc. And will auto cleanup the inode on close if we never link this
@@ -117,6 +125,24 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 	// for O_TMPFILE, filename is /proc/self/fd/<fd> to be used
 	// later to link file into namespace
 	f := os.NewFile(uintptr(fd), filepath.Join(procfddir, strconv.Itoa(fd)))
+
+	// Some filesystems open an O_TMPFILE but can't set xattrs on it, which
+	// the object's metadata needs. Use a named temporary file there.
+	// The result is remembered per bucket, as buckets can be on different
+	// filesystems, so that the probe runs once.
+	if _, ok := p.meta.(meta.XattrMeta); ok {
+		if _, known := p.otmpXattr.Load(bucket); !known {
+			err := probeTmpFileXattr(f)
+			switch {
+			case err == nil:
+				p.otmpXattr.Store(bucket, true)
+			case tmpfileXattrUnsupported(err):
+				p.otmpXattr.Store(bucket, false)
+				f.Close()
+				return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
+			}
+		}
+	}
 
 	// The mode passed to open() is masked by the process umask. Set the
 	// configured mode explicitly so new objects get the same permissions
@@ -175,6 +201,26 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 	}
 
 	return tmp, nil
+}
+
+// probeTmpFileXattr sets and removes an attribute on the open O_TMPFILE, a
+// variable so that tests can make it fail
+var probeTmpFileXattr = origProbeTmpFileXattr
+
+func origProbeTmpFileXattr(f *os.File) error {
+	const name = "user.vgw.xattr-probe"
+	if err := xattr.FSet(f, name, []byte{}); err != nil {
+		return err
+	}
+	_ = xattr.FRemove(f, name)
+	return nil
+}
+
+// tmpfileXattrUnsupported reports whether err means that xattrs can't be set
+// on an O_TMPFILE, as opposed to a full, read-only or quota-limited filesystem.
+func tmpfileXattrUnsupported(err error) bool {
+	return errors.Is(err, syscall.ENODATA) || errors.Is(err, syscall.EOPNOTSUPP) ||
+		errors.Is(err, syscall.ENOSYS)
 }
 
 // openOTmpFile opens an O_TMPFILE in the directory path, relative to dirfd,

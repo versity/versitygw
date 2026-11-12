@@ -105,6 +105,10 @@ type Posix struct {
 	// fallocate; per path since buckets can be on different filesystems.
 	fallocUnsupported sync.Map
 
+	// otmpXattr holds, per bucket path, whether xattrs can be set on an
+	// O_TMPFILE there (false: use a named temp file).
+	otmpXattr sync.Map
+
 	// forceNoCopyFileRange is a flag to disable the use of io.Copy to
 	// reassemble multipart upload parts, which uses copy_file_range on
 	// linux. This is needed for cases where a filesystem that does not
