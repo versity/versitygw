@@ -24,6 +24,7 @@ import (
 	"hash"
 	"io"
 	"io/fs"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1794,12 +1795,20 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 
 	var etagfi fs.FileInfo
 	if recordStat {
-		etagfi = p.statForEtag(f)
+		etagfi, err = p.reserveEtagStat(f, versionPath, "")
+		if err != nil {
+			return versionPath, err
+		}
 	}
 	if err := f.link(); err != nil {
 		return versionPath, err
 	}
-	p.recordEtagStat(etagfi, versionPath, versionPath, "")
+	err = p.recordEtagStat(etagfi, versionPath, versionPath, "")
+	if err != nil {
+		// the object is not replaced, so it must not have a version yet
+		_ = os.Remove(versionPath)
+		return versionPath, err
+	}
 
 	return versionPath, nil
 }
@@ -3264,12 +3273,18 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", fmt.Errorf("set object multipart metadata: %w", err)
 	}
 
-	etagfi := p.statForEtag(f)
+	etagfi, err := p.reserveEtagStat(f, bucket, object)
+	if err != nil {
+		return res, "", err
+	}
 	err = f.link()
 	if err != nil {
 		return res, "", publishErr(objname, err)
 	}
-	p.recordEtagStat(etagfi, objname, bucket, object)
+	err = p.recordEtagStat(etagfi, objname, bucket, object)
+	if err != nil {
+		return res, "", err
+	}
 
 	// cleanup tmp dirs
 	_ = p.removeUpload(bucket, key, activeUploadName)
@@ -5358,12 +5373,18 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		versionID = ""
 	}
 
-	etagfi := p.statForEtag(f)
+	etagfi, err := p.reserveEtagStat(f, *po.Bucket, object)
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
+	}
 	err = f.link()
 	if err != nil {
 		return s3response.PutObjectOutput{}, publishErr(name, err)
 	}
-	p.recordEtagStat(etagfi, name, *po.Bucket, object)
+	err = p.recordEtagStat(etagfi, name, *po.Bucket, object)
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
+	}
 
 	// Set object tagging
 	if tags != nil {
@@ -5752,14 +5773,24 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				// the restored version keeps its last modified time
 				f.setModTime(srcObjVersion.ModTime())
 
-				etagfi := p.statForEtag(f)
-				if err := f.link(); err != nil {
-					return nil, fmt.Errorf("link tmp file: %w", err)
-				}
-
 				attrs, err := p.meta.ListAttributes(versionPath, srcVersionId)
 				if err != nil {
 					return nil, fmt.Errorf("list object attributes: %w", err)
+				}
+
+				// the restored version gets its own etag-stat, unless it
+				// was changed outside of the gateway and keeps the one
+				// recorded for it. The deleted version is removed by
+				// now, so the restore is completed even when etag-stat
+				// can't be stored, and that error is returned after.
+				recordStat := !versionStale && slices.Contains(attrs, etagStatKey)
+				var etagfi fs.FileInfo
+				var recordErr error
+				if recordStat {
+					etagfi, recordErr = p.reserveEtagStat(f, bucket, object)
+				}
+				if err := f.link(); err != nil {
+					return nil, fmt.Errorf("link tmp file: %w", err)
 				}
 
 				// the restored version has only its own attributes: the
@@ -5789,8 +5820,8 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					}
 				}
 
-				if !versionStale && slices.Contains(attrs, etagStatKey) {
-					p.recordEtagStat(etagfi, p.ObjectPath(bucket, object), bucket, object)
+				if recordStat && recordErr == nil {
+					recordErr = p.recordEtagStat(etagfi, p.ObjectPath(bucket, object), bucket, object)
 				}
 
 				err = os.Remove(filepath.Join(versionPath, srcVersionId))
@@ -5800,6 +5831,10 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 
 				_ = p.meta.DeleteAttributes(versionPath, srcVersionId)
 				p.removeParents(filepath.Join(p.versioningDir, bucket), filepath.Join(genObjVersionKey(object), *input.VersionId))
+
+				if recordErr != nil {
+					return nil, recordErr
+				}
 
 				return &s3.DeleteObjectOutput{
 					DeleteMarker: &isDelMarker,
@@ -8809,48 +8844,65 @@ func etagStat(size int64, mtime time.Time) string {
 	return fmt.Sprintf("%d:%d", size, mtime.UnixNano())
 }
 
-// statForEtag returns the file info of the temporary file f that is about to
-// be published, which recordEtagStat needs once it is published, when
-// detectStaleEtag is set, and nil otherwise.
-func (p *Posix) statForEtag(f *tmpfile) fs.FileInfo {
+// etagStatReserved is stored as the etag-stat of an object before it is
+// published, and replaced by the recorded one after. It is as long as the
+// longest recorded value, so that the space for the record is taken while a
+// failure can still fail the write before the object is replaced. It reads
+// as nothing recorded, so that the object is not seen as stale between its
+// publish and its record.
+var etagStatReserved = strings.Repeat("-", len(etagStat(math.MaxInt64, time.Unix(0, math.MinInt64))))
+
+// reserveEtagStat stores etagStatReserved as the etag-stat of the temporary
+// file f, published later as bucket/object, when detectStaleEtag is set. It
+// returns the file info of f, which recordEtagStat needs once f is
+// published, or nil when detectStaleEtag is not set.
+func (p *Posix) reserveEtagStat(f *tmpfile, bucket, object string) (fs.FileInfo, error) {
 	if !p.detectStaleEtag {
-		return nil
+		return nil, nil
 	}
 	fi, err := f.File().Stat()
 	if err != nil {
-		debuglogger.Logf("stat tmpfile for etag-stat: %v", err)
-		return nil
+		return nil, fmt.Errorf("stat tmpfile for etag-stat: %w", err)
 	}
-	return fi
+	err = p.meta.StoreAttribute(f.File(), bucket, object, etagStatKey, []byte(etagStatReserved))
+	if err != nil {
+		return nil, fmt.Errorf("reserve etag-stat: %w", err)
+	}
+	return fi, nil
 }
 
 // recordEtagStat records the size and modification time of the object just
-// published at path as its etagStatKey attribute, so that a change made to
-// the object outside of the gateway can be told apart. tmpfi is the file
-// info statForEtag returned for its temporary file, nil when
-// detectStaleEtag is not set. The values are taken from the published file
-// once it is closed and in place, so they are the ones the filesystem keeps,
-// at the resolution it has. When the file at path is no longer the one that
-// was published, because it was replaced meanwhile or copied from another
-// filesystem, nothing is recorded and the object is never seen as stale.
-func (p *Posix) recordEtagStat(tmpfi fs.FileInfo, path, bucket, object string) {
+// published at path as its etagStatKey attribute, in place of the value
+// reserveEtagStat stored, so that a change made to the object outside of the
+// gateway can be told apart. tmpfi is the file info reserveEtagStat returned
+// for its temporary file, nil when detectStaleEtag is not set. The values are
+// taken from the published file once it is closed and in place, so they are
+// the ones the filesystem keeps, at the resolution it has. When the file at
+// path is no longer the one that was published, because it was removed or
+// replaced meanwhile, or copied from another filesystem, nothing is
+// recorded: a write that replaced it records its own. Any other failure is
+// returned: the object is published by then, and keeps the reserved value.
+func (p *Posix) recordEtagStat(tmpfi fs.FileInfo, path, bucket, object string) error {
 	if tmpfi == nil {
-		return
+		return nil
 	}
 	f, fi, err := openRegular(path)
+	if IsEntryGone(err) || errors.Is(err, errNotRegular) {
+		return nil
+	}
 	if err != nil {
-		debuglogger.Logf("open %v for etag-stat: %v", path, err)
-		return
+		return fmt.Errorf("open %v for etag-stat: %w", path, err)
 	}
 	defer f.Close()
 	if !os.SameFile(tmpfi, fi) {
-		return
+		return nil
 	}
 	err = p.meta.StoreAttribute(f, bucket, object, etagStatKey,
 		[]byte(etagStat(fi.Size(), fi.ModTime())))
 	if err != nil {
-		debuglogger.Logf("store etag-stat of %v: %v", path, err)
+		return fmt.Errorf("store etag-stat of %v: %w", path, err)
 	}
+	return nil
 }
 
 // openForEtag opens the object at path so that its etag, and whether it is
@@ -8886,10 +8938,14 @@ func openRegular(path string) (*os.File, fs.FileInfo, error) {
 	}
 	if !fi.Mode().IsRegular() {
 		f.Close()
-		return nil, nil, fmt.Errorf("%v is not a regular file", path)
+		return nil, nil, fmt.Errorf("%v: %w", path, errNotRegular)
 	}
 	return f, fi, nil
 }
+
+// errNotRegular is the error of openRegular for a path that is not a regular
+// file.
+var errNotRegular = errors.New("not a regular file")
 
 // objectEtag returns the etag served for the object bucket/object, its stored
 // etag or defaultEtag when it has none. With detectStaleEtag, when f is the
@@ -8920,7 +8976,8 @@ func (p *Posix) etagStale(f *os.File, bucket, object string, fi fs.FileInfo) boo
 		return false
 	}
 	b, err := p.meta.RetrieveAttribute(f, bucket, object, etagStatKey)
-	return err == nil && string(b) != etagStat(fi.Size(), fi.ModTime())
+	return err == nil && string(b) != etagStatReserved &&
+		string(b) != etagStat(fi.Size(), fi.ModTime())
 }
 
 // staleEntry reports whether the listing entry bucket/object, a file at path
@@ -8942,7 +8999,7 @@ func (p *Posix) staleEntry(path, bucket, object string, fi fs.FileInfo) (string,
 		return "", fi, false
 	}
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagStatKey)
-	if err != nil {
+	if err != nil || string(b) == etagStatReserved {
 		// nothing recorded: never stale
 		return "", fi, false
 	}
