@@ -17,6 +17,7 @@ package posix
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -132,5 +133,101 @@ func TestFsyncFailureFailsThePut(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, bucket, "object")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("object was published after a failed fsync: %v", err)
+	}
+}
+
+// Removing the object and its empty parents after publication must not turn
+// a successful PUT into an error when the directory handles are flushed.
+func TestFsyncConcurrentDelete(t *testing.T) {
+	for _, noTmp := range []bool{false, true} {
+		t.Run(fmt.Sprintf("fallback=%v", noTmp), func(t *testing.T) {
+			root := t.TempDir()
+			p, err := New(root, meta.XattrMeta{}, PosixOpts{AbsolutePaths: true, ForceNoTmpFile: noTmp, Fsync: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			createTestBucket(t, p, "bucket")
+			orig := syncDir
+			t.Cleanup(func() { syncDir = orig })
+			calls := 0
+			syncDir = func(dir string, d *os.File) error {
+				calls++
+				if calls == 1 {
+					for _, path := range []string{filepath.Join(root, "bucket/a/b/object"), filepath.Join(root, "bucket/a/b"), filepath.Join(root, "bucket/a")} {
+						if err := os.Remove(path); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				return orig(dir, d)
+			}
+			if err := putTestObject(t, p, "bucket", "a/b/object", "hello"); err != nil {
+				t.Fatal(err)
+			}
+			if calls != 3 {
+				t.Fatalf("synced %d directories, want 3", calls)
+			}
+		})
+	}
+}
+
+func TestFsyncUnreadableAncestor(t *testing.T) {
+	for _, noTmp := range []bool{false, true} {
+		t.Run(fmt.Sprintf("fallback=%v", noTmp), func(t *testing.T) {
+			root := t.TempDir()
+			p, err := New(root, meta.XattrMeta{}, PosixOpts{AbsolutePaths: true, ForceNoTmpFile: noTmp, Fsync: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			createTestBucket(t, p, "bucket")
+			parent := filepath.Join(root, "bucket/a")
+			if err := os.MkdirAll(filepath.Join(parent, "b"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(parent, 0300); err != nil {
+				t.Fatal(err)
+			}
+			defer os.Chmod(parent, 0755)
+			if d, err := os.Open(parent); err == nil {
+				d.Close()
+				t.Skip("user can read directories without read permission")
+			} else if !errors.Is(err, os.ErrPermission) {
+				t.Fatal(err)
+			}
+			if err := putTestObject(t, p, "bucket", "a/b/object", "hello"); err == nil {
+				t.Fatal("PUT succeeded with unreadable ancestor")
+			}
+			if _, err := os.Stat(filepath.Join(parent, "b/object")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("object published: %v", err)
+			}
+		})
+	}
+}
+
+func TestFsyncNamespaceFailureClosesHandles(t *testing.T) {
+	bucket := t.TempDir()
+	dir := filepath.Join(bucket, "a", "b")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	tmp := &tmpfile{bucket: bucket, fsync: true}
+	dirs, err := tmp.openDirForSync(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dirs) == 0 {
+		t.Skip("directory fsync is disabled on this platform")
+	}
+	orig := syncDir
+	t.Cleanup(func() { syncDir = orig })
+	want := errors.New("directory sync failed")
+	syncDir = func(string, *os.File) error { return want }
+	if err := tmp.syncNamespace(dirs); !errors.Is(err, want) {
+		t.Fatalf("sync error = %v, want %v", err, want)
+	}
+	for _, d := range dirs {
+		if _, err := d.Stat(); !errors.Is(err, os.ErrClosed) {
+			t.Errorf("handle %q not closed: %v", d.Name(), err)
+		}
 	}
 }
