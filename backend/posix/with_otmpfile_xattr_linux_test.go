@@ -4,10 +4,13 @@
 package posix
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend/meta"
@@ -87,4 +90,45 @@ func TestOTmpFileXattrProbe(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestOTmpFileXattrProbeConcurrent checks that concurrent uploads to a bucket
+// whose O_TMPFILE can't hold xattrs all use a named temporary file, including
+// the ones that open their O_TMPFILE before another upload recorded the result.
+func TestOTmpFileXattrProbeConcurrent(t *testing.T) {
+	root := t.TempDir()
+	p, err := New(root, meta.XattrMeta{}, PosixOpts{AbsolutePaths: true})
+	if err != nil {
+		t.Fatalf("new posix: %v", err)
+	}
+	bucket := "bucket"
+	createTestBucket(t, p, bucket)
+	skipWithoutOTmpfile(t, filepath.Join(root, bucket))
+	tmpDir := filepath.Join(root, bucket, MetaTmpDir)
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { probeTmpFileXattr = origProbeTmpFileXattr })
+	probeTmpFileXattr = func(f *os.File) error {
+		time.Sleep(20 * time.Millisecond)
+		return syscall.EOPNOTSUPP
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			f, err := p.openObjectTmpFile(bucket, fmt.Sprintf("object%d", i), 5, auth.Account{}, false, odirectNotAllowed)
+			if err != nil {
+				t.Errorf("open tmp file %d: %v", i, err)
+				return
+			}
+			defer f.cleanup()
+			if filepath.Dir(f.File().Name()) != tmpDir {
+				t.Errorf("temp file %v is not a named file", f.File().Name())
+			}
+		}(i)
+	}
+	wg.Wait()
 }

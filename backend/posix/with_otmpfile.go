@@ -131,16 +131,22 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 	// The result is remembered per bucket, as buckets can be on different
 	// filesystems, so that the probe runs once.
 	if _, ok := p.meta.(meta.XattrMeta); ok {
-		if _, known := p.otmpXattr.Load(bucket); !known {
+		// Re-check after opening: a concurrent upload may have probed
+		// this bucket and found it unsupported since the check above.
+		v, known := p.otmpXattr.Load(bucket)
+		if !known {
 			err := probeTmpFileXattr(f)
 			switch {
 			case err == nil:
 				p.otmpXattr.Store(bucket, true)
 			case tmpfileXattrUnsupported(err):
 				p.otmpXattr.Store(bucket, false)
-				f.Close()
-				return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
+				known, v = true, false
 			}
+		}
+		if known && !v.(bool) {
+			f.Close()
+			return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 		}
 	}
 
