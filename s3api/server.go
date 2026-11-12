@@ -15,12 +15,14 @@
 package s3api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -30,6 +32,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/bwlimit"
 	"github.com/versity/versitygw/internal/httpctx"
 	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/metrics"
@@ -43,8 +46,9 @@ import (
 )
 
 const (
-	shutDownDuration     = time.Second * 10
-	requestHeaderMaxSize = 8 * 1024
+	shutDownDuration         = time.Second * 10
+	requestHeaderMaxSize     = 8 * 1024
+	bandwidthMetricsInterval = 10 * time.Second
 )
 
 type S3ApiServer struct {
@@ -57,6 +61,9 @@ type S3ApiServer struct {
 	health           string
 	maxConnections   int
 	maxRequests      int
+	ingressLimiter   *bwlimit.Limiter
+	egressLimiter    *bwlimit.Limiter
+	bandwidthErr     error
 	allowAnyRegion   bool
 	webuiMountPrefix string
 	webuiSrvCfg      *webui.ServerConfig
@@ -68,6 +75,23 @@ type S3ApiServer struct {
 	onListen         func()
 	onListenAddrs    func(addrs []net.Addr)
 	listener         atomic.Pointer[netutil.MultiListener]
+	listenHookOnce   sync.Once
+	runMu            sync.Mutex
+	run              *serverRun
+	served           bool
+	cancelFirstServe bool
+}
+
+type serverRun struct {
+	ready            chan struct{}
+	stopRequested    chan struct{}
+	listener         *netutil.MultiListener
+	conns            *bwlimit.ConnSet
+	reporterStop     chan struct{}
+	reporterDone     chan struct{}
+	reporterStopOnce sync.Once
+	shutdownOnce     sync.Once
+	shutdownErr      error
 }
 
 type routeMount struct {
@@ -108,6 +132,9 @@ func New(
 
 	for _, opt := range opts {
 		opt(server)
+	}
+	if server.bandwidthErr != nil {
+		return nil, server.bandwidthErr
 	}
 
 	if err := auth.ValidateListBucketsScope(iam, server.Router.listBucketsScope); err != nil {
@@ -397,6 +424,37 @@ func WithConcurrencyLimiter(maxConnections, maxRequests int) Option {
 	}
 }
 
+// WithBandwidthLimit caps the aggregate bytes per second the server reads
+// from (ingress) and writes to (egress) all client connections, measured on
+// the raw connection, including TLS records. Ingress shaping delays bytes
+// returned to the server; the OS receive buffer may temporarily accept more
+// bytes before TCP backpressure takes effect; OS send buffering can also
+// shift egress timing. Traffic over the limit is delayed, not rejected. A
+// zero rate leaves that direction unlimited. A zero burst selects a default
+// of 10ms of traffic, between 64KiB and 1MiB. Negative values and configured
+// bursts outside 32KiB to 2GiB-1 are rejected.
+// The limit is shared by all clients, including unauthenticated ones, so it
+// is a capacity cap, not a fairness or abuse control.
+func WithBandwidthLimit(ingressRate, ingressBurst, egressRate, egressBurst int64) Option {
+	return func(s *S3ApiServer) {
+		for _, cfg := range []struct {
+			direction string
+			rate      int64
+			burst     int64
+		}{
+			{"ingress", ingressRate, ingressBurst},
+			{"egress", egressRate, egressBurst},
+		} {
+			if err := bwlimit.ValidateConfig(cfg.direction, cfg.rate, cfg.burst); err != nil {
+				s.bandwidthErr = err
+				return
+			}
+		}
+		s.ingressLimiter = bwlimit.NewLimiter(ingressRate, ingressBurst)
+		s.egressLimiter = bwlimit.NewLimiter(egressRate, egressBurst)
+	}
+}
+
 // WithSocketPerm sets the file-mode permissions applied to file-backed UNIX
 // domain sockets after binding. It has no effect on TCP/IP or abstract
 // namespace sockets.
@@ -439,22 +497,73 @@ func WithOnListenAddrs(fn func(addrs []net.Addr)) Option {
 // ServeMultiPort creates listeners for multiple port specifications and serves
 // on all of them simultaneously. This supports listening on multiple ports and/or
 // addresses (e.g., [":7070", "localhost:8080", "0.0.0.0:9090"]).
-func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
+// Concurrent serves are rejected. After a run ends, callers must coordinate
+// a subsequent restart with ShutDown; a call that has not started yet is not
+// an active run.
+func (sa *S3ApiServer) ServeMultiPort(ports []string) (serveErr error) {
 	if len(ports) == 0 {
 		return fmt.Errorf("no ports specified")
 	}
 
-	// Multiple ports - create listeners for each
+	sa.runMu.Lock()
+	if sa.run != nil {
+		sa.runMu.Unlock()
+		return fmt.Errorf("s3 server is already serving")
+	}
+	if sa.cancelFirstServe {
+		sa.cancelFirstServe = false
+		sa.served = true
+		sa.runMu.Unlock()
+		return net.ErrClosed
+	}
+	sa.served = true
+	run := &serverRun{
+		ready:         make(chan struct{}),
+		stopRequested: make(chan struct{}),
+	}
+	if sa.ingressLimiter != nil || sa.egressLimiter != nil {
+		run.conns = bwlimit.NewConnSet()
+	}
+	sa.run = run
+	sa.runMu.Unlock()
+
 	var listeners []net.Listener
+	ready := false
+	defer func() {
+		if !ready {
+			for _, ln := range listeners {
+				if err := ln.Close(); err != nil {
+					serveErr = errors.Join(serveErr, err)
+				}
+			}
+			close(run.ready)
+			serveErr = errors.Join(serveErr, sa.shutdownRun(run))
+		}
+		if run.listener != nil {
+			sa.listener.CompareAndSwap(run.listener, nil)
+		}
+		sa.runMu.Lock()
+		if sa.run == run {
+			sa.run = nil
+		}
+		sa.runMu.Unlock()
+	}()
+
+	lnOpts := netutil.ListenerOptions{SocketPerm: sa.socketPerm}
+	if run.conns != nil {
+		lnOpts.WrapListener = func(ln net.Listener) net.Listener {
+			return bwlimit.NewListenerWithConnSet(ln, sa.ingressLimiter, sa.egressLimiter, run.conns)
+		}
+	}
 
 	for _, portSpec := range ports {
 		var ln net.Listener
 		var err error
 
 		if sa.CertStorage != nil {
-			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, sa.CertStorage.GetCertificate, netutil.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, sa.CertStorage.GetCertificate, lnOpts)
 		} else {
-			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, portSpec, netutil.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, portSpec, lnOpts)
 		}
 		if err != nil {
 			return fmt.Errorf("failed to bind s3 listener %s: %w", portSpec, err)
@@ -467,38 +576,144 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 		return fmt.Errorf("failed to create any s3 listeners")
 	}
 
-	// Combine all listeners
 	finalListener := netutil.NewMultiListener(listeners...)
+	run.listener = finalListener
 	sa.listener.Store(finalListener)
 
-	if sa.onListen != nil || sa.onListenAddrs != nil {
-		fn, fnAddrs := sa.onListen, sa.onListenAddrs
+	if reporter, ok := sa.Router.mm.(metrics.BandwidthWaitReporter); ok &&
+		(sa.ingressLimiter != nil || sa.egressLimiter != nil) {
+		run.reporterStop = make(chan struct{})
+		run.reporterDone = make(chan struct{})
+		go func() {
+			defer close(run.reporterDone)
+			reportBandwidthWait(reporter, sa.ingressLimiter, sa.egressLimiter, run.reporterStop)
+		}()
+	}
+	close(run.ready)
+	ready = true
+
+	select {
+	case <-run.stopRequested:
+		err := sa.shutdownRun(run)
+		closeErr := finalListener.Close()
+		run.stopReporter()
+		return errors.Join(net.ErrClosed, err, closeErr)
+	default:
+	}
+
+	sa.listenHookOnce.Do(func() {
 		sa.app.Hooks().OnListen(func(fiber.ListenData) error {
-			if fn != nil {
-				fn()
+			if sa.onListen != nil {
+				sa.onListen()
 			}
-			if fnAddrs != nil {
-				fnAddrs(finalListener.Addrs())
+			if sa.onListenAddrs != nil {
+				if ln := sa.listener.Load(); ln != nil {
+					sa.onListenAddrs(ln.Addrs())
+				}
 			}
 			return nil
 		})
-	}
+	})
 
-	return sa.app.Listener(finalListener, fiber.ListenConfig{
+	err := sa.app.Listener(finalListener, fiber.ListenConfig{
 		DisableStartupMessage: true,
 	})
+	return errors.Join(err, sa.shutdownRun(run))
 }
 
-// ShutDown gracefully shuts down the server with a context timeout
-func (sa *S3ApiServer) ShutDown() error {
-	// fasthttp's Shutdown closes only the listeners its Serve has already
-	// registered, and the listen hooks fire before fiber calls Serve. Closing
-	// the listener here makes a ShutDown in that window stop the server too:
-	// Serve's first Accept fails and it returns.
-	if ln := sa.listener.Load(); ln != nil {
-		ln.Close()
+func (run *serverRun) stopReporter() {
+	if run.reporterStop == nil {
+		return
 	}
-	return sa.app.ShutdownWithTimeout(shutDownDuration)
+	run.reporterStopOnce.Do(func() { close(run.reporterStop) })
+	<-run.reporterDone
+}
+
+// reportBandwidthWait publishes how long connections were delayed by the
+// bandwidth limiters each interval, and once more when stop is closed.
+func reportBandwidthWait(mm metrics.BandwidthWaitReporter, ingress, egress *bwlimit.Limiter, stop <-chan struct{}) {
+	flush := func() {
+		if in := ingress.DrainWaitTime(); in > 0 {
+			mm.SendBandwidthWait("ingress", in)
+		}
+		if out := egress.DrainWaitTime(); out > 0 {
+			mm.SendBandwidthWait("egress", out)
+		}
+	}
+
+	t := time.NewTicker(bandwidthMetricsInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			flush()
+		case <-stop:
+			flush()
+			return
+		}
+	}
+}
+
+// ShutDown gracefully shuts down the server with a context timeout. If called
+// before the first ServeMultiPort starts, it cancels that first serve.
+func (sa *S3ApiServer) ShutDown() error {
+	sa.runMu.Lock()
+	run := sa.run
+	if run == nil && !sa.served {
+		sa.cancelFirstServe = true
+	}
+	sa.runMu.Unlock()
+	if run == nil {
+		return nil
+	}
+	return sa.shutdownRun(run)
+}
+
+func (sa *S3ApiServer) shutdownRun(run *serverRun) error {
+	run.shutdownOnce.Do(func() {
+		close(run.stopRequested)
+		ctx, cancel := context.WithTimeout(context.Background(), shutDownDuration)
+		defer cancel()
+
+		var stopForce func() bool
+		var forceDone chan error
+		if run.conns != nil {
+			forceDone = make(chan error, 1)
+			stopForce = context.AfterFunc(ctx, func() {
+				forceDone <- run.conns.CloseAll()
+			})
+		}
+		finishForce := func() error {
+			if stopForce == nil {
+				return nil
+			}
+			if stopForce() {
+				if ctx.Err() != nil {
+					return run.conns.CloseAll()
+				}
+				return nil
+			}
+			return <-forceDone
+		}
+
+		select {
+		case <-run.ready:
+			var listenerErr, appErr, waitErr error
+			if run.listener != nil {
+				listenerErr = run.listener.Close()
+				appErr = sa.app.ShutdownWithContext(ctx)
+				if run.conns != nil {
+					waitErr = run.conns.Wait(ctx)
+				}
+			}
+			forceErr := finishForce()
+			run.stopReporter()
+			run.shutdownErr = errors.Join(listenerErr, appErr, waitErr, forceErr, ctx.Err())
+		case <-ctx.Done():
+			run.shutdownErr = errors.Join(ctx.Err(), finishForce())
+		}
+	})
+	return run.shutdownErr
 }
 
 // stackTraceHandler stores the system panics

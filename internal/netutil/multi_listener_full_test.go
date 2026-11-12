@@ -16,6 +16,7 @@ package netutil
 
 import (
 	"crypto/tls"
+	"errors"
 	"io"
 	"net"
 	"testing"
@@ -135,6 +136,93 @@ func TestMultiListenerClose(t *testing.T) {
 	_, err = ml.Accept()
 	if err == nil {
 		t.Error("Accept() should fail after Close() on subsequent calls")
+	}
+}
+
+type observedAcceptListener struct {
+	net.Listener
+	accepted int
+	queued   chan struct{}
+}
+
+func (l *observedAcceptListener) Accept() (net.Conn, error) {
+	if l.accepted == 1 {
+		close(l.queued)
+	}
+	c, err := l.Listener.Accept()
+	if err == nil {
+		l.accepted++
+	}
+	return c, err
+}
+
+type closeErrorListener struct {
+	net.Listener
+	err error
+}
+
+func (l *closeErrorListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &closeErrorConn{Conn: c, err: l.err}, nil
+}
+
+type closeErrorConn struct {
+	net.Conn
+	err error
+}
+
+func (c *closeErrorConn) Close() error {
+	return errors.Join(c.Conn.Close(), c.err)
+}
+
+func TestMultiListenerCloseClosesQueuedConnections(t *testing.T) {
+	closeErr := errors.New("connection close failed")
+	for _, tt := range []struct {
+		name string
+		err  error
+	}{
+		{"closed", nil},
+		{"close error", closeErr},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			observed := &observedAcceptListener{
+				Listener: &closeErrorListener{Listener: raw, err: tt.err},
+				queued:   make(chan struct{}),
+			}
+			ml := NewMultiListener(observed)
+			client, err := net.Dial("tcp", raw.Addr().String())
+			if err != nil {
+				ml.Close()
+				t.Fatal(err)
+			}
+			defer client.Close()
+
+			select {
+			case <-observed.queued:
+			case <-time.After(2 * time.Second):
+				ml.Close()
+				t.Fatal("connection was not queued")
+			}
+			if err := ml.Close(); !errors.Is(err, tt.err) {
+				t.Fatalf("Close() error = %v, want %v", err, tt.err)
+			}
+			if err := ml.Close(); !errors.Is(err, tt.err) {
+				t.Fatalf("repeated Close() error = %v, want %v", err, tt.err)
+			}
+			if err := client.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := client.Read(make([]byte, 1)); err != io.EOF {
+				t.Fatalf("queued connection read error = %v, want EOF", err)
+			}
+		})
 	}
 }
 

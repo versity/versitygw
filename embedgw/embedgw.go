@@ -36,6 +36,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/bwlimit"
 	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api"
@@ -97,6 +98,24 @@ type Config struct {
 	// MaxRequests is the maximum number of concurrent in-flight S3 requests.
 	// Should not exceed MaxConnections; if it does, a warning is logged.
 	MaxRequests int
+
+	// IngressBandwidthLimit caps the aggregate bytes per second the S3 API
+	// server reads from all client connections. Excess traffic is delayed,
+	// not rejected; OS receive buffers may accept bytes before backpressure.
+	// 0 means unlimited.
+	IngressBandwidthLimit int64
+	// IngressBandwidthBurst is the number of bytes that may be read in a
+	// burst above IngressBandwidthLimit. 0 selects a default of 10ms of
+	// traffic, between 64KiB and 1MiB. If set, it must be 32KiB to 2GiB-1.
+	IngressBandwidthBurst int64
+	// EgressBandwidthLimit caps the aggregate bytes per second the S3 API
+	// server writes to all client connections. Excess traffic is delayed,
+	// not rejected. 0 means unlimited.
+	EgressBandwidthLimit int64
+	// EgressBandwidthBurst is the number of bytes that may be written in a
+	// burst above EgressBandwidthLimit. 0 selects a default of 10ms of
+	// traffic, between 64KiB and 1MiB. If set, it must be 32KiB to 2GiB-1.
+	EgressBandwidthBurst int64
 
 	// AdminMaxConnections is the maximum concurrent TCP connections for the
 	// separate admin server. Only used when AdminPorts is non-empty.
@@ -730,6 +749,12 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		log.Printf("WARNING: max-requests (%d) exceeds max-connections (%d) which could allow for gateway to panic before throttling requests",
 			cfg.MaxRequests, cfg.MaxConnections)
 	}
+	if err := bwlimit.ValidateConfig("ingress", cfg.IngressBandwidthLimit, cfg.IngressBandwidthBurst); err != nil {
+		return err
+	}
+	if err := bwlimit.ValidateConfig("egress", cfg.EgressBandwidthLimit, cfg.EgressBandwidthBurst); err != nil {
+		return err
+	}
 	if cfg.MultipartMaxParts < 1 {
 		return fmt.Errorf("mp-max-parts must be positive")
 	}
@@ -840,6 +865,11 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	opts := []s3api.Option{
 		s3api.WithConcurrencyLimiter(cfg.MaxConnections, cfg.MaxRequests),
 		s3api.WithMpMaxParts(cfg.MultipartMaxParts),
+	}
+	if cfg.IngressBandwidthLimit > 0 || cfg.EgressBandwidthLimit > 0 {
+		opts = append(opts, s3api.WithBandwidthLimit(
+			cfg.IngressBandwidthLimit, cfg.IngressBandwidthBurst,
+			cfg.EgressBandwidthLimit, cfg.EgressBandwidthBurst))
 	}
 	if cfg.SocketPerm != "" {
 		opts = append(opts, s3api.WithSocketPerm(parsedSocketPerm))

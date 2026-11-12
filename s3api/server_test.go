@@ -28,10 +28,15 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/internal/netutil"
+	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/middlewares"
 )
 
 func newTestS3ApiServer(opts ...Option) (*S3ApiServer, error) {
+	return newTestS3ApiServerWithMetrics(nil, opts...)
+}
+
+func newTestS3ApiServerWithMetrics(mm metrics.Manager, opts ...Option) (*S3ApiServer, error) {
 	allOpts := append([]Option{WithConcurrencyLimiter(10, 10)}, opts...)
 
 	return New(
@@ -42,7 +47,7 @@ func newTestS3ApiServer(opts ...Option) (*S3ApiServer, error) {
 		nil,
 		nil,
 		nil,
-		nil,
+		mm,
 		allOpts...,
 	)
 }
@@ -82,6 +87,13 @@ func TestS3ApiServer_Serve(t *testing.T) {
 				t.Errorf("S3ApiServer.Serve() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestWithBandwidthLimitRejectsOversizedBurst(t *testing.T) {
+	_, err := newTestS3ApiServer(WithBandwidthLimit(0, 0, 1<<30, 1<<31))
+	if err == nil || !strings.Contains(err.Error(), "egress-bandwidth-burst must not exceed") {
+		t.Fatalf("New() error = %v, want oversized egress burst error", err)
 	}
 }
 
