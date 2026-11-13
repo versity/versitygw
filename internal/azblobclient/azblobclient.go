@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/versity/versitygw/internal/novaluesclient"
 )
 
 // stripQueryFromURLErrors removes the query, which can hold a SAS token,
@@ -43,6 +44,25 @@ func (stripQueryFromURLErrors) Do(req *policy.Request) (*http.Response, error) {
 		}
 	}
 	return resp, err
+}
+
+// withoutContextValues sends the rest of the pipeline under a context with
+// no values, so net/http does not read the gateway's *fasthttp.RequestCtx
+// after the call returns (#2641, see novaluesclient).
+//
+// It is a policy rather than novaluesclient.Wrap as ClientOptions.Transport
+// because azcore's default transport, used when Transport is nil, lives in
+// an internal package: wrapping a client of our own would mean copying its
+// HTTP/2 health check pings, TLS and timeout settings and keeping them in
+// sync. As a per-call policy it also covers the retry policy and the token
+// requests of the bearer-token policy, which use the request's context. The
+// policies after it no longer see per-call overrides set as context values,
+// such as policy.WithRetryOptions or runtime.WithHTTPHeader; the gateway
+// sets none.
+type withoutContextValues struct{}
+
+func (withoutContextValues) Do(req *policy.Request) (*http.Response, error) {
+	return req.WithContext(novaluesclient.WithoutValues(req.Raw().Context())).Next()
 }
 
 // Credentials describes how a client returned by New authenticates.
@@ -69,7 +89,7 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 	}
 
 	opts := &azblob.ClientOptions{ClientOptions: policy.ClientOptions{
-		PerCallPolicies: []policy.Policy{stripQueryFromURLErrors{}},
+		PerCallPolicies: []policy.Policy{stripQueryFromURLErrors{}, withoutContextValues{}},
 	}}
 
 	// A token copied with its leading "?" would otherwise be sent twice.
