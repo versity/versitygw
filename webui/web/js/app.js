@@ -143,6 +143,16 @@ function requireS3() {
 }
 
 /**
+ * Sign out: clear the session, and for single sign-on also end the session
+ * at the identity provider when it advertises an end-session endpoint.
+ */
+function signOut() {
+  const endSessionURL = sso.endSessionURL();
+  api.logout();
+  window.location.href = endSessionURL || 'index.html';
+}
+
+/**
  * Redirect to appropriate page if already authenticated
  */
 function redirectIfAuthenticated() {
@@ -411,13 +421,30 @@ function updateUserInfo() {
   const info = api.getCredentialsInfo();
   if (!info) return;
 
+  const userInfoEl = document.getElementById('user-info');
+  const ssoUser = sso.userInfo();
+  if (ssoUser) {
+    if (userInfoEl) {
+      const endsAt = ssoUser.expiration
+        ? new Date(ssoUser.expiration).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '';
+      userInfoEl.innerHTML = `
+        <div class="flex-1 min-w-0">
+          <p class="text-white text-sm font-medium truncate" title="${escapeHtml(ssoUser.name)}">${escapeHtml(ssoUser.name)}</p>
+          <p class="text-white/50 text-xs truncate">SSO · ${escapeHtml(ssoUser.roleName)}</p>
+          ${endsAt ? `<p class="text-white/50 text-xs">Session ends ${escapeHtml(endsAt)}</p>` : ''}
+        </div>
+      `;
+    }
+    return;
+  }
+
   const accessKeyShort = info.accessKey.length > 12
     ? info.accessKey.substring(0, 12) + '...'
     : info.accessKey;
 
   const roleLabel = sessionRoleLabel();
 
-  const userInfoEl = document.getElementById('user-info');
   if (userInfoEl) {
     userInfoEl.innerHTML = `
       <div class="flex-1 min-w-0">
@@ -455,6 +482,7 @@ function initSidebarWithRole() {
   if (api.hasIAM() || !api.canManageGatewayUsers()) hide('[data-admin-users-only]');
 
   reportIAMProbeFailure();
+  sso.watch();
 }
 
 /**

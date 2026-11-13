@@ -30,6 +30,7 @@ under the License.
 <body class="min-h-screen bg-gradient-to-br from-surface to-white flex items-center justify-center p-4">
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/sso.js"></script>
 
   <div class="w-full max-w-md">
     <!-- Login Card -->
@@ -48,6 +49,41 @@ under the License.
           </svg>
           <p id="error-message" class="text-sm text-red-700">Invalid credentials.</p>
         </div>
+      </div>
+
+      <!-- Single sign-on, shown when the server configured a provider -->
+      <div id="sso-section" class="hidden mb-6">
+        <button
+          type="button"
+          id="sso-btn"
+          onclick="startSSO()"
+          class="w-full bg-primary hover:bg-primary-600 active:bg-primary-700 text-white font-medium py-3 px-4 rounded-lg transition-all duration-150 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2"
+        >
+          Sign in with SSO
+        </button>
+        <div class="flex items-center gap-3 mt-6 text-xs text-charcoal-300">
+          <span class="flex-1 h-px bg-gray-200"></span>
+          <span>or use access keys</span>
+          <span class="flex-1 h-px bg-gray-200"></span>
+        </div>
+      </div>
+
+      <!-- Single sign-on in progress -->
+      <div id="sso-status" class="hidden flex flex-col items-center gap-3 py-6 text-charcoal">
+        <svg class="animate-spin h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <p id="sso-status-text" class="text-sm">Signing you in…</p>
+      </div>
+
+      <!-- Single sign-on role choice, when the token offers several roles -->
+      <div id="sso-role-picker" class="hidden space-y-4">
+        <h2 class="text-charcoal font-semibold">Choose a role for this session</h2>
+        <div id="sso-role-list" class="space-y-2"></div>
+        <button type="button" id="sso-role-cancel" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+          Cancel
+        </button>
       </div>
 
       <form id="login-form" action="#" method="post" class="space-y-5">
@@ -231,8 +267,11 @@ under the License.
   </div>
 
   <script>
-    // Redirect if already authenticated
-    redirectIfAuthenticated();
+    // Redirect if already authenticated. A single sign-on callback is handled
+    // further down instead: it may be renewing a session that still exists.
+    if (!sso.isCallback()) {
+      redirectIfAuthenticated();
+    }
 
     // ============================================
     // Advanced Options Toggle
@@ -708,22 +747,10 @@ under the License.
         return;
       }
 
-      // Validate that virtual host style is not used with IP addresses
-      if (s3Endpoint && addressingStyle === 'virtual-host') {
-        try {
-          const url = new URL(s3Endpoint);
-          const hostname = url.hostname;
-          // Check for IPv4 (e.g., 192.168.1.1) or IPv6 (e.g., [::1] or 2001:db8::1)
-          const isIPv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
-          const isIPv6 = hostname.includes(':') || hostname.startsWith('[');
-          
-          if (isIPv4 || isIPv6) {
-            showError('Virtual Host addressing style cannot be used with IP addresses. Please use a domain name or switch to Path Style.');
-            return;
-          }
-        } catch (err) {
-          // If URL parsing fails, let it continue and fail later with a more specific error
-        }
+      const addressingError = addressingStyleError(s3Endpoint, addressingStyle);
+      if (addressingError) {
+        showError(addressingError);
+        return;
       }
 
       const submitBtn = document.getElementById('submit-btn');
@@ -784,6 +811,133 @@ under the License.
         setLoading(submitBtn, false);
       }
     });
+
+    // Virtual host addressing cannot work with an IP address endpoint.
+    function addressingStyleError(s3Endpoint, addressingStyle) {
+      if (!s3Endpoint || addressingStyle !== 'virtual-host') return null;
+      try {
+        const hostname = new URL(s3Endpoint).hostname;
+        // Check for IPv4 (e.g., 192.168.1.1) or IPv6 (e.g., [::1] or 2001:db8::1)
+        const isIPv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+        const isIPv6 = hostname.includes(':') || hostname.startsWith('[');
+        if (isIPv4 || isIPv6) {
+          return 'Virtual Host addressing style cannot be used with IP addresses. Please use a domain name or switch to Path Style.';
+        }
+      } catch (err) {
+        // If URL parsing fails, let it continue and fail later with a more specific error
+      }
+      return null;
+    }
+
+    // ============================================
+    // Single Sign-On
+    // ============================================
+
+    const ssoConfig = sso.pageConfig();
+    if (ssoConfig) {
+      document.getElementById('sso-btn').textContent = ssoConfig.label || 'Sign in with SSO';
+      document.getElementById('sso-section').classList.remove('hidden');
+    }
+
+    if (sso.isCallback()) {
+      handleSSOCallback();
+    }
+
+    // Leave for the identity provider. The endpoints come from the same
+    // fields the key form uses; the IAM endpoint is required, since that is
+    // where the provider's token is exchanged.
+    async function startSSO() {
+      hideError();
+
+      const s3Endpoint = document.getElementById('endpoint-select').value.trim();
+      const iamEndpoint = document.getElementById('iam-endpoint-select').value.trim();
+      const addressingStyle = document.getElementById('addressing-style').value;
+
+      const addressingError = addressingStyleError(s3Endpoint, addressingStyle);
+      if (addressingError) {
+        showError(addressingError);
+        return;
+      }
+
+      const button = document.getElementById('sso-btn');
+      setLoading(button, true);
+      try {
+        await sso.begin({
+          config: ssoConfig,
+          iamEndpoint,
+          s3Endpoint,
+          region: getSelectedRegion(),
+          addressingStyle,
+        });
+      } catch (error) {
+        showError(error.message);
+        setLoading(button, false);
+      }
+    }
+
+    // The provider sent the user back here: finish signing in, then continue
+    // exactly like the key form does.
+    async function handleSSOCallback() {
+      showSSOPanel('sso-status');
+      try {
+        const signIn = await sso.handleCallback();
+        const roleArn = signIn.roles.length === 1
+          ? signIn.roles[0]
+          : await chooseSSORole(signIn.roles);
+
+        showSSOPanel('sso-status');
+        const returnTo = await sso.complete(signIn, roleArn);
+
+        const role = await api.detectRole();
+        if (role === 'none') {
+          throw new Error('The gateway did not accept the single sign-on credentials.');
+        }
+        api.setUserContext(role === 'admin' ? 'admin' : 'user', []);
+
+        window.location.href = returnTo || defaultLandingPage();
+      } catch (error) {
+        if (error.restarted) return;
+        api.logout();
+        console.error('Single sign-on error:', error.message);
+        showSSOPanel(null);
+        showError(error.message || 'Single sign-on failed. Please try again.');
+      }
+    }
+
+    // Ask which of several roles to use, labelled by the role name.
+    function chooseSSORole(roles) {
+      return new Promise((resolve, reject) => {
+        const list = document.getElementById('sso-role-list');
+        list.innerHTML = '';
+        roles.forEach(arn => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'w-full text-left px-4 py-3 border-2 border-gray-200 rounded-lg hover:border-accent hover:bg-blue-50 transition-colors';
+          button.dataset.roleArn = arn;
+          const name = document.createElement('span');
+          name.className = 'block text-charcoal font-medium';
+          name.textContent = arn.split('/').pop();
+          const full = document.createElement('span');
+          full.className = 'block text-xs text-charcoal-300 font-mono truncate';
+          full.textContent = arn;
+          button.append(name, full);
+          button.addEventListener('click', () => resolve(arn));
+          list.appendChild(button);
+        });
+        document.getElementById('sso-role-cancel').onclick = () => reject(new Error('Sign-in cancelled.'));
+        showSSOPanel('sso-role-picker');
+      });
+    }
+
+    // Show one of the single sign-on panels in place of the sign-in form, or
+    // the form again when id is null.
+    function showSSOPanel(id) {
+      ['sso-status', 'sso-role-picker'].forEach(panel => {
+        document.getElementById(panel).classList.toggle('hidden', panel !== id);
+      });
+      document.getElementById('login-form').classList.toggle('hidden', !!id);
+      document.getElementById('sso-section').classList.toggle('hidden', !!id || !ssoConfig);
+    }
   </script>
 </body>
 </html>

@@ -125,6 +125,7 @@ class VersityAPI {
     this._hasS3 = false;        // Credentials validate against the S3 data plane
     this._canListBuckets = false; // hasS3 is true and s3:ListAllMyBuckets is allowed
     this._canManageGatewayUsers = true; // False when the gateway runs in single-user mode
+    this._renewer = null;       // Renews temporary credentials (single sign-on)
   }
 
   /**
@@ -139,6 +140,7 @@ class VersityAPI {
     if (!this.credentials) {
       throw new Error('Not authenticated');
     }
+    await this._beforeSign();
 
     const endpoint = this.getEndpoint(useAdminEndpoint);
     const url = new URL(endpoint + path);
@@ -162,6 +164,10 @@ class VersityAPI {
     url.searchParams.set('X-Amz-Date', amzDate);
     url.searchParams.set('X-Amz-Expires', String(expiresSeconds));
     url.searchParams.set('X-Amz-SignedHeaders', 'host');
+    // Temporary credentials carry their session token in the signed query.
+    if (this.credentials.sessionToken) {
+      url.searchParams.set('X-Amz-Security-Token', this.credentials.sessionToken);
+    }
 
     // Sort query params for canonical request
     const sortedParams = [...url.searchParams.entries()].sort((a, b) => a[0].localeCompare(b[0]));
@@ -218,6 +224,32 @@ class VersityAPI {
     sessionStorage.setItem('vgw_secret_key', secretKey);
     sessionStorage.setItem('vgw_region', region);
     sessionStorage.setItem('vgw_is_admin', 'false');
+    sessionStorage.removeItem('vgw_session_token');
+    sessionStorage.removeItem('vgw_session_expiration');
+  }
+
+  /**
+   * Attach the session token and expiry of temporary credentials, such as
+   * those single sign-on gets from AssumeRoleWithWebIdentity. Call after
+   * setCredentials().
+   * @param {string} sessionToken - Sent as X-Amz-Security-Token
+   * @param {number} expiration - Expiry, in milliseconds since the epoch
+   */
+  setSessionToken(sessionToken, expiration) {
+    this.credentials.sessionToken = sessionToken;
+    this.credentials.expiration = expiration;
+    sessionStorage.setItem('vgw_session_token', sessionToken);
+    sessionStorage.setItem('vgw_session_expiration', String(expiration));
+  }
+
+  /**
+   * Install the object that renews temporary credentials: beforeSign() runs
+   * before every signature, and afterRejection() when the gateway rejects the
+   * credentials, resolving true once fresh ones are in place. Long-term keys
+   * never need one.
+   */
+  setCredentialRenewer(renewer) {
+    this._renewer = renewer;
   }
 
   /**
@@ -327,6 +359,8 @@ class VersityAPI {
     const hasS3 = sessionStorage.getItem('vgw_has_s3') === 'true';
     const canListBuckets = sessionStorage.getItem('vgw_can_list_buckets') === 'true';
     const canManageGatewayUsers = sessionStorage.getItem('vgw_can_manage_gateway_users') !== 'false';
+    const sessionToken = sessionStorage.getItem('vgw_session_token');
+    const expiration = Number(sessionStorage.getItem('vgw_session_expiration')) || null;
 
     // Support legacy single endpoint storage
     const legacyEndpoint = sessionStorage.getItem('vgw_endpoint');
@@ -335,6 +369,10 @@ class VersityAPI {
       this.adminEndpoint = adminEndpoint || legacyEndpoint || null;
       this.s3Endpoint = s3Endpoint || legacyEndpoint || null;
       this.credentials = { accessKey, secretKey };
+      if (sessionToken) {
+        this.credentials.sessionToken = sessionToken;
+        this.credentials.expiration = expiration;
+      }
       this.region = region;
       this.addressingStyle = addressingStyle;
       this._isAdmin = isAdmin;
@@ -364,6 +402,7 @@ class VersityAPI {
     this._canManageGatewayUsers = true;
     this._userType = 'user';
     this._accessibleGateways = [];
+    this._renewer = null;
     sessionStorage.removeItem('vgw_admin_endpoint');
     sessionStorage.removeItem('vgw_s3_endpoint');
     sessionStorage.removeItem('vgw_endpoint'); // Legacy
@@ -380,6 +419,12 @@ class VersityAPI {
     sessionStorage.removeItem('vgw_iam_probe_error');
     sessionStorage.removeItem('vgw_user_type');
     sessionStorage.removeItem('vgw_accessible_gateways');
+    sessionStorage.removeItem('vgw_session_token');
+    sessionStorage.removeItem('vgw_session_expiration');
+    // Single sign-on keeps its state under one prefix.
+    Object.keys(sessionStorage)
+      .filter(key => key.startsWith('vgw_sso_'))
+      .forEach(key => sessionStorage.removeItem(key));
   }
 
   // ============================================
@@ -453,6 +498,7 @@ class VersityAPI {
       s3Endpoint: this.s3Endpoint,
       endpoint: this.s3Endpoint, // Legacy compatibility
       accessKey: this.credentials.accessKey,
+      expiration: this.credentials.expiration || null,
       region: this.region,
       isAdmin: this._isAdmin,
       iamEndpoint: this.iamEndpoint,
@@ -640,6 +686,7 @@ class VersityAPI {
     if (!this.credentials) {
       throw new Error('Not authenticated');
     }
+    await this._beforeSign();
 
     const fullUrl = this.buildRequestUrl(path, useAdminEndpoint);
     const url = new URL(fullUrl);
@@ -682,6 +729,10 @@ class VersityAPI {
     Object.entries(extraSignedHeaders).forEach(([key, value]) => {
       headers[key.toLowerCase()] = String(value).trim();
     });
+
+    if (this.credentials.sessionToken) {
+      headers['x-amz-security-token'] = this.credentials.sessionToken;
+    }
 
     const signedHeadersList = Object.keys(headers).sort();
     const signedHeaders = signedHeadersList.join(';');
@@ -731,6 +782,10 @@ class VersityAPI {
       responseHeaders[key] = String(value).trim();
     });
 
+    if (this.credentials.sessionToken) {
+      responseHeaders['X-Amz-Security-Token'] = this.credentials.sessionToken;
+    }
+
     return {
       url: url.toString(),
       headers: responseHeaders
@@ -749,6 +804,7 @@ class VersityAPI {
     if (!this.credentials) {
       throw new Error('Not authenticated');
     }
+    await this._beforeSign();
 
     const fullUrl = this.buildRequestUrl(path, false);
     const url = new URL(fullUrl);
@@ -781,6 +837,9 @@ class VersityAPI {
       'x-amz-content-sha256': payloadHash,
       'x-amz-date': amzDate,
     };
+    if (this.credentials.sessionToken) {
+      headers['x-amz-security-token'] = this.credentials.sessionToken;
+    }
 
     const signedHeadersList = Object.keys(headers).sort();
     const signedHeaders = signedHeadersList.join(';');
@@ -815,15 +874,20 @@ class VersityAPI {
     // Create authorization header
     const authorization = `${algorithm} Credential=${this.credentials.accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
+    const requestHeaders = {
+      'Authorization': authorization,
+      'X-Amz-Date': amzDate,
+      'X-Amz-Content-Sha256': payloadHash,
+      'X-Amz-Checksum-Sha256': checksumBase64,
+      'Content-Type': 'application/xml',
+    };
+    if (this.credentials.sessionToken) {
+      requestHeaders['X-Amz-Security-Token'] = this.credentials.sessionToken;
+    }
+
     return {
       url: url.toString(),
-      headers: {
-        'Authorization': authorization,
-        'X-Amz-Date': amzDate,
-        'X-Amz-Content-Sha256': payloadHash,
-        'X-Amz-Checksum-Sha256': checksumBase64,
-        'Content-Type': 'application/xml',
-      }
+      headers: requestHeaders
     };
   }
 
@@ -853,15 +917,15 @@ class VersityAPI {
       (key.toLowerCase().startsWith('x-amz-') ? amzHeaders : plainHeaders)[key] = value;
     });
 
-    const signed = await this.signRequest(method, path, queryParams, body, useAdminEndpoint, contentType, amzHeaders);
-    const fetchUrl = signed.url;
-    const headers = { ...signed.headers, ...plainHeaders };
+    const sign = async () => {
+      const signed = await this.signRequest(method, path, queryParams, body, useAdminEndpoint, contentType, amzHeaders);
+      return { url: signed.url, headers: { ...signed.headers, ...plainHeaders } };
+    };
 
     let response;
     try {
-      response = await fetch(fetchUrl, {
+      response = await this._send(sign, {
         method,
-        headers,
         body: body || undefined,
         signal: signal || undefined,
       });
@@ -916,6 +980,71 @@ class VersityAPI {
       url: signed.url,
       headers: signed.headers,
     };
+  }
+
+  /**
+   * Sign and send a request. sign() returns { url, headers, body } (headers
+   * and body optional) for fetch(), merged over init.
+   *
+   * With temporary credentials and a renewer installed, a response saying
+   * the credentials were rejected (most often: they expired) gets them
+   * renewed and the request signed and sent once more. Long-term keys are
+   * signed and sent exactly once.
+   */
+  async _send(sign, init = {}) {
+    let response = await this._fetchSigned(await sign(), init);
+    if (!this._renewer || !(await this._credentialsRejected(response))) {
+      return response;
+    }
+    if (!(await this._renewer.afterRejection())) {
+      return response;
+    }
+    response = await this._fetchSigned(await sign(), init);
+    if (await this._credentialsRejected(response)) {
+      this._renewer.reauthenticate();
+    }
+    return response;
+  }
+
+  _fetchSigned(signed, init) {
+    const options = { ...init };
+    if (signed.headers) options.headers = signed.headers;
+    if (signed.body !== undefined) options.body = signed.body;
+    return fetch(signed.url, options);
+  }
+
+  /**
+   * Report whether a response rejected the temporary credentials themselves,
+   * as opposed to denying the action. An expired session is simply unknown
+   * to the gateway: S3 answers InvalidAccessKeyId and IAM
+   * InvalidClientTokenId.
+   */
+  async _credentialsRejected(response) {
+    if (!this.credentials?.sessionToken || (response.status !== 400 && response.status !== 403)) {
+      return false;
+    }
+    let text = '';
+    try {
+      text = await response.clone().text();
+    } catch (e) {
+      // An unreadable body is judged like an empty one
+    }
+    if (!text.trim()) {
+      // HEAD responses carry no error body, so only the credentials' own
+      // expiry can tell a rejected session from a denied action.
+      return !!this.credentials.expiration && Date.now() >= this.credentials.expiration;
+    }
+    return REJECTED_CREDENTIAL_CODES.has(parseXmlErrorCode(text));
+  }
+
+  /**
+   * Let the renewer refresh temporary credentials that are about to expire
+   * before they sign anything. Does nothing for long-term keys.
+   */
+  async _beforeSign() {
+    if (this._renewer && this.credentials?.sessionToken) {
+      await this._renewer.beforeSign();
+    }
   }
 
   /**
@@ -1135,10 +1264,10 @@ class VersityAPI {
    */
   async listBucketsS3() {
     // Use presigned URL to avoid triggering a browser preflight for GET /.
-    const presignedUrl = await this.presignUrl('GET', '/', {}, 60, false);
+    const sign = async () => ({ url: await this.presignUrl('GET', '/', {}, 60, false) });
     let httpResponse;
     try {
-      httpResponse = await fetch(presignedUrl, { method: 'GET' });
+      httpResponse = await this._send(sign, { method: 'GET' });
     } catch (e) {
       // Browsers surface network-level failures (CORS, TLS/certificate errors,
       // unreachable host) as a generic TypeError with no further detail.
@@ -1276,10 +1405,8 @@ class VersityAPI {
    * Delete a bucket (S3 DeleteBucket)
    */
   async deleteBucket(bucketName) {
-    const fetchParams = await this.buildFetchParams('DELETE', `/${bucketName}`, {}, '');
-    const response = await fetch(fetchParams.url, {
+    const response = await this._send(() => this.buildFetchParams('DELETE', `/${bucketName}`, {}, ''), {
       method: 'DELETE',
-      headers: fetchParams.headers,
     });
 
     if (!response.ok) {
@@ -1350,11 +1477,8 @@ class VersityAPI {
    * Get object metadata (HeadObject)
    */
   async headObject(bucket, key) {
-    const fetchParams = await this.buildFetchParams('HEAD', `/${bucket}/${encodeS3Key(key)}`);
-
-    const response = await fetch(fetchParams.url, {
+    const response = await this._send(() => this.buildFetchParams('HEAD', `/${bucket}/${encodeS3Key(key)}`), {
       method: 'HEAD',
-      headers: fetchParams.headers,
     });
 
     if (!response.ok) {
@@ -1391,11 +1515,8 @@ class VersityAPI {
    * Returns a Blob for browser download
    */
   async getObject(bucket, key) {
-    const fetchParams = await this.buildFetchParams('GET', `/${bucket}/${encodeS3Key(key)}`);
-
-    const response = await fetch(fetchParams.url, {
+    const response = await this._send(() => this.buildFetchParams('GET', `/${bucket}/${encodeS3Key(key)}`), {
       method: 'GET',
-      headers: fetchParams.headers,
     });
 
     if (!response.ok) {
@@ -1419,11 +1540,8 @@ class VersityAPI {
     // Browser-side signing with payload hash
     const arrayBuffer = await file.arrayBuffer();
     const payloadHash = await this.sha256ArrayBuffer(arrayBuffer);
-    const signed = await this.signRequestWithPayloadHash('PUT', path, {}, payloadHash, finalContentType);
-
-    const response = await fetch(signed.url, {
+    const response = await this._send(() => this.signRequestWithPayloadHash('PUT', path, {}, payloadHash, finalContentType), {
       method: 'PUT',
-      headers: signed.headers,
       body: file,
       signal,
     });
@@ -1463,6 +1581,7 @@ class VersityAPI {
     if (!this.credentials) {
       throw new Error('Not authenticated');
     }
+    await this._beforeSign();
 
     const fullUrl = this.buildRequestUrl(path, false);
     const url = new URL(fullUrl);
@@ -1491,6 +1610,9 @@ class VersityAPI {
       'x-amz-content-sha256': payloadHash,
       'x-amz-date': amzDate,
     };
+    if (this.credentials.sessionToken) {
+      headers['x-amz-security-token'] = this.credentials.sessionToken;
+    }
 
     const signedHeadersList = Object.keys(headers).sort();
     const signedHeaders = signedHeadersList.join(';');
@@ -1525,14 +1647,19 @@ class VersityAPI {
     // Create authorization header
     const authorization = `${algorithm} Credential=${this.credentials.accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
+    const requestHeaders = {
+      'Authorization': authorization,
+      'X-Amz-Date': amzDate,
+      'X-Amz-Content-Sha256': payloadHash,
+      'Content-Type': contentType,
+    };
+    if (this.credentials.sessionToken) {
+      requestHeaders['X-Amz-Security-Token'] = this.credentials.sessionToken;
+    }
+
     return {
       url: url.toString(),
-      headers: {
-        'Authorization': authorization,
-        'X-Amz-Date': amzDate,
-        'X-Amz-Content-Sha256': payloadHash,
-        'Content-Type': contentType,
-      }
+      headers: requestHeaders
     };
   }
 
@@ -1558,11 +1685,8 @@ class VersityAPI {
     body += '\n</Delete>';
 
     const checksum = await this.sha256Base64(body);
-    const signed = await this.signRequestWithChecksum('POST', `/${bucket}`, { delete: '' }, body, checksum);
-
-    const response = await fetch(signed.url, {
+    const response = await this._send(() => this.signRequestWithChecksum('POST', `/${bucket}`, { delete: '' }, body, checksum), {
       method: 'POST',
-      headers: signed.headers,
       body: body,
     });
 
@@ -1581,11 +1705,8 @@ class VersityAPI {
     // Ensure prefix ends with /
     const folderKey = prefix.endsWith('/') ? prefix : prefix + '/';
 
-    const fetchParams = await this.buildFetchParams('PUT', `/${bucket}/${encodeS3Key(folderKey)}`, {}, '');
-
-    const response = await fetch(fetchParams.url, {
+    const response = await this._send(() => this.buildFetchParams('PUT', `/${bucket}/${encodeS3Key(folderKey)}`, {}, ''), {
       method: 'PUT',
-      headers: fetchParams.headers,
       body: '',
     });
 
@@ -1604,11 +1725,8 @@ class VersityAPI {
    * Returns uploadId needed for subsequent parts
    */
   async createMultipartUpload(bucket, key, contentType = 'application/octet-stream', signal = undefined) {
-    const fetchParams = await this.buildFetchParams('POST', `/${bucket}/${encodeS3Key(key)}`, { uploads: '' }, '', false, contentType);
-
-    const response = await fetch(fetchParams.url, {
+    const response = await this._send(() => this.buildFetchParams('POST', `/${bucket}/${encodeS3Key(key)}`, { uploads: '' }, '', false, contentType), {
       method: 'POST',
-      headers: fetchParams.headers,
       signal,
     });
 
@@ -1642,7 +1760,7 @@ class VersityAPI {
     };
 
     const payloadHash = await this.sha256ArrayBuffer(arrayBuffer);
-    const signed = await this.signRequestWithPayloadHash(
+    const sign = () => this.signRequestWithPayloadHash(
       'PUT',
       path,
       queryParams,
@@ -1650,9 +1768,8 @@ class VersityAPI {
       'application/octet-stream'
     );
 
-    const response = await fetch(signed.url, {
+    const response = await this._send(sign, {
       method: 'PUT',
-      headers: signed.headers,
       body: arrayBuffer,
       signal,
     });
@@ -1704,11 +1821,8 @@ class VersityAPI {
 
     body += '\n</CompleteMultipartUpload>';
 
-    const fetchParams = await this.buildFetchParams('POST', `/${bucket}/${encodeS3Key(key)}`, { uploadId }, body);
-
-    const response = await fetch(fetchParams.url, {
+    const response = await this._send(() => this.buildFetchParams('POST', `/${bucket}/${encodeS3Key(key)}`, { uploadId }, body), {
       method: 'POST',
-      headers: fetchParams.headers,
       body: body,
       signal,
     });
@@ -1725,11 +1839,8 @@ class VersityAPI {
    * Abort a multipart upload
    */
   async abortMultipartUpload(bucket, key, uploadId) {
-    const fetchParams = await this.buildFetchParams('DELETE', `/${bucket}/${encodeS3Key(key)}`, { uploadId }, '');
-
-    const response = await fetch(fetchParams.url, {
+    const response = await this._send(() => this.buildFetchParams('DELETE', `/${bucket}/${encodeS3Key(key)}`, { uploadId }, ''), {
       method: 'DELETE',
-      headers: fetchParams.headers,
     });
 
     if (!response.ok) {
@@ -1943,11 +2054,8 @@ class VersityAPI {
    * Download a specific version of an object
    */
   async getObjectVersion(bucket, key, versionId) {
-    const fetchParams = await this.buildFetchParams('GET', `/${bucket}/${encodeS3Key(key)}`, { versionId });
-
-    const response = await fetch(fetchParams.url, {
+    const response = await this._send(() => this.buildFetchParams('GET', `/${bucket}/${encodeS3Key(key)}`, { versionId }), {
       method: 'GET',
-      headers: fetchParams.headers,
     });
 
     if (!response.ok) {
@@ -2163,6 +2271,24 @@ ${tagsXml}
       throw new Error('Not authenticated');
     }
 
+    const response = await this._send(() => this._signPutObjectMetadata(bucket, key, metadata, contentType), {
+      method: 'PUT',
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`HTTP ${response.status}: ${text || response.statusText}`);
+    }
+
+    return true;
+  }
+
+  /**
+   * Sign the metadata-replacing CopyObject putObjectMetadata() sends.
+   */
+  async _signPutObjectMetadata(bucket, key, metadata, contentType) {
+    await this._beforeSign();
+
     const method = 'PUT';
     const path = `/${bucket}/${encodeS3Key(key)}`;
     const endpoint = this.getEndpoint(false);
@@ -2198,6 +2324,10 @@ ${tagsXml}
     // Add content type if specified
     if (contentType) {
       headers['content-type'] = contentType;
+    }
+
+    if (this.credentials.sessionToken) {
+      headers['x-amz-security-token'] = this.credentials.sessionToken;
     }
 
     // Sort headers for canonical request (case-insensitive)
@@ -2260,17 +2390,11 @@ ${tagsXml}
       requestHeaders['Content-Type'] = contentType;
     }
 
-    const response = await fetch(url.toString(), {
-      method: method,
-      headers: requestHeaders
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status}: ${text || response.statusText}`);
+    if (this.credentials.sessionToken) {
+      requestHeaders['X-Amz-Security-Token'] = this.credentials.sessionToken;
     }
 
-    return true;
+    return { url: url.toString(), headers: requestHeaders };
   }
 
   /**
@@ -2339,6 +2463,7 @@ ${tagsXml}
     if (!this.iamEndpoint) {
       throw new Error('IAM API endpoint is not configured');
     }
+    await this._beforeSign();
 
     const url = new URL(this.iamEndpoint + '/');
     const host = url.host;
@@ -2363,6 +2488,9 @@ ${tagsXml}
       'x-amz-content-sha256': payloadHash,
       'x-amz-date': amzDate,
     };
+    if (this.credentials.sessionToken) {
+      headers['x-amz-security-token'] = this.credentials.sessionToken;
+    }
 
     const signedHeadersList = Object.keys(headers).sort();
     const signedHeaders = signedHeadersList.join(';');
@@ -2386,14 +2514,19 @@ ${tagsXml}
     const signatureBuffer = await this.hmacSha256(signingKey, stringToSign);
     const signature = this.bufferToHex(signatureBuffer);
 
+    const requestHeaders = {
+      'Authorization': `${algorithm} Credential=${this.credentials.accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+      'X-Amz-Date': amzDate,
+      'X-Amz-Content-Sha256': payloadHash,
+      'Content-Type': contentType,
+    };
+    if (this.credentials.sessionToken) {
+      requestHeaders['X-Amz-Security-Token'] = this.credentials.sessionToken;
+    }
+
     return {
       url: url.toString(),
-      headers: {
-        'Authorization': `${algorithm} Credential=${this.credentials.accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
-        'X-Amz-Date': amzDate,
-        'X-Amz-Content-Sha256': payloadHash,
-        'Content-Type': contentType,
-      },
+      headers: requestHeaders,
       body
     };
   }
@@ -2402,14 +2535,10 @@ ${tagsXml}
    * Make a signed IAM/STS request and parse the XML response
    */
   async iamRequest(action, params = {}, sigService = 'iam') {
-    const signed = await this.signIamRequest(action, params, sigService);
-
     let response;
     try {
-      response = await fetch(signed.url, {
+      response = await this._send(() => this.signIamRequest(action, params, sigService), {
         method: 'POST',
-        headers: signed.headers,
-        body: signed.body,
       });
     } catch (e) {
       if (e instanceof TypeError) {
@@ -2421,7 +2550,9 @@ ${tagsXml}
     const responseText = await response.text();
 
     if (!response.ok) {
-      throw new Error(parseXmlErrorMessage(responseText, `HTTP ${response.status}: ${response.statusText}`));
+      const error = new Error(parseXmlErrorMessage(responseText, `HTTP ${response.status}: ${response.statusText}`));
+      error.code = parseXmlErrorCode(responseText);
+      throw error;
     }
 
     return this.parseIamResponse(responseText);
@@ -2880,6 +3011,18 @@ ${tagsXml}
 const IAM_API_VERSION = '2010-05-08';
 const STS_API_VERSION = '2011-06-15';
 const IAM_SIGNING_REGION = 'us-east-1';
+
+/**
+ * Error codes meaning the gateway did not accept the temporary credentials
+ * themselves. Neither API has a dedicated expiry code: an expired session is
+ * unknown to S3 (InvalidAccessKeyId) and to IAM (InvalidClientTokenId).
+ */
+const REJECTED_CREDENTIAL_CODES = new Set([
+  'InvalidAccessKeyId',
+  'InvalidClientTokenId',
+  'InvalidToken',
+  'ExpiredToken',
+]);
 
 /**
  * Pull <Code>/<Message> out of an S3, Admin or IAM error body: all three

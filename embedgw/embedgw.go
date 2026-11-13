@@ -564,6 +564,10 @@ type Config struct {
 	// segment is masked. Leave empty to disable WebUI hosting on the S3
 	// endpoint.
 	WebuiS3Prefix string
+	// WebuiOIDC adds "Sign in with SSO" to the login page of either WebUI
+	// mode when its Issuer is set. It requires WebuiIAMGateways, since the
+	// provider's token is exchanged at the standalone IAM service.
+	WebuiOIDC webui.OIDCConfig
 
 	// Static website hosting endpoint
 	//
@@ -825,6 +829,13 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			return err
 		}
 	}
+	// Checked here as well as by the WebUI itself, so a bad setting fails
+	// before the IAM and backend setup below rather than after it.
+	if len(cfg.WebuiPorts) > 0 || cfg.WebuiS3Prefix != "" {
+		if err := cfg.WebuiOIDC.Validate(validatedWebuiIAMGateways); err != nil {
+			return err
+		}
+	}
 
 	utils.SetBucketNameValidationStrict(!cfg.DisableStrictBucketNames)
 
@@ -1007,6 +1018,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			AdminGateways: s3WebAdminGateways,
 			IAMGateways:   validatedWebuiIAMGateways,
 			Region:        cfg.Region,
+			OIDC:          cfg.WebuiOIDC,
 		}))
 	}
 
@@ -1186,6 +1198,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			AdminGateways: adminGateways,
 			IAMGateways:   validatedWebuiIAMGateways,
 			Region:        cfg.Region,
+			OIDC:          cfg.WebuiOIDC,
 		}, webOpts...)
 		if err != nil {
 			return fmt.Errorf("init webui: %w", err)

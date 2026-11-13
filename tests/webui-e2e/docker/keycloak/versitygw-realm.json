@@ -1,0 +1,128 @@
+{
+  "realm": "versitygw",
+  "enabled": true,
+  "sslRequired": "none",
+  "groups": [
+    {
+      "name": "s3-admins",
+      "attributes": { "vgw_roles": ["arn:aws:iam::000000000000:role/s3-admins"] }
+    },
+    {
+      "name": "s3-readers",
+      "attributes": { "vgw_roles": ["arn:aws:iam::000000000000:role/s3-readers"] }
+    },
+    {
+      "name": "contractors",
+      "attributes": { "vgw_roles": ["arn:aws:iam::000000000000:role/s3-admins"] }
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@example.com",
+      "firstName": "Alice",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "alice", "temporary": false }],
+      "groups": ["/s3-admins"]
+    },
+    {
+      "username": "bob",
+      "email": "bob@example.com",
+      "firstName": "Bob",
+      "lastName": "Reader",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "bob", "temporary": false }],
+      "groups": ["/s3-readers"]
+    },
+    {
+      "username": "carol",
+      "email": "carol@example.com",
+      "firstName": "Carol",
+      "lastName": "Both",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "carol", "temporary": false }],
+      "groups": ["/s3-admins", "/s3-readers"]
+    },
+    {
+      "username": "dave",
+      "email": "dave@example.com",
+      "firstName": "Dave",
+      "lastName": "Nogroup",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dave", "temporary": false }],
+      "groups": []
+    },
+    {
+      "username": "mallory",
+      "email": "mallory@example.com",
+      "firstName": "Mallory",
+      "lastName": "Contractor",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "mallory", "temporary": false }],
+      "groups": ["/contractors"]
+    },
+    {
+      "username": "frank",
+      "email": "frank@example.com",
+      "firstName": "Frank",
+      "lastName": "Disposable",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "frank", "temporary": false }],
+      "groups": ["/s3-readers"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "versitygw-webui",
+      "name": "VersityGW WebUI",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": ["http://127.0.0.1:26111/"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://127.0.0.1:26111/"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "vgw_roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "vgw_roles",
+            "claim.name": "vgw_roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "aggregate.attrs": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

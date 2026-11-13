@@ -42,6 +42,8 @@ type ServerConfig struct {
 	IAMGateways []string
 	Region      string
 	CORSOrigin  string
+	// OIDC adds single sign-on to the login page when its Issuer is set.
+	OIDC OIDCConfig
 }
 
 // Server is the main GUI server
@@ -103,6 +105,10 @@ func WithTrustedProxies(trusted clientip.TrustedProxies) Option {
 
 // NewServer creates a new GUI server instance
 func NewServer(cfg *ServerConfig, opts ...Option) (*Server, error) {
+	if err := cfg.OIDC.Validate(cfg.IAMGateways); err != nil {
+		return nil, err
+	}
+
 	app := fiber.New(fiber.Config{
 		AppName:      "versitygw",
 		ServerHeader: "VERSITYGW",
@@ -223,12 +229,17 @@ func (s *Server) handleIndexHTML(c fiber.Ctx) error {
 		adminGateways = s.config.Gateways
 	}
 
-	configJSON, err := json.Marshal(map[string]any{
+	pageConfig := map[string]any{
 		"gateways":      s.config.Gateways,
 		"adminGateways": adminGateways,
 		"iamGateways":   s.config.IAMGateways,
 		"defaultRegion": s.config.Region,
-	})
+	}
+	if s.config.OIDC.Enabled() {
+		pageConfig["oidc"] = s.config.OIDC.withDefaults()
+	}
+
+	configJSON, err := json.Marshal(pageConfig)
 	if err != nil {
 		return fiber.ErrInternalServerError
 	}
@@ -294,6 +305,10 @@ func (s *Server) Shutdown() error {
 // This allows hosting the WebUI on the same port as another service (e.g. the S3 API server).
 // The prefix must start with "/" and must not be empty or just "/".
 func MountOn(app *fiber.App, prefix string, cfg *ServerConfig) error {
+	if err := cfg.OIDC.Validate(cfg.IAMGateways); err != nil {
+		return err
+	}
+
 	s := &Server{
 		app:        app,
 		config:     cfg,

@@ -29,6 +29,7 @@ under the License.
 <body class="min-h-screen bg-surface">
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/sso.js"></script>
 
   <div class="relative flex h-screen overflow-hidden">
     <input id="sidebar-toggle" type="checkbox" class="peer hidden"/>
@@ -773,6 +774,7 @@ under the License.
                      <option value="days">days</option>
                    </select>
                 </div>
+                <p id="presigned-url-session-note" class="hidden mt-2 text-xs text-charcoal-300"></p>
               </div>
               <div class="text-right py-2 border-b border-gray-100">
                 <button onclick="generatePresignedUrl()" id="presigned-url-btn" class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-600 disabled:bg-gray-500 text-white font-medium rounded-lg transition-colors">
@@ -1310,8 +1312,7 @@ under the License.
 
     function logout() {
       confirm('Are you sure you want to sign out?', () => {
-        api.logout();
-        window.location.href = 'index.html';
+        signOut();
       });
     }
 
@@ -2591,7 +2592,23 @@ under the License.
       document.getElementById('presigned-url-exp-value').value = '1';
       document.getElementById('presigned-url-exp-unit').value = 'minutes';
 
+      // A URL signed with temporary credentials stops working when the
+      // session that signed it ends, whatever its own expiration says.
+      const note = document.getElementById('presigned-url-session-note');
+      const sessionEnd = sessionCredentialsEnd();
+      note.classList.toggle('hidden', !sessionEnd);
+      if (sessionEnd) {
+        note.textContent = `Signed with your single sign-on session, so the URL stops working when that session ends (${sessionEnd.toLocaleString()}).`;
+      }
+
       openModal('presigned-url-modal');
+    }
+
+    // When the session's temporary credentials expire, or null for
+    // long-term keys.
+    function sessionCredentialsEnd() {
+      const expiration = api.getCredentialsInfo()?.expiration;
+      return expiration ? new Date(expiration) : null;
     }
 
     async function generatePresignedUrl() {
@@ -2623,6 +2640,15 @@ under the License.
           break;
         default:
           expirationSecs = expirationValue;
+      }
+
+      const sessionEnd = sessionCredentialsEnd();
+      if (sessionEnd) {
+        const remainingSecs = Math.floor((sessionEnd.getTime() - Date.now()) / 1000);
+        if (expirationSecs > remainingSecs) {
+          expirationSecs = Math.max(1, remainingSecs);
+          showToast('Expiration shortened to when your session ends', 'warning');
+        }
       }
       
       try {

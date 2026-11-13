@@ -1,0 +1,6 @@
+node_modules/
+# Playwright output: per-test traces and screenshots, and the HTML report.
+test-results/
+playwright-report/
+# Logs of the versitygw processes the tests ran against.
+logs/
