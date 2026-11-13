@@ -150,6 +150,7 @@ func main() {
 		gwcli.ScoutfsCommand(),
 		gwcli.S3Command(),
 		gwcli.AzureCommand(),
+		gwcli.DaosCommand(),
 		gwcli.PluginCommand(),
 		gwcli.IAMCommand(),
 		gwcli.AdminCommand(),

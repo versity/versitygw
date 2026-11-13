@@ -1,0 +1,916 @@
+// Copyright 2026 Versity Software
+// This file is licensed under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+package daos
+
+import (
+	"context"
+	"crypto/md5"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"path"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/google/uuid"
+	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
+)
+
+const (
+	mpDirName        = tmpDirName + "/multipart"
+	attrObjName      = "objname"
+	inProgressSuffix = ".inprogress"
+	maxPartNumber    = 10000
+)
+
+func (d *Daos) CreateMultipartUpload(_ context.Context, input s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+	var out s3response.InitiateMultipartUploadResult
+	bucket := awsString(input.Bucket)
+	key := awsString(input.Key)
+	if err := d.bucketExists(bucket); err != nil {
+		return out, err
+	}
+	if key == "" {
+		return out, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err := reservedKey(key); err != nil {
+		return out, err
+	}
+	if strings.HasSuffix(key, "/") {
+		return out, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
+	}
+	if unsupportedCreate(input) {
+		return out, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+	uploadID := uuid.NewString()
+	uploadDir := path.Join(mpHashDir(bucket, key), uploadID)
+	// The durable session record exists before any session artifact:
+	// a stop mid-lifecycle leaves a classifiable record, and the
+	// claim alias policy has ownership from the start.
+	if err := d.writeRecord(recordForUpload(bucket, key, uploadID)); err != nil {
+		return out, err
+	}
+	if err := d.mkdirParents(uploadDir); err != nil {
+		d.removeRecord(bucket, uploadID)
+		return out, err
+	}
+	if err := d.fs.Mkdir(uploadDir); err != nil {
+		d.removeRecord(bucket, uploadID)
+		return out, mapFS(err)
+	}
+	if err := d.setXattr(path.Dir(uploadDir), attrObjName, []byte(key)); err != nil {
+		_ = d.fs.Remove(uploadDir, true)
+		d.removeRecord(bucket, uploadID)
+		return out, err
+	}
+	obj, err := d.fs.Open(uploadDir, openRead)
+	if err != nil {
+		_ = d.fs.Remove(uploadDir, true)
+		d.removeRecord(bucket, uploadID)
+		return out, mapFS(err)
+	}
+	err = d.storeAttrs(obj, "", putInputFromCreate(input), false)
+	if err == nil {
+		err = d.storeTagHeader(obj, input.Tagging)
+	}
+	if err == nil && input.ChecksumAlgorithm != "" {
+		err = d.storeChecksums(obj, s3response.Checksum{
+			Algorithm: input.ChecksumAlgorithm,
+			Type:      input.ChecksumType,
+		})
+	}
+	d.fs.Release(obj)
+	if err != nil {
+		_ = d.fs.Remove(uploadDir, true)
+		d.removeRecord(bucket, uploadID)
+		return out, err
+	}
+	return s3response.InitiateMultipartUploadResult{
+		Bucket:   bucket,
+		Key:      key,
+		UploadId: uploadID,
+	}, nil
+}
+
+func (d *Daos) UploadPart(_ context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+	bucket := awsString(input.Bucket)
+	key := awsString(input.Key)
+	uploadID := awsString(input.UploadId)
+	if err := d.bucketExists(bucket); err != nil {
+		return nil, err
+	}
+	if strings.HasSuffix(key, "/") {
+		return nil, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
+	}
+	if err := validUploadID(uploadID); err != nil {
+		return nil, err
+	}
+	if input.PartNumber == nil || *input.PartNumber < 1 || *input.PartNumber > maxPartNumber {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
+	}
+	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
+		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+	// A quarantined session refuses part writes until reconciliation.
+	if d.coord.uploadHeld(bucket, key, uploadID) {
+		return nil, d.coord.quarantineUpload(bucket, key, uploadID, nil)
+	}
+	// The session guard covers the whole part write, including the
+	// parent-handle resolution inside the publishing Move, so a
+	// concurrent completion cannot claim the directory mid-write and
+	// an abort cannot remove it.
+	unlock := d.coord.uploads.lock(uploadID)
+	defer unlock()
+	uploadDir, err := d.uploadDirReady(bucket, key, uploadID)
+	if err != nil {
+		return nil, err
+	}
+	stored, err := d.loadChecksumsAt(uploadDir)
+	if err != nil {
+		return nil, err
+	}
+	hashed, err := d.wrapPartBody(input, stored)
+	if err != nil {
+		return nil, err
+	}
+	etag, err := d.writePart(uploadDir, *input.PartNumber, hashed.body, input.ContentLength, stored, hashed)
+	if err != nil {
+		return nil, err
+	}
+	res := &s3.UploadPartOutput{ETag: &etag}
+	if hashed.expose {
+		setPartChecksum(res, hashed.userAlg, hashed.userSum())
+	}
+	return res, nil
+}
+
+func (d *Daos) uploadDirReady(bucket, key, uploadID string) (string, error) {
+	uploadDir := path.Join(mpHashDir(bucket, key), uploadID)
+	if _, err := d.fs.Stat(uploadDir); err != nil {
+		if errors.Is(err, errNotExist) {
+			return "", s3err.GetNoSuchUploadErr(uploadID)
+		}
+		return "", mapFS(err)
+	}
+	return uploadDir, nil
+}
+
+func (d *Daos) writePart(uploadDir string, partNumber int32, body io.Reader, length *int64, stored s3response.Checksum, hashed partHash) (string, error) {
+	tmp := path.Join(uploadDir, ".part-"+uuid.NewString())
+	obj, err := d.fs.Open(tmp, openWrite|openCreate|openExcl)
+	if err != nil {
+		return "", mapFS(err)
+	}
+	moved := false
+	defer func() {
+		d.fs.Release(obj)
+		if !moved {
+			_ = d.fs.Remove(tmp, false)
+		}
+	}()
+	r, crcSum, err := partCRCReader(body)
+	if err != nil {
+		return "", err
+	}
+	sum, _, err := d.writeBody(obj, r, length)
+	if err != nil {
+		return "", err
+	}
+	if err := d.storePartSums(obj, stored, hashed); err != nil {
+		return "", err
+	}
+	if err := d.fs.SetXattr(obj, attrPartCRC64, []byte(crcSum())); err != nil {
+		return "", mapFS(err)
+	}
+	etag := "\"" + hex.EncodeToString(sum) + "\""
+	if err := d.fs.SetXattr(obj, attrETag, []byte(etag)); err != nil {
+		return "", mapFS(err)
+	}
+	partPath := path.Join(uploadDir, strconv.FormatInt(int64(partNumber), 10))
+	if err := d.fs.Move(tmp, partPath); err != nil {
+		return "", mapFS(err)
+	}
+	moved = true
+	return etag, nil
+}
+
+func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
+	var out s3response.CompleteMultipartUploadResult
+	bucket := awsString(input.Bucket)
+	key := awsString(input.Key)
+	uploadID := awsString(input.UploadId)
+	if err := d.bucketExists(bucket); err != nil {
+		return out, "", err
+	}
+	if key == "" || strings.HasSuffix(key, "/") {
+		return out, "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err := reservedKey(key); err != nil {
+		return out, "", err
+	}
+	if err := validUploadID(uploadID); err != nil {
+		return out, "", err
+	}
+	if unsupportedComplete(input) {
+		return out, "", s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+	if input.MultipartUpload == nil || len(input.MultipartUpload.Parts) == 0 {
+		return out, "", s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+	parts := input.MultipartUpload.Parts
+	etag, err := backend.ComputeMultipartETagFromPartETags(uploadID, parts)
+	if err != nil {
+		return out, "", err
+	}
+	if err := partOrder(parts); err != nil {
+		return out, "", err
+	}
+	// A quarantined session (unresolved claim alias) refuses every
+	// mutation until reconciliation; the durable record identifies it.
+	if d.coord.uploadHeld(bucket, key, uploadID) {
+		return out, "", d.coord.quarantineUpload(bucket, key, uploadID, nil)
+	}
+	// The session guard serializes this completion against part
+	// writes, competing completions, and abort: the whole claim ->
+	// verify -> assemble -> publish -> cleanup runs under it.
+	unlock := d.coord.uploads.lock(uploadID)
+	defer unlock()
+	hashDir := mpHashDir(bucket, key)
+	uploadDir := path.Join(hashDir, uploadID)
+	claim := path.Join(hashDir, uploadID+"."+strings.Trim(etag, `"`)+inProgressSuffix)
+	var ch s3response.Checksum
+	if _, err := d.fs.Stat(uploadDir); err == nil {
+		if err := d.fs.Move(uploadDir, claim); err != nil {
+			// A failed claim Move may have left both names: that
+			// alias is never guessed at. Quarantine the session.
+			if aerr := d.ambiguousAfter(err, uploadDir, claim, recordForUpload(bucket, key, uploadID)); aerr != nil {
+				return out, "", aerr
+			}
+			if _, statErr := d.fs.Stat(claim); statErr != nil {
+				return out, "", s3err.GetNoSuchUploadErr(uploadID)
+			}
+		}
+	} else if !errors.Is(err, errNotExist) {
+		return out, "", mapFS(err)
+	} else if _, statErr := d.fs.Stat(claim); statErr != nil {
+		return out, "", s3err.GetNoSuchUploadErr(uploadID)
+	}
+	// Both paths converge on the claim. An upload part can only be
+	// written under the upload directory's own name, so verifying and
+	// hashing under the claim means the bytes assembled are the bytes
+	// validated, even if a part was replaced while the upload was
+	// still addressable.
+	if uerr := d.verifyParts(claim, uploadID, parts); uerr != nil {
+		// A rejection after claiming must not strand the upload
+		// under a name UploadPart cannot reach: restore the upload
+		// directory when the claim is still ours to move back.
+		if rerr := d.fs.Move(claim, uploadDir); rerr != nil {
+			return out, "", d.coord.quarantineUpload(bucket, key, uploadID, []string{claim, uploadDir})
+		}
+		return out, "", uerr
+	}
+	if ch, err = d.objectChecksumFromParts(claim, input, parts); err != nil {
+		if rerr := d.fs.Move(claim, uploadDir); rerr != nil {
+			return out, "", d.coord.quarantineUpload(bucket, key, uploadID, []string{claim, uploadDir})
+		}
+		return out, "", err
+	}
+	opID := newOpID()
+	tmp := objectPath(bucket, tmpDirName+"/put-"+opID)
+	if err := d.mkdirParents(tmp); err != nil {
+		return out, "", err
+	}
+	obj, err := d.fs.Open(tmp, openWrite|openCreate|openExcl)
+	if err != nil {
+		return out, "", mapFS(err)
+	}
+	published := false
+	defer func() {
+		d.fs.Release(obj)
+		if !published {
+			_ = d.fs.Remove(tmp, false)
+		}
+	}()
+	if err := d.copyParts(obj, claim, parts); err != nil {
+		return out, "", err
+	}
+	po, err := d.loadUserAttrs(claim)
+	if err != nil {
+		return out, "", err
+	}
+	if err := d.storeAttrs(obj, etag, po, false); err != nil {
+		return out, "", err
+	}
+	if err := d.copyAttr(claim, obj, attrTags); err != nil {
+		return out, "", err
+	}
+	if err := d.storeChecksums(obj, ch); err != nil {
+		return out, "", err
+	}
+	if _, err := d.fs.Stat(claim); err != nil {
+		return out, "", s3err.GetNoSuchUploadErr(uploadID)
+	}
+	// Publication goes through the guarded helper like every other
+	// destination writer; the session guard is already held, and the
+	// helper takes the namespace mutex inside.
+	if _, err := d.publish(bucket, key, tmp, nil, nil, recKindMPUPublish, opID); err != nil {
+		// The assembled object is safe in staging; put the upload
+		// back if the claim is still ours, so a retry can run.
+		_ = d.fs.Move(claim, uploadDir)
+		return out, "", err
+	}
+	published = true
+	_ = d.fs.Remove(claim, true)
+	d.removeRecord(bucket, uploadID)
+	d.reclaimIfIdle(bucket, key)
+	result := s3response.CompleteMultipartUploadResult{
+		Bucket: &bucket,
+		Key:    &key,
+		ETag:   &etag,
+	}
+	fillCompleteChecksum(&result, ch)
+	return result, "", nil
+}
+
+func (d *Daos) AbortMultipartUpload(_ context.Context, input *s3.AbortMultipartUploadInput) error {
+	bucket := awsString(input.Bucket)
+	key := awsString(input.Key)
+	uploadID := awsString(input.UploadId)
+	if err := d.bucketExists(bucket); err != nil {
+		return err
+	}
+	if err := validUploadID(uploadID); err != nil {
+		return err
+	}
+	// Abort is a destructive session participant: it holds the same
+	// guard so it cannot remove a claim mid-assembly, and a
+	// quarantined session refuses it until reconciliation.
+	if d.coord.uploadHeld(bucket, key, uploadID) {
+		return d.coord.quarantineUpload(bucket, key, uploadID, nil)
+	}
+	unlock := d.coord.uploads.lock(uploadID)
+	defer unlock()
+	hashDir := mpHashDir(bucket, key)
+	removed := false
+	if err := d.fs.Remove(path.Join(hashDir, uploadID), true); err == nil {
+		removed = true
+	} else if !errors.Is(err, errNotExist) {
+		return mapFS(err)
+	}
+	ents, err := d.fs.ReadDir(hashDir)
+	if errors.Is(err, errNotExist) {
+		if removed {
+			return nil
+		}
+		return s3err.GetNoSuchUploadErr(uploadID)
+	}
+	if err != nil {
+		return mapFS(err)
+	}
+	prefix := uploadID + "."
+	for _, ent := range ents {
+		if ent.IsDir && strings.HasPrefix(ent.Name, prefix) && strings.HasSuffix(ent.Name, inProgressSuffix) {
+			if err := d.fs.Remove(path.Join(hashDir, ent.Name), true); err != nil && !errors.Is(err, errNotExist) {
+				return mapFS(err)
+			}
+			removed = true
+		}
+	}
+	if !removed {
+		return s3err.GetNoSuchUploadErr(uploadID)
+	}
+	// The session tree is gone: the durable session record goes with
+	// it. Artifact-last - the record never outlives its artifacts.
+	d.removeRecord(bucket, uploadID)
+	return nil
+}
+
+func (d *Daos) ListParts(_ context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+	var out s3response.ListPartsResult
+	bucket := awsString(input.Bucket)
+	key := awsString(input.Key)
+	uploadID := awsString(input.UploadId)
+	if err := d.bucketExists(bucket); err != nil {
+		return out, err
+	}
+	if err := validUploadID(uploadID); err != nil {
+		return out, err
+	}
+	dir, err := d.uploadDir(bucket, key, uploadID)
+	if err != nil {
+		return out, err
+	}
+	marker := 0
+	if awsString(input.PartNumberMarker) != "" {
+		marker, err = strconv.Atoi(*input.PartNumberMarker)
+		if err != nil {
+			return out, s3err.GetInvalidArgMaxLimiter("part-number-marker", *input.PartNumberMarker)
+		}
+	}
+	maxParts := 1000
+	if input.MaxParts != nil {
+		maxParts = int(*input.MaxParts)
+	}
+	ents, err := d.fs.ReadDir(dir)
+	if err != nil {
+		return out, mapFS(err)
+	}
+	var parts []s3response.Part
+	for _, ent := range ents {
+		if ent.IsDir {
+			continue
+		}
+		pn, err := strconv.Atoi(ent.Name)
+		if err != nil || pn <= marker {
+			continue
+		}
+		etag, mtime := d.partSummary(path.Join(dir, ent.Name))
+		ch, err := d.loadChecksumsAt(path.Join(dir, ent.Name))
+		if err != nil {
+			return out, err
+		}
+		if ch.Algorithm == "" {
+			ch = s3response.Checksum{}
+		}
+		part := s3response.Part{
+			PartNumber:   pn,
+			ETag:         etag,
+			Size:         ent.Size,
+			LastModified: time.Unix(mtime, 0).UTC(),
+		}
+		fillPartChecksum(&part, ch)
+		parts = append(parts, part)
+	}
+	sort.Slice(parts, func(i, j int) bool { return parts[i].PartNumber < parts[j].PartNumber })
+	truncated := false
+	if maxParts == 0 {
+		parts = nil
+		truncated = true
+	} else if len(parts) > maxParts {
+		parts = parts[:maxParts]
+		truncated = true
+	}
+	next := 0
+	if len(parts) > 0 {
+		next = parts[len(parts)-1].PartNumber
+	}
+	uploadCh, err := d.loadChecksumsAt(dir)
+	if err != nil {
+		return out, err
+	}
+	return s3response.ListPartsResult{
+		Bucket:               bucket,
+		Key:                  key,
+		UploadID:             uploadID,
+		ChecksumAlgorithm:    uploadCh.Algorithm,
+		ChecksumType:         uploadCh.Type,
+		PartNumberMarker:     marker,
+		NextPartNumberMarker: next,
+		MaxParts:             maxParts,
+		IsTruncated:          truncated,
+		Parts:                parts,
+		StorageClass:         types.StorageClassStandard,
+	}, nil
+}
+
+func (d *Daos) ListMultipartUploads(_ context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
+	var out s3response.ListMultipartUploadsResult
+	bucket := awsString(input.Bucket)
+	if err := d.bucketExists(bucket); err != nil {
+		return out, err
+	}
+	prefix := awsString(input.Prefix)
+	delimiter := awsString(input.Delimiter)
+	keyMarker := awsString(input.KeyMarker)
+	uploadMarker := awsString(input.UploadIdMarker)
+	maxUploads := 1000
+	if input.MaxUploads != nil {
+		maxUploads = int(*input.MaxUploads)
+	}
+	ents, err := d.fs.ReadDir(objectPath(bucket, mpDirName))
+	if err != nil && !errors.Is(err, errNotExist) {
+		return out, mapFS(err)
+	}
+	var uploads []s3response.Upload
+	for _, ent := range ents {
+		if !ent.IsDir {
+			continue
+		}
+		hashDir := objectPath(bucket, mpDirName+"/"+ent.Name)
+		nameb, err := d.xattr(hashDir, attrObjName)
+		if err != nil {
+			continue
+		}
+		objectName := string(nameb)
+		if prefix != "" && !strings.HasPrefix(objectName, prefix) {
+			continue
+		}
+		if keyMarker != "" && uploadMarker == "" && objectName <= keyMarker {
+			continue
+		}
+		if keyMarker != "" && uploadMarker != "" && objectName < keyMarker {
+			continue
+		}
+		kids, err := d.fs.ReadDir(hashDir)
+		if err != nil {
+			continue
+		}
+		for _, kid := range kids {
+			if !kid.IsDir || strings.HasSuffix(kid.Name, inProgressSuffix) {
+				continue
+			}
+			uploads = append(uploads, s3response.Upload{
+				Key:          objectName,
+				UploadID:     kid.Name,
+				StorageClass: types.StorageClassStandard,
+				Initiated:    time.Unix(kid.Mtime, 0).UTC(),
+			})
+		}
+	}
+	sort.Slice(uploads, func(i, j int) bool {
+		if uploads[i].Key != uploads[j].Key {
+			return uploads[i].Key < uploads[j].Key
+		}
+		if !uploads[i].Initiated.Equal(uploads[j].Initiated) {
+			return uploads[i].Initiated.Before(uploads[j].Initiated)
+		}
+		return uploads[i].UploadID < uploads[j].UploadID
+	})
+	page, err := backend.ListMultipartUploads(uploads, prefix, delimiter, keyMarker, uploadMarker, maxUploads)
+	if err != nil {
+		return out, err
+	}
+	return s3response.ListMultipartUploadsResult{
+		Bucket:             bucket,
+		Prefix:             prefix,
+		Delimiter:          delimiter,
+		KeyMarker:          keyMarker,
+		UploadIDMarker:     uploadMarker,
+		NextKeyMarker:      page.NextKeyMarker,
+		NextUploadIDMarker: page.NextUploadIDMarker,
+		MaxUploads:         maxUploads,
+		IsTruncated:        page.IsTruncated,
+		Uploads:            page.Uploads,
+		CommonPrefixes:     page.CommonPrefixes,
+	}, nil
+}
+
+func (d *Daos) copyParts(dst Object, dir string, parts []types.CompletedPart) error {
+	var destOff int64
+	size, err := d.fs.ChunkSize(dst)
+	if err != nil {
+		return mapFS(err)
+	}
+	if size < 256*1024 {
+		size = 256 * 1024
+	} else if size > 4*1024*1024 {
+		size = 4 * 1024 * 1024
+	}
+	buf := make([]byte, size)
+	for _, part := range parts {
+		pp := path.Join(dir, strconv.FormatInt(int64(*part.PartNumber), 10))
+		info, err := d.fs.Stat(pp)
+		if err != nil {
+			return mapFS(err)
+		}
+		src, err := d.fs.Open(pp, openRead)
+		if err != nil {
+			return mapFS(err)
+		}
+		var srcOff int64
+		for srcOff < info.Size {
+			end := srcOff + int64(len(buf))
+			if end > info.Size {
+				end = info.Size
+			}
+			n, err := readFull(d.fs, src, buf[:end-srcOff], srcOff)
+			if n > 0 {
+				if _, werr := writeFull(d.fs, dst, buf[:n], destOff); werr != nil {
+					d.fs.Release(src)
+					return mapFS(werr)
+				}
+				srcOff += int64(n)
+				destOff += int64(n)
+			}
+			if err != nil {
+				d.fs.Release(src)
+				return mapFS(err)
+			}
+			if n == 0 {
+				d.fs.Release(src)
+				return fmt.Errorf("short part copy: %d of %d", srcOff, info.Size)
+			}
+		}
+		d.fs.Release(src)
+	}
+	return nil
+}
+
+func (d *Daos) verifyParts(dir, uploadID string, parts []types.CompletedPart) error {
+	for i, part := range parts {
+		pp := path.Join(dir, strconv.FormatInt(int64(*part.PartNumber), 10))
+		got, err := d.xattr(pp, attrETag)
+		if errors.Is(err, errNotExist) {
+			return s3err.GetInvalidPartErr(uploadID, *part.PartNumber, awsString(part.ETag))
+		}
+		if err != nil {
+			return mapFS(err)
+		}
+		if !backend.AreEtagsSame(string(got), awsString(part.ETag)) {
+			return s3err.GetInvalidPartErr(uploadID, *part.PartNumber, awsString(part.ETag))
+		}
+		// Every part but the last must meet the minimum size; only
+		// the stored part knows its size, the controller does not.
+		if i < len(parts)-1 {
+			info, err := d.fs.Stat(pp)
+			if err != nil {
+				return mapFS(err)
+			}
+			if info.Size < backend.MinPartSize {
+				return s3err.GetEntityTooSmallErr(info.Size, backend.MinPartSize)
+			}
+		}
+	}
+	return nil
+}
+
+func (d *Daos) uploadDir(bucket, key, uploadID string) (string, error) {
+	hashDir := mpHashDir(bucket, key)
+	dir := path.Join(hashDir, uploadID)
+	if _, err := d.fs.Stat(dir); err == nil {
+		return dir, nil
+	} else if !errors.Is(err, errNotExist) {
+		return "", mapFS(err)
+	}
+	ents, err := d.fs.ReadDir(hashDir)
+	if errors.Is(err, errNotExist) {
+		return "", s3err.GetNoSuchUploadErr(uploadID)
+	}
+	if err != nil {
+		return "", mapFS(err)
+	}
+	prefix := uploadID + "."
+	for _, ent := range ents {
+		if ent.IsDir && strings.HasPrefix(ent.Name, prefix) && strings.HasSuffix(ent.Name, inProgressSuffix) {
+			return path.Join(hashDir, ent.Name), nil
+		}
+	}
+	return "", s3err.GetNoSuchUploadErr(uploadID)
+}
+
+func (d *Daos) writeBody(obj Object, r io.Reader, length *int64) ([]byte, int64, error) {
+	if r == nil {
+		sum := md5.Sum(nil)
+		return sum[:], 0, nil
+	}
+	size, err := d.fs.ChunkSize(obj)
+	if err != nil {
+		return nil, 0, mapFS(err)
+	}
+	if size < 256*1024 {
+		size = 256 * 1024
+	} else if size > 4*1024*1024 {
+		size = 4 * 1024 * 1024
+	}
+	h := md5.New()
+	buf := make([]byte, size)
+	filled := 0
+	var off int64
+	var emptyReads int
+	want := int64(-1)
+	if length != nil {
+		want = *length
+	}
+	flush := func(end int) error {
+		if end == 0 {
+			return nil
+		}
+		if _, werr := h.Write(buf[:end]); werr != nil {
+			return werr
+		}
+		if _, werr := writeFull(d.fs, obj, buf[:end], off); werr != nil {
+			return mapFS(werr)
+		}
+		off += int64(end)
+		return nil
+	}
+	for {
+		chunk := buf[filled:]
+		if want >= 0 && off+int64(filled) < want && int64(len(chunk)) > want-off-int64(filled) {
+			chunk = chunk[:want-off-int64(filled)]
+		}
+		n, err := r.Read(chunk)
+		if n > 0 {
+			filled += n
+			if want >= 0 && off+int64(filled) > want {
+				return nil, off, s3err.GetAPIError(s3err.ErrInvalidRequest)
+			}
+			if filled == len(buf) {
+				if ferr := flush(filled); ferr != nil {
+					return nil, off, ferr
+				}
+				filled = 0
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, off, err
+		}
+		if n == 0 {
+			emptyReads++
+			if emptyReads > 8 {
+				return nil, off, io.ErrNoProgress
+			}
+			continue
+		}
+		emptyReads = 0
+	}
+	if ferr := flush(filled); ferr != nil {
+		return nil, off, ferr
+	}
+	if want >= 0 && off != want {
+		return nil, off, io.ErrUnexpectedEOF
+	}
+	return h.Sum(nil), off, nil
+}
+
+func (d *Daos) loadUserAttrs(p string) (s3response.PutObjectInput, error) {
+	var po s3response.PutObjectInput
+	obj, err := d.fs.Open(p, openRead)
+	if err != nil {
+		return po, mapFS(err)
+	}
+	defer d.fs.Release(obj)
+	m, err := d.loadAttrs(obj)
+	if err != nil {
+		return po, err
+	}
+	po.ContentType = ptrIfSet(m[attrContentType])
+	po.ContentEncoding = ptrIfSet(m[attrEncoding])
+	po.ContentLanguage = ptrIfSet(m[attrLanguage])
+	po.ContentDisposition = ptrIfSet(m[attrDisposition])
+	po.CacheControl = ptrIfSet(m[attrCacheCtl])
+	po.Expires = ptrIfSet(m[attrExpires])
+	po.WebsiteRedirectLocation = ptrIfSet(m[attrRedirect])
+	if raw, ok := m[attrMetadata]; ok && len(raw) > 0 {
+		if err := json.Unmarshal([]byte(raw), &po.Metadata); err != nil {
+			return po, fmt.Errorf("parse metadata: %w", err)
+		}
+	}
+	return po, nil
+}
+
+func ptrIfSet(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
+// partSummary returns the etag and mtime of a stored part, reading the
+// packed attributes in one xattr fetch.
+func (d *Daos) partSummary(p string) (string, int64) {
+	obj, err := d.fs.Open(p, openRead)
+	if err != nil {
+		return "", 0
+	}
+	defer d.fs.Release(obj)
+	m, err := d.loadAttrs(obj)
+	if err != nil {
+		return "", 0
+	}
+	info, err := d.fs.StatObj(obj)
+	if err != nil {
+		return m[attrETag], 0
+	}
+	return m[attrETag], info.Mtime
+}
+
+func (d *Daos) setXattr(p, name string, value []byte) error {
+	obj, err := d.fs.Open(p, openRead)
+	if err != nil {
+		return mapFS(err)
+	}
+	defer d.fs.Release(obj)
+	return mapFS(d.fs.SetXattr(obj, name, value))
+}
+
+func (d *Daos) xattr(p, name string) ([]byte, error) {
+	obj, err := d.fs.Open(p, openRead)
+	if err != nil {
+		return nil, err
+	}
+	defer d.fs.Release(obj)
+	return d.fs.GetXattr(obj, name)
+}
+
+func mpHashDir(bucket, key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return objectPath(bucket, mpDirName+"/"+hex.EncodeToString(sum[:]))
+}
+
+func validUploadID(uploadID string) error {
+	id, err := uuid.Parse(uploadID)
+	if err != nil || id.String() != uploadID {
+		return s3err.GetNoSuchUploadErr(uploadID)
+	}
+	return nil
+}
+
+func partOrder(parts []types.CompletedPart) error {
+	var prev int32
+	for i, part := range parts {
+		if part.PartNumber == nil || *part.PartNumber < 1 || *part.PartNumber > maxPartNumber {
+			return s3err.GetAPIError(s3err.ErrInvalidPartNumberRange)
+		}
+		if i > 0 && *part.PartNumber <= prev {
+			return s3err.GetAPIError(s3err.ErrInvalidPartOrder)
+		}
+		prev = *part.PartNumber
+	}
+	return nil
+}
+
+func unsupportedCreate(in s3response.CreateMultipartUploadInput) bool {
+	if backend.HasSSEC(in.SSECustomerAlgorithm, in.SSECustomerKey, in.SSECustomerKeyMD5) {
+		return true
+	}
+	if in.ObjectLockMode != "" || in.ObjectLockLegalHoldStatus != "" || lockDateSet(in.ObjectLockRetainUntilDate) {
+		return true
+	}
+	if in.ACL != "" || in.ServerSideEncryption != "" || (in.StorageClass != "" && in.StorageClass != types.StorageClassStandard) {
+		return true
+	}
+	if in.BucketKeyEnabled != nil && *in.BucketKeyEnabled {
+		return true
+	}
+	return anyString(in.GrantFullControl, in.GrantRead, in.GrantReadACP, in.GrantWriteACP, in.SSEKMSKeyId, in.SSEKMSEncryptionContext)
+}
+
+func lockDateSet(t *time.Time) bool {
+	return t != nil && !t.IsZero()
+}
+
+func unsupportedComplete(in *s3.CompleteMultipartUploadInput) bool {
+	if in.MpuObjectSize != nil {
+		return true
+	}
+	if backend.HasSSEC(in.SSECustomerAlgorithm, in.SSECustomerKey, in.SSECustomerKeyMD5) {
+		return true
+	}
+	return anyString(in.IfMatch, in.IfNoneMatch)
+}
+
+func putInputFromCreate(in s3response.CreateMultipartUploadInput) s3response.PutObjectInput {
+	return s3response.PutObjectInput{
+		ContentType:             in.ContentType,
+		ContentEncoding:         in.ContentEncoding,
+		ContentDisposition:      in.ContentDisposition,
+		ContentLanguage:         in.ContentLanguage,
+		CacheControl:            in.CacheControl,
+		Expires:                 in.Expires,
+		WebsiteRedirectLocation: in.WebsiteRedirectLocation,
+		Metadata:                in.Metadata,
+	}
+}
+
+func anyString(vals ...*string) bool {
+	for _, v := range vals {
+		if v != nil && *v != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func optionalString(fs FS, obj Object, name string) *string {
+	b, err := fs.GetXattr(obj, name)
+	if err != nil || len(b) == 0 {
+		return nil
+	}
+	s := string(b)
+	return &s
+}
