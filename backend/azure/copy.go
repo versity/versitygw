@@ -63,10 +63,7 @@ func (az *Azure) copySourceURL(ctx context.Context, srcBucket, srcObj string) (s
 	}
 
 	if az.defaultCreds != nil {
-		svcClient, err := service.NewClient(az.serviceURL, az.defaultCreds, nil)
-		if err != nil {
-			return "", fmt.Errorf("init service client: %w", err)
-		}
+		svcClient := az.client.ServiceClient()
 
 		now := time.Now().UTC()
 		info := service.KeyInfo{

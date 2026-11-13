@@ -14,6 +14,7 @@
 
 // Package novaluesclient wraps the HTTP client of a backend SDK so that
 // net/http never reads values from the context of a backend call.
+// WithoutValues serves SDKs that take a pipeline policy instead.
 //
 // The gateway hands backends the *fasthttp.RequestCtx of the request, and
 // fasthttp resets and reuses it for the next request once the handler
@@ -64,7 +65,7 @@ type client struct {
 }
 
 func (c client) Do(req *http.Request) (*http.Response, error) {
-	return c.Doer.Do(req.WithContext(withoutValues(req.Context())))
+	return c.Doer.Do(req.WithContext(WithoutValues(req.Context())))
 }
 
 // CloseIdleConnections forwards to the wrapped client, if it has it.
@@ -74,7 +75,9 @@ func (c client) CloseIdleConnections() {
 	}
 }
 
-func withoutValues(parent context.Context) context.Context {
+// WithoutValues returns a context with the deadline and cancellation of
+// parent and no values other than its httptrace.ClientTrace.
+func WithoutValues(parent context.Context) context.Context {
 	var ctx context.Context = noValuesContext{parent}
 	if tr := httptrace.ContextClientTrace(parent); tr != nil {
 		ctx = httptrace.WithClientTrace(ctx, tr)
