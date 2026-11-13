@@ -83,6 +83,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 		IOBufferSize:        opts.IOBufferSize,
 		CopyObjectThreshold: opts.CopyObjectThreshold,
 		DefaultEtag:         opts.DefaultEtag,
+		DetectStaleEtag:     opts.DetectStaleEtag,
 		DataIntegrityEtag:   opts.DataIntegrityEtag,
 		EnableODirect:       opts.EnableODirect,
 		ObjectLockMode:      objectLockMode,
