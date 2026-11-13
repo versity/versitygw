@@ -1083,6 +1083,8 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 		return compareErrField("HeadersNotSigned", err.HeadersNotSigned, received.HeadersNotSigned)
 	case s3err.NoSuchUploadError:
 		return compareErrField("UploadId", err.UploadId, received.UploadId)
+	case s3err.InvalidPartOrderError:
+		return compareErrField("UploadId", err.UploadId, received.UploadId)
 	case s3err.NoSuchVersionError:
 		return compareS3ApiErrFields(
 			compareErrField("Key", err.Key, received.Key),
@@ -1543,6 +1545,43 @@ func withRequestHeader(key, value string) func(*s3.Options) {
 					}),
 				"Signing",
 				middleware.Before,
+			)
+		})
+	}
+}
+
+// withRawResponse keeps a copy of the http response an SDK request gets back,
+// for checking the error fields the SDK's error types don't expose. The
+// request still goes through the client, so it is sent to the configured
+// endpoint in the configured addressing style.
+func withRawResponse(dst **http.Response) func(*s3.Options) {
+	return func(o *s3.Options) {
+		o.APIOptions = append(o.APIOptions, func(stack *middleware.Stack) error {
+			// added after the operation's own middlewares, it runs right above
+			// the transport and reads the body before the SDK's deserializers
+			// consume it
+			return stack.Deserialize.Add(
+				middleware.DeserializeMiddlewareFunc("CaptureRawResponse",
+					func(ctx context.Context, in middleware.DeserializeInput, next middleware.DeserializeHandler) (
+						out middleware.DeserializeOutput, md middleware.Metadata, err error,
+					) {
+						out, md, err = next.HandleDeserialize(ctx, in)
+						resp, ok := out.RawResponse.(*smithyhttp.Response)
+						if !ok {
+							return out, md, err
+						}
+						body, readErr := io.ReadAll(resp.Body)
+						resp.Body.Close()
+						if readErr != nil {
+							return out, md, errors.Join(err, readErr)
+						}
+						resp.Body = io.NopCloser(bytes.NewReader(body))
+						raw := *resp.Response
+						raw.Body = io.NopCloser(bytes.NewReader(body))
+						*dst = &raw
+						return out, md, err
+					}),
+				middleware.After,
 			)
 		})
 	}

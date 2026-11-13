@@ -2834,7 +2834,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			return res, "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCompleteMpPartNumber, fmt.Sprint(*part.PartNumber))
 		}
 		if *part.PartNumber <= partNumber {
-			return res, "", s3err.GetAPIError(s3err.ErrInvalidPartOrder)
+			return res, "", s3err.GetInvalidPartOrderErr(uploadID)
 		}
 
 		partNumber = *part.PartNumber
