@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/s3proxy"
 	"github.com/versity/versitygw/s3api/middlewares"
 )
@@ -46,6 +47,13 @@ func TestChainedGatewayRace(t *testing.T) {
 		t.Fatalf("s3proxy.New: %v", err)
 	}
 
+	headBucketsThroughGateway(t, be)
+}
+
+// headBucketsThroughGateway serves be on a gateway and sends it concurrent
+// HeadBucket requests on keep-alive connections.
+func headBucketsThroughGateway(t *testing.T, be backend.Backend) {
+	t.Helper()
 	addrs := make(chan []net.Addr, 1)
 	sa, err := New(
 		be,
