@@ -54,7 +54,7 @@ source ./tests/setup_unit.sh
       return 7
     }
     export -f docker
-    bash ./tests/run_parallel.sh --log-folder "$1" --max-parallel-jobs 1 --log-file "$2" fake-image failing-suite
+    bash ./tests/run_parallel.sh --config-folder "$1/config" --log-folder "$1" --max-parallel-jobs 1 --log-file "$2" fake-image failing-suite
   ' bash "$BATS_TEST_TMPDIR" "$runner_log"
 
   assert_failure 1
@@ -88,7 +88,7 @@ source ./tests/setup_unit.sh
       else
         options=(--log-file parallel.log --html-report index.html --log-folder "$2")
       fi
-      bash ./tests/run_parallel.sh "${options[@]}" fake-image suite
+      bash ./tests/run_parallel.sh --config-folder "$2/config" "${options[@]}" fake-image suite
     ' bash "$order" "$folder"
 
     assert_success
@@ -157,11 +157,13 @@ source ./tests/setup_unit.sh
 
 # tags: unit
 @test "run parallel - mounts the default or custom host config folder" {
-  local mode expected trace="$BATS_TEST_TMPDIR/docker-mounts"
+  local mode expected root trace="$BATS_TEST_TMPDIR/docker-mounts"
+  root="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
+  ln -s "$PWD/tests" "$root/tests"
 
   for mode in default custom; do
-    expected="$PWD/runtime/config"
-    if [ "$mode" == "custom" ]; then expected="$BATS_TEST_TMPDIR/custom config"; fi
+    expected="$root/runtime/config"
+    if [ "$mode" == "custom" ]; then expected="$root/custom config"; fi
     mkdir -p "$expected"
     expected="$(cd "$expected" && pwd -P)"
     run bash -c '
@@ -174,6 +176,7 @@ source ./tests/setup_unit.sh
       export trace
       options=()
       if [ "$3" == "custom" ]; then options=(--config-folder "$4"); fi
+      cd "$2"
       bash ./tests/run_parallel.sh "${options[@]}" --log-folder "$2" fake-image suite
     ' bash "$trace" "$BATS_TEST_TMPDIR" "$mode" "$expected"
 
@@ -231,7 +234,7 @@ source ./tests/setup_unit.sh
       }
       export -f docker
       export trace inspect_status
-      bash ./tests/run_parallel.sh --log-folder "$3" --build-mode "$4" fake-image suite
+      bash ./tests/run_parallel.sh --config-folder "$3/config" --log-folder "$3" --build-mode "$4" fake-image suite
     ' bash "$trace" "$inspect_status" "$BATS_TEST_TMPDIR" "$mode"
 
     if [ "$mode:$inspect_status" == "use-tag:1" ]; then
@@ -310,7 +313,7 @@ source ./tests/setup_unit.sh
       if [ "${!#}" == "failing-suite" ]; then return 7; fi
     }
     export -f docker
-    bash ./tests/run_parallel.sh --log-folder "$1/suite logs" --max-parallel-jobs 1 --html-report "$2" fake-image "pass&<suite>,failing-suite"
+    bash ./tests/run_parallel.sh --config-folder "$1/config" --log-folder "$1/suite logs" --max-parallel-jobs 1 --html-report "$2" fake-image "pass&<suite>,failing-suite"
   ' bash "$BATS_TEST_TMPDIR" "$report"
 
   assert_failure 1
