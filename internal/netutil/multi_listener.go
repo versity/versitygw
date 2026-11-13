@@ -36,6 +36,9 @@ type MultiListener struct {
 	acceptCh  chan acceptResult
 	closeCh   chan struct{}
 	closeOnce sync.Once
+	closeErr  error
+	closeMu   sync.Mutex
+	connErrs  []error
 	wg        sync.WaitGroup
 }
 
@@ -72,7 +75,11 @@ func (ml *MultiListener) acceptLoop(ln net.Listener) {
 		select {
 		case <-ml.closeCh:
 			if conn != nil {
-				conn.Close()
+				if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+					ml.closeMu.Lock()
+					ml.connErrs = append(ml.connErrs, err)
+					ml.closeMu.Unlock()
+				}
 			}
 			return
 		case ml.acceptCh <- acceptResult{conn: conn, err: err}:
@@ -91,14 +98,23 @@ func (ml *MultiListener) Accept() (net.Conn, error) {
 		if !ok {
 			return nil, errors.New("listener closed")
 		}
+		select {
+		case <-ml.closeCh:
+			if result.conn != nil {
+				if err := result.conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+					return nil, fmt.Errorf("listener closed; closing accepted connection: %w", err)
+				}
+			}
+			return nil, errors.New("listener closed")
+		default:
+		}
 		return result.conn, result.err
 	}
 }
 
 func (ml *MultiListener) Close() error {
-	var errs []error
-
 	ml.closeOnce.Do(func() {
+		var errs []error
 		close(ml.closeCh)
 
 		for _, ln := range ml.listeners {
@@ -108,16 +124,23 @@ func (ml *MultiListener) Close() error {
 		}
 
 		ml.wg.Wait()
+		ml.closeMu.Lock()
+		errs = append(errs, ml.connErrs...)
+		ml.closeMu.Unlock()
 
 		close(ml.acceptCh)
-		for range ml.acceptCh {
+		for result := range ml.acceptCh {
+			if result.conn != nil {
+				if err := result.conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+					errs = append(errs, err)
+				}
+			}
+		}
+		if len(errs) > 0 {
+			ml.closeErr = fmt.Errorf("errors closing listeners: %w", errors.Join(errs...))
 		}
 	})
-
-	if len(errs) > 0 {
-		return fmt.Errorf("errors closing listeners: %v", errs)
-	}
-	return nil
+	return ml.closeErr
 }
 
 func (ml *MultiListener) Addr() net.Addr {
@@ -249,6 +272,16 @@ func resolveHostnameAddrs(address string) ([]string, error) {
 
 type ListenerOptions struct {
 	SocketPerm os.FileMode
+	// WrapListener, when set, wraps each bound socket listener before any TLS
+	// layer is added, so the wrapper sees raw TCP bytes including TLS records.
+	WrapListener func(net.Listener) net.Listener
+}
+
+func (o ListenerOptions) wrap(ln net.Listener) net.Listener {
+	if o.WrapListener == nil {
+		return ln
+	}
+	return o.WrapListener(ln)
 }
 
 func NewMultiAddrListener(network, address string, opts ListenerOptions) (net.Listener, error) {
@@ -268,7 +301,7 @@ func NewMultiAddrListener(network, address string, opts ListenerOptions) (net.Li
 				return nil, fmt.Errorf("failed to set permissions on socket %s: %w", address, err)
 			}
 		}
-		return NewMultiListener(ln), nil
+		return NewMultiListener(opts.wrap(ln)), nil
 	}
 
 	addrs, err := resolveHostnameAddrs(address)
@@ -285,7 +318,7 @@ func NewMultiAddrListener(network, address string, opts ListenerOptions) (net.Li
 			}
 			return nil, fmt.Errorf("failed to bind listener %s: %w", addr, err)
 		}
-		listeners = append(listeners, ln)
+		listeners = append(listeners, opts.wrap(ln))
 	}
 
 	return NewMultiListener(listeners...), nil
@@ -355,7 +388,7 @@ func NewMultiAddrTLSListenerWithOptions(network, address string, tlsOpts TLSOpti
 				return nil, fmt.Errorf("failed to set permissions on socket %s: %w", address, err)
 			}
 		}
-		return NewMultiListener(newTLSListener(ln, config)), nil
+		return NewMultiListener(newTLSListener(opts.wrap(ln), config)), nil
 	}
 
 	addrs, err := resolveHostnameAddrs(address)
@@ -372,7 +405,7 @@ func NewMultiAddrTLSListenerWithOptions(network, address string, tlsOpts TLSOpti
 			}
 			return nil, fmt.Errorf("failed to bind TLS listener %s: %w", addr, err)
 		}
-		listeners = append(listeners, newTLSListener(ln, config))
+		listeners = append(listeners, newTLSListener(opts.wrap(ln), config))
 	}
 
 	return NewMultiListener(listeners...), nil

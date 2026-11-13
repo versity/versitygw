@@ -378,3 +378,41 @@ func TestRunVersityGWValidatesListBucketsScope(t *testing.T) {
 		})
 	}
 }
+
+func TestRunVersityGWValidatesBandwidth(t *testing.T) {
+	tests := []struct {
+		name    string
+		set     func(*Config)
+		wantErr string
+	}{
+		{"negative limit", func(c *Config) { c.EgressBandwidthLimit = -1 }, "egress-bandwidth-limit must not be negative"},
+		{"burst without limit", func(c *Config) { c.IngressBandwidthBurst = 1 << 20 }, "ingress-bandwidth-burst requires ingress-bandwidth-limit"},
+		{"burst below minimum", func(c *Config) {
+			c.EgressBandwidthLimit = 1 << 20
+			c.EgressBandwidthBurst = 1024
+		}, "egress-bandwidth-burst must be at least"},
+		{"burst above maximum", func(c *Config) {
+			c.EgressBandwidthLimit = 1 << 30
+			c.EgressBandwidthBurst = 1 << 31
+		}, "egress-bandwidth-burst must not exceed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{
+				RootUserAccess:    "root",
+				RootUserSecret:    "secret",
+				Ports:             []string{"127.0.0.1:0"},
+				MaxConnections:    1,
+				MaxRequests:       1,
+				MultipartMaxParts: 1,
+				Quiet:             true,
+			}
+			tt.set(&cfg)
+
+			err := RunVersityGW(context.Background(), backend.BackendUnsupported{}, &cfg)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want substring %q", err, tt.wantErr)
+			}
+		})
+	}
+}

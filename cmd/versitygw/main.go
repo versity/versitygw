@@ -28,6 +28,7 @@ import (
 	"github.com/versity/versitygw/cmd/internal/gwcli"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/embedgw"
+	"github.com/versity/versitygw/internal/bwlimit"
 	"github.com/versity/versitygw/internal/netutil"
 )
 
@@ -38,6 +39,8 @@ var (
 	allowAnyRegion                                bool
 	maxConnections, maxRequests                   int
 	adminMaxConnections, adminMaxRequests         int
+	ingressBWLimit, ingressBWBurst                string
+	egressBWLimit, egressBWBurst                  string
 	corsAllowOrigin                               string
 	admCertFile, admKeyFile                       string
 	adminPathPrefix                               string
@@ -357,6 +360,30 @@ func initFlags() []cli.Flag {
 			Value:       100000,
 			Destination: &maxRequests,
 			Aliases:     []string{"mr"},
+		},
+		&cli.StringFlag{
+			Name:        "ingress-bandwidth-limit",
+			Usage:       "maximum aggregate rate the s3 api server reads from clients, per second, e.g. 500MiB, 1GB, 10Gbit (B is bytes, bit is bits; a lowercase b is rejected as ambiguous); excess traffic is delayed, not rejected; 0 for unlimited",
+			EnvVars:     []string{"VGW_INGRESS_BANDWIDTH_LIMIT"},
+			Destination: &ingressBWLimit,
+		},
+		&cli.StringFlag{
+			Name:        "ingress-bandwidth-burst",
+			Usage:       "bytes that may be read in a burst above ingress-bandwidth-limit, e.g. 1MiB; range 32KiB to 2GiB-1; defaults to 10ms of traffic, between 64KiB and 1MiB",
+			EnvVars:     []string{"VGW_INGRESS_BANDWIDTH_BURST"},
+			Destination: &ingressBWBurst,
+		},
+		&cli.StringFlag{
+			Name:        "egress-bandwidth-limit",
+			Usage:       "maximum aggregate rate the s3 api server writes to clients, per second, e.g. 500MiB, 1GB, 10Gbit (B is bytes, bit is bits; a lowercase b is rejected as ambiguous); excess traffic is delayed, not rejected; 0 for unlimited",
+			EnvVars:     []string{"VGW_EGRESS_BANDWIDTH_LIMIT"},
+			Destination: &egressBWLimit,
+		},
+		&cli.StringFlag{
+			Name:        "egress-bandwidth-burst",
+			Usage:       "bytes that may be written in a burst above egress-bandwidth-limit, e.g. 1MiB; range 32KiB to 2GiB-1; defaults to 10ms of traffic, between 64KiB and 1MiB",
+			EnvVars:     []string{"VGW_EGRESS_BANDWIDTH_BURST"},
+			Destination: &egressBWBurst,
 		},
 		&cli.StringFlag{
 			Name:        "cors-allow-origin",
@@ -1020,6 +1047,18 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		return err
 	}
 
+	var bw [4]int64
+	for i, f := range []struct{ name, val string }{
+		{"ingress-bandwidth-limit", ingressBWLimit},
+		{"ingress-bandwidth-burst", ingressBWBurst},
+		{"egress-bandwidth-limit", egressBWLimit},
+		{"egress-bandwidth-burst", egressBWBurst},
+	} {
+		if bw[i], err = bwlimit.ParseBytes(f.val); err != nil {
+			return fmt.Errorf("%s: %w", f.name, err)
+		}
+	}
+
 	return embedgw.RunVersityGW(ctx, be, &embedgw.Config{
 		RootUserAccess:              gwcli.RootUserAccess,
 		RootUserSecret:              gwcli.RootUserSecret,
@@ -1029,6 +1068,10 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		AdminPorts:                  admPorts,
 		MaxConnections:              maxConnections,
 		MaxRequests:                 maxRequests,
+		IngressBandwidthLimit:       bw[0],
+		IngressBandwidthBurst:       bw[1],
+		EgressBandwidthLimit:        bw[2],
+		EgressBandwidthBurst:        bw[3],
 		AdminMaxConnections:         adminMaxConnections,
 		AdminMaxRequests:            adminMaxRequests,
 		MultipartMaxParts:           mpMaxParts,
