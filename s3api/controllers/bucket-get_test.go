@@ -623,6 +623,29 @@ func TestS3ApiController_GetBucketPolicyStatus(t *testing.T) {
 }
 
 func TestS3ApiController_ListObjectVersions(t *testing.T) {
+	specialKeysVersionsResult := s3response.ListVersionsResult{
+		Prefix:        utils.GetStringPtr("a b/"),
+		Delimiter:     utils.GetStringPtr("/"),
+		KeyMarker:     utils.GetStringPtr("a b"),
+		NextKeyMarker: utils.GetStringPtr("c d"),
+		Versions:      []s3response.ObjectVersion{{Key: utils.GetStringPtr("a b/c+d")}},
+		DeleteMarkers: []s3response.DeleteMarkerEntry{{Key: utils.GetStringPtr("e f")}},
+		CommonPrefixes: []types.CommonPrefix{
+			{Prefix: utils.GetStringPtr("g h/")},
+		},
+	}
+	urlEncodedVersionsResult := s3response.ListVersionsResult{
+		EncodingType:  types.EncodingTypeUrl,
+		Prefix:        utils.GetStringPtr("a+b/"),
+		Delimiter:     utils.GetStringPtr("/"),
+		KeyMarker:     utils.GetStringPtr("a+b"),
+		NextKeyMarker: utils.GetStringPtr("c+d"),
+		Versions:      []s3response.ObjectVersion{{Key: utils.GetStringPtr("a+b/c%2Bd")}},
+		DeleteMarkers: []s3response.DeleteMarkerEntry{{Key: utils.GetStringPtr("e+f")}},
+		CommonPrefixes: []types.CommonPrefix{
+			{Prefix: utils.GetStringPtr("g+h/")},
+		},
+	}
 	listVersionsResult := s3response.ListVersionsResult{
 		Name:      utils.GetStringPtr("name"),
 		Prefix:    utils.GetStringPtr("prefix"),
@@ -648,6 +671,41 @@ func TestS3ApiController_ListObjectVersions(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "invalid encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"encoding-type": "gibberish",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"),
+			},
+		},
+		{
+			name: "url encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  specialKeysVersionsResult,
+				queries: map[string]string{
+					"encoding-type": "url",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: urlEncodedVersionsResult,
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
 			},
 		},
 		{
@@ -945,6 +1003,27 @@ func TestS3ApiController_GetBucketAcl(t *testing.T) {
 }
 
 func TestS3ApiController_ListMultipartUploads(t *testing.T) {
+	specialKeysMpResult := s3response.ListMultipartUploadsResult{
+		Bucket:         "bucket",
+		Prefix:         "a b/",
+		Delimiter:      "/",
+		KeyMarker:      "a b",
+		NextKeyMarker:  "c d",
+		UploadIDMarker: "id",
+		Uploads:        []s3response.Upload{{Key: "a b/c+d"}},
+		CommonPrefixes: []s3response.CommonPrefix{{Prefix: "e f/"}},
+	}
+	urlEncodedMpResult := s3response.ListMultipartUploadsResult{
+		Bucket:         "bucket",
+		EncodingType:   "url",
+		Prefix:         "a+b/",
+		Delimiter:      "/",
+		KeyMarker:      "a+b",
+		NextKeyMarker:  "c+d",
+		UploadIDMarker: "id",
+		Uploads:        []s3response.Upload{{Key: "a+b/c%2Bd"}},
+		CommonPrefixes: []s3response.CommonPrefix{{Prefix: "e+f/"}},
+	}
 	listMpResult := s3response.ListMultipartUploadsResult{
 		Prefix:    "prefix",
 		Delimiter: "delim",
@@ -970,6 +1049,41 @@ func TestS3ApiController_ListMultipartUploads(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "invalid encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"encoding-type": "gibberish",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"),
+			},
+		},
+		{
+			name: "url encoding type",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  specialKeysMpResult,
+				queries: map[string]string{
+					"encoding-type": "url",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: urlEncodedMpResult,
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
 			},
 		},
 		{
