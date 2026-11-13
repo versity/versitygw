@@ -359,6 +359,15 @@ func (c S3ApiController) ListObjectVersions(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	encodingType, err := utils.ParseEncodingType(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	data, err := c.be.ListObjectVersions(ctx.RequestCtx(),
 		&s3.ListObjectVersionsInput{
 			Bucket:          &bucket,
@@ -368,6 +377,9 @@ func (c S3ApiController) ListObjectVersions(ctx fiber.Ctx) (*Response, error) {
 			Prefix:          &prefix,
 			VersionIdMarker: &versionIdMarker,
 		})
+	if err == nil && encodingType != "" {
+		data = utils.URLEncodeListVersionsResult(data, encodingType)
+	}
 	return &Response{
 		Data: data,
 		MetaOpts: &MetaOptions{
@@ -508,6 +520,14 @@ func (c S3ApiController) ListMultipartUploads(ctx fiber.Ctx) (*Response, error) 
 			},
 		}, err
 	}
+	encodingType, err := utils.ParseEncodingType(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
 	res, err := c.be.ListMultipartUploads(ctx.RequestCtx(),
 		&s3.ListMultipartUploadsInput{
 			Bucket:         &bucket,
@@ -517,6 +537,9 @@ func (c S3ApiController) ListMultipartUploads(ctx fiber.Ctx) (*Response, error) 
 			MaxUploads:     &maxUploads,
 			KeyMarker:      &keyMarker,
 		})
+	if err == nil && encodingType != "" {
+		res = utils.URLEncodeListMultipartUploadsResult(res, encodingType)
+	}
 	return &Response{
 		Data: res,
 		MetaOpts: &MetaOptions{

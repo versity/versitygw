@@ -1327,3 +1327,68 @@ func URLEncodeListObjectsV2Result(res s3response.ListObjectsV2Result, encodingTy
 	res.CommonPrefixes = urlEncodeCommonPrefixes(res.CommonPrefixes)
 	return res
 }
+
+// urlEncodeString encodes a non-pointer key name like urlEncodeKeyName.
+func urlEncodeString(name string) string {
+	return *urlEncodeKeyName(&name)
+}
+
+// URLEncodeListVersionsResult returns res as S3 answers a ListObjectVersions
+// request with encoding-type=url: EncodingType set to the value as sent and the
+// Delimiter, KeyMarker, NextKeyMarker, Prefix, Key (of versions and delete
+// markers) and CommonPrefixes values encoded. The backend's values are left
+// untouched.
+func URLEncodeListVersionsResult(res s3response.ListVersionsResult, encodingType types.EncodingType) s3response.ListVersionsResult {
+	res.EncodingType = encodingType
+	res.Delimiter = urlEncodeKeyName(res.Delimiter)
+	res.KeyMarker = urlEncodeKeyName(res.KeyMarker)
+	res.NextKeyMarker = urlEncodeKeyName(res.NextKeyMarker)
+	res.Prefix = urlEncodeKeyName(res.Prefix)
+	res.CommonPrefixes = urlEncodeCommonPrefixes(res.CommonPrefixes)
+	if res.Versions != nil {
+		versions := make([]s3response.ObjectVersion, len(res.Versions))
+		for i, v := range res.Versions {
+			v.Key = urlEncodeKeyName(v.Key)
+			versions[i] = v
+		}
+		res.Versions = versions
+	}
+	if res.DeleteMarkers != nil {
+		markers := make([]s3response.DeleteMarkerEntry, len(res.DeleteMarkers))
+		for i, m := range res.DeleteMarkers {
+			m.Key = urlEncodeKeyName(m.Key)
+			markers[i] = m
+		}
+		res.DeleteMarkers = markers
+	}
+	return res
+}
+
+// URLEncodeListMultipartUploadsResult returns res as S3 answers a
+// ListMultipartUploads request with encoding-type=url: EncodingType set to the
+// value as sent and the Delimiter, KeyMarker, NextKeyMarker, Prefix, Key and
+// CommonPrefixes values encoded. The backend's values are left untouched.
+func URLEncodeListMultipartUploadsResult(res s3response.ListMultipartUploadsResult, encodingType types.EncodingType) s3response.ListMultipartUploadsResult {
+	res.EncodingType = string(encodingType)
+	res.Delimiter = urlEncodeString(res.Delimiter)
+	res.KeyMarker = urlEncodeString(res.KeyMarker)
+	res.NextKeyMarker = urlEncodeString(res.NextKeyMarker)
+	res.Prefix = urlEncodeString(res.Prefix)
+	if res.Uploads != nil {
+		uploads := make([]s3response.Upload, len(res.Uploads))
+		for i, u := range res.Uploads {
+			u.Key = urlEncodeString(u.Key)
+			uploads[i] = u
+		}
+		res.Uploads = uploads
+	}
+	if res.CommonPrefixes != nil {
+		prefixes := make([]s3response.CommonPrefix, len(res.CommonPrefixes))
+		for i, cp := range res.CommonPrefixes {
+			cp.Prefix = urlEncodeString(cp.Prefix)
+			prefixes[i] = cp
+		}
+		res.CommonPrefixes = prefixes
+	}
+	return res
+}
