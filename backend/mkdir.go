@@ -95,8 +95,13 @@ func mkdirAll(path string, uid, gid int, doChown bool, dirPerm fs.FileMode, retr
 			break
 		}
 
-		if errors.Is(err, fs.ErrNotExist) && *retries > 0 {
-			// The parent was removed after it was made, make it again.
+		// ENOENT: the parent was removed after it was made.
+		// ENOTDIR or ESTALE, unless path ends in a separator: Mkdir itself
+		// reports that a parent isn't a directory anymore, the same race the
+		// Lstat branch below retries after an EEXIST. A trailing separator
+		// stays with that branch: Mkdir("file/") for a regular file is not
+		// a parent that vanished.
+		if *retries > 0 && (errors.Is(err, fs.ErrNotExist) || (i == len(path) && isNotDirOrStale(err))) {
 			takeMkdirRetry(retries)
 			continue
 		}
