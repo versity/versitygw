@@ -131,7 +131,7 @@ gateway:
 | **Ingress** | `ingress.enabled=true`, `ingress.className`, `ingress.hosts`, `ingress.tls` |
 | **HTTPRoute** | `httpRoute.enabled=true` — Gateway API successor to Ingress for S3 API; also `admin.httpRoute.enabled=true` and `webui.httpRoute.enabled=true` to expose the admin API and/or WebUI |
 | **Admin API** | `admin.enabled=true` — exposes a separate management API on `admin.port` (default `7071`); `admin.pathPrefix` (e.g. `/admin`) serves it under a path prefix, on the S3 port when `admin.enabled=false` — see [Serving Under One Hostname](#serving-under-one-hostname) |
-| **WebUI** | `webui.enabled=true` — browser-based management UI on `webui.port` (default `8080`); set `webui.apiGateways` and `webui.adminGateways` to your externally reachable endpoints, and `webui.iamGateways` when `iam.type=standalone` so the login page offers the IAM service (the WebUI then ignores the admin API entirely — the IAM service manages users, and buckets are managed over the S3 API). `webui.pathPrefix` serves it under a path on `webui.port`; `webui.s3Prefix` also serves it on the S3 port |
+| **WebUI** | `webui.enabled=true` — browser-based management UI on `webui.port` (default `8080`); set `webui.apiGateways` and `webui.adminGateways` to your externally reachable endpoints, and `webui.iamGateways` when `iam.type=standalone` so the login page offers the IAM service (the WebUI then ignores the admin API entirely — the IAM service manages users, and buckets are managed over the S3 API). `webui.pathPrefix` serves it under a path on `webui.port`; `webui.s3Prefix` also serves it on the S3 port. `webui.oidc.*` adds single sign-on — see [WebUI Single Sign-On](#webui-single-sign-on) |
 | **Website Hosting** | `website.enabled=true` — static website hosting endpoint on `website.port` (default `8090`); optionally set `website.domain` for virtual-host routing (e.g. `example.com`), or omit it for catch-all mode where the full hostname is the bucket name |
 | **IAM** | `iam.enabled=true` — identity and access management. `iam.type=internal` (default) stores accounts in a flat file under `iam.dir`, alongside backend data or on its own PVC with `iam.persistence.enabled=true`; `iam.type=standalone` delegates to a separate standalone IAM API service — see [Standalone IAM Service](#standalone-iam-service) below; `iam.type=azure` stores accounts in a `users.json` blob of an existing Azure Blob Storage container (`iam.azure.container`), shared by every replica, with credentials from `iam.azure.credentials.existingSecret` or the Azure default credential chain (e.g. AKS workload identity). Other IAM backends (S3, LDAP, Vault, FreeIPA) can be configured through `extraEnv` |
 | **Persistence** | `persistence.enabled=true` — provisions a PVC for backend data and IAM storage (unless `iam.persistence.enabled=true`); defaults to `10Gi`, or uses a hostPath volume specified by `persistence.hostPath` |
@@ -200,6 +200,35 @@ Key points:
 - **OIDC identity providers**: `AssumeRoleWithWebIdentity` only trusts an OIDC provider reachable over verified https at a publicly routable address on the implicit `:443`. An in-cluster provider satisfies none of that, so `iamServer.oidc.allowPrivateEndpoints` permits private/loopback addresses and an explicit port (a SPIRE OIDC discovery provider on a ClusterIP `Service`), and `iamServer.oidc.allowInsecureTransport` additionally permits plaintext `http://` providers and drops TLS verification (the same provider bound to `127.0.0.1` as a sidecar). Each relaxes real protections — see the comments in `values.yaml` — so enable only the one your topology needs. `iamServer.oidc.discoveryUrls` is the narrower alternative for a provider that is public but reachable in-cluster: it moves only one provider's discovery fetch to an address you name (private addresses included, without `allowPrivateEndpoints`), while tokens keep naming their public issuer.
 - **WebUI access**: to manage IAM users from the WebUI, set `webui.iamGateways` to the URL a browser can reach `iamServer` on, and `iamServer.corsAllowOrigin` to the WebUI's own origin. Every WebUI call to the IAM API is cross-origin, so without `corsAllowOrigin` the browser blocks it and the WebUI's IAM navigation silently never appears.
 - **Secret rotation**: both processes re-read their TLS certificates and CA bundles, the private mTLS material on both sides included, on SIGHUP, so a certificate rotator sidecar sharing the process namespace (`shareProcessNamespace`) can rotate them in place. Environment-based credentials are read only at startup: after a referenced Secret rotates, restart both Deployments or configure a Secret-reloader controller through `deploymentAnnotations` and `iamServer.deploymentAnnotations`.
+
+## WebUI Single Sign-On
+
+`webui.oidc` adds a "Sign in with SSO" button to the WebUI login page. The browser signs in at an OpenID Connect provider (Keycloak, authentik, Okta, Entra ID, ...) with the authorization code flow and PKCE, then exchanges the ID token for temporary credentials with `AssumeRoleWithWebIdentity` on the standalone IAM service. The access-key form stays available.
+
+```yaml
+iam:
+  enabled: true
+  type: standalone
+iamServer:
+  enabled: true
+  corsAllowOrigin: https://s3.example.com      # the WebUI's origin
+webui:
+  s3Prefix: /ui
+  apiGateways:
+    - https://s3.example.com
+  iamGateways:
+    - https://iam.example.com
+  oidc:
+    issuer: https://auth.example.com/realms/main
+    clientId: versitygw-webui
+    roleArn: arn:aws:iam::000000000000:role/webui-users
+```
+
+- **At the provider**: register a public client (no client secret) with the authorization code flow and PKCE S256. Its redirect URI is the login page URL, here `https://s3.example.com/ui/`, unless `webui.oidc.redirectUri` overrides it; register the same URL as a post-logout redirect URI. Allow the WebUI origin for CORS (Keycloak "Web origins"), since the browser calls the token endpoint directly.
+- **On the IAM service**: register the provider with `CreateOpenIDConnectProvider`, using the same issuer URL and the client ID in its client ID list, and create the role with a trust policy that federates that provider (typically conditioned on `<issuer>:aud` and claims such as `groups`).
+- **Roles**: role permission policies do not see token claims, so per-group permissions need one role per group. Set `webui.oidc.roleClaim` to a claim the provider fills with the user's role ARNs; with several, the user picks one at sign-in. `webui.oidc.roleArn` is the role used otherwise.
+- **Session renewal**: with a refresh token the WebUI renews credentials in the background; without one it warns before the session ends and sends the user back through the provider. Some providers only issue refresh tokens when `webui.oidc.scopes` includes `offline_access`.
+- **Bucket CORS**: SSO requests carry `X-Amz-Security-Token`. A bucket with its own CORS configuration must list it in `AllowedHeaders` (or allow `*`).
 
 ## Scaling and Persistence
 

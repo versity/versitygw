@@ -1,0 +1,166 @@
+# VersityGW WebUI end-to-end tests: a public OAuth2/OpenID provider for the
+# WebUI, groups that carry role ARNs, the test users, and a scope mapping
+# that turns the user's groups into a vgw_roles claim. It matches the
+# Keycloak realm next door user for user.
+version: 1
+metadata:
+  name: VersityGW WebUI end-to-end tests
+entries:
+  # The default objects this blueprint uses, applied first so that a fresh
+  # database never sees this blueprint before them.
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        path: system/providers-oauth2.yaml
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        path: default/flow-default-authentication-flow.yaml
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        path: default/flow-default-provider-authorization-implicit-consent.yaml
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        path: default/flow-default-invalidation-flow.yaml
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        path: default/default-brand.yaml
+      required: true
+
+  - model: authentik_core.group
+    identifiers:
+      name: s3-admins
+    attrs:
+      attributes:
+        vgw_roles: [arn:aws:iam::000000000000:role/s3-admins]
+  - model: authentik_core.group
+    identifiers:
+      name: s3-readers
+    attrs:
+      attributes:
+        vgw_roles: [arn:aws:iam::000000000000:role/s3-readers]
+  - model: authentik_core.group
+    identifiers:
+      name: contractors
+    attrs:
+      attributes:
+        vgw_roles: [arn:aws:iam::000000000000:role/s3-admins]
+
+  - model: authentik_core.user
+    identifiers:
+      username: alice
+    attrs:
+      name: Alice Admin
+      email: alice@example.com
+      password: alice
+      groups:
+        - !Find [authentik_core.group, [name, s3-admins]]
+  - model: authentik_core.user
+    identifiers:
+      username: bob
+    attrs:
+      name: Bob Reader
+      email: bob@example.com
+      password: bob
+      groups:
+        - !Find [authentik_core.group, [name, s3-readers]]
+  - model: authentik_core.user
+    identifiers:
+      username: carol
+    attrs:
+      name: Carol Both
+      email: carol@example.com
+      password: carol
+      groups:
+        - !Find [authentik_core.group, [name, s3-admins]]
+        - !Find [authentik_core.group, [name, s3-readers]]
+  - model: authentik_core.user
+    identifiers:
+      username: dave
+    attrs:
+      name: Dave Nogroup
+      email: dave@example.com
+      password: dave
+  - model: authentik_core.user
+    identifiers:
+      username: mallory
+    attrs:
+      name: Mallory Contractor
+      email: mallory@example.com
+      password: mallory
+      groups:
+        - !Find [authentik_core.group, [name, contractors]]
+  - model: authentik_core.user
+    identifiers:
+      username: frank
+    attrs:
+      name: Frank Disposable
+      email: frank@example.com
+      password: frank
+      groups:
+        - !Find [authentik_core.group, [name, s3-readers]]
+
+  - model: authentik_providers_oauth2.scopemapping
+    id: vgw-roles-mapping
+    identifiers:
+      name: "VersityGW: vgw_roles"
+    attrs:
+      scope_name: vgw_roles
+      description: VersityGW role ARNs from the user's groups
+      expression: |
+        return {
+            "vgw_roles": [
+                role
+                for group in request.user.groups.all()
+                for role in group.attributes.get("vgw_roles", [])
+            ]
+        }
+
+  - model: authentik_providers_oauth2.oauth2provider
+    id: versitygw-provider
+    identifiers:
+      name: versitygw-webui
+    attrs:
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      # The global logout flow, so that signing out of the WebUI also ends
+      # the authentik session. The provider default only shows a page.
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-invalidation-flow]]
+      client_type: public
+      client_id: versitygw-webui
+      # Only the grant types listed here are allowed; none means none.
+      grant_types:
+        - authorization_code
+        - refresh_token
+      redirect_uris:
+        - matching_mode: strict
+          url: http://127.0.0.1:26121/
+          redirect_uri_type: authorization
+        # Where signing out may return to (post_logout_redirect_uri).
+        - matching_mode: strict
+          url: http://127.0.0.1:26121/
+          redirect_uri_type: logout
+      # Without a signing key, ID tokens are HS256, which the gateway
+      # cannot verify.
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      include_claims_in_id_token: true
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+        # Refresh tokens are issued only for this scope.
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+        - !KeyOf vgw-roles-mapping
+
+  - model: authentik_core.application
+    identifiers:
+      slug: versitygw
+    attrs:
+      name: VersityGW
+      provider: !KeyOf versitygw-provider

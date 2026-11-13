@@ -19,3 +19,21 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  # The WebUI end-to-end tests: Playwright and the AWS SDK, and the
+  # identity provider images.
+  - package-ecosystem: "npm"
+    directory: "/tests/webui-e2e"
+    schedule:
+      interval: "weekly"
+    groups:
+      webui-e2e:
+        patterns: ["*"]
+
+  - package-ecosystem: "docker-compose"
+    directory: "/tests/webui-e2e/docker"
+    schedule:
+      interval: "weekly"
+    groups:
+      webui-e2e-images:
+        patterns: ["*"]

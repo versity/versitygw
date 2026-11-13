@@ -1,0 +1,75 @@
+name: WebUI end-to-end tests
+permissions:
+  contents: read
+on: pull_request
+
+# Runs tests/webui-e2e: the WebUI in headless Chromium against versitygw
+# built from this commit, with Keycloak and authentik as real identity
+# providers in Docker.
+
+jobs:
+  test:
+    name: RunWebUIE2ETests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: tests/webui-e2e
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # authentik takes a minute or two to start, so it starts first and
+      # gets ready while the rest installs.
+      - name: Start the identity providers
+        run: docker compose -f docker/compose.yml up -d
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/webui-e2e/package-lock.json
+
+      - name: Install the test dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Type-check the tests
+        run: npm run typecheck
+
+      - name: Build versitygw
+        working-directory: .
+        run: |
+          go build -o "$RUNNER_TEMP/versitygw" ./cmd/versitygw
+          echo "VERSITYGW_BINARY=$RUNNER_TEMP/versitygw" >> "$GITHUB_ENV"
+
+      - name: Wait for the identity providers
+        run: npm run idp:up
+
+      - name: Run the tests
+        run: npm test
+
+      - name: Save the identity provider logs
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p logs
+          docker compose -f docker/compose.yml logs --no-color > logs/identity-providers.log 2>&1 || true
+
+      - name: Upload the report and logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: webui-e2e-report
+          path: |
+            tests/webui-e2e/playwright-report/
+            tests/webui-e2e/test-results/
+            tests/webui-e2e/logs/
+          retention-days: 14
+          if-no-files-found: ignore
