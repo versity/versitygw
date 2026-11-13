@@ -1,0 +1,25 @@
+{
+  "name": "versitygw-webui-e2e",
+  "private": true,
+  "description": "End-to-end tests of the VersityGW WebUI in a real browser",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit",
+    "idp:up": "docker compose -f docker/compose.yml up -d --wait --wait-timeout 300",
+    "idp:down": "docker compose -f docker/compose.yml down",
+    "idp:logs": "docker compose -f docker/compose.yml logs"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-iam": "3.1167.0",
+    "@aws-sdk/client-s3": "3.1167.0",
+    "@playwright/test": "1.65.0",
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3"
+  }
+}
