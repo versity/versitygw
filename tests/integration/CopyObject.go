@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -1643,7 +1644,7 @@ func CopyObject_to_itself_by_replacing_the_checksum(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		_, err := putObjectWithData(400, &s3.PutObjectInput{
+		put, err := putObjectWithData(400, &s3.PutObjectInput{
 			Bucket:            &bucket,
 			Key:               &obj,
 			ChecksumAlgorithm: types.ChecksumAlgorithmSha256,
@@ -1651,6 +1652,13 @@ func CopyObject_to_itself_by_replacing_the_checksum(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
+
+		hasher, err := NewHasher(types.ChecksumAlgorithmCrc32)
+		if err != nil {
+			return err
+		}
+		hasher.Write(put.data)
+		crc := base64.StdEncoding.EncodeToString(hasher.Sum(nil))
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
@@ -1665,8 +1673,13 @@ func CopyObject_to_itself_by_replacing_the_checksum(s *S3Conf) error {
 			return err
 		}
 
-		if out.CopyObjectResult.ChecksumCRC32 == nil {
-			return fmt.Errorf("expected non empty crc32 checksum")
+		if getString(out.CopyObjectResult.ChecksumCRC32) != crc {
+			return fmt.Errorf("expected the crc32 checksum to be %v, instead got %v",
+				crc, getString(out.CopyObjectResult.ChecksumCRC32))
+		}
+		if out.CopyObjectResult.ChecksumType != types.ChecksumTypeFullObject {
+			return fmt.Errorf("expected the checksum type to be %v, instead got %v",
+				types.ChecksumTypeFullObject, out.CopyObjectResult.ChecksumType)
 		}
 		for _, algo := range types.ChecksumAlgorithmCrc32.Values() {
 			if algo == types.ChecksumAlgorithmCrc32 {
@@ -1688,8 +1701,13 @@ func CopyObject_to_itself_by_replacing_the_checksum(s *S3Conf) error {
 			return err
 		}
 
-		if res.ChecksumCRC32 == nil {
-			return fmt.Errorf("expected non empty crc32 checksum")
+		if getString(res.ChecksumCRC32) != crc {
+			return fmt.Errorf("expected the crc32 checksum to be %v, instead got %v",
+				crc, getString(res.ChecksumCRC32))
+		}
+		if res.ChecksumType != types.ChecksumTypeFullObject {
+			return fmt.Errorf("expected the checksum type to be %v, instead got %v",
+				types.ChecksumTypeFullObject, res.ChecksumType)
 		}
 		for _, algo := range types.ChecksumAlgorithmCrc32.Values() {
 			if algo == types.ChecksumAlgorithmCrc32 {
