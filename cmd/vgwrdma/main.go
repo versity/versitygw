@@ -31,6 +31,7 @@ import (
 	"github.com/versity/versitygw/cmd/internal/gwcli"
 	"github.com/versity/versitygw/cubackend"
 	"github.com/versity/versitygw/cumiddleware"
+	"github.com/versity/versitygw/hipv3backend"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/embedgw"
 	"github.com/versity/versitygw/internal/netutil"
@@ -1176,6 +1177,12 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	var s3Opts []s3api.Option
+	// The hipobj-rc-v3 middleware is registered on every build and
+	// every mode: it only parses and stores the token, so builds
+	// without the rdma transport can still answer the documented 501
+	// rather than ignoring the header. It sits outside the v1 block
+	// so v3 never depends on the cuObject flags.
+	s3Opts = append(s3Opts, s3api.WithMiddleware("/", cumiddleware.RDMAv3Middleware))
 	if v1On {
 		rdma.ConfigureTelemetry(debug)
 
@@ -1453,6 +1460,15 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	} else {
 		cfg.S3Options = s3Opts
 	}
+
+	// hipobj-rc-v3 data path: wrap the backend so PutObject,
+	// UploadPart, and GetObject intercept requests carrying a stored
+	// v3 token. In builds without the rdma transport the adapter's
+	// dialer returns the unsupported-transport error, which maps to
+	// the documented 501; the middleware above is registered either
+	// way. Placement is last, after every other backend layer, so
+	// the intercept sees the fully assembled chain.
+	be = hipv3backend.New(be, nil, hipv3backend.Config{})
 
 	runErr := embedgw.RunVersityGW(ctx, be, cfg)
 	return runErr
