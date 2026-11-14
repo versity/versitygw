@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/internal/httpctx"
 )
 
 type Color string
@@ -65,8 +66,14 @@ func printError(prefix prefix, er error) {
 // Logs http request details: headers, body, params, query args
 func LogFiberRequestDetails(ctx fiber.Ctx) {
 	// Log the full request url, with sensitive query parameter values
-	// redacted (ctx.OriginalURL() would print them in the clear).
-	fullURL := ctx.Scheme() + "://" + ctx.Host() + ctx.Path()
+	// redacted (ctx.OriginalURL() would print them in the clear). For a
+	// virtual-hosted-style request, log the path the client sent, not the
+	// bucket-prefixed one the host-style parser routes by.
+	path := ctx.Path()
+	if orig, ok := httpctx.ContextKeyOriginalURIPath.Get(ctx).(string); ok {
+		path = orig
+	}
+	fullURL := ctx.Scheme() + "://" + ctx.Host() + path
 	if qs := debugRedactedQueryString(ctx.Request().URI().QueryArgs()); qs != "" {
 		fullURL += "?" + qs
 	}

@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,9 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 // hostStyleBackend serves any existing bucket, answering GetObject with the
@@ -51,6 +55,128 @@ func (hostStyleBackend) GetObject(_ context.Context, input *s3.GetObjectInput) (
 		Body:          io.NopCloser(strings.NewReader(body)),
 		ContentLength: aws.Int64(int64(len(body))),
 	}, nil
+}
+
+// uploadBackend serves uploads to any bucket without object lock, recording
+// the body each one reads.
+type uploadBackend struct {
+	hostStyleBackend
+	received *[]byte
+}
+
+func (uploadBackend) GetObjectLockConfiguration(context.Context, string) ([]byte, error) {
+	return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+}
+
+func (uploadBackend) ValidateUploadID(string) error { return nil }
+
+func (b uploadBackend) PutObject(_ context.Context, input s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+	var err error
+	*b.received, err = io.ReadAll(input.Body)
+	return s3response.PutObjectOutput{}, err
+}
+
+func (b uploadBackend) UploadPart(_ context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+	var err error
+	*b.received, err = io.ReadAll(input.Body)
+	return &s3.UploadPartOutput{}, err
+}
+
+// The debug logger must leave a virtual-hosted-style upload's body to the
+// handler, as it does a path-style one's, and log the URL the client sent.
+func TestHostStyleUploadWithDebugLogger(t *testing.T) {
+	const (
+		domain = "s3.example.test"
+		region = "us-east-1"
+		body   = "hello\n"
+	)
+	debuglogger.SetLevel(debuglogger.LevelDebug)
+	defer debuglogger.SetLevel(debuglogger.LevelSilent)
+
+	var received []byte
+	root := testAdminRoot
+	srv, err := New(uploadBackend{received: &received}, root, region,
+		auth.NewIAMServiceSingle(auth.Account{Access: root.Access, Secret: root.Secret}),
+		nil, nil, nil, nil,
+		WithConcurrencyLimiter(10, 10),
+		WithQuiet(),
+		WithHostStyle(domain),
+	)
+	if err != nil {
+		t.Fatalf("new s3 server: %v", err)
+	}
+
+	sum := sha256.Sum256([]byte(body))
+	payloadHash := hex.EncodeToString(sum[:])
+	creds := aws.Credentials{AccessKeyID: root.Access, SecretAccessKey: root.Secret}
+
+	tests := []struct {
+		name   string
+		target string
+	}{
+		{
+			name:   "path-style PutObject",
+			target: "http://" + domain + "/bucketa/key",
+		},
+		{
+			name:   "virtual-hosted-style PutObject",
+			target: "http://bucketa." + domain + "/key",
+		},
+		{
+			name:   "virtual-hosted-style UploadPart",
+			target: "http://bucketa." + domain + "/key?partNumber=1&uploadId=id",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			received = nil
+			req, _ := http.NewRequest(http.MethodPut, tt.target, strings.NewReader(body))
+			req.Header.Set("X-Amz-Content-Sha256", payloadHash)
+			if err := v4.NewSigner().SignHTTP(context.Background(), creds, req, payloadHash, "s3", region, time.Now()); err != nil {
+				t.Fatalf("sign request: %v", err)
+			}
+			var resp *http.Response
+			logged := captureStdout(t, func() {
+				resp, err = srv.app.Test(req)
+			})
+			if err != nil {
+				t.Fatalf("app.Test: %v", err)
+			}
+			defer resp.Body.Close()
+			got, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status %d: %s", resp.StatusCode, got)
+			}
+			if string(received) != body {
+				t.Errorf("handler read body %q, want %q", received, body)
+			}
+			if wantURL := "[URL]: " + tt.target + "\x1b[0m\n"; !strings.Contains(logged, wantURL) {
+				t.Errorf("debug log has no %q line:\n%s", wantURL, logged)
+			}
+		})
+	}
+}
+
+// captureStdout returns what fn writes to os.Stdout, where the debug logger
+// prints.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	defer r.Close()
+	out := make(chan string)
+	go func() {
+		b, _ := io.ReadAll(r)
+		out <- string(b)
+	}()
+	stdout := os.Stdout
+	os.Stdout = w
+	fn()
+	os.Stdout = stdout
+	w.Close()
+	return <-out
 }
 
 // A virtual-hosted-style gateway must route a request to the bucket of the
