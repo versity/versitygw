@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -157,6 +158,61 @@ func TestLogFiberRequestAndResponseDetailsRedactSensitiveFields(t *testing.T) {
 	}
 	if !strings.Contains(output, redactedValue) {
 		t.Errorf("expected redaction marker %q in captured output:\n%s", redactedValue, output)
+	}
+}
+
+// A POST Object form reaches the handler unread, and its fields, the
+// signature among them, are not printed.
+func TestLogFiberRequestDetailsLeavesMultipartFormUnread(t *testing.T) {
+	const signature = "dummy-signature"
+
+	app := fiber.New(fiber.Config{
+		StreamRequestBody:            true,
+		DisablePreParseMultipartForm: true,
+	})
+	app.Post("/", func(ctx fiber.Ctx) error {
+		LogFiberRequestDetails(ctx)
+		stream := ctx.Request().BodyStream()
+		if stream == nil {
+			return nil
+		}
+		body, err := io.ReadAll(stream)
+		if err != nil {
+			return err
+		}
+		return ctx.Send(body)
+	})
+
+	var sent bytes.Buffer
+	w := multipart.NewWriter(&sent)
+	if err := w.WriteField("x-amz-signature", signature); err != nil {
+		t.Fatalf("write field: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(sent.Bytes()))
+	req.Header.Set("Content-Type", w.FormDataContentType())
+
+	var resp *http.Response
+	output := captureLogOutput(t, func() {
+		var err error
+		if resp, err = app.Test(req); err != nil {
+			t.Fatalf("app.Test: %v", err)
+		}
+	})
+	defer resp.Body.Close()
+
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !bytes.Equal(got, sent.Bytes()) {
+		t.Errorf("handler read %q, want the form as sent, %q", got, sent.Bytes())
+	}
+	if strings.Contains(output, signature) {
+		t.Errorf("captured debug output printed the form's signature:\n%s", output)
 	}
 }
 

@@ -17,6 +17,7 @@ package auth
 import (
 	"encoding/base64"
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 
@@ -65,9 +66,8 @@ func TestParsePOSTPolicyBase64_Success_AndEvaluate(t *testing.T) {
 	p := mustParsePolicyForTest(t, encoded)
 
 	assert.NoError(t, p.Evaluate(PostPolicyEvalInput{
-		Bucket:        "photos",
-		Key:           "uploads/image.jpg",
-		ContentLength: 5,
+		Bucket: "photos",
+		Key:    "uploads/image.jpg",
 		Fields: map[string]string{
 			"x-amz-algorithm": "AWS4-HMAC-SHA256",
 			"file":            "ignored",
@@ -76,6 +76,10 @@ func TestParsePOSTPolicyBase64_Success_AndEvaluate(t *testing.T) {
 			"x-ignore-meta":   "ignored",
 		},
 	}))
+
+	lo, hi := p.ContentLengthRange()
+	assert.Equal(t, int64(1), lo)
+	assert.Equal(t, int64(10), hi)
 }
 
 func TestParsePOSTPolicyBase64_AcceptsRawBase64(t *testing.T) {
@@ -99,6 +103,12 @@ func TestParsePOSTPolicyBase64_ConcreteParseErrors(t *testing.T) {
 	badQuotedRangeEncoded := encodePolicyForTest(t, time.Now().Add(5*time.Minute), []any{
 		[]any{"content-length-range", "abc", 10},
 	}, false)
+
+	rangePolicy := func(lo, hi any) string {
+		return encodePolicyForTest(t, time.Now().Add(5*time.Minute), []any{
+			[]any{"content-length-range", lo, hi},
+		}, false)
+	}
 
 	tests := []struct {
 		name     string
@@ -206,6 +216,26 @@ func TestParsePOSTPolicyBase64_ConcreteParseErrors(t *testing.T) {
 			encoded:  badQuotedRangeEncoded,
 			expected: s3err.InvalidPolicyDocument.InvalidJSON(),
 		},
+		{
+			name:     "content-length-range with a negative max",
+			encoded:  rangePolicy(0, -1),
+			expected: s3err.InvalidPolicyDocument.InvalidJSON(),
+		},
+		{
+			name:     "content-length-range with a negative min",
+			encoded:  rangePolicy(-5, 100),
+			expected: s3err.InvalidPolicyDocument.InvalidJSON(),
+		},
+		{
+			name:     "content-length-range with a negative quoted max, which S3 takes and this refuses",
+			encoded:  rangePolicy("0", "-1"),
+			expected: s3err.InvalidPolicyDocument.InvalidJSON(),
+		},
+		{
+			name:     "content-length-range with a min and a max of zero",
+			encoded:  rangePolicy(0, 0),
+			expected: nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -234,9 +264,8 @@ func TestPOSTPolicyEvaluate_ConcretePolicyRejections(t *testing.T) {
 		{
 			name: "extra field",
 			input: PostPolicyEvalInput{
-				Bucket:        "photos",
-				Key:           "uploads/image.jpg",
-				ContentLength: 3,
+				Bucket: "photos",
+				Key:    "uploads/image.jpg",
 				Fields: map[string]string{
 					"x-amz-algorithm": "AWS4-HMAC-SHA256",
 					"acl":             "private",
@@ -247,9 +276,8 @@ func TestPOSTPolicyEvaluate_ConcretePolicyRejections(t *testing.T) {
 		{
 			name: "bucket mismatch",
 			input: PostPolicyEvalInput{
-				Bucket:        "other-bucket",
-				Key:           "uploads/image.jpg",
-				ContentLength: 3,
+				Bucket: "other-bucket",
+				Key:    "uploads/image.jpg",
 				Fields: map[string]string{
 					"x-amz-algorithm": "AWS4-HMAC-SHA256",
 				},
@@ -259,9 +287,8 @@ func TestPOSTPolicyEvaluate_ConcretePolicyRejections(t *testing.T) {
 		{
 			name: "key prefix mismatch",
 			input: PostPolicyEvalInput{
-				Bucket:        "photos",
-				Key:           "tmp/image.jpg",
-				ContentLength: 3,
+				Bucket: "photos",
+				Key:    "tmp/image.jpg",
 				Fields: map[string]string{
 					"x-amz-algorithm": "AWS4-HMAC-SHA256",
 				},
@@ -271,36 +298,11 @@ func TestPOSTPolicyEvaluate_ConcretePolicyRejections(t *testing.T) {
 		{
 			name: "missing required field",
 			input: PostPolicyEvalInput{
-				Bucket:        "photos",
-				Key:           "uploads/image.jpg",
-				ContentLength: 3,
-				Fields:        map[string]string{},
+				Bucket: "photos",
+				Key:    "uploads/image.jpg",
+				Fields: map[string]string{},
 			},
 			expected: s3err.InvalidPolicyDocument.ConditionFailed(`["eq","$x-amz-algorithm","AWS4-HMAC-SHA256"]`),
-		},
-		{
-			name: "content too large",
-			input: PostPolicyEvalInput{
-				Bucket:        "photos",
-				Key:           "uploads/image.jpg",
-				ContentLength: 10,
-				Fields: map[string]string{
-					"x-amz-algorithm": "AWS4-HMAC-SHA256",
-				},
-			},
-			expected: s3err.GetEntityTooLargeErr(10, 4),
-		},
-		{
-			name: "content too small",
-			input: PostPolicyEvalInput{
-				Bucket:        "photos",
-				Key:           "uploads/image.jpg",
-				ContentLength: 1,
-				Fields: map[string]string{
-					"x-amz-algorithm": "AWS4-HMAC-SHA256",
-				},
-			},
-			expected: s3err.GetEntityTooSmallErr(1, 2),
 		},
 	}
 
@@ -308,6 +310,71 @@ func TestPOSTPolicyEvaluate_ConcretePolicyRejections(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := p.Evaluate(tt.input)
 			assert.Equal(t, tt.expected, err)
+		})
+	}
+}
+
+func TestPOSTPolicyContentLengthRange(t *testing.T) {
+	tests := []struct {
+		name       string
+		conditions []any
+		wantLo     int64
+		wantHi     int64
+	}{
+		{
+			name:       "no content-length-range",
+			conditions: []any{map[string]string{"bucket": "photos"}},
+			wantHi:     math.MaxInt64,
+		},
+		{
+			name: "one content-length-range",
+			conditions: []any{
+				map[string]string{"bucket": "photos"},
+				[]any{"content-length-range", 2, 4},
+			},
+			wantLo: 2,
+			wantHi: 4,
+		},
+		{
+			name: "the highest min and the lowest max of several",
+			conditions: []any{
+				[]any{"content-length-range", 1, 10},
+				map[string]string{"bucket": "photos"},
+				[]any{"content-length-range", 5, 20},
+				[]any{"content-length-range", 2, 8},
+			},
+			wantLo: 5,
+			wantHi: 8,
+		},
+		{
+			name: "quoted sizes",
+			conditions: []any{
+				map[string]string{"bucket": "photos"},
+				[]any{"content-length-range", "1", "7"},
+			},
+			wantLo: 1,
+			wantHi: 7,
+		},
+		{
+			name: "a max of zero",
+			conditions: []any{
+				map[string]string{"bucket": "photos"},
+				[]any{"content-length-range", 0, 0},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := mustParsePolicyForTest(t, encodePolicyForTest(t, time.Now().Add(5*time.Minute), tt.conditions, false))
+
+			lo, hi := p.ContentLengthRange()
+			assert.Equal(t, tt.wantLo, lo)
+			assert.Equal(t, tt.wantHi, hi)
+
+			// the size of the file is not a form field: Evaluate leaves it
+			// to whoever reads the file
+			assert.NoError(t, p.Evaluate(PostPolicyEvalInput{Bucket: "photos", Key: "image.jpg"}))
 		})
 	}
 }
@@ -321,9 +388,8 @@ func TestPOSTPolicyEvaluate_IgnoresAllowedCoverageFields(t *testing.T) {
 	p := mustParsePolicyForTest(t, encoded)
 
 	err := p.Evaluate(PostPolicyEvalInput{
-		Bucket:        "photos",
-		Key:           "uploads/image.jpg",
-		ContentLength: 3,
+		Bucket: "photos",
+		Key:    "uploads/image.jpg",
 		Fields: map[string]string{
 			"file":            "ignored",
 			"policy":          "ignored",
@@ -344,9 +410,8 @@ func TestPOSTPolicyEvaluate_ContentTypeStartsWithList_AllEntriesMustMatch(t *tes
 	p := mustParsePolicyForTest(t, encoded)
 
 	err := p.Evaluate(PostPolicyEvalInput{
-		Bucket:        "photos",
-		Key:           "uploads/image.jpg",
-		ContentLength: 3,
+		Bucket: "photos",
+		Key:    "uploads/image.jpg",
 		Fields: map[string]string{
 			"content-type": "image/png,text/plain",
 		},
