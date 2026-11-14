@@ -33,6 +33,9 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 // hostStyleBackend serves any existing bucket, answering GetObject with the
@@ -51,6 +54,80 @@ func (hostStyleBackend) GetObject(_ context.Context, input *s3.GetObjectInput) (
 		Body:          io.NopCloser(strings.NewReader(body)),
 		ContentLength: aws.Int64(int64(len(body))),
 	}, nil
+}
+
+// uploadBackend serves uploads to any bucket without object lock, reading
+// the whole body, so one consumed before the handler fails the payload hash
+// check.
+type uploadBackend struct {
+	hostStyleBackend
+}
+
+func (uploadBackend) GetObjectLockConfiguration(context.Context, string) ([]byte, error) {
+	return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+}
+
+func (uploadBackend) ValidateUploadID(string) error { return nil }
+
+func (uploadBackend) PutObject(_ context.Context, input s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+	_, err := io.Copy(io.Discard, input.Body)
+	return s3response.PutObjectOutput{}, err
+}
+
+func (uploadBackend) UploadPart(_ context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+	_, err := io.Copy(io.Discard, input.Body)
+	return &s3.UploadPartOutput{}, err
+}
+
+// The debug logger must leave a virtual-hosted-style upload's body to the
+// handler, as it does a path-style one's.
+func TestHostStyleUploadWithDebugLogger(t *testing.T) {
+	const (
+		domain = "s3.example.test"
+		region = "us-east-1"
+		body   = "hello\n"
+	)
+	debuglogger.SetLevel(debuglogger.LevelDebug)
+	defer debuglogger.SetLevel(debuglogger.LevelSilent)
+
+	root := testAdminRoot
+	srv, err := New(uploadBackend{}, root, region,
+		auth.NewIAMServiceSingle(auth.Account{Access: root.Access, Secret: root.Secret}),
+		nil, nil, nil, nil,
+		WithConcurrencyLimiter(10, 10),
+		WithQuiet(),
+		WithHostStyle(domain),
+	)
+	if err != nil {
+		t.Fatalf("new s3 server: %v", err)
+	}
+
+	sum := sha256.Sum256([]byte(body))
+	payloadHash := hex.EncodeToString(sum[:])
+	creds := aws.Credentials{AccessKeyID: root.Access, SecretAccessKey: root.Secret}
+
+	for _, target := range []string{
+		"http://" + domain + "/bucketa/key",
+		"http://bucketa." + domain + "/key",
+		"http://bucketa." + domain + "/key?partNumber=1&uploadId=id",
+	} {
+		t.Run(target, func(t *testing.T) {
+			req, _ := http.NewRequest(http.MethodPut, target, strings.NewReader(body))
+			req.Header.Set("X-Amz-Content-Sha256", payloadHash)
+			if err := v4.NewSigner().SignHTTP(context.Background(), creds, req, payloadHash, "s3", region, time.Now()); err != nil {
+				t.Fatalf("sign request: %v", err)
+			}
+			resp, err := srv.app.Test(req)
+			if err != nil {
+				t.Fatalf("app.Test: %v", err)
+			}
+			defer resp.Body.Close()
+			got, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status %d: %s", resp.StatusCode, got)
+			}
+		})
+	}
 }
 
 // A virtual-hosted-style gateway must route a request to the bucket of the

@@ -215,6 +215,12 @@ func New(
 	// path unescapes the url
 	app.Use("*", controllers.WrapMiddleware(middlewares.DecodeURL, l, mm))
 
+	// initialize the host-style parser before the debug logger: the logger
+	// recognizes uploads, whose body it must not read, by the path-style path
+	if server.Router.virtualDomain != "" {
+		app.Use("*", middlewares.HostStyleParser(server.Router.virtualDomain))
+	}
+
 	// initialize the debug logger in debug mode
 	if debuglogger.IsDebugEnabled() {
 		app.Use("*", middlewares.DebugLogger())
