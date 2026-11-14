@@ -135,7 +135,10 @@ int rdial_dial(const char *ip, uint16_t port, int timeout_ms,
 	 * directions, so the send completion below polls this queue. */
 	memset(&qp_init, 0, sizeof(qp_init));
 	qp_init.cap.max_send_wr = 4;
-	qp_init.cap.max_recv_wr = 0;
+	/* The provider requires a nonzero receive queue; the connection
+	 * never posts receives, but a zero depth makes the driver's
+	 * create-QP path dereference a NULL resource array. */
+	qp_init.cap.max_recv_wr = 1;
 	qp_init.cap.max_send_sge = 1;
 	qp_init.cap.max_recv_sge = 1;
 	qp_init.qp_type = IBV_QPT_RC;
