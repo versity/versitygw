@@ -15,10 +15,10 @@
 package cumiddleware
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/valyala/fasthttp"
 
 	"github.com/versity/versitygw/rdma/rcdial"
 	"github.com/versity/versitygw/s3err"
@@ -45,9 +45,10 @@ const (
 	localKeyV3Descriptor = "hipv3.rdma.descriptor"
 )
 
-// GetV3Descriptor returns the parsed v3 token of the current
-// request, if the middleware stored one.
-func GetV3Descriptor(ctx *fasthttp.RequestCtx) (rcdial.Token, bool) {
+// GetV3Descriptor returns the parsed v3 token of the request behind
+// ctx (the backend receives the *fasthttp.RequestCtx, whose Value
+// exposes the user values the middleware set), if any.
+func GetV3Descriptor(ctx context.Context) (rcdial.Token, bool) {
 	if ctx == nil {
 		return rcdial.Token{}, false
 	}

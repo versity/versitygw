@@ -306,6 +306,12 @@ func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
+	// A hipobj-rc-v3 part upload carries no HTTP body; the token's
+	// length is the logical part length (see PutObject).
+	if v3Len, ok := utils.V3LogicalLength(ctx.RequestCtx()); ok {
+		contentLength = v3Len
+	}
+
 	algorithm, checksums, err := utils.ParseChecksumHeadersAndSdkAlgo(ctx)
 	if err != nil {
 		debuglogger.Logf("err parsing checksum headers: %v", err)
@@ -881,6 +887,15 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
+
+	// A hipobj-rc-v3 PUT carries no HTTP body: the token names the
+	// client memory region and its length is the logical object
+	// length. The HTTP Content-Length (0) stays as signed on the
+	// wire; every length the controller publishes from here on takes
+	// the token's.
+	if v3Len, ok := utils.V3LogicalLength(ctx.RequestCtx()); ok {
+		contentLength = v3Len
 	}
 
 	objLock, err := utils.ParsObjectLockHdrs(ctx)
