@@ -53,11 +53,6 @@ type S3ApiRouter struct {
 func (sa *S3ApiRouter) Init() {
 	ctrl := controllers.New(sa.be, sa.iam, sa.logger, sa.evs, sa.mm, sa.readonly, sa.disableACL, sa.virtualDomain, sa.mpMaxParts, sa.listBucketsScope, sa.disableSSECTLS)
 	sa.Ctrl = ctrl
-	// initialize global host-style parser middleware if virtual domain is specified
-	if sa.virtualDomain != "" {
-		sa.app.Use("*", middlewares.HostStyleParser(sa.virtualDomain))
-	}
-
 	if sa.WithAdmSrv {
 		adminRouter := &S3AdminRouter{s3api: ctrl}
 		adminRouter.Init(sa.app.Group(sa.adminPathPrefix), sa.be, sa.iam, sa.aLogger, sa.root, sa.region, false, sa.corsAllowOrigin)
