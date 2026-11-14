@@ -15,7 +15,13 @@ import (
 	"unsafe"
 )
 
-// conn is a live RDMA CM connection to a client listener.
+// transportAvailable reports whether this build carries the cgo
+// RDMA CM transport.
+const transportAvailable = true
+
+// conn is a live RDMA CM connection to a client listener. All
+// staging memory lives on the C heap: Go allocations are never
+// registered with the HCA, so nothing the device touches can move.
 type conn struct {
 	c *C.struct_rdial_conn
 }
@@ -34,18 +40,38 @@ func cgoDial(ip string, port uint16, timeoutMS int) (*conn, error) {
 	return &conn{c: c}, nil
 }
 
-func (cn *conn) read(local []byte, rkey uint32, remoteAddr uint64, timeoutMS int) (int, error) {
-	n := C.rdial_read(cn.c, unsafe.Pointer(&local[0]), C.uint32_t(rkey),
-		C.uint64_t(remoteAddr), C.uint64_t(len(local)), C.int(timeoutMS))
+// readStaging performs the RDMA READ into a C-owned buffer and
+// returns a Go slice aliasing it plus the function that releases the
+// C memory. The adapter copies the data out and frees inside the
+// same call, so no Go-visible alias outlives the C buffer.
+func (cn *conn) read(localLen uint64, rkey uint32, remoteAddr uint64, timeoutMS int) ([]byte, func(), error) {
+	var staging unsafe.Pointer
+	n := C.rdial_read(cn.c, C.uint32_t(rkey), C.uint64_t(remoteAddr),
+		C.uint64_t(localLen), C.int(timeoutMS), &staging)
 	if n < 0 {
-		return 0, fmt.Errorf("rdial: read: %w", errno(n))
+		return nil, nil, fmt.Errorf("rdial: read: %w", errno(n))
 	}
-	return int(n), nil
+	if staging == nil {
+		return nil, nil, fmt.Errorf("rdial: read: no staging returned")
+	}
+	buf := unsafe.Slice((*byte)(staging), int(n))
+	free := func() { C.rdial_free(staging) }
+	return buf, free, nil
 }
 
-func (cn *conn) write(local []byte, rkey uint32, remoteAddr uint64, timeoutMS int) (int, error) {
-	n := C.rdial_write(cn.c, unsafe.Pointer(&local[0]), C.uint32_t(rkey),
-		C.uint64_t(remoteAddr), C.uint64_t(len(local)), C.int(timeoutMS))
+// writeStaging copies data into a C-owned buffer (allocated with
+// rdial_alloc) and posts the RDMA WRITE from it. Only the C buffer
+// is ever registered; the Go slice is gone before the transfer.
+func (cn *conn) write(data []byte, rkey uint32, remoteAddr uint64, timeoutMS int) (int, error) {
+	staging := C.rdial_alloc(C.uint64_t(len(data)))
+	if staging == nil {
+		return 0, fmt.Errorf("rdial: staging alloc of %d bytes failed", len(data))
+	}
+	dst := unsafe.Slice((*byte)(staging), len(data))
+	copy(dst, data)
+	n := C.rdial_write(cn.c, staging, C.uint32_t(rkey),
+		C.uint64_t(remoteAddr), C.uint64_t(len(data)), C.int(timeoutMS))
+	C.rdial_free(staging)
 	if n < 0 {
 		return 0, fmt.Errorf("rdial: write: %w", errno(n))
 	}

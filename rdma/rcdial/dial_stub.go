@@ -2,12 +2,8 @@
 
 package rcdial
 
-import "errors"
-
-// ErrUnsupportedTransport is returned by the stub transport on
-// configurations without the rdma build tag; the caller turns it into
-// the 501 unsupported-transport response.
-var ErrUnsupportedTransport = errors.New("rcdial: unsupported transport in this build")
+// transportAvailable is false on builds without the rdma transport.
+const transportAvailable = false
 
 type stubConn struct{}
 
@@ -17,11 +13,11 @@ func cgoDial(ip string, port uint16, timeoutMS int) (*stubConn, error) {
 	return nil, ErrUnsupportedTransport
 }
 
-func (c *stubConn) read(local []byte, rkey uint32, remoteAddr uint64, timeoutMS int) (int, error) {
-	return 0, ErrUnsupportedTransport
+func (c *stubConn) read(localLen uint64, rkey uint32, remoteAddr uint64, timeoutMS int) ([]byte, func(), error) {
+	return nil, nil, ErrUnsupportedTransport
 }
 
-func (c *stubConn) write(local []byte, rkey uint32, remoteAddr uint64, timeoutMS int) (int, error) {
+func (c *stubConn) write(data []byte, rkey uint32, remoteAddr uint64, timeoutMS int) (int, error) {
 	return 0, ErrUnsupportedTransport
 }
 

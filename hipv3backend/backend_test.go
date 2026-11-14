@@ -48,30 +48,37 @@ func (f *fakeDialer) Dial(t rcdial.Token) (rcdial.Conn, error) {
 	return &fakeConn{d: f}, nil
 }
 
+func (f *fakeDialer) TransportSupported() bool { return true }
+
 type fakeConn struct{ d *fakeDialer }
 
-func (c *fakeConn) Read(local []byte, rkey uint32, remoteAddr uint64) (int, error) {
+func (c *fakeConn) Read(length uint64, rkey uint32, remoteAddr uint64) ([]byte, func(), error) {
 	c.d.reads++
 	if c.d.readErr != nil {
-		return 0, c.d.readErr
+		return nil, nil, c.d.readErr
 	}
-	n := copy(local, c.d.readBuf)
+	n := int(length)
+	if n > len(c.d.readBuf) {
+		n = len(c.d.readBuf)
+	}
+	out := make([]byte, n)
+	copy(out, c.d.readBuf[:n])
 	if c.d.shortIO && n > 0 {
-		n--
+		out = out[:n-1]
 	}
-	return n, nil
+	return out, func() {}, nil
 }
 
-func (c *fakeConn) Write(local []byte, rkey uint32, remoteAddr uint64) (int, error) {
+func (c *fakeConn) Write(data []byte, rkey uint32, remoteAddr uint64) (int, error) {
 	c.d.writes++
 	if c.d.writeErr != nil {
 		return 0, c.d.writeErr
 	}
-	c.d.written = append(c.d.written[:0], local...)
-	if c.d.shortIO && len(local) > 0 {
-		return len(local) - 1, nil
+	c.d.written = append(c.d.written[:0], data...)
+	if c.d.shortIO && len(data) > 0 {
+		return len(data) - 1, nil
 	}
-	return len(local), nil
+	return len(data), nil
 }
 
 func (c *fakeConn) Close() {}

@@ -17,12 +17,13 @@ package cumiddleware
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/versity/versitygw/rdma/rcdial"
-	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 )
 
 // HeaderRDMAv3Token is the header a hipobj-rc-v3 client carries on a
@@ -70,6 +71,14 @@ var sameOperationParams = map[string]map[string]bool{
 	"PUT": {"uploadId": true, "partNumber": true},
 }
 
+// isObjectPath reports whether the URL path names an object (at
+// least one segment after the bucket); bucket-level operations like
+// GET /bucket or PUT /bucket stay off the v3 path.
+func isObjectPath(path string) bool {
+	trimmed := strings.Trim(path, "/")
+	return strings.Contains(trimmed, "/")
+}
+
 // RDMAv3Middleware extracts the hipobj-rc-v3 token. Without the
 // header, or when the query selects another operation, the request
 // passes through unchanged. With a malformed token the middleware
@@ -79,6 +88,9 @@ var sameOperationParams = map[string]map[string]bool{
 func RDMAv3Middleware(ctx fiber.Ctx) error {
 	token := ctx.Get(HeaderRDMAv3Token)
 	if token == "" {
+		return ctx.Next()
+	}
+	if !isObjectPath(ctx.Path()) {
 		return ctx.Next()
 	}
 	method := ctx.Method()

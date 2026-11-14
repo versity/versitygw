@@ -40,8 +40,11 @@ type capturingBackend struct {
 	partLen  int64
 	partBody []byte
 
-	getObject []byte
-	getErr    error
+	getObject    []byte
+	getErr       error
+	contentRange string // returned as Content-Range when non-empty
+	declared     int64  // when nonzero, reported length differs from the stream
+	getCalls     int
 }
 
 func (b *capturingBackend) PutObject(_ context.Context, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
@@ -61,14 +64,23 @@ func (b *capturingBackend) UploadPart(_ context.Context, up *s3.UploadPartInput)
 }
 
 func (b *capturingBackend) GetObject(_ context.Context, _ *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	b.getCalls++
 	if b.getErr != nil {
 		return nil, b.getErr
 	}
 	n := int64(len(b.getObject))
-	return &s3.GetObjectOutput{
+	if b.declared != 0 {
+		n = b.declared
+	}
+	out := &s3.GetObjectOutput{
 		Body:          io.NopCloser(bytes.NewReader(b.getObject)),
 		ContentLength: &n,
-	}, nil
+	}
+	if b.contentRange != "" {
+		cr := b.contentRange
+		out.ContentRange = &cr
+	}
+	return out, nil
 }
 
 func putInput(length int64) s3response.PutObjectInput {

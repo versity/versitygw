@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+// ErrUnsupportedTransport is returned by the stub transport on
+// configurations without the rdma build tag; the caller turns it
+// into the 501 unsupported-transport response.
+var ErrUnsupportedTransport = fmt.Errorf("rcdial: unsupported transport in this build")
+
 // Config carries the transport limits the gateway sets on the
 // adapter; zero fields fall back to the defaults below.
 type Config struct {
@@ -43,34 +48,61 @@ func (c Config) withDefaults() Config {
 	return c
 }
 
-func (c Config) dialMS() int       { return int(c.DialTimeout.Milliseconds()) }
-func (c Config) transferMS() int   { return int(c.TransferTimeout.Milliseconds()) }
-func (c Config) teardownMS() int   { return int(c.TeardownTimeout.Milliseconds()) }
+func (c Config) dialMS() int     { return int(c.DialTimeout.Milliseconds()) }
+func (c Config) transferMS() int { return int(c.TransferTimeout.Milliseconds()) }
+func (c Config) teardownMS() int { return int(c.TeardownTimeout.Milliseconds()) }
 
 // Dialer is the seam the backend adapter consumes; production binds
-// the cgo transport, tests bind fakes.
+// the cgo transport, tests bind fakes. TransportSupport reports
+// whether this build can carry v3 transfers at all; the adapter
+// answers 501 when it cannot.
 type Dialer interface {
 	// Dial connects to the token's listener address.
 	Dial(t Token) (Conn, error)
+	// TransportSupported is false on builds without the rdma
+	// transport.
+	TransportSupported() bool
 }
 
-// Conn is one established connection to a client listener.
+// Conn is one established connection to a client listener. Staging
+// memory for a Read belongs to the connection and is released by the
+// returned free function; Write copies the caller's slice into
+// C-owned staging internally.
 type Conn interface {
-	// Read pulls len(local) bytes from the client region into
-	// local; returns the byte count.
-	Read(local []byte, rkey uint32, remoteAddr uint64) (int, error)
-	// Write pushes len(local) bytes from local into the client
-	// region; returns the byte count.
-	Write(local []byte, rkey uint32, remoteAddr uint64) (int, error)
+	// Read pulls length bytes from the client region; the returned
+	// slice aliases connection-owned staging valid until free is
+	// called. free is never nil on success.
+	Read(length uint64, rkey uint32, remoteAddr uint64) (data []byte, free func(), err error)
+	// Write pushes data into the client region; returns the byte
+	// count.
+	Write(data []byte, rkey uint32, remoteAddr uint64) (int, error)
 	// Close disconnects, honoring the teardown deadline.
 	Close()
 }
 
-// CM.Dialer is the production dialer over RDMA CM.
+// cmDialer is the production dialer over RDMA CM.
 type cmDialer struct{ cfg Config }
 
-// NewDialer returns the transport dialer for cfg.
-func NewDialer(cfg Config) Dialer { return cmDialer{cfg: cfg.withDefaults()} }
+// stubDialer is the Dialer for builds without the rdma transport.
+type stubDialer struct{}
+
+// NewDialer returns the transport dialer; on builds without the
+// rdma tag it returns a dialer whose TransportSupported is false
+// and whose Dial always fails with ErrUnsupportedTransport.
+func NewDialer(cfg Config) Dialer {
+	if transportAvailable {
+		return cmDialer{cfg: cfg.withDefaults()}
+	}
+	return stubDialer{}
+}
+
+func (stubDialer) TransportSupported() bool { return false }
+
+func (stubDialer) Dial(t Token) (Conn, error) {
+	return nil, ErrUnsupportedTransport
+}
+
+func (d cmDialer) TransportSupported() bool { return true }
 
 func (d cmDialer) Dial(t Token) (Conn, error) {
 	host, portStr, err := net.SplitHostPort(t.ListenAddr())
@@ -95,17 +127,17 @@ type connAdapter struct {
 
 // connIface is the union the two transports satisfy.
 type connIface interface {
-	read(local []byte, rkey uint32, remoteAddr uint64, timeoutMS int) (int, error)
-	write(local []byte, rkey uint32, remoteAddr uint64, timeoutMS int) (int, error)
+	read(localLen uint64, rkey uint32, remoteAddr uint64, timeoutMS int) ([]byte, func(), error)
+	write(data []byte, rkey uint32, remoteAddr uint64, timeoutMS int) (int, error)
 	close(timeoutMS int)
 }
 
-func (a *connAdapter) Read(local []byte, rkey uint32, remoteAddr uint64) (int, error) {
-	return a.c.read(local, rkey, remoteAddr, a.cfg.transferMS())
+func (a *connAdapter) Read(length uint64, rkey uint32, remoteAddr uint64) ([]byte, func(), error) {
+	return a.c.read(length, rkey, remoteAddr, a.cfg.transferMS())
 }
 
-func (a *connAdapter) Write(local []byte, rkey uint32, remoteAddr uint64) (int, error) {
-	return a.c.write(local, rkey, remoteAddr, a.cfg.transferMS())
+func (a *connAdapter) Write(data []byte, rkey uint32, remoteAddr uint64) (int, error) {
+	return a.c.write(data, rkey, remoteAddr, a.cfg.transferMS())
 }
 
 func (a *connAdapter) Close() {

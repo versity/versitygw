@@ -21,20 +21,31 @@ import (
 	"io"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/versity/versitygw/cumiddleware"
 	"github.com/versity/versitygw/debuglogger"
-	"github.com/versity/versitygw/rdma/rcdial"
+	"github.com/versity/versitygw/s3err"
 )
 
-// GetObject serves a v3 GET: read the object (or range) through the
-// wrapped backend, gate the resolved length against the token, push
-// the bytes to the client's memory region with an RDMA WRITE, and
-// return a bodyless response. Requests without a v3 descriptor
-// delegate unchanged.
+// GetObject serves a v3 GET: resolve the object (or range) through
+// the wrapped backend, gate the resolved length against the token
+// and the staging limit, push the bytes to the client's memory
+// region with an RDMA WRITE, and return a bodyless response whose
+// reply header reports 200 for a full object or 206 for a range. On
+// any failure the reply header stays absent. Requests without a v3
+// descriptor delegate unchanged.
 func (s *Server) GetObject(ctx context.Context, in *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	tok, ok := descriptorOf(ctx)
 	if !ok {
 		return s.Backend.GetObject(ctx, in)
+	}
+	if !s.dialer.TransportSupported() {
+		return nil, errUnsupported()
+	}
+	if tok.Length == 0 || tok.Length > s.cfg.MaxStaging {
+		return nil, s3err.APIError{
+			Code:           "InvalidRequest",
+			Description:    "hipobj-rc-v3 transfer length out of range",
+			HTTPStatusCode: 400,
+		}
 	}
 	res, err := s.Backend.GetObject(ctx, in)
 	if err != nil {
@@ -42,18 +53,15 @@ func (s *Server) GetObject(ctx context.Context, in *s3.GetObjectInput) (*s3.GetO
 	}
 	defer res.Body.Close()
 
+	ranged := res.ContentRange != nil && *res.ContentRange != ""
 	size := derefI64(res.ContentLength)
-	if res.ContentRange != nil && *res.ContentRange != "" {
-		// The resolved range length is what the token must match.
-		if size == 0 {
-			return nil, s3RangeLengthError()
-		}
-	}
 	if uint64(size) != tok.Length {
 		debuglogger.Logf("hipv3: GET length mismatch: object/range %d, token %d", size, tok.Length)
 		return nil, s3RangeLengthError()
 	}
-	staged, err := io.ReadAll(res.Body)
+	// The staging limit bounds the read too, so an inconsistent
+	// backend stream cannot grow the allocation past it.
+	staged, err := io.ReadAll(io.LimitReader(res.Body, int64(s.cfg.MaxStaging)+1))
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +91,13 @@ func (s *Server) GetObject(ctx context.Context, in *s3.GetObjectInput) (*s3.GetO
 	res.Body = io.NopCloser(bytes.NewReader(nil))
 	zero := int64(0)
 	res.ContentLength = &zero
-	debuglogger.Logf("hipv3: GET %q via RDMA WRITE of %d bytes", deref(in.Key), tok.Length)
+	status := 200
+	if ranged {
+		status = 206
+	}
+	SetReply(ctx, status, tok.Length)
+	debuglogger.Logf("hipv3: GET %q via RDMA WRITE of %d bytes (status %d)",
+		deref(in.Key), tok.Length, status)
 	return res, nil
 }
 
@@ -92,22 +106,13 @@ func (s *Server) GetObject(ctx context.Context, in *s3.GetObjectInput) (*s3.GetO
 // silently accept a truncated object (it compares the reply count
 // against its own requested size), so mismatch must fail closed.
 func s3RangeLengthError() error {
-	return errLengthMismatch{}
+	return s3err.APIError{
+		Code: "InvalidRequest",
+		Description: "hipobj-rc-v3 token length does not match " +
+			"the resolved object or range length",
+		HTTPStatusCode: 400,
+	}
 }
-
-type errLengthMismatch struct{}
-
-func (errLengthMismatch) Error() string {
-	return "hipobj-rc-v3 token length does not match the resolved object or range length"
-}
-
-// ReplyHeader exposes the value the response layer stamps on a
-// successful transfer.
-func ReplyHeader(bytes uint64) string {
-	return rcdial.FormatReply(200, bytes)
-}
-
-var _ = cumiddleware.HeaderRDMAv3Reply
 
 func derefI64(v *int64) int64 {
 	if v == nil {

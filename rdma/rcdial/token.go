@@ -119,9 +119,14 @@ func ParseReply(s string) (Reply, error) {
 	if len(fields) != 2 {
 		return r, fmt.Errorf("rc-v3 reply: want 2 fields, got %d", len(fields))
 	}
-	status, err := strconv.Atoi(fields[0])
-	if err != nil || status < 100 || status > 599 {
-		return r, fmt.Errorf("rc-v3 reply: status: %w", err)
+	// The wire grammar is exactly three decimal digits: no sign,
+	// no leading zeros, no longer forms.
+	if len(fields[0]) != 3 || fields[0][0] < '1' || fields[0][0] > '9' {
+		return r, fmt.Errorf("rc-v3 reply: status %q", fields[0])
+	}
+	status := int(fields[0][0]-'0')*100 + int(fields[0][1]-'0')*10 + int(fields[0][2]-'0')
+	if status < 100 || status > 599 {
+		return r, fmt.Errorf("rc-v3 reply: status: %d", status)
 	}
 	b, err := decodeHexUint(fields[1], fieldWidths[4], 64)
 	if err != nil {

@@ -59,3 +59,28 @@ func New(be backend.Backend, dialer rcdial.Dialer, cfg Config) *Server {
 func descriptorOf(ctx context.Context) (rcdial.Token, bool) {
 	return cumiddleware.GetV3Descriptor(ctx)
 }
+
+// replyKey is the user-value key a completed transfer stores its
+// reply under; the response layer picks it up and stamps the header.
+const replyKey = "hipv3.rdma.reply"
+
+// SetReply records the successful-transfer reply on the request
+// context: the HTTP status the client expects (200 full object, 206
+// range) and the transferred byte count. Called only after the
+// transfer and the backend both succeeded; the header stays absent
+// on every error path.
+func SetReply(ctx context.Context, status int, count uint64) {
+	if sc, ok := ctx.(interface {
+		SetUserValue(key interface{}, value interface{})
+	}); ok {
+		sc.SetUserValue(replyKey, rcdial.FormatReply(status, count))
+	}
+}
+
+// TakeReply returns and clears the recorded reply, if any. The
+// response layer calls it once when writing headers.
+func TakeReply(ctx context.Context) (string, bool) {
+	v := ctx.Value(replyKey)
+	s, ok := v.(string)
+	return s, ok && s != ""
+}
