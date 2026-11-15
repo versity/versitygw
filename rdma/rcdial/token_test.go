@@ -16,7 +16,7 @@ func mustTokenIP(ipStr string) [16]byte {
 }
 
 func TestParseTokenIPv4Mapped(t *testing.T) {
-	// 192.168.61.50, port 18181 (0x46e5), arbitrary rkey/addr/len.
+	// 192.168.61.50, port 18181 (0x4705), arbitrary rkey/addr/len.
 	tok, err := ParseToken("00000000000000000000ffffc0a83d32:4705:1a2b3c4d:0000000000400200:0000000000100000")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
