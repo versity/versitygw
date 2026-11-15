@@ -49,7 +49,10 @@ func (s *Server) GetObject(ctx context.Context, in *s3.GetObjectInput) (*s3.GetO
 	}
 	res, err := s.Backend.GetObject(ctx, in)
 	if err != nil {
-		return nil, err
+		// Errors here can carry response metadata (304 validators,
+		// delete-marker headers); pass the output through so the
+		// controller can emit them, and skip staging entirely.
+		return res, err
 	}
 	defer res.Body.Close()
 

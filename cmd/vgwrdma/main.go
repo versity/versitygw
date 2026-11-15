@@ -1114,6 +1114,21 @@ func debugLogLevel() debuglogger.Level {
 	return debuglogger.LevelSilent
 }
 
+// buildV3Options assembles the hipobj-rc-v3 server options. The
+// middleware is registered on every build and every mode: it only
+// parses and stores the token, so builds without the rdma
+// transport can still answer the documented 501 rather than
+// ignoring the header. It stays independent of the cuObject flags,
+// and the virtual domain lets the object predicate recognize
+// virtual-hosted requests, which reach this middleware before the
+// host-style parser rewrites their path. Extracted so the
+// registration test consumes the same assembly the gateway uses.
+func buildV3Options(virtualDomain string) []s3api.Option {
+	return []s3api.Option{
+		s3api.WithMiddleware("/", cumiddleware.RDMAv3Middleware(virtualDomain)),
+	}
+}
+
 func runGateway(ctx context.Context, be backend.Backend) error {
 	// The gateway command owns the input backend from here on:
 	// every failure path below must close the whole chain it
@@ -1177,12 +1192,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	var s3Opts []s3api.Option
-	// The hipobj-rc-v3 middleware is registered on every build and
-	// every mode: it only parses and stores the token, so builds
-	// without the rdma transport can still answer the documented 501
-	// rather than ignoring the header. It sits outside the v1 block
-	// so v3 never depends on the cuObject flags.
-	s3Opts = append(s3Opts, s3api.WithMiddleware("/", cumiddleware.RDMAv3Middleware))
+	s3Opts = append(s3Opts, buildV3Options(virtualDomain)...)
 	if v1On {
 		rdma.ConfigureTelemetry(debug)
 

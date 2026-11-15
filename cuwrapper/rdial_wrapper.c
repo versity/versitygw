@@ -17,6 +17,13 @@ struct rdial_conn {
 	struct ibv_mr *mr; /* registration of the current staging buffer */
 	void *staging;     /* the buffer mr covers, or NULL */
 	size_t staging_len;
+	/* Set when a transfer timed out with a WR still outstanding.
+	 * The verbs contract forbids touching the staged buffer (or
+	 * reusing the registration) until that WR completes; the only
+	 * safe continuation is teardown, which rdial_close performs
+	 * by destroying the QP and flushing outstanding work before
+	 * the MR is deregistered. */
+	int broken;
 };
 
 static int64_t now_ms(void)
@@ -42,9 +49,9 @@ static int expect_event(struct rdma_event_channel *ch,
 		int64_t left = deadline_ms - now_ms();
 		if (left <= 0)
 			return -ETIMEDOUT;
-		do {
-			r = poll(&pfd, 1, (int)left);
-		} while (r < 0 && errno == EINTR);
+		r = poll(&pfd, 1, (int)left);
+		if (r < 0 && errno == EINTR)
+			continue; /* recompute the remaining time */
 		if (r < 0)
 			return -errno;
 		if (r == 0)
@@ -269,6 +276,10 @@ long rdial_read(struct rdial_conn *c, uint32_t rkey, uint64_t remote_addr,
 
 	if (!c || !staging_out || len == 0 || len > UINT32_MAX)
 		return -EINVAL;
+	/* A timed-out WR may still be writing into the previous
+	 * staging buffer; only teardown can release it safely. */
+	if (c->broken)
+		return -ECANCELED;
 	staging = malloc((size_t)len);
 	if (!staging)
 		return -ENOMEM;
@@ -279,7 +290,10 @@ long rdial_read(struct rdial_conn *c, uint32_t rkey, uint64_t remote_addr,
 	n = post_one(c, staging, (size_t)len, rkey, remote_addr, 0,
 		     now_ms() + timeout_ms);
 	if (n < 0) {
-		free(staging);
+		if (n == -ETIMEDOUT)
+			c->broken = 1;
+		else
+			free(staging);
 		return n;
 	}
 	*staging_out = staging;
@@ -289,12 +303,22 @@ long rdial_read(struct rdial_conn *c, uint32_t rkey, uint64_t remote_addr,
 long rdial_write(struct rdial_conn *c, const void *staging, uint32_t rkey,
 		 uint64_t remote_addr, uint64_t len, int timeout_ms)
 {
+	long n;
+
 	if (!c || !staging || len == 0 || len > UINT32_MAX)
 		return -EINVAL;
+	if (c->broken)
+		return -ECANCELED;
 	if (ensure_mr(c, (void *)(uintptr_t)staging, (size_t)len) != 0)
 		return -errno;
-	return post_one(c, (void *)(uintptr_t)staging, (size_t)len, rkey,
-			remote_addr, 1, now_ms() + timeout_ms);
+	n = post_one(c, (void *)(uintptr_t)staging, (size_t)len, rkey,
+		     remote_addr, 1, now_ms() + timeout_ms);
+	/* The staged buffer stays caller-owned; a timed-out WRITE WR
+	 * may still be reading it, so the connection is marked broken
+	 * rather than reporting the buffer as released. */
+	if (n == -ETIMEDOUT)
+		c->broken = 1;
+	return n;
 }
 
 void *rdial_alloc(uint64_t len)
@@ -318,19 +342,22 @@ void rdial_close(struct rdial_conn *c, int timeout_ms)
 	if (c->id) {
 		rdma_disconnect(c->id);
 		/* The peer's DISCONNECTED event may or may not arrive in
-		 * time; teardown proceeds either way, QP before the id
-		 * because destroy_qp must precede destroying the CQ the
-		 * id owns. */
+		 * time; teardown proceeds either way. The QP is
+		 * destroyed before the MR is deregistered: destroying
+		 * the QP flushes any work request still outstanding
+		 * (notably a timed-out transfer on a broken connection),
+		 * and only once nothing can reference the registration
+		 * is it safe to deregister and let the buffer go. */
 		expect_event(c->ch, RDMA_CM_EVENT_DISCONNECTED,
 			     now_ms() + timeout_ms, &ev);
 		if (ev)
 			rdma_ack_cm_event(ev);
+		if (c->id->qp)
+			rdma_destroy_qp(c->id);
 		if (c->mr) {
 			ibv_dereg_mr(c->mr);
 			c->mr = NULL;
 		}
-		if (c->id->qp)
-			rdma_destroy_qp(c->id);
 		rdma_destroy_id(c->id);
 	}
 	if (c->ch)

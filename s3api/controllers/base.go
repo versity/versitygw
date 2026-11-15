@@ -288,7 +288,9 @@ func ProcessController(ctx fiber.Ctx, controller Controller, s3action string, sv
 	response, err := controller(ctx)
 
 	// Set the response headers
-	SetResponseHeaders(ctx, response.Headers)
+	if response != nil {
+		SetResponseHeaders(ctx, response.Headers)
+	}
 	// A completed hipobj-rc-v3 transfer recorded its reply during
 	// the backend call; stamp the header now, only on success.
 	if err == nil {
@@ -299,9 +301,9 @@ func ProcessController(ctx fiber.Ctx, controller Controller, s3action string, sv
 	requestID, hostID := utils.EnsureRequestIDs(ctx)
 	ensureExposeMetaHeaders(ctx)
 
-	opts := response.MetaOpts
-	if opts == nil {
-		opts = &MetaOptions{}
+	opts := &MetaOptions{}
+	if response != nil && response.MetaOpts != nil {
+		opts = response.MetaOpts
 	}
 	// Send the metrics
 	if svc.MetricsManager != nil {

@@ -58,16 +58,11 @@ func ParseToken(s string) (Token, error) {
 	if err != nil {
 		return t, fmt.Errorf("rc-v3 token: listen ip: %w", err)
 	}
-	var allZero bool
-	nonZero := false
-	for _, b := range ip {
-		if b != 0 {
-			nonZero = true
-			break
-		}
-	}
-	allZero = !nonZero
-	if allZero {
+	// Reject the unspecified address in both its native IPv6 form
+	// (sixteen zero bytes) and its IPv4-mapped form
+	// (::ffff:0.0.0.0); either would send the transfer to no
+	// listener at all.
+	if net.IP(ip).IsUnspecified() {
 		return t, fmt.Errorf("rc-v3 token: listen ip is unspecified")
 	}
 	copy(t.ListenIP[:], ip)
@@ -123,6 +118,11 @@ func ParseReply(s string) (Reply, error) {
 	// no leading zeros, no longer forms.
 	if len(fields[0]) != 3 || fields[0][0] < '1' || fields[0][0] > '9' {
 		return r, fmt.Errorf("rc-v3 reply: status %q", fields[0])
+	}
+	for i := 1; i < 3; i++ {
+		if fields[0][i] < '0' || fields[0][i] > '9' {
+			return r, fmt.Errorf("rc-v3 reply: status %q", fields[0])
+		}
 	}
 	status := int(fields[0][0]-'0')*100 + int(fields[0][1]-'0')*10 + int(fields[0][2]-'0')
 	if status < 100 || status > 599 {

@@ -22,6 +22,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/rdma/rcdial"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -45,6 +46,7 @@ type capturingBackend struct {
 	contentRange string // returned as Content-Range when non-empty
 	declared     int64  // when nonzero, reported length differs from the stream
 	getCalls     int
+	gotVersion   *string
 }
 
 func (b *capturingBackend) PutObject(_ context.Context, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
@@ -63,8 +65,12 @@ func (b *capturingBackend) UploadPart(_ context.Context, up *s3.UploadPartInput)
 	return &s3.UploadPartOutput{}, nil
 }
 
-func (b *capturingBackend) GetObject(_ context.Context, _ *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+func (b *capturingBackend) GetObject(_ context.Context, in *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	b.getCalls++
+	if in != nil && in.VersionId != nil {
+		v := *in.VersionId
+		b.gotVersion = &v
+	}
 	if b.getErr != nil {
 		return nil, b.getErr
 	}
@@ -109,5 +115,13 @@ func getInput() *s3.GetObjectInput {
 	bucket, key := "b", "k"
 	return &s3.GetObjectInput{Bucket: &bucket, Key: &key}
 }
+
+// rawToken renders the wire form of a token for header-driven tests.
+func rawToken(length uint64) string {
+	return rcdial.FormatToken(token(length))
+}
+
+// errBoom is a generic backend failure for error-path tests.
+var errBoom = errors.New("boom")
 
 var _ = errors.New

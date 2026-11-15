@@ -255,3 +255,21 @@ func TestGetInconsistentBackendStreamBounded(t *testing.T) {
 		t.Errorf("wrote %d times despite inconsistency", fake.writes)
 	}
 }
+
+// TestGetForwardsVersionId proves the adapter passes the requested
+// version through to the wrapped backend unchanged; a v3 GET must
+// not drop it.
+func TestGetForwardsVersionId(t *testing.T) {
+	be := &capturingBackend{getObject: bytes.Repeat([]byte{2}, 32)}
+	srv := New(be, &fakeDialer{}, Config{})
+	in := getInput()
+	ver := "VERSIONTOKEN"
+	in.VersionId = &ver
+
+	if _, err := srv.GetObject(v3ctx(token(32)), in); err != nil {
+		t.Fatal(err)
+	}
+	if be.gotVersion == nil || *be.gotVersion != ver {
+		t.Errorf("backend versionId = %v, want %q", be.gotVersion, ver)
+	}
+}
