@@ -998,6 +998,7 @@ func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 			ChecksumXXHASH64:          utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash64]),
 			ChecksumXXHASH3:           utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash3]),
 			ChecksumXXHASH128:         utils.GetStringPtr(checksums[types.ChecksumAlgorithmXxhash128]),
+			ContentMD5:                utils.GetStringPtr(ctx.Get("Content-MD5")),
 			IfMatch:                   ifMatch,
 			IfNoneMatch:               ifNoneMatch,
 		})
