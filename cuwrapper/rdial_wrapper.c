@@ -24,6 +24,12 @@ struct rdial_conn {
 	 * by destroying the QP and flushing outstanding work before
 	 * the MR is deregistered. */
 	int broken;
+	/* Set when the connection owns a retained staging buffer: a
+	 * READ that timed out handed its allocation over because the
+	 * caller can neither use nor safely free it while the WR may
+	 * still be writing. rdial_close frees it after the QP and MR
+	 * are gone, so nothing can reference the memory anymore. */
+	int retain;
 };
 
 static int64_t now_ms(void)
@@ -290,10 +296,16 @@ long rdial_read(struct rdial_conn *c, uint32_t rkey, uint64_t remote_addr,
 	n = post_one(c, staging, (size_t)len, rkey, remote_addr, 0,
 		     now_ms() + timeout_ms);
 	if (n < 0) {
-		if (n == -ETIMEDOUT)
+		if (n == -ETIMEDOUT) {
+			/* The WR may still be writing into staging; the
+			 * caller can neither read nor free it. Hand the
+			 * allocation to the connection, which releases
+			 * it in rdial_close after the QP flush. */
 			c->broken = 1;
-		else
+			c->retain = 1;
+		} else {
 			free(staging);
+		}
 		return n;
 	}
 	*staging_out = staging;
@@ -362,5 +374,10 @@ void rdial_close(struct rdial_conn *c, int timeout_ms)
 	}
 	if (c->ch)
 		rdma_destroy_event_channel(c->ch);
+	/* A timed-out READ handed its staging over (retain); the QP
+	 * flush above completed the outstanding WR, so the memory is
+	 * now unreachable from the device and can be released. */
+	if (c->retain && c->staging)
+		free(c->staging);
 	free(c);
 }

@@ -106,10 +106,14 @@ func objectPath(path, host, virtualDomain string) bool {
 // pass "" when host-style addressing is disabled.
 func RDMAv3Middleware(virtualDomain string) fiber.Handler {
 	return func(ctx fiber.Ctx) error {
-		token := ctx.Get(HeaderRDMAv3Token)
-		if token == "" {
+		// Header presence, not just a nonempty value: a present but
+		// empty token is malformed and must answer 400, while an
+		// absent header is ordinary traffic.
+		present := ctx.Request().Header.Peek(HeaderRDMAv3Token) != nil
+		if !present {
 			return ctx.Next()
 		}
+		token := ctx.Get(HeaderRDMAv3Token)
 		if !objectPath(ctx.Path(), strings.ToLower(ctx.Hostname()), virtualDomain) {
 			return ctx.Next()
 		}

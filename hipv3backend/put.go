@@ -138,7 +138,9 @@ func (s *Server) readStaging(tok rcdial.Token) ([]byte, error) {
 }
 
 // checksumFieldsOf projects either upload input's checksum fields
-// onto the shared verification table.
+// onto the shared verification table. contentMD5 is the legacy
+// Content-MD5 header, verified alongside the x-amz-checksum-md5
+// field the way the ordinary upload middleware would have.
 func checksumFieldsOf(po *s3response.PutObjectInput, up *s3.UploadPartInput) checksumFields {
 	if po != nil {
 		return checksumFields{
@@ -147,6 +149,7 @@ func checksumFieldsOf(po *s3response.PutObjectInput, up *s3.UploadPartInput) che
 			sha256: po.ChecksumSHA256, sha512: po.ChecksumSHA512,
 			md5: po.ChecksumMD5, xxhash64: po.ChecksumXXHASH64,
 			xxhash3: po.ChecksumXXHASH3, xxhash128: po.ChecksumXXHASH128,
+			contentMD5: po.ContentMD5,
 		}
 	}
 	return checksumFields{
@@ -155,6 +158,7 @@ func checksumFieldsOf(po *s3response.PutObjectInput, up *s3.UploadPartInput) che
 		sha256: up.ChecksumSHA256, sha512: up.ChecksumSHA512,
 		md5: up.ChecksumMD5, xxhash64: up.ChecksumXXHASH64,
 		xxhash3: up.ChecksumXXHASH3, xxhash128: up.ChecksumXXHASH128,
+		contentMD5: up.ContentMD5,
 	}
 }
 
@@ -162,6 +166,7 @@ type checksumFields struct {
 	crc32, crc32c, crc64nvme     *string
 	sha1, sha256, sha512, md5    *string
 	xxhash64, xxhash3, xxhash128 *string
+	contentMD5                   *string
 }
 
 // verifyChecksums runs one HashReader per carried algorithm over the
@@ -179,6 +184,7 @@ func verifyChecksums(staged []byte, f checksumFields) error {
 		{f.sha256, utils.HashTypeSha256},
 		{f.sha512, utils.HashTypeSha512},
 		{f.md5, utils.HashTypeMd5},
+		{f.contentMD5, utils.HashTypeContentMD5},
 		{f.xxhash64, utils.HashTypeXXHASH64},
 		{f.xxhash3, utils.HashTypeXXHASH3},
 		{f.xxhash128, utils.HashTypeXXHASH128},

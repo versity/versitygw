@@ -95,6 +95,8 @@ func (cn *conn) write(data []byte, rkey uint32, remoteAddr uint64, timeoutMS int
 		C.rdial_free(staging)
 		return 0, fmt.Errorf("rdial: write: %w", errno(n))
 	}
+	// The WRITE completed: nothing references the staging anymore.
+	C.rdial_free(staging)
 	return int(n), nil
 }
 

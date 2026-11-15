@@ -273,3 +273,22 @@ func TestGetForwardsVersionId(t *testing.T) {
 		t.Errorf("backend versionId = %v, want %q", be.gotVersion, ver)
 	}
 }
+
+// TestPutContentMD5Rejected covers the legacy Content-MD5 header on
+// the object PUT path: a valid-format digest that does not match
+// the staged bytes must fail before the backend sees data.
+func TestPutContentMD5Rejected(t *testing.T) {
+	be := &capturingBackend{}
+	fake := &fakeDialer{readBuf: bytes.Repeat([]byte{5}, 16)}
+	srv := New(be, fake, Config{})
+
+	po := putInput(0)
+	bad := "AAAAAAAAAAAAAAAAAAAAAA=="
+	po.ContentMD5 = &bad
+	if _, err := srv.PutObject(v3ctx(token(16)), po); err == nil {
+		t.Fatal("mismatching Content-MD5 accepted")
+	}
+	if be.putCalls != 0 {
+		t.Error("backend invoked despite Content-MD5 failure")
+	}
+}

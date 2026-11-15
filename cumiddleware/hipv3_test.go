@@ -213,3 +213,21 @@ func TestV3MiddlewareVirtualHostedObject(t *testing.T) {
 		t.Error("virtual-hosted request stored a descriptor with no virtual domain configured")
 	}
 }
+
+// A present-but-empty token header is malformed traffic for an
+// object request: it must answer the terminal 400, not fall back to
+// the ordinary HTTP path where a bodyless PUT would write an empty
+// object.
+func TestV3MiddlewareEmptyTokenIs400(t *testing.T) {
+	app, _ := newV3App()
+	req := httptest.NewRequest(http.MethodGet, "/bucket/key", nil)
+	req.Header.Set(HeaderRDMAv3Token, "")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty token status = %d, want 400", resp.StatusCode)
+	}
+}
