@@ -246,6 +246,34 @@ fail:
 
 #define RDIAL3_MAX 64 /* "RDIAL3 " + 8 + 1 + 6 + 1 + 32 + "\n" + slack */
 
+/* Find this host's routable GID: the first non-link-local,
+ * non-empty entry on port 1. The index is not stable across
+ * address changes (adding or removing an IP renumbers the table),
+ * so it must be discovered, not hardcoded. */
+static int oob_find_gid(struct ibv_context *dev, union ibv_gid *gid)
+{
+	union ibv_gid g;
+	int i;
+
+	for (i = 1; i < 8; i++) {
+		if (ibv_query_gid(dev, 1, i, &g) != 0)
+			continue;
+		if (g.raw[0] == 0xfe && (g.raw[1] & 0xc0) == 0x80)
+			continue; /* link-local */
+		{
+			int j, any = 0;
+
+			for (j = 0; j < 16; j++)
+				any |= g.raw[j];
+			if (!any)
+				continue; /* empty slot */
+		}
+		*gid = g;
+		return i;
+	}
+	return -1;
+}
+
 /* Connect to ip:port with a nonblocking connect bounded by an
  * absolute deadline. Returns the socket fd or a negative errno. */
 static int connect_tcp(const char *ip, uint16_t port, int64_t deadline_ms)
@@ -463,7 +491,7 @@ static int oob_qp_create(struct ibv_pd *pd, struct ibv_cq *cq,
  * (tests/rdma_verify.c ep_connect). */
 static int oob_qp_connect(struct ibv_qp *qp, uint32_t peer_qpn,
 			  uint32_t peer_psn, const union ibv_gid *peer_gid,
-			  uint32_t my_psn)
+			  uint32_t my_psn, uint8_t my_gid_index)
 {
 	struct ibv_qp_attr r = {
 		.qp_state = IBV_QPS_RTR,
@@ -475,7 +503,7 @@ static int oob_qp_connect(struct ibv_qp *qp, uint32_t peer_qpn,
 		.ah_attr = {.is_global = 1,
 			    .port_num = 1,
 			    .grh = {.dgid = *peer_gid,
-				    .sgid_index = 1,
+				    .sgid_index = my_gid_index,
 				    .hop_limit = 1}},
 	};
 	struct ibv_qp_attr s = {
@@ -513,6 +541,7 @@ int rdial_dial_oob(const char *ip, uint16_t port, int timeout_ms,
 	union ibv_gid my_gid, peer_gid;
 	char myline[RDIAL3_MAX], peerline[RDIAL3_MAX];
 	uint32_t peer_qpn, peer_psn, my_psn;
+	int my_gid_index;
 	int64_t deadline = now_ms() + timeout_ms;
 	int ctrl_fd = -1;
 	int rc, n;
@@ -564,11 +593,13 @@ int rdial_dial_oob(const char *ip, uint16_t port, int timeout_ms,
 		seeded = 1;
 	}
 	my_psn = (uint32_t)(rand() & 0xFFFFFF);
-	if (ibv_query_gid(dev, 1, 1, &my_gid) != 0) {
-		rc = -errno;
+	my_gid_index = oob_find_gid(dev, &my_gid);
+	if (my_gid_index < 0) {
+		rc = -ENODEV;
 		goto fail;
 	}
-	rc = oob_qp_connect(qp, peer_qpn, peer_psn, &peer_gid, my_psn);
+	rc = oob_qp_connect(qp, peer_qpn, peer_psn, &peer_gid, my_psn,
+			    (uint8_t)my_gid_index);
 	if (rc != 0)
 		goto fail;
 

@@ -168,7 +168,7 @@ static int http_req(const s3req *r, char *status_out, char *replyhdr_out,
 	snprintf(dbuf, sizeof(dbuf), "AWS4%s", r->sk);
 	hmac(dbuf, strlen(dbuf), datestamp, strlen(datestamp), kdate);
 	hmac(kdate, 32, r->region, strlen(r->region), kregion);
-	hmac(kregion, 32, "s3", 1, kservice);
+	hmac(kregion, 32, "s3", 2, kservice);
 	hmac(kservice, 32, "aws4_request", 12, ksig);
 	hmac(ksig, 32, str2sign, strlen(str2sign), kfin);
 
@@ -416,7 +416,7 @@ int main(int argc, char **argv)
 		/* verify our region now contains the object bytes */
 		int bad = 0;
 		for (long i = 0; i < len; i++) {
-			uint8_t expect = (uint8_t)(i * 5 + 11);
+			uint8_t expect = (uint8_t)(i * 7 + 3);
 			if (region[i] != expect) {
 				if (bad < 4)
 					fprintf(stderr,

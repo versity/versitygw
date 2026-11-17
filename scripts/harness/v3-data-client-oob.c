@@ -120,7 +120,7 @@ static int http_req(const s3req *r, char *status_out, char *replyhdr_out,
 		    int replyhdr_cap, char *body_out, int body_cap,
 		    long *body_len_out)
 {
-	char hosthdr[128], amzdate[32], datestamp[16];
+	char hosthdr[384], amzdate[32], datestamp[16];
 	time_t t = time(NULL);
 	struct tm tmv;
 	gmtime_r(&t, &tmv);
@@ -137,16 +137,17 @@ static int http_req(const s3req *r, char *status_out, char *replyhdr_out,
 	int has_tok = r->tokenhdr != NULL;
 	char hostport[128];
 	snprintf(hostport, sizeof(hostport), "%s:9000", r->host);
-	snprintf(hosthdr, sizeof(hosthdr), "host:%s\nx-amz-date:%s\n", hostport,
-		 amzdate);
+	snprintf(hosthdr, sizeof(hosthdr), "host:%s\nx-amz-content-sha256:%s\nx-amz-date:%s\n",
+		 hostport, payload_sha, amzdate);
 	char tokline[512] = "";
 	char signed_hdrs[128];
 	if (has_tok) {
 		snprintf(tokline, sizeof(tokline), "x-amz-rc-rdma-token:%s\n",
 			 r->tokenhdr);
-		strcpy(signed_hdrs, "host;x-amz-date;x-amz-rc-rdma-token");
+		strcpy(signed_hdrs,
+		       "host;x-amz-content-sha256;x-amz-date;x-amz-rc-rdma-token");
 	} else {
-		strcpy(signed_hdrs, "host;x-amz-date");
+		strcpy(signed_hdrs, "host;x-amz-content-sha256;x-amz-date");
 	}
 
 	char qs[64] = "";
@@ -176,7 +177,7 @@ static int http_req(const s3req *r, char *status_out, char *replyhdr_out,
 	snprintf(dbuf, sizeof(dbuf), "AWS4%s", r->sk);
 	hmac(dbuf, strlen(dbuf), datestamp, strlen(datestamp), kdate);
 	hmac(kdate, 32, r->region, strlen(r->region), kregion);
-	hmac(kregion, 32, "s3", 1, kservice);
+	hmac(kregion, 32, "s3", 2, kservice);
 	hmac(kservice, 32, "aws4_request", 12, ksig);
 	hmac(ksig, 32, str2sign, strlen(str2sign), kfin);
 
@@ -276,7 +277,6 @@ static struct ibv_mr *mr;
 static uint8_t *region;
 static int listen_fd = -1;
 #define REGION_LEN (1 << 20)
-#define GID_INDEX 1
 
 static int send_all_fd(int fd, const void *buf, size_t len)
 {
@@ -292,6 +292,30 @@ static int send_all_fd(int fd, const void *buf, size_t len)
 		len -= (size_t)n;
 	}
 	return 0;
+}
+
+/* Find this host's routable GID: the first non-link-local,
+ * non-empty entry on port 1. The index is not stable across
+ * address changes, so it must be discovered, not hardcoded. */
+static int find_gid(union ibv_gid *gid)
+{
+	union ibv_gid g;
+	int i, j, any;
+
+	for (i = 1; i < 8; i++) {
+		if (ibv_query_gid(dev, 1, i, &g) != 0)
+			continue;
+		if (g.raw[0] == 0xfe && (g.raw[1] & 0xc0) == 0x80)
+			continue; /* link-local */
+		any = 0;
+		for (j = 0; j < 16; j++)
+			any |= g.raw[j];
+		if (!any)
+			continue; /* empty slot */
+		*gid = g;
+		return i;
+	}
+	return -1;
 }
 
 static int recv_byte_fd(int fd)
@@ -360,7 +384,8 @@ static int parse_rdial3(const char *line, uint32_t *qpn, uint32_t *psn,
  * rdma_verify.c pattern; access flags include the remote ops
  * because this region is the RDMA target. */
 static int qp_to_rts(uint32_t peer_qpn, uint32_t peer_psn,
-		     const union ibv_gid *peer_gid, uint32_t my_psn)
+		     const union ibv_gid *peer_gid, uint32_t my_psn,
+		     uint8_t my_gid_index)
 {
 	struct ibv_qp_attr a = {
 		.qp_state = IBV_QPS_INIT,
@@ -380,7 +405,7 @@ static int qp_to_rts(uint32_t peer_qpn, uint32_t peer_psn,
 		.ah_attr = {.is_global = 1,
 			    .port_num = 1,
 			    .grh = {.dgid = *peer_gid,
-				    .sgid_index = GID_INDEX,
+				    .sgid_index = my_gid_index,
 				    .hop_limit = 1}},
 	};
 	struct ibv_qp_attr s = {
@@ -414,11 +439,17 @@ static int serve_one(int fd, int is_put)
 {
 	union ibv_gid my_gid, peer_gid;
 	uint32_t peer_qpn, peer_psn, my_psn;
+	uint8_t my_gid_index;
 	char myline[64], peerline[64];
 	int c, n;
 
-	if (ibv_query_gid(dev, 1, GID_INDEX, &my_gid) != 0)
-		return -1;
+	{
+		int gi = find_gid(&my_gid);
+
+		if (gi < 0)
+			return -1;
+		my_gid_index = (uint8_t)gi;
+	}
 	my_psn = (uint32_t)(rand() & 0xFFFFFF);
 
 	n = snprintf(myline, sizeof(myline),
@@ -439,7 +470,7 @@ static int serve_one(int fd, int is_put)
 		return -1;
 	if (parse_rdial3(peerline, &peer_qpn, &peer_psn, &peer_gid) != 0)
 		return -1;
-	if (qp_to_rts(peer_qpn, peer_psn, &peer_gid, my_psn) != 0)
+	if (qp_to_rts(peer_qpn, peer_psn, &peer_gid, my_psn, my_gid_index) != 0)
 		return -1;
 	if (send_all_fd(fd, "R", 1) != 0)
 		return -1;
@@ -517,14 +548,20 @@ static int oob_setup(const char *ip)
 
 /* Server thread: the gateway dials only after the S3 request
  * arrives, so the accept/serve loop runs concurrently with the
- * HTTP request the main thread sends. */
+ * HTTP request the main thread sends. The accept is bounded so a
+ * gateway that dies before dialing still lets the client fail
+ * fast instead of blocking until the outer timeout. */
 static volatile int serve_result;
 static volatile int serve_done;
 
 static void *serve_thread(void *arg)
 {
 	int is_put = *(int *)arg;
-	int cfd = accept(listen_fd, NULL, NULL);
+	struct timeval tv = {.tv_sec = 10};
+	int cfd;
+
+	setsockopt(listen_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	cfd = accept(listen_fd, NULL, NULL);
 
 	if (cfd < 0) {
 		serve_result = -1;
@@ -638,7 +675,7 @@ int main(int argc, char **argv)
 		/* verify our region now contains the object bytes */
 		int bad = 0;
 		for (long i = 0; i < len; i++) {
-			uint8_t expect = (uint8_t)(i * 5 + 11);
+			uint8_t expect = (uint8_t)(i * 7 + 3);
 			if (region[i] != expect) {
 				if (bad < 4)
 					fprintf(stderr,
