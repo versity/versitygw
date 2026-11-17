@@ -295,7 +295,6 @@ rest_go_command_perform_send() {
     return 1
   fi
   log 5 "response: $response"
-  log 5 "output: $(cat "$output_file")"
   if [ "$header_file" != "" ]; then
     response_file="$header_file"
   else

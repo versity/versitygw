@@ -156,9 +156,8 @@ check_list_parts_parts() {
     return 1
   fi
   local data_string="$1" max_parts="$2"
-  local -a number_etag_size_triples=("${@:3}")
-  local response part_number
-  local -a parts=()
+  local -a number_etag_size_triples=("${@:3}") parts
+  local response part_number etag size
 
   if ! response=$(get_elements_inside_string "$data_string" "Part" 2>&1); then
     log 2 "error getting Part elements: $response"
