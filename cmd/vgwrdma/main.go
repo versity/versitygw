@@ -38,6 +38,7 @@ import (
 	"github.com/versity/versitygw/internal/rdmamode"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/rdma"
+	"github.com/versity/versitygw/rdma/rcdial"
 	"github.com/versity/versitygw/rdma/rcroutes"
 	"github.com/versity/versitygw/rdma/rcserver"
 	"github.com/versity/versitygw/s3api"
@@ -121,6 +122,7 @@ var (
 	socketPerm                             string
 	rdmaIP                                 string
 	rcGidHint                              string
+	rcTransport                            string
 	rcDevice                               string
 	rcGidIndex                             int
 	rdmaRCEnable                           bool
@@ -275,6 +277,14 @@ documentation can be found in the GitHub wiki.`,
 				if !v1On && !v2On {
 					return fmt.Errorf("either --rdma-ip or --rdma-rc-enable is required")
 				}
+			}
+			// The v3 dialer transport is either the default CM or
+			// the TCP parameter exchange; anything else is a
+			// startup-time typo, not a silent fallback.
+			switch rcTransport {
+			case "", "cm", "oob":
+			default:
+				return fmt.Errorf("invalid --rc-transport %q: want cm or oob", rcTransport)
 			}
 			return nil
 		},
@@ -979,6 +989,12 @@ func initFlags() []cli.Flag {
 			Value:       0,
 			Destination: &rcGidIndex,
 		},
+		&cli.StringFlag{
+			Name:        "rc-transport",
+			Usage:       "v3 dialer transport: cm (default, RDMA CM) or oob (TCP parameter exchange, for fabrics without kernel CM)",
+			EnvVars:     []string{"VGW_RC_TRANSPORT"},
+			Destination: &rcTransport,
+		},
 		&cli.BoolFlag{
 			Name:        "rdma-rc-enable",
 			Usage:       "enable the hipobj-rc-v2 RC control routes and data plane (independent of --rdma-ip)",
@@ -1478,7 +1494,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	// the documented 501; the middleware above is registered either
 	// way. Placement is last, after every other backend layer, so
 	// the intercept sees the fully assembled chain.
-	be = hipv3backend.New(be, nil, hipv3backend.Config{})
+	be = hipv3backend.New(be, nil, hipv3backend.Config{
+		Config: rcdial.Config{Transport: rcTransport},
+	})
 
 	runErr := embedgw.RunVersityGW(ctx, be, cfg)
 	return runErr
