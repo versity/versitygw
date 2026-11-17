@@ -39,6 +39,17 @@ struct rdial_conn;
 int rdial_dial(const char *ip, uint16_t port, int timeout_ms,
 	       struct rdial_conn **out);
 
+/* Connect to ip:port over TCP, exchange QP parameters with the
+ * peer's listener (line-based, no rdma_cm), and program the RC QP
+ * directly. For fabrics without kernel CM support (for example the
+ * rocm-ernic emulation) this is the only way to establish the
+ * connection. Returns 0 on success and stores the connection in
+ * *out; returns a negative errno on failure. timeout_ms bounds TCP
+ * connect, the exchange, and the readiness wait. The connection's
+ * transfers use the same read/write entry points as the CM dial. */
+int rdial_dial_oob(const char *ip, uint16_t port, int timeout_ms,
+		   struct rdial_conn **out);
+
 /* RDMA READ len bytes from the client region (rkey, remote_addr)
  * into a C-owned staging buffer returned via staging_out; the caller
  * releases it with rdial_free. Returns len on success, negative

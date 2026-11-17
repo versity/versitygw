@@ -5,6 +5,11 @@ package rcdial
 // transportAvailable is false on builds without the rdma transport.
 const transportAvailable = false
 
+// newOOBDialer reports the unsupported transport on builds without
+// the rdma tag, mirroring the cm path: an oob request on such a
+// build surfaces the same 501 as any other transport request.
+func newOOBDialer(cfg Config) Dialer { return stubDialer{} }
+
 type stubConn struct{}
 
 var _ connIface = (*stubConn)(nil)

@@ -22,6 +22,12 @@ type Config struct {
 	// TeardownTimeout bounds the wait for the peer's disconnect
 	// event during Close before tearing down regardless.
 	TeardownTimeout time.Duration
+	// Transport selects the dialer transport: "" or "cm" uses RDMA
+	// CM (the default and the only mode real deployments use),
+	// "oob" uses the TCP parameter exchange for fabrics without
+	// kernel CM (e.g. the rocm-ernic emulator). Any other value
+	// falls back to cm.
+	Transport string
 }
 
 // DefaultConfig matches the values the adapter constructor applies
@@ -88,10 +94,16 @@ type stubDialer struct{}
 
 // NewDialer returns the transport dialer; on builds without the
 // rdma tag it returns a dialer whose TransportSupported is false
-// and whose Dial always fails with ErrUnsupportedTransport.
+// and whose Dial always fails with ErrUnsupportedTransport. The
+// "oob" transport resolves through newOOBDialer, which the build
+// tags bind to the TCP-exchange dialer or to the stub.
 func NewDialer(cfg Config) Dialer {
+	cfg = cfg.withDefaults()
+	if cfg.Transport == "oob" {
+		return newOOBDialer(cfg)
+	}
 	if transportAvailable {
-		return cmDialer{cfg: cfg.withDefaults()}
+		return cmDialer{cfg: cfg}
 	}
 	return stubDialer{}
 }
