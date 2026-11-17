@@ -90,12 +90,17 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"sync"
 	"unsafe"
 )
 
 type dfsFS struct {
 	dfs *C.dfs_t
 	ref initRef
+	// gate lets Close wait out in-flight libdfs calls before the
+	// container is disconnected. Readers take RLock for the duration
+	// of one cgo call; Close takes the write lock.
+	gate sync.RWMutex
 }
 
 type dfsObj struct {
@@ -132,6 +137,12 @@ func (f *dfsFS) Close() error {
 	if f == nil {
 		return nil
 	}
+	// Wait out every in-flight libdfs call before disconnecting the
+	// container: each reader holds RLock across its cgo call, so the
+	// write lock returning means no libdfs entry point is running and
+	// none can start.
+	f.gate.Lock()
+	defer f.gate.Unlock()
 	dfs := f.dfs
 	f.dfs = nil
 	return f.ref.release(func() error {
@@ -145,6 +156,14 @@ func (f *dfsFS) Close() error {
 }
 
 func (f *dfsFS) Open(p string, flags int) (Object, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
+	return f.openLocked(p, flags)
+}
+
+// openLocked is Open without taking the read lock. Callers must
+// already hold it.
+func (f *dfsFS) openLocked(p string, flags int) (Object, error) {
 	if flags&openCreate != 0 {
 		return f.openCreate(p, flags)
 	}
@@ -159,6 +178,8 @@ func (f *dfsFS) Open(p string, flags int) (Object, error) {
 }
 
 func (f *dfsFS) OpenRel(parent Object, name string, flags int) (Object, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	p := parent.(*dfsObj)
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
@@ -171,6 +192,8 @@ func (f *dfsFS) OpenRel(parent Object, name string, flags int) (Object, error) {
 }
 
 func (f *dfsFS) ChunkSize(obj Object) (int64, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	o := obj.(*dfsObj)
 	var sz C.daos_size_t
 	if err := dfsErrno(C.dfs_get_chunk_size(o.obj, &sz)); err != nil {
@@ -179,6 +202,8 @@ func (f *dfsFS) ChunkSize(obj Object) (int64, error) {
 	return int64(sz), nil
 }
 
+// openCreate creates and opens the object at p. Callers must
+// already hold the read lock.
 func (f *dfsFS) openCreate(p string, flags int) (Object, error) {
 	parent, name, release, err := f.parent(p, C.O_RDWR)
 	if err != nil {
@@ -196,6 +221,8 @@ func (f *dfsFS) openCreate(p string, flags int) (Object, error) {
 }
 
 func (f *dfsFS) Read(obj Object, buf []byte, off int64) (int, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	o := obj.(*dfsObj)
 	if len(buf) == 0 {
 		return 0, nil
@@ -209,6 +236,8 @@ func (f *dfsFS) Read(obj Object, buf []byte, off int64) (int, error) {
 }
 
 func (f *dfsFS) Write(obj Object, buf []byte, off int64) (int, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	o := obj.(*dfsObj)
 	if len(buf) == 0 {
 		return 0, nil
@@ -221,6 +250,8 @@ func (f *dfsFS) Write(obj Object, buf []byte, off int64) (int, error) {
 }
 
 func (f *dfsFS) Mkdir(p string) error {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	parent, name, release, err := f.parent(p, C.O_RDWR)
 	if err != nil {
 		return err
@@ -232,6 +263,8 @@ func (f *dfsFS) Mkdir(p string) error {
 }
 
 func (f *dfsFS) MkdirRel(parent Object, name string) error {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	p := parent.(*dfsObj)
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
@@ -239,6 +272,8 @@ func (f *dfsFS) MkdirRel(parent Object, name string) error {
 }
 
 func (f *dfsFS) Remove(p string, force bool) error {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	parent, name, release, err := f.parent(p, C.O_RDWR)
 	if err != nil {
 		return err
@@ -254,6 +289,8 @@ func (f *dfsFS) Remove(p string, force bool) error {
 }
 
 func (f *dfsFS) Move(src, dst string) error {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	sp, sn, srel, err := f.parent(src, C.O_RDWR)
 	if err != nil {
 		return err
@@ -278,12 +315,14 @@ func (f *dfsFS) Move(src, dst string) error {
 	return pathErr(dst, pathErr(src, err))
 }
 
+// fileOverDir reports whether a move would put a file over a
+// directory. Callers must already hold the read lock.
 func (f *dfsFS) fileOverDir(src, dst string) error {
-	dstInfo, err := f.Stat(dst)
+	dstInfo, err := f.statLocked(dst)
 	if err != nil || !dstInfo.IsDir {
 		return errInvalid
 	}
-	srcInfo, err := f.Stat(src)
+	srcInfo, err := f.statLocked(src)
 	if err == nil && srcInfo.IsDir {
 		return errInvalid
 	}
@@ -291,6 +330,14 @@ func (f *dfsFS) fileOverDir(src, dst string) error {
 }
 
 func (f *dfsFS) Stat(p string) (Info, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
+	return f.statLocked(p)
+}
+
+// statLocked is Stat without taking the read lock. Callers must
+// already hold it.
+func (f *dfsFS) statLocked(p string) (Info, error) {
 	parent, name, release, err := f.parent(p, C.O_RDONLY)
 	if err != nil {
 		return Info{}, err
@@ -315,6 +362,8 @@ func (f *dfsFS) Stat(p string) (Info, error) {
 }
 
 func (f *dfsFS) StatRel(parent Object, name string) (Info, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	p := parent.(*dfsObj)
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
@@ -331,6 +380,8 @@ func (f *dfsFS) StatRel(parent Object, name string) (Info, error) {
 }
 
 func (f *dfsFS) SetXattr(obj Object, name string, value []byte) error {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	if len(name) > maxXattrName || len(value) > maxXattrLen {
 		return errNameLong
 	}
@@ -345,6 +396,8 @@ func (f *dfsFS) SetXattr(obj Object, name string, value []byte) error {
 }
 
 func (f *dfsFS) RemoveXattr(obj Object, name string) error {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	if len(name) > maxXattrName {
 		return errNameLong
 	}
@@ -355,6 +408,8 @@ func (f *dfsFS) RemoveXattr(obj Object, name string) error {
 }
 
 func (f *dfsFS) GetXattr(obj Object, name string) ([]byte, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	o := obj.(*dfsObj)
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
@@ -371,15 +426,19 @@ func (f *dfsFS) GetXattr(obj Object, name string) ([]byte, error) {
 }
 
 func (f *dfsFS) ReadDir(p string) ([]Info, error) {
-	obj, err := f.Open(p, openRead)
+	f.gate.RLock()
+	defer f.gate.RUnlock()
+	obj, err := f.openLocked(p, openRead)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Release(obj)
+	defer f.releaseLocked(obj)
 	return f.readDirObj(obj)
 }
 
 func (f *dfsFS) ReadDirObj(obj Object) ([]Info, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	return f.readDirObj(obj)
 }
 
@@ -419,6 +478,14 @@ func (f *dfsFS) readDirObj(obj Object) ([]Info, error) {
 }
 
 func (f *dfsFS) Release(obj Object) error {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
+	return f.releaseLocked(obj)
+}
+
+// releaseLocked is Release without taking the read lock. Callers
+// must already hold it.
+func (f *dfsFS) releaseLocked(obj Object) error {
 	o := obj.(*dfsObj)
 	if o.obj == nil {
 		return nil
@@ -429,6 +496,8 @@ func (f *dfsFS) Release(obj Object) error {
 }
 
 func (f *dfsFS) StatObj(obj Object) (Info, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	o := obj.(*dfsObj)
 	var st C.struct_stat
 	if err := dfsErrno(C.dfs_ostat(f.dfs, o.obj, &st)); err != nil {
@@ -442,6 +511,8 @@ func (f *dfsFS) StatObj(obj Object) (Info, error) {
 }
 
 func (f *dfsFS) SetOclass(obj Object, oclass string) error {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	o := obj.(*dfsObj)
 	cname := C.CString(oclass)
 	defer C.free(unsafe.Pointer(cname))
@@ -449,10 +520,14 @@ func (f *dfsFS) SetOclass(obj Object, oclass string) error {
 }
 
 func (f *dfsFS) SetChunkSize(obj Object, n int64) error {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
 	o := obj.(*dfsObj)
 	return dfsErrno(C.dfs_obj_set_chunk_size(f.dfs, o.obj, 0, C.daos_size_t(n)))
 }
 
+// parent resolves the parent directory object for a path. Callers
+// must already hold the read lock.
 func (f *dfsFS) parent(p string, flags C.int) (parent *C.dfs_obj_t, name string, release func(), err error) {
 	release = func() {}
 	p = clean(p)
