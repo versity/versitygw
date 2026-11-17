@@ -223,6 +223,18 @@ func IAMUpdateAssumeRolePolicy_trust_policy_document_grammar(s *S3Conf) error {
 	})
 }
 
+// IAMUpdateAssumeRolePolicy_trust_policy_aws_principals verifies a trust
+// policy's AWS principals must each resolve to something for it to replace a
+// role's existing one.
+func IAMUpdateAssumeRolePolicy_trust_policy_aws_principals(s *S3Conf) error {
+	testName := "IAMUpdateAssumeRolePolicy_trust_policy_aws_principals"
+	return iamActionHandler(s, testName, func(client *iam.Client) error {
+		return runTrustPolicyAWSPrincipalCases(client, func(doc string, wantErr iamerr.APIError) error {
+			return checkUpdateAssumeRolePolicyTrustPolicyCase(client, doc, wantErr)
+		})
+	})
+}
+
 // checkUpdateAssumeRolePolicyTrustPolicyCase verifies doc is accepted/rejected
 // as expected when used to update an existing role's trust policy.
 func checkUpdateAssumeRolePolicyTrustPolicyCase(client *iam.Client, doc string, wantErr iamerr.APIError) (err error) {

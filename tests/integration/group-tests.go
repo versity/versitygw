@@ -1554,6 +1554,7 @@ func TestIAMCreateRole(ts *TestState) {
 	ts.Run(IAMCreateRole_success)
 	ts.Run(IAMCreateRole_defaults)
 	ts.Run(IAMCreateRole_trust_policy_document_grammar)
+	ts.Run(IAMCreateRole_trust_policy_aws_principals)
 }
 
 func TestIAMGetRole(ts *TestState) {
@@ -1596,6 +1597,7 @@ func TestIAMUpdateAssumeRolePolicy(ts *TestState) {
 	ts.Run(IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded)
 	ts.Run(IAMUpdateAssumeRolePolicy_success)
 	ts.Run(IAMUpdateAssumeRolePolicy_trust_policy_document_grammar)
+	ts.Run(IAMUpdateAssumeRolePolicy_trust_policy_aws_principals)
 }
 
 func TestIAMTagRole(ts *TestState) {
@@ -1791,6 +1793,44 @@ func TestIAMListOpenIDConnectProviderTags(ts *TestState) {
 	ts.Run(IAMListOpenIDConnectProviderTags_pagination)
 }
 
+func TestIAMAssumeRole(ts *TestState) {
+	ts.Run(IAMAssumeRole_missing_role_arn)
+	ts.Run(IAMAssumeRole_missing_role_session_name)
+	ts.Run(IAMAssumeRole_malformed_duration)
+	ts.Run(IAMAssumeRole_wrong_version_is_invalid_action)
+	ts.Run(IAMAssumeRole_incorrect_service_scope)
+	ts.Run(IAMAssumeRole_no_auth)
+	ts.Run(IAMAssumeRole_unknown_access_key)
+	ts.Run(IAMAssumeRole_invalid_credentials)
+	ts.Run(IAMAssumeRole_invalid_parameters)
+	ts.Run(IAMAssumeRole_unsupported_parameters)
+	ts.Run(IAMAssumeRole_root_refused)
+	ts.Run(IAMAssumeRole_role_arn_not_an_arn)
+	ts.Run(IAMAssumeRole_mfa_not_supported)
+	ts.Run(IAMAssumeRole_success)
+	ts.Run(IAMAssumeRole_response_wire_shape)
+	ts.Run(IAMAssumeRole_presigned_url)
+	ts.Run(IAMAssumeRole_unresolved_role_arn)
+	ts.Run(IAMAssumeRole_account_trust_requires_identity_policy)
+	ts.Run(IAMAssumeRole_direct_trust_needs_no_identity_policy)
+	ts.Run(IAMAssumeRole_explicit_deny)
+	ts.Run(IAMAssumeRole_trust_statement_must_cover_the_caller)
+	ts.Run(IAMAssumeRole_identity_policy_resource_scoping)
+	ts.Run(IAMAssumeRole_external_id)
+	ts.Run(IAMAssumeRole_role_session_name_condition)
+	ts.Run(IAMAssumeRole_trust_policy_principal_conditions)
+	ts.Run(IAMAssumeRole_identity_policy_conditions)
+	ts.Run(IAMAssumeRole_duration)
+	ts.Run(IAMAssumeRole_session_policy)
+	ts.Run(IAMAssumeRole_session_policy_documents)
+	ts.Run(IAMAssumeRole_error_precedence)
+	ts.Run(IAMAssumeRole_role_chaining)
+	ts.Run(IAMAssumeRole_role_chaining_session_policy)
+	ts.Run(IAMAssumeRole_role_chaining_duration_limit)
+	ts.Run(IAMAssumeRole_session_of_deleted_role)
+	ts.Run(IAMAssumeRole_trust_policy_update_takes_effect)
+}
+
 func TestIAMAssumeRoleWithWebIdentity(ts *TestState) {
 	ts.Run(IAMAssumeRoleWithWebIdentity_missing_role_arn)
 	ts.Run(IAMAssumeRoleWithWebIdentity_role_arn_too_short)
@@ -1958,14 +1998,6 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMPrincipal_role_arn_does_not_match_a_user)
 	ts.Run(S3IAMPrincipal_deleted_user_arn_rejected)
 	ts.Run(S3IAMPrincipal_wildcard_grants_everyone)
-}
-
-// TestS3IAMSessionAccessControl is the one group the OIDC workflow runs, so
-// it carries every test that needs a real, signed ID token — including the
-// IAM/STS-endpoint ones below, which are not S3 access-control tests but
-// have the same GitHub-OIDC prerequisite. Every test here skips itself
-// outside a job that can mint a token.
-func TestS3IAMSessionAccessControl(ts *TestState) {
 	ts.Run(S3IAMSession_role_policy_allows)
 	ts.Run(S3IAMSession_role_without_policy_denied)
 	ts.Run(S3IAMSession_role_policy_explicit_deny_wins)
@@ -1975,6 +2007,7 @@ func TestS3IAMSessionAccessControl(ts *TestState) {
 	ts.Run(S3IAMSession_session_policy_explicit_deny_overrides_role)
 	ts.Run(S3IAMSession_role_policy_deny_overrides_session_allow)
 	ts.Run(S3IAMSession_session_policy_without_role_policy_denied)
+	ts.Run(S3IAMSession_session_policy_scopes_to_prefix)
 	ts.Run(S3IAMSession_bucket_policy_allows_without_role_policy)
 	ts.Run(S3IAMSession_bucket_policy_role_arn_covers_every_session)
 	ts.Run(S3IAMSession_bucket_policy_names_one_session)
@@ -1990,9 +2023,18 @@ func TestS3IAMSessionAccessControl(ts *TestState) {
 	ts.Run(S3IAMSession_delete_objects_authorizes_each_key)
 	ts.Run(S3IAMSession_condition_identity_keys)
 	ts.Run(S3IAMSession_get_caller_identity_matches_s3_principal)
-	ts.Run(S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live)
 	ts.Run(S3IAMSession_GetRole_role_last_used_recorded)
 	ts.Run(S3IAMSession_role_last_used_records_s3)
+}
+
+// TestS3IAMSessionAccessControl is the one group the OIDC workflow runs, so
+// it carries the tests that need a real, signed ID token: the ones that mint
+// their session with AssumeRoleWithWebIdentity. Every test here skips itself
+// outside a job that can mint a token. Sessions minted with AssumeRole need
+// no identity provider, and their tests run with TestS3IAMAccessControl.
+func TestS3IAMSessionAccessControl(ts *TestState) {
+	ts.Run(S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live)
+	ts.Run(S3IAMSession_web_identity_session_on_s3)
 }
 
 func TestIAM(ts *TestState) {
@@ -2037,6 +2079,7 @@ func TestIAM(ts *TestState) {
 	TestIAMTagOpenIDConnectProvider(ts)
 	TestIAMUntagOpenIDConnectProvider(ts)
 	TestIAMListOpenIDConnectProviderTags(ts)
+	TestIAMAssumeRole(ts)
 	TestIAMAssumeRoleWithWebIdentity(ts)
 	TestIAMGetCallerIdentity(ts)
 	TestIAMAccessControl(ts)
@@ -2470,6 +2513,7 @@ func GetIntTests() IntTests {
 		"S3IAMSession_session_policy_filters_bucket_policy_grant":                          S3IAMSession_session_policy_filters_bucket_policy_grant,
 		"S3IAMSession_bucket_policy_allows_without_role_policy":                            S3IAMSession_bucket_policy_allows_without_role_policy,
 		"S3IAMSession_session_policy_without_role_policy_denied":                           S3IAMSession_session_policy_without_role_policy_denied,
+		"S3IAMSession_session_policy_scopes_to_prefix":                                     S3IAMSession_session_policy_scopes_to_prefix,
 		"S3IAMSession_role_policy_deny_overrides_session_allow":                            S3IAMSession_role_policy_deny_overrides_session_allow,
 		"S3IAMSession_session_policy_explicit_deny_overrides_role":                         S3IAMSession_session_policy_explicit_deny_overrides_role,
 		"S3IAMSession_session_policy_cannot_widen_role":                                    S3IAMSession_session_policy_cannot_widen_role,
@@ -2479,6 +2523,7 @@ func GetIntTests() IntTests {
 		"S3IAMSession_role_without_policy_denied":                                          S3IAMSession_role_without_policy_denied,
 		"S3IAMSession_role_policy_allows":                                                  S3IAMSession_role_policy_allows,
 		"S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live":                          S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live,
+		"S3IAMSession_web_identity_session_on_s3":                                          S3IAMSession_web_identity_session_on_s3,
 		"S3IAMSession_GetRole_role_last_used_recorded":                                     S3IAMSession_GetRole_role_last_used_recorded,
 		"S3IAMSession_role_last_used_records_s3":                                           S3IAMSession_role_last_used_records_s3,
 		"S3IAMAccessControl_retention_extension_needs_no_bypass":                           S3IAMAccessControl_retention_extension_needs_no_bypass,
@@ -2787,6 +2832,7 @@ func GetIntTests() IntTests {
 		"IAMCreateRole_success":                                                            IAMCreateRole_success,
 		"IAMCreateRole_defaults":                                                           IAMCreateRole_defaults,
 		"IAMCreateRole_trust_policy_document_grammar":                                      IAMCreateRole_trust_policy_document_grammar,
+		"IAMCreateRole_trust_policy_aws_principals":                                        IAMCreateRole_trust_policy_aws_principals,
 		"IAMGetRole_missing_role_name":                                                     IAMGetRole_missing_role_name,
 		"IAMGetRole_invalid_role_name":                                                     IAMGetRole_invalid_role_name,
 		"IAMGetRole_long_role_name":                                                        IAMGetRole_long_role_name,
@@ -2817,6 +2863,7 @@ func GetIntTests() IntTests {
 		"IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded":                       IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded,
 		"IAMUpdateAssumeRolePolicy_success":                                                IAMUpdateAssumeRolePolicy_success,
 		"IAMUpdateAssumeRolePolicy_trust_policy_document_grammar":                          IAMUpdateAssumeRolePolicy_trust_policy_document_grammar,
+		"IAMUpdateAssumeRolePolicy_trust_policy_aws_principals":                            IAMUpdateAssumeRolePolicy_trust_policy_aws_principals,
 		"IAMTagRole_missing_role_name":                                                     IAMTagRole_missing_role_name,
 		"IAMTagRole_invalid_role_name":                                                     IAMTagRole_invalid_role_name,
 		"IAMTagRole_role_name_too_long":                                                    IAMTagRole_role_name_too_long,
@@ -2959,6 +3006,41 @@ func GetIntTests() IntTests {
 		"IAMListOpenIDConnectProviderTags_empty_result":                                    IAMListOpenIDConnectProviderTags_empty_result,
 		"IAMListOpenIDConnectProviderTags_success":                                         IAMListOpenIDConnectProviderTags_success,
 		"IAMListOpenIDConnectProviderTags_pagination":                                      IAMListOpenIDConnectProviderTags_pagination,
+		"IAMAssumeRole_missing_role_arn":                                                   IAMAssumeRole_missing_role_arn,
+		"IAMAssumeRole_missing_role_session_name":                                          IAMAssumeRole_missing_role_session_name,
+		"IAMAssumeRole_malformed_duration":                                                 IAMAssumeRole_malformed_duration,
+		"IAMAssumeRole_wrong_version_is_invalid_action":                                    IAMAssumeRole_wrong_version_is_invalid_action,
+		"IAMAssumeRole_incorrect_service_scope":                                            IAMAssumeRole_incorrect_service_scope,
+		"IAMAssumeRole_no_auth":                                                            IAMAssumeRole_no_auth,
+		"IAMAssumeRole_unknown_access_key":                                                 IAMAssumeRole_unknown_access_key,
+		"IAMAssumeRole_invalid_credentials":                                                IAMAssumeRole_invalid_credentials,
+		"IAMAssumeRole_invalid_parameters":                                                 IAMAssumeRole_invalid_parameters,
+		"IAMAssumeRole_unsupported_parameters":                                             IAMAssumeRole_unsupported_parameters,
+		"IAMAssumeRole_root_refused":                                                       IAMAssumeRole_root_refused,
+		"IAMAssumeRole_role_arn_not_an_arn":                                                IAMAssumeRole_role_arn_not_an_arn,
+		"IAMAssumeRole_mfa_not_supported":                                                  IAMAssumeRole_mfa_not_supported,
+		"IAMAssumeRole_success":                                                            IAMAssumeRole_success,
+		"IAMAssumeRole_response_wire_shape":                                                IAMAssumeRole_response_wire_shape,
+		"IAMAssumeRole_presigned_url":                                                      IAMAssumeRole_presigned_url,
+		"IAMAssumeRole_unresolved_role_arn":                                                IAMAssumeRole_unresolved_role_arn,
+		"IAMAssumeRole_account_trust_requires_identity_policy":                             IAMAssumeRole_account_trust_requires_identity_policy,
+		"IAMAssumeRole_direct_trust_needs_no_identity_policy":                              IAMAssumeRole_direct_trust_needs_no_identity_policy,
+		"IAMAssumeRole_explicit_deny":                                                      IAMAssumeRole_explicit_deny,
+		"IAMAssumeRole_trust_statement_must_cover_the_caller":                              IAMAssumeRole_trust_statement_must_cover_the_caller,
+		"IAMAssumeRole_identity_policy_resource_scoping":                                   IAMAssumeRole_identity_policy_resource_scoping,
+		"IAMAssumeRole_external_id":                                                        IAMAssumeRole_external_id,
+		"IAMAssumeRole_role_session_name_condition":                                        IAMAssumeRole_role_session_name_condition,
+		"IAMAssumeRole_trust_policy_principal_conditions":                                  IAMAssumeRole_trust_policy_principal_conditions,
+		"IAMAssumeRole_identity_policy_conditions":                                         IAMAssumeRole_identity_policy_conditions,
+		"IAMAssumeRole_duration":                                                           IAMAssumeRole_duration,
+		"IAMAssumeRole_session_policy":                                                     IAMAssumeRole_session_policy,
+		"IAMAssumeRole_session_policy_documents":                                           IAMAssumeRole_session_policy_documents,
+		"IAMAssumeRole_error_precedence":                                                   IAMAssumeRole_error_precedence,
+		"IAMAssumeRole_role_chaining":                                                      IAMAssumeRole_role_chaining,
+		"IAMAssumeRole_role_chaining_session_policy":                                       IAMAssumeRole_role_chaining_session_policy,
+		"IAMAssumeRole_role_chaining_duration_limit":                                       IAMAssumeRole_role_chaining_duration_limit,
+		"IAMAssumeRole_session_of_deleted_role":                                            IAMAssumeRole_session_of_deleted_role,
+		"IAMAssumeRole_trust_policy_update_takes_effect":                                   IAMAssumeRole_trust_policy_update_takes_effect,
 		"IAMAssumeRoleWithWebIdentity_missing_role_arn":                                    IAMAssumeRoleWithWebIdentity_missing_role_arn,
 		"IAMAssumeRoleWithWebIdentity_role_arn_too_short":                                  IAMAssumeRoleWithWebIdentity_role_arn_too_short,
 		"IAMAssumeRoleWithWebIdentity_malformed_duration":                                  IAMAssumeRoleWithWebIdentity_malformed_duration,

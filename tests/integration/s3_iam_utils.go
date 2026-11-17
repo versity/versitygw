@@ -84,6 +84,10 @@ type s3IAMPrincipal struct {
 	// that need to build a differently-credentialed client from the same
 	// session (a presigned URL, an STS call, a deliberately wrong token).
 	sessionToken string
+	// assumedBy is set only for a session minted by newRoleSession: the IAM
+	// user that assumed the role, so a test can have it assume the role
+	// again.
+	assumedBy *s3IAMPrincipal
 }
 
 // s3IAMActionHandler is actionHandler for the S3+IAM groups: it runs handler
@@ -478,6 +482,75 @@ func gitHubOIDCToken() (string, bool) {
 	return gitHubOIDCTokenVal, gitHubOIDCTokenOK
 }
 
+// newRoleSession creates a role carrying rolePolicies as its inline
+// permission policies, and an IAM user its trust policy names, then has that
+// user assume it with AssumeRole and, when sessionPolicy is non-empty, an
+// inline session policy.
+//
+// The returned principal's name is the role name, so a test can put another
+// role policy on it or delete the role mid-test; arn is the assumed-role
+// session ARN, which is what a denial message names.
+func newRoleSession(root *iam.Client, s *S3Conf, rolePolicies map[string]string, sessionPolicy string) (*s3IAMPrincipal, func(), error) {
+	assumer, cleanupAssumer, err := newS3IAMUser(root, s, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	roleName, _, cleanupRole, err := newAssumableRole(root, trustAllowingAWS(assumer.arn))
+	if err != nil {
+		cleanupAssumer()
+		return nil, nil, err
+	}
+	// The role may already have been deleted by the test itself
+	// (S3IAMSession_deleted_role_denies); cleanup tolerates that.
+	cleanup := func() {
+		cleanupRole()
+		cleanupAssumer()
+	}
+
+	for name, doc := range rolePolicies {
+		if _, err := putIAMRolePolicy(root, &iam.PutRolePolicyInput{
+			RoleName: aws.String(roleName), PolicyName: aws.String(name), PolicyDocument: aws.String(doc),
+		}); err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("attach role policy %q: %w", name, err)
+		}
+	}
+
+	session, err := assumeRoleSession(s, assumer, roleName, sessionPolicy)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	return session, cleanup, nil
+}
+
+// anotherSessionOfRole mints a second, independent session of the role
+// session is one of — the fixture for the difference between a bucket policy
+// naming a role, which covers every session of it, and one naming a single
+// session, which covers only that one.
+func anotherSessionOfRole(s *S3Conf, session *s3IAMPrincipal) (*s3IAMPrincipal, error) {
+	return assumeRoleSession(s, session.assumedBy, session.name, "")
+}
+
+// assumeRoleSession has assumer assume roleName under a fresh session name.
+func assumeRoleSession(s *S3Conf, assumer *s3IAMPrincipal, roleName, sessionPolicy string) (*s3IAMPrincipal, error) {
+	input := &sts.AssumeRoleInput{
+		RoleArn:         aws.String(roleArnFor(roleName)),
+		RoleSessionName: aws.String("s3-sess-" + genRandString(8)),
+	}
+	if sessionPolicy != "" {
+		input.Policy = aws.String(sessionPolicy)
+	}
+	out, err := assumeRoleAs(assumer, input)
+	if err != nil {
+		return nil, fmt.Errorf("AssumeRole: %w", err)
+	}
+
+	session := roleSession(s, roleName, out)
+	session.assumedBy = assumer
+	return session, nil
+}
+
 // s3IAMSessionActionHandler is s3IAMActionHandler that first skips the test
 // when no GitHub OIDC token can be minted — which is every environment but
 // the one workflow holding id-token: write permission.
@@ -489,14 +562,11 @@ func s3IAMSessionActionHandler(s *S3Conf, testName string, handler func(root *ia
 	return s3IAMActionHandler(s, testName, handler, opts...)
 }
 
-// newGitHubSession registers a throwaway OIDC provider for GitHub Actions'
-// issuer and a role trusting it, attaches rolePolicies as the role's inline
-// permission policies, then assumes it with a real ID token and (when
-// sessionPolicy is non-empty) an inline session policy.
-//
-// The returned principal's name is the role name, so a test can put another
-// role policy on it or delete the role mid-test; arn is the assumed-role
-// session ARN, which is what a denial message names.
+// newGitHubSession is newRoleSession for a session minted by
+// AssumeRoleWithWebIdentity instead: it registers a throwaway OIDC provider
+// for GitHub Actions' issuer and a role trusting it, attaches rolePolicies as
+// the role's inline permission policies, then assumes it with a real ID
+// token and (when sessionPolicy is non-empty) an inline session policy.
 func newGitHubSession(root *iam.Client, s *S3Conf, rolePolicies map[string]string, sessionPolicy string) (*s3IAMPrincipal, func(), error) {
 	token, ok := gitHubOIDCToken()
 	if !ok {
@@ -543,42 +613,7 @@ func newGitHubSession(root *iam.Client, s *S3Conf, rolePolicies map[string]strin
 		client:       s3ClientWithSessionCreds(s, access, secret, sessionToken),
 		sessionToken: sessionToken,
 	}
-	// The role may already have been deleted by the test itself
-	// (S3IAMSession_deleted_role_denies); cleanup tolerates that.
 	return principal, cleanup, nil
-}
-
-// anotherSessionOfRole mints a second, independent session of a role a test
-// already holds one of — the fixture for the difference between a bucket
-// policy naming a role, which covers every session of it, and one naming a
-// single session, which covers only that one.
-func anotherSessionOfRole(s *S3Conf, roleName string) (*s3IAMPrincipal, error) {
-	token, ok := gitHubOIDCToken()
-	if !ok {
-		return nil, fmt.Errorf("no GitHub OIDC token available")
-	}
-
-	sessionName := "s3-sess-" + genRandString(8)
-	out, err := assumeRoleWithWebIdentitySessionPolicy(s, roleArnFor(roleName), sessionName, token, "")
-	if err != nil {
-		return nil, fmt.Errorf("AssumeRoleWithWebIdentity: %w", err)
-	}
-
-	access := aws.ToString(out.Credentials.AccessKeyId)
-	secret := aws.ToString(out.Credentials.SecretAccessKey)
-	sessionToken := aws.ToString(out.Credentials.SessionToken)
-
-	conf := *s
-	conf.awsID = access
-	conf.awsSecret = secret
-
-	return &s3IAMPrincipal{
-		name:         roleName,
-		arn:          aws.ToString(out.AssumedRoleUser.Arn),
-		conf:         conf,
-		client:       s3ClientWithSessionCreds(s, access, secret, sessionToken),
-		sessionToken: sessionToken,
-	}, nil
 }
 
 // assumeRoleWithWebIdentitySessionPolicy is assumeRoleWithWebIdentity with
