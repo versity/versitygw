@@ -55,7 +55,23 @@ list_parts_rest() {
   local bucket_name="$1" key="$2" upload_id="$3" callback="$4" params=("${@:5}")
   local response
 
-  if ! response=$(send_rest_go_command_callback "200" "$callback" "-bucketName" "$bucket_name" "-objectKey" "$key" "-query" "uploadId=$upload_id" "${params[@]}" 2>&1); then
+  if ! response=$(send_rest_go_command_callback "200" "$callback" "-bucketName" "$bucket_name" "-objectKey" "$key" \
+      "-query" "uploadId=$upload_id" "${params[@]}" 2>&1); then
+    log 2 "error sending REST ListParts command or checking response: $response"
+    return 1
+  fi
+  return 0
+}
+
+list_parts_rest_expect_error_callback() {
+  if ! check_param_count_gt "bucket name, key, upload ID, HTTP code, error code, message, callback, other params" 4 $#; then
+    return 1
+  fi
+  local bucket_name="$1" key="$2" upload_id="$3" http_code="$4" error_code="$5" message="$6" callback="$7" params=("${@:8}")
+  local response
+
+  if ! response=$(send_rest_go_command_expect_error_callback "$http_code" "$error_code" "$message" "$callback" "-bucketName" "$bucket_name" "-objectKey" "$key" \
+      "-query" "uploadId=$upload_id" "${params[@]}" 2>&1); then
     log 2 "error sending REST ListParts command or checking response: $response"
     return 1
   fi

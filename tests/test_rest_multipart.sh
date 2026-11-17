@@ -372,3 +372,87 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_two_name" "$test_file" "$TEST_FILE_FOLDER/${test_file}-copy"
   assert_success
 }
+
+@test "REST - upload ID after abort returns 404" {
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  file_name="$output"
+
+  run create_multipart_upload_rest "$bucket_name" "$file_name" "" "parse_upload_id"
+  assert_success
+  upload_id="$output"
+
+  run abort_multipart_upload_rest "$bucket_name" "$file_name" "$upload_id"
+  assert_success
+
+  run list_parts_rest_expect_error_callback "$bucket_name" "$file_name" "$upload_id" "404" "NoSuchUpload" "does not exist" \
+    "check_specific_argument_name_and_value" "--" "UploadId" "$upload_id"
+  assert_success
+}
+
+@test "REST - upload ID after completion returns 404" {
+  local bucket_name file_name upload_id parts_payload
+
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  read -r bucket_name file_name <<< "$output"
+
+  run multipart_upload_rest_before_completion "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/$file_name" 2
+  assert_success
+  read -r upload_id parts_payload <<< "$output"
+
+  run complete_multipart_upload_rest "$bucket_name" "$file_name" "$upload_id" "$parts_payload"
+  assert_success
+
+  run list_parts_rest_expect_error_callback "$bucket_name" "$file_name" "$upload_id" "404" "NoSuchUpload" "does not exist" \
+    "check_specific_argument_name_and_value" "--" "UploadId" "$upload_id"
+  assert_success
+}
+
+@test "REST - multipart - out of order - pagination" {
+  local bucket_name file_name upload_id part_one part_two part_three
+
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  read -r bucket_name file_name <<< "$output"
+
+  run split_file "$TEST_FILE_FOLDER/$file_name" 3
+  assert_success
+  read -r part_one part_two part_three <<< "$output"
+  log 5 "parts: $part_one $part_two $part_three"
+
+  run create_multipart_upload_rest "$bucket_name" "$file_name" "" "parse_upload_id"
+  assert_success
+  upload_id="$output"
+
+  run upload_part_rest "$bucket_name" "$file_name" "$upload_id" "2" "$part_one"
+  assert_success
+
+  run upload_part_rest "$bucket_name" "$file_name" "$upload_id" "7" "$part_two"
+  assert_success
+
+  run upload_part_rest "$bucket_name" "$file_name" "$upload_id" "10000" "$part_three"
+  assert_success
+
+  locally_calculated_etag="\"$(openssl dgst -md5 "$part_one" | awk '{print $NF}')\""
+  file_size=$(get_file_size "$part_one")
+
+  list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 2 7 "$locally_calculated_etag" "$file_size"
+  assert_success
+
+  locally_calculated_etag="\"$(openssl dgst -md5 "$part_two" | awk '{print $NF}')\""
+  file_size=$(get_file_size "$part_two")
+
+  list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 7 10000 "$locally_calculated_etag" "$file_size"
+  assert_success
+
+  locally_calculated_etag="\"$(openssl dgst -md5 "$part_three" | awk '{print $NF}')\""
+  file_size=$(get_file_size "$part_three")
+
+  list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 9999 10000 "$locally_calculated_etag" "$file_size"
+  assert_success
+}

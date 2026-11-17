@@ -155,9 +155,9 @@ check_list_parts_parts() {
   if ! check_param_count_gt "data string, part number marker, next part number, etag/size pairs" 3 $#; then
     return 1
   fi
-  local data_string="$1" part_number_marker="$2" next_part_number_marker="$3"
-  local -a etag_size_pairs=("${@:4}")
-  local response part_number
+  local data_string="$1" max_parts="$2" part_number_marker="$3" next_part_number_marker="$4"
+  local -a etag_size_pairs=("${@:5}")
+  local response part_number num_parts_returned
   local -a parts=()
 
   if ! response=$(get_elements_inside_string "$data_string" "Part" 2>&1); then
@@ -169,20 +169,17 @@ check_list_parts_parts() {
     mapfile -t parts <<< "$response"
   fi
 
-  local part_count=$((next_part_number_marker-part_number_marker))
-  if [ $part_count -lt 0 ]; then
-    part_count=0
-  fi
-  if [ ${#parts[@]} -ne "$part_count" ]; then
-    log 2 "part count mismatch, expected '$part_count', actual '${#parts[@]}'"
+  num_parts_returned="${#parts[@]}"
+  if [ "$num_parts_returned" -gt "$max_parts" ]; then
+    log 2 "part count mismatch, maximum '$max_parts', actual '$num_parts_returned"
     return 1
   fi
-  if [ $((part_count*2)) -ne "${#etag_size_pairs[@]}" ]; then
+  if [ $((num_parts_returned*2)) -ne "${#etag_size_pairs[@]}" ]; then
     log 2 "part count and etag/size mismatch, expected '$((part_count*2))' fields, actual is '${#etag_size_pairs[@]}'"
     return 1
   fi
 
-  for ((i=0; i<part_count; i++)); do
+  for ((i=0; i<num_parts_returned; i++)); do
     part_number=$((part_number_marker+1+i))
     etag="${etag_size_pairs[((i*2))]}"
     if ! check_part_elements "${parts[$i]}" "$part_number" "${etag_size_pairs[((i*2))]}" "${etag_size_pairs[((i*2+1))]}"; then
@@ -224,7 +221,7 @@ check_list_with_marker_and_max_parts() {
     fi
   done
 
-  if ! check_list_parts_parts "$list_parts_result" "$part_number_marker" "$next_part_number_marker" "${etag_size_pairs[@]}"; then
+  if ! check_list_parts_parts "$list_parts_result" "$max_parts" "$part_number_marker" "$next_part_number_marker" "${etag_size_pairs[@]}"; then
     log 2 "error checking parts in parts list"
     return 1
   fi

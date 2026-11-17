@@ -206,9 +206,18 @@ test_multipart_upload_with_checksum_part_replacement() {
     log 2 "expected checksum mismatch (first set, idx 1 is '${flipped_checksums[1]}', second, idx 0 is '${checksums[0]}'"
   fi
 
+  if ! list_parts_rest "$bucket_name" "$file_name" "$upload_id" "list_parts_check_checksums" "--" "$bucket_name" "$file_name" "$upload_id" "$checksum_algorithm" "${checksums[@]}"; then
+    log 2 "error listing parts and checking checksums"
+    return 1
+  fi
+
   if ! calculate_final_checksum_finish_multipart_and_check_head_object_checksum "$checksum_type" "$checksum_algorithm" "$TEST_FILE_FOLDER/$file_name" \
       "$bucket_name" "$file_name" "$upload_id" "${checksums_and_payload[1]}" "${checksums[@]}"; then
     log 2 "error calculating checksum, completing multipart, and/or verifying checksum with HeadObject"
+    return 1
+  fi
+  if ! download_and_compare_file "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"; then
+    log 2 "error downloading and comparing file"
     return 1
   fi
   return 0
