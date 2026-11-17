@@ -438,21 +438,30 @@ source ./tests/drivers/upload_part/upload_part_rest.sh
   run upload_part_rest "$bucket_name" "$file_name" "$upload_id" "10000" "$part_three"
   assert_success
 
+  local -a part_array=(
+    "2" "$etag_one" "$size_one"
+    "7" "$etag_two" "$size_two"
+    "10000" "$etag_three" "$size_three"
+  )
+
   locally_calculated_etag="\"$(openssl dgst -md5 "$part_one" | awk '{print $NF}')\""
   file_size=$(get_file_size "$part_one")
 
-  list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 2 7 "$locally_calculated_etag" "$file_size"
+  list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 1 2 "2" "$locally_calculated_etag" "$file_size"
   assert_success
 
   locally_calculated_etag="\"$(openssl dgst -md5 "$part_two" | awk '{print $NF}')\""
   file_size=$(get_file_size "$part_two")
 
-  list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 7 10000 "$locally_calculated_etag" "$file_size"
+  list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 2 7 7 "$locally_calculated_etag" "$file_size"
   assert_success
 
   locally_calculated_etag="\"$(openssl dgst -md5 "$part_three" | awk '{print $NF}')\""
   file_size=$(get_file_size "$part_three")
 
-  list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 9999 10000 "$locally_calculated_etag" "$file_size"
+  list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 7 10000 10000 "$locally_calculated_etag" "$file_size"
+  assert_success
+
+  list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 10000 0
   assert_success
 }
