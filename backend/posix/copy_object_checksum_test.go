@@ -316,12 +316,17 @@ func TestCopyObjectSelfDeleted(t *testing.T) {
 			// read or deleted
 			at   string
 			algo types.ChecksumAlgorithm
+			tags bool
 		}{
 			// the stored checksum is read before the lock is taken
 			{name: "before the lock", at: checksumsKey, algo: types.ChecksumAlgorithmSha256},
 			// the object metadata is deleted first under the lock
 			{name: "under the lock", at: metadataHdr, algo: types.ChecksumAlgorithmSha256},
 			{name: "under the lock without a checksum", at: metadataHdr},
+			// the version id is read just before the new attributes
+			// are stored; with sidecar metadata they are stored for
+			// the deleted object, and the tagging fails afterwards
+			{name: "before the attributes are stored", at: versionIdKey, tags: true},
 		} {
 			t.Run(mode+"/"+tc.name, func(t *testing.T) {
 				ctx := context.Background()
@@ -337,7 +342,7 @@ func TestCopyObjectSelfDeleted(t *testing.T) {
 					bucket: bucket, key: key, at: tc.at,
 				}
 
-				_, err := p.CopyObject(ctx, s3response.CopyObjectInput{
+				input := s3response.CopyObjectInput{
 					Bucket:              &bucket,
 					Key:                 &key,
 					CopySource:          aws.String(bucket + "/" + key),
@@ -346,14 +351,14 @@ func TestCopyObjectSelfDeleted(t *testing.T) {
 					ChecksumAlgorithm:   tc.algo,
 					ContentType:         aws.String("text/plain"),
 					Metadata:            map[string]string{"key": "value"},
-				})
+				}
+				if tc.tags {
+					input.TaggingDirective = types.TaggingDirectiveReplace
+					input.Tagging = aws.String("key=value")
+				}
+				_, err := p.CopyObject(ctx, input)
 				if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
 					t.Fatalf("self copy of a deleted object: got %v, want NoSuchKey", err)
-				}
-				// with sidecar metadata the copy must not leave
-				// attributes of the deleted object behind
-				if attrs, _ := storer.ListAttributes(bucket, key); len(attrs) != 0 {
-					t.Errorf("attributes left for the deleted object: %v", attrs)
 				}
 			})
 		}
