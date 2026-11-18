@@ -46,19 +46,14 @@ func (stripQueryFromURLErrors) Do(req *policy.Request) (*http.Response, error) {
 	return resp, err
 }
 
-// withoutContextValues sends the rest of the pipeline under a context with
-// no values, so net/http does not read the gateway's *fasthttp.RequestCtx
-// after the call returns (#2641, see novaluesclient).
-//
-// It is a policy rather than novaluesclient.Wrap as ClientOptions.Transport
-// because azcore's default transport, used when Transport is nil, lives in
-// an internal package: wrapping a client of our own would mean copying its
-// HTTP/2 health check pings, TLS and timeout settings and keeping them in
-// sync. As a per-call policy it also covers the retry policy and the token
-// requests of the bearer-token policy, which use the request's context. The
-// policies after it no longer see per-call overrides set as context values,
-// such as policy.WithRetryOptions or runtime.WithHTTPHeader; the gateway
-// sets none.
+// withoutContextValues sends the rest of the pipeline under
+// novaluesclient.WithoutValues of the request's context, so net/http does not
+// call Value on the gateway's *fasthttp.RequestCtx after the call returns. It
+// is a per-call policy so that it also covers the retry policy and the token
+// requests of the bearer-token policy. The cost is that the policies after it
+// no longer see per-call overrides set as context values, such as
+// policy.WithRetryOptions, runtime.WithHTTPHeader or the tracer of a
+// configured TracingProvider, whose HTTP spans are lost.
 type withoutContextValues struct{}
 
 func (withoutContextValues) Do(req *policy.Request) (*http.Response, error) {
@@ -79,8 +74,13 @@ type Credentials struct {
 // New returns a client for the blob service. A SAS token takes
 // precedence, then an account name and key; with neither, the
 // DefaultAzureCredential chain (environment, workload identity,
-// managed identity, Azure CLI, ...) is used.
-func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, Credentials, error) {
+// managed identity, Azure CLI, ...) is used. Each opt is applied to the
+// client options before the client is built.
+//
+// The clients ignore per-call overrides passed in the context of a call
+// (policy.WithRetryOptions, runtime.WithHTTPHeader, a tracer); see
+// withoutContextValues.
+func New(accountName, accountKey, serviceURL, sasToken string, opts ...func(*policy.ClientOptions)) (*azblob.Client, Credentials, error) {
 	svcURL := serviceURL
 	if serviceURL == "" && accountName != "" {
 		// if not otherwise specified, use the typical form:
@@ -88,9 +88,13 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 		svcURL = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
 	}
 
-	opts := &azblob.ClientOptions{ClientOptions: policy.ClientOptions{
-		PerCallPolicies: []policy.Policy{stripQueryFromURLErrors{}, withoutContextValues{}},
-	}}
+	clientOpts := &azblob.ClientOptions{}
+	for _, opt := range opts {
+		opt(&clientOpts.ClientOptions)
+	}
+	// added after opts so that no opt can drop them
+	clientOpts.PerCallPolicies = append([]policy.Policy{stripQueryFromURLErrors{}, withoutContextValues{}},
+		clientOpts.PerCallPolicies...)
 
 	// A token copied with its leading "?" would otherwise be sent twice.
 	sasToken = strings.TrimPrefix(sasToken, "?")
@@ -102,7 +106,7 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 		if _, err := url.ParseQuery(sasToken); err != nil {
 			return nil, Credentials{}, errors.New("invalid SAS token: malformed query")
 		}
-		client, err := azblob.NewClientWithNoCredential(svcURL+"?"+sasToken, opts)
+		client, err := azblob.NewClientWithNoCredential(svcURL+"?"+sasToken, clientOpts)
 		if err != nil {
 			return nil, Credentials{}, fmt.Errorf("init client: %w", err)
 		}
@@ -114,7 +118,7 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 		if err != nil {
 			return nil, Credentials{}, fmt.Errorf("init default credentials: %w", err)
 		}
-		client, err := azblob.NewClient(svcURL, cred, opts)
+		client, err := azblob.NewClient(svcURL, cred, clientOpts)
 		if err != nil {
 			return nil, Credentials{}, fmt.Errorf("init client: %w", err)
 		}
@@ -126,7 +130,7 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*azblob.Client, 
 		return nil, Credentials{}, fmt.Errorf("init credentials: %w", err)
 	}
 
-	client, err := azblob.NewClientWithSharedKeyCredential(svcURL, cred, opts)
+	client, err := azblob.NewClientWithSharedKeyCredential(svcURL, cred, clientOpts)
 	if err != nil {
 		return nil, Credentials{}, fmt.Errorf("init client: %w", err)
 	}

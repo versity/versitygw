@@ -109,18 +109,21 @@ func TestNewKeepsSASOutOfTransportErrors(t *testing.T) {
 	endpoint := "http://" + l.Addr().String() + "/acct"
 	l.Close()
 
-	client, _, err := New("", "", endpoint, "sv=2024-01-01&sig=SECRETSIGNATURE")
+	client, _, err := New("", "", endpoint, "sv=2024-01-01&sig=SECRETSIGNATURE", noRetries)
 	if !assert.NoError(t, err) {
 		return
 	}
 
-	_, err = client.DownloadStream(policy.WithRetryOptions(context.Background(), policy.RetryOptions{MaxRetries: -1}), "iam", "users.json", nil)
+	_, err = client.DownloadStream(context.Background(), "iam", "users.json", nil)
 	if assert.Error(t, err) {
 		// the URL is still reported, only its query is removed
 		assert.Contains(t, err.Error(), "/acct/iam/users.json")
 		assert.NotContains(t, err.Error(), "SECRETSIGNATURE")
 	}
 }
+
+// noRetries disables retries. The clients ignore policy.WithRetryOptions.
+func noRetries(o *policy.ClientOptions) { o.Retry.MaxRetries = -1 }
 
 func TestNewRejectsInvalidSASWithoutLeakingToken(t *testing.T) {
 	for _, tt := range []struct{ name, token string }{
