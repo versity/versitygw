@@ -227,6 +227,104 @@ func TestGetObjectGlacierOffline(t *testing.T) {
 
 // mkdirTempIn creates a directory in dir that is removed when the test
 // completes.
+// TestCopyObjectGlacierOffline checks that a glacier mode CopyObject of an
+// offline object on a real ScoutFS filesystem returns InvalidObjectState
+// instead of waiting for the object to be staged, after the copy source
+// preconditions, and leaves the object as it was. Set SCOUTFS_TEST_DIR to a
+// directory on a ScoutFS mount to run it.
+func TestCopyObjectGlacierOffline(t *testing.T) {
+	dir := os.Getenv("SCOUTFS_TEST_DIR")
+	if dir == "" {
+		t.Skip("SCOUTFS_TEST_DIR is not set")
+	}
+
+	// New() chdirs into the gateway root; restore the original working
+	// directory when the test completes.
+	t.Chdir(t.TempDir())
+
+	s, err := New(mkdirTempIn(t, dir, "gw-root-"), ScoutfsOpts{
+		GlacierMode:         true,
+		ValidateBucketNames: true,
+		CopyObjectThreshold: 4 << 20,
+	})
+	if err != nil {
+		t.Fatalf("init scoutfs backend: %v", err)
+	}
+	t.Cleanup(s.Shutdown)
+
+	ctx := context.Background()
+	bucket, key, body := "bucket", "archived", "hello world"
+	err = s.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket:                    &bucket,
+		CreateBucketConfiguration: &types.CreateBucketConfiguration{},
+	}, []byte{})
+	if err != nil {
+		t.Fatalf("create bucket: %v", err)
+	}
+	_, err = s.PutObject(ctx, s3response.PutObjectInput{
+		Bucket:        &bucket,
+		Key:           &key,
+		Body:          strings.NewReader(body),
+		ContentLength: aws.Int64(int64(len(body))),
+	})
+	if err != nil {
+		t.Fatalf("put object: %v", err)
+	}
+	releaseFile(t, s.ObjectPath(bucket, key))
+	before, err := s.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &bucket, Key: &key, ChecksumMode: types.ChecksumModeEnabled})
+	if err != nil {
+		t.Fatalf("head object: %v", err)
+	}
+
+	errArchived := s3err.GetAPIError(s3err.ErrInvalidObjectState)
+	tests := []struct {
+		name    string
+		dst     string
+		algo    types.ChecksumAlgorithm
+		ifMatch *string
+		want    error
+	}{
+		{name: "self copy with a new checksum", dst: key, algo: types.ChecksumAlgorithmSha256, want: errArchived},
+		{name: "self copy of the metadata", dst: key, want: errArchived},
+		{name: "copy to another key", dst: "copy", want: errArchived},
+		{name: "copy source if-match differs", dst: "copy", ifMatch: aws.String("other"),
+			want: s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfMatch)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			done := make(chan error, 1)
+			go func() {
+				_, err := s.CopyObject(ctx, s3response.CopyObjectInput{
+					Bucket:              &bucket,
+					Key:                 aws.String(tt.dst),
+					CopySource:          aws.String(bucket + "/" + key),
+					CopySourceIfMatch:   tt.ifMatch,
+					ExpectedBucketOwner: aws.String(""),
+					MetadataDirective:   types.MetadataDirectiveReplace,
+					ChecksumAlgorithm:   tt.algo,
+				})
+				done <- err
+			}()
+			select {
+			case err := <-done:
+				assert.Equal(t, tt.want, err)
+			case <-time.After(10 * time.Second):
+				t.Fatal("copy of an offline object waits for it to be staged")
+			}
+		})
+	}
+
+	after, err := s.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &bucket, Key: &key, ChecksumMode: types.ChecksumModeEnabled})
+	if err != nil {
+		t.Fatalf("head object: %v", err)
+	}
+	assert.Equal(t, before.ETag, after.ETag)
+	assert.Equal(t, before.ChecksumSHA256, after.ChecksumSHA256)
+	assert.Equal(t, types.StorageClassGlacier, after.StorageClass)
+	_, err = os.Stat(s.ObjectPath(bucket, "copy"))
+	assert.ErrorIs(t, err, fs.ErrNotExist)
+}
+
 func mkdirTempIn(t *testing.T, dir, pattern string) string {
 	t.Helper()
 	d, err := os.MkdirTemp(dir, pattern)

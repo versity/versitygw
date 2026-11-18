@@ -6961,7 +6961,15 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 	}, nil
 }
 
-func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (_ s3response.CopyObjectOutput, err error) {
+func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
+	return p.CopyObjectWithPreReadFunc(ctx, input, nil)
+}
+
+// CopyObjectWithPreReadFunc is CopyObject with a hook that can reject the
+// copy. preRead gets the opened source object file after the copy source
+// preconditions pass, before any of its data is read. A nil preRead is
+// skipped. Directory objects have no data and skip it too.
+func (p *Posix) CopyObjectWithPreReadFunc(ctx context.Context, input s3response.CopyObjectInput, preRead func(f *os.File) error) (_ s3response.CopyObjectOutput, err error) {
 	defer backend.MapPermissionErr(&err)
 
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5,
@@ -7132,6 +7140,13 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		return s3response.CopyObjectOutput{}, err
 	}
 
+	if preRead != nil && !fi.IsDir() {
+		err = preRead(f)
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
+	}
+
 	var etag string
 	var version *string
 	var crc32 *string
@@ -7290,9 +7305,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 					xxhash128 = &sum
 				}
 
-				// If a new checksum is calculated, the checksum type
-				// should be FULL_OBJECT
-				chType = types.ChecksumTypeFullObject
+				chType = checksums.Type
 
 				err = p.storeChecksums(f, dstBucket, dstObject, checksums)
 				if err != nil {
@@ -8753,8 +8766,6 @@ func hashObjectFile(f *os.File, fi fs.FileInfo, algo types.ChecksumAlgorithm) (s
 	if err != nil {
 		return "", fmt.Errorf("initialize hash reader: %w", err)
 	}
-	// read the whole object: a single Read hashes only the bytes read
-	// into its buffer
 	_, err = io.Copy(io.Discard, hashReader)
 	if err != nil {
 		return "", fmt.Errorf("read obj file: %w", err)
