@@ -15,10 +15,14 @@
 package posix
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
+
+	"github.com/versity/versitygw/backend"
 )
 
 // syncFile and syncDir are variables so tests can observe the calls. syncDir
@@ -40,7 +44,9 @@ func (dirs syncDirs) Close() {
 // openDirForSync opens every directory that will be synced before publishing.
 // Read permission failures must fail the PUT before the object exists, and
 // a concurrent DELETE after publication must not invalidate the handles.
-// Windows cannot fsync directory handles.
+// Windows cannot fsync directory handles. A request holds one fd per path
+// component from before the publish until every directory is flushed (up to
+// 512 for a 1024-byte key); the hold is short, so the risk is low.
 func (tmp *tmpfile) openDirForSync(dir string) (syncDirs, error) {
 	if !tmp.fsync || runtime.GOOS == "windows" {
 		return nil, nil
@@ -51,7 +57,7 @@ func (tmp *tmpfile) openDirForSync(dir string) (syncDirs, error) {
 		d, err := os.Open(dir)
 		if err != nil {
 			dirs.Close()
-			return nil, fmt.Errorf("open sync directory %q: %w", dir, err)
+			return nil, err
 		}
 		dirs = append(dirs, d)
 		parent := filepath.Dir(dir)
@@ -84,4 +90,20 @@ func (tmp *tmpfile) syncNamespace(dirs syncDirs) error {
 		}
 	}
 	return nil
+}
+
+// moveInto publishes tempname as objPath. With retained directory handles it
+// renames relative to the object's parent handle, so the object lands in the
+// directory that is synced even if the path was removed and recreated since
+// the handles were opened; a removed parent fails with ENOENT. It falls back
+// to renaming by path when there are no handles or the rename crosses
+// filesystems.
+func moveInto(tempname, objPath string, perm os.FileMode, dirs syncDirs) error {
+	if len(dirs) > 0 {
+		ok, err := renameInDir(tempname, int(dirs[0].Fd()), filepath.Base(objPath))
+		if ok && (err == nil || !errors.Is(err, syscall.EXDEV)) {
+			return err
+		}
+	}
+	return backend.MoveFile(tempname, objPath, perm)
 }

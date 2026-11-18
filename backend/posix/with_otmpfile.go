@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"golang.org/x/sys/unix"
 )
@@ -493,7 +492,7 @@ func (tmp *tmpfile) fallbackLink() error {
 		}
 		// rename only works for files within the same filesystem,
 		// MoveFile falls back to copy otherwise
-		err = backend.MoveFile(tempname, objPath, tmp.newFilePerm)
+		err = moveInto(tempname, objPath, tmp.newFilePerm, d)
 		if err != nil {
 			if d != nil {
 				d.Close()
