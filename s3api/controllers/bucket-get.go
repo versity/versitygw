@@ -377,7 +377,15 @@ func (c S3ApiController) ListObjectVersions(ctx fiber.Ctx) (*Response, error) {
 			Prefix:          &prefix,
 			VersionIdMarker: &versionIdMarker,
 		})
-	if err == nil && encodingType != "" {
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	if encodingType != "" {
 		data = utils.URLEncodeListVersionsResult(data, encodingType)
 	}
 	return &Response{
@@ -537,7 +545,15 @@ func (c S3ApiController) ListMultipartUploads(ctx fiber.Ctx) (*Response, error) 
 			MaxUploads:     &maxUploads,
 			KeyMarker:      &keyMarker,
 		})
-	if err == nil && encodingType != "" {
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	if encodingType != "" {
 		res = utils.URLEncodeListMultipartUploadsResult(res, encodingType)
 	}
 	return &Response{

@@ -734,7 +734,6 @@ func TestS3ApiController_ListObjectVersions(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					Data: s3response.ListVersionsResult{},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},
@@ -1112,7 +1111,6 @@ func TestS3ApiController_ListMultipartUploads(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					Data: s3response.ListMultipartUploadsResult{},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},

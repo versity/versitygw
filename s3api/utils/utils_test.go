@@ -2042,3 +2042,13 @@ func TestURLEncodeListMultipartUploadsResultKeepsBackendValues(t *testing.T) {
 	assert.Equal(t, "a b", res.Uploads[0].Key)
 	assert.Equal(t, "c d", res.CommonPrefixes[0].Prefix)
 }
+
+func TestListVersionsResultOmitsEmptyEncodingType(t *testing.T) {
+	out, err := xml.Marshal(s3response.ListVersionsResult{})
+	assert.NoError(t, err)
+	assert.NotContains(t, string(out), "EncodingType")
+
+	out, err = xml.Marshal(s3response.ListVersionsResult{EncodingType: types.EncodingTypeUrl})
+	assert.NoError(t, err)
+	assert.Contains(t, string(out), "<EncodingType>url</EncodingType>")
+}

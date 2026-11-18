@@ -598,6 +598,7 @@ func TestListMultipartUploads(ts *TestState) {
 	ts.Run(ListMultipartUploads_upload_id_marker_truncated)
 	ts.Run(ListMultipartUploads_prefix)
 	ts.Run(ListMultipartUploads_both_delimiter_and_prefix)
+	ts.Run(ListMultipartUploads_url_encoding)
 	ts.Run(ListMultipartUploads_delimiter_no_matches)
 	ts.Run(ListMultipartUploads_with_upload_id)
 	//TODO: remove the condition after implementing checksums in azure
@@ -2235,6 +2236,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(ListObjectVersions_paginate)
 	ts.Run(ListObjectVersions_single_null_versionId_object)
 	ts.Run(ListObjectVersions_checksum)
+	ts.Run(ListObjectVersions_url_encoding)
 	// Multipart upload
 	ts.Run(Versioning_Multipart_Upload_success)
 	ts.Run(Versioning_Multipart_Upload_overwrite_an_object)
@@ -3479,6 +3481,7 @@ func GetIntTests() IntTests {
 		"ListMultipartUploads_upload_id_marker_with_key_marker":                            ListMultipartUploads_upload_id_marker_with_key_marker,
 		"ListMultipartUploads_delimiter_truncated":                                         ListMultipartUploads_delimiter_truncated,
 		"ListMultipartUploads_upload_id_marker_truncated":                                  ListMultipartUploads_upload_id_marker_truncated,
+		"ListMultipartUploads_url_encoding":                                                ListMultipartUploads_url_encoding,
 		"ListMultipartUploads_prefix":                                                      ListMultipartUploads_prefix,
 		"ListMultipartUploads_both_delimiter_and_prefix":                                   ListMultipartUploads_both_delimiter_and_prefix,
 		"ListMultipartUploads_with_upload_id":                                              ListMultipartUploads_with_upload_id,
@@ -3989,6 +3992,7 @@ func GetIntTests() IntTests {
 		"ListObjectVersions_key_marker":                                                    ListObjectVersions_key_marker,
 		"ListObjectVersions_paginate":                                                      ListObjectVersions_paginate,
 		"ListObjectVersions_single_null_versionId_object":                                  ListObjectVersions_single_null_versionId_object,
+		"ListObjectVersions_url_encoding":                                                  ListObjectVersions_url_encoding,
 		"ListObjectVersions_checksum":                                                      ListObjectVersions_checksum,
 		"Versioning_Multipart_Upload_success":                                              Versioning_Multipart_Upload_success,
 		"Versioning_Multipart_Upload_overwrite_an_object":                                  Versioning_Multipart_Upload_overwrite_an_object,

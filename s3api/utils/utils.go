@@ -1262,14 +1262,19 @@ func ParseEncodingType(ctx fiber.Ctx) (types.EncodingType, error) {
 // the QueryEscape output starts a full escape, so "%2A" can only come from "*".
 var s3KeyNameEscaper = strings.NewReplacer("%2F", "/", "%2A", "*", "~", "%7E")
 
-// urlEncodeKeyName encodes a key name the way S3 does for encoding-type=url:
+// urlEncodeString encodes a key name the way S3 does for encoding-type=url:
 // as a query component, so a space becomes "+" and "+" becomes "%2B", with "/"
 // and "*" left as is and "~" escaped as "%7E".
+func urlEncodeString(name string) string {
+	return s3KeyNameEscaper.Replace(url.QueryEscape(name))
+}
+
+// urlEncodeKeyName is the nil-safe variant of urlEncodeString.
 func urlEncodeKeyName(name *string) *string {
 	if name == nil {
 		return nil
 	}
-	encoded := s3KeyNameEscaper.Replace(url.QueryEscape(*name))
+	encoded := urlEncodeString(*name)
 	return &encoded
 }
 
@@ -1295,6 +1300,58 @@ func urlEncodeObjectKeys(objects []s3response.Object) []s3response.Object {
 	for i, obj := range objects {
 		obj.Key = urlEncodeKeyName(obj.Key)
 		encoded[i] = obj
+	}
+	return encoded
+}
+
+// urlEncodeVersionKeys returns a copy of versions with each key encoded.
+func urlEncodeVersionKeys(versions []s3response.ObjectVersion) []s3response.ObjectVersion {
+	if versions == nil {
+		return nil
+	}
+	encoded := make([]s3response.ObjectVersion, len(versions))
+	for i, v := range versions {
+		v.Key = urlEncodeKeyName(v.Key)
+		encoded[i] = v
+	}
+	return encoded
+}
+
+// urlEncodeDeleteMarkerKeys returns a copy of markers with each key encoded.
+func urlEncodeDeleteMarkerKeys(markers []s3response.DeleteMarkerEntry) []s3response.DeleteMarkerEntry {
+	if markers == nil {
+		return nil
+	}
+	encoded := make([]s3response.DeleteMarkerEntry, len(markers))
+	for i, m := range markers {
+		m.Key = urlEncodeKeyName(m.Key)
+		encoded[i] = m
+	}
+	return encoded
+}
+
+// urlEncodeUploadKeys returns a copy of uploads with each key encoded.
+func urlEncodeUploadKeys(uploads []s3response.Upload) []s3response.Upload {
+	if uploads == nil {
+		return nil
+	}
+	encoded := make([]s3response.Upload, len(uploads))
+	for i, u := range uploads {
+		u.Key = urlEncodeString(u.Key)
+		encoded[i] = u
+	}
+	return encoded
+}
+
+// urlEncodeUploadPrefixes returns a copy of prefixes with each prefix encoded.
+func urlEncodeUploadPrefixes(prefixes []s3response.CommonPrefix) []s3response.CommonPrefix {
+	if prefixes == nil {
+		return nil
+	}
+	encoded := make([]s3response.CommonPrefix, len(prefixes))
+	for i, cp := range prefixes {
+		cp.Prefix = urlEncodeString(cp.Prefix)
+		encoded[i] = cp
 	}
 	return encoded
 }
@@ -1328,11 +1385,6 @@ func URLEncodeListObjectsV2Result(res s3response.ListObjectsV2Result, encodingTy
 	return res
 }
 
-// urlEncodeString encodes a non-pointer key name like urlEncodeKeyName.
-func urlEncodeString(name string) string {
-	return *urlEncodeKeyName(&name)
-}
-
 // URLEncodeListVersionsResult returns res as S3 answers a ListObjectVersions
 // request with encoding-type=url: EncodingType set to the value as sent and the
 // Delimiter, KeyMarker, NextKeyMarker, Prefix, Key (of versions and delete
@@ -1345,22 +1397,8 @@ func URLEncodeListVersionsResult(res s3response.ListVersionsResult, encodingType
 	res.NextKeyMarker = urlEncodeKeyName(res.NextKeyMarker)
 	res.Prefix = urlEncodeKeyName(res.Prefix)
 	res.CommonPrefixes = urlEncodeCommonPrefixes(res.CommonPrefixes)
-	if res.Versions != nil {
-		versions := make([]s3response.ObjectVersion, len(res.Versions))
-		for i, v := range res.Versions {
-			v.Key = urlEncodeKeyName(v.Key)
-			versions[i] = v
-		}
-		res.Versions = versions
-	}
-	if res.DeleteMarkers != nil {
-		markers := make([]s3response.DeleteMarkerEntry, len(res.DeleteMarkers))
-		for i, m := range res.DeleteMarkers {
-			m.Key = urlEncodeKeyName(m.Key)
-			markers[i] = m
-		}
-		res.DeleteMarkers = markers
-	}
+	res.Versions = urlEncodeVersionKeys(res.Versions)
+	res.DeleteMarkers = urlEncodeDeleteMarkerKeys(res.DeleteMarkers)
 	return res
 }
 
@@ -1374,21 +1412,7 @@ func URLEncodeListMultipartUploadsResult(res s3response.ListMultipartUploadsResu
 	res.KeyMarker = urlEncodeString(res.KeyMarker)
 	res.NextKeyMarker = urlEncodeString(res.NextKeyMarker)
 	res.Prefix = urlEncodeString(res.Prefix)
-	if res.Uploads != nil {
-		uploads := make([]s3response.Upload, len(res.Uploads))
-		for i, u := range res.Uploads {
-			u.Key = urlEncodeString(u.Key)
-			uploads[i] = u
-		}
-		res.Uploads = uploads
-	}
-	if res.CommonPrefixes != nil {
-		prefixes := make([]s3response.CommonPrefix, len(res.CommonPrefixes))
-		for i, cp := range res.CommonPrefixes {
-			cp.Prefix = urlEncodeString(cp.Prefix)
-			prefixes[i] = cp
-		}
-		res.CommonPrefixes = prefixes
-	}
+	res.Uploads = urlEncodeUploadKeys(res.Uploads)
+	res.CommonPrefixes = urlEncodeUploadPrefixes(res.CommonPrefixes)
 	return res
 }
