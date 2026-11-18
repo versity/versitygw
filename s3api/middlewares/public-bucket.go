@@ -50,6 +50,10 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 		switch s3action {
 		case metrics.ActionListAllMyBuckets:
 			return s3err.GetAPIError(s3err.ErrAccessDenied)
+		case metrics.ActionGetObjectAttributes:
+			// AWS never serves an anonymous GetObjectAttributes, whatever
+			// the bucket policy grants.
+			return s3err.GetAPIError(s3err.ErrAnonymousGetObjectAttributes)
 		case metrics.ActionGetBucketOwnershipControls:
 			return s3err.GetAPIError(s3err.ErrAnonymousGetBucketOwnership)
 		case metrics.ActionPutBucketOwnershipControls, metrics.ActionDeleteBucketOwnershipControls:
@@ -85,10 +89,6 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 		// attribute it sets on the object, and the bucket has to grant
 		// every one of them publicly.
 		switch s3action {
-		case metrics.ActionGetObjectAttributes:
-			// Reading an object's attributes takes read access to the
-			// object itself too, granted publicly as well.
-			actions = auth.ObjectAttributesActions(ctx.Query("versionId"))
 		case metrics.ActionPutObject:
 			if err := verifyAnonymousUploadLock(ctx, be, bucket); err != nil {
 				return err

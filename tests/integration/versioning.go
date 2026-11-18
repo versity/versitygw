@@ -7568,10 +7568,23 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 					return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
 				}
 
-				return nil
+				return err
 			}
 
-			policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectAttributes", "s3:GetObject"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			// s3:GetObjectAttributes alone, without s3:GetObject
+			policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectAttributes"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			// deny without versionId
+			err = getObjectAttr(nil, true)
+			if err != nil {
+				return err
+			}
+
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectAttributes", "s3:GetObject"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
 			err = putBucketPolicy(s3client, bucket, policy)
 			if err != nil {
 				return err
@@ -7585,6 +7598,32 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 
 			// allow without versionId
 			err = getObjectAttr(nil, false)
+			if err != nil {
+				return err
+			}
+
+			// s3:GetObjectVersionAttributes alone, without s3:GetObjectVersion
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectVersionAttributes"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			// deny with versionId
+			err = getObjectAttr(res.res.VersionId, true)
+			if err != nil {
+				return err
+			}
+
+			// s3:GetObject doesn't cover a request naming a version
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectVersionAttributes", "s3:GetObject"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			// deny with versionId
+			err = getObjectAttr(res.res.VersionId, true)
 			if err != nil {
 				return err
 			}

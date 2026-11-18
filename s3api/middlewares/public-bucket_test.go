@@ -16,7 +16,6 @@ package middlewares
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -44,28 +43,22 @@ func (b backendWithBucketPolicy) GetBucketAcl(ctx context.Context, input *s3.Get
 }
 
 // TestAuthorizePublicBucketAccess_GetObjectAttributes checks that an
-// anonymous GetObjectAttributes request needs the bucket policy to grant
-// s3:GetObject along with s3:GetObjectAttributes, and s3:GetObjectVersion
-// along with s3:GetObjectVersionAttributes for a request naming a version.
+// anonymous GetObjectAttributes request is refused even when the bucket
+// policy grants every action it could be authorized as, as AWS does.
 func TestAuthorizePublicBucketAccess_GetObjectAttributes(t *testing.T) {
+	be := backendWithBucketPolicy{
+		policy: []byte(`{"Statement":[{"Effect":"Allow","Principal":"*","Action":["s3:GetObjectAttributes","s3:GetObject","s3:GetObjectVersionAttributes","s3:GetObjectVersion"],"Resource":"arn:aws:s3:::bucket/*"}]}`),
+	}
+
 	tests := []struct {
-		name      string
-		actions   string
-		versionId string
-		allowed   bool
+		name   string
+		target string
 	}{
-		{name: "s3:GetObjectAttributes alone", actions: `"s3:GetObjectAttributes"`},
-		{name: "s3:GetObjectAttributes and s3:GetObject", actions: `["s3:GetObjectAttributes","s3:GetObject"]`, allowed: true},
-		{name: "s3:GetObjectVersionAttributes alone", actions: `"s3:GetObjectVersionAttributes"`, versionId: "version-id"},
-		{name: "s3:GetObjectVersionAttributes and s3:GetObject", actions: `["s3:GetObjectVersionAttributes","s3:GetObject"]`, versionId: "version-id"},
-		{name: "s3:GetObjectVersionAttributes and s3:GetObjectVersion", actions: `["s3:GetObjectVersionAttributes","s3:GetObjectVersion"]`, versionId: "version-id", allowed: true},
+		{name: "without versionId", target: "/bucket/object?attributes"},
+		{name: "with versionId", target: "/bucket/object?attributes&versionId=version-id"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			be := backendWithBucketPolicy{
-				policy: fmt.Appendf(nil, `{"Statement":[{"Effect":"Allow","Principal":"*","Action":%s,"Resource":"arn:aws:s3:::bucket/*"}]}`, tt.actions),
-			}
-
 			var authErr error
 			app := fiber.New()
 			app.Get("/:bucket/*", func(ctx fiber.Ctx) error {
@@ -73,18 +66,9 @@ func TestAuthorizePublicBucketAccess_GetObjectAttributes(t *testing.T) {
 				return nil
 			})
 
-			target := "/bucket/object?attributes"
-			if tt.versionId != "" {
-				target += "&versionId=" + tt.versionId
-			}
-			_, err := app.Test(httptest.NewRequest(http.MethodGet, target, nil))
+			_, err := app.Test(httptest.NewRequest(http.MethodGet, tt.target, nil))
 			assert.NoError(t, err)
-
-			if tt.allowed {
-				assert.NoError(t, authErr)
-			} else {
-				assert.Equal(t, s3err.GetAPIError(s3err.ErrAccessDenied), authErr)
-			}
+			assert.Equal(t, s3err.GetAPIError(s3err.ErrAnonymousGetObjectAttributes), authErr)
 		})
 	}
 }

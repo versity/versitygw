@@ -1275,6 +1275,67 @@ func AccessControl_CopyObject_with_retention_policy(s *S3Conf) error {
 	}, withLock())
 }
 
+func AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
+	testName := "AccessControl_GetObjectAttributes_policy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		objectResource := fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket)
+		userClient := s.getUserClient(testuser)
+
+		getObjectAttributes := func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+				Bucket:           &bucket,
+				Key:              &obj,
+				ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesEtag},
+			})
+			cancel()
+			return err
+		}
+
+		// Error path: user has s3:GetObjectAttributes but not s3:GetObject
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectAttributes"`, objectResource)
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		if err := checkApiErr(getObjectAttributes(), s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		// Error path: user has s3:GetObject but not s3:GetObjectAttributes
+		policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObject"`, objectResource)
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		if err := checkApiErr(getObjectAttributes(), s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		// Happy path: user has s3:GetObjectAttributes and s3:GetObject
+		policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectAttributes","s3:GetObject"]`, objectResource)
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		return getObjectAttributes()
+	})
+}
+
 // AccessControl_bucket_policy_condition_ip_allow covers a bucket-policy
 // Allow statement scoped by an IpAddress Condition matching the caller's
 // real source IP: 0.0.0.0/0 matches any IPv4 address, so this exercises
