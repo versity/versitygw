@@ -19,6 +19,7 @@ package posix
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend/meta"
@@ -50,8 +52,8 @@ func failProbe(t *testing.T, err error) *int {
 
 // TestOTmpFileProbe checks that a filesystem whose O_TMPFILE can't hold
 // xattrs or be linked uses a named temporary file, that the result is
-// remembered per bucket, that errors that are not about O_TMPFILE support are
-// not hidden by the fallback, and that deleting the bucket forgets the result.
+// remembered per bucket, that errors that are not about O_TMPFILE support
+// don't fail the upload or get remembered, and that deleting the bucket forgets the result.
 func TestOTmpFileProbe(t *testing.T) {
 	for _, mode := range []string{"xattr", "sidecar"} {
 		for _, tc := range []struct {
@@ -80,17 +82,6 @@ func TestOTmpFileProbe(t *testing.T) {
 					return p.openObjectTmpFile(bucket, obj, 5, auth.Account{}, false, odirectNotAllowed)
 				}
 				f, err := open("object")
-				if tc.err != nil && !tc.wantName {
-					// not about O_TMPFILE support: reported, not hidden
-					if err == nil {
-						f.cleanup()
-						t.Fatal("open tmp file succeeded, want the probe error")
-					}
-					if _, known := p.otmpProbe.Load(p.BucketPath(bucket)); known {
-						t.Error("an error that is not about O_TMPFILE support was remembered")
-					}
-					return
-				}
 				if err != nil {
 					t.Fatalf("open tmp file: %v", err)
 				}
@@ -109,8 +100,18 @@ func TestOTmpFileProbe(t *testing.T) {
 				if named := filepath.Dir(f2.File().Name()) == tmpDir; named != tc.wantName {
 					t.Errorf("second temp file %v is named: %v, want %v", f2.File().Name(), named, tc.wantName)
 				}
-				if *probes != 1 {
-					t.Errorf("probed %d times for 2 opens, want 1", *probes)
+				// An error that is not about O_TMPFILE support leaves the
+				// result unknown: the upload keeps its O_TMPFILE and the
+				// next upload probes again.
+				wantProbes, wantKnown := 1, true
+				if tc.err != nil && !tc.wantName {
+					wantProbes, wantKnown = 2, false
+				}
+				if *probes != wantProbes {
+					t.Errorf("probed %d times for 2 opens, want %d", *probes, wantProbes)
+				}
+				if _, known := p.otmpProbe.Load(p.BucketPath(bucket)); known != wantKnown {
+					t.Errorf("probe result remembered: %v, want %v", known, wantKnown)
 				}
 				if tc.err == nil {
 					// the real probe leaves nothing behind
@@ -180,10 +181,7 @@ func TestOTmpFileUnsupportedUploads(t *testing.T) {
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			mk := metaModes(t)[tc.mode]
-			p := newVersionedTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
-				ms, opts := mk(t)
-				return ms, opts
-			})
+			p := newVersionedTestPosix(t, mk)
 			bucket := "bucket"
 			createTestBucket(t, p, bucket)
 			skipWithoutOTmpfile(t, p.BucketPath(bucket))
@@ -193,15 +191,37 @@ func TestOTmpFileUnsupportedUploads(t *testing.T) {
 			failProbe(t, tc.err)
 
 			// PutObject, twice: the second one replaces the versioned object
+			var first s3response.PutObjectOutput
 			for i, body := range []string{"first", "second"} {
 				out, err := testPut(p, bucket, "object", []byte(body), nil, nil)
 				if err != nil {
 					t.Fatalf("put %d: %v", i, err)
 				}
+				if i == 0 {
+					first = out
+				}
 				got, etag := getTestObject(t, p, bucket, "object")
-				if string(got) != body || etag != aws.ToString(&out.ETag) || etag == "" {
+				if string(got) != body || etag != out.ETag || etag == "" {
 					t.Errorf("put %d: object is %q with etag %q, want %q with etag %q", i, got, etag, body, out.ETag)
 				}
+			}
+
+			// The previous version was copied to the versioning directory
+			prev, err := p.GetObject(ctx, &s3.GetObjectInput{
+				Bucket:    &bucket,
+				Key:       aws.String("object"),
+				VersionId: aws.String(first.VersionID),
+			})
+			if err != nil {
+				t.Fatalf("get previous version: %v", err)
+			}
+			prevBody, err := io.ReadAll(prev.Body)
+			prev.Body.Close()
+			if err != nil {
+				t.Fatalf("read previous version: %v", err)
+			}
+			if string(prevBody) != "first" || aws.ToString(prev.ETag) != first.ETag || first.ETag == "" {
+				t.Errorf("previous version is %q with etag %q, want %q with etag %q", prevBody, aws.ToString(prev.ETag), "first", first.ETag)
 			}
 
 			// UploadPart followed by CompleteMultipartUpload

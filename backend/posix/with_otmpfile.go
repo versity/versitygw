@@ -97,21 +97,29 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 		return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 	}
 
+	// Some filesystems open an O_TMPFILE but can't set xattrs on it or
+	// can't link it into the namespace. Probe the bucket's filesystem before
+	// the upload's own O_TMPFILE is opened: a bucket where it can't be used
+	// gets a named temporary file. The answer depends only on the
+	// filesystem, so an upload that raced another probe gets the same result.
+	if !known && p.probeOTmp(bucket, tmpDir, uid, gid, doChown) {
+		return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
+	}
+
 	// O_TMPFILE allows for a file handle to an unnamed file in the filesystem.
 	// This can help reduce contention within the namespace (parent directories),
 	// etc. And will auto cleanup the inode on close if we never link this
 	// file descriptor into the namespace.
 	// Not all filesystems support this, so fallback to CreateTemp for when
 	// this is not supported.
-	// openOTmp opens an O_TMPFILE the way the upload needs it
-	openOTmp := func() (fd int, useODirect, hasACL bool, err error) {
-		if inherit {
-			return p.openInheritingTmpFile(bucket, otmpDir, allowODirect)
-		}
+	var fd int
+	var useODirect, hasACL bool
+	var err error
+	if inherit {
+		fd, useODirect, hasACL, err = p.openInheritingTmpFile(bucket, otmpDir, allowODirect)
+	} else {
 		fd, useODirect, err = p.openOTmpFile(unix.AT_FDCWD, otmpDir, allowODirect)
-		return fd, useODirect, false, err
 	}
-	fd, useODirect, hasACL, err := openOTmp()
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
 			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
@@ -126,20 +134,6 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 	// for O_TMPFILE, filename is /proc/self/fd/<fd> to be used
 	// later to link file into namespace
 	f := os.NewFile(uintptr(fd), filepath.Join(procfddir, strconv.Itoa(fd)))
-
-	// Some filesystems open an O_TMPFILE but can't set xattrs on it or
-	// can't link it into the namespace. Use a named temporary file there.
-	// The answer depends only on the filesystem, so an upload that raced
-	// another probe gets the same result.
-	if !known {
-		if err := p.probeOTmp(bucket, tmpDir, openOTmp, uid, gid, doChown); err != nil {
-			f.Close()
-			if tmpfileUnsupported(err) {
-				return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
-			}
-			return nil, fmt.Errorf("probe temp file: %w", err)
-		}
-	}
 
 	// The mode passed to open() is masked by the process umask. Set the
 	// configured mode explicitly so new objects get the same permissions
@@ -201,23 +195,27 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 }
 
 // probeOTmp finds out whether an O_TMPFILE of the bucket can be used for
-// uploads and remembers it for the bucket path. It does not touch the upload's
-// own file: a separate O_TMPFILE is opened, opened the same way as the
-// upload's, and discarded. An answer is stored only when the filesystem
-// reported the defect; any other error is returned and nothing is remembered,
-// so that a full or read-only filesystem, a quota or a permission error is
-// reported, not hidden by a named file.
+// uploads and remembers it for the bucket path. It reports whether the
+// bucket's filesystem was found unable to hold the upload in an O_TMPFILE.
+// The probe file is opened in tmpDir, the directory it is linked into, so it
+// tests the bucket's filesystem whatever directory an upload with an
+// inherited default ACL opens its own file in. It does not touch the
+// upload's file. An answer is stored only when the filesystem reported the
+// defect. Any other error leaves the result unknown: nothing is remembered
+// and the upload goes on with its own O_TMPFILE, which reports a full or
+// read-only filesystem, a quota or a permission error as it does without
+// the probe.
 //
 // The result is keyed by the bucket path (the versioning code passes the
-// path of a bucket's versioning directory), so buckets on different
-// filesystems are probed separately; with the default ACL inherited, the
-// O_TMPFILE is made in the object's directory, which could be on another
-// mount below the bucket, a case that is not probed separately. The entry is
-// removed when the bucket is deleted.
-func (p *Posix) probeOTmp(bucket, tmpDir string, openOTmp func() (int, bool, bool, error), uid, gid int, doChown bool) error {
-	fd, _, _, err := openOTmp()
+// path of a bucket's versioning directory). The entry is removed when the
+// bucket is deleted.
+func (p *Posix) probeOTmp(bucket, tmpDir string, uid, gid int, doChown bool) (unsupported bool) {
+	if err := p.mkdirAll(tmpDir, uid, gid, doChown); err != nil {
+		return false
+	}
+	fd, _, err := p.openOTmpFile(unix.AT_FDCWD, tmpDir, odirectNotAllowed)
 	if err != nil {
-		return err
+		return false
 	}
 	f := os.NewFile(uintptr(fd), filepath.Join(procfddir, strconv.Itoa(fd)))
 	defer f.Close()
@@ -225,11 +223,7 @@ func (p *Posix) probeOTmp(bucket, tmpDir string, openOTmp func() (int, bool, boo
 	// The directory's default ACL can create the file without owner write
 	// access, which fsetxattr checks before asking the filesystem.
 	if err := f.Chmod(0o600); err != nil {
-		return fmt.Errorf("set probe file mode: %w", err)
-	}
-	// A directory that can't be made is reported by the named file's open
-	if err := p.mkdirAll(tmpDir, uid, gid, doChown); err != nil {
-		return fmt.Errorf("make temp dir: %w", err)
+		return false
 	}
 
 	var xt meta.TmpFileTester
@@ -244,8 +238,9 @@ func (p *Posix) probeOTmp(bucket, tmpDir string, openOTmp func() (int, bool, boo
 		if _, known := p.otmpProbe.LoadOrStore(bucket, false); !known {
 			log.Printf("WARNING: O_TMPFILE can't be used in %v (%v); using named temporary files there. Use --disableotmp to skip this check.", bucket, err)
 		}
+		return true
 	}
-	return err
+	return false
 }
 
 // probeOTmpFile checks that f, an O_TMPFILE, can hold the metadata an
