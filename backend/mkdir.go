@@ -75,6 +75,10 @@ func mkdirAll(path string, uid, gid int, doChown bool, dirPerm fs.FileMode, retr
 		i--
 	}
 
+	// A path that ends in a separator ("file/"): the internal a//b -> a/
+	// recursion makes one, no caller passes one.
+	noTrailingSep := i == len(path)
+
 	j := i
 	for j > 0 && !os.IsPathSeparator(path[j-1]) { // Scan backward over element.
 		j--
@@ -96,12 +100,13 @@ func mkdirAll(path string, uid, gid int, doChown bool, dirPerm fs.FileMode, retr
 		}
 
 		// ENOENT: the parent was removed after it was made.
-		// ENOTDIR or ESTALE, unless path ends in a separator: Mkdir itself
-		// reports that a parent isn't a directory anymore, the same race the
-		// Lstat branch below retries after an EEXIST. A trailing separator
-		// stays with that branch: Mkdir("file/") for a regular file is not
-		// a parent that vanished.
-		if *retries > 0 && (errors.Is(err, fs.ErrNotExist) || (i == len(path) && isNotDirOrStale(err))) {
+		// ENOTDIR or ESTALE: Mkdir itself reports that a parent isn't a
+		// directory anymore, the same race the Lstat branch below retries
+		// after an EEXIST. Not for a path that ends in a separator: there
+		// the ENOTDIR can be about the last element itself, which making
+		// the parents again never fixes, so the retries would only spend
+		// the whole budget (about 115 ms) before giving up.
+		if *retries > 0 && (errors.Is(err, fs.ErrNotExist) || (noTrailingSep && isNotDirOrStale(err))) {
 			takeMkdirRetry(retries)
 			continue
 		}
@@ -120,9 +125,9 @@ func mkdirAll(path string, uid, gid int, doChown bool, dirPerm fs.FileMode, retr
 		// of them now means it has been removed since: IBM Storage Scale
 		// reports a directory that another node is removing as ENOTDIR,
 		// and NFS a removed one as ESTALE. With a trailing separator
-		// ("file/") the two calls give these answers for a file at path,
-		// with nothing removed, so that isn't retried.
-		parentGone := i == len(path) && isNotDirOrStale(err1)
+		// ("file/") these answers can be about the file at path, with
+		// nothing removed, so that isn't retried.
+		parentGone := noTrailingSep && isNotDirOrStale(err1)
 		if errors.Is(err, fs.ErrExist) && (errors.Is(err1, fs.ErrNotExist) || parentGone) {
 			if *retries == 0 {
 				// Return the lookup error rather than the EEXIST, so

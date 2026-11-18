@@ -68,21 +68,38 @@ func pathErr(op, path string, errno syscall.Errno) error {
 // with EEXIST because another writer has just made the directory, and the
 // Lstat after it fails because a node removing a parent directory reports
 // it as ENOTDIR (IBM Storage Scale), or as a stale handle (NFS). MkdirAll
-// has to make the directories again instead of returning the EEXIST.
+// has to make the directories again instead of returning the EEXIST. The
+// cases without an Lstat answer are #2647: Mkdir itself fails with ENOTDIR
+// or ESTALE for the same reason, before Lstat runs.
 func TestMkdirAllParentGoneAfterEEXIST(t *testing.T) {
-	for _, errno := range []syscall.Errno{syscall.ENOTDIR, syscall.ESTALE} {
-		t.Run(errno.Error(), func(t *testing.T) {
+	for _, tc := range []struct {
+		mkdirErrno syscall.Errno
+		// lstatErrno is what the Lstat after the Mkdir answers, 0 for the
+		// real one.
+		lstatErrno syscall.Errno
+		wantLstat  int
+	}{
+		{syscall.EEXIST, syscall.ENOTDIR, 1},
+		{syscall.EEXIST, syscall.ESTALE, 1},
+		{syscall.ENOTDIR, 0, 0},
+		{syscall.ESTALE, 0, 0},
+	} {
+		name := "mkdir " + tc.mkdirErrno.Error()
+		if tc.lstatErrno != 0 {
+			name += ", lstat " + tc.lstatErrno.Error()
+		}
+		t.Run(name, func(t *testing.T) {
 			target := filepath.Join(t.TempDir(), "a", "b", "c")
-			mkdirCalls, _ := stubMkdirAll(t, target,
+			mkdirCalls, lstatCalls := stubMkdirAll(t, target,
 				func(n int) (bool, error) {
 					if n == 1 {
-						return true, pathErr("mkdir", target, syscall.EEXIST)
+						return true, pathErr("mkdir", target, tc.mkdirErrno)
 					}
 					return false, nil
 				},
 				func(n int) (bool, error) {
-					if n == 1 {
-						return true, pathErr("lstat", target, errno)
+					if n == 1 && tc.lstatErrno != 0 {
+						return true, pathErr("lstat", target, tc.lstatErrno)
 					}
 					return false, nil
 				})
@@ -93,8 +110,9 @@ func TestMkdirAllParentGoneAfterEEXIST(t *testing.T) {
 			if fi, err := os.Stat(target); err != nil || !fi.IsDir() {
 				t.Fatalf("directory not made: %v", err)
 			}
-			if *mkdirCalls != 2 {
-				t.Fatalf("mkdir calls = %d, want 2", *mkdirCalls)
+			if *mkdirCalls != 2 || *lstatCalls != tc.wantLstat {
+				t.Fatalf("mkdir calls = %d, lstat calls = %d, want 2 and %d",
+					*mkdirCalls, *lstatCalls, tc.wantLstat)
 			}
 		})
 	}
@@ -133,174 +151,114 @@ func TestMkdirAllParentGoneAfterRevalidation(t *testing.T) {
 	}
 }
 
-// TestMkdirAllParentReplacedByFile replaces the parent directory with a file
-// between Mkdir and Lstat, so the real Lstat fails with ENOTDIR. The retry
-// finds the file and reports it, as for a parent that was a file from the
-// start.
+// TestMkdirAllParentReplacedByFile replaces the parent directory with a
+// file. With Mkdir answering EEXIST, that happens between Mkdir and Lstat,
+// so the real Lstat fails with ENOTDIR; with ENOTDIR, it happens before
+// Mkdir, so the real Mkdir answers it. The retry finds the file and reports
+// it, as for a parent that was a file from the start.
 func TestMkdirAllParentReplacedByFile(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Lstat under a file fails with ERROR_PATH_NOT_FOUND on Windows, not ENOTDIR")
-	}
-	parent := filepath.Join(t.TempDir(), "a")
-	target := filepath.Join(parent, "b")
-	stubMkdirAll(t, target,
-		func(n int) (bool, error) {
-			if n > 1 {
-				t.Errorf("mkdir of %s retried after its parent became a file", target)
-				return false, nil
-			}
-			// Another writer made the directory, then a delete removed it
-			// and its parent, and an upload put an object at the parent key.
-			if err := os.Mkdir(target, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Remove(target); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Remove(parent); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(parent, nil, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			return true, pathErr("mkdir", target, syscall.EEXIST)
-		}, nil)
-
-	err := MkdirAll(target, 0, 0, false, 0o755)
-	if !errors.Is(err, s3err.GetAPIError(s3err.ErrObjectParentIsFile)) {
-		t.Fatalf("MkdirAll: %v, want ErrObjectParentIsFile", err)
-	}
-}
-
-// TestMkdirAllMkdirParentNotDir is #2647: Mkdir itself fails with ENOTDIR
-// or ESTALE because a parent directory is being removed, before Lstat runs.
-// MkdirAll has to make the directories again instead of returning that error.
-func TestMkdirAllMkdirParentNotDir(t *testing.T) {
-	for _, errno := range []syscall.Errno{syscall.ENOTDIR, syscall.ESTALE} {
-		t.Run(errno.Error(), func(t *testing.T) {
-			target := filepath.Join(t.TempDir(), "a", "b", "c")
-			mkdirCalls, lstatCalls := stubMkdirAll(t, target,
-				func(n int) (bool, error) {
-					if n == 1 {
-						return true, pathErr("mkdir", target, errno)
-					}
+	t.Run("mkdir EEXIST", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Lstat under a file fails with ERROR_PATH_NOT_FOUND on Windows, not ENOTDIR")
+		}
+		parent := filepath.Join(t.TempDir(), "a")
+		target := filepath.Join(parent, "b")
+		stubMkdirAll(t, target,
+			func(n int) (bool, error) {
+				if n > 1 {
+					t.Errorf("mkdir of %s retried after its parent became a file", target)
 					return false, nil
-				}, nil)
+				}
+				// Another writer made the directory, then a delete removed it
+				// and its parent, and an upload put an object at the parent key.
+				if err := os.Mkdir(target, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(target); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(parent); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(parent, nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return true, pathErr("mkdir", target, syscall.EEXIST)
+			}, nil)
 
-			if err := MkdirAll(target, 0, 0, false, 0o755); err != nil {
-				t.Fatalf("MkdirAll: %v", err)
-			}
-			if fi, err := os.Stat(target); err != nil || !fi.IsDir() {
-				t.Fatalf("directory not made: %v", err)
-			}
-			if *mkdirCalls != 2 || *lstatCalls != 0 {
-				t.Fatalf("mkdir calls = %d, lstat calls = %d, want 2 and 0", *mkdirCalls, *lstatCalls)
-			}
-		})
-	}
-}
+		err := MkdirAll(target, 0, 0, false, 0o755)
+		if !errors.Is(err, s3err.GetAPIError(s3err.ErrObjectParentIsFile)) {
+			t.Fatalf("MkdirAll: %v, want ErrObjectParentIsFile", err)
+		}
+	})
 
-// TestMkdirAllMkdirParentReplacedByFile is the ENOTDIR from Mkdir when the
-// parent directory has been replaced by a file. The retry finds the file
-// and reports it, as the EEXIST form does.
-func TestMkdirAllMkdirParentReplacedByFile(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("replacing a directory with a file is not the same on Windows")
-	}
-	parent := filepath.Join(t.TempDir(), "a")
-	target := filepath.Join(parent, "b")
-	mkdirCalls, _ := stubMkdirAll(t, target,
-		func(n int) (bool, error) {
-			if n > 1 {
-				t.Errorf("mkdir of %s retried after its parent became a file", target)
+	t.Run("mkdir ENOTDIR", func(t *testing.T) {
+		parent := filepath.Join(t.TempDir(), "a")
+		target := filepath.Join(parent, "b")
+		mkdirCalls, lstatCalls := stubMkdirAll(t, target,
+			func(n int) (bool, error) {
+				if n > 1 {
+					t.Errorf("mkdir of %s retried after its parent became a file", target)
+					return false, nil
+				}
+				// The parent exists when MkdirAll made it. An upload then
+				// replaces it with an object, so the real Mkdir fails.
+				if err := os.Remove(parent); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(parent, nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
 				return false, nil
-			}
-			// The parent exists when Mkdir runs. A delete then puts an
-			// object at the parent key before this call returns.
-			if err := os.Mkdir(target, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Remove(target); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Remove(parent); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(parent, nil, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			return true, pathErr("mkdir", target, syscall.ENOTDIR)
-		}, nil)
+			},
+			func(int) (bool, error) { return false, nil })
 
-	err := MkdirAll(target, 0, 0, false, 0o755)
-	if !errors.Is(err, s3err.GetAPIError(s3err.ErrObjectParentIsFile)) {
-		t.Fatalf("MkdirAll: %v, want ErrObjectParentIsFile", err)
-	}
-	if *mkdirCalls != 1 {
-		t.Fatalf("mkdir calls = %d, want 1", *mkdirCalls)
-	}
-}
-
-// TestMkdirAllMkdirNotDirRetriesBounded checks that Mkdir answering ENOTDIR
-// or ESTALE on every pass stops at the retry budget and returns that error.
-func TestMkdirAllMkdirNotDirRetriesBounded(t *testing.T) {
-	for _, errno := range []syscall.Errno{syscall.ENOTDIR, syscall.ESTALE} {
-		t.Run(errno.Error(), func(t *testing.T) {
-			target := filepath.Join(t.TempDir(), "a", "b")
-			mkdirCalls, _ := stubMkdirAll(t, target,
-				func(int) (bool, error) { return true, pathErr("mkdir", target, errno) },
-				nil)
-
-			err := MkdirAll(target, 0, 0, false, 0o755)
-			if !errors.Is(err, errno) {
-				t.Fatalf("MkdirAll: %v, want %v", err, errno)
-			}
-			if *mkdirCalls != maxMkdirRaceRetries+1 {
-				t.Fatalf("mkdir calls = %d, want %d", *mkdirCalls, maxMkdirRaceRetries+1)
-			}
-		})
-	}
-}
-
-// TestMkdirAllMkdirNotDirTrailingSeparator checks that ENOTDIR from Mkdir of
-// a path that ends in a separator is not retried. Linux answers EEXIST to
-// Mkdir("file/") and ENOTDIR to Lstat; an ENOTDIR from Mkdir there is the
-// same file, not a parent that vanished.
-func TestMkdirAllMkdirNotDirTrailingSeparator(t *testing.T) {
-	sep := string(os.PathSeparator)
-	file := filepath.Join(t.TempDir(), "file")
-	if err := os.WriteFile(file, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	target := file + sep
-	mkdirCalls, _ := stubMkdirAll(t, target,
-		func(int) (bool, error) { return true, pathErr("mkdir", target, syscall.ENOTDIR) },
-		func(int) (bool, error) { return true, pathErr("lstat", target, syscall.ENOTDIR) })
-
-	err := MkdirAll(target, 0, 0, false, 0o755)
-	if err == nil {
-		t.Fatal("MkdirAll succeeded for a file path with a trailing separator")
-	}
-	if *mkdirCalls != 1 {
-		t.Fatalf("mkdir calls = %d, want 1", *mkdirCalls)
-	}
+		err := MkdirAll(target, 0, 0, false, 0o755)
+		if !errors.Is(err, s3err.GetAPIError(s3err.ErrObjectParentIsFile)) {
+			t.Fatalf("MkdirAll: %v, want ErrObjectParentIsFile", err)
+		}
+		if *mkdirCalls != 1 || *lstatCalls != 0 {
+			t.Fatalf("mkdir calls = %d, lstat calls = %d, want 1 and 0", *mkdirCalls, *lstatCalls)
+		}
+	})
 }
 
 // TestMkdirAllEEXISTRetriesBounded checks that a filesystem that keeps
 // answering EEXIST to Mkdir and that the path, or a parent of it, is gone to
 // Lstat takes the retry budget and no more, and then gets the Lstat error
-// rather than the EEXIST: the path doesn't exist.
+// rather than the EEXIST: the path doesn't exist. Mkdir answering ENOTDIR
+// or ESTALE on every pass is bounded the same way and returns that error.
 func TestMkdirAllEEXISTRetriesBounded(t *testing.T) {
-	for _, errno := range []syscall.Errno{syscall.ENOENT, syscall.ENOTDIR, syscall.ESTALE} {
-		t.Run(errno.Error(), func(t *testing.T) {
+	for _, tc := range []struct {
+		mkdirErrno syscall.Errno
+		// lstatErrno is the answer of Lstat, 0 for the real one.
+		lstatErrno syscall.Errno
+		wantErrno  syscall.Errno
+	}{
+		{syscall.EEXIST, syscall.ENOENT, syscall.ENOENT},
+		{syscall.EEXIST, syscall.ENOTDIR, syscall.ENOTDIR},
+		{syscall.EEXIST, syscall.ESTALE, syscall.ESTALE},
+		{syscall.ENOTDIR, 0, syscall.ENOTDIR},
+		{syscall.ESTALE, 0, syscall.ESTALE},
+	} {
+		name := "mkdir " + tc.mkdirErrno.Error()
+		if tc.lstatErrno != 0 {
+			name += ", lstat " + tc.lstatErrno.Error()
+		}
+		t.Run(name, func(t *testing.T) {
 			target := filepath.Join(t.TempDir(), "a", "b")
 			mkdirCalls, _ := stubMkdirAll(t, target,
-				func(int) (bool, error) { return true, pathErr("mkdir", target, syscall.EEXIST) },
-				func(int) (bool, error) { return true, pathErr("lstat", target, errno) })
+				func(int) (bool, error) { return true, pathErr("mkdir", target, tc.mkdirErrno) },
+				func(int) (bool, error) {
+					if tc.lstatErrno != 0 {
+						return true, pathErr("lstat", target, tc.lstatErrno)
+					}
+					return false, nil
+				})
 
 			err := MkdirAll(target, 0, 0, false, 0o755)
-			if !errors.Is(err, errno) {
-				t.Fatalf("MkdirAll: %v, want %v", err, errno)
+			if !errors.Is(err, tc.wantErrno) {
+				t.Fatalf("MkdirAll: %v, want %v", err, tc.wantErrno)
 			}
 			if *mkdirCalls != maxMkdirRaceRetries+1 {
 				t.Fatalf("mkdir calls = %d, want %d", *mkdirCalls, maxMkdirRaceRetries+1)
@@ -311,9 +269,12 @@ func TestMkdirAllEEXISTRetriesBounded(t *testing.T) {
 
 // TestMkdirAllTrailingSeparator checks that a file at a path that ends in a
 // separator isn't taken for a removed parent. Linux answers EEXIST to the
-// Mkdir of "file/" and ENOTDIR to the Lstat of it on every pass, with no
-// directory changing in between, so there is nothing to retry. MkdirAll
-// itself makes such a path for "a//b", whose parent it takes to be "a/".
+// Mkdir of "file/" and ENOTDIR to the Lstat of it on every pass; macOS and
+// BSD answer ENOTDIR to both. No directory changes in between, and for
+// ENOTDIR the error can be about the last element itself, which making the
+// parents again never fixes, so there is nothing to retry. No caller passes
+// such a path; MkdirAll itself makes one for "a//b", whose parent it takes
+// to be "a/".
 func TestMkdirAllTrailingSeparator(t *testing.T) {
 	sep := string(os.PathSeparator)
 	for _, tc := range []struct {
@@ -339,6 +300,26 @@ func TestMkdirAllTrailingSeparator(t *testing.T) {
 			err := MkdirAll(path, 0, 0, false, 0o755)
 			if !errors.Is(err, syscall.EEXIST) {
 				t.Fatalf("MkdirAll: %v, want EEXIST", err)
+			}
+			if *mkdirCalls != 1 {
+				t.Fatalf("mkdir calls = %d, want 1", *mkdirCalls)
+			}
+		})
+
+		// What macOS and BSD answer: ENOTDIR to the Mkdir as well.
+		t.Run(tc.name+", as on macOS", func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "file")
+			if err := os.WriteFile(file, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			path, target := tc.path(file)
+			mkdirCalls, _ := stubMkdirAll(t, target,
+				func(int) (bool, error) { return true, pathErr("mkdir", target, syscall.ENOTDIR) },
+				func(int) (bool, error) { return true, pathErr("lstat", target, syscall.ENOTDIR) })
+
+			err := MkdirAll(path, 0, 0, false, 0o755)
+			if !errors.Is(err, syscall.ENOTDIR) {
+				t.Fatalf("MkdirAll: %v, want ENOTDIR", err)
 			}
 			if *mkdirCalls != 1 {
 				t.Fatalf("mkdir calls = %d, want 1", *mkdirCalls)
