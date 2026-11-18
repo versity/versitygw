@@ -14,7 +14,9 @@
 
 // Package novaluesclient wraps the HTTP client of a backend SDK so that
 // net/http never reads values from the context of a backend call.
-// WithoutValues serves SDKs that take a pipeline policy instead.
+// WithoutValues provides the same context to SDKs hooked through a pipeline
+// policy rather than an HTTP client; internal/azblobclient uses it that way
+// for the Azure SDK.
 //
 // The gateway hands backends the *fasthttp.RequestCtx of the request, and
 // fasthttp resets and reuses it for the next request once the handler
@@ -25,7 +27,7 @@
 // and a dial it started keeps going after another connection served the
 // request.
 //
-// The wrapper relies on the following:
+// The wrapper and the azblobclient policy rely on the following:
 //
 //   - Done and Err of the parent still reach the RequestCtx after the call
 //     returns. That is safe only because fasthttp never resets ctx.s and

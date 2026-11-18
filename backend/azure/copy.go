@@ -63,15 +63,13 @@ func (az *Azure) copySourceURL(ctx context.Context, srcBucket, srcObj string) (s
 	}
 
 	if az.defaultCreds != nil {
-		svcClient := az.client.ServiceClient()
-
 		now := time.Now().UTC()
 		info := service.KeyInfo{
 			Start:  backend.GetPtrFromString(now.Add(-10 * time.Second).Format(sas.TimeFormat)),
 			Expiry: backend.GetPtrFromString(now.Add(48 * time.Hour).Format(sas.TimeFormat)),
 		}
 
-		udc, err := svcClient.GetUserDelegationCredential(ctx, info, nil)
+		udc, err := az.client.ServiceClient().GetUserDelegationCredential(ctx, info, nil)
 		if err != nil {
 			return "", fmt.Errorf("get user delegation credential: %w", err)
 		}
