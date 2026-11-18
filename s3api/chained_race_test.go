@@ -16,9 +16,13 @@ package s3api
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -28,6 +32,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/azure"
 	"github.com/versity/versitygw/backend/s3proxy"
 	"github.com/versity/versitygw/s3api/middlewares"
 )
@@ -47,12 +52,60 @@ func TestChainedGatewayRace(t *testing.T) {
 		t.Fatalf("s3proxy.New: %v", err)
 	}
 
-	headBucketsThroughGateway(t, be)
+	client := serveGateway(t, be)
+	sendConcurrently(t, "HeadBucket", func() error {
+		_, err := client.HeadBucket(context.Background(),
+			&s3.HeadBucketInput{Bucket: aws.String("bucket")})
+		return err
+	})
 }
 
-// headBucketsThroughGateway serves be on a gateway and sends it concurrent
-// HeadBucket requests on keep-alive connections.
-func headBucketsThroughGateway(t *testing.T, be backend.Backend) {
+// TestChainedAzureGatewayRace is TestChainedGatewayRace with the azure
+// backend in front of a fake Blob endpoint (#2641). GetObject streams the
+// blob's body to the client after the handler returns, so net/http finishes
+// the round trip later than for HeadBucket. Run with -race.
+func TestChainedAzureGatewayRace(t *testing.T) {
+	body := []byte("chained gateway race")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// a HEAD gets the headers without the body
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.Header().Set("ETag", `"0x8DCB1C2D3E4F5A6"`)
+		w.Header().Set("Last-Modified", "Mon, 02 Jan 2006 15:04:05 GMT")
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(upstream.Close)
+	key := base64.StdEncoding.EncodeToString([]byte("key"))
+	be, err := azure.New(context.Background(), "account", key, upstream.URL+"/account", "", 0, "", "")
+	if err != nil {
+		t.Fatalf("azure.New: %v", err)
+	}
+
+	client := serveGateway(t, be)
+	sendConcurrently(t, "HeadBucket", func() error {
+		_, err := client.HeadBucket(context.Background(),
+			&s3.HeadBucketInput{Bucket: aws.String("bucket")})
+		return err
+	})
+	sendConcurrently(t, "GetObject", func() error {
+		out, err := client.GetObject(context.Background(),
+			&s3.GetObjectInput{Bucket: aws.String("bucket"), Key: aws.String("key")})
+		if err != nil {
+			return err
+		}
+		defer out.Body.Close()
+		got, err := io.ReadAll(out.Body)
+		if err != nil {
+			return err
+		}
+		if string(got) != string(body) {
+			return fmt.Errorf("body = %q, want %q", got, body)
+		}
+		return nil
+	})
+}
+
+// serveGateway serves be on a gateway and returns an S3 client for it.
+func serveGateway(t *testing.T, be backend.Backend) *s3.Client {
 	t.Helper()
 	addrs := make(chan []net.Addr, 1)
 	sa, err := New(
@@ -83,22 +136,25 @@ func headBucketsThroughGateway(t *testing.T, be backend.Backend) {
 		<-served
 	})
 
-	client := s3.New(s3.Options{
+	return s3.New(s3.Options{
 		Region:       "us-east-1",
 		BaseEndpoint: aws.String("http://" + gw.String()),
 		UsePathStyle: true,
 		Credentials:  credentials.NewStaticCredentialsProvider("access", "secret", ""),
 	})
+}
 
+// sendConcurrently runs call from several workers, which reuse the
+// client's keep-alive connections.
+func sendConcurrently(t *testing.T, name string, call func() error) {
+	t.Helper()
 	const workers, perWorker = 8, 25
 	var wg sync.WaitGroup
 	errs := make(chan error, workers*perWorker)
 	for range workers {
 		wg.Go(func() {
 			for range perWorker {
-				_, err := client.HeadBucket(context.Background(),
-					&s3.HeadBucketInput{Bucket: aws.String("bucket")})
-				if err != nil {
+				if err := call(); err != nil {
 					errs <- err
 				}
 			}
@@ -107,6 +163,6 @@ func headBucketsThroughGateway(t *testing.T, be backend.Backend) {
 	wg.Wait()
 	close(errs)
 	for err := range errs {
-		t.Errorf("HeadBucket: %v", err)
+		t.Errorf("%s: %v", name, err)
 	}
 }
