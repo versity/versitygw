@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -29,7 +30,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pkg/xattr"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/meta"
@@ -88,9 +88,12 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 		return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 	}
 
-	// A bucket whose filesystem can't set xattrs on an O_TMPFILE goes
-	// straight to the named file, without opening an O_TMPFILE first.
-	if v, ok := p.otmpXattr.Load(bucket); ok && !v.(bool) {
+	// Whether the bucket's filesystem can hold the upload in an O_TMPFILE
+	// is probed once per bucket path, on a separate file (see probeOTmp). A
+	// bucket where it can't goes straight to the named file, without
+	// opening an O_TMPFILE first.
+	supported, known := p.otmpProbe.Load(bucket)
+	if known && !supported.(bool) {
 		return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 	}
 
@@ -100,17 +103,15 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 	// file descriptor into the namespace.
 	// Not all filesystems support this, so fallback to CreateTemp for when
 	// this is not supported.
-	var (
-		fd         int
-		useODirect bool
-		hasACL     bool
-		err        error
-	)
-	if inherit {
-		fd, useODirect, hasACL, err = p.openInheritingTmpFile(bucket, otmpDir, allowODirect)
-	} else {
+	// openOTmp opens an O_TMPFILE the way the upload needs it
+	openOTmp := func() (fd int, useODirect, hasACL bool, err error) {
+		if inherit {
+			return p.openInheritingTmpFile(bucket, otmpDir, allowODirect)
+		}
 		fd, useODirect, err = p.openOTmpFile(unix.AT_FDCWD, otmpDir, allowODirect)
+		return fd, useODirect, false, err
 	}
+	fd, useODirect, hasACL, err := openOTmp()
 	if err != nil {
 		if errors.Is(err, syscall.EROFS) {
 			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
@@ -126,27 +127,17 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 	// later to link file into namespace
 	f := os.NewFile(uintptr(fd), filepath.Join(procfddir, strconv.Itoa(fd)))
 
-	// Some filesystems open an O_TMPFILE but can't set xattrs on it, which
-	// the object's metadata needs. Use a named temporary file there.
-	// The result is remembered per bucket, as buckets can be on different
-	// filesystems, so that the probe runs once.
-	if _, ok := p.meta.(meta.XattrMeta); ok {
-		// Re-check after opening: a concurrent upload may have probed
-		// this bucket and found it unsupported since the check above.
-		v, known := p.otmpXattr.Load(bucket)
-		if !known {
-			err := probeTmpFileXattr(f)
-			switch {
-			case err == nil:
-				p.otmpXattr.Store(bucket, true)
-			case tmpfileXattrUnsupported(err):
-				p.otmpXattr.Store(bucket, false)
-				known, v = true, false
-			}
-		}
-		if known && !v.(bool) {
+	// Some filesystems open an O_TMPFILE but can't set xattrs on it or
+	// can't link it into the namespace. Use a named temporary file there.
+	// The answer depends only on the filesystem, so an upload that raced
+	// another probe gets the same result.
+	if !known {
+		if err := p.probeOTmp(bucket, tmpDir, openOTmp, uid, gid, doChown); err != nil {
 			f.Close()
-			return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
+			if tmpfileUnsupported(err) {
+				return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
+			}
+			return nil, fmt.Errorf("probe temp file: %w", err)
 		}
 	}
 
@@ -209,24 +200,79 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 	return tmp, nil
 }
 
-// probeTmpFileXattr sets and removes an attribute on the open O_TMPFILE, a
-// variable so that tests can make it fail
-var probeTmpFileXattr = origProbeTmpFileXattr
-
-func origProbeTmpFileXattr(f *os.File) error {
-	const name = "user.vgw.xattr-probe"
-	if err := xattr.FSet(f, name, []byte{}); err != nil {
+// probeOTmp finds out whether an O_TMPFILE of the bucket can be used for
+// uploads and remembers it for the bucket path. It does not touch the upload's
+// own file: a separate O_TMPFILE is opened, opened the same way as the
+// upload's, and discarded. An answer is stored only when the filesystem
+// reported the defect; any other error is returned and nothing is remembered,
+// so that a full or read-only filesystem, a quota or a permission error is
+// reported, not hidden by a named file.
+//
+// The result is keyed by the bucket path (the versioning code passes the
+// path of a bucket's versioning directory), so buckets on different
+// filesystems are probed separately; with the default ACL inherited, the
+// O_TMPFILE is made in the object's directory, which could be on another
+// mount below the bucket, a case that is not probed separately. The entry is
+// removed when the bucket is deleted.
+func (p *Posix) probeOTmp(bucket, tmpDir string, openOTmp func() (int, bool, bool, error), uid, gid int, doChown bool) error {
+	fd, _, _, err := openOTmp()
+	if err != nil {
 		return err
 	}
-	_ = xattr.FRemove(f, name)
-	return nil
+	f := os.NewFile(uintptr(fd), filepath.Join(procfddir, strconv.Itoa(fd)))
+	defer f.Close()
+
+	// The directory's default ACL can create the file without owner write
+	// access, which fsetxattr checks before asking the filesystem.
+	if err := f.Chmod(0o600); err != nil {
+		return fmt.Errorf("set probe file mode: %w", err)
+	}
+	// A directory that can't be made is reported by the named file's open
+	if err := p.mkdirAll(tmpDir, uid, gid, doChown); err != nil {
+		return fmt.Errorf("make temp dir: %w", err)
+	}
+
+	var xt meta.TmpFileTester
+	if t, ok := p.meta.(meta.TmpFileTester); ok {
+		xt = t
+	}
+	err = probeOTmpFile(xt, f, tmpDir)
+	switch {
+	case err == nil:
+		p.otmpProbe.Store(bucket, true)
+	case tmpfileUnsupported(err):
+		if _, known := p.otmpProbe.LoadOrStore(bucket, false); !known {
+			log.Printf("WARNING: O_TMPFILE can't be used in %v (%v); using named temporary files there. Use --disableotmp to skip this check.", bucket, err)
+		}
+	}
+	return err
 }
 
-// tmpfileXattrUnsupported reports whether err means that xattrs can't be set
-// on an O_TMPFILE, as opposed to a full, read-only or quota-limited filesystem.
-func tmpfileXattrUnsupported(err error) bool {
+// probeOTmpFile checks that f, an O_TMPFILE, can hold the metadata an
+// upload sets on it (when the storer keeps it in xattrs) and be linked into
+// dir, a variable so that tests can make it fail
+var probeOTmpFile = origProbeOTmpFile
+
+func origProbeOTmpFile(xt meta.TmpFileTester, f *os.File, dir string) error {
+	if xt != nil {
+		if err := xt.TestFile(f); err != nil {
+			return err
+		}
+	}
+	name := filepath.Join(dir, fmt.Sprintf(".probe.%d.%d", os.Getpid(), time.Now().UnixNano()))
+	err := unix.Linkat(unix.AT_FDCWD, f.Name(), unix.AT_FDCWD, name, unix.AT_SYMLINK_FOLLOW)
+	if err != nil {
+		return fmt.Errorf("link probe tmpfile: %w", err)
+	}
+	return unix.Unlink(name)
+}
+
+// tmpfileUnsupported reports whether err means that an O_TMPFILE can't be
+// used for uploads on its filesystem (no xattrs on it, or it can't be
+// linked), as opposed to a full, read-only or quota-limited filesystem.
+func tmpfileUnsupported(err error) bool {
 	return errors.Is(err, syscall.ENODATA) || errors.Is(err, syscall.EOPNOTSUPP) ||
-		errors.Is(err, syscall.ENOSYS)
+		errors.Is(err, syscall.ENOSYS) || errors.Is(err, syscall.EXDEV)
 }
 
 // openOTmpFile opens an O_TMPFILE in the directory path, relative to dirfd,

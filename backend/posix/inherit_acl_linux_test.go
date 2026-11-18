@@ -675,6 +675,8 @@ func TestInheritDefaultACLOpenErrors(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// the bucket's O_TMPFILE probe is not what is counted here
+			p.otmpProbe.Store(p.BucketPath(bucket), true)
 			opens := 0
 			openat = func(dirfd int, path string, flags int, mode uint32) (int, error) {
 				opens++
