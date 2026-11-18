@@ -683,6 +683,13 @@ func MoveFile(source, destination string, perm os.FileMode, fsync bool) error {
 		}
 	}
 
+	// Close before publishing: on NFS a failed write-back can surface only at
+	// close(), and the copy must not go live with missing data.
+	err = destFile.Close()
+	if err != nil {
+		return fmt.Errorf("close temporary destination: %w", err)
+	}
+
 	err = os.Rename(tmpName, destination)
 	if err != nil {
 		return fmt.Errorf("publish destination: %w", err)
