@@ -545,15 +545,20 @@ func TestDetectStaleEtagSidecar(t *testing.T) {
 
 // failEtagStatMeta fails to store etag-stat while fail is set: the value
 // reserveEtagStat stores before an object is published when reserved is set,
-// and the one recordEtagStat stores after otherwise.
+// and the one recordEtagStat stores after otherwise. With noSpace, the failure
+// is the APIError of a metadata store out of space.
 type failEtagStatMeta struct {
 	meta.MetadataStorer
 	fail, reserved *atomic.Bool
+	noSpace        bool
 }
 
 func (m failEtagStatMeta) StoreAttribute(f *os.File, bucket, object, attribute string, value []byte) error {
 	if attribute == etagStatKey && m.fail.Load() &&
 		(string(value) == etagStatReserved) == m.reserved.Load() {
+		if m.noSpace {
+			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		}
 		return errors.New("etag-stat store failed")
 	}
 	return m.MetadataStorer.StoreAttribute(f, bucket, object, attribute, value)
@@ -663,4 +668,108 @@ func TestDetectStaleEtagRecordFails(t *testing.T) {
 			assert.Equal(t, 1, versions(t, p))
 		})
 	})
+}
+
+// TestDetectStaleEtagDeleteMarkerKeepsLock checks that a delete marker whose
+// version can't get its etag-stat leaves the object lock of the object in
+// place, so that the version is still protected once the delete is retried.
+func TestDetectStaleEtagDeleteMarkerKeepsLock(t *testing.T) {
+	ctx := context.Background()
+	bucket, key := "testbucket", "obj"
+	until := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	retention := []byte(`{"Mode":"GOVERNANCE","RetainUntilDate":"` + until + `"}`)
+	for _, reserved := range []bool{true, false} {
+		p := newStaleEtagPosix(t, true, true)
+		fail, res := &atomic.Bool{}, &atomic.Bool{}
+		res.Store(reserved)
+		p.meta = failEtagStatMeta{MetadataStorer: p.meta, fail: fail, reserved: res}
+		createTestBucket(t, p, bucket)
+		require.NoError(t, p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled))
+		require.NoError(t, p.PutObjectLockConfiguration(ctx, bucket, []byte(`{"Enabled":true}`)))
+		put, err := testPut(p, bucket, key, []byte("locked"), nil, nil)
+		require.NoError(t, err)
+		require.NoError(t, p.PutObjectLegalHold(ctx, bucket, key, "", true))
+		require.NoError(t, p.PutObjectRetention(ctx, bucket, key, "", retention))
+
+		fail.Store(true)
+		_, err = p.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: &key})
+		require.Error(t, err)
+		fail.Store(false)
+
+		// the object is still the version that was put, and keeps its lock
+		assert.Equal(t, put.ETag, aws.ToString(headEtag(t, p, bucket, key).ETag))
+		lh, err := p.GetObjectLegalHold(ctx, bucket, key, put.VersionID)
+		require.NoError(t, err)
+		assert.True(t, *lh)
+		ret, err := p.GetObjectRetention(ctx, bucket, key, put.VersionID)
+		require.NoError(t, err)
+		assert.Contains(t, string(ret), `"Mode":"GOVERNANCE"`)
+
+		// the retried delete makes a version that keeps the lock
+		_, err = p.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: &key})
+		require.NoError(t, err)
+		lh, err = p.GetObjectLegalHold(ctx, bucket, key, put.VersionID)
+		require.NoError(t, err)
+		assert.True(t, *lh)
+		ret, err = p.GetObjectRetention(ctx, bucket, key, put.VersionID)
+		require.NoError(t, err)
+		assert.Contains(t, string(ret), `"Mode":"GOVERNANCE"`)
+	}
+}
+
+// TestDetectStaleEtagPutRecordFailsKeepsSettings checks that a PutObject
+// whose etag-stat can't be recorded once the object is published still
+// stores the tagging, legal hold and retention of the request before it
+// returns the error.
+func TestDetectStaleEtagPutRecordFailsKeepsSettings(t *testing.T) {
+	ctx := context.Background()
+	bucket, key := "testbucket", "obj"
+	p := newStaleEtagPosix(t, true, true)
+	fail, res := &atomic.Bool{}, &atomic.Bool{}
+	p.meta = failEtagStatMeta{MetadataStorer: p.meta, fail: fail, reserved: res}
+	createTestBucket(t, p, bucket)
+	require.NoError(t, p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled))
+	require.NoError(t, p.PutObjectLockConfiguration(ctx, bucket, []byte(`{"Enabled":true}`)))
+
+	fail.Store(true)
+	body := []byte("data")
+	_, err := p.PutObject(ctx, s3response.PutObjectInput{
+		Bucket:                    &bucket,
+		Key:                       &key,
+		Body:                      bytes.NewReader(body),
+		ContentLength:             aws.Int64(int64(len(body))),
+		Tagging:                   aws.String("key=value"),
+		ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+		ObjectLockMode:            types.ObjectLockModeGovernance,
+		ObjectLockRetainUntilDate: aws.Time(time.Now().Add(time.Hour)),
+	})
+	assert.ErrorContains(t, err, "etag-stat store failed")
+	fail.Store(false)
+
+	tags, err := p.GetObjectTagging(ctx, bucket, key, "")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"key": "value"}, tags)
+	lh, err := p.GetObjectLegalHold(ctx, bucket, key, "")
+	require.NoError(t, err)
+	assert.True(t, *lh)
+	ret, err := p.GetObjectRetention(ctx, bucket, key, "")
+	require.NoError(t, err)
+	assert.Contains(t, string(ret), `"Mode":"GOVERNANCE"`)
+}
+
+// TestDetectStaleEtagNoSpaceError checks that the InsufficientStorage of a
+// metadata store out of space reaches the client unwrapped, whether the
+// etag-stat is reserved or recorded.
+func TestDetectStaleEtagNoSpaceError(t *testing.T) {
+	bucket := "testbucket"
+	for _, reserved := range []bool{true, false} {
+		p := newStaleEtagPosix(t, true, false)
+		fail, res := &atomic.Bool{}, &atomic.Bool{}
+		res.Store(reserved)
+		p.meta = failEtagStatMeta{MetadataStorer: p.meta, fail: fail, reserved: res, noSpace: true}
+		createTestBucket(t, p, bucket)
+		fail.Store(true)
+		_, err := testPut(p, bucket, "obj", []byte("data"), nil, nil)
+		assert.Equal(t, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice), err)
+	}
 }
