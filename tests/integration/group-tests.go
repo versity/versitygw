@@ -1142,6 +1142,7 @@ func TestPosix(ts *TestState) {
 		ts.Run(CompleteMultipartUpload_race_with_sibling_deletes)
 		ts.Run(ListObjects_race_with_parent_dir_replaced)
 		ts.Run(PutObject_race_with_parent_object_deletes)
+		ts.Run(PutObject_race_with_parent_object_deletes_nested_dirs)
 		ts.Run(ListObjects_race_with_prefix_removal)
 		ts.Run(HeadObject_GetObject_race_with_delete)
 		if !ts.conf.sidecarTests {
@@ -3788,6 +3789,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_race_with_sibling_deletes":                                CompleteMultipartUpload_race_with_sibling_deletes,
 		"ListObjects_race_with_parent_dir_replaced":                                        ListObjects_race_with_parent_dir_replaced,
 		"PutObject_race_with_parent_object_deletes":                                        PutObject_race_with_parent_object_deletes,
+		"PutObject_race_with_parent_object_deletes_nested_dirs":                            PutObject_race_with_parent_object_deletes_nested_dirs,
 		"PutObject_race_with_sibling_version_deletes":                                      PutObject_race_with_sibling_version_deletes,
 		"ListObjects_race_with_prefix_removal":                                             ListObjects_race_with_prefix_removal,
 		"HeadObject_GetObject_race_with_delete":                                            HeadObject_GetObject_race_with_delete,
