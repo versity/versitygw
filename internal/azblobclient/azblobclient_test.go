@@ -18,9 +18,15 @@ import (
 	"context"
 	"encoding/base64"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -152,4 +158,110 @@ func TestNewTrimsLeadingQuestionMarkFromSAS(t *testing.T) {
 		assert.Equal(t, "sv=2024-01-01&sig=abc", creds.SASToken)
 		assert.NotContains(t, client.URL(), "??")
 	}
+}
+
+type ctxKey struct{}
+
+type transportFunc func(*http.Request) (*http.Response, error)
+
+func (f transportFunc) Do(req *http.Request) (*http.Response, error) { return f(req) }
+
+// The transport of a client from New does not see values of the caller's
+// context.
+func TestNewHidesContextValuesFromTransport(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString([]byte("testkey"))
+	var got any = "unset"
+	client, _, err := New("acct", key, "http://127.0.0.1/acct", "", func(o *policy.ClientOptions) {
+		o.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+			got = req.Context().Value(ctxKey{})
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: http.NoBody, Request: req}, nil
+		})
+	})
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	ctx := context.WithValue(context.Background(), ctxKey{}, "v")
+	_, err = client.ServiceClient().NewContainerClient("bucket").GetProperties(ctx, nil)
+	assert.NoError(t, err)
+	assert.Nil(t, got, "transport saw a value of the caller's context")
+}
+
+// Cancelling the caller's context still ends an in-flight request.
+func TestNewRequestContextCancelReachesTransport(t *testing.T) {
+	inflight, done := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		once.Do(func() { close(inflight) })
+		select {
+		case <-r.Context().Done():
+		case <-done:
+		}
+	}))
+	t.Cleanup(upstream.Close)
+	// runs before upstream.Close, which waits for the handler
+	t.Cleanup(func() { close(done) })
+	key := base64.StdEncoding.EncodeToString([]byte("testkey"))
+	client, _, err := New("acct", key, upstream.URL+"/acct", "")
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errc := make(chan error, 1)
+	go func() {
+		_, err := client.ServiceClient().NewContainerClient("bucket").GetProperties(ctx, nil)
+		errc <- err
+	}()
+	select {
+	case <-inflight:
+	case err := <-errc:
+		t.Fatalf("GetProperties returned before reaching the server: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("request did not reach the server")
+	}
+	cancel()
+
+	select {
+	case err := <-errc:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("GetProperties did not return after its context was canceled")
+	}
+}
+
+type tokenCredentialFunc func(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error)
+
+func (f tokenCredentialFunc) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return f(ctx, opts)
+}
+
+// Token requests of a bearer-token policy, which azblob adds after the
+// per-call policies, do not see values of the caller's context either.
+func TestWithoutContextValuesHidesValuesFromTokenRequests(t *testing.T) {
+	var got any = "unset"
+	cred := tokenCredentialFunc(func(ctx context.Context, _ policy.TokenRequestOptions) (azcore.AccessToken, error) {
+		got = ctx.Value(ctxKey{})
+		return azcore.AccessToken{Token: "token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+	})
+	pl := runtime.NewPipeline("azblobclient", "test",
+		runtime.PipelineOptions{PerRetry: []policy.Policy{runtime.NewBearerTokenPolicy(cred, []string{"scope"}, nil)}},
+		&policy.ClientOptions{
+			PerCallPolicies: []policy.Policy{withoutContextValues{}},
+			Transport: transportFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: http.NoBody, Request: req}, nil
+			}),
+		})
+
+	req, err := runtime.NewRequest(context.WithValue(context.Background(), ctxKey{}, "v"), http.MethodGet, "https://acct.blob.core.windows.net/")
+	if !assert.NoError(t, err) {
+		return
+	}
+	resp, err := pl.Do(req)
+	if !assert.NoError(t, err) {
+		return
+	}
+	resp.Body.Close()
+	assert.Nil(t, got, "token request saw a value of the caller's context")
 }
