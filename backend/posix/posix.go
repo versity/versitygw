@@ -1751,6 +1751,7 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 
 	// Copy the object attributes(metadata)
 	recordStat := false
+	var removable []string
 	for _, attr := range attrs {
 		if attr == etagStatKey && !srcStale && !isDir {
 			recordStat = true
@@ -1769,12 +1770,8 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 			return versionPath, fmt.Errorf("store %v attribute: %w", attr, err)
 		}
 
-		// remove object lock attributes in delete marker
 		if removeAttributes && isRemovableAttr(attr) {
-			err := p.meta.DeleteAttribute(bucket, key, attr)
-			if err != nil {
-				return versionPath, fmt.Errorf("remove %s attribute: %w", attr, err)
-			}
+			removable = append(removable, attr)
 		}
 	}
 
@@ -1808,6 +1805,16 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 		// the object is not replaced, so it must not have a version yet
 		_ = os.Remove(versionPath)
 		return versionPath, err
+	}
+
+	// A delete marker doesn't keep the object lock attributes. They are
+	// removed from the object only once the version that keeps them is
+	// published, so that a failure before leaves them on the object.
+	for _, attr := range removable {
+		err := p.meta.DeleteAttribute(bucket, key, attr)
+		if err != nil {
+			return versionPath, fmt.Errorf("remove %s attribute: %w", attr, err)
+		}
 	}
 
 	return versionPath, nil
@@ -5381,10 +5388,10 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	if err != nil {
 		return s3response.PutObjectOutput{}, publishErr(name, err)
 	}
-	err = p.recordEtagStat(etagfi, name, *po.Bucket, object)
-	if err != nil {
-		return s3response.PutObjectOutput{}, err
-	}
+	// The object is published by now, so its tagging and object lock
+	// settings are stored even when etag-stat can't be, and that error
+	// is returned after.
+	recordErr := p.recordEtagStat(etagfi, name, *po.Bucket, object)
 
 	// Set object tagging
 	if tags != nil {
@@ -5403,6 +5410,10 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	err = p.putObjectLockSettings(ctx, po)
 	if err != nil {
 		return s3response.PutObjectOutput{}, err
+	}
+
+	if recordErr != nil {
+		return s3response.PutObjectOutput{}, recordErr
 	}
 
 	return s3response.PutObjectOutput{
@@ -8866,7 +8877,7 @@ func (p *Posix) reserveEtagStat(f *tmpfile, bucket, object string) (fs.FileInfo,
 	}
 	err = p.meta.StoreAttribute(f.File(), bucket, object, etagStatKey, []byte(etagStatReserved))
 	if err != nil {
-		return nil, fmt.Errorf("reserve etag-stat: %w", err)
+		return nil, etagStatErr("reserve etag-stat", err)
 	}
 	return fi, nil
 }
@@ -8900,9 +8911,20 @@ func (p *Posix) recordEtagStat(tmpfi fs.FileInfo, path, bucket, object string) e
 	err = p.meta.StoreAttribute(f, bucket, object, etagStatKey,
 		[]byte(etagStat(fi.Size(), fi.ModTime())))
 	if err != nil {
-		return fmt.Errorf("store etag-stat of %v: %w", path, err)
+		return etagStatErr(fmt.Sprintf("store etag-stat of %v", path), err)
 	}
 	return nil
+}
+
+// etagStatErr returns err as is when it is an s3err.APIError, such as the
+// InsufficientStorage of a metadata store out of space, so that the client
+// gets it, and wraps it with msg otherwise.
+func etagStatErr(msg string, err error) error {
+	var apiErr s3err.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr
+	}
+	return fmt.Errorf("%s: %w", msg, err)
 }
 
 // openForEtag opens the object at path so that its etag, and whether it is
