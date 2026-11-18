@@ -17,6 +17,7 @@ package debuglogger
 import (
 	"fmt"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
@@ -78,8 +79,10 @@ func LogFiberRequestDetails(ctx fiber.Ctx) {
 			printWrappedLine(yellow, string(key), debugRedact(string(key), string(value)))
 		}
 	})
-	// skip request body log for PutObject and UploadPart
-	skipBodyLog := isLargeDataAction(ctx)
+	// skip request body log for PutObject and UploadPart, and for a
+	// multipart form, which POST Object streams: logging it here would
+	// consume it
+	skipBodyLog := isLargeDataAction(ctx) || isMultipartForm(ctx)
 	if !skipBodyLog {
 		if postArgs := ctx.Request().PostArgs(); postArgs.Len() != 0 {
 			// form-encoded body (e.g. AWS Query protocol requests like
@@ -359,6 +362,11 @@ func wrapText(text string, width int) []string {
 		lines = append(lines, text)
 	}
 	return lines
+}
+
+func isMultipartForm(ctx fiber.Ctx) bool {
+	mediaType, _, err := mime.ParseMediaType(ctx.Get("Content-Type"))
+	return err == nil && mediaType == fiber.MIMEMultipartForm
 }
 
 // TODO: remove this and use utils.IsBidDataAction after refactoring

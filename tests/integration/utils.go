@@ -39,9 +39,11 @@ import (
 	"math/big"
 	"math/bits"
 	rnd "math/rand"
+	"mime"
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os/exec"
 	"slices"
@@ -609,6 +611,7 @@ type APIErrorResponse struct {
 	ProposedSize                int64                      `xml:"ProposedSize,omitempty"`
 	MaxSizeAllowed              int64                      `xml:"MaxSizeAllowed,omitempty"`
 	MinSizeAllowed              int64                      `xml:"MinSizeAllowed,omitempty"`
+	MaxPostPreDataLengthBytes   int64                      `xml:"MaxPostPreDataLengthBytes,omitempty"`
 	ServerTime                  string                     `xml:"ServerTime,omitempty"`
 	XAmzExpires                 int                        `xml:"X-Amz-Expires,omitempty"`
 	Expires                     string                     `xml:"Expires,omitempty"`
@@ -1063,6 +1066,8 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 			compareErrField("Size", err.Size, received.Size),
 			compareErrField("MaxSizeAllowed", err.MaxSizeAllowed, received.MaxSizeAllowed),
 		)
+	case s3err.MaxPostPreDataLengthExceededError:
+		return compareErrField("MaxPostPreDataLengthBytes", err.MaxPostPreDataLengthBytes, received.MaxPostPreDataLengthBytes)
 	case s3err.MetadataTooLargeError:
 		return compareS3ApiErrFields(
 			compareErrField("Size", int64(err.Size), received.Size),
@@ -4566,11 +4571,22 @@ func getSigningKey(secret, yearMonthDay, region string) []byte {
 }
 
 // buildPostObjectBody builds a multipart/form-data body for a POST object request.
-// Fields are written first (in the order provided)
+// Fields are written first, except those named in fieldsAfterFile, which
+// follow the file part in that order. A nil fileHeader sends the file as
+// upload.bin.
 // Returns (body bytes, boundary string, error).
-func buildPostObjectBody(fields, extraFields map[string]string, fileContent []byte) ([]byte, string, error) {
+func buildPostObjectBody(fields, extraFields map[string]string, fileContent []byte, fileHeader textproto.MIMEHeader, fieldsAfterFile []string) ([]byte, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
+
+	afterFile := map[string]string{}
+	writeField := func(key, value string) error {
+		if slices.Contains(fieldsAfterFile, key) {
+			afterFile[key] = value
+			return nil
+		}
+		return w.WriteField(key, value)
+	}
 
 	for key, value := range fields {
 		v, ok := extraFields[key]
@@ -4581,23 +4597,37 @@ func buildPostObjectBody(fields, extraFields map[string]string, fileContent []by
 			}
 			value = v
 		}
-		if err := w.WriteField(key, value); err != nil {
+		if err := writeField(key, value); err != nil {
 			return nil, "", err
 		}
 	}
 
 	for key, value := range extraFields {
-		if err := w.WriteField(key, value); err != nil {
+		if err := writeField(key, value); err != nil {
 			return nil, "", err
 		}
 	}
 
-	fw, err := w.CreateFormFile("file", "upload.bin")
+	var fw io.Writer
+	var err error
+	if fileHeader == nil {
+		fw, err = w.CreateFormFile("file", "upload.bin")
+	} else {
+		fw, err = w.CreatePart(fileHeader)
+	}
 	if err != nil {
 		return nil, "", err
 	}
 	if _, err = fw.Write(fileContent); err != nil {
 		return nil, "", err
+	}
+
+	for _, key := range fieldsAfterFile {
+		if value, ok := afterFile[key]; ok {
+			if err := w.WriteField(key, value); err != nil {
+				return nil, "", err
+			}
+		}
 	}
 
 	if err := w.Close(); err != nil {
@@ -4672,6 +4702,8 @@ type PostRequestConfig struct {
 	secret               string
 	region               string
 	extraFields          map[string]string
+	fieldsAfterFile      []string
+	fileHeader           textproto.MIMEHeader
 	fileContent          []byte
 	rawPolicy            *string
 	date                 time.Time
@@ -4755,7 +4787,7 @@ func newPostObjectRequest(input PostRequestConfig) (*http.Request, map[string]st
 	fields["policy"] = policy
 	fields["x-amz-signature"] = signPostPolicy(policy, input.date.Format("20060102"), input.region, input.secret)
 
-	body, boundary, err := buildPostObjectBody(fields, input.extraFields, input.fileContent)
+	body, boundary, err := buildPostObjectBody(fields, input.extraFields, input.fileContent, input.fileHeader, input.fieldsAfterFile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -4780,6 +4812,65 @@ func newPostObjectRequest(input PostRequestConfig) (*http.Request, map[string]st
 	req.ContentLength = int64(len(body))
 
 	return req, fields, nil
+}
+
+// newPostObjectRequestClosing returns the request for input with a body that
+// ends with closing(boundary), in place of the final boundary and its CRLF. It
+// also returns the body in two parts, to send with a pause between them. The
+// first part ends within the bytes that the gateway reads ahead of the file: as
+// many bytes after the start of the content of the file as the boundary has.
+// The second holds the rest of the form.
+func newPostObjectRequestClosing(input PostRequestConfig, closing func(boundary string) string) (*http.Request, [2][]byte, error) {
+	var parts [2][]byte
+
+	req, _, err := newPostObjectRequest(input)
+	if err != nil {
+		return nil, parts, err
+	}
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, parts, err
+	}
+
+	_, params, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
+	if err != nil {
+		return nil, parts, err
+	}
+	boundary := params["boundary"]
+
+	body, ok := bytes.CutSuffix(body, []byte("\r\n--"+boundary+"--\r\n"))
+	if !ok {
+		return nil, parts, fmt.Errorf("the form does not end with its final boundary")
+	}
+	split := len(body) - len(input.fileContent) + len("\r\n--"+boundary)
+	body = append(body, closing(boundary)...)
+
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+
+	return req, [2][]byte{body[:split], body[split:]}, nil
+}
+
+// sendInParts sends req with its body in two writes and a pause between them,
+// as a client does that is slow to send the end of the form. The gateway reads
+// the first 8 KiB of a body before it handles the request, so the first part
+// must be longer than that for the gateway to handle the request before it has
+// the second.
+func sendInParts(s *S3Conf, req *http.Request, parts [2][]byte) (*http.Response, error) {
+	pr, pw := io.Pipe()
+	req.Body = pr
+
+	go func() {
+		_, err := pw.Write(parts[0])
+		if err == nil {
+			time.Sleep(time.Second)
+			_, err = pw.Write(parts[1])
+		}
+		pw.CloseWithError(err)
+	}()
+
+	return s.httpClient.Do(req)
 }
 
 func getEtagBytes(etag string) ([]byte, error) {

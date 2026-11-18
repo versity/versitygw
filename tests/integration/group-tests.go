@@ -224,6 +224,7 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_sse_c_invalid_headers)
 	ts.Run(PutObject_unsupported_sse_not_implemented)
 	ts.Run(PutObject_default_content_type)
+	ts.Run(PutObject_multipart_form_data_body)
 	ts.Run(PutObject_overwrite_resets_attributes)
 	ts.Run(PutObject_overwrite_multipart_object)
 	ts.Run(PutObject_dir_object_overwrite_resets_attributes)
@@ -2353,6 +2354,19 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_invalid_tagging)
 	ts.Run(PostObject_success_with_tagging)
 	ts.Run(PostObject_success_double_dash_boundary)
+	ts.Run(PostObject_file_without_filename)
+	ts.Run(PostObject_file_before_key)
+	ts.Run(PostObject_ignores_fields_after_file)
+	ts.Run(PostObject_content_length_range_fields_after_file)
+	ts.Run(PostObject_content_length_range_large_file)
+	ts.Run(PostObject_content_length_range_under_min_keeps_object)
+	ts.Run(PostObject_content_length_range_body_without_final_crlf)
+	ts.Run(PostObject_short_closing_boundary_keeps_object)
+	ts.Run(PostObject_small_file_with_short_closing_boundary)
+	ts.Run(PostObject_small_file_with_field_after_file)
+	ts.Run(PostObject_empty_file_with_field_after_file)
+	ts.Run(PostObject_preamble_and_folded_header)
+	ts.Run(PostObject_data_before_file_limit)
 	ts.Run(PostObject_object_lock_success)
 	ts.Run(PostObject_object_lock_invalid_fields)
 	ts.Run(PostObject_object_lock_missing_bucket_config)
@@ -3190,6 +3204,7 @@ func GetIntTests() IntTests {
 		"PutObject_tagging_invalid_argument_value":                                         PutObject_tagging_invalid_argument_value,
 		"PutObject_success":                                                                PutObject_success,
 		"PutObject_default_content_type":                                                   PutObject_default_content_type,
+		"PutObject_multipart_form_data_body":                                               PutObject_multipart_form_data_body,
 		"PutObject_overwrite_resets_attributes":                                            PutObject_overwrite_resets_attributes,
 		"PutObject_overwrite_multipart_object":                                             PutObject_overwrite_multipart_object,
 		"PutObject_dir_object_overwrite_resets_attributes":                                 PutObject_dir_object_overwrite_resets_attributes,
@@ -4135,6 +4150,19 @@ func GetIntTests() IntTests {
 		"PostObject_multiple_checksum_headers":                                             PostObject_multiple_checksum_headers,
 		"PostObject_checksums_success":                                                     PostObject_checksums_success,
 		"PostObject_success_double_dash_boundary":                                          PostObject_success_double_dash_boundary,
+		"PostObject_file_without_filename":                                                 PostObject_file_without_filename,
+		"PostObject_file_before_key":                                                       PostObject_file_before_key,
+		"PostObject_ignores_fields_after_file":                                             PostObject_ignores_fields_after_file,
+		"PostObject_content_length_range_fields_after_file":                                PostObject_content_length_range_fields_after_file,
+		"PostObject_content_length_range_large_file":                                       PostObject_content_length_range_large_file,
+		"PostObject_content_length_range_under_min_keeps_object":                           PostObject_content_length_range_under_min_keeps_object,
+		"PostObject_content_length_range_body_without_final_crlf":                          PostObject_content_length_range_body_without_final_crlf,
+		"PostObject_short_closing_boundary_keeps_object":                                   PostObject_short_closing_boundary_keeps_object,
+		"PostObject_small_file_with_short_closing_boundary":                                PostObject_small_file_with_short_closing_boundary,
+		"PostObject_small_file_with_field_after_file":                                      PostObject_small_file_with_field_after_file,
+		"PostObject_empty_file_with_field_after_file":                                      PostObject_empty_file_with_field_after_file,
+		"PostObject_preamble_and_folded_header":                                            PostObject_preamble_and_folded_header,
+		"PostObject_data_before_file_limit":                                                PostObject_data_before_file_limit,
 		"PostObject_object_lock_success":                                                   PostObject_object_lock_success,
 		"PostObject_object_lock_invalid_fields":                                            PostObject_object_lock_invalid_fields,
 		"PostObject_object_lock_missing_bucket_config":                                     PostObject_object_lock_missing_bucket_config,

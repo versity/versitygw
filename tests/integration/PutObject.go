@@ -23,6 +23,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"sort"
@@ -1413,6 +1414,37 @@ func PutObject_default_content_type(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+// PutObject_multipart_form_data_body stores a body typed multipart/form-data
+// as sent: only POST Object reads a form.
+func PutObject_multipart_form_data_body(s *S3Conf) error {
+	testName := "PutObject_multipart_form_data_body"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		if err := w.WriteField("key", "value"); err != nil {
+			return err
+		}
+		if err := w.Close(); err != nil {
+			return err
+		}
+
+		key := "my-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         &key,
+			Body:        bytes.NewReader(body.Bytes()),
+			ContentType: getPtr(w.FormDataContentType()),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return checkObjectData(s3client, bucket, key, "", body.Bytes())
 	})
 }
 

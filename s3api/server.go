@@ -135,6 +135,11 @@ func New(
 		// if the limit is reached, fiber/fasthttp will throw an error
 		// in the global error handler
 		ReadBufferSize: requestHeaderMaxSize,
+		// POST Object reads its multipart body as a stream, part by part in the
+		// order sent. fasthttp's pre-parse would hand it a rebuilt body instead,
+		// with the fields in random order and a file part without a filename
+		// among them.
+		DisablePreParseMultipartForm: true,
 	})
 
 	server.app = app
