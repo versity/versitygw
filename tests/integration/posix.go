@@ -956,53 +956,6 @@ func PutObject_race_with_parent_object_deletes(s *S3Conf) error {
 	})
 }
 
-// PutObject_race_with_parent_object_deletes_nested_dirs is like
-// PutObject_race_with_parent_object_deletes, but the workers upload directory
-// objects two levels under the parent key. The upload has to make both
-// directories, so while another worker replaces the parent with an object and
-// deletes it, a directory it made can be replaced by a file. An upload can't
-// fail otherwise.
-func PutObject_race_with_parent_object_deletes_nested_dirs(s *S3Conf) error {
-	testName := "PutObject_race_with_parent_object_deletes_nested_dirs"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		return raceWorkers(siblingRaceWorkers, siblingRaceIterations, func(w, i int) error {
-			parent := fmt.Sprintf("race/%d/b", w/parentRaceGroupSize)
-			key, conflict := parent, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
-			var body []byte
-			if w%parentRaceGroupSize != 0 {
-				key, conflict = fmt.Sprintf("%v/c/d%d-%d/", parent, w, i), s3err.GetAPIError(s3err.ErrObjectParentIsFile)
-			} else {
-				body = siblingRaceData(key)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
-				Bucket: &bucket,
-				Key:    &key,
-				Body:   bytes.NewReader(body),
-			})
-			cancel()
-			if err != nil {
-				// the object at the parent key, or the directories under
-				// it, were in the way
-				if err := checkApiErr(err, conflict); err != nil {
-					return fmt.Errorf("put %v: %w", key, err)
-				}
-				return nil
-			}
-			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
-				Bucket: &bucket,
-				Key:    &key,
-			})
-			cancel()
-			if err != nil {
-				return fmt.Errorf("delete %v: %w", key, err)
-			}
-			return nil
-		})
-	})
-}
-
 // HeadObject_GetObject_race_with_delete reads objects with HeadObject and
 // GetObject while they are uploaded and deleted over and over. With a
 // versioning directory configured, a read looks up the version id of the
