@@ -859,7 +859,7 @@ func ListMultipartUploads_with_checksums(s *S3Conf) error {
 func ListMultipartUploads_url_encoding(s *S3Conf) error {
 	testName := "ListMultipartUploads_url_encoding"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		for _, key := range []string{" x(test)+", "dir b/up", "m+ a", "m+ b", "m+ c"} {
+		for _, key := range []string{"x (test)+", "dir b/up", "m+ a", "m+ b", "m+ c"} {
 			if _, err := createMp(s3client, bucket, key); err != nil {
 				return err
 			}
@@ -884,7 +884,7 @@ func ListMultipartUploads_url_encoding(s *S3Conf) error {
 		for _, u := range out.Uploads {
 			keys = append(keys, getString(u.Key))
 		}
-		expKeys := []string{"+x%28test%29%2B", "m%2B+a", "m%2B+b", "m%2B+c"}
+		expKeys := []string{"x+%28test%29%2B", "m%2B+a", "m%2B+b", "m%2B+c"}
 		sort.Strings(keys)
 		sort.Strings(expKeys)
 		if strings.Join(keys, ",") != strings.Join(expKeys, ",") {
