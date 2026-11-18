@@ -155,10 +155,10 @@ func TestFsyncConcurrentDelete(t *testing.T) {
 			createTestBucket(t, p, "bucket")
 			orig := syncDir
 			t.Cleanup(func() { syncDir = orig })
-			calls := 0
+			var synced []string
 			syncDir = func(dir string, d *os.File) error {
-				calls++
-				if calls == 1 {
+				synced = append(synced, dir)
+				if len(synced) == 1 {
 					// DeleteObject removes the object and its empty
 					// parents through the real removeParents path.
 					bucket, key := "bucket", "a/b/object"
@@ -172,8 +172,13 @@ func TestFsyncConcurrentDelete(t *testing.T) {
 			if err := putTestObject(t, p, "bucket", "a/b/object", "hello"); err != nil {
 				t.Fatal(err)
 			}
-			if calls != 3 {
-				t.Fatalf("synced %d directories, want 3", calls)
+			want := []string{
+				filepath.Join(root, "bucket", "a", "b"),
+				filepath.Join(root, "bucket", "a"),
+				filepath.Join(root, "bucket"),
+			}
+			if !slices.Equal(synced, want) {
+				t.Fatalf("synced %v, want %v", synced, want)
 			}
 		})
 	}
