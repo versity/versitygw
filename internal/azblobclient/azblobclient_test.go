@@ -128,9 +128,6 @@ func TestNewKeepsSASOutOfTransportErrors(t *testing.T) {
 	}
 }
 
-// noRetries disables retries. The clients ignore policy.WithRetryOptions.
-func noRetries(o *policy.ClientOptions) { o.Retry.MaxRetries = -1 }
-
 func TestNewRejectsInvalidSASWithoutLeakingToken(t *testing.T) {
 	for _, tt := range []struct{ name, token string }{
 		{"newline", "sig=SECRET\n"},
@@ -160,12 +157,6 @@ func TestNewTrimsLeadingQuestionMarkFromSAS(t *testing.T) {
 	}
 }
 
-type ctxKey struct{}
-
-type transportFunc func(*http.Request) (*http.Response, error)
-
-func (f transportFunc) Do(req *http.Request) (*http.Response, error) { return f(req) }
-
 // The transport of a client from New does not see values of the caller's
 // context.
 func TestNewHidesContextValuesFromTransport(t *testing.T) {
@@ -185,6 +176,31 @@ func TestNewHidesContextValuesFromTransport(t *testing.T) {
 	_, err = client.ServiceClient().NewContainerClient("bucket").GetProperties(ctx, nil)
 	assert.NoError(t, err)
 	assert.Nil(t, got, "transport saw a value of the caller's context")
+}
+
+// The policy that drops the context values is a per-call policy of a client
+// from New: per-call policies passed in opts, which run after it and before
+// the bearer-token policy, already see no values.
+func TestNewHidesContextValuesFromPerCallPolicies(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString([]byte("testkey"))
+	var got any = "unset"
+	client, _, err := New("acct", key, "http://127.0.0.1/acct", "", func(o *policy.ClientOptions) {
+		o.PerCallPolicies = append(o.PerCallPolicies, policyFunc(func(req *policy.Request) (*http.Response, error) {
+			got = req.Raw().Context().Value(ctxKey{})
+			return req.Next()
+		}))
+		o.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: http.NoBody, Request: req}, nil
+		})
+	})
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	ctx := context.WithValue(context.Background(), ctxKey{}, "v")
+	_, err = client.ServiceClient().NewContainerClient("bucket").GetProperties(ctx, nil)
+	assert.NoError(t, err)
+	assert.Nil(t, got, "a per-call policy saw a value of the caller's context")
 }
 
 // Cancelling the caller's context still ends an in-flight request.
@@ -231,12 +247,6 @@ func TestNewRequestContextCancelReachesTransport(t *testing.T) {
 	}
 }
 
-type tokenCredentialFunc func(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error)
-
-func (f tokenCredentialFunc) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	return f(ctx, opts)
-}
-
 // Token requests of a bearer-token policy, which azblob adds after the
 // per-call policies, do not see values of the caller's context either.
 func TestWithoutContextValuesHidesValuesFromTokenRequests(t *testing.T) {
@@ -265,3 +275,22 @@ func TestWithoutContextValuesHidesValuesFromTokenRequests(t *testing.T) {
 	resp.Body.Close()
 	assert.Nil(t, got, "token request saw a value of the caller's context")
 }
+
+// noRetries disables retries. The clients ignore policy.WithRetryOptions.
+func noRetries(o *policy.ClientOptions) { o.Retry.MaxRetries = -1 }
+
+type ctxKey struct{}
+
+type transportFunc func(*http.Request) (*http.Response, error)
+
+func (f transportFunc) Do(req *http.Request) (*http.Response, error) { return f(req) }
+
+type tokenCredentialFunc func(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error)
+
+func (f tokenCredentialFunc) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return f(ctx, opts)
+}
+
+type policyFunc func(*policy.Request) (*http.Response, error)
+
+func (f policyFunc) Do(req *policy.Request) (*http.Response, error) { return f(req) }

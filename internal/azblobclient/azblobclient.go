@@ -78,8 +78,7 @@ type Credentials struct {
 // client options before the client is built.
 //
 // The clients ignore per-call overrides passed in the context of a call
-// (policy.WithRetryOptions, runtime.WithHTTPHeader, a tracer); see
-// withoutContextValues.
+// (policy.WithRetryOptions, runtime.WithHTTPHeader, a tracer).
 func New(accountName, accountKey, serviceURL, sasToken string, opts ...func(*policy.ClientOptions)) (*azblob.Client, Credentials, error) {
 	svcURL := serviceURL
 	if serviceURL == "" && accountName != "" {
