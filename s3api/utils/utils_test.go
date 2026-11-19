@@ -2006,3 +2006,39 @@ func TestURLEncodeListObjectsResultKeepsBackendValues(t *testing.T) {
 	assert.Equal(t, "a b", *res.Contents[0].Key)
 	assert.Equal(t, "a b", key)
 }
+
+func TestURLEncodeListVersionsResultKeepsBackendValues(t *testing.T) {
+	key, marker := "a b", "c d"
+	res := s3response.ListVersionsResult{
+		KeyMarker:     &marker,
+		Versions:      []s3response.ObjectVersion{{Key: &key}},
+		DeleteMarkers: []s3response.DeleteMarkerEntry{{Key: &key}},
+	}
+
+	encoded := URLEncodeListVersionsResult(res, types.EncodingTypeUrl)
+
+	assert.Equal(t, types.EncodingTypeUrl, encoded.EncodingType)
+	assert.Equal(t, "c+d", *encoded.KeyMarker)
+	assert.Equal(t, "a+b", *encoded.Versions[0].Key)
+	assert.Equal(t, "a+b", *encoded.DeleteMarkers[0].Key)
+	assert.Equal(t, "a b", *res.Versions[0].Key)
+	assert.Equal(t, "a b", *res.DeleteMarkers[0].Key)
+	assert.Equal(t, "c d", *res.KeyMarker)
+}
+
+func TestURLEncodeListMultipartUploadsResultKeepsBackendValues(t *testing.T) {
+	res := s3response.ListMultipartUploadsResult{
+		Prefix:         "a b",
+		Uploads:        []s3response.Upload{{Key: "a b"}},
+		CommonPrefixes: []s3response.CommonPrefix{{Prefix: "c d"}},
+	}
+
+	encoded := URLEncodeListMultipartUploadsResult(res, types.EncodingTypeUrl)
+
+	assert.Equal(t, "url", encoded.EncodingType)
+	assert.Equal(t, "a+b", encoded.Prefix)
+	assert.Equal(t, "a+b", encoded.Uploads[0].Key)
+	assert.Equal(t, "c+d", encoded.CommonPrefixes[0].Prefix)
+	assert.Equal(t, "a b", res.Uploads[0].Key)
+	assert.Equal(t, "c d", res.CommonPrefixes[0].Prefix)
+}

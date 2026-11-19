@@ -155,9 +155,6 @@ source ./tests/setup.sh
 
 # tags: curl,ListMultipartUploads,multipart,encoding-type
 @test "REST - ListMultipartUploads - encoding type" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2156"
-  fi
   run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -181,9 +178,6 @@ source ./tests/setup.sh
 
 # tags: curl,ListMultipartUploads,multipart,encoding-type,invalid-query
 @test "REST - ListMultipartUploads - invalid encoding type" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2156"
-  fi
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
   read -r bucket_name test_file <<< "$output"
