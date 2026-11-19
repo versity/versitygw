@@ -168,6 +168,7 @@ func TestGetObjectAttributesMatchOpenedFile(t *testing.T) {
 				versionIdKey: []byte("stale-version"),
 				mpMetaKey:    staleMp,
 				cacheCtrlHdr: []byte("stale-cache"),
+				tagHdr:       []byte(`{"stale":"tag"}`),
 			},
 		}, PosixOpts{NewDirPerm: 0755, VersioningDir: t.TempDir()}
 	})
@@ -202,6 +203,9 @@ func TestGetObjectAttributesMatchOpenedFile(t *testing.T) {
 		if got := aws.ToString(out.VersionId); got != res.VersionID {
 			t.Fatalf("version id = %q, want the opened object's %q", got, res.VersionID)
 		}
+		if out.TagCount != nil {
+			t.Fatalf("tag count = %d, want no tags on the opened object", aws.ToInt32(out.TagCount))
+		}
 	})
 
 	t.Run("version id of a 304", func(t *testing.T) {
@@ -218,6 +222,9 @@ func TestGetObjectAttributesMatchOpenedFile(t *testing.T) {
 		}
 		if got := aws.ToString(out.VersionId); got != res.VersionID {
 			t.Fatalf("304 version id = %q, want the opened object's %q", got, res.VersionID)
+		}
+		if out.TagCount != nil {
+			t.Fatalf("304 tag count = %d, want no tags on the opened object", aws.ToInt32(out.TagCount))
 		}
 	})
 
@@ -360,8 +367,8 @@ func (m beforeReadMeta) RetrieveAttribute(f *os.File, bucket, object, attribute 
 // version id of a versioned bucket reports the version id of the object it
 // opened, for the 200 and for the 304, when the object is replaced after the
 // open and before the version id is read: a version id read by path would be
-// the new object's. When the object is removed there, the answer is
-// NoSuchKey.
+// the new object's. Removing the object after the open also preserves the
+// opened object's response.
 func TestGetObjectLiveVersionIdFromOpenedFile(t *testing.T) {
 	const (
 		bucket = "testbucket"
@@ -409,19 +416,11 @@ func TestGetObjectLiveVersionIdFromOpenedFile(t *testing.T) {
 				input.IfNoneMatch = aws.String(trimEtag(first.ETag))
 			}
 			out, err := p.GetObject(ctx, input)
+			if out != nil && out.Body != nil {
+				defer out.Body.Close()
+			}
 			if change != nil {
 				t.Fatal("get object did not read the version id")
-			}
-			if tc.remove {
-				// the object's tags and attributes are read by path, so a
-				// removed object is a 404, never a 200 or 304 of a removed one
-				if err == nil {
-					out.Body.Close()
-				}
-				if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
-					t.Fatalf("get object: expected NoSuchKey, got %v", err)
-				}
-				return
 			}
 			if tc.notModified {
 				if !errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
@@ -431,7 +430,6 @@ func TestGetObjectLiveVersionIdFromOpenedFile(t *testing.T) {
 				if err != nil {
 					t.Fatalf("get object: %v", err)
 				}
-				defer out.Body.Close()
 				data, err := io.ReadAll(out.Body)
 				if err != nil {
 					t.Fatalf("read body: %v", err)
