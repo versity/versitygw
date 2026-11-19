@@ -287,11 +287,12 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error
 
 		if input.GrantRead != nil || input.GrantReadACP != nil || input.GrantFullControl != nil || input.GrantWrite != nil || input.GrantWriteACP != nil {
 			fullControlList, readList, readACPList, writeList, writeACPList := []string{}, []string{}, []string{}, []string{}, []string{}
+			headerGrantees := []Grantee{}
 
 			if input.GrantFullControl != nil && *input.GrantFullControl != "" {
 				fullControlList = splitUnique(*input.GrantFullControl, ",")
 				for _, str := range fullControlList {
-					defaultGrantees = append(defaultGrantees, Grantee{
+					headerGrantees = append(headerGrantees, Grantee{
 						Access:     str,
 						Permission: PermissionFullControl,
 						Type:       types.TypeCanonicalUser,
@@ -301,7 +302,7 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error
 			if input.GrantRead != nil && *input.GrantRead != "" {
 				readList = splitUnique(*input.GrantRead, ",")
 				for _, str := range readList {
-					defaultGrantees = append(defaultGrantees, Grantee{
+					headerGrantees = append(headerGrantees, Grantee{
 						Access:     str,
 						Permission: PermissionRead,
 						Type:       types.TypeCanonicalUser,
@@ -311,7 +312,7 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error
 			if input.GrantReadACP != nil && *input.GrantReadACP != "" {
 				readACPList = splitUnique(*input.GrantReadACP, ",")
 				for _, str := range readACPList {
-					defaultGrantees = append(defaultGrantees, Grantee{
+					headerGrantees = append(headerGrantees, Grantee{
 						Access:     str,
 						Permission: PermissionReadAcp,
 						Type:       types.TypeCanonicalUser,
@@ -321,7 +322,7 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error
 			if input.GrantWrite != nil && *input.GrantWrite != "" {
 				writeList = splitUnique(*input.GrantWrite, ",")
 				for _, str := range writeList {
-					defaultGrantees = append(defaultGrantees, Grantee{
+					headerGrantees = append(headerGrantees, Grantee{
 						Access:     str,
 						Permission: PermissionWrite,
 						Type:       types.TypeCanonicalUser,
@@ -331,7 +332,7 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error
 			if input.GrantWriteACP != nil && *input.GrantWriteACP != "" {
 				writeACPList = splitUnique(*input.GrantWriteACP, ",")
 				for _, str := range writeACPList {
-					defaultGrantees = append(defaultGrantees, Grantee{
+					headerGrantees = append(headerGrantees, Grantee{
 						Access:     str,
 						Permission: PermissionWriteAcp,
 						Type:       types.TypeCanonicalUser,
@@ -340,6 +341,13 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error
 			}
 
 			accs = append(append(append(append(fullControlList, readList...), writeACPList...), readACPList...), writeList...)
+
+			// Grant headers replace the whole ACL, as on AWS, so the owner
+			// gets no FULL_CONTROL grant unless a header names it. The owner
+			// keeps full access to its bucket anyway, see aclAllows.
+			if len(headerGrantees) > 0 {
+				defaultGrantees = headerGrantees
+			}
 		} else {
 			cache := make(map[string]bool)
 			for _, grt := range input.AccessControlPolicy.AccessControlList.Grants {
