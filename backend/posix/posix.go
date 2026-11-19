@@ -7140,13 +7140,6 @@ func (p *Posix) CopyObjectWithPreReadFunc(ctx context.Context, input s3response.
 		return s3response.CopyObjectOutput{}, err
 	}
 
-	if preRead != nil && !fi.IsDir() {
-		err = preRead(f)
-		if err != nil {
-			return s3response.CopyObjectOutput{}, err
-		}
-	}
-
 	var etag string
 	var version *string
 	var crc32 *string
@@ -7172,6 +7165,15 @@ func (p *Posix) CopyObjectWithPreReadFunc(ctx context.Context, input s3response.
 	if selfCopy && srcVersionId == "" &&
 		input.MetadataDirective == types.MetadataDirectiveCopy {
 		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+	}
+
+	// A self copy that changes nothing is rejected above whatever the
+	// state of the source, as S3 does, so preRead runs only after it.
+	if preRead != nil && !fi.IsDir() {
+		err = preRead(f)
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
 	}
 
 	// In a versioned bucket a self copy creates a new version like any other

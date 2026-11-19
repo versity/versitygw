@@ -31,7 +31,8 @@ import (
 // TestCopyObjectPreRead checks that a preRead rejection of the source comes
 // after the copy source preconditions and before any data is read or
 // written, for a copy to another key and for a self copy that computes a
-// new checksum, and that directory objects skip it.
+// new checksum, and that directory objects and a self copy that changes
+// nothing, which is rejected first, skip it.
 func TestCopyObjectPreRead(t *testing.T) {
 	p := newTestPosix(t, metaModes(t)["xattr"])
 	p.copyObjectThreshold = 4 << 20
@@ -65,18 +66,25 @@ func TestCopyObjectPreRead(t *testing.T) {
 		src, dst    string
 		ifMatch     *string
 		algo        types.ChecksumAlgorithm
+		directive   types.MetadataDirective
 		want        error
 		wantPreRead bool
 	}{
 		{name: "copy to another key", src: key, dst: "copy", want: errArchived, wantPreRead: true},
 		{name: "self copy with a new checksum", src: key, dst: key, algo: types.ChecksumAlgorithmSha256, want: errArchived, wantPreRead: true},
 		{name: "self copy of the metadata", src: key, dst: key, want: errArchived, wantPreRead: true},
+		{name: "self copy that changes nothing", src: key, dst: key, directive: types.MetadataDirectiveCopy,
+			want: s3err.GetAPIError(s3err.ErrInvalidCopyDest)},
 		{name: "copy source if-match differs", src: key, dst: "copy", ifMatch: aws.String("other"),
 			want: s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfMatch)},
 		{name: "directory object", src: "dir/", dst: "dir-copy/"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			directive := tt.directive
+			if directive == "" {
+				directive = types.MetadataDirectiveReplace
+			}
 			var preReadFile *os.File
 			_, err := p.CopyObjectWithPreReadFunc(ctx, s3response.CopyObjectInput{
 				Bucket:              &bucket,
@@ -84,7 +92,7 @@ func TestCopyObjectPreRead(t *testing.T) {
 				CopySource:          aws.String(bucket + "/" + tt.src),
 				CopySourceIfMatch:   tt.ifMatch,
 				ExpectedBucketOwner: aws.String(""),
-				MetadataDirective:   types.MetadataDirectiveReplace,
+				MetadataDirective:   directive,
 				ChecksumAlgorithm:   tt.algo,
 			}, func(f *os.File) error {
 				preReadFile = f

@@ -225,13 +225,12 @@ func TestGetObjectGlacierOffline(t *testing.T) {
 	}
 }
 
-// mkdirTempIn creates a directory in dir that is removed when the test
-// completes.
 // TestCopyObjectGlacierOffline checks that a glacier mode CopyObject of an
 // offline object on a real ScoutFS filesystem returns InvalidObjectState
 // instead of waiting for the object to be staged, after the copy source
-// preconditions, and leaves the object as it was. Set SCOUTFS_TEST_DIR to a
-// directory on a ScoutFS mount to run it.
+// preconditions, and leaves the object as it was. A self copy that changes
+// nothing is rejected with InvalidRequest before that, as for any object.
+// Set SCOUTFS_TEST_DIR to a directory on a ScoutFS mount to run it.
 func TestCopyObjectGlacierOffline(t *testing.T) {
 	dir := os.Getenv("SCOUTFS_TEST_DIR")
 	if dir == "" {
@@ -278,12 +277,15 @@ func TestCopyObjectGlacierOffline(t *testing.T) {
 
 	errArchived := s3err.GetAPIError(s3err.ErrInvalidObjectState)
 	tests := []struct {
-		name    string
-		dst     string
-		algo    types.ChecksumAlgorithm
-		ifMatch *string
-		want    error
+		name      string
+		dst       string
+		algo      types.ChecksumAlgorithm
+		directive types.MetadataDirective
+		ifMatch   *string
+		want      error
 	}{
+		{name: "self copy that changes nothing", dst: key, directive: types.MetadataDirectiveCopy,
+			want: s3err.GetAPIError(s3err.ErrInvalidCopyDest)},
 		{name: "self copy with a new checksum", dst: key, algo: types.ChecksumAlgorithmSha256, want: errArchived},
 		{name: "self copy of the metadata", dst: key, want: errArchived},
 		{name: "copy to another key", dst: "copy", want: errArchived},
@@ -292,6 +294,10 @@ func TestCopyObjectGlacierOffline(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			directive := tt.directive
+			if directive == "" {
+				directive = types.MetadataDirectiveReplace
+			}
 			done := make(chan error, 1)
 			go func() {
 				_, err := s.CopyObject(ctx, s3response.CopyObjectInput{
@@ -300,7 +306,7 @@ func TestCopyObjectGlacierOffline(t *testing.T) {
 					CopySource:          aws.String(bucket + "/" + key),
 					CopySourceIfMatch:   tt.ifMatch,
 					ExpectedBucketOwner: aws.String(""),
-					MetadataDirective:   types.MetadataDirectiveReplace,
+					MetadataDirective:   directive,
 					ChecksumAlgorithm:   tt.algo,
 				})
 				done <- err
@@ -325,6 +331,8 @@ func TestCopyObjectGlacierOffline(t *testing.T) {
 	assert.ErrorIs(t, err, fs.ErrNotExist)
 }
 
+// mkdirTempIn creates a directory in dir that is removed when the test
+// completes.
 func mkdirTempIn(t *testing.T, dir, pattern string) string {
 	t.Helper()
 	d, err := os.MkdirTemp(dir, pattern)
