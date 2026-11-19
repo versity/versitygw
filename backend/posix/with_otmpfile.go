@@ -88,20 +88,16 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 		return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 	}
 
-	// Whether the bucket's filesystem can hold the upload in an O_TMPFILE
-	// is probed once per bucket path, on a separate file (see probeOTmp). A
-	// bucket where it can't goes straight to the named file, without
-	// opening an O_TMPFILE first.
+	// Some filesystems open an O_TMPFILE but can't set xattrs on it or
+	// can't link it into the namespace. The bucket's filesystem is probed
+	// once per bucket path, on a separate file and before the upload's own
+	// O_TMPFILE is opened: a bucket where it can't be used goes straight to
+	// the named file. The answer depends only on the filesystem, so an
+	// upload that raced another probe gets the same result.
 	supported, known := p.otmpProbe.Load(bucket)
 	if known && !supported.(bool) {
 		return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 	}
-
-	// Some filesystems open an O_TMPFILE but can't set xattrs on it or
-	// can't link it into the namespace. Probe the bucket's filesystem before
-	// the upload's own O_TMPFILE is opened: a bucket where it can't be used
-	// gets a named temporary file. The answer depends only on the
-	// filesystem, so an upload that raced another probe gets the same result.
 	if !known && p.probeOTmp(bucket, tmpDir, uid, gid, doChown) {
 		return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 	}
@@ -112,9 +108,12 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 	// file descriptor into the namespace.
 	// Not all filesystems support this, so fallback to CreateTemp for when
 	// this is not supported.
-	var fd int
-	var useODirect, hasACL bool
-	var err error
+	var (
+		fd         int
+		useODirect bool
+		hasACL     bool
+		err        error
+	)
 	if inherit {
 		fd, useODirect, hasACL, err = p.openInheritingTmpFile(bucket, otmpDir, allowODirect)
 	} else {
@@ -215,6 +214,12 @@ func (p *Posix) probeOTmp(bucket, tmpDir string, uid, gid int, doChown bool) (un
 	}
 	fd, _, err := p.openOTmpFile(unix.AT_FDCWD, tmpDir, odirectNotAllowed)
 	if err != nil {
+		if otmpfileUnsupported(err) {
+			// The expected fallback for filesystems without O_TMPFILE
+			// (NFS, for example): remember it, without a warning.
+			p.otmpProbe.Store(bucket, false)
+			return true
+		}
 		return false
 	}
 	f := os.NewFile(uintptr(fd), filepath.Join(procfddir, strconv.Itoa(fd)))
@@ -226,10 +231,7 @@ func (p *Posix) probeOTmp(bucket, tmpDir string, uid, gid int, doChown bool) (un
 		return false
 	}
 
-	var xt meta.TmpFileTester
-	if t, ok := p.meta.(meta.TmpFileTester); ok {
-		xt = t
-	}
+	xt, _ := p.meta.(meta.TmpFileTester)
 	err = probeOTmpFile(xt, f, tmpDir)
 	switch {
 	case err == nil:

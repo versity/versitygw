@@ -33,6 +33,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/s3response"
+	"golang.org/x/sys/unix"
 )
 
 // failProbe makes the O_TMPFILE probe fail with err, counting the probes
@@ -131,6 +132,105 @@ func TestOTmpFileProbe(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestOTmpFileProbeNoOTmpfile checks that a filesystem without O_TMPFILE is
+// probed once: the failing open is remembered, without a warning, and the
+// uploads go straight to the named file.
+func TestOTmpFileProbeNoOTmpfile(t *testing.T) {
+	p := newTestPosix(t, metaModes(t)["xattr"])
+	bucket := "bucket"
+	createTestBucket(t, p, bucket)
+	tmpDir := p.ObjectPath(bucket, MetaTmpDir)
+	opens := 0
+	openat = func(dirfd int, path string, flags int, mode uint32) (int, error) {
+		opens++
+		return -1, syscall.EOPNOTSUPP
+	}
+	t.Cleanup(func() { openat = unix.Openat })
+
+	for _, obj := range []string{"object", "object2", "object3"} {
+		f, err := p.openObjectTmpFile(bucket, obj, 5, auth.Account{}, false, odirectNotAllowed)
+		if err != nil {
+			t.Fatalf("open tmp file %v: %v", obj, err)
+		}
+		defer f.cleanup()
+		if filepath.Dir(f.File().Name()) != tmpDir {
+			t.Errorf("temp file %v is not a named file", f.File().Name())
+		}
+	}
+	if opens != 1 {
+		t.Errorf("tried to open an O_TMPFILE %d times for 3 uploads, want 1", opens)
+	}
+	if v, known := p.otmpProbe.Load(p.BucketPath(bucket)); !known || v.(bool) {
+		t.Errorf("probe result is %v (remembered: %v), want false", v, known)
+	}
+}
+
+// TestOTmpFileProbeDir checks that with InheritDefaultACL the probe file is
+// opened in the bucket's temp directory, not in the directory of the object,
+// which can be on another filesystem.
+func TestOTmpFileProbeDir(t *testing.T) {
+	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		return meta.XattrMeta{}, PosixOpts{AbsolutePaths: true, InheritDefaultACL: true}
+	})
+	bucket := "bucket"
+	createTestBucket(t, p, bucket)
+	skipWithoutOTmpfile(t, p.BucketPath(bucket))
+	if err := os.MkdirAll(filepath.Join(p.BucketPath(bucket), "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tmpDir := p.ObjectPath(bucket, MetaTmpDir)
+
+	t.Cleanup(func() { probeOTmpFile = origProbeOTmpFile })
+	var probeDir string
+	probeOTmpFile = func(xt meta.TmpFileTester, f *os.File, dir string) error {
+		// an O_TMPFILE reads as <dir>/#<inode> (deleted)
+		link, err := os.Readlink(f.Name())
+		if err != nil {
+			return err
+		}
+		probeDir = filepath.Dir(link)
+		return origProbeOTmpFile(xt, f, dir)
+	}
+	if err := putTestObject(t, p, bucket, "sub/obj", "x"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if probeDir != tmpDir {
+		t.Errorf("probe file opened in %q, want %q", probeDir, tmpDir)
+	}
+}
+
+// TestOTmpFileProbeErrorDoesNotFailPut checks that a probe that can't run
+// doesn't fail an upload that succeeds without it: with
+// InheritDefaultACL, a bucket root that can't be written and a writable
+// sub directory, the probe can't create .sgwtmp. The result stays unknown.
+// Run as a user other than root, which can write anywhere.
+func TestOTmpFileProbeErrorDoesNotFailPut(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write to any directory")
+	}
+	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		return meta.XattrMeta{}, PosixOpts{AbsolutePaths: true, InheritDefaultACL: true}
+	})
+	bucket := "bucket"
+	createTestBucket(t, p, bucket)
+	root := p.BucketPath(bucket)
+	skipWithoutOTmpfile(t, root)
+	if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(root, 0o755) })
+
+	if err := putTestObject(t, p, bucket, "sub/obj", "x"); err != nil {
+		t.Fatalf("put with a bucket root that can't be written: %v", err)
+	}
+	if _, known := p.otmpProbe.Load(root); known {
+		t.Error("the probe result was remembered after a probe error")
 	}
 }
 
