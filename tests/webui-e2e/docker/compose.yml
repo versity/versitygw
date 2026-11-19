@@ -1,0 +1,100 @@
+# Identity providers for the WebUI end-to-end tests: Keycloak, and authentik
+# with its database. Every credential here is a throwaway test value.
+#
+#   docker compose -f tests/webui-e2e/docker/compose.yml up -d --wait
+#
+# "--wait" returns once each provider serves the test realm or application,
+# which takes a minute or two on authentik's first start. The databases live
+# in memory, so every "up" after a "down" starts from these files again.
+#
+# The project name keeps these containers apart from any other Keycloak or
+# authentik on the machine.
+name: vgw-webui-e2e
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2@sha256:723b1d6e254c0fc96d5cffec860c7e0744d6a3277822b865bb538cf891575e41
+    # The fixed hostname makes the issuer the same for the browser and the
+    # gateway, whichever address they reach Keycloak at.
+    command: start-dev --import-realm --hostname http://127.0.0.1:26180
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "26180:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      # The image has no curl; bash talks HTTP to the management port.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.0\r\n\r\n' >&3 &&
+          read -r status <&3 && [[ $$status == *' 200 '* ]]
+      interval: 2s
+      timeout: 2s
+      retries: 90
+
+  authentik-db:
+    image: docker.io/library/postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: authentik
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d authentik -U authentik"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2026.8.5@sha256:602227a86455d6772e3d16b7d852713c4f864f40df5df894abd1285bb53979a5
+    command: server
+    environment: &authentik-env
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: authentik
+      AUTHENTIK_SECRET_KEY: webui-e2e-secret-key-not-for-production
+      # akadmin's password, for looking around the admin interface, and the
+      # API token the tests use to change accounts.
+      AUTHENTIK_BOOTSTRAP_PASSWORD: admin
+      AUTHENTIK_BOOTSTRAP_EMAIL: admin@example.com
+      AUTHENTIK_BOOTSTRAP_TOKEN: webui-e2e-api-token
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+    ports:
+      - "26190:9000"
+    volumes:
+      - ./authentik:/blueprints/custom:ro
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    healthcheck:
+      # The worker applies the blueprint after both containers start, so the
+      # application's discovery document is what says the provider is ready.
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:9000/application/o/versitygw/.well-known/openid-configuration')
+      interval: 3s
+      timeout: 3s
+      retries: 100
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2026.8.5@sha256:602227a86455d6772e3d16b7d852713c4f864f40df5df894abd1285bb53979a5
+    command: worker
+    environment: *authentik-env
+    volumes:
+      - ./authentik:/blueprints/custom:ro
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    # Readiness is the server's check above.
+    healthcheck:
+      disable: true

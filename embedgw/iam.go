@@ -202,6 +202,9 @@ type IAMConfig struct {
 	// both empty produces an IAM-only dashboard.
 	WebuiGateways      []string
 	WebuiAdminGateways []string
+	// WebuiOIDC adds "Sign in with SSO" to the login page when its Issuer is
+	// set; the token is exchanged at this process's own IAM API.
+	WebuiOIDC webui.OIDCConfig
 	// Region seeds the WebUI's default region selector. IAM's own signing
 	// region is fixed, so this only matters when WebuiGateways points the
 	// dashboard at an S3 gateway as well.
@@ -414,6 +417,7 @@ func newIAMWebUI(cfg *IAMConfig, clientIPHeader string, trustedProxies utils.Tru
 		AdminGateways: adminGateways,
 		IAMGateways:   iamGateways,
 		Region:        cfg.Region,
+		OIDC:          cfg.WebuiOIDC,
 	}, webOpts...)
 }
 
