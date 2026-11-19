@@ -64,14 +64,14 @@ func pathErr(op, path string, errno syscall.Errno) error {
 	return &fs.PathError{Op: op, Path: path, Err: errno}
 }
 
-// TestMkdirAllParentGoneAfterEEXIST is the sequence of #2645: Mkdir fails
+// TestMkdirAllParentGone is the sequence of #2645: Mkdir fails
 // with EEXIST because another writer has just made the directory, and the
 // Lstat after it fails because a node removing a parent directory reports
 // it as ENOTDIR (IBM Storage Scale), or as a stale handle (NFS). MkdirAll
-// has to make the directories again instead of returning the EEXIST. The
-// cases without an Lstat answer are #2647: Mkdir itself fails with ENOTDIR
-// or ESTALE for the same reason, before Lstat runs.
-func TestMkdirAllParentGoneAfterEEXIST(t *testing.T) {
+// has to make the directories again instead of returning the EEXIST. In the
+// #2647 cases Mkdir itself fails with ENOTDIR or ESTALE, and Lstat isn't
+// called.
+func TestMkdirAllParentGone(t *testing.T) {
 	for _, tc := range []struct {
 		mkdirErrno syscall.Errno
 		// lstatErrno is what the Lstat after the Mkdir answers, 0 for the
@@ -223,12 +223,12 @@ func TestMkdirAllParentReplacedByFile(t *testing.T) {
 	})
 }
 
-// TestMkdirAllEEXISTRetriesBounded checks that a filesystem that keeps
+// TestMkdirAllRetriesBounded checks that a filesystem that keeps
 // answering EEXIST to Mkdir and that the path, or a parent of it, is gone to
 // Lstat takes the retry budget and no more, and then gets the Lstat error
 // rather than the EEXIST: the path doesn't exist. Mkdir answering ENOTDIR
 // or ESTALE on every pass is bounded the same way and returns that error.
-func TestMkdirAllEEXISTRetriesBounded(t *testing.T) {
+func TestMkdirAllRetriesBounded(t *testing.T) {
 	for _, tc := range []struct {
 		mkdirErrno syscall.Errno
 		// lstatErrno is the answer of Lstat, 0 for the real one.

@@ -105,7 +105,7 @@ func mkdirAll(path string, uid, gid int, doChown bool, dirPerm fs.FileMode, retr
 		// after an EEXIST. Not for a path that ends in a separator: there
 		// the ENOTDIR can be about the last element itself, which making
 		// the parents again never fixes, so the retries would only spend
-		// the whole budget (about 115 ms) before giving up.
+		// the whole retry budget before giving up.
 		if *retries > 0 && (errors.Is(err, fs.ErrNotExist) || (noTrailingSep && isNotDirOrStale(err))) {
 			takeMkdirRetry(retries)
 			continue
