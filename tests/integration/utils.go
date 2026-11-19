@@ -1438,7 +1438,8 @@ type trustPolicyGrammarCase struct {
 
 // trustPolicyGrammarCases covers the role trust-policy grammar
 var trustPolicyGrammarCases = []trustPolicyGrammarCase{
-	{"valid AWS principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::123456789012:root"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid AWS principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::000000000000:root"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"every action a trust policy may name", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","sts:AssumeRoleWithSAML","sts:AssumeRoleWithWebIdentity","sts:TagSession","sts:SetSourceIdentity","sts:SetContext"]}]}`, nil},
 	{"valid without version", `{"Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, nil},
 	{"valid Service principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"s3.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, nil},
 	{"valid multiple principal type keys together", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*","Service":"sts.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, nil},
@@ -1475,6 +1476,11 @@ var trustPolicyGrammarCases = []trustPolicyGrammarCase{
 	{"non-sts vendor action rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"s3:GetObject"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
 	{"non-sts notaction rejected even on deny", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Principal":{"AWS":"*"},"NotAction":"s3:GetObject"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
 	{"one non-sts action in an otherwise-valid array rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","s3:GetObject"]}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"sts wildcard action rejected (looks valid, trust actions are a fixed list)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"sts partial wildcard action rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"sts action in another case rejected (trust actions match case-sensitively)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:assumerole"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"sts action that assumes nothing rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:GetCallerIdentity"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"disallowed sts notaction rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Principal":{"AWS":"*"},"NotAction":"sts:*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
 
 	{"resource forbidden", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","Resource":"*"}]}`, iamerr.MalformedPolicyDocument("Has prohibited field Resource")},
 	{"notresource forbidden", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","NotResource":"*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy must not contain resources.")},
@@ -1482,6 +1488,96 @@ var trustPolicyGrammarCases = []trustPolicyGrammarCase{
 	{"duplicate sid across statements", `{"Version":"2012-10-17","Statement":[{"Sid":"Dup","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"},{"Sid":"Dup","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("The Statement Ids in the policy are not unique")},
 
 	{"cognito federated without condition (looks valid, Cognito needs a Condition)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"cognito-identity.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("A condition block must be present for the Cognito provider")},
+}
+
+// runTrustPolicyAWSPrincipalCases runs check over the values a trust policy's
+// Principal.AWS may and may not take. Only a value that resolves to
+// something is accepted: every principal, the account, or an IAM user, role
+// or role session that exists. A user and a role in a path of its own are
+// created for the cases to name, and removed afterwards.
+func runTrustPolicyAWSPrincipalCases(client *iam.Client, check func(doc string, wantErr iamerr.APIError) error) (err error) {
+	userName := newIAMUserName()
+	userOut, err := createIAMUser(client, &iam.CreateUserInput{UserName: aws.String(userName)})
+	if err != nil {
+		return fmt.Errorf("create user: %w", err)
+	}
+	defer func() {
+		if deleteErr := deleteIAMUser(client, userName); deleteErr != nil {
+			err = errors.Join(err, fmt.Errorf("cleanup: %w", deleteErr))
+		}
+	}()
+	userArn := aws.ToString(userOut.User.Arn)
+
+	roleName := newIAMRoleName()
+	roleOut, err := createIAMRole(client, &iam.CreateRoleInput{
+		RoleName:                 aws.String(roleName),
+		Path:                     aws.String("/team/"),
+		AssumeRolePolicyDocument: aws.String(validTrustPolicyDocument),
+	})
+	if err != nil {
+		return fmt.Errorf("create role: %w", err)
+	}
+	defer func() {
+		if deleteErr := deleteIAMRole(client, roleName); deleteErr != nil {
+			err = errors.Join(err, fmt.Errorf("cleanup: %w", deleteErr))
+		}
+	}()
+	roleArn := aws.ToString(roleOut.Role.Arn)
+
+	accepted := []struct {
+		name      string
+		principal any
+	}{
+		{"every principal", "*"},
+		{"account root arn", accountArn()},
+		{"bare account id", testAccountID},
+		{"existing user", userArn},
+		{"existing role with its path", roleArn},
+		{"session of an existing role", assumedRoleArnFor(roleName, "any-session")},
+		{"several that all resolve", []string{accountArn(), userArn, roleArn}},
+	}
+	for _, tc := range accepted {
+		if err := check(trustAllowingAWS(tc.principal), nil); err != nil {
+			return fmt.Errorf("%s: %w", tc.name, err)
+		}
+	}
+
+	rejected := []struct {
+		name      string
+		principal string
+	}{
+		{"user that does not exist", userArnFor("does-not-exist")},
+		{"role that does not exist", roleArnFor("does-not-exist")},
+		{"role without its path (looks valid, a role's arn carries its path)", roleArnFor(roleName)},
+		{"session of a role that does not exist", assumedRoleArnFor("does-not-exist", "any-session")},
+		{"session name with a wildcard", assumedRoleArnFor(roleName, "*")},
+		{"wildcard inside an arn", userArnFor("*")},
+		{"another account's root", "arn:aws:iam::123456789012:root"},
+		{"another account's id", "123456789012"},
+		{"group arn", "arn:aws:iam::" + testAccountID + ":group/admins"},
+		{"not an arn", "foo"},
+		{"empty", ""},
+	}
+	for _, tc := range rejected {
+		if err := check(trustAllowingAWS(tc.principal), iamerr.InvalidPrincipalInPolicy("AWS", tc.principal)); err != nil {
+			return fmt.Errorf("%s: %w", tc.name, err)
+		}
+	}
+
+	// One unresolvable principal among resolvable ones, and one in a Deny
+	// statement, are rejected just the same.
+	missing := userArnFor("does-not-exist")
+	if err := check(trustAllowingAWS([]string{userArn, missing}), iamerr.InvalidPrincipalInPolicy("AWS", missing)); err != nil {
+		return fmt.Errorf("one of several that does not resolve: %w", err)
+	}
+	denyMissing := trustDoc(
+		trustStatement{Effect: "Allow", Principal: map[string]any{"AWS": "*"}, Action: actSTSAssumeRole},
+		trustStatement{Effect: "Deny", Principal: map[string]any{"AWS": missing}, Action: actSTSAssumeRole},
+	)
+	if err := check(denyMissing, iamerr.InvalidPrincipalInPolicy("AWS", missing)); err != nil {
+		return fmt.Errorf("unresolvable principal in a deny statement: %w", err)
+	}
+	return nil
 }
 
 func putObjects(client *s3.Client, objs []string, bucket string) ([]types.Object, error) {

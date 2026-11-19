@@ -149,7 +149,7 @@ func (p *PrivateAPI) handleResolvePrincipals(ctx fiber.Ctx) error {
 
 	invalid := []string{}
 	for _, principal := range req.Principals {
-		resolves, err := principalResolves(ctx.Context(), p.store, iamutil.DefaultAccountID, principal)
+		resolves, err := iamutil.PrincipalResolves(ctx.Context(), p.store, iamutil.DefaultAccountID, principal)
 		if err != nil {
 			// A store fault, not a verdict on the principal — errorHandler
 			// renders it as a 500 so the gateway reports the service as

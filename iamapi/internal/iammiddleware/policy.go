@@ -29,10 +29,12 @@ import (
 
 // iamActionPrefix is the policy-action vendor prefix for every action this
 // middleware evaluates. It's only ever wired into the "iam" service
-// pipeline — GetCallerIdentity and AssumeRoleWithWebIdentity
-// (the two "sts" actions sharing this endpoint) never reach it, matching
-// real AWS where sts:GetCallerIdentity requires no identity-based policy
-// grant at all and AssumeRoleWithWebIdentity has no identity yet to check.
+// pipeline — the "sts" actions sharing this endpoint never reach it:
+// sts:GetCallerIdentity requires no identity-based policy grant at all,
+// AssumeRoleWithWebIdentity has no identity yet to check, and AssumeRole is
+// decided by the target role's trust policy together with the caller's
+// identity policies, which AuthorizeAssumeRole evaluates once the role is
+// known.
 const iamActionPrefix = "iam:"
 
 // VerifyIAMPolicy authorizes an IAM action against the caller identity

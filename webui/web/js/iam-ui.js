@@ -345,7 +345,7 @@ const IAM_POLICY_VARIANTS = {
   },
   trust: {
     infoTitle: 'About Trust Policies',
-    infoBody: 'A trust policy states who may assume this role. <strong>Principal</strong> is required, <strong>Resource</strong> is not allowed, and every action must be <code>sts:</code>-prefixed. Shared identity providers are additionally tenancy-scoped by the server; it will describe the rule if the document violates it.',
+    infoBody: 'A trust policy states who may assume this role. <strong>Principal</strong> is required, <strong>Resource</strong> is not allowed, and every action must be an <code>sts:</code> action a trust policy may name, spelled exactly and without wildcards. An <code>AWS</code> principal has to exist when the policy is saved. Shared identity providers are additionally tenancy-scoped by the server; it will describe the rule if the document violates it.',
     reference: `<div>
         <p class="font-medium text-charcoal mb-1">Actions:</p>
         <ul class="space-y-0.5 text-charcoal-400">
@@ -356,7 +356,7 @@ const IAM_POLICY_VARIANTS = {
       <div>
         <p class="font-medium text-charcoal mb-1">Principal Keys:</p>
         <ul class="space-y-0.5 text-charcoal-400">
-          <li>&bull; <code class="bg-white px-1 py-0.5 rounded">AWS</code> - a user ARN in this account</li>
+          <li>&bull; <code class="bg-white px-1 py-0.5 rounded">AWS</code> - a user, role or session ARN in this account, the account itself, or <code>*</code></li>
           <li>&bull; <code class="bg-white px-1 py-0.5 rounded">Federated</code> - an OIDC provider ARN</li>
           <li>&bull; <code class="bg-white px-1 py-0.5 rounded">Service</code> - a service principal</li>
         </ul>
@@ -385,9 +385,9 @@ const IAM_POLICY_VARIANTS = {
       Version: '2012-10-17',
       Statement: [
         {
-          Sid: 'AllowUserToAssume',
+          Sid: 'AllowAccountToAssume',
           Effect: 'Allow',
-          Principal: { AWS: `arn:aws:iam::${IAM_ACCOUNT_ID}:user/example` },
+          Principal: { AWS: `arn:aws:iam::${IAM_ACCOUNT_ID}:root` },
           Action: ['sts:AssumeRole']
         }
       ]
