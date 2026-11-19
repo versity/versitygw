@@ -97,6 +97,7 @@ const (
 	ErrAnonymousCopyObject
 	ErrAnonymousPutBucketOwnership
 	ErrAnonymousGetBucketOwnership
+	ErrAnonymousGetObjectAttributes
 	ErrAnonymousResponseHeaders
 	ErrMethodNotAllowed
 	ErrBucketNotEmpty
@@ -255,6 +256,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrAnonymousGetBucketOwnership: {
 		Code:           "AccessDenied",
 		Description:    "s3:GetBucketOwnershipControls does not support Anonymous requests!",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrAnonymousGetObjectAttributes: {
+		Code:           "AccessDenied",
+		Description:    "Request has no authentication!",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrAnonymousResponseHeaders: {

@@ -1917,6 +1917,7 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_create_multipart_upload_tagging_split_sources)
 	ts.Run(S3IAMAccessControl_post_object_tagging_split_sources)
 	ts.Run(S3IAMAccessControl_put_object_lock_split_sources)
+	ts.Run(S3IAMAccessControl_get_object_attributes_split_sources)
 	ts.Run(S3IAMAccessControl_create_bucket)
 	ts.Run(S3IAMAccessControl_list_buckets)
 	ts.Run(S3IAMAccessControl_governance_bypass_sources)
@@ -2066,6 +2067,7 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_CopyObject_with_tagging_policy)
 	ts.Run(AccessControl_CopyObject_with_legal_hold_policy)
 	ts.Run(AccessControl_CopyObject_with_retention_policy)
+	ts.Run(AccessControl_GetObjectAttributes_policy)
 	if !ts.conf.azureTests {
 		ts.Run(AccessControl_dot_segment_key_rejected_before_policy)
 	}
@@ -2118,6 +2120,7 @@ func TestPublicBuckets(ts *TestState) {
 	ts.Run(PublicBucket_upload_part_object_lock)
 	ts.Run(PublicBucket_post_object_tagging)
 	ts.Run(PublicBucket_post_object_lock)
+	ts.Run(PublicBucket_get_object_attributes)
 	if ts.conf.versioningEnabled {
 		ts.Run(PublicBucket_object_version_actions)
 		ts.Run(PublicBucket_object_version_actions_public_acl)
@@ -2521,6 +2524,7 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_create_multipart_upload_tagging_split_sources":                 S3IAMAccessControl_create_multipart_upload_tagging_split_sources,
 		"S3IAMAccessControl_post_object_tagging_split_sources":                             S3IAMAccessControl_post_object_tagging_split_sources,
 		"S3IAMAccessControl_put_object_lock_split_sources":                                 S3IAMAccessControl_put_object_lock_split_sources,
+		"S3IAMAccessControl_get_object_attributes_split_sources":                           S3IAMAccessControl_get_object_attributes_split_sources,
 		"S3IAMAccessControl_create_bucket":                                                 S3IAMAccessControl_create_bucket,
 		"S3IAMAccessControl_list_buckets":                                                  S3IAMAccessControl_list_buckets,
 		"S3IAMAccessControl_governance_bypass_sources":                                     S3IAMAccessControl_governance_bypass_sources,
@@ -3867,6 +3871,7 @@ func GetIntTests() IntTests {
 		"AccessControl_CopyObject_with_tagging_policy":                                     AccessControl_CopyObject_with_tagging_policy,
 		"AccessControl_CopyObject_with_legal_hold_policy":                                  AccessControl_CopyObject_with_legal_hold_policy,
 		"AccessControl_CopyObject_with_retention_policy":                                   AccessControl_CopyObject_with_retention_policy,
+		"AccessControl_GetObjectAttributes_policy":                                         AccessControl_GetObjectAttributes_policy,
 		"AccessControl_dot_segment_key_rejected_before_policy":                             AccessControl_dot_segment_key_rejected_before_policy,
 		"AccessControl_bucket_policy_condition_ip_allow":                                   AccessControl_bucket_policy_condition_ip_allow,
 		"AccessControl_bucket_policy_condition_ip_deny_no_match":                           AccessControl_bucket_policy_condition_ip_deny_no_match,
@@ -3907,6 +3912,7 @@ func GetIntTests() IntTests {
 		"PublicBucket_upload_part_object_lock":                                             PublicBucket_upload_part_object_lock,
 		"PublicBucket_post_object_tagging":                                                 PublicBucket_post_object_tagging,
 		"PublicBucket_post_object_lock":                                                    PublicBucket_post_object_lock,
+		"PublicBucket_get_object_attributes":                                               PublicBucket_get_object_attributes,
 		"PublicBucket_object_version_actions":                                              PublicBucket_object_version_actions,
 		"PublicBucket_object_version_actions_public_acl":                                   PublicBucket_object_version_actions_public_acl,
 		"PutBucketVersioning_non_existing_bucket":                                          PutBucketVersioning_non_existing_bucket,

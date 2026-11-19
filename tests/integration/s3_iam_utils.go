@@ -39,6 +39,7 @@ import (
 
 const (
 	actS3GetObject                  = "s3:GetObject"
+	actS3GetObjectAttributes        = "s3:GetObjectAttributes"
 	actS3PutObject                  = "s3:PutObject"
 	actS3PutObjectTagging           = "s3:PutObjectTagging"
 	actS3DeleteObject               = "s3:DeleteObject"

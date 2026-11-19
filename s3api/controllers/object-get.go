@@ -370,11 +370,6 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	action := auth.GetObjectAttributesAction
-	if versionId != "" {
-		action = auth.GetObjectVersionAttributesAction
-	}
-
 	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionRead,
@@ -382,7 +377,7 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 		Acc:             acct,
 		Bucket:          bucket,
 		Object:          key,
-		Actions:         []auth.Action{action},
+		Actions:         auth.ObjectAttributesActions(versionId),
 		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {

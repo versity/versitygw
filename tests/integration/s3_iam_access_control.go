@@ -1216,6 +1216,87 @@ func S3IAMAccessControl_put_object_lock_split_sources(s *S3Conf) error {
 	}, withLock())
 }
 
+// S3IAMAccessControl_get_object_attributes_split_sources verifies
+// GetObjectAttributes decides s3:GetObjectAttributes and s3:GetObject
+// independently: one granted by the bucket policy and the other by the
+// identity policy together allow it, in either direction. With only
+// s3:GetObjectAttributes granted, the denial names s3:GetObject, as AWS does.
+func S3IAMAccessControl_get_object_attributes_split_sources(s *S3Conf) error {
+	testName := "S3IAMAccessControl_get_object_attributes_split_sources"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		getObjectAttributes := func(user *s3IAMPrincipal) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := user.client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+				Bucket:           &bucket,
+				Key:              getPtr("obj"),
+				ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesEtag},
+			})
+			cancel()
+			return err
+		}
+
+		cases := []struct {
+			name           string
+			bucketAction   string
+			identityAction string
+		}{
+			{name: "s3:GetObject from the bucket policy", bucketAction: actS3GetObject, identityAction: actS3GetObjectAttributes},
+			{name: "s3:GetObject from the identity policy", bucketAction: actS3GetObjectAttributes, identityAction: actS3GetObject},
+		}
+		for _, tc := range cases {
+			if err := func() error {
+				user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+					"p": policyDoc(accessStatement{
+						Effect: "Allow", Action: tc.identityAction, Resource: objectsArn(bucket),
+					}),
+				})
+				if err != nil {
+					return err
+				}
+				defer cleanup()
+
+				if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+					Effect: "Allow", Principal: user.arn, Action: tc.bucketAction, Resource: objectsArn(bucket),
+				}); err != nil {
+					return err
+				}
+
+				if err := getObjectAttributes(user); err != nil {
+					return fmt.Errorf("expected GetObjectAttributes to be allowed: %w", err)
+				}
+				return nil
+			}(); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3GetObjectAttributes, Resource: objectsArn(bucket),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect: "Allow", Principal: user.arn, Action: actS3GetObjectAttributes, Resource: objectsArn(bucket),
+		}); err != nil {
+			return err
+		}
+
+		return checkApiErr(getObjectAttributes(user), wantImplicitDeny(user.arn, actS3GetObject, objectArn(bucket, "obj")))
+	})
+}
+
 // S3IAMAccessControl_create_bucket verifies s3:CreateBucket is gated by the
 // identity policy alone — the bucket doesn't exist yet, so there is no
 // bucket policy or ACL to consult — and that the grant is resource-scoped to
