@@ -36,6 +36,11 @@ type pubState struct {
 	retires string
 	// prevGen tracks the previous generation for registry updates.
 	prevGen *generation
+	// dropRecord tells the caller the committed publish no longer
+	// protects any artifact, so the operation record can be removed
+	// after the namespace stripe is released instead of making
+	// unrelated publishers wait on that directory operation.
+	dropRecord bool
 }
 
 // publish moves staging to dst under the namespace mutex. ifMatch /
@@ -55,8 +60,9 @@ func (d *Daos) publish(bucket, key, staging string, ifMatch, ifNoneMatch *string
 		return st, err
 	}
 
-	d.coord.ns.mu.Lock()
-	defer d.coord.ns.mu.Unlock()
+	stripe := d.coord.ns.stripeFor(bucket, key)
+	stripe.Lock()
+	defer stripe.Unlock()
 
 	// Destination conditions run inside the guard: no writer can
 	// interleave between this evaluation and the publish Move.
@@ -114,12 +120,16 @@ func (d *Daos) publish(bucket, key, staging string, ifMatch, ifNoneMatch *string
 	// when its readers drain. The record survives only while a
 	// protected artifact does: a reader-pinned retiree keeps it, an
 	// idle one is reclaimed right away and drops it. With no retiree
-	// there is nothing to protect and the record goes now.
+	// there is nothing to protect. The removal itself runs after the
+	// stripe is released; until then a restart scan sees the record
+	// and classifies the staging file by its own rules, which for a
+	// committed publish means finding the destination present and
+	// dropping the record.
 	d.coord.commitRetire(bucket, key, st.retires, rec.ID)
 	if st.retires == "" {
-		d.removeRecord(bucket, rec.ID)
+		st.dropRecord = true
 	} else if d.reclaimIfIdle(bucket, key) {
-		d.removeRecord(bucket, rec.ID)
+		st.dropRecord = true
 	}
 	return st, nil
 }
@@ -147,8 +157,9 @@ func (d *Daos) deleteFile(bucket, key string) error {
 		return err
 	}
 
-	d.coord.ns.mu.Lock()
-	defer d.coord.ns.mu.Unlock()
+	stripe := d.coord.ns.stripeFor(bucket, key)
+	stripe.Lock()
+	defer stripe.Unlock()
 
 	info, err := d.fs.Stat(dst)
 	if errors.Is(err, errNotExist) {

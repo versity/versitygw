@@ -350,11 +350,16 @@ func (d *Daos) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMult
 	// Publication goes through the guarded helper like every other
 	// destination writer; the session guard is already held, and the
 	// helper takes the namespace mutex inside.
-	if _, err := d.publish(bucket, key, tmp, nil, nil, recKindMPUPublish, opID); err != nil {
+	st, err := d.publish(bucket, key, tmp, nil, nil, recKindMPUPublish, opID)
+	if err != nil {
 		// The assembled object is safe in staging; put the upload
 		// back if the claim is still ours, so a retry can run.
 		_ = d.fs.Move(claim, uploadDir)
 		return out, "", err
+	}
+	if st.dropRecord {
+		// Past the namespace stripe.
+		d.removeRecord(bucket, opID)
 	}
 	published = true
 	_ = d.fs.Remove(claim, true)

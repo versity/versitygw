@@ -590,8 +590,14 @@ func (d *Daos) putFileConds(bucket, key string, body io.Reader, po s3response.Pu
 	// publish, and rollback run in one critical section shared by
 	// every destination writer. Unconditional PUTs pass nil
 	// conditions; the guard itself is what closes the race.
-	if _, err := d.publish(bucket, key, tmp, ifMatch, ifNoneMatch, recKindPut, opID); err != nil {
+	st, err := d.publish(bucket, key, tmp, ifMatch, ifNoneMatch, recKindPut, opID)
+	if err != nil {
 		return s3response.PutObjectOutput{}, err
+	}
+	if st.dropRecord {
+		// Past the namespace stripe: the record removal no longer
+		// makes unrelated publishers wait.
+		d.removeRecord(bucket, opID)
 	}
 	moved = true
 	return out, nil
@@ -819,8 +825,8 @@ func strPtr(v string) *string {
 // generation. Release happens when the caller's stream closes (the
 // body reader) or immediately on error.
 func (d *Daos) openLive(bucket, key string, flags int) (Info, Object, *readerLease, error) {
-	d.coord.ns.mu.Lock()
-	defer d.coord.ns.mu.Unlock()
+	d.coord.ns.stripeFor(bucket, key).Lock()
+	defer d.coord.ns.stripeFor(bucket, key).Unlock()
 	p := objectPath(bucket, key)
 	obj, info, err := lookupStat(d.fs, p, flags)
 	if err != nil {

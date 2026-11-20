@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"path"
 	"sort"
 	"strings"
@@ -42,8 +43,32 @@ import (
 // rollback, directory-marker writes, nonrecursive directory deletes,
 // and the metadata capture of reader acquisition. Body staging and
 // checksums stay outside.
+//
+// The guard is striped by destination: bucket plus the first
+// canonical path component. Two flat keys in different buckets, or
+// different top-level prefixes of one bucket, publish concurrently;
+// a key and its nested children share a stripe because the first
+// component is the same. Reader acquisition, retirement, rollback,
+// and same-destination publication all hash to the same stripe, so
+// every operation on one destination family stays serialized.
 type namespace struct {
-	mu sync.Mutex
+	stripes [64]sync.Mutex
+}
+
+// stripeFor picks the namespace stripe of a destination. The first
+// canonical component joins the bucket so sibling objects of one
+// directory tree serialize while unrelated trees do not.
+func (n *namespace) stripeFor(bucket, key string) *sync.Mutex {
+	rest := strings.TrimPrefix(canonicalKey(bucket, key), clean(bucket+"/"))
+	first := rest
+	if i := strings.IndexByte(first, '/'); i >= 0 {
+		first = first[:i]
+	}
+	h := fnv.New32a()
+	h.Write([]byte(bucket))
+	h.Write([]byte{0})
+	h.Write([]byte(first))
+	return &n.stripes[h.Sum32()%uint32(len(n.stripes))]
 }
 
 // uploadLocks stripes session guards by upload UUID. Part writers
@@ -239,8 +264,12 @@ func (c *coord) quarantineUpload(bucket, key, uploadID string, artifacts []strin
 }
 
 // trackRetire records a retire that just happened under the
-// namespace mutex. The generation is pending: the publication has not
-// committed yet, so reclamation is blocked.
+// namespace mutex. The generation carrying readers' references is
+// the live one being replaced, so that generation itself moves to
+// the retired set in place, pending until the publication commits or
+// rolls back. Creating a fresh generation here would strand the
+// pinned one: its refc would never drain from the retired set and a
+// simultaneous overwrite could retire a file no reader referenced.
 func (c *coord) trackRetire(bucket, key, retirePath, opID string) {
 	ck := canonicalKey(bucket, key)
 	c.mu.Lock()
@@ -250,8 +279,15 @@ func (c *coord) trackRetire(bucket, key, retirePath, opID string) {
 		rec = &keyRec{keyStr: ck, retired: map[string]*generation{}}
 		c.keys[ck] = rec
 	}
-	g := &generation{id: opID, retired: retirePath, state: genRetiredPending, owner: rec}
+	g := rec.live
+	if g == nil {
+		g = &generation{owner: rec}
+	}
+	g.id = opID
+	g.retired = retirePath
+	g.state = genRetiredPending
 	rec.retired[retirePath] = g
+	rec.live = nil
 }
 
 // commitRetire finalizes a retire whose publication committed. The
@@ -282,7 +318,9 @@ func (c *coord) commitRetire(bucket, key, retirePath, opID string) {
 }
 
 // commitRetireRollback undoes the registry effect of a retire whose
-// publication failed and was restored.
+// publication failed and was restored. The restored file becomes the
+// live generation again: it was the live one before the retire, and
+// the failed publication installed no replacement.
 func (c *coord) commitRetireRollback(bucket, key, retirePath string) {
 	if retirePath == "" {
 		return
@@ -291,7 +329,16 @@ func (c *coord) commitRetireRollback(bucket, key, retirePath string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if rec := c.keys[ck]; rec != nil {
-		delete(rec.retired, retirePath)
+		if g, ok := rec.retired[retirePath]; ok {
+			delete(rec.retired, retirePath)
+			if rec.live == nil {
+				g.id = ""
+				g.retired = ""
+				g.state = genLive
+				g.reclaimNow = false
+				rec.live = g
+			}
+		}
 		if rec.live == nil && len(rec.retired) == 0 {
 			delete(c.keys, ck)
 		}
