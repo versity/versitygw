@@ -45,6 +45,12 @@ type MetadataStorer interface {
 	// directory for an object is renamed so that metadata stays in sync.
 	RenameObject(bucket, oldObject, newObject string) error
 
+	// RemoveObject removes all stored metadata of object and of the paths
+	// below it within the given bucket. This must be called whenever the
+	// data directory for an object is removed with its contents so that
+	// the metadata of the removed files doesn't outlive them.
+	RemoveObject(bucket, object string) error
+
 	// ReplaceObject removes the attributes of an object, other than the
 	// ones named in keep, when a new file replaces the object's file. This
 	// must be called whenever a new file is published at an object's path

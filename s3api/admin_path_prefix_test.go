@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,7 +59,7 @@ func TestAdminPathPrefix(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(srv.name+"/"+tt.name, func(t *testing.T) {
 				app := srv.newApp(t, tt.prefix)
-				resp, err := app.Test(signedAdminRequest(t, tt.path))
+				resp, err := app.Test(signedAdminRequest(t, tt.path, "us-east-1", ""))
 				if err != nil {
 					t.Fatalf("app.Test: %v", err)
 				}
@@ -121,15 +122,28 @@ func newTestS3AdminApp(t *testing.T, prefix string) *fiber.App {
 	return srv.app
 }
 
-func signedAdminRequest(t *testing.T, path string) *http.Request {
+// signedAdminRequest returns a PATCH to an admin route, signed with the root
+// credentials for region. X-Vgw-Owner names root, which admin create-bucket
+// requires and the other admin routes ignore.
+func signedAdminRequest(t *testing.T, path, region, body string) *http.Request {
 	t.Helper()
-	sum := sha256.Sum256(nil)
+	return signedRequest(t, http.MethodPatch, path, region, body, http.Header{"X-Vgw-Owner": {testAdminRoot.Access}})
+}
+
+// signedRequest returns a request signed with the root credentials for
+// region, carrying header along with the signing headers.
+func signedRequest(t *testing.T, method, target, region, body string, header http.Header) *http.Request {
+	t.Helper()
+	sum := sha256.Sum256([]byte(body))
 	payloadHash := hex.EncodeToString(sum[:])
 
-	req := httptest.NewRequest(http.MethodPatch, "http://localhost"+path, nil)
+	req := httptest.NewRequest(method, "http://localhost"+target, strings.NewReader(body))
+	for name, values := range header {
+		req.Header[name] = values
+	}
 	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
 	creds := aws.Credentials{AccessKeyID: testAdminRoot.Access, SecretAccessKey: testAdminRoot.Secret}
-	if err := v4.NewSigner().SignHTTP(context.Background(), creds, req, payloadHash, "s3", "us-east-1", time.Now()); err != nil {
+	if err := v4.NewSigner().SignHTTP(context.Background(), creds, req, payloadHash, "s3", region, time.Now()); err != nil {
 		t.Fatalf("sign request: %v", err)
 	}
 	return req

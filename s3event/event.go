@@ -169,7 +169,7 @@ func createEventSchema(ctx fiber.Ctx, meta EventMeta, configId ConfigurationId) 
 					PrincipalId: acc.Access,
 				},
 				RequestParameters: EventRequestParams{
-					SourceIPAddress: ctx.IP(),
+					SourceIPAddress: utils.ClientIP(ctx),
 				},
 				ResponseElements: EventResponseElements{
 					RequestId: ctx.Get("X-Amz-Request-Id"),

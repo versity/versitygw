@@ -851,3 +851,83 @@ func ListMultipartUploads_with_checksums(s *S3Conf) error {
 		return nil
 	})
 }
+
+// ListMultipartUploads_url_encoding lists uploads and common prefixes whose
+// names need escaping with encoding-type=url: S3 returns EncodingType and
+// encodes the key names, Prefix and markers as a query component, with "/"
+// left as is. Any other encoding type is rejected.
+func ListMultipartUploads_url_encoding(s *S3Conf) error {
+	testName := "ListMultipartUploads_url_encoding"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, key := range []string{"x (test)+", "dir b/up", "m+ a", "m+ b", "m+ c"} {
+			if _, err := createMp(s3client, bucket, key); err != nil {
+				return err
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket:       &bucket,
+			Delimiter:    getPtr("/"),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.EncodingType != types.EncodingTypeUrl {
+			return fmt.Errorf("expected the encoding type to be %q, instead got %q",
+				types.EncodingTypeUrl, out.EncodingType)
+		}
+		keys := []string{}
+		for _, u := range out.Uploads {
+			keys = append(keys, getString(u.Key))
+		}
+		expKeys := []string{"x+%28test%29%2B", "m%2B+a", "m%2B+b", "m%2B+c"}
+		sort.Strings(keys)
+		sort.Strings(expKeys)
+		if strings.Join(keys, ",") != strings.Join(expKeys, ",") {
+			return fmt.Errorf("expected the upload keys %v, instead got %v", expKeys, keys)
+		}
+		if len(out.CommonPrefixes) != 1 || getString(out.CommonPrefixes[0].Prefix) != "dir+b/" {
+			return fmt.Errorf("expected the common prefix %q, instead got %v", "dir+b/", out.CommonPrefixes)
+		}
+
+		// Prefix, KeyMarker and NextKeyMarker are encoded too
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket:       &bucket,
+			Prefix:       getPtr("m+ "),
+			KeyMarker:    getPtr("m+ a"),
+			MaxUploads:   getPtr(int32(1)),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(out.Prefix) != "m%2B+" {
+			return fmt.Errorf("expected the prefix %q, instead got %q", "m%2B+", getString(out.Prefix))
+		}
+		if getString(out.KeyMarker) != "m%2B+a" {
+			return fmt.Errorf("expected the key marker %q, instead got %q", "m%2B+a", getString(out.KeyMarker))
+		}
+		if getString(out.NextKeyMarker) != "m%2B+b" {
+			return fmt.Errorf("expected the next key marker %q, instead got %q",
+				"m%2B+b", getString(out.NextKeyMarker))
+		}
+		if len(out.Uploads) != 1 || getString(out.Uploads[0].Key) != "m%2B+b" {
+			return fmt.Errorf("expected the upload key %q, instead got %v", "m%2B+b", out.Uploads)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket:       &bucket,
+			EncodingType: "gibberish",
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"))
+	})
+}

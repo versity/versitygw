@@ -15,9 +15,13 @@
 package s3api
 
 import (
+	"bytes"
+	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"strings"
 	"sync"
 	"testing"
@@ -126,6 +130,29 @@ func TestWithOnListenAddrs(t *testing.T) {
 	case <-served:
 	case <-time.After(shutDownDuration + time.Second):
 		t.Fatal("ServeMultiPort() did not return after ShutDown()")
+	}
+}
+
+// TestShutDownFromListenHook shuts the server down from the listen hook,
+// which fiber runs before fasthttp's Serve registers the listener for its
+// own Shutdown to close.
+func TestShutDownFromListenHook(t *testing.T) {
+	var sa *S3ApiServer
+	shutDown := make(chan error, 1)
+	sa, err := newTestS3ApiServer(WithOnListen(func() { shutDown <- sa.ShutDown() }))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	served := make(chan error, 1)
+	go func() { served <- sa.ServeMultiPort([]string{"127.0.0.1:0"}) }()
+
+	select {
+	case <-served:
+	case <-time.After(shutDownDuration + time.Second):
+		t.Fatal("ServeMultiPort() did not return after ShutDown()")
+	}
+	if err := <-shutDown; err != nil {
+		t.Fatalf("ShutDown() error = %v", err)
 	}
 }
 
@@ -285,5 +312,98 @@ func TestCustomMountValidation(t *testing.T) {
 				t.Fatalf("New() error = %v, want substring %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestRequestAddressIgnoresProxyHeaders pins the peer address reported by
+// ctx.IP(). The gateway deliberately configures neither fiber's ProxyHeader nor
+// TrustProxy, because ctx.IP() feeds aws:SourceIp in IAM policy conditions and
+// a client-supplied header must not be able to influence that. The logging
+// address is resolved separately from an opt-in header.
+func TestRequestAddressIgnoresProxyHeaders(t *testing.T) {
+	server, err := newTestS3ApiServer(
+		WithQuiet(),
+		WithRoute(http.MethodGet, "/addr", func(ctx fiber.Ctx) error {
+			// app.Test() serves over a placeholder connection; pin the peer
+			// address so the fallback is deterministic.
+			ctx.RequestCtx().SetRemoteAddr(&net.TCPAddr{IP: net.ParseIP("192.0.2.1"), Port: 12345})
+			return ctx.SendString(ctx.IP())
+		}),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/addr", nil)
+	req.Header.Set("X-Forwarded-For", "203.0.113.7")
+	req.Header.Set("X-Real-Ip", "203.0.113.7")
+
+	resp, err := server.app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if got := string(body); got != "192.0.2.1" {
+		t.Fatalf("ctx.IP() = %q, want the socket peer address %q", got, "192.0.2.1")
+	}
+}
+
+// POST Object reads its multipart body as a stream, so fasthttp must not
+// parse the form first.
+func TestMultipartBodyIsStreamed(t *testing.T) {
+	server, err := newTestS3ApiServer(
+		WithQuiet(),
+		WithRoute(http.MethodPost, "/form", func(ctx fiber.Ctx) error {
+			stream := ctx.Request().BodyStream()
+			if stream == nil {
+				return ctx.Status(http.StatusInternalServerError).SendString("no body stream")
+			}
+			body, err := io.ReadAll(stream)
+			if err != nil {
+				return err
+			}
+			return ctx.Send(body)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	var sent bytes.Buffer
+	w := multipart.NewWriter(&sent)
+	if err := w.WriteField("key", "my-object"); err != nil {
+		t.Fatalf("write field: %v", err)
+	}
+	fw, err := w.CreatePart(textproto.MIMEHeader{"Content-Disposition": {`form-data; name="file"`}})
+	if err != nil {
+		t.Fatalf("create file part: %v", err)
+	}
+	if _, err := fw.Write([]byte("some dummy data")); err != nil {
+		t.Fatalf("write file part: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/form", bytes.NewReader(sent.Bytes()))
+	req.Header.Set("Content-Type", w.FormDataContentType())
+
+	resp, err := server.app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !bytes.Equal(got, sent.Bytes()) {
+		t.Fatalf("handler read %q, want the body as sent, %q", got, sent.Bytes())
 	}
 }

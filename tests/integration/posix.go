@@ -15,6 +15,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -127,7 +129,7 @@ func PutObject_windows_reserved_names(s *S3Conf) error {
 		keys := []string{
 			"question?", "question", "asterisk*", `quote"`, "colon:name", "C:drive",
 			"lt<gt>", "pipe|", "tab\tchar",
-			`back\slash`, "back/slash", `..\..\escape`,
+			`back\slash`, "back/slash", `dir\..\..\escape`,
 			"trailingdot.", "trailingdot", "trailingspace ", "trailingspace",
 			"dotdir./file", "dotdir/file", "spacedir /file", "spacedir/file",
 			"CON", "nul.txt", "aux/obj", "com1", "LPT9.log", "CONIN$",
@@ -649,6 +651,607 @@ func PutObject_race_with_delete(s *S3Conf) error {
 	})
 }
 
+// PutObject_race_with_sibling_deletes uploads, reads back and deletes
+// distinct objects under the same nested prefix concurrently. The uploads
+// stage their data outside of the prefix, so a delete of a sibling object
+// removes the parent directories an upload has just made, or is about to
+// publish its object in. Every upload must succeed and be readable.
+func PutObject_race_with_sibling_deletes(s *S3Conf) error {
+	testName := "PutObject_race_with_sibling_deletes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return putGetDeleteRace(s3client, bucket, siblingRaceKey, func(key string, data []byte) error {
+			_, err := putObjectWithData(int64(len(data)), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+				Body:   bytes.NewReader(data),
+			}, s3client)
+			return err
+		})
+	})
+}
+
+// PutObject_race_into_new_dirs is PutObject_race_with_sibling_deletes with
+// new parent directories for each iteration: the uploads of the workers make
+// the same directories at once, while the deletes of the workers that are
+// ahead remove them.
+func PutObject_race_into_new_dirs(s *S3Conf) error {
+	testName := "PutObject_race_into_new_dirs"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return putGetDeleteRace(s3client, bucket, func(w, i int) string {
+			return fmt.Sprintf("race/%d/a/b/c/d/e/w%d", i, w)
+		}, func(key string, data []byte) error {
+			_, err := putObjectWithData(int64(len(data)), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+				Body:   bytes.NewReader(data),
+			}, s3client)
+			return err
+		})
+	})
+}
+
+// CopyObject_race_with_sibling_deletes is PutObject_race_with_sibling_deletes
+// with the objects made by CopyObject.
+func CopyObject_race_with_sibling_deletes(s *S3Conf) error {
+	testName := "CopyObject_race_with_sibling_deletes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return putGetDeleteRace(s3client, bucket, siblingRaceKey, func(key string, data []byte) error {
+			// the source is outside of the prefix, so that it doesn't keep
+			// the parent directories of the copies in place
+			src := "src/" + key
+			_, err := putObjectWithData(int64(len(data)), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &src,
+				Body:   bytes.NewReader(data),
+			}, s3client)
+			if err != nil {
+				return fmt.Errorf("put copy source: %w", err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:     &bucket,
+				Key:        &key,
+				CopySource: getPtr(bucket + "/" + src),
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &src,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("delete copy source: %w", err)
+			}
+			return nil
+		})
+	})
+}
+
+// CompleteMultipartUpload_race_with_sibling_deletes is
+// PutObject_race_with_sibling_deletes with the objects made by multipart
+// uploads.
+func CompleteMultipartUpload_race_with_sibling_deletes(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_race_with_sibling_deletes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return putGetDeleteRace(s3client, bucket, siblingRaceKey, func(key string, data []byte) error {
+			mp, err := createMp(s3client, bucket, key)
+			if err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			part, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
+				Bucket:     &bucket,
+				Key:        &key,
+				UploadId:   mp.UploadId,
+				PartNumber: getPtr(int32(1)),
+				Body:       bytes.NewReader(data),
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("upload part: %w", err)
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+				Bucket:   &bucket,
+				Key:      &key,
+				UploadId: mp.UploadId,
+				MultipartUpload: &types.CompletedMultipartUpload{
+					Parts: []types.CompletedPart{
+						{ETag: part.ETag, PartNumber: getPtr(int32(1))},
+					},
+				},
+			})
+			cancel()
+			return err
+		})
+	})
+}
+
+// PutObject_race_with_sibling_version_deletes races the uploads and the
+// permanent deletes of the versions of distinct objects under the same
+// nested prefix in a versioning-enabled bucket. Overwriting an object moves
+// its previous version into the versioning directory, where the versions of
+// objects share their parent directories too. Deleting a version removes the
+// parent directories that hold no other version, and deleting the latest
+// version of an object restores the previous one in its place.
+func PutObject_race_with_sibling_version_deletes(s *S3Conf) error {
+	testName := "PutObject_race_with_sibling_version_deletes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return raceWorkers(siblingRaceWorkers, siblingRaceIterations/2, func(w, i int) error {
+			key := siblingRaceKey(w, i)
+			var versions []string
+			var datas [][]byte
+			for v := range 2 {
+				data := siblingRaceData(fmt.Sprintf("%v-%d", key, v))
+				out, err := putObjectWithData(int64(len(data)), &s3.PutObjectInput{
+					Bucket: &bucket,
+					Key:    &key,
+					Body:   bytes.NewReader(data),
+				}, s3client)
+				if err != nil {
+					return fmt.Errorf("put %v version %d: %w", key, v, err)
+				}
+				versions = append(versions, getString(out.res.VersionId))
+				datas = append(datas, data)
+			}
+			for v := range versions {
+				err := checkObjectData(s3client, bucket, key, versions[v], datas[v])
+				if err != nil {
+					return fmt.Errorf("version %d: %w", v, err)
+				}
+			}
+			// delete the latest version first, which restores the
+			// previous one in its place
+			for _, v := range []int{1, 0} {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+					Bucket:    &bucket,
+					Key:       &key,
+					VersionId: &versions[v],
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("delete %v version %d: %w", key, v, err)
+				}
+				if v == 1 {
+					err := checkObjectData(s3client, bucket, key, "", datas[0])
+					if err != nil {
+						return fmt.Errorf("restored version: %w", err)
+					}
+				}
+			}
+			return nil
+		})
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// ListObjects_race_with_parent_dir_replaced lists prefixes while, under each
+// of them, "d" is in turn the parent directory of an object and an object
+// itself. Deleting the nested object removes its parent directories and
+// uploading "d" puts a file in their place, so a listing can read a directory
+// and then find a file in the path of its entries. An object that stays under
+// each prefix keeps the prefix directory in place. A listing must not fail,
+// and must list the object that stays.
+func ListObjects_race_with_parent_dir_replaced(s *S3Conf) error {
+	testName := "ListObjects_race_with_parent_dir_replaced"
+	const iterations = 200
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		var anchors []string
+		for w := 0; w < siblingRaceWorkers; w += 2 {
+			anchors = append(anchors, fmt.Sprintf("race/%d/anchor", w/2))
+		}
+		if _, err := putObjects(s3client, anchors, bucket); err != nil {
+			return err
+		}
+
+		return raceWorkers(siblingRaceWorkers, iterations, func(w, i int) error {
+			// the workers share a prefix in pairs: one lists it, the
+			// other turns "d" from a directory into an object and back
+			prefix := fmt.Sprintf("race/%d/", w/2)
+			anchor := prefix + "anchor"
+			isAnchor := func(key *string) bool { return getString(key) == anchor }
+			if w%2 == 1 {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+					Bucket: &bucket,
+					Prefix: &prefix,
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("list objects %v: %w", prefix, err)
+				}
+				if !slices.ContainsFunc(out.Contents, func(o types.Object) bool { return isAnchor(o.Key) }) {
+					return fmt.Errorf("list objects %v: expected %v to be listed", prefix, anchor)
+				}
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				outV2, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+					Bucket: &bucket,
+					Prefix: &prefix,
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("list objects v2 %v: %w", prefix, err)
+				}
+				if !slices.ContainsFunc(outV2.Contents, func(o types.Object) bool { return isAnchor(o.Key) }) {
+					return fmt.Errorf("list objects v2 %v: expected %v to be listed", prefix, anchor)
+				}
+				return nil
+			}
+
+			key := prefix + "d/e/obj"
+			if i%2 == 1 {
+				key = prefix + "d"
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("put %v: %w", key, err)
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("delete %v: %w", key, err)
+			}
+			return nil
+		})
+	})
+}
+
+// PutObject_race_with_parent_object_deletes uploads, reads back and deletes
+// objects under a key while another worker uploads, reads back and deletes an
+// object at that key itself. A posix directory can't be a file at once, so an
+// upload under the key conflicts with the object at it while that exists, and
+// the other way around while objects are under the key. An upload can't fail
+// otherwise, even when the object it conflicted with is deleted right after
+// the upload looked it up, and an upload that succeeded must be readable.
+func PutObject_race_with_parent_object_deletes(s *S3Conf) error {
+	testName := "PutObject_race_with_parent_object_deletes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return raceWorkers(siblingRaceWorkers, siblingRaceIterations, func(w, i int) error {
+			parent := fmt.Sprintf("race/%d/b", w/parentRaceGroupSize)
+			key, conflict := parent, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
+			if w%parentRaceGroupSize != 0 {
+				key, conflict = fmt.Sprintf("%v/w%d-%d", parent, w, i), s3err.GetAPIError(s3err.ErrObjectParentIsFile)
+			}
+			data := siblingRaceData(key)
+			_, err := putObjectWithData(int64(len(data)), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+				Body:   bytes.NewReader(data),
+			}, s3client)
+			if err != nil {
+				// the object at the parent key, or the objects under it,
+				// were in the way
+				if err := checkApiErr(err, conflict); err != nil {
+					return fmt.Errorf("put %v: %w", key, err)
+				}
+				return nil
+			}
+			if err := checkObjectData(s3client, bucket, key, "", data); err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("delete %v: %w", key, err)
+			}
+			return nil
+		})
+	})
+}
+
+// HeadObject_GetObject_race_with_delete reads objects with HeadObject and
+// GetObject while they are uploaded and deleted over and over. With a
+// versioning directory configured, a read looks up the version id of the
+// object after its stat, so a delete can remove the object in between. A
+// read must find the object or answer NoSuchKey, and must not fail otherwise.
+func HeadObject_GetObject_race_with_delete(s *S3Conf) error {
+	testName := "HeadObject_GetObject_race_with_delete"
+	// a read fails only if the delete removes the object between the
+	// read's stat of it and its lookup of the version id
+	const workers, iterations = 16, 200
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return raceWorkers(workers, iterations, func(w, i int) error {
+			// the workers share a key in pairs: one reads it, the other
+			// uploads and deletes it
+			key := fmt.Sprintf("race/%d/obj", w/2)
+			if w%2 == 1 {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+					Bucket: &bucket,
+					Key:    &key,
+				})
+				cancel()
+				if err != nil {
+					if err := checkSdkApiErr(err, "NotFound"); err != nil {
+						return fmt.Errorf("head %v: %w", key, err)
+					}
+				}
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				defer cancel()
+				out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+					Bucket: &bucket,
+					Key:    &key,
+				})
+				if err != nil {
+					if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+						return fmt.Errorf("get %v: %w", key, err)
+					}
+					return nil
+				}
+				defer out.Body.Close()
+				if _, err := io.Copy(io.Discard, out.Body); err != nil {
+					return fmt.Errorf("read %v: %w", key, err)
+				}
+				return nil
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+				Body:   bytes.NewReader(siblingRaceData(key)),
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("put %v: %w", key, err)
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("delete %v: %w", key, err)
+			}
+			return nil
+		})
+	})
+}
+
+// GetObject_etag_race_with_put reads one object with GetObject while it is
+// overwritten over and over. The ETag returned by every PutObject is recorded
+// with the body it was uploaded with, without assuming how the gateway
+// computes it (it is not the MD5 of the body with --data-integrity-etag).
+// A read that takes the ETag from one version of the object and the body
+// from another is told apart: the body of every read must be the body
+// recorded for the ETag of that read. Every other read sends the ETag of the
+// previous read as If-Match: it either fails the precondition, or it returns
+// that very ETag and the body recorded for it. The sidecar metadata is not
+// stored on the object's inode, so this check does not apply to it.
+func GetObject_etag_race_with_put(s *S3Conf) error {
+	testName := "GetObject_etag_race_with_put"
+	const writers, readers, iterations = 4, 4, 100
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "race/obj"
+
+		type read struct {
+			etag string
+			body []byte
+		}
+		var mu sync.Mutex
+		bodies := map[string][]byte{}
+		var reads []read
+		prev := make([]string, readers)
+
+		err := raceWorkers(writers+readers, iterations, func(w, i int) error {
+			if w < writers {
+				body := fmt.Appendf(nil, "%s version %d-%d\n", key, w, i)
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				defer cancel()
+				out, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+					Bucket: &bucket,
+					Key:    &key,
+					Body:   bytes.NewReader(body),
+				})
+				if err != nil {
+					return fmt.Errorf("put %v: %w", key, err)
+				}
+				mu.Lock()
+				bodies[aws.ToString(out.ETag)] = body
+				mu.Unlock()
+				return nil
+			}
+
+			// each reader is one worker, so prev[r] is not shared
+			r := w - writers
+			input := &s3.GetObjectInput{Bucket: &bucket, Key: &key}
+			ifMatch := i%2 == 1 && prev[r] != ""
+			if ifMatch {
+				input.IfMatch = &prev[r]
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
+			out, err := s3client.GetObject(ctx, input)
+			if err != nil {
+				if ifMatch {
+					// the object was overwritten since the previous read
+					if err := checkSdkApiErr(err, "PreconditionFailed"); err != nil {
+						return fmt.Errorf("get %v if-match %v: %w", key, prev[r], err)
+					}
+					prev[r] = ""
+					return nil
+				}
+				// no writer may have uploaded yet
+				if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+					return fmt.Errorf("get %v: %w", key, err)
+				}
+				return nil
+			}
+			defer out.Body.Close()
+			body, err := io.ReadAll(out.Body)
+			if err != nil {
+				return fmt.Errorf("read %v: %w", key, err)
+			}
+			etag := aws.ToString(out.ETag)
+			if ifMatch && etag != prev[r] {
+				return fmt.Errorf("get %v if-match %v: returned etag %v", key, prev[r], etag)
+			}
+			prev[r] = etag
+			mu.Lock()
+			reads = append(reads, read{etag: etag, body: body})
+			mu.Unlock()
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		// the writers are done, so every etag a read returned is recorded
+		for _, rd := range reads {
+			want, ok := bodies[rd.etag]
+			if !ok {
+				return fmt.Errorf("get %v: etag %v was not returned by any put", key, rd.etag)
+			}
+			if !bytes.Equal(rd.body, want) {
+				return fmt.Errorf("get %v: etag %v does not belong to the body returned: got %q, want %q", key, rd.etag, rd.body, want)
+			}
+		}
+		return nil
+	})
+}
+
+// DeleteObject_race_with_delete deletes each object through several
+// requests at once. Deleting an absent key succeeds, so every request must
+// succeed, whether it removes the object or finds it removed by another,
+// and the object must be gone afterwards.
+func DeleteObject_race_with_delete(s *S3Conf) error {
+	testName := "DeleteObject_race_with_delete"
+	// a delete fails only if another delete removes the object between
+	// the delete's stat of it and its unlink
+	const groups, deleters, iterations = 8, 4, 50
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return raceWorkers(groups, iterations, func(g, i int) error {
+			// the keys have no prefix, so that no delete removes the
+			// directory of a key being uploaded; every other group
+			// deletes directory objects
+			key := fmt.Sprintf("race-%d-obj-%d", g, i)
+			if g%2 == 1 {
+				key += "/"
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("put %v: %w", key, err)
+			}
+
+			eg := errgroup.Group{}
+			for range deleters {
+				eg.Go(func() error {
+					ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+					defer cancel()
+					_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+						Bucket: &bucket,
+						Key:    &key,
+					})
+					if err != nil {
+						return fmt.Errorf("delete %v: %w", key, err)
+					}
+					return nil
+				})
+			}
+			if err := eg.Wait(); err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
+			_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			if err == nil {
+				return fmt.Errorf("%v exists after it was deleted", key)
+			}
+			if err := checkSdkApiErr(err, "NotFound"); err != nil {
+				return fmt.Errorf("head %v after delete: %w", key, err)
+			}
+			return nil
+		})
+	})
+}
+
+// ListObjects_race_with_prefix_removal lists prefixes while the only object
+// under each of them is uploaded and deleted over and over. Deleting the
+// object removes the prefix directory, so a listing can read the directory
+// and find it gone right after. A listing must not fail.
+func ListObjects_race_with_prefix_removal(s *S3Conf) error {
+	testName := "ListObjects_race_with_prefix_removal"
+	// a listing fails only if the delete removes the prefix directory
+	// between the listing's read of the directory and its stat of it
+	const iterations = 100
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return raceWorkers(siblingRaceWorkers, iterations, func(w, i int) error {
+			// the workers share a prefix in pairs: one lists it, the
+			// other uploads and deletes the object under it
+			prefix := fmt.Sprintf("race/%d/", w/2)
+			if w%2 == 1 {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+					Bucket: &bucket,
+					Prefix: &prefix,
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("list objects %v: %w", prefix, err)
+				}
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				_, err = s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+					Bucket: &bucket,
+					Prefix: &prefix,
+				})
+				cancel()
+				if err != nil {
+					return fmt.Errorf("list objects v2 %v: %w", prefix, err)
+				}
+				return nil
+			}
+
+			key := fmt.Sprintf("%vobj-%d", prefix, i)
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("put %v: %w", key, err)
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("delete %v: %w", key, err)
+			}
+			return nil
+		})
+	})
+}
+
 // PutObject_reserved_key checks that no key reaches the .sgwtmp directory of
 // a bucket, where its multipart uploads are staged: the parts of an upload at
 // .sgwtmp/multipart/<sha256 of the key>/<upload id>/. A client can't replace
@@ -669,8 +1272,6 @@ func PutObject_reserved_key(s *S3Conf) error {
 		partKey := fmt.Sprintf(".sgwtmp/multipart/%x/%v/1", sha256.Sum256([]byte(obj)), *mp.UploadId)
 		for _, key := range []string{
 			partKey,
-			"./" + partKey,
-			"my-dir/../" + partKey,
 			".SGWTMP" + strings.TrimPrefix(partKey, ".sgwtmp"),
 			".sgwtmp/",
 			".sgwtmp/my-obj",
@@ -889,5 +1490,234 @@ func ListObjectsV2_reserved_prefix(s *S3Conf) error {
 		}
 
 		return checkAndAbortUpload(s3client, bucket, obj, *mp.UploadId)
+	})
+}
+
+// S3 takes "." and ".." segments as part of the key, but posix stores an
+// object at the path of its key, which would resolve them to another
+// object or to a path outside the bucket. Such keys are rejected.
+func PutObject_dot_segment_key(s *S3Conf) error {
+	testName := "PutObject_dot_segment_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		keys := []string{
+			".",
+			"./",
+			"/.",
+			"x/.",
+			"x/..",
+			"a/./b",
+			"./" + obj,
+			"a/../" + obj,
+		}
+		if !s.hostStyle {
+			// without the bucket in the path these climb above its root
+			keys = append(keys, "..", "../", "for/../../bar/", "../"+bucket+"/"+obj)
+		}
+		for _, key := range keys {
+			_, err := putObjectWithData(10, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			}, s3client)
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
+				return fmt.Errorf("%v: %w", key, err)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if res.ContentLength == nil || *res.ContentLength != 0 {
+			return fmt.Errorf("expected %v to keep its empty body, instead got size %v", obj, res.ContentLength)
+		}
+
+		return nil
+	})
+}
+
+func PostObject_dot_segment_key(s *S3Conf) error {
+	testName := "PostObject_dot_segment_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, obj := range []string{
+			".",
+			"..",
+			"./",
+			"/.",
+			"../",
+			"/..",
+			"../.",
+			"a/./b",
+			"a/../b",
+			"../../../.",
+			"../../../etc/passwd",
+			"../../../../tmp/foo",
+			"for/../../bar/",
+			"a/a/a/../../../../../etc/passwd",
+			"/a/../../b/../../c/../../../etc/passwd",
+		} {
+			resp, err := sendPostObject(PostRequestConfig{
+				bucket:      bucket,
+				key:         obj,
+				s3Conf:      s,
+				fileContent: []byte("data"),
+			})
+			if err != nil {
+				return err
+			}
+
+			if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
+				return fmt.Errorf("%v: %w", obj, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func DeleteObjects_dot_segment_key(s *S3Conf) error {
+	testName := "DeleteObjects_dot_segment_key"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, otherObj := "my-obj", "other-obj"
+		_, err := putObjects(s3client, []string{obj, otherObj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// Every key resolves outside the bucket or to the bucket itself;
+		// the ones climbing back into it name obj. A request holding any of
+		// them is rejected as a whole, so its valid key isn't deleted
+		// either.
+		for _, key := range []string{
+			".",
+			"..",
+			"../",
+			"./" + obj,
+			"a/../" + obj,
+			"../../../etc/passwd",
+			"../" + bucket + "/" + obj,
+			"dir/../../" + bucket + "/" + obj,
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+				Bucket: &bucket,
+				Delete: &types.Delete{
+					Objects: []types.ObjectIdentifier{
+						{Key: &otherObj},
+						{Key: &key},
+					},
+				},
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
+				return fmt.Errorf("key %q: %w", key, err)
+			}
+		}
+
+		for _, key := range []string{obj, otherObj} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("head %v: %w", key, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func CopyObject_dot_segment_copy_source(s *S3Conf) error {
+	testName := "CopyObject_dot_segment_copy_source"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		for _, test := range []struct {
+			copySource string
+			object     string
+		}{
+			{"bucket/.", "."},
+			{"bucket/..", ".."},
+			{"bucket/../", "../"},
+			{"bucket/foo/ba/../../../r/baz", "foo/ba/../../../r/baz"},
+			// would copy obj
+			{bucket + "/a/../" + obj, "a/../" + obj},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:     &bucket,
+				Key:        getPtr("obj"),
+				CopySource: &test.copySource,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, test.object)); err != nil {
+				return fmt.Errorf("%v: %w", test.copySource, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func UploadPartCopy_dot_segment_copy_source(s *S3Conf) error {
+	testName := "UploadPartCopy_dot_segment_copy_source"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// A malformed upload ID would be rejected before the copy source
+		// is checked.
+		mp, err := createMp(s3client, bucket, "obj")
+		if err != nil {
+			return err
+		}
+
+		partNumber := int32(1)
+		for _, test := range []struct {
+			copySource string
+			object     string
+		}{
+			{"bucket/.", "."},
+			{"bucket/..", ".."},
+			{"bucket/../", "../"},
+			{"bucket/foo/ba/../../../r/baz", "foo/ba/../../../r/baz"},
+			// would copy obj
+			{bucket + "/a/../" + obj, "a/../" + obj},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:     &bucket,
+				Key:        getPtr("obj"),
+				UploadId:   mp.UploadId,
+				CopySource: &test.copySource,
+				PartNumber: &partNumber,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, test.object)); err != nil {
+				return fmt.Errorf("%v: %w", test.copySource, err)
+			}
+		}
+
+		return nil
 	})
 }

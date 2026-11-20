@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -377,6 +378,35 @@ var conditionVariableOperators = map[string]bool{
 // yet recognize. Callers MUST treat ok=false as "cannot rule out a hidden
 // Deny" and deny the whole evaluation, never as a non-match.
 func Evaluate(raw json.RawMessage, ctxVars map[string][]string, version string) (matched bool, ok bool) {
+	return evaluate(raw, ctxVars, version, nil, false)
+}
+
+// EvaluateAssuming is Evaluate for a request that is only partly known.
+// Every operator/key clause that tests one of unknownKeys is taken to
+// evaluate to assume rather than being tested against ctxVars, whatever its
+// operator: IfExists, Null and the ForAllValues/ForAnyValue qualifiers
+// included. A clause with a value that names one of unknownKeys as a ${...}
+// policy variable Evaluate would substitute is evaluated with its other
+// values first, and taken to evaluate to assume only when they leave it
+// open. A value list matches when any of its values does, so more values
+// can only make a positive operator hold and a Not operator fail: a known
+// value that makes a positive operator hold, or a Not operator fail,
+// settles the clause whatever the unknown values turn out to be. Neither
+// does a clause depend on its values when its key is absent from ctxVars
+// or has no values there. Key names match case-insensitively, as
+// LookupContextValues matches them. Every other clause is evaluated exactly
+// as Evaluate evaluates it, and ok has Evaluate's meaning.
+//
+// A caller deciding whether a statement could apply to a request it can't
+// fully describe picks the assumption that errs to the safe side of the
+// statement's effect.
+func EvaluateAssuming(raw json.RawMessage, ctxVars map[string][]string, version string, unknownKeys []string, assume bool) (matched bool, ok bool) {
+	return evaluate(raw, ctxVars, version, unknownKeys, assume)
+}
+
+// evaluate is Evaluate and EvaluateAssuming. With no unknownKeys, assume is
+// never read.
+func evaluate(raw json.RawMessage, ctxVars map[string][]string, version string, unknownKeys []string, assume bool) (matched bool, ok bool) {
 	block, err := Parse(raw)
 	if err != nil {
 		debuglogger.Logf("policy condition block failed to parse: %v", err)
@@ -385,17 +415,59 @@ func Evaluate(raw json.RawMessage, ctxVars map[string][]string, version string) 
 
 	for operator, kvs := range block {
 		op, _ := ParseOperatorName(operator) // Parse already validated every operator name
+		substitutes := version == version2012 && conditionVariableOperators[op.Base]
 		for key, expected := range kvs {
-			actual, present := lookupContextValues(ctxVars, key)
-			if version == version2012 && conditionVariableOperators[op.Base] {
+			if len(unknownKeys) > 0 && containsFold(unknownKeys, key) {
+				if !assume {
+					return false, true
+				}
+				continue
+			}
+
+			var droppedUnknown bool
+			if substitutes && len(unknownKeys) > 0 {
+				expected, droppedUnknown = withoutUnknownValues(expected, unknownKeys)
+			}
+			actual, present := LookupContextValues(ctxVars, key)
+			if substitutes {
 				expected = substituteConditionValues(expected, ctxVars)
 			}
-			if !evaluateConditionKey(op, expected, actual, present) {
+			holds := evaluateConditionKey(op, expected, actual, present)
+			if droppedUnknown && len(actual) > 0 && holds == conditionRegistry[op.Base].negate {
+				// the known values leave the clause open, so the unknown
+				// ones decide it
+				holds = assume
+			}
+			if !holds {
 				return false, true
 			}
 		}
 	}
 	return true, true
+}
+
+// withoutUnknownValues returns values without those naming one of
+// unknownKeys as a ${...} policy variable, and whether it dropped any.
+func withoutUnknownValues(values Values, unknownKeys []string) (Values, bool) {
+	known := make(Values, 0, len(values))
+	for _, value := range values {
+		if !slices.ContainsFunc(PolicyVariableKeys(value), func(key string) bool {
+			return containsFold(unknownKeys, key)
+		}) {
+			known = append(known, value)
+		}
+	}
+	return known, len(known) < len(values)
+}
+
+// containsFold reports whether keys holds key, ignoring case.
+func containsFold(keys []string, key string) bool {
+	for _, k := range keys {
+		if strings.EqualFold(k, key) {
+			return true
+		}
+	}
+	return false
 }
 
 // version2012 is AWS's "2012-10-17" policy-document version string, the
@@ -404,13 +476,13 @@ func Evaluate(raw json.RawMessage, ctxVars map[string][]string, version string) 
 // specific policy type's Version constants.
 const version2012 = "2012-10-17"
 
-// lookupContextValues retrieves ctxVars[key], matching key
+// LookupContextValues retrieves ctxVars[key], matching key
 // case-insensitively: AWS documents condition (and policy-variable) key
 // *names* as case-insensitive - "aws:SourceIp" and "AWS:SOURCEIP" name the
 // same key - even though the values held under that key remain
 // case-sensitive. An exact match is tried first so the common case doesn't
 // pay for a map scan.
-func lookupContextValues(ctxVars map[string][]string, key string) ([]string, bool) {
+func LookupContextValues(ctxVars map[string][]string, key string) ([]string, bool) {
 	if v, ok := ctxVars[key]; ok {
 		return v, true
 	}
@@ -439,12 +511,50 @@ func SubstitutePolicyVariables(s string, ctxVars map[string][]string) string {
 	}
 	return policyVariablePattern.ReplaceAllStringFunc(s, func(match string) string {
 		key := match[2 : len(match)-1]
-		values, ok := lookupContextValues(ctxVars, key)
+		values, ok := LookupContextValues(ctxVars, key)
 		if !ok || len(values) != 1 {
 			return match
 		}
 		return values[0]
 	})
+}
+
+// PolicyVariableKeys returns the context key every ${key} placeholder in s
+// names, in order of appearance — the keys SubstitutePolicyVariables would
+// read to expand s.
+func PolicyVariableKeys(s string) []string {
+	if !strings.Contains(s, "${") {
+		return nil
+	}
+	var keys []string
+	for _, match := range policyVariablePattern.FindAllStringSubmatch(s, -1) {
+		keys = append(keys, match[1])
+	}
+	return keys
+}
+
+// ReferencedKeys returns every context key the Condition block raw can read
+// when it is evaluated: each key it tests, and each key a ${...} policy
+// variable in one of its values names. A variable counts whether or not its
+// operator and the document's version would actually expand it, so the
+// result may name keys an evaluation never reads, but it never misses one
+// that it does. An absent or empty block reads nothing. The error is Parse's.
+func ReferencedKeys(raw json.RawMessage) ([]string, error) {
+	block, err := Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	var keys []string
+	for _, kvs := range block {
+		for key, values := range kvs {
+			keys = append(keys, key)
+			for _, value := range values {
+				keys = append(keys, PolicyVariableKeys(value)...)
+			}
+		}
+	}
+	return keys, nil
 }
 
 // substituteConditionValues applies SubstitutePolicyVariables to every

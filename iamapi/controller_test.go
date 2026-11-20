@@ -4577,6 +4577,68 @@ func TestIAMApiControllerAssumeRoleWithWebIdentityExplicitDeny(t *testing.T) {
 	requireSTSError(t, resp, http.StatusForbidden, "Sender", "AccessDenied", "Not authorized to perform sts:AssumeRoleWithWebIdentity")
 }
 
+// TestIAMApiControllerAssumeRoleWithWebIdentityStoreFailure pins that a store
+// failing any of the role and provider reads is a retryable InternalFailure,
+// never the AccessDenied or InvalidIdentityToken verdict an absent role or
+// provider gets. For the trust policy's own provider lookups it is also what
+// keeps a Deny statement applied: evaluation skips a statement whose principal
+// doesn't resolve, so a Deny whose provider could not be read would otherwise
+// go unapplied while the Allow beside it matched.
+func TestIAMApiControllerAssumeRoleWithWebIdentityStoreFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		// failOn is the read that fails; failCall is which call to it,
+		// counting from 1.
+		failOn   string
+		failCall int
+	}{
+		{name: "role", failOn: "GetRole", failCall: 1},
+		{name: "allow statement provider", failOn: "GetOIDCProvider", failCall: 1},
+		{name: "deny statement provider", failOn: "GetOIDCProvider", failCall: 2},
+		{name: "matched provider", failOn: "GetOIDCProvider", failCall: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, faulty := newFaultyStoreTestServer(t)
+			providerArn := createTestOIDCProviderForTrust(t, server, "https://store-down.example.com", "client1")
+			createTestRoleForTrust(t, server, "store-down-role",
+				`{"Version":"2012-10-17","Statement":[`+
+					`{"Effect":"Allow","Principal":{"Federated":"`+providerArn+`"},"Action":"sts:AssumeRoleWithWebIdentity"},`+
+					`{"Effect":"Deny","Principal":{"Federated":"`+providerArn+`"},"Action":"sts:AssumeRoleWithWebIdentity",`+
+					`"Condition":{"StringEquals":{"store-down.example.com:sub":"blocked-user"}}}]}`)
+
+			calls := 0
+			faulty.fail = func(method, _ string) error {
+				if method != tt.failOn {
+					return nil
+				}
+				calls++
+				if calls == tt.failCall {
+					return errStoreDown
+				}
+				return nil
+			}
+
+			// Only the matched-provider read is reached by a token the Deny
+			// leaves alone.
+			sub := "blocked-user"
+			if tt.name == "matched provider" {
+				sub = "user1"
+			}
+			token := webIdentityTokenWithClaims(t, map[string]any{
+				"iss": "https://store-down.example.com", "aud": "client1", "sub": sub, "exp": 9999999999,
+			})
+			resp := doSTSAction(t, server, url.Values{
+				"Action":           {"AssumeRoleWithWebIdentity"},
+				"RoleArn":          {"arn:aws:iam::000000000000:role/store-down-role"},
+				"RoleSessionName":  {"session1"},
+				"WebIdentityToken": {token},
+			})
+			requireSTSError(t, resp, http.StatusInternalServerError, "Receiver", "InternalFailure", internalFailureMessage)
+		})
+	}
+}
+
 func TestIAMApiControllerAssumeRoleWithWebIdentityAudienceNotInClientIDList(t *testing.T) {
 	server := newIAMControllerTestServer(t)
 

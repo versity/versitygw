@@ -192,6 +192,12 @@ func initTestCommands() []*cli.Command {
 					Aliases:     []string{"vs"},
 				},
 				&cli.BoolFlag{
+					Name:        "sidecar-test-mode",
+					Usage:       "Skips tests that are not supported by Sidecar",
+					Destination: &sidecarTests,
+					Aliases:     []string{"sidecar"},
+				},
+				&cli.BoolFlag{
 					Name:        "windows-test-mode",
 					Usage:       "Skips tests that are not supported on Windows",
 					Destination: &windowsTests,
@@ -223,24 +229,35 @@ func initTestCommands() []*cli.Command {
 			Name:  "s3-iam",
 			Usage: "Tests s3 gateway access control backed by the standalone IAM service",
 			Description: `Runs the access-control tests for an s3 gateway configured with --iam-standalone-endpoint:
-			IAM user identity policies, their interaction with bucket policies, governance-retention
-			bypass, and bucket creation. Requires --iam-endpoint pointing at the IAM service's
-			control-plane API, since the tests create the users and policies they then exercise.`,
+			IAM user identity policies, role sessions minted with AssumeRole and their session
+			policies, the interaction of both with bucket policies, governance-retention bypass, and
+			bucket creation. Requires --iam-endpoint pointing at the IAM service's control-plane API,
+			since the tests create the users, roles and policies they then exercise.`,
 			Action: getAction(integration.TestS3IAMAccessControl),
 		},
 		{
 			Name:  "s3-iam-session",
-			Usage: "Tests s3 gateway access control for assumed-role session credentials",
-			Description: `Runs the role/session access-control tests against an s3 gateway backed by the
-			standalone IAM service. Every test mints real temporary credentials via
-			AssumeRoleWithWebIdentity against GitHub Actions' OIDC issuer, so the whole group skips
-			itself outside a GitHub Actions job holding id-token: write permission.`,
+			Usage: "Tests web identity federation end-to-end against a real OIDC identity provider",
+			Description: `Runs the tests that mint temporary credentials via AssumeRoleWithWebIdentity against
+			GitHub Actions' OIDC issuer and use them on an s3 gateway backed by the standalone IAM
+			service. The whole group skips itself outside a GitHub Actions job holding
+			id-token: write permission.`,
 			Action: getAction(integration.TestS3IAMSessionAccessControl),
 		},
 		{
 			Name:   "noacl",
 			Usage:  "Tests gateway in ACL-disabled mode",
 			Action: getAction(integration.TestNoAclMode),
+		},
+		{
+			Name:   "list-buckets-accessible",
+			Usage:  "Tests ListBuckets on a gateway started with --list-buckets-scope accessible",
+			Action: getAction(integration.TestListBucketsAccessible),
+		},
+		{
+			Name:   "list-buckets-all",
+			Usage:  "Tests ListBuckets on a gateway started with --list-buckets-scope all",
+			Action: getAction(integration.TestListBucketsAll),
 		},
 		{
 			Name:   "data-integrity-etag",

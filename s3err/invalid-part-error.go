@@ -16,6 +16,7 @@ package s3err
 
 import (
 	"encoding/xml"
+	"strings"
 )
 
 // InvalidPartError is returned when one or more specified parts cannot be found.
@@ -61,11 +62,13 @@ func (e InvalidPartError) Is(target error) bool {
 	return ok && e.APIError == t
 }
 
+// GetInvalidPartErr builds an InvalidPart error. etag is the value the client
+// sent; like S3, the error echoes it without the surrounding quotes.
 func GetInvalidPartErr(uploadId string, partNumber int32, etag string) InvalidPartError {
 	return InvalidPartError{
 		APIError:   GetAPIError(ErrInvalidPart),
 		UploadId:   uploadId,
 		PartNumber: partNumber,
-		ETag:       etag,
+		ETag:       strings.ReplaceAll(etag, `"`, ""),
 	}
 }

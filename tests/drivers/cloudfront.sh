@@ -213,7 +213,7 @@ disable_cloudfront_distribution() {
   fi
   config_with_disable="$TEST_FILE_FOLDER/$response"
 
-  if ! response=$(jq '.DistributionConfig.Enabled = false | .DistributionConfig' <<< "$config_json" > "$config_with_disable" 2>&1); then
+  if ! response=$(jq '.DistributionConfig.Enabled = false | .DistributionConfig' <<< "$config_json" 2>&1 > "$config_with_disable"); then
     log 2 "error locally writing new config with Enabled set to false: $response"
     return 1
   fi

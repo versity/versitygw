@@ -102,6 +102,59 @@ func CompleteMultipartUpload_upload_id_path_traversal(s *S3Conf) error {
 	})
 }
 
+func CompleteMultipartUpload_malformed_upload_id(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_malformed_upload_id"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		parts := &types.CompletedMultipartUpload{
+			Parts: []types.CompletedPart{
+				{ETag: getPtr("etag"), PartNumber: getPtr(int32(1))},
+			},
+		}
+
+		// Unsupported conditional headers are reported ahead of a malformed
+		// upload ID, a missing part list, a negative object size or an
+		// invalid checksum type after it.
+		for i, test := range []struct {
+			input       *s3.CompleteMultipartUploadInput
+			expectedErr s3err.S3Error
+		}{
+			{
+				&s3.CompleteMultipartUploadInput{IfNoneMatch: getPtr("etag")},
+				s3err.GetNotImplementedErr("If-None-Match", s3err.NmpAdditionalMessageIfNoneMatch),
+			},
+			{
+				&s3.CompleteMultipartUploadInput{IfMatch: getPtr("*")},
+				s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageIfMatch),
+			},
+			{
+				&s3.CompleteMultipartUploadInput{},
+				s3err.GetAPIError(s3err.ErrNoSuchUpload),
+			},
+			{
+				&s3.CompleteMultipartUploadInput{MultipartUpload: parts, MpuObjectSize: getPtr(int64(-1))},
+				s3err.GetAPIError(s3err.ErrNoSuchUpload),
+			},
+			{
+				&s3.CompleteMultipartUploadInput{MultipartUpload: parts, ChecksumType: types.ChecksumType("invalid")},
+				s3err.GetAPIError(s3err.ErrNoSuchUpload),
+			},
+		} {
+			test.input.Bucket = &bucket
+			test.input.Key = getPtr("my-obj")
+			test.input.UploadId = getPtr("../invalid-upload")
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CompleteMultipartUpload(ctx, test.input)
+			cancel()
+			if err := checkApiErr(err, test.expectedErr); err != nil {
+				return fmt.Errorf("test case %d: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func CompleteMultipartUpload_incorrect_part_number(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_incorrect_part_number"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -213,22 +266,36 @@ func CompleteMultipartUpload_invalid_ETag_error_fields(s *S3Conf) error {
 			return err
 		}
 
-		// the sdk doesn't expose the InvalidPart error fields, so the
-		// request is signed and sent by hand
-		body := []byte(`<CompleteMultipartUpload><Part><ETag>invalidETag</ETag><PartNumber>1</PartNumber></Part></CompleteMultipartUpload>`)
-		req, err := createSignedReq(http.MethodPost, s.endpoint,
-			fmt.Sprintf("%v/%v?uploadId=%v", bucket, obj, *out.UploadId),
-			s.awsID, s.awsSecret, "s3", s.awsRegion, "", body, time.Now(), nil)
-		if err != nil {
-			return err
+		// S3 echoes the ETag the client sent, stripped of quotes, and
+		// never the ETag of the stored part
+		for _, test := range []struct {
+			sent   string
+			echoed string
+		}{
+			{"invalidETag", "invalidETag"},
+			{`"00000000000000000000000000000000"`, "00000000000000000000000000000000"},
+		} {
+			// the sdk doesn't expose the InvalidPart error fields, so the
+			// request is signed and sent by hand
+			body := fmt.Appendf(nil, `<CompleteMultipartUpload><Part><ETag>%s</ETag><PartNumber>1</PartNumber></Part></CompleteMultipartUpload>`, test.sent)
+			req, err := createSignedReq(http.MethodPost, s.endpoint,
+				fmt.Sprintf("%v/%v?uploadId=%v", bucket, obj, *out.UploadId),
+				s.awsID, s.awsSecret, "s3", s.awsRegion, "", body, time.Now(), nil)
+			if err != nil {
+				return err
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+
+			if err := checkHTTPResponseApiErr(resp, s3err.GetInvalidPartErr(*out.UploadId, 1, test.echoed)); err != nil {
+				return fmt.Errorf("etag %s: %w", test.sent, err)
+			}
 		}
 
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-
-		return checkHTTPResponseApiErr(resp, s3err.GetInvalidPartErr(*out.UploadId, 1, "invalidETag"))
+		return nil
 	})
 }
 func CompleteMultipartUpload_invalid_checksum_type(s *S3Conf) error {
@@ -1432,6 +1499,41 @@ func CompleteMultipartUpload_incorrect_parts_order(s *S3Conf) error {
 			return err
 		}
 
+		for _, test := range []struct {
+			name  string
+			parts []types.Part
+		}{
+			{"swapped parts", []types.Part{parts[1], parts[0], parts[2]}},
+			{"repeated part number", []types.Part{parts[0], parts[1], parts[1]}},
+		} {
+			compParts := make([]types.CompletedPart, 0, len(test.parts))
+			for _, p := range test.parts {
+				compParts = append(compParts, completedPartFromPart(p))
+			}
+
+			// the sdk doesn't expose the InvalidPartOrder error fields, so
+			// the raw response is kept to check them
+			var resp *http.Response
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+				Bucket:   &bucket,
+				Key:      &obj,
+				UploadId: out.UploadId,
+				MultipartUpload: &types.CompletedMultipartUpload{
+					Parts: compParts,
+				},
+			}, withRawResponse(&resp))
+			cancel()
+			if resp == nil {
+				return fmt.Errorf("%s: no response received: %w", test.name, err)
+			}
+
+			if err := checkHTTPResponseApiErr(resp, s3err.GetInvalidPartOrderErr(*out.UploadId)); err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
+		}
+
+		// the rejected requests leave the upload intact
 		compParts := []types.CompletedPart{}
 		for _, el := range parts {
 			compParts = append(compParts, types.CompletedPart{
@@ -1439,8 +1541,6 @@ func CompleteMultipartUpload_incorrect_parts_order(s *S3Conf) error {
 				PartNumber: el.PartNumber,
 			})
 		}
-
-		compParts[0], compParts[1] = compParts[1], compParts[0]
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
@@ -1452,11 +1552,7 @@ func CompleteMultipartUpload_incorrect_parts_order(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPartOrder)); err != nil {
-			return err
-		}
-
-		return nil
+		return err
 	})
 }
 

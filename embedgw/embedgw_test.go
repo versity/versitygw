@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 )
 
@@ -246,6 +247,126 @@ func TestRunVersityGWValidatesAdminPathPrefix(t *testing.T) {
 				Quiet:             true,
 			}
 			tt.mutate(&cfg)
+
+			err := RunVersityGW(context.Background(), backend.BackendUnsupported{}, &cfg)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %q, want substring %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRunVersityGWValidatesClientIPHeader(t *testing.T) {
+	cfg := Config{
+		RootUserAccess:    "root",
+		RootUserSecret:    "secret",
+		Ports:             []string{"127.0.0.1:0"},
+		MaxConnections:    1,
+		MaxRequests:       1,
+		MultipartMaxParts: 1,
+		Quiet:             true,
+		ClientIPHeader:    "Forwarded",
+	}
+
+	err := RunVersityGW(context.Background(), backend.BackendUnsupported{}, &cfg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid client IP header") {
+		t.Fatalf("error = %q, want substring %q", err, "invalid client IP header")
+	}
+}
+
+// TestRunVersityGWRequiresTrustedProxies pins the review requirement that a
+// configured client IP header cannot silently degrade into trusting every
+// peer.
+func TestRunVersityGWRequiresTrustedProxies(t *testing.T) {
+	cfg := Config{
+		RootUserAccess:    "root",
+		RootUserSecret:    "secret",
+		Ports:             []string{"127.0.0.1:0"},
+		MaxConnections:    1,
+		MaxRequests:       1,
+		MultipartMaxParts: 1,
+		Quiet:             true,
+		ClientIPHeader:    "X-Forwarded-For",
+	}
+
+	err := RunVersityGW(context.Background(), backend.BackendUnsupported{}, &cfg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "trusted-proxies is empty") {
+		t.Fatalf("error = %q, want substring %q", err, "trusted-proxies is empty")
+	}
+}
+
+func TestRunVersityGWRejectsInvalidTrustedProxies(t *testing.T) {
+	cfg := Config{
+		RootUserAccess:    "root",
+		RootUserSecret:    "secret",
+		Ports:             []string{"127.0.0.1:0"},
+		MaxConnections:    1,
+		MaxRequests:       1,
+		MultipartMaxParts: 1,
+		Quiet:             true,
+		ClientIPHeader:    "X-Forwarded-For",
+		TrustedProxies:    "10.0.0.0/8, nope",
+	}
+
+	err := RunVersityGW(context.Background(), backend.BackendUnsupported{}, &cfg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid trusted proxy") {
+		t.Fatalf("error = %q, want substring %q", err, "invalid trusted proxy")
+	}
+}
+
+// policyEvaluatorIAM stands in for an IAM service that evaluates identity
+// policies.
+type policyEvaluatorIAM struct{ auth.IAMService }
+
+func (policyEvaluatorIAM) EvaluatePolicy(string, string, []auth.Action, []string, map[string][]string) (auth.PolicyEvaluation, error) {
+	return auth.PolicyEvaluation{}, nil
+}
+
+// fixedOwnerIAM stands in for an IAM service that fixes bucket ownership.
+type fixedOwnerIAM struct{ auth.IAMService }
+
+func (fixedOwnerIAM) BucketOwner() auth.Account { return auth.Account{Access: "owner"} }
+
+func TestRunVersityGWValidatesListBucketsScope(t *testing.T) {
+	single := auth.NewIAMServiceSingle(auth.Account{Access: "root", Secret: "secret", Role: auth.RoleAdmin})
+	tests := []struct {
+		name    string
+		scope   string
+		iam     auth.IAMService
+		wantErr string
+	}{
+		{name: "invalid value", scope: "shared", wantErr: "invalid list buckets scope"},
+		{name: "accessible with a policy evaluator", scope: "accessible", iam: policyEvaluatorIAM{single}, wantErr: "not supported with an IAM service"},
+		{name: "all with a policy evaluator", scope: "all", iam: policyEvaluatorIAM{single}, wantErr: "not supported with an IAM service"},
+		{name: "accessible with a fixed owner", scope: "accessible", iam: fixedOwnerIAM{single}, wantErr: "not supported with an IAM service"},
+		{name: "all with a fixed owner", scope: "all", iam: fixedOwnerIAM{single}, wantErr: "not supported with an IAM service"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{
+				RootUserAccess:    "root",
+				RootUserSecret:    "secret",
+				Ports:             []string{"127.0.0.1:0"},
+				MaxConnections:    1,
+				MaxRequests:       1,
+				MultipartMaxParts: 1,
+				Quiet:             true,
+				ListBucketsScope:  tt.scope,
+				IAMService:        tt.iam,
+			}
 
 			err := RunVersityGW(context.Background(), backend.BackendUnsupported{}, &cfg)
 			if err == nil {

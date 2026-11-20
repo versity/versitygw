@@ -25,9 +25,11 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/httpctx"
 	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/middlewares"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3log"
 )
 
@@ -43,7 +45,14 @@ type S3AdminServer struct {
 	maxRequests     int
 	socketPerm      os.FileMode
 	pathPrefix      string
-	extraRoutes     []adminRouteMount
+	allowAnyRegion  bool
+	clientIPHeader  string
+	trustedProxies  utils.TrustedProxies
+	// clientIPHeaderErr holds an invalid WithAdminClientIPHeader value; the
+	// admin server has no error-returning constructor, so ServeMultiPort
+	// reports it at startup rather than logging the socket address silently.
+	clientIPHeaderErr error
+	extraRoutes       []adminRouteMount
 }
 
 // adminRouteMount is a route registered on the admin app after the
@@ -66,7 +75,19 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 		opt(server)
 	}
 
-	app := fiber.New(fiber.Config{
+	// validate the header once here, so the request path can compare it
+	// directly instead of re-normalizing on every request
+	if server.clientIPHeader != "" {
+		header, err := utils.NormalizeClientIPHeader(server.clientIPHeader)
+		if err != nil {
+			server.clientIPHeaderErr = err
+			server.clientIPHeader = ""
+		} else {
+			server.clientIPHeader = header
+		}
+	}
+
+	app := fiber.NewWithCustomCtx(httpctx.NewCtx, fiber.Config{
 		AppName:      "versitygw",
 		ServerHeader: "VERSITYGW",
 		ErrorHandler: globalErrorHandler,
@@ -87,14 +108,26 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 			Format: "${time} | adm | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 			CustomTags: map[string]logger.LogFunc{
 				logger.TagQueryStringParams: debuglogger.RedactedQueryParamsTag,
+				logger.TagIP:                utils.ClientIPTag,
 			},
 		}))
 	}
 	// initialize requestId middleware
 	app.Use("*", middlewares.RequestIDs())
 
+	// resolve the logged client address from a trusted proxy header, when
+	// one is configured
+	if server.clientIPHeader != "" {
+		app.Use("*", utils.ClientIPMiddleware(server.clientIPHeader, server.trustedProxies))
+	}
+
 	// initialize total requests cap limiter middleware
 	app.Use("*", middlewares.RateLimiter(server.maxRequests, nil, l))
+
+	// the same defaults the s3 server sets: CreateBucket validates its
+	// LocationConstraint against the region in the context, which would
+	// otherwise fall back to us-east-1 on a standalone admin port
+	app.Use("*", middlewares.SetDefaultValues(root, region, server.allowAnyRegion))
 
 	app.Use("*", controllers.WrapMiddleware(middlewares.DecodeURL, l, nil))
 
@@ -139,6 +172,19 @@ func WithAdminCORSAllowOrigin(origin string) AdminOpt {
 	return func(s *S3AdminServer) { s.corsAllowOrigin = origin }
 }
 
+// WithAdminClientIPHeader is WithClientIPHeader for the standalone admin
+// server.
+func WithAdminClientIPHeader(header string) AdminOpt {
+	return func(s *S3AdminServer) { s.clientIPHeader = header }
+}
+
+// WithAdminTrustedProxies sets the peers whose client IP header is trusted for
+// the standalone admin server. It only has an effect together with
+// WithAdminClientIPHeader.
+func WithAdminTrustedProxies(trusted utils.TrustedProxies) AdminOpt {
+	return func(s *S3AdminServer) { s.trustedProxies = trusted }
+}
+
 // WithAdminConcurrencyLimiter sets the admin standalone server's maximum
 // connection limit and the hard limit for in-flight requests.
 func WithAdminConcurrencyLimiter(maxConnections, maxRequests int) AdminOpt {
@@ -161,6 +207,12 @@ func WithAdminPathPrefix(prefix string) AdminOpt {
 	return func(s *S3AdminServer) { s.pathPrefix = prefix }
 }
 
+// WithAdminAllowAnyRegion is WithAllowAnyRegion for the standalone admin
+// server.
+func WithAdminAllowAnyRegion() AdminOpt {
+	return func(s *S3AdminServer) { s.allowAnyRegion = true }
+}
+
 // WithAdminRoute registers a route on the standalone admin server,
 // after the built-in admin routes and their middleware chain. Use it
 // for admin-surface endpoints that do not fit the S3 admin controller
@@ -180,6 +232,9 @@ func WithAdminRoute(method, path string, handlers ...fiber.Handler) AdminOpt {
 // on all of them simultaneously. This supports listening on multiple ports and/or
 // addresses (e.g., [":8080", "localhost:8081"]).
 func (sa *S3AdminServer) ServeMultiPort(ports []string) error {
+	if sa.clientIPHeaderErr != nil {
+		return sa.clientIPHeaderErr
+	}
 	if len(ports) == 0 {
 		return fmt.Errorf("no ports specified")
 	}

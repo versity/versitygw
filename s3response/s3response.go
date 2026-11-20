@@ -15,11 +15,14 @@
 package s3response
 
 import (
+	"context"
 	"encoding/xml"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	smithytime "github.com/aws/smithy-go/time"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -138,11 +141,12 @@ type GetObjectAttributesResponse struct {
 }
 
 type ObjectParts struct {
-	PartNumberMarker     int
-	NextPartNumberMarker int
-	MaxParts             int
-	IsTruncated          bool
+	PartNumberMarker     int                `xml:",omitempty"`
+	NextPartNumberMarker int                `xml:",omitempty"`
+	MaxParts             int                `xml:",omitempty"`
+	IsTruncated          bool               `xml:",omitempty"`
 	Parts                []types.ObjectPart `xml:"Part"`
+	PartsCount           *int32             `xml:",omitempty"`
 }
 
 // ListMultipartUploadsResponse - s3 api list multipart uploads response.
@@ -298,7 +302,60 @@ type DeleteObjects struct {
 	Quiet   bool                     `xml:"Quiet,omitempty"`
 }
 
+// UnmarshalXML decodes LastModifiedTime as an HTTP date, the form the SDKs
+// send. The SDK type alone decodes it as RFC 3339, which S3 rejects.
+func (d *DeleteObjects) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
+	var p struct {
+		Objects []struct {
+			types.ObjectIdentifier
+			LastModifiedTime *string
+		} `xml:"Object"`
+		Quiet bool
+	}
+	if err := dec.DecodeElement(&p, &start); err != nil {
+		return err
+	}
+
+	// An empty LastModifiedTime is a schema error, and S3 reports it ahead
+	// of an unparseable date in any object. Of the unparseable dates, the
+	// first one in the body is reported, as sent.
+	var dateErr error
+	objects := make([]types.ObjectIdentifier, 0, len(p.Objects))
+	for _, o := range p.Objects {
+		obj := o.ObjectIdentifier
+		if o.LastModifiedTime != nil {
+			if strings.TrimSpace(*o.LastModifiedTime) == "" {
+				return s3err.GetAPIError(s3err.ErrMalformedXML)
+			}
+			lmt, err := parseLastModifiedTime(*o.LastModifiedTime)
+			if err != nil && dateErr == nil {
+				dateErr = s3err.GetInvalidDateAttributeErr(*o.LastModifiedTime)
+			}
+			obj.LastModifiedTime = &lmt
+		}
+		objects = append(objects, obj)
+	}
+	if dateErr != nil {
+		return dateErr
+	}
+
+	d.Objects = objects
+	d.Quiet = p.Quiet
+	return nil
+}
+
+// parseLastModifiedTime accepts the HTTP date forms and, like S3, a numeric
+// zone offset in place of GMT.
+func parseLastModifiedTime(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if t, err := smithytime.ParseHTTPDate(s); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC1123Z, s)
+}
+
 type DeleteResult struct {
+	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ DeleteResult" json:"-"`
 	Deleted []types.DeletedObject
 	Error   []types.Error
 }
@@ -330,6 +387,16 @@ type ListBucketsInput struct {
 	ContinuationToken string
 	Prefix            string
 	MaxBuckets        int32
+	// IsVisible, when set, decides whether a bucket whose ACL names an
+	// owner other than Owner is listed too. The backend calls it inside its
+	// listing loop, so MaxBuckets and the continuation token count only the
+	// buckets it lists, and passes the bucket's stored ACL (the JSON
+	// auth.ParseACL reads) along with the context any backend call it makes
+	// must use: a backend holding a resource for the whole listing, such as
+	// a concurrency slot, can mark that context so nested calls don't wait
+	// on it. An error fails the listing. When nil, only the buckets Owner
+	// owns are listed. IsAdmin lists every bucket without calling it.
+	IsVisible func(ctx context.Context, bucket string, acl []byte) (bool, error)
 }
 
 type ListAllMyBucketsResult struct {
@@ -523,7 +590,7 @@ type ListVersionsResult struct {
 	CommonPrefixes      []types.CommonPrefix
 	DeleteMarkers       []DeleteMarkerEntry `xml:"DeleteMarker"`
 	Delimiter           *string
-	EncodingType        types.EncodingType
+	EncodingType        types.EncodingType `xml:",omitempty"`
 	IsTruncated         *bool
 	KeyMarker           *string
 	MaxKeys             *int32
@@ -591,8 +658,8 @@ func (d DeleteMarkerEntry) MarshalXML(e *xml.Encoder, start xml.StartElement) er
 
 type GetBucketVersioningOutput struct {
 	XMLName   xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ VersioningConfiguration" json:"-"`
-	MFADelete *types.MFADeleteStatus
 	Status    *types.BucketVersioningStatus
+	MFADelete *types.MFADeleteStatus `xml:"MfaDelete"`
 }
 
 type PutObjectRetentionInput struct {

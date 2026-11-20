@@ -30,6 +30,7 @@ import (
 	"github.com/versity/versitygw/iamapi/internal/iammiddleware"
 	"github.com/versity/versitygw/iamapi/internal/iamutil"
 	"github.com/versity/versitygw/iamapi/storage"
+	"github.com/versity/versitygw/internal/clientip"
 	"github.com/versity/versitygw/internal/netutil"
 )
 
@@ -66,6 +67,10 @@ type IAMApiServer struct {
 	oidc OIDCConfig
 	// corsAllowOrigin is the single origin browsers may call this API from
 	corsAllowOrigin string
+	// clientIPHeader and trustedProxies control the address recorded in the
+	// request log; see WithClientIPHeader and WithTrustedProxies.
+	clientIPHeader string
+	trustedProxies clientip.TrustedProxies
 }
 
 // OIDCConfig groups the settings that govern how this API treats OIDC
@@ -174,6 +179,16 @@ func New(store storage.Storer, root RootCredentials, opts ...Option) (*IAMApiSer
 		return nil, err
 	}
 
+	// validate the header once here, so the request path can compare it
+	// directly instead of re-normalizing on every request
+	if server.clientIPHeader != "" {
+		header, err := clientip.NormalizeClientIPHeader(server.clientIPHeader)
+		if err != nil {
+			return nil, err
+		}
+		server.clientIPHeader = header
+	}
+
 	app := fiber.New(fiber.Config{
 		AppName:           "versitygw-iam",
 		ServerHeader:      "VERSITYGW",
@@ -199,6 +214,7 @@ func New(store storage.Storer, root RootCredentials, opts ...Option) (*IAMApiSer
 			Format: "${time} | vgw-iam | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 			CustomTags: map[string]logger.LogFunc{
 				logger.TagQueryStringParams: debuglogger.RedactedQueryParamsTag,
+				logger.TagIP:                clientip.Tag,
 			},
 		}))
 	}
@@ -208,6 +224,12 @@ func New(store storage.Storer, root RootCredentials, opts ...Option) (*IAMApiSer
 	}
 
 	app.Use("*", iammiddleware.RequestIDs())
+
+	// resolve the logged client address from a trusted proxy header, when
+	// one is configured
+	if server.clientIPHeader != "" {
+		app.Use("*", clientip.Middleware(server.clientIPHeader, server.trustedProxies))
+	}
 
 	if server.health != "" {
 		app.Get(server.health, func(ctx fiber.Ctx) error {
@@ -255,6 +277,23 @@ func WithConcurrencyLimiter(maxConnections, maxRequests int) Option {
 
 func WithSocketPerm(perm os.FileMode) Option {
 	return func(s *IAMApiServer) { s.socketPerm = perm }
+}
+
+// WithClientIPHeader records the client address from the named proxy header in
+// the request log. The accepted values are clientip.ClientIPHeaderForwardedFor
+// and clientip.ClientIPHeaderRealIP; an empty value (the default) keeps the
+// socket peer address. The header is only honoured from a peer listed in
+// WithTrustedProxies. ctx.IP() is not changed, so SourceIP in policy
+// evaluation keeps using the socket address.
+func WithClientIPHeader(header string) Option {
+	return func(s *IAMApiServer) { s.clientIPHeader = header }
+}
+
+// WithTrustedProxies sets the peers whose client IP header is trusted, as
+// parsed by clientip.ParseTrustedProxies. It only has an effect together with
+// WithClientIPHeader.
+func WithTrustedProxies(trusted clientip.TrustedProxies) Option {
+	return func(s *IAMApiServer) { s.trustedProxies = trusted }
 }
 
 // WithCORSAllowOrigin sets the Access-Control-Allow-Origin value returned to

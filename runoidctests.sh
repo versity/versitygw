@@ -86,7 +86,10 @@ IAM_PID=$!
 wait_for_server "IAM API server" "http://127.0.0.1:$IAM_PORT/healthz" "$IAM_PID"
 
 echo "Starting the s3 gateway backed by it"
+# The tests change role policies and expect the very next request to see the
+# change, which a cached policy decision would hide.
 ./versitygw --health /healthz -p ":$GW_PORT" -a user -s pass \
+	--iam-cache-disable \
 	--iam-standalone-endpoint "127.0.0.1:$IAM_PRIVATE_PORT" \
 	--iam-standalone-client-cert "$CERT_DIR/gw-client.pem" \
 	--iam-standalone-client-cert-key "$CERT_DIR/gw-client.key" \

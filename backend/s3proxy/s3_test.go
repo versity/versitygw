@@ -16,8 +16,11 @@ package s3proxy
 
 import (
 	"context"
+	"encoding/xml"
+	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -25,16 +28,24 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/s3err"
 )
 
-// captureHTTPClient records the request the aws sdk sends and answers 200,
-// so tests can assert on the wire format without a real backend.
+// captureHTTPClient records the request the aws sdk sends and answers
+// respStatus (200 when unset) with respHeader and respBody, so tests can
+// assert on the wire format and on how responses are mapped without a real
+// backend.
 type captureHTTPClient struct {
+	respStatus    int
+	respHeader    http.Header
+	respBody      string
+	query         url.Values
 	body          []byte
 	contentLength int64
 }
 
 func (c *captureHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	c.query = req.URL.Query()
 	c.contentLength = req.ContentLength
 	if req.Body != nil {
 		b, err := io.ReadAll(req.Body)
@@ -45,10 +56,14 @@ func (c *captureHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	} else {
 		c.body = nil
 	}
+	status := c.respStatus
+	if status == 0 {
+		status = http.StatusOK
+	}
 	return &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{},
-		Body:       http.NoBody,
+		StatusCode: status,
+		Header:     c.respHeader,
+		Body:       io.NopCloser(strings.NewReader(c.respBody)),
 		Request:    req,
 	}, nil
 }
@@ -60,7 +75,7 @@ func newCaptureProxy(t *testing.T) (*S3Proxy, *captureHTTPClient) {
 
 func newCaptureProxyWithRegion(t *testing.T, region string) (*S3Proxy, *captureHTTPClient) {
 	t.Helper()
-	capture := &captureHTTPClient{}
+	capture := &captureHTTPClient{respHeader: http.Header{}}
 	client := s3.New(s3.Options{
 		Region:       region,
 		BaseEndpoint: aws.String("http://backend.test"),
@@ -214,5 +229,228 @@ func TestCreateBucketKeepsTagsAndSetsBackendRegionConstraint(t *testing.T) {
 	}
 	if !strings.Contains(body, "<Key>env</Key>") || !strings.Contains(body, "<Value>test</Value>") {
 		t.Errorf("CreateBucket must keep the requested tags, got %q", body)
+	}
+}
+
+func TestGetObjectAttributesMapsResponse(t *testing.T) {
+	p, capture := newCaptureProxy(t)
+	capture.respHeader.Set("x-amz-version-id", "v1")
+	capture.respHeader.Set("x-amz-delete-marker", "false")
+	capture.respBody = `<?xml version="1.0" encoding="UTF-8"?>
+<GetObjectAttributesResponse>
+  <ETag>abc-3</ETag>
+  <ObjectParts>
+    <PartNumberMarker>1</PartNumberMarker>
+    <NextPartNumberMarker>2</NextPartNumberMarker>
+    <MaxParts>1</MaxParts>
+    <IsTruncated>true</IsTruncated>
+    <PartsCount>3</PartsCount>
+  </ObjectParts>
+  <ObjectSize>30</ObjectSize>
+</GetObjectAttributesResponse>`
+
+	out, err := p.GetObjectAttributes(context.Background(), &s3.GetObjectAttributesInput{
+		Bucket:           aws.String("test-bucket"),
+		Key:              aws.String("obj"),
+		ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesObjectParts},
+	})
+	if err != nil {
+		t.Fatalf("GetObjectAttributes: %v", err)
+	}
+	if got := aws.ToString(out.VersionId); got != "v1" {
+		t.Errorf("expected version id v1, got %q", got)
+	}
+	if out.DeleteMarker == nil || *out.DeleteMarker {
+		t.Errorf("expected delete marker false, got %v", out.DeleteMarker)
+	}
+	parts := out.ObjectParts
+	if parts == nil {
+		t.Fatal("expected object parts")
+	}
+	if got := aws.ToInt32(parts.PartsCount); got != 3 {
+		t.Errorf("expected parts count 3, got %d", got)
+	}
+	if parts.PartNumberMarker != 1 || parts.NextPartNumberMarker != 2 ||
+		parts.MaxParts != 1 || !parts.IsTruncated {
+		t.Errorf("unexpected object parts %+v", *parts)
+	}
+}
+
+func TestGetObjectAttributesNoObjectParts(t *testing.T) {
+	p, capture := newCaptureProxy(t)
+	capture.respBody = `<?xml version="1.0" encoding="UTF-8"?>
+<GetObjectAttributesResponse>
+  <ETag>abc</ETag>
+  <ObjectSize>10</ObjectSize>
+</GetObjectAttributesResponse>`
+
+	out, err := p.GetObjectAttributes(context.Background(), &s3.GetObjectAttributesInput{
+		Bucket:           aws.String("test-bucket"),
+		Key:              aws.String("obj"),
+		ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesObjectParts},
+	})
+	if err != nil {
+		t.Fatalf("GetObjectAttributes: %v", err)
+	}
+	if out.ObjectParts != nil {
+		t.Errorf("expected no object parts, got %+v", *out.ObjectParts)
+	}
+}
+
+// S3 rejects an empty versionId with 400 InvalidArgument, so the tagging
+// calls must leave the query parameter out when no version was requested.
+func TestObjectTaggingVersionId(t *testing.T) {
+	ops := []struct {
+		name string
+		call func(p *S3Proxy, versionId string) error
+	}{
+		{"PutObjectTagging", func(p *S3Proxy, versionId string) error {
+			return p.PutObjectTagging(context.Background(), "test-bucket", "obj",
+				versionId, map[string]string{"key": "val"})
+		}},
+		{"GetObjectTagging", func(p *S3Proxy, versionId string) error {
+			_, err := p.GetObjectTagging(context.Background(), "test-bucket", "obj", versionId)
+			return err
+		}},
+		{"DeleteObjectTagging", func(p *S3Proxy, versionId string) error {
+			return p.DeleteObjectTagging(context.Background(), "test-bucket", "obj", versionId)
+		}},
+	}
+
+	for _, op := range ops {
+		t.Run(op.name+" without version id", func(t *testing.T) {
+			p, capture := newCaptureProxy(t)
+			capture.respBody = "<Tagging><TagSet></TagSet></Tagging>"
+
+			if err := op.call(p, ""); err != nil {
+				t.Fatalf("%s: %v", op.name, err)
+			}
+			if capture.query.Has("versionId") {
+				t.Errorf("expected no versionId query parameter, got %q", capture.query.Encode())
+			}
+		})
+		t.Run(op.name+" with version id", func(t *testing.T) {
+			p, capture := newCaptureProxy(t)
+			capture.respBody = "<Tagging><TagSet></TagSet></Tagging>"
+
+			if err := op.call(p, "v1"); err != nil {
+				t.Fatalf("%s: %v", op.name, err)
+			}
+			if got := capture.query.Get("versionId"); got != "v1" {
+				t.Errorf("expected versionId v1, got %q", got)
+			}
+		})
+	}
+}
+
+// A bucket that was never versioned answers with an empty
+// VersioningConfiguration, and S3 leaves MfaDelete out unless it was
+// configured. Neither element may then show up in the gateway response.
+func TestGetBucketVersioningOmitsUnsetFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		respBody string
+		want     string
+	}{
+		{
+			name:     "never versioned",
+			respBody: `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>`,
+			want:     `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></VersioningConfiguration>`,
+		},
+		{
+			name:     "enabled",
+			respBody: `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Enabled</Status></VersioningConfiguration>`,
+			want:     `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Enabled</Status></VersioningConfiguration>`,
+		},
+		{
+			name:     "suspended with mfa delete",
+			respBody: `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Suspended</Status><MfaDelete>Disabled</MfaDelete></VersioningConfiguration>`,
+			want:     `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Suspended</Status><MfaDelete>Disabled</MfaDelete></VersioningConfiguration>`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, capture := newCaptureProxy(t)
+			capture.respBody = tt.respBody
+
+			out, err := p.GetBucketVersioning(context.Background(), "test-bucket")
+			if err != nil {
+				t.Fatalf("GetBucketVersioning: %v", err)
+			}
+			got, err := xml.Marshal(out)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if string(got) != tt.want {
+				t.Errorf("expected %s, got %s", tt.want, got)
+			}
+		})
+	}
+}
+
+// The sdk keeps only the code and message of an upstream error, so the
+// UploadId S3 puts in an InvalidPartOrder error has to come back from the
+// request, while other errors pass through unchanged.
+func TestCompleteMultipartUploadErrorUploadId(t *testing.T) {
+	tests := []struct {
+		name         string
+		respBody     string
+		wantUploadId bool
+		wantErr      s3err.APIError
+	}{
+		{
+			name:         "invalid part order",
+			respBody:     `<Error><Code>InvalidPartOrder</Code><Message>The list of parts was not in ascending order. Parts must be ordered by part number.</Message><UploadId>upload-id</UploadId></Error>`,
+			wantUploadId: true,
+			wantErr:      s3err.GetAPIError(s3err.ErrInvalidPartOrder),
+		},
+		{
+			name:     "no such upload",
+			respBody: `<Error><Code>NoSuchUpload</Code><Message>The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.</Message><UploadId>upload-id</UploadId></Error>`,
+			wantErr: s3err.APIError{
+				Code:           "NoSuchUpload",
+				Description:    "The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.",
+				HTTPStatusCode: http.StatusBadRequest,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, capture := newCaptureProxy(t)
+			capture.respStatus = http.StatusBadRequest
+			capture.respBody = tt.respBody
+
+			_, _, err := p.CompleteMultipartUpload(context.Background(), &s3.CompleteMultipartUploadInput{
+				Bucket:   aws.String("test-bucket"),
+				Key:      aws.String("obj"),
+				UploadId: aws.String("upload-id"),
+				MultipartUpload: &types.CompletedMultipartUpload{
+					Parts: []types.CompletedPart{
+						{PartNumber: aws.Int32(2), ETag: aws.String(`"etag2"`)},
+						{PartNumber: aws.Int32(1), ETag: aws.String(`"etag1"`)},
+					},
+				},
+			})
+
+			var orderErr s3err.InvalidPartOrderError
+			isOrderErr := errors.As(err, &orderErr)
+			if isOrderErr != tt.wantUploadId {
+				t.Fatalf("expected an InvalidPartOrderError to be %v, got %T: %v", tt.wantUploadId, err, err)
+			}
+			if isOrderErr {
+				if orderErr.UploadId != "upload-id" {
+					t.Errorf("expected UploadId %q, got %q", "upload-id", orderErr.UploadId)
+				}
+				if orderErr.APIError != tt.wantErr {
+					t.Errorf("expected %+v, got %+v", tt.wantErr, orderErr.APIError)
+				}
+				return
+			}
+			if err != tt.wantErr {
+				t.Errorf("expected %+v, got %T: %+v", tt.wantErr, err, err)
+			}
+		})
 	}
 }

@@ -23,6 +23,7 @@ type ContextKey string
 
 const (
 	ContextKeyRegion           ContextKey = "region"
+	ContextKeyAnyRegion        ContextKey = "any-region"
 	ContextKeyStartTime        ContextKey = "start-time"
 	ContextKeyIsRoot           ContextKey = "is-root"
 	ContextKeyRootAccessKey    ContextKey = "root-access-key"
@@ -42,6 +43,7 @@ const (
 	ContextKeyWebsiteConfig    ContextKey = "website-config"
 	ContextKeyCallerIdentity   ContextKey = "iam-caller-identity"
 	ContextKeyOriginalURIPath  ContextKey = "original-uri-path"
+	ContextKeyClientIP         ContextKey = "client-ip"
 )
 
 func (ck ContextKey) Set(ctx fiber.Ctx, val any) {

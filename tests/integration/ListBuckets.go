@@ -16,6 +16,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -28,8 +29,15 @@ import (
 
 func ListBuckets_as_user(s *S3Conf) error {
 	testName := "ListBuckets_as_user"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) (err error) {
 		buckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}
+		// delete the buckets made here even when the test fails, so they
+		// don't get into the listings of the ListBuckets tests after it
+		defer func() {
+			for _, elem := range buckets[1:] {
+				err = errors.Join(err, teardown(s, *elem.Name))
+			}
+		}()
 		for range 6 {
 			bckt := getBucketName()
 
@@ -46,7 +54,7 @@ func ListBuckets_as_user(s *S3Conf) error {
 
 		testuser := getUser("user")
 
-		err := createUsers(s, []user{testuser})
+		err = createUsers(s, []user{testuser})
 		if err != nil {
 			return err
 		}
@@ -74,16 +82,10 @@ func ListBuckets_as_user(s *S3Conf) error {
 			return fmt.Errorf("expected buckets owner to be %v, instead got %v",
 				testuser.access, getString(out.Owner.ID))
 		}
-		if !compareBuckets(out.Buckets, buckets[:3]) {
+		userBuckets := sortedBuckets(buckets[:3])
+		if !compareBuckets(out.Buckets, userBuckets) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
-				buckets[:3], out.Buckets)
-		}
-
-		for _, elem := range buckets[1:] {
-			err = teardown(s, *elem.Name)
-			if err != nil {
-				return err
-			}
+				sprintBuckets(userBuckets), sprintBuckets(out.Buckets))
 		}
 
 		return nil
@@ -92,10 +94,10 @@ func ListBuckets_as_user(s *S3Conf) error {
 
 func ListBuckets_as_admin(s *S3Conf) error {
 	testName := "ListBuckets_as_admin"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) (err error) {
 		testuser, adminUser := getUser("user"), getUser("admin")
 
-		err := createUsers(s, []user{testuser, adminUser})
+		err = createUsers(s, []user{testuser, adminUser})
 		if err != nil {
 			return err
 		}
@@ -117,6 +119,13 @@ func ListBuckets_as_admin(s *S3Conf) error {
 		}
 
 		buckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}
+		// delete the buckets made here even when the test fails, so they
+		// don't get into the listings of the ListBuckets tests after it
+		defer func() {
+			for _, elem := range buckets[1:] {
+				err = errors.Join(err, teardown(s, *elem.Name))
+			}
+		}()
 		for range 6 {
 			bckt := getBucketName()
 
@@ -152,16 +161,10 @@ func ListBuckets_as_admin(s *S3Conf) error {
 			return fmt.Errorf("expected buckets owner to be %v, instead got %v",
 				adminUser.access, getString(out.Owner.ID))
 		}
-		if !compareBuckets(out.Buckets, buckets, ignore...) {
+		expected := sortedBuckets(buckets)
+		if !compareBuckets(out.Buckets, expected, ignore...) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
-				sprintBuckets(buckets), sprintBuckets(out.Buckets))
-		}
-
-		for _, elem := range buckets[1:] {
-			err = teardown(s, *elem.Name)
-			if err != nil {
-				return err
-			}
+				sprintBuckets(expected), sprintBuckets(out.Buckets))
 		}
 
 		return nil
@@ -170,7 +173,7 @@ func ListBuckets_as_admin(s *S3Conf) error {
 
 func ListBuckets_with_prefix(s *S3Conf) error {
 	testName := "ListBuckets_with_prefix"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) (err error) {
 		prefix := "my-prefix-"
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -188,6 +191,13 @@ func ListBuckets_with_prefix(s *S3Conf) error {
 		}
 
 		allBuckets, prefixedBuckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}, []types.Bucket{}
+		// delete the buckets made here even when the test fails, so they
+		// don't get into the listings of the ListBuckets tests after it
+		defer func() {
+			for _, elem := range allBuckets[1:] {
+				err = errors.Join(err, teardown(s, *elem.Name))
+			}
+		}()
 		for i := range 5 {
 			bckt := getBucketName()
 			if i%2 == 0 {
@@ -229,16 +239,10 @@ func ListBuckets_with_prefix(s *S3Conf) error {
 			return fmt.Errorf("expected prefix to be %v, instead got %v",
 				prefix, getString(out.Prefix))
 		}
-		if !compareBuckets(out.Buckets, prefixedBuckets, ignore...) {
+		expected := sortedBuckets(prefixedBuckets)
+		if !compareBuckets(out.Buckets, expected, ignore...) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
-				prefixedBuckets, out.Buckets)
-		}
-
-		for _, elem := range allBuckets[1:] {
-			err = teardown(s, *elem.Name)
-			if err != nil {
-				return err
-			}
+				sprintBuckets(expected), sprintBuckets(out.Buckets))
 		}
 
 		return nil
@@ -442,7 +446,7 @@ func ListBuckets_empty_success(s *S3Conf) error {
 
 func ListBuckets_success(s *S3Conf) error {
 	testName := "ListBuckets_success"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) (err error) {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		initOut, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{})
 		cancel()
@@ -458,6 +462,13 @@ func ListBuckets_success(s *S3Conf) error {
 		}
 
 		buckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}
+		// delete the buckets made here even when the test fails, so they
+		// don't get into the listings of the ListBuckets tests after it
+		defer func() {
+			for _, elem := range buckets[1:] {
+				err = errors.Join(err, teardown(s, *elem.Name))
+			}
+		}()
 		for range 5 {
 			bckt := getBucketName()
 
@@ -483,16 +494,10 @@ func ListBuckets_success(s *S3Conf) error {
 			return fmt.Errorf("expected owner to be %v, instead got %v",
 				s.awsID, getString(out.Owner.ID))
 		}
-		if !compareBuckets(out.Buckets, buckets, ignore...) {
+		expected := sortedBuckets(buckets)
+		if !compareBuckets(out.Buckets, expected, ignore...) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
-				sprintBuckets(buckets), sprintBuckets(out.Buckets))
-		}
-
-		for _, elem := range buckets[1:] {
-			err = teardown(s, *elem.Name)
-			if err != nil {
-				return err
-			}
+				sprintBuckets(expected), sprintBuckets(out.Buckets))
 		}
 
 		return nil

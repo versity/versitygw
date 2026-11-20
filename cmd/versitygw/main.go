@@ -23,17 +23,20 @@ import (
 	"os"
 
 	"github.com/urfave/cli/v2"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/cmd/internal/gwcli"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/embedgw"
 	"github.com/versity/versitygw/internal/netutil"
+	"github.com/versity/versitygw/webui"
 )
 
 var (
 	ports                                         []string
 	admPorts                                      []string
 	region                                        string
+	allowAnyRegion                                bool
 	maxConnections, maxRequests                   int
 	adminMaxConnections, adminMaxRequests         int
 	corsAllowOrigin                               string
@@ -48,6 +51,8 @@ var (
 	eventConfigFilePath                           string
 	logWebhookURL, accessLog                      string
 	adminLogFile                                  string
+	clientIPHeader                                string
+	trustedProxies                                string
 	healthPath                                    string
 	virtualDomain                                 string
 	logLevel                                      string
@@ -75,6 +80,9 @@ var (
 	s3IamRegion, s3IamBucket                      string
 	s3IamEndpoint                                 string
 	s3IamSslNoVerify                              bool
+	azIamAccount, azIamKey                        string
+	azIamSASToken, azIamURL                       string
+	azIamContainer                                string
 	iamCacheDisable                               bool
 	iamCacheTTL                                   int
 	iamCachePrune                                 int
@@ -91,6 +99,7 @@ var (
 	standaloneDefaultUserID                       int
 	standaloneDefaultGroupID                      int
 	standaloneDefaultProjectID                    int
+	standalonePolicyCacheTTL                      int
 	iamDebug                                      bool
 	webuiPorts                                    []string
 	webuiCertFile, webuiKeyFile                   string
@@ -100,11 +109,18 @@ var (
 	webuiIAMGateways                              []string
 	webuiPathPrefix                               string
 	webuiS3Prefix                                 string
+	webuiOIDCIssuer, webuiOIDCClientID            string
+	webuiOIDCRoleArn, webuiOIDCRoleClaim          string
+	webuiOIDCScopes, webuiOIDCLabel               string
+	webuiOIDCSessionDuration                      int
+	webuiOIDCRedirectURI                          string
+	webuiOIDCAllowHTTP                            bool
 	websitePorts                                  []string
 	websiteDomain                                 string
 	websiteCertFile, websiteKeyFile               string
 	websiteNoTLS                                  bool
 	disableACLs                                   bool
+	listBucketsScope                              string
 	disableSSECTLS                                bool
 	mpMaxParts                                    int
 	socketPerm                                    string
@@ -276,6 +292,62 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_WEBUI_S3_PREFIX"},
 			Destination: &webuiS3Prefix,
 		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-issuer",
+			Usage:       "turn on WebUI single sign-on with this OpenID Connect provider issuer URL (e.g. 'https://auth.example.com/realms/main'); it must match the issuer in the provider's discovery document and the OIDC provider registered on the standalone IAM service exactly. The browser exchanges the provider's ID token for temporary credentials with AssumeRoleWithWebIdentity, so this requires --webui-iam-gateways. Nothing in the --webui-oidc-* settings is secret: all of it is sent to the browser",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_ISSUER"},
+			Destination: &webuiOIDCIssuer,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-client-id",
+			Usage:       "client ID of the public client (no client secret, PKCE) registered at the provider for the WebUI; required with --webui-oidc-issuer, and must be in the IAM OIDC provider's client ID list",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_CLIENT_ID"},
+			Destination: &webuiOIDCClientID,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-role-arn",
+			Usage:       "role assumed by WebUI single sign-on sessions (e.g. 'arn:aws:iam::000000000000:role/webui-users'); used when --webui-oidc-role-claim is unset or the token names no role. At least one of the two is required with --webui-oidc-issuer",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_ROLE_ARN"},
+			Destination: &webuiOIDCRoleArn,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-role-claim",
+			Usage:       "name of an ID token claim holding one or more role ARNs for WebUI single sign-on; with several, the user picks one at sign-in",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_ROLE_CLAIM"},
+			Destination: &webuiOIDCRoleClaim,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-scopes",
+			Usage:       "space-separated scopes requested at the provider for WebUI single sign-on; must include openid. Some providers only issue the refresh token that renews a session in the background when offline_access is requested",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_SCOPES"},
+			Value:       webui.DefaultOIDCScopes,
+			Destination: &webuiOIDCScopes,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-label",
+			Usage:       "text of the WebUI single sign-on button",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_LABEL"},
+			Value:       webui.DefaultOIDCLabel,
+			Destination: &webuiOIDCLabel,
+		},
+		&cli.IntFlag{
+			Name:        "webui-oidc-session-duration",
+			Usage:       "lifetime of WebUI single sign-on credentials in seconds, sent as AssumeRoleWithWebIdentity DurationSeconds (900-43200, and at most the role's MaxSessionDuration); 0 uses the IAM service default of 3600",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_SESSION_DURATION"},
+			Destination: &webuiOIDCSessionDuration,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-redirect-uri",
+			Usage:       "redirect URI registered at the provider for WebUI single sign-on; by default the browser uses the login page's own URL (origin plus --webui-path-prefix or --webui-s3-prefix, with a trailing '/'). It must be on the same origin users open the WebUI from",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_REDIRECT_URI"},
+			Destination: &webuiOIDCRedirectURI,
+		},
+		&cli.BoolFlag{
+			Name:        "webui-oidc-allow-http",
+			Usage:       "allow a plain http --webui-oidc-issuer, for test providers only; the IAM service needs --oidc-allow-insecure-transport to accept the same issuer",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_ALLOW_HTTP"},
+			Destination: &webuiOIDCAllowHTTP,
+		},
 		&cli.StringSliceFlag{
 			Name:    "website",
 			Usage:   "enable static website hosting endpoint on the specified listen address (e.g. ':8080'; same forms as --port; can be specified multiple times; requires --website-domain)",
@@ -326,6 +398,12 @@ func initFlags() []cli.Flag {
 			Value:       "us-east-1",
 			Destination: &region,
 			Aliases:     []string{"r"},
+		},
+		&cli.BoolFlag{
+			Name:        "allow-any-region",
+			Usage:       "accept requests signed for any region, not only the gateway region",
+			EnvVars:     []string{"VGW_ALLOW_ANY_REGION"},
+			Destination: &allowAnyRegion,
 		},
 		&cli.IntFlag{
 			Name:        "max-connections",
@@ -451,6 +529,16 @@ func initFlags() []cli.Flag {
 			Destination: &disableACLs,
 			Aliases:     []string{"noacl"},
 		},
+		&cli.StringFlag{
+			Name: "list-buckets-scope",
+			Usage: "which buckets ListBuckets returns to non-admin users of an IAM backend without identity policies (internal, LDAP, Vault, IPA, S3): " +
+				"owned (their own buckets, as in AWS), " +
+				"accessible (also buckets whose ACL or bucket policy grants them s3:ListBucket on at least part of the bucket, ignoring public grants; reads the policy of each bucket they don't own on every listing), " +
+				"or all (every bucket). Only owned is allowed with the standalone IAM service",
+			EnvVars:     []string{"VGW_LIST_BUCKETS_SCOPE"},
+			Value:       string(auth.ListBucketsScopeOwned),
+			Destination: &listBucketsScope,
+		},
 		&cli.BoolFlag{
 			Name:        "disable-sse-c-tls-enforcement",
 			Usage:       "allow SSE-C requests over plaintext HTTP",
@@ -468,6 +556,18 @@ func initFlags() []cli.Flag {
 			Usage:       "enable admin server access logging to specified file, stdout, stderr, or - for stdout",
 			EnvVars:     []string{"LOGFILE", "VGW_ADMIN_ACCESS_LOG"},
 			Destination: &adminLogFile,
+		},
+		&cli.StringFlag{
+			Name:        "client-ip-header",
+			Usage:       `header to take the client IP for logs from: "X-Forwarded-For" or "X-Real-Ip"; disabled by default; requires --trusted-proxies`,
+			EnvVars:     []string{"VGW_CLIENT_IP_HEADER"},
+			Destination: &clientIPHeader,
+		},
+		&cli.StringFlag{
+			Name:        "trusted-proxies",
+			Usage:       `comma-separated IP addresses and CIDR prefixes of the proxies in front of the gateway, or "unix" to trust a peer connected over a unix socket; the client IP header is only honoured from these peers, and is required when --client-ip-header is set`,
+			EnvVars:     []string{"VGW_TRUSTED_PROXIES"},
+			Destination: &trustedProxies,
 		},
 		&cli.StringFlag{
 			Name:        "log-webhook-url",
@@ -738,6 +838,36 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_S3_IAM_NO_VERIFY"},
 			Destination: &s3IamSslNoVerify,
 		},
+		&cli.StringFlag{
+			Name:        "iam-azure-account",
+			Usage:       "azure IAM storage account name",
+			EnvVars:     []string{"VGW_IAM_AZURE_ACCOUNT_NAME"},
+			Destination: &azIamAccount,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-access-key",
+			Usage:       "azure IAM storage account key",
+			EnvVars:     []string{"VGW_IAM_AZURE_ACCESS_KEY"},
+			Destination: &azIamKey,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-sas-token",
+			Usage:       "azure IAM SAS token",
+			EnvVars:     []string{"VGW_IAM_AZURE_SAS_TOKEN"},
+			Destination: &azIamSASToken,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-url",
+			Usage:       "azure IAM blob service URL, defaults to https://<account>.blob.core.windows.net/ (set it for Azurite or custom endpoints)",
+			EnvVars:     []string{"VGW_IAM_AZURE_ENDPOINT"},
+			Destination: &azIamURL,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-container",
+			Usage:       "azure IAM container, enables the azure blob IAM service",
+			EnvVars:     []string{"VGW_IAM_AZURE_CONTAINER"},
+			Destination: &azIamContainer,
+		},
 		&cli.BoolFlag{
 			Name:        "iam-cache-disable",
 			Usage:       "disable local iam cache",
@@ -890,6 +1020,13 @@ func initFlags() []cli.Flag {
 			Destination: &standaloneDefaultProjectID,
 		},
 		&cli.IntFlag{
+			Name:        "iam-standalone-policy-cache-ttl",
+			Usage:       "how long the standalone IAM backend reuses an identity-policy decision, and so how long a policy change can take to apply (seconds, 0 disables; --iam-cache-disable also disables it)",
+			EnvVars:     []string{"VGW_IAM_STANDALONE_POLICY_CACHE_TTL"},
+			Value:       5,
+			Destination: &standalonePolicyCacheTTL,
+		},
+		&cli.IntFlag{
 			Name:        "mp-max-parts",
 			Usage:       "maximum number of parts allowed in a multipart upload",
 			EnvVars:     []string{"VGW_MP_MAX_PARTS"},
@@ -950,6 +1087,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		RootUserAccess:              gwcli.RootUserAccess,
 		RootUserSecret:              gwcli.RootUserSecret,
 		Region:                      region,
+		AllowAnyRegion:              allowAnyRegion,
 		Ports:                       ports,
 		AdminPorts:                  admPorts,
 		MaxConnections:              maxConnections,
@@ -969,6 +1107,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		Readonly:                    readonly,
 		KeepAlive:                   keepAlive,
 		DisableACLs:                 disableACLs,
+		ListBucketsScope:            listBucketsScope,
 		DisableSSECTLS:              disableSSECTLS,
 		DisableStrictBucketNames:    gwcli.DisableStrictBucketNames,
 		VirtualDomain:               virtualDomain,
@@ -1006,6 +1145,11 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		S3IAMBucket:                 s3IamBucket,
 		S3IAMEndpoint:               s3IamEndpoint,
 		S3IAMDisableSSLVerify:       s3IamSslNoVerify,
+		AzureIAMAccount:             azIamAccount,
+		AzureIAMKey:                 azIamKey,
+		AzureIAMSASToken:            azIamSASToken,
+		AzureIAMURL:                 azIamURL,
+		AzureIAMContainer:           azIamContainer,
 		IAMCacheDisable:             iamCacheDisable,
 		IAMCacheTTL:                 iamCacheTTL,
 		IAMCachePrune:               iamCachePrune,
@@ -1023,9 +1167,12 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		StandaloneDefaultUserID:     standaloneDefaultUserID,
 		StandaloneDefaultGroupID:    standaloneDefaultGroupID,
 		StandaloneDefaultProjectID:  standaloneDefaultProjectID,
+		StandalonePolicyCacheTTL:    standalonePolicyCacheTTL,
 		AccessLog:                   accessLog,
 		LogWebhookURL:               logWebhookURL,
 		AdminLogFile:                adminLogFile,
+		ClientIPHeader:              clientIPHeader,
+		TrustedProxies:              trustedProxies,
 		MetricsService:              metricsService,
 		StatsdServers:               statsdServers,
 		DogstatsServers:             dogstatsServers,
@@ -1048,6 +1195,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		WebuiIAMGateways:            webuiIAMGateways,
 		WebuiPathPrefix:             webuiPathPrefix,
 		WebuiS3Prefix:               webuiS3Prefix,
+		WebuiOIDC:                   webuiOIDCConfig(),
 		WebsitePorts:                websitePorts,
 		WebsiteDomain:               websiteDomain,
 		WebsiteCertFile:             websiteCertFile,
@@ -1058,4 +1206,20 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		Build:                       Build,
 		BuildTime:                   BuildTime,
 	})
+}
+
+// webuiOIDCConfig collects the --webui-oidc-* flags, shared by the WebUI the
+// gateway hosts and the one the iam command hosts.
+func webuiOIDCConfig() webui.OIDCConfig {
+	return webui.OIDCConfig{
+		Issuer:          webuiOIDCIssuer,
+		ClientID:        webuiOIDCClientID,
+		RoleArn:         webuiOIDCRoleArn,
+		RoleClaim:       webuiOIDCRoleClaim,
+		Scopes:          webuiOIDCScopes,
+		Label:           webuiOIDCLabel,
+		SessionDuration: webuiOIDCSessionDuration,
+		RedirectURI:     webuiOIDCRedirectURI,
+		AllowHTTP:       webuiOIDCAllowHTTP,
+	}
 }

@@ -17,9 +17,11 @@ package integration
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -363,5 +365,80 @@ func IAM_CreateBucket_success(s *S3Conf) error {
 		}
 
 		return teardown(s, bucket)
+	})
+}
+
+// IAM_concurrent_user_updates creates and deletes users in parallel, so
+// that an IAM service losing concurrent updates fails the test.
+func IAM_concurrent_user_updates(s *S3Conf) error {
+	testName := "IAM_concurrent_user_updates"
+	return actionHandlerNoSetup(s, testName, func(_ *s3.Client, _ string) error {
+		const count = 50
+		users := make([]user, count)
+		for i := range users {
+			users[i] = getUser("user")
+		}
+
+		// parallel runs f for every user and joins the errors
+		parallel := func(f func(usr user) error) error {
+			var wg sync.WaitGroup
+			errs := make([]error, count)
+			for i, usr := range users {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					errs[i] = f(usr)
+				}()
+			}
+			wg.Wait()
+			return errors.Join(errs...)
+		}
+
+		err := parallel(func(usr user) error {
+			return createUsers(s, []user{usr})
+		})
+		if err != nil {
+			return err
+		}
+
+		// every user must exist and authenticate
+		for _, usr := range users {
+			cfg := *s
+			cfg.awsID = usr.access
+			cfg.awsSecret = usr.secret
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := cfg.GetClient().ListBuckets(ctx, &s3.ListBucketsInput{})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("user %v: %w", usr.access, err)
+			}
+		}
+
+		err = parallel(func(usr user) error {
+			out, err := execCommand(s.getAdminCommand("-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "delete-user", "-a", usr.access)...)
+			if err != nil {
+				return fmt.Errorf("delete user %v: %w: %s", usr.access, err, out)
+			}
+			if strings.Contains(string(out), adminErrorPrefix) {
+				return fmt.Errorf("failed to delete user %v: %s", usr.access, out)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		// no deleted user may be left
+		out, err := execCommand(s.getAdminCommand("-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "list-users")...)
+		if err != nil {
+			return fmt.Errorf("list users: %w: %s", err, out)
+		}
+		for _, usr := range users {
+			if strings.Contains(string(out), usr.access) {
+				return fmt.Errorf("user %v still exists after delete", usr.access)
+			}
+		}
+
+		return nil
 	})
 }

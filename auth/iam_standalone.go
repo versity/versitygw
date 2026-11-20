@@ -110,6 +110,17 @@ type IAMServiceStandaloneConfig struct {
 	// attacker-controlled until the signature is verified. Empty disables
 	// the reporting rather than storing a blank region.
 	Region string
+	// SigningKeyCacheTTL is how long a derived signing key, and the identity
+	// it was resolved for, is reused for further requests made with the same
+	// credential and credential scope, though never past the expiration of a
+	// session. It is therefore also the longest a deactivated or deleted
+	// access key can keep working. Zero disables the cache.
+	SigningKeyCacheTTL time.Duration
+	// PolicyCacheTTL is how long an identity-policy decision is reused for
+	// further requests by the same identity for the same actions and
+	// resource, and therefore how long a policy change can take to apply.
+	// Zero disables the cache.
+	PolicyCacheTTL time.Duration
 }
 
 // IAMServiceStandalone is the S3 gateway's client for a standalone IAM
@@ -134,6 +145,10 @@ type IAMServiceStandalone struct {
 	// cannot name itself. Written once by probeProtocol before this client
 	// serves anything, and read-only afterwards.
 	accountID string
+	// signingKeys and policies cache the two calls every S3 request makes,
+	// and are nil when their TTL disables them.
+	signingKeys *signingKeyCache
+	policies    *policyCache
 }
 
 var (
@@ -168,11 +183,13 @@ func NewIAMServiceStandalone(rootAcc Account, cfg IAMServiceStandaloneConfig) (*
 	}
 
 	svc := &IAMServiceStandalone{
-		baseURL: baseURL,
-		access:  access,
-		secret:  secret,
-		rootAcc: rootAcc,
-		cfg:     cfg,
+		baseURL:     baseURL,
+		access:      access,
+		secret:      secret,
+		rootAcc:     rootAcc,
+		cfg:         cfg,
+		signingKeys: newSigningKeyCache(cfg.SigningKeyCacheTTL),
+		policies:    newPolicyCache(cfg.PolicyCacheTTL),
 	}
 	svc.client.Store(client)
 
@@ -463,14 +480,17 @@ func (s *IAMServiceStandalone) DeriveSigningKey(access, sessionToken, date, regi
 		return sigv4auth.DeriveKey(s.rootAcc.Secret, date, region, service), s.rootAccount(), nil
 	}
 
-	var resp private.DeriveSigningKeyResponse
-	err := s.doPrivateRequest(private.DerivePath, private.DeriveSigningKeyRequest{
-		AccessKeyID:  access,
-		SessionToken: sessionToken,
-		Date:         date,
-		Region:       region,
-		Service:      service,
-	}, &resp)
+	resp, err := s.signingKeys.derive(access, sessionToken, date, region, service, func() (private.DeriveSigningKeyResponse, error) {
+		var resp private.DeriveSigningKeyResponse
+		err := s.doPrivateRequest(private.DerivePath, private.DeriveSigningKeyRequest{
+			AccessKeyID:  access,
+			SessionToken: sessionToken,
+			Date:         date,
+			Region:       region,
+			Service:      service,
+		}, &resp)
+		return resp, err
+	})
 	if err != nil {
 		return nil, Account{}, err
 	}
@@ -479,7 +499,8 @@ func (s *IAMServiceStandalone) DeriveSigningKey(access, sessionToken, date, regi
 	acc.Arn = resp.PrincipalArn
 	acc.RoleArn = resp.RoleArn
 
-	return resp.DerivedKey, acc, nil
+	// The cache hands every caller the same key, so each gets its own copy.
+	return bytes.Clone(resp.DerivedKey), acc, nil
 }
 
 // accountFor builds the Account metadata DeriveSigningKey/GetUserAccount
@@ -520,6 +541,21 @@ func (s *IAMServiceStandalone) ResolvePrincipals(principals []string) ([]string,
 // actions against resource in a single request rather than one round trip
 // per action.
 func (s *IAMServiceStandalone) EvaluatePolicy(access, sessionToken string, actions []Action, resources []string, condition map[string][]string) (PolicyEvaluation, error) {
+	eval, err := s.policies.evaluate(access, sessionToken, actions, resources, condition, func() (standaloneEvaluation, error) {
+		return s.fetchPolicyEvaluation(access, sessionToken, actions, resources, condition)
+	})
+	if errors.Is(err, ErrNoSuchUser) || errors.Is(err, ErrInvalidSessionToken) {
+		// The request authenticated with a signing key cached from before
+		// its credential went away. Forgetting the key refuses the next
+		// request at authentication rather than leaving it to the TTL.
+		s.signingKeys.forget(access, sessionToken)
+	}
+	return eval, err
+}
+
+// fetchPolicyEvaluation asks the IAM service to evaluate the actions ×
+// resources matrix, failing closed on a response of the wrong shape.
+func (s *IAMServiceStandalone) fetchPolicyEvaluation(access, sessionToken string, actions []Action, resources []string, condition map[string][]string) (standaloneEvaluation, error) {
 	actionStrs := make([]string, len(actions))
 	for i, action := range actions {
 		actionStrs[i] = string(action)
@@ -537,32 +573,36 @@ func (s *IAMServiceStandalone) EvaluatePolicy(access, sessionToken string, actio
 		Service: sigv4auth.ServiceS3,
 	}, &resp)
 	if err != nil {
-		return PolicyEvaluation{}, err
+		return standaloneEvaluation{}, err
 	}
 	if len(resp.Decisions) != len(resources) {
 		// A protocol mismatch between the gateway and IAM service builds —
 		// fail closed rather than silently under- or over-evaluating the
 		// requested matrix.
-		return PolicyEvaluation{}, fmt.Errorf("iam standalone: evaluate-policy returned %d resource decisions for %d resources", len(resp.Decisions), len(resources))
+		return standaloneEvaluation{}, fmt.Errorf("iam standalone: evaluate-policy returned %d resource decisions for %d resources", len(resp.Decisions), len(resources))
 	}
 
 	decisions, err := decisionMatrixFromWire(resp.Decisions, len(actions))
 	if err != nil {
-		return PolicyEvaluation{}, err
+		return standaloneEvaluation{}, err
 	}
 
-	eval := PolicyEvaluation{
-		Decisions:    decisions,
-		PrincipalArn: resp.PrincipalArn,
+	eval := standaloneEvaluation{
+		PolicyEvaluation: PolicyEvaluation{
+			Decisions:    decisions,
+			PrincipalArn: resp.PrincipalArn,
+		},
+		cacheable:     resp.Cacheable,
+		conditionKeys: resp.ConditionKeys,
 	}
 
 	if resp.HasSessionPolicy {
 		if len(resp.SessionDecisions) != len(resources) {
-			return PolicyEvaluation{}, fmt.Errorf("iam standalone: evaluate-policy returned %d session-decision rows for %d resources", len(resp.SessionDecisions), len(resources))
+			return standaloneEvaluation{}, fmt.Errorf("iam standalone: evaluate-policy returned %d session-decision rows for %d resources", len(resp.SessionDecisions), len(resources))
 		}
 		sessionDecisions, err := decisionMatrixFromWire(resp.SessionDecisions, len(actions))
 		if err != nil {
-			return PolicyEvaluation{}, err
+			return standaloneEvaluation{}, err
 		}
 		eval.HasSessionPolicy = true
 		eval.SessionDecisions = sessionDecisions

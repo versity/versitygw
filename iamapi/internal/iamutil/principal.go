@@ -11,26 +11,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package private
+package iamutil
 
 import (
 	"context"
-	"errors"
 	"strings"
 
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/iamapi/iamerr"
-	"github.com/versity/versitygw/iamapi/internal/iamutil"
+	"github.com/versity/versitygw/iamapi/policy"
 )
 
 // accountIDLen is the length of an AWS account id, and the length the bare
 // account-id principal form must have.
 const accountIDLen = 12
 
-// principalResolves reports whether principal names an identity that exists
-// right now, in the form an S3 bucket policy's Principal element may take.
-// It is the write-time check behind PutBucketPolicy: a statement naming
-// something that cannot be resolved is rejected rather than stored as one
-// that can never match.
+// PrincipalResolves reports whether principal names an identity that exists
+// right now, in the form the AWS principal of a resource-based policy may
+// take: an S3 bucket policy's Principal element, or a role trust policy's
+// Principal.AWS. It is the write-time check behind PutBucketPolicy,
+// CreateRole and UpdateAssumeRolePolicy: a statement naming something that
+// cannot be resolved is rejected rather than stored as one that can never
+// match.
 //
 // The accepted forms, all scoped to accountID — this service serves exactly
 // one account, and an ARN naming another cannot name anything it knows:
@@ -51,8 +53,8 @@ const accountIDLen = 12
 // The session name in an assumed-role ARN is not checked for EXISTENCE —
 // it names a session that need not have been minted yet, and commonly
 // won't have been when the policy is written — but it must still be a
-// session name that could exist: the same grammar
-// AssumeRoleWithWebIdentity enforces on RoleSessionName. Without that,
+// session name that could exist: the same grammar AssumeRole and
+// AssumeRoleWithWebIdentity enforce on RoleSessionName. Without that,
 // "assumed-role/reader/*" would be stored as a statement that no session
 // can ever match, since a caller's session ARN carries a literal name and
 // nothing here pattern-matches.
@@ -61,7 +63,7 @@ const accountIDLen = 12
 // instance-profile ARN, another partition, another account, an access key
 // id — does not resolve. Wildcards in particular: only a whole Principal of
 // "*" is special, and that never reaches here.
-func principalResolves(ctx context.Context, store iamutil.IdentityStore, accountID, principal string) (bool, error) {
+func PrincipalResolves(ctx context.Context, store IdentityStore, accountID, principal string) (bool, error) {
 	if principal == accountID && isAccountID(principal) {
 		return true, nil
 	}
@@ -99,7 +101,7 @@ func principalResolves(ctx context.Context, store iamutil.IdentityStore, account
 	if !found || roleName == "" {
 		return false, nil
 	}
-	if err := iamutil.ValidateRoleSessionName(sessionName); err != nil {
+	if err := ValidateRoleSessionName(sessionName); err != nil {
 		return false, nil
 	}
 	role, err := store.GetRole(ctx, roleName)
@@ -111,16 +113,36 @@ func principalResolves(ctx context.Context, store iamutil.IdentityStore, account
 	// wrong-case role name would be accepted and then match nothing — the
 	// same reason the user and role branches above compare the stored ARN
 	// rather than trusting the lookup.
-	return role != nil && iamutil.BuildAssumedRoleArn(accountID, role.RoleName, sessionName) == principal, nil
+	return role != nil && BuildAssumedRoleArn(accountID, role.RoleName, sessionName) == principal, nil
+}
+
+// ValidateTrustPrincipals rejects a trust policy naming an AWS principal that
+// resolves to nothing: a user or role that does not exist, another account,
+// a wildcard inside an ARN. Such a statement could never match a caller, and
+// storing it would hide the mistake until an AssumeRole call is refused.
+func ValidateTrustPrincipals(ctx context.Context, store IdentityStore, document string) error {
+	for _, principal := range policy.TrustAWSPrincipals(document) {
+		if principal == policy.WildcardPrincipal {
+			continue
+		}
+		resolves, err := PrincipalResolves(ctx, store, DefaultAccountID, principal)
+		if err != nil {
+			return err
+		}
+		if !resolves {
+			debuglogger.Logf("trust policy names an AWS principal that does not resolve: %q", principal)
+			return iamerr.InvalidPrincipalInPolicy("AWS", principal)
+		}
+	}
+	return nil
 }
 
 // ignoreNoSuchEntity returns nil for the store's "this identity does not
-// exist" error — the answer principalResolves is asking for — and err
+// exist" error — the answer PrincipalResolves is asking for — and err
 // itself for anything else, which is a fault in the service rather than a
 // verdict on the principal.
 func ignoreNoSuchEntity(err error) error {
-	var apiErr iamerr.Error
-	if errors.As(err, &apiErr) && apiErr.Code == "NoSuchEntity" {
+	if iamerr.IsNoSuchEntity(err) {
 		return nil
 	}
 	return err

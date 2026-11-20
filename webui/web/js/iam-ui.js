@@ -87,7 +87,7 @@ function iamArnCell(arn) {
   const safe = escapeHtml(arn);
   return `<div class="flex items-center gap-2 min-w-0">
     <span class="font-mono text-xs text-charcoal truncate max-w-[22rem]" title="${safe}">${safe}</span>
-    <button onclick="iamCopy('${safe}', 'ARN')" class="p-1 text-charcoal-300 hover:text-accent hover:bg-accent-50 rounded transition-colors flex-shrink-0" title="Copy ARN">
+    <button onclick="iamCopy('${escapeJsAttr(arn)}', 'ARN')" class="p-1 text-charcoal-300 hover:text-accent hover:bg-accent-50 rounded transition-colors flex-shrink-0" title="Copy ARN">
       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
     </button>
   </div>`;
@@ -345,7 +345,7 @@ const IAM_POLICY_VARIANTS = {
   },
   trust: {
     infoTitle: 'About Trust Policies',
-    infoBody: 'A trust policy states who may assume this role. <strong>Principal</strong> is required, <strong>Resource</strong> is not allowed, and every action must be <code>sts:</code>-prefixed. Shared identity providers are additionally tenancy-scoped by the server; it will describe the rule if the document violates it.',
+    infoBody: 'A trust policy states who may assume this role. <strong>Principal</strong> is required, <strong>Resource</strong> is not allowed, and every action must be an <code>sts:</code> action a trust policy may name, spelled exactly and without wildcards. An <code>AWS</code> principal has to exist when the policy is saved. Shared identity providers are additionally tenancy-scoped by the server; it will describe the rule if the document violates it.',
     reference: `<div>
         <p class="font-medium text-charcoal mb-1">Actions:</p>
         <ul class="space-y-0.5 text-charcoal-400">
@@ -356,7 +356,7 @@ const IAM_POLICY_VARIANTS = {
       <div>
         <p class="font-medium text-charcoal mb-1">Principal Keys:</p>
         <ul class="space-y-0.5 text-charcoal-400">
-          <li>&bull; <code class="bg-white px-1 py-0.5 rounded">AWS</code> - a user ARN in this account</li>
+          <li>&bull; <code class="bg-white px-1 py-0.5 rounded">AWS</code> - a user, role or session ARN in this account, the account itself, or <code>*</code></li>
           <li>&bull; <code class="bg-white px-1 py-0.5 rounded">Federated</code> - an OIDC provider ARN</li>
           <li>&bull; <code class="bg-white px-1 py-0.5 rounded">Service</code> - a service principal</li>
         </ul>
@@ -385,9 +385,9 @@ const IAM_POLICY_VARIANTS = {
       Version: '2012-10-17',
       Statement: [
         {
-          Sid: 'AllowUserToAssume',
+          Sid: 'AllowAccountToAssume',
           Effect: 'Allow',
-          Principal: { AWS: `arn:aws:iam::${IAM_ACCOUNT_ID}:user/example` },
+          Principal: { AWS: `arn:aws:iam::${IAM_ACCOUNT_ID}:root` },
           Action: ['sts:AssumeRole']
         }
       ]

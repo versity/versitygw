@@ -36,51 +36,40 @@ type ChecksumReader interface {
 // ChecksumReader.
 //
 // If bodyReader already supports ChecksumReader, we wrap stackedReader
-// with MockChecksumReader so that reading continues from stackedReader,
-// but Algorithm() and Checksum() still delegate to the underlying reader.
+// with MockChecksumReader so that reading continues from stackedReader
+// (keeping any validation it performs), while Algorithm() and Checksum()
+// delegate to bodyReader, which stackedReader is expected to consume.
 //
 // If bodyReader is not a ChecksumReader, we simply return stackedReader.
 func NewChecksumReader(bodyReader io.Reader, stackedReader io.Reader) io.Reader {
-	_, ok := bodyReader.(ChecksumReader)
+	cr, ok := bodyReader.(ChecksumReader)
 	if ok {
-		return &MockChecksumReader{rdr: stackedReader}
+		return &MockChecksumReader{rdr: stackedReader, meta: cr}
 	}
 
 	return stackedReader
 }
 
-// MockChecksumReader is a wrapper around an io.Reader that forwards Read()
-// but also conditionally exposes checksum metadata if the underlying reader
-// implements the ChecksumReader interface.
+// MockChecksumReader reads from the stacked reader and reports checksum
+// metadata from the original ChecksumReader it wraps.
 type MockChecksumReader struct {
-	rdr io.Reader
+	rdr  io.Reader
+	meta ChecksumReader
 }
 
-// Read simply forwards data reads to the underlying reader.
+// Read simply forwards data reads to the stacked reader.
 func (rr *MockChecksumReader) Read(buffer []byte) (int, error) {
 	return rr.rdr.Read(buffer)
 }
 
-// Algorithm returns the checksum algorithm used by the underlying reader,
-// but only if the wrapped reader implements ChecksumReader.
+// Algorithm returns the checksum algorithm of the original reader.
 func (rr *MockChecksumReader) Algorithm() string {
-	r, ok := rr.rdr.(ChecksumReader)
-	if ok {
-		return r.Algorithm()
-	}
-
-	return ""
+	return rr.meta.Algorithm()
 }
 
-// Checksum returns the checksum value from the underlying reader,
-// if it implements ChecksumReader. Otherwise returns an empty string.
+// Checksum returns the checksum value of the original reader.
 func (rr *MockChecksumReader) Checksum() string {
-	r, ok := rr.rdr.(ChecksumReader)
-	if ok {
-		return r.Checksum()
-	}
-
-	return ""
+	return rr.meta.Checksum()
 }
 
 var _ ChecksumReader = &MockChecksumReader{}

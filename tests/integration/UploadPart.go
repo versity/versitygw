@@ -143,6 +143,34 @@ func UploadPart_upload_id_path_traversal(s *S3Conf) error {
 	})
 }
 
+func UploadPart_malformed_upload_id(s *S3Conf) error {
+	testName := "UploadPart_malformed_upload_id"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// A malformed upload ID is reported ahead of an invalid part
+		// number and of invalid or mismatched checksums.
+		for i, input := range []*s3.UploadPartInput{
+			{PartNumber: getPtr(int32(-10))},
+			{PartNumber: getPtr(int32(1)), ChecksumCRC32: getPtr("invalid_base64!")},
+			{PartNumber: getPtr(int32(1)), ChecksumCRC32: getPtr("AAAAAA==")},
+			{PartNumber: getPtr(int32(1)), ContentMD5: getPtr("nZ8ysQ5XDHwZxKA3cpfRYQ==")},
+		} {
+			input.Bucket = &bucket
+			input.Key = getPtr("my-obj")
+			input.UploadId = getPtr("../invalid-upload")
+			input.Body = strings.NewReader("part data")
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.UploadPart(ctx, input)
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
+				return fmt.Errorf("test case %d: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func UploadPart_multiple_checksum_headers(s *S3Conf) error {
 	testName := "UploadPart_multiple_checksum_headers"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

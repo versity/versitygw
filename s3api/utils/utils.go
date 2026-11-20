@@ -176,14 +176,9 @@ func ParseMaxLimiter(limiter string, lt LimiterType) (int32, error) {
 		return defaultMaxLimiter, nil
 	}
 
-	num, err := strconv.ParseInt(limiter, 10, 32)
+	num, err := parseLimiterInt(limiter, lt)
 	if err != nil {
-		// versions_max_keys follows max-keys error semantics.
-		if lt == LimiterTypeVersionsMaxKeys {
-			lt = LimiterTypeMaxKeys
-		}
-		debuglogger.Logf("invalid %s provided: %s\n", lt, limiter)
-		return 0, s3err.GetInvalidArgMaxLimiter(string(lt), limiter)
+		return 0, err
 	}
 
 	// max-buckets has distinct range rules and errors.
@@ -217,6 +212,30 @@ func ParseMaxLimiter(limiter string, lt LimiterType) (int32, error) {
 		num = int64(defaultMaxLimiter)
 	}
 	return int32(num), nil
+}
+
+// ValidateLimiterInteger returns the InvalidArgument error ParseMaxLimiter
+// gives a limiter that is set but isn't a 32-bit integer, without checking
+// its range.
+func ValidateLimiterInteger(limiter string, lt LimiterType) error {
+	if limiter == "" {
+		return nil
+	}
+	_, err := parseLimiterInt(limiter, lt)
+	return err
+}
+
+func parseLimiterInt(limiter string, lt LimiterType) (int64, error) {
+	num, err := strconv.ParseInt(limiter, 10, 32)
+	if err != nil {
+		// versions_max_keys follows max-keys error semantics.
+		if lt == LimiterTypeVersionsMaxKeys {
+			lt = LimiterTypeMaxKeys
+		}
+		debuglogger.Logf("invalid %s provided: %s\n", lt, limiter)
+		return 0, s3err.GetInvalidArgMaxLimiter(string(lt), limiter)
+	}
+	return num, nil
 }
 
 type CustomHeader struct {
@@ -952,8 +971,8 @@ func GetInt64(n *int64) int64 {
 	return *n
 }
 
-// ValidateCopySource parses and validates the copy-source
-func ValidateCopySource(input string) error {
+// ValidateCopySource parses and validates the copy-source of be
+func ValidateCopySource(input string, be backend.Backend) error {
 	copysource, err := url.QueryUnescape(input)
 	if err != nil {
 		debuglogger.Logf("invalid copy source encoding: %s", input)
@@ -970,10 +989,7 @@ func ValidateCopySource(input string) error {
 	// that is recognized in copy source
 	object, _, _ := strings.Cut(rest, "?versionId=")
 
-	// objects containing '../', '...../' ... are considered valid in AWS
-	// but for the security purposes these should be considered as invalid
-	// in the gateway
-	if !IsObjectNameValid(object) {
+	if !IsObjectNameValid(object, be) {
 		debuglogger.Logf("invalid copy source object: %s", object)
 		return s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, object)
 	}
@@ -1275,14 +1291,19 @@ func ParseEncodingType(ctx fiber.Ctx) (types.EncodingType, error) {
 // the QueryEscape output starts a full escape, so "%2A" can only come from "*".
 var s3KeyNameEscaper = strings.NewReplacer("%2F", "/", "%2A", "*", "~", "%7E")
 
-// urlEncodeKeyName encodes a key name the way S3 does for encoding-type=url:
+// urlEncodeString encodes a key name the way S3 does for encoding-type=url:
 // as a query component, so a space becomes "+" and "+" becomes "%2B", with "/"
 // and "*" left as is and "~" escaped as "%7E".
+func urlEncodeString(name string) string {
+	return s3KeyNameEscaper.Replace(url.QueryEscape(name))
+}
+
+// urlEncodeKeyName is the nil-safe variant of urlEncodeString.
 func urlEncodeKeyName(name *string) *string {
 	if name == nil {
 		return nil
 	}
-	encoded := s3KeyNameEscaper.Replace(url.QueryEscape(*name))
+	encoded := urlEncodeString(*name)
 	return &encoded
 }
 
@@ -1308,6 +1329,58 @@ func urlEncodeObjectKeys(objects []s3response.Object) []s3response.Object {
 	for i, obj := range objects {
 		obj.Key = urlEncodeKeyName(obj.Key)
 		encoded[i] = obj
+	}
+	return encoded
+}
+
+// urlEncodeVersionKeys returns a copy of versions with each key encoded.
+func urlEncodeVersionKeys(versions []s3response.ObjectVersion) []s3response.ObjectVersion {
+	if versions == nil {
+		return nil
+	}
+	encoded := make([]s3response.ObjectVersion, len(versions))
+	for i, v := range versions {
+		v.Key = urlEncodeKeyName(v.Key)
+		encoded[i] = v
+	}
+	return encoded
+}
+
+// urlEncodeDeleteMarkerKeys returns a copy of markers with each key encoded.
+func urlEncodeDeleteMarkerKeys(markers []s3response.DeleteMarkerEntry) []s3response.DeleteMarkerEntry {
+	if markers == nil {
+		return nil
+	}
+	encoded := make([]s3response.DeleteMarkerEntry, len(markers))
+	for i, m := range markers {
+		m.Key = urlEncodeKeyName(m.Key)
+		encoded[i] = m
+	}
+	return encoded
+}
+
+// urlEncodeUploadKeys returns a copy of uploads with each key encoded.
+func urlEncodeUploadKeys(uploads []s3response.Upload) []s3response.Upload {
+	if uploads == nil {
+		return nil
+	}
+	encoded := make([]s3response.Upload, len(uploads))
+	for i, u := range uploads {
+		u.Key = urlEncodeString(u.Key)
+		encoded[i] = u
+	}
+	return encoded
+}
+
+// urlEncodeUploadPrefixes returns a copy of prefixes with each prefix encoded.
+func urlEncodeUploadPrefixes(prefixes []s3response.CommonPrefix) []s3response.CommonPrefix {
+	if prefixes == nil {
+		return nil
+	}
+	encoded := make([]s3response.CommonPrefix, len(prefixes))
+	for i, cp := range prefixes {
+		cp.Prefix = urlEncodeString(cp.Prefix)
+		encoded[i] = cp
 	}
 	return encoded
 }
@@ -1338,5 +1411,37 @@ func URLEncodeListObjectsV2Result(res s3response.ListObjectsV2Result, encodingTy
 	res.StartAfter = urlEncodeKeyName(res.StartAfter)
 	res.Contents = urlEncodeObjectKeys(res.Contents)
 	res.CommonPrefixes = urlEncodeCommonPrefixes(res.CommonPrefixes)
+	return res
+}
+
+// URLEncodeListVersionsResult returns res as S3 answers a ListObjectVersions
+// request with encoding-type=url: EncodingType set to the value as sent and the
+// Delimiter, KeyMarker, NextKeyMarker, Prefix, Key (of versions and delete
+// markers) and CommonPrefixes values encoded. The backend's values are left
+// untouched.
+func URLEncodeListVersionsResult(res s3response.ListVersionsResult, encodingType types.EncodingType) s3response.ListVersionsResult {
+	res.EncodingType = encodingType
+	res.Delimiter = urlEncodeKeyName(res.Delimiter)
+	res.KeyMarker = urlEncodeKeyName(res.KeyMarker)
+	res.NextKeyMarker = urlEncodeKeyName(res.NextKeyMarker)
+	res.Prefix = urlEncodeKeyName(res.Prefix)
+	res.CommonPrefixes = urlEncodeCommonPrefixes(res.CommonPrefixes)
+	res.Versions = urlEncodeVersionKeys(res.Versions)
+	res.DeleteMarkers = urlEncodeDeleteMarkerKeys(res.DeleteMarkers)
+	return res
+}
+
+// URLEncodeListMultipartUploadsResult returns res as S3 answers a
+// ListMultipartUploads request with encoding-type=url: EncodingType set to the
+// value as sent and the Delimiter, KeyMarker, NextKeyMarker, Prefix, Key and
+// CommonPrefixes values encoded. The backend's values are left untouched.
+func URLEncodeListMultipartUploadsResult(res s3response.ListMultipartUploadsResult, encodingType types.EncodingType) s3response.ListMultipartUploadsResult {
+	res.EncodingType = string(encodingType)
+	res.Delimiter = urlEncodeString(res.Delimiter)
+	res.KeyMarker = urlEncodeString(res.KeyMarker)
+	res.NextKeyMarker = urlEncodeString(res.NextKeyMarker)
+	res.Prefix = urlEncodeString(res.Prefix)
+	res.Uploads = urlEncodeUploadKeys(res.Uploads)
+	res.CommonPrefixes = urlEncodeUploadPrefixes(res.CommonPrefixes)
 	return res
 }

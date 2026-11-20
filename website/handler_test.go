@@ -30,6 +30,7 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/internal/httpctx"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -642,7 +643,7 @@ func TestWebsiteHandlerHeadValidatesObjectName(t *testing.T) {
 		IndexDocument: &s3response.IndexDocument{Suffix: "index.html"},
 	}, nil, true)
 
-	resp := websiteRequestWithHeaders(t, be, http.MethodHead, "/../../private.html", nil)
+	resp := websiteRequestWithHeaders(t, be, http.MethodHead, "/dir/../private.html", nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusBadRequest {
@@ -691,7 +692,7 @@ func TestWebsiteHandlerGetAppliesBucketCORS(t *testing.T) {
 	if got := resp.Header.Get("Access-Control-Allow-Methods"); got != "GET, HEAD" {
 		t.Fatalf("Access-Control-Allow-Methods = %q", got)
 	}
-	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "Content-Length, ETag, x-amz-storage-class" {
+	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "Content-Length, ETag, x-amz-storage-class, x-amz-restore" {
 		t.Fatalf("Access-Control-Expose-Headers = %q", got)
 	}
 	if got := resp.Header.Get("Access-Control-Allow-Credentials"); got != "true" {
@@ -743,7 +744,7 @@ func TestWebsiteHandlerHeadAppliesBucketCORS(t *testing.T) {
 	if got := resp.Header.Get("Access-Control-Allow-Methods"); got != "HEAD" {
 		t.Fatalf("Access-Control-Allow-Methods = %q", got)
 	}
-	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "Content-Length, ETag, x-amz-storage-class" {
+	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "Content-Length, ETag, x-amz-storage-class, x-amz-restore" {
 		t.Fatalf("Access-Control-Expose-Headers = %q", got)
 	}
 	if got := readBody(t, resp); got != "" {
@@ -1179,7 +1180,7 @@ func websiteRequestWithHostAndHeaders(t *testing.T, be backend.Backend, method, 
 func websiteRequestWithDomainHostAndHeaders(t *testing.T, be backend.Backend, domain, method, host, path string, headers map[string]string) *http.Response {
 	t.Helper()
 
-	app := fiber.New(fiber.Config{ServerHeader: "VERSITYGW"})
+	app := fiber.NewWithCustomCtx(httpctx.NewCtx, fiber.Config{ServerHeader: "VERSITYGW"})
 	registerWebsiteRoutes(app, be, domain)
 
 	req := httptest.NewRequest(method, path, nil)

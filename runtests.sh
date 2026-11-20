@@ -40,7 +40,9 @@ mkdir /tmp/versioningdir
 # setup tls certificate and key
 ECHO "Generating TLS certificate and key in the cert.pem and key.pem files"
 
-openssl genpkey -algorithm RSA -out key.pem -pkeyopt rsa_keygen_bits:2048
+# ECDSA P-256 rather than RSA: the gateway signs every TLS handshake with
+# this key, and an ECDSA signature costs a fraction of an RSA one.
+openssl genpkey -algorithm EC -out key.pem -pkeyopt ec_paramgen_curve:P-256
 openssl req -new -x509 -key key.pem -out cert.pem -days 365 -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
 
 ECHO "Running the sdk test over http"
@@ -65,7 +67,7 @@ if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow --paral
 	exit 1
 fi
 # posix tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 posix; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 posix $SIDECAR_TEST_FLAG; then
 	echo "posix tests failed"
 	kill $GW_PID
 	exit 1
@@ -83,7 +85,10 @@ ECHO "Running the sdk test over https"
 
 # run server in background with TLS certificate
 # port: 7071(default)
-GOCOVERDIR=/tmp/https.covdata ./versitygw --cert "$PWD/cert.pem" --key "$PWD/key.pem" -p :7071 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
+# The gateway closes the connection after every response unless keep-alive
+# is enabled, and over TLS each new connection costs a full handshake. The
+# http stages keep the default, the https ones run with keep-alive.
+GOCOVERDIR=/tmp/https.covdata ./versitygw --cert "$PWD/cert.pem" --key "$PWD/key.pem" --keep-alive -p :7071 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
 GW_HTTPS_PID=$!
 
 sleep 1
@@ -102,7 +107,7 @@ if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071
 	exit 1
 fi
 # posix tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 posix; then
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 posix $SIDECAR_TEST_FLAG; then
 	echo "posix tests failed"
 	kill $GW_HTTPS_PID
 	exit 1
@@ -139,7 +144,7 @@ if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 full-flow -vs --p
 	exit 1
 fi
 # posix tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 posix -vs; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 posix -vs $SIDECAR_TEST_FLAG; then
 	echo "versiongin-enabled posix tests failed"
 	kill $GW_VS_PID
 	exit 1
@@ -151,7 +156,7 @@ kill $GW_VS_PID
 ECHO "Running the sdk test over https against the versioning-enabled gateway"
 # run server in background versioning-enabled
 # port: 7073
-GOCOVERDIR=/tmp/versioning.https.covdata ./versitygw --cert "$PWD/cert.pem" --key "$PWD/key.pem" -p :7073 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG --versioning-dir /tmp/versioningdir /tmp/gw &
+GOCOVERDIR=/tmp/versioning.https.covdata ./versitygw --cert "$PWD/cert.pem" --key "$PWD/key.pem" --keep-alive -p :7073 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG --versioning-dir /tmp/versioningdir /tmp/gw &
 GW_VS_HTTPS_PID=$!
 
 # wait a second for server to start up
@@ -171,7 +176,7 @@ if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073
 	exit 1
 fi
 # posix tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073 posix -vs; then
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073 posix -vs $SIDECAR_TEST_FLAG; then
 	echo "versiongin-enabled posix tests failed"
 	kill $GW_VS_HTTPS_PID
 	exit 1
@@ -229,6 +234,46 @@ fi
 # kill off server
 kill $GW_NO_ACL_PID
 
+ECHO "Running list-buckets-scope accessible integration tests"
+# port: 7076
+GOCOVERDIR=/tmp/covdata ./versitygw -p :7076 -a user -s pass --list-buckets-scope accessible --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
+GW_LB_ACCESSIBLE_PID=$!
+
+sleep 1
+
+if ! kill -0 $GW_LB_ACCESSIBLE_PID; then
+	echo "list-buckets-scope accessible server no longer running"
+	exit 1
+fi
+
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7076 list-buckets-accessible; then
+	echo "list-buckets-scope accessible integration tests failed"
+	kill $GW_LB_ACCESSIBLE_PID
+	exit 1
+fi
+
+kill $GW_LB_ACCESSIBLE_PID
+
+ECHO "Running list-buckets-scope all integration tests"
+# port: 7077
+GOCOVERDIR=/tmp/covdata ./versitygw -p :7077 -a user -s pass --list-buckets-scope all --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
+GW_LB_ALL_PID=$!
+
+sleep 1
+
+if ! kill -0 $GW_LB_ALL_PID; then
+	echo "list-buckets-scope all server no longer running"
+	exit 1
+fi
+
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7077 list-buckets-all; then
+	echo "list-buckets-scope all integration tests failed"
+	kill $GW_LB_ALL_PID
+	exit 1
+fi
+
+kill $GW_LB_ALL_PID
+
 ECHO "Running the s3 + standalone IAM access control tests"
 # This stage is the only one that runs two versitygw processes at once: a
 # standalone IAM service holding every user, policy and secret, and an s3
@@ -257,7 +302,10 @@ if ! kill -0 $IAM_PID; then
 	exit 1
 fi
 
+# The tests change access keys and policies and expect the very next request
+# to see the change, which a cached signing key or policy decision would hide.
 GOCOVERDIR=/tmp/s3iamgw.covdata ./versitygw -p :7082 -a user -s pass \
+	--iam-cache-disable \
 	--iam-standalone-endpoint 127.0.0.1:7081 \
 	--iam-standalone-client-cert /tmp/s3iamcerts/gw-client.pem \
 	--iam-standalone-client-cert-key /tmp/s3iamcerts/gw-client.key \

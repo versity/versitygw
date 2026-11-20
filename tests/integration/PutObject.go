@@ -15,11 +15,16 @@
 package integration
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/md5"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -1412,6 +1417,37 @@ func PutObject_default_content_type(s *S3Conf) error {
 	})
 }
 
+// PutObject_multipart_form_data_body stores a body typed multipart/form-data
+// as sent: only POST Object reads a form.
+func PutObject_multipart_form_data_body(s *S3Conf) error {
+	testName := "PutObject_multipart_form_data_body"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		if err := w.WriteField("key", "value"); err != nil {
+			return err
+		}
+		if err := w.Close(); err != nil {
+			return err
+		}
+
+		key := "my-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         &key,
+			Body:        bytes.NewReader(body.Bytes()),
+			ContentType: getPtr(w.FormDataContentType()),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return checkObjectData(s3client, bucket, key, "", body.Bytes())
+	})
+}
+
 func PutObject_overwrite_resets_attributes(s *S3Conf) error {
 	testName := "PutObject_overwrite_resets_attributes"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1650,26 +1686,100 @@ func PutObject_invalid_credentials(s *S3Conf) error {
 func PutObject_invalid_object_names(s *S3Conf) error {
 	testName := "PutObject_invalid_object_names"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		for _, obj := range []string{
+		for _, test := range []struct {
+			obj string
+			err s3err.APIError
+		}{
+			// the ".." segments climb above the root of the request path,
+			// with the bucket in the path and without it
+			{"../../x", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			{"../../../.", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			{"../../../etc/passwd", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			{"../../../../tmp/foo", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			{"a/a/a/../../../../../etc/passwd", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			{"/a/../../b/../../c/../../../etc/passwd", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			// empty segments don't count
+			{"x//../../../y", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			// a backslash separates the segments too
+			{"x\\..\\..\\..\\y", s3err.GetAPIError(s3err.ErrInvalidURI)},
+			// slashes only
+			{"/", s3err.GetAPIError(s3err.ErrBadRequest)},
+			{"//", s3err.GetAPIError(s3err.ErrBadRequest)},
+		} {
+			_, err := putObjects(s3client, []string{test.obj}, bucket)
+			if err := checkApiErr(err, test.err); err != nil {
+				return fmt.Errorf("%v: %w", test.obj, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func PutObject_dot_segment_object_names(s *S3Conf) error {
+	testName := "PutObject_dot_segment_object_names"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// S3 takes "." and ".." segments as part of the key, so each
+		// of these is an object of its own
+		objs := []string{
 			".",
-			"..",
 			"./",
 			"/.",
-			"//",
-			"../",
-			"/..",
-			"/..",
-			"../.",
-			"../../../.",
-			"../../../etc/passwd",
-			"../../../../tmp/foo",
-			"for/../../bar/",
-			"a/a/a/../../../../../etc/passwd",
-			"/a/../../b/../../c/../../../etc/passwd",
-		} {
-			_, err := putObjects(s3client, []string{obj}, bucket)
-			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
+			"x/.",
+			"x/..",
+			"a/./b",
+			"a/../b",
+			"x/y/../..",
+		}
+		sort.Strings(objs)
+
+		for _, obj := range objs {
+			_, err := putObjectWithData(0, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+				Body:   strings.NewReader(obj),
+			}, s3client)
+			if err != nil {
+				return fmt.Errorf("put %v: %w", obj, err)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(res.Contents) != len(objs) {
+			return fmt.Errorf("expected %v objects, instead got %v", len(objs), len(res.Contents))
+		}
+		for i, obj := range res.Contents {
+			if *obj.Key != objs[i] {
+				return fmt.Errorf("expected the %vth object name to be %s, instead got %s", i+1, objs[i], *obj.Key)
+			}
+		}
+
+		for _, obj := range objs {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			if err != nil {
+				cancel()
+				return fmt.Errorf("get %v: %w", obj, err)
+			}
+			body, err := io.ReadAll(out.Body)
+			out.Body.Close()
+			cancel()
+			if err != nil {
 				return err
+			}
+			if string(body) != obj {
+				return fmt.Errorf("expected the body of %v to be %q, instead got %q", obj, obj, body)
 			}
 		}
 
@@ -1721,9 +1831,11 @@ func PutObject_false_negative_object_names(s *S3Conf) error {
 			"..%c0%af..%c0%afetc/passwd",               // UTF-8 overlong trick
 			"dir/%c0%ae%c0%ae/%c0%ae%c0%ae/etc/passwd", // overlong UTF-8 encoding
 			".../.../.../target.txt",
-			"dir/%20../file.txt",           // encoded space
-			"..\\u2215..\\u2215etc/passwd", // Unicode division slash
-			"logs/latest -> /etc/passwd",   // symlink attacks
+			"dir/%20../file.txt", // encoded space
+			// the backslash separates segments, so without "dir/" the
+			// ".." would climb above the root of a virtual-hosted path
+			"dir/..\\u2215..\\u2215etc/passwd", // Unicode division slash
+			"logs/latest -> /etc/passwd",       // symlink attacks
 			//TODO: add this test case in advanced routing
 			// "/etc/passwd" // absolute path injection
 		}
@@ -1758,56 +1870,84 @@ func PutObject_false_negative_object_names(s *S3Conf) error {
 	})
 }
 
-// abortedBodyReader yields `sent` bytes and then fails, so the transport tears
-// the connection down mid-body. That is what a client that dies or cancels
-// looks like on the wire.
-type abortedBodyReader struct {
-	remaining int
-}
-
-func (r *abortedBodyReader) Read(p []byte) (int, error) {
-	if r.remaining <= 0 {
-		return 0, fmt.Errorf("connection aborted by test")
-	}
-	n := len(p)
-	if n > r.remaining {
-		n = r.remaining
-	}
-	for i := 0; i < n; i++ {
-		p[i] = 'a'
-	}
-	r.remaining -= n
-	return n, nil
-}
-
-// putObjectAborted announces `declared` bytes, sends `sent`, then drops the
-// connection. It returns no error: the request is expected to fail.
-func putObjectAborted(s *S3Conf, bucket, obj string, declared, sent int, extra map[string]string) {
+// putObjectAborted sends a PutObject that announces `declared` bytes but
+// carries only `body`, then shuts down the write side of the connection. To
+// the gateway this is a client that died mid-upload: the body ends early.
+//
+// The read side stays open, so the gateway can still answer, and it answers
+// only once it is done with the upload, temp file included. Waiting for that
+// answer keeps the upload from racing the test's bucket cleanup. Otherwise the
+// late upload can recreate the deleted bucket's directory, or, on Windows,
+// make DeleteBucket fail because its temp file is still open.
+//
+// It returns the status code of the gateway's answer.
+func putObjectAborted(s *S3Conf, bucket, obj string, declared int, body []byte, payloadHash string, headers map[string]string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
-		fmt.Sprintf("%s/%s/%s", s.endpoint, bucket, obj), &abortedBodyReader{remaining: sent})
+		fmt.Sprintf("%s/%s/%s", s.endpoint, bucket, obj), bytes.NewReader(body))
 	if err != nil {
-		return
+		return 0, fmt.Errorf("create the request: %w", err)
 	}
 	req.ContentLength = int64(declared)
-	req.Header.Set("x-amz-content-sha256", "UNSIGNED-PAYLOAD")
-	for k, v := range extra {
+	req.Header.Set("x-amz-content-sha256", payloadHash)
+	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 
 	signer := v4.NewSigner()
-	if err := signer.SignHTTP(req.Context(),
+	if err := signer.SignHTTP(ctx,
 		aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret},
-		req, "UNSIGNED-PAYLOAD", "s3", s.awsRegion, time.Now()); err != nil {
-		return
+		req, payloadHash, "s3", s.awsRegion, time.Now()); err != nil {
+		return 0, fmt.Errorf("sign the request: %w", err)
 	}
 
-	resp, err := s.httpClient.Do(req)
-	if err == nil && resp != nil {
-		resp.Body.Close()
+	addr := req.URL.Host
+	if req.URL.Port() == "" {
+		port := "80"
+		if req.URL.Scheme == "https" {
+			port = "443"
+		}
+		addr = net.JoinHostPort(req.URL.Hostname(), port)
 	}
+
+	var conn net.Conn
+	if req.URL.Scheme == "https" {
+		dialer := &tls.Dialer{Config: &tls.Config{InsecureSkipVerify: s.tlsStatus}}
+		conn, err = dialer.DialContext(ctx, "tcp", addr)
+	} else {
+		conn, err = (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("connect to %v: %w", addr, err)
+	}
+	defer conn.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		conn.SetDeadline(deadline)
+	}
+
+	// Request.Write sends the headers and the body, then fails because the
+	// body is shorter than ContentLength. That failure is the point, so only
+	// a failed flush counts.
+	bw := bufio.NewWriter(conn)
+	_ = req.Write(bw)
+	if err := bw.Flush(); err != nil {
+		return 0, fmt.Errorf("send the request: %w", err)
+	}
+
+	// Both *net.TCPConn and *tls.Conn can shut down just their write side.
+	if err := conn.(interface{ CloseWrite() error }).CloseWrite(); err != nil {
+		return 0, fmt.Errorf("close the write side: %w", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
+	if err != nil {
+		return 0, fmt.Errorf("read the response: %w", err)
+	}
+	resp.Body.Close()
+
+	return resp.StatusCode, nil
 }
 
 // PutObject_aborted_plain_body checks that a plain (non-aws-chunked) PUT whose
@@ -1820,10 +1960,17 @@ func PutObject_aborted_plain_body(s *S3Conf) error {
 	testName := "PutObject_aborted_plain_body"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "aborted-plain"
-		putObjectAborted(s, bucket, obj, 65536, 20000, nil)
+		status, err := putObjectAborted(s, bucket, obj, 65536,
+			bytes.Repeat([]byte{'a'}, 20000), "UNSIGNED-PAYLOAD", nil)
+		if err != nil {
+			return err
+		}
+		if status < 300 {
+			return fmt.Errorf("expected the aborted upload to fail, got %v", status)
+		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
 			Bucket: &bucket,
 			Key:    &obj,
 		})

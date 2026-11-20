@@ -15,6 +15,7 @@
 package integration
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/hmac"
@@ -23,6 +24,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -33,11 +35,15 @@ import (
 	"hash/crc32"
 	"hash/crc64"
 	"io"
+	"maps"
 	"math/big"
 	"math/bits"
 	rnd "math/rand"
+	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os/exec"
 	"slices"
@@ -48,6 +54,7 @@ import (
 	"unicode"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -446,6 +453,147 @@ func createPresignedReq(method, endpoint, path, access, secret, region string, d
 	return presigned, nil
 }
 
+// sendRawRequest sends a request to the gateway endpoint with target written
+// to the request line verbatim, which net/http can't do for an absolute-form
+// target ("http://host/path") nor for an origin-form one starting with "//".
+// host is sent as the Host header, whatever host target names.
+func sendRawRequest(s *S3Conf, method, target, host string, header http.Header) (*http.Response, error) {
+	endpoint, err := url.Parse(s.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("parse the endpoint: %w", err)
+	}
+	addr := endpoint.Host
+	if endpoint.Port() == "" {
+		port := "80"
+		if endpoint.Scheme == "https" {
+			port = "443"
+		}
+		addr = net.JoinHostPort(endpoint.Hostname(), port)
+	}
+
+	dialer := &net.Dialer{Timeout: shortTimeout}
+	var conn net.Conn
+	if endpoint.Scheme == "https" {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
+			ServerName:         endpoint.Hostname(),
+			InsecureSkipVerify: s.tlsStatus,
+		})
+	} else {
+		conn, err = dialer.Dial("tcp", addr)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("connect to the endpoint: %w", err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(shortTimeout)); err != nil {
+		return nil, err
+	}
+
+	var req strings.Builder
+	fmt.Fprintf(&req, "%s %s HTTP/1.1\r\nHost: %s\r\n", method, target, host)
+	for key, vals := range header {
+		for _, val := range vals {
+			fmt.Fprintf(&req, "%s: %s\r\n", key, val)
+		}
+	}
+	req.WriteString("Connection: close\r\n\r\n")
+	if _, err := io.WriteString(conn, req.String()); err != nil {
+		return nil, fmt.Errorf("send the request: %w", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: method})
+	if err != nil {
+		return nil, fmt.Errorf("read the response: %w", err)
+	}
+	// the body is read off the connection before it's closed
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read the response body: %w", err)
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+
+	return resp, nil
+}
+
+// requestTargetHandler runs a request-target test with two buckets: bucket,
+// holding the object obj the test signs a request for, and otherBucket,
+// holding the objects a request pointed at otherBucket's host could get
+// instead, at obj and at bucket/obj. The data of each object is its own
+// bucket/key, so the test can tell which object was served.
+func requestTargetHandler(s *S3Conf, testName string, handler func(bucket, otherBucket, obj string) error) error {
+	runF(testName)
+	bucket, otherBucket, obj := getBucketName(), getBucketName(), "my-obj"
+
+	err := setup(s, bucket)
+	if err != nil {
+		failF("%v: failed to create a bucket: %v", testName, err)
+		return fmt.Errorf("%v: failed to create a bucket: %w", testName, err)
+	}
+	err = setup(s, otherBucket)
+	if err != nil {
+		err = errors.Join(err, teardown(s, bucket))
+		failF("%v: failed to create a bucket: %v", testName, err)
+		return fmt.Errorf("%v: failed to create a bucket: %w", testName, err)
+	}
+
+	client := s.GetClient()
+	for _, o := range [][2]string{{bucket, obj}, {otherBucket, obj}, {otherBucket, bucket + "/" + obj}} {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &o[0],
+			Key:    &o[1],
+			Body:   strings.NewReader(o[0] + "/" + o[1]),
+		})
+		cancel()
+		if err != nil {
+			break
+		}
+	}
+	if err == nil {
+		err = handler(bucket, otherBucket, obj)
+	}
+
+	err = errors.Join(err, teardown(s, bucket), teardown(s, otherBucket))
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+	passF(testName)
+	return nil
+}
+
+// presignPathStyleGetObject presigns a path-style GetObject of bucket/obj,
+// whichever addressing style the gateway is tested with.
+func presignPathStyleGetObject(s *S3Conf, bucket, obj string) (*url.URL, error) {
+	client := s3.NewPresignClient(s3.NewFromConfig(s.Config(), func(o *s3.Options) {
+		o.UsePathStyle = true
+	}))
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	req, err := client.PresignGetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &obj})
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+	return url.Parse(req.URL)
+}
+
+// checkObjectResponse checks resp served the object whose data is want.
+func checkObjectResponse(resp *http.Response, want string) error {
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read the response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("expected the response status to be %v, instead got %v: %s", http.StatusOK, resp.StatusCode, body)
+	}
+	if string(body) != want {
+		return fmt.Errorf("expected the object %q to be served, instead got %q", want, body)
+	}
+	return nil
+}
+
 type APIErrorResponse struct {
 	XMLName                     xml.Name `xml:"Error"`
 	Code                        string
@@ -463,6 +611,7 @@ type APIErrorResponse struct {
 	ProposedSize                int64                      `xml:"ProposedSize,omitempty"`
 	MaxSizeAllowed              int64                      `xml:"MaxSizeAllowed,omitempty"`
 	MinSizeAllowed              int64                      `xml:"MinSizeAllowed,omitempty"`
+	MaxPostPreDataLengthBytes   int64                      `xml:"MaxPostPreDataLengthBytes,omitempty"`
 	ServerTime                  string                     `xml:"ServerTime,omitempty"`
 	XAmzExpires                 int                        `xml:"X-Amz-Expires,omitempty"`
 	Expires                     string                     `xml:"Expires,omitempty"`
@@ -518,18 +667,26 @@ func checkHTTPResponseApiErr(resp *http.Response, expected s3err.S3Error) error 
 
 	resp.Body.Close()
 
+	if resp.StatusCode != apiErr.HTTPStatusCode {
+		return fmt.Errorf("expected response status code to be %v, instead got %v: %s", apiErr.HTTPStatusCode, resp.StatusCode, body)
+	}
+
 	var errResp APIErrorResponse
 	err = xml.Unmarshal(body, &errResp)
 	if err != nil {
 		return err
 	}
 
-	if resp.StatusCode != apiErr.HTTPStatusCode {
-		return fmt.Errorf("expected response status code to be %v, instead got %v", apiErr.HTTPStatusCode, resp.StatusCode)
-	}
-
 	if err := checkRegionMismatchHeader(resp, expected); err != nil {
 		return err
+	}
+
+	// the header map canonicalizes names, so a header sent twice under
+	// different casings shows up here as two values
+	for _, name := range []string{"x-amz-request-id", "x-amz-id-2"} {
+		if got := len(resp.Header.Values(name)); got != 1 {
+			return fmt.Errorf("expected exactly one %s header, got %v", name, got)
+		}
 	}
 
 	return compareS3ApiError(expected, &errResp)
@@ -909,6 +1066,8 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 			compareErrField("Size", err.Size, received.Size),
 			compareErrField("MaxSizeAllowed", err.MaxSizeAllowed, received.MaxSizeAllowed),
 		)
+	case s3err.MaxPostPreDataLengthExceededError:
+		return compareErrField("MaxPostPreDataLengthBytes", err.MaxPostPreDataLengthBytes, received.MaxPostPreDataLengthBytes)
 	case s3err.MetadataTooLargeError:
 		return compareS3ApiErrFields(
 			compareErrField("Size", int64(err.Size), received.Size),
@@ -928,6 +1087,8 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 	case s3err.HeadersNotSignedError:
 		return compareErrField("HeadersNotSigned", err.HeadersNotSigned, received.HeadersNotSigned)
 	case s3err.NoSuchUploadError:
+		return compareErrField("UploadId", err.UploadId, received.UploadId)
+	case s3err.InvalidPartOrderError:
 		return compareErrField("UploadId", err.UploadId, received.UploadId)
 	case s3err.NoSuchVersionError:
 		return compareS3ApiErrFields(
@@ -1022,6 +1183,218 @@ func checkSdkApiErr(err error, code string) error {
 	return err
 }
 
+// checkNotModifiedValidators checks that a 304 Not Modified response carries
+// the object's ETag and Last-Modified.
+func checkNotModifiedValidators(err error, etag string, lastModified time.Time) error {
+	var respErr *awshttp.ResponseError
+	if !errors.As(err, &respErr) {
+		return fmt.Errorf("expected an HTTP response error, instead got %w", err)
+	}
+	if got := respErr.Response.Header.Get("ETag"); got != etag {
+		return fmt.Errorf("expected the ETag header to be %q, instead got %q", etag, got)
+	}
+	got, perr := http.ParseTime(respErr.Response.Header.Get("Last-Modified"))
+	if perr != nil || !got.Equal(lastModified) {
+		return fmt.Errorf("expected the Last-Modified header to be %v, instead got %q",
+			lastModified, respErr.Response.Header.Get("Last-Modified"))
+	}
+	// a 304 has no content, so it carries no Content-Type
+	if ct := respErr.Response.Header.Get("Content-Type"); ct != "" {
+		return fmt.Errorf("expected no Content-Type header, instead got %q", ct)
+	}
+	return nil
+}
+
+// perResponseHeaders differ between any two responses, whatever the object.
+var perResponseHeaders = []string{"Date", "X-Amz-Request-Id", "X-Amz-Id-2", "Server",
+	"Connection", "Keep-Alive", "Transfer-Encoding"}
+
+// notModifiedHeaderKeys are the 200's headers a 304 repeats, with
+// x-amz-meta-* headers: those describing the object, not its content.
+// The keys are canonical, as in http.Header.
+var notModifiedHeaderKeys = []string{"Etag", "Last-Modified", "Cache-Control", "Expires",
+	"X-Amz-Version-Id", "X-Amz-Storage-Class", "X-Amz-Website-Redirect-Location",
+	"X-Amz-Tagging-Count", "X-Amz-Mp-Parts-Count", "X-Amz-Object-Lock-Mode",
+	"X-Amz-Object-Lock-Retain-Until-Date", "X-Amz-Object-Lock-Legal-Hold", "X-Amz-Restore"}
+
+// checkNotModifiedHeaders checks that err is a 304 Not Modified carrying
+// exactly the headers in notModifiedHeaderKeys and the x-amz-meta-* headers
+// of ok200, the 200 to the same request, with the same values.
+func checkNotModifiedHeaders(err error, ok200 http.Header) error {
+	var respErr *awshttp.ResponseError
+	if !errors.As(err, &respErr) || respErr.HTTPStatusCode() != http.StatusNotModified {
+		return fmt.Errorf("expected a 304 Not Modified response, instead got %v", err)
+	}
+	got, want := respErr.Response.Header.Clone(), http.Header{}
+	for _, key := range perResponseHeaders {
+		got.Del(key)
+	}
+	for key, values := range ok200 {
+		if slices.Contains(notModifiedHeaderKeys, key) || strings.HasPrefix(key, "X-Amz-Meta-") {
+			want[key] = values
+		}
+	}
+	keys := map[string]bool{}
+	for key := range want {
+		keys[key] = true
+	}
+	for key := range got {
+		keys[key] = true
+	}
+	for _, key := range slices.Sorted(maps.Keys(keys)) {
+		if !slices.Equal(want[key], got[key]) {
+			return fmt.Errorf("expected the 304's %s header to be %q, as the 200 sends it, instead got %q",
+				key, want[key], got[key])
+		}
+	}
+	return nil
+}
+
+// notModifiedHeadersCase is one request a 304 answers: an object read, with
+// the read's options.
+type notModifiedHeadersCase struct {
+	key          string
+	versionId    *string
+	partNumber   *int32
+	cacheControl *string
+	expires      *time.Time
+}
+
+// notModifiedHeaders runs GetObject or HeadObject for each case, once
+// without a condition and once with the object's ETag in If-None-Match, and
+// checks that the 304 carries the 200's headers that describe the object.
+func notModifiedHeaders(s3client *s3.Client, bucket string, head bool, cases []notModifiedHeadersCase) error {
+	for i, c := range cases {
+		// read returns the raw headers of the response, and the ETag
+		read := func(ifNoneMatch *string) (http.Header, *string, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
+			var etag *string
+			var md middleware.Metadata
+			if head {
+				out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+					Bucket:               &bucket,
+					Key:                  &c.key,
+					VersionId:            c.versionId,
+					PartNumber:           c.partNumber,
+					ResponseCacheControl: c.cacheControl,
+					ResponseExpires:      c.expires,
+					ChecksumMode:         types.ChecksumModeEnabled,
+					IfNoneMatch:          ifNoneMatch,
+				})
+				if err != nil {
+					return nil, nil, err
+				}
+				etag, md = out.ETag, out.ResultMetadata
+			} else {
+				out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+					Bucket:               &bucket,
+					Key:                  &c.key,
+					VersionId:            c.versionId,
+					PartNumber:           c.partNumber,
+					ResponseCacheControl: c.cacheControl,
+					ResponseExpires:      c.expires,
+					ChecksumMode:         types.ChecksumModeEnabled,
+					IfNoneMatch:          ifNoneMatch,
+				})
+				if err != nil {
+					return nil, nil, err
+				}
+				out.Body.Close()
+				etag, md = out.ETag, out.ResultMetadata
+			}
+			raw, ok := awsmiddleware.GetRawResponse(md).(*smithyhttp.Response)
+			if !ok {
+				return nil, nil, fmt.Errorf("no raw response in the result metadata")
+			}
+			return raw.Header, etag, nil
+		}
+
+		ok200, etag, err := read(nil)
+		if err != nil {
+			return fmt.Errorf("case %d: %w", i, err)
+		}
+		_, _, err = read(etag)
+		if err := checkNotModifiedHeaders(err, ok200); err != nil {
+			return fmt.Errorf("case %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// notModifiedHeadersTest checks the headers of a GetObject or HeadObject
+// answered with 304 Not Modified, for an object with metadata, for a part
+// of a multipart object and for a locked object.
+func notModifiedHeadersTest(s *S3Conf, testName string, head bool) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, mpObj, lockedObj := "my-obj", "my-mp-obj", "my-locked-obj"
+		expires := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Second)
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:                  &bucket,
+			Key:                     &obj,
+			CacheControl:            getPtr("max-age=60"),
+			Expires:                 &expires,
+			ContentType:             getPtr("text/plain"),
+			ContentLanguage:         getPtr("en"),
+			ContentDisposition:      getPtr("inline"),
+			WebsiteRedirectLocation: getPtr("/redirect"),
+			Tagging:                 getPtr("key=value"),
+			Metadata:                map[string]string{"foo": "bar"},
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		mp, err := createMp(s3client, bucket, mpObj)
+		if err != nil {
+			return err
+		}
+		parts, _, err := uploadParts(s3client, 10*1024*1024, 2, bucket, mpObj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+		compParts := make([]types.CompletedPart, len(parts))
+		for i, p := range parts {
+			compParts[i] = types.CompletedPart{ETag: p.ETag, PartNumber: p.PartNumber}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:          &bucket,
+			Key:             &mpObj,
+			UploadId:        mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{Parts: compParts},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		_, err = putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       &lockedObj,
+			ChecksumAlgorithm:         types.ChecksumAlgorithmCrc32,
+			ObjectLockMode:            types.ObjectLockModeGovernance,
+			ObjectLockRetainUntilDate: &expires,
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		overrideExpires := expires.Add(time.Hour)
+		err = notModifiedHeaders(s3client, bucket, head, []notModifiedHeadersCase{
+			{key: obj},
+			{key: obj, cacheControl: getPtr("no-cache"), expires: &overrideExpires},
+			{key: mpObj, partNumber: getPtr(int32(1))},
+			{key: lockedObj},
+		})
+		if err != nil {
+			return err
+		}
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: lockedObj, removeLegalHold: true}})
+	}, withLock())
+}
+
 func checkIAMApiErr(err error, expected iamerr.APIError) error {
 	if err == nil {
 		return fmt.Errorf("expected IAM API error, instead got nil")
@@ -1065,7 +1438,8 @@ type trustPolicyGrammarCase struct {
 
 // trustPolicyGrammarCases covers the role trust-policy grammar
 var trustPolicyGrammarCases = []trustPolicyGrammarCase{
-	{"valid AWS principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::123456789012:root"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid AWS principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::000000000000:root"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"every action a trust policy may name", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","sts:AssumeRoleWithSAML","sts:AssumeRoleWithWebIdentity","sts:TagSession","sts:SetSourceIdentity","sts:SetContext"]}]}`, nil},
 	{"valid without version", `{"Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, nil},
 	{"valid Service principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"s3.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, nil},
 	{"valid multiple principal type keys together", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*","Service":"sts.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, nil},
@@ -1102,6 +1476,11 @@ var trustPolicyGrammarCases = []trustPolicyGrammarCase{
 	{"non-sts vendor action rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"s3:GetObject"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
 	{"non-sts notaction rejected even on deny", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Principal":{"AWS":"*"},"NotAction":"s3:GetObject"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
 	{"one non-sts action in an otherwise-valid array rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","s3:GetObject"]}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"sts wildcard action rejected (looks valid, trust actions are a fixed list)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"sts partial wildcard action rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"sts action in another case rejected (trust actions match case-sensitively)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:assumerole"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"sts action that assumes nothing rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:GetCallerIdentity"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"disallowed sts notaction rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Principal":{"AWS":"*"},"NotAction":"sts:*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
 
 	{"resource forbidden", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","Resource":"*"}]}`, iamerr.MalformedPolicyDocument("Has prohibited field Resource")},
 	{"notresource forbidden", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","NotResource":"*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy must not contain resources.")},
@@ -1109,6 +1488,96 @@ var trustPolicyGrammarCases = []trustPolicyGrammarCase{
 	{"duplicate sid across statements", `{"Version":"2012-10-17","Statement":[{"Sid":"Dup","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"},{"Sid":"Dup","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("The Statement Ids in the policy are not unique")},
 
 	{"cognito federated without condition (looks valid, Cognito needs a Condition)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"cognito-identity.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("A condition block must be present for the Cognito provider")},
+}
+
+// runTrustPolicyAWSPrincipalCases runs check over the values a trust policy's
+// Principal.AWS may and may not take. Only a value that resolves to
+// something is accepted: every principal, the account, or an IAM user, role
+// or role session that exists. A user and a role in a path of its own are
+// created for the cases to name, and removed afterwards.
+func runTrustPolicyAWSPrincipalCases(client *iam.Client, check func(doc string, wantErr iamerr.APIError) error) (err error) {
+	userName := newIAMUserName()
+	userOut, err := createIAMUser(client, &iam.CreateUserInput{UserName: aws.String(userName)})
+	if err != nil {
+		return fmt.Errorf("create user: %w", err)
+	}
+	defer func() {
+		if deleteErr := deleteIAMUser(client, userName); deleteErr != nil {
+			err = errors.Join(err, fmt.Errorf("cleanup: %w", deleteErr))
+		}
+	}()
+	userArn := aws.ToString(userOut.User.Arn)
+
+	roleName := newIAMRoleName()
+	roleOut, err := createIAMRole(client, &iam.CreateRoleInput{
+		RoleName:                 aws.String(roleName),
+		Path:                     aws.String("/team/"),
+		AssumeRolePolicyDocument: aws.String(validTrustPolicyDocument),
+	})
+	if err != nil {
+		return fmt.Errorf("create role: %w", err)
+	}
+	defer func() {
+		if deleteErr := deleteIAMRole(client, roleName); deleteErr != nil {
+			err = errors.Join(err, fmt.Errorf("cleanup: %w", deleteErr))
+		}
+	}()
+	roleArn := aws.ToString(roleOut.Role.Arn)
+
+	accepted := []struct {
+		name      string
+		principal any
+	}{
+		{"every principal", "*"},
+		{"account root arn", accountArn()},
+		{"bare account id", testAccountID},
+		{"existing user", userArn},
+		{"existing role with its path", roleArn},
+		{"session of an existing role", assumedRoleArnFor(roleName, "any-session")},
+		{"several that all resolve", []string{accountArn(), userArn, roleArn}},
+	}
+	for _, tc := range accepted {
+		if err := check(trustAllowingAWS(tc.principal), nil); err != nil {
+			return fmt.Errorf("%s: %w", tc.name, err)
+		}
+	}
+
+	rejected := []struct {
+		name      string
+		principal string
+	}{
+		{"user that does not exist", userArnFor("does-not-exist")},
+		{"role that does not exist", roleArnFor("does-not-exist")},
+		{"role without its path (looks valid, a role's arn carries its path)", roleArnFor(roleName)},
+		{"session of a role that does not exist", assumedRoleArnFor("does-not-exist", "any-session")},
+		{"session name with a wildcard", assumedRoleArnFor(roleName, "*")},
+		{"wildcard inside an arn", userArnFor("*")},
+		{"another account's root", "arn:aws:iam::123456789012:root"},
+		{"another account's id", "123456789012"},
+		{"group arn", "arn:aws:iam::" + testAccountID + ":group/admins"},
+		{"not an arn", "foo"},
+		{"empty", ""},
+	}
+	for _, tc := range rejected {
+		if err := check(trustAllowingAWS(tc.principal), iamerr.InvalidPrincipalInPolicy("AWS", tc.principal)); err != nil {
+			return fmt.Errorf("%s: %w", tc.name, err)
+		}
+	}
+
+	// One unresolvable principal among resolvable ones, and one in a Deny
+	// statement, are rejected just the same.
+	missing := userArnFor("does-not-exist")
+	if err := check(trustAllowingAWS([]string{userArn, missing}), iamerr.InvalidPrincipalInPolicy("AWS", missing)); err != nil {
+		return fmt.Errorf("one of several that does not resolve: %w", err)
+	}
+	denyMissing := trustDoc(
+		trustStatement{Effect: "Allow", Principal: map[string]any{"AWS": "*"}, Action: actSTSAssumeRole},
+		trustStatement{Effect: "Deny", Principal: map[string]any{"AWS": missing}, Action: actSTSAssumeRole},
+	)
+	if err := check(denyMissing, iamerr.InvalidPrincipalInPolicy("AWS", missing)); err != nil {
+		return fmt.Errorf("unresolvable principal in a deny statement: %w", err)
+	}
+	return nil
 }
 
 func putObjects(client *s3.Client, objs []string, bucket string) ([]types.Object, error) {
@@ -1182,6 +1651,43 @@ func withRequestHeader(key, value string) func(*s3.Options) {
 	}
 }
 
+// withRawResponse keeps a copy of the http response an SDK request gets back,
+// for checking the error fields the SDK's error types don't expose. The
+// request still goes through the client, so it is sent to the configured
+// endpoint in the configured addressing style.
+func withRawResponse(dst **http.Response) func(*s3.Options) {
+	return func(o *s3.Options) {
+		o.APIOptions = append(o.APIOptions, func(stack *middleware.Stack) error {
+			// added after the operation's own middlewares, it runs right above
+			// the transport and reads the body before the SDK's deserializers
+			// consume it
+			return stack.Deserialize.Add(
+				middleware.DeserializeMiddlewareFunc("CaptureRawResponse",
+					func(ctx context.Context, in middleware.DeserializeInput, next middleware.DeserializeHandler) (
+						out middleware.DeserializeOutput, md middleware.Metadata, err error,
+					) {
+						out, md, err = next.HandleDeserialize(ctx, in)
+						resp, ok := out.RawResponse.(*smithyhttp.Response)
+						if !ok {
+							return out, md, err
+						}
+						body, readErr := io.ReadAll(resp.Body)
+						resp.Body.Close()
+						if readErr != nil {
+							return out, md, errors.Join(err, readErr)
+						}
+						resp.Body = io.NopCloser(bytes.NewReader(body))
+						raw := *resp.Response
+						raw.Body = io.NopCloser(bytes.NewReader(body))
+						*dst = &raw
+						return out, md, err
+					}),
+				middleware.After,
+			)
+		})
+	}
+}
+
 // headObjectETag re-reads an object's current ETag, which an overwrite may
 // have changed.
 func headObjectETag(client *s3.Client, bucket, key string) (string, error) {
@@ -1193,6 +1699,257 @@ func headObjectETag(client *s3.Client, bucket, key string) (string, error) {
 		return "", err
 	}
 	return getString(res.ETag), nil
+}
+
+// testCopySourcePreconditions puts a copy source object and sends a copy of it
+// to path, a CopyObject or an UploadPartCopy request URI, for every
+// x-amz-copy-source-if-* precondition combination. S3 never answers a copy
+// with 304 NotModified: a failed precondition is a 412 PreconditionFailed
+// naming the copy-source header that decided it.
+func testCopySourcePreconditions(s *S3Conf, s3client *s3.Client, bucket, path string) error {
+	key := "my-obj"
+	obj, err := putObjectWithData(10, &s3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	}, s3client)
+	if err != nil {
+		return err
+	}
+
+	// sleep one second to get dates before and after
+	// the object creation
+	time.Sleep(time.Second * 1)
+
+	before := time.Now().AddDate(0, 0, -3)
+	after := time.Now()
+	// a date in the future is ignored
+	future := time.Now().AddDate(0, 0, 3)
+	etag := obj.res.ETag
+	etagTrimmed := strings.Trim(*etag, `"`)
+
+	// the object hasn't been modified since its Last-Modified date
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	cancel()
+	if err != nil {
+		return err
+	}
+	lastModified := *head.LastModified
+
+	errIfMatch := s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfMatch)
+	errIfNoneMatch := s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfNoneMatch)
+	errIfModSince := s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfModifiedSince)
+	errIfUnmodSince := s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfUnmodifiedSince)
+
+	for i, test := range []struct {
+		ifmatch           *string
+		ifnonematch       *string
+		ifmodifiedsince   *time.Time
+		ifunmodifiedsince *time.Time
+		err               s3err.S3Error
+	}{
+		// all the cases when preconditions are either empty, true or false
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, &before, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, &after, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, nil, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, &before, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, &after, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, nil, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, &before, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, &after, errIfMatch},
+		{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, nil, errIfMatch},
+
+		{getPtr("invalid_etag"), etag, &before, &before, errIfMatch},
+		{getPtr("invalid_etag"), etag, &before, &after, errIfMatch},
+		{getPtr("invalid_etag"), etag, &before, nil, errIfMatch},
+		{getPtr("invalid_etag"), etag, &after, &before, errIfMatch},
+		{getPtr("invalid_etag"), etag, &after, &after, errIfMatch},
+		{getPtr("invalid_etag"), etag, &after, nil, errIfMatch},
+		{getPtr("invalid_etag"), etag, nil, &before, errIfMatch},
+		{getPtr("invalid_etag"), etag, nil, &after, errIfMatch},
+		{getPtr("invalid_etag"), etag, nil, nil, errIfMatch},
+
+		{getPtr("invalid_etag"), nil, &before, &before, errIfMatch},
+		{getPtr("invalid_etag"), nil, &before, &after, errIfMatch},
+		{getPtr("invalid_etag"), nil, &before, nil, errIfMatch},
+		{getPtr("invalid_etag"), nil, &after, &before, errIfMatch},
+		{getPtr("invalid_etag"), nil, &after, &after, errIfMatch},
+		{getPtr("invalid_etag"), nil, &after, nil, errIfMatch},
+		{getPtr("invalid_etag"), nil, nil, &before, errIfMatch},
+		{getPtr("invalid_etag"), nil, nil, &after, errIfMatch},
+		{getPtr("invalid_etag"), nil, nil, nil, errIfMatch},
+
+		{etag, getPtr("invalid_etag"), &before, &before, nil},
+		{etag, getPtr("invalid_etag"), &before, &after, nil},
+		{etag, getPtr("invalid_etag"), &before, nil, nil},
+		{etag, getPtr("invalid_etag"), &after, &before, nil},
+		{etag, getPtr("invalid_etag"), &after, &after, nil},
+		{etag, getPtr("invalid_etag"), &after, nil, nil},
+		{etag, getPtr("invalid_etag"), nil, &before, nil},
+		{etag, getPtr("invalid_etag"), nil, &after, nil},
+		{etag, getPtr("invalid_etag"), nil, nil, nil},
+
+		{etag, etag, &before, &before, errIfNoneMatch},
+		{etag, etag, &before, &after, errIfNoneMatch},
+		{etag, etag, &before, nil, errIfNoneMatch},
+		{etag, etag, &after, &before, errIfNoneMatch},
+		{etag, etag, &after, &after, errIfNoneMatch},
+		{etag, etag, &after, nil, errIfNoneMatch},
+		{etag, etag, nil, &before, errIfNoneMatch},
+		{etag, etag, nil, &after, errIfNoneMatch},
+		{etag, etag, nil, nil, errIfNoneMatch},
+
+		{etag, nil, &before, &before, nil},
+		{etag, nil, &before, &after, nil},
+		{etag, nil, &before, nil, nil},
+		{etag, nil, &after, &before, errIfModSince},
+		{etag, nil, &after, &after, errIfModSince},
+		{etag, nil, &after, nil, errIfModSince},
+		{etag, nil, nil, &before, nil},
+		{etag, nil, nil, &after, nil},
+		{etag, nil, nil, nil, nil},
+
+		{nil, getPtr("invalid_etag"), &before, &before, errIfUnmodSince},
+		{nil, getPtr("invalid_etag"), &before, &after, nil},
+		{nil, getPtr("invalid_etag"), &before, nil, nil},
+		{nil, getPtr("invalid_etag"), &after, &before, errIfUnmodSince},
+		{nil, getPtr("invalid_etag"), &after, &after, nil},
+		{nil, getPtr("invalid_etag"), &after, nil, nil},
+		{nil, getPtr("invalid_etag"), nil, &before, errIfUnmodSince},
+		{nil, getPtr("invalid_etag"), nil, &after, nil},
+		{nil, getPtr("invalid_etag"), nil, nil, nil},
+
+		{nil, etag, &before, &before, errIfUnmodSince},
+		{nil, etag, &before, &after, errIfNoneMatch},
+		{nil, etag, &before, nil, errIfNoneMatch},
+		{nil, etag, &after, &before, errIfUnmodSince},
+		{nil, etag, &after, &after, errIfNoneMatch},
+		{nil, etag, &after, nil, errIfNoneMatch},
+		{nil, etag, nil, &before, errIfUnmodSince},
+		{nil, etag, nil, &after, errIfNoneMatch},
+		{nil, etag, nil, nil, errIfNoneMatch},
+
+		{nil, nil, &before, &before, errIfUnmodSince},
+		{nil, nil, &before, &after, nil},
+		{nil, nil, &before, nil, nil},
+		{nil, nil, &after, &before, errIfUnmodSince},
+		{nil, nil, &after, &after, errIfModSince},
+		{nil, nil, &after, nil, errIfModSince},
+		{nil, nil, nil, &before, errIfUnmodSince},
+		{nil, nil, nil, &after, nil},
+		{nil, nil, nil, nil, nil},
+
+		// if-match, if-non-match without quotes
+		{&etagTrimmed, getPtr("invalid_etag"), &before, &before, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), &before, &after, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), &before, nil, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), &after, &before, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), &after, &after, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), &after, nil, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), nil, &before, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), nil, &after, nil},
+		{&etagTrimmed, getPtr("invalid_etag"), nil, nil, nil},
+
+		{&etagTrimmed, &etagTrimmed, &before, &before, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, &before, &after, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, &before, nil, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, &after, &before, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, &after, &after, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, &after, nil, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, nil, &before, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, nil, &after, errIfNoneMatch},
+		{&etagTrimmed, &etagTrimmed, nil, nil, errIfNoneMatch},
+
+		{&etagTrimmed, nil, &before, &before, nil},
+		{&etagTrimmed, nil, &before, &after, nil},
+		{&etagTrimmed, nil, &before, nil, nil},
+		{&etagTrimmed, nil, &after, &before, errIfModSince},
+		{&etagTrimmed, nil, &after, &after, errIfModSince},
+		{&etagTrimmed, nil, &after, nil, errIfModSince},
+		{&etagTrimmed, nil, nil, &before, nil},
+		{&etagTrimmed, nil, nil, &after, nil},
+		{&etagTrimmed, nil, nil, nil, nil},
+
+		{nil, &etagTrimmed, &before, &before, errIfUnmodSince},
+		{nil, &etagTrimmed, &before, &after, errIfNoneMatch},
+		{nil, &etagTrimmed, &before, nil, errIfNoneMatch},
+		{nil, &etagTrimmed, &after, &before, errIfUnmodSince},
+		{nil, &etagTrimmed, &after, &after, errIfNoneMatch},
+		{nil, &etagTrimmed, &after, nil, errIfNoneMatch},
+		{nil, &etagTrimmed, nil, &before, errIfUnmodSince},
+		{nil, &etagTrimmed, nil, &after, errIfNoneMatch},
+		{nil, &etagTrimmed, nil, nil, errIfNoneMatch},
+
+		// if-match and if-none-match with asterisk
+		{getPtr("*"), nil, nil, nil, nil},
+		{getPtr("*"), nil, &after, nil, errIfModSince},
+		{getPtr("*"), getPtr("invalid_etag"), nil, nil, nil},
+		{getPtr("*"), etag, nil, nil, errIfNoneMatch},
+		{getPtr("*"), getPtr("*"), nil, nil, errIfNoneMatch},
+		{getPtr("*"), getPtr("*"), nil, &before, errIfNoneMatch},
+		{nil, getPtr("*"), nil, nil, errIfNoneMatch},
+		{nil, getPtr("*"), &before, nil, errIfNoneMatch},
+		{nil, getPtr("*"), nil, &after, errIfNoneMatch},
+		{nil, getPtr("*"), nil, &before, errIfUnmodSince},
+		{getPtr("invalid_etag"), getPtr("*"), nil, nil, errIfMatch},
+
+		// dates equal to Last-Modified
+		{nil, nil, nil, &lastModified, nil},
+		{nil, nil, &lastModified, nil, errIfModSince},
+
+		// a future if-modified-since is ignored
+		{nil, nil, &future, nil, nil},
+		{etag, nil, &future, nil, nil},
+		{nil, etag, &future, nil, errIfNoneMatch},
+	} {
+		headers := map[string]string{
+			"X-Amz-Copy-Source": fmt.Sprintf("%s/%s", bucket, key),
+		}
+		if test.ifmatch != nil {
+			headers["X-Amz-Copy-Source-If-Match"] = *test.ifmatch
+		}
+		if test.ifnonematch != nil {
+			headers["X-Amz-Copy-Source-If-None-Match"] = *test.ifnonematch
+		}
+		if test.ifmodifiedsince != nil {
+			headers["X-Amz-Copy-Source-If-Modified-Since"] = test.ifmodifiedsince.UTC().Format(http.TimeFormat)
+		}
+		if test.ifunmodifiedsince != nil {
+			headers["X-Amz-Copy-Source-If-Unmodified-Since"] = test.ifunmodifiedsince.UTC().Format(http.TimeFormat)
+		}
+
+		req, err := createSignedReq(http.MethodPut, s.endpoint, path, s.awsID, s.awsSecret,
+			"s3", s.awsRegion, "", nil, time.Now(), headers)
+		if err != nil {
+			return fmt.Errorf("test case %d: %w", i, err)
+		}
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("test case %d: %w", i, err)
+		}
+
+		if test.err != nil {
+			if err := checkHTTPResponseApiErr(resp, test.err); err != nil {
+				return fmt.Errorf("test case %d failed: %w", i, err)
+			}
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("test case %d: %w", i, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("test case %d failed: expected the copy to succeed, instead got %v: %s",
+				i, resp.StatusCode, body)
+		}
+	}
+
+	return nil
 }
 
 func listObjects(client *s3.Client, bucket, prefix, delimiter string, maxKeys int32) ([]types.Object, []types.CommonPrefix, error) {
@@ -1881,6 +2638,17 @@ func areMapsSame(mp1, mp2 map[string]string) bool {
 	return true
 }
 
+// sortedBuckets returns a copy of buckets sorted by name, the order
+// ListBuckets lists them in. Bucket names don't sort in the order they're
+// made in: "test-bucket-1000" comes before "test-bucket-999".
+func sortedBuckets(buckets []types.Bucket) []types.Bucket {
+	sorted := slices.Clone(buckets)
+	slices.SortFunc(sorted, func(a, b types.Bucket) int {
+		return strings.Compare(*a.Name, *b.Name)
+	})
+	return sorted
+}
+
 func compareBuckets(list1 []types.Bucket, list2 []types.Bucket, ignore ...string) bool {
 	if len(ignore) > 0 {
 		ignoreSet := make(map[string]struct{}, len(ignore))
@@ -2286,6 +3054,43 @@ func putBucketVersioningStatus(client *s3.Client, bucket string, status types.Bu
 	cancel()
 
 	return err
+}
+
+// checkBucketVersioningStatus verifies the bucket reports the expected
+// versioning status.
+func checkBucketVersioningStatus(client *s3.Client, bucket string, expected types.BucketVersioningStatus) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	res, err := client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+		Bucket: &bucket,
+	})
+	cancel()
+	if err != nil {
+		return err
+	}
+
+	if res.Status != expected {
+		return fmt.Errorf("expected the bucket versioning status to be %v, instead got %v",
+			expected, res.Status)
+	}
+
+	return nil
+}
+
+// checkErrStatusCode verifies the HTTP status code of a failed request.
+// checkApiErr compares against the gateway's own error table, so a wrong
+// status code in that table can only be caught by a hard-coded expectation.
+func checkErrStatusCode(err error, expected int) error {
+	var respErr *awshttp.ResponseError
+	if !errors.As(err, &respErr) {
+		return fmt.Errorf("expected an http response error, instead got %v", err)
+	}
+
+	if respErr.HTTPStatusCode() != expected {
+		return fmt.Errorf("expected response status code to be %v, instead got %v",
+			expected, respErr.HTTPStatusCode())
+	}
+
+	return nil
 }
 
 func checkWORMProtection(s *S3Conf, client *s3.Client, bucket, object string) error {
@@ -3164,21 +3969,24 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 			// A GOVERNANCE retention can be weakened with the bypass
 			// permission and header, so shorten it to a few seconds out
 			// rather than waiting for the original date. The margin absorbs
-			// network delay.
-			retDate := time.Now().Add(lockWaitTime)
+			// network delay, and a stall longer than that is retried.
+			err := retryOnPastRetainDate(func() error {
+				retDate := time.Now().Add(lockWaitTime)
 
-			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-			_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-				Bucket:                    &bucket,
-				Key:                       &obj.key,
-				VersionId:                 getNonEmptyPtr(obj.versionId),
-				BypassGovernanceRetention: getBoolPtr(true),
-				Retention: &types.ObjectLockRetention{
-					Mode:            types.ObjectLockRetentionModeGovernance,
-					RetainUntilDate: &retDate,
-				},
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+					Bucket:                    &bucket,
+					Key:                       &obj.key,
+					VersionId:                 getNonEmptyPtr(obj.versionId),
+					BypassGovernanceRetention: getBoolPtr(true),
+					Retention: &types.ObjectLockRetention{
+						Mode:            types.ObjectLockRetentionModeGovernance,
+						RetainUntilDate: &retDate,
+					},
+				})
+				cancel()
+				return err
 			})
-			cancel()
 
 			// If object was already deleted, ignore the error
 			if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
@@ -3243,6 +4051,26 @@ func waitOutComplianceRetention(client *s3.Client, bucket string, obj objToDelet
 		time.Sleep(wait)
 	}
 	return nil
+}
+
+// retryOnPastRetainDate calls req, a request carrying a retain until date
+// only seconds out, again for as long as the gateway rejects that date as
+// already passed, up to maxRetryAttempts times. A loaded host can stall
+// a request for longer than such a margin, which expires the date in transit,
+// and the gateway then answers InvalidArgument instead of whatever the request
+// was meant to exercise. req must compute its date from time.Now() on
+// every call for a retry to help.
+func retryOnPastRetainDate(req func() error) error {
+	pastDate := s3err.GetInvalidArgumentErr(s3err.InvalidArgPastObjectLockRetainDate, "")
+
+	var err error
+	for range maxRetryAttempts {
+		err = req()
+		if checkApiErr(err, pastDate) != nil {
+			return err
+		}
+	}
+	return err
 }
 
 type objectLockMode string
@@ -3839,11 +4667,22 @@ func getSigningKey(secret, yearMonthDay, region string) []byte {
 }
 
 // buildPostObjectBody builds a multipart/form-data body for a POST object request.
-// Fields are written first (in the order provided)
+// Fields are written first, except those named in fieldsAfterFile, which
+// follow the file part in that order. A nil fileHeader sends the file as
+// upload.bin.
 // Returns (body bytes, boundary string, error).
-func buildPostObjectBody(fields, extraFields map[string]string, fileContent []byte) ([]byte, string, error) {
+func buildPostObjectBody(fields, extraFields map[string]string, fileContent []byte, fileHeader textproto.MIMEHeader, fieldsAfterFile []string) ([]byte, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
+
+	afterFile := map[string]string{}
+	writeField := func(key, value string) error {
+		if slices.Contains(fieldsAfterFile, key) {
+			afterFile[key] = value
+			return nil
+		}
+		return w.WriteField(key, value)
+	}
 
 	for key, value := range fields {
 		v, ok := extraFields[key]
@@ -3854,23 +4693,37 @@ func buildPostObjectBody(fields, extraFields map[string]string, fileContent []by
 			}
 			value = v
 		}
-		if err := w.WriteField(key, value); err != nil {
+		if err := writeField(key, value); err != nil {
 			return nil, "", err
 		}
 	}
 
 	for key, value := range extraFields {
-		if err := w.WriteField(key, value); err != nil {
+		if err := writeField(key, value); err != nil {
 			return nil, "", err
 		}
 	}
 
-	fw, err := w.CreateFormFile("file", "upload.bin")
+	var fw io.Writer
+	var err error
+	if fileHeader == nil {
+		fw, err = w.CreateFormFile("file", "upload.bin")
+	} else {
+		fw, err = w.CreatePart(fileHeader)
+	}
 	if err != nil {
 		return nil, "", err
 	}
 	if _, err = fw.Write(fileContent); err != nil {
 		return nil, "", err
+	}
+
+	for _, key := range fieldsAfterFile {
+		if value, ok := afterFile[key]; ok {
+			if err := w.WriteField(key, value); err != nil {
+				return nil, "", err
+			}
+		}
 	}
 
 	if err := w.Close(); err != nil {
@@ -3945,6 +4798,8 @@ type PostRequestConfig struct {
 	secret               string
 	region               string
 	extraFields          map[string]string
+	fieldsAfterFile      []string
+	fileHeader           textproto.MIMEHeader
 	fileContent          []byte
 	rawPolicy            *string
 	date                 time.Time
@@ -4028,7 +4883,7 @@ func newPostObjectRequest(input PostRequestConfig) (*http.Request, map[string]st
 	fields["policy"] = policy
 	fields["x-amz-signature"] = signPostPolicy(policy, input.date.Format("20060102"), input.region, input.secret)
 
-	body, boundary, err := buildPostObjectBody(fields, input.extraFields, input.fileContent)
+	body, boundary, err := buildPostObjectBody(fields, input.extraFields, input.fileContent, input.fileHeader, input.fieldsAfterFile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -4053,6 +4908,65 @@ func newPostObjectRequest(input PostRequestConfig) (*http.Request, map[string]st
 	req.ContentLength = int64(len(body))
 
 	return req, fields, nil
+}
+
+// newPostObjectRequestClosing returns the request for input with a body that
+// ends with closing(boundary), in place of the final boundary and its CRLF. It
+// also returns the body in two parts, to send with a pause between them. The
+// first part ends within the bytes that the gateway reads ahead of the file: as
+// many bytes after the start of the content of the file as the boundary has.
+// The second holds the rest of the form.
+func newPostObjectRequestClosing(input PostRequestConfig, closing func(boundary string) string) (*http.Request, [2][]byte, error) {
+	var parts [2][]byte
+
+	req, _, err := newPostObjectRequest(input)
+	if err != nil {
+		return nil, parts, err
+	}
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, parts, err
+	}
+
+	_, params, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
+	if err != nil {
+		return nil, parts, err
+	}
+	boundary := params["boundary"]
+
+	body, ok := bytes.CutSuffix(body, []byte("\r\n--"+boundary+"--\r\n"))
+	if !ok {
+		return nil, parts, fmt.Errorf("the form does not end with its final boundary")
+	}
+	split := len(body) - len(input.fileContent) + len("\r\n--"+boundary)
+	body = append(body, closing(boundary)...)
+
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+
+	return req, [2][]byte{body[:split], body[split:]}, nil
+}
+
+// sendInParts sends req with its body in two writes and a pause between them,
+// as a client does that is slow to send the end of the form. The gateway reads
+// the first 8 KiB of a body before it handles the request, so the first part
+// must be longer than that for the gateway to handle the request before it has
+// the second.
+func sendInParts(s *S3Conf, req *http.Request, parts [2][]byte) (*http.Response, error) {
+	pr, pw := io.Pipe()
+	req.Body = pr
+
+	go func() {
+		_, err := pw.Write(parts[0])
+		if err == nil {
+			time.Sleep(time.Second)
+			_, err = pw.Write(parts[1])
+		}
+		pw.CloseWithError(err)
+	}()
+
+	return s.httpClient.Do(req)
 }
 
 func getEtagBytes(etag string) ([]byte, error) {
@@ -4287,4 +5201,103 @@ func getStoredContentEncoding(s3client *s3.Client, bucket, object string) (strin
 	}
 
 	return *out.ContentEncoding, nil
+}
+
+// Settings of the races between uploads and deletes of objects that share
+// their parent directories. A delete only removes a directory that no other
+// object is in, so the workers share their directories in pairs: with more
+// workers to a directory, it would hardly ever be empty.
+const (
+	siblingRaceWorkers    = 32
+	siblingRaceIterations = 50
+)
+
+// parentRaceGroupSize is the number of workers that share a parent key in
+// PutObject_race_with_parent_object_deletes: one uploads the object at the
+// key, the rest upload objects under it.
+const parentRaceGroupSize = 2
+
+// siblingRaceKey returns the key of an iteration of a worker: it shares its
+// parent directories with the keys of one other worker, and the top level
+// one with the keys of all workers.
+func siblingRaceKey(worker, iteration int) string {
+	return fmt.Sprintf("race/%d/a/b/c/d/e/w%d-%d", worker/2, worker, iteration)
+}
+
+// raceWorkers runs fn for each iteration of each of the workers, the
+// workers concurrently with each other.
+func raceWorkers(workers, iterations int, fn func(worker, iteration int) error) error {
+	eg := errgroup.Group{}
+	for w := range workers {
+		eg.Go(func() error {
+			for i := range iterations {
+				if err := fn(w, i); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
+}
+
+// siblingRaceData returns the data uploaded at key: it differs per key, so
+// that reading back another object is told apart.
+func siblingRaceData(key string) []byte {
+	return bytes.Repeat([]byte(key+"\n"), 16)
+}
+
+// checkObjectData checks that the object at key holds data. An upload that
+// succeeded must be readable right away.
+func checkObjectData(s3client *s3.Client, bucket, key, versionId string, data []byte) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+	input := &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	}
+	if versionId != "" {
+		input.VersionId = &versionId
+	}
+	out, err := s3client.GetObject(ctx, input)
+	if err != nil {
+		return fmt.Errorf("get %v after a successful upload: %w", key, err)
+	}
+	defer out.Body.Close()
+	got, err := io.ReadAll(out.Body)
+	if err != nil {
+		return fmt.Errorf("read %v: %w", key, err)
+	}
+	if !bytes.Equal(got, data) {
+		return fmt.Errorf("get %v: expected the uploaded data %q, instead got %q", key, data, got)
+	}
+	return nil
+}
+
+// putGetDeleteRace runs workers that each upload an object with upload, read
+// it back and delete it, over and over. keyFn gives the key of an iteration of
+// a worker: the keys are distinct, but share their parent directories. A
+// delete removes the parent directories of its object that hold no other
+// object, while other uploads are about to place their objects there.
+func putGetDeleteRace(s3client *s3.Client, bucket string, keyFn func(worker, iteration int) string, upload func(key string, data []byte) error) error {
+	return raceWorkers(siblingRaceWorkers, siblingRaceIterations, func(w, i int) error {
+		key := keyFn(w, i)
+		data := siblingRaceData(key)
+		if err := upload(key, data); err != nil {
+			return fmt.Errorf("upload %v: %w", key, err)
+		}
+		if err := checkObjectData(s3client, bucket, key, "", data); err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("delete %v: %w", key, err)
+		}
+		return nil
+	})
 }

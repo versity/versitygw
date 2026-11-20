@@ -17,6 +17,7 @@ package utils
 import (
 	"encoding/base64"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
@@ -48,6 +49,32 @@ func TestEnsureRequestIDs(t *testing.T) {
 	assert.Equal(t, hostID, hostIDAgain)
 	assert.Equal(t, requestID, RequestID(ctx))
 	assert.Equal(t, hostID, HostID(ctx))
-	assert.Equal(t, requestID, string(ctx.Response().Header.Peek(HeaderAmzRequestID)))
-	assert.Equal(t, hostID, string(ctx.Response().Header.Peek(HeaderAmzID2)))
+	assert.Equal(t, requestID, string(ctx.Response().Header.PeekCanonical([]byte(HeaderAmzRequestID))))
+	assert.Equal(t, hostID, string(ctx.Response().Header.PeekCanonical([]byte(HeaderAmzID2))))
+}
+
+func TestEnsureRequestIDsNormalizingToggled(t *testing.T) {
+	for _, disableFirst := range []bool{false, true} {
+		ctx := fiber.New().AcquireCtx(&fasthttp.RequestCtx{})
+		if disableFirst {
+			ctx.Response().Header.DisableNormalizing()
+		}
+		EnsureRequestIDs(ctx)
+
+		// flip the flag the way SetResponseHeaders does mid-request
+		if disableFirst {
+			ctx.Response().Header.EnableNormalizing()
+		} else {
+			ctx.Response().Header.DisableNormalizing()
+		}
+		EnsureRequestIDs(ctx)
+
+		keys := map[string]int{}
+		for k := range ctx.Response().Header.All() {
+			if strings.HasPrefix(strings.ToLower(string(k)), "x-amz-") {
+				keys[string(k)]++
+			}
+		}
+		assert.Equal(t, map[string]int{HeaderAmzRequestID: 1, HeaderAmzID2: 1}, keys)
+	}
 }

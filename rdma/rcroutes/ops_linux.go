@@ -31,6 +31,7 @@ import (
 	"github.com/valyala/fasthttp"
 
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/internal/httpctx"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/rdma/rcserver"
 	"github.com/versity/versitygw/s3api/utils"
@@ -342,7 +343,7 @@ const pubRequestBacklogCap = 4096
 func newOpsTracker(sessionLimit int) *opsTracker {
 	t := &opsTracker{
 		sessions: map[string]*sessionRecord{},
-		app: fiber.New(fiber.Config{
+		app: fiber.NewWithCustomCtx(httpctx.NewCtx, fiber.Config{
 			Immutable: true,
 		}),
 		pubq:         make(chan pubJob, pubQueueSoftCap),

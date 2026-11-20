@@ -218,6 +218,11 @@ type Opts struct {
 	S3Bucket                    string
 	S3Endpoint                  string
 	S3DisableSSlVerfiy          bool
+	AzureAccount                string
+	AzureKey                    string
+	AzureSASToken               string
+	AzureURL                    string
+	AzureContainer              string
 	CacheDisable                bool
 	CacheTTL                    int
 	CachePrune                  int
@@ -236,6 +241,7 @@ type Opts struct {
 	StandaloneDefaultGroupID    int
 	StandaloneDefaultProjectID  int
 	StandaloneRegion            string
+	StandalonePolicyCacheTTL    int
 }
 
 func New(o *Opts) (IAMService, error) {
@@ -245,7 +251,7 @@ func New(o *Opts) (IAMService, error) {
 	switch {
 	case o.StandaloneIAMEndpoint != "":
 		fmt.Printf("initializing standalone IAM with %q\n", o.StandaloneIAMEndpoint)
-		svc, err = NewIAMServiceStandalone(o.RootAccount, IAMServiceStandaloneConfig{
+		cfg := IAMServiceStandaloneConfig{
 			Endpoint:         o.StandaloneIAMEndpoint,
 			Access:           o.StandaloneIAMAccess,
 			Secret:           o.StandaloneIAMSecret,
@@ -256,18 +262,20 @@ func New(o *Opts) (IAMService, error) {
 			DefaultGroupID:   o.StandaloneDefaultGroupID,
 			DefaultProjectID: o.StandaloneDefaultProjectID,
 			Region:           o.StandaloneRegion,
-		})
+		}
+		if !o.CacheDisable {
+			cfg.SigningKeyCacheTTL = time.Duration(o.CacheTTL) * time.Second
+			cfg.PolicyCacheTTL = time.Duration(o.StandalonePolicyCacheTTL) * time.Second
+		}
+		svc, err = NewIAMServiceStandalone(o.RootAccount, cfg)
 		if err != nil {
 			return nil, err
 		}
-		// Never cache-wrapped, unlike every other backend below: IAMCache
-		// only implements the base IAMService methods, so wrapping this
-		// backend in it would silently strip the SigningKeyProvider/
-		// PolicyEvaluator interfaces signature verification and policy
-		// enforcement depend on — not just skip a performance
-		// optimization, but break both outright.
-		//
-		// TODO: Do we need to implement cache for this ?
+		// Not wrapped in IAMCache like the backends below, but configured to
+		// cache for itself. IAMCache caches accounts, secrets included, by
+		// access key, which this backend never hands out: requests are
+		// served by SigningKeyProvider and PolicyEvaluator instead, and a
+		// wrapper exposing only the IAMService methods would hide both.
 		return svc, nil
 	case o.Dir != "":
 		svc, err = NewInternal(o.RootAccount, o.Dir)
@@ -282,6 +290,10 @@ func New(o *Opts) (IAMService, error) {
 			o.S3Endpoint, o.S3DisableSSlVerfiy)
 		fmt.Printf("initializing S3 IAM with '%v/%v'\n",
 			o.S3Endpoint, o.S3Bucket)
+	case o.AzureContainer != "":
+		svc, err = NewAzure(o.RootAccount, o.AzureAccount, o.AzureKey, o.AzureURL,
+			o.AzureSASToken, o.AzureContainer)
+		fmt.Printf("initializing Azure IAM with container %q\n", o.AzureContainer)
 	case o.VaultEndpointURL != "":
 		svc, err = NewVaultIAMService(o.RootAccount, o.VaultEndpointURL, o.VaultNamespace, o.VaultSecretStoragePath, o.VaultSecretStorageNamespace,
 			o.VaultAuthMethod, o.VaultAuthNamespace, o.VaultMountPath, o.VaultRootToken, o.VaultRoleId, o.VaultRoleSecret,

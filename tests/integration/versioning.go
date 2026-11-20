@@ -1540,6 +1540,41 @@ func Versioning_HeadObject_invalid_parent(s *S3Conf) error {
 	})
 }
 
+// Versioning_not_modified_version_id checks that a 304 Not Modified to a
+// GetObject or HeadObject carries the x-amz-version-id of the version it
+// validated, the live one or the one requested.
+func Versioning_not_modified_version_id(s *S3Conf) error {
+	testName := "Versioning_not_modified_version_id"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		first, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		_, err = putObjectWithData(20, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		cases := []notModifiedHeadersCase{
+			{key: obj},
+			{key: obj, versionId: first.res.VersionId},
+		}
+		for _, head := range []bool{false, true} {
+			if err := notModifiedHeaders(s3client, bucket, head, cases); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_HeadObject_success(s *S3Conf) error {
 	testName := "Versioning_HeadObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1869,6 +1904,18 @@ func Versioning_HeadObject_delete_marker(s *S3Conf) error {
 			cancel()
 			if err := checkSdkApiErr(err, "NotFound"); err != nil {
 				return err
+			}
+
+			// the current version of the key is a delete marker
+			var respErr *awshttp.ResponseError
+			if !errors.As(err, &respErr) {
+				return fmt.Errorf("expected an HTTP response error, instead got %w", err)
+			}
+			if dm := respErr.Response.Header.Get("x-amz-delete-marker"); dm != "true" {
+				return fmt.Errorf("expected the x-amz-delete-marker header to be true, instead got %q", dm)
+			}
+			if vId := respErr.Response.Header.Get("x-amz-version-id"); vId != getString(out.VersionId) {
+				return fmt.Errorf("expected the x-amz-version-id header to be %q, instead got %q", getString(out.VersionId), vId)
 			}
 
 			return nil
@@ -5481,9 +5528,39 @@ func Versioning_status_switch_to_suspended_with_object_lock(s *S3Conf) error {
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrSuspendedVersioningNotAllowed)); err != nil {
 			return err
 		}
+		if err := checkErrStatusCode(err, http.StatusConflict); err != nil {
+			return err
+		}
 
-		return nil
+		return checkBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
 	}, withLock())
+}
+
+func Versioning_status_switch_to_suspended_with_object_lock_enabled_later(s *S3Conf) error {
+	testName := "Versioning_status_switch_to_suspended_with_object_lock_enabled_later"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrSuspendedVersioningNotAllowed)); err != nil {
+			return err
+		}
+		if err := checkErrStatusCode(err, http.StatusConflict); err != nil {
+			return err
+		}
+
+		return checkBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_PutObjectRetention_invalid_versionId(s *S3Conf) error {
@@ -6984,6 +7061,39 @@ func Versioning_WORM_PutObject_new_version_lock_settings(s *S3Conf) error {
 				*cur.ObjectLockRetainUntilDate)
 		}
 
+		// the first version, now non-current, keeps its own lock settings
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		old, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: first.res.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if old.ObjectLockLegalHoldStatus != types.ObjectLockLegalHoldStatusOn {
+			return fmt.Errorf("expected the first version's legal hold status to be %q, instead got %q",
+				types.ObjectLockLegalHoldStatusOn, old.ObjectLockLegalHoldStatus)
+		}
+		if old.ObjectLockMode != types.ObjectLockModeGovernance {
+			return fmt.Errorf("expected the first version's object lock mode to be %q, instead got %q",
+				types.ObjectLockModeGovernance, old.ObjectLockMode)
+		}
+		if old.ObjectLockRetainUntilDate == nil || old.ObjectLockRetainUntilDate.Unix() != rDate.Unix() {
+			return fmt.Errorf("expected the first version's retain until date to be %v, instead got %v",
+				rDate.UTC(), old.ObjectLockRetainUntilDate)
+		}
+		// and a 304 for it carries them, as the 200 does
+		for _, head := range []bool{true, false} {
+			err = notModifiedHeaders(s3client, bucket, head, []notModifiedHeadersCase{
+				{key: obj, versionId: first.res.VersionId},
+			})
+			if err != nil {
+				return err
+			}
+		}
+
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{
 			{
 				key:             obj,
@@ -7458,10 +7568,23 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 					return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
 				}
 
-				return nil
+				return err
 			}
 
+			// s3:GetObjectAttributes alone, without s3:GetObject
 			policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectAttributes"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			// deny without versionId
+			err = getObjectAttr(nil, true)
+			if err != nil {
+				return err
+			}
+
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectAttributes", "s3:GetObject"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
 			err = putBucketPolicy(s3client, bucket, policy)
 			if err != nil {
 				return err
@@ -7479,7 +7602,33 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 				return err
 			}
 
+			// s3:GetObjectVersionAttributes alone, without s3:GetObjectVersion
 			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectVersionAttributes"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			// deny with versionId
+			err = getObjectAttr(res.res.VersionId, true)
+			if err != nil {
+				return err
+			}
+
+			// s3:GetObject doesn't cover a request naming a version
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectVersionAttributes", "s3:GetObject"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			// deny with versionId
+			err = getObjectAttr(res.res.VersionId, true)
+			if err != nil {
+				return err
+			}
+
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectVersionAttributes", "s3:GetObjectVersion"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
 			err = putBucketPolicy(s3client, bucket, policy)
 			if err != nil {
 				return err

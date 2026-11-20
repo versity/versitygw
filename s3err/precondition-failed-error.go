@@ -26,6 +26,12 @@ const (
 	ConditionIfMatchInitiatedTime Condition = "If-Match-Initiated-Time"
 	ConditionIfMatchLastModTime   Condition = "If-Match-Last-Mod-Time"
 	ConditionPostBucket           Condition = "Bucket POST must be of the enclosure-type multipart/form-data"
+
+	// The copy-source preconditions of CopyObject and UploadPartCopy
+	ConditionCopySourceIfMatch           Condition = "x-amz-copy-source-If-Match"
+	ConditionCopySourceIfNoneMatch       Condition = "x-amz-copy-source-If-None-Match"
+	ConditionCopySourceIfModifiedSince   Condition = "x-amz-copy-source-If-Modified-Since"
+	ConditionCopySourceIfUnmodifiedSince Condition = "x-amz-copy-source-If-Unmodified-Since"
 )
 
 // PreconditionFailedError is returned when a conditional request precondition is not met.

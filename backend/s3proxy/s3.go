@@ -31,6 +31,7 @@ import (
 	"github.com/aws/smithy-go"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/internal/novaluesclient"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -65,11 +66,15 @@ type S3Proxy struct {
 
 var _ backend.Backend = &S3Proxy{}
 
+// NewWithClient uses a copy of client whose HTTP client does not see the
+// values of the backend call's context; see package novaluesclient.
 func NewWithClient(ctx context.Context, client *s3.Client, metaBucket string) (*S3Proxy, error) {
 	s := &S3Proxy{
 		metaBucket: metaBucket,
 	}
-	s.client = client
+	s.client = s3.New(client.Options(), func(o *s3.Options) {
+		o.HTTPClient = novaluesclient.Wrap(o.HTTPClient)
+	})
 	return s, s.validate(ctx)
 }
 
@@ -103,6 +108,17 @@ func (s *S3Proxy) validate(ctx context.Context) error {
 	return nil
 }
 
+// StoresDotSegmentKeys reports true: the keys are passed on to the S3 service.
+func (s *S3Proxy) StoresDotSegmentKeys() bool {
+	return true
+}
+
+// ListBuckets lists the upstream buckets, filtering each upstream page to
+// the ones the caller may list. MaxBuckets and the continuation token pass
+// to the upstream listing unchanged, so a filtered page can come back short
+// with the upstream token, which is still a valid page. Without a meta
+// bucket no ACLs are stored, so every bucket is listed to every caller and
+// input.IsVisible is never called.
 func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 	output, err := s.client.ListBuckets(ctx, &s3.ListBucketsInput{
 		ContinuationToken: &input.ContinuationToken,
@@ -136,7 +152,14 @@ func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsI
 			return s3response.ListAllMyBucketsResult{}, err
 		}
 
-		if acl.Owner == input.Owner {
+		listed := acl.Owner == input.Owner
+		if !listed && input.IsVisible != nil {
+			listed, err = input.IsVisible(ctx, *b.Name, data)
+			if err != nil {
+				return s3response.ListAllMyBucketsResult{}, err
+			}
+		}
+		if listed {
 			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
 				Name:         *b.Name,
 				CreationDate: *b.CreationDate,
@@ -319,10 +342,15 @@ func (s *S3Proxy) GetBucketVersioning(ctx context.Context, bucket string) (s3res
 		return s3response.GetBucketVersioningOutput{}, handleError(err)
 	}
 
-	return s3response.GetBucketVersioningOutput{
-		Status:    &out.Status,
-		MFADelete: &out.MFADelete,
-	}, nil
+	var res s3response.GetBucketVersioningOutput
+	if out.Status != "" {
+		res.Status = &out.Status
+	}
+	if out.MFADelete != "" {
+		res.MFADelete = &out.MFADelete
+	}
+
+	return res, nil
 }
 
 func (s *S3Proxy) ListObjectVersions(ctx context.Context, input *s3.ListObjectVersionsInput) (s3response.ListVersionsResult, error) {
@@ -571,7 +599,18 @@ func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 		}
 	}
 
-	return res, versionid, handleError(err)
+	err = handleError(err)
+	var apiErr s3err.APIError
+	if errors.As(err, &apiErr) && apiErr.Code == s3err.GetAPIError(s3err.ErrInvalidPartOrder).Code {
+		// the sdk drops the UploadId element of the upstream error, and it
+		// is the one the request was sent with
+		return res, versionid, s3err.InvalidPartOrderError{
+			APIError: apiErr,
+			UploadId: aws.ToString(input.UploadId),
+		}
+	}
+
+	return res, versionid, err
 }
 
 func (s *S3Proxy) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
@@ -1232,27 +1271,23 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 		return s3response.GetObjectAttributesResponse{}, handleError(err)
 	}
 
-	parts := s3response.ObjectParts{}
-	objParts := out.ObjectParts
-	if objParts != nil {
+	var parts *s3response.ObjectParts
+	if objParts := out.ObjectParts; objParts != nil {
+		parts = &s3response.ObjectParts{
+			Parts:      objParts.Parts,
+			PartsCount: objParts.TotalPartsCount,
+		}
 		if objParts.PartNumberMarker != nil {
-			partNumberMarker, err := strconv.Atoi(*objParts.PartNumberMarker)
-			if err != nil {
-				parts.PartNumberMarker = partNumberMarker
-			}
-			if objParts.NextPartNumberMarker != nil {
-				nextPartNumberMarker, err := strconv.Atoi(*objParts.NextPartNumberMarker)
-				if err != nil {
-					parts.NextPartNumberMarker = nextPartNumberMarker
-				}
-			}
-			if objParts.IsTruncated != nil {
-				parts.IsTruncated = *objParts.IsTruncated
-			}
-			if objParts.MaxParts != nil {
-				parts.MaxParts = int(*objParts.MaxParts)
-			}
-			parts.Parts = objParts.Parts
+			parts.PartNumberMarker, _ = strconv.Atoi(*objParts.PartNumberMarker)
+		}
+		if objParts.NextPartNumberMarker != nil {
+			parts.NextPartNumberMarker, _ = strconv.Atoi(*objParts.NextPartNumberMarker)
+		}
+		if objParts.MaxParts != nil {
+			parts.MaxParts = int(*objParts.MaxParts)
+		}
+		if objParts.IsTruncated != nil {
+			parts.IsTruncated = *objParts.IsTruncated
 		}
 	}
 
@@ -1261,8 +1296,10 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 		LastModified: out.LastModified,
 		ObjectSize:   out.ObjectSize,
 		StorageClass: out.StorageClass,
-		ObjectParts:  &parts,
+		ObjectParts:  parts,
 		Checksum:     out.Checksum,
+		VersionId:    out.VersionId,
+		DeleteMarker: out.DeleteMarker,
 	}, nil
 }
 
@@ -1613,7 +1650,7 @@ func (s *S3Proxy) PutObjectTagging(ctx context.Context, bucket, object, versionI
 	_, err := s.client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
 		Bucket:    &bucket,
 		Key:       &object,
-		VersionId: &versionId,
+		VersionId: backend.GetPtrFromString(versionId),
 		Tagging:   tagging,
 	})
 	return handleError(err)
@@ -1626,7 +1663,7 @@ func (s *S3Proxy) GetObjectTagging(ctx context.Context, bucket, object, versionI
 	output, err := s.client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
 		Bucket:    &bucket,
 		Key:       &object,
-		VersionId: &versionId,
+		VersionId: backend.GetPtrFromString(versionId),
 	})
 	if err != nil {
 		return nil, handleError(err)
@@ -1647,7 +1684,7 @@ func (s *S3Proxy) DeleteObjectTagging(ctx context.Context, bucket, object, versi
 	_, err := s.client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
 		Bucket:    &bucket,
 		Key:       &object,
-		VersionId: &versionId,
+		VersionId: backend.GetPtrFromString(versionId),
 	})
 	return handleError(err)
 }

@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,6 +29,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/versity/versitygw/iamapi/internal/iammiddleware"
+	"github.com/versity/versitygw/iamapi/storage"
 	iamtypes "github.com/versity/versitygw/iamapi/types"
 )
 
@@ -150,6 +152,176 @@ func TestVerifyIAMAuthRejectsUnknownAccessKey(t *testing.T) {
 
 	resp := doSignedIAMActionAs(t, server, "unknown-access-key-id", "does-not-matter", "", url.Values{"Action": {"ListUsers"}})
 	requireIAMError(t, resp, http.StatusForbidden, "Sender", "InvalidClientTokenId", "The security token included in the request is invalid.")
+}
+
+// faultyStore stands in for a storage backend that cannot be reached (a
+// sealed Vault, an expired token, a network partition) for the reads a test
+// chooses: fail is consulted on every read below with the method name and the
+// key it was asked for, and a non-nil result is returned in place of the real
+// store's answer. A nil fail, the default, passes every read through, so a
+// test can set up its fixtures before arming it.
+type faultyStore struct {
+	storage.Storer
+	fail func(method, key string) error
+}
+
+func (s *faultyStore) failure(method, key string) error {
+	if s.fail == nil {
+		return nil
+	}
+	return s.fail(method, key)
+}
+
+func (s *faultyStore) GetUserByAccessKeyID(ctx context.Context, accessKeyID string) (*iamtypes.User, error) {
+	if err := s.failure("GetUserByAccessKeyID", accessKeyID); err != nil {
+		return nil, err
+	}
+	return s.Storer.GetUserByAccessKeyID(ctx, accessKeyID)
+}
+
+func (s *faultyStore) GetSession(ctx context.Context, accessKeyID string) (*iamtypes.Session, error) {
+	if err := s.failure("GetSession", accessKeyID); err != nil {
+		return nil, err
+	}
+	return s.Storer.GetSession(ctx, accessKeyID)
+}
+
+func (s *faultyStore) GetUser(ctx context.Context, userName string) (*iamtypes.User, error) {
+	if err := s.failure("GetUser", userName); err != nil {
+		return nil, err
+	}
+	return s.Storer.GetUser(ctx, userName)
+}
+
+func (s *faultyStore) GetRole(ctx context.Context, roleName string) (*iamtypes.Role, error) {
+	if err := s.failure("GetRole", roleName); err != nil {
+		return nil, err
+	}
+	return s.Storer.GetRole(ctx, roleName)
+}
+
+func (s *faultyStore) GetOIDCProvider(ctx context.Context, arn string) (*iamtypes.OIDCProvider, error) {
+	if err := s.failure("GetOIDCProvider", arn); err != nil {
+		return nil, err
+	}
+	return s.Storer.GetOIDCProvider(ctx, arn)
+}
+
+var errStoreDown = errors.New("vault is sealed")
+
+const internalFailureMessage = "The request processing has failed because of an unknown error, exception or failure."
+
+// newFaultyStoreTestServer is newIAMControllerTestServer over a faultyStore
+// the test arms once its fixtures are in place.
+func newFaultyStoreTestServer(t *testing.T) (*IAMApiServer, *faultyStore) {
+	t.Helper()
+
+	store, err := storage.New(storage.Config{Dir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	faulty := &faultyStore{Storer: store}
+	server, err := New(faulty, testRoot, WithQuiet())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return server, faulty
+}
+
+// TestVerifyIAMAuthReportsStoreFailureAsInternalFailure pins that a store
+// which cannot answer is a retryable server fault, not InvalidClientTokenId:
+// the latter tells a client with a valid credential that it is revoked, and
+// SDKs do not retry it.
+func TestVerifyIAMAuthReportsStoreFailureAsInternalFailure(t *testing.T) {
+	server, faulty := newFaultyStoreTestServer(t)
+	faulty.fail = func(method, _ string) error {
+		if method == "GetUserByAccessKeyID" || method == "GetSession" {
+			return errStoreDown
+		}
+		return nil
+	}
+
+	t.Run("iam user key", func(t *testing.T) {
+		resp := doSignedIAMActionAs(t, server, "AKIAALICE", "alicesecret", "", url.Values{"Action": {"GetUser"}, "UserName": {"alice"}})
+		requireIAMError(t, resp, http.StatusInternalServerError, "Receiver", "InternalFailure", internalFailureMessage)
+	})
+	t.Run("iam session key", func(t *testing.T) {
+		resp := doSignedIAMActionAs(t, server, "ASIASESSION", "sessionsecret", "token", url.Values{"Action": {"GetUser"}, "UserName": {"alice"}})
+		requireIAMError(t, resp, http.StatusInternalServerError, "Receiver", "InternalFailure", internalFailureMessage)
+	})
+	t.Run("sts user key", func(t *testing.T) {
+		resp := doSignedSTSAction(t, server, "AKIAALICE", "alicesecret", "", url.Values{"Action": {"GetCallerIdentity"}})
+		requireSTSError(t, resp, http.StatusInternalServerError, "Receiver", "InternalFailure", internalFailureMessage)
+	})
+}
+
+// TestVerifyIAMPolicyReportsResourceLookupFailure covers the target-resource
+// lookups authorization makes once the caller is authenticated. A store that
+// fails one of them must fail the request: evaluating it as an unresolved
+// resource would leave a Deny scoped to that resource unmatched while the
+// caller's wildcard Allow still matched, and the controller could then act on
+// the very resource the Deny protects.
+func TestVerifyIAMPolicyReportsResourceLookupFailure(t *testing.T) {
+	const policyDocument = `{"Version":"2012-10-17","Statement":[` +
+		`{"Effect":"Allow","Action":"iam:*","Resource":"*"},` +
+		`{"Effect":"Deny","Action":"iam:*","Resource":["arn:aws:iam::000000000000:user/victim","arn:aws:iam::000000000000:user/protected",` +
+		`"arn:aws:iam::000000000000:role/victim","arn:aws:iam::000000000000:oidc-provider/victim.example.com"]}]}`
+
+	tests := []struct {
+		name   string
+		params url.Values
+		// failOn names the read that fails, and its key; failCall is which
+		// call to it fails, counting from 1, for an action that makes it
+		// more than once.
+		failOn, failKey string
+		failCall        int
+	}{
+		{name: "existing user", params: url.Values{"Action": {"DeleteUser"}, "UserName": {"victim"}}, failOn: "GetUser", failKey: "victim", failCall: 1},
+		{name: "named user", params: url.Values{"Action": {"GetUser"}, "UserName": {"victim"}}, failOn: "GetUser", failKey: "victim", failCall: 1},
+		// The source is allowed and the denied name is the target, which is
+		// built from the source user's second lookup.
+		{name: "rename target", params: url.Values{"Action": {"UpdateUser"}, "UserName": {"bob"}, "NewUserName": {"protected"}}, failOn: "GetUser", failKey: "bob", failCall: 2},
+		{name: "access key owner", params: url.Values{"Action": {"GetAccessKeyLastUsed"}}, failOn: "GetUserByAccessKeyID", failCall: 1},
+		{name: "existing role", params: url.Values{"Action": {"DeleteRole"}, "RoleName": {"victim"}}, failOn: "GetRole", failKey: "victim", failCall: 1},
+		{name: "oidc provider", params: url.Values{"Action": {"DeleteOpenIDConnectProvider"}}, failOn: "GetOIDCProvider", failCall: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, faulty := newFaultyStoreTestServer(t)
+			accessKeyID, secret := createTestUserWithAccessKey(t, server, "alice", policyDocument)
+			victimKeyID, _ := createTestUserWithAccessKey(t, server, "victim", "")
+			createTestUserWithAccessKey(t, server, "bob", "")
+			createTestRoleForTrust(t, server, "victim",
+				`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"arn:aws:iam::000000000000:oidc-provider/victim.example.com"},"Action":"sts:AssumeRoleWithWebIdentity"}]}`)
+			providerArn := createTestOIDCProviderForTrust(t, server, "https://victim.example.com", "client1")
+
+			params := tt.params
+			failKey := tt.failKey
+			switch tt.params.Get("Action") {
+			case "GetAccessKeyLastUsed":
+				params.Set("AccessKeyId", victimKeyID)
+				failKey = victimKeyID
+			case "DeleteOpenIDConnectProvider":
+				params.Set("OpenIDConnectProviderArn", providerArn)
+				failKey = providerArn
+			}
+
+			calls := 0
+			faulty.fail = func(method, key string) error {
+				if method != tt.failOn || key != failKey {
+					return nil
+				}
+				calls++
+				if calls == tt.failCall {
+					return errStoreDown
+				}
+				return nil
+			}
+
+			resp := doSignedIAMActionAs(t, server, accessKeyID, secret, "", params)
+			requireIAMError(t, resp, http.StatusInternalServerError, "Receiver", "InternalFailure", internalFailureMessage)
+		})
+	}
 }
 
 func TestIAMApiControllerGetCallerIdentityWithUser(t *testing.T) {

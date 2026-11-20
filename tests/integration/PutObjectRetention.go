@@ -399,7 +399,7 @@ func PutObjectRetention_shorten_governance_without_bypass(s *S3Conf) error {
 			return err
 		}
 
-		shorter := time.Now().Add(complianceTestRetention / 2)
+		shorter := date.Add(-time.Minute)
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
@@ -456,7 +456,7 @@ func PutObjectRetention_shorten_governance_with_bypass(s *S3Conf) error {
 			return err
 		}
 
-		shorter := time.Now().Add(complianceTestRetention / 2)
+		shorter := date.Add(-time.Minute)
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
@@ -487,7 +487,6 @@ func PutObjectRetention_shorten_compliance_denied(s *S3Conf) error {
 		}
 
 		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%v"`, s.awsID), `["s3:BypassGovernanceRetention"]`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket))
-		bypass := true
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
@@ -499,65 +498,51 @@ func PutObjectRetention_shorten_compliance_denied(s *S3Conf) error {
 			return err
 		}
 
-		// The COMPLIANCE lock goes on last, after the slow setup above rather
-		// than before it, so the whole complianceTestRetention budget is left
-		// for the two attempts below. Started any earlier, a slow object upload
-		// can consume the entire window and leave an already expired retention
-		// with nothing to shorten.
-		date := time.Now().Add(complianceTestRetention)
+		// The server rejects a RetainUntilDate that has already passed
+		// (InvalidArgument) before it ever gets to the object-lock comparison
+		// this test is exercising (ErrObjectLocked), and a stalled host can
+		// hold a request past a complianceTestRetention window. So each
+		// attempt locks the object for a fresh complianceTestRetention first,
+		// which only ever extends the lock and is always allowed, then asks
+		// for a date just short of it, the widest margin a shortening can
+		// have. An attempt that still loses its date to a stall is retried.
+		for _, bypass := range []bool{false, true} {
+			err := retryOnPastRetainDate(func() error {
+				date := time.Now().Add(complianceTestRetention)
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-			Bucket: &bucket,
-			Key:    &obj,
-			Retention: &types.ObjectLockRetention{
-				Mode:            types.ObjectLockRetentionModeCompliance,
-				RetainUntilDate: &date,
-			},
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+					Bucket: &bucket,
+					Key:    &obj,
+					Retention: &types.ObjectLockRetention{
+						Mode:            types.ObjectLockRetentionModeCompliance,
+						RetainUntilDate: &date,
+					},
+				})
+				cancel()
+				if err != nil {
+					return err
+				}
 
-		// Recomputed fresh right before each request below, rather than once
-		// up front: the server rejects a RetainUntilDate that has already
-		// passed (InvalidArgument) before it ever gets to the object-lock
-		// comparison this test is exercising (ErrObjectLocked)
-		newShorterDate := func() time.Time {
-			return time.Now().Add(time.Until(date) / 2)
-		}
+				shorter := date.Add(-time.Second)
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+					Bucket: &bucket,
+					Key:    &obj,
+					Retention: &types.ObjectLockRetention{
+						Mode:            types.ObjectLockRetentionModeCompliance,
+						RetainUntilDate: &shorter,
+					},
+					BypassGovernanceRetention: &bypass,
+				})
+				cancel()
+				return err
+			})
 
-		// Neither asking to bypass nor holding the permission helps.
-		shorter := newShorterDate()
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-			Bucket: &bucket,
-			Key:    &obj,
-			Retention: &types.ObjectLockRetention{
-				Mode:            types.ObjectLockRetentionModeCompliance,
-				RetainUntilDate: &shorter,
-			},
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
-			return err
-		}
-
-		shorter = newShorterDate()
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-			Bucket: &bucket,
-			Key:    &obj,
-			Retention: &types.ObjectLockRetention{
-				Mode:            types.ObjectLockRetentionModeCompliance,
-				RetainUntilDate: &shorter,
-			},
-			BypassGovernanceRetention: &bypass,
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
-			return err
+			// Neither asking to bypass nor holding the permission helps.
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+				return fmt.Errorf("bypass %v: %w", bypass, err)
+			}
 		}
 
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: obj, isCompliance: true}})

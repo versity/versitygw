@@ -93,7 +93,17 @@ func (c S3ApiController) AbortMultipartUpload(ctx fiber.Ctx) (*Response, error) 
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := c.verifyAccess(ctx,
+	// A malformed upload ID is rejected before access is verified.
+	err := c.be.ValidateUploadID(uploadId)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = c.verifyAccess(ctx,
 		auth.AccessOptions{
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,

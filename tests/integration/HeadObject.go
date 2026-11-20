@@ -372,6 +372,10 @@ func HeadObject_dir_with_range(s *S3Conf) error {
 	return headObject_zero_len_with_range_helper(testName, "my-dir/", s)
 }
 
+func HeadObject_not_modified_headers(s *S3Conf) error {
+	return notModifiedHeadersTest(s, "HeadObject_not_modified_headers", true)
+}
+
 func HeadObject_conditional_reads(s *S3Conf) error {
 	testName := "HeadObject_conditional_reads"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -395,6 +399,18 @@ func HeadObject_conditional_reads(s *S3Conf) error {
 		after := time.Now()
 		etag := obj.res.ETag
 		etagTrimmed := strings.Trim(*etag, `"`)
+
+		// the object hasn't been modified since its Last-Modified date
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		head, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		lastModified := *head.LastModified
 
 		for i, test := range []struct {
 			ifmatch           *string
@@ -547,6 +563,10 @@ func HeadObject_conditional_reads(s *S3Conf) error {
 			{nil, getPtr("*"), nil, &after, errMod},
 			{nil, getPtr("*"), nil, &before, errCond},
 			{getPtr("invalid_etag"), getPtr("*"), nil, nil, errCond},
+
+			// if-modified-since and if-unmodified-since equal to Last-Modified
+			{nil, nil, &lastModified, nil, errMod},
+			{nil, nil, nil, &lastModified, nil},
 		} {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
@@ -562,8 +582,16 @@ func HeadObject_conditional_reads(s *S3Conf) error {
 				return fmt.Errorf("test case %d failed: expected no error, but got %v", i, err)
 			}
 			if test.err != nil {
+				if err == nil {
+					return fmt.Errorf("test case %d failed: expected %v, instead got nil", i, *test.err)
+				}
 				if err := checkSdkApiErr(err, *test.err); err != nil {
 					return fmt.Errorf("test case %d failed: %w", i, err)
+				}
+				if test.err == errMod {
+					if err := checkNotModifiedValidators(err, *etag, lastModified); err != nil {
+						return fmt.Errorf("test case %d failed: %w", i, err)
+					}
 				}
 			}
 		}

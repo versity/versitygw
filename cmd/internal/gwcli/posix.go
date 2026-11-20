@@ -38,6 +38,7 @@ var (
 	sidecar              string
 	nometa               bool
 	forceNoTmpFile       bool
+	inheritDefaultACL    bool
 	forceNoCopyFileRange bool
 	fsync                bool
 	forceNoObjLockFile   bool
@@ -140,6 +141,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				Destination: &forceNoTmpFile,
 			},
 			&cli.BoolFlag{
+				Name:        "inherit-default-acl",
+				Usage:       "new objects inherit the default ACL of their directory, whose group and other permissions --file-perms then limits instead of setting (needs O_TMPFILE, Linux only)",
+				EnvVars:     []string{"VGW_INHERIT_DEFAULT_ACL"},
+				Destination: &inheritDefaultACL,
+			},
+			&cli.BoolFlag{
 				Name:        "disable-copy-file-range",
 				Usage:       "explicitly copy multipart upload parts instead of using copy_file_range (which may hang with some NFS servers)",
 				EnvVars:     []string{"VGW_DISABLE_COPY_FILE_RANGE"},
@@ -182,6 +189,11 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_DATA_INTEGRITY_ETAG"},
 				Destination: &dataIntegrityEtag,
 			},
+			&cli.StringSliceFlag{
+				Name:    "exclude-dirs",
+				Usage:   "directory name, not a path, to hide from object listings and reserve at any depth in a bucket; object keys through it are rejected, and it can't be used as a bucket name (can be specified multiple times)",
+				EnvVars: []string{"VGW_EXCLUDE_DIRS"},
+			},
 		},
 	}
 }
@@ -215,6 +227,7 @@ func runPosix(ctx *cli.Context) error {
 		BucketLinks:          bucketlinks,
 		VersioningDir:        versioningDir,
 		ForceNoTmpFile:       forceNoTmpFile,
+		InheritDefaultACL:    inheritDefaultACL,
 		ForceNoCopyFileRange: forceNoCopyFileRange,
 		Fsync:                fsync,
 		ForceNoObjLockFile:   forceNoObjLockFile,
@@ -226,6 +239,7 @@ func runPosix(ctx *cli.Context) error {
 		CopyObjectThreshold:  CopyObjectThreshold,
 		DefaultEtag:          defaultEtag,
 		DataIntegrityEtag:    dataIntegrityEtag,
+		ExcludeDirs:          ctx.StringSlice("exclude-dirs"),
 	}
 	opts.SetNewDirPerm(fs.FileMode(dirPerms))
 	opts.SetNewFilePerm(fs.FileMode(filePerms))

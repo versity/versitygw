@@ -175,6 +175,25 @@ func TestCORSHTTPMethod_IsEmpty(t *testing.T) {
 }
 
 func TestCORSConfiguration_Validate(t *testing.T) {
+	validRule := CORSRule{
+		AllowedOrigins: []CORSOrigin{"http://origin.com"},
+		AllowedMethods: []CORSHTTPMethod{http.MethodGet},
+	}
+	rules := func(count int, overrides map[int]CORSRule) []CORSRule {
+		result := make([]CORSRule, count)
+		for i := range result {
+			result[i] = validRule
+			if rule, ok := overrides[i]; ok {
+				result[i] = rule
+			}
+		}
+		return result
+	}
+	badMethodRule := CORSRule{
+		AllowedOrigins: []CORSOrigin{"http://origin.com"},
+		AllowedMethods: []CORSHTTPMethod{http.MethodPatch},
+	}
+
 	tests := []struct {
 		name string
 		cfg  *CORSConfiguration
@@ -183,6 +202,26 @@ func TestCORSConfiguration_Validate(t *testing.T) {
 		{"nil config", nil, s3err.GetAPIError(s3err.ErrMalformedXML)},
 		{"nil rules", &CORSConfiguration{}, s3err.GetAPIError(s3err.ErrMalformedXML)},
 		{"empty rules", &CORSConfiguration{Rules: []CORSRule{}}, s3err.GetAPIError(s3err.ErrMalformedXML)},
+		{"empty allowed origins", &CORSConfiguration{Rules: []CORSRule{{
+			AllowedMethods: []CORSHTTPMethod{http.MethodPost},
+			AllowedHeaders: []CORSHeader{"X-Test"},
+		}}}, s3err.GetAPIError(s3err.ErrMalformedXML)},
+		{"empty allowed methods", &CORSConfiguration{Rules: []CORSRule{{
+			AllowedOrigins: []CORSOrigin{"http://allowed.com"},
+			AllowedMethods: []CORSHTTPMethod{},
+		}}}, s3err.GetAPIError(s3err.ErrMalformedXML)},
+		{"empty allowed methods after an invalid rule", &CORSConfiguration{Rules: rules(2, map[int]CORSRule{
+			0: badMethodRule,
+			1: {AllowedOrigins: []CORSOrigin{"http://origin.com"}},
+		})}, s3err.GetAPIError(s3err.ErrMalformedXML)},
+		{"100 rules", &CORSConfiguration{Rules: rules(100, nil)}, nil},
+		{"101 rules", &CORSConfiguration{Rules: rules(101, nil)}, s3err.GetAPIError(s3err.ErrCORSRulesLimited)},
+		{"101 rules with an invalid rule", &CORSConfiguration{Rules: rules(101, map[int]CORSRule{
+			0: badMethodRule,
+		})}, s3err.GetAPIError(s3err.ErrCORSRulesLimited)},
+		{"101 rules with empty allowed origins", &CORSConfiguration{Rules: rules(101, map[int]CORSRule{
+			100: {AllowedMethods: []CORSHTTPMethod{http.MethodGet}},
+		})}, s3err.GetAPIError(s3err.ErrMalformedXML)},
 		{"invalid rule", &CORSConfiguration{Rules: []CORSRule{{
 			AllowedHeaders: []CORSHeader{"Invalid Header"},
 			AllowedOrigins: []CORSOrigin{"origin"},
@@ -379,6 +418,14 @@ func TestCORSRule_Validate(t *testing.T) {
 			want: s3err.GetAPIError(s3err.ErrMalformedXML),
 		},
 		{
+			name: "empty allowed methods before invalid allowed origin",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{"http://allowed*/*"},
+				AllowedHeaders: []CORSHeader{"X-Test"},
+			},
+			want: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
 			name: "invalid allowed header",
 			rule: CORSRule{
 				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
@@ -396,6 +443,88 @@ func TestCORSRule_Validate(t *testing.T) {
 				ExposeHeaders:  []CORSHeader{"Content-Encoding", "invalid header"},
 			},
 			want: s3err.GetInvalidCORSHeaderErr("invalid header"),
+		},
+		{
+			name: "single wildcard allowed headers",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
+				AllowedMethods: []CORSHTTPMethod{http.MethodGet},
+				AllowedHeaders: []CORSHeader{"*", "x-amz-*", "*-foo", "a*b"},
+			},
+			want: nil,
+		},
+		{
+			name: "multiple wildcard allowed header",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
+				AllowedMethods: []CORSHTTPMethod{http.MethodGet},
+				AllowedHeaders: []CORSHeader{"Content-Length", "x-*-meta-*"},
+			},
+			want: s3err.GetMultipleWildcardCORSHeaderErr("x-*-meta-*"),
+		},
+		{
+			name: "multiple wildcard allowed header with invalid character",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
+				AllowedMethods: []CORSHTTPMethod{http.MethodGet},
+				AllowedHeaders: []CORSHeader{"bad *-*"},
+			},
+			want: s3err.GetMultipleWildcardCORSHeaderErr("bad *-*"),
+		},
+		{
+			name: "invalid allowed header before multiple wildcard header",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
+				AllowedMethods: []CORSHTTPMethod{http.MethodGet},
+				AllowedHeaders: []CORSHeader{"bad header", "**"},
+			},
+			want: s3err.GetInvalidCORSHeaderErr("bad header"),
+		},
+		{
+			name: "invalid method before multiple wildcard allowed header",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
+				AllowedMethods: []CORSHTTPMethod{http.MethodPatch},
+				AllowedHeaders: []CORSHeader{"x-*-*"},
+			},
+			want: s3err.GetUnsopportedCORSMethodErr(http.MethodPatch),
+		},
+		{
+			name: "wildcard expose header",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
+				AllowedMethods: []CORSHTTPMethod{http.MethodGet},
+				ExposeHeaders:  []CORSHeader{"ETag", "*"},
+			},
+			want: s3err.GetWildcardCORSExposeHeaderErr("*"),
+		},
+		{
+			name: "wildcard expose header with invalid character",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
+				AllowedMethods: []CORSHTTPMethod{http.MethodGet},
+				ExposeHeaders:  []CORSHeader{"bad *"},
+			},
+			want: s3err.GetWildcardCORSExposeHeaderErr("bad *"),
+		},
+		{
+			name: "invalid expose header before wildcard expose header",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
+				AllowedMethods: []CORSHTTPMethod{http.MethodGet},
+				ExposeHeaders:  []CORSHeader{"bad header", "x-amz-*"},
+			},
+			want: s3err.GetInvalidCORSHeaderErr("bad header"),
+		},
+		{
+			name: "invalid allowed header before wildcard expose header",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
+				AllowedMethods: []CORSHTTPMethod{http.MethodGet},
+				AllowedHeaders: []CORSHeader{"bad header"},
+				ExposeHeaders:  []CORSHeader{"*"},
+			},
+			want: s3err.GetInvalidCORSHeaderErr("bad header"),
 		},
 	}
 

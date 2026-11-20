@@ -24,6 +24,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/iamapi/iamerr"
+	"github.com/versity/versitygw/iamapi/internal/iammiddleware"
 	"github.com/versity/versitygw/iamapi/internal/iamutil"
 	"github.com/versity/versitygw/iamapi/policy"
 	"github.com/versity/versitygw/iamapi/storage"
@@ -654,6 +655,9 @@ func (c IAMApiController) CreateRole(ctx fiber.Ctx) (*Response, error) {
 	if len(assumeRolePolicyDocument) > policy.MaxTrustPolicyBytes {
 		return nil, iamerr.TrustPolicySizeLimitExceeded(policy.MaxTrustPolicyBytes)
 	}
+	if err := iamutil.ValidateTrustPrincipals(ctx.Context(), c.store, assumeRolePolicyDocument); err != nil {
+		return nil, err
+	}
 
 	description, _ := iamutil.RequestParam(ctx, "Description")
 	if err := iamutil.ValidateDescription("description", description); err != nil {
@@ -809,6 +813,9 @@ func (c IAMApiController) UpdateAssumeRolePolicy(ctx fiber.Ctx) (*Response, erro
 	}
 	if len(policyDocument) > policy.MaxTrustPolicyBytes {
 		return nil, iamerr.TrustPolicySizeLimitExceeded(policy.MaxTrustPolicyBytes)
+	}
+	if err := iamutil.ValidateTrustPrincipals(ctx.Context(), c.store, policyDocument); err != nil {
+		return nil, err
 	}
 
 	if _, err := c.store.UpdateAssumeRolePolicy(ctx.Context(), storage.UpdateAssumeRolePolicyInput{
@@ -1309,6 +1316,167 @@ func (c IAMApiController) ListOpenIDConnectProviderTags(ctx fiber.Ctx) (*Respons
 	}}, nil
 }
 
+// AssumeRole exchanges the caller's own SigV4 credentials for temporary
+// credentials of a role. The checks run in the order real STS applies them,
+// which decides the error a request failing several of them gets: parameter
+// shape, the root caller, the RoleArn's outline, MFA, authorization, the
+// requested duration, and last the session policy's grammar.
+func (c IAMApiController) AssumeRole(ctx fiber.Ctx) (*Response, error) {
+	rawRoleArn, ok := iamutil.RequestParam(ctx, "RoleArn")
+	if !ok || rawRoleArn == "" {
+		debuglogger.Logf("missing required AssumeRole parameter: RoleArn")
+		return nil, iamerr.MissingValue("roleArn")
+	}
+	if err := iamutil.ValidateRoleArnLength(rawRoleArn); err != nil {
+		return nil, err
+	}
+
+	roleSessionName, ok := iamutil.RequestParam(ctx, "RoleSessionName")
+	if !ok || roleSessionName == "" {
+		debuglogger.Logf("missing required AssumeRole parameter: RoleSessionName")
+		return nil, iamerr.MissingValue("roleSessionName")
+	}
+	if err := iamutil.ValidateRoleSessionName(roleSessionName); err != nil {
+		return nil, err
+	}
+
+	durationSeconds, err := iamutil.ParseDurationSeconds(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	externalID, hasExternalID := iamutil.RequestParam(ctx, "ExternalId")
+	if hasExternalID {
+		if err := iamutil.ValidateExternalID(externalID); err != nil {
+			return nil, err
+		}
+	}
+
+	// Only the session policy's size and character set are parameter shape.
+	// Its grammar is checked last, once the caller is known to be allowed
+	// to assume the role at all.
+	sessionPolicy, hasSessionPolicy := iamutil.RequestParam(ctx, "Policy")
+	if hasSessionPolicy {
+		if sessionPolicy == "" {
+			return nil, iamerr.ValueTooShort("policy", 1)
+		}
+		if len(sessionPolicy) > policy.MaxSessionPolicyBytes {
+			return nil, iamerr.ValueTooLong("policy", policy.MaxSessionPolicyBytes)
+		}
+		if err := policy.Validate("policy", sessionPolicy); err != nil {
+			return nil, err
+		}
+	}
+
+	// Each of these changes what the resulting session may do or how it is
+	// identified. Accepting one and ignoring it would hand back credentials
+	// that differ from the ones asked for, so they are refused instead.
+	for _, param := range []string{"PolicyArns", "Tags", "TransitiveTagKeys", "ProvidedContexts"} {
+		if iamutil.HasRequestParamPrefix(ctx, param+".member.") {
+			debuglogger.Logf("AssumeRole: %s is not supported", param)
+			return nil, iamerr.UnsupportedParameter(param)
+		}
+	}
+	if sourceIdentity, ok := iamutil.RequestParam(ctx, "SourceIdentity"); ok && sourceIdentity != "" {
+		debuglogger.Logf("AssumeRole: SourceIdentity is not supported")
+		return nil, iamerr.UnsupportedParameter("SourceIdentity")
+	}
+
+	identity, _ := httpctx.ContextKeyCallerIdentity.Get(ctx).(types.Identity)
+	if identity.IsRoot {
+		debuglogger.Logf("AssumeRole: the root account may not assume a role")
+		return nil, iamerr.AccessDeniedRootAssumeRole()
+	}
+
+	if !iamutil.IsArnShaped(rawRoleArn) {
+		debuglogger.Logf("AssumeRole: RoleArn is not an ARN: %q", rawRoleArn)
+		return nil, iamerr.InvalidRoleArn(rawRoleArn)
+	}
+
+	// No identity has an MFA device, so a serial number and code can never
+	// be validated.
+	serialNumber, _ := iamutil.RequestParam(ctx, "SerialNumber")
+	tokenCode, _ := iamutil.RequestParam(ctx, "TokenCode")
+	switch {
+	case serialNumber != "" && tokenCode != "":
+		debuglogger.Logf("AssumeRole: MFA is not supported")
+		return nil, iamerr.AccessDeniedMFAUnverifiable()
+	case serialNumber != "" || tokenCode != "":
+		debuglogger.Logf("AssumeRole: MFA serial number and token code must be given together")
+		return nil, iamerr.AccessDeniedMFAIncomplete()
+	}
+
+	// Every authorization failure, a role that does not exist included, is
+	// the same error.
+	callerArn := iammiddleware.CallerArn(identity)
+	denied := iamerr.AccessDeniedAssumeRole(callerArn, rawRoleArn)
+
+	roleName, ok := iamutil.RoleNameFromAssumeArn(rawRoleArn, iamutil.DefaultAccountID)
+	if !ok {
+		debuglogger.Logf("AssumeRole: RoleArn is not a role in this account: %q", rawRoleArn)
+		return nil, denied
+	}
+	role, err := c.store.GetRole(ctx.Context(), roleName)
+	if err != nil {
+		// The store failing is not the role being absent, and answering
+		// AccessDenied would tell the caller its request is refused rather
+		// than that it can be retried.
+		if !iamerr.IsSenderError(err) {
+			return nil, err
+		}
+		debuglogger.Logf("AssumeRole: role %q not found: %v", roleName, err)
+		return nil, denied
+	}
+	// The lookup is by name alone and ignores case. The ARN the caller sent
+	// must be the role's own, path and case included.
+	if rawRoleArn != role.Arn {
+		debuglogger.Logf("AssumeRole: RoleArn %q does not match role %q's actual arn %q", rawRoleArn, roleName, role.Arn)
+		return nil, denied
+	}
+
+	if !iammiddleware.AuthorizeAssumeRole(ctx, identity, role, externalID, roleSessionName) {
+		debuglogger.Logf("AssumeRole: %q is not authorized to assume role %q", callerArn, roleName)
+		return nil, denied
+	}
+
+	if role.MaxSessionDuration > 0 && durationSeconds > role.MaxSessionDuration {
+		debuglogger.Logf("AssumeRole: requested duration %ds exceeds role %q max session duration %ds", durationSeconds, roleName, role.MaxSessionDuration)
+		return nil, iamerr.DurationExceedsMaxSessionDuration()
+	}
+	// A role session assuming another role is role chaining.
+	if identity.Session != nil && durationSeconds > iamutil.MaxChainedDurationSeconds {
+		debuglogger.Logf("AssumeRole: requested duration %ds exceeds the role chaining limit", durationSeconds)
+		return nil, iamerr.DurationExceedsRoleChainingLimit()
+	}
+
+	if hasSessionPolicy {
+		if err := policy.Parse(sessionPolicy); err != nil {
+			return nil, err
+		}
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	session, err := iamutil.NewSession(role, roleSessionName, sessionPolicy, now, durationSeconds)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := c.store.CreateSession(ctx.Context(), session); err != nil {
+		debuglogger.Logf("failed to store AssumeRole session for access key %q: %v", session.AccessKeyId, err)
+		return nil, err
+	}
+
+	return &Response{Data: &types.AssumeRoleResponse{
+		Result: types.AssumeRoleResult{
+			AssumedRoleUser: types.AssumedRoleUser{
+				AssumedRoleId: role.RoleID + ":" + roleSessionName,
+				Arn:           iamutil.BuildAssumedRoleArn(iamutil.DefaultAccountID, role.RoleName, roleSessionName),
+			},
+			Credentials:      iamutil.SessionCredentials(session),
+			PackedPolicySize: iamutil.PackedPolicySize(sessionPolicy),
+		},
+	}}, nil
+}
+
 func (c IAMApiController) AssumeRoleWithWebIdentity(ctx fiber.Ctx) (*Response, error) {
 	rawRoleArn, ok := iamutil.RequestParam(ctx, "RoleArn")
 	if !ok || rawRoleArn == "" {
@@ -1389,6 +1557,12 @@ func (c IAMApiController) AssumeRoleWithWebIdentity(ctx fiber.Ctx) (*Response, e
 
 	role, err := c.store.GetRole(ctx.Context(), roleName)
 	if err != nil {
+		// The store failing is not the role being absent, and answering
+		// AccessDenied would tell the caller its request is refused rather
+		// than that it can be retried.
+		if !iamerr.IsSenderError(err) {
+			return nil, err
+		}
 		debuglogger.Logf("AssumeRoleWithWebIdentity: role %q not found: %v", roleName, err)
 		return nil, iamerr.AccessDeniedAssumeRoleWithWebIdentity()
 	}
@@ -1434,15 +1608,27 @@ func (c IAMApiController) AssumeRoleWithWebIdentity(ctx fiber.Ctx) (*Response, e
 		RoleSessionName:  roleSessionName,
 	}
 
+	// A Federated principal that names no provider (or is no provider ARN at
+	// all, such as cognito-identity.amazonaws.com) simply doesn't resolve. A
+	// provider the store failed to read is different: evaluation skips any
+	// statement whose principal doesn't resolve, Deny statements included,
+	// so evaluating on would let a Deny that could not be read go unapplied.
+	var lookupErr error
 	lookup := func(federatedArn string) (string, bool) {
 		provider, err := c.store.GetOIDCProvider(ctx.Context(), federatedArn)
 		if err != nil {
+			if !iamerr.IsSenderError(err) && lookupErr == nil {
+				lookupErr = err
+			}
 			return "", false
 		}
 		return provider.Url, true
 	}
 
 	result, providerArn := policy.EvaluateWebIdentityTrust(role.AssumeRolePolicyDocument, lookup, wctx)
+	if lookupErr != nil {
+		return nil, lookupErr
+	}
 	switch result {
 	case policy.NoPrincipal, policy.ExplicitlyDenied:
 		debuglogger.Logf("AssumeRoleWithWebIdentity: role %q trust policy does not authorize this request", roleName)
@@ -1454,6 +1640,9 @@ func (c IAMApiController) AssumeRoleWithWebIdentity(ctx fiber.Ctx) (*Response, e
 
 	provider, err := c.store.GetOIDCProvider(ctx.Context(), providerArn)
 	if err != nil {
+		if !iamerr.IsSenderError(err) {
+			return nil, err
+		}
 		debuglogger.Logf("AssumeRoleWithWebIdentity: matched provider %q vanished before use: %v", providerArn, err)
 		return nil, iamerr.AccessDeniedAssumeRoleWithWebIdentity()
 	}
@@ -1473,38 +1662,15 @@ func (c IAMApiController) AssumeRoleWithWebIdentity(ctx fiber.Ctx) (*Response, e
 		return nil, err
 	}
 
-	accessKeyID, err := iamutil.GenerateTempAccessKeyID()
+	session, err := iamutil.NewSession(role, roleSessionName, sessionPolicy, now, durationSeconds)
 	if err != nil {
 		return nil, err
 	}
-	secretAccessKey, err := iamutil.GenerateSecretAccessKey()
-	if err != nil {
-		return nil, err
-	}
-	sessionToken, err := iamutil.GenerateSessionToken()
-	if err != nil {
-		return nil, err
-	}
-
-	expiration := now.Add(time.Duration(durationSeconds) * time.Second)
-
-	session := types.Session{
-		AccessKeyId:     accessKeyID,
-		SecretAccessKey: secretAccessKey,
-		SessionToken:    sessionToken,
-		RoleArn:         role.Arn,
-		RoleName:        role.RoleName,
-		RoleID:          role.RoleID,
-		RoleSessionName: roleSessionName,
-		Provider:        providerArn,
-		Audience:        audience,
-		Subject:         subject,
-		CreateDate:      now,
-		Expiration:      expiration,
-		Policy:          sessionPolicy,
-	}
+	session.Provider = providerArn
+	session.Audience = audience
+	session.Subject = subject
 	if _, err := c.store.CreateSession(ctx.Context(), session); err != nil {
-		debuglogger.Logf("failed to store AssumeRoleWithWebIdentity session for access key %q: %v", accessKeyID, err)
+		debuglogger.Logf("failed to store AssumeRoleWithWebIdentity session for access key %q: %v", session.AccessKeyId, err)
 		return nil, err
 	}
 
@@ -1515,13 +1681,8 @@ func (c IAMApiController) AssumeRoleWithWebIdentity(ctx fiber.Ctx) (*Response, e
 				AssumedRoleId: role.RoleID + ":" + roleSessionName,
 				Arn:           iamutil.BuildAssumedRoleArn(iamutil.DefaultAccountID, role.RoleName, roleSessionName),
 			},
-			Provider: rawIssuer,
-			Credentials: types.Credentials{
-				AccessKeyId:     accessKeyID,
-				SecretAccessKey: secretAccessKey,
-				SessionToken:    sessionToken,
-				Expiration:      expiration,
-			},
+			Provider:                    rawIssuer,
+			Credentials:                 iamutil.SessionCredentials(session),
 			SubjectFromWebIdentityToken: subject,
 			PackedPolicySize:            iamutil.PackedPolicySize(sessionPolicy),
 		},

@@ -55,11 +55,14 @@ head_object_rest_expect_success() {
 }
 
 head_object_rest_expect_success_callback() {
-  if ! check_param_count_v2 "bucket, object, env vars, callback" 4 $#; then
+  if ! check_param_count_gt "bucket, object, env vars, callback, params (optional)" 4 $#; then
     return 1
   fi
-  env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2 $3"
-  if ! callback_result=$(send_rest_command_expect_success_callback "$env_vars" "./tests/rest_scripts/head_object.sh" "200" "$4" 2>&1); then
+  local bucket="$1" object="$2" param_env_vars="$3" callback="$4" params=("${@:5}")
+  local env_vars
+
+  env_vars="BUCKET_NAME=$bucket OBJECT_KEY=$object $param_env_vars"
+  if ! callback_result=$(send_rest_command_expect_success_callback "$env_vars" "./tests/rest_scripts/head_object.sh" "200" "$callback" "${params[@]}" 2>&1); then
     log 2 "error sending REST command and checking error: $callback_result"
     return 1
   fi

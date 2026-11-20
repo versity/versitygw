@@ -18,6 +18,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/versity/versitygw/iamapi/iamerr"
 	"github.com/versity/versitygw/iamapi/types"
 	"github.com/versity/versitygw/internal/sigv4auth"
 )
@@ -31,14 +32,28 @@ import (
 // The public IAM control plane deliberately collapses both into a single
 // InvalidClientTokenId: an unauthenticated caller must not learn whether an
 // access key exists.
+//
+// They describe the credential, never the store: a store that fails to answer
+// is passed through as the error it is, and renders as a 5xx the client
+// retries.
 var (
 	ErrIdentityNotFound    = errors.New("identity not found")
 	ErrInvalidSessionToken = errors.New("invalid session token")
 )
 
+// ErrSessionNotFound is returned by IdentityStore.GetSession when
+// accessKeyID names no session, or names one whose Expiration has already
+// passed.
+var ErrSessionNotFound = errors.New("iamapi: session not found")
+
 // IdentityStore resolves an access key id to the session or long-term user
 // that owns it, and resolves named resources for policy evaluation.
 // storage.Storer satisfies this directly.
+//
+// A lookup that finds nothing is reported as ErrSessionNotFound by
+// GetSession and as an iamerr NoSuchEntity error (iamerr.IsNoSuchEntity) by
+// the others. Any other error means the store could not answer and must
+// never be read as the entity not existing.
 type IdentityStore interface {
 	GetSession(ctx context.Context, accessKeyID string) (*types.Session, error)
 	GetRole(ctx context.Context, roleName string) (*types.Role, error)
@@ -71,7 +86,10 @@ func ResolveSessionByToken(ctx context.Context, store IdentityStore, accessKeyID
 
 	session, err := store.GetSession(ctx, accessKeyID)
 	if err != nil {
-		return nil, "", ErrIdentityNotFound
+		if errors.Is(err, ErrSessionNotFound) {
+			return nil, "", ErrIdentityNotFound
+		}
+		return nil, "", err
 	}
 
 	if !sigv4auth.SecureCompare(token, session.SessionToken) {
@@ -94,12 +112,20 @@ func ResolveSessionByToken(ctx context.Context, store IdentityStore, accessKeyID
 	// recreating one of the same name (necessarily getting a new RoleID)
 	// would let every pre-existing session for the old role silently
 	// inherit whatever policies the new role happens to carry.
+	//
+	// Only a role that is gone is tolerated. A store that cannot answer is
+	// not the role being gone: continuing without the role would deny every
+	// request the session makes for as long as the store is down.
+	role, err := store.GetRole(ctx, session.RoleName)
+	if err != nil && !iamerr.IsNoSuchEntity(err) {
+		return nil, "", err
+	}
+
 	identity := &types.Identity{
 		Session:       session,
 		SessionPolicy: session.Policy,
 	}
-	if role, err := store.GetRole(ctx, session.RoleName); err == nil &&
-		role.RoleID == session.RoleID && role.Arn == session.RoleArn {
+	if err == nil && role.RoleID == session.RoleID && role.Arn == session.RoleArn {
 		identity.Role = role
 		identity.IdentityPolicies = role.Policies.Inline
 	}
@@ -124,7 +150,10 @@ func ResolveUserIdentity(ctx context.Context, store IdentityStore, accessKeyID s
 
 	user, err := store.GetUserByAccessKeyID(ctx, accessKeyID)
 	if err != nil {
-		return nil, "", ErrIdentityNotFound
+		if iamerr.IsNoSuchEntity(err) {
+			return nil, "", ErrIdentityNotFound
+		}
+		return nil, "", err
 	}
 
 	var keyEntry *types.AccessKeyEntry

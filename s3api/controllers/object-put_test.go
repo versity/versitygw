@@ -471,6 +471,25 @@ func TestS3ApiController_UploadPart(t *testing.T) {
 		output testOutput
 	}{
 		{
+			name: "malformed upload id",
+			input: testInput{
+				locals:       accessDeniedLocals,
+				extraMockErr: s3err.GetNoSuchUploadErr("bad"),
+				queries: map[string]string{
+					"partNumber": "-2",
+					"uploadId":   "bad",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetNoSuchUploadErr("bad"),
+			},
+		},
+		{
 			name: "verify access fails",
 			input: testInput{
 				locals: accessDeniedLocals,
@@ -618,6 +637,9 @@ func TestS3ApiController_UploadPart(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			be := &BackendMock{
+				ValidateUploadIDFunc: func(uploadID string) error {
+					return tt.input.extraMockErr
+				},
 				UploadPartFunc: func(contextMoqParam context.Context, uploadPartInput *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
 					return tt.input.beRes.(*s3.UploadPartOutput), tt.input.beErr
 				},
@@ -648,6 +670,9 @@ func TestS3ApiController_UploadPart(t *testing.T) {
 
 func TestS3ApiController_UploadPartPlainBodyUsesContentLength(t *testing.T) {
 	be := &BackendMock{
+		ValidateUploadIDFunc: func(string) error {
+			return nil
+		},
 		UploadPartFunc: func(_ context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
 			assert.Equal(t, int64(5), *input.ContentLength)
 			body, err := io.ReadAll(input.Body)
@@ -700,6 +725,28 @@ func TestS3ApiController_UploadPartCopy(t *testing.T) {
 		input  testInput
 		output testOutput
 	}{
+		{
+			name: "malformed upload id",
+			input: testInput{
+				locals:       accessDeniedLocals,
+				extraMockErr: s3err.GetNoSuchUploadErr("bad"),
+				headers: map[string]string{
+					"X-Amz-Copy-Source": "bad%G1",
+				},
+				queries: map[string]string{
+					"partNumber": "-2",
+					"uploadId":   "bad",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetNoSuchUploadErr("bad"),
+			},
+		},
 		{
 			name: "verify access fails",
 			input: testInput{
@@ -861,6 +908,9 @@ func TestS3ApiController_UploadPartCopy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			be := &BackendMock{
+				ValidateUploadIDFunc: func(uploadID string) error {
+					return tt.input.extraMockErr
+				},
 				UploadPartCopyFunc: func(contextMoqParam context.Context, uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
 					return tt.input.beRes.(s3response.CopyPartResult), tt.input.beErr
 				},

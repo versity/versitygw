@@ -60,6 +60,10 @@ type Config struct {
 	// Region is the AWS region name reported to S3 clients (e.g. "us-east-1").
 	// Defaults to "us-east-1" when empty.
 	Region string
+	// AllowAnyRegion accepts requests signed for any region, not just Region,
+	// and CreateBucket requests with any location constraint. Region is still
+	// the region reported to clients.
+	AllowAnyRegion bool
 
 	// Ports is the list of S3 API listening addresses. Each entry can be
 	// "host:port" to bind a specific interface, or ":port" to bind all
@@ -147,6 +151,22 @@ type Config struct {
 	// bucket ACLs. PutBucketAcl returns AccessControlListNotSupported.
 	// Prefer bucket policies over ACLs when this is enabled.
 	DisableACLs bool
+	// ListBucketsScope is which buckets ListBuckets returns to an account
+	// that is neither root nor an admin, under an IAM backend without
+	// identity policies (internal, LDAP, Vault, IPA, S3):
+	//
+	//   "owned"      -- the buckets it owns, as in AWS (the default, also when empty)
+	//   "accessible" -- also each bucket whose ACL or bucket policy grants it
+	//                   s3:ListBucket, on at least part of the bucket
+	//   "all"        -- every bucket, as admins see them
+	//
+	// Grants to everyone, a bucket policy Principal of "*" or an ACL grant to
+	// the AllUsers group, never make a bucket visible under "accessible". It
+	// reads the bucket policy of each bucket the caller doesn't own on every
+	// ListBuckets call, which the other scopes don't. The standalone IAM
+	// service lists buckets as S3 does, so RunVersityGW fails with any scope
+	// but "owned" for it.
+	ListBucketsScope string
 	// DisableSSECTLS disables the HTTPS requirement for SSE-C requests.
 	DisableSSECTLS bool
 	// DisableStrictBucketNames allows legacy or non-DNS-compliant bucket
@@ -185,6 +205,7 @@ type Config struct {
 	//   IAMDir                -- local directory
 	//   LDAPServerURL         -- LDAP
 	//   S3IAMEndpoint         -- S3-backed
+	//   AzureIAMContainer     -- Azure Blob Storage-backed
 	//   VaultEndpointURL      -- HashiCorp Vault
 	//   IpaHost               -- FreeIPA
 	//
@@ -194,7 +215,8 @@ type Config struct {
 	// API is unavailable.
 	//
 	// The IAMCache fields below apply to all backends except single-account
-	// mode and IAMService.
+	// mode and IAMService. The standalone IAM service backend uses
+	// IAMCacheDisable and IAMCacheTTL only, see the IAM Cache section.
 
 	// IAMService, when non-nil, is used directly as the gateway's IAM
 	// backend, bypassing all other IAM Backend fields below.
@@ -288,6 +310,24 @@ type Config struct {
 	// environments.
 	S3IAMDisableSSLVerify bool
 
+	// Azure Blob Storage-backed IAM backend. Activated when
+	// AzureIAMContainer is non-empty. Credentials follow the same rules as
+	// the azure backend: a SAS token, else an account name and key, else
+	// DefaultAzureCredential (environment, workload or managed identity).
+
+	// AzureIAMAccount is the storage account name.
+	AzureIAMAccount string
+	// AzureIAMKey is the storage account key.
+	AzureIAMKey string
+	// AzureIAMSASToken is a SAS token granting access to the container.
+	AzureIAMSASToken string
+	// AzureIAMURL is the blob service URL. Defaults to
+	// https://<account>.blob.core.windows.net/ when empty.
+	AzureIAMURL string
+	// AzureIAMContainer is the container that stores IAM account data.
+	// It must already exist.
+	AzureIAMContainer string
+
 	// FreeIPA IAM backend. Activated when IpaHost is non-empty.
 
 	// IpaHost is the hostname or URL of the FreeIPA server.
@@ -339,17 +379,31 @@ type Config struct {
 	StandaloneDefaultUserID    int
 	StandaloneDefaultGroupID   int
 	StandaloneDefaultProjectID int
+	// StandalonePolicyCacheTTL is the time-to-live in seconds of a cached
+	// identity-policy decision, and so how long a policy change made on the
+	// IAM service can take to apply here. A decision is reused only for the
+	// same identity, actions and resource, and only while the request's
+	// values agree on every condition key the identity's policies read.
+	// Zero disables the policy cache, as does IAMCacheDisable.
+	StandalonePolicyCacheTTL int
 
 	// IAM Cache
 	//
 	// The gateway maintains an in-memory cache of IAM account lookups to
 	// reduce load on the external IAM backend. The cache applies to all
 	// backends except single-account mode. All fields are optional.
+	//
+	// The standalone IAM service backend caches derived signing keys
+	// instead of accounts, together with identity-policy decisions (see
+	// StandalonePolicyCacheTTL). Its caches are bounded in size rather than
+	// pruned, so IAMCachePrune does not apply to it.
 
 	// IAMCacheDisable disables the in-memory IAM account cache. By default,
-	// accounts are cached to reduce backend lookup frequency.
+	// accounts are cached to reduce backend lookup frequency. With the
+	// standalone IAM service backend it disables both of its caches.
 	IAMCacheDisable bool
-	// IAMCacheTTL is the time-to-live in seconds for cached IAM entries.
+	// IAMCacheTTL is the time-to-live in seconds for cached IAM entries. It
+	// is also how long a deactivated or deleted access key can keep working.
 	IAMCacheTTL int
 	// IAMCachePrune is the interval in seconds between cache prune runs that
 	// remove expired entries.
@@ -372,6 +426,20 @@ type Config struct {
 	// AdminLogFile is the file path or stream name (stdout, stderr, or - for
 	// stdout) for admin API request logs.
 	AdminLogFile string
+	// ClientIPHeader records the client address from this proxy header in the
+	// request log and the S3 and admin access logs. Accepted values are
+	// "X-Forwarded-For" and "X-Real-Ip". Empty (the default) keeps the socket
+	// peer address. The header is only honoured from a peer in
+	// TrustedProxies, which is required when this is set. IAM aws:SourceIp
+	// conditions are unaffected and keep evaluating the socket address.
+	ClientIPHeader string
+	// TrustedProxies lists the comma-separated IP addresses and CIDR prefixes
+	// of the proxies in front of the gateway. The entry "unix" trusts a peer
+	// connected over a unix domain socket, whose address fasthttp reports as
+	// 0.0.0.0. Required when ClientIPHeader is set: the header is ignored
+	// from any other peer, and startup fails when the header is set with no
+	// trusted proxies.
+	TrustedProxies string
 
 	// Metrics
 	//
@@ -496,6 +564,10 @@ type Config struct {
 	// segment is masked. Leave empty to disable WebUI hosting on the S3
 	// endpoint.
 	WebuiS3Prefix string
+	// WebuiOIDC adds "Sign in with SSO" to the login page of either WebUI
+	// mode when its Issuer is set. It requires WebuiIAMGateways, since the
+	// provider's token is exchanged at the standalone IAM service.
+	WebuiOIDC webui.OIDCConfig
 
 	// Static website hosting endpoint
 	//
@@ -600,6 +672,11 @@ func (c *Config) IamOpts() *auth.Opts {
 		S3Bucket:                    c.S3IAMBucket,
 		S3Endpoint:                  c.S3IAMEndpoint,
 		S3DisableSSlVerfiy:          c.S3IAMDisableSSLVerify,
+		AzureAccount:                c.AzureIAMAccount,
+		AzureKey:                    c.AzureIAMKey,
+		AzureSASToken:               c.AzureIAMSASToken,
+		AzureURL:                    c.AzureIAMURL,
+		AzureContainer:              c.AzureIAMContainer,
 		CacheDisable:                c.IAMCacheDisable,
 		CacheTTL:                    c.IAMCacheTTL,
 		CachePrune:                  c.IAMCachePrune,
@@ -618,6 +695,7 @@ func (c *Config) IamOpts() *auth.Opts {
 		StandaloneDefaultGroupID:    c.StandaloneDefaultGroupID,
 		StandaloneDefaultProjectID:  c.StandaloneDefaultProjectID,
 		StandaloneRegion:            c.Region,
+		StandalonePolicyCacheTTL:    c.StandalonePolicyCacheTTL,
 	}
 }
 
@@ -658,6 +736,22 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	}
 	if cfg.MultipartMaxParts < 1 {
 		return fmt.Errorf("mp-max-parts must be positive")
+	}
+	listBucketsScope, err := auth.ParseListBucketsScope(cfg.ListBucketsScope)
+	if err != nil {
+		return err
+	}
+
+	clientIPHeader, err := utils.NormalizeClientIPHeader(cfg.ClientIPHeader)
+	if err != nil {
+		return err
+	}
+	trustedProxies, err := utils.ParseTrustedProxies(cfg.TrustedProxies)
+	if err != nil {
+		return err
+	}
+	if clientIPHeader != "" && trustedProxies.IsEmpty() {
+		return fmt.Errorf("client-ip-header is set but trusted-proxies is empty: the header would be trusted from every peer")
 	}
 
 	if len(cfg.Ports) == 0 {
@@ -735,6 +829,13 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			return err
 		}
 	}
+	// Checked here as well as by the WebUI itself, so a bad setting fails
+	// before the IAM and backend setup below rather than after it.
+	if len(cfg.WebuiPorts) > 0 || cfg.WebuiS3Prefix != "" {
+		if err := cfg.WebuiOIDC.Validate(validatedWebuiIAMGateways); err != nil {
+			return err
+		}
+	}
 
 	utils.SetBucketNameValidationStrict(!cfg.DisableStrictBucketNames)
 
@@ -786,6 +887,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	if cfg.Readonly {
 		opts = append(opts, s3api.WithReadOnly())
 	}
+	if cfg.AllowAnyRegion {
+		opts = append(opts, s3api.WithAllowAnyRegion())
+	}
 	if cfg.VirtualDomain != "" {
 		opts = append(opts, s3api.WithHostStyle(cfg.VirtualDomain))
 	}
@@ -795,8 +899,13 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	if cfg.DisableACLs {
 		opts = append(opts, s3api.WithDisableACL())
 	}
+	opts = append(opts, s3api.WithListBucketsScope(listBucketsScope))
 	if cfg.DisableSSECTLS {
 		opts = append(opts, s3api.WithDisableSSECTLS())
+	}
+	if clientIPHeader != "" {
+		opts = append(opts, s3api.WithClientIPHeader(clientIPHeader))
+		opts = append(opts, s3api.WithTrustedProxies(trustedProxies))
 	}
 	if len(cfg.S3Options) > 0 {
 		opts = append(opts, cfg.S3Options...)
@@ -812,6 +921,14 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		if err != nil {
 			return fmt.Errorf("setup iam: %w", err)
 		}
+	}
+	// Checked against the IAM service itself, since a caller may supply one
+	// prebuilt.
+	if err := auth.ValidateListBucketsScope(iam, listBucketsScope); err != nil {
+		if cfg.IAMService == nil {
+			iam.Shutdown()
+		}
+		return err
 	}
 
 	loggers, err := s3log.InitLogger(&s3log.LogConfig{
@@ -901,6 +1018,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			AdminGateways: s3WebAdminGateways,
 			IAMGateways:   validatedWebuiIAMGateways,
 			Region:        cfg.Region,
+			OIDC:          cfg.WebuiOIDC,
 		}))
 	}
 
@@ -967,6 +1085,13 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		}
 		if cfg.AdminPathPrefix != "" {
 			admOpts = append(admOpts, s3api.WithAdminPathPrefix(cfg.AdminPathPrefix))
+		}
+		if cfg.AllowAnyRegion {
+			admOpts = append(admOpts, s3api.WithAdminAllowAnyRegion())
+		}
+		if clientIPHeader != "" {
+			admOpts = append(admOpts, s3api.WithAdminClientIPHeader(clientIPHeader))
+			admOpts = append(admOpts, s3api.WithAdminTrustedProxies(trustedProxies))
 		}
 
 		admSrv = s3api.NewAdminServer(be, middlewares.RootUserConfig{Access: cfg.RootUserAccess, Secret: cfg.RootUserSecret}, cfg.Region, iam, loggers.AdminLogger, srv.Router.Ctrl, admOpts...)
@@ -1063,12 +1188,17 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		if cfg.SocketPerm != "" {
 			webOpts = append(webOpts, webui.WithSocketPerm(parsedSocketPerm))
 		}
+		if clientIPHeader != "" {
+			webOpts = append(webOpts, webui.WithClientIPHeader(clientIPHeader))
+			webOpts = append(webOpts, webui.WithTrustedProxies(trustedProxies))
+		}
 
 		webSrv, err = webui.NewServer(&webui.ServerConfig{
 			Gateways:      gateways,
 			AdminGateways: adminGateways,
 			IAMGateways:   validatedWebuiIAMGateways,
 			Region:        cfg.Region,
+			OIDC:          cfg.WebuiOIDC,
 		}, webOpts...)
 		if err != nil {
 			return fmt.Errorf("init webui: %w", err)
@@ -1124,6 +1254,10 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		}
 		if cfg.SocketPerm != "" {
 			wsOpts = append(wsOpts, website.WithSocketPerm(parsedSocketPerm))
+		}
+		if clientIPHeader != "" {
+			wsOpts = append(wsOpts, website.WithClientIPHeader(clientIPHeader))
+			wsOpts = append(wsOpts, website.WithTrustedProxies(trustedProxies))
 		}
 
 		wsSrv = website.NewServer(be, cfg.WebsiteDomain, wsOpts...)

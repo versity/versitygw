@@ -29,6 +29,7 @@ under the License.
 <body class="min-h-screen bg-surface">
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/sso.js"></script>
 
   <div class="relative flex h-screen overflow-hidden">
     <input id="sidebar-toggle" type="checkbox" class="peer hidden"/>
@@ -119,7 +120,7 @@ under the License.
         </nav>
       <div class="p-4 border-t border-white/10">
         <div id="user-info" class="flex items-center gap-3 mb-3"></div>
-        <button onclick="api.logout(); window.location.href='index.html';" class="w-full flex items-center gap-2 px-3 py-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm">
+        <button onclick="signOut()" class="w-full flex items-center gap-2 px-3 py-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
           </svg>
@@ -457,12 +458,12 @@ under the License.
           <td class="py-4 px-6 text-sm text-charcoal">${user.projectid || '0'}</td>
           <td class="py-4 px-6 text-right">
             <div class="flex items-center justify-end gap-2">
-              <button onclick="openEditModal('${escapeHtml(user.access)}')" class="p-2 text-charcoal-300 hover:text-accent hover:bg-accent-50 rounded-lg transition-colors" title="Edit">
+              <button onclick="openEditModal('${escapeJsAttr(user.access)}')" class="p-2 text-charcoal-300 hover:text-accent hover:bg-accent-50 rounded-lg transition-colors" title="Edit">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                 </svg>
               </button>
-              <button onclick="openDeleteModal('${escapeHtml(user.access)}')" class="p-2 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+              <button onclick="openDeleteModal('${escapeJsAttr(user.access)}')" class="p-2 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                 </svg>

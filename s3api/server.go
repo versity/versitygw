@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -29,6 +30,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/httpctx"
 	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/controllers"
@@ -55,13 +57,17 @@ type S3ApiServer struct {
 	health           string
 	maxConnections   int
 	maxRequests      int
+	allowAnyRegion   bool
 	webuiMountPrefix string
 	webuiSrvCfg      *webui.ServerConfig
+	clientIPHeader   string
+	trustedProxies   utils.TrustedProxies
 	routes           []routeMount
 	middlewares      []middlewareMount
 	socketPerm       os.FileMode
 	onListen         func()
 	onListenAddrs    func(addrs []net.Addr)
+	listener         atomic.Pointer[netutil.MultiListener]
 }
 
 type routeMount struct {
@@ -104,7 +110,21 @@ func New(
 		opt(server)
 	}
 
-	app := fiber.New(fiber.Config{
+	if err := auth.ValidateListBucketsScope(iam, server.Router.listBucketsScope); err != nil {
+		return nil, err
+	}
+
+	// validate the header once here, so the request path can compare it
+	// directly instead of re-normalizing on every request
+	if server.clientIPHeader != "" {
+		header, err := utils.NormalizeClientIPHeader(server.clientIPHeader)
+		if err != nil {
+			return nil, err
+		}
+		server.clientIPHeader = header
+	}
+
+	app := fiber.NewWithCustomCtx(httpctx.NewCtx, fiber.Config{
 		AppName:           "versitygw",
 		ServerHeader:      "VERSITYGW",
 		StreamRequestBody: true,
@@ -115,6 +135,11 @@ func New(
 		// if the limit is reached, fiber/fasthttp will throw an error
 		// in the global error handler
 		ReadBufferSize: requestHeaderMaxSize,
+		// POST Object reads its multipart body as a stream, part by part in the
+		// order sent. fasthttp's pre-parse would hand it a rebuilt body instead,
+		// with the fields in random order and a file part without a filename
+		// among them.
+		DisablePreParseMultipartForm: true,
 	})
 
 	server.app = app
@@ -138,12 +163,19 @@ func New(
 			Format: "${time} | vgw | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 			CustomTags: map[string]logger.LogFunc{
 				logger.TagQueryStringParams: debuglogger.RedactedQueryParamsTag,
+				logger.TagIP:                utils.ClientIPTag,
 			},
 		}))
 	}
 
 	// initialize requestId middleware
 	app.Use("*", middlewares.RequestIDs())
+
+	// resolve the logged client address from a trusted proxy header, when
+	// one is configured
+	if server.clientIPHeader != "" {
+		app.Use("*", utils.ClientIPMiddleware(server.clientIPHeader, server.trustedProxies))
+	}
 
 	// Set up health endpoint if specified
 	if server.health != "" {
@@ -182,7 +214,7 @@ func New(
 	}
 
 	// initilaze the default value setter middleware
-	app.Use("*", middlewares.SetDefaultValues(root, region))
+	app.Use("*", middlewares.SetDefaultValues(root, region, server.allowAnyRegion))
 
 	// initialize the 'DecodeURL' middleware which
 	// path unescapes the url
@@ -191,6 +223,12 @@ func New(
 	// reject unknown response-* query parameters on every
 	// action, before the bucket lookup and authentication
 	app.Use("*", controllers.WrapMiddleware(middlewares.ValidateResponseOverrides, l, mm))
+
+	// initialize the host-style parser before the debug logger: the logger
+	// recognizes uploads, whose body it must not read, by the path-style path
+	if server.Router.virtualDomain != "" {
+		app.Use("*", middlewares.HostStyleParser(server.Router.virtualDomain))
+	}
 
 	// initialize the debug logger in debug mode
 	if debuglogger.IsDebugEnabled() {
@@ -287,6 +325,13 @@ func WithDisableSSECTLS() Option {
 	return func(s *S3ApiServer) { s.Router.disableSSECTLS = true }
 }
 
+// WithAllowAnyRegion accepts requests signed for any region, not just the
+// gateway region, and CreateBucket requests with any location constraint.
+// The gateway still reports its own region to clients.
+func WithAllowAnyRegion() Option {
+	return func(s *S3ApiServer) { s.allowAnyRegion = true }
+}
+
 // WithHostStyle enabled host-style bucket addressing on the server
 func WithHostStyle(virtualDomain string) Option {
 	return func(s *S3ApiServer) {
@@ -303,6 +348,23 @@ func WithKeepAlive() Option {
 // This is applied when no bucket CORS configuration exists, and for admin APIs.
 func WithCORSAllowOrigin(origin string) Option {
 	return func(s *S3ApiServer) { s.Router.corsAllowOrigin = origin }
+}
+
+// WithClientIPHeader records the client address from the named proxy header in
+// the request log and the S3 access logs. The accepted values are
+// utils.ClientIPHeaderForwardedFor and utils.ClientIPHeaderRealIP; an empty
+// value (the default) keeps the socket peer address. The header is only
+// honoured from a peer listed in WithTrustedProxies. ctx.IP() is not changed,
+// so IAM aws:SourceIp conditions keep evaluating the socket address.
+func WithClientIPHeader(header string) Option {
+	return func(s *S3ApiServer) { s.clientIPHeader = header }
+}
+
+// WithTrustedProxies sets the peers whose client IP header is trusted, as
+// parsed by utils.ParseTrustedProxies. It only has an effect together with
+// WithClientIPHeader.
+func WithTrustedProxies(trusted utils.TrustedProxies) Option {
+	return func(s *S3ApiServer) { s.trustedProxies = trusted }
 }
 
 // WithWebUI mounts the WebUI on the S3 server's Fiber app at the given path prefix,
@@ -363,6 +425,14 @@ func WithDisableACL() Option {
 	return func(s *S3ApiServer) { s.Router.disableACL = true }
 }
 
+// WithListBucketsScope sets which buckets ListBuckets returns to an account
+// that is neither root nor an admin. New rejects any scope but
+// auth.ListBucketsScopeOwned with an IAM service that evaluates identity
+// policies or fixes bucket ownership.
+func WithListBucketsScope(scope auth.ListBucketsScope) Option {
+	return func(s *S3ApiServer) { s.Router.listBucketsScope = scope }
+}
+
 // WithOnListen registers a callback that is invoked once the server is bound
 // and ready to accept requests. It is called from the fiber OnListen hook,
 // which fires immediately before the server begins serving the first
@@ -414,6 +484,7 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 
 	// Combine all listeners
 	finalListener := netutil.NewMultiListener(listeners...)
+	sa.listener.Store(finalListener)
 
 	if sa.onListen != nil || sa.onListenAddrs != nil {
 		fn, fnAddrs := sa.onListen, sa.onListenAddrs
@@ -435,6 +506,13 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 
 // ShutDown gracefully shuts down the server with a context timeout
 func (sa *S3ApiServer) ShutDown() error {
+	// fasthttp's Shutdown closes only the listeners its Serve has already
+	// registered, and the listen hooks fire before fiber calls Serve. Closing
+	// the listener here makes a ShutDown in that window stop the server too:
+	// Serve's first Accept fails and it returns.
+	if ln := sa.listener.Load(); ln != nil {
+		ln.Close()
+	}
 	return sa.app.ShutdownWithTimeout(shutDownDuration)
 }
 

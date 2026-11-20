@@ -48,7 +48,7 @@ type walkState struct {
 	marker     string
 	max        int32
 	getObj     GetObjFunc
-	skipdirs   []string
+	skipDirs   SkipDirs
 
 	// Mutable state
 	cpmap     cpMap
@@ -60,6 +60,27 @@ type walkState struct {
 }
 
 type GetObjFunc func(path string, d fs.DirEntry) (s3response.Object, error)
+
+// SkipDirs names the directories a walk never descends into or reports as
+// objects. Regular files with these names are ordinary objects. Names are
+// matched ignoring case: a case-insensitive file system resolves a name in
+// any case to the same directory, and matching the same way on every file
+// system keeps the listings in agreement with backends that reject object
+// keys through these directories ignoring case.
+type SkipDirs struct {
+	// Root names directories skipped only at the top of the walked file
+	// system, such as the gateway's own metadata directory.
+	Root []string
+	// Any names directories skipped at every depth.
+	Any []string
+}
+
+// skips reports whether a directory named name is skipped. atRoot reports
+// whether the directory is at the top of the walked file system.
+func (s SkipDirs) skips(name string, atRoot bool) bool {
+	match := func(skip string) bool { return strings.EqualFold(name, skip) }
+	return slices.ContainsFunc(s.Any, match) || (atRoot && slices.ContainsFunc(s.Root, match))
+}
 
 var ErrSkipObj = errors.New("skip this object")
 
@@ -93,7 +114,7 @@ func (c cpMap) CpArray() []types.CommonPrefix {
 
 // Walk walks the supplied fs.FS and returns results compatible with list
 // objects responses
-func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj GetObjFunc, skipdirs []string) (WalkResults, error) {
+func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj GetObjFunc, skipDirs SkipDirs) (WalkResults, error) {
 	// if max is 0, it should return empty non-truncated result
 	if max == 0 {
 		return WalkResults{
@@ -109,7 +130,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 		marker:     marker,
 		max:        max,
 		getObj:     getObj,
-		skipdirs:   skipdirs,
+		skipDirs:   skipDirs,
 		cpmap:      cpMap{},
 	}
 
@@ -136,30 +157,89 @@ type WalkVersioningResults struct {
 }
 
 type ObjVersionFuncResult struct {
-	ObjectVersions      []s3response.ObjectVersion
-	DelMarkers          []s3response.DeleteMarkerEntry
+	ObjectVersions []s3response.ObjectVersion
+	DelMarkers     []s3response.DeleteMarkerEntry
+	// NextVersionIdMarker is the version id listed last
 	NextVersionIdMarker string
-	Truncated           bool
+	// Truncated reports that versions of the key are left out because
+	// the listing is full
+	Truncated bool
 }
 
-type GetVersionsFunc func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*ObjVersionFuncResult, error)
+// GetVersionsFunc lists up to availableObjCount versions of the key at path,
+// the versions following versionIdMarker if it's not empty.
+type GetVersionsFunc func(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*ObjVersionFuncResult, error)
 
 // WalkVersions walks the supplied fs.FS and returns results compatible with
 // ListObjectVersions action response
-func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyMarker, versionIdMarker string, max int, getObj GetVersionsFunc, skipdirs []string) (WalkVersioningResults, error) {
+func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyMarker, versionIdMarker string, max int, getObj GetVersionsFunc, skipDirs SkipDirs) (WalkVersioningResults, error) {
+	// if max is 0, it should return empty non-truncated result
+	if max == 0 {
+		return WalkVersioningResults{}, nil
+	}
+
 	cpmap := cpMap{}
 	var objects []s3response.ObjectVersion
 	var delMarkers []s3response.DeleteMarkerEntry
-
-	var pastMarker bool
-	if keyMarker == "" {
-		pastMarker = true
-	}
-	var nextMarker string
-	var nextVersionIdMarker string
+	// count is the number of the listed versions, delete markers and
+	// common prefixes
+	var count int
+	// the key and the version id listed last are the markers of the
+	// next page
+	var lastKey, lastVersionId string
 	var truncated bool
 
-	pastVersionIdMarker := versionIdMarker == ""
+	// addCommonPrefix lists the common prefix unless it's listed already
+	// or it doesn't sort after the key marker, as the earlier pages
+	// listed it then.
+	addCommonPrefix := func(cp string) error {
+		if _, ok := cpmap[cp]; ok || cp <= keyMarker {
+			return nil
+		}
+		if count == max {
+			truncated = true
+			return fs.SkipAll
+		}
+		cpmap.Add(cp)
+		count++
+		lastKey, lastVersionId = cp, ""
+		return nil
+	}
+
+	// listVersions lists the versions of the key at path. The versions of
+	// the key marker are listed after the version id marker, and none of
+	// them are listed without one.
+	listVersions := func(path, key string, d fs.DirEntry) error {
+		var marker string
+		if key == keyMarker {
+			if versionIdMarker == "" {
+				return nil
+			}
+			marker = versionIdMarker
+		}
+
+		res, err := getObj(path, marker, max-count, d)
+		if err == ErrSkipObj {
+			return nil
+		}
+		if err != nil {
+			if d.IsDir() {
+				return fmt.Errorf("directory to object %q: %w", path, err)
+			}
+			return fmt.Errorf("file to object %q: %w", path, err)
+		}
+		objects = append(objects, res.ObjectVersions...)
+		delMarkers = append(delMarkers, res.DelMarkers...)
+		if n := len(res.ObjectVersions) + len(res.DelMarkers); n > 0 {
+			count += n
+			lastKey, lastVersionId = key, res.NextVersionIdMarker
+		}
+		if res.Truncated {
+			truncated = true
+			return fs.SkipAll
+		}
+		return nil
+	}
 
 	err := walkDirRoot(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -172,7 +252,10 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		if path == "." {
 			return nil
 		}
-		if slices.Contains(skipdirs, d.Name()) {
+		// Only directories are skipped by name. A file with a skipped
+		// name is an ordinary object, and returning SkipDir for a file
+		// would skip the rest of its directory.
+		if d.IsDir() && skipDirs.skips(d.Name(), !strings.Contains(path, pathSeparator)) {
 			return fs.SkipDir
 		}
 
@@ -183,13 +266,11 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 			key += "/"
 		}
 
-		if !pastMarker {
-			if key == keyMarker {
-				pastMarker = true
-			}
-			if key < keyMarker {
-				return nil
-			}
+		// The keys before the key marker are listed on the earlier pages.
+		// The walk still enters the directories before it, as they hold
+		// the keys between the directory and the key marker.
+		if key < keyMarker {
+			return nil
 		}
 
 		if d.IsDir() {
@@ -214,7 +295,9 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 				prefix != key &&
 				strings.HasPrefix(key, prefix) {
 				before, _, _ := strings.Cut(strings.TrimPrefix(key, prefix), delimiter)
-				cpmap.Add(prefix + before + delimiter)
+				if err := addCommonPrefix(prefix + before + delimiter); err != nil {
+					return err
+				}
 				return fs.SkipDir
 			}
 
@@ -230,23 +313,7 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 				return nil
 			}
 
-			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
-			if err == ErrSkipObj {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("directory to object %q: %w", path, err)
-			}
-			objects = append(objects, res.ObjectVersions...)
-			delMarkers = append(delMarkers, res.DelMarkers...)
-			if res.Truncated {
-				truncated = true
-				nextMarker = key
-				nextVersionIdMarker = res.NextVersionIdMarker
-				return fs.SkipAll
-			}
-
-			return nil
+			return listVersions(path, key, d)
 		}
 
 		// If object doesn't have prefix, don't include in results.
@@ -257,23 +324,7 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		if delimiter == "" {
 			// If no delimiter specified, then all files with matching
 			// prefix are included in results
-			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
-			if err == ErrSkipObj {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("file to object %q: %w", path, err)
-			}
-			objects = append(objects, res.ObjectVersions...)
-			delMarkers = append(delMarkers, res.DelMarkers...)
-			if res.Truncated {
-				truncated = true
-				nextMarker = path
-				nextVersionIdMarker = res.NextVersionIdMarker
-				return fs.SkipAll
-			}
-
-			return nil
+			return listVersions(path, key, d)
 		}
 
 		// Since delimiter is specified, we only want results that
@@ -300,50 +351,29 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		suffix := strings.TrimPrefix(path, prefix)
 		before, _, found := strings.Cut(suffix, delimiter)
 		if !found {
-			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
-			if err == ErrSkipObj {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("file to object %q: %w", path, err)
-			}
-			objects = append(objects, res.ObjectVersions...)
-			delMarkers = append(delMarkers, res.DelMarkers...)
-
-			if res.Truncated {
-				truncated = true
-				nextMarker = path
-				nextVersionIdMarker = res.NextVersionIdMarker
-				return fs.SkipAll
-			}
-			return nil
+			return listVersions(path, key, d)
 		}
 
 		// Common prefixes are a set, so should not have duplicates.
 		// These are abstractly a "directory", so need to include the
 		// delimiter at the end.
-		cpmap.Add(prefix + before + delimiter)
-		if (len(objects) + cpmap.Len()) == int(max) {
-			nextMarker = path
-			truncated = true
-
-			return fs.SkipAll
-		}
-
-		return nil
+		return addCommonPrefix(prefix + before + delimiter)
 	})
 	if err != nil {
 		return WalkVersioningResults{}, err
 	}
 
-	return WalkVersioningResults{
-		CommonPrefixes:      cpmap.CpArray(),
-		ObjectVersions:      objects,
-		DelMarkers:          delMarkers,
-		Truncated:           truncated,
-		NextMarker:          nextMarker,
-		NextVersionIdMarker: nextVersionIdMarker,
-	}, nil
+	result := WalkVersioningResults{
+		CommonPrefixes: cpmap.CpArray(),
+		ObjectVersions: objects,
+		DelMarkers:     delMarkers,
+		Truncated:      truncated,
+	}
+	if truncated {
+		result.NextMarker = lastKey
+		result.NextVersionIdMarker = lastVersionId
+	}
+	return result, nil
 }
 
 func readDir(path string, walkstate *walkState) {
@@ -359,7 +389,7 @@ func readDir(path string, walkstate *walkState) {
 		// user-supplied prefix that doesn't exist on disk, or a directory
 		// that was removed concurrently during the walk. In both cases,
 		// treat the subtree as empty rather than surfacing an error.
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if isDirGone(err) {
 			return
 		}
 		walkstate.walkErr = fmt.Errorf("readdir %q: %w", path, err)
@@ -381,7 +411,7 @@ func readDirEntries(path string, entries []fs.DirEntry, walkstate *walkState) {
 			return
 		}
 
-		if shouldSkip(entries[entriesIndex].Name(), walkstate) {
+		if shouldSkip(path, entries[entriesIndex], walkstate) {
 			entriesIndex++
 			continue
 		}
@@ -444,7 +474,7 @@ func processDir(
 			// if it is a directory, we
 			// need to call recursively to
 			// check for further preceding entries
-			if shouldSkip(entries[entriesIndex].Name(), walkstate) {
+			if shouldSkip(path, entries[entriesIndex], walkstate) {
 				entriesIndex++
 				continue
 			}
@@ -558,21 +588,22 @@ func checkAndMaybeAddCommonPrefix(objectName string, walkstate *walkState,
 	return false
 }
 
-func shouldSkip(name string, walkstate *walkState) bool {
-	return slices.Contains(walkstate.skipdirs, name)
+// shouldSkip reports whether entry, read from the directory path, is a
+// skipped directory. A file with a skipped name is an ordinary object and is
+// not skipped.
+func shouldSkip(path string, entry fs.DirEntry, walkstate *walkState) bool {
+	return entry.IsDir() && walkstate.skipDirs.skips(entry.Name(), path == pathDot)
 }
 
 // inSkipDir reports whether dir, a directory named by the listing prefix, is
-// a skipped directory or inside one. The prefix spells the directory names
-// as the client sent them, which a case-insensitive file system resolves to
-// a skipped directory in any case, so they are matched ignoring case.
+// a skipped directory or inside one.
 func inSkipDir(dir string, walkstate *walkState) bool {
+	i := 0
 	for name := range strings.SplitSeq(dir, pathSeparator) {
-		if slices.ContainsFunc(walkstate.skipdirs, func(skip string) bool {
-			return strings.EqualFold(name, skip)
-		}) {
+		if walkstate.skipDirs.skips(name, i == 0) {
 			return true
 		}
+		i++
 	}
 	return false
 }
@@ -636,7 +667,7 @@ func quickWalk(walkstate *walkState) error {
 	}
 
 	if useRootEntries {
-		// keep fast-path semantics but still honor skipdirs for the prefixed
+		// keep fast-path semantics but still honor skipDirs for the prefixed
 		// root and every directory above it
 		if !inSkipDir(rootDir, walkstate) {
 			// Mirror processDir: offer the root directory itself to getObj whenever
@@ -647,7 +678,11 @@ func quickWalk(walkstate *walkState) error {
 			if fullObjectName > walkstate.marker {
 				if !checkAndMaybeAddCommonPrefix(fullObjectName, walkstate) {
 					rootInfo, err := fs.Stat(walkstate.fileSystem, rootDir)
-					if err != nil {
+					if isDirGone(err) {
+						// The prefix directory was removed concurrently after
+						// it was read, so treat it as empty.
+						return nil
+					} else if err != nil {
 						walkstate.walkErr = fmt.Errorf("stat %q: %w", rootDir, err)
 					} else {
 						dirobj, err := walkstate.getObj(fullObjectName, fs.FileInfoToDirEntry(rootInfo))
@@ -675,4 +710,10 @@ func quickWalk(walkstate *walkState) error {
 		walkstate.newMarker = ""
 	}
 	return nil
+}
+
+// isDirGone reports whether err from reading a directory means that the
+// directory isn't there: it never was, or it was removed during the walk.
+func isDirGone(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
 }

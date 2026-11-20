@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -379,5 +380,155 @@ func TestComputeMultipartETagFromPartETags(t *testing.T) {
 				t.Fatalf("expected etag %q, got %q", tt.wantETag, etag)
 			}
 		})
+	}
+}
+
+func TestValidateObjectPutPreconditionHeaders(t *testing.T) {
+	str := func(s string) *string { return &s }
+
+	tests := []struct {
+		name        string
+		ifMatch     *string
+		ifNoneMatch *string
+		wantErr     error
+	}{
+		{name: "no headers"},
+		{name: "if-match etag", ifMatch: str("etag")},
+		{name: "if-none-match star", ifNoneMatch: str("*")},
+		{
+			name:        "both headers",
+			ifMatch:     str("*"),
+			ifNoneMatch: str("etag"),
+			wantErr:     s3err.GetNotImplementedErr("If-Match,If-None-Match", s3err.NmpAdditionalMessageMultipleCondHeaders),
+		},
+		{
+			name:        "if-none-match etag",
+			ifNoneMatch: str("etag"),
+			wantErr:     s3err.GetNotImplementedErr("If-None-Match", s3err.NmpAdditionalMessageIfNoneMatch),
+		},
+		{
+			name:    "if-match star",
+			ifMatch: str("*"),
+			wantErr: s3err.GetNotImplementedErr("If-Match", s3err.NmpAdditionalMessageIfMatch),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateObjectPutPreconditionHeaders(tt.ifMatch, tt.ifNoneMatch)
+			if !reflect.DeepEqual(err, tt.wantErr) {
+				t.Fatalf("expected error %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestEvaluatePreconditionsLastModified(t *testing.T) {
+	const etag = "b1946ac92492d2347c6235b4d2611184"
+	// the object modification time has a sub-second part, while the
+	// Last-Modified header and the request dates are in seconds
+	modTime := time.Date(2026, 10, 7, 6, 20, 25, 746772327, time.UTC)
+	lastModified := modTime.Truncate(time.Second)
+	before := lastModified.Add(-time.Second)
+	after := lastModified.Add(time.Second)
+	tm := func(v time.Time) *time.Time { return &v }
+
+	errCond := s3err.GetPreconditionFailedErr(s3err.ConditionIfUnmodifiedSince)
+
+	for _, tc := range []struct {
+		name string
+		pre  PreConditions
+		want error
+	}{
+		{"if-modified-since before", PreConditions{IfModSince: tm(before)}, nil},
+		{"if-modified-since last modified", PreConditions{IfModSince: tm(lastModified)}, errNotModified},
+		{"if-modified-since after", PreConditions{IfModSince: tm(after)}, errNotModified},
+		{"if-unmodified-since before", PreConditions{IfUnmodeSince: tm(before)}, errCond},
+		{"if-unmodified-since last modified", PreConditions{IfUnmodeSince: tm(lastModified)}, nil},
+		{"if-unmodified-since after", PreConditions{IfUnmodeSince: tm(after)}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := EvaluatePreconditions(etag, modTime, tc.pre)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEvaluateCopySourcePreconditions(t *testing.T) {
+	const etag = "b1946ac92492d2347c6235b4d2611184"
+	modTime := time.Date(2026, 10, 7, 6, 20, 25, 746772327, time.UTC)
+	lastModified := modTime.Truncate(time.Second)
+	before := lastModified.Add(-time.Second)
+	after := lastModified.Add(time.Second)
+	tm := func(v time.Time) *time.Time { return &v }
+	str := func(v string) *string { return &v }
+
+	errIfMatch := s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfMatch)
+	errIfNoneMatch := s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfNoneMatch)
+	errIfModSince := s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfModifiedSince)
+	errIfUnmodSince := s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfUnmodifiedSince)
+
+	for _, tc := range []struct {
+		name string
+		pre  PreConditions
+		want error
+	}{
+		{"no preconditions", PreConditions{}, nil},
+		{"if-match mismatch", PreConditions{IfMatch: str("invalid")}, errIfMatch},
+		{"if-match mismatch over the rest", PreConditions{IfMatch: str("invalid"), IfNoneMatch: str(etag), IfModSince: tm(after), IfUnmodeSince: tm(before)}, errIfMatch},
+		{"if-match asterisk", PreConditions{IfMatch: str("*")}, nil},
+		{"if-match with if-none-match match", PreConditions{IfMatch: str(etag), IfNoneMatch: str(etag)}, errIfNoneMatch},
+		{"if-match with if-none-match mismatch", PreConditions{IfMatch: str(etag), IfNoneMatch: str("invalid"), IfModSince: tm(after)}, nil},
+		{"if-match with if-modified-since false", PreConditions{IfMatch: str(etag), IfModSince: tm(after), IfUnmodeSince: tm(before)}, errIfModSince},
+		{"if-match ignores if-unmodified-since", PreConditions{IfMatch: str(etag), IfUnmodeSince: tm(before)}, nil},
+		{"if-none-match match", PreConditions{IfNoneMatch: str(etag)}, errIfNoneMatch},
+		{"if-none-match asterisk", PreConditions{IfNoneMatch: str("*")}, errIfNoneMatch},
+		{"if-none-match match with if-unmodified-since false", PreConditions{IfNoneMatch: str(etag), IfUnmodeSince: tm(before)}, errIfUnmodSince},
+		{"if-none-match mismatch ignores if-modified-since", PreConditions{IfNoneMatch: str("invalid"), IfModSince: tm(after)}, nil},
+		{"if-modified-since before", PreConditions{IfModSince: tm(before)}, nil},
+		{"if-modified-since last modified", PreConditions{IfModSince: tm(lastModified)}, errIfModSince},
+		{"if-modified-since after", PreConditions{IfModSince: tm(after)}, errIfModSince},
+		{"both dates false", PreConditions{IfModSince: tm(after), IfUnmodeSince: tm(before)}, errIfUnmodSince},
+		{"if-unmodified-since before", PreConditions{IfUnmodeSince: tm(before)}, errIfUnmodSince},
+		{"if-unmodified-since last modified", PreConditions{IfUnmodeSince: tm(lastModified)}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := EvaluateCopySourcePreconditions(etag, modTime, tc.pre)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	// a copy passes or fails exactly as a read does, but never with a 304
+	matches := []*string{nil, str(etag), str("invalid"), str("*")}
+	dates := []*time.Time{nil, tm(before), tm(lastModified), tm(after)}
+	for _, ifMatch := range matches {
+		for _, ifNoneMatch := range matches {
+			for _, ifModSince := range dates {
+				for _, ifUnmodSince := range dates {
+					pre := PreConditions{
+						IfMatch:       ifMatch,
+						IfNoneMatch:   ifNoneMatch,
+						IfModSince:    ifModSince,
+						IfUnmodeSince: ifUnmodSince,
+					}
+					readErr := EvaluatePreconditions(etag, modTime, pre)
+					copyErr := EvaluateCopySourcePreconditions(etag, modTime, pre)
+					if (readErr == nil) != (copyErr == nil) {
+						t.Fatalf("%+v: read got %v, copy got %v", pre, readErr, copyErr)
+					}
+					if copyErr == nil {
+						continue
+					}
+					var pfErr s3err.PreconditionFailedError
+					if !errors.As(copyErr, &pfErr) {
+						t.Fatalf("%+v: expected a PreconditionFailed copy error, got %v", pre, copyErr)
+					}
+				}
+			}
+		}
 	}
 }

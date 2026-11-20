@@ -82,8 +82,12 @@ func EnsureRequestIDs(ctx fiber.Ctx) (requestID, hostID string) {
 		ContextKeyHostID.Set(ctx, hostID)
 	}
 
-	ctx.Response().Header.Set(HeaderAmzRequestID, requestID)
-	ctx.Response().Header.Set(HeaderAmzID2, hostID)
+	// The canonical variants bypass the response's header name
+	// normalization flag, which SetResponseHeaders turns off part way
+	// through a request. Going through Set would store these names in a
+	// different case before and after that point and emit each twice.
+	ctx.Response().Header.SetCanonical([]byte(HeaderAmzRequestID), []byte(requestID))
+	ctx.Response().Header.SetCanonical([]byte(HeaderAmzID2), []byte(hostID))
 
 	return requestID, hostID
 }
@@ -94,7 +98,7 @@ func RequestID(ctx fiber.Ctx) string {
 		return requestID
 	}
 
-	return string(ctx.Response().Header.Peek(HeaderAmzRequestID))
+	return string(ctx.Response().Header.PeekCanonical([]byte(HeaderAmzRequestID)))
 }
 
 func HostID(ctx fiber.Ctx) string {
@@ -103,7 +107,7 @@ func HostID(ctx fiber.Ctx) string {
 		return hostID
 	}
 
-	return string(ctx.Response().Header.Peek(HeaderAmzID2))
+	return string(ctx.Response().Header.PeekCanonical([]byte(HeaderAmzID2)))
 }
 
 func mustReadRandom(b []byte) {

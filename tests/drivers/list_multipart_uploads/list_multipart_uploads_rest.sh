@@ -15,6 +15,7 @@
 # under the License.#
 
 source ./tests/drivers/list.sh
+source ./tests/util/util_multipart_before_completion.sh
 
 check_multipart_upload_user_data() {
   if ! check_param_count_v2 "data file, expected upload ID, owner ID, initiator ID" 4 $#; then
@@ -86,15 +87,16 @@ get_next_values() {
   if ! check_param_count_v2 "data file" 1 $#; then
     return 1
   fi
+  local data_file="$1"
   local response next_key_marker next_upload_id_marker
 
-  if ! response=$(get_element_text "$1" "NextKeyMarker" 2>&1); then
+  if ! response=$(get_element_text "$data_file" "NextKeyMarker" 2>&1); then
     log 2 "error checking NextKeyMarker: $response"
     return 1
   fi
   next_key_marker="$response"
 
-  if ! response=$(get_element_text "$1" "NextUploadIdMarker" 2>&1); then
+  if ! response=$(get_element_text "$data_file" "NextUploadIdMarker" 2>&1); then
     log 2 "error checking NextUploadIdMarker: $response"
     return 1
   fi
@@ -109,15 +111,30 @@ list_multipart_uploads_get_check_next_values() {
   if ! check_param_count_ge_le "bucket, expected key, expected upload ID, next key (optional), next upload ID (optional)" 3 5 $#; then
     return 1
   fi
-  local query_val="max-uploads=1&uploads" response
-  if [ "$4" != "" ]; then
-    query_val+="&key-marker=$4"
+  local bucket="$1" expected_key="$2" expected_upload_id="$3" next_key="$4" next_upload_id="$5"
+  local query_val="max-uploads=1&uploads" response key_marker upload_id_marker
+  local -a response_lines
+
+  if [ -n "$next_key" ]; then
+    query_val+="&key-marker=${next_key}"
   fi
-  if [ "$5" != "" ]; then
-    query_val+="&upload-id-marker=$5"
+  if [ -n "$next_upload_id" ]; then
+    query_val+="&upload-id-marker=${next_upload_id}"
   fi
-  if ! response=$(send_rest_go_command_callback "200" "get_next_values" "-bucketName" "$1" "-query" "$query_val" 2>&1); then
+  if ! response=$(send_rest_go_command_callback "200" "get_next_values" "-bucketName" "$bucket" "-query" "$query_val" 2>&1); then
     log 2 "error sending multipart upload and checking key and upload ID vals"
+    return 1
+  fi
+  mapfile -t response_lines <<< "$response"
+  key_marker="${response_lines[0]}"
+  upload_id_marker="${response_lines[1]}"
+
+  if [ "$expected_key" != "$key_marker" ]; then
+    log 2 "expected key marker '$expected_key', was '$key_marker'"
+    return 1
+  fi
+  if [ "$expected_upload_id" != "$upload_id_marker" ]; then
+    log 2 "expected upload ID marker '$expected_upload_id', was '$upload_id_marker'"
     return 1
   fi
   return 0
@@ -186,6 +203,38 @@ list_uploads_with_prefix_and_delimiter_check_results() {
   fi
   if ! send_rest_go_command_callback "200" "check_prefixes_delimiters_and_keys" "-bucketName" "$1" "-query" "uploads&delimiter=$3&prefix=$2" "--" "ListMultipartUploadsResult" "Upload" "${@:2}"; then
     log 2 "error sending command to list objects or receiving prefix and delimiter response"
+    return 1
+  fi
+  return 0
+}
+
+create_abort_multipart_upload_rest() {
+  if ! check_param_count_v2 "bucket, key" 2 $#; then
+    return 1
+  fi
+  local bucket="$1" key="$2"
+  local response upload_id
+
+  if ! list_and_check_upload "$bucket" "$key"; then
+    log 2 "error listing multipart uploads before creation"
+    return 1
+  fi
+  if ! response=$(create_multipart_upload_rest "$bucket" "$key" "" "parse_upload_id" 2>&1); then
+    log 2 "error creating upload: $response"
+    return 1
+  fi
+  upload_id="$response"
+
+  if ! list_and_check_upload "$bucket" "$key" "$upload_id"; then
+    log 2 "error listing multipart uploads after upload creation"
+    return 1
+  fi
+  if ! abort_multipart_upload_rest "$bucket" "$key" "$upload_id"; then
+    log 2 "error aborting multipart upload"
+    return 1
+  fi
+  if ! list_and_check_upload "$bucket" "$key"; then
+    log 2 "error listing multipart uploads after abort"
     return 1
   fi
   return 0

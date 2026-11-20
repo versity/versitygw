@@ -84,3 +84,51 @@ source ./tests/setup.sh
   run list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 4 0
   assert_success
 }
+
+@test "REST - ListParts - out of order" {
+  local bucket_name file_name upload_id etag_one etag_two etag_three offset old new
+  local -a parts
+
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  read -r bucket_name file_name <<< "$output"
+
+  run create_multipart_upload_rest "$bucket_name" "$file_name" "" "parse_upload_id"
+  assert_success
+  upload_id=$output
+
+  run split_file "$TEST_FILE_FOLDER/$file_name" 3
+  assert_success
+  read -r -a parts <<< "$output"
+
+  run upload_part_rest "$bucket_name" "$file_name" "$upload_id" "7" "${parts[0]}"
+  assert_success
+  etag_one="$output"
+  log 5 "sha256sum: $(sha256sum "${parts[0]}")"
+
+  run upload_part_rest "$bucket_name" "$file_name" "$upload_id" "2" "${parts[0]}"
+  assert_success
+  etag_two="$output"
+
+  run upload_part_rest "$bucket_name" "$file_name" "$upload_id" "10000" "${parts[0]}"
+  assert_success
+  etag_three="$output"
+
+  run list_parts_rest "$bucket_name" "$file_name" "$upload_id" "list_parts_check_part_ordering" "--" "$bucket_name" "$file_name" "$upload_id" \
+    "2" "$etag_two" "7" "$etag_one" "10000" "$etag_three"
+  assert_success
+
+  offset=100
+  old=$(od -An -tu1 -N1 -j "$offset" "${parts[0]}")
+  new=$((old ^ 255))
+  printf "\\$(printf '%03o' "$new")" | dd of="${parts[0]}" bs=1 seek="$offset" conv=notrunc status=none
+  log 5 "sha256sum: $(sha256sum "${parts[0]}")"
+
+  run upload_part_rest "$bucket_name" "$file_name" "$upload_id" "7" "${parts[0]}"
+  assert_success
+  etag_one="$output"
+
+  run list_parts_rest "$bucket_name" "$file_name" "$upload_id" "list_parts_check_part_ordering" "--" "$bucket_name" "$file_name" "$upload_id" \
+    "2" "$etag_two" "7" "$etag_one" "10000" "$etag_three"
+  assert_success
+}

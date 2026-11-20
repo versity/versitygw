@@ -23,6 +23,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/internal/sigv4auth"
 	"github.com/versity/versitygw/s3api/utils"
@@ -42,14 +43,16 @@ const (
 )
 
 type PostObjectResult struct {
-	ContentLength int64
+	// ProposedSize is the size of the file the request proposes. It is not
+	// always the file's size, see utils.MpParseResult.
+	ProposedSize int64
 	// FileRdr streams the file payload. Length() reports the exact number of
 	// file-content bytes read after the backend has consumed the body.
 	FileRdr utils.MpFileReader
 	Fields  map[string]string
 }
 
-func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string) fiber.Handler {
+func AuthorizePostObject(be backend.Backend, root RootUserConfig, iam auth.IAMService, region string) fiber.Handler {
 	rootAccount := auth.Account{Access: root.Access, Secret: root.Secret, Role: auth.RoleAdmin}
 
 	return func(ctx fiber.Ctx) error {
@@ -94,7 +97,7 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 			return s3err.PostAuth.MissingField("key")
 		}
 
-		if !utils.IsObjectNameValid(fields["key"]) {
+		if !utils.IsObjectNameValid(fields["key"], be) {
 			debuglogger.Logf("invalid POST object key: %q", fields["key"])
 			return s3err.GetAPIError(s3err.ErrBadRequest)
 		}
@@ -162,7 +165,7 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 				return err
 			}
 
-			if region != creds.Region {
+			if !utils.ContextKeyAnyRegion.IsSet(ctx) && region != creds.Region {
 				debuglogger.Logf("incorrect POST object credential region: got %q want %q", creds.Region, region)
 				return s3err.PostAuth.IncorrectRegion(credentialStr, region, creds.Region)
 			}
@@ -207,9 +210,9 @@ func AuthorizePostObject(root RootUserConfig, iam auth.IAMService, region string
 
 		utils.ContextKeyObjectPostResult.Set(ctx,
 			PostObjectResult{
-				Fields:        fields,
-				FileRdr:       result.FileRdr,
-				ContentLength: result.ContentLength,
+				Fields:       fields,
+				FileRdr:      result.FileRdr,
+				ProposedSize: result.ProposedSize,
 			},
 		)
 

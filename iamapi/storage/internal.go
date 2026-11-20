@@ -238,7 +238,12 @@ func (s *InternalStore) GetUserByAccessKeyID(ctx context.Context, accessKeyID st
 
 	user, err := s.GetUser(ctx, username)
 	if err != nil {
-		return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+		// An index entry whose user is gone is the key not existing; any
+		// other error is the store failing and is not.
+		if iamerr.IsNoSuchEntity(err) {
+			return nil, iamerr.NoSuchEntityAccessKey(accessKeyID)
+		}
+		return nil, err
 	}
 	return user, nil
 }
@@ -1540,7 +1545,7 @@ func (s *InternalStore) GetSession(_ context.Context, accessKeyID string) (*type
 
 	session, ok := conf.Sessions[accessKeyID]
 	if !ok || !session.Expiration.After(time.Now().UTC()) {
-		return nil, ErrSessionNotFound
+		return nil, iamutil.ErrSessionNotFound
 	}
 
 	cloned := session

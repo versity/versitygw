@@ -97,6 +97,7 @@ const (
 	ErrAnonymousCopyObject
 	ErrAnonymousPutBucketOwnership
 	ErrAnonymousGetBucketOwnership
+	ErrAnonymousGetObjectAttributes
 	ErrAnonymousResponseHeaders
 	ErrMethodNotAllowed
 	ErrBucketNotEmpty
@@ -124,6 +125,7 @@ const (
 	ErrObjectTaggingLimited
 	ErrCannotParseHTTPRequest
 	ErrMalformedPOSTRequest
+	ErrMaxPostPreDataLengthExceeded
 	ErrEntityTooSmall
 	ErrEntityTooLarge
 	ErrMalformedXML
@@ -187,6 +189,7 @@ const (
 	ErrCORSForbidden
 	ErrMissingCORSOrigin
 	ErrCORSIsNotEnabled
+	ErrCORSRulesLimited
 	ErrNoSuchWebsiteConfiguration
 	ErrInvalidWebsiteRedirectProtocol
 	ErrInvalidRedirectLocation
@@ -212,6 +215,7 @@ const (
 	ErrACLsDisabled
 	ErrNoSpaceLeftOnDevice
 	ErrReservedObjectKey
+	ErrExcludedObjectKey
 
 	// Admin api errors
 	ErrAdminAccessDenied
@@ -252,6 +256,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrAnonymousGetBucketOwnership: {
 		Code:           "AccessDenied",
 		Description:    "s3:GetBucketOwnershipControls does not support Anonymous requests!",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrAnonymousGetObjectAttributes: {
+		Code:           "AccessDenied",
+		Description:    "Request has no authentication!",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrAnonymousResponseHeaders: {
@@ -392,6 +401,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrMalformedPOSTRequest: {
 		Code:           "MalformedPOSTRequest",
 		Description:    "The body of your POST request is not well-formed multipart/form-data.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMaxPostPreDataLengthExceeded: {
+		Code:           "MaxPostPreDataLengthExceeded",
+		Description:    "Your POST request fields preceeding the upload file was too large.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrEntityTooSmall: {
@@ -617,7 +631,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrSuspendedVersioningNotAllowed: {
 		Code:           "InvalidBucketState",
 		Description:    "An Object Lock configuration is present on this bucket, so the versioning state cannot be changed.",
-		HTTPStatusCode: http.StatusBadRequest,
+		HTTPStatusCode: http.StatusConflict,
 	},
 	ErrMissingRequestBody: {
 		Code:           "MissingRequestBodyError",
@@ -698,6 +712,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "AccessForbidden",
 		Description:    "CORSResponse: CORS is not enabled for this bucket.",
 		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrCORSRulesLimited: {
+		Code:           "InvalidRequest",
+		Description:    "The number of CORS rules should not exceed allowed limit of 100 rules.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNoSuchWebsiteConfiguration: {
 		Code:           "NoSuchWebsiteConfiguration",
@@ -816,6 +835,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "Object keys in the .sgwtmp directory are reserved for the gateway's internal use.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
+	ErrExcludedObjectKey: {
+		Code:           "ReservedObjectKey",
+		Description:    "Object keys in a directory excluded from object listings are reserved.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
 
 	// Admin api errors
 	ErrAdminAccessDenied: {
@@ -922,6 +946,16 @@ func GetInvalidTrailingChecksumHeaderErr(header string) APIError {
 	}
 }
 
+// GetInvalidDateAttributeErr returns the error for a date in a request body
+// that doesn't parse. value is echoed as the client sent it.
+func GetInvalidDateAttributeErr(value string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("Invalid value for date attribute: %v", value),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
 // Returns checksum type mismatch APIError
 func GetChecksumTypeMismatchErr(expected, actual types.ChecksumAlgorithm) APIError {
 	return APIError{
@@ -1002,6 +1036,22 @@ func GetMultipleWildcardCORSOriginErr(origin string) APIError {
 	return APIError{
 		Code:           "InvalidRequest",
 		Description:    fmt.Sprintf(`AllowedOrigin "%s" can not have more than one wildcard.`, origin),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetMultipleWildcardCORSHeaderErr(header string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf(`AllowedHeader "%s" can not have more than one wildcard.`, header),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetWildcardCORSExposeHeaderErr(header string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf(`ExposeHeader "%s" contains wildcard. We currently do not support wildcard for ExposeHeader.`, header),
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }

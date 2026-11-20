@@ -50,7 +50,7 @@ check_part_list_rest() {
     log 2 "error getting file name: $file_name"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" ./tests/rest_scripts/list_parts.sh); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" ./tests/rest_scripts/list_parts.sh 2>&1); then
     log 2 "error listing multipart upload parts: $result"
     return 1
   fi
@@ -239,5 +239,108 @@ list_parts_check_with_marker_and_max_parts() {
     log 2 "error sending ListParts command and checking callback"
     return 1
   fi
+  return 0
+}
+
+list_parts_check_parent_fields() {
+  if ! check_param_count_v2 "data file, bucket, key, upload ID" 4 $#; then
+    return 1
+  fi
+  local data_file="$1" bucket="$2" key="$3" upload_id="$4"
+
+  if ! check_xml_element "$data_file" "$bucket" "ListPartsResult" "Bucket"; then
+    log 2 "error checking 'Bucket' element"
+    return 1
+  fi
+  if ! check_xml_element "$data_file" "$key" "ListPartsResult" "Key"; then
+    log 2 "error checking 'Key' element"
+    return 1
+  fi
+  if ! check_xml_element "$data_file" "$upload_id" "ListPartsResult" "UploadId"; then
+    log 2 "error checking 'UploadId' element"
+    return 1
+  fi
+  return 0
+}
+
+list_parts_check_part_ordering() {
+  if ! check_param_count_gt "data file, bucket, key, upload ID, at least one pair of part numbers/etags" 6 $#; then
+    return 1
+  fi
+  if [ "$(($# % 2))" -ne 0 ]; then
+    log 2 "must be an even param count"
+    return 1
+  fi
+  local data_file="$1" bucket="$2" key="$3" upload_id="$4" part_etag_pairs=("${@:5}")
+  local response pair_idx part
+  local -a parts
+
+  log 5 "data: $(cat "$data_file")"
+
+  if ! list_parts_check_parent_fields "$data_file" "$bucket" "$key" "$upload_id"; then
+    log 2 "error checking parent fields"
+    return 1
+  fi
+  if ! response=$(get_element "$data_file" "ListPartsResult" "Part" 2>&1); then
+    log 2 "error getting parts: $response"
+    return 1
+  fi
+  mapfile -t parts <<< "$response"
+  if [ "${#parts[@]}" -ne "$((${#part_etag_pairs[@]}/2))" ]; then
+    log 2 "expected '$((${#part_etag_pairs[@]}/2))' parts, was '${#parts[@]}'"
+    return 1
+  fi
+  pair_idx=0
+  for part in "${parts[@]}"; do
+    if ! check_xml_element_inside_string "$part" "${part_etag_pairs[$pair_idx]}" "Part" "PartNumber"; then
+      log 2 "error checking 'PartNumber' element"
+      return 1
+    fi
+    ((pair_idx++))
+    if ! check_xml_element_inside_string "$part" "${part_etag_pairs[$pair_idx]}" "Part" "ETag"; then
+      log 2 "error checking 'ETag' element"
+      return 1
+    fi
+    ((pair_idx++))
+  done
+  return 0
+}
+
+list_parts_check_checksums() {
+  if ! check_param_count_gt "data file, bucket, key, upload ID, checksum algorithm, at least two checksums (in order of part number)" 7 $#; then
+    return 1
+  fi
+  local data_file="$1" bucket="$2" key="$3" upload_id="$4" checksum_algorithm="$5" checksums=("${@:6}")
+  local response checksum_idx=0 part_number uppercase_algorithm
+  local -a parts
+
+  if ! list_parts_check_parent_fields "$data_file" "$bucket" "$key" "$upload_id"; then
+    log 2 "error checking parent fields"
+    return 1
+  fi
+  if ! response=$(get_element "$data_file" "ListPartsResult" "Part" 2>&1); then
+    log 2 "error getting parts: $response"
+    return 1
+  fi
+  mapfile -t parts <<< "$response"
+  if [ "${#parts[@]}" -ne "${#checksums[@]}" ]; then
+    log 2 "expected '${#checksums[@]}' parts, was '${#parts[@]}'"
+    return 1
+  fi
+  log 5 "checksums: ${checksums[*]}"
+  uppercase_algorithm=${checksum_algorithm^^}
+  for part in "${parts[@]}"; do
+    part_number=$((checksum_idx+1))
+    if ! check_xml_element_inside_string "$part" "$part_number" "Part" "PartNumber"; then
+      log 2 "error checking part number"
+      return 1
+    fi
+    if ! check_xml_element_inside_string "$part" "${checksums[$checksum_idx]}" "Part" "Checksum${uppercase_algorithm}"; then
+      log 2 "error checking checksum for part '$((checksum_idx+1))'"
+      return 1
+    fi
+    log 5 "part: $part"
+    ((checksum_idx++))
+  done
   return 0
 }

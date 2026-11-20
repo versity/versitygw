@@ -67,9 +67,6 @@ var (
 	ErrUserIDAlreadyExists      = errors.New("iamapi: user id already exists")
 	ErrAccessKeyIDAlreadyExists = errors.New("iamapi: access key id already exists")
 	ErrRoleIDAlreadyExists      = errors.New("iamapi: role id already exists")
-	// ErrSessionNotFound is returned by GetSession when accessKeyID names no
-	// session, or names one whose Expiration has already passed.
-	ErrSessionNotFound = errors.New("iamapi: session not found")
 )
 
 type ListUsersInput struct {

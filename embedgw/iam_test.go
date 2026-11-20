@@ -15,21 +15,36 @@
 package embedgw
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/versity/versitygw/iamapi/private"
+	"github.com/versity/versitygw/iamapi/storage"
 )
 
 func TestRunIAMAPIValidatesConfig(t *testing.T) {
@@ -288,6 +303,152 @@ func TestRunIAMAPIReloadsCertsOnSigHup(t *testing.T) {
 	}
 
 	waitFor(newCA, newGateway, oldGateway)
+}
+
+// TestRunIAMAPIUsesSuppliedStore runs the IAM service on an embedder's own
+// Store with IAMDir set as well: a user created through the public API must
+// land in that Store, the private listener must resolve the user's access key
+// from it, and IAMDir must be left untouched.
+func TestRunIAMAPIUsesSuppliedStore(t *testing.T) {
+	store, err := storage.NewInternal(t.TempDir())
+	if err != nil {
+		t.Fatalf("init store: %v", err)
+	}
+	iamDir := t.TempDir()
+
+	// A unix socket path is limited to ~104 bytes on macOS, which t.TempDir()
+	// can exceed once it embeds the test name.
+	sockDir, err := os.MkdirTemp("", "vgw-iam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(sockDir) })
+	publicSock := filepath.Join(sockDir, "api.sock")
+	privateSock := filepath.Join(sockDir, "priv.sock")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunIAMAPI(ctx, &IAMConfig{
+			RootUserAccess: "root",
+			RootUserSecret: "secret",
+			Ports:          []string{publicSock},
+			MaxConnections: 16,
+			MaxRequests:    16,
+			Quiet:          true,
+			PrivatePorts:   []string{privateSock},
+			Store:          store,
+			IAMDir:         iamDir,
+		})
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-errCh:
+			if err != nil {
+				t.Errorf("RunIAMAPI: %v", err)
+			}
+		case <-time.After(15 * time.Second):
+			t.Error("RunIAMAPI did not return after cancel")
+		}
+	})
+
+	unixClient := func(sock string) *http.Client {
+		return &http.Client{Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, "unix", sock)
+			},
+		}}
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for _, sock := range []string{publicSock, privateSock} {
+		for {
+			conn, err := net.Dial("unix", sock)
+			if err == nil {
+				conn.Close()
+				break
+			}
+			select {
+			case runErr := <-errCh:
+				t.Fatalf("RunIAMAPI exited early: %v", runErr)
+			default:
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s: %v", filepath.Base(sock), err)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+
+	client := iam.New(iam.Options{
+		Region:       "us-east-1",
+		Credentials:  credentials.NewStaticCredentialsProvider("root", "secret", ""),
+		BaseEndpoint: aws.String("http://localhost"),
+		HTTPClient:   unixClient(publicSock),
+	})
+	if _, err := client.CreateUser(context.Background(), &iam.CreateUserInput{
+		UserName: aws.String("alice"),
+	}); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if _, err := store.GetUser(context.Background(), "alice"); err != nil {
+		t.Fatalf("user created through the IAM API is not in the supplied store: %v", err)
+	}
+	key, err := client.CreateAccessKey(context.Background(), &iam.CreateAccessKeyInput{
+		UserName: aws.String("alice"),
+	})
+	if err != nil {
+		t.Fatalf("CreateAccessKey: %v", err)
+	}
+
+	body, err := json.Marshal(private.ResolveIdentityRequest{
+		AccessKeyIDs: []string{aws.ToString(key.AccessKey.AccessKeyId)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest(http.MethodPost, "http://localhost"+private.ResolveIdentityPath, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(private.ProtocolHeader, strconv.Itoa(private.ProtocolVersion))
+	hash := sha256.Sum256(body)
+	if err := awsv4.NewSigner().SignHTTP(context.Background(),
+		aws.Credentials{AccessKeyID: "root", SecretAccessKey: "secret"},
+		req, hex.EncodeToString(hash[:]), "iam", "us-east-1", time.Now().UTC(),
+	); err != nil {
+		t.Fatalf("sign resolve-identity request: %v", err)
+	}
+	resp, err := unixClient(privateSock).Do(req)
+	if err != nil {
+		t.Fatalf("resolve-identity: %v", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read resolve-identity response: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("resolve-identity: status %d: %s", resp.StatusCode, respBody)
+	}
+	var resolved private.ResolveIdentityResponse
+	if err := json.Unmarshal(respBody, &resolved); err != nil {
+		t.Fatalf("decode resolve-identity response: %v", err)
+	}
+	if len(resolved.Identities) != 1 || !resolved.Identities[0].Found || resolved.Identities[0].Kind != private.KindUser {
+		t.Fatalf("private listener did not resolve the access key from the supplied store: %+v", resolved.Identities)
+	}
+
+	entries, err := os.ReadDir(iamDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("IAMDir was written to although Store is set: %d entries", len(entries))
+	}
 }
 
 type iamTestCA struct {

@@ -38,6 +38,7 @@ const (
 // and (see response.go's ProcessController) render under STS's own XML
 // namespace rather than IAM's.
 var stsActions = map[string]bool{
+	"AssumeRole":                true,
 	"AssumeRoleWithWebIdentity": true,
 	"GetCallerIdentity":         true,
 }
@@ -108,6 +109,7 @@ func (r *IAMApiRouter) Init() {
 		"UntagOpenIDConnectProvider":    r.Ctrl.UntagOpenIDConnectProvider,
 		"ListOpenIDConnectProviderTags": r.Ctrl.ListOpenIDConnectProviderTags,
 		// STS actions (routed through this same endpoint; see stsActions)
+		"AssumeRole":                r.Ctrl.AssumeRole,
 		"AssumeRoleWithWebIdentity": r.Ctrl.AssumeRoleWithWebIdentity,
 		"GetCallerIdentity":         r.Ctrl.GetCallerIdentity,
 	}

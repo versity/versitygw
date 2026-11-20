@@ -444,7 +444,7 @@ init_command_log() {
 main_log_cleanup() {
   if [ -f "${TEST_LOG_FILE}.${TEST_ID}" ]; then
     if [ "$LOG_ON_SUCCESS" == "true" ] || [ "$BATS_TEST_COMPLETED" != "1" ]; then
-      if ! error=$(cat "${TEST_LOG_FILE}.${TEST_ID}" >> "$TEST_LOG_FILE" 2>&1); then
+      if ! error=$(cat "${TEST_LOG_FILE}.${TEST_ID}" 2>&1 >> "$TEST_LOG_FILE"); then
         echo "error appending temp log to main log '$TEST_LOG_FILE': $error" >&2
         return 1
       fi

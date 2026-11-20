@@ -16,13 +16,14 @@ package middlewares
 
 import (
 	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 )
 
 // BucketObjectNameValidator extracts and validates
-// the bucket and object names from the request URI.
-func BucketObjectNameValidator() fiber.Handler {
+// the bucket and object names of be from the request URI.
+func BucketObjectNameValidator(be backend.Backend) fiber.Handler {
 	return func(ctx fiber.Ctx) error {
 		bucket, object := parsePath(ctx.Path())
 
@@ -33,7 +34,7 @@ func BucketObjectNameValidator() fiber.Handler {
 
 		// check if the provided object name is valid
 		// skip for empty objects: e.g bucket operations: HeadBucket...
-		if object != "" && !utils.IsObjectNameValid(object) {
+		if object != "" && !utils.IsObjectNameValid(object, be) {
 			return s3err.GetAPIError(s3err.ErrBadRequest)
 		}
 

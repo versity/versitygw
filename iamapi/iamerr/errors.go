@@ -407,6 +407,16 @@ func NoSuchEntityAccessKey(accessKeyID string) Error {
 	return newSenderError("NoSuchEntity", fmt.Sprintf("The Access Key with id %s cannot be found", accessKeyID), http.StatusNotFound)
 }
 
+func IsNoSuchEntity(err error) bool {
+	var apiErr Error
+	return errors.As(err, &apiErr) && apiErr.Code == "NoSuchEntity"
+}
+
+func IsSenderError(err error) bool {
+	var apiErr Error
+	return errors.As(err, &apiErr) && apiErr.Type == TypeSender
+}
+
 func EntityAlreadyExistsRole(roleName string) Error {
 	return newSenderError("EntityAlreadyExists", fmt.Sprintf("Role with name %s already exists.", roleName), http.StatusConflict)
 }
@@ -621,6 +631,53 @@ func InvalidIdentityTokenMissingClaim(claim string) Error {
 
 func AccessDeniedAssumeRoleWithWebIdentity() Error {
 	return newSenderError("AccessDenied", "Not authorized to perform sts:AssumeRoleWithWebIdentity", http.StatusForbidden)
+}
+
+// AccessDeniedAssumeRole is the one error AssumeRole reports for every
+// authorization failure — a role that does not exist, a trust policy that
+// does not cover the caller, a missing identity-policy Allow, an explicit
+// Deny on either side — so the response never reveals which it was. roleArn
+// is echoed exactly as the caller sent it.
+func AccessDeniedAssumeRole(callerArn, roleArn string) Error {
+	return newSenderError("AccessDenied", fmt.Sprintf(
+		"User: %s is not authorized to perform: sts:AssumeRole on resource: %s",
+		callerArn, roleArn,
+	), http.StatusForbidden)
+}
+
+func AccessDeniedRootAssumeRole() Error {
+	return newSenderError("AccessDenied", "Roles may not be assumed by root accounts.", http.StatusForbidden)
+}
+
+// AccessDeniedMFAUnverifiable is returned when AssumeRole is given an MFA
+// serial number and token code that cannot be validated. No identity here
+// has an MFA device, so that is every pair.
+func AccessDeniedMFAUnverifiable() Error {
+	return newSenderError("AccessDenied", "MultiFactorAuthentication failed, unable to validate MFA code.  Please verify your MFA serial number is valid and associated with this user.", http.StatusForbidden)
+}
+
+func AccessDeniedMFAIncomplete() Error {
+	return newSenderError("AccessDenied", "MultiFactorAuthentication failed, must provide both MFA serial number and one time pass code.", http.StatusForbidden)
+}
+
+// InvalidRoleArn is returned when AssumeRole's RoleArn is not an ARN at all.
+// A well-formed ARN that names no role is an authorization failure instead.
+func InvalidRoleArn(value string) Error {
+	return ValidationError(fmt.Sprintf("%s is invalid", value))
+}
+
+func InvalidExternalID(value string) Error {
+	return ValidationError(fmt.Sprintf("1 validation error detected: Value '%s' at 'externalId' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\w+=,.@:\\/-]*", value))
+}
+
+func DurationExceedsRoleChainingLimit() Error {
+	return ValidationError("The requested DurationSeconds exceeds the 1 hour session limit for roles assumed by role chaining.")
+}
+
+// InvalidPrincipalInPolicy is returned when a trust policy names a principal
+// that does not resolve to anything.
+func InvalidPrincipalInPolicy(key, value string) Error {
+	return MalformedPolicyDocument(fmt.Sprintf("Invalid principal in policy: %q:%q", key, value))
 }
 
 func InvalidRoleSessionName(value string) Error {
