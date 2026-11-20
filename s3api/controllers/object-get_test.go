@@ -17,6 +17,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -850,6 +851,77 @@ func TestS3ApiController_GetObjectAttributes_policy(t *testing.T) {
 				ctrl.GetObjectAttributes,
 				response,
 				wantErr,
+				ctxInputs{
+					locals: accessDeniedLocals,
+					headers: map[string]string{
+						"X-Amz-Object-Attributes": "ETag",
+					},
+					queries: queries,
+				})
+		})
+	}
+}
+
+// TestS3ApiController_GetObjectAttributes_missing_object checks that a
+// missing object is reported as NoSuchKey only to a caller with
+// s3:ListBucket, and as AccessDenied otherwise, whether or not s3:GetObject
+// is granted, as AWS does.
+func TestS3ApiController_GetObjectAttributes_missing_object(t *testing.T) {
+	versionId := ulid.Make().String()
+	tests := []struct {
+		name      string
+		actions   string
+		versionId string
+		wantErr   error
+	}{
+		{name: "s3:GetObjectAttributes alone", actions: `"s3:GetObjectAttributes"`, wantErr: s3err.GetAPIError(s3err.ErrAccessDenied)},
+		{name: "s3:GetObjectAttributes and s3:GetObject", actions: `["s3:GetObjectAttributes","s3:GetObject"]`, wantErr: s3err.GetAPIError(s3err.ErrAccessDenied)},
+		{name: "s3:GetObjectAttributes and s3:ListBucket", actions: `["s3:GetObjectAttributes","s3:ListBucket"]`, wantErr: s3err.GetAPIError(s3err.ErrNoSuchKey)},
+		{name: "s3:GetObjectVersionAttributes and s3:ListBucket", actions: `["s3:GetObjectVersionAttributes","s3:ListBucket"]`, versionId: versionId, wantErr: s3err.GetAPIError(s3err.ErrNoSuchKey)},
+		{name: "s3:GetObjectAttributes and s3:ListBucket, with versionId", actions: `["s3:GetObjectAttributes","s3:ListBucket"]`, versionId: versionId, wantErr: s3err.GetAPIError(s3err.ErrAccessDenied)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := fmt.Sprintf(`{"Statement":[{"Effect":"Allow","Principal":{"AWS":"user"},"Action":%s,"Resource":["arn:aws:s3:::bucket","arn:aws:s3:::bucket/object"]}]}`, tt.actions)
+			be := &BackendMock{
+				GetObjectAttributesFunc: func(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
+					return s3response.GetObjectAttributesResponse{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+				},
+				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+					return []byte(policy), nil
+				},
+				NormalizeObjectKeyFunc: func(bucket, object string) string {
+					return object
+				},
+			}
+
+			ctrl := S3ApiController{
+				be: be,
+			}
+
+			var queries map[string]string
+			if tt.versionId != "" {
+				queries = map[string]string{
+					"versionId": tt.versionId,
+				}
+			}
+
+			response := &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: "root",
+				},
+			}
+			if errors.Is(tt.wantErr, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+				response.Headers = map[string]*string{
+					"x-amz-version-id": nil,
+				}
+			}
+
+			testController(
+				t,
+				ctrl.GetObjectAttributes,
+				response,
+				tt.wantErr,
 				ctxInputs{
 					locals: accessDeniedLocals,
 					headers: map[string]string{

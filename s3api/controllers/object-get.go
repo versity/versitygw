@@ -370,6 +370,7 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	attributesAction, readAction := auth.ObjectAttributesActions(versionId)
 	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionRead,
@@ -377,7 +378,7 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 		Acc:             acct,
 		Bucket:          bucket,
 		Object:          key,
-		Actions:         auth.ObjectAttributesActions(versionId),
+		Actions:         []auth.Action{attributesAction},
 		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
@@ -431,6 +432,26 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 			MaxParts:             maxParts,
 			VersionId:            &versionId,
 		})
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		// AWS reports a missing object as NoSuchKey only to a caller
+		// allowed to list the bucket, and as AccessDenied otherwise.
+		listErr := c.verifyAccess(ctx, auth.AccessOptions{
+			Acl:             parsedAcl,
+			AclPermission:   auth.PermissionRead,
+			IsRoot:          isRoot,
+			Acc:             acct,
+			Bucket:          bucket,
+			Actions:         []auth.Action{auth.ListBucketAction},
+			IsPublicRequest: isPublicBucket,
+		})
+		if listErr != nil {
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, listErr
+		}
+	}
 	if err != nil {
 		headers := map[string]*string{
 			"x-amz-version-id": res.VersionId,
@@ -440,6 +461,24 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 		}
 		return &Response{
 			Headers: headers,
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = c.verifyAccess(ctx, auth.AccessOptions{
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Object:          key,
+		Actions:         []auth.Action{readAction},
+		IsPublicRequest: isPublicBucket,
+	})
+	if err != nil {
+		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},

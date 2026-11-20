@@ -1566,6 +1566,58 @@ func AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 	})
 }
 
+func AccessControl_GetObjectAttributes_missing_object(s *S3Conf) error {
+	testName := "AccessControl_GetObjectAttributes_missing_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		resource := fmt.Sprintf(`["arn:aws:s3:::%s","arn:aws:s3:::%s/*"]`, bucket, bucket)
+		userClient := s.getUserClient(testuser)
+
+		getObjectAttributes := func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+				Bucket:           &bucket,
+				Key:              &obj,
+				ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesEtag},
+			})
+			cancel()
+			return err
+		}
+
+		// Without s3:ListBucket a missing object is AccessDenied
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectAttributes"`, resource)
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		if err := checkApiErr(getObjectAttributes(), s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectAttributes","s3:GetObject"]`, resource)
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		if err := checkApiErr(getObjectAttributes(), s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		// With s3:ListBucket it is NoSuchKey, even without s3:GetObject
+		policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectAttributes","s3:ListBucket"]`, resource)
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		return checkSdkApiErr(getObjectAttributes(), "NoSuchKey")
+	})
+}
+
 // AccessControl_bucket_policy_condition_ip_allow covers a bucket-policy
 // Allow statement scoped by an IpAddress Condition matching the caller's
 // real source IP: 0.0.0.0/0 matches any IPv4 address, so this exercises

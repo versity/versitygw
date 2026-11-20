@@ -368,10 +368,11 @@ func ObjectUploadActions(tagging, legalHold, lockMode, retainUntilDate string) [
 // authorized as. Reading an object's attributes takes read access to the
 // object itself too: s3:GetObjectAttributes with s3:GetObject, or
 // s3:GetObjectVersionAttributes with s3:GetObjectVersion for a request
-// naming a version.
-func ObjectAttributesActions(versionId string) []Action {
+// naming a version. As in AWS, the attributes action is checked before the
+// object is looked up and the read action only once the object exists.
+func ObjectAttributesActions(versionId string) (attributes, read Action) {
 	if versionId != "" {
-		return []Action{GetObjectVersionAttributesAction, GetObjectVersionAction}
+		return GetObjectVersionAttributesAction, GetObjectVersionAction
 	}
-	return []Action{GetObjectAttributesAction, GetObjectAction}
+	return GetObjectAttributesAction, GetObjectAction
 }
