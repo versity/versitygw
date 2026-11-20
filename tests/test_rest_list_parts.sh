@@ -72,13 +72,13 @@ source ./tests/setup.sh
     etags+=("$output")
   done
 
-  run list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 0 1 "${etags[0]}" "${sizes[0]}"
+  run list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 0 1 1 "${etags[0]}" "${sizes[0]}"
   assert_success
 
-  run list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 2 1 3 "${etags[1]}" "${sizes[1]}" "${etags[2]}" "${sizes[2]}"
+  run list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 2 1 3 2 "${etags[1]}" "${sizes[1]}" 3 "${etags[2]}" "${sizes[2]}"
   assert_success
 
-  run list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 2 3 4 "${etags[3]}" "${sizes[3]}"
+  run list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 2 3 4 4 "${etags[3]}" "${sizes[3]}"
   assert_success
 
   run list_parts_check_with_marker_and_max_parts "$bucket_name" "$file_name" "$upload_id" 1 4 0
