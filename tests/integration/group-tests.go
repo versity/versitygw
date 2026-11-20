@@ -2443,6 +2443,7 @@ func TestUnsignedStreaminPayloadTrailer(ts *TestState) {
 		ts.Run(UnsignedStreamingPayloadTrailer_multiple_checksum_headers)
 		ts.Run(UnsignedStreamingPayloadTrailer_sdk_algo_and_trailer_mismatch)
 		ts.Run(UnsignedStreamingPayloadTrailer_incomplete_body)
+		ts.Run(UnsignedStreamingPayloadTrailer_trailer_line_too_long)
 		ts.Run(UnsignedStreamingPayloadTrailer_aborted_connection)
 		ts.Run(UnsignedStreamingPayloadTrailer_invalid_chunk_size)
 		ts.Run(UnsignedStreamingPayloadTrailer_content_length_payload_size_mismatch)
@@ -4168,6 +4169,7 @@ func GetIntTests() IntTests {
 		"UnsignedStreamingPayloadTrailer_multiple_checksum_headers":                        UnsignedStreamingPayloadTrailer_multiple_checksum_headers,
 		"UnsignedStreamingPayloadTrailer_sdk_algo_and_trailer_mismatch":                    UnsignedStreamingPayloadTrailer_sdk_algo_and_trailer_mismatch,
 		"UnsignedStreamingPayloadTrailer_incomplete_body":                                  UnsignedStreamingPayloadTrailer_incomplete_body,
+		"UnsignedStreamingPayloadTrailer_trailer_line_too_long":                            UnsignedStreamingPayloadTrailer_trailer_line_too_long,
 		"UnsignedStreamingPayloadTrailer_invalid_chunk_size":                               UnsignedStreamingPayloadTrailer_invalid_chunk_size,
 		"UnsignedStreamingPayloadTrailer_content_length_payload_size_mismatch":             UnsignedStreamingPayloadTrailer_content_length_payload_size_mismatch,
 		"UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme":            UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme,

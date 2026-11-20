@@ -51,6 +51,11 @@ var (
 // into the caller's buffer. It only keeps bounded header/trailer parsing state
 // and a few counters, so a large client-declared chunk does not become a large
 // allocation in the gateway.
+//
+// Its memory use does not grow with the body, valid or not: framing lines
+// (chunk sizes and the trailer header) are parsed in place in the maxHeaderSize
+// read buffer and cannot outgrow it. Past its creation, the reader allocates
+// only a few small values, once, to check the trailing checksum.
 type UnsignedChunkReader struct {
 	reader         *bufio.Reader
 	checksumType   checksumType
@@ -233,14 +238,18 @@ func (ucr *UnsignedChunkReader) Read(p []byte) (int, error) {
 		}
 	}
 
-	debuglogger.Infof("Read:\n  buffer_size=%v\n  bytes_returned_this_read=%v\n  decoded_bytes_returned_total=%v\n  current_chunk_left_for_next_read=%v\n  need_chunk_end_for_next_read=%v\n  current_chunk_number=%v\n  declared_chunk_bytes=%v",
-		len(p),
-		n,
-		ucr.decodedBytesReturned(),
-		ucr.chunkDataLeft,
-		ucr.needChunkEnd,
-		ucr.lastChunkNumber,
-		ucr.dataRead)
+	// Checked here rather than left to Infof: its arguments escape, so the
+	// call would allocate on every Read even with debug logging disabled.
+	if debuglogger.IsDebugEnabled() {
+		debuglogger.Infof("Read:\n  buffer_size=%v\n  bytes_returned_this_read=%v\n  decoded_bytes_returned_total=%v\n  current_chunk_left_for_next_read=%v\n  need_chunk_end_for_next_read=%v\n  current_chunk_number=%v\n  declared_chunk_bytes=%v",
+			len(p),
+			n,
+			ucr.decodedBytesReturned(),
+			ucr.chunkDataLeft,
+			ucr.needChunkEnd,
+			ucr.lastChunkNumber,
+			ucr.dataRead)
+	}
 
 	return n, nil
 }
@@ -286,16 +295,19 @@ func (ucr *UnsignedChunkReader) handleExcessChunkData() error {
 }
 
 // Reads and validates the bytes provided from the underlying io.Reader
+//
+// It runs at least once per chunk, so the logs below take a copy of data: were
+// data itself logged, it would escape and every call would allocate it.
 func (ucr *UnsignedChunkReader) readAndSkip(data ...byte) error {
 	for i, d := range data {
 		b, err := ucr.reader.ReadByte()
 		if err != nil {
-			debuglogger.Logf("unsigned chunk reader failed to read expected byte %d of delimiter %q: expected %q, err: %v", i+1, data, d, err)
+			debuglogger.Logf("unsigned chunk reader failed to read expected byte %d of delimiter %q: expected %q, err: %v", i+1, string(data), d, err)
 			return s3err.GetAPIError(s3err.ErrIncompleteBody)
 		}
 
 		if b != d {
-			debuglogger.Logf("unsigned chunk reader delimiter mismatch at byte %d of %q: expected %q, got %q", i+1, data, d, b)
+			debuglogger.Logf("unsigned chunk reader delimiter mismatch at byte %d of %q: expected %q, got %q", i+1, string(data), d, b)
 			return s3err.GetAPIError(s3err.ErrIncompleteBody)
 		}
 	}
@@ -305,16 +317,24 @@ func (ucr *UnsignedChunkReader) readAndSkip(data ...byte) error {
 
 // Extracts the chunk size from the payload
 func (ucr *UnsignedChunkReader) extractChunkSize() (int64, error) {
-	line, err := ucr.readChunkSizeLine()
+	line, err := ucr.readLine()
 	if err != nil {
 		debuglogger.Logf("unsigned chunk reader failed to read chunk size line for chunk %v: %v", ucr.chunkNumber+1, err)
+		return 0, err
+	}
+
+	// The line lives in the read buffer, so it is parsed before the '\n' is
+	// read. Both failures are reported the same way, so their order does not
+	// change the result.
+	chunkSize, parseErr := strconv.ParseInt(string(bytes.TrimSpace(line)), 16, 64)
+	if parseErr != nil || chunkSize < 0 {
+		debuglogger.Logf("unsigned chunk reader failed to parse chunk %v size %q as non-negative hexadecimal int64: %v", ucr.chunkNumber+1, line, parseErr)
 		return 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
 	}
 
-	chunkSize, err := strconv.ParseInt(line, 16, 64)
-	if err != nil || chunkSize < 0 {
-		debuglogger.Logf("unsigned chunk reader failed to parse chunk %v size %q as non-negative hexadecimal int64: %v", ucr.chunkNumber+1, line, err)
-		return 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
+	if err := ucr.readAndSkip('\n'); err != nil {
+		debuglogger.Logf("unsigned chunk reader chunk %v size header is not followed by \\n after \\r: %v", ucr.chunkNumber+1, err)
+		return 0, err
 	}
 	ucr.chunkNumber++
 
@@ -327,40 +347,38 @@ func (ucr *UnsignedChunkReader) extractChunkSize() (int64, error) {
 	ucr.lastChunkSize = chunkSize
 	ucr.seenChunk = true
 
-	debuglogger.Infof("chunk size extracted: %v", chunkSize)
+	// guarded for the same reason as the log at the end of Read
+	if debuglogger.IsDebugEnabled() {
+		debuglogger.Infof("chunk size extracted: %v", chunkSize)
+	}
 
 	return chunkSize, nil
 }
 
-func (ucr *UnsignedChunkReader) readChunkSizeLine() (string, error) {
-	var line []byte
-	for {
-		// ReadSlice lets normal headers use bufio's internal buffer. The append
-		// path only handles split or oversized headers and is bounded by
-		// maxHeaderSize, so malformed headers cannot grow memory unboundedly.
-		part, err := ucr.reader.ReadSlice('\r')
-		line = append(line, part...)
-		if len(line) > maxHeaderSize {
-			debuglogger.Logf("unsigned chunk reader chunk %v size header exceeds maximum allowed size: header_len=%v, header_limit=%v", ucr.chunkNumber+1, len(line), maxHeaderSize)
-			return "", s3err.GetAPIError(s3err.ErrIncompleteBody)
-		}
-		if err == nil {
-			break
-		}
-		if errors.Is(err, bufio.ErrBufferFull) {
-			continue
-		}
-		debuglogger.Logf("unsigned chunk reader failed while reading chunk %v size header before \\r delimiter: %v", ucr.chunkNumber+1, err)
-		return "", err
+// readLine reads a framing line, either a chunk-size line or the trailer
+// header, up to its terminating '\r', and returns it without the '\r'. Checking
+// the '\n' that follows is left to the caller.
+//
+// The line is returned in place from the read buffer, so reading it never
+// allocates, and it has to fit there: a line that fills all maxHeaderSize bytes
+// of the buffer without a '\r' is rejected, rather than collected somewhere
+// larger. This is what keeps a client that sends a never-ending line from
+// growing the gateway's memory.
+//
+// The returned slice is only valid until the next read from ucr.reader, so the
+// caller must be done with it before reading the '\n'.
+func (ucr *UnsignedChunkReader) readLine() ([]byte, error) {
+	line, err := ucr.reader.ReadSlice('\r')
+	if errors.Is(err, bufio.ErrBufferFull) {
+		debuglogger.Logf("unsigned chunk reader framing line exceeds the maximum allowed size: no \\r within %v bytes", maxHeaderSize)
+		return nil, s3err.GetAPIError(s3err.ErrIncompleteBody)
 	}
-
-	err := ucr.readAndSkip('\n')
 	if err != nil {
-		debuglogger.Logf("unsigned chunk reader chunk %v size header is not followed by \\n after \\r: %v", ucr.chunkNumber+1, err)
-		return "", err
+		debuglogger.Logf("unsigned chunk reader failed to read framing line up to its \\r delimiter after %v bytes: %v", len(line), err)
+		return nil, s3err.GetAPIError(s3err.ErrIncompleteBody)
 	}
 
-	return strings.TrimSpace(string(line)), nil
+	return line[:len(line)-1], nil
 }
 
 // isValidChunkSize checks if the parsed chunk size is valid
@@ -383,84 +401,83 @@ func (ucr *UnsignedChunkReader) isValidChunkSize(size int64) bool {
 	return true
 }
 
-// Reads and validates the trailer at the end
+// Reads and validates the trailer that follows the final zero-sized chunk:
+// either just "\r\n" when no trailing header is sent, or a single
+// "<checksum-header>:<checksum>\r\n" line followed by the closing "\r\n".
+//
+// The header line is read like a chunk-size line, in place and bounded by the
+// read buffer, so a trailer that never ends is rejected once the buffer fills
+// instead of being buffered in memory.
 func (ucr *UnsignedChunkReader) readTrailer() error {
-	var trailerBuffer bytes.Buffer
-	var hasChecksum bool
-
-	for {
-		v, err := ucr.reader.ReadByte()
-		if err != nil {
-			debuglogger.Logf("unsigned chunk reader failed to read trailer byte after final chunk: %v", err)
-			return s3err.GetAPIError(s3err.ErrIncompleteBody)
-		}
-		if v != '\r' {
-			hasChecksum = true
-			trailerBuffer.WriteByte(v)
-			continue
-		}
-
-		if !hasChecksum {
-			// in case the payload doesn't contain trailer
-			// the first 2 bytes(\r\n) have been read
-			// only read the last byte: \n
-			err := ucr.readAndSkip('\n')
-			if err != nil {
-				debuglogger.Logf("unsigned chunk reader empty trailer terminator is incomplete: expected final \\n after \\r: %v", err)
-				return s3err.GetAPIError(s3err.ErrIncompleteBody)
-			}
-
-			break
-		}
-
-		var tmp [3]byte
-		_, err = io.ReadFull(ucr.reader, tmp[:])
-		if err != nil {
-			debuglogger.Logf("unsigned chunk reader trailer delimiter is incomplete after trailer header %q: expected \\n\\r\\n, err: %v", trailerBuffer.String(), err)
-			return s3err.GetAPIError(s3err.ErrIncompleteBody)
-		}
-		if !bytes.Equal(tmp[:], trailerDelim) {
-			debuglogger.Logf("unsigned chunk reader trailer delimiter mismatch after trailer header %q: expected \\n\\r\\n, got %q", trailerBuffer.String(), tmp[:])
-			return s3err.GetAPIError(s3err.ErrIncompleteBody)
-		}
-		break
+	line, err := ucr.readLine()
+	if err != nil {
+		debuglogger.Logf("unsigned chunk reader failed to read trailer header after final chunk: %v", err)
+		return err
 	}
 
-	// Parse the trailer
-	trailerHeader := trailerBuffer.String()
-	trailerHeader = strings.TrimSpace(trailerHeader)
-	if trailerHeader == "" {
-		if ucr.checksumType != "" {
-			debuglogger.Logf("unsigned chunk reader expected trailing checksum %s, but final trailer header is empty", ucr.checksumType)
-			return s3err.GetAPIError(s3err.ErrMalformedTrailer)
-		}
+	// The line lives in the read buffer, so everything needed from it is taken
+	// before the terminator is read. The terminator is still checked first, so
+	// a body cut short is reported as such whatever its trailer holds.
+	header := bytes.TrimSpace(line)
+	hasHeader := len(header) != 0
+	var checksum string
+	var parseErr error
+	if hasHeader {
+		checksum, parseErr = ucr.parseTrailerHeader(header)
+	} else if ucr.checksumType != "" {
+		debuglogger.Logf("unsigned chunk reader expected trailing checksum %s, but final trailer header is empty", ucr.checksumType)
+		parseErr = s3err.GetAPIError(s3err.ErrMalformedTrailer)
+	}
 
+	if len(line) == 0 {
+		// No trailer was sent: the '\r' just read opened the closing "\r\n",
+		// so only its '\n' is left.
+		err = ucr.readAndSkip('\n')
+	} else {
+		err = ucr.readAndSkip(trailerDelim...)
+	}
+	if err != nil {
+		debuglogger.Logf("unsigned chunk reader trailer terminator is incomplete: %v", err)
+		return err
+	}
+
+	if parseErr != nil {
+		return parseErr
+	}
+	if !hasHeader {
 		return nil
-	}
-	trailerHeaderParts := strings.Split(trailerHeader, ":")
-	if len(trailerHeaderParts) != 2 {
-		debuglogger.Logf("unsigned chunk reader malformed trailer header %q: expected exactly one ':' separator, got %v parts", trailerHeader, len(trailerHeaderParts))
-		return s3err.GetAPIError(s3err.ErrMalformedTrailer)
-	}
-
-	checksumKey := checksumType(trailerHeaderParts[0])
-	checksum := trailerHeaderParts[1]
-
-	if !checksumKey.isValid() {
-		debuglogger.Logf("unsigned chunk reader malformed trailer header %q: unsupported checksum key %q", trailerHeader, checksumKey)
-		return s3err.GetAPIError(s3err.ErrMalformedTrailer)
-	}
-
-	if checksumKey != ucr.checksumType {
-		debuglogger.Logf("unsigned chunk reader trailer checksum type mismatch: expected %q from x-amz-trailer, got %q in trailer header", ucr.checksumType, checksumKey)
-		return s3err.GetAPIError(s3err.ErrMalformedTrailer)
 	}
 
 	ucr.parsedChecksum = checksum
-	debuglogger.Infof("parsed the trailing header:%s:%s", checksumKey, checksum)
+	debuglogger.Infof("parsed the trailing header:%s:%s", ucr.checksumType, checksum)
 
 	// Validate checksum
 	return ucr.validateChecksum()
+}
+
+// parseTrailerHeader parses a trimmed, non-empty trailer header line and
+// returns the checksum it carries. The header must be exactly one
+// "<checksum-header>:<checksum>" pair, naming the algorithm x-amz-trailer
+// announced.
+func (ucr *UnsignedChunkReader) parseTrailerHeader(header []byte) (string, error) {
+	key, checksum, found := bytes.Cut(header, []byte{':'})
+	if !found || bytes.IndexByte(checksum, ':') != -1 {
+		debuglogger.Logf("unsigned chunk reader malformed trailer header %q: expected exactly one ':' separator", header)
+		return "", s3err.GetAPIError(s3err.ErrMalformedTrailer)
+	}
+
+	checksumKey := checksumType(key)
+	if !checksumKey.isValid() {
+		debuglogger.Logf("unsigned chunk reader malformed trailer header %q: unsupported checksum key %q", header, key)
+		return "", s3err.GetAPIError(s3err.ErrMalformedTrailer)
+	}
+
+	if checksumKey != ucr.checksumType {
+		debuglogger.Logf("unsigned chunk reader trailer checksum type mismatch: expected %q from x-amz-trailer, got %q in trailer header", ucr.checksumType, key)
+		return "", s3err.GetAPIError(s3err.ErrMalformedTrailer)
+	}
+
+	return string(checksum), nil
 }
 
 // Validates the trailing checksum sent at the end
