@@ -39,6 +39,7 @@ var (
 	nometa               bool
 	forceNoTmpFile       bool
 	inheritDefaultACL    bool
+	tmpSubdirs           int
 	forceNoCopyFileRange bool
 	fsync                bool
 	forceNoObjLockFile   bool
@@ -140,6 +141,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_DISABLE_OTMP"},
 				Destination: &forceNoTmpFile,
 			},
+			&cli.IntFlag{
+				Name:        "tmp-subdirs",
+				Usage:       "create named temp files in this many .sgwtmp subdirectories to reduce directory contention when O_TMPFILE is not used (0 disables, max 256)",
+				EnvVars:     []string{"VGW_POSIX_TMP_SUBDIRS"},
+				Destination: &tmpSubdirs,
+			},
 			&cli.BoolFlag{
 				Name:        "inherit-default-acl",
 				Usage:       "new objects inherit the default ACL of their directory, whose group and other permissions --file-perms then limits instead of setting (needs O_TMPFILE, Linux only)",
@@ -221,6 +228,10 @@ func runPosix(ctx *cli.Context) error {
 		return fmt.Errorf("concurrency must be positive, got %d", actionsConcurrency)
 	}
 
+	if tmpSubdirs < 0 || tmpSubdirs > posix.MaxTmpSubdirs {
+		return fmt.Errorf("tmp-subdirs must be within 0-%d, got %d", posix.MaxTmpSubdirs, tmpSubdirs)
+	}
+
 	opts := posix.PosixOpts{
 		ChownUID:             chownuid,
 		ChownGID:             chowngid,
@@ -228,6 +239,7 @@ func runPosix(ctx *cli.Context) error {
 		VersioningDir:        versioningDir,
 		ForceNoTmpFile:       forceNoTmpFile,
 		InheritDefaultACL:    inheritDefaultACL,
+		TmpSubdirs:           tmpSubdirs,
 		ForceNoCopyFileRange: forceNoCopyFileRange,
 		Fsync:                fsync,
 		ForceNoObjLockFile:   forceNoObjLockFile,

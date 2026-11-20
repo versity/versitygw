@@ -124,7 +124,7 @@ kill $GW_HTTPS_PID
 ECHO "Running the sdk test over http against the versioning-enabled gateway"
 # run server in background versioning-enabled
 # port: 7072
-GOCOVERDIR=/tmp/versioning.covdata ./versitygw -p :7072 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG --versioning-dir /tmp/versioningdir /tmp/gw &
+GOCOVERDIR=/tmp/versioning.covdata ./versitygw -p :7072 -a user -s pass --iam-dir /tmp/gw posix $SIDECAR_FLAG --disableotmp --tmp-subdirs 4 --versioning-dir /tmp/versioningdir /tmp/gw &
 GW_VS_PID=$!
 
 # wait a second for server to start up

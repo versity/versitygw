@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -104,6 +105,11 @@ type Posix struct {
 	// fallocUnsupported holds bucket paths whose filesystem rejected
 	// fallocate; per path since buckets can be on different filesystems.
 	fallocUnsupported sync.Map
+
+	// tmpSubdirs is PosixOpts.TmpSubdirs.
+	tmpSubdirs int
+	// tmpSubdirSeq picks temp subdirectories round-robin.
+	tmpSubdirSeq atomic.Uint64
 
 	// forceNoCopyFileRange is a flag to disable the use of io.Copy to
 	// reassemble multipart upload parts, which uses copy_file_range on
@@ -301,6 +307,10 @@ type PosixOpts struct {
 	// has no effect when O_TMPFILE is disabled or not supported, or outside
 	// Linux.
 	InheritDefaultACL bool
+	// TmpSubdirs creates named temp files in this many subdirectories of
+	// .sgwtmp, so concurrent creates do not contend for one directory lock.
+	// 0 disables it. No effect when O_TMPFILE is used.
+	TmpSubdirs int
 	// ForceNoCopyFileRange disables the use of io.Copy for multipart uploads parts
 	ForceNoCopyFileRange bool
 	// Fsync flushes each new object's data, metadata and directory entries
@@ -408,6 +418,11 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 
 	if opts.SideCarDir != "" && strings.HasPrefix(opts.SideCarDir, rootdir) {
 		return nil, fmt.Errorf("sidecar directory cannot be inside the gateway root directory")
+	}
+
+	if opts.TmpSubdirs < 0 || opts.TmpSubdirs > MaxTmpSubdirs {
+		return nil, fmt.Errorf("temp subdirs %d out of range [0, %d]",
+			opts.TmpSubdirs, MaxTmpSubdirs)
 	}
 
 	// A storer that keeps metadata on the object files (xattr) resolves
@@ -522,6 +537,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		forceNoTmpFile:       opts.ForceNoTmpFile,
 		inheritDefaultACL:    inheritDefaultACL,
 		fsync:                opts.Fsync,
+		tmpSubdirs:           opts.TmpSubdirs,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
 		objectLockMode:       objectLockMode,
 		enableODirect:        opts.EnableODirect,
@@ -1125,6 +1141,30 @@ func (p *Posix) removePartialBucket(bucket string) {
 			debuglogger.Logf("failed to remove partially created bucket version directory (%q): %v", bucket, err)
 		}
 	}
+}
+
+// MaxTmpSubdirs is the upper bound of PosixOpts.TmpSubdirs.
+const MaxTmpSubdirs = 256
+
+// tmpSubdir returns the subdirectory of .sgwtmp dir for the next temp file.
+// Subdirectories are only removed with their bucket, so a create never races
+// the removal of an empty one.
+func (p *Posix) tmpSubdir(dir string) string {
+	if p.tmpSubdirs <= 1 {
+		return dir
+	}
+	n := p.tmpSubdirSeq.Add(1) % uint64(p.tmpSubdirs)
+	return filepath.Join(dir, strconv.FormatUint(n, 10))
+}
+
+// partTmpDir returns where a part of an upload in objdir makes a named temp
+// file: the bucket's .sgwtmp when temp subdirectories are on, so the part
+// spreads over them like other uploads, or else objdir.
+func (p *Posix) partTmpDir(bucket, objdir string) string {
+	if p.tmpSubdirs > 1 {
+		return p.ObjectPath(bucket, MetaTmpDir)
+	}
+	return p.ObjectPath(bucket, objdir)
 }
 
 // mkdirAll is backend.MkdirAll with this backend's directory permissions and
@@ -4018,8 +4058,8 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 
 	partPath := filepath.Join(mpPath, fmt.Sprintf("%v", *part))
 
-	f, err := p.openTmpFile(p.ObjectPath(bucket, objdir),
-		bucket, partPath, length, acct, doFalloc, odirectAllowed)
+	f, err := p.openTmpFileIn(p.ObjectPath(bucket, objdir), p.partTmpDir(bucket, objdir),
+		bucket, partPath, length, acct, doFalloc, false, odirectAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(r)
@@ -4479,8 +4519,8 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, err
 	}
 
-	f, err := p.openTmpFile(p.ObjectPath(*upi.Bucket, objdir),
-		*upi.Bucket, partPath, length, acct, doFalloc, odirectNotAllowed)
+	f, err := p.openTmpFileIn(p.ObjectPath(*upi.Bucket, objdir), p.partTmpDir(*upi.Bucket, objdir),
+		*upi.Bucket, partPath, length, acct, doFalloc, false, odirectNotAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
