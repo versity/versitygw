@@ -973,21 +973,16 @@ func GetInt64(n *int64) int64 {
 
 // ValidateCopySource parses and validates the copy-source of be
 func ValidateCopySource(input string, be backend.Backend) error {
-	copysource, err := url.QueryUnescape(input)
+	bucket, object, _, err := backend.ParseCopySource(input)
 	if err != nil {
-		debuglogger.Logf("invalid copy source encoding: %s", input)
-		return s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, input)
+		debuglogger.Logf("invalid copy source %q: %v", input, err)
+		return err
 	}
 
-	bucket, rest, _ := strings.Cut(copysource, "/")
 	if !IsValidBucketName(bucket) {
 		debuglogger.Logf("invalid copy source bucket: %s", bucket)
 		return s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, input)
 	}
-
-	// cut till the versionId as it's the only query param
-	// that is recognized in copy source
-	object, _, _ := strings.Cut(rest, "?versionId=")
 
 	if !IsObjectNameValid(object, be) {
 		debuglogger.Logf("invalid copy source object: %s", object)

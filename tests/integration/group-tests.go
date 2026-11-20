@@ -431,6 +431,7 @@ func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_long_metadata)
 	ts.Run(CopyObject_copy_source_starting_with_slash)
 	ts.Run(CopyObject_invalid_copy_source)
+	ts.Run(CopyObject_copy_source_encoded_version_id_separator)
 	ts.Run(CopyObject_non_existing_dir_object)
 	ts.Run(CopyObject_should_copy_meta_props)
 	ts.Run(CopyObject_should_not_copy_website_redirect_without_user_metadata)
@@ -549,6 +550,7 @@ func TestUploadPartCopy(ts *TestState) {
 	ts.Run(UploadPartCopy_incorrect_object_key)
 	ts.Run(UploadPartCopy_invalid_part_number)
 	ts.Run(UploadPartCopy_invalid_copy_source)
+	ts.Run(UploadPartCopy_copy_source_encoded_version_id_separator)
 	ts.Run(UploadPartCopy_non_existing_source_bucket)
 	ts.Run(UploadPartCopy_non_existing_source_object_key)
 	ts.Run(UploadPartCopy_success)
@@ -2102,6 +2104,14 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_user_PutBucketAcl_with_policy_access)
 	ts.Run(AccessControl_copy_object_with_starting_slash_for_user)
 	ts.Run(AccessControl_UploadPartCopy_malformed_upload_id_without_source_access)
+	// UploadPartCopy maps to Azure StageBlockFromURL, which Azurite does
+	// not implement.
+	if !ts.conf.azureTests {
+		ts.Run(AccessControl_copy_source_version_id_explicit_deny)
+	}
+	if ts.conf.versioningEnabled {
+		ts.Run(AccessControl_copy_source_version_needs_get_object_version)
+	}
 	ts.Run(AccessControl_multipart_malformed_upload_id_without_access)
 	ts.Run(AccessControl_PutObject_with_tagging_policy)
 	ts.Run(AccessControl_PutObject_with_legal_hold_policy)
@@ -2199,7 +2209,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_PutObject_conditional_writes_over_delete_marker)
 	// CopyObject action
 	ts.Run(Versioning_CopyObject_invalid_versionId)
-	ts.Run(Versioning_CopyObject_encoded_versionid_separator_invalid_versionId)
+	ts.Run(Versioning_CopyObject_encoded_versionid_separator_stays_in_key)
 	ts.Run(Versioning_CopyObject_success)
 	ts.Run(Versioning_CopyObject_non_existing_version_id)
 	ts.Run(Versioning_CopyObject_from_an_object_version)
@@ -2293,7 +2303,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_Multipart_Upload_conditional_writes_over_delete_marker)
 	ts.Run(Versioning_Multipart_Upload_already_completed)
 	ts.Run(Versioning_UploadPartCopy_invalid_versionId)
-	ts.Run(Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId)
+	ts.Run(Versioning_UploadPartCopy_encoded_versionid_separator_stays_in_key)
 	ts.Run(Versioning_UploadPartCopy_non_existing_versionId)
 	ts.Run(Versioning_UploadPartCopy_from_an_object_version)
 	ts.Run(Versioning_UploadPartCopy_from_a_delete_marker)
@@ -3459,6 +3469,7 @@ func GetIntTests() IntTests {
 		"CopyObject_to_itself_with_new_metadata":                                           CopyObject_to_itself_with_new_metadata,
 		"CopyObject_copy_source_starting_with_slash":                                       CopyObject_copy_source_starting_with_slash,
 		"CopyObject_invalid_copy_source":                                                   CopyObject_invalid_copy_source,
+		"CopyObject_copy_source_encoded_version_id_separator":                              CopyObject_copy_source_encoded_version_id_separator,
 		"CopyObject_non_existing_dir_object":                                               CopyObject_non_existing_dir_object,
 		"CopyObject_should_copy_meta_props":                                                CopyObject_should_copy_meta_props,
 		"CopyObject_should_not_copy_website_redirect_without_user_metadata":                CopyObject_should_not_copy_website_redirect_without_user_metadata,
@@ -3548,6 +3559,7 @@ func GetIntTests() IntTests {
 		"UploadPartCopy_incorrect_object_key":                                              UploadPartCopy_incorrect_object_key,
 		"UploadPartCopy_invalid_part_number":                                               UploadPartCopy_invalid_part_number,
 		"UploadPartCopy_invalid_copy_source":                                               UploadPartCopy_invalid_copy_source,
+		"UploadPartCopy_copy_source_encoded_version_id_separator":                          UploadPartCopy_copy_source_encoded_version_id_separator,
 		"UploadPartCopy_non_existing_source_bucket":                                        UploadPartCopy_non_existing_source_bucket,
 		"UploadPartCopy_non_existing_source_object_key":                                    UploadPartCopy_non_existing_source_object_key,
 		"UploadPartCopy_success":                                                           UploadPartCopy_success,
@@ -3949,6 +3961,8 @@ func GetIntTests() IntTests {
 		"AccessControl_user_PutBucketAcl_with_policy_access":                               AccessControl_user_PutBucketAcl_with_policy_access,
 		"AccessControl_copy_object_with_starting_slash_for_user":                           AccessControl_copy_object_with_starting_slash_for_user,
 		"AccessControl_UploadPartCopy_malformed_upload_id_without_source_access":           AccessControl_UploadPartCopy_malformed_upload_id_without_source_access,
+		"AccessControl_copy_source_version_id_explicit_deny":                               AccessControl_copy_source_version_id_explicit_deny,
+		"AccessControl_copy_source_version_needs_get_object_version":                       AccessControl_copy_source_version_needs_get_object_version,
 		"AccessControl_multipart_malformed_upload_id_without_access":                       AccessControl_multipart_malformed_upload_id_without_access,
 		"AccessControl_PutObject_with_tagging_policy":                                      AccessControl_PutObject_with_tagging_policy,
 		"AccessControl_PutObject_with_legal_hold_policy":                                   AccessControl_PutObject_with_legal_hold_policy,
@@ -4024,7 +4038,7 @@ func GetIntTests() IntTests {
 		"Versioning_PutObject_suspended_null_version_resets_attributes":                    Versioning_PutObject_suspended_null_version_resets_attributes,
 		"Versioning_PutObject_conditional_writes_over_delete_marker":                       Versioning_PutObject_conditional_writes_over_delete_marker,
 		"Versioning_CopyObject_invalid_versionId":                                          Versioning_CopyObject_invalid_versionId,
-		"Versioning_CopyObject_encoded_versionid_separator_invalid_versionId":              Versioning_CopyObject_encoded_versionid_separator_invalid_versionId,
+		"Versioning_CopyObject_encoded_versionid_separator_stays_in_key":                   Versioning_CopyObject_encoded_versionid_separator_stays_in_key,
 		"Versioning_CopyObject_success":                                                    Versioning_CopyObject_success,
 		"Versioning_CopyObject_non_existing_version_id":                                    Versioning_CopyObject_non_existing_version_id,
 		"Versioning_CopyObject_from_an_object_version":                                     Versioning_CopyObject_from_an_object_version,
@@ -4107,7 +4121,7 @@ func GetIntTests() IntTests {
 		"Versioning_Multipart_Upload_conditional_writes_over_delete_marker":                Versioning_Multipart_Upload_conditional_writes_over_delete_marker,
 		"Versioning_Multipart_Upload_already_completed":                                    Versioning_Multipart_Upload_already_completed,
 		"Versioning_UploadPartCopy_invalid_versionId":                                      Versioning_UploadPartCopy_invalid_versionId,
-		"Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId":          Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId,
+		"Versioning_UploadPartCopy_encoded_versionid_separator_stays_in_key":               Versioning_UploadPartCopy_encoded_versionid_separator_stays_in_key,
 		"Versioning_UploadPartCopy_non_existing_versionId":                                 Versioning_UploadPartCopy_non_existing_versionId,
 		"Versioning_UploadPartCopy_from_an_object_version":                                 Versioning_UploadPartCopy_from_an_object_version,
 		"Versioning_UploadPartCopy_from_a_delete_marker":                                   Versioning_UploadPartCopy_from_a_delete_marker,

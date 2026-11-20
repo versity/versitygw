@@ -242,33 +242,47 @@ func ParseCopySourceRange(size int64, acceptRange string) (int64, int64, error) 
 	return startOffset, endOffset - startOffset + 1, nil
 }
 
-// ParseCopySource parses x-amz-copy-source header and returns source bucket,
-// source object, versionId, error respectively
+// ParseCopySource parses the x-amz-copy-source header and returns the source
+// bucket, object key and versionId, in that order. The request validation,
+// the source authorization and the backend all parse the header with it, so
+// the object authorized is the object read.
+//
+// The header is "bucket/key", optionally preceded by a "/" and followed by a
+// "?versionId=" query. It is split at its first "?" before anything is
+// percent-decoded, so an encoded "%3F" is part of the key and never starts
+// the query. The query may only hold a single, non-empty versionId. The
+// bucket and the key are percent-decoded after the split, so "%2F" separates
+// them as "/" does. A header without a key returns an empty key for the
+// caller to reject.
 func ParseCopySource(copySourceHeader string) (string, string, string, error) {
 	if copySourceHeader == "" {
 		return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, copySourceHeader)
 	}
 
-	if copySourceHeader[0] == '/' {
-		copySourceHeader = copySourceHeader[1:]
+	source, query, hasQuery := strings.Cut(strings.TrimPrefix(copySourceHeader, "/"), "?")
+
+	var versionId string
+	if hasQuery {
+		rawVersionId, ok := strings.CutPrefix(query, "versionId=")
+		if !ok || strings.ContainsAny(rawVersionId, "?&") {
+			return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, copySourceHeader)
+		}
+		if rawVersionId == "" {
+			return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEmptyVersionId, "")
+		}
+		var err error
+		versionId, err = url.QueryUnescape(rawVersionId)
+		if err != nil {
+			return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, copySourceHeader)
+		}
 	}
 
-	// URL-decode the entire header before splitting the versionId suffix so the
-	// backend interprets encoded separators the same way as controller
-	// validation. This also preserves encoded bucket/key separators such as
-	// "%2F" from AWS .NET SDK v4 clients.
-	decoded, err := url.QueryUnescape(copySourceHeader)
+	decoded, err := url.QueryUnescape(source)
 	if err != nil {
 		return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, copySourceHeader)
 	}
 
-	decodedSource, versionId, _ := strings.Cut(decoded, "?versionId=")
-
-	srcBucket, srcObject, ok := strings.Cut(decodedSource, "/")
-	if !ok {
-		return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, decodedSource)
-	}
-
+	srcBucket, srcObject, _ := strings.Cut(decoded, "/")
 	return srcBucket, srcObject, versionId, nil
 }
 

@@ -587,6 +587,32 @@ func CopyObject_invalid_copy_source(s *S3Conf) error {
 				copySource:  "bucket/",
 				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, ""),
 			},
+			// invalid query
+			{
+				// empty versionId
+				copySource:  "bucket/obj?versionId=",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEmptyVersionId, ""),
+			},
+			{
+				// versionId without a value
+				copySource:  "bucket/obj?versionId",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/obj?versionId"),
+			},
+			{
+				// a query parameter other than versionId
+				copySource:  "bucket/obj?foo=bar",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/obj?foo=bar"),
+			},
+			{
+				// versionId with another query parameter
+				copySource:  "bucket/obj?versionId=id&foo=bar",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/obj?versionId=id&foo=bar"),
+			},
+			{
+				// an unencoded '?' in the key starts the query
+				copySource:  "bucket/my?obj",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/my?obj"),
+			},
 		} {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
@@ -598,6 +624,64 @@ func CopyObject_invalid_copy_source(s *S3Conf) error {
 			if err := checkApiErr(err, test.expectedErr); err != nil {
 				return err
 			}
+		}
+
+		return nil
+	})
+}
+
+// An encoded "?versionId=" in the copy source is part of the source key: the
+// copy reads the object whose key ends with it, not the object named by the
+// key before it.
+func CopyObject_copy_source_encoded_version_id_separator(s *S3Conf) error {
+	testName := "CopyObject_copy_source_encoded_version_id_separator"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, dstObj := "my-obj", "dst-obj"
+		literalObj := obj + "?versionId="
+
+		_, err := putObjectWithData(100, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		r, err := putObjectWithData(200, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &literalObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			CopySource: getPtr(fmt.Sprintf("%s/%s%%3FversionId%%3D", bucket, obj)),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		defer out.Body.Close()
+
+		body, err := io.ReadAll(out.Body)
+		if err != nil {
+			return err
+		}
+		if sha256.Sum256(body) != r.csum {
+			return fmt.Errorf("expected the copy of %q, instead got another object's data", literalObj)
 		}
 
 		return nil
