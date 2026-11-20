@@ -313,6 +313,76 @@ func (r *dfsBodyReader) Close() error {
 	return r.fs.Release(r.obj)
 }
 
+// minTransferBuf and maxTransferBuf bound the copy buffer used by
+// WriteTo, matching the policy writeBody applies to PUT bodies.
+const (
+	minTransferBuf = 256 * 1024
+	maxTransferBuf = 4 * 1024 * 1024
+)
+
+// WriteTo copies the remaining range through one buffer sized to the
+// object chunk size, instead of letting the transport choose the size
+// of each blocking dfs_read. The HTTP layer copies a response body in
+// transport-sized pieces when the body only implements Read; with a
+// 1 MiB copy buffer a 32 MiB response issues 32 reads instead of
+// thousands. The error contract matches Read: a short read while
+// bytes are still owed latches ErrUnexpectedEOF, and the first
+// positive read result is reported before any error.
+func (r *dfsBodyReader) WriteTo(w io.Writer) (int64, error) {
+	if r.err != nil {
+		return 0, r.err
+	}
+	if r.rem <= 0 {
+		return 0, nil
+	}
+	size := r.rem
+	if size > minTransferBuf {
+		size = r.bufSize()
+	}
+	if size < 1 {
+		size = 1
+	}
+	buf := make([]byte, size)
+	var written int64
+	for r.rem > 0 {
+		n, err := r.Read(buf)
+		if n > 0 {
+			m, werr := w.Write(buf[:n])
+			written += int64(m)
+			if werr != nil {
+				r.err = werr
+				return written, werr
+			}
+			if m != n {
+				r.err = io.ErrShortWrite
+				return written, r.err
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) && r.rem == 0 {
+				return written, nil
+			}
+			return written, err
+		}
+	}
+	return written, nil
+}
+
+// bufSize sizes the WriteTo copy buffer to the object chunk size,
+// clamped to the same bounds as PUT staging buffers. On a sizing
+// error it falls back to the minimum rather than failing the body:
+// the copy loop stays correct at any buffer size.
+func (r *dfsBodyReader) bufSize() int64 {
+	size, err := r.fs.ChunkSize(r.obj)
+	if err != nil || size < minTransferBuf {
+		return minTransferBuf
+	}
+	if size > maxTransferBuf {
+		return maxTransferBuf
+	}
+	return size
+}
+
 func (d *Daos) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 	if awsString(input.VersionId) != "" {
 		return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, awsString(input.VersionId))

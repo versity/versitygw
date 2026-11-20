@@ -33,6 +33,7 @@ type Fake struct {
 	plantBefore   string
 	bytesRead     int64
 	bytesWritten  int64
+	readCalls     int
 	fullOpens     int
 	handles       int
 	maxRead       int
@@ -189,6 +190,7 @@ func (f *Fake) openNode(parent *node, name string, flags int) (Object, error) {
 func (f *Fake) Read(obj Object, buf []byte, off int64) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.readCalls++
 	n := obj.(fakeObj).n
 	if n.dir {
 		return 0, errIsDir
@@ -210,6 +212,15 @@ func (f *Fake) BytesRead() int64 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.bytesRead
+}
+
+// ReadCalls is how many Read calls have been made. Tests use it to
+// prove a copy loop batches storage reads instead of letting the
+// transport choose the read size.
+func (f *Fake) ReadCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.readCalls
 }
 
 func (f *Fake) Write(obj Object, buf []byte, off int64) (int, error) {
@@ -543,6 +554,26 @@ func (f *Fake) SetChunkSize(obj Object, n int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.chunkSizesSet = append(f.chunkSizesSet, n)
+	return nil
+}
+
+// Truncate cuts an object's stored bytes to n. Tests use it to model
+// a body that loses its tail while a reader is open, which Read and
+// WriteTo must surface as ErrUnexpectedEOF.
+func (f *Fake) Truncate(p string, n int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	node, err := f.walk(p, false)
+	if err != nil {
+		return err
+	}
+	if node.dir {
+		return errIsDir
+	}
+	if n < 0 || n > int64(len(node.data)) {
+		n = int64(len(node.data))
+	}
+	node.data = node.data[:n]
 	return nil
 }
 

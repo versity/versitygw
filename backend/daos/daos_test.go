@@ -584,3 +584,158 @@ func TestSuffixRangeOnEmptyObjectIsInvalid(t *testing.T) {
 		t.Fatalf("range = %v", err)
 	}
 }
+
+// countingWriter records the sizes passed to Write, modeling a
+// transport that copies a response body in small pieces.
+type countingWriter struct {
+	sizes []int
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.sizes = append(c.sizes, len(p))
+	return len(p), nil
+}
+
+func TestGetBodyWriteToBatchesReads(t *testing.T) {
+	d, fs := newTest(t)
+	// A 1 MiB object with a 1 MiB chunk size: WriteTo should issue
+	// one read per chunk instead of one per transport-sized piece.
+	const size = 1 << 20
+	body := make([]byte, size)
+	for i := range body {
+		body[i] = byte(i)
+	}
+	fs.SetDefaultChunk(size)
+	put(t, d, "big", string(body), "", nil)
+
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("big"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Body.Close()
+	cw := &countingWriter{}
+	n, err := got.Body.(io.WriterTo).WriteTo(cw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != size {
+		t.Fatalf("wrote %d bytes, want %d", n, size)
+	}
+	if calls := fs.ReadCalls(); calls != 1 {
+		t.Fatalf("Read calls = %d, want 1", calls)
+	}
+	if len(cw.sizes) != 1 || cw.sizes[0] != size {
+		t.Fatalf("write sizes = %v, want one %d", cw.sizes, size)
+	}
+}
+
+func TestGetBodyWriteToSpansRanges(t *testing.T) {
+	d, fs := newTest(t)
+	const size = 1 << 20
+	fs.SetDefaultChunk(size)
+	body := make([]byte, 3*size)
+	put(t, d, "big", string(body), "", nil)
+
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("big"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Body.Close()
+	cw := &countingWriter{}
+	n, err := got.Body.(io.WriterTo).WriteTo(cw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 3*size {
+		t.Fatalf("wrote %d bytes, want %d", n, 3*size)
+	}
+	// rem above the minimum clamps the buffer to the chunk size: one
+	// read per chunk regardless of the transport's buffer.
+	if calls := fs.ReadCalls(); calls != 3 {
+		t.Fatalf("Read calls = %d, want 3", calls)
+	}
+}
+
+func TestGetBodyWriteToSmallGetSkipsChunkQuery(t *testing.T) {
+	d, fs := newTest(t)
+	fs.SetDefaultChunk(1 << 20)
+	put(t, d, "small", "hello", "", nil)
+
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("small"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Body.Close()
+	if calls := len(fs.ChunkSizeCalls()); calls != 0 {
+		t.Fatalf("ChunkSize calls = %d, want 0 for a small body", calls)
+	}
+	cw := &countingWriter{}
+	n, err := got.Body.(io.WriterTo).WriteTo(cw)
+	if err != nil || n != 5 {
+		t.Fatalf("WriteTo = %d, %v", n, err)
+	}
+	if calls := fs.ReadCalls(); calls != 1 {
+		t.Fatalf("Read calls = %d, want 1", calls)
+	}
+}
+
+func TestGetBodyWriteToSurfacesShortRead(t *testing.T) {
+	d, fs := newTest(t)
+	// The object shrinks after GetObject opens it: the copy loop must
+	// report ErrUnexpectedEOF, the same contract Read latches.
+	put(t, d, "vanish", "0123456789", "", nil)
+	fs.SetDefaultChunk(1 << 20)
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("vanish"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Body.Close()
+	if err := fs.Truncate("bucket/vanish", 4); err != nil {
+		t.Fatal(err)
+	}
+	cw := &countingWriter{}
+	_, err = got.Body.(io.WriterTo).WriteTo(cw)
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("err = %v, want ErrUnexpectedEOF", err)
+	}
+	if got := cw.sizes; len(got) != 1 || got[0] != 4 {
+		t.Fatalf("write sizes = %v, want one 4 before the error", got)
+	}
+}
+
+func TestGetBodyWriteToPropagatesWriteError(t *testing.T) {
+	d, _ := newTest(t)
+	put(t, d, "obj", "0123456789", "", nil)
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("obj"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Body.Close()
+	errFail := errors.New("sink failed")
+	n, err := got.Body.(io.WriterTo).WriteTo(failWriter{errFail})
+	if !errors.Is(err, errFail) {
+		t.Fatalf("err = %v, want %v", err, errFail)
+	}
+	if n != 0 {
+		t.Fatalf("wrote %d bytes before failure, want 0", n)
+	}
+}
+
+type failWriter struct{ err error }
+
+func (f failWriter) Write([]byte) (int, error) { return 0, f.err }
