@@ -178,6 +178,60 @@ func (f *dfsFS) openLocked(p string, flags int) (Object, error) {
 	return &dfsObj{fs: f, obj: obj}, nil
 }
 
+// OpenStat opens path and reports its stat from the same lookup by
+// requesting the documented stbuf output, instead of a separate
+// dfs_ostat call on the opened handle.
+func (f *dfsFS) OpenStat(p string, flags int) (Object, Info, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
+	if flags&openCreate != 0 {
+		obj, err := f.openCreate(p, flags)
+		if err != nil {
+			return nil, Info{}, err
+		}
+		info, serr := f.statObjLocked(obj)
+		if serr != nil {
+			f.Release(obj)
+			return nil, Info{}, serr
+		}
+		return obj, info, nil
+	}
+	cpath := C.CString(absPath(p))
+	defer C.free(unsafe.Pointer(cpath))
+	var obj *C.dfs_obj_t
+	var st C.struct_stat
+	rc := C.dfs_lookup(f.dfs, cpath, openMode(flags), &obj, nil, &st)
+	if err := pathErr(p, dfsErrno(rc)); err != nil {
+		return nil, Info{}, err
+	}
+	return &dfsObj{fs: f, obj: obj}, statFromC(&st), nil
+}
+
+// OpenRelStat is OpenStat for a child of an open parent directory.
+func (f *dfsFS) OpenRelStat(parent Object, name string, flags int) (Object, Info, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
+	p := parent.(*dfsObj)
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	var obj *C.dfs_obj_t
+	var st C.struct_stat
+	rc := C.dfs_lookup_rel(f.dfs, p.obj, cname, openMode(flags), &obj, nil, &st)
+	if err := pathErr(name, dfsErrno(rc)); err != nil {
+		return nil, Info{}, err
+	}
+	return &dfsObj{fs: f, obj: obj}, statFromC(&st), nil
+}
+
+// statFromC converts the C stat the lookup calls fill into an Info.
+func statFromC(st *C.struct_stat) Info {
+	return Info{
+		Size:  int64(st.st_size),
+		IsDir: C.versitygw_isdir(st) != 0,
+		Mtime: int64(st.st_mtim.tv_sec),
+	}
+}
+
 func (f *dfsFS) OpenRel(parent Object, name string, flags int) (Object, error) {
 	f.gate.RLock()
 	defer f.gate.RUnlock()
@@ -473,9 +527,11 @@ func (f *dfsFS) readDirObj(obj Object) ([]Info, error) {
 	o := obj.(*dfsObj)
 	var anchor C.daos_anchor_t
 	var out []Info
+	// The batch buffers live outside the enumeration loop: the call
+	// overwrites them in place each round.
+	var dirs [64]C.struct_dirent
+	var stats [64]C.struct_stat
 	for {
-		var dirs [64]C.struct_dirent
-		var stats [64]C.struct_stat
 		nr := C.uint32_t(len(dirs))
 		rc := C.dfs_readdirplus(f.dfs, o.obj, &anchor, &nr, &dirs[0], &stats[0])
 		if err := dfsErrno(rc); err != nil {
@@ -490,7 +546,7 @@ func (f *dfsFS) readDirObj(obj Object) ([]Info, error) {
 				Name: name,
 				// dfs_readdirplus fills only d_name in the dirent;
 				// the type lives in the accompanying struct stat.
-				IsDir: C.versitygw_isdir(&stats[i]) != 0,
+				IsDir: stats[i].st_mode&C.S_IFMT == C.S_IFDIR,
 				Size:  int64(stats[i].st_size),
 				// glibc exposes st_mtime only as a macro; read the
 				// underlying timespec directly.
@@ -525,6 +581,12 @@ func (f *dfsFS) releaseLocked(obj Object) error {
 func (f *dfsFS) StatObj(obj Object) (Info, error) {
 	f.gate.RLock()
 	defer f.gate.RUnlock()
+	return f.statObjLocked(obj)
+}
+
+// statObjLocked is StatObj without taking the read lock. Callers must
+// already hold it.
+func (f *dfsFS) statObjLocked(obj Object) (Info, error) {
 	o := obj.(*dfsObj)
 	var st C.struct_stat
 	if err := dfsErrno(C.dfs_ostat(f.dfs, o.obj, &st)); err != nil {

@@ -878,6 +878,50 @@ func (d *Daos) bucketExists(bucket string) error {
 	return nil
 }
 
+// fsLookupStat is the optional single-call form of opening a path and
+// learning its stat. The cgo seam provides it directly; other seams
+// fall back to a separate stat.
+type fsLookupStat interface {
+	OpenStat(path string, flags int) (Object, Info, error)
+	OpenRelStat(parent Object, name string, flags int) (Object, Info, error)
+}
+
+// lookupStat opens path, returning the handle and its stat. Seams
+// that implement fsLookupStat answer with one lookup that requests
+// the documented stbuf output; the rest combine Open and StatObj.
+func lookupStat(fs FS, path string, flags int) (Object, Info, error) {
+	if ls, ok := fs.(fsLookupStat); ok {
+		return ls.OpenStat(path, flags)
+	}
+	obj, err := fs.Open(path, flags)
+	if err != nil {
+		return nil, Info{}, err
+	}
+	info, serr := fs.StatObj(obj)
+	if serr != nil {
+		fs.Release(obj)
+		return nil, Info{}, serr
+	}
+	return obj, info, nil
+}
+
+// relLookupStat is lookupStat for a child of an open parent.
+func relLookupStat(fs FS, parent Object, name string, flags int) (Object, Info, error) {
+	if ls, ok := fs.(fsLookupStat); ok {
+		return ls.OpenRelStat(parent, name, flags)
+	}
+	obj, err := fs.OpenRel(parent, name, flags)
+	if err != nil {
+		return nil, Info{}, err
+	}
+	info, serr := fs.StatObj(obj)
+	if serr != nil {
+		fs.Release(obj)
+		return nil, Info{}, serr
+	}
+	return obj, info, nil
+}
+
 func (d *Daos) mkdirParents(p string) error {
 	dir := pathDir(p)
 	if dir == "" || dir == "." {

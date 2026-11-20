@@ -17,6 +17,7 @@ package daos
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -139,3 +140,68 @@ func prefixKeys(prefixes []types.CommonPrefix) []string {
 }
 
 func int32ptr(v int32) *int32 { return &v }
+
+func TestListTakesStatFromLookupAndSkipsFullAttrDecode(t *testing.T) {
+	d, fs := newTest(t)
+	for i := 0; i < 20; i++ {
+		put(t, d, fmt.Sprintf("obj-%02d", i), "x", "", nil)
+	}
+	statsBefore := fs.StatCalls()
+	res, err := d.ListObjectsV2(context.Background(), &s3.ListObjectsV2Input{
+		Bucket: backend.GetPtrFromString("bucket"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Contents) != 20 {
+		t.Fatalf("contents = %d", len(res.Contents))
+	}
+	// The fake has no combined lookup, so the fallback issues one
+	// StatObj per entry; a listing must not add a second stat on the
+	// opened child beyond that.
+	if got := fs.StatCalls() - statsBefore; got > 20 {
+		t.Fatalf("StatObj calls = %d, want at most 20", got)
+	}
+	// Each entry reads the packed blob once and nothing else: a
+	// packed-format object answers from one GetXattr.
+	if got := fs.XattrGets("meta.v1"); got != 20 {
+		t.Fatalf("packed reads = %d, want 20", got)
+	}
+	for _, name := range []string{"etag", "content-type", "metadata"} {
+		if got := fs.XattrGets(name); got != 0 {
+			t.Fatalf("legacy %q probes = %d, want 0", name, got)
+		}
+	}
+}
+
+func TestListLegacyEntryProbesOnlyETag(t *testing.T) {
+	d, fs := newTest(t)
+	// Write one object, then strip its packed blob and set the
+	// legacy etag xattr: the pre-packed on-disk format.
+	put(t, d, "legacy", "x", "", nil)
+	if err := fs.SetXattrRaw("bucket/legacy", "etag", []byte(`"abc"`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.RemoveXattrRaw("bucket/legacy", "meta.v1"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := d.ListObjectsV2(context.Background(), &s3.ListObjectsV2Input{
+		Bucket: backend.GetPtrFromString("bucket"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Contents) != 1 || awsString(res.Contents[0].ETag) != `"abc"` {
+		t.Fatalf("contents = %+v", res.Contents)
+	}
+	// The packed probe misses and only the legacy etag is read: one
+	// probe instead of nine.
+	if got := fs.XattrGets("etag"); got != 1 {
+		t.Fatalf("legacy etag probes = %d, want 1", got)
+	}
+	for _, name := range []string{"content-type", "metadata", "content-encoding"} {
+		if got := fs.XattrGets(name); got != 0 {
+			t.Fatalf("legacy %q probes = %d, want 0", name, got)
+		}
+	}
+}

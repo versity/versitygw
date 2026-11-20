@@ -35,6 +35,8 @@ type Fake struct {
 	bytesWritten  int64
 	readCalls     int
 	removedXattrs int
+	statCalls     int
+	xattrGets     map[string]int
 	fullOpens     int
 	handles       int
 	maxRead       int
@@ -230,6 +232,21 @@ func (f *Fake) RemovedXattrs() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.removedXattrs
+}
+
+// StatCalls is how many StatObj calls have been made. Tests use it
+// to prove a listing takes its stat from the enumeration or lookup.
+func (f *Fake) StatCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.statCalls
+}
+
+// XattrGets returns how many GetXattr calls were made per name.
+func (f *Fake) XattrGets(name string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.xattrGets[name]
 }
 
 func (f *Fake) Write(obj Object, buf []byte, off int64) (int, error) {
@@ -490,6 +507,10 @@ func (f *Fake) RemoveXattr(obj Object, name string) error {
 func (f *Fake) GetXattr(obj Object, name string) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.xattrGets == nil {
+		f.xattrGets = map[string]int{}
+	}
+	f.xattrGets[name]++
 	n := obj.(fakeObj).n
 	v, ok := n.xattr[name]
 	if !ok {
@@ -544,6 +565,7 @@ func (f *Fake) Release(Object) error {
 func (f *Fake) StatObj(obj Object) (Info, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.statCalls++
 	return infoOf(obj.(fakeObj).n), nil
 }
 
@@ -564,6 +586,38 @@ func (f *Fake) SetChunkSize(obj Object, n int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.chunkSizesSet = append(f.chunkSizesSet, n)
+	return nil
+}
+
+// SetXattrRaw sets an xattr by path without the object write path.
+// Tests use it to build on-disk states the write path never makes,
+// such as the legacy per-attribute format.
+func (f *Fake) SetXattrRaw(p, name string, val []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, err := f.walk(p, false)
+	if err != nil {
+		return err
+	}
+	if n.dir {
+		return errIsDir
+	}
+	if n.xattr == nil {
+		n.xattr = map[string][]byte{}
+	}
+	n.xattr[name] = val
+	return nil
+}
+
+// RemoveXattrRaw removes an xattr by path, ignoring absence.
+func (f *Fake) RemoveXattrRaw(p, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, err := f.walk(p, false)
+	if err != nil {
+		return err
+	}
+	delete(n.xattr, name)
 	return nil
 }
 

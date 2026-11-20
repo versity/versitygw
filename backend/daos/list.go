@@ -182,28 +182,44 @@ func (r *objResolver) get(objPath string, entry fs.DirEntry) (s3response.Object,
 }
 
 // relSummary opens one entry relative to its parent and reads the packed
-// attributes and stat in two calls. A missing etag means the entry is not
-// an object.
+// attributes, taking the stat from the same lookup. A missing etag means
+// the entry is not an object.
 func (d *Daos) relSummary(parent Object, name string) (string, Info, error) {
-	obj, err := d.fs.OpenRel(parent, name, openRead)
+	obj, info, err := relLookupStat(d.fs, parent, name, openRead)
 	if err != nil {
 		return "", Info{}, err
 	}
 	defer d.fs.Release(obj)
-	info, err := d.fs.StatObj(obj)
-	if err != nil {
-		return "", Info{}, err
-	}
-	etag := ""
-	if m, err := d.loadAttrs(obj); err == nil {
-		etag = m[attrETag]
-	}
+	etag := d.etagOnly(obj)
 	// libdfs reports a nonzero size on a directory (the size of its
 	// internal entry struct); an S3 directory object is always empty.
 	if info.IsDir {
 		info.Size = 0
 	}
 	return etag, info, nil
+}
+
+// etagOnly reads just the object etag. A listing needs only this one
+// field, so on a packed-attribute miss it probes only the legacy etag
+// xattr instead of the full nine-attribute set; an empty answer marks
+// an unmarked directory or a legacy object without an etag.
+func (d *Daos) etagOnly(obj Object) string {
+	raw, err := d.fs.GetXattr(obj, attrPacked)
+	if err == nil && len(raw) > 0 {
+		m, uerr := unmarshalAttrs(raw)
+		if uerr == nil {
+			return m[attrETag]
+		}
+		return ""
+	}
+	if err != nil && !errors.Is(err, errNotExist) {
+		return ""
+	}
+	raw, err = d.fs.GetXattr(obj, attrETag)
+	if err != nil || len(raw) == 0 {
+		return ""
+	}
+	return string(raw)
 }
 
 func maxKeys(v *int32) int32 {
