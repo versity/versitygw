@@ -37,7 +37,7 @@ func TestDaosCommandDoesNotStartWhenOpenFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("command succeeded")
 	}
-	if !strings.Contains(err.Error(), "-tags daos") && !strings.Contains(err.Error(), "dfs ") && !strings.Contains(err.Error(), "open daos") {
+	if !strings.Contains(err.Error(), "-tags daos") && !strings.Contains(err.Error(), "dfs ") && !strings.Contains(err.Error(), "init daos") {
 		t.Fatalf("error %q", err)
 	}
 	if called {
