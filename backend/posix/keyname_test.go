@@ -288,7 +288,7 @@ func TestEncodedKeys(t *testing.T) {
 
 			copyKey := "copy*dst?."
 			_, err = p.CopyObject(ctx, s3response.CopyObjectInput{
-				Bucket: &bucket, Key: &copyKey, CopySource: aws.String(bucket + "/" + "question?.txt"),
+				Bucket: &bucket, Key: &copyKey, CopySource: aws.String(bucket + "/" + "question%3F.txt"),
 				ExpectedBucketOwner: aws.String(""), MetadataDirective: types.MetadataDirectiveCopy,
 			})
 			if err != nil {
@@ -336,7 +336,7 @@ func TestEncodedKeys(t *testing.T) {
 			}
 			_, err = p.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 				Bucket: &bucket, Key: &copyPartKey, UploadId: &mp2.UploadId, PartNumber: aws.Int32(1),
-				CopySource: aws.String(bucket + "/" + "question?.txt"), CopySourceRange: aws.String(""),
+				CopySource: aws.String(bucket + "/" + "question%3F.txt"), CopySourceRange: aws.String(""),
 			})
 			if err != nil {
 				t.Fatalf("upload part copy: %v", err)

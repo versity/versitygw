@@ -1608,6 +1608,12 @@ func TestValidateCopySource(t *testing.T) {
 		{"invalid object name 5", "bucket/.?versionId=smth", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, ".")},
 		{"invalid object name 6", "bucket/foo/../bar", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "foo/../bar")},
 		{"invalid object name 7", "bucket/", true, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "")},
+		{"invalid object name 8", "bucket/safe%3FversionId%3D..%2f..%2fsecret.txt", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, "safe?versionId=../../secret.txt")},
+		// invalid query
+		{"empty versionId", "bucket/object?versionId=", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEmptyVersionId, "")},
+		{"invalid copy source URI 1", "bucket/object?foo=bar", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/object?foo=bar")},
+		{"invalid copy source URI 2", "bucket/object?versionId", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/object?versionId")},
+		{"invalid copy source URI 3", "bucket/obj?ect", false, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/obj?ect")},
 		// success
 		{"no error 1", "bucket/object", false, nil},
 		{"no error 2", "bucket/object/key", false, nil},
@@ -1616,6 +1622,8 @@ func TestValidateCopySource(t *testing.T) {
 		{"no error 5", "bucket/foo/bar/baz?versionId=01BX5ZZKBKACTAV9WEVGEMMVRZ", false, nil},
 		{"no error 6", "bucket/../foo", true, nil},
 		{"no error 7", "bucket/.?versionId=smth", true, nil},
+		{"no error 8", "bucket/object%3FversionId%3D", false, nil},
+		{"no error 9", "/bucket/object?versionId=null", false, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
