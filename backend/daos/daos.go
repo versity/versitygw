@@ -573,7 +573,7 @@ func (d *Daos) putFileConds(bucket, key string, body io.Reader, po s3response.Pu
 	if err := d.storeAttrs(obj, etag, po, false); err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
-	if err := d.storeTagHeader(obj, po.Tagging); err != nil {
+	if err := d.storeTagHeaderFresh(obj, po.Tagging, true); err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
 	out := s3response.PutObjectOutput{ETag: etag}
@@ -900,27 +900,50 @@ func (d *Daos) mkdirParents(p string) error {
 		if part == "" {
 			continue
 		}
-		next, oerr := d.fs.OpenRel(cur, part, openWrite)
+		next, isDir, oerr := openRelDir(d.fs, cur, part, openWrite)
 		if errors.Is(oerr, errNotExist) {
 			if mkerr := d.fs.MkdirRel(cur, part); mkerr != nil && !errors.Is(mkerr, errExist) {
 				return mapFS(mkerr)
 			}
-			next, oerr = d.fs.OpenRel(cur, part, openWrite)
+			next, isDir, oerr = openRelDir(d.fs, cur, part, openWrite)
 		}
 		if oerr != nil {
 			return mapFS(oerr)
 		}
 		open = append(open, next)
-		info, serr := d.fs.StatObj(next)
-		if serr != nil {
-			return mapFS(serr)
-		}
-		if !info.IsDir {
+		if !isDir {
 			return errNotDir
 		}
 		cur = next
 	}
 	return nil
+}
+
+// fsOpenRelDir is the optional single-call form of opening a child
+// relative to a parent and learning whether it is a directory. The
+// cgo seam provides it directly; other seams fall back to a stat.
+type fsOpenRelDir interface {
+	OpenRelDir(parent Object, name string, flags int) (Object, bool, error)
+}
+
+// openRelDir opens name under parent, reporting directory status.
+// Seams that implement fsOpenRelDir answer with one lookup that
+// requests the documented mode output; the rest combine OpenRel and
+// StatObj.
+func openRelDir(fs FS, parent Object, name string, flags int) (Object, bool, error) {
+	if sd, ok := fs.(fsOpenRelDir); ok {
+		return sd.OpenRelDir(parent, name, flags)
+	}
+	obj, err := fs.OpenRel(parent, name, flags)
+	if err != nil {
+		return nil, false, err
+	}
+	info, serr := fs.StatObj(obj)
+	if serr != nil {
+		fs.Release(obj)
+		return nil, false, serr
+	}
+	return obj, info.IsDir, nil
 }
 
 func (d *Daos) mapKeyErr(err error, key string) error {

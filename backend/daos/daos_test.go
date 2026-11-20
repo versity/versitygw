@@ -739,3 +739,48 @@ func TestGetBodyWriteToPropagatesWriteError(t *testing.T) {
 type failWriter struct{ err error }
 
 func (f failWriter) Write([]byte) (int, error) { return 0, f.err }
+
+func TestMkdirParentsFallsBackWithoutSingleCallSeam(t *testing.T) {
+	// The fake does not implement fsOpenRelDir, so mkdirParents uses
+	// the OpenRel+StatObj fallback and still resolves parents.
+	d, _ := newTest(t)
+	put(t, d, "a/b/c/obj", "hello", "", nil)
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("a/b/c/obj"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(got.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "hello" {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestPutFreshStagingSkipsTagRemoval(t *testing.T) {
+	d, fs := newTest(t)
+	// Every PUT stages into a fresh exclusive file, so an empty tag
+	// set never issues a removal on staging; publication replaces
+	// the previous generation wholesale, which also drops any
+	// earlier tag set.
+	rmCalls := fs.RemovedXattrs()
+	put(t, d, "obj", "one", "", nil)
+	put(t, d, "obj", "two", "", nil)
+	if got := fs.RemovedXattrs() - rmCalls; got != 0 {
+		t.Fatalf("xattr removals = %d, want 0", got)
+	}
+	// A directory marker keeps the removal: Mkdir may reuse an
+	// existing directory that carries an earlier tag set.
+	got, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("obj"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = got.Body.Close()
+}

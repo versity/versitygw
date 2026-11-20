@@ -104,8 +104,9 @@ type dfsFS struct {
 }
 
 type dfsObj struct {
-	fs  *dfsFS
-	obj *C.dfs_obj_t
+	fs    *dfsFS
+	obj   *C.dfs_obj_t
+	isDir bool
 }
 
 func (dfsObj) isObject() {}
@@ -184,11 +185,37 @@ func (f *dfsFS) OpenRel(parent Object, name string, flags int) (Object, error) {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
 	var obj *C.dfs_obj_t
-	rc := C.dfs_lookup_rel(f.dfs, p.obj, cname, openMode(flags), &obj, nil, nil)
+	var mode C.mode_t
+	rc := C.dfs_lookup_rel(f.dfs, p.obj, cname, openMode(flags), &obj, &mode, nil)
 	if err := pathErr(name, dfsErrno(rc)); err != nil {
 		return nil, err
 	}
-	return &dfsObj{fs: f, obj: obj}, nil
+	return &dfsObj{fs: f, obj: obj, isDir: mode&C.S_IFMT == C.S_IFDIR}, nil
+}
+
+// OpenRelDir opens name relative to parent and reports whether it is a
+// directory. fsStatDir implementors satisfy it with one lookup that
+// requests the documented mode output; the fallback path uses OpenRel
+// plus StatObj for seams that do not.
+func (f *dfsFS) OpenRelDir(parent Object, name string, flags int) (Object, bool, error) {
+	f.gate.RLock()
+	defer f.gate.RUnlock()
+	obj, isDir, err := f.openRelDirLocked(parent, name, flags)
+	return obj, isDir, err
+}
+
+// openRelDirLocked is OpenRelDir without taking the read lock.
+func (f *dfsFS) openRelDirLocked(parent Object, name string, flags int) (Object, bool, error) {
+	p := parent.(*dfsObj)
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	var obj *C.dfs_obj_t
+	var mode C.mode_t
+	rc := C.dfs_lookup_rel(f.dfs, p.obj, cname, openMode(flags), &obj, &mode, nil)
+	if err := pathErr(name, dfsErrno(rc)); err != nil {
+		return nil, false, err
+	}
+	return &dfsObj{fs: f, obj: obj}, mode&C.S_IFMT == C.S_IFDIR, nil
 }
 
 func (f *dfsFS) ChunkSize(obj Object) (int64, error) {

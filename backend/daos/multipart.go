@@ -92,7 +92,9 @@ func (d *Daos) CreateMultipartUpload(_ context.Context, input s3response.CreateM
 	}
 	err = d.storeAttrs(obj, "", putInputFromCreate(input), false)
 	if err == nil {
-		err = d.storeTagHeader(obj, input.Tagging)
+		// The upload directory was just created; it carries no
+		// earlier tag set to remove.
+		err = d.storeTagHeaderFresh(obj, input.Tagging, true)
 	}
 	if err == nil && input.ChecksumAlgorithm != "" {
 		err = d.storeChecksums(obj, s3response.Checksum{

@@ -591,11 +591,22 @@ func (d *Daos) removeXattr(p, name string) error {
 }
 
 func (d *Daos) storeTagHeader(obj Object, tagging *string) error {
+	return d.storeTagHeaderFresh(obj, tagging, false)
+}
+
+// storeTagHeaderFresh stores the tag header on obj. fresh marks an
+// object created by this operation with openExcl, which cannot carry
+// an earlier tag set, so an empty tagging skips the removal call
+// entirely; the removal stays for objects that replaced something.
+func (d *Daos) storeTagHeaderFresh(obj Object, tagging *string, fresh bool) error {
 	tags, err := backend.ParseObjectTags(awsString(tagging))
 	if err != nil {
 		return err
 	}
 	if tags == nil {
+		if fresh {
+			return nil
+		}
 		err := d.fs.RemoveXattr(obj, attrTags)
 		if errors.Is(err, errNotExist) {
 			return nil

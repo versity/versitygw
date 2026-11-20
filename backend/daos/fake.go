@@ -34,6 +34,7 @@ type Fake struct {
 	bytesRead     int64
 	bytesWritten  int64
 	readCalls     int
+	removedXattrs int
 	fullOpens     int
 	handles       int
 	maxRead       int
@@ -221,6 +222,14 @@ func (f *Fake) ReadCalls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.readCalls
+}
+
+// RemovedXattrs is how many RemoveXattr calls have been made. Tests
+// use it to prove a fresh staging file skips the empty tag removal.
+func (f *Fake) RemovedXattrs() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.removedXattrs
 }
 
 func (f *Fake) Write(obj Object, buf []byte, off int64) (int, error) {
@@ -469,6 +478,7 @@ func (f *Fake) SetXattr(obj Object, name string, value []byte) error {
 func (f *Fake) RemoveXattr(obj Object, name string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.removedXattrs++
 	n := obj.(fakeObj).n
 	if _, ok := n.xattr[name]; !ok {
 		return errNotExist
