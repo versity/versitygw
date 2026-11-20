@@ -105,6 +105,11 @@ type Posix struct {
 	// fallocate; per path since buckets can be on different filesystems.
 	fallocUnsupported sync.Map
 
+	// otmpProbe holds, per bucket path, whether an O_TMPFILE can be used for
+	// uploads there: it takes xattrs and can be linked (false: use a named
+	// temp file). Removed when the bucket is deleted.
+	otmpProbe sync.Map
+
 	// forceNoCopyFileRange is a flag to disable the use of io.Copy to
 	// reassemble multipart upload parts, which uses copy_file_range on
 	// linux. This is needed for cases where a filesystem that does not
@@ -1223,8 +1228,10 @@ func (p *Posix) DeleteBucket(ctx context.Context, bucket string) (err error) {
 	if err = p.meta.DeleteAttributes(bucket, ""); err != nil {
 		debuglogger.Logf("failed to delete bucket sidecar attributes (%q): %v", bucket, err)
 	}
+	p.otmpProbe.Delete(p.BucketPath(bucket))
 	// Remove the bucket from versioning directory
 	if p.versioningEnabled() {
+		p.otmpProbe.Delete(filepath.Join(p.versioningDir, bucket))
 		err = os.RemoveAll(filepath.Join(p.versioningDir, bucket))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("remove bucket version: %w", err)

@@ -577,8 +577,8 @@ func TestInheritDefaultACLWithoutOTmpfileRemovesDir(t *testing.T) {
 // TestInheritDefaultACLWriteOnlyDir checks that objects can be put in a
 // directory the gateway can write to but not read, with and without the
 // option: neither an O_TMPFILE nor its linkat() needs read permission on the
-// directory. The first PUT in a new bucket makes a named temporary file, as
-// .sgwtmp doesn't exist yet, and the second one an O_TMPFILE. With Fsync,
+// directory. Both PUTs get an O_TMPFILE: the first one creates .sgwtmp when
+// the bucket's filesystem is probed. With Fsync,
 // which can't sync a directory it can't read, the PUTs fail before the
 // objects are published. Run as a user other than root, which can read any
 // directory.
@@ -675,6 +675,8 @@ func TestInheritDefaultACLOpenErrors(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// the bucket's O_TMPFILE probe is not what is counted here
+			p.otmpProbe.Store(p.BucketPath(bucket), true)
 			opens := 0
 			openat = func(dirfd int, path string, flags int, mode uint32) (int, error) {
 				opens++
