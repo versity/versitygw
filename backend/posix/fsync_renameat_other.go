@@ -16,7 +16,10 @@
 
 package posix
 
+// renameInDirSupported reports whether renameInDir works on this platform.
+const renameInDirSupported = false
+
 // renameInDir is unsupported here; callers fall back to renaming by path.
-func renameInDir(src string, dir int, name string) (bool, error) {
-	return false, nil
+func renameInDir(src string, dir int, objPath string) error {
+	return nil
 }

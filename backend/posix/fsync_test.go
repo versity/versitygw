@@ -166,6 +166,9 @@ func TestFsyncConcurrentDelete(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
+					if _, err := os.Stat(filepath.Join(root, "bucket", "a")); !errors.Is(err, os.ErrNotExist) {
+						t.Fatalf("DeleteObject left bucket/a behind: %v", err)
+					}
 				}
 				return orig(dir, d)
 			}
@@ -273,7 +276,7 @@ func TestFsyncMoveIntoUsesHandle(t *testing.T) {
 	if len(dirs) == 0 {
 		t.Skip("directory fsync is disabled on this platform")
 	}
-	if ok, _ := renameInDir("", -1, ""); !ok {
+	if !renameInDirSupported {
 		t.Skip("rename relative to a directory handle is unsupported here")
 	}
 	src := filepath.Join(bucket, "temp")

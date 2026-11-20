@@ -16,12 +16,22 @@
 
 package posix
 
-import "golang.org/x/sys/unix"
+import (
+	"os"
+	"path/filepath"
 
-// renameInDir renames src to name inside the directory handle dir, so the
+	"golang.org/x/sys/unix"
+)
+
+// renameInDirSupported reports whether renameInDir works on this platform.
+const renameInDirSupported = true
+
+// renameInDir renames src to the base name of objPath inside the directory handle dir, so the
 // object lands in the directory that will be synced even if the path was
-// removed and recreated meanwhile. The second result reports whether the
-// platform supports it.
-func renameInDir(src string, dir int, name string) (bool, error) {
-	return true, unix.Renameat(unix.AT_FDCWD, src, dir, name)
+// removed and recreated meanwhile.
+func renameInDir(src string, dir int, objPath string) error {
+	if err := unix.Renameat(unix.AT_FDCWD, src, dir, filepath.Base(objPath)); err != nil {
+		return &os.LinkError{Op: "renameat", Old: src, New: objPath, Err: err}
+	}
+	return nil
 }

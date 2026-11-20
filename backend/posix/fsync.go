@@ -99,9 +99,9 @@ func (tmp *tmpfile) syncNamespace(dirs syncDirs) error {
 // to renaming by path when there are no handles or the rename crosses
 // filesystems.
 func moveInto(tempname, objPath string, perm os.FileMode, dirs syncDirs) error {
-	if len(dirs) > 0 {
-		ok, err := renameInDir(tempname, int(dirs[0].Fd()), filepath.Base(objPath))
-		if ok && (err == nil || !errors.Is(err, syscall.EXDEV)) {
+	if renameInDirSupported && len(dirs) > 0 {
+		err := renameInDir(tempname, int(dirs[0].Fd()), objPath)
+		if err == nil || !errors.Is(err, syscall.EXDEV) {
 			return err
 		}
 	}
