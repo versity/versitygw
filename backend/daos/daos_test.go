@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -783,4 +784,66 @@ func TestPutFreshStagingSkipsTagRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = got.Body.Close()
+}
+
+func TestGetBodyCloseDoesNotScanAllKeys(t *testing.T) {
+	d, _ := newTest(t)
+	// Populate many keys so a full-registry scan in release would
+	// visit a large map; the fix walks one pointer to the record.
+	for i := 0; i < 200; i++ {
+		put(t, d, fmt.Sprintf("obj-%03d", i), "x", "", nil)
+	}
+	// Overwrite one key so its retire path holds a retired
+	// generation, then open a reader on the new generation and
+	// release it: the retired entry must reclaim through the direct
+	// owner pointer.
+	put(t, d, "target", "old", "", nil)
+	put(t, d, "target", "new", "", nil)
+	out, err := d.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("target"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := out.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// The record with an empty live generation and no retired
+	// generations must be pruned; a scan-based release used to leave
+	// that to a full walk. State is observable through a second
+	// overwrite succeeding.
+	put(t, d, "target", "newer", "", nil)
+}
+
+func TestUploadPartCopyDoesNotBufferWholeRange(t *testing.T) {
+	d, fs := newTest(t)
+	src := strings.Repeat("a", 8<<20)
+	put(t, d, "big", src, "", nil)
+	created, err := d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("photos/b.jpg"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	partNumber := int32(1)
+	res, err := d.UploadPartCopy(context.Background(), &s3.UploadPartCopyInput{
+		Bucket:     backend.GetPtrFromString("bucket"),
+		Key:        backend.GetPtrFromString("photos/b.jpg"),
+		UploadId:   &created.UploadId,
+		PartNumber: &partNumber,
+		CopySource: backend.GetPtrFromString("/bucket/big"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ETag == nil {
+		t.Fatal("missing etag")
+	}
+	// The copy streamed in chunk-sized steps: the fake's read
+	// counters report multiple reads rather than one giant read.
+	if got := fs.ReadCalls(); got < 2 {
+		t.Fatalf("source reads = %d, want a streamed multi-read copy", got)
+	}
 }

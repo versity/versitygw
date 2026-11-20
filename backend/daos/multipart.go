@@ -27,6 +27,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -699,6 +700,31 @@ func (d *Daos) uploadDir(bucket, key, uploadID string) (string, error) {
 	return "", s3err.GetNoSuchUploadErr(uploadID)
 }
 
+// transferBufPool recycles the copy buffers writeBody and WriteTo
+// size to the object chunk size, so a gateway serving many small
+// PUTs stops allocating and freeing a 256 KiB to 4 MiB buffer per
+// request. Buffers keep the size they were created with: the pool
+// itself is per-size.
+var transferBufPool = sync.Pool{
+	New: func() any { return new([]byte) },
+}
+
+// getTransferBuf returns a byte slice of at least n bytes, recycled
+// from the pool when one of that size is available.
+func getTransferBuf(n int64) []byte {
+	if v := transferBufPool.Get(); v != nil {
+		if b := *v.(*[]byte); int64(cap(b)) >= n {
+			return b[:n]
+		}
+	}
+	return make([]byte, n)
+}
+
+// putTransferBuf returns a buffer for reuse.
+func putTransferBuf(b []byte) {
+	transferBufPool.Put(&b)
+}
+
 func (d *Daos) writeBody(obj Object, r io.Reader, length *int64) ([]byte, int64, error) {
 	if r == nil {
 		sum := md5.Sum(nil)
@@ -714,7 +740,8 @@ func (d *Daos) writeBody(obj Object, r io.Reader, length *int64) ([]byte, int64,
 		size = 4 * 1024 * 1024
 	}
 	h := md5.New()
-	buf := make([]byte, size)
+	buf := getTransferBuf(size)
+	defer putTransferBuf(buf)
 	filled := 0
 	var off int64
 	var emptyReads int

@@ -42,6 +42,7 @@ var (
 	errNameLong    = errors.New("daos: name too long")
 	errInvalid     = errors.New("daos: invalid argument")
 	errFileOverDir = errors.New("daos: file over directory")
+	errRange       = errors.New("daos: result too large")
 )
 
 const maxComponent = 255
@@ -93,6 +94,8 @@ func errnoSentinel(rc int) error {
 		return errNameLong
 	case syscall.EINVAL:
 		return errInvalid
+	case syscall.ERANGE:
+		return errRange
 	default:
 		return fmt.Errorf("dfs errno %d", rc)
 	}

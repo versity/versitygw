@@ -342,7 +342,8 @@ func (r *dfsBodyReader) WriteTo(w io.Writer) (int64, error) {
 	if size < 1 {
 		size = 1
 	}
-	buf := make([]byte, size)
+	buf := getTransferBuf(size)
+	defer putTransferBuf(buf)
 	var written int64
 	for r.rem > 0 {
 		n, err := r.Read(buf)
@@ -821,14 +822,9 @@ func (d *Daos) openLive(bucket, key string, flags int) (Info, Object, *readerLea
 	d.coord.ns.mu.Lock()
 	defer d.coord.ns.mu.Unlock()
 	p := objectPath(bucket, key)
-	obj, err := d.fs.Open(p, flags)
+	obj, info, err := lookupStat(d.fs, p, flags)
 	if err != nil {
 		return Info{}, nil, nil, d.mapOpenErr(err, bucket, key)
-	}
-	info, err := d.fs.StatObj(obj)
-	if err != nil {
-		d.fs.Release(obj)
-		return Info{}, nil, nil, mapFS(err)
 	}
 	wantDir := strings.HasSuffix(key, "/")
 	if wantDir != info.IsDir {
@@ -1015,6 +1011,17 @@ func mapFS(err error) error {
 		return nil
 	}
 	return fmt.Errorf("dfs: %w", err)
+}
+
+// sectionReaderAt adapts an open object to io.ReaderAt so a source
+// range can stream through io.SectionReader without buffering it.
+type sectionReaderAt struct {
+	fs  FS
+	obj Object
+}
+
+func (s *sectionReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	return readFull(s.fs, s.obj, p, off)
 }
 
 func readFull(fs FS, obj Object, buf []byte, off int64) (int, error) {

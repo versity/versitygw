@@ -214,14 +214,16 @@ func (d *Daos) UploadPartCopy(_ context.Context, input *s3.UploadPartCopyInput) 
 	if err != nil {
 		return out, err
 	}
-	var buffered []byte
-	if !info.IsDir && length > 0 {
-		buffered = make([]byte, length)
-		if _, err := readFull(d.fs, obj, buffered, start); err != nil {
-			return out, err
-		}
+	// Stream the source range instead of buffering it whole: large
+	// part copies used to size a byte slice to the full range and
+	// hold the entire part in gateway memory before the first write.
+	var reader io.Reader
+	if info.IsDir || length == 0 {
+		reader = bytes.NewReader(nil)
+	} else {
+		reader = io.NewSectionReader(&sectionReaderAt{fs: d.fs, obj: obj}, start, length)
 	}
-	reader := bytes.NewReader(buffered)
+	nlen := length
 	var hashed partHash
 	hashed.body = reader
 	if stored.Type != "" {
@@ -232,11 +234,10 @@ func (d *Daos) UploadPartCopy(_ context.Context, input *s3.UploadPartCopyInput) 
 		hashed.sum = sum
 		hashed.userAlg = utils.HashType(strings.ToLower(string(stored.Algorithm)))
 		hashed.expose = true
-		if _, err := reader.Seek(0, io.SeekStart); err != nil {
+		if _, err := reader.(io.Seeker).Seek(0, io.SeekStart); err != nil {
 			return out, err
 		}
 	}
-	nlen := int64(len(buffered))
 	etag, err := d.writePart(uploadDir, *input.PartNumber, reader, &nlen, stored, hashed)
 	if err != nil {
 		return out, err

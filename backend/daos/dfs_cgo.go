@@ -494,16 +494,28 @@ func (f *dfsFS) GetXattr(obj Object, name string) ([]byte, error) {
 	o := obj.(*dfsObj)
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
-	buf := C.malloc(C.size_t(maxXattrLen))
-	if buf == nil {
-		return nil, fmt.Errorf("dfs: out of memory")
+	// Values are typically far smaller than the 64 KiB cap; try the
+	// on-stack buffer first and only fall back to the heap when the
+	// xattr reports it does not fit.
+	var scratch [256]byte
+	n := C.daos_size_t(len(scratch))
+	rc := C.dfs_getxattr(o.fs.dfs, o.obj, cname, unsafe.Pointer(&scratch[0]), &n)
+	if dfsErrno(rc) == errRange {
+		buf := C.malloc(C.size_t(maxXattrLen))
+		if buf == nil {
+			return nil, fmt.Errorf("dfs: out of memory")
+		}
+		defer C.free(buf)
+		n = C.daos_size_t(maxXattrLen)
+		if err := dfsErrno(C.dfs_getxattr(o.fs.dfs, o.obj, cname, buf, &n)); err != nil {
+			return nil, err
+		}
+		return C.GoBytes(buf, C.int(n)), nil
 	}
-	defer C.free(buf)
-	n := C.daos_size_t(maxXattrLen)
-	if err := dfsErrno(C.dfs_getxattr(o.fs.dfs, o.obj, cname, buf, &n)); err != nil {
+	if err := dfsErrno(rc); err != nil {
 		return nil, err
 	}
-	return C.GoBytes(buf, C.int(n)), nil
+	return C.GoBytes(unsafe.Pointer(&scratch[0]), C.int(n)), nil
 }
 
 func (f *dfsFS) ReadDir(p string) ([]Info, error) {

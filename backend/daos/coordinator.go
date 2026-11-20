@@ -83,16 +83,6 @@ func (u *uploadLocks) lockShared(uploadID string) func() {
 // generation identifies one durable version of an object: the live
 // object, or a retired copy waiting out its readers. Records are
 // immutable; refcount counts leases, and state governs reclamation.
-type generation struct {
-	id      string // operation UUID that created this generation
-	retired string // retire path; empty while live
-	state   genState
-	refc    int
-	// reclaimNow marks a committed retiree with no reader that the
-	// publisher must remove right after commit.
-	reclaimNow bool
-}
-
 type genState int
 
 const (
@@ -115,6 +105,19 @@ type keyRec struct {
 	keyStr  string
 	live    *generation
 	retired map[string]*generation // by retire path
+}
+
+// generation references its owning keyRec so a draining lease can
+// find its record directly instead of scanning every key.
+type generation struct {
+	id      string // operation UUID that created this generation
+	retired string // retire path; empty while live
+	state   genState
+	refc    int
+	// reclaimNow marks a committed retiree with no reader that the
+	// publisher must remove right after commit.
+	reclaimNow bool
+	owner      *keyRec
 }
 
 type recoveryRec struct {
@@ -173,7 +176,7 @@ func (c *coord) acquire(bucket, key string) *readerLease {
 		c.keys[ck] = rec
 	}
 	if rec.live == nil {
-		rec.live = &generation{id: ""}
+		rec.live = &generation{id: "", owner: rec}
 	}
 	gen := rec.live
 	gen.refc++
@@ -199,18 +202,11 @@ func (l *readerLease) release(fs FS) {
 		if reclaim {
 			g.state = genLive // terminal marker; record pruned below
 		}
-		ck := ""
-		for k, rec := range c.keys {
-			for _, rg := range rec.retired {
-				if rg == g {
-					ck = k
-				}
-			}
-		}
-		if reclaim && ck != "" {
-			delete(c.keys[ck].retired, g.retired)
-			if len(c.keys[ck].retired) == 0 && c.keys[ck].live == nil {
-				delete(c.keys, ck)
+		rec := g.owner
+		if reclaim && rec != nil {
+			delete(rec.retired, g.retired)
+			if len(rec.retired) == 0 && rec.live == nil {
+				delete(c.keys, rec.keyStr)
 			}
 		}
 		c.mu.Unlock()
@@ -254,7 +250,7 @@ func (c *coord) trackRetire(bucket, key, retirePath, opID string) {
 		rec = &keyRec{keyStr: ck, retired: map[string]*generation{}}
 		c.keys[ck] = rec
 	}
-	g := &generation{id: opID, retired: retirePath, state: genRetiredPending}
+	g := &generation{id: opID, retired: retirePath, state: genRetiredPending, owner: rec}
 	rec.retired[retirePath] = g
 }
 
@@ -270,7 +266,7 @@ func (c *coord) commitRetire(bucket, key, retirePath, opID string) {
 		rec = &keyRec{keyStr: ck, retired: map[string]*generation{}}
 		c.keys[ck] = rec
 	}
-	rec.live = &generation{id: opID}
+	rec.live = &generation{id: opID, owner: rec}
 	if retirePath != "" {
 		if g, ok := rec.retired[retirePath]; ok {
 			if g.refc > 0 {
