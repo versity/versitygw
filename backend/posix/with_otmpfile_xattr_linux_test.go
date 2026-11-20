@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,6 +150,9 @@ func TestOTmpFileProbeNoOTmpfile(t *testing.T) {
 		return -1, syscall.EOPNOTSUPP
 	}
 	t.Cleanup(func() { openat = unix.Openat })
+	var logs strings.Builder
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 
 	for _, obj := range []string{"object", "object2", "object3"} {
 		f, err := p.openObjectTmpFile(bucket, obj, 5, auth.Account{}, false, odirectNotAllowed)
@@ -165,6 +169,41 @@ func TestOTmpFileProbeNoOTmpfile(t *testing.T) {
 	}
 	if v, known := p.otmpProbe.Load(p.BucketPath(bucket)); !known || v.(bool) {
 		t.Errorf("probe result is %v (remembered: %v), want false", v, known)
+	}
+	if logs.Len() != 0 {
+		t.Errorf("expected no warning, got %q", logs.String())
+	}
+}
+
+// TestOTmpFileProbeNoOTmpfileInherit checks that with InheritDefaultACL a
+// failing O_TMPFILE open in the bucket's temp directory is not remembered:
+// the upload opens its own file in the object's directory, which can be on
+// another filesystem.
+func TestOTmpFileProbeNoOTmpfileInherit(t *testing.T) {
+	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		return meta.XattrMeta{}, PosixOpts{AbsolutePaths: true, InheritDefaultACL: true}
+	})
+	bucket := "bucket"
+	createTestBucket(t, p, bucket)
+	if err := os.MkdirAll(filepath.Join(p.BucketPath(bucket), "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tmpDir := p.ObjectPath(bucket, MetaTmpDir)
+	openat = func(dirfd int, path string, flags int, mode uint32) (int, error) {
+		if path == tmpDir {
+			return -1, syscall.EOPNOTSUPP
+		}
+		return unix.Openat(dirfd, path, flags, mode)
+	}
+	t.Cleanup(func() { openat = unix.Openat })
+
+	f, err := p.openObjectTmpFile(bucket, "sub/obj", 5, auth.Account{}, false, odirectNotAllowed)
+	if err != nil {
+		t.Fatalf("open tmp file: %v", err)
+	}
+	defer f.cleanup()
+	if _, known := p.otmpProbe.Load(p.BucketPath(bucket)); known {
+		t.Error("probe result remembered, want unknown")
 	}
 }
 

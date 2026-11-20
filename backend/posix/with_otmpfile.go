@@ -98,7 +98,7 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 	if known && !supported.(bool) {
 		return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 	}
-	if !known && p.probeOTmp(bucket, tmpDir, uid, gid, doChown) {
+	if !known && p.probeOTmp(bucket, otmpDir, tmpDir, uid, gid, doChown) {
 		return p.openMkTemp(tmpDir, bucket, obj, size, dofalloc, uid, gid, doChown, allowODirect)
 	}
 
@@ -200,21 +200,24 @@ func (p *Posix) openTmpFileIn(otmpDir, tmpDir, bucket, obj string, size int64, a
 // tests the bucket's filesystem whatever directory an upload with an
 // inherited default ACL opens its own file in. It does not touch the
 // upload's file. An answer is stored only when the filesystem reported the
-// defect. Any other error leaves the result unknown: nothing is remembered
-// and the upload goes on with its own O_TMPFILE, which reports a full or
-// read-only filesystem, a quota or a permission error as it does without
-// the probe.
+// defect, or when it has no O_TMPFILE and the upload opens its own in the
+// probe's directory (otmpDir == tmpDir): with an inherited default ACL the
+// upload may open in a directory on another filesystem, so a probe that
+// can't open an O_TMPFILE says nothing about it. Any other error leaves the
+// result unknown: nothing is remembered and the upload goes on with its own
+// O_TMPFILE, which reports a full or read-only filesystem, a quota or a
+// permission error as it does without the probe.
 //
 // The result is keyed by the bucket path (the versioning code passes the
 // path of a bucket's versioning directory). The entry is removed when the
 // bucket is deleted.
-func (p *Posix) probeOTmp(bucket, tmpDir string, uid, gid int, doChown bool) (unsupported bool) {
+func (p *Posix) probeOTmp(bucket, otmpDir, tmpDir string, uid, gid int, doChown bool) (unsupported bool) {
 	if err := p.mkdirAll(tmpDir, uid, gid, doChown); err != nil {
 		return false
 	}
 	fd, _, err := p.openOTmpFile(unix.AT_FDCWD, tmpDir, odirectNotAllowed)
 	if err != nil {
-		if otmpfileUnsupported(err) {
+		if otmpfileUnsupported(err) && otmpDir == tmpDir {
 			// The expected fallback for filesystems without O_TMPFILE
 			// (NFS, for example): remember it, without a warning.
 			p.otmpProbe.Store(bucket, false)
