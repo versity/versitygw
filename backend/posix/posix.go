@@ -4863,7 +4863,7 @@ func (p *Posix) snapshotObjVersion(bucket, key string, vStatus types.BucketVersi
 	if !isVersionIdMissing {
 		_, err := p.createObjVersion(bucket, key, d.Size(), acct, false)
 		if err != nil {
-			return fmt.Errorf("create object version: %w", err)
+			return etagStatErr("create object version", err)
 		}
 	}
 

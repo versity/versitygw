@@ -773,3 +773,24 @@ func TestDetectStaleEtagNoSpaceError(t *testing.T) {
 		assert.Equal(t, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice), err)
 	}
 }
+
+// TestDetectStaleEtagNoSpaceErrorVersion checks the same for the version
+// that an overwrite in a versioned bucket makes of the replaced object.
+func TestDetectStaleEtagNoSpaceErrorVersion(t *testing.T) {
+	ctx := context.Background()
+	bucket, key := "testbucket", "obj"
+	for _, reserved := range []bool{true, false} {
+		p := newStaleEtagPosix(t, true, true)
+		fail, res := &atomic.Bool{}, &atomic.Bool{}
+		res.Store(reserved)
+		p.meta = failEtagStatMeta{MetadataStorer: p.meta, fail: fail, reserved: res, noSpace: true}
+		createTestBucket(t, p, bucket)
+		require.NoError(t, p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled))
+		_, err := testPut(p, bucket, key, []byte("old"), nil, nil)
+		require.NoError(t, err)
+
+		fail.Store(true)
+		_, err = testPut(p, bucket, key, []byte("new"), nil, nil)
+		assert.Equal(t, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice), err)
+	}
+}
