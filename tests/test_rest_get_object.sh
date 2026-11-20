@@ -118,9 +118,6 @@ source ./tests/setup.sh
 
 # tags: curl,GetObject,invalid-header,response-headers
 @test "REST - GetObject - response query - invalid response type" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2075"
-  fi
   run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
   assert_success
   read -r bucket_name file_name <<< "$output"
