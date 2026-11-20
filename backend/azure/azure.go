@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -168,8 +169,8 @@ func New(ctx context.Context, accountName, accountKey, serviceURL, sasToken stri
 	return az, nil
 }
 
-func newAzure(accountName, accountKey, serviceURL, sasToken string, copyObjectThreshold int64, copySASVersion string) (*Azure, error) {
-	client, creds, err := azblobclient.New(accountName, accountKey, serviceURL, sasToken)
+func newAzure(accountName, accountKey, serviceURL, sasToken string, copyObjectThreshold int64, copySASVersion string, opts ...func(*policy.ClientOptions)) (*Azure, error) {
+	client, creds, err := azblobclient.New(accountName, accountKey, serviceURL, sasToken, opts...)
 	if err != nil {
 		return nil, err
 	}

@@ -30,7 +30,7 @@ func TestWithoutValues(t *testing.T) {
 	parent, cancel := context.WithDeadline(context.WithValue(context.Background(), ctxKey{}, "v"), deadline)
 	defer cancel()
 
-	ctx := withoutValues(parent)
+	ctx := WithoutValues(parent)
 	if got := ctx.Value(ctxKey{}); got != nil {
 		t.Fatalf("Value = %v, want nil", got)
 	}
@@ -53,7 +53,7 @@ func TestWithoutValuesKeepsClientTrace(t *testing.T) {
 	tr := &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) {}}
 	parent := httptrace.WithClientTrace(context.WithValue(context.Background(), ctxKey{}, "v"), tr)
 
-	ctx := withoutValues(parent)
+	ctx := WithoutValues(parent)
 	if got := httptrace.ContextClientTrace(ctx); got == nil || got.GotConn == nil {
 		t.Fatalf("ContextClientTrace = %v, want the parent's trace", got)
 	}
