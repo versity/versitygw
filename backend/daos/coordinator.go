@@ -46,23 +46,38 @@ type namespace struct {
 	mu sync.Mutex
 }
 
-// uploadLocks stripes session guards by upload UUID. UploadPart,
-// UploadPartCopy, CompleteMultipartUpload, and AbortMultipartUpload
-// hold one stripe for the whole operation; active and claimed upload
-// names hash to the same stripe because the key is the upload UUID.
+// uploadLocks stripes session guards by upload UUID. Part writers
+// and listings take a stripe shared with other part operations;
+// CompleteMultipartUpload and AbortMultipartUpload take it
+// exclusively because they rename the upload directory itself.
+// Active and claimed upload names hash to the same stripe because
+// the key is the upload UUID.
 type uploadLocks struct {
 	mu      sync.Mutex
-	stripes [64]sync.Mutex
+	stripes [64]sync.RWMutex
 }
 
-func (u *uploadLocks) lock(uploadID string) func() {
+func (u *uploadLocks) slot(uploadID string) *sync.RWMutex {
 	id, err := uuid.Parse(uploadID)
 	if err != nil {
 		id = uuid.NewSHA1(uuid.NameSpaceURL, []byte(uploadID))
 	}
-	slot := int(id[15]) % len(u.stripes)
-	u.stripes[slot].Lock()
-	return u.stripes[slot].Unlock
+	return &u.stripes[int(id[15])%len(u.stripes)]
+}
+
+func (u *uploadLocks) lock(uploadID string) func() {
+	s := u.slot(uploadID)
+	s.Lock()
+	return s.Unlock
+}
+
+// lockShared holds a stripe against directory renames only: part
+// operations address distinct files inside the upload directory and
+// may run concurrently with each other.
+func (u *uploadLocks) lockShared(uploadID string) func() {
+	s := u.slot(uploadID)
+	s.RLock()
+	return s.RUnlock
 }
 
 // generation identifies one durable version of an object: the live

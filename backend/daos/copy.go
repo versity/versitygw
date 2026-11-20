@@ -180,8 +180,8 @@ func (d *Daos) UploadPartCopy(_ context.Context, input *s3.UploadPartCopyInput) 
 	}
 	// Part-copy participates in the session guard through the same
 	// stripe as UploadPart: writePart's publishing Move and the
-	// readiness checks run under it.
-	unlock := d.coord.uploads.lock(uploadID)
+	// readiness checks run under it, shared with other part writers.
+	unlock := d.coord.uploads.lockShared(uploadID)
 	defer unlock()
 	if err := d.bucketExists(srcBucket); err != nil {
 		return out, err

@@ -320,3 +320,112 @@ func TestListPartsReturnsChecksumAndHonorsZero(t *testing.T) {
 		t.Fatalf("zero page parts %d truncated %v", len(empty.Parts), empty.IsTruncated)
 	}
 }
+
+// blockingPartBody stays unread until released, proving two part
+// writers share the session stripe instead of serializing on it.
+type blockingPartBody struct {
+	release chan struct{}
+}
+
+func (b *blockingPartBody) Read(p []byte) (int, error) {
+	<-b.release
+	if len(p) == 0 {
+		return 0, nil
+	}
+	p[0] = 'x'
+	return 1, io.EOF
+}
+
+func TestUploadPartsRunConcurrently(t *testing.T) {
+	d, _ := newTest(t)
+	created, err := d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("photos/a.jpg"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	both := make(chan struct{}, 2)
+	release := make(chan struct{})
+	start := func(n int32) {
+		go func() {
+			body := &blockingPartBody{release: release}
+			// Signal arrival; the main test unblocks both writers
+			// once the peer also arrived: with an exclusive stripe
+			// the second writer would never arrive and the test
+			// would time out.
+			both <- struct{}{}
+			out, err := d.UploadPart(context.Background(), &s3.UploadPartInput{
+				Bucket:        backend.GetPtrFromString("bucket"),
+				Key:           backend.GetPtrFromString("photos/a.jpg"),
+				UploadId:      &created.UploadId,
+				PartNumber:    &n,
+				ContentLength: int64ptr(1),
+				Body:          body,
+			})
+			if err != nil {
+				t.Errorf("part %d: %v", n, err)
+			}
+			if out == nil || out.ETag == nil {
+				t.Errorf("part %d: missing etag", n)
+			}
+		}()
+	}
+	start(1)
+	start(2)
+	select {
+	case <-time.After(10 * time.Second):
+		t.Fatal("second part writer did not enter the stripe: part writes still serialize")
+	case <-both:
+		<-both
+	}
+	close(release)
+}
+
+func TestCompleteWaitsForPartWriters(t *testing.T) {
+	d, _ := newTest(t)
+	created, err := d.CreateMultipartUpload(context.Background(), s3response.CreateMultipartUploadInput{
+		Bucket: backend.GetPtrFromString("bucket"),
+		Key:    backend.GetPtrFromString("photos/a.jpg"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := &blockingPartBody{release: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.UploadPart(context.Background(), &s3.UploadPartInput{
+			Bucket:        backend.GetPtrFromString("bucket"),
+			Key:           backend.GetPtrFromString("photos/a.jpg"),
+			UploadId:      &created.UploadId,
+			PartNumber:    int32ptr(1),
+			ContentLength: int64ptr(1),
+			Body:          body,
+		})
+		done <- err
+	}()
+	// Wait until the writer holds the shared stripe.
+	time.Sleep(50 * time.Millisecond)
+	go func() {
+		etag := `"` + strings.Repeat("0", 32) + `"`
+		_, _, _ = d.CompleteMultipartUpload(context.Background(), &s3.CompleteMultipartUploadInput{
+			Bucket:   backend.GetPtrFromString("bucket"),
+			Key:      backend.GetPtrFromString("photos/a.jpg"),
+			UploadId: &created.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{{PartNumber: int32ptr(1), ETag: &etag}},
+			},
+		})
+	}()
+	// The completion must still be waiting: the part writer holds
+	// the stripe shared, and Complete needs it exclusively.
+	select {
+	case err := <-done:
+		t.Fatalf("UploadPart finished early (err=%v): completion did not exclude it", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+	close(body.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

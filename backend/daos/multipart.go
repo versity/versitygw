@@ -141,8 +141,10 @@ func (d *Daos) UploadPart(_ context.Context, input *s3.UploadPartInput) (*s3.Upl
 	// The session guard covers the whole part write, including the
 	// parent-handle resolution inside the publishing Move, so a
 	// concurrent completion cannot claim the directory mid-write and
-	// an abort cannot remove it.
-	unlock := d.coord.uploads.lock(uploadID)
+	// an abort cannot remove it. Part writes address distinct files,
+	// so the stripe is shared with other part operations and taken
+	// exclusively only by directory renamers.
+	unlock := d.coord.uploads.lockShared(uploadID)
 	defer unlock()
 	uploadDir, err := d.uploadDirReady(bucket, key, uploadID)
 	if err != nil {
@@ -191,9 +193,16 @@ func (d *Daos) writePart(uploadDir string, partNumber int32, body io.Reader, len
 			_ = d.fs.Remove(tmp, false)
 		}
 	}()
-	r, crcSum, err := partCRCReader(body)
-	if err != nil {
-		return "", err
+	// The wrapped chain already digests the bytes with CRC64NVME for
+	// an UploadPart; re-wrapping here would hash the same body twice.
+	// UploadPartCopy arrives with an unwrapped reader and still takes
+	// the crc path.
+	r, crcSum := body, func() string { return "" }
+	if !hashed.hasCRC64() {
+		r, crcSum, err = partCRCReader(body)
+		if err != nil {
+			return "", err
+		}
 	}
 	sum, _, err := d.writeBody(obj, r, length)
 	if err != nil {
@@ -202,7 +211,11 @@ func (d *Daos) writePart(uploadDir string, partNumber int32, body io.Reader, len
 	if err := d.storePartSums(obj, stored, hashed); err != nil {
 		return "", err
 	}
-	if err := d.fs.SetXattr(obj, attrPartCRC64, []byte(crcSum())); err != nil {
+	storedCRC := hashed.crc64Sum()
+	if crcSum != nil && crcSum() != "" {
+		storedCRC = crcSum()
+	}
+	if err := d.fs.SetXattr(obj, attrPartCRC64, []byte(storedCRC)); err != nil {
 		return "", mapFS(err)
 	}
 	etag := "\"" + hex.EncodeToString(sum) + "\""
@@ -419,6 +432,11 @@ func (d *Daos) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respons
 	if err := validUploadID(uploadID); err != nil {
 		return out, err
 	}
+	// A listing races the claim rename of a concurrent completion:
+	// hold the session stripe shared so the directory name it read
+	// stays valid for the whole listing.
+	unlock := d.coord.uploads.lockShared(uploadID)
+	defer unlock()
 	dir, err := d.uploadDir(bucket, key, uploadID)
 	if err != nil {
 		return out, err

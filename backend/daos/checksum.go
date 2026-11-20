@@ -279,6 +279,15 @@ func (h partHash) crc64Sum() string {
 	return h.userSum()
 }
 
+// hasCRC64 reports whether the wrapped body chain already digests the
+// part bytes with CRC64NVME, either as the user-facing algorithm or
+// as the dedicated crc64 wrapper wrapPartBody adds alongside another
+// algorithm. When it does, writePart stores that digest instead of
+// wrapping the body a second time.
+func (h partHash) hasCRC64() bool {
+	return h.userAlg == utils.HashTypeCRC64NVME || h.crc64 != nil
+}
+
 func partHeaderChecksum(input *s3.UploadPartInput) (utils.HashType, string) {
 	pairs := []struct {
 		alg utils.HashType
