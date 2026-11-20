@@ -1278,6 +1278,7 @@ func TestGatewayIAM(ts *TestState) {
 	ts.Run(IAM_admin_ChangeBucketOwner)
 	ts.Run(IAM_ChangeBucketOwner_back_to_root)
 	ts.Sync(IAM_ListBuckets)
+	ts.Run(IAM_ListUsers)
 	ts.Run(IAM_CreateBucket_empty_owner_header)
 	ts.Run(IAM_CreateBucket_non_existing_user)
 	ts.Run(IAM_CreateBucket_success)
@@ -3930,6 +3931,7 @@ func GetIntTests() IntTests {
 		"IAM_admin_ChangeBucketOwner":                                                      IAM_admin_ChangeBucketOwner,
 		"IAM_ChangeBucketOwner_back_to_root":                                               IAM_ChangeBucketOwner_back_to_root,
 		"IAM_ListBuckets":                                                                  IAM_ListBuckets,
+		"IAM_ListUsers":                                                                    IAM_ListUsers,
 		"IAM_CreateBucket_empty_owner_header":                                              IAM_CreateBucket_empty_owner_header,
 		"IAM_CreateBucket_non_existing_user":                                               IAM_CreateBucket_non_existing_user,
 		"IAM_CreateBucket_success":                                                         IAM_CreateBucket_success,
