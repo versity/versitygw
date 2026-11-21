@@ -199,6 +199,10 @@ func (tmp *tmpfile) setModTime(t time.Time) {
 	tmp.modTime = t
 }
 
+func (tmp *tmpfile) setNoRecreateDir() {
+	tmp.noRecreateDir = true
+}
+
 // applyModTime sets the modification time requested with setModTime on the
 // file at path. Windows updates the last write time when a handle the file
 // was written through is closed, so it has to be set after that handle is
@@ -229,6 +233,9 @@ func sleepWithJitter(backoffMs int) {
 // publish places the object in it. Making dir only right before publish keeps
 // the time it spends empty, and removable, short.
 func (tmp *tmpfile) publishInDir(dir string, publish func() error) error {
+	if tmp.noRecreateDir {
+		return publish()
+	}
 	backoffMs := initialBackoffMs
 	for attempt := 0; ; attempt++ {
 		err := publish()

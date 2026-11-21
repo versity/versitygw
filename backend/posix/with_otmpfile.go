@@ -38,19 +38,20 @@ import (
 const procfddir = "/proc/self/fd"
 
 type tmpfile struct {
-	f           *os.File
-	bucket      string
-	objname     string
-	isOTmp      bool
-	procFDName  string
-	useODirect  bool
-	size        int64
-	doChown     bool
-	uid         int
-	gid         int
-	newDirPerm  fs.FileMode
-	newFilePerm fs.FileMode
-	fsync       bool
+	f             *os.File
+	bucket        string
+	objname       string
+	isOTmp        bool
+	procFDName    string
+	useODirect    bool
+	size          int64
+	doChown       bool
+	uid           int
+	gid           int
+	newDirPerm    fs.FileMode
+	newFilePerm   fs.FileMode
+	fsync         bool
+	noRecreateDir bool
 	// modTime is the modification time the file is published with,
 	// the time it was last written if zero
 	modTime time.Time
