@@ -271,16 +271,19 @@ func TestCopyObjectSelfChecksumChangedUnderLock(t *testing.T) {
 	}
 }
 
-// deleteOnceMeta deletes the object with DeleteObject once, when the
-// attribute named at is first read or deleted.
+// deleteOnceMeta deletes the object once, when the attribute named at is first
+// read or deleted. When external is true, it simulates an external or
+// other-gateway removal directly on disk so it can run while CopyObject holds
+// lockObjectPublish on the same goroutine.
 type deleteOnceMeta struct {
 	meta.MetadataStorer
-	t      *testing.T
-	p      *Posix
-	bucket string
-	key    string
-	at     string
-	done   bool
+	t        *testing.T
+	p        *Posix
+	bucket   string
+	key      string
+	at       string
+	external bool
+	done     bool
 }
 
 func (m *deleteOnceMeta) deleteObject(attribute string) {
@@ -288,6 +291,15 @@ func (m *deleteOnceMeta) deleteObject(attribute string) {
 		return
 	}
 	m.done = true
+	if m.external {
+		if err := os.Remove(m.p.ObjectPath(m.bucket, m.key)); err != nil {
+			m.t.Fatalf("remove object: %v", err)
+		}
+		if err := m.MetadataStorer.DeleteAttributes(m.bucket, m.key); err != nil {
+			m.t.Fatalf("delete attributes: %v", err)
+		}
+		return
+	}
 	_, err := m.p.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: &m.bucket, Key: &m.key})
 	if err != nil {
 		m.t.Fatalf("delete object: %v", err)
@@ -314,19 +326,20 @@ func TestCopyObjectSelfDeleted(t *testing.T) {
 			name string
 			// the object is deleted when this attribute is first
 			// read or deleted
-			at   string
-			algo types.ChecksumAlgorithm
-			tags bool
+			at       string
+			external bool
+			algo     types.ChecksumAlgorithm
+			tags     bool
 		}{
 			// the stored checksum is read before the lock is taken
 			{name: "before the lock", at: checksumsKey, algo: types.ChecksumAlgorithmSha256},
 			// the object metadata is deleted first under the lock
-			{name: "under the lock", at: metadataHdr, algo: types.ChecksumAlgorithmSha256},
-			{name: "under the lock without a checksum", at: metadataHdr},
+			{name: "under the lock", at: metadataHdr, external: true, algo: types.ChecksumAlgorithmSha256},
+			{name: "under the lock without a checksum", at: metadataHdr, external: true},
 			// the version id is read just before the new attributes
 			// are stored; with sidecar metadata they are stored for
 			// the deleted object, and the tagging fails afterwards
-			{name: "before the attributes are stored", at: versionIdKey, tags: true},
+			{name: "before the attributes are stored", at: versionIdKey, external: true, tags: true},
 		} {
 			t.Run(mode+"/"+tc.name, func(t *testing.T) {
 				ctx := context.Background()
@@ -339,7 +352,7 @@ func TestCopyObjectSelfDeleted(t *testing.T) {
 				storer := p.meta
 				p.meta = &deleteOnceMeta{
 					MetadataStorer: storer, t: t, p: p,
-					bucket: bucket, key: key, at: tc.at,
+					bucket: bucket, key: key, at: tc.at, external: tc.external,
 				}
 
 				input := s3response.CopyObjectInput{

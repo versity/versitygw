@@ -5437,6 +5437,12 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		return nil, err
 	}
 
+	unlock, err := p.lockObjectPublish(ctx, bucket, object)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
 	conds := backend.ObjectDeletePreconditions{
 		IfMatch:            input.IfMatch,
 		IfMatchLastModTime: input.IfMatchLastModifiedTime,
@@ -7207,10 +7213,11 @@ func (p *Posix) CopyObjectWithPreReadFunc(ctx context.Context, input s3response.
 		}
 		defer unlock()
 
-		// A delete doesn't take the publish lock, so the object can be
-		// removed at any step of the rewrite. A step that fails because
-		// of it gets an error of the filesystem or metadata store, so a
-		// failure with the object gone is reported as NoSuchKey.
+		// An external removal or another gateway in local or none lock
+		// mode can still delete the object under the publish lock. A
+		// step that fails because of it gets an error of the filesystem
+		// or metadata store, so a failure with the object gone is
+		// reported as NoSuchKey.
 		defer func() {
 			var apiErr s3err.APIError
 			if err == nil || errors.As(err, &apiErr) {

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/versity/versitygw/backend"
@@ -130,9 +131,10 @@ func (p *Posix) verifyObjectLockMode() error {
 	return nil
 }
 
-// objLockShard returns the shard index for an object key.
+// objLockShard returns the shard index for an object key. Trailing slashes
+// are trimmed so a file key and its directory aliases share one lock shard.
 func objLockShard(object string) uint8 {
-	sum := sha256.Sum256([]byte(object))
+	sum := sha256.Sum256([]byte(strings.TrimRight(object, "/")))
 	return sum[0]
 }
 
