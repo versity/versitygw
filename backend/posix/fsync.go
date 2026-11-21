@@ -15,10 +15,14 @@
 package posix
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
+
+	"github.com/versity/versitygw/backend"
 )
 
 // syncFile and syncDir are variables so tests can observe the calls. syncDir
@@ -28,17 +32,40 @@ var (
 	syncDir  = func(dir string, d *os.File) error { return d.Sync() }
 )
 
-// openDirForSync opens dir, the directory an object is published in, for the
-// fsync of its entry, before the object is published: fsync needs a
-// directory opened for reading, and when the gateway can't read the
-// directory the PUT then fails before the object exists, not after it is
-// published. It returns nil when nothing is synced: when fsync is off, or on
-// Windows, which cannot fsync a directory handle.
-func (tmp *tmpfile) openDirForSync(dir string) (*os.File, error) {
+// syncDirs owns the directory handles from the object's parent to the bucket.
+type syncDirs []*os.File
+
+func (dirs syncDirs) Close() {
+	for _, d := range dirs {
+		d.Close()
+	}
+}
+
+// openDirForSync opens every directory that will be synced before publishing.
+// Read permission failures must fail the PUT before the object exists, and
+// a concurrent DELETE after publication must not invalidate the handles.
+// Windows cannot fsync directory handles. A request holds one fd per path
+// component from before the publish until every directory is flushed (up to
+// 512 for a 1024-byte key); the hold is short, so the risk is low.
+func (tmp *tmpfile) openDirForSync(dir string) (syncDirs, error) {
 	if !tmp.fsync || runtime.GOOS == "windows" {
 		return nil, nil
 	}
-	return os.Open(dir)
+	var dirs syncDirs
+	stop := filepath.Clean(tmp.bucket)
+	for {
+		d, err := os.Open(dir)
+		if err != nil {
+			dirs.Close()
+			return nil, err
+		}
+		dirs = append(dirs, d)
+		parent := filepath.Dir(dir)
+		if dir == stop || parent == dir {
+			return dirs, nil
+		}
+		dir = parent
+	}
 }
 
 // syncData flushes an object's data and its inode, which includes the
@@ -53,37 +80,30 @@ func (tmp *tmpfile) syncData() error {
 	return nil
 }
 
-// syncNamespace flushes the directory entry that publishes the object, and
-// those of any parent directories created for it, by syncing the object's
-// directory and each parent up to and including the bucket directory.
-// objDir is the object's directory, opened with openDirForSync before the
-// object was published, or nil when nothing is synced. It is closed.
-func (tmp *tmpfile) syncNamespace(objDir *os.File) error {
-	if objDir == nil {
-		return nil
+// syncNamespace flushes the publication and its parent entries using only
+// handles opened before publication. All handles are closed, even on error.
+func (tmp *tmpfile) syncNamespace(dirs syncDirs) error {
+	defer dirs.Close()
+	for _, d := range dirs {
+		if err := syncDir(d.Name(), d); err != nil {
+			return fmt.Errorf("fsync directory %q: %w", d.Name(), err)
+		}
 	}
-	defer objDir.Close()
-	stop := filepath.Clean(tmp.bucket)
-	dir := filepath.Dir(filepath.Join(tmp.bucket, tmp.objname))
-	for d := objDir; ; d = nil {
-		if d == nil {
-			var err error
-			d, err = os.Open(dir)
-			if err != nil {
-				return fmt.Errorf("fsync directory %q: %w", dir, err)
-			}
+	return nil
+}
+
+// moveInto publishes tempname as objPath. With retained directory handles it
+// renames relative to the object's parent handle, so the object lands in the
+// directory that is synced even if the path was removed and recreated since
+// the handles were opened; a removed parent fails with ENOENT. It falls back
+// to renaming by path when there are no handles or the rename crosses
+// filesystems.
+func moveInto(tempname, objPath string, perm os.FileMode, dirs syncDirs) error {
+	if renameInDirSupported && len(dirs) > 0 {
+		err := renameInDir(tempname, int(dirs[0].Fd()), objPath)
+		if err == nil || !errors.Is(err, syscall.EXDEV) {
+			return err
 		}
-		err := syncDir(dir, d)
-		if d != objDir {
-			d.Close()
-		}
-		if err != nil {
-			return fmt.Errorf("fsync directory %q: %w", dir, err)
-		}
-		parent := filepath.Dir(dir)
-		if dir == stop || parent == dir {
-			return nil
-		}
-		dir = parent
 	}
+	return backend.MoveFile(tempname, objPath, perm)
 }

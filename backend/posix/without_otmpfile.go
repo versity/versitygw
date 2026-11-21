@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -140,13 +139,13 @@ func (tmp *tmpfile) link() error {
 		return fmt.Errorf("set tmpfile modification time: %w", err)
 	}
 
-	var syncd *os.File
+	var syncd syncDirs
 	err = tmp.publishInDir(filepath.Dir(objPath), func() error {
 		d, err := tmp.openDirForSync(filepath.Dir(objPath))
 		if err != nil {
 			return fmt.Errorf("open parent dir: %w", err)
 		}
-		err = backend.MoveFile(tempname, objPath, tmp.newFilePerm)
+		err = moveInto(tempname, objPath, tmp.newFilePerm, d)
 		if err != nil {
 			if d != nil {
 				d.Close()

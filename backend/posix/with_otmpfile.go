@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"golang.org/x/sys/unix"
 )
@@ -415,7 +414,7 @@ func (tmp *tmpfile) link() error {
 		srcFDName = filepath.Base(tmp.f.Name())
 	}
 
-	var syncd *os.File
+	var syncd syncDirs
 	err = tmp.publishInDir(dir, func() error {
 		d, err := tmp.openDirForSync(dir)
 		if err != nil {
@@ -423,7 +422,7 @@ func (tmp *tmpfile) link() error {
 		}
 		var dirfd int
 		if d != nil {
-			dirfd = int(d.Fd())
+			dirfd = int(d[0].Fd())
 		} else {
 			// O_PATH: linkat() and renameat() need write and search
 			// permission on the directory, not read permission
@@ -485,7 +484,7 @@ func (tmp *tmpfile) fallbackLink() error {
 	}
 
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
-	var syncd *os.File
+	var syncd syncDirs
 	err = tmp.publishInDir(filepath.Dir(objPath), func() error {
 		d, err := tmp.openDirForSync(filepath.Dir(objPath))
 		if err != nil {
@@ -493,7 +492,7 @@ func (tmp *tmpfile) fallbackLink() error {
 		}
 		// rename only works for files within the same filesystem,
 		// MoveFile falls back to copy otherwise
-		err = backend.MoveFile(tempname, objPath, tmp.newFilePerm)
+		err = moveInto(tempname, objPath, tmp.newFilePerm, d)
 		if err != nil {
 			if d != nil {
 				d.Close()
