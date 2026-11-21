@@ -370,10 +370,6 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		return nil, fmt.Errorf("get absolute path of %v: %w", rootdir, err)
 	}
 
-	if opts.SideCarDir != "" && strings.HasPrefix(opts.SideCarDir, rootdir) {
-		return nil, fmt.Errorf("sidecar directory cannot be inside the gateway root directory")
-	}
-
 	// A storer that keeps metadata on the object files (xattr) resolves
 	// bucket names the same way this backend does: relative to the working
 	// directory by default, under the absolute root with AbsolutePaths.
