@@ -2753,7 +2753,9 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	newMetaObj := filepath.Join(metaObjDir, activeUploadName)
 	if err := p.meta.RenameObject(bucket, oldMetaObj, newMetaObj); err != nil {
 		// Roll back the data directory rename so a future retry can succeed.
-		os.Rename(uploadIDInProgress, uploadIDDir)
+		if rbErr := os.Rename(uploadIDInProgress, uploadIDDir); rbErr != nil {
+			debuglogger.Logf("rollback rename multipart upload dir (%q -> %q): %v", uploadIDInProgress, uploadIDDir, rbErr)
+		}
 		unlockClaim()
 		return res, "", fmt.Errorf("rename metadata for in-progress: %w", err)
 	}
@@ -2774,9 +2776,16 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			return
 		}
 		unlockRollback, lockErr := p.lockObjectPublish(context.Background(), bucket, object)
+		if lockErr != nil {
+			debuglogger.Logf("rollback lock object publish (%q/%q): %v", bucket, object, lockErr)
+		}
 		p.removeUploadMetaRetry(bucket, oldMetaObj)
-		p.meta.RenameObject(bucket, newMetaObj, oldMetaObj)
-		os.Rename(uploadIDInProgress, uploadIDDir)
+		if rbErr := p.meta.RenameObject(bucket, newMetaObj, oldMetaObj); rbErr != nil {
+			debuglogger.Logf("rollback rename multipart metadata (%q -> %q): %v", newMetaObj, oldMetaObj, rbErr)
+		}
+		if rbErr := os.Rename(uploadIDInProgress, uploadIDDir); rbErr != nil {
+			debuglogger.Logf("rollback rename multipart upload dir (%q -> %q): %v", uploadIDInProgress, uploadIDDir, rbErr)
+		}
 		if lockErr == nil {
 			unlockRollback()
 		}
@@ -3655,14 +3664,21 @@ func (p *Posix) AbortMultipartUpload(ctx context.Context, mpu *s3.AbortMultipart
 
 	metaTarget := filepath.Join(MetaTmpDir, ".abort-meta-"+abortID)
 	if err := p.meta.RenameObject(bucket, upiddir, metaTarget); err != nil {
-		_ = os.Rename(targetPath, upiddirPath)
+		restoreErr := p.restoreRetiredUploadLocked(bucket, object, objdirRel, upiddir, upiddirPath, targetPath, "")
 		unlock()
+		if restoreErr != nil {
+			debuglogger.Logf("rollback retired multipart upload (%q/%q): %v", bucket, upiddir, restoreErr)
+			return fmt.Errorf("rename multipart upload metadata: %w (rollback failed: %v)", err, restoreErr)
+		}
 		return fmt.Errorf("rename multipart upload metadata: %w", err)
 	}
 	unlock()
 
 	if err := removeDirRetry(targetPath); err != nil {
-		_ = p.restoreRetiredUpload(bucket, object, objdirRel, upiddir, upiddirPath, targetPath, metaTarget)
+		if restoreErr := p.restoreRetiredUpload(bucket, object, objdirRel, upiddir, upiddirPath, targetPath, metaTarget); restoreErr != nil {
+			debuglogger.Logf("rollback retired multipart upload (%q/%q): %v", bucket, upiddir, restoreErr)
+			return fmt.Errorf("remove multipart upload container: %w (rollback failed: %v)", err, restoreErr)
+		}
 		return fmt.Errorf("remove multipart upload container: %w", err)
 	}
 	p.removeUploadMetaRetry(bucket, metaTarget)
@@ -3672,29 +3688,47 @@ func (p *Posix) AbortMultipartUpload(ctx context.Context, mpu *s3.AbortMultipart
 
 func (p *Posix) restoreRetiredUpload(bucket, key, objdir, upiddir, upiddirPath, targetPath, metaTarget string) error {
 	unlockRestore, lockErr := p.lockObjectPublish(context.Background(), bucket, p.encodeKey(key))
-	if lockErr == nil {
+	if lockErr != nil {
+		debuglogger.Logf("rollback lock object publish (%q/%q): %v", bucket, key, lockErr)
+	} else {
 		defer unlockRestore()
 	}
 
+	return p.restoreRetiredUploadLocked(bucket, key, objdir, upiddir, upiddirPath, targetPath, metaTarget)
+}
+
+func (p *Posix) restoreRetiredUploadLocked(bucket, key, objdir, upiddir, upiddirPath, targetPath, metaTarget string) error {
 	backoffMs := initialBackoffMs
 	for attempt := 0; ; attempt++ {
-		if mkErr := backend.MkdirAll(filepath.Dir(upiddirPath), 0, 0, false, p.newDirPerm); mkErr != nil && !isParentDirGone(mkErr) {
-			return mkErr
-		}
 		renameErr := os.Rename(targetPath, upiddirPath)
 		if renameErr == nil {
 			break
 		}
 		if !isParentDirGone(renameErr) || attempt == maxDirRecreateRetries {
-			return renameErr
+			return fmt.Errorf("restore multipart upload container: %w", renameErr)
 		}
-		sleepWithJitter(backoffMs)
-		backoffMs = min(backoffMs*2, maxBackoffMs)
+		if _, statErr := os.Stat(targetPath); errors.Is(statErr, fs.ErrNotExist) {
+			return fmt.Errorf("restore multipart upload container: %w", renameErr)
+		}
+		if attempt > 0 {
+			sleepWithJitter(backoffMs)
+			backoffMs = min(backoffMs*2, maxBackoffMs)
+		}
+		if mkErr := backend.MkdirAll(filepath.Dir(upiddirPath), 0, 0, false, p.newDirPerm); mkErr != nil && !isParentDirGone(mkErr) && !isDirDeletePending(mkErr) {
+			return fmt.Errorf("recreate multipart parent dir: %w", mkErr)
+		}
 	}
 
-	_ = p.meta.StoreAttribute(nil, bucket, objdir, onameAttr, []byte(key))
-	_ = p.meta.RenameObject(bucket, metaTarget, upiddir)
-	return nil
+	var restoreErrs []error
+	if err := p.meta.StoreAttribute(nil, bucket, objdir, onameAttr, []byte(key)); err != nil {
+		restoreErrs = append(restoreErrs, fmt.Errorf("restore multipart object name attr: %w", err))
+	}
+	if metaTarget != "" {
+		if err := p.meta.RenameObject(bucket, metaTarget, upiddir); err != nil {
+			restoreErrs = append(restoreErrs, fmt.Errorf("restore multipart upload metadata: %w", err))
+		}
+	}
+	return errors.Join(restoreErrs...)
 }
 
 // removeUpload removes the directory of the upload uploadName of key with its
@@ -3706,18 +3740,7 @@ func (p *Posix) removeUpload(bucket, key, uploadName string) error {
 	upiddir := filepath.Join(objdir, uploadName)
 	upiddirPath := p.ObjectPath(bucket, upiddir)
 
-	targetPath := filepath.Join(p.ObjectPath(bucket, MetaTmpDir), fmt.Sprintf(".abort-%s", uuid.New().String()))
-	if err := os.Rename(upiddirPath, targetPath); err != nil {
-		if isParentDirGone(err) {
-			return fs.ErrNotExist
-		}
-		targetPath = upiddirPath
-	}
-
-	if err := removeDirRetry(targetPath); err != nil {
-		if targetPath != upiddirPath {
-			_ = os.Rename(targetPath, upiddirPath)
-		}
+	if err := removeDirRetry(upiddirPath); err != nil {
 		return fmt.Errorf("remove multipart upload container: %w", err)
 	}
 	p.removeUploadMetaRetry(bucket, upiddir)

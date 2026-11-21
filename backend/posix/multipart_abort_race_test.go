@@ -49,17 +49,43 @@ func (tr *triggerOnRead) Read(p []byte) (int, error) {
 	return tr.r.Read(p)
 }
 
-func abortTmpLeftovers(t *testing.T, p *Posix, bucket string) []string {
-	t.Helper()
-	entries, err := os.ReadDir(p.ObjectPath(bucket, MetaTmpDir))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
+type hookMetadataStorer struct {
+	meta.MetadataStorer
+	renameObject   func(bucket, oldObject, newObject string) error
+	storeAttribute func(f *os.File, bucket, object, attribute string, value []byte) error
+}
+
+func (h *hookMetadataStorer) RenameObject(bucket, oldObject, newObject string) error {
+	if h.renameObject != nil {
+		return h.renameObject(bucket, oldObject, newObject)
 	}
-	require.NoError(t, err)
+	return h.MetadataStorer.RenameObject(bucket, oldObject, newObject)
+}
+
+func (h *hookMetadataStorer) StoreAttribute(f *os.File, bucket, object, attribute string, value []byte) error {
+	if h.storeAttribute != nil {
+		return h.storeAttribute(f, bucket, object, attribute, value)
+	}
+	return h.MetadataStorer.StoreAttribute(f, bucket, object, attribute, value)
+}
+
+func abortTmpLeftovers(t *testing.T, p *Posix, bucket, sidecarDir string) []string {
+	t.Helper()
+	roots := []string{p.ObjectPath(bucket, MetaTmpDir)}
+	if sidecarDir != "" {
+		roots = append(roots, filepath.Join(sidecarDir, bucket, MetaTmpDir))
+	}
 	var leftovers []string
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".abort-") {
-			leftovers = append(leftovers, e.Name())
+	for _, root := range roots {
+		entries, err := os.ReadDir(root)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		require.NoError(t, err)
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), ".abort-") {
+				leftovers = append(leftovers, filepath.Join(root, e.Name()))
+			}
 		}
 	}
 	return leftovers
@@ -143,7 +169,7 @@ func TestUploadPartRacingAbortMultipartUpload(t *testing.T) {
 
 		assert.Empty(t, multipartLeftovers(t, p.ObjectPath(bucket, "")))
 		assert.Empty(t, multipartLeftovers(t, filepath.Join(sidecar, bucket)))
-		assert.Empty(t, abortTmpLeftovers(t, p, bucket))
+		assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecar))
 	})
 
 	t.Run("deterministic_abort_before_link", func(t *testing.T) {
@@ -194,7 +220,7 @@ func TestUploadPartRacingAbortMultipartUpload(t *testing.T) {
 
 		assert.Empty(t, multipartLeftovers(t, p.ObjectPath(bucket, "")))
 		assert.Empty(t, multipartLeftovers(t, filepath.Join(sidecar, bucket)))
-		assert.Empty(t, abortTmpLeftovers(t, p, bucket))
+		assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecar))
 	})
 
 	t.Run("upload_part_copy_after_abort", func(t *testing.T) {
@@ -242,7 +268,7 @@ func TestUploadPartRacingAbortMultipartUpload(t *testing.T) {
 
 		assert.Empty(t, multipartLeftovers(t, p.ObjectPath(bucket, "")))
 		assert.Empty(t, multipartLeftovers(t, filepath.Join(sidecar, bucket)))
-		assert.Empty(t, abortTmpLeftovers(t, p, bucket))
+		assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecar))
 	})
 
 	for _, tc := range []struct {
@@ -338,7 +364,7 @@ func TestUploadPartRacingAbortMultipartUpload(t *testing.T) {
 			if sidecar != "" {
 				assert.Empty(t, multipartLeftovers(t, filepath.Join(sidecar, bucket)))
 			}
-			assert.Empty(t, abortTmpLeftovers(t, p, bucket))
+			assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecar))
 		})
 	}
 
@@ -439,7 +465,7 @@ func TestUploadPartRacingAbortMultipartUpload(t *testing.T) {
 			if sidecarDir != "" {
 				assert.Empty(t, multipartLeftovers(t, filepath.Join(sidecarDir, bucket)))
 			}
-			assert.Empty(t, abortTmpLeftovers(t, p, bucket))
+			assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecarDir))
 		})
 	}
 
@@ -520,7 +546,7 @@ func TestUploadPartRacingAbortMultipartUpload(t *testing.T) {
 		assert.Empty(t, listRes.Uploads)
 		assert.Empty(t, multipartLeftovers(t, p.ObjectPath(bucket, "")))
 		assert.Empty(t, multipartLeftovers(t, filepath.Join(sidecar, bucket)))
-		assert.Empty(t, abortTmpLeftovers(t, p, bucket))
+		assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecar))
 	})
 
 	t.Run("early_abort_xattr_race", func(t *testing.T) {
@@ -587,7 +613,7 @@ func TestUploadPartRacingAbortMultipartUpload(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, listRes.Uploads)
 		assert.Empty(t, multipartLeftovers(t, p.ObjectPath(bucket, "")))
-		assert.Empty(t, abortTmpLeftovers(t, p, bucket))
+		assert.Empty(t, abortTmpLeftovers(t, p, bucket, ""))
 	})
 
 	t.Run("failed_complete_rollback_preserves_part_meta", func(t *testing.T) {
@@ -691,7 +717,7 @@ func TestUploadPartRacingAbortMultipartUpload(t *testing.T) {
 
 		assert.Empty(t, multipartLeftovers(t, p.ObjectPath(bucket, "")))
 		assert.Empty(t, multipartLeftovers(t, filepath.Join(sidecar, bucket)))
-		assert.Empty(t, abortTmpLeftovers(t, p, bucket))
+		assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecar))
 	})
 
 	t.Run("concurrent_upload_part_vs_failed_complete_rollback", func(t *testing.T) {
@@ -822,7 +848,7 @@ func TestUploadPartRacingAbortMultipartUpload(t *testing.T) {
 
 		assert.Empty(t, multipartLeftovers(t, p.ObjectPath(bucket, "")))
 		assert.Empty(t, multipartLeftovers(t, filepath.Join(sidecar, bucket)))
-		assert.Empty(t, abortTmpLeftovers(t, p, bucket))
+		assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecar))
 	})
 
 	t.Run("abort_rollback_after_parent_cleanup", func(t *testing.T) {
@@ -924,6 +950,186 @@ func TestUploadPartRacingAbortMultipartUpload(t *testing.T) {
 
 		assert.Empty(t, multipartLeftovers(t, p.ObjectPath(bucket, "")))
 		assert.Empty(t, multipartLeftovers(t, filepath.Join(sidecar, bucket)))
-		assert.Empty(t, abortTmpLeftovers(t, p, bucket))
+		assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecar))
+	})
+
+	t.Run("abort_metadata_rename_failure_rollback_after_parent_cleanup", func(t *testing.T) {
+		p, sidecar := newSidecarTestPosix(t)
+		defer p.Shutdown()
+
+		bucket := "mpubucket-abort-meta-rb"
+		createTestBucket(t, p, bucket)
+
+		key := "mpu/abort-meta-rollback"
+		initRes, err := p.CreateMultipartUpload(ctx, s3response.CreateMultipartUploadInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		require.NoError(t, err)
+		uploadID := initRes.UploadId
+
+		payload := bytes.Repeat([]byte("m"), 4096)
+		p1Out, err := p.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:        &bucket,
+			Key:           &key,
+			UploadId:      &uploadID,
+			PartNumber:    aws.Int32(1),
+			ContentLength: aws.Int64(int64(len(payload))),
+			Body:          bytes.NewReader(payload),
+		})
+		require.NoError(t, err)
+
+		sum := sha256.Sum256([]byte(key))
+		objdirRel := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
+
+		origMeta := p.meta
+		injectedErr := errors.New("injected metadata rename failure")
+		p.meta = &hookMetadataStorer{
+			MetadataStorer: origMeta,
+			renameObject: func(b, oldObj, newObj string) error {
+				if strings.Contains(newObj, ".abort-meta-") {
+					p.cleanupEmptyMultipartObjDir(b, key, objdirRel)
+					return injectedErr
+				}
+				return origMeta.RenameObject(b, oldObj, newObj)
+			},
+		}
+
+		abortErr := p.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &key,
+			UploadId: &uploadID,
+		})
+		require.ErrorIs(t, abortErr, injectedErr)
+		p.meta = origMeta
+
+		listRes, err := p.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket:     &bucket,
+			MaxUploads: aws.Int32(1000),
+		})
+		require.NoError(t, err)
+		require.Len(t, listRes.Uploads, 1)
+		assert.Equal(t, uploadID, listRes.Uploads[0].UploadID)
+		assert.Equal(t, key, listRes.Uploads[0].Key)
+
+		partsRes, err := p.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   &bucket,
+			Key:      &key,
+			UploadId: &uploadID,
+			MaxParts: aws.Int32(1000),
+		})
+		require.NoError(t, err)
+		require.Len(t, partsRes.Parts, 1)
+		assert.Equal(t, *p1Out.ETag, partsRes.Parts[0].ETag)
+
+		_, _, compErr := p.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &key,
+			UploadId: &uploadID,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{{
+					PartNumber: aws.Int32(1),
+					ETag:       p1Out.ETag,
+				}},
+			},
+		})
+		require.NoError(t, compErr)
+
+		assert.Empty(t, multipartLeftovers(t, p.ObjectPath(bucket, "")))
+		assert.Empty(t, multipartLeftovers(t, filepath.Join(sidecar, bucket)))
+		assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecar))
+	})
+
+	t.Run("restore_retired_upload_reports_meta_errors_and_detects_sidecar_leftovers", func(t *testing.T) {
+		p, sidecar := newSidecarTestPosix(t)
+		defer p.Shutdown()
+
+		bucket := "mpubucket-restore-errs"
+		createTestBucket(t, p, bucket)
+
+		sidecarTmp := filepath.Join(sidecar, bucket, MetaTmpDir)
+		require.NoError(t, os.MkdirAll(sidecarTmp, 0o755))
+		leftoverPath := filepath.Join(sidecarTmp, ".abort-meta-probe")
+		require.NoError(t, os.WriteFile(leftoverPath, []byte("x"), 0o600))
+		assert.Equal(t, []string{leftoverPath}, abortTmpLeftovers(t, p, bucket, sidecar))
+		require.NoError(t, os.Remove(leftoverPath))
+		assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecar))
+
+		key := "mpu/restore-errors"
+		initRes, err := p.CreateMultipartUpload(ctx, s3response.CreateMultipartUploadInput{
+			Bucket:      &bucket,
+			Key:         &key,
+			ContentType: aws.String("application/octet-stream"),
+		})
+		require.NoError(t, err)
+		uploadID := initRes.UploadId
+
+		sum := sha256.Sum256([]byte(key))
+		objdirRel := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
+		upiddir := filepath.Join(objdirRel, uploadID)
+		upiddirPath := p.ObjectPath(bucket, upiddir)
+		targetPath := filepath.Join(p.ObjectPath(bucket, MetaTmpDir), ".abort-test-1")
+		metaTarget := filepath.Join(MetaTmpDir, ".abort-meta-test-1")
+
+		require.NoError(t, os.Rename(upiddirPath, targetPath))
+		require.NoError(t, p.meta.RenameObject(bucket, upiddir, metaTarget))
+
+		origMeta := p.meta
+		storeErr := errors.New("injected store attr failure")
+		renameErr := errors.New("injected restore meta rename failure")
+		p.meta = &hookMetadataStorer{
+			MetadataStorer: origMeta,
+			storeAttribute: func(f *os.File, b, obj, attr string, val []byte) error {
+				if attr == onameAttr {
+					return storeErr
+				}
+				return origMeta.StoreAttribute(f, b, obj, attr, val)
+			},
+			renameObject: func(b, oldObj, newObj string) error {
+				if oldObj == metaTarget && newObj == upiddir {
+					return renameErr
+				}
+				return origMeta.RenameObject(b, oldObj, newObj)
+			},
+		}
+
+		restoreErr := p.restoreRetiredUpload(bucket, key, objdirRel, upiddir, upiddirPath, targetPath, metaTarget)
+		require.ErrorIs(t, restoreErr, storeErr)
+		require.ErrorIs(t, restoreErr, renameErr)
+		p.meta = origMeta
+
+		// Clean up the left-behind sidecar metaTarget so the leftover check passes.
+		assert.Equal(t, []string{filepath.Join(sidecar, bucket, metaTarget)}, abortTmpLeftovers(t, p, bucket, sidecar))
+		p.removeUploadMetaRetry(bucket, metaTarget)
+		require.NoError(t, p.meta.StoreAttribute(nil, bucket, objdirRel, onameAttr, []byte(key)))
+		require.NoError(t, p.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &key,
+			UploadId: &uploadID,
+		}))
+
+		assert.Empty(t, multipartLeftovers(t, p.ObjectPath(bucket, "")))
+		assert.Empty(t, multipartLeftovers(t, filepath.Join(sidecar, bucket)))
+		assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecar))
+	})
+
+	t.Run("failed_create_cleans_up_without_abort_leftovers", func(t *testing.T) {
+		p, sidecar := newSidecarTestPosix(t)
+		defer p.Shutdown()
+
+		bucket := "mpubucket-failed-create"
+		createTestBucket(t, p, bucket)
+
+		key := "mpu/failed-create"
+		_, err := p.CreateMultipartUpload(ctx, s3response.CreateMultipartUploadInput{
+			Bucket:                    &bucket,
+			Key:                       &key,
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+		})
+		require.Error(t, err)
+
+		assert.Empty(t, multipartLeftovers(t, p.ObjectPath(bucket, "")))
+		assert.Empty(t, multipartLeftovers(t, filepath.Join(sidecar, bucket)))
+		assert.Empty(t, abortTmpLeftovers(t, p, bucket, sidecar))
 	})
 }
