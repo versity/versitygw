@@ -16,10 +16,12 @@
 
 package posix
 
+import "errors"
+
 // renameInDirSupported reports whether renameInDir works on this platform.
 const renameInDirSupported = false
 
 // renameInDir is unsupported here; callers fall back to renaming by path.
 func renameInDir(src string, dir int, objPath string) error {
-	return nil
+	return errors.ErrUnsupported
 }
