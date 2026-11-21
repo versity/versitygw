@@ -28,6 +28,7 @@ package private
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 
@@ -93,6 +94,7 @@ type PrivateAPI struct {
 	app           *fiber.App
 	store         storage.Storer
 	socketPerm    os.FileMode
+	wrapListener  func(net.Listener) net.Listener
 	quiet         bool
 	serverVersion string
 }
@@ -104,6 +106,12 @@ type PrivateAPIOption func(*PrivateAPI)
 // Linux abstract-namespace sockets).
 func WithPrivateSocketPerm(perm os.FileMode) PrivateAPIOption {
 	return func(p *PrivateAPI) { p.socketPerm = perm }
+}
+
+// WithPrivateWrapListener wraps each listener ServeMultiPort binds, below any
+// TLS layer, as s3api.WithWrapListener does for the S3 ports.
+func WithPrivateWrapListener(wrap func(net.Listener) net.Listener) PrivateAPIOption {
+	return func(p *PrivateAPI) { p.wrapListener = wrap }
 }
 
 // WithPrivateQuiet suppresses per-request summary logging, mirroring

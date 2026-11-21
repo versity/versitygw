@@ -49,9 +49,9 @@ func (p *PrivateAPI) ServeMultiPort(addrs []string, tlsOpts netutil.TLSOptions) 
 		var ln net.Listener
 		var err error
 		if netutil.IsUnixSocketPath(addr) && tlsOpts.GetCertificate == nil {
-			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, addr, netutil.ListenerOptions{SocketPerm: p.socketPerm})
+			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, addr, netutil.ListenerOptions{SocketPerm: p.socketPerm, WrapListener: p.wrapListener})
 		} else {
-			ln, err = netutil.NewMultiAddrTLSListenerWithOptions(fiber.NetworkTCP, addr, tlsOpts, netutil.ListenerOptions{SocketPerm: p.socketPerm})
+			ln, err = netutil.NewMultiAddrTLSListenerWithOptions(fiber.NetworkTCP, addr, tlsOpts, netutil.ListenerOptions{SocketPerm: p.socketPerm, WrapListener: p.wrapListener})
 		}
 		if err != nil {
 			closeListeners(listeners)

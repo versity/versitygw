@@ -59,6 +59,7 @@ type Server struct {
 	// WithTrustedProxies.
 	clientIPHeader string
 	trustedProxies clientip.TrustedProxies
+	wrapListener   func(net.Listener) net.Listener
 }
 
 // Option sets various options for NewServer()
@@ -84,6 +85,12 @@ func WithPathPrefix(prefix string) Option {
 // namespace sockets.
 func WithSocketPerm(perm os.FileMode) Option {
 	return func(s *Server) { s.socketPerm = perm }
+}
+
+// WithWrapListener wraps each listener ServeMultiPort binds, below any TLS
+// layer, as s3api.WithWrapListener does for the S3 ports.
+func WithWrapListener(wrap func(net.Listener) net.Listener) Option {
+	return func(s *Server) { s.wrapListener = wrap }
 }
 
 // WithClientIPHeader records the client address from the named proxy header in
@@ -272,9 +279,9 @@ func (s *Server) ServeMultiPort(ports []string) error {
 		var err error
 
 		if s.CertStorage != nil {
-			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, addrSpec, s.CertStorage.GetCertificate, netutil.ListenerOptions{SocketPerm: s.socketPerm})
+			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, addrSpec, s.CertStorage.GetCertificate, netutil.ListenerOptions{SocketPerm: s.socketPerm, WrapListener: s.wrapListener})
 		} else {
-			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, addrSpec, netutil.ListenerOptions{SocketPerm: s.socketPerm})
+			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, addrSpec, netutil.ListenerOptions{SocketPerm: s.socketPerm, WrapListener: s.wrapListener})
 		}
 
 		if err != nil {

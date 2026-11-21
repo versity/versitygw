@@ -74,6 +74,7 @@ type S3ApiServer struct {
 	routes           []routeMount
 	middlewares      []middlewareMount
 	socketPerm       os.FileMode
+	wrapListener     func(net.Listener) net.Listener
 	onListen         func()
 	onListenAddrs    func(addrs []net.Addr)
 	listener         atomic.Pointer[netutil.MultiListener]
@@ -482,6 +483,19 @@ func WithSocketPerm(perm os.FileMode) Option {
 	return func(s *S3ApiServer) { s.socketPerm = perm }
 }
 
+// WithWrapListener wraps each listener ServeMultiPort binds, below any TLS
+// layer. The wrapper sees every connection from its first byte, including the
+// request headers and body bytes the server reads before any handler runs, so
+// an embedder can, for example, set its own read and write deadlines.
+//
+// The wrapper must return a non-nil listener. Its connections must honor the
+// deadlines set through them, and pass CloseWrite through when the underlying
+// connection has it: a TLS port uses both to send its 400 reply to a plaintext
+// HTTP request.
+func WithWrapListener(wrap func(net.Listener) net.Listener) Option {
+	return func(s *S3ApiServer) { s.wrapListener = wrap }
+}
+
 // WithDisableACL disables the s3 api server ACLs, by ignoring all
 // bucket/object ACL headers
 func WithDisableACL() Option {
@@ -522,7 +536,7 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 		return fmt.Errorf("no ports specified")
 	}
 
-	lnOpts := netutil.ListenerOptions{SocketPerm: sa.socketPerm}
+	lnOpts := netutil.ListenerOptions{SocketPerm: sa.socketPerm, WrapListener: sa.wrapListener}
 	if sa.ingressLimiter != nil || sa.egressLimiter != nil {
 		// A previous ShutDown lifted the limits and stopped the reporter.
 		sa.ingressLimiter.SetUnlimited(false)
@@ -531,6 +545,9 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 		sa.reporterStopped = false
 		sa.reporterMu.Unlock()
 		lnOpts.WrapListener = func(ln net.Listener) net.Listener {
+			if sa.wrapListener != nil {
+				ln = sa.wrapListener(ln)
+			}
 			return bwlimit.NewListener(ln, sa.ingressLimiter, sa.egressLimiter)
 		}
 	}

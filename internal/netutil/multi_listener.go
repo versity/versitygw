@@ -250,7 +250,8 @@ func resolveHostnameAddrs(address string) ([]string, error) {
 type ListenerOptions struct {
 	SocketPerm os.FileMode
 	// WrapListener, when set, wraps each bound socket listener before any TLS
-	// layer is added, so the wrapper sees raw TCP bytes including TLS records.
+	// layer is added, so the wrapper sees raw stream bytes (TCP or unix
+	// socket), including TLS records. It must return a non-nil listener.
 	WrapListener func(net.Listener) net.Listener
 }
 

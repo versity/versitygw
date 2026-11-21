@@ -44,6 +44,7 @@ type S3AdminServer struct {
 	maxConnections  int
 	maxRequests     int
 	socketPerm      os.FileMode
+	wrapListener    func(net.Listener) net.Listener
 	pathPrefix      string
 	allowAnyRegion  bool
 	clientIPHeader  string
@@ -208,6 +209,12 @@ func WithAdminSocketPerm(perm os.FileMode) AdminOpt {
 	return func(s *S3AdminServer) { s.socketPerm = perm }
 }
 
+// WithAdminWrapListener wraps each listener ServeMultiPort binds, below any
+// TLS layer, as WithWrapListener does for the S3 ports.
+func WithAdminWrapListener(wrap func(net.Listener) net.Listener) AdminOpt {
+	return func(s *S3AdminServer) { s.wrapListener = wrap }
+}
+
 // WithAdminPathPrefix mounts all admin routes under the given path prefix
 // (e.g. "/admin").
 func WithAdminPathPrefix(prefix string) AdminOpt {
@@ -254,9 +261,9 @@ func (sa *S3AdminServer) ServeMultiPort(ports []string) error {
 		var err error
 
 		if sa.CertStorage != nil {
-			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, sa.CertStorage.GetCertificate, netutil.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, sa.CertStorage.GetCertificate, netutil.ListenerOptions{SocketPerm: sa.socketPerm, WrapListener: sa.wrapListener})
 		} else {
-			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, portSpec, netutil.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, portSpec, netutil.ListenerOptions{SocketPerm: sa.socketPerm, WrapListener: sa.wrapListener})
 		}
 
 		if err != nil {
