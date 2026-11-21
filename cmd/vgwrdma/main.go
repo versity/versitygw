@@ -33,10 +33,12 @@ import (
 	"github.com/versity/versitygw/cumiddleware"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/embedgw"
+	"github.com/versity/versitygw/hipv3backend"
 	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/internal/rdmamode"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/rdma"
+	"github.com/versity/versitygw/rdma/rcdial"
 	"github.com/versity/versitygw/rdma/rcroutes"
 	"github.com/versity/versitygw/rdma/rcserver"
 	"github.com/versity/versitygw/s3api"
@@ -120,6 +122,7 @@ var (
 	socketPerm                             string
 	rdmaIP                                 string
 	rcGidHint                              string
+	rcTransport                            string
 	rcDevice                               string
 	rcGidIndex                             int
 	rdmaRCEnable                           bool
@@ -274,6 +277,14 @@ documentation can be found in the GitHub wiki.`,
 				if !v1On && !v2On {
 					return fmt.Errorf("either --rdma-ip or --rdma-rc-enable is required")
 				}
+			}
+			// The v3 dialer transport is either the default CM or
+			// the TCP parameter exchange; anything else is a
+			// startup-time typo, not a silent fallback.
+			switch rcTransport {
+			case "", "cm", "oob":
+			default:
+				return fmt.Errorf("invalid --rc-transport %q: want cm or oob", rcTransport)
 			}
 			return nil
 		},
@@ -978,6 +989,12 @@ func initFlags() []cli.Flag {
 			Value:       0,
 			Destination: &rcGidIndex,
 		},
+		&cli.StringFlag{
+			Name:        "rc-transport",
+			Usage:       "v3 dialer transport: cm (default, RDMA CM) or oob (TCP parameter exchange, for fabrics without kernel CM)",
+			EnvVars:     []string{"VGW_RC_TRANSPORT"},
+			Destination: &rcTransport,
+		},
 		&cli.BoolFlag{
 			Name:        "rdma-rc-enable",
 			Usage:       "enable the hipobj-rc-v2 RC control routes and data plane (independent of --rdma-ip)",
@@ -1113,6 +1130,21 @@ func debugLogLevel() debuglogger.Level {
 	return debuglogger.LevelSilent
 }
 
+// buildV3Options assembles the hipobj-rc-v3 server options. The
+// middleware is registered on every build and every mode: it only
+// parses and stores the token, so builds without the rdma
+// transport can still answer the documented 501 rather than
+// ignoring the header. It stays independent of the cuObject flags,
+// and the virtual domain lets the object predicate recognize
+// virtual-hosted requests, which reach this middleware before the
+// host-style parser rewrites their path. Extracted so the
+// registration test consumes the same assembly the gateway uses.
+func buildV3Options(virtualDomain string) []s3api.Option {
+	return []s3api.Option{
+		s3api.WithMiddleware("/", cumiddleware.RDMAv3Middleware(virtualDomain)),
+	}
+}
+
 func runGateway(ctx context.Context, be backend.Backend) error {
 	// The gateway command owns the input backend from here on:
 	// every failure path below must close the whole chain it
@@ -1176,6 +1208,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	var s3Opts []s3api.Option
+	s3Opts = append(s3Opts, buildV3Options(virtualDomain)...)
 	if v1On {
 		rdma.ConfigureTelemetry(debug)
 
@@ -1453,6 +1486,17 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	} else {
 		cfg.S3Options = s3Opts
 	}
+
+	// hipobj-rc-v3 data path: wrap the backend so PutObject,
+	// UploadPart, and GetObject intercept requests carrying a stored
+	// v3 token. In builds without the rdma transport the adapter's
+	// dialer returns the unsupported-transport error, which maps to
+	// the documented 501; the middleware above is registered either
+	// way. Placement is last, after every other backend layer, so
+	// the intercept sees the fully assembled chain.
+	be = hipv3backend.New(be, nil, hipv3backend.Config{
+		Config: rcdial.Config{Transport: rcTransport},
+	})
 
 	runErr := embedgw.RunVersityGW(ctx, be, cfg)
 	return runErr

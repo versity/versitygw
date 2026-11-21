@@ -58,6 +58,7 @@ RCSERVER_LIB=rdma/librcserver.a
 RCSERVER_SRCS=$(wildcard cuwrapper/rc/*.cpp)
 RCSERVER_OBJS=$(RCSERVER_SRCS:.cpp=.o)
 RCSERVER_CXXFLAGS=-fPIC -std=c++17 -Icuwrapper/rc
+RDIAL_WRAPPER_LIB=rdma/librdialwrapper.a
 
 VERSION := $(shell if test -e VERSION; then cat VERSION; else git describe --abbrev=0 --tags HEAD; fi)
 BUILD := $(shell git rev-parse --short HEAD || echo release-rpm)
@@ -106,8 +107,13 @@ cuwrapper/rc/%.o: cuwrapper/rc/%.cpp
 
 .INTERMEDIATE: $(RCSERVER_OBJS)
 
+$(RDIAL_WRAPPER_LIB): cuwrapper/rdial_wrapper.c cuwrapper/rdial_wrapper.h
+	$(CC) -c -fPIC -Icuwrapper -o cuwrapper/rdial_wrapper.o cuwrapper/rdial_wrapper.c
+	$(AR) rcs $(RDIAL_WRAPPER_LIB) cuwrapper/rdial_wrapper.o
+	rm -f cuwrapper/rdial_wrapper.o
+
 .PHONY: vgwrdma
-vgwrdma: $(VGWRDMA_WRAPPER_LIB) $(RCSERVER_LIB)
+vgwrdma: $(VGWRDMA_WRAPPER_LIB) $(RCSERVER_LIB) $(RDIAL_WRAPPER_LIB)
 	CGO_ENABLED=1 \
 	CGO_CFLAGS="$(VGWRDMA_RDMA_CGO_CFLAGS)" \
 	CGO_LDFLAGS="$(VGWRDMA_RDMA_CGO_LDFLAGS)" \
