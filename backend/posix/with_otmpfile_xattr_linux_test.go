@@ -151,8 +151,9 @@ func TestOTmpFileProbeNoOTmpfile(t *testing.T) {
 	}
 	t.Cleanup(func() { openat = unix.Openat })
 	var logs strings.Builder
+	orig := log.Writer()
 	log.SetOutput(&logs)
-	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	t.Cleanup(func() { log.SetOutput(orig) })
 
 	for _, obj := range []string{"object", "object2", "object3"} {
 		f, err := p.openObjectTmpFile(bucket, obj, 5, auth.Account{}, false, odirectNotAllowed)
@@ -188,6 +189,7 @@ func TestOTmpFileProbeNoOTmpfileInherit(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(p.BucketPath(bucket), "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	skipWithoutOTmpfile(t, p.BucketPath(bucket))
 	tmpDir := p.ObjectPath(bucket, MetaTmpDir)
 	openat = func(dirfd int, path string, flags int, mode uint32) (int, error) {
 		if path == tmpDir {
@@ -202,6 +204,9 @@ func TestOTmpFileProbeNoOTmpfileInherit(t *testing.T) {
 		t.Fatalf("open tmp file: %v", err)
 	}
 	defer f.cleanup()
+	if !strings.HasPrefix(f.File().Name(), procfddir) {
+		t.Errorf("temp file %v is not an O_TMPFILE", f.File().Name())
+	}
 	if _, known := p.otmpProbe.Load(p.BucketPath(bucket)); known {
 		t.Error("probe result remembered, want unknown")
 	}
