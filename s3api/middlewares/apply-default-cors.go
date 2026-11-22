@@ -18,9 +18,15 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/s3api/utils"
 )
 
+// ensureExposeETag exposes ETag and a few other headers needed by browser
+// clients when the gateway default CORS origin is applied. It also marks the
+// request, so that user metadata headers are exposed as well.
 func ensureExposeETag(ctx fiber.Ctx) {
+	utils.ContextKeyDefaultCORS.Set(ctx, true)
+
 	existing := strings.TrimSpace(string(ctx.Response().Header.Peek("Access-Control-Expose-Headers")))
 	defaults := []string{"ETag", "x-amz-storage-class", "x-amz-restore"}
 	if existing == "" {

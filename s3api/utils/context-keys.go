@@ -42,4 +42,5 @@ const (
 	ContextKeyHostID           = httpctx.ContextKeyHostID
 	ContextKeyWebsiteConfig    = httpctx.ContextKeyWebsiteConfig
 	ContextKeyClientIP         = httpctx.ContextKeyClientIP
+	ContextKeyDefaultCORS      = httpctx.ContextKeyDefaultCORS
 )

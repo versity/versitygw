@@ -133,9 +133,6 @@ func ApplyBucketCORS(be backend.Backend, resolveBucket BucketResolver, fallbackO
 			}
 		}
 
-		// Always expose ETag and user metadata headers for browser clients.
-		ensureExposeETag(ctx)
-
 		return nil
 	}
 }
