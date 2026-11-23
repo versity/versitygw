@@ -205,7 +205,7 @@ source ./tests/setup_unit.sh
     export -f docker
     export trace
     cd "$1"
-    bash ./tests/run_parallel.sh --config-folder "./config link" \
+    bash ./tests/run_parallel.sh --config-folder "./config_link" \
       --log-folder "./new_logs" --log-file runner.log fake-image suite
   ' bash "$root"
 
