@@ -362,40 +362,41 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	if err := utils.ValidateVersionId(ctx); err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
+	errResponse := &Response{
+		MetaOpts: &MetaOptions{
+			BucketOwner: parsedAcl.Owner,
+		},
 	}
 
+	if err := utils.ValidateVersionId(ctx); err != nil {
+		return errResponse, err
+	}
+
+	// The attributes action is checked before the object is looked up and
+	// the read action only once it exists. Both are evaluated together
+	// first, so that an allowed request evaluates the policies only once.
 	attributesAction, readAction := auth.ObjectAttributesActions(versionId)
-	err := c.verifyAccess(ctx, auth.AccessOptions{
+	accessOpts := auth.AccessOptions{
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionRead,
 		IsRoot:          isRoot,
 		Acc:             acct,
 		Bucket:          bucket,
 		Object:          key,
-		Actions:         []auth.Action{attributesAction},
+		Actions:         []auth.Action{attributesAction, readAction},
 		IsPublicRequest: isPublicBucket,
-	})
-	if err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
+	}
+	readErr := c.verifyAccess(ctx, accessOpts)
+	if readErr != nil {
+		accessOpts.Actions = []auth.Action{attributesAction}
+		if err := c.verifyAccess(ctx, accessOpts); err != nil {
+			return errResponse, err
+		}
 	}
 
 	ssec, err := c.parseSSECHeaders(ctx)
 	if err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
+		return errResponse, err
 	}
 
 	var maxParts *int32
@@ -408,11 +409,7 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 	// parse the object attributes
 	attrs, err := utils.ParseObjectAttributes(ctx)
 	if err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
+		return errResponse, err
 	}
 
 	objAttrs := make([]types.ObjectAttributes, 0, len(attrs))
@@ -432,24 +429,14 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 			MaxParts:             maxParts,
 			VersionId:            &versionId,
 		})
-	if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
-		// AWS reports a missing object as NoSuchKey only to a caller
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) ||
+		errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchVersion)) {
+		// AWS reports a missing object or version as such only to a caller
 		// allowed to list the bucket, and as AccessDenied otherwise.
-		listErr := c.verifyAccess(ctx, auth.AccessOptions{
-			Acl:             parsedAcl,
-			AclPermission:   auth.PermissionRead,
-			IsRoot:          isRoot,
-			Acc:             acct,
-			Bucket:          bucket,
-			Actions:         []auth.Action{auth.ListBucketAction},
-			IsPublicRequest: isPublicBucket,
-		})
-		if listErr != nil {
-			return &Response{
-				MetaOpts: &MetaOptions{
-					BucketOwner: parsedAcl.Owner,
-				},
-			}, listErr
+		accessOpts.Object = ""
+		accessOpts.Actions = []auth.Action{auth.ListBucketAction}
+		if listErr := c.verifyAccess(ctx, accessOpts); listErr != nil {
+			return errResponse, listErr
 		}
 	}
 	if err != nil {
@@ -467,22 +454,8 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.verifyAccess(ctx, auth.AccessOptions{
-		Acl:             parsedAcl,
-		AclPermission:   auth.PermissionRead,
-		IsRoot:          isRoot,
-		Acc:             acct,
-		Bucket:          bucket,
-		Object:          key,
-		Actions:         []auth.Action{readAction},
-		IsPublicRequest: isPublicBucket,
-	})
-	if err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
+	if readErr != nil {
+		return errResponse, readErr
 	}
 
 	headers := map[string]*string{
