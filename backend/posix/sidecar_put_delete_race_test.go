@@ -25,6 +25,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -669,6 +670,329 @@ func TestSidecarDeleteDirObjectRacingPutFileObjectPreservesMetadata(t *testing.T
 				if !maps.Equal(head.Metadata, wantMeta) {
 					t.Fatalf("round %d: HeadObject Metadata = %v, want %v", round, head.Metadata, wantMeta)
 				}
+			}
+		})
+	}
+}
+
+func TestObjLockKeyNormalization(t *testing.T) {
+	wantKey := "dir/foo"
+	wantShard := objLockShard(wantKey)
+	for _, alias := range []string{
+		"dir/foo/",
+		"dir/foo//",
+		"dir//foo",
+		"dir///foo//",
+		"/dir/foo",
+		"//dir/foo",
+		"./dir/foo",
+		"dir/./foo",
+		"dir/a/../foo",
+	} {
+		if got := normalizeObjLockKey(alias); got != wantKey {
+			t.Fatalf("normalizeObjLockKey(%q) = %q, want %q", alias, got, wantKey)
+		}
+		if got := objLockShard(alias); got != wantShard {
+			t.Fatalf("objLockShard(%q) = %d, objLockShard(%q) = %d; want equal", alias, got, wantKey, wantShard)
+		}
+	}
+
+	rootShard := objLockShard("")
+	for _, rootAlias := range []string{"", ".", "/", "///", "a/.."} {
+		if got := normalizeObjLockKey(rootAlias); got != "" {
+			t.Fatalf("normalizeObjLockKey(%q) = %q, want %q", rootAlias, got, "")
+		}
+		if got := objLockShard(rootAlias); got != rootShard {
+			t.Fatalf("objLockShard(%q) = %d, want %d", rootAlias, got, rootShard)
+		}
+	}
+
+	if normalizeObjLockKey(`a\b`) == normalizeObjLockKey("a/b") {
+		t.Fatalf("normalizeObjLockKey(%q) unexpectedly matched normalizeObjLockKey(%q)", `a\b`, "a/b")
+	}
+}
+
+type etagSyncMeta struct {
+	meta.MetadataStorer
+	t       *testing.T
+	seedKey string
+	slot    chan struct{}
+	once    sync.Once
+	release func()
+	putDone <-chan struct{}
+}
+
+func (m *etagSyncMeta) RetrieveAttribute(f *os.File, bucket, object, attribute string) ([]byte, error) {
+	val, err := m.MetadataStorer.RetrieveAttribute(f, bucket, object, attribute)
+	if attribute == etagkey && err == nil {
+		m.once.Do(func() {
+			select {
+			case <-m.slot:
+				m.slot <- struct{}{}
+				m.t.Errorf("RetrieveAttribute(%q, etag): expected publish lock slot for %q to be held, but it was free", object, m.seedKey)
+			default:
+			}
+			m.release()
+			select {
+			case <-m.putDone:
+			case <-time.After(25 * time.Millisecond):
+			}
+		})
+	}
+	return val, err
+}
+
+func TestConditionalDeleteVsOverwriteAtomicityDeterministic(t *testing.T) {
+	ctx := context.Background()
+	const (
+		bucket  = "cond-det-bucket"
+		seedKey = "dir/foo"
+	)
+
+	for mode, mkMeta := range metaModes(t) {
+		t.Run(mode, func(t *testing.T) {
+			for _, delKey := range []string{"dir/foo", "dir//foo", "/dir/foo"} {
+				t.Run("delKey="+delKey, func(t *testing.T) {
+					p := newTestPosix(t, mkMeta)
+					defer p.Shutdown()
+					createTestBucket(t, p, bucket)
+
+					seedRes, err := testPut(p, bucket, seedKey, []byte("old"), nil, nil)
+					if err != nil {
+						t.Fatalf("seed PutObject: %v", err)
+					}
+					oldETag := seedRes.ETag
+
+					slotIdx := objLockSlot(sha256.Sum256([]byte(bucket)), objLockShard(seedKey))
+					slot := p.objLockSlots[slotIdx]
+
+					putReady := make(chan struct{})
+					releasePut := make(chan struct{})
+					putDone := make(chan struct{})
+					var releaseOnce sync.Once
+					release := func() {
+						releaseOnce.Do(func() { close(releasePut) })
+					}
+
+					p.meta = &etagSyncMeta{
+						MetadataStorer: p.meta,
+						t:              t,
+						seedKey:        seedKey,
+						slot:           slot,
+						release:        release,
+						putDone:        putDone,
+					}
+
+					var putOut s3response.PutObjectOutput
+					var putErr error
+					go func() {
+						defer close(putDone)
+						newBody := []byte("new")
+						cl := int64(len(newBody))
+						putOut, putErr = p.PutObjectWithPostFunc(ctx, s3response.PutObjectInput{
+							Bucket:        aws.String(bucket),
+							Key:           aws.String(seedKey),
+							ContentLength: &cl,
+							Body:          bytes.NewReader(newBody),
+						}, func(*os.File) error {
+							close(putReady)
+							<-releasePut
+							return nil
+						})
+					}()
+					defer func() {
+						release()
+						<-putDone
+					}()
+
+					select {
+					case <-putReady:
+					case <-putDone:
+						t.Fatalf("PutObject exited before postprocess: %v", putErr)
+					}
+
+					_, delErr := p.DeleteObject(ctx, &s3.DeleteObjectInput{
+						Bucket:  aws.String(bucket),
+						Key:     aws.String(delKey),
+						IfMatch: aws.String(oldETag),
+					})
+
+					release()
+					<-putDone
+
+					if putErr != nil {
+						t.Fatalf("PutObject failed: %v", putErr)
+					}
+					if delErr != nil {
+						t.Fatalf("DeleteObject(%q) failed: %v", delKey, delErr)
+					}
+
+					head, err := p.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket: aws.String(bucket),
+						Key:    aws.String(seedKey),
+					})
+					if err != nil {
+						t.Fatalf("HeadObject(%q) failed: %v", seedKey, err)
+					}
+					if got := aws.ToString(head.ETag); got != putOut.ETag {
+						t.Fatalf("HeadObject ETag = %q, want %q", got, putOut.ETag)
+					}
+
+					get, err := p.GetObject(ctx, &s3.GetObjectInput{
+						Bucket: aws.String(bucket),
+						Key:    aws.String(seedKey),
+					})
+					if err != nil {
+						t.Fatalf("GetObject(%q) failed: %v", seedKey, err)
+					}
+					gotBody, err := io.ReadAll(get.Body)
+					_ = get.Body.Close()
+					if err != nil {
+						t.Fatalf("read GetObject body: %v", err)
+					}
+					if !bytes.Equal(gotBody, []byte("new")) {
+						t.Fatalf("GetObject body = %q, want %q", gotBody, "new")
+					}
+					if got := aws.ToString(get.ETag); got != putOut.ETag {
+						t.Fatalf("GetObject ETag = %q, want %q", got, putOut.ETag)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestConditionalDeleteVsOverwriteRace(t *testing.T) {
+	ctx := context.Background()
+	const rounds = 20
+
+	for mode, mkMeta := range metaModes(t) {
+		t.Run(mode, func(t *testing.T) {
+			p := newVersionedTestPosix(t, mkMeta)
+			defer p.Shutdown()
+
+			unversioned := "cond-ovw-unversioned"
+			versioned := "cond-ovw-versioned"
+			suspended := "cond-ovw-suspended"
+			for _, b := range []string{unversioned, versioned, suspended} {
+				createTestBucket(t, p, b)
+			}
+			if err := p.PutBucketVersioning(ctx, versioned, types.BucketVersioningStatusEnabled); err != nil {
+				t.Fatalf("enable versioning: %v", err)
+			}
+			if err := p.PutBucketVersioning(ctx, suspended, types.BucketVersioningStatusEnabled); err != nil {
+				t.Fatalf("enable versioning before suspend: %v", err)
+			}
+			if err := p.PutBucketVersioning(ctx, suspended, types.BucketVersioningStatusSuspended); err != nil {
+				t.Fatalf("suspend versioning: %v", err)
+			}
+
+			for _, tc := range []struct {
+				name     string
+				bucket   string
+				useBatch bool
+			}{
+				{name: "unversioned", bucket: unversioned},
+				{name: "versioned", bucket: versioned},
+				{name: "suspended", bucket: suspended},
+				{name: "DeleteObjects", bucket: unversioned, useBatch: true},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					for round := 0; round < rounds; round++ {
+						key := fmt.Sprintf("key-%s-%02d", tc.name, round)
+						seedRes, err := testPut(p, tc.bucket, key, []byte("old"), nil, nil)
+						if err != nil {
+							t.Fatalf("round %d: seed put: %v", round, err)
+						}
+						oldETag := seedRes.ETag
+
+						start := make(chan struct{})
+						var wg sync.WaitGroup
+						var putOut s3response.PutObjectOutput
+						var putErr error
+						var delErr error
+						var batchOut s3response.DeleteResult
+
+						wg.Add(2)
+						go func() {
+							defer wg.Done()
+							<-start
+							putOut, putErr = testPut(p, tc.bucket, key, []byte("new"), nil, nil)
+						}()
+						go func() {
+							defer wg.Done()
+							<-start
+							if tc.useBatch {
+								batchOut, delErr = p.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+									Bucket: aws.String(tc.bucket),
+									Delete: &types.Delete{
+										Objects: []types.ObjectIdentifier{{
+											Key:  aws.String(key),
+											ETag: aws.String(oldETag),
+										}},
+									},
+								})
+								return
+							}
+							_, delErr = p.DeleteObject(ctx, &s3.DeleteObjectInput{
+								Bucket:  aws.String(tc.bucket),
+								Key:     aws.String(key),
+								IfMatch: aws.String(oldETag),
+							})
+						}()
+
+						close(start)
+						wg.Wait()
+
+						if putErr != nil {
+							t.Fatalf("round %d: PutObject failed: %v", round, putErr)
+						}
+						if tc.useBatch {
+							if delErr != nil {
+								t.Fatalf("round %d: DeleteObjects failed: %v", round, delErr)
+							}
+							okDeleted := len(batchOut.Deleted) == 1 && len(batchOut.Error) == 0
+							okPrecond := len(batchOut.Deleted) == 0 && len(batchOut.Error) == 1 &&
+								aws.ToString(batchOut.Error[0].Code) == "PreconditionFailed"
+							if !okDeleted && !okPrecond {
+								t.Fatalf("round %d: unexpected DeleteObjects result: deleted=%d errors=%+v",
+									round, len(batchOut.Deleted), batchOut.Error)
+							}
+						} else if delErr != nil && !isPreconditionFailed(delErr) {
+							t.Fatalf("round %d: DeleteObject unexpected error: %v", round, delErr)
+						}
+
+						head, err := p.HeadObject(ctx, &s3.HeadObjectInput{
+							Bucket: aws.String(tc.bucket),
+							Key:    aws.String(key),
+						})
+						if err != nil {
+							t.Fatalf("round %d: HeadObject(%q) failed: %v", round, key, err)
+						}
+						if got := aws.ToString(head.ETag); got != putOut.ETag {
+							t.Fatalf("round %d: HeadObject ETag = %q, want %q", round, got, putOut.ETag)
+						}
+
+						get, err := p.GetObject(ctx, &s3.GetObjectInput{
+							Bucket: aws.String(tc.bucket),
+							Key:    aws.String(key),
+						})
+						if err != nil {
+							t.Fatalf("round %d: GetObject(%q) failed: %v", round, key, err)
+						}
+						gotBody, err := io.ReadAll(get.Body)
+						_ = get.Body.Close()
+						if err != nil {
+							t.Fatalf("round %d: read GetObject body: %v", round, err)
+						}
+						if !bytes.Equal(gotBody, []byte("new")) {
+							t.Fatalf("round %d: GetObject body = %q, want %q", round, gotBody, "new")
+						}
+						if got := aws.ToString(get.ETag); got != putOut.ETag {
+							t.Fatalf("round %d: GetObject ETag = %q, want %q", round, got, putOut.ETag)
+						}
+					}
+				})
 			}
 		})
 	}
