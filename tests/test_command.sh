@@ -206,17 +206,17 @@ source ./tests/setup_unit.sh
     export trace
     cd "$1"
     bash ./tests/run_parallel.sh --config-folder "./config link" \
-      --log-folder "./new logs" --log-file runner.log fake-image suite
+      --log-folder "./new_logs" --log-file runner.log fake-image suite
   ' bash "$root"
 
   assert_success
-  run command grep -Fx -- "$root/actual config:/home/tester/config" "$trace"
+  run command grep -Fx -- "$root/actual_config:/home/tester/config" "$trace"
   assert_success
-  run command grep -Fx -- "$root/new logs:/home/tester/log" "$trace"
+  run command grep -Fx -- "$root/new_logs:/home/tester/log" "$trace"
   assert_success
-  run command grep -Fx -- "HOST_LOG_FOLDER=$root/new logs" "$trace"
+  run command grep -Fx -- "HOST_LOG_FOLDER=$root/new_logs" "$trace"
   assert_success
-  assert [ -s "$root/new logs/runner.log" ]
+  assert [ -s "$root/new_logs/runner.log" ]
 }
 
 # tags: unit
