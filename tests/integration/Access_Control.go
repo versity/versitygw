@@ -1569,20 +1569,27 @@ func AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 func AccessControl_GetObjectAttributes_missing_object(s *S3Conf) error {
 	testName := "AccessControl_GetObjectAttributes_missing_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj := "my-obj"
+		obj, existingObj := "my-obj", "existing-obj"
 		testuser := getUser("user")
 		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		if _, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &existingObj,
+		}, s3client); err != nil {
 			return err
 		}
 
 		resource := fmt.Sprintf(`["arn:aws:s3:::%s","arn:aws:s3:::%s/*"]`, bucket, bucket)
 		userClient := s.getUserClient(testuser)
 
-		getObjectAttributes := func() error {
+		getObjectAttributes := func(key string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := userClient.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
 				Bucket:           &bucket,
-				Key:              &obj,
+				Key:              &key,
 				ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesEtag},
 			})
 			cancel()
@@ -1595,7 +1602,7 @@ func AccessControl_GetObjectAttributes_missing_object(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkApiErr(getObjectAttributes(), s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+		if err := checkApiErr(getObjectAttributes(obj), s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
 		}
 
@@ -1604,7 +1611,7 @@ func AccessControl_GetObjectAttributes_missing_object(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkApiErr(getObjectAttributes(), s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+		if err := checkApiErr(getObjectAttributes(obj), s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
 		}
 
@@ -1614,7 +1621,42 @@ func AccessControl_GetObjectAttributes_missing_object(s *S3Conf) error {
 			return err
 		}
 
-		return checkSdkApiErr(getObjectAttributes(), "NoSuchKey")
+		if err := checkApiErr(getObjectAttributes(obj), s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+			return err
+		}
+
+		// s3:ListBucket doesn't stand in for s3:GetObject on an existing object
+		if err := checkApiErr(getObjectAttributes(existingObj), s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		// An explicit Deny on s3:ListBucket hides a missing object again
+		policy = fmt.Sprintf(`{
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Principal": "%s",
+					"Action": ["s3:GetObjectAttributes", "s3:GetObject", "s3:ListBucket"],
+					"Resource": %s
+				},
+				{
+					"Effect": "Deny",
+					"Principal": "%s",
+					"Action": "s3:ListBucket",
+					"Resource": "arn:aws:s3:::%s"
+				}
+			]
+		}`, testuser.access, resource, testuser.access, bucket)
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		if err := checkApiErr(getObjectAttributes(obj), s3err.GetExplicitDenyAccessErr(testuser.access, "s3:ListBucket",
+			fmt.Sprintf("arn:aws:s3:::%s", bucket), "a resource-based policy")); err != nil {
+			return err
+		}
+
+		return getObjectAttributes(existingObj)
 	})
 }
 

@@ -1962,6 +1962,7 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_post_object_tagging_split_sources)
 	ts.Run(S3IAMAccessControl_put_object_lock_split_sources)
 	ts.Run(S3IAMAccessControl_get_object_attributes_split_sources)
+	ts.Run(S3IAMAccessControl_get_object_attributes_missing_object)
 	ts.Run(S3IAMAccessControl_create_bucket)
 	ts.Run(S3IAMAccessControl_list_buckets)
 	ts.Run(S3IAMAccessControl_governance_bypass_sources)
@@ -2585,6 +2586,7 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_post_object_tagging_split_sources":                             S3IAMAccessControl_post_object_tagging_split_sources,
 		"S3IAMAccessControl_put_object_lock_split_sources":                                 S3IAMAccessControl_put_object_lock_split_sources,
 		"S3IAMAccessControl_get_object_attributes_split_sources":                           S3IAMAccessControl_get_object_attributes_split_sources,
+		"S3IAMAccessControl_get_object_attributes_missing_object":                          S3IAMAccessControl_get_object_attributes_missing_object,
 		"S3IAMAccessControl_create_bucket":                                                 S3IAMAccessControl_create_bucket,
 		"S3IAMAccessControl_list_buckets":                                                  S3IAMAccessControl_list_buckets,
 		"S3IAMAccessControl_governance_bypass_sources":                                     S3IAMAccessControl_governance_bypass_sources,
