@@ -44,7 +44,7 @@ source ./tests/setup_unit.sh
 
 # tags: unit
 @test "run parallel - appends status to file and stdout" {
-  local runner_log="$BATS_TEST_TMPDIR/runner log.txt" contents
+  local runner_log="$BATS_TEST_TMPDIR/runner_log.txt" contents
   printf '%s\n' "existing entry" > "$runner_log"
 
   run bash -c '
@@ -79,7 +79,7 @@ source ./tests/setup_unit.sh
   local order folder contents
 
   for order in before after; do
-    folder="$BATS_TEST_TMPDIR/$order/new logs"
+    folder="$BATS_TEST_TMPDIR/$order/new_logs"
     run bash -c '
       docker() { return 0; }
       export -f docker
@@ -163,7 +163,9 @@ source ./tests/setup_unit.sh
 
   for mode in default custom; do
     expected="$root/runtime/config"
-    if [ "$mode" == "custom" ]; then expected="$root/custom config"; fi
+    if [ "$mode" == "custom" ]; then
+      expected="$root/custom_config"
+    fi
     mkdir -p "$expected"
     expected="$(cd "$expected" && pwd -P)"
     run bash -c '
@@ -191,8 +193,8 @@ source ./tests/setup_unit.sh
   local root trace="$BATS_TEST_TMPDIR/docker-paths"
   root="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
   ln -s "$PWD/tests" "$root/tests"
-  mkdir -p "$root/actual config"
-  ln -s "$root/actual config" "$root/config link"
+  mkdir -p "$root/actual_config"
+  ln -s "$root/actual_config" "$root/config_link"
 
   run bash -c '
     trace="$1/docker-paths"
