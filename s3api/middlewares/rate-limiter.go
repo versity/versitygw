@@ -39,7 +39,7 @@ func RateLimiter(limit int, mm metrics.Manager, logger s3log.AuditLogger) fiber.
 				mm.Send(ctx, err, metrics.ActionUndetected, 0, 0)
 			}
 			if logger != nil {
-				logger.Log(ctx, err, ctx.BodyRaw(), s3log.LogMeta{
+				logger.Log(ctx, err, nil, s3log.LogMeta{
 					Action: metrics.ActionUndetected,
 				})
 			}

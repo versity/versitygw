@@ -15,8 +15,12 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -1131,5 +1135,35 @@ func ListObjectsV2_url_encoding(s *S3Conf) error {
 		})
 		cancel()
 		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"))
+	})
+}
+
+// S3 neither reads nor verifies the body of an action that takes none, so a
+// payload hash that does not match it is not an error.
+func ListObjectsV2_ignores_request_body(s *S3Conf) error {
+	testName := "ListObjectsV2_ignores_request_body"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		// the hash of an empty body
+		const payloadHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+		req, err := createSignedReq(http.MethodGet, s.endpoint, bucket+"?list-type=2", s.awsID, s.awsSecret,
+			"s3", s.awsRegion, payloadHash, bytes.Repeat([]byte("a"), 1024), time.Now(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status %v, instead got %v: %s", http.StatusOK, resp.StatusCode, body)
+		}
+
+		return nil
 	})
 }

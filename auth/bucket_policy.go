@@ -15,6 +15,7 @@
 package auth
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -60,7 +61,17 @@ const (
 	policyErrInvalidConditionKey     = policyErr("Policy has an invalid condition key")
 	policyErrConditionActionMismatch = policyErr("Conditions do not apply to combination of actions and resources in statement")
 	policyErrInvalidIPCondition      = policyErr("Invalid IP address in Conditions")
+	policyErrTooLarge                = policyErr("Normalized policy document exceeds the maximum allowed size of 20480 bytes")
 )
+
+// maxNormalizedPolicyBytes is the largest bucket policy S3 stores, measured
+// as normalized JSON: the whitespace between its tokens does not count.
+const maxNormalizedPolicyBytes = 20480
+
+// ErrPolicyTooLarge refuses a bucket policy over maxNormalizedPolicyBytes.
+// S3 refuses a PutBucketPolicy body too large to be normalized with it as
+// well, whatever the policy in it would normalize to.
+var ErrPolicyTooLarge = getMalformedPolicyError(policyErrTooLarge)
 
 type BucketPolicy struct {
 	Version   PolicyVersion      `json:"Version"`
@@ -312,6 +323,12 @@ func ParsePolicyDocument(data []byte) (*BucketPolicy, error) {
 func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) error {
 	if len(policyBin) == 0 || policyBin[0] != '{' {
 		return getMalformedPolicyError(policyErrInvalidFirstChar)
+	}
+	// a document that is not valid JSON has no normalized form, and is
+	// refused as such by the parser below
+	var normalized bytes.Buffer
+	if json.Compact(&normalized, policyBin) == nil && normalized.Len() > maxNormalizedPolicyBytes {
+		return ErrPolicyTooLarge
 	}
 	policy, err := ParsePolicyDocument(policyBin)
 	if err != nil {

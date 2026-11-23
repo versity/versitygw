@@ -372,3 +372,14 @@ func PutObjectLockConfiguration_success(s *S3Conf) error {
 		return nil
 	}, withLock())
 }
+
+func PutObjectLockConfiguration_body_size_limit(s *S3Conf) error {
+	testName := "PutObjectLockConfiguration_body_size_limit"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyLimit(s, bucket, requestBodyLimit{
+			method: http.MethodPut,
+			query:  "object-lock",
+			limit:  2097152,
+		})
+	})
+}

@@ -510,3 +510,14 @@ func PutBucketAcl_success_grants(s *S3Conf) error {
 		return nil
 	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
+
+func PutBucketAcl_body_size_limit(s *S3Conf) error {
+	testName := "PutBucketAcl_body_size_limit"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyLimit(s, bucket, requestBodyLimit{
+			method: http.MethodPut,
+			query:  "acl",
+			limit:  204800,
+		})
+	})
+}

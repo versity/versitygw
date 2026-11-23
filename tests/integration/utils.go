@@ -612,6 +612,7 @@ type APIErrorResponse struct {
 	MaxSizeAllowed              int64                      `xml:"MaxSizeAllowed,omitempty"`
 	MinSizeAllowed              int64                      `xml:"MinSizeAllowed,omitempty"`
 	MaxPostPreDataLengthBytes   int64                      `xml:"MaxPostPreDataLengthBytes,omitempty"`
+	MaxMessageLengthBytes       int64                      `xml:"MaxMessageLengthBytes,omitempty"`
 	ServerTime                  string                     `xml:"ServerTime,omitempty"`
 	XAmzExpires                 int                        `xml:"X-Amz-Expires,omitempty"`
 	Expires                     string                     `xml:"Expires,omitempty"`
@@ -1068,6 +1069,8 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 		)
 	case s3err.MaxPostPreDataLengthExceededError:
 		return compareErrField("MaxPostPreDataLengthBytes", err.MaxPostPreDataLengthBytes, received.MaxPostPreDataLengthBytes)
+	case s3err.MaxMessageLengthExceeded:
+		return compareErrField("MaxMessageLengthBytes", err.MaxMessageLengthBytes, received.MaxMessageLengthBytes)
 	case s3err.MetadataTooLargeError:
 		return compareS3ApiErrFields(
 			compareErrField("Size", int64(err.Size), received.Size),
@@ -5300,4 +5303,200 @@ func putGetDeleteRace(s3client *s3.Client, bucket string, keyFn func(worker, ite
 		}
 		return nil
 	})
+}
+
+// requestBodyLimit is the limit S3 sets the body of an action that takes it
+// whole, with the request that reaches the action.
+type requestBodyLimit struct {
+	method string
+	// object addresses the request to an object rather than the bucket
+	object bool
+	query  string
+	// headers route the request to the action
+	headers map[string]string
+	// limit is the largest body accepted, in bytes
+	limit int
+	// err is the error a larger body is refused with, MaxMessageLengthExceeded
+	// when nil
+	err s3err.S3Error
+}
+
+func (l requestBodyLimit) path(bucket string) string {
+	path := bucket
+	if l.object {
+		path += "/my-obj"
+	}
+	if l.query != "" {
+		path += "?" + l.query
+	}
+
+	return path
+}
+
+func (l requestBodyLimit) tooLarge() s3err.S3Error {
+	if l.err != nil {
+		return l.err
+	}
+
+	return s3err.GetMaxMessageLengthExceeded(int64(l.limit))
+}
+
+// checkRequestBodyLimit checks that the action takes a body of exactly its
+// limit, and refuses one byte more. The size check comes before anything the
+// action does with the body, so neither the object nor the upload the requests
+// name has to exist.
+func checkRequestBodyLimit(s *S3Conf, bucket string, l requestBodyLimit) error {
+	// a blank document of the limit passes the size check, to be refused by
+	// the action for what it is
+	resp, err := sendBodyLimitRequest(s, l, bucket, bytes.Repeat([]byte(" "), l.limit), false)
+	if err != nil {
+		return err
+	}
+	if err := checkNotHTTPResponseApiErr(resp, l.tooLarge()); err != nil {
+		return fmt.Errorf("a body of the limit: %w", err)
+	}
+
+	return checkRequestBodyRefused(s, bucket, l)
+}
+
+// checkRequestBodyRefused checks that the action refuses a body one byte past
+// its limit, sent with a Content-Length, chunked, and as the head of a body
+// its Content-Length declares far larger.
+func checkRequestBodyRefused(s *S3Conf, bucket string, l requestBodyLimit) error {
+	body := bytes.Repeat([]byte(" "), l.limit+1)
+	for _, chunked := range []bool{false, true} {
+		resp, err := sendBodyLimitRequest(s, l, bucket, body, chunked)
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, l.tooLarge()); err != nil {
+			return fmt.Errorf("a body past the limit (chunked: %v): %w", chunked, err)
+		}
+	}
+
+	req, err := createSignedReq(l.method, s.endpoint, l.path(bucket), s.awsID, s.awsSecret,
+		"s3", s.awsRegion, "UNSIGNED-PAYLOAD", nil, time.Now(), l.headers)
+	if err != nil {
+		return err
+	}
+	// the gateway reads up to 8 KiB of a body ahead of the handlers, whatever
+	// its limit, and waits for it
+	resp, err := sendPartialBody(s, req, 1<<30, bytes.Repeat([]byte(" "), max(l.limit+1, 8<<10)))
+	if err != nil {
+		return err
+	}
+	if err := checkHTTPResponseApiErr(resp, l.tooLarge()); err != nil {
+		return fmt.Errorf("a body declared past the limit: %w", err)
+	}
+
+	return nil
+}
+
+// sendBodyLimitRequest sends the action a signed request carrying body. A
+// chunked body is sent with UNSIGNED-PAYLOAD, as a client that does not know
+// the length of its body up front does not know its hash either.
+func sendBodyLimitRequest(s *S3Conf, l requestBodyLimit, bucket string, body []byte, chunked bool) (*http.Response, error) {
+	payloadHash := ""
+	signedBody := body
+	if chunked {
+		payloadHash = "UNSIGNED-PAYLOAD"
+		signedBody = nil
+	}
+	req, err := createSignedReq(l.method, s.endpoint, l.path(bucket), s.awsID, s.awsSecret,
+		"s3", s.awsRegion, payloadHash, signedBody, time.Now(), l.headers)
+	if err != nil {
+		return nil, err
+	}
+	if chunked {
+		// an unknown length makes net/http frame the body as chunked
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		req.ContentLength = -1
+		req.GetBody = nil
+	}
+
+	return s.httpClient.Do(req)
+}
+
+// sendPartialBody sends req declaring a body of declared bytes, but carries
+// only body, then shuts down the write side of the connection and reads the
+// response.
+func sendPartialBody(s *S3Conf, req *http.Request, declared int64, body []byte) (*http.Response, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+
+	addr := req.URL.Host
+	if req.URL.Port() == "" {
+		port := "80"
+		if req.URL.Scheme == "https" {
+			port = "443"
+		}
+		addr = net.JoinHostPort(req.URL.Hostname(), port)
+	}
+
+	var conn net.Conn
+	var err error
+	if req.URL.Scheme == "https" {
+		dialer := &tls.Dialer{Config: &tls.Config{InsecureSkipVerify: s.tlsStatus}}
+		conn, err = dialer.DialContext(ctx, "tcp", addr)
+	} else {
+		conn, err = (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("connect to %v: %w", addr, err)
+	}
+	defer conn.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		conn.SetDeadline(deadline)
+	}
+
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = declared
+	// Request.Write sends the headers and the body, then fails because the
+	// body is shorter than ContentLength. That failure is the point, so only
+	// a failed flush counts.
+	bw := bufio.NewWriter(conn)
+	_ = req.Write(bw)
+	if err := bw.Flush(); err != nil {
+		return nil, fmt.Errorf("send the request: %w", err)
+	}
+
+	// Both *net.TCPConn and *tls.Conn can shut down just their write side.
+	if err := conn.(interface{ CloseWrite() error }).CloseWrite(); err != nil {
+		return nil, fmt.Errorf("close the write side: %w", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
+	if err != nil {
+		return nil, fmt.Errorf("read the response: %w", err)
+	}
+	// the body is read off the connection before it's closed
+	respBody, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read the response body: %w", err)
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+
+	return resp, nil
+}
+
+// checkNotHTTPResponseApiErr fails if resp is the error unexpected.
+func checkNotHTTPResponseApiErr(resp *http.Response, unexpected s3err.S3Error) error {
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return err
+	}
+
+	var errResp APIErrorResponse
+	if xml.Unmarshal(body, &errResp) != nil {
+		// not an error response at all
+		return nil
+	}
+	apiErr := unexpected.BaseError()
+	if errResp.Code == apiErr.Code && errResp.Message == apiErr.Description {
+		return fmt.Errorf("unexpected %v error: %s", apiErr.Code, body)
+	}
+
+	return nil
 }

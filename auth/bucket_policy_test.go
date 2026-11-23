@@ -15,6 +15,7 @@
 package auth
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -188,6 +189,43 @@ func TestBucketPolicyIsPublic(t *testing.T) {
 			policy, err := ParsePolicyDocument([]byte(tt.policy))
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, policy.IsPublic())
+		})
+	}
+}
+
+// S3 sizes a bucket policy by its normalized JSON: the whitespace between its
+// tokens is free, and the rest is limited to 20480 bytes.
+func TestValidatePolicyDocument_NormalizedSize(t *testing.T) {
+	// policyOfSize returns a compact policy of exactly size bytes
+	policyOfSize := func(size int) string {
+		const head = `{"Version":"2012-10-17","Statement":[{"Sid":"`
+		const tail = `","Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::bucket/*"}]}`
+		return head + strings.Repeat("a", size-len(head)-len(tail)) + tail
+	}
+	atLimit := policyOfSize(maxNormalizedPolicyBytes)
+
+	tests := []struct {
+		name   string
+		policy string
+		err    error
+	}{
+		{name: "compact at the limit", policy: atLimit},
+		{name: "compact over the limit", policy: policyOfSize(maxNormalizedPolicyBytes + 1), err: ErrPolicyTooLarge},
+		{
+			name:   "whitespace between tokens is not counted",
+			policy: "{" + strings.Repeat(" \n\t", 10000) + atLimit[1:],
+		},
+		{name: "trailing whitespace is not counted", policy: atLimit + strings.Repeat(" ", 30000)},
+		{
+			name:   "invalid JSON is refused as such",
+			policy: atLimit + `,` + strings.Repeat(" ", 30000),
+			err:    getMalformedPolicyError(policyErrInvalidPolicy),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.err, ValidatePolicyDocument([]byte(tt.policy), "bucket", nil))
 		})
 	}
 }

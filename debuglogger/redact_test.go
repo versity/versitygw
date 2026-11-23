@@ -134,6 +134,7 @@ func TestLogFiberRequestAndResponseDetailsRedactSensitiveFields(t *testing.T) {
 	app := fiber.New()
 	app.Post("/", func(ctx fiber.Ctx) error {
 		LogFiberRequestDetails(ctx)
+		LogFiberRequestBody(ctx)
 		ctx.Response().Header.Set("X-Amz-Security-Token", dummySecurity)
 		LogFiberResponseDetails(ctx)
 		return ctx.SendString("ok")
