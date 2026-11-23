@@ -16,8 +16,8 @@
     "idp:logs": "docker compose -f docker/compose.yml logs"
   },
   "devDependencies": {
-    "@aws-sdk/client-iam": "3.1169.0",
-    "@aws-sdk/client-s3": "3.1169.0",
+    "@aws-sdk/client-iam": "3.1174.0",
+    "@aws-sdk/client-s3": "3.1174.0",
     "@playwright/test": "1.65.1",
     "@types/node": "26.6.6",
     "typescript": "7.0.2"
