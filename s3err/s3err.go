@@ -195,6 +195,7 @@ const (
 	ErrInvalidRedirectLocation
 	ErrBothReplaceKeyAndPrefix
 	ErrMaxMessageLengthExceeded
+	ErrRequestBodyTooLarge
 	ErrNotModified
 	ErrInvalidLocationConstraint
 	ErrMalformedTrailer
@@ -741,6 +742,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrMaxMessageLengthExceeded: {
 		Code:           "MaxMessageLengthExceeded",
 		Description:    "Your request was too big.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrRequestBodyTooLarge: {
+		Code:           "RequestBodyTooLarge",
+		Description:    "The request body was too large.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNotModified: {

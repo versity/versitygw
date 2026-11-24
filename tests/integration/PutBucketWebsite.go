@@ -497,3 +497,14 @@ func PutBucketWebsite_success_redirect_all(s *S3Conf) error {
 		return nil
 	})
 }
+
+func PutBucketWebsite_body_size_limit(s *S3Conf) error {
+	testName := "PutBucketWebsite_body_size_limit"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyLimit(s, bucket, requestBodyLimit{
+			method: http.MethodPut,
+			query:  "website",
+			limit:  131072,
+		})
+	})
+}

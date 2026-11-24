@@ -121,6 +121,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketTagging, auth.PutBucketTaggingAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.PutBucketTaggingBodyLimit),
 			middlewares.VerifyChecksums(false, true, true),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -135,6 +136,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketOwnershipControls, auth.PutBucketOwnershipControlsAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.PutBucketOwnershipControlsBodyLimit),
 			middlewares.VerifyChecksums(false, true, false),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -149,6 +151,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketVersioning, auth.PutBucketVersioningAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.PutBucketVersioningBodyLimit),
 			middlewares.VerifyChecksums(false, true, false),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -163,6 +166,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutObjectLockConfiguration, auth.PutBucketObjectLockConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.PutObjectLockConfigurationBodyLimit),
 			middlewares.VerifyChecksums(false, true, true),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -177,6 +181,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketCors, auth.PutBucketCorsAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.PutBucketCorsBodyLimit),
 			middlewares.VerifyChecksums(false, true, true),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -191,6 +196,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketPolicy, auth.PutBucketPolicyAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.PutBucketPolicyBodyLimit),
 			middlewares.VerifyChecksums(false, false, false),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -205,6 +211,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketAcl, auth.PutBucketAclAction, auth.PermissionWriteAcp, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.PutBucketAclBodyLimit),
 			middlewares.VerifyChecksums(false, false, false),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -375,6 +382,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketWebsite, auth.PutBucketWebsiteAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.PutBucketWebsiteBodyLimit),
 			middlewares.VerifyChecksums(false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
@@ -389,6 +397,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionCreateBucket, auth.CreateBucketAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.CreateBucketBodyLimit),
 			middlewares.VerifyChecksums(false, false, false),
 		))
 
@@ -1044,6 +1053,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteObjects, auth.DeleteObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.DeleteObjectsBodyLimit),
 			middlewares.VerifyChecksums(false, true, true),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1360,6 +1370,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionRestoreObject, auth.RestoreObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.RestoreObjectBodyLimit),
 			middlewares.VerifyChecksums(false, false, false),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1375,6 +1386,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionSelectObjectContent, auth.GetObjectAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.SelectObjectContentBodyLimit),
 			middlewares.VerifyChecksums(false, false, false),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1389,6 +1401,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionCompleteMultipartUpload, auth.PutObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.CompleteMultipartUploadBodyLimit),
 			middlewares.ParseAcl(sa.be),
 		))
 	objectRouter.Post("",
@@ -1402,6 +1415,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionCreateMultipartUpload, auth.PutObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.NoRequestBody),
 			middlewares.ParseAcl(sa.be),
 		))
 
@@ -1417,6 +1431,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutObjectTagging, auth.PutObjectTaggingAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.PutObjectTaggingBodyLimit),
 			middlewares.VerifyChecksums(false, true, false),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1431,6 +1446,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutObjectRetention, auth.PutObjectRetentionAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.PutObjectRetentionBodyLimit),
 			middlewares.VerifyChecksums(false, false, true),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1445,6 +1461,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutObjectLegalHold, auth.PutObjectLegalHoldAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.PutObjectLegalHoldBodyLimit),
 			middlewares.VerifyChecksums(false, false, true),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1459,6 +1476,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutObjectAcl, auth.PutObjectAclAction, auth.PermissionWriteAcp, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.PutObjectAclBodyLimit),
 			middlewares.VerifyChecksums(false, false, false),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1474,6 +1492,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionUploadPartCopy, auth.PutObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.NoRequestBody),
 			middlewares.ParseAcl(sa.be),
 		))
 	objectRouter.Put("",
@@ -1528,6 +1547,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionCopyObject, auth.PutObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
 			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.NoRequestBody),
 			middlewares.ParseAcl(sa.be),
 		))
 	objectRouter.Put("",

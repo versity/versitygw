@@ -2806,3 +2806,15 @@ func CompleteMultipartUpload_racey_data_integrity(s *S3Conf) error {
 		return nil
 	})
 }
+
+func CompleteMultipartUpload_body_size_limit(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_body_size_limit"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyLimit(s, bucket, requestBodyLimit{
+			method: http.MethodPost,
+			object: true,
+			query:  "uploadId=my-upload",
+			limit:  2621440,
+		})
+	})
+}

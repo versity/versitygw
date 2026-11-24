@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -1067,5 +1068,19 @@ func UploadPartCopy_incorrect_source_bucket_expected_owner(s *S3Conf) error {
 		})
 		cancel()
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}
+
+// The action takes no body, and refuses any.
+func UploadPartCopy_non_empty_body(s *S3Conf) error {
+	testName := "UploadPartCopy_non_empty_body"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyRefused(s, bucket, requestBodyLimit{
+			method:  http.MethodPut,
+			object:  true,
+			query:   "partNumber=1&uploadId=my-upload",
+			headers: map[string]string{"X-Amz-Copy-Source": bucket + "/source-obj"},
+			err:     s3err.GetAPIError(s3err.ErrNonEmptyRequestBody),
+		})
 	})
 }

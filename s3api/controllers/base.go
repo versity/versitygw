@@ -55,11 +55,10 @@ const (
 	iso8601TimeFormatExtended = "Mon Jan _2 15:04:05 2006"
 	timefmt                   = "Mon, 02 Jan 2006 15:04:05 GMT"
 
-	maxXMLBodyLen                = 4 * 1024 * 1024
-	minPartNumber                = 1
-	maxPartNumber                = 10000
-	maxWebsiteConfigurationBytes = 131072
-	maxDeleteObjects             = 1000
+	maxXMLBodyLen    = 4 * 1024 * 1024
+	minPartNumber    = 1
+	maxPartNumber    = 10000
+	maxDeleteObjects = 1000
 
 	defaultRegion      = "us-east-1"
 	defaultContentType = "binary/octet-stream"
@@ -251,7 +250,7 @@ func WrapMiddleware(handler fiber.Handler, logger s3log.AuditLogger, mm metrics.
 				mm.Send(ctx, err, metrics.ActionUndetected, 0, 0)
 			}
 			if logger != nil {
-				logger.Log(ctx, err, ctx.BodyRaw(), s3log.LogMeta{
+				logger.Log(ctx, err, nil, s3log.LogMeta{
 					Action: metrics.ActionUndetected,
 				})
 			}

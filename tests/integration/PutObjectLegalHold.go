@@ -154,3 +154,15 @@ func PutObjectLegalHold_success(s *S3Conf) error {
 func PutObjectLegalHold_empty_version_id(s *S3Conf) error {
 	return testEmptyVersionId(s, "PutObjectLegalHold_empty_version_id", http.MethodPut, "legal-hold", []byte("<LegalHold><Status>ON</Status></LegalHold>"))
 }
+
+func PutObjectLegalHold_body_size_limit(s *S3Conf) error {
+	testName := "PutObjectLegalHold_body_size_limit"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyLimit(s, bucket, requestBodyLimit{
+			method: http.MethodPut,
+			object: true,
+			query:  "legal-hold",
+			limit:  1048576,
+		})
+	})
+}

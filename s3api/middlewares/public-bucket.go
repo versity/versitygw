@@ -15,8 +15,6 @@
 package middlewares
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"strings"
 
@@ -177,15 +175,16 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 			}
 		}
 
+		// the body is read, if the action takes one, with ReadRequestBody
+		// down the chain: stack the payload hash check for it to be verified
+		// as it is read
 		if payloadHash != "" {
-			// Calculate the hash of the request payload
-			hashedPayload := sha256.Sum256(ctx.BodyRaw())
-			hexPayload := hex.EncodeToString(hashedPayload[:])
-
-			// Compare the calculated hash with the hash provided
-			if payloadHash != hexPayload {
-				return s3err.GetContentSHA256MismatchErr(payloadHash, hexPayload)
-			}
+			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
+				var cr io.Reader
+				cr, err = utils.NewHashReader(r, payloadHash, utils.HashTypeSha256Hex)
+				return cr
+			})
+			return err
 		}
 
 		return nil

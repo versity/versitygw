@@ -38,6 +38,7 @@ func (ar *S3AdminRouter) Init(app fiber.Router, be backend.Backend, iam auth.IAM
 	app.Patch("/create-user",
 		controllers.ProcessHandlers(ctrl.CreateUser, metrics.ActionAdminCreateUser, services,
 			middlewares.VerifyV4Signature(root, iam, region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.AdminBodyLimit),
 			middlewares.IsAdmin(metrics.ActionAdminCreateUser),
 			middlewares.ApplyDefaultCORS(corsAllowOrigin),
 		))
@@ -62,6 +63,7 @@ func (ar *S3AdminRouter) Init(app fiber.Router, be backend.Backend, iam auth.IAM
 	app.Patch("/update-user",
 		controllers.ProcessHandlers(ctrl.UpdateUser, metrics.ActionAdminUpdateUser, services,
 			middlewares.VerifyV4Signature(root, iam, region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.AdminBodyLimit),
 			middlewares.IsAdmin(metrics.ActionAdminUpdateUser),
 			middlewares.ApplyDefaultCORS(corsAllowOrigin),
 		))
@@ -109,6 +111,7 @@ func (ar *S3AdminRouter) Init(app fiber.Router, be backend.Backend, iam auth.IAM
 	app.Patch("/:bucket/create",
 		controllers.ProcessHandlers(ctrl.CreateBucket, metrics.ActionAdminCreateBucket, services,
 			middlewares.VerifyV4Signature(root, iam, region, false, true, false),
+			middlewares.ReadRequestBody(middlewares.CreateBucketBodyLimit),
 			middlewares.IsAdmin(metrics.ActionAdminCreateBucket),
 			middlewares.ApplyDefaultCORS(corsAllowOrigin),
 		))

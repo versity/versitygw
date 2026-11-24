@@ -464,15 +464,6 @@ func (c S3ApiController) UploadPartCopy(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	if len(ctx.Request().Body()) != 0 {
-		debuglogger.Logf("expected empty request body")
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.GetAPIError(s3err.ErrNonEmptyRequestBody)
-	}
-
 	if partNumber < minPartNumber || partNumber > int32(c.effectiveMpMaxParts()) {
 		debuglogger.Logf("invalid part number: %d", partNumber)
 		return &Response{
@@ -639,15 +630,6 @@ func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
-	}
-
-	if len(ctx.Request().Body()) != 0 {
-		debuglogger.Logf("expected empty request body")
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.GetAPIError(s3err.ErrNonEmptyRequestBody)
 	}
 
 	metadata, err := utils.GetUserMetaData(&ctx.Request().Header)

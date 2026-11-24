@@ -403,3 +403,14 @@ func PutBucketCors_success(s *S3Conf) error {
 		})
 	})
 }
+
+func PutBucketCors_body_size_limit(s *S3Conf) error {
+	testName := "PutBucketCors_body_size_limit"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyLimit(s, bucket, requestBodyLimit{
+			method: http.MethodPut,
+			query:  "cors",
+			limit:  65536,
+		})
+	})
+}

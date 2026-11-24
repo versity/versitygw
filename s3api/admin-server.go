@@ -92,6 +92,9 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 		ServerHeader: "VERSITYGW",
 		ErrorHandler: globalErrorHandler,
 		Concurrency:  server.maxConnections,
+		// leave the body to the handlers, as the s3 server does: fasthttp
+		// would otherwise read it whole before the signature is checked
+		StreamRequestBody: true,
 	})
 
 	server.app = app
@@ -101,6 +104,10 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 			EnableStackTrace:  true,
 			StackTraceHandler: stackTraceHandler,
 		}))
+
+	// discard what the handlers leave of the request body, as on the s3
+	// server
+	app.Use("*", middlewares.DrainRequestBody())
 
 	// Logging middlewares
 	if !server.quiet {

@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -684,5 +685,18 @@ func CreateMultipartUpload_object_acl_not_supported(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+// The action takes no body, and refuses any.
+func CreateMultipartUpload_non_empty_body(s *S3Conf) error {
+	testName := "CreateMultipartUpload_non_empty_body"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyRefused(s, bucket, requestBodyLimit{
+			method: http.MethodPost,
+			object: true,
+			query:  "uploads",
+			err:    s3err.GetAPIError(s3err.ErrNonEmptyRequestBody),
+		})
 	})
 }
