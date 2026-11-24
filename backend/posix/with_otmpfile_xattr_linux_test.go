@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 
@@ -37,19 +38,20 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// failProbe makes the O_TMPFILE probe fail with err, counting the probes
-func failProbe(t *testing.T, err error) *int {
+// failProbe makes the O_TMPFILE probe fail with err, counting the probes,
+// which uploads racing for an unprobed bucket run concurrently
+func failProbe(t *testing.T, err error) *atomic.Int32 {
 	t.Helper()
-	probes := 0
+	probes := new(atomic.Int32)
 	t.Cleanup(func() { probeOTmpFile = origProbeOTmpFile })
 	probeOTmpFile = func(xt meta.TmpFileTester, f *os.File, dir string) error {
-		probes++
+		probes.Add(1)
 		if err != nil {
 			return err
 		}
 		return origProbeOTmpFile(xt, f, dir)
 	}
-	return &probes
+	return probes
 }
 
 // TestOTmpFileProbe checks that a filesystem whose O_TMPFILE can't hold
@@ -105,12 +107,12 @@ func TestOTmpFileProbe(t *testing.T) {
 				// An error that is not about O_TMPFILE support leaves the
 				// result unknown: the upload keeps its O_TMPFILE and the
 				// next upload probes again.
-				wantProbes, wantKnown := 1, true
+				wantProbes, wantKnown := int32(1), true
 				if tc.err != nil && !tc.wantName {
 					wantProbes, wantKnown = 2, false
 				}
-				if *probes != wantProbes {
-					t.Errorf("probed %d times for 2 opens, want %d", *probes, wantProbes)
+				if got := probes.Load(); got != wantProbes {
+					t.Errorf("probed %d times for 2 opens, want %d", got, wantProbes)
 				}
 				if _, known := p.otmpProbe.Load(p.BucketPath(bucket)); known != wantKnown {
 					t.Errorf("probe result remembered: %v, want %v", known, wantKnown)

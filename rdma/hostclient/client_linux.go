@@ -25,7 +25,7 @@ package hostclient
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../cuwrapper
-#cgo LDFLAGS: -L${SRCDIR}/.. -l:libhostclientwrapper.a -libverbs -lmlx5 -lstdc++
+#cgo LDFLAGS: ${SRCDIR}/../libhostclientwrapper.a -libverbs -lmlx5 -lstdc++
 #include <stdlib.h>
 #include "rdma_host_client_wrapper.h"
 */
