@@ -13,7 +13,7 @@ name: vgw-webui-e2e
 
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0
+    image: quay.io/keycloak/keycloak:26.8.2@sha256:7e66a96e4739239070aeaf72e4c5decf0f7f682cfc725b9f7ea2b336eaba38b3
     # The fixed hostname makes the issuer the same for the browser and the
     # gateway, whichever address they reach Keycloak at.
     command: start-dev --import-realm --hostname http://127.0.0.1:26180
@@ -52,7 +52,7 @@ services:
       retries: 30
 
   authentik-server:
-    image: ghcr.io/goauthentik/server:2026.8.5@sha256:602227a86455d6772e3d16b7d852713c4f864f40df5df894abd1285bb53979a5
+    image: ghcr.io/goauthentik/server:2026.8.6@sha256:da89d8338a3b1889800eb033fd61f8d43f7aa9a1c5a042cb5e03d891b1f0c56c
     command: server
     environment: &authentik-env
       AUTHENTIK_POSTGRESQL__HOST: authentik-db
@@ -87,7 +87,7 @@ services:
       retries: 100
 
   authentik-worker:
-    image: ghcr.io/goauthentik/server:2026.8.5@sha256:602227a86455d6772e3d16b7d852713c4f864f40df5df894abd1285bb53979a5
+    image: ghcr.io/goauthentik/server:2026.8.6@sha256:da89d8338a3b1889800eb033fd61f8d43f7aa9a1c5a042cb5e03d891b1f0c56c
     command: worker
     environment: *authentik-env
     volumes:
