@@ -21,13 +21,18 @@ import (
 	"io"
 	"mime"
 	"net/textproto"
+	"slices"
 	"strings"
 
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 )
 
-const finalBoundaryDelimiterLen = 8 // len("\r\n--") + len("--\r\n")
+const (
+	finalBoundaryDelimiterLen = 8 // len("\r\n--") + len("--\r\n")
+	// maxPreDataLength is S3's limit on the bytes before the file content.
+	maxPreDataLength = 20 << 10
+)
 
 // MultipartParser parses S3 browser-based POST multipart/form-data in a streaming way.
 // It buffers regular form fields, but it does not buffer the file part.
@@ -69,6 +74,10 @@ func NewMultipartParser(body io.Reader, boundary string, requestContentLength in
 type MpFileReader interface {
 	io.Reader
 	Length() int64
+	// BufferedSize returns the size of the file if the boundary that ends it
+	// is already in the bytes the reader holds. It does not read more, and so
+	// does not wait for the client.
+	BufferedSize() (int64, bool)
 }
 
 type MpParseResult struct {
@@ -76,17 +85,27 @@ type MpParseResult struct {
 	Fields map[string]string
 	// FileRdr streams the file payload without buffering the entire part in memory.
 	FileRdr MpFileReader
-	// ContentLength is the expected byte length of the file payload only.
-	ContentLength int64
+	// ProposedSize is the size of the file payload the request proposes. It is
+	// the file's own size when the boundary that ends the file is in the bytes
+	// the parser reads ahead of the file, whatever follows it. Otherwise it is
+	// the Content-Length less the bytes before the file content and the closing
+	// boundary with its CRLF: the file's size for a form that ends with the
+	// file and that boundary, and more for a form with anything after the file
+	// (fields, an epilogue), as the file ends at the first boundary. A form that
+	// ends with "--boundary--" and no CRLF proposes two bytes less than the
+	// file has, and one that ends with "--boundary" four. The size of the file is
+	// only known once it is read, see ContentLengthRangeReader.
+	ProposedSize int64
 }
 
 // Parse parses all non-file fields and returns:
 //   - form values
 //   - a streaming file reader
-//   - file content length
+//   - the size of the file the request proposes
 //
-// The returned file reader MUST be read until EOF, otherwise final-boundary
-// validation is not triggered.
+// It reads ahead of the file for as many bytes as its buffer holds, and waits
+// for the client to send them. The returned file reader MUST be read until EOF,
+// otherwise the boundary that ends the file is not checked.
 func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 	fields := make(map[string]string)
 
@@ -128,21 +147,30 @@ func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 		// At this point, headers + blank line have already been consumed,
 		// so bytesRead points exactly at the first byte of file content.
 		if isFilePart {
-			fileContentLength := mp.requestContentLength - mp.bytesRead - int64(len(mp.boundary)) - finalBoundaryDelimiterLen
-			if fileContentLength < 0 {
-				debuglogger.Logf("calculated negative multipart file content-length: %d", fileContentLength)
-				return nil, fmt.Errorf("calculated negative file content-length: %d", fileContentLength)
-			}
-
 			fr := &finalFileReader{
 				r:       mp.br,
-				trailer: []byte("\r\n--" + mp.boundary + "--\r\n"),
+				trailer: []byte("\r\n--" + mp.boundary),
+			}
+
+			// Read ahead of the file for as many bytes as the buffer holds, or as the
+			// request has left if that is less. The client sends them whatever the
+			// file is. With them, the end of a small file is in the bytes read
+			// wherever the reads of the body ended: its size does not depend on the
+			// length of the fields before it, or on when the client sends its bytes.
+			// The next read returns an error if there is one.
+			_, _ = mp.br.Peek(int(min(int64(mp.br.Size()), mp.requestContentLength-mp.bytesRead)))
+
+			proposedSize, ok := fr.BufferedSize()
+			if !ok {
+				// A form that ends within the file has no closing boundary, and can
+				// leave less than nothing for the file.
+				proposedSize = max(0, mp.requestContentLength-mp.bytesRead-int64(len(mp.boundary))-finalBoundaryDelimiterLen)
 			}
 
 			return &MpParseResult{
-				Fields:        fields,
-				FileRdr:       fr,
-				ContentLength: fileContentLength,
+				Fields:       fields,
+				FileRdr:      fr,
+				ProposedSize: proposedSize,
 			}, nil
 		}
 
@@ -163,27 +191,29 @@ func (mp *MultipartParser) Parse() (*MpParseResult, error) {
 	}
 }
 
+// expectInitialBoundary skips the preamble: the lines before the first
+// boundary (RFC 2046).
 func (mp *MultipartParser) expectInitialBoundary() error {
-	line, _, err := mp.readLine()
-	if err != nil {
-		return s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
-	}
-
 	want := "--" + mp.boundary
-	if line != want {
-		debuglogger.Logf("unexpected initial multipart boundary: got %q want %q", line, want)
-		return s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
+	for {
+		line, _, err := mp.readLine()
+		if err != nil {
+			return err
+		}
+		if line == want {
+			return nil
+		}
 	}
-	return nil
 }
 
 func (mp *MultipartParser) readHeaders() (map[string]string, error) {
 	headers := make(map[string]string)
+	var key string
 
 	for {
 		line, _, err := mp.readLine()
 		if err != nil {
-			return nil, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
+			return nil, err
 		}
 
 		// Blank line terminates headers.
@@ -191,15 +221,20 @@ func (mp *MultipartParser) readHeaders() (map[string]string, error) {
 			return headers, nil
 		}
 
-		key, value, ok := strings.Cut(line, ":")
+		// A line that starts with whitespace continues the header before it.
+		if key != "" && (line[0] == ' ' || line[0] == '\t') {
+			headers[key] += " " + strings.TrimSpace(line)
+			continue
+		}
+
+		name, value, ok := strings.Cut(line, ":")
 		if !ok {
 			debuglogger.Logf("invalid multipart header line: %q", line)
 			return nil, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
 		}
 
-		key = textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(key))
-		value = strings.TrimSpace(value)
-		headers[key] = value
+		key = textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(name))
+		headers[key] = strings.TrimSpace(value)
 	}
 }
 
@@ -235,21 +270,36 @@ func (mp *MultipartParser) readFieldValue() (string, error) {
 
 // readLine reads one CRLF-terminated line, counts consumed bytes,
 // returns the line without trailing CRLF, and also the raw bytes including CRLF.
+// Every line comes before the file content, so maxPreDataLength bounds it.
 func (mp *MultipartParser) readLine() (string, []byte, error) {
-	s, err := mp.br.ReadString('\n')
-	if err != nil {
-		debuglogger.Logf("failed to read multipart line: %v", err)
-		return "", nil, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
+	var raw []byte
+	for {
+		chunk, err := mp.br.ReadSlice('\n')
+		raw = append(raw, chunk...)
+		if mp.bytesRead+int64(len(raw)) > maxPreDataLength {
+			debuglogger.Logf("multipart data before the file exceeds %d bytes", maxPreDataLength)
+			return "", nil, s3err.GetMaxPostPreDataLengthExceededErr(maxPreDataLength)
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if err != nil {
+			debuglogger.Logf("failed to read multipart line: %v", err)
+			return "", nil, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
+		}
+		break
 	}
 
-	mp.bytesRead += int64(len(s))
+	mp.bytesRead += int64(len(raw))
+
+	s := string(raw)
 
 	if !strings.HasSuffix(s, "\r\n") {
 		debuglogger.Logf("multipart line is not CRLF-terminated: %q", s)
 		return "", nil, s3err.GetAPIError(s3err.ErrMalformedPOSTRequest)
 	}
 
-	return strings.TrimSuffix(s, "\r\n"), []byte(s), nil
+	return strings.TrimSuffix(s, "\r\n"), raw, nil
 }
 
 func trimTrailingCRLF(buf *bytes.Buffer) {
@@ -259,11 +309,12 @@ func trimTrailingCRLF(buf *bytes.Buffer) {
 	}
 }
 
-// finalFileReader streams file bytes until it reaches the final multipart boundary:
+// finalFileReader streams file bytes until the boundary that ends the file part:
 //
-//	\r\n--<boundary>--\r\n
+//	\r\n--<boundary>
 //
-// Any epilogue bytes after that final boundary are ignored.
+// What follows it is ignored: the closing "--", any fields after the file,
+// and the epilogue.
 type finalFileReader struct {
 	r *bufio.Reader
 	// trailer is the exact byte sequence that terminates the file part.
@@ -347,4 +398,33 @@ func (r *finalFileReader) Read(p []byte) (int, error) {
 // Multipart boundary and delimiter bytes are never counted.
 func (r *finalFileReader) Length() int64 {
 	return r.bytesRead
+}
+
+// BufferedSize returns the size of the file if the boundary that ends it is in
+// the bytes this reader holds, or in the buffer of the reader it reads from. It
+// does not read more.
+func (r *finalFileReader) BufferedSize() (int64, bool) {
+	if r.done {
+		return r.bytesRead, true
+	}
+	if r.failed != nil {
+		return 0, false
+	}
+
+	held := r.buf
+	if n := r.r.Buffered(); n > 0 {
+		pending, _ := r.r.Peek(n)
+		if len(held) == 0 {
+			held = pending
+		} else {
+			// the boundary can start in r.buf and end in the bytes pending
+			held = slices.Concat(held, pending)
+		}
+	}
+
+	if idx := bytes.Index(held, r.trailer); idx >= 0 {
+		return r.bytesRead + int64(idx), true
+	}
+
+	return 0, false
 }

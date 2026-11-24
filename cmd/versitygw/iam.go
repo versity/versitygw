@@ -86,6 +86,7 @@ func runIAM(ctx *cli.Context) error {
 		WebuiIAMGateways:               webuiIAMGateways,
 		WebuiGateways:                  webuiGateways,
 		WebuiAdminGateways:             webuiAdminGateways,
+		WebuiOIDC:                      webuiOIDCConfig(),
 		SigHup:                         gwcli.SigHup,
 		Version:                        Version,
 		Build:                          Build,

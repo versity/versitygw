@@ -772,8 +772,10 @@ func Versioning_CopyObject_invalid_versionId(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
-func Versioning_CopyObject_encoded_versionid_separator_invalid_versionId(s *S3Conf) error {
-	testName := "Versioning_CopyObject_encoded_versionid_separator_invalid_versionId"
+// An encoded "?versionId=" separator is part of the source key, so the
+// ".." segments after it are too, and the key is rejected.
+func Versioning_CopyObject_encoded_versionid_separator_stays_in_key(s *S3Conf) error {
+	testName := "Versioning_CopyObject_encoded_versionid_separator_stays_in_key"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		dstObj, srcObj := "dst-obj", "src-obj"
 
@@ -793,7 +795,7 @@ func Versioning_CopyObject_encoded_versionid_separator_invalid_versionId(s *S3Co
 			CopySource: getPtr(fmt.Sprintf("%v/%v%%3FversionId%%3D..%%2f..%%2fsecret.txt", bucket, srcObj)),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "../../secret.txt"))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, srcObj+"?versionId=../../secret.txt"))
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
@@ -5237,8 +5239,10 @@ func Versioning_UploadPartCopy_invalid_versionId(s *S3Conf) error {
 	})
 }
 
-func Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId(s *S3Conf) error {
-	testName := "Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId"
+// An encoded "?versionId=" separator is part of the source key, so the
+// ".." segments after it are too, and the key is rejected.
+func Versioning_UploadPartCopy_encoded_versionid_separator_stays_in_key(s *S3Conf) error {
+	testName := "Versioning_UploadPartCopy_encoded_versionid_separator_stays_in_key"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		dstObj, srcObj := "dst-obj", "src-obj"
 		_, err := putObjectWithData(10, &s3.PutObjectInput{
@@ -5263,7 +5267,7 @@ func Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId(s *
 			CopySource: getPtr(fmt.Sprintf("%v/%v%%3FversionId%%3D..%%2f..%%2fsecret.txt", bucket, srcObj)),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "../../secret.txt"))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, srcObj+"?versionId=../../secret.txt"))
 	})
 }
 
@@ -7568,10 +7572,23 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 					return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
 				}
 
-				return nil
+				return err
 			}
 
+			// s3:GetObjectAttributes alone, without s3:GetObject
 			policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectAttributes"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			// deny without versionId
+			err = getObjectAttr(nil, true)
+			if err != nil {
+				return err
+			}
+
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectAttributes", "s3:GetObject"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
 			err = putBucketPolicy(s3client, bucket, policy)
 			if err != nil {
 				return err
@@ -7589,7 +7606,33 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 				return err
 			}
 
+			// s3:GetObjectVersionAttributes alone, without s3:GetObjectVersion
 			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectVersionAttributes"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			// deny with versionId
+			err = getObjectAttr(res.res.VersionId, true)
+			if err != nil {
+				return err
+			}
+
+			// s3:GetObject doesn't cover a request naming a version
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectVersionAttributes", "s3:GetObject"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			// deny with versionId
+			err = getObjectAttr(res.res.VersionId, true)
+			if err != nil {
+				return err
+			}
+
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectVersionAttributes", "s3:GetObjectVersion"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
 			err = putBucketPolicy(s3client, bucket, policy)
 			if err != nil {
 				return err

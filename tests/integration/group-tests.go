@@ -224,6 +224,7 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_sse_c_invalid_headers)
 	ts.Run(PutObject_unsupported_sse_not_implemented)
 	ts.Run(PutObject_default_content_type)
+	ts.Run(PutObject_multipart_form_data_body)
 	ts.Run(PutObject_overwrite_resets_attributes)
 	ts.Run(PutObject_overwrite_multipart_object)
 	ts.Run(PutObject_dir_object_overwrite_resets_attributes)
@@ -430,6 +431,7 @@ func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_long_metadata)
 	ts.Run(CopyObject_copy_source_starting_with_slash)
 	ts.Run(CopyObject_invalid_copy_source)
+	ts.Run(CopyObject_copy_source_encoded_version_id_separator)
 	ts.Run(CopyObject_non_existing_dir_object)
 	ts.Run(CopyObject_should_copy_meta_props)
 	ts.Run(CopyObject_should_not_copy_website_redirect_without_user_metadata)
@@ -548,6 +550,7 @@ func TestUploadPartCopy(ts *TestState) {
 	ts.Run(UploadPartCopy_incorrect_object_key)
 	ts.Run(UploadPartCopy_invalid_part_number)
 	ts.Run(UploadPartCopy_invalid_copy_source)
+	ts.Run(UploadPartCopy_copy_source_encoded_version_id_separator)
 	ts.Run(UploadPartCopy_non_existing_source_bucket)
 	ts.Run(UploadPartCopy_non_existing_source_object_key)
 	ts.Run(UploadPartCopy_success)
@@ -598,6 +601,7 @@ func TestListMultipartUploads(ts *TestState) {
 	ts.Run(ListMultipartUploads_upload_id_marker_truncated)
 	ts.Run(ListMultipartUploads_prefix)
 	ts.Run(ListMultipartUploads_both_delimiter_and_prefix)
+	ts.Run(ListMultipartUploads_url_encoding)
 	ts.Run(ListMultipartUploads_delimiter_no_matches)
 	ts.Run(ListMultipartUploads_with_upload_id)
 	//TODO: remove the condition after implementing checksums in azure
@@ -1276,6 +1280,7 @@ func TestGatewayIAM(ts *TestState) {
 	ts.Run(IAM_admin_ChangeBucketOwner)
 	ts.Run(IAM_ChangeBucketOwner_back_to_root)
 	ts.Sync(IAM_ListBuckets)
+	ts.Run(IAM_ListUsers)
 	ts.Run(IAM_CreateBucket_empty_owner_header)
 	ts.Run(IAM_CreateBucket_non_existing_user)
 	ts.Run(IAM_CreateBucket_success)
@@ -1554,6 +1559,7 @@ func TestIAMCreateRole(ts *TestState) {
 	ts.Run(IAMCreateRole_success)
 	ts.Run(IAMCreateRole_defaults)
 	ts.Run(IAMCreateRole_trust_policy_document_grammar)
+	ts.Run(IAMCreateRole_trust_policy_aws_principals)
 }
 
 func TestIAMGetRole(ts *TestState) {
@@ -1596,6 +1602,7 @@ func TestIAMUpdateAssumeRolePolicy(ts *TestState) {
 	ts.Run(IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded)
 	ts.Run(IAMUpdateAssumeRolePolicy_success)
 	ts.Run(IAMUpdateAssumeRolePolicy_trust_policy_document_grammar)
+	ts.Run(IAMUpdateAssumeRolePolicy_trust_policy_aws_principals)
 }
 
 func TestIAMTagRole(ts *TestState) {
@@ -1791,6 +1798,44 @@ func TestIAMListOpenIDConnectProviderTags(ts *TestState) {
 	ts.Run(IAMListOpenIDConnectProviderTags_pagination)
 }
 
+func TestIAMAssumeRole(ts *TestState) {
+	ts.Run(IAMAssumeRole_missing_role_arn)
+	ts.Run(IAMAssumeRole_missing_role_session_name)
+	ts.Run(IAMAssumeRole_malformed_duration)
+	ts.Run(IAMAssumeRole_wrong_version_is_invalid_action)
+	ts.Run(IAMAssumeRole_incorrect_service_scope)
+	ts.Run(IAMAssumeRole_no_auth)
+	ts.Run(IAMAssumeRole_unknown_access_key)
+	ts.Run(IAMAssumeRole_invalid_credentials)
+	ts.Run(IAMAssumeRole_invalid_parameters)
+	ts.Run(IAMAssumeRole_unsupported_parameters)
+	ts.Run(IAMAssumeRole_root_refused)
+	ts.Run(IAMAssumeRole_role_arn_not_an_arn)
+	ts.Run(IAMAssumeRole_mfa_not_supported)
+	ts.Run(IAMAssumeRole_success)
+	ts.Run(IAMAssumeRole_response_wire_shape)
+	ts.Run(IAMAssumeRole_presigned_url)
+	ts.Run(IAMAssumeRole_unresolved_role_arn)
+	ts.Run(IAMAssumeRole_account_trust_requires_identity_policy)
+	ts.Run(IAMAssumeRole_direct_trust_needs_no_identity_policy)
+	ts.Run(IAMAssumeRole_explicit_deny)
+	ts.Run(IAMAssumeRole_trust_statement_must_cover_the_caller)
+	ts.Run(IAMAssumeRole_identity_policy_resource_scoping)
+	ts.Run(IAMAssumeRole_external_id)
+	ts.Run(IAMAssumeRole_role_session_name_condition)
+	ts.Run(IAMAssumeRole_trust_policy_principal_conditions)
+	ts.Run(IAMAssumeRole_identity_policy_conditions)
+	ts.Run(IAMAssumeRole_duration)
+	ts.Run(IAMAssumeRole_session_policy)
+	ts.Run(IAMAssumeRole_session_policy_documents)
+	ts.Run(IAMAssumeRole_error_precedence)
+	ts.Run(IAMAssumeRole_role_chaining)
+	ts.Run(IAMAssumeRole_role_chaining_session_policy)
+	ts.Run(IAMAssumeRole_role_chaining_duration_limit)
+	ts.Run(IAMAssumeRole_session_of_deleted_role)
+	ts.Run(IAMAssumeRole_trust_policy_update_takes_effect)
+}
+
 func TestIAMAssumeRoleWithWebIdentity(ts *TestState) {
 	ts.Run(IAMAssumeRoleWithWebIdentity_missing_role_arn)
 	ts.Run(IAMAssumeRoleWithWebIdentity_role_arn_too_short)
@@ -1916,6 +1961,7 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_create_multipart_upload_tagging_split_sources)
 	ts.Run(S3IAMAccessControl_post_object_tagging_split_sources)
 	ts.Run(S3IAMAccessControl_put_object_lock_split_sources)
+	ts.Run(S3IAMAccessControl_get_object_attributes_split_sources)
 	ts.Run(S3IAMAccessControl_create_bucket)
 	ts.Run(S3IAMAccessControl_list_buckets)
 	ts.Run(S3IAMAccessControl_governance_bypass_sources)
@@ -1958,14 +2004,6 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMPrincipal_role_arn_does_not_match_a_user)
 	ts.Run(S3IAMPrincipal_deleted_user_arn_rejected)
 	ts.Run(S3IAMPrincipal_wildcard_grants_everyone)
-}
-
-// TestS3IAMSessionAccessControl is the one group the OIDC workflow runs, so
-// it carries every test that needs a real, signed ID token — including the
-// IAM/STS-endpoint ones below, which are not S3 access-control tests but
-// have the same GitHub-OIDC prerequisite. Every test here skips itself
-// outside a job that can mint a token.
-func TestS3IAMSessionAccessControl(ts *TestState) {
 	ts.Run(S3IAMSession_role_policy_allows)
 	ts.Run(S3IAMSession_role_without_policy_denied)
 	ts.Run(S3IAMSession_role_policy_explicit_deny_wins)
@@ -1975,6 +2013,7 @@ func TestS3IAMSessionAccessControl(ts *TestState) {
 	ts.Run(S3IAMSession_session_policy_explicit_deny_overrides_role)
 	ts.Run(S3IAMSession_role_policy_deny_overrides_session_allow)
 	ts.Run(S3IAMSession_session_policy_without_role_policy_denied)
+	ts.Run(S3IAMSession_session_policy_scopes_to_prefix)
 	ts.Run(S3IAMSession_bucket_policy_allows_without_role_policy)
 	ts.Run(S3IAMSession_bucket_policy_role_arn_covers_every_session)
 	ts.Run(S3IAMSession_bucket_policy_names_one_session)
@@ -1990,9 +2029,18 @@ func TestS3IAMSessionAccessControl(ts *TestState) {
 	ts.Run(S3IAMSession_delete_objects_authorizes_each_key)
 	ts.Run(S3IAMSession_condition_identity_keys)
 	ts.Run(S3IAMSession_get_caller_identity_matches_s3_principal)
-	ts.Run(S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live)
 	ts.Run(S3IAMSession_GetRole_role_last_used_recorded)
 	ts.Run(S3IAMSession_role_last_used_records_s3)
+}
+
+// TestS3IAMSessionAccessControl is the one group the OIDC workflow runs, so
+// it carries the tests that need a real, signed ID token: the ones that mint
+// their session with AssumeRoleWithWebIdentity. Every test here skips itself
+// outside a job that can mint a token. Sessions minted with AssumeRole need
+// no identity provider, and their tests run with TestS3IAMAccessControl.
+func TestS3IAMSessionAccessControl(ts *TestState) {
+	ts.Run(S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live)
+	ts.Run(S3IAMSession_web_identity_session_on_s3)
 }
 
 func TestIAM(ts *TestState) {
@@ -2037,6 +2085,7 @@ func TestIAM(ts *TestState) {
 	TestIAMTagOpenIDConnectProvider(ts)
 	TestIAMUntagOpenIDConnectProvider(ts)
 	TestIAMListOpenIDConnectProviderTags(ts)
+	TestIAMAssumeRole(ts)
 	TestIAMAssumeRoleWithWebIdentity(ts)
 	TestIAMGetCallerIdentity(ts)
 	TestIAMAccessControl(ts)
@@ -2055,6 +2104,14 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_user_PutBucketAcl_with_policy_access)
 	ts.Run(AccessControl_copy_object_with_starting_slash_for_user)
 	ts.Run(AccessControl_UploadPartCopy_malformed_upload_id_without_source_access)
+	// UploadPartCopy maps to Azure StageBlockFromURL, which Azurite does
+	// not implement.
+	if !ts.conf.azureTests {
+		ts.Run(AccessControl_copy_source_version_id_explicit_deny)
+	}
+	if ts.conf.versioningEnabled {
+		ts.Run(AccessControl_copy_source_version_needs_get_object_version)
+	}
 	ts.Run(AccessControl_multipart_malformed_upload_id_without_access)
 	ts.Run(AccessControl_PutObject_with_tagging_policy)
 	ts.Run(AccessControl_PutObject_with_legal_hold_policy)
@@ -2065,6 +2122,7 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_CopyObject_with_tagging_policy)
 	ts.Run(AccessControl_CopyObject_with_legal_hold_policy)
 	ts.Run(AccessControl_CopyObject_with_retention_policy)
+	ts.Run(AccessControl_GetObjectAttributes_policy)
 	if !ts.conf.azureTests {
 		ts.Run(AccessControl_dot_segment_key_rejected_before_policy)
 	}
@@ -2117,6 +2175,7 @@ func TestPublicBuckets(ts *TestState) {
 	ts.Run(PublicBucket_upload_part_object_lock)
 	ts.Run(PublicBucket_post_object_tagging)
 	ts.Run(PublicBucket_post_object_lock)
+	ts.Run(PublicBucket_get_object_attributes)
 	if ts.conf.versioningEnabled {
 		ts.Run(PublicBucket_object_version_actions)
 		ts.Run(PublicBucket_object_version_actions_public_acl)
@@ -2150,7 +2209,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_PutObject_conditional_writes_over_delete_marker)
 	// CopyObject action
 	ts.Run(Versioning_CopyObject_invalid_versionId)
-	ts.Run(Versioning_CopyObject_encoded_versionid_separator_invalid_versionId)
+	ts.Run(Versioning_CopyObject_encoded_versionid_separator_stays_in_key)
 	ts.Run(Versioning_CopyObject_success)
 	ts.Run(Versioning_CopyObject_non_existing_version_id)
 	ts.Run(Versioning_CopyObject_from_an_object_version)
@@ -2235,6 +2294,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(ListObjectVersions_paginate)
 	ts.Run(ListObjectVersions_single_null_versionId_object)
 	ts.Run(ListObjectVersions_checksum)
+	ts.Run(ListObjectVersions_url_encoding)
 	// Multipart upload
 	ts.Run(Versioning_Multipart_Upload_success)
 	ts.Run(Versioning_Multipart_Upload_overwrite_an_object)
@@ -2243,7 +2303,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_Multipart_Upload_conditional_writes_over_delete_marker)
 	ts.Run(Versioning_Multipart_Upload_already_completed)
 	ts.Run(Versioning_UploadPartCopy_invalid_versionId)
-	ts.Run(Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId)
+	ts.Run(Versioning_UploadPartCopy_encoded_versionid_separator_stays_in_key)
 	ts.Run(Versioning_UploadPartCopy_non_existing_versionId)
 	ts.Run(Versioning_UploadPartCopy_from_an_object_version)
 	ts.Run(Versioning_UploadPartCopy_from_a_delete_marker)
@@ -2353,6 +2413,19 @@ func TestPostObject(ts *TestState) {
 	ts.Run(PostObject_invalid_tagging)
 	ts.Run(PostObject_success_with_tagging)
 	ts.Run(PostObject_success_double_dash_boundary)
+	ts.Run(PostObject_file_without_filename)
+	ts.Run(PostObject_file_before_key)
+	ts.Run(PostObject_ignores_fields_after_file)
+	ts.Run(PostObject_content_length_range_fields_after_file)
+	ts.Run(PostObject_content_length_range_large_file)
+	ts.Run(PostObject_content_length_range_under_min_keeps_object)
+	ts.Run(PostObject_content_length_range_body_without_final_crlf)
+	ts.Run(PostObject_short_closing_boundary_keeps_object)
+	ts.Run(PostObject_small_file_with_short_closing_boundary)
+	ts.Run(PostObject_small_file_with_field_after_file)
+	ts.Run(PostObject_empty_file_with_field_after_file)
+	ts.Run(PostObject_preamble_and_folded_header)
+	ts.Run(PostObject_data_before_file_limit)
 	ts.Run(PostObject_object_lock_success)
 	ts.Run(PostObject_object_lock_invalid_fields)
 	ts.Run(PostObject_object_lock_missing_bucket_config)
@@ -2380,6 +2453,7 @@ func TestUnsignedStreaminPayloadTrailer(ts *TestState) {
 		ts.Run(UnsignedStreamingPayloadTrailer_multiple_checksum_headers)
 		ts.Run(UnsignedStreamingPayloadTrailer_sdk_algo_and_trailer_mismatch)
 		ts.Run(UnsignedStreamingPayloadTrailer_incomplete_body)
+		ts.Run(UnsignedStreamingPayloadTrailer_trailer_line_too_long)
 		ts.Run(UnsignedStreamingPayloadTrailer_aborted_connection)
 		ts.Run(UnsignedStreamingPayloadTrailer_invalid_chunk_size)
 		ts.Run(UnsignedStreamingPayloadTrailer_content_length_payload_size_mismatch)
@@ -2470,6 +2544,7 @@ func GetIntTests() IntTests {
 		"S3IAMSession_session_policy_filters_bucket_policy_grant":                          S3IAMSession_session_policy_filters_bucket_policy_grant,
 		"S3IAMSession_bucket_policy_allows_without_role_policy":                            S3IAMSession_bucket_policy_allows_without_role_policy,
 		"S3IAMSession_session_policy_without_role_policy_denied":                           S3IAMSession_session_policy_without_role_policy_denied,
+		"S3IAMSession_session_policy_scopes_to_prefix":                                     S3IAMSession_session_policy_scopes_to_prefix,
 		"S3IAMSession_role_policy_deny_overrides_session_allow":                            S3IAMSession_role_policy_deny_overrides_session_allow,
 		"S3IAMSession_session_policy_explicit_deny_overrides_role":                         S3IAMSession_session_policy_explicit_deny_overrides_role,
 		"S3IAMSession_session_policy_cannot_widen_role":                                    S3IAMSession_session_policy_cannot_widen_role,
@@ -2479,6 +2554,7 @@ func GetIntTests() IntTests {
 		"S3IAMSession_role_without_policy_denied":                                          S3IAMSession_role_without_policy_denied,
 		"S3IAMSession_role_policy_allows":                                                  S3IAMSession_role_policy_allows,
 		"S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live":                          S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live,
+		"S3IAMSession_web_identity_session_on_s3":                                          S3IAMSession_web_identity_session_on_s3,
 		"S3IAMSession_GetRole_role_last_used_recorded":                                     S3IAMSession_GetRole_role_last_used_recorded,
 		"S3IAMSession_role_last_used_records_s3":                                           S3IAMSession_role_last_used_records_s3,
 		"S3IAMAccessControl_retention_extension_needs_no_bypass":                           S3IAMAccessControl_retention_extension_needs_no_bypass,
@@ -2507,6 +2583,7 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_create_multipart_upload_tagging_split_sources":                 S3IAMAccessControl_create_multipart_upload_tagging_split_sources,
 		"S3IAMAccessControl_post_object_tagging_split_sources":                             S3IAMAccessControl_post_object_tagging_split_sources,
 		"S3IAMAccessControl_put_object_lock_split_sources":                                 S3IAMAccessControl_put_object_lock_split_sources,
+		"S3IAMAccessControl_get_object_attributes_split_sources":                           S3IAMAccessControl_get_object_attributes_split_sources,
 		"S3IAMAccessControl_create_bucket":                                                 S3IAMAccessControl_create_bucket,
 		"S3IAMAccessControl_list_buckets":                                                  S3IAMAccessControl_list_buckets,
 		"S3IAMAccessControl_governance_bypass_sources":                                     S3IAMAccessControl_governance_bypass_sources,
@@ -2787,6 +2864,7 @@ func GetIntTests() IntTests {
 		"IAMCreateRole_success":                                                            IAMCreateRole_success,
 		"IAMCreateRole_defaults":                                                           IAMCreateRole_defaults,
 		"IAMCreateRole_trust_policy_document_grammar":                                      IAMCreateRole_trust_policy_document_grammar,
+		"IAMCreateRole_trust_policy_aws_principals":                                        IAMCreateRole_trust_policy_aws_principals,
 		"IAMGetRole_missing_role_name":                                                     IAMGetRole_missing_role_name,
 		"IAMGetRole_invalid_role_name":                                                     IAMGetRole_invalid_role_name,
 		"IAMGetRole_long_role_name":                                                        IAMGetRole_long_role_name,
@@ -2817,6 +2895,7 @@ func GetIntTests() IntTests {
 		"IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded":                       IAMUpdateAssumeRolePolicy_trust_policy_size_limit_exceeded,
 		"IAMUpdateAssumeRolePolicy_success":                                                IAMUpdateAssumeRolePolicy_success,
 		"IAMUpdateAssumeRolePolicy_trust_policy_document_grammar":                          IAMUpdateAssumeRolePolicy_trust_policy_document_grammar,
+		"IAMUpdateAssumeRolePolicy_trust_policy_aws_principals":                            IAMUpdateAssumeRolePolicy_trust_policy_aws_principals,
 		"IAMTagRole_missing_role_name":                                                     IAMTagRole_missing_role_name,
 		"IAMTagRole_invalid_role_name":                                                     IAMTagRole_invalid_role_name,
 		"IAMTagRole_role_name_too_long":                                                    IAMTagRole_role_name_too_long,
@@ -2959,6 +3038,41 @@ func GetIntTests() IntTests {
 		"IAMListOpenIDConnectProviderTags_empty_result":                                    IAMListOpenIDConnectProviderTags_empty_result,
 		"IAMListOpenIDConnectProviderTags_success":                                         IAMListOpenIDConnectProviderTags_success,
 		"IAMListOpenIDConnectProviderTags_pagination":                                      IAMListOpenIDConnectProviderTags_pagination,
+		"IAMAssumeRole_missing_role_arn":                                                   IAMAssumeRole_missing_role_arn,
+		"IAMAssumeRole_missing_role_session_name":                                          IAMAssumeRole_missing_role_session_name,
+		"IAMAssumeRole_malformed_duration":                                                 IAMAssumeRole_malformed_duration,
+		"IAMAssumeRole_wrong_version_is_invalid_action":                                    IAMAssumeRole_wrong_version_is_invalid_action,
+		"IAMAssumeRole_incorrect_service_scope":                                            IAMAssumeRole_incorrect_service_scope,
+		"IAMAssumeRole_no_auth":                                                            IAMAssumeRole_no_auth,
+		"IAMAssumeRole_unknown_access_key":                                                 IAMAssumeRole_unknown_access_key,
+		"IAMAssumeRole_invalid_credentials":                                                IAMAssumeRole_invalid_credentials,
+		"IAMAssumeRole_invalid_parameters":                                                 IAMAssumeRole_invalid_parameters,
+		"IAMAssumeRole_unsupported_parameters":                                             IAMAssumeRole_unsupported_parameters,
+		"IAMAssumeRole_root_refused":                                                       IAMAssumeRole_root_refused,
+		"IAMAssumeRole_role_arn_not_an_arn":                                                IAMAssumeRole_role_arn_not_an_arn,
+		"IAMAssumeRole_mfa_not_supported":                                                  IAMAssumeRole_mfa_not_supported,
+		"IAMAssumeRole_success":                                                            IAMAssumeRole_success,
+		"IAMAssumeRole_response_wire_shape":                                                IAMAssumeRole_response_wire_shape,
+		"IAMAssumeRole_presigned_url":                                                      IAMAssumeRole_presigned_url,
+		"IAMAssumeRole_unresolved_role_arn":                                                IAMAssumeRole_unresolved_role_arn,
+		"IAMAssumeRole_account_trust_requires_identity_policy":                             IAMAssumeRole_account_trust_requires_identity_policy,
+		"IAMAssumeRole_direct_trust_needs_no_identity_policy":                              IAMAssumeRole_direct_trust_needs_no_identity_policy,
+		"IAMAssumeRole_explicit_deny":                                                      IAMAssumeRole_explicit_deny,
+		"IAMAssumeRole_trust_statement_must_cover_the_caller":                              IAMAssumeRole_trust_statement_must_cover_the_caller,
+		"IAMAssumeRole_identity_policy_resource_scoping":                                   IAMAssumeRole_identity_policy_resource_scoping,
+		"IAMAssumeRole_external_id":                                                        IAMAssumeRole_external_id,
+		"IAMAssumeRole_role_session_name_condition":                                        IAMAssumeRole_role_session_name_condition,
+		"IAMAssumeRole_trust_policy_principal_conditions":                                  IAMAssumeRole_trust_policy_principal_conditions,
+		"IAMAssumeRole_identity_policy_conditions":                                         IAMAssumeRole_identity_policy_conditions,
+		"IAMAssumeRole_duration":                                                           IAMAssumeRole_duration,
+		"IAMAssumeRole_session_policy":                                                     IAMAssumeRole_session_policy,
+		"IAMAssumeRole_session_policy_documents":                                           IAMAssumeRole_session_policy_documents,
+		"IAMAssumeRole_error_precedence":                                                   IAMAssumeRole_error_precedence,
+		"IAMAssumeRole_role_chaining":                                                      IAMAssumeRole_role_chaining,
+		"IAMAssumeRole_role_chaining_session_policy":                                       IAMAssumeRole_role_chaining_session_policy,
+		"IAMAssumeRole_role_chaining_duration_limit":                                       IAMAssumeRole_role_chaining_duration_limit,
+		"IAMAssumeRole_session_of_deleted_role":                                            IAMAssumeRole_session_of_deleted_role,
+		"IAMAssumeRole_trust_policy_update_takes_effect":                                   IAMAssumeRole_trust_policy_update_takes_effect,
 		"IAMAssumeRoleWithWebIdentity_missing_role_arn":                                    IAMAssumeRoleWithWebIdentity_missing_role_arn,
 		"IAMAssumeRoleWithWebIdentity_role_arn_too_short":                                  IAMAssumeRoleWithWebIdentity_role_arn_too_short,
 		"IAMAssumeRoleWithWebIdentity_malformed_duration":                                  IAMAssumeRoleWithWebIdentity_malformed_duration,
@@ -3190,6 +3304,7 @@ func GetIntTests() IntTests {
 		"PutObject_tagging_invalid_argument_value":                                         PutObject_tagging_invalid_argument_value,
 		"PutObject_success":                                                                PutObject_success,
 		"PutObject_default_content_type":                                                   PutObject_default_content_type,
+		"PutObject_multipart_form_data_body":                                               PutObject_multipart_form_data_body,
 		"PutObject_overwrite_resets_attributes":                                            PutObject_overwrite_resets_attributes,
 		"PutObject_overwrite_multipart_object":                                             PutObject_overwrite_multipart_object,
 		"PutObject_dir_object_overwrite_resets_attributes":                                 PutObject_dir_object_overwrite_resets_attributes,
@@ -3354,6 +3469,7 @@ func GetIntTests() IntTests {
 		"CopyObject_to_itself_with_new_metadata":                                           CopyObject_to_itself_with_new_metadata,
 		"CopyObject_copy_source_starting_with_slash":                                       CopyObject_copy_source_starting_with_slash,
 		"CopyObject_invalid_copy_source":                                                   CopyObject_invalid_copy_source,
+		"CopyObject_copy_source_encoded_version_id_separator":                              CopyObject_copy_source_encoded_version_id_separator,
 		"CopyObject_non_existing_dir_object":                                               CopyObject_non_existing_dir_object,
 		"CopyObject_should_copy_meta_props":                                                CopyObject_should_copy_meta_props,
 		"CopyObject_should_not_copy_website_redirect_without_user_metadata":                CopyObject_should_not_copy_website_redirect_without_user_metadata,
@@ -3443,6 +3559,7 @@ func GetIntTests() IntTests {
 		"UploadPartCopy_incorrect_object_key":                                              UploadPartCopy_incorrect_object_key,
 		"UploadPartCopy_invalid_part_number":                                               UploadPartCopy_invalid_part_number,
 		"UploadPartCopy_invalid_copy_source":                                               UploadPartCopy_invalid_copy_source,
+		"UploadPartCopy_copy_source_encoded_version_id_separator":                          UploadPartCopy_copy_source_encoded_version_id_separator,
 		"UploadPartCopy_non_existing_source_bucket":                                        UploadPartCopy_non_existing_source_bucket,
 		"UploadPartCopy_non_existing_source_object_key":                                    UploadPartCopy_non_existing_source_object_key,
 		"UploadPartCopy_success":                                                           UploadPartCopy_success,
@@ -3479,6 +3596,7 @@ func GetIntTests() IntTests {
 		"ListMultipartUploads_upload_id_marker_with_key_marker":                            ListMultipartUploads_upload_id_marker_with_key_marker,
 		"ListMultipartUploads_delimiter_truncated":                                         ListMultipartUploads_delimiter_truncated,
 		"ListMultipartUploads_upload_id_marker_truncated":                                  ListMultipartUploads_upload_id_marker_truncated,
+		"ListMultipartUploads_url_encoding":                                                ListMultipartUploads_url_encoding,
 		"ListMultipartUploads_prefix":                                                      ListMultipartUploads_prefix,
 		"ListMultipartUploads_both_delimiter_and_prefix":                                   ListMultipartUploads_both_delimiter_and_prefix,
 		"ListMultipartUploads_with_upload_id":                                              ListMultipartUploads_with_upload_id,
@@ -3826,6 +3944,7 @@ func GetIntTests() IntTests {
 		"IAM_admin_ChangeBucketOwner":                                                      IAM_admin_ChangeBucketOwner,
 		"IAM_ChangeBucketOwner_back_to_root":                                               IAM_ChangeBucketOwner_back_to_root,
 		"IAM_ListBuckets":                                                                  IAM_ListBuckets,
+		"IAM_ListUsers":                                                                    IAM_ListUsers,
 		"IAM_CreateBucket_empty_owner_header":                                              IAM_CreateBucket_empty_owner_header,
 		"IAM_CreateBucket_non_existing_user":                                               IAM_CreateBucket_non_existing_user,
 		"IAM_CreateBucket_success":                                                         IAM_CreateBucket_success,
@@ -3842,6 +3961,8 @@ func GetIntTests() IntTests {
 		"AccessControl_user_PutBucketAcl_with_policy_access":                               AccessControl_user_PutBucketAcl_with_policy_access,
 		"AccessControl_copy_object_with_starting_slash_for_user":                           AccessControl_copy_object_with_starting_slash_for_user,
 		"AccessControl_UploadPartCopy_malformed_upload_id_without_source_access":           AccessControl_UploadPartCopy_malformed_upload_id_without_source_access,
+		"AccessControl_copy_source_version_id_explicit_deny":                               AccessControl_copy_source_version_id_explicit_deny,
+		"AccessControl_copy_source_version_needs_get_object_version":                       AccessControl_copy_source_version_needs_get_object_version,
 		"AccessControl_multipart_malformed_upload_id_without_access":                       AccessControl_multipart_malformed_upload_id_without_access,
 		"AccessControl_PutObject_with_tagging_policy":                                      AccessControl_PutObject_with_tagging_policy,
 		"AccessControl_PutObject_with_legal_hold_policy":                                   AccessControl_PutObject_with_legal_hold_policy,
@@ -3852,6 +3973,7 @@ func GetIntTests() IntTests {
 		"AccessControl_CopyObject_with_tagging_policy":                                     AccessControl_CopyObject_with_tagging_policy,
 		"AccessControl_CopyObject_with_legal_hold_policy":                                  AccessControl_CopyObject_with_legal_hold_policy,
 		"AccessControl_CopyObject_with_retention_policy":                                   AccessControl_CopyObject_with_retention_policy,
+		"AccessControl_GetObjectAttributes_policy":                                         AccessControl_GetObjectAttributes_policy,
 		"AccessControl_dot_segment_key_rejected_before_policy":                             AccessControl_dot_segment_key_rejected_before_policy,
 		"AccessControl_bucket_policy_condition_ip_allow":                                   AccessControl_bucket_policy_condition_ip_allow,
 		"AccessControl_bucket_policy_condition_ip_deny_no_match":                           AccessControl_bucket_policy_condition_ip_deny_no_match,
@@ -3892,6 +4014,7 @@ func GetIntTests() IntTests {
 		"PublicBucket_upload_part_object_lock":                                             PublicBucket_upload_part_object_lock,
 		"PublicBucket_post_object_tagging":                                                 PublicBucket_post_object_tagging,
 		"PublicBucket_post_object_lock":                                                    PublicBucket_post_object_lock,
+		"PublicBucket_get_object_attributes":                                               PublicBucket_get_object_attributes,
 		"PublicBucket_object_version_actions":                                              PublicBucket_object_version_actions,
 		"PublicBucket_object_version_actions_public_acl":                                   PublicBucket_object_version_actions_public_acl,
 		"PutBucketVersioning_non_existing_bucket":                                          PutBucketVersioning_non_existing_bucket,
@@ -3915,7 +4038,7 @@ func GetIntTests() IntTests {
 		"Versioning_PutObject_suspended_null_version_resets_attributes":                    Versioning_PutObject_suspended_null_version_resets_attributes,
 		"Versioning_PutObject_conditional_writes_over_delete_marker":                       Versioning_PutObject_conditional_writes_over_delete_marker,
 		"Versioning_CopyObject_invalid_versionId":                                          Versioning_CopyObject_invalid_versionId,
-		"Versioning_CopyObject_encoded_versionid_separator_invalid_versionId":              Versioning_CopyObject_encoded_versionid_separator_invalid_versionId,
+		"Versioning_CopyObject_encoded_versionid_separator_stays_in_key":                   Versioning_CopyObject_encoded_versionid_separator_stays_in_key,
 		"Versioning_CopyObject_success":                                                    Versioning_CopyObject_success,
 		"Versioning_CopyObject_non_existing_version_id":                                    Versioning_CopyObject_non_existing_version_id,
 		"Versioning_CopyObject_from_an_object_version":                                     Versioning_CopyObject_from_an_object_version,
@@ -3989,6 +4112,7 @@ func GetIntTests() IntTests {
 		"ListObjectVersions_key_marker":                                                    ListObjectVersions_key_marker,
 		"ListObjectVersions_paginate":                                                      ListObjectVersions_paginate,
 		"ListObjectVersions_single_null_versionId_object":                                  ListObjectVersions_single_null_versionId_object,
+		"ListObjectVersions_url_encoding":                                                  ListObjectVersions_url_encoding,
 		"ListObjectVersions_checksum":                                                      ListObjectVersions_checksum,
 		"Versioning_Multipart_Upload_success":                                              Versioning_Multipart_Upload_success,
 		"Versioning_Multipart_Upload_overwrite_an_object":                                  Versioning_Multipart_Upload_overwrite_an_object,
@@ -3997,7 +4121,7 @@ func GetIntTests() IntTests {
 		"Versioning_Multipart_Upload_conditional_writes_over_delete_marker":                Versioning_Multipart_Upload_conditional_writes_over_delete_marker,
 		"Versioning_Multipart_Upload_already_completed":                                    Versioning_Multipart_Upload_already_completed,
 		"Versioning_UploadPartCopy_invalid_versionId":                                      Versioning_UploadPartCopy_invalid_versionId,
-		"Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId":          Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId,
+		"Versioning_UploadPartCopy_encoded_versionid_separator_stays_in_key":               Versioning_UploadPartCopy_encoded_versionid_separator_stays_in_key,
 		"Versioning_UploadPartCopy_non_existing_versionId":                                 Versioning_UploadPartCopy_non_existing_versionId,
 		"Versioning_UploadPartCopy_from_an_object_version":                                 Versioning_UploadPartCopy_from_an_object_version,
 		"Versioning_UploadPartCopy_from_a_delete_marker":                                   Versioning_UploadPartCopy_from_a_delete_marker,
@@ -4059,6 +4183,7 @@ func GetIntTests() IntTests {
 		"UnsignedStreamingPayloadTrailer_multiple_checksum_headers":                        UnsignedStreamingPayloadTrailer_multiple_checksum_headers,
 		"UnsignedStreamingPayloadTrailer_sdk_algo_and_trailer_mismatch":                    UnsignedStreamingPayloadTrailer_sdk_algo_and_trailer_mismatch,
 		"UnsignedStreamingPayloadTrailer_incomplete_body":                                  UnsignedStreamingPayloadTrailer_incomplete_body,
+		"UnsignedStreamingPayloadTrailer_trailer_line_too_long":                            UnsignedStreamingPayloadTrailer_trailer_line_too_long,
 		"UnsignedStreamingPayloadTrailer_invalid_chunk_size":                               UnsignedStreamingPayloadTrailer_invalid_chunk_size,
 		"UnsignedStreamingPayloadTrailer_content_length_payload_size_mismatch":             UnsignedStreamingPayloadTrailer_content_length_payload_size_mismatch,
 		"UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme":            UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme,
@@ -4135,6 +4260,19 @@ func GetIntTests() IntTests {
 		"PostObject_multiple_checksum_headers":                                             PostObject_multiple_checksum_headers,
 		"PostObject_checksums_success":                                                     PostObject_checksums_success,
 		"PostObject_success_double_dash_boundary":                                          PostObject_success_double_dash_boundary,
+		"PostObject_file_without_filename":                                                 PostObject_file_without_filename,
+		"PostObject_file_before_key":                                                       PostObject_file_before_key,
+		"PostObject_ignores_fields_after_file":                                             PostObject_ignores_fields_after_file,
+		"PostObject_content_length_range_fields_after_file":                                PostObject_content_length_range_fields_after_file,
+		"PostObject_content_length_range_large_file":                                       PostObject_content_length_range_large_file,
+		"PostObject_content_length_range_under_min_keeps_object":                           PostObject_content_length_range_under_min_keeps_object,
+		"PostObject_content_length_range_body_without_final_crlf":                          PostObject_content_length_range_body_without_final_crlf,
+		"PostObject_short_closing_boundary_keeps_object":                                   PostObject_short_closing_boundary_keeps_object,
+		"PostObject_small_file_with_short_closing_boundary":                                PostObject_small_file_with_short_closing_boundary,
+		"PostObject_small_file_with_field_after_file":                                      PostObject_small_file_with_field_after_file,
+		"PostObject_empty_file_with_field_after_file":                                      PostObject_empty_file_with_field_after_file,
+		"PostObject_preamble_and_folded_header":                                            PostObject_preamble_and_folded_header,
+		"PostObject_data_before_file_limit":                                                PostObject_data_before_file_limit,
 		"PostObject_object_lock_success":                                                   PostObject_object_lock_success,
 		"PostObject_object_lock_invalid_fields":                                            PostObject_object_lock_invalid_fields,
 		"PostObject_object_lock_missing_bucket_config":                                     PostObject_object_lock_missing_bucket_config,

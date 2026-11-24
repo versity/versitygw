@@ -20,10 +20,11 @@ import (
 )
 
 // Session is the storage-layer representation of a temporary credential set
-// minted by AssumeRoleWithWebIdentity. It is never marshaled to XML
-// directly — GetCallerIdentity and (in a later change) S3 request
-// authentication read it back by AccessKeyId to resolve the calling
-// identity.
+// minted by AssumeRole or AssumeRoleWithWebIdentity. It is never marshaled
+// to XML directly — request authentication reads it back by AccessKeyId to
+// resolve the calling identity. Provider, Audience and Subject describe the
+// web identity token a session was exchanged for, and are empty for a
+// session minted by AssumeRole.
 type Session struct {
 	AccessKeyId     string    `json:"accessKeyId"`
 	SecretAccessKey string    `json:"secretAccessKey"`
@@ -38,14 +39,13 @@ type Session struct {
 	CreateDate      time.Time `json:"createDate"`
 	Expiration      time.Time `json:"expiration"`
 	// Policy is the optional inline session policy document supplied via
-	// AssumeRoleWithWebIdentity's Policy parameter, or "" if none was
-	// supplied. It can only narrow, never widen, the assumed role's own
-	// permissions.
+	// the Policy parameter, or "" if none was supplied. It can only narrow,
+	// never widen, the assumed role's own permissions.
 	Policy string `json:"policy,omitempty"`
 }
 
 // Credentials is the temporary security credential set returned by
-// AssumeRoleWithWebIdentity.
+// AssumeRole and AssumeRoleWithWebIdentity.
 type Credentials struct {
 	AccessKeyId     string
 	SecretAccessKey string
@@ -57,6 +57,25 @@ type Credentials struct {
 type AssumedRoleUser struct {
 	AssumedRoleId string
 	Arn           string
+}
+
+type AssumeRoleResponse struct {
+	XMLName          xml.Name         `xml:"https://sts.amazonaws.com/doc/2011-06-15/ AssumeRoleResponse"`
+	Result           AssumeRoleResult `xml:"AssumeRoleResult"`
+	ResponseMetadata ResponseMetadata
+}
+
+func (r *AssumeRoleResponse) SetRequestID(requestID string) {
+	r.ResponseMetadata.RequestID = requestID
+}
+
+type AssumeRoleResult struct {
+	AssumedRoleUser AssumedRoleUser
+	Credentials     Credentials
+	// PackedPolicySize is a percentage indicating how close the request's
+	// session policy came to its size quota; nil, and therefore omitted,
+	// when no session Policy parameter was supplied.
+	PackedPolicySize *int64 `xml:",omitempty"`
 }
 
 type AssumeRoleWithWebIdentityResponse struct {

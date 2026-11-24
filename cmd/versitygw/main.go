@@ -29,6 +29,7 @@ import (
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/embedgw"
 	"github.com/versity/versitygw/internal/netutil"
+	"github.com/versity/versitygw/webui"
 )
 
 var (
@@ -108,6 +109,12 @@ var (
 	webuiIAMGateways                              []string
 	webuiPathPrefix                               string
 	webuiS3Prefix                                 string
+	webuiOIDCIssuer, webuiOIDCClientID            string
+	webuiOIDCRoleArn, webuiOIDCRoleClaim          string
+	webuiOIDCScopes, webuiOIDCLabel               string
+	webuiOIDCSessionDuration                      int
+	webuiOIDCRedirectURI                          string
+	webuiOIDCAllowHTTP                            bool
 	websitePorts                                  []string
 	websiteDomain                                 string
 	websiteCertFile, websiteKeyFile               string
@@ -284,6 +291,62 @@ func initFlags() []cli.Flag {
 			Usage:       "mount the WebUI on the S3 port at the given path prefix (e.g. '/ui'); must start with '/', must not be '/', and must not end with '/'",
 			EnvVars:     []string{"VGW_WEBUI_S3_PREFIX"},
 			Destination: &webuiS3Prefix,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-issuer",
+			Usage:       "turn on WebUI single sign-on with this OpenID Connect provider issuer URL (e.g. 'https://auth.example.com/realms/main'); it must match the issuer in the provider's discovery document and the OIDC provider registered on the standalone IAM service exactly. The browser exchanges the provider's ID token for temporary credentials with AssumeRoleWithWebIdentity, so this requires --webui-iam-gateways. Nothing in the --webui-oidc-* settings is secret: all of it is sent to the browser",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_ISSUER"},
+			Destination: &webuiOIDCIssuer,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-client-id",
+			Usage:       "client ID of the public client (no client secret, PKCE) registered at the provider for the WebUI; required with --webui-oidc-issuer, and must be in the IAM OIDC provider's client ID list",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_CLIENT_ID"},
+			Destination: &webuiOIDCClientID,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-role-arn",
+			Usage:       "role assumed by WebUI single sign-on sessions (e.g. 'arn:aws:iam::000000000000:role/webui-users'); used when --webui-oidc-role-claim is unset or the token names no role. At least one of the two is required with --webui-oidc-issuer",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_ROLE_ARN"},
+			Destination: &webuiOIDCRoleArn,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-role-claim",
+			Usage:       "name of an ID token claim holding one or more role ARNs for WebUI single sign-on; with several, the user picks one at sign-in",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_ROLE_CLAIM"},
+			Destination: &webuiOIDCRoleClaim,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-scopes",
+			Usage:       "space-separated scopes requested at the provider for WebUI single sign-on; must include openid. Some providers only issue the refresh token that renews a session in the background when offline_access is requested",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_SCOPES"},
+			Value:       webui.DefaultOIDCScopes,
+			Destination: &webuiOIDCScopes,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-label",
+			Usage:       "text of the WebUI single sign-on button",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_LABEL"},
+			Value:       webui.DefaultOIDCLabel,
+			Destination: &webuiOIDCLabel,
+		},
+		&cli.IntFlag{
+			Name:        "webui-oidc-session-duration",
+			Usage:       "lifetime of WebUI single sign-on credentials in seconds, sent as AssumeRoleWithWebIdentity DurationSeconds (900-43200, and at most the role's MaxSessionDuration); 0 uses the IAM service default of 3600",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_SESSION_DURATION"},
+			Destination: &webuiOIDCSessionDuration,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-redirect-uri",
+			Usage:       "redirect URI registered at the provider for WebUI single sign-on; by default the browser uses the login page's own URL (origin plus --webui-path-prefix or --webui-s3-prefix, with a trailing '/'). It must be on the same origin users open the WebUI from",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_REDIRECT_URI"},
+			Destination: &webuiOIDCRedirectURI,
+		},
+		&cli.BoolFlag{
+			Name:        "webui-oidc-allow-http",
+			Usage:       "allow a plain http --webui-oidc-issuer, for test providers only; the IAM service needs --oidc-allow-insecure-transport to accept the same issuer",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_ALLOW_HTTP"},
+			Destination: &webuiOIDCAllowHTTP,
 		},
 		&cli.StringSliceFlag{
 			Name:    "website",
@@ -1132,6 +1195,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		WebuiIAMGateways:            webuiIAMGateways,
 		WebuiPathPrefix:             webuiPathPrefix,
 		WebuiS3Prefix:               webuiS3Prefix,
+		WebuiOIDC:                   webuiOIDCConfig(),
 		WebsitePorts:                websitePorts,
 		WebsiteDomain:               websiteDomain,
 		WebsiteCertFile:             websiteCertFile,
@@ -1142,4 +1206,20 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		Build:                       Build,
 		BuildTime:                   BuildTime,
 	})
+}
+
+// webuiOIDCConfig collects the --webui-oidc-* flags, shared by the WebUI the
+// gateway hosts and the one the iam command hosts.
+func webuiOIDCConfig() webui.OIDCConfig {
+	return webui.OIDCConfig{
+		Issuer:          webuiOIDCIssuer,
+		ClientID:        webuiOIDCClientID,
+		RoleArn:         webuiOIDCRoleArn,
+		RoleClaim:       webuiOIDCRoleClaim,
+		Scopes:          webuiOIDCScopes,
+		Label:           webuiOIDCLabel,
+		SessionDuration: webuiOIDCSessionDuration,
+		RedirectURI:     webuiOIDCRedirectURI,
+		AllowHTTP:       webuiOIDCAllowHTTP,
+	}
 }

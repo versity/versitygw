@@ -97,6 +97,7 @@ const (
 	ErrAnonymousCopyObject
 	ErrAnonymousPutBucketOwnership
 	ErrAnonymousGetBucketOwnership
+	ErrAnonymousGetObjectAttributes
 	ErrAnonymousResponseHeaders
 	ErrMethodNotAllowed
 	ErrBucketNotEmpty
@@ -124,6 +125,7 @@ const (
 	ErrObjectTaggingLimited
 	ErrCannotParseHTTPRequest
 	ErrMalformedPOSTRequest
+	ErrMaxPostPreDataLengthExceeded
 	ErrEntityTooSmall
 	ErrEntityTooLarge
 	ErrMalformedXML
@@ -254,6 +256,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrAnonymousGetBucketOwnership: {
 		Code:           "AccessDenied",
 		Description:    "s3:GetBucketOwnershipControls does not support Anonymous requests!",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrAnonymousGetObjectAttributes: {
+		Code:           "AccessDenied",
+		Description:    "Request has no authentication!",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrAnonymousResponseHeaders: {
@@ -394,6 +401,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrMalformedPOSTRequest: {
 		Code:           "MalformedPOSTRequest",
 		Description:    "The body of your POST request is not well-formed multipart/form-data.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMaxPostPreDataLengthExceeded: {
+		Code:           "MaxPostPreDataLengthExceeded",
+		Description:    "Your POST request fields preceeding the upload file was too large.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrEntityTooSmall: {

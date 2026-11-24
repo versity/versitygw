@@ -17,12 +17,14 @@ package debuglogger
 import (
 	"fmt"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
 	"sync/atomic"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/internal/httpctx"
 )
 
 type Color string
@@ -65,8 +67,14 @@ func printError(prefix prefix, er error) {
 // Logs http request details: headers, body, params, query args
 func LogFiberRequestDetails(ctx fiber.Ctx) {
 	// Log the full request url, with sensitive query parameter values
-	// redacted (ctx.OriginalURL() would print them in the clear).
-	fullURL := ctx.Scheme() + "://" + ctx.Host() + ctx.Path()
+	// redacted (ctx.OriginalURL() would print them in the clear). For a
+	// virtual-hosted-style request, log the path the client sent, not the
+	// bucket-prefixed one the host-style parser routes by.
+	path := ctx.Path()
+	if orig, ok := httpctx.ContextKeyOriginalURIPath.Get(ctx).(string); ok {
+		path = orig
+	}
+	fullURL := ctx.Scheme() + "://" + ctx.Host() + path
 	if qs := debugRedactedQueryString(ctx.Request().URI().QueryArgs()); qs != "" {
 		fullURL += "?" + qs
 	}
@@ -78,8 +86,10 @@ func LogFiberRequestDetails(ctx fiber.Ctx) {
 			printWrappedLine(yellow, string(key), debugRedact(string(key), string(value)))
 		}
 	})
-	// skip request body log for PutObject and UploadPart
-	skipBodyLog := isLargeDataAction(ctx)
+	// skip request body log for PutObject and UploadPart, and for a
+	// multipart form, which POST Object streams: logging it here would
+	// consume it
+	skipBodyLog := isLargeDataAction(ctx) || isMultipartForm(ctx)
 	if !skipBodyLog {
 		if postArgs := ctx.Request().PostArgs(); postArgs.Len() != 0 {
 			// form-encoded body (e.g. AWS Query protocol requests like
@@ -359,6 +369,11 @@ func wrapText(text string, width int) []string {
 		lines = append(lines, text)
 	}
 	return lines
+}
+
+func isMultipartForm(ctx fiber.Ctx) bool {
+	mediaType, _, err := mime.ParseMediaType(ctx.Get("Content-Type"))
+	return err == nil && mediaType == fiber.MIMEMultipartForm
 }
 
 // TODO: remove this and use utils.IsBidDataAction after refactoring

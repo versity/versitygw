@@ -35,12 +35,13 @@ func TestPerClientTransportErrorsOmitSAS(t *testing.T) {
 	l.Close()
 
 	const sig = "SECRETSIGNATURE"
-	az, err := newAzure("", "", endpoint, "sv=2024-01-01&sig="+sig, 0, "")
+	az, err := newAzure("", "", endpoint, "sv=2024-01-01&sig="+sig, 0, "",
+		func(o *policy.ClientOptions) { o.Retry.MaxRetries = -1 })
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ctx := policy.WithRetryOptions(context.Background(), policy.RetryOptions{MaxRetries: -1})
+	ctx := context.Background()
 	checks := []struct {
 		name string
 		call func() error

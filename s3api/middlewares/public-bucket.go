@@ -36,7 +36,6 @@ var objectVersionActions = map[auth.Action]auth.Action{
 	auth.GetObjectTaggingAction:    auth.GetObjectVersionTaggingAction,
 	auth.PutObjectTaggingAction:    auth.PutObjectVersionTaggingAction,
 	auth.DeleteObjectTaggingAction: auth.DeleteObjectVersionTaggingAction,
-	auth.GetObjectAttributesAction: auth.GetObjectVersionAttributesAction,
 }
 
 // AuthorizePublicBucketAccess checks if the bucket grants public
@@ -51,6 +50,10 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 		switch s3action {
 		case metrics.ActionListAllMyBuckets:
 			return s3err.GetAPIError(s3err.ErrAccessDenied)
+		case metrics.ActionGetObjectAttributes:
+			// AWS never serves an anonymous GetObjectAttributes, whatever
+			// the bucket policy grants.
+			return s3err.GetAPIError(s3err.ErrAnonymousGetObjectAttributes)
 		case metrics.ActionGetBucketOwnershipControls:
 			return s3err.GetAPIError(s3err.ErrAnonymousGetBucketOwnership)
 		case metrics.ActionPutBucketOwnershipControls, metrics.ActionDeleteBucketOwnershipControls:

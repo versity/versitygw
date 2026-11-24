@@ -319,6 +319,42 @@ webui:
   # Point it at iamServer.service (see the iamServer section) or its ingress.
   iamGateways: []
   # - https://iam.example.com
+  # Single sign-on: adds a "Sign in with SSO" button to the login page. The
+  # browser signs in at an OpenID Connect provider (authorization code flow
+  # with PKCE, as a public client with no secret) and exchanges the ID token
+  # for temporary credentials with AssumeRoleWithWebIdentity on the
+  # standalone IAM service. Requires iam.type=standalone and iamGateways.
+  # Nothing here is secret: all of it is sent to the browser.
+  oidc:
+    # Provider issuer URL; setting it turns SSO on. Must exactly match the
+    # issuer in the provider's discovery document and the OIDC provider
+    # registered on the IAM service.
+    issuer: ""
+    # Public client ID registered at the provider for the WebUI. Required
+    # with issuer, and must be in the IAM OIDC provider's client ID list.
+    clientId: ""
+    # Role every SSO session assumes, unless roleClaim names one. At least
+    # one of roleArn and roleClaim is required.
+    roleArn: ""
+    # ID token claim holding one or more role ARNs; with several, the user
+    # picks one at sign-in.
+    roleClaim: ""
+    # Space-separated scopes; must include openid. Empty means
+    # "openid profile email". Some providers only issue the refresh token
+    # that renews sessions in the background when offline_access is listed.
+    scopes: ""
+    # Sign-in button text. Empty means "Sign in with SSO".
+    label: ""
+    # Credential lifetime in seconds (900-43200, at most the role's
+    # MaxSessionDuration). 0 uses the IAM service default of 3600.
+    sessionDuration: 0
+    # Redirect URI registered at the provider. Empty lets the browser use
+    # the login page URL: the WebUI origin plus pathPrefix or s3Prefix, with
+    # a trailing "/".
+    redirectUri: ""
+    # Allow a plain http issuer. For test providers only; the IAM service
+    # also needs iamServer.oidc.allowInsecureTransport.
+    allowHttp: false
   # --- Ingress ---
   # Expose the WebUI via a Kubernetes Ingress resource.
   # Requires an ingress controller (e.g. nginx, traefik) to be installed in the cluster.

@@ -1127,3 +1127,94 @@ func ListObjectVersions_checksum(s *S3Conf) error {
 		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
+
+// ListObjectVersions_url_encoding lists versions, delete markers and common
+// prefixes whose names need escaping with encoding-type=url: S3 returns
+// EncodingType and encodes the key names, Prefix and markers as a query
+// component, with "/" left as is. Any other encoding type is rejected.
+func ListObjectVersions_url_encoding(s *S3Conf) error {
+	testName := "ListObjectVersions_url_encoding"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"a+ b.txt", "a+ c.txt", "dir a/obj", "del me+"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("del me+"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket:       &bucket,
+			Delimiter:    getPtr("/"),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.EncodingType != types.EncodingTypeUrl {
+			return fmt.Errorf("expected the encoding type to be %q, instead got %q",
+				types.EncodingTypeUrl, out.EncodingType)
+		}
+		versionKeys := []string{}
+		for _, v := range out.Versions {
+			versionKeys = append(versionKeys, getString(v.Key))
+		}
+		expVersionKeys := []string{"a%2B+b.txt", "a%2B+c.txt", "del+me%2B"}
+		if !slices.Equal(versionKeys, expVersionKeys) {
+			return fmt.Errorf("expected the version keys %v, instead got %v", expVersionKeys, versionKeys)
+		}
+		if len(out.DeleteMarkers) != 1 || getString(out.DeleteMarkers[0].Key) != "del+me%2B" {
+			return fmt.Errorf("expected the delete marker key %q, instead got %v",
+				"del+me%2B", out.DeleteMarkers)
+		}
+		if len(out.CommonPrefixes) != 1 || getString(out.CommonPrefixes[0].Prefix) != "dir+a/" {
+			return fmt.Errorf("expected the common prefix %q, instead got %v", "dir+a/", out.CommonPrefixes)
+		}
+
+		// Prefix, KeyMarker and NextKeyMarker are encoded too
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket:       &bucket,
+			Prefix:       getPtr("a+ "),
+			KeyMarker:    getPtr("a+ a"),
+			MaxKeys:      getPtr(int32(1)),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(out.Prefix) != "a%2B+" {
+			return fmt.Errorf("expected the prefix %q, instead got %q", "a%2B+", getString(out.Prefix))
+		}
+		if getString(out.KeyMarker) != "a%2B+a" {
+			return fmt.Errorf("expected the key marker %q, instead got %q", "a%2B+a", getString(out.KeyMarker))
+		}
+		if getString(out.NextKeyMarker) != "a%2B+b.txt" {
+			return fmt.Errorf("expected the next key marker %q, instead got %q",
+				"a%2B+b.txt", getString(out.NextKeyMarker))
+		}
+		if len(out.Versions) != 1 || getString(out.Versions[0].Key) != "a%2B+b.txt" {
+			return fmt.Errorf("expected the version key %q, instead got %v", "a%2B+b.txt", out.Versions)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket:       &bucket,
+			EncodingType: "gibberish",
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"))
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}

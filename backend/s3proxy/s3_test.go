@@ -17,6 +17,7 @@ package s3proxy
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -27,12 +28,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/s3err"
 )
 
-// captureHTTPClient records the request the aws sdk sends and answers 200
-// with respHeader and respBody, so tests can assert on the wire format and
-// on how responses are mapped without a real backend.
+// captureHTTPClient records the request the aws sdk sends and answers
+// respStatus (200 when unset) with respHeader and respBody, so tests can
+// assert on the wire format and on how responses are mapped without a real
+// backend.
 type captureHTTPClient struct {
+	respStatus    int
 	respHeader    http.Header
 	respBody      string
 	query         url.Values
@@ -52,8 +56,12 @@ func (c *captureHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	} else {
 		c.body = nil
 	}
+	status := c.respStatus
+	if status == 0 {
+		status = http.StatusOK
+	}
 	return &http.Response{
-		StatusCode: http.StatusOK,
+		StatusCode: status,
 		Header:     c.respHeader,
 		Body:       io.NopCloser(strings.NewReader(c.respBody)),
 		Request:    req,
@@ -376,6 +384,72 @@ func TestGetBucketVersioningOmitsUnsetFields(t *testing.T) {
 			}
 			if string(got) != tt.want {
 				t.Errorf("expected %s, got %s", tt.want, got)
+			}
+		})
+	}
+}
+
+// The sdk keeps only the code and message of an upstream error, so the
+// UploadId S3 puts in an InvalidPartOrder error has to come back from the
+// request, while other errors pass through unchanged.
+func TestCompleteMultipartUploadErrorUploadId(t *testing.T) {
+	tests := []struct {
+		name         string
+		respBody     string
+		wantUploadId bool
+		wantErr      s3err.APIError
+	}{
+		{
+			name:         "invalid part order",
+			respBody:     `<Error><Code>InvalidPartOrder</Code><Message>The list of parts was not in ascending order. Parts must be ordered by part number.</Message><UploadId>upload-id</UploadId></Error>`,
+			wantUploadId: true,
+			wantErr:      s3err.GetAPIError(s3err.ErrInvalidPartOrder),
+		},
+		{
+			name:     "no such upload",
+			respBody: `<Error><Code>NoSuchUpload</Code><Message>The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.</Message><UploadId>upload-id</UploadId></Error>`,
+			wantErr: s3err.APIError{
+				Code:           "NoSuchUpload",
+				Description:    "The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.",
+				HTTPStatusCode: http.StatusBadRequest,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, capture := newCaptureProxy(t)
+			capture.respStatus = http.StatusBadRequest
+			capture.respBody = tt.respBody
+
+			_, _, err := p.CompleteMultipartUpload(context.Background(), &s3.CompleteMultipartUploadInput{
+				Bucket:   aws.String("test-bucket"),
+				Key:      aws.String("obj"),
+				UploadId: aws.String("upload-id"),
+				MultipartUpload: &types.CompletedMultipartUpload{
+					Parts: []types.CompletedPart{
+						{PartNumber: aws.Int32(2), ETag: aws.String(`"etag2"`)},
+						{PartNumber: aws.Int32(1), ETag: aws.String(`"etag1"`)},
+					},
+				},
+			})
+
+			var orderErr s3err.InvalidPartOrderError
+			isOrderErr := errors.As(err, &orderErr)
+			if isOrderErr != tt.wantUploadId {
+				t.Fatalf("expected an InvalidPartOrderError to be %v, got %T: %v", tt.wantUploadId, err, err)
+			}
+			if isOrderErr {
+				if orderErr.UploadId != "upload-id" {
+					t.Errorf("expected UploadId %q, got %q", "upload-id", orderErr.UploadId)
+				}
+				if orderErr.APIError != tt.wantErr {
+					t.Errorf("expected %+v, got %+v", tt.wantErr, orderErr.APIError)
+				}
+				return
+			}
+			if err != tt.wantErr {
+				t.Errorf("expected %+v, got %T: %+v", tt.wantErr, err, err)
 			}
 		})
 	}

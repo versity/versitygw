@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/stretchr/testify/assert"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -138,4 +140,14 @@ func TestDeleteObjectsUnmarshalLastModifiedTime(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestListVersionsResultOmitsEmptyEncodingType(t *testing.T) {
+	out, err := xml.Marshal(ListVersionsResult{})
+	assert.NoError(t, err)
+	assert.NotContains(t, string(out), "EncodingType")
+
+	out, err = xml.Marshal(ListVersionsResult{EncodingType: types.EncodingTypeUrl})
+	assert.NoError(t, err)
+	assert.Contains(t, string(out), "<EncodingType>url</EncodingType>")
 }

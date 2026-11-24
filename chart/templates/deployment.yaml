@@ -328,6 +328,44 @@ spec:
             - name: VGW_WEBUI_IAM_GATEWAYS
               value: {{ .Values.webui.iamGateways | join "," | quote }}
             {{- end }}
+            {{- with .Values.webui.oidc }}
+            {{- if .issuer }}
+            - name: VGW_WEBUI_OIDC_ISSUER
+              value: {{ .issuer | quote }}
+            {{- if .clientId }}
+            - name: VGW_WEBUI_OIDC_CLIENT_ID
+              value: {{ .clientId | quote }}
+            {{- end }}
+            {{- if .roleArn }}
+            - name: VGW_WEBUI_OIDC_ROLE_ARN
+              value: {{ .roleArn | quote }}
+            {{- end }}
+            {{- if .roleClaim }}
+            - name: VGW_WEBUI_OIDC_ROLE_CLAIM
+              value: {{ .roleClaim | quote }}
+            {{- end }}
+            {{- if .scopes }}
+            - name: VGW_WEBUI_OIDC_SCOPES
+              value: {{ .scopes | quote }}
+            {{- end }}
+            {{- if .label }}
+            - name: VGW_WEBUI_OIDC_LABEL
+              value: {{ .label | quote }}
+            {{- end }}
+            {{- if .sessionDuration }}
+            - name: VGW_WEBUI_OIDC_SESSION_DURATION
+              value: {{ .sessionDuration | quote }}
+            {{- end }}
+            {{- if .redirectUri }}
+            - name: VGW_WEBUI_OIDC_REDIRECT_URI
+              value: {{ .redirectUri | quote }}
+            {{- end }}
+            {{- if .allowHttp }}
+            - name: VGW_WEBUI_OIDC_ALLOW_HTTP
+              value: "true"
+            {{- end }}
+            {{- end }}
+            {{- end }}
             {{- end }}
             # Website Hosting
             {{- if .Values.website.enabled }}

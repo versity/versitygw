@@ -322,8 +322,8 @@ func S3IAMPrincipal_account_delegates_but_does_not_grant(s *S3Conf) error {
 // S3IAMPrincipal_role_arn_does_not_match_a_user verifies a role ARN names
 // sessions of that role and nothing else: a long-term user is not covered by
 // it, however the role is otherwise configured. The session side — that a
-// role ARN does match every session of the role — needs a real OIDC token
-// and lives in the s3-iam-session group.
+// role ARN does match every session of the role — is
+// S3IAMSession_bucket_policy_role_arn_covers_every_session.
 func S3IAMPrincipal_role_arn_does_not_match_a_user(s *S3Conf) error {
 	testName := "S3IAMPrincipal_role_arn_does_not_match_a_user"
 	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
@@ -409,10 +409,7 @@ func S3IAMPrincipal_wildcard_grants_everyone(s *S3Conf) error {
 }
 
 // newS3IAMBareRole creates a role nothing ever assumes: these tests only
-// need one to exist, so that a Principal naming it resolves. Its trust
-// policy names the account rather than an OIDC provider, which keeps the
-// fixture free of the whole web-identity setup a session needs — those tests
-// live in the s3-iam-session group.
+// need one to exist, so that a Principal naming it resolves.
 func newS3IAMBareRole(root *iam.Client) (roleName string, cleanup func(), err error) {
 	roleName = newIAMRoleName()
 	trust := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"` +

@@ -105,6 +105,11 @@ type Posix struct {
 	// fallocate; per path since buckets can be on different filesystems.
 	fallocUnsupported sync.Map
 
+	// otmpProbe holds, per bucket path, whether an O_TMPFILE can be used for
+	// uploads there: it takes xattrs and can be linked (false: use a named
+	// temp file). Removed when the bucket is deleted.
+	otmpProbe sync.Map
+
 	// forceNoCopyFileRange is a flag to disable the use of io.Copy to
 	// reassemble multipart upload parts, which uses copy_file_range on
 	// linux. This is needed for cases where a filesystem that does not
@@ -1223,8 +1228,10 @@ func (p *Posix) DeleteBucket(ctx context.Context, bucket string) (err error) {
 	if err = p.meta.DeleteAttributes(bucket, ""); err != nil {
 		debuglogger.Logf("failed to delete bucket sidecar attributes (%q): %v", bucket, err)
 	}
+	p.otmpProbe.Delete(p.BucketPath(bucket))
 	// Remove the bucket from versioning directory
 	if p.versioningEnabled() {
+		p.otmpProbe.Delete(filepath.Join(p.versioningDir, bucket))
 		err = os.RemoveAll(filepath.Join(p.versioningDir, bucket))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("remove bucket version: %w", err)
@@ -2834,7 +2841,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			return res, "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCompleteMpPartNumber, fmt.Sprint(*part.PartNumber))
 		}
 		if *part.PartNumber <= partNumber {
-			return res, "", s3err.GetAPIError(s3err.ErrInvalidPartOrder)
+			return res, "", s3err.GetInvalidPartOrderErr(uploadID)
 		}
 
 		partNumber = *part.PartNumber
@@ -6961,7 +6968,15 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 	}, nil
 }
 
-func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (_ s3response.CopyObjectOutput, err error) {
+func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
+	return p.CopyObjectWithPreReadFunc(ctx, input, nil)
+}
+
+// CopyObjectWithPreReadFunc is CopyObject with a hook that can reject the
+// copy. preRead gets the opened source object file after the copy source
+// preconditions pass, before any of its data is read. A nil preRead is
+// skipped. Directory objects have no data and skip it too.
+func (p *Posix) CopyObjectWithPreReadFunc(ctx context.Context, input s3response.CopyObjectInput, preRead func(f *os.File) error) (_ s3response.CopyObjectOutput, err error) {
 	defer backend.MapPermissionErr(&err)
 
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5,
@@ -7146,6 +7161,10 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	var xxhash128 *string
 	var chType types.ChecksumType
 
+	// The algorithm is accepted in any case, and stored and returned the
+	// way S3 names it.
+	input.ChecksumAlgorithm = types.ChecksumAlgorithm(strings.ToUpper(string(input.ChecksumAlgorithm)))
+
 	dstObjdPath := joinPathWithTrailer(p.BucketPath(dstBucket), dstObject)
 	// A copy of an object onto itself is rejected unless it replaces the
 	// object metadata. Naming a source version makes it a regular copy.
@@ -7155,18 +7174,63 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 	}
 
+	// A self copy that changes nothing is rejected above whatever the
+	// state of the source, as S3 does, so preRead runs only after it.
+	if preRead != nil && !fi.IsDir() {
+		err = preRead(f)
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
+	}
+
 	// In a versioned bucket a self copy creates a new version like any other
 	// write, so only unversioned buckets are rewritten in place.
 	versioned := p.versioningEnabled() && vStatus != ""
 	if selfCopy && !versioned {
+		// A checksum in a new algorithm is computed from the source
+		// file opened above before the publish lock is taken, as
+		// PutObject stages its data before it, so that reading the
+		// object doesn't hold up writes to other keys. It is used under
+		// the lock only if the object is still the file that was read.
+		var readSum string
+		var readInfo fs.FileInfo
+		if input.ChecksumAlgorithm != "" {
+			stored, err := p.retrieveChecksums(nil, dstBucket, dstObject)
+			if err != nil || stored.Algorithm != input.ChecksumAlgorithm {
+				readSum, err = hashObjectFile(f, fi, input.ChecksumAlgorithm)
+				if err != nil {
+					return s3response.CopyObjectOutput{}, err
+				}
+				readInfo = fi
+			}
+		}
+
 		// The object is rewritten in place rather than through PutObject,
 		// so the authoritative precondition check is made here, under the
 		// publish lock that competing writers to the key take.
-		unlock, err := p.lockObjectPublish(ctx, dstBucket, dstObject)
-		if err != nil {
-			return s3response.CopyObjectOutput{}, err
+		unlock, lockErr := p.lockObjectPublish(ctx, dstBucket, dstObject)
+		if lockErr != nil {
+			return s3response.CopyObjectOutput{}, lockErr
 		}
 		defer unlock()
+
+		// A delete doesn't take the publish lock, so the object can be
+		// removed at any step of the rewrite. A step that fails because
+		// of it gets an error of the filesystem or metadata store, so a
+		// failure with the object gone is reported as NoSuchKey.
+		defer func() {
+			var apiErr s3err.APIError
+			if err == nil || errors.As(err, &apiErr) {
+				return
+			}
+			_, serr := os.Stat(dstObjdPath)
+			if !errors.Is(serr, fs.ErrNotExist) && !isErrNotDir(serr) {
+				return
+			}
+			debuglogger.Logf("self copy of deleted object %v/%v: %v",
+				dstBucket, dstObject, err)
+			err = s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}()
 
 		err = p.checkPutPreconditions(dstBucket, dstObject, input.IfMatch, input.IfNoneMatch)
 		if err != nil {
@@ -7195,21 +7259,29 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 					return s3response.CopyObjectOutput{}, fmt.Errorf("open obj file: %w", err)
 				}
 				defer f.Close()
-
-				hashReader, err := utils.NewHashReader(f, "", utils.HashType(strings.ToLower(string(input.ChecksumAlgorithm))))
+				fi, err := f.Stat()
 				if err != nil {
-					return s3response.CopyObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
+					return s3response.CopyObjectOutput{}, fmt.Errorf("stat obj file: %w", err)
 				}
 
-				_, err = hashReader.Read(nil)
-				if err != nil {
-					return s3response.CopyObjectOutput{}, fmt.Errorf("read err: %w", err)
+				sum := readSum
+				if readInfo == nil || !sameObjectData(readInfo, fi) {
+					// the object was replaced or changed after it
+					// was read, so the checksum read is not its own
+					sum, err = hashObjectFile(f, fi, input.ChecksumAlgorithm)
+					if err != nil {
+						return s3response.CopyObjectOutput{}, err
+					}
 				}
 
-				checksums = s3response.Checksum{}
+				// The new checksum replaces the stored one, so it is
+				// a FULL_OBJECT checksum of the given algorithm
+				checksums = s3response.Checksum{
+					Algorithm: input.ChecksumAlgorithm,
+					Type:      types.ChecksumTypeFullObject,
+				}
 
-				sum := hashReader.Sum()
-				switch hashReader.Type() {
+				switch utils.HashType(strings.ToLower(string(input.ChecksumAlgorithm))) {
 				case utils.HashTypeCRC32:
 					checksums.CRC32 = &sum
 					crc32 = &sum
@@ -7242,9 +7314,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 					xxhash128 = &sum
 				}
 
-				// If a new checksum is calculated, the checksum type
-				// should be FULL_OBJECT
-				chType = types.ChecksumTypeFullObject
+				chType = checksums.Type
 
 				err = p.storeChecksums(f, dstBucket, dstObject, checksums)
 				if err != nil {
@@ -8691,6 +8761,35 @@ func (p *Posix) retrieveChecksums(f *os.File, bucket, object string) (checksums 
 
 	err = json.Unmarshal(checksumsAtr, &checksums)
 	return checksums, err
+}
+
+// hashObjectFile returns the checksum in algorithm algo of the content of
+// the open object file f, whose file info is fi. A directory object has no
+// content, so its checksum is the one of empty data.
+func hashObjectFile(f *os.File, fi fs.FileInfo, algo types.ChecksumAlgorithm) (string, error) {
+	var rdr io.Reader = f
+	if fi.IsDir() {
+		rdr = strings.NewReader("")
+	}
+	hashReader, err := utils.NewHashReader(rdr, "", utils.HashType(strings.ToLower(string(algo))))
+	if err != nil {
+		return "", fmt.Errorf("initialize hash reader: %w", err)
+	}
+	_, err = io.Copy(io.Discard, hashReader)
+	if err != nil {
+		return "", fmt.Errorf("read obj file: %w", err)
+	}
+	return hashReader.Sum(), nil
+}
+
+// sameObjectData reports whether the object file, or directory, with the
+// file info fi has the content of the one that had the file info read: it
+// is the same inode, and a file has the same size and modification time.
+func sameObjectData(read, fi fs.FileInfo) bool {
+	if !os.SameFile(read, fi) {
+		return false
+	}
+	return fi.IsDir() || (fi.Size() == read.Size() && fi.ModTime().Equal(read.ModTime()))
 }
 
 func getString(str *string) string {

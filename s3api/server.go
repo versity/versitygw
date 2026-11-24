@@ -135,6 +135,11 @@ func New(
 		// if the limit is reached, fiber/fasthttp will throw an error
 		// in the global error handler
 		ReadBufferSize: requestHeaderMaxSize,
+		// POST Object reads its multipart body as a stream, part by part in the
+		// order sent. fasthttp's pre-parse would hand it a rebuilt body instead,
+		// with the fields in random order and a file part without a filename
+		// among them.
+		DisablePreParseMultipartForm: true,
 	})
 
 	server.app = app
@@ -214,6 +219,12 @@ func New(
 	// initialize the 'DecodeURL' middleware which
 	// path unescapes the url
 	app.Use("*", controllers.WrapMiddleware(middlewares.DecodeURL, l, mm))
+
+	// initialize the host-style parser before the debug logger: the logger
+	// recognizes uploads, whose body it must not read, by the path-style path
+	if server.Router.virtualDomain != "" {
+		app.Use("*", middlewares.HostStyleParser(server.Router.virtualDomain))
+	}
 
 	// initialize the debug logger in debug mode
 	if debuglogger.IsDebugEnabled() {

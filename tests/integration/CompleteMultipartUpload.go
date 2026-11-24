@@ -1499,6 +1499,41 @@ func CompleteMultipartUpload_incorrect_parts_order(s *S3Conf) error {
 			return err
 		}
 
+		for _, test := range []struct {
+			name  string
+			parts []types.Part
+		}{
+			{"swapped parts", []types.Part{parts[1], parts[0], parts[2]}},
+			{"repeated part number", []types.Part{parts[0], parts[1], parts[1]}},
+		} {
+			compParts := make([]types.CompletedPart, 0, len(test.parts))
+			for _, p := range test.parts {
+				compParts = append(compParts, completedPartFromPart(p))
+			}
+
+			// the sdk doesn't expose the InvalidPartOrder error fields, so
+			// the raw response is kept to check them
+			var resp *http.Response
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+				Bucket:   &bucket,
+				Key:      &obj,
+				UploadId: out.UploadId,
+				MultipartUpload: &types.CompletedMultipartUpload{
+					Parts: compParts,
+				},
+			}, withRawResponse(&resp))
+			cancel()
+			if resp == nil {
+				return fmt.Errorf("%s: no response received: %w", test.name, err)
+			}
+
+			if err := checkHTTPResponseApiErr(resp, s3err.GetInvalidPartOrderErr(*out.UploadId)); err != nil {
+				return fmt.Errorf("%s: %w", test.name, err)
+			}
+		}
+
+		// the rejected requests leave the upload intact
 		compParts := []types.CompletedPart{}
 		for _, el := range parts {
 			compParts = append(compParts, types.CompletedPart{
@@ -1506,8 +1541,6 @@ func CompleteMultipartUpload_incorrect_parts_order(s *S3Conf) error {
 				PartNumber: el.PartNumber,
 			})
 		}
-
-		compParts[0], compParts[1] = compParts[1], compParts[0]
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
@@ -1519,11 +1552,7 @@ func CompleteMultipartUpload_incorrect_parts_order(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPartOrder)); err != nil {
-			return err
-		}
-
-		return nil
+		return err
 	})
 }
 
