@@ -43,13 +43,17 @@ source ./tests/setup_unit.sh
 }
 
 # tags: unit
-@test "run parallel - appends status to file and stdout" {
+@test "run parallel - appends status to runner log file and stdout if --log-folder and --log-file are set" {
   local runner_log="$BATS_TEST_TMPDIR/runner_log.txt" contents
+  # add line to simulated existing log to ensure log data isn't overwritten
   printf '%s\n' "existing entry" > "$runner_log"
 
   run bash -c '
     docker() {
-      if [ "$1" == "image" ]; then return 0; fi
+      # return success response to the "docker image inspect" command by run_parallel.sh to see if image exists
+      if [ "$1" == "image" ]; then
+        return 0
+      fi
       printf "%s\n" "suite output"
       return 7
     }
@@ -171,7 +175,9 @@ source ./tests/setup_unit.sh
     run bash -c '
       trace="$1"
       docker() {
-        if [ "$1" == "image" ]; then return 0; fi
+        if [ "$1" == "image" ]; then
+          return 0
+        fi
         printf "%s\n" "$@" > "$trace"
       }
       export -f docker
