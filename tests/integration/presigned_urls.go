@@ -1276,7 +1276,8 @@ func PresignedAuth_absolute_form_another_host(s *S3Conf) error {
 
 // S3 takes the whole authority of an absolute-form request-target as its
 // host, a userinfo prefix included, so it can't hide the signed host in front
-// of another bucket's one.
+// of another bucket's one. It takes the bucket name out of that host like out
+// of a virtual-hosted-style one, before its domain, and that name isn't valid.
 func PresignedAuth_absolute_form_userinfo_host(s *S3Conf) error {
 	testName := "PresignedAuth_absolute_form_userinfo_host"
 	return requestTargetHandler(s, testName, func(bucket, otherBucket, obj string) error {
@@ -1292,18 +1293,35 @@ func PresignedAuth_absolute_form_userinfo_host(s *S3Conf) error {
 			return err
 		}
 
-		if s.hostStyle {
-			// the host has the virtual domain after a bucket name that
-			// isn't valid
-			return checkHTTPResponseApiErr(resp, s3err.GetBucketErr(s3err.ErrInvalidBucketName, strings.ToLower(u.Host+"@"+otherBucket)))
-		}
-
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
+		return checkHTTPResponseApiErr(resp, s3err.GetBucketErr(s3err.ErrInvalidBucketName, strings.ToLower(u.Host+"@"+otherBucket)))
 	})
 }
 
-// S3 takes an absolute-form request-target with an empty host
-// ("http:///path") as having none, and the Host header names the host.
+// S3 takes a userinfo in the Host header as part of the host too, and the
+// whole host as the bucket name when it isn't under S3's domain, a name that
+// isn't valid.
+func PresignedAuth_userinfo_host_header(s *S3Conf) error {
+	testName := "PresignedAuth_userinfo_host_header"
+	return requestTargetHandler(s, testName, func(bucket, _, obj string) error {
+		u, err := presignPathStyleGetObject(s, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		host := "user@" + u.Host
+		resp, err := sendRawRequest(s, http.MethodGet, u.RequestURI(), host, nil)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetBucketErr(s3err.ErrInvalidBucketName, strings.ToLower(host)))
+	})
+}
+
+// The gateway's http server rejects an absolute-form request-target with an
+// empty host ("http:///path") before any handler runs. S3 serves it with the
+// Host header's host, except a presigned "https:///path" one, whose
+// signature it checks with an empty host.
 func PresignedAuth_absolute_form_empty_host(s *S3Conf) error {
 	testName := "PresignedAuth_absolute_form_empty_host"
 	return requestTargetHandler(s, testName, func(bucket, _, obj string) error {
@@ -1318,7 +1336,7 @@ func PresignedAuth_absolute_form_empty_host(s *S3Conf) error {
 			return err
 		}
 
-		return checkObjectResponse(resp, bucket+"/"+obj)
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidURI))
 	})
 }
 
@@ -1341,11 +1359,10 @@ func PresignedAuth_absolute_form_non_http_scheme(s *S3Conf) error {
 }
 
 // An origin-form request-target starting with "//" and another bucket's host
-// can't point a presigned url at that bucket, though the gateway's http
-// server takes a host out of such a target when it has a "://" anywhere,
-// like in its fragment. The request goes to the Host header's host, with the
-// path left after that bucket's host. S3 itself keeps the whole target as
-// the path, and rejects the signature.
+// can't point a presigned url at that bucket, even with a "://" in its
+// fragment: the whole target is the path, whose first segment, the bucket,
+// is empty, so no route matches it. S3 also keeps the whole target as the
+// path, and rejects the signature.
 func PresignedAuth_origin_form_another_bucket_host(s *S3Conf) error {
 	testName := "PresignedAuth_origin_form_another_bucket_host"
 	return requestTargetHandler(s, testName, func(bucket, otherBucket, obj string) error {
@@ -1360,6 +1377,6 @@ func PresignedAuth_origin_form_another_bucket_host(s *S3Conf) error {
 			return err
 		}
 
-		return checkObjectResponse(resp, bucket+"/"+obj)
+		return checkHTTPResponseApiErr(resp, s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeService, nil))
 	})
 }

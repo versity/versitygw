@@ -84,6 +84,7 @@ func TestPresignedAuthentication(ts *TestState) {
 	ts.Run(PresignedAuth_absolute_form_another_bucket_host)
 	ts.Run(PresignedAuth_absolute_form_another_host)
 	ts.Run(PresignedAuth_absolute_form_userinfo_host)
+	ts.Run(PresignedAuth_userinfo_host_header)
 	ts.Run(PresignedAuth_absolute_form_empty_host)
 	ts.Run(PresignedAuth_absolute_form_non_http_scheme)
 	ts.Run(PresignedAuth_origin_form_another_bucket_host)
@@ -3248,6 +3249,7 @@ func GetIntTests() IntTests {
 		"PresignedAuth_absolute_form_another_bucket_host":                                  PresignedAuth_absolute_form_another_bucket_host,
 		"PresignedAuth_absolute_form_another_host":                                         PresignedAuth_absolute_form_another_host,
 		"PresignedAuth_absolute_form_userinfo_host":                                        PresignedAuth_absolute_form_userinfo_host,
+		"PresignedAuth_userinfo_host_header":                                               PresignedAuth_userinfo_host_header,
 		"PresignedAuth_absolute_form_empty_host":                                           PresignedAuth_absolute_form_empty_host,
 		"PresignedAuth_absolute_form_non_http_scheme":                                      PresignedAuth_absolute_form_non_http_scheme,
 		"PresignedAuth_origin_form_another_bucket_host":                                    PresignedAuth_origin_form_another_bucket_host,

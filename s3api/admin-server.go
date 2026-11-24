@@ -90,7 +90,7 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region 
 	app := fiber.NewWithCustomCtx(httpctx.NewCtx, fiber.Config{
 		AppName:      "versitygw",
 		ServerHeader: "VERSITYGW",
-		ErrorHandler: globalErrorHandler,
+		ErrorHandler: errorHandler(""),
 		Concurrency:  server.maxConnections,
 		// leave the body to the handlers, as the s3 server does: fasthttp
 		// would otherwise read it whole before the signature is checked
