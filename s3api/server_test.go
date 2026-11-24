@@ -407,3 +407,55 @@ func TestMultipartBodyIsStreamed(t *testing.T) {
 		t.Fatalf("handler read %q, want the body as sent, %q", got, sent.Bytes())
 	}
 }
+
+// S3 takes the bucket name out of a host with a userinfo like out of a
+// virtual-hosted-style host, before its domain, or else takes the whole host.
+func TestUserinfoHostBucket(t *testing.T) {
+	tests := []struct {
+		name, host, domain, want string
+	}{
+		{
+			name:   "another bucket's host after the domain",
+			host:   "s3.example.test:7070@bucketb.s3.example.test:7070",
+			domain: "s3.example.test",
+			want:   "s3.example.test:7070@bucketb",
+		},
+		{
+			name:   "Host header's host as the domain",
+			host:   "127.0.0.1:7070@bucketb.127.0.0.1:7070",
+			domain: "127.0.0.1:7070",
+			want:   "127.0.0.1:7070@bucketb",
+		},
+		{
+			name:   "empty userinfo",
+			host:   "@bucketb.s3.example.test",
+			domain: "s3.example.test",
+			want:   "@bucketb",
+		},
+		{
+			name:   "domain in another case",
+			host:   "user@bucketb.s3.example.test",
+			domain: "S3.Example.Test",
+			want:   "user@bucketb",
+		},
+		{
+			name:   "host not under the domain",
+			host:   "user@s3.example.test",
+			domain: "s3.example.test",
+			want:   "user@s3.example.test",
+		},
+		{
+			name:   "no domain",
+			host:   "user@bucketb.s3.example.test",
+			domain: "",
+			want:   "user@bucketb.s3.example.test",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := userinfoHostBucket(tt.host, tt.domain); got != tt.want {
+				t.Fatalf("userinfoHostBucket(%q, %q) = %q, want %q", tt.host, tt.domain, got, tt.want)
+			}
+		})
+	}
+}

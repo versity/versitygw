@@ -27,6 +27,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
+	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
@@ -129,7 +130,7 @@ func New(
 		ServerHeader:      "VERSITYGW",
 		StreamRequestBody: true,
 		DisableKeepalive:  !server.keepAlive,
-		ErrorHandler:      globalErrorHandler,
+		ErrorHandler:      errorHandler(server.Router.virtualDomain),
 		Concurrency:       server.maxConnections,
 		// Sets buffer limit to read/parse incoming requests
 		// if the limit is reached, fiber/fasthttp will throw an error
@@ -518,9 +519,17 @@ func stackTraceHandler(ctx fiber.Ctx, e any) {
 	utils.ContextKeyStack.Set(ctx, e)
 }
 
+// errorHandler returns the error handler of a server whose virtual-hosted-style
+// requests are under virtualDomain, if any.
+func errorHandler(virtualDomain string) fiber.ErrorHandler {
+	return func(ctx fiber.Ctx, er error) error {
+		return globalErrorHandler(ctx, er, virtualDomain)
+	}
+}
+
 // globalErrorHandler catches the errors before reaching to
 // the handlers and any system panics
-func globalErrorHandler(ctx fiber.Ctx, er error) error {
+func globalErrorHandler(ctx fiber.Ctx, er error, virtualDomain string) error {
 	requestID, hostID := utils.EnsureRequestIDs(ctx)
 
 	// set content type to application/xml
@@ -552,6 +561,27 @@ func globalErrorHandler(ctx fiber.Ctx, er error) error {
 				err := s3err.GetAPIError(s3err.ErrCannotParseHTTPRequest)
 				return ctx.Status(err.StatusCode()).Send(err.XMLBody(requestID, hostID))
 			}
+			if strings.Contains(fiberErr.Message, fasthttp.ErrorInvalidURI.Error()) {
+				// fasthttp rejects a request-target it can't take a host
+				// and a path out of before any handler runs, like an
+				// absolute-form one with a userinfo or an empty host, and
+				// a host with a userinfo in the Host header too. S3 takes
+				// a userinfo as part of the host, and a bucket name out of
+				// it that isn't valid.
+				if host := strings.ToLower(httpctx.RequestHost(ctx)); strings.Contains(host, "@") {
+					// the userinfo may hold a password: leave the host out
+					debuglogger.Logf("the request host has a userinfo")
+					domain := virtualDomain
+					if domain == "" {
+						domain = string(ctx.Request().Header.Host())
+					}
+					err := s3err.GetBucketErr(s3err.ErrInvalidBucketName, userinfoHostBucket(host, domain))
+					return ctx.Status(err.StatusCode()).Send(err.XMLBody(requestID, hostID))
+				}
+				debuglogger.Logf("failed to parse the request url: %v", fiberErr.Message)
+				err := s3err.GetAPIError(s3err.ErrInvalidURI)
+				return ctx.Status(err.StatusCode()).Send(err.XMLBody(requestID, hostID))
+			}
 		}
 
 		// additionally log the internal error
@@ -561,4 +591,19 @@ func globalErrorHandler(ctx fiber.Ctx, er error) error {
 	ctx.Status(http.StatusInternalServerError)
 
 	return ctx.Send(s3err.GetAPIError(s3err.ErrInternalError).XMLBody(requestID, hostID))
+}
+
+// userinfoHostBucket returns the bucket name S3 takes out of host, a request
+// host with a userinfo: the part before ".<domain>", as HostStyleParser takes
+// a virtual-hosted-style one's, or else the whole host. domain is the virtual
+// domain, or the Host header's host on a path-style gateway, naming the
+// gateway like S3's own domain does S3.
+func userinfoHostBucket(host, domain string) string {
+	if domain == "" {
+		return host
+	}
+	if bucket, _, found := strings.Cut(host, "."+strings.ToLower(domain)); found && bucket != "" {
+		return bucket
+	}
+	return host
 }

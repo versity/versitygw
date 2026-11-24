@@ -24,7 +24,7 @@ package rcserver
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../cuwrapper/rc
-#cgo LDFLAGS: -L${SRCDIR}/.. -l:librcserver.a -lstdc++ -ldl -lpthread
+#cgo LDFLAGS: ${SRCDIR}/../librcserver.a -lstdc++ -ldl -lpthread
 #include "rc_server_abi.h"
 #include <stdlib.h>
 

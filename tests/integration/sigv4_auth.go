@@ -708,11 +708,10 @@ func Authentication_absolute_form_another_bucket_host(s *S3Conf) error {
 }
 
 // An origin-form request-target starting with "//" and another bucket's host
-// can't point a signed request at that bucket, though the gateway's http
-// server takes a host out of such a target when it has a "://" anywhere,
-// like in its fragment. The request goes to the Host header's host, with the
-// path left after that bucket's host. S3 itself keeps the whole target as
-// the path, and rejects the signature.
+// can't point a signed request at that bucket, even with a "://" in its
+// fragment: the whole target is the path, whose first segment, the bucket,
+// is empty, so no route matches it. S3 also keeps the whole target as the
+// path, and rejects the signature.
 func Authentication_origin_form_another_bucket_host(s *S3Conf) error {
 	testName := "Authentication_origin_form_another_bucket_host"
 	return requestTargetHandler(s, testName, func(bucket, otherBucket, obj string) error {
@@ -727,6 +726,6 @@ func Authentication_origin_form_another_bucket_host(s *S3Conf) error {
 			return err
 		}
 
-		return checkObjectResponse(resp, bucket+"/"+obj)
+		return checkHTTPResponseApiErr(resp, s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeService, nil))
 	})
 }
