@@ -35,6 +35,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/meta"
+	"github.com/versity/versitygw/backend/posix"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
@@ -396,9 +397,8 @@ func convertPosixDataset(ctx *cli.Context) error {
 		if err != nil {
 			return fmt.Errorf("resolve sidecar directory: %w", err)
 		}
-		rel, err := filepath.Rel(root, sidecarDir)
-		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return errors.New("sidecar directory cannot be inside the posix root directory")
+		if err := posix.CheckDirsNotNested(root, sidecarDir); err != nil {
+			return fmt.Errorf("invalid sidecar directory: %w", err)
 		}
 		sc, err := meta.NewSideCar(sidecarDir)
 		if err != nil {
