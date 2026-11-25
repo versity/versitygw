@@ -16,6 +16,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -505,6 +506,90 @@ func PutBucketAcl_success_grants(s *S3Conf) error {
 		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err != nil {
 			return err
+		}
+
+		return nil
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
+func PutBucketAcl_success_grant_headers_round_trip(s *S3Conf) error {
+	testName := "PutBucketAcl_success_grant_headers_round_trip"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser1, testuser2 := getUser("user"), getUser("user")
+		err := createUsers(s, []user{testuser1, testuser2})
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket:        &bucket,
+			GrantRead:     &testuser1.access,
+			GrantWriteACP: &testuser2.access,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// the grant headers replace the acl, so the owner gets no FULL_CONTROL grant
+		grants := []types.Grant{
+			{
+				Grantee: &types.Grantee{
+					ID:   &testuser1.access,
+					Type: types.TypeCanonicalUser,
+				},
+				Permission: types.PermissionRead,
+			},
+			{
+				Grantee: &types.Grantee{
+					ID:   &testuser2.access,
+					Type: types.TypeCanonicalUser,
+				},
+				Permission: types.PermissionWriteAcp,
+			},
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareGrants(out.Grants, grants) {
+			return fmt.Errorf("expected grants to be %v, instead got %v",
+				grants, out.Grants)
+		}
+
+		// putting the returned acl back as the body should leave it unchanged
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Grants: out.Grants,
+				Owner:  out.Owner,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareGrants(out.Grants, grants) {
+			return fmt.Errorf("expected grants after the round trip to be %v, instead got %v",
+				grants, out.Grants)
 		}
 
 		return nil

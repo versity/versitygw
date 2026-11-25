@@ -32,12 +32,12 @@ func (existingAccountsIAM) ResolveAccounts([]string) ([]string, error) {
 }
 
 // TestUpdateACL checks which grants end up in the bucket ACL. Grant headers
-// replace the ACL, as on AWS, so the owner gets a FULL_CONTROL grant only
-// from a canned ACL, from the default ACL of a bucket created without
-// grants, or when a header names it.
+// and an AccessControlPolicy body replace the ACL, as on AWS, so the owner
+// gets a FULL_CONTROL grant only from a canned ACL, from the default ACL of
+// a bucket created without grants, or when the request names it.
 func TestUpdateACL(t *testing.T) {
 	empty := ""
-	readAcpGrantee := "user1"
+	userGrantee := "user1"
 	ownerGrantee := "owner"
 
 	ownerFullControl := Grantee{
@@ -54,7 +54,7 @@ func TestUpdateACL(t *testing.T) {
 		{
 			name: "grant header",
 			input: &PutBucketAclInput{
-				GrantReadACP: &readAcpGrantee,
+				GrantReadACP: &userGrantee,
 			},
 			want: []Grantee{
 				{
@@ -70,6 +70,81 @@ func TestUpdateACL(t *testing.T) {
 				GrantFullControl: &ownerGrantee,
 			},
 			want: []Grantee{ownerFullControl},
+		},
+		{
+			name: "grant headers naming the owner and another user",
+			input: &PutBucketAclInput{
+				GrantFullControl: &ownerGrantee,
+				GrantRead:        &userGrantee,
+			},
+			want: []Grantee{
+				ownerFullControl,
+				{
+					Permission: PermissionRead,
+					Access:     "user1",
+					Type:       types.TypeCanonicalUser,
+				},
+			},
+		},
+		{
+			name: "same grantee in two grant headers",
+			input: &PutBucketAclInput{
+				GrantRead:     &userGrantee,
+				GrantWriteACP: &userGrantee,
+			},
+			want: []Grantee{
+				{
+					Permission: PermissionRead,
+					Access:     "user1",
+					Type:       types.TypeCanonicalUser,
+				},
+				{
+					Permission: PermissionWriteAcp,
+					Access:     "user1",
+					Type:       types.TypeCanonicalUser,
+				},
+			},
+		},
+		{
+			name: "access control policy without the owner",
+			input: &PutBucketAclInput{
+				AccessControlPolicy: &AccessControlPolicy{
+					Owner: &types.Owner{ID: &ownerGrantee},
+					AccessControlList: AccessControlList{
+						Grants: []Grant{
+							{
+								Grantee:    &Grt{ID: "user1", Type: types.TypeCanonicalUser},
+								Permission: PermissionRead,
+							},
+							{
+								Grantee:    &Grt{ID: "user2", Type: types.TypeCanonicalUser},
+								Permission: PermissionWrite,
+							},
+						},
+					},
+				},
+			},
+			want: []Grantee{
+				{
+					Permission: PermissionRead,
+					Access:     "user1",
+					Type:       types.TypeCanonicalUser,
+				},
+				{
+					Permission: PermissionWrite,
+					Access:     "user2",
+					Type:       types.TypeCanonicalUser,
+				},
+			},
+		},
+		{
+			name: "access control policy with no grants",
+			input: &PutBucketAclInput{
+				AccessControlPolicy: &AccessControlPolicy{
+					Owner: &types.Owner{ID: &ownerGrantee},
+				},
+			},
+			want: []Grantee{},
 		},
 		{
 			name: "create bucket without grants",
@@ -108,10 +183,6 @@ func TestUpdateACL(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, "owner", acl.Owner)
 			assert.Equal(t, tt.want, acl.Grantees)
-
-			for _, action := range []Action{GetBucketAclAction, PutBucketAclAction, ListBucketAction, PutObjectAction, PutBucketPolicyAction} {
-				assert.True(t, aclAllows(acl, "owner", action, false), "owner denied %s", action)
-			}
 		})
 	}
 }

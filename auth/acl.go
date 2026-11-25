@@ -343,20 +343,30 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error
 			accs = append(append(append(append(fullControlList, readList...), writeACPList...), readACPList...), writeList...)
 
 			// Grant headers replace the whole ACL, as on AWS, so the owner
-			// gets no FULL_CONTROL grant unless a header names it. The owner
-			// keeps full access to its bucket anyway, see aclAllows.
+			// gets no FULL_CONTROL grant unless a header names it. Unlike
+			// AWS, the bucket owner keeps full access to its bucket without
+			// that grant, as the ACL check always lets the owner through.
+			// This is a deliberate divergence: on AWS the owner gets 403 on
+			// HeadBucket, ListObjectsV2, PutObject, DeleteObject and the
+			// like, but the gateway has no object ACLs, so enforcing that
+			// would also block reads of existing objects, which AWS allows.
+			//
+			// Only CreateBucket passes empty grant headers, when none were sent.
 			if len(headerGrantees) > 0 {
 				defaultGrantees = headerGrantees
 			}
 		} else {
 			cache := make(map[string]bool)
+			// The body replaces the whole ACL as well, so an empty Grants
+			// list leaves the bucket with no grants.
+			bodyGrantees := []Grantee{}
 			for _, grt := range input.AccessControlPolicy.AccessControlList.Grants {
 				if grt.Grantee == nil || grt.Grantee.ID == "" || grt.Permission == "" {
 					return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
 				}
 
 				access := grt.Grantee.ID
-				defaultGrantees = append(defaultGrantees, Grantee{
+				bodyGrantees = append(bodyGrantees, Grantee{
 					Access:     access,
 					Permission: grt.Permission,
 					Type:       types.TypeCanonicalUser,
@@ -366,6 +376,7 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error
 					accs = append(accs, access)
 				}
 			}
+			defaultGrantees = bodyGrantees
 		}
 
 		// Check if the specified accounts exist

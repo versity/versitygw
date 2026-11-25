@@ -276,16 +276,7 @@ func GetBucketAcl_success(s *S3Conf) error {
 			return err
 		}
 
-		grants = append([]types.Grant{
-			{
-				Grantee: &types.Grantee{
-					ID:   &s.awsID,
-					Type: types.TypeCanonicalUser,
-				},
-				Permission: types.PermissionFullControl,
-			},
-		}, grants...)
-
+		// the body replaces the acl, so the owner gets no FULL_CONTROL grant
 		if ok := compareGrants(out.Grants, grants); !ok {
 			return fmt.Errorf("expected grants to be %v, instead got %v",
 				grants, out.Grants)

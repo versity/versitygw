@@ -688,6 +688,7 @@ func TestPutBucketAcl(ts *TestState) {
 	ts.Run(PutBucketAcl_success_grants)
 	ts.Run(PutBucketAcl_success_canned_acl)
 	ts.Run(PutBucketAcl_success_acp)
+	ts.Run(PutBucketAcl_success_grant_headers_round_trip)
 }
 
 func TestGetBucketAcl(ts *TestState) {
@@ -3550,6 +3551,7 @@ func GetIntTests() IntTests {
 		"PutBucketAcl_success_grants":                                                      PutBucketAcl_success_grants,
 		"PutBucketAcl_success_canned_acl":                                                  PutBucketAcl_success_canned_acl,
 		"PutBucketAcl_success_acp":                                                         PutBucketAcl_success_acp,
+		"PutBucketAcl_success_grant_headers_round_trip":                                    PutBucketAcl_success_grant_headers_round_trip,
 		"GetBucketAcl_non_existing_bucket":                                                 GetBucketAcl_non_existing_bucket,
 		"GetBucketAcl_translation_canned_public_read":                                      GetBucketAcl_translation_canned_public_read,
 		"GetBucketAcl_translation_canned_public_read_write":                                GetBucketAcl_translation_canned_public_read_write,
