@@ -132,3 +132,13 @@ func walkDirRoot(fsys fs.FS, root string, fn WalkDirFunc) error {
 	}
 	return err
 }
+
+// walkDirEntry walks the file tree rooted at root like walkDirRoot, with d
+// the directory entry of root, which the caller already looked up.
+func walkDirEntry(fsys fs.FS, root string, d fs.DirEntry, fn WalkDirFunc) error {
+	err := walkDir(fsys, root, d, fn)
+	if err == fs.SkipDir || err == fs.SkipAll {
+		return nil
+	}
+	return err
+}
