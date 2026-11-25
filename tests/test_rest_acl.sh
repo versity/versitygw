@@ -232,6 +232,6 @@ fi
   run create_bucket_rest_expect_success "$bucket_name" "$envs"
   assert_success
 
-  run get_bucket_acl_rest "$bucket_name" "" "check_that_acl_xml_does_not_have_owner_permission"
+  run get_bucket_acl_rest "$bucket_name" "" "check_that_acl_xml_has_user_read_acp_and_no_owner_permission"
   assert_success
 }

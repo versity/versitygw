@@ -62,6 +62,22 @@ check_that_acl_xml_does_not_have_owner_permission() {
   return 0
 }
 
+check_that_acl_xml_has_user_read_acp_and_no_owner_permission() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  if ! check_that_acl_xml_does_not_have_owner_permission "$1"; then
+    log 2 "error checking for owner permission"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  if ! grant="$(xmllint --xpath "//*[local-name()='AccessControlPolicy']/*[local-name()='AccessControlList']/*[local-name()='Grant'][*[local-name()='Grantee']/*[local-name()='ID' and text()='${user_canonical_id}']][*[local-name()='Permission' and text()='READ_ACP']]" "$1" 2>&1)"; then
+    log 2 "user '$user_canonical_id' should have READ_ACP grant (error: $grant)"
+    return 1
+  fi
+  return 0
+}
+
 check_for_display_name() {
   if ! check_param_count_v2 "data file" 1 $#; then
     return 1
