@@ -160,8 +160,8 @@ source ./tests/setup_unit.sh
 }
 
 # tags: unit
-@test "run parallel - mounts the default or custom host config folder" {
-  local mode expected root trace="$BATS_TEST_TMPDIR/docker-mounts"
+@test "run parallel - properly mounts the custom host config folder, or default when none is entered" {
+  local mode expected root docker_args="$BATS_TEST_TMPDIR/docker_args"
   root="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
   ln -s "$PWD/tests" "$root/tests"
 
@@ -173,54 +173,59 @@ source ./tests/setup_unit.sh
     mkdir -p "$expected"
     expected="$(cd "$expected" && pwd -P)"
     run bash -c '
-      trace="$1"
+      docker_args="$1"
       docker() {
         if [ "$1" == "image" ]; then
           return 0
         fi
-        printf "%s\n" "$@" > "$trace"
+        printf "%s\n" "$@" > "$docker_args"
       }
       export -f docker
-      export trace
+      # ensure that docker() function can see docker_args parameter and write to it
+      export docker_args
       options=()
-      if [ "$3" == "custom" ]; then options=(--config-folder "$4"); fi
+      if [ "$3" == "custom" ]; then
+        options=(--config-folder "$4")
+      fi
       cd "$2"
       bash ./tests/run_parallel.sh "${options[@]}" --log-folder "$2" fake-image suite
-    ' bash "$trace" "$BATS_TEST_TMPDIR" "$mode" "$expected"
+    ' bash "$docker_args" "$BATS_TEST_TMPDIR" "$mode" "$expected"
 
     assert_success
-    run command grep -Fx -- "$expected:/home/tester/config" "$trace"
+    run command grep -Fx -- "$expected:/home/tester/config" "$docker_args"
     assert_success
   done
 }
 
 # tags: unit
 @test "run parallel - normalizes host mounts and HOST_LOG_FOLDER" {
-  local root trace="$BATS_TEST_TMPDIR/docker-paths"
+  local root docker_args="$BATS_TEST_TMPDIR/docker-paths"
   root="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
   ln -s "$PWD/tests" "$root/tests"
   mkdir -p "$root/actual_config"
   ln -s "$root/actual_config" "$root/config_link"
 
   run bash -c '
-    trace="$1/docker-paths"
+    docker_args="$1/docker-paths"
     docker() {
-      if [ "$1" == "image" ]; then return 0; fi
-      printf "%s\n" "$@" > "$trace"
+      if [ "$1" == "image" ]; then
+        return 0
+      fi
+      printf "%s\n" "$@" > "$docker_args"
     }
     export -f docker
-    export trace
+    export docker_args
     cd "$1"
     bash ./tests/run_parallel.sh --config-folder "./config_link" \
       --log-folder "./new_logs" --log-file runner.log fake-image suite
   ' bash "$root"
 
   assert_success
-  run command grep -Fx -- "$root/actual_config:/home/tester/config" "$trace"
+  run command grep -Fx -- "$root/actual_config:/home/tester/config" "$docker_args"
   assert_success
-  run command grep -Fx -- "$root/new_logs:/home/tester/log" "$trace"
+  run command grep -Fx -- "$root/new_logs:/home/tester/log" "$docker_args"
   assert_success
-  run command grep -Fx -- "HOST_LOG_FOLDER=$root/new_logs" "$trace"
+  run command grep -Fx -- "HOST_LOG_FOLDER=$root/new_logs" "$docker_args"
   assert_success
   assert [ -s "$root/new_logs/runner.log" ]
 }
