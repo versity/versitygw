@@ -1726,7 +1726,8 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 	// gateway: it then keeps the ones recorded for the object, so that
 	// it is stale too.
 	srcStale := false
-	if srcInfo, err := sf.Stat(); err == nil {
+	srcInfo, serr := sf.Stat()
+	if serr == nil {
 		originalMTime = srcInfo.ModTime()
 		srcStale = p.etagStale(sf, bucket, key, srcInfo)
 	}
@@ -1736,6 +1737,12 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 		_, err = io.Copy(f.File(), sf)
 		if err != nil {
 			return versionPath, err
+		}
+		// a change made outside of the gateway during the copy is in the
+		// version: it keeps the object's record, so that it is stale
+		if after, err := sf.Stat(); p.detectStaleEtag && serr == nil && err == nil && !sameObjectData(srcInfo, after) {
+			srcStale = true
+			originalMTime = after.ModTime()
 		}
 	}
 
@@ -1753,7 +1760,7 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 	recordStat := false
 	var removable []string
 	for _, attr := range attrs {
-		if attr == etagStatKey && !srcStale && !isDir {
+		if attr == etagStatKey && p.detectStaleEtag && !srcStale && !isDir {
 			recordStat = true
 			continue
 		}
@@ -5755,7 +5762,8 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				// outside of the gateway: it then keeps the ones
 				// recorded for the version, so that it is stale too
 				versionStale := false
-				if sfi, err := sf.Stat(); err == nil {
+				sfi, serr := sf.Stat()
+				if serr == nil {
 					versionStale = p.etagStale(sf, versionPath, srcVersionId, sfi)
 				}
 				acct, ok := ctx.Value("account").(auth.Account)
@@ -5777,12 +5785,21 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					return nil, fmt.Errorf("copy object %w", err)
 				}
 
+				// the restored version keeps its last modified time
+				mtime := srcObjVersion.ModTime()
+				// a change made outside of the gateway during the copy
+				// is in the restored object: it keeps the version's
+				// record, so that it is stale
+				if after, err := sf.Stat(); p.detectStaleEtag && serr == nil && err == nil && !sameObjectData(sfi, after) {
+					versionStale = true
+					mtime = after.ModTime()
+				}
+
 				if err := sf.Close(); err != nil {
 					return nil, fmt.Errorf("close obj version: %w", err)
 				}
 
-				// the restored version keeps its last modified time
-				f.setModTime(srcObjVersion.ModTime())
+				f.setModTime(mtime)
 
 				attrs, err := p.meta.ListAttributes(versionPath, srcVersionId)
 				if err != nil {
@@ -5794,7 +5811,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				// recorded for it. The deleted version is removed by
 				// now, so the restore is completed even when etag-stat
 				// can't be stored, and that error is returned after.
-				recordStat := !versionStale && slices.Contains(attrs, etagStatKey)
+				recordStat := p.detectStaleEtag && !versionStale && slices.Contains(attrs, etagStatKey)
 				var etagfi fs.FileInfo
 				var recordErr error
 				if recordStat {
@@ -5817,7 +5834,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					if attr == nullVersionPrevKey {
 						continue
 					}
-					if attr == etagStatKey && !versionStale {
+					if attr == etagStatKey && p.detectStaleEtag && !versionStale {
 						continue
 					}
 					data, err := p.meta.RetrieveAttribute(nil, versionPath, srcVersionId, attr)
@@ -9024,7 +9041,8 @@ func etagStatErr(msg string, err error) error {
 // path, which may be a symlink. It returns the open file and its file info,
 // which the caller uses in place of fi. It returns nil and fi when
 // detectStaleEtag is not set, when path is not a regular file or a symlink
-// to one, or when it can't be opened: its etag is then never stale.
+// to one, or when it can't be opened: whether its etag is stale is then
+// decided by path, from fi.
 func (p *Posix) openForEtag(path string, fi fs.FileInfo) (*os.File, fs.FileInfo) {
 	if !p.detectStaleEtag || fi == nil || !(fi.Mode().IsRegular() || fi.Mode()&fs.ModeSymlink != 0) {
 		return nil, fi
@@ -9063,12 +9081,12 @@ var errNotRegular = errors.New("not a regular file")
 
 // objectEtag returns the etag served for the object bucket/object, its stored
 // etag or defaultEtag when it has none. With detectStaleEtag, when f is the
-// open object and fi its file info taken from f, an object whose size or
-// modification time no longer match the ones recorded when the gateway wrote
-// it was changed outside of the gateway: its etag is then made from its size
-// and modification time and stale is true, and its stored checksums and
-// multipart metadata don't apply to its content. err is the error of reading
-// the stored etag.
+// open object, or nil when it can't be opened, and fi its file info, an
+// object whose size or modification time no longer match the ones recorded
+// when the gateway wrote it was changed outside of the gateway: its etag is
+// then made from its size and modification time and stale is true, and its
+// stored checksums and multipart metadata don't apply to its content. err is
+// the error of reading the stored etag.
 func (p *Posix) objectEtag(f *os.File, bucket, object string, fi fs.FileInfo) (etag string, stale bool, err error) {
 	b, err := p.meta.RetrieveAttribute(f, bucket, object, etagkey)
 	etag = string(b)
@@ -9083,12 +9101,16 @@ func (p *Posix) objectEtag(f *os.File, bucket, object string, fi fs.FileInfo) (e
 
 // etagStale reports whether the object open in f, with the file info fi taken
 // from f, no longer has the size and modification time recorded with its
-// etag. Objects without a recorded size and modification time, such as those
+// etag. When f is nil, the record is read by path and compared with fi.
+// Objects without a recorded size and modification time, such as those
 // written before detectStaleEtag was set, and directories are never stale.
 func (p *Posix) etagStale(f *os.File, bucket, object string, fi fs.FileInfo) bool {
-	if !p.detectStaleEtag || f == nil || fi == nil || !fi.Mode().IsRegular() {
+	if !p.detectStaleEtag || fi == nil || !fi.Mode().IsRegular() {
 		return false
 	}
+	// without an open file, as for one under a lease (an NFS write
+	// delegation or an SMB oplock) that can't be opened without waiting
+	// for it, the record is read by path
 	b, err := p.meta.RetrieveAttribute(f, bucket, object, etagStatKey)
 	return err == nil && string(b) != etagStatReserved &&
 		string(b) != etagStat(fi.Size(), fi.ModTime())
@@ -9102,12 +9124,13 @@ func (p *Posix) etagStale(f *os.File, bucket, object string, fi fs.FileInfo) boo
 // apply.
 //
 // The size and modification time recorded for the entry are first read by
-// path and compared with fi, so that an unchanged file is not opened. Only
-// a mismatch, or a symlink, is confirmed on the file opened, from its own
+// path and compared with fi, so that an unchanged file is not opened. A
+// mismatch, or a symlink, is confirmed on the file opened, from its own
 // attributes and fstat, so that no entry is reported stale from two
-// different files. An entry reported fresh from two different files would
-// need the new one to have the recorded size and modification time to the
-// nanosecond.
+// different files. The exception is a file that can't be opened, such as
+// one under a lease: it is decided by path, from fi. An entry reported fresh
+// from two different files would need the new one to have the recorded size
+// and modification time to the nanosecond.
 func (p *Posix) staleEntry(path, bucket, object string, fi fs.FileInfo) (string, fs.FileInfo, bool) {
 	if !p.detectStaleEtag {
 		return "", fi, false
@@ -9122,6 +9145,10 @@ func (p *Posix) staleEntry(path, bucket, object string, fi fs.FileInfo) (string,
 	}
 	f, ffi := p.openForEtag(path, fi)
 	if f == nil {
+		// the mismatch seen by path can't be confirmed: keep it
+		if p.etagStale(nil, bucket, object, fi) {
+			return staleEtag(fi), fi, true
+		}
 		return "", fi, false
 	}
 	defer f.Close()

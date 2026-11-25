@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -793,4 +794,109 @@ func TestDetectStaleEtagNoSpaceErrorVersion(t *testing.T) {
 		_, err = testPut(p, bucket, key, []byte("new"), nil, nil)
 		assert.Equal(t, s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice), err)
 	}
+}
+
+// changeOnStatMeta runs change once the etag-stat of the file at path is read
+// from that file open. The change then lands after the stat the record is
+// compared with, and before the file is copied, as one made outside of the
+// gateway during the copy.
+type changeOnStatMeta struct {
+	meta.MetadataStorer
+	path   string
+	change func()
+}
+
+func (m *changeOnStatMeta) RetrieveAttribute(f *os.File, bucket, object, attribute string) ([]byte, error) {
+	b, err := m.MetadataStorer.RetrieveAttribute(f, bucket, object, attribute)
+	if attribute == etagStatKey && f != nil && m.change != nil && f.Name() == m.path {
+		change := m.change
+		m.change = nil
+		change()
+	}
+	return b, err
+}
+
+// TestDetectStaleEtagChangedWhileCopied checks that an object changed outside
+// of the gateway while it is copied to its version, or a version changed
+// while it is copied back to the object, makes a stale copy.
+func TestDetectStaleEtagChangedWhileCopied(t *testing.T) {
+	ctx := context.Background()
+	bucket, key := "testbucket", "obj"
+	setup := func(t *testing.T) (*Posix, *changeOnStatMeta, []s3response.PutObjectOutput) {
+		p := newStaleEtagPosix(t, true, true)
+		m := &changeOnStatMeta{MetadataStorer: p.meta}
+		p.meta = m
+		createTestBucket(t, p, bucket)
+		require.NoError(t, p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled))
+		put, err := testPut(p, bucket, key, []byte("v1"), nil, nil)
+		require.NoError(t, err)
+		return p, m, []s3response.PutObjectOutput{put}
+	}
+	changed := "v1-changed"
+
+	t.Run("archived version", func(t *testing.T) {
+		p, m, puts := setup(t)
+		m.path = p.ObjectPath(bucket, key)
+		m.change = func() { rewrite(t, m.path, changed, time.Now().Add(time.Minute)) }
+		_, err := testPut(p, bucket, key, []byte("v2"), nil, nil)
+		require.NoError(t, err)
+		require.Nil(t, m.change, "the object was not changed during the copy")
+
+		versions, err := p.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{Bucket: &bucket, Prefix: &key, MaxKeys: aws.Int32(1000)})
+		require.NoError(t, err)
+		found := false
+		for _, v := range versions.Versions {
+			if aws.ToString(v.VersionId) == puts[0].VersionID {
+				found = true
+				assert.True(t, isStaleEtag(aws.ToString(v.ETag)), "etag %v", aws.ToString(v.ETag))
+				assert.Equal(t, int64(len(changed)), aws.ToInt64(v.Size))
+			}
+		}
+		assert.True(t, found)
+	})
+
+	t.Run("restored version", func(t *testing.T) {
+		p, m, puts := setup(t)
+		put, err := testPut(p, bucket, key, []byte("v2"), nil, nil)
+		require.NoError(t, err)
+		m.path = filepath.Join(p.genObjVersionPath(bucket, key), puts[0].VersionID)
+		m.change = func() { rewrite(t, m.path, changed, time.Now().Add(time.Minute)) }
+		_, err = p.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: &key, VersionId: &put.VersionID})
+		require.NoError(t, err)
+		require.Nil(t, m.change, "the version was not changed during the copy")
+
+		h := headEtag(t, p, bucket, key)
+		assert.True(t, isStaleEtag(aws.ToString(h.ETag)), "etag %v", aws.ToString(h.ETag))
+		assert.Equal(t, int64(len(changed)), aws.ToInt64(h.ContentLength))
+		assert.Nil(t, h.ChecksumCRC64NVME)
+	})
+}
+
+// TestStaleEtagOffKeepsRecord checks that without DetectStaleEtag the
+// etag-stat recorded for an object is kept as is, like its other attributes,
+// by the version made of it and by the object restored from that version.
+func TestStaleEtagOffKeepsRecord(t *testing.T) {
+	ctx := context.Background()
+	p := newStaleEtagPosix(t, false, true)
+	bucket, key := "testbucket", "obj"
+	createTestBucket(t, p, bucket)
+	require.NoError(t, p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled))
+
+	v1, err := testPut(p, bucket, key, []byte("v1"), nil, nil)
+	require.NoError(t, err)
+	// as recorded by a gateway with the option set
+	record := []byte(etagStat(int64(len("v1")), time.Unix(1, 0)))
+	require.NoError(t, p.meta.StoreAttribute(nil, bucket, key, etagStatKey, record))
+
+	v2, err := testPut(p, bucket, key, []byte("v2"), nil, nil)
+	require.NoError(t, err)
+	b, err := p.meta.RetrieveAttribute(nil, p.genObjVersionPath(bucket, key), v1.VersionID, etagStatKey)
+	require.NoError(t, err)
+	assert.Equal(t, record, b)
+
+	_, err = p.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: &key, VersionId: &v2.VersionID})
+	require.NoError(t, err)
+	b, err = p.meta.RetrieveAttribute(nil, bucket, key, etagStatKey)
+	require.NoError(t, err)
+	assert.Equal(t, record, b)
 }
