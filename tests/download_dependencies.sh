@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+source "$(dirname "${BASH_SOURCE[0]}")/retry.sh"
+
 download_apt_packages() {
   if [ $# -lt 1 ]; then
     echo "download_apt_packages requires download folder, packages" >&2
@@ -22,17 +24,12 @@ download_apt_packages() {
     return 1
   fi
 
-  if ! env DEBIAN_FRONTEND=noninteractive sudo apt-get update; then
-    echo "error with apt update" >&2
+  # apt-get update only warns when a mirror is unreachable, and the download
+  # is what fails then, so the two are retried together
+  if ! retry update_and_download_apt_packages "$download_folder" "${packages[@]}"; then
     return 1
   fi
-
-  if ! env DEBIAN_FRONTEND=noninteractive sudo apt-get install --download-only --reinstall -y -o "Dir::Cache::archives=$download_folder" "${packages[@]}"; then
-    echo "error with apt download" >&2
-    return 1
-  else
-    echo "download successful"
-  fi
+  echo "download successful"
   if ! sudo rm -rf "${download_folder}/partial" "${download_folder}/lock"; then
     echo "error removing apt-specific repo files and folders"
     return 1
@@ -74,7 +71,7 @@ download_aws() {
       return 1
       ;;
   esac
-  if ! curl -fsSL "$download_url" -o "$download_path"; then
+  if ! retry curl -fsSL "$download_url" -o "$download_path"; then
     echo "error: failed to download AWS CLI" >&2
     rm -rf "$aws_folder"
     return 1
@@ -154,7 +151,7 @@ download_mc() {
   fi
   download_path="${mc_folder}/mc"
 
-  if ! curl -fsSL "$download_url" -o "$download_path"; then
+  if ! retry curl -fsSL "$download_url" -o "$download_path"; then
     echo "error: failed to download mc" >&2
     rm -rf "$mc_folder"
     return 1
@@ -183,7 +180,7 @@ download_bats_helpers() {
   if [ -d "${destination_folder}/bats-support" ]; then
     echo "bats-support already installed"
   else
-    if ! git clone https://github.com/bats-core/bats-support.git "${destination_folder}/bats-support"; then
+    if ! retry git clone https://github.com/bats-core/bats-support.git "${destination_folder}/bats-support"; then
       echo "error getting bats-support library" >&2
       return 1
     fi
@@ -191,10 +188,26 @@ download_bats_helpers() {
   if [ -d "${destination_folder}/bats-assert" ]; then
     echo "bats-assert already installed"
   else
-    if ! git clone https://github.com/ztombol/bats-assert.git "${destination_folder}/bats-assert"; then
+    if ! retry git clone https://github.com/ztombol/bats-assert.git "${destination_folder}/bats-assert"; then
       echo "error getting bats-assert library" >&2
       return 1
     fi
+  fi
+  return 0
+}
+
+update_and_download_apt_packages() {
+  if [ $# -lt 2 ]; then
+    echo "update_and_download_apt_packages requires download folder, packages" >&2
+    return 1
+  fi
+  if ! env DEBIAN_FRONTEND=noninteractive sudo apt-get update; then
+    echo "error with apt update" >&2
+    return 1
+  fi
+  if ! env DEBIAN_FRONTEND=noninteractive sudo apt-get install --download-only --reinstall -y -o "Dir::Cache::archives=$1" "${@:2}"; then
+    echo "error with apt download" >&2
+    return 1
   fi
   return 0
 }

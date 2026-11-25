@@ -39,7 +39,7 @@ jobs:
       - name: Install the test dependencies
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          ../retry.sh npx playwright install --with-deps chromium
 
       - name: Type-check the tests
         run: npm run typecheck
@@ -47,6 +47,7 @@ jobs:
       - name: Build versitygw
         working-directory: .
         run: |
+          ./tests/retry.sh go mod download
           go build -o "$RUNNER_TEMP/versitygw" ./cmd/versitygw
           echo "VERSITYGW_BINARY=$RUNNER_TEMP/versitygw" >> "$GITHUB_ENV"
 
