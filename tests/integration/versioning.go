@@ -7689,7 +7689,7 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 				return err
 			}
 
-			err = checkApiErr(getAttributesOf(missingObj, res.res.VersionId), s3err.GetAPIError(s3err.ErrNoSuchKey))
+			err = checkApiErr(getAttributesOf(missingObj, res.res.VersionId), s3err.GetAPIError(s3err.ErrNoSuchVersion))
 			if err != nil {
 				return err
 			}
