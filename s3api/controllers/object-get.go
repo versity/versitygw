@@ -438,6 +438,8 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 		if listErr := c.verifyAccess(ctx, accessOpts); listErr != nil {
 			return errResponse, listErr
 		}
+	} else if readErr != nil {
+		return errResponse, readErr
 	}
 	if err != nil {
 		headers := map[string]*string{
@@ -452,10 +454,6 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
-	}
-
-	if readErr != nil {
-		return errResponse, readErr
 	}
 
 	headers := map[string]*string{
