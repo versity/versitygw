@@ -403,38 +403,21 @@ func IAM_CreateBucket_success(s *S3Conf) error {
 			return err
 		}
 
-		if len(acl.Grants) != 2 {
-			return fmt.Errorf("expected the length of acl grants to be 2, instead got %v", len(acl.Grants))
+		if getString(acl.Owner.ID) != testUser1.access {
+			return fmt.Errorf("expected the bucket owner to be %v, instead got %v", testUser1.access, getString(acl.Owner.ID))
 		}
 
-		var granteeChecked bool
-		var ownerChecked bool
-		for _, grant := range acl.Grants {
-			// owner
-			if getString(grant.Grantee.ID) == testUser1.access {
-				ownerChecked = true
-				if grant.Permission != types.PermissionFullControl {
-					return fmt.Errorf("expected the owner '%s' to have %s permission, instead got %s", testUser1.access, types.PermissionFullControl, grant.Permission)
-				}
-
-				continue
-			}
-
-			if getString(grant.Grantee.ID) != testUser2.access {
-				return fmt.Errorf("expected the grantee ID to be %v, instaed got %v", testUser2.access, getString(grant.Grantee.ID))
-			}
-			if grant.Permission != types.PermissionRead {
-				return fmt.Errorf("expected the %v user permission to be %s, instead got %s", testUser2.access, types.PermissionRead, grant.Permission)
-			}
-
-			granteeChecked = true
+		// the grant header replaces the acl, so the owner gets no FULL_CONTROL grant
+		if len(acl.Grants) != 1 {
+			return fmt.Errorf("expected the length of acl grants to be 1, instead got %v", len(acl.Grants))
 		}
 
-		if !ownerChecked {
-			return fmt.Errorf("missing the owner '%s' full control acl", testUser1.access)
+		grant := acl.Grants[0]
+		if getString(grant.Grantee.ID) != testUser2.access {
+			return fmt.Errorf("expected the grantee ID to be %v, instaed got %v", testUser2.access, getString(grant.Grantee.ID))
 		}
-		if !granteeChecked {
-			return fmt.Errorf("missing the user %s in read grantees acl", testUser2.access)
+		if grant.Permission != types.PermissionRead {
+			return fmt.Errorf("expected the %v user permission to be %s, instead got %s", testUser2.access, types.PermissionRead, grant.Permission)
 		}
 
 		return teardown(s, bucket)

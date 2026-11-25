@@ -206,8 +206,8 @@ fi
 
 # tags: curl,GetBucketAcl,x-amz-grant-read-acp
 @test "REST - FULL_CONTROL permission not returned for owner after CreateBucket with GRANT_READ_ACP" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1407"
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "skip bucket create tests for static buckets"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
