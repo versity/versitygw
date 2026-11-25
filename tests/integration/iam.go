@@ -347,6 +347,46 @@ func IAM_CreateBucket_success(s *S3Conf) error {
 			return fmt.Errorf("expected the %v user permission to be %s, instead got %s", testUser2.access, types.PermissionRead, grant.Permission)
 		}
 
+		// unlike on AWS, the owner keeps full access without its own grant
+		ownerClient := s.getUserClient(testUser1)
+
+		obj := "my-obj"
+		_, err = putObjects(ownerClient, []string{obj}, bucket)
+		if err != nil {
+			return fmt.Errorf("owner PutObject: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		objs, err := ownerClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("owner ListObjectsV2: %w", err)
+		}
+		if len(objs.Contents) != 1 || getString(objs.Contents[0].Key) != obj {
+			return fmt.Errorf("expected the owner to list only the object %v, instead got %v", obj, objs.Contents)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = ownerClient.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("owner GetBucketAcl: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = ownerClient.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket:    &bucket,
+			GrantRead: &testUser2.access,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("owner PutBucketAcl: %w", err)
+		}
+
 		return teardown(s, bucket)
 	})
 }
