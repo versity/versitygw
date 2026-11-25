@@ -569,10 +569,6 @@ func validateSubDir(root, dir string) (string, error) {
 			dir, err)
 	}
 
-	if err := CheckDirsNotNested(root, absDir); err != nil {
-		return "", err
-	}
-
 	vDir, err := os.Stat(absDir)
 	if err != nil {
 		return "", fmt.Errorf("stat %q: %w", absDir, err)
@@ -582,17 +578,20 @@ func validateSubDir(root, dir string) (string, error) {
 		return "", fmt.Errorf("path %q is not a directory", absDir)
 	}
 
+	if err := CheckDirsNotNested(root, absDir); err != nil {
+		return "", err
+	}
+
 	return absDir, nil
 }
 
 // ErrDirsNested is returned when the gateway root directory and an auxiliary
 // directory (sidecar or versioning) are the same, or one is inside the other.
-var ErrDirsNested = errors.New("directory must not be the same as, inside, or contain the root directory")
+var ErrDirsNested = errors.New("must not be the same as, inside, or contain the root directory")
 
 // CheckDirsNotNested returns an error wrapping ErrDirsNested if root and dir
 // are equal or one contains the other. Symlinks are resolved first so a
-// symlinked path segment cannot hide the nesting. Paths that do not exist
-// yet are resolved through their closest existing ancestor.
+// symlinked path segment cannot hide the nesting, so both must exist.
 func CheckDirsNotNested(root, dir string) error {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
@@ -602,47 +601,19 @@ func CheckDirsNotNested(root, dir string) error {
 	if err != nil {
 		return fmt.Errorf("get absolute path of %v: %w", dir, err)
 	}
-	realRoot, err := resolveExistingPath(absRoot)
+	realRoot, err := filepath.EvalSymlinks(absRoot)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve %q: %w", absRoot, err)
 	}
-	realDir, err := resolveExistingPath(absDir)
+	realDir, err := filepath.EvalSymlinks(absDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve %q: %w", absDir, err)
 	}
 
 	if isDirBelowRoot(realRoot, realDir) || isDirBelowRoot(realDir, realRoot) {
-		return fmt.Errorf("%v and the root directory %v: %w",
-			dir, root, ErrDirsNested)
+		return fmt.Errorf("%v %w %v", dir, ErrDirsNested, root)
 	}
 	return nil
-}
-
-// resolveExistingPath evaluates symlinks of an absolute path. If the path
-// (or its tail) does not exist, the closest existing ancestor is resolved
-// and the missing tail is appended unchanged.
-func resolveExistingPath(path string) (string, error) {
-	path = filepath.Clean(path)
-	var tail []string
-	cur := path
-	for {
-		real, err := filepath.EvalSymlinks(cur)
-		if err == nil {
-			for i := len(tail) - 1; i >= 0; i-- {
-				real = filepath.Join(real, tail[i])
-			}
-			return real, nil
-		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return "", fmt.Errorf("resolve %q: %w", path, err)
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			return path, nil
-		}
-		tail = append(tail, filepath.Base(cur))
-		cur = parent
-	}
 }
 
 func isDirBelowRoot(root, dir string) bool {

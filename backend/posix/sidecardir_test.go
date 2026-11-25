@@ -18,6 +18,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/versity/versitygw/backend/meta"
@@ -32,69 +33,91 @@ func mustMkdirAll(t *testing.T, dirs ...string) {
 	}
 }
 
-// TestSideCarDirNesting checks that the sidecar directory is accepted when it
-// only shares a string prefix with the root, and rejected when it is the
-// root, inside it, or contains it (also through symlinks).
-func TestSideCarDirNesting(t *testing.T) {
-	base := t.TempDir()
-	// resolve the temp dir so symlink cases are explicit
-	base, err := filepath.EvalSymlinks(base)
-	if err != nil {
-		t.Fatal(err)
+type dirNestingCase struct {
+	name    string
+	root    string
+	dir     string
+	wantErr bool
+}
+
+// runDirNestingCases starts the backend with each case's directory once as the
+// sidecar directory and once as the versioning directory.
+func runDirNestingCases(t *testing.T, tests []dirNestingCase) {
+	t.Helper()
+	for _, tt := range tests {
+		t.Run("sidecar/"+tt.name, func(t *testing.T) {
+			sc, err := meta.NewSideCar(tt.dir)
+			if err != nil {
+				t.Fatalf("new sidecar: %v", err)
+			}
+			p, err := New(tt.root, sc, PosixOpts{SideCarDir: tt.dir, AbsolutePaths: true})
+			checkDirNesting(t, p, err, tt.wantErr, "invalid sidecar directory: "+tt.dir)
+		})
+		t.Run("versioning/"+tt.name, func(t *testing.T) {
+			p, err := New(tt.root, meta.XattrMeta{}, PosixOpts{VersioningDir: tt.dir, AbsolutePaths: true})
+			checkDirNesting(t, p, err, tt.wantErr, "invalid versioning directory: "+tt.dir)
+		})
 	}
+}
+
+func checkDirNesting(t *testing.T, p *Posix, err error, wantErr bool, prefix string) {
+	t.Helper()
+	if err == nil {
+		p.Shutdown()
+		if wantErr {
+			t.Fatal("expected nesting error")
+		}
+		return
+	}
+	if !wantErr {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !errors.Is(err, ErrDirsNested) {
+		t.Fatalf("expected ErrDirsNested, got: %v", err)
+	}
+	if want := prefix + " " + ErrDirsNested.Error(); !strings.HasPrefix(err.Error(), want) {
+		t.Fatalf("expected error starting with %q, got: %v", want, err)
+	}
+}
+
+// TestAuxDirNesting checks that the sidecar and versioning directories are
+// accepted when they only share a string prefix with the root, and rejected
+// when they are the root, inside it, or contain it.
+func TestAuxDirNesting(t *testing.T) {
+	base := t.TempDir()
 	root := filepath.Join(base, "s3")
 	sibling := filepath.Join(base, "s3-sidecar")
 	inside := filepath.Join(root, "sidecar")
 	mustMkdirAll(t, root, sibling, inside)
 
-	// symlink layout: link -> real; root via link, sidecar nested in real root
-	real := filepath.Join(base, "real")
-	realRoot := filepath.Join(real, "gwroot")
-	realInner := filepath.Join(realRoot, "inner")
-	mustMkdirAll(t, realRoot, realInner)
-	link := filepath.Join(base, "link")
-	if err := os.Symlink(real, link); err != nil {
-		t.Skipf("symlinks unsupported: %v", err)
-	}
-
-	tests := []struct {
-		name    string
-		root    string
-		sidecar string
-		wantErr bool
-	}{
+	runDirNestingCases(t, []dirNestingCase{
 		{"sibling sharing prefix", root, sibling, false},
 		{"subdirectory of root", root, inside, true},
 		{"same as root", root, root, true},
 		{"parent of root", root, base, true},
 		{"root with trailing separator, sibling", root + string(filepath.Separator), sibling, false},
 		{"root with trailing separator, inside", root + string(filepath.Separator), inside, true},
-		{"symlinked root, sidecar nested in real path", filepath.Join(link, "gwroot"), realInner, true},
-		{"real root, sidecar nested via symlinked path", realRoot, filepath.Join(link, "gwroot", "inner"), true},
+	})
+}
+
+// TestAuxDirNestingSymlinks checks that a symlinked path segment does not hide
+// the nesting.
+func TestAuxDirNestingSymlinks(t *testing.T) {
+	base := t.TempDir()
+	// symlink layout: link -> realDir
+	realDir := filepath.Join(base, "real")
+	realRoot := filepath.Join(realDir, "gwroot")
+	realInner := filepath.Join(realRoot, "inner")
+	mustMkdirAll(t, realInner)
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(realDir, link); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sc, err := meta.NewSideCar(tt.sidecar)
-			if err != nil {
-				t.Fatalf("new sidecar: %v", err)
-			}
-			p, err := New(tt.root, sc, PosixOpts{SideCarDir: tt.sidecar, AbsolutePaths: true})
-			if !tt.wantErr {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				p.Shutdown()
-				return
-			}
-			if err == nil {
-				p.Shutdown()
-				t.Fatal("expected nesting error")
-			}
-			if !errors.Is(err, ErrDirsNested) {
-				t.Fatalf("expected ErrDirsNested, got: %v", err)
-			}
-		})
-	}
+
+	runDirNestingCases(t, []dirNestingCase{
+		{"symlinked root, nested in real path", filepath.Join(link, "gwroot"), realInner, true},
+		{"real root, nested via symlinked path", realRoot, filepath.Join(link, "gwroot", "inner"), true},
+	})
 }
 
 // TestSideCarDirRelativeRoot checks the default (non-AbsolutePaths) mode with
@@ -115,16 +138,4 @@ func TestSideCarDirRelativeRoot(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	p.Shutdown()
-}
-
-func TestCheckDirsNotNestedMissingDir(t *testing.T) {
-	base := t.TempDir()
-	root := filepath.Join(base, "s3")
-	mustMkdirAll(t, root)
-	if err := CheckDirsNotNested(root, filepath.Join(root, "not", "yet")); !errors.Is(err, ErrDirsNested) {
-		t.Fatalf("expected ErrDirsNested, got %v", err)
-	}
-	if err := CheckDirsNotNested(root, filepath.Join(base, "other", "new")); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
 }
