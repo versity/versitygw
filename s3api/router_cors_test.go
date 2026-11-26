@@ -356,3 +356,42 @@ func TestS3ApiRouter_OptionsWithBucketCORS_NoDuplicateHeaders(t *testing.T) {
 		t.Error("Access-Control-Allow-Headers header is empty")
 	}
 }
+
+func TestS3ApiRouter_GetObject_BucketCORSWithoutExposeHeaders(t *testing.T) {
+	origin := "http://example.com"
+
+	corsConfig := []byte(`<CORSConfiguration>
+		<CORSRule>
+			<AllowedOrigin>http://example.com</AllowedOrigin>
+			<AllowedMethod>GET</AllowedMethod>
+			<AllowedMethod>PUT</AllowedMethod>
+		</CORSRule>
+	</CORSConfiguration>`)
+
+	app := fiber.New()
+	(&S3ApiRouter{
+		app:    app,
+		be:     backendWithBucketCors{corsConfig: corsConfig},
+		iam:    &auth.IAMServiceInternal{},
+		region: "us-east-1",
+	}).Init()
+
+	req, err := http.NewRequest(http.MethodGet, "/mybucket/myobj", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Host = "localhost"
+	req.Header.Set("Origin", origin)
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != origin {
+		t.Fatalf("expected Access-Control-Allow-Origin %q, got %q", origin, got)
+	}
+	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "" {
+		t.Fatalf("expected no Access-Control-Expose-Headers without ExposeHeader in the bucket CORS rule, got %q", got)
+	}
+}

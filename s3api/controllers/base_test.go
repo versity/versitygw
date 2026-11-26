@@ -312,6 +312,7 @@ func TestEnsureExposeMetaHeaders_AddsActualMetaHeaderNames(t *testing.T) {
 	app := fiber.New()
 	ctx := app.AcquireCtx(&fasthttp.RequestCtx{})
 
+	utils.ContextKeyDefaultCORS.Set(ctx, true)
 	ctx.Response().Header.Add("Access-Control-Allow-Origin", "https://example.com")
 	ctx.Response().Header.Add("Access-Control-Expose-Headers", "ETag")
 	ctx.Response().Header.Set("x-amz-meta-foo", "bar")
@@ -321,6 +322,18 @@ func TestEnsureExposeMetaHeaders_AddsActualMetaHeaderNames(t *testing.T) {
 
 	got := string(ctx.Response().Header.Peek("Access-Control-Expose-Headers"))
 	assert.Equal(t, "ETag, X-Amz-Meta-Bar, X-Amz-Meta-Foo", got)
+}
+
+func TestEnsureExposeMetaHeaders_SkipsBucketCORS(t *testing.T) {
+	app := fiber.New()
+	ctx := app.AcquireCtx(&fasthttp.RequestCtx{})
+
+	ctx.Response().Header.Add("Access-Control-Allow-Origin", "https://example.com")
+	ctx.Response().Header.Set("x-amz-meta-foo", "bar")
+
+	ensureExposeMetaHeaders(ctx)
+
+	assert.Empty(t, ctx.Response().Header.Peek("Access-Control-Expose-Headers"))
 }
 
 // mock the audit logger

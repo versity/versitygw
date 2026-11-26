@@ -444,8 +444,10 @@ func ProcessController(ctx fiber.Ctx, controller Controller, s3action string, sv
 }
 
 func ensureExposeMetaHeaders(ctx fiber.Ctx) {
-	// Only attempt to modify expose headers when CORS is actually in use.
-	if len(ctx.Response().Header.Peek("Access-Control-Allow-Origin")) == 0 {
+	// Only extend expose headers for the gateway default CORS. Bucket CORS
+	// rules expose only the headers listed in their ExposeHeader elements.
+	if !utils.ContextKeyDefaultCORS.IsSet(ctx) ||
+		len(ctx.Response().Header.Peek("Access-Control-Allow-Origin")) == 0 {
 		return
 	}
 
