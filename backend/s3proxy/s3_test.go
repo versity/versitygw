@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -452,5 +453,144 @@ func TestCompleteMultipartUploadErrorUploadId(t *testing.T) {
 				t.Errorf("expected %+v, got %T: %+v", tt.wantErr, err, err)
 			}
 		})
+	}
+}
+
+// S3 reports a delete marker only in the headers of the GET or HEAD error
+// response, which the sdk returns without an output. The proxy passes the
+// marker on, so the gateway sends x-amz-delete-marker and x-amz-version-id
+// too, and keeps the Allow header and the resource type of the 405.
+func TestHeadGetObjectDeleteMarker(t *testing.T) {
+	lastModified := time.Date(2026, time.November, 26, 10, 19, 6, 0, time.UTC)
+	tests := []struct {
+		name             string
+		status           int
+		header           http.Header
+		getBody          string
+		wantDeleteMarker bool
+		wantVersionId    string
+		wantLastModified *time.Time
+		// wantErr is the GET error, HEAD has the same status and no body
+		wantErr        s3err.APIError
+		wantNotAllowed bool
+	}{
+		{
+			name:   "current version is a delete marker",
+			status: http.StatusNotFound,
+			header: http.Header{
+				"X-Amz-Delete-Marker": {"true"},
+				"X-Amz-Version-Id":    {"dm-version"},
+			},
+			getBody:          `<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><Key>obj</Key></Error>`,
+			wantDeleteMarker: true,
+			wantVersionId:    "dm-version",
+			wantErr:          s3err.GetAPIError(s3err.ErrNoSuchKey),
+		},
+		{
+			name:   "version is a delete marker",
+			status: http.StatusMethodNotAllowed,
+			header: http.Header{
+				"X-Amz-Delete-Marker": {"true"},
+				"X-Amz-Version-Id":    {"dm-version"},
+				"Last-Modified":       {lastModified.Format(http.TimeFormat)},
+				"Allow":               {"DELETE"},
+			},
+			getBody:          `<Error><Code>MethodNotAllowed</Code><Message>The specified method is not allowed against this resource.</Message><Method>GET</Method><ResourceType>DeleteMarker</ResourceType></Error>`,
+			wantDeleteMarker: true,
+			wantVersionId:    "dm-version",
+			wantLastModified: &lastModified,
+			wantErr:          s3err.GetAPIError(s3err.ErrMethodNotAllowed),
+			wantNotAllowed:   true,
+		},
+		{
+			name:    "no such key",
+			status:  http.StatusNotFound,
+			header:  http.Header{},
+			getBody: `<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><Key>obj</Key></Error>`,
+			wantErr: s3err.GetAPIError(s3err.ErrNoSuchKey),
+		},
+	}
+
+	type result struct {
+		deleteMarker *bool
+		versionId    *string
+		lastModified *time.Time
+		hasOutput    bool
+	}
+
+	for _, tt := range tests {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			t.Run(tt.name+"/"+method, func(t *testing.T) {
+				p, capture := newCaptureProxy(t)
+				capture.respStatus = tt.status
+				capture.respHeader = tt.header
+
+				var res result
+				var err error
+				if method == http.MethodGet {
+					capture.respBody = tt.getBody
+					var out *s3.GetObjectOutput
+					out, err = p.GetObject(context.Background(), &s3.GetObjectInput{
+						Bucket: aws.String("test-bucket"),
+						Key:    aws.String("obj"),
+					})
+					if out != nil {
+						res = result{out.DeleteMarker, out.VersionId, out.LastModified, true}
+					}
+				} else {
+					var out *s3.HeadObjectOutput
+					out, err = p.HeadObject(context.Background(), &s3.HeadObjectInput{
+						Bucket: aws.String("test-bucket"),
+						Key:    aws.String("obj"),
+					})
+					if out != nil {
+						res = result{out.DeleteMarker, out.VersionId, out.LastModified, true}
+					}
+				}
+
+				var serr s3err.S3Error
+				if !errors.As(err, &serr) {
+					t.Fatalf("expected an s3 error, got %T: %v", err, err)
+				}
+				if serr.StatusCode() != tt.status {
+					t.Errorf("expected status %d, got %d", tt.status, serr.StatusCode())
+				}
+				// a HEAD error has no body to carry the error code
+				if method == http.MethodGet && !errors.Is(err, tt.wantErr) {
+					t.Errorf("expected %+v, got %T: %+v", tt.wantErr, err, err)
+				}
+
+				var mnaErr s3err.MethodNotAllowedError
+				if errors.As(err, &mnaErr) != tt.wantNotAllowed {
+					t.Fatalf("expected a MethodNotAllowedError to be %v, got %T: %v", tt.wantNotAllowed, err, err)
+				}
+				if tt.wantNotAllowed {
+					want := s3err.GetMethodNotAllowedErr(method, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete})
+					if mnaErr.Method != want.Method || mnaErr.ResourceType != want.ResourceType ||
+						mnaErr.AllowedMethodsString() != want.AllowedMethodsString() {
+						t.Errorf("expected %+v, got %+v", want, mnaErr)
+					}
+				}
+
+				if !tt.wantDeleteMarker {
+					if res.hasOutput {
+						t.Errorf("expected no output, got %+v", res)
+					}
+					return
+				}
+				if !aws.ToBool(res.deleteMarker) {
+					t.Errorf("expected the delete marker to be true, got %v", res.deleteMarker)
+				}
+				if got := aws.ToString(res.versionId); got != tt.wantVersionId {
+					t.Errorf("expected version id %q, got %q", tt.wantVersionId, got)
+				}
+				switch {
+				case tt.wantLastModified == nil && res.lastModified != nil:
+					t.Errorf("expected no last modified, got %v", *res.lastModified)
+				case tt.wantLastModified != nil && (res.lastModified == nil || !res.lastModified.Equal(*tt.wantLastModified)):
+					t.Errorf("expected last modified %v, got %v", *tt.wantLastModified, res.lastModified)
+				}
+			})
+		}
 	}
 }

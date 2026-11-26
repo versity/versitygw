@@ -1002,9 +1002,10 @@ func TestS3ApiController_GetObject(t *testing.T) {
 			name: "backend returns error",
 			input: testInput{
 				locals: defaultLocals,
-				beErr:  s3err.GetAPIError(s3err.ErrInvalidAccessKeyID),
+				beErr:  s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete}),
 				beRes: &s3.GetObjectOutput{
 					DeleteMarker: &delMarker,
+					VersionId:    utils.GetStringPtr("versionId"),
 					LastModified: &tm,
 				},
 			},
@@ -1012,13 +1013,38 @@ func TestS3ApiController_GetObject(t *testing.T) {
 				response: &Response{
 					Headers: map[string]*string{
 						"x-amz-delete-marker": utils.GetStringPtr("true"),
+						"x-amz-version-id":    utils.GetStringPtr("versionId"),
 						"Last-Modified":       utils.GetStringPtr(tm.UTC().Format(timefmt)),
 					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidAccessKeyID),
+				err: s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete}),
+			},
+		},
+		{
+			name: "backend returns error without last modified",
+			input: testInput{
+				locals: defaultLocals,
+				beErr:  s3err.GetAPIError(s3err.ErrNoSuchKey),
+				beRes: &s3.GetObjectOutput{
+					DeleteMarker: &delMarker,
+					VersionId:    utils.GetStringPtr("versionId"),
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Headers: map[string]*string{
+						"x-amz-delete-marker": utils.GetStringPtr("true"),
+						"x-amz-version-id":    utils.GetStringPtr("versionId"),
+						"Last-Modified":       nil,
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrNoSuchKey),
 			},
 		},
 		{

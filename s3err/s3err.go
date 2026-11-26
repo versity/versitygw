@@ -1155,6 +1155,7 @@ const (
 	ResourceTypeBucketPolicy ResourceType = "BUCKETPOLICY"
 	ResourceTypeUpload       ResourceType = "UPLOAD"
 	ResourceTypeTorrent      ResourceType = "TORRENT"
+	ResourceTypeDeleteMarker ResourceType = "DeleteMarker"
 )
 
 func ObjectDeleteError(key, versionId *string, err error) types.Error {

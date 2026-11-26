@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -1173,6 +1174,13 @@ func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 	}
 
 	out, err := s.client.HeadObject(ctx, input)
+	if dm, ok := getUpstreamDeleteMarker(err, http.MethodHead); ok {
+		return &s3.HeadObjectOutput{
+			DeleteMarker: aws.Bool(true),
+			VersionId:    dm.versionId,
+			LastModified: dm.lastModified,
+		}, dm.err
+	}
 	return out, handleError(err)
 }
 
@@ -1233,6 +1241,13 @@ func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 	}
 
 	output, err := s.client.GetObject(ctx, input)
+	if dm, ok := getUpstreamDeleteMarker(err, http.MethodGet); ok {
+		return &s3.GetObjectOutput{
+			DeleteMarker: aws.Bool(true),
+			VersionId:    dm.versionId,
+			LastModified: dm.lastModified,
+		}, dm.err
+	}
 	if err != nil {
 		return nil, handleError(err)
 	}
@@ -1952,6 +1967,43 @@ func handleError(err error) error {
 		return apiErr
 	}
 	return err
+}
+
+// upstreamDeleteMarker is the delete marker that S3 reports in the headers
+// of a GET or HEAD error: a 404 when the current version of the key is a
+// delete marker, a 405 when the request names a delete marker version.
+type upstreamDeleteMarker struct {
+	versionId    *string
+	lastModified *time.Time
+	err          error
+}
+
+// getUpstreamDeleteMarker returns the delete marker reported with err, and
+// false when err doesn't report one. The SDK returns no output with the
+// error, so the marker is read from the response headers.
+func getUpstreamDeleteMarker(err error, method string) (upstreamDeleteMarker, bool) {
+	var re *awshttp.ResponseError
+	if !errors.As(err, &re) || re.Response == nil || re.Response.Response == nil {
+		return upstreamDeleteMarker{}, false
+	}
+	header := re.Response.Header
+	if header.Get("x-amz-delete-marker") != "true" {
+		return upstreamDeleteMarker{}, false
+	}
+
+	dm := upstreamDeleteMarker{err: handleError(err)}
+	if vId := header.Get("x-amz-version-id"); vId != "" {
+		dm.versionId = &vId
+	}
+	if lm, err := http.ParseTime(header.Get("Last-Modified")); err == nil {
+		dm.lastModified = &lm
+	}
+	if re.Response.StatusCode == http.StatusMethodNotAllowed {
+		// keep the resource type and the Allow header of the delete marker
+		dm.err = s3err.GetMethodNotAllowedErr(method, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete})
+	}
+
+	return dm, true
 }
 
 func convertObjects(objs []types.Object) []s3response.Object {
