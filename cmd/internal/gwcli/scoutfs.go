@@ -140,6 +140,12 @@ move interfaces as well as support for tiered filesystems.`,
 				Destination: &defaultEtag,
 			},
 			&cli.BoolFlag{
+				Name:        "detect-stale-etag",
+				Usage:       "record the size and modification time of objects with their ETag, and do not return the stored ETag, checksums and part sizes of objects changed outside of versitygw (e.g. over NFS or SMB)",
+				EnvVars:     []string{"VGW_DETECT_STALE_ETAG"},
+				Destination: &detectStaleEtag,
+			},
+			&cli.BoolFlag{
 				Name:        "data-integrity-etag",
 				Usage:       "use data-integrity checksum-derived ETags instead of MD5-based ETags (PUT object ETag, multipart part ETags, and completed multipart object ETag)",
 				EnvVars:     []string{"VGW_DATA_INTEGRITY_ETAG"},
@@ -190,6 +196,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.CopyObjectThreshold = CopyObjectThreshold
 	opts.ObjectLockMode = posix.ObjectLockMode(scoutfsLockMode)
 	opts.DefaultEtag = defaultEtag
+	opts.DetectStaleEtag = detectStaleEtag
 	opts.DataIntegrityEtag = dataIntegrityEtag
 	opts.EnableODirect = enableODirect
 	opts.SetNewDirPerm(fs.FileMode(dirPerms))
