@@ -2257,6 +2257,8 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_GetObject_success)
 	ts.Run(Versioning_GetObject_delete_marker_without_versionId)
 	ts.Run(Versioning_GetObject_delete_marker)
+	ts.Run(Versioning_GetHeadObject_delete_marker_request_options)
+	ts.Run(Versioning_GetHeadObject_null_delete_marker)
 	ts.Run(Versioning_GetObject_null_versionId_obj)
 	ts.Run(Versioning_GetObject_null_version_without_versionId)
 	ts.Run(Versioning_unversioned_bucket_omits_versionId)
@@ -4102,6 +4104,8 @@ func GetIntTests() IntTests {
 		"Versioning_GetObject_success":                                                     Versioning_GetObject_success,
 		"Versioning_GetObject_delete_marker_without_versionId":                             Versioning_GetObject_delete_marker_without_versionId,
 		"Versioning_GetObject_delete_marker":                                               Versioning_GetObject_delete_marker,
+		"Versioning_GetHeadObject_delete_marker_request_options":                           Versioning_GetHeadObject_delete_marker_request_options,
+		"Versioning_GetHeadObject_null_delete_marker":                                      Versioning_GetHeadObject_null_delete_marker,
 		"Versioning_unversioned_bucket_omits_versionId":                                    Versioning_unversioned_bucket_omits_versionId,
 		"Versioning_GetObject_null_version_without_versionId":                              Versioning_GetObject_null_version_without_versionId,
 		"Versioning_GetObject_null_versionId_obj":                                          Versioning_GetObject_null_versionId_obj,

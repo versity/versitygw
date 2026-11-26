@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -477,13 +478,144 @@ func TestGetObjectDeleteMarkerMovedAfterLookup(t *testing.T) {
 	if out != nil && out.Body != nil {
 		out.Body.Close()
 	}
-	if !errors.Is(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed)) {
-		t.Fatalf("get marker: %v, want MethodNotAllowed", err)
+	var mnaErr s3err.MethodNotAllowedError
+	if !errors.As(err, &mnaErr) || mnaErr.ResourceType != s3err.ResourceTypeDeleteMarker {
+		t.Fatalf("get marker: %v, want MethodNotAllowed for a delete marker", err)
 	}
-	if out == nil || !aws.ToBool(out.DeleteMarker) || out.LastModified == nil {
-		t.Fatalf("marker output = %+v", out)
+	if out == nil || !aws.ToBool(out.DeleteMarker) || out.LastModified == nil ||
+		aws.ToString(out.VersionId) != aws.ToString(marker.VersionId) {
+		t.Fatalf("marker output = %+v, want the delete marker %v", out, aws.ToString(marker.VersionId))
 	}
 	if replace != nil {
 		t.Fatal("delete marker lookup did not run")
+	}
+}
+
+// TestGetHeadObjectCurrentDeleteMarker checks that a GET or HEAD without a
+// versionId of a key whose current version is a delete marker returns the
+// marker's version id, and no Last-Modified, along with NoSuchKey, and that
+// one naming the marker returns MethodNotAllowed for a delete marker.
+func TestGetHeadObjectCurrentDeleteMarker(t *testing.T) {
+	const bucket, key = "testbucket", "obj"
+	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		return meta.XattrMeta{}, PosixOpts{NewDirPerm: 0755, VersioningDir: t.TempDir()}
+	})
+	createTestBucket(t, p, bucket)
+	ctx := context.Background()
+	if err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPut(p, bucket, key, []byte("data"), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := p.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	markerId := aws.ToString(marker.VersionId)
+
+	getOut, err := p.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		t.Fatalf("get: %v, want NoSuchKey", err)
+	}
+	if getOut == nil || !aws.ToBool(getOut.DeleteMarker) || aws.ToString(getOut.VersionId) != markerId || getOut.LastModified != nil {
+		t.Fatalf("get output = %+v, want the delete marker %v without a last modified", getOut, markerId)
+	}
+
+	headOut, err := p.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		t.Fatalf("head: %v, want NoSuchKey", err)
+	}
+	if headOut == nil || !aws.ToBool(headOut.DeleteMarker) || aws.ToString(headOut.VersionId) != markerId || headOut.LastModified != nil {
+		t.Fatalf("head output = %+v, want the delete marker %v without a last modified", headOut, markerId)
+	}
+
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		var err error
+		if method == http.MethodGet {
+			_, err = p.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key), VersionId: &markerId})
+		} else {
+			_, err = p.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucket), Key: aws.String(key), VersionId: &markerId})
+		}
+		var mnaErr s3err.MethodNotAllowedError
+		if !errors.As(err, &mnaErr) {
+			t.Fatalf("%s version: %v, want MethodNotAllowed", method, err)
+		}
+		want := s3err.GetMethodNotAllowedErr(method, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete})
+		if mnaErr.Method != want.Method || mnaErr.ResourceType != want.ResourceType ||
+			mnaErr.AllowedMethodsString() != want.AllowedMethodsString() {
+			t.Fatalf("%s version: got %+v, want %+v", method, mnaErr, want)
+		}
+	}
+}
+
+// TestGetHeadObjectDeleteMarkerVersionIdFromOpenedFile checks that a GET or
+// HEAD without a versionId, of a key whose current version is a delete
+// marker, names the marker by the version id of the marker it found. A PUT
+// that replaces the marker before its version id is read must not make the
+// response name the new object's version as the delete marker: a client
+// that deletes that version would remove the live object.
+func TestGetHeadObjectDeleteMarkerVersionIdFromOpenedFile(t *testing.T) {
+	const bucket, key = "testbucket", "obj"
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			var replace func()
+			p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+				return beforeReadMeta{object: key, attribute: versionIdKey, run: &replace}, PosixOpts{NewDirPerm: 0755, VersioningDir: t.TempDir()}
+			})
+			createTestBucket(t, p, bucket)
+			ctx := context.Background()
+			if err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := testPut(p, bucket, key, []byte("old"), nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			marker, err := p.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var newVersionId string
+			replace = func() {
+				out, err := testPut(p, bucket, key, []byte("new"), nil, nil)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				newVersionId = out.VersionID
+			}
+
+			var deleteMarker *bool
+			var versionId *string
+			if method == http.MethodGet {
+				var out *s3.GetObjectOutput
+				out, err = p.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+				if out != nil {
+					if out.Body != nil {
+						out.Body.Close()
+					}
+					deleteMarker, versionId = out.DeleteMarker, out.VersionId
+				}
+			} else {
+				var out *s3.HeadObjectOutput
+				out, err = p.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+				if out != nil {
+					deleteMarker, versionId = out.DeleteMarker, out.VersionId
+				}
+			}
+			if replace != nil {
+				t.Fatal("version id lookup did not run")
+			}
+			if newVersionId == "" {
+				t.Fatal("the delete marker was not replaced")
+			}
+			if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+				t.Fatalf("got %v, want NoSuchKey", err)
+			}
+			if aws.ToBool(deleteMarker) && aws.ToString(versionId) != aws.ToString(marker.VersionId) {
+				t.Fatalf("got the delete marker named %q, want the marker %q (the new object is %q)",
+					aws.ToString(versionId), aws.ToString(marker.VersionId), newVersionId)
+			}
+		})
 	}
 }

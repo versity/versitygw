@@ -621,6 +621,7 @@ func (c S3ApiController) GetObject(ctx fiber.Ctx) (*Response, error) {
 		case res != nil && res.DeleteMarker != nil && *res.DeleteMarker:
 			headers = map[string]*string{
 				"x-amz-delete-marker": utils.GetStringPtr("true"),
+				"x-amz-version-id":    res.VersionId,
 				"Last-Modified":       utils.FormatDatePtrToString(res.LastModified, timefmt),
 			}
 		}

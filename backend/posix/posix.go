@@ -1880,6 +1880,39 @@ func (p *Posix) isObjDeleteMarker(bucket, object string) (bool, error) {
 	return true, nil
 }
 
+// currentDeleteMarkerVersionId returns the version id of the delete marker
+// that the caller found to be the current version of object. A PUT can
+// replace the marker after that check, and a version id read by path would
+// then be the new object's: a response naming it as the delete marker
+// could make a client delete the live object. So the marker is checked again
+// and its version id read on one open file. A marker removed or replaced in
+// between gives NoSuchKey. A directory object has no open file, so its
+// attributes are read by path.
+func (p *Posix) currentDeleteMarkerVersionId(ctx context.Context, bucket, object string) (string, error) {
+	var f *os.File
+	if !strings.HasSuffix(object, "/") {
+		var err error
+		f, err = openForRead(p.ObjectPath(bucket, object), false)
+		if IsEntryGone(err) {
+			return "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if err != nil {
+			return "", fmt.Errorf("open delete marker: %w", err)
+		}
+		defer f.Close()
+	}
+
+	_, err := p.meta.RetrieveAttribute(f, bucket, object, deleteMarkerKey)
+	if errors.Is(err, meta.ErrNoSuchKey) || IsEntryGone(err) {
+		return "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return "", fmt.Errorf("get object delete-marker: %w", err)
+	}
+
+	return p.liveObjVersionId(ctx, f, bucket, object)
+}
+
 // checkCopySourceDeleteMarker rejects a copy whose source resolves to a
 // delete marker: the key has no current version when the marker is the
 // latest, and a marker named by version id holds no data to copy.
@@ -6245,17 +6278,27 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 			return nil, err
 		}
 
-		// if the specified object version is a delete marker, return MethodNotAllowed
+		// if the current version, or the requested version, is a delete marker,
+		// return NoSuchKey (no versionId) or MethodNotAllowed (versionId)
 		if isDelMarker {
 			if versionId != "" {
-				err = s3err.GetAPIError(s3err.ErrMethodNotAllowed)
-			} else {
-				err = s3err.GetAPIError(s3err.ErrNoSuchKey)
+				return &s3.GetObjectOutput{
+					DeleteMarker: getBoolPtr(true),
+					VersionId:    &versionId,
+					LastModified: backend.GetTimePtr(fid.ModTime()),
+				}, s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete})
+			}
+
+			// S3 names the delete marker by its version id, without a
+			// Last-Modified, when it is the current version
+			dmVersionId, err := p.currentDeleteMarkerVersionId(ctx, bucket, object)
+			if err != nil {
+				return nil, err
 			}
 			return &s3.GetObjectOutput{
 				DeleteMarker: getBoolPtr(true),
-				LastModified: backend.GetTimePtr(fid.ModTime()),
-			}, err
+				VersionId:    &dmVersionId,
+			}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 	}
 
@@ -6335,8 +6378,9 @@ func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjec
 			if err == nil {
 				return &s3.GetObjectOutput{
 					DeleteMarker: getBoolPtr(true),
+					VersionId:    &requestedVersionId,
 					LastModified: backend.GetTimePtr(fi.ModTime()),
-				}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+				}, s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete})
 			}
 			if IsEntryGone(err) {
 				return nil, goneErr()
@@ -6717,10 +6761,10 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 					DeleteMarker: getBoolPtr(true),
 					VersionId:    &versionId,
 					LastModified: backend.GetTimePtr(fi.ModTime()),
-				}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+				}, s3err.GetMethodNotAllowedErr(http.MethodHead, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete})
 			}
 
-			dmVersionId, err := p.liveObjVersionId(ctx, nil, bucket, object)
+			dmVersionId, err := p.currentDeleteMarkerVersionId(ctx, bucket, object)
 			if err != nil {
 				return nil, err
 			}

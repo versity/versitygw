@@ -1208,6 +1208,55 @@ func checkNotModifiedValidators(err error, etag string, lastModified time.Time) 
 	return nil
 }
 
+// checkDeleteMarkerResponse checks that err is the GET or HEAD error S3
+// sends for a delete marker. A request without a versionId for a key whose
+// current version is a delete marker gets a 404 with x-amz-delete-marker and
+// the marker's x-amz-version-id, but no Last-Modified. A request whose
+// versionId names a delete marker (isVersion) gets a 405 that also carries
+// the marker's Last-Modified and "Allow: DELETE".
+func checkDeleteMarkerResponse(err error, versionId string, isVersion bool) error {
+	var respErr *awshttp.ResponseError
+	if !errors.As(err, &respErr) {
+		return fmt.Errorf("expected an HTTP response error, instead got %w", err)
+	}
+
+	wantStatus := http.StatusNotFound
+	if isVersion {
+		wantStatus = http.StatusMethodNotAllowed
+	}
+	if status := respErr.HTTPStatusCode(); status != wantStatus {
+		return fmt.Errorf("expected the response status code to be %v, instead got %v", wantStatus, status)
+	}
+
+	header := respErr.Response.Header
+	if dm := header.Get("x-amz-delete-marker"); dm != "true" {
+		return fmt.Errorf("expected the x-amz-delete-marker header to be true, instead got %q", dm)
+	}
+	if vId := header.Get("x-amz-version-id"); vId != versionId {
+		return fmt.Errorf("expected the x-amz-version-id header to be %q, instead got %q", versionId, vId)
+	}
+
+	lastModified, allow := header.Get("Last-Modified"), header.Get("Allow")
+	if !isVersion {
+		if lastModified != "" {
+			return fmt.Errorf("expected no Last-Modified header, instead got %q", lastModified)
+		}
+		if allow != "" {
+			return fmt.Errorf("expected no Allow header, instead got %q", allow)
+		}
+		return nil
+	}
+
+	if _, err := http.ParseTime(lastModified); err != nil {
+		return fmt.Errorf("expected a Last-Modified header, instead got %q", lastModified)
+	}
+	if allow != http.MethodDelete {
+		return fmt.Errorf("expected the Allow header to be %q, instead got %q", http.MethodDelete, allow)
+	}
+
+	return nil
+}
+
 // perResponseHeaders differ between any two responses, whatever the object.
 var perResponseHeaders = []string{"Date", "X-Amz-Request-Id", "X-Amz-Id-2", "Server",
 	"Connection", "Keep-Alive", "Transfer-Encoding"}
