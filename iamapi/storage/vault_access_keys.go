@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	vault "github.com/hashicorp/vault-client-go"
@@ -95,23 +96,33 @@ func (s *VaultStore) withReAuth(call func() error) error {
 	return call()
 }
 
-// indexCall runs call against the index path. It differs from withReAuth in
-// how it reads a 403, because the index path is the one path an existing
-// deployment's Vault policy may not cover: it was added after those policies
-// were written. A 403 is then a policy denial rather than an expired token,
-// and the index is switched off for the life of the process instead of being
-// retried — and re-authenticated against — on every lookup. Everything keeps
-// working through the scan, exactly as it did before the index existed, and
-// extending the policy to the path plus a restart brings the index back.
+// indexCall runs call against the access key index path (see
+// secondaryIndexCall).
+func (s *VaultStore) indexCall(call func() error) error {
+	return s.secondaryIndexCall(&s.indexDenied, errAccessKeyIndexDenied, s.accessKeysPath(),
+		"the access key index is disabled and access key lookups will scan every user", call)
+}
+
+// secondaryIndexCall runs call against the path of one of the store's
+// secondary indexes, the access key index or the session index
+// (vault_sessions.go). It differs from withReAuth in how it reads a 403,
+// because an index path is a path an existing deployment's Vault policy may
+// not cover: each was added after those policies were written. A 403 is then
+// a policy denial rather than an expired token, and that index is switched
+// off, through denied, for the life of the process instead of being retried —
+// and re-authenticated against — on every call. Everything keeps working the
+// way it did before the index existed, and extending the policy to the path
+// plus a restart brings the index back. Once switched off, every call returns
+// deniedErr without touching Vault.
 //
 // With AppRole credentials, a 403 is first treated as an expired token: only
 // a retry that is still refused after re-authenticating counts as a denial,
 // and a failed re-authentication is returned as the store-wide failure it
 // is. A static token cannot be renewed, so its 403 is a denial at once —
 // reAuthIfNeeded would only attempt an AppRole login with no credentials.
-func (s *VaultStore) indexCall(call func() error) error {
-	if s.indexDenied.Load() {
-		return errAccessKeyIndexDenied
+func (s *VaultStore) secondaryIndexCall(denied *atomic.Bool, deniedErr error, path, consequence string, call func() error) error {
+	if denied.Load() {
+		return deniedErr
 	}
 	err := call()
 	if !vault.IsErrorStatus(err, http.StatusForbidden) {
@@ -127,11 +138,11 @@ func (s *VaultStore) indexCall(call func() error) error {
 	}
 	// Logged unconditionally, once: this is a deployment that silently runs
 	// with the cost the index exists to remove until someone acts on it.
-	if s.indexDenied.CompareAndSwap(false, true) {
-		log.Printf("WARNING: vault denied access to %q: the access key index is disabled and access key lookups will scan every user; "+
-			"grant the IAM policy access to this path and restart to enable it: %v", s.accessKeysPath(), err)
+	if denied.CompareAndSwap(false, true) {
+		log.Printf("WARNING: vault denied access to %q: %s; "+
+			"grant the IAM policy access to this path and restart to enable it: %v", path, consequence, err)
 	}
-	return errAccessKeyIndexDenied
+	return deniedErr
 }
 
 // readAccessKeyIndex returns the case-folded user key accessKeyID is indexed
