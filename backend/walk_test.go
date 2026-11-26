@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -1934,4 +1935,246 @@ func comparePrefixesUnordered(got []types.CommonPrefix, want []string) bool {
 		}
 	}
 	return true
+}
+
+// readDirLogFS records the directories read from a MapFS.
+type readDirLogFS struct {
+	fstest.MapFS
+	dirs []string
+}
+
+func (r *readDirLogFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	r.dirs = append(r.dirs, name)
+	return r.MapFS.ReadDir(name)
+}
+
+// TestWalkVersionsPrefixReadsPrefixDir checks that a listing with a prefix
+// reads the deepest directory the prefix names and the directories with the
+// prefix below it, and not the root or the other ancestors of the prefix,
+// whose cost would grow with the keys outside the prefix (#2690).
+func TestWalkVersionsPrefixReadsPrefixDir(t *testing.T) {
+	mapFS := fstest.MapFS{
+		"some/single/key":          {},
+		"some/single/key2":         {},
+		"some/single/keydir/obj":   {},
+		"some/single/other":        {},
+		"some/single/otherdir/obj": {},
+	}
+	for i := range 100 {
+		mapFS[fmt.Sprintf("obj%03d", i)] = &fstest.MapFile{}
+		mapFS[fmt.Sprintf("dir%03d/obj", i)] = &fstest.MapFile{}
+		mapFS[fmt.Sprintf("some/obj%03d", i)] = &fstest.MapFile{}
+	}
+
+	tests := []struct {
+		name           string
+		prefix         string
+		delimiter      string
+		versions       []string
+		commonPrefixes []string
+		readDirs       []string
+	}{
+		{
+			name:     "key prefix",
+			prefix:   "some/single/key",
+			versions: []string{"some/single/key", "some/single/key2", "some/single/keydir/", "some/single/keydir/obj"},
+			readDirs: []string{"some/single", "some/single/keydir"},
+		},
+		{
+			name:           "key prefix with delimiter",
+			prefix:         "some/single/key",
+			delimiter:      "/",
+			versions:       []string{"some/single/key", "some/single/key2"},
+			commonPrefixes: []string{"some/single/keydir/"},
+			readDirs:       []string{"some/single"},
+		},
+		{
+			name:           "directory prefix with delimiter",
+			prefix:         "some/single/",
+			delimiter:      "/",
+			versions:       []string{"some/single/", "some/single/key", "some/single/key2", "some/single/other"},
+			commonPrefixes: []string{"some/single/keydir/", "some/single/otherdir/"},
+			readDirs:       []string{"some/single"},
+		},
+		{
+			name:     "missing directory",
+			prefix:   "some/missing/key",
+			readDirs: nil,
+		},
+		{
+			name:     "file in the place of a directory",
+			prefix:   "some/single/key/x",
+			readDirs: nil,
+		},
+		{name: "leading slash", prefix: "/some/single/key"},
+		{name: "empty path element", prefix: "some//single/key"},
+		{name: "dot path element", prefix: "./some/single/key"},
+		{name: "dot dot path element", prefix: "some/../some/single/key"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys := &readDirLogFS{MapFS: mapFS}
+			res, err := backend.WalkVersions(context.Background(), fsys, tc.prefix, tc.delimiter,
+				"", "", 1000, getVersionsTestFunc, backend.SkipDirs{})
+			if err != nil {
+				t.Fatalf("walk versions: %v", err)
+			}
+
+			var versions []string
+			for _, v := range res.ObjectVersions {
+				versions = append(versions, *v.Key)
+			}
+			if !slices.Equal(versions, tc.versions) {
+				t.Errorf("expected the versions %v, instead got %v", tc.versions, versions)
+			}
+			var commonPrefixes []string
+			for _, cp := range res.CommonPrefixes {
+				commonPrefixes = append(commonPrefixes, *cp.Prefix)
+			}
+			if !slices.Equal(commonPrefixes, tc.commonPrefixes) {
+				t.Errorf("expected the common prefixes %v, instead got %v",
+					tc.commonPrefixes, commonPrefixes)
+			}
+			if !slices.Equal(fsys.dirs, tc.readDirs) {
+				t.Errorf("expected to read the directories %q, instead read %q",
+					tc.readDirs, fsys.dirs)
+			}
+		})
+	}
+}
+
+// rootWalkFS fails the lookup of every directory but the root, which makes
+// WalkVersions walk from the root for every prefix, as it did before it
+// started the walk at the directory of the prefix.
+type rootWalkFS struct {
+	fstest.MapFS
+}
+
+func (r rootWalkFS) Stat(name string) (fs.FileInfo, error) {
+	if name != "." {
+		return nil, &fs.PathError{Op: "stat", Path: name, Err: syscall.ENAMETOOLONG}
+	}
+	return r.MapFS.Stat(name)
+}
+
+// walkVersionsPage formats a WalkVersions page for comparisons.
+func walkVersionsPage(res backend.WalkVersioningResults) string {
+	var b strings.Builder
+	for _, v := range res.ObjectVersions {
+		fmt.Fprintf(&b, "version %s@%s\n", *v.Key, *v.VersionId)
+	}
+	for _, cp := range res.CommonPrefixes {
+		fmt.Fprintf(&b, "common prefix %s\n", *cp.Prefix)
+	}
+	fmt.Fprintf(&b, "truncated %v, next %q@%q", res.Truncated, res.NextMarker, res.NextVersionIdMarker)
+	return b.String()
+}
+
+// TestWalkVersionsPrefixWalkFromRoot checks that the walk from the directory
+// of the prefix lists the same pages as the walk from the root.
+func TestWalkVersionsPrefixWalkFromRoot(t *testing.T) {
+	mapFS := fstest.MapFS{
+		".sgwtmp/a/b": {},
+		"a-x":         {},
+		"a.b/x":       {},
+		"a/.zfs/snap": {},
+		"a/b-c":       {},
+		"a/b.c/d":     {},
+		"a/b/c.d/e":   {},
+		"a/b/c/d":     {},
+		"a/b/c/e/f":   {},
+		"a/b/c0":      {},
+		"a/b/cd":      {},
+		"a/b/d":       {},
+		"a/bc/d":      {},
+		"a/x/y":       {},
+		"top":         {},
+		"z/y":         {},
+	}
+	versionCounts := map[string]int{}
+	for i, path := range slices.Sorted(maps.Keys(mapFS)) {
+		versionCounts[path] = i%3 + 1
+	}
+	getVersions := createMultiVersionFunc(versionCounts)
+	skipDirs := backend.SkipDirs{Root: []string{".sgwtmp"}, Any: []string{".zfs"}}
+
+	prefixes := []string{
+		"a", "a/", "a/b", "a/b/", "a/b/c", "a/b/c/", "a/b/c/e/", "a/b/c/e/f",
+		"a/b/c/e/f/", "a/x/", "a.b/", "z/", "missing/", "a/missing/x",
+		"top/", "top/x",
+	}
+	markers := []struct{ key, versionId string }{
+		{"", ""}, {"0", ""}, {"a/", ""}, {"a/b", ""}, {"a/b/", ""},
+		{"a/b/c", ""}, {"a/b/c/", ""}, {"a/b/c/d", ""}, {"a/b/c/d", "v2"},
+		{"a/b/c0", "v1"}, {"a/b/cd", ""}, {"zzz", ""},
+	}
+
+	ctx := context.Background()
+	for _, prefix := range prefixes {
+		for _, delimiter := range []string{"", "/", "c"} {
+			for _, max := range []int{1, 2, 3, 1000} {
+				for _, marker := range markers {
+					keyMarker, versionIdMarker := marker.key, marker.versionId
+					for page := 1; ; page++ {
+						name := fmt.Sprintf("prefix %q delimiter %q max %d marker %q@%q page %d",
+							prefix, delimiter, max, marker.key, marker.versionId, page)
+						got, err := backend.WalkVersions(ctx, mapFS, prefix, delimiter,
+							keyMarker, versionIdMarker, max, getVersions, skipDirs)
+						if err != nil {
+							t.Fatalf("%s: walk versions: %v", name, err)
+						}
+						want, err := backend.WalkVersions(ctx, rootWalkFS{mapFS}, prefix, delimiter,
+							keyMarker, versionIdMarker, max, getVersions, skipDirs)
+						if err != nil {
+							t.Fatalf("%s: walk versions from the root: %v", name, err)
+						}
+						if g, w := walkVersionsPage(got), walkVersionsPage(want); g != w {
+							t.Fatalf("%s:\nexpected\n%s\ninstead got\n%s", name, w, g)
+						}
+						if !got.Truncated {
+							break
+						}
+						keyMarker, versionIdMarker = got.NextMarker, got.NextVersionIdMarker
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestWalkVersionsPrefixInSkipDir checks that a prefix naming a skipped
+// directory, or a directory inside one, lists nothing, also when it spells
+// the skipped directory in another case on a case-insensitive file system.
+func TestWalkVersionsPrefixInSkipDir(t *testing.T) {
+	fsys := caseFoldFS{fstest.MapFS{
+		".sgwtmp/multipart/hash/upload/1": {},
+		"d/.zfs/snap":                     {},
+		"obj":                             {},
+	}}
+	skipDirs := backend.SkipDirs{Root: []string{".sgwtmp"}, Any: []string{".zfs"}}
+
+	for _, prefix := range []string{
+		".sgwtmp/",
+		".sgwtmp/multipart/",
+		".sgwtmp/multipart/hash/upload/1",
+		".SGWTMP/multipart/hash/upload/",
+		".SgwTmp/multipart/",
+		"d/.zfs/",
+		"d/.ZFS/snap",
+	} {
+		for _, delimiter := range []string{"", "/"} {
+			res, err := backend.WalkVersions(context.Background(), fsys, prefix, delimiter, "", "", 1000,
+				getVersionsTestFunc, skipDirs)
+			if err != nil {
+				t.Errorf("prefix %q delimiter %q: walk versions: %v", prefix, delimiter, err)
+				continue
+			}
+			if len(res.ObjectVersions) != 0 || len(res.CommonPrefixes) != 0 {
+				t.Errorf("prefix %q delimiter %q: listed versions %v and common prefixes %v",
+					prefix, delimiter, printVersionObjects(res.ObjectVersions),
+					printCommonPrefixes(res.CommonPrefixes))
+			}
+		}
+	}
 }
