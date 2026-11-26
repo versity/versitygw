@@ -67,6 +67,24 @@ const errInvalidName = syscall.Errno(123)
 // empty." — the POSIX equivalent is ENOTEMPTY.
 const errDirNotEmpty = syscall.Errno(145)
 
+// errSharingViolation is Windows ERROR_SHARING_VIOLATION (32): "The process
+// cannot access the file because it is being used by another process."
+const errSharingViolation = syscall.Errno(32)
+
+// isErrFileInUse reports whether err indicates that a file can't be replaced
+// because it's open. A rename without POSIX semantics can't replace a file
+// that's open, even with FILE_SHARE_DELETE as every object read opens it:
+// it fails with ERROR_ACCESS_DENIED (5), or with ERROR_SHARING_VIOLATION
+// (32) when the file was opened without FILE_SHARE_DELETE. Access denied is
+// also the error for a file that can't be replaced for lack of permission.
+func isErrFileInUse(err error) bool {
+	var sysErr syscall.Errno
+	if errors.As(err, &sysErr) {
+		return sysErr == syscall.ERROR_ACCESS_DENIED || sysErr == errSharingViolation
+	}
+	return false
+}
+
 // isErrNameTooLong reports whether err indicates that a filename or path
 // component is too long. On Windows this covers both ENAMETOOLONG
 // (ERROR_FILENAME_EXCED_RANGE, 206) and ERROR_INVALID_NAME (123), which is

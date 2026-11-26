@@ -93,6 +93,13 @@ func isErrDirNotEmpty(err error) bool {
 	return errors.Is(err, syscall.ENOTEMPTY)
 }
 
+// isErrFileInUse reports whether err indicates that a file can't be replaced
+// because it's open. A file being open never keeps it from being replaced on
+// POSIX.
+func isErrFileInUse(error) bool {
+	return false
+}
+
 // openForRead opens an object data file for reading.
 func openForRead(name string, useODirect bool) (*os.File, error) {
 	return openDataRead(name, useODirect)

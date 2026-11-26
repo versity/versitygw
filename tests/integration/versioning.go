@@ -3658,6 +3658,290 @@ func Versioning_DeleteObject_implicit_dir(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+// Versioning_DeleteObject_delete_marker_hidden_version hides an object
+// version with a delete marker and makes it current again by deleting the
+// delete marker: right away, or after a later put archived the delete marker
+// and the deletion of that put made it current again. The keys include ones
+// ending in a segment of 255 bytes, the longest name a file can have, at the
+// root of the bucket and under a prefix. The version comes back with its
+// data, ETag, version id, last modified time, checksum, content type,
+// metadata and tags.
+func Versioning_DeleteObject_delete_marker_hidden_version(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_delete_marker_hidden_version"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		segment := strings.Repeat("a", 255)
+		for _, c := range []struct {
+			obj      string
+			archived bool
+		}{
+			{obj: "my-obj"},
+			{obj: "my-archived-obj", archived: true},
+			{obj: segment},
+			{obj: "my-dir/" + segment},
+		} {
+			obj, archived := c.obj, c.archived
+
+			put, err := putObjectWithData(256*1024, &s3.PutObjectInput{
+				Bucket:      &bucket,
+				Key:         &obj,
+				ContentType: getPtr("text/plain"),
+				Metadata:    map[string]string{"foo": "bar"},
+				Tagging:     getPtr("key=val"),
+			}, s3client, withPutObjectChecksumAlgo(types.ChecksumAlgorithmSha256))
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			want, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:       &bucket,
+				Key:          &obj,
+				ChecksumMode: types.ChecksumModeEnabled,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			del, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if del.DeleteMarker == nil || !*del.DeleteMarker {
+				return fmt.Errorf("%v: expected the delete to create a delete marker", obj)
+			}
+
+			if archived {
+				out, err := putObjectWithData(10, &s3.PutObjectInput{
+					Bucket: &bucket,
+					Key:    &obj,
+				}, s3client)
+				if err != nil {
+					return err
+				}
+
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+					Bucket:    &bucket,
+					Key:       &obj,
+					VersionId: out.res.VersionId,
+				})
+				cancel()
+				if err != nil {
+					return err
+				}
+			}
+
+			// the delete marker hides the version
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err == nil {
+				return fmt.Errorf("%v: expected NotFound, instead got nil", obj)
+			}
+			if err := checkSdkApiErr(err, "NotFound"); err != nil {
+				return fmt.Errorf("%v: %w", obj, err)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: del.VersionId,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			got, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket:       &bucket,
+				Key:          &obj,
+				ChecksumMode: types.ChecksumModeEnabled,
+			})
+			if err != nil {
+				cancel()
+				return err
+			}
+			body, err := io.ReadAll(got.Body)
+			got.Body.Close()
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if !isSameData(body, put.data) {
+				return fmt.Errorf("%v: expected the %v bytes of the hidden version, instead got %v other bytes",
+					obj, len(put.data), len(body))
+			}
+			for _, field := range []struct {
+				name      string
+				want, got *string
+			}{
+				{"ETag", want.ETag, got.ETag},
+				{"VersionId", want.VersionId, got.VersionId},
+				{"ChecksumSHA256", want.ChecksumSHA256, got.ChecksumSHA256},
+				{"Content-Type", want.ContentType, got.ContentType},
+			} {
+				if getString(field.got) != getString(field.want) {
+					return fmt.Errorf("%v: expected the %v to be %v, instead got %v",
+						obj, field.name, getString(field.want), getString(field.got))
+				}
+			}
+			if want.LastModified == nil || got.LastModified == nil ||
+				!got.LastModified.Equal(*want.LastModified) {
+				return fmt.Errorf("%v: expected the LastModified to be %v, instead got %v",
+					obj, want.LastModified, got.LastModified)
+			}
+			if !maps.Equal(got.Metadata, want.Metadata) {
+				return fmt.Errorf("%v: expected the metadata to be %v, instead got %v",
+					obj, want.Metadata, got.Metadata)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			tagging, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			tags := []types.Tag{{Key: getPtr("key"), Value: getPtr("val")}}
+			if !areTagsSame(tagging.TagSet, tags) {
+				return fmt.Errorf("%v: expected the tags to be %v, instead got %v",
+					obj, tags, tagging.TagSet)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			versions, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+				Bucket: &bucket,
+				Prefix: &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if len(versions.DeleteMarkers) != 0 {
+				return fmt.Errorf("%v: expected empty delete markers list, instead got %v",
+					obj, versions.DeleteMarkers)
+			}
+			if len(versions.Versions) != 1 {
+				return fmt.Errorf("%v: expected 1 object version, instead got %v",
+					obj, len(versions.Versions))
+			}
+			v := versions.Versions[0]
+			if getString(v.VersionId) != getString(want.VersionId) ||
+				v.IsLatest == nil || !*v.IsLatest {
+				return fmt.Errorf("%v: expected the version %v to be the latest, instead got %v (latest: %v)",
+					obj, getString(want.VersionId), getString(v.VersionId), v.IsLatest)
+			}
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// Versioning_DeleteObject_delete_marker_in_flight_read deletes objects while
+// they're read: an object version, and the null version of a bucket whose
+// versioning is suspended, which the delete marker replaces. A read that is
+// in progress when the delete marker is created returns the whole object.
+func Versioning_DeleteObject_delete_marker_in_flight_read(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_delete_marker_in_flight_read"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// the object is much larger than the network buffers, so most of it
+		// is left to read when the delete marker is created
+		const dataLen, readLen = 32 * 1024 * 1024, 1024 * 1024
+
+		// readDuringDelete reads the first readLen bytes of obj, deletes it
+		// and then reads the rest. It returns the size and the sha256 sum
+		// of what was read.
+		readDuringDelete := func(obj string) (int64, []byte, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
+			defer cancel()
+			out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			if err != nil {
+				return 0, nil, err
+			}
+			defer out.Body.Close()
+
+			hasher := sha256.New()
+			n, err := io.CopyN(hasher, out.Body, readLen)
+			if err != nil {
+				return n, nil, fmt.Errorf("read the object before the delete: %w", err)
+			}
+
+			delCtx, delCancel := context.WithTimeout(context.Background(), shortTimeout)
+			del, err := s3client.DeleteObject(delCtx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			delCancel()
+			if err != nil {
+				return n, nil, err
+			}
+			if del.DeleteMarker == nil || !*del.DeleteMarker {
+				return n, nil, fmt.Errorf("expected the delete to create a delete marker")
+			}
+
+			rest, err := io.Copy(hasher, out.Body)
+			n += rest
+			if err != nil {
+				return n, nil, fmt.Errorf("read the object after the delete: %w", err)
+			}
+			return n, hasher.Sum(nil), nil
+		}
+
+		for _, status := range []types.BucketVersioningStatus{
+			types.BucketVersioningStatusEnabled,
+			types.BucketVersioningStatusSuspended,
+		} {
+			err := putBucketVersioningStatus(s3client, bucket, status)
+			if err != nil {
+				return err
+			}
+
+			obj := "my-obj"
+			if status == types.BucketVersioningStatusSuspended {
+				obj = "my-null-obj"
+			}
+
+			put, err := putObjectWithData(dataLen, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+
+			n, sum, err := readDuringDelete(obj)
+			if err != nil {
+				return fmt.Errorf("%v: %w", obj, err)
+			}
+			if n != dataLen || !isSameData(sum, put.csum[:]) {
+				return fmt.Errorf("%v: expected the read to return the %v bytes of the object, instead got %v other bytes",
+					obj, dataLen, n)
+			}
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_DeleteObject_delete_a_delete_marker(s *S3Conf) error {
 	testName := "Versioning_DeleteObject_delete_a_delete_marker"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

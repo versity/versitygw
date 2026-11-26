@@ -2285,6 +2285,8 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_DeleteObject_promoted_version_attributes)
 	ts.Run(Versioning_DeleteObject_promoted_version_last_modified)
 	ts.Run(Versioning_DeleteObject_delete_marker_last_modified)
+	ts.Run(Versioning_DeleteObject_delete_marker_hidden_version)
+	ts.Run(Versioning_DeleteObject_delete_marker_in_flight_read)
 	ts.Run(Versioning_DeleteObject_non_existing_object)
 	ts.Run(Versioning_DeleteObject_implicit_dir)
 	ts.Run(Versioning_DeleteObject_trailing_slash_counterpart)
@@ -4128,6 +4130,8 @@ func GetIntTests() IntTests {
 		"Versioning_DeleteObject_promoted_version_attributes":                              Versioning_DeleteObject_promoted_version_attributes,
 		"Versioning_DeleteObject_promoted_version_last_modified":                           Versioning_DeleteObject_promoted_version_last_modified,
 		"Versioning_DeleteObject_delete_marker_last_modified":                              Versioning_DeleteObject_delete_marker_last_modified,
+		"Versioning_DeleteObject_delete_marker_hidden_version":                             Versioning_DeleteObject_delete_marker_hidden_version,
+		"Versioning_DeleteObject_delete_marker_in_flight_read":                             Versioning_DeleteObject_delete_marker_in_flight_read,
 		"Versioning_DeleteObject_dir_object_latest_version":                                Versioning_DeleteObject_dir_object_latest_version,
 		"Versioning_DeleteObject_non_existing_object":                                      Versioning_DeleteObject_non_existing_object,
 		"Versioning_DeleteObject_implicit_dir":                                             Versioning_DeleteObject_implicit_dir,
