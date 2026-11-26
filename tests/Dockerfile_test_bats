@@ -40,6 +40,8 @@ RUN chown -R tester:tester /home/tester/.cache/go-build /home/tester/go
 
 USER tester
 
+RUN mkdir config log && cp $CONFIG_FILE config/.env && cp $SECRETS_FILE config/.secrets
+
 RUN . $SECRETS_FILE && \
     export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE && \
     aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile $AWS_PROFILE && \
@@ -51,8 +53,6 @@ RUN mkdir /tmp/gw
 RUN openssl genpkey -algorithm RSA -out versitygw-docker.pem -pkeyopt rsa_keygen_bits:2048 && \
     openssl req -new -x509 -key versitygw-docker.pem -out cert-docker.pem -days 365 \
         -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
-
-RUN mkdir config log && cp $CONFIG_FILE config/.env
 
 ENV WORKSPACE=.
 ENV VERSITYGW_TEST_ENV=/home/tester/config/.env

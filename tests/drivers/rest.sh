@@ -261,6 +261,8 @@ rest_go_command_perform_send() {
     return 1
   fi
   local header_file="" output_file="" params=("$@")
+  local -a params
+
   for ((i=0; i < $#; i++)); do
     if [ "${!i}" == "-headerFile" ]; then
       next_idx=$((i+1))
@@ -278,6 +280,7 @@ rest_go_command_perform_send() {
     output_file="$TEST_FILE_FOLDER/$response"
     params+=("-outputFile" "$output_file")
   fi
+  log 5 "params: ${params[*]}"
   if ! curl_command=$(generate_go_command -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -awsRegion "$AWS_REGION" -url "$AWS_ENDPOINT_URL" "-writeXMLPayloadToFile" "$TEST_FILE_FOLDER/$xml_file" "${params[@]}" 2>&1); then
     log 2 "error: $curl_command"
     return 1
@@ -286,10 +289,12 @@ rest_go_command_perform_send() {
   mapfile -t curl_command_array < <(
     printf '%s' "$curl_command" | python3 -c 'import shlex, sys; [print(arg) for arg in shlex.split(sys.stdin.read())]'
   )
+  log 5 "curl command: ${curl_command[*]}"
   if ! response=$(send_command "${curl_command_array[@]}" 2>&1); then
     log 2 "error sending command: $response"
     return 1
   fi
+  log 5 "response: $response"
   if [ "$header_file" != "" ]; then
     response_file="$header_file"
   else
@@ -467,6 +472,7 @@ send_rest_go_command_callback() {
     log 2 "error sending go command and getting response: $response"
     return 1
   fi
+
   mapfile -t data_and_callback_params <<< "$response"
   data_file="${data_and_callback_params[0]}"
   callback_params=("${data_and_callback_params[@]:1}")

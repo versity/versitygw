@@ -152,13 +152,12 @@ check_part_elements() {
 }
 
 check_list_parts_parts() {
-  if ! check_param_count_gt "data string, part number marker, next part number, etag/size pairs" 3 $#; then
+  if ! check_param_count_gt "data string, number/etag/size triples" 1 $#; then
     return 1
   fi
-  local data_string="$1" part_number_marker="$2" next_part_number_marker="$3"
-  local -a etag_size_pairs=("${@:4}")
-  local response part_number
-  local -a parts=()
+  local data_string="$1" max_parts="$2"
+  local -a number_etag_size_triples=("${@:3}") parts
+  local response part_number etag size
 
   if ! response=$(get_elements_inside_string "$data_string" "Part" 2>&1); then
     log 2 "error getting Part elements: $response"
@@ -169,32 +168,30 @@ check_list_parts_parts() {
     mapfile -t parts <<< "$response"
   fi
 
-  local part_count=$((next_part_number_marker-part_number_marker))
-  if [ $part_count -lt 0 ]; then
-    part_count=0
-  fi
-  if [ ${#parts[@]} -ne "$part_count" ]; then
-    log 2 "part count mismatch, expected '$part_count', actual '${#parts[@]}'"
+  num_parts_returned="${#parts[@]}"
+  if [ "$num_parts_returned" -gt "$max_parts" ]; then
+    log 2 "part count mismatch, maximum '$max_parts', actual '$num_parts_returned'"
     return 1
   fi
-  if [ $((part_count*2)) -ne "${#etag_size_pairs[@]}" ]; then
-    log 2 "part count and etag/size mismatch, expected '$((part_count*2))' fields, actual is '${#etag_size_pairs[@]}'"
+  if [ $((num_parts_returned*3)) -ne "${#number_etag_size_triples[@]}" ]; then
+    log 2 "part count and number/etag/size mismatch, expected '$((num_parts_returned*3))' fields, actual is '${#number_etag_size_triples[@]}'"
     return 1
   fi
 
-  for ((i=0; i<part_count; i++)); do
-    part_number=$((part_number_marker+1+i))
-    etag="${etag_size_pairs[((i*2))]}"
-    if ! check_part_elements "${parts[$i]}" "$part_number" "${etag_size_pairs[((i*2))]}" "${etag_size_pairs[((i*2+1))]}"; then
-      log 2 "error checking part '$part_number' element: $response"
+  for ((i=0; i<num_parts_returned; i++)); do
+    part_number="${number_etag_size_triples[((i*3))]}"
+    etag="${number_etag_size_triples[((i*3+1))]}"
+    size="${number_etag_size_triples[((i*3+2))]}"
+    log 5 "part number: $part_number, etag: $etag, size: $size"
+    if ! check_part_elements "${parts[$i]}" "$part_number" "$etag" "$size"; then
+      log 2 "error checking part number '$part_number': $response"
       return 1
     fi
   done
-  return 0
 }
 
 check_list_with_marker_and_max_parts() {
-  if ! check_param_count_gt "data file, bucket, key, upload ID, max parts, part number marker, expected next part number marker, etag/size pairs" 7 $#; then
+  if ! check_param_count_gt "data file, bucket, key, upload ID, max parts, part number marker, expected next part number marker, part number/etag/size triples" 7 $#; then
     return 1
   fi
   local data_file="$1"
@@ -204,7 +201,7 @@ check_list_with_marker_and_max_parts() {
   local max_parts="$5"
   local part_number_marker="$6"
   local next_part_number_marker="$7"
-  local -a etag_size_pairs=("${@:8}")
+  local -a number_etag_size_triples=("${@:8}")
 
   local response list_parts_result
   local -a element_names=() expected_values=() parts=()
@@ -224,7 +221,7 @@ check_list_with_marker_and_max_parts() {
     fi
   done
 
-  if ! check_list_parts_parts "$list_parts_result" "$part_number_marker" "$next_part_number_marker" "${etag_size_pairs[@]}"; then
+  if ! check_list_parts_parts "$list_parts_result" "$max_parts" "${number_etag_size_triples[@]}"; then
     log 2 "error checking parts in parts list"
     return 1
   fi
@@ -232,7 +229,7 @@ check_list_with_marker_and_max_parts() {
 }
 
 list_parts_check_with_marker_and_max_parts() {
-  if ! check_param_count_gt "bucket name, key, upload ID, max parts, part number marker, expected next part number marker, etag/size pairs" 6 $#; then
+  if ! check_param_count_gt "bucket name, key, upload ID, max parts, part number marker, expected next part number marker, part number/etag/size triples" 6 $#; then
     return 1
   fi
   if ! send_rest_go_command_callback "200" "check_list_with_marker_and_max_parts" "-bucketName" "$1" "-objectKey" "$2" "-query" "part-number-marker=$5&max-parts=$4&uploadId=$3" "--" "$@"; then
