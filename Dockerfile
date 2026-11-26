@@ -13,7 +13,8 @@ ENV TIME=${TIME}
 WORKDIR /app
 
 COPY go.mod ./
-RUN go mod download
+RUN --mount=type=bind,source=tests/retry.sh,target=/usr/local/bin/retry \
+    retry go mod download
 
 COPY ./ ./
 
