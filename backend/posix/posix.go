@@ -6920,6 +6920,12 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 			}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 
+		// a requested version of a missing key is NoSuchVersion, as on AWS
+		versionId := backend.GetStringFromPtr(input.VersionId)
+		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) && versionId != "" {
+			return s3response.GetObjectAttributesResponse{}, s3err.GetNoSuchVersionErr(*input.Key, versionId)
+		}
+
 		return s3response.GetObjectAttributesResponse{}, err
 	}
 

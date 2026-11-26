@@ -1981,6 +1981,7 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_post_object_tagging_split_sources)
 	ts.Run(S3IAMAccessControl_put_object_lock_split_sources)
 	ts.Run(S3IAMAccessControl_get_object_attributes_split_sources)
+	ts.Run(S3IAMAccessControl_get_object_attributes_missing_object)
 	ts.Run(S3IAMAccessControl_create_bucket)
 	ts.Run(S3IAMAccessControl_list_buckets)
 	ts.Run(S3IAMAccessControl_governance_bypass_sources)
@@ -2142,6 +2143,7 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_CopyObject_with_legal_hold_policy)
 	ts.Run(AccessControl_CopyObject_with_retention_policy)
 	ts.Run(AccessControl_GetObjectAttributes_policy)
+	ts.Run(AccessControl_GetObjectAttributes_missing_object)
 	if !ts.conf.azureTests {
 		ts.Run(AccessControl_dot_segment_key_rejected_before_policy)
 	}
@@ -2604,6 +2606,7 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_post_object_tagging_split_sources":                             S3IAMAccessControl_post_object_tagging_split_sources,
 		"S3IAMAccessControl_put_object_lock_split_sources":                                 S3IAMAccessControl_put_object_lock_split_sources,
 		"S3IAMAccessControl_get_object_attributes_split_sources":                           S3IAMAccessControl_get_object_attributes_split_sources,
+		"S3IAMAccessControl_get_object_attributes_missing_object":                          S3IAMAccessControl_get_object_attributes_missing_object,
 		"S3IAMAccessControl_create_bucket":                                                 S3IAMAccessControl_create_bucket,
 		"S3IAMAccessControl_list_buckets":                                                  S3IAMAccessControl_list_buckets,
 		"S3IAMAccessControl_governance_bypass_sources":                                     S3IAMAccessControl_governance_bypass_sources,
@@ -4013,6 +4016,7 @@ func GetIntTests() IntTests {
 		"AccessControl_CopyObject_with_legal_hold_policy":                                  AccessControl_CopyObject_with_legal_hold_policy,
 		"AccessControl_CopyObject_with_retention_policy":                                   AccessControl_CopyObject_with_retention_policy,
 		"AccessControl_GetObjectAttributes_policy":                                         AccessControl_GetObjectAttributes_policy,
+		"AccessControl_GetObjectAttributes_missing_object":                                 AccessControl_GetObjectAttributes_missing_object,
 		"AccessControl_dot_segment_key_rejected_before_policy":                             AccessControl_dot_segment_key_rejected_before_policy,
 		"AccessControl_bucket_policy_condition_ip_allow":                                   AccessControl_bucket_policy_condition_ip_allow,
 		"AccessControl_bucket_policy_condition_ip_deny_no_match":                           AccessControl_bucket_policy_condition_ip_deny_no_match,

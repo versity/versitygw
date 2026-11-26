@@ -145,6 +145,55 @@ func TestGetObjectAttributesPartsCount(t *testing.T) {
 	}
 }
 
+// TestGetObjectAttributesMissingKeyVersion checks that a version requested on
+// a missing key is NoSuchVersion, as on AWS, whether the version ID is live
+// on another key or doesn't exist at all, and that a missing key without a
+// version is still NoSuchKey.
+func TestGetObjectAttributesMissingKeyVersion(t *testing.T) {
+	p := newTestPosix(t, func(t *testing.T) (meta.MetadataStorer, PosixOpts) {
+		return meta.XattrMeta{}, PosixOpts{NewDirPerm: 0755, VersioningDir: t.TempDir()}
+	})
+	bucket := "testbucket"
+	createTestBucket(t, p, bucket)
+
+	ctx := context.Background()
+	err := p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled)
+	if err != nil {
+		t.Fatalf("put bucket versioning: %v", err)
+	}
+	put, err := p.PutObject(ctx, s3response.PutObjectInput{
+		Bucket:        &bucket,
+		Key:           aws.String("obj"),
+		Body:          strings.NewReader("data"),
+		ContentLength: aws.Int64(4),
+	})
+	if err != nil {
+		t.Fatalf("put object: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		versionId *string
+		want      s3err.APIError
+	}{
+		{"version of another key", &put.VersionID, s3err.GetAPIError(s3err.ErrNoSuchVersion)},
+		{"non-existing version", aws.String("01G65Z755AFWAKHE12NY0CQ9FH"), s3err.GetAPIError(s3err.ErrNoSuchVersion)},
+		{"no version", nil, s3err.GetAPIError(s3err.ErrNoSuchKey)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := p.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+				Bucket:           &bucket,
+				Key:              aws.String("missing-obj"),
+				VersionId:        tc.versionId,
+				ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesEtag},
+			})
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("expected %v, got %v", tc.want.Code, err)
+			}
+		})
+	}
+}
+
 // removeAfterReadMeta runs remove, once it is set, after the next read of
 // attribute of object, so that the object is removed between that read and
 // what the caller does next.

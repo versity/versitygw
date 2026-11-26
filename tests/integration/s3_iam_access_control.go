@@ -1297,6 +1297,55 @@ func S3IAMAccessControl_get_object_attributes_split_sources(s *S3Conf) error {
 	})
 }
 
+// S3IAMAccessControl_get_object_attributes_missing_object verifies a missing
+// object is NoSuchKey to a caller granted s3:GetObjectAttributes by the
+// bucket policy and s3:ListBucket by the identity policy. Without
+// s3:ListBucket, s3:GetObject or not, the denial names s3:ListBucket on the
+// bucket, as AWS does.
+func S3IAMAccessControl_get_object_attributes_missing_object(s *S3Conf) error {
+	testName := "S3IAMAccessControl_get_object_attributes_missing_object"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3ListBucket, Resource: bucketArn(bucket),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect: "Allow", Principal: user.arn, Action: actS3GetObjectAttributes, Resource: objectsArn(bucket),
+		}); err != nil {
+			return err
+		}
+
+		getObjectAttributes := func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := user.client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+				Bucket:           &bucket,
+				Key:              getPtr("missing"),
+				ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesEtag},
+			})
+			cancel()
+			return err
+		}
+
+		if err := checkApiErr(getObjectAttributes(), s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+			return fmt.Errorf("s3:ListBucket from the identity policy: %w", err)
+		}
+
+		if err := putS3IAMUserPolicy(root, user, "p", policyDoc(accessStatement{
+			Effect: "Allow", Action: actS3GetObject, Resource: objectsArn(bucket),
+		})); err != nil {
+			return err
+		}
+
+		return checkApiErr(getObjectAttributes(), wantImplicitDeny(user.arn, actS3ListBucket, bucketArn(bucket)))
+	})
+}
+
 // S3IAMAccessControl_create_bucket verifies s3:CreateBucket is gated by the
 // identity policy alone — the bucket doesn't exist yet, so there is no
 // bucket policy or ACL to consult — and that the grant is resource-scoped to

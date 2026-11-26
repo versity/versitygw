@@ -7650,7 +7650,51 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 				return err
 			}
 
-			return nil
+			missingObj := "missing-" + obj
+			nonExistingVersion := getPtr("01G65Z755AFWAKHE12NY0CQ9FH")
+			getAttributesOf := func(key string, versionId *string) error {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := userClient.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+					Bucket:           &bucket,
+					Key:              &key,
+					VersionId:        versionId,
+					ObjectAttributes: types.ObjectAttributesChecksum.Values(),
+				})
+				cancel()
+				return err
+			}
+
+			// Without s3:ListBucket a missing key or version is AccessDenied
+			resource := fmt.Sprintf(`["arn:aws:s3:::%s","arn:aws:s3:::%s/*"]`, bucket, bucket)
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectVersionAttributes", "s3:GetObjectVersion"]`, resource)
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			err = checkApiErr(getAttributesOf(missingObj, res.res.VersionId), s3err.GetAPIError(s3err.ErrAccessDenied))
+			if err != nil {
+				return err
+			}
+
+			err = checkApiErr(getAttributesOf(obj, nonExistingVersion), s3err.GetAPIError(s3err.ErrAccessDenied))
+			if err != nil {
+				return err
+			}
+
+			// With s3:ListBucket it is reported as such
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectVersionAttributes", "s3:ListBucket"]`, resource)
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			err = checkApiErr(getAttributesOf(missingObj, res.res.VersionId), s3err.GetAPIError(s3err.ErrNoSuchVersion))
+			if err != nil {
+				return err
+			}
+
+			return checkApiErr(getAttributesOf(obj, nonExistingVersion), s3err.GetAPIError(s3err.ErrNoSuchVersion))
 		})
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
