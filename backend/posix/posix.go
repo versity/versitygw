@@ -24,6 +24,7 @@ import (
 	"hash"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -318,7 +319,10 @@ type PosixOpts struct {
 	ForceNoObjLockFile bool
 	// ObjectLockMode selects flock, fcntl, local, or none for conditional object
 	// publishes. An empty value defaults to flock. Local locking is only atomic
-	// within a single gateway process; none rejects conditional writes.
+	// within a single gateway process; none rejects conditional writes. With
+	// sidecar metadata and more than one gateway sharing the filesystem, the
+	// lock keeps an object's data and metadata in step: use flock or fcntl on
+	// a filesystem whose locks exclude across nodes.
 	ObjectLockMode ObjectLockMode
 	// EnableODirect enables best-effort O_DIRECT for object data reads/writes.
 	// Disabled by default.
@@ -478,6 +482,14 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 
 	if sidecardirAbs != "" {
 		fmt.Println("Using sidecar directory for metadata:", sidecardirAbs)
+		// Sidecar metadata is stored at the object path before the object's
+		// data is published, so only the publish lock keeps an object's
+		// data and metadata in step.
+		if objectLockMode == ObjectLockModeLocal || objectLockMode == ObjectLockModeNone {
+			fmt.Printf("Warning: --sidecar with --object-lock-mode %v only serializes object publishes within this gateway: "+
+				"gateways sharing the filesystem can leave an object's data and metadata out of step, "+
+				"use flock or fcntl on a filesystem whose locks exclude across nodes\n", objectLockMode)
+		}
 	}
 
 	// A gateway that is not root can only chown a file to an account whose
@@ -1505,15 +1517,6 @@ func (p *Posix) deleteNullVersionIdObject(bucket, key string) error {
 	return nil
 }
 
-func isRemovableAttr(attr string) bool {
-	switch attr {
-	case objectLegalHoldKey, objectRetentionKey:
-		return true
-	default:
-		return false
-	}
-}
-
 // dirObjectAttrs are the attributes that make up the state of a directory
 // object. The directory is kept across versions and is also the parent of
 // other objects, so it may carry attributes that don't belong to the object:
@@ -1654,7 +1657,7 @@ func (p *Posix) clearDirObjectAttrs(bucket, key string) error {
 }
 
 // Creates a new copy(version) of an object in the versioning directory
-func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Account, removeAttributes bool) (versionPath string, err error) {
+func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Account) (versionPath string, err error) {
 	sf, err := os.Open(p.ObjectPath(bucket, key))
 	if err != nil {
 		return "", err
@@ -1733,14 +1736,6 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 		err = p.meta.StoreAttribute(f.File(), versionPath, "", attr, data)
 		if err != nil {
 			return versionPath, fmt.Errorf("store %v attribute: %w", attr, err)
-		}
-
-		// remove object lock attributes in delete marker
-		if removeAttributes && isRemovableAttr(attr) {
-			err := p.meta.DeleteAttribute(bucket, key, attr)
-			if err != nil {
-				return versionPath, fmt.Errorf("remove %s attribute: %w", attr, err)
-			}
 		}
 	}
 
@@ -4715,7 +4710,8 @@ func (p *Posix) checkPutPreconditions(bucket, object string, ifMatch, ifNoneMatc
 	}
 
 	// A delete marker as the current version leaves the key without an
-	// object, although the entry keeps the etag of the version it hides.
+	// object, although the directory of a directory object's delete marker
+	// keeps the etag of the version it hides.
 	isDel, err := p.isObjDeleteMarker(bucket, object)
 	if isDel || errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
 		return backend.EvaluateObjectPutPreconditions("", ifMatch, ifNoneMatch, false)
@@ -4753,7 +4749,8 @@ func (p *Posix) checkDeletePreconditions(bucket, object string, conds backend.Ob
 		return fmt.Errorf("stat object: %w", err)
 	}
 
-	// a delete marker keeps the etag of the version it hides
+	// the directory of a directory object's delete marker keeps the etag
+	// of the version it hides
 	isDel, err := p.isObjDeleteMarker(bucket, object)
 	if err != nil {
 		return err
@@ -4804,7 +4801,7 @@ func (p *Posix) snapshotObjVersion(bucket, key string, vStatus types.BucketVersi
 		isVersionIdMissing = len(vIdBytes) == 0
 	}
 	if !isVersionIdMissing {
-		_, err := p.createObjVersion(bucket, key, d.Size(), acct, false)
+		_, err := p.createObjVersion(bucket, key, d.Size(), acct)
 		if err != nil {
 			return fmt.Errorf("create object version: %w", err)
 		}
@@ -5502,7 +5499,15 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 
 	if p.versioningEnabled() && vStatus != "" {
 		if getString(input.VersionId) == "" {
-			err := p.checkDeletePreconditions(bucket, object, conds)
+			// the delete marker replaces the current version at the object
+			// path: serialize with competing writers to the same key
+			unlock, err := p.lockObjectPublish(ctx, bucket, object)
+			if err != nil {
+				return nil, err
+			}
+			defer unlock()
+
+			err = p.checkDeletePreconditions(bucket, object, conds)
 			if err != nil {
 				return nil, err
 			}
@@ -5544,40 +5549,40 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				vId = []byte(nullVersionId)
 			}
 
-			// Creates a new object version in the versioning directory
+			// Creates a new object version in the versioning directory. The
+			// version keeps its object lock settings until it's replaced by
+			// the delete marker, which has none.
 			if p.isBucketVersioningEnabled(vStatus) || string(vId) != nullVersionId {
-				_, err = p.createObjVersion(bucket, object, fi.Size(), acct, true)
+				_, err = p.createObjVersion(bucket, object, fi.Size(), acct)
 				if err != nil {
 					return nil, err
 				}
 			}
 
-			// Mark the object as a delete marker
-			err = p.meta.StoreAttribute(nil, bucket, object, deleteMarkerKey, []byte{})
-			if err != nil {
-				return nil, fmt.Errorf("set delete marker: %w", err)
-			}
-
 			versionId := nullVersionId
 			if p.isBucketVersioningEnabled(vStatus) {
-				// Generate & set a unique versionId for the delete marker
+				// Generate a unique versionId for the delete marker
 				versionId = ulid.Make().String()
-				err = p.meta.StoreAttribute(nil, bucket, object, versionIdKey, []byte(versionId))
-				if err != nil {
-					return nil, fmt.Errorf("set versionId: %w", err)
-				}
-			} else {
-				err = p.meta.DeleteAttribute(bucket, object, versionIdKey)
-				if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-					return nil, fmt.Errorf("delete versionId: %w", err)
-				}
 			}
 
-			// The delete marker is last modified when it's created, not
-			// when the version it hides was. Setting the time needs the
-			// entry to be owned by the gateway, otherwise it's left as is.
-			now := time.Now()
-			_ = os.Chtimes(objpath, now, now)
+			if isDir {
+				err = p.markDeleteMarker(bucket, object, versionId)
+			} else {
+				err = p.publishDeleteMarker(bucket, object, versionId, acct)
+				if isErrNameTooLong(err) || isErrFileInUse(err) {
+					// The version's file can't be replaced on Linux when its
+					// name leaves no room for the temporary name an
+					// overwrite takes, or on Windows while it's open for
+					// reading. The file is made the delete marker then,
+					// which keeps the version's data.
+					log.Printf("WARNING: delete marker of %v/%v keeps the version's data, it can't replace the version's file: %v",
+						bucket, object, err)
+					err = p.markDeleteMarker(bucket, object, versionId)
+				}
+			}
+			if err != nil {
+				return nil, err
+			}
 
 			return &s3.DeleteObjectOutput{
 				DeleteMarker: getBoolPtr(true),
@@ -5854,6 +5859,108 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	p.removeParents(bucket, object)
 
 	return &s3.DeleteObjectOutput{}, nil
+}
+
+// publishDeleteMarker publishes the delete marker versionId of the file key
+// object in place of its current version, which the caller has archived if
+// it is kept. A delete marker holds no data: it is a new empty file, so the
+// space of the version it replaces is released, and reads of that version
+// already in progress finish with it, as they do when an object is
+// overwritten.
+func (p *Posix) publishDeleteMarker(bucket, object, versionId string, acct auth.Account) error {
+	f, err := p.openObjectTmpFile(bucket, object, 0, acct, skipFalloc, odirectNotAllowed)
+	if err != nil {
+		return fmt.Errorf("open tmp file: %w", err)
+	}
+	defer f.cleanup()
+
+	keep := []string{deleteMarkerKey}
+	if versionId != nullVersionId {
+		keep = append(keep, versionIdKey)
+	}
+
+	// path-based metadata still holds the attributes of the replaced
+	// version, which the delete marker doesn't have
+	err = p.meta.ReplaceObject(bucket, object, keep)
+	if err != nil {
+		return fmt.Errorf("remove replaced version attributes: %w", err)
+	}
+
+	// Path-based metadata is stored at the object path right away, while the
+	// file waits for its publish: the delete marker's attributes are stored
+	// right before it, so that they're out of step with the file at the
+	// path for as short a time as possible.
+	err = p.meta.StoreAttribute(f.File(), bucket, object, deleteMarkerKey, []byte{})
+	if err != nil {
+		return fmt.Errorf("set delete marker: %w", err)
+	}
+	if versionId != nullVersionId {
+		err = p.meta.StoreAttribute(f.File(), bucket, object, versionIdKey, []byte(versionId))
+		if err != nil {
+			return fmt.Errorf("set versionId: %w", err)
+		}
+	}
+
+	err = linkDeleteMarker(f)
+	if err != nil {
+		return fmt.Errorf("link delete marker: %w", err)
+	}
+
+	// A publish that the publish lock doesn't exclude, such as one of
+	// another gateway sharing the filesystem, can leave the delete
+	// marker's file at the object path with another object's attributes.
+	_, dmErr := p.meta.RetrieveAttribute(nil, bucket, object, deleteMarkerKey)
+	vId, vErr := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
+	if errors.Is(vErr, meta.ErrNoSuchKey) {
+		vId, vErr = []byte(nullVersionId), nil
+	}
+	if dmErr != nil || vErr != nil || string(vId) != versionId {
+		return fmt.Errorf("delete marker %v of %v/%v lost its attributes to a concurrent publish: delete marker: %v, versionId %q: %v",
+			versionId, bucket, object, dmErr, vId, vErr)
+	}
+	return nil
+}
+
+// linkDeleteMarker publishes the file of a delete marker, a variable so that
+// tests can make it fail
+var linkDeleteMarker = (*tmpfile).link
+
+// markDeleteMarker makes the entry at the path of object the delete marker
+// versionId in place, keeping what the entry holds: the directory of a
+// directory object, which is kept across versions and holds no data, or the
+// file of a version that couldn't be replaced with an empty one.
+func (p *Posix) markDeleteMarker(bucket, object, versionId string) error {
+	err := p.meta.StoreAttribute(nil, bucket, object, deleteMarkerKey, []byte{})
+	if err != nil {
+		return fmt.Errorf("set delete marker: %w", err)
+	}
+
+	if versionId != nullVersionId {
+		err = p.meta.StoreAttribute(nil, bucket, object, versionIdKey, []byte(versionId))
+		if err != nil {
+			return fmt.Errorf("set versionId: %w", err)
+		}
+	} else {
+		err = p.meta.DeleteAttribute(bucket, object, versionIdKey)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return fmt.Errorf("delete versionId: %w", err)
+		}
+	}
+
+	// a delete marker has no object lock settings
+	for _, attr := range []string{objectLegalHoldKey, objectRetentionKey} {
+		err = p.meta.DeleteAttribute(bucket, object, attr)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return fmt.Errorf("remove %v attribute: %w", attr, err)
+		}
+	}
+
+	// The delete marker is last modified when it's created, not when the
+	// version it hides was. Setting the time needs the entry to be owned
+	// by the gateway, otherwise it's left as is.
+	now := time.Now()
+	_ = os.Chtimes(p.ObjectPath(bucket, object), now, now)
+	return nil
 }
 
 // newestObjVersionId returns the id of the newest version, other than the

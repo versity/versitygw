@@ -166,7 +166,7 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 			},
 			&cli.StringFlag{
 				Name:        "object-lock-mode",
-				Usage:       "lock mode for conditional object publishes: flock, fcntl, local, or none",
+				Usage:       "lock mode for conditional object publishes: flock, fcntl, local, or none (gateways sharing a filesystem with --sidecar need flock or fcntl locks that exclude across nodes)",
 				EnvVars:     []string{"VGW_OBJECT_LOCK_MODE"},
 				DefaultText: "flock",
 				Destination: &objectLockMode,
