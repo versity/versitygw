@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/controllers"
 )
@@ -37,7 +38,7 @@ func TestAdminCreateBucketLocationConstraint(t *testing.T) {
 	}{
 		{name: "standalone admin server", newApp: func(t *testing.T) *fiber.App {
 			iam := testAdminIAM()
-			ctrl := controllers.New(backend.BackendUnsupported{}, iam, nil, nil, nil, false, false, "", 0)
+			ctrl := controllers.New(backend.BackendUnsupported{}, iam, nil, nil, nil, false, false, "", 0, auth.ListBucketsScopeOwned)
 			srv := NewAdminServer(backend.BackendUnsupported{}, testAdminRoot, region, iam, nil, ctrl,
 				WithAdminConcurrencyLimiter(10, 10),
 				WithAdminQuiet(),

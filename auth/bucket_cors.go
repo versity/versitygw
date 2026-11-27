@@ -28,6 +28,9 @@ import (
 // headerRegex is the regexp to validate http header names
 var headerRegex = regexp.MustCompile(`^[!#$%&'*+\-.^_` + "`" + `|~0-9A-Za-z]+$`)
 
+// maxCORSRules is the maximum number of rules in a bucket CORS configuration
+const maxCORSRules = 100
+
 type (
 	CORSHeader     string
 	CORSHTTPMethod string
@@ -101,6 +104,19 @@ func (cc *CORSConfiguration) Validate() error {
 		return s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
+	// AllowedOrigin and AllowedMethod are required by the XML schema, so a
+	// rule missing either one fails before the rules limit and value checks
+	for _, rule := range cc.Rules {
+		if err := rule.validateRequired(); err != nil {
+			return err
+		}
+	}
+
+	if len(cc.Rules) > maxCORSRules {
+		debuglogger.Logf("too many CORS rules: %d", len(cc.Rules))
+		return s3err.GetAPIError(s3err.ErrCORSRulesLimited)
+	}
+
 	// validate each CORS rule
 	for _, rule := range cc.Rules {
 		if err := rule.Validate(); err != nil {
@@ -163,12 +179,11 @@ type CORSRule struct {
 	MaxAgeSeconds  *int32
 }
 
-// Validate validates and returns error if CORS configuration has invalid rule
+// Validate validates the CORS rule origins, methods and headers.
+// A rule missing AllowedOrigin or AllowedMethod fails first.
 func (cr *CORSRule) Validate() error {
-	// AllowedOrigins  can't be empty
-	if len(cr.AllowedOrigins) == 0 {
-		debuglogger.Logf("empty CORS allowed origins")
-		return s3err.GetAPIError(s3err.ErrMalformedXML)
+	if err := cr.validateRequired(); err != nil {
+		return err
 	}
 	// validate CORS allowed origins
 	for _, origin := range cr.AllowedOrigins {
@@ -177,11 +192,6 @@ func (cr *CORSRule) Validate() error {
 			return err
 		}
 	}
-	// AllowedMethods can't be empty
-	if len(cr.AllowedMethods) == 0 {
-		debuglogger.Logf("empty CORS allowed methods")
-		return s3err.GetAPIError(s3err.ErrMalformedXML)
-	}
 	// validate CORS allowed methods
 	for _, method := range cr.AllowedMethods {
 		if !method.IsValid() {
@@ -189,19 +199,44 @@ func (cr *CORSRule) Validate() error {
 			return s3err.GetUnsopportedCORSMethodErr(method.String())
 		}
 	}
-	// validate CORS allowed headers
+	// validate CORS allowed headers: the wildcard check runs before
+	// the character check
 	for _, header := range cr.AllowedHeaders {
+		if strings.Count(header.String(), "*") > 1 {
+			debuglogger.Logf("multiple wildcards in CORS allowed header: %s", header)
+			return s3err.GetMultipleWildcardCORSHeaderErr(header.String())
+		}
 		if !header.IsValid() {
 			debuglogger.Logf("invalid CORS allowed header: %s", header)
 			return s3err.GetInvalidCORSHeaderErr(header.String())
 		}
 	}
-	// validate CORS expose headers
+	// validate CORS expose headers: wildcards aren't supported, and
+	// that check runs before the character check
 	for _, header := range cr.ExposeHeaders {
+		if strings.Contains(header.String(), "*") {
+			debuglogger.Logf("wildcard in CORS expose header: %s", header)
+			return s3err.GetWildcardCORSExposeHeaderErr(header.String())
+		}
 		if !header.IsValid() {
 			debuglogger.Logf("invalid CORS exposed header: %s", header)
 			return s3err.GetInvalidCORSHeaderErr(header.String())
 		}
+	}
+
+	return nil
+}
+
+// validateRequired checks that the rule has the AllowedOrigin and
+// AllowedMethod elements the XML schema requires
+func (cr *CORSRule) validateRequired() error {
+	if len(cr.AllowedOrigins) == 0 {
+		debuglogger.Logf("empty CORS allowed origins")
+		return s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+	if len(cr.AllowedMethods) == 0 {
+		debuglogger.Logf("empty CORS allowed methods")
+		return s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	return nil

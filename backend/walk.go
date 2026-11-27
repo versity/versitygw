@@ -82,6 +82,19 @@ func (s SkipDirs) skips(name string, atRoot bool) bool {
 	return slices.ContainsFunc(s.Any, match) || (atRoot && slices.ContainsFunc(s.Root, match))
 }
 
+// skipsPath reports whether dir, a directory path relative to the top of the
+// walked file system, is a skipped directory or inside one.
+func (s SkipDirs) skipsPath(dir string) bool {
+	atRoot := true
+	for name := range strings.SplitSeq(dir, pathSeparator) {
+		if s.skips(name, atRoot) {
+			return true
+		}
+		atRoot = false
+	}
+	return false
+}
+
 var ErrSkipObj = errors.New("skip this object")
 
 // map to store object common prefixes
@@ -157,32 +170,98 @@ type WalkVersioningResults struct {
 }
 
 type ObjVersionFuncResult struct {
-	ObjectVersions      []s3response.ObjectVersion
-	DelMarkers          []s3response.DeleteMarkerEntry
+	ObjectVersions []s3response.ObjectVersion
+	DelMarkers     []s3response.DeleteMarkerEntry
+	// NextVersionIdMarker is the version id listed last
 	NextVersionIdMarker string
-	Truncated           bool
+	// Truncated reports that versions of the key are left out because
+	// the listing is full
+	Truncated bool
 }
 
-type GetVersionsFunc func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*ObjVersionFuncResult, error)
+// GetVersionsFunc lists up to availableObjCount versions of the key at path,
+// the versions following versionIdMarker if it's not empty.
+type GetVersionsFunc func(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*ObjVersionFuncResult, error)
 
 // WalkVersions walks the supplied fs.FS and returns results compatible with
 // ListObjectVersions action response
 func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyMarker, versionIdMarker string, max int, getObj GetVersionsFunc, skipDirs SkipDirs) (WalkVersioningResults, error) {
+	// if max is 0, it should return empty non-truncated result
+	if max == 0 {
+		return WalkVersioningResults{}, nil
+	}
+
+	// The walk starts at the deepest directory the prefix names instead of
+	// at the root, so that its cost doesn't grow with the keys outside it.
+	root, rootEntry, ok := prefixWalkRoot(fileSystem, prefix, skipDirs)
+	if !ok {
+		return WalkVersioningResults{}, nil
+	}
+
 	cpmap := cpMap{}
 	var objects []s3response.ObjectVersion
 	var delMarkers []s3response.DeleteMarkerEntry
-
-	var pastMarker bool
-	if keyMarker == "" {
-		pastMarker = true
-	}
-	var nextMarker string
-	var nextVersionIdMarker string
+	// count is the number of the listed versions, delete markers and
+	// common prefixes
+	var count int
+	// the key and the version id listed last are the markers of the
+	// next page
+	var lastKey, lastVersionId string
 	var truncated bool
 
-	pastVersionIdMarker := versionIdMarker == ""
+	// addCommonPrefix lists the common prefix unless it's listed already
+	// or it doesn't sort after the key marker, as the earlier pages
+	// listed it then.
+	addCommonPrefix := func(cp string) error {
+		if _, ok := cpmap[cp]; ok || cp <= keyMarker {
+			return nil
+		}
+		if count == max {
+			truncated = true
+			return fs.SkipAll
+		}
+		cpmap.Add(cp)
+		count++
+		lastKey, lastVersionId = cp, ""
+		return nil
+	}
 
-	err := walkDirRoot(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
+	// listVersions lists the versions of the key at path. The versions of
+	// the key marker are listed after the version id marker, and none of
+	// them are listed without one.
+	listVersions := func(path, key string, d fs.DirEntry) error {
+		var marker string
+		if key == keyMarker {
+			if versionIdMarker == "" {
+				return nil
+			}
+			marker = versionIdMarker
+		}
+
+		res, err := getObj(path, marker, max-count, d)
+		if err == ErrSkipObj {
+			return nil
+		}
+		if err != nil {
+			if d.IsDir() {
+				return fmt.Errorf("directory to object %q: %w", path, err)
+			}
+			return fmt.Errorf("file to object %q: %w", path, err)
+		}
+		objects = append(objects, res.ObjectVersions...)
+		delMarkers = append(delMarkers, res.DelMarkers...)
+		if n := len(res.ObjectVersions) + len(res.DelMarkers); n > 0 {
+			count += n
+			lastKey, lastVersionId = key, res.NextVersionIdMarker
+		}
+		if res.Truncated {
+			truncated = true
+			return fs.SkipAll
+		}
+		return nil
+	}
+
+	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -207,13 +286,11 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 			key += "/"
 		}
 
-		if !pastMarker {
-			if key == keyMarker {
-				pastMarker = true
-			}
-			if key < keyMarker {
-				return nil
-			}
+		// The keys before the key marker are listed on the earlier pages.
+		// The walk still enters the directories before it, as they hold
+		// the keys between the directory and the key marker.
+		if key < keyMarker {
+			return nil
 		}
 
 		if d.IsDir() {
@@ -238,7 +315,9 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 				prefix != key &&
 				strings.HasPrefix(key, prefix) {
 				before, _, _ := strings.Cut(strings.TrimPrefix(key, prefix), delimiter)
-				cpmap.Add(prefix + before + delimiter)
+				if err := addCommonPrefix(prefix + before + delimiter); err != nil {
+					return err
+				}
 				return fs.SkipDir
 			}
 
@@ -247,30 +326,15 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 			// At this point we know strings.HasPrefix(prefix, key) holds
 			// (i.e. path is an ancestor of the prefix directory). Skip it
 			// unless it is the exact prefix directory.
-			// Note: WalkVersions always walks from "." (unlike Walk, which
-			// narrows the root) because versioning marker semantics require
-			// visiting all entries in order, so this guard is needed instead.
+			// Note: the walk starts at the deepest directory the prefix
+			// names, which is still an ancestor of the prefix unless the
+			// prefix ends with a slash, and it starts at "." when that
+			// directory can't be looked up, so this guard is still needed.
 			if prefix != "" && strings.HasPrefix(prefix, key) && key != prefix {
 				return nil
 			}
 
-			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
-			if err == ErrSkipObj {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("directory to object %q: %w", path, err)
-			}
-			objects = append(objects, res.ObjectVersions...)
-			delMarkers = append(delMarkers, res.DelMarkers...)
-			if res.Truncated {
-				truncated = true
-				nextMarker = key
-				nextVersionIdMarker = res.NextVersionIdMarker
-				return fs.SkipAll
-			}
-
-			return nil
+			return listVersions(path, key, d)
 		}
 
 		// If object doesn't have prefix, don't include in results.
@@ -281,23 +345,7 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		if delimiter == "" {
 			// If no delimiter specified, then all files with matching
 			// prefix are included in results
-			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
-			if err == ErrSkipObj {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("file to object %q: %w", path, err)
-			}
-			objects = append(objects, res.ObjectVersions...)
-			delMarkers = append(delMarkers, res.DelMarkers...)
-			if res.Truncated {
-				truncated = true
-				nextMarker = path
-				nextVersionIdMarker = res.NextVersionIdMarker
-				return fs.SkipAll
-			}
-
-			return nil
+			return listVersions(path, key, d)
 		}
 
 		// Since delimiter is specified, we only want results that
@@ -324,50 +372,70 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		suffix := strings.TrimPrefix(path, prefix)
 		before, _, found := strings.Cut(suffix, delimiter)
 		if !found {
-			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
-			if err == ErrSkipObj {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("file to object %q: %w", path, err)
-			}
-			objects = append(objects, res.ObjectVersions...)
-			delMarkers = append(delMarkers, res.DelMarkers...)
-
-			if res.Truncated {
-				truncated = true
-				nextMarker = path
-				nextVersionIdMarker = res.NextVersionIdMarker
-				return fs.SkipAll
-			}
-			return nil
+			return listVersions(path, key, d)
 		}
 
 		// Common prefixes are a set, so should not have duplicates.
 		// These are abstractly a "directory", so need to include the
 		// delimiter at the end.
-		cpmap.Add(prefix + before + delimiter)
-		if (len(objects) + cpmap.Len()) == int(max) {
-			nextMarker = path
-			truncated = true
+		return addCommonPrefix(prefix + before + delimiter)
+	}
 
-			return fs.SkipAll
-		}
-
-		return nil
-	})
+	var err error
+	if rootEntry == nil {
+		err = walkDirRoot(fileSystem, pathDot, walkFn)
+	} else {
+		err = walkDirEntry(fileSystem, root, rootEntry, walkFn)
+	}
 	if err != nil {
 		return WalkVersioningResults{}, err
 	}
 
-	return WalkVersioningResults{
-		CommonPrefixes:      cpmap.CpArray(),
-		ObjectVersions:      objects,
-		DelMarkers:          delMarkers,
-		Truncated:           truncated,
-		NextMarker:          nextMarker,
-		NextVersionIdMarker: nextVersionIdMarker,
-	}, nil
+	result := WalkVersioningResults{
+		CommonPrefixes: cpmap.CpArray(),
+		ObjectVersions: objects,
+		DelMarkers:     delMarkers,
+		Truncated:      truncated,
+	}
+	if truncated {
+		result.NextMarker = lastKey
+		result.NextVersionIdMarker = lastVersionId
+	}
+	return result, nil
+}
+
+// prefixWalkRoot returns the directory that a walk of the keys with prefix
+// starts at, and the directory entry of that directory. The keys with the
+// prefix are all in the deepest directory the prefix names, or are that
+// directory when the prefix ends with a slash. A walk of the directory visits
+// them in the order a walk of the whole file system does, and the
+// directories outside it hold no key with the prefix. The directory entry is
+// nil when the walk starts at the root. ok is false when no key has the
+// prefix, as the directory is skipped or isn't there.
+func prefixWalkRoot(fsys fs.FS, prefix string, skipDirs SkipDirs) (root string, d fs.DirEntry, ok bool) {
+	i := strings.LastIndex(prefix, pathSeparator)
+	if i < 0 {
+		return pathDot, nil, true
+	}
+	dir := prefix[:i]
+	// The walked keys are made of directory entry names, so none of them is
+	// in a directory with an empty, "." or ".." path element.
+	if dir == pathDot || !fs.ValidPath(dir) || skipDirs.skipsPath(dir) {
+		return "", nil, false
+	}
+
+	info, err := fs.Stat(fsys, dir)
+	switch {
+	case err == nil && info.IsDir():
+		return dir, fs.FileInfoToDirEntry(info), true
+	case err == nil, isDirGone(err):
+		// A file or nothing is where the directory would be.
+		return "", nil, false
+	default:
+		// The walk from the root lists the keys as before when the
+		// directory can't be looked up, e.g. when a name is too long.
+		return pathDot, nil, true
+	}
 }
 
 func readDir(path string, walkstate *walkState) {
@@ -589,19 +657,6 @@ func shouldSkip(path string, entry fs.DirEntry, walkstate *walkState) bool {
 	return entry.IsDir() && walkstate.skipDirs.skips(entry.Name(), path == pathDot)
 }
 
-// inSkipDir reports whether dir, a directory named by the listing prefix, is
-// a skipped directory or inside one.
-func inSkipDir(dir string, walkstate *walkState) bool {
-	i := 0
-	for name := range strings.SplitSeq(dir, pathSeparator) {
-		if walkstate.skipDirs.skips(name, i == 0) {
-			return true
-		}
-		i++
-	}
-	return false
-}
-
 func addContentEntry(objectName string, dirEntry fs.DirEntry, walkstate *walkState) bool {
 	obj, err := walkstate.getObj(objectName, dirEntry)
 	if err == ErrSkipObj {
@@ -663,7 +718,7 @@ func quickWalk(walkstate *walkState) error {
 	if useRootEntries {
 		// keep fast-path semantics but still honor skipDirs for the prefixed
 		// root and every directory above it
-		if !inSkipDir(rootDir, walkstate) {
+		if !walkstate.skipDirs.skipsPath(rootDir) {
 			// Mirror processDir: offer the root directory itself to getObj whenever
 			// its key sorts after the marker, using checkAndMaybeAddCommonPrefix to
 			// handle the delimiter case. This replaces the previous guards that

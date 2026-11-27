@@ -22,7 +22,7 @@ jobs:
 
     - name: Get dependencies
       run: |
-        go get -v -t -d ./...
+        ./tests/retry.sh go get -v -t -d ./...
 
     - name: Build RDMA session server archive
       run: make rdma/librcserver.a
@@ -31,7 +31,7 @@ jobs:
       run: go test -coverprofile profile.txt -race -v -timeout 30s -tags=github ./...
 
     - name: Install govulncheck
-      run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      run: ./tests/retry.sh go install golang.org/x/vuln/cmd/govulncheck@latest
       shell: bash
 
     - name: Run govulncheck
@@ -56,6 +56,9 @@ jobs:
         with:
           go-version: 'stable'
 
+      - name: Get dependencies
+        run: ./tests/retry.sh go mod download
+
       - name: Build for ${{ matrix.os }}/${{ matrix.arch }}
         run: |
           GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -o versitygw-${{ matrix.os }}-${{ matrix.arch }} cmd/versitygw/*.go
@@ -73,6 +76,9 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version: 'stable'
+
+      - name: Get dependencies
+        run: ./tests/retry.sh go mod download
 
       - name: Build all plugins
         run: |

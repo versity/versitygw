@@ -16,11 +16,18 @@ package embedgw
 
 import (
 	"context"
+	"io"
+	"net"
+	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3api"
 )
 
 func TestValidatePortConflicts(t *testing.T) {
@@ -322,5 +329,132 @@ func TestRunVersityGWRejectsInvalidTrustedProxies(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid trusted proxy") {
 		t.Fatalf("error = %q, want substring %q", err, "invalid trusted proxy")
+	}
+}
+
+// policyEvaluatorIAM stands in for an IAM service that evaluates identity
+// policies.
+type policyEvaluatorIAM struct{ auth.IAMService }
+
+func (policyEvaluatorIAM) EvaluatePolicy(string, string, []auth.Action, []string, map[string][]string) (auth.PolicyEvaluation, error) {
+	return auth.PolicyEvaluation{}, nil
+}
+
+// fixedOwnerIAM stands in for an IAM service that fixes bucket ownership.
+type fixedOwnerIAM struct{ auth.IAMService }
+
+func (fixedOwnerIAM) BucketOwner() auth.Account { return auth.Account{Access: "owner"} }
+
+func TestRunVersityGWValidatesListBucketsScope(t *testing.T) {
+	single := auth.NewIAMServiceSingle(auth.Account{Access: "root", Secret: "secret", Role: auth.RoleAdmin})
+	tests := []struct {
+		name    string
+		scope   string
+		iam     auth.IAMService
+		wantErr string
+	}{
+		{name: "invalid value", scope: "shared", wantErr: "invalid list buckets scope"},
+		{name: "accessible with a policy evaluator", scope: "accessible", iam: policyEvaluatorIAM{single}, wantErr: "not supported with an IAM service"},
+		{name: "all with a policy evaluator", scope: "all", iam: policyEvaluatorIAM{single}, wantErr: "not supported with an IAM service"},
+		{name: "accessible with a fixed owner", scope: "accessible", iam: fixedOwnerIAM{single}, wantErr: "not supported with an IAM service"},
+		{name: "all with a fixed owner", scope: "all", iam: fixedOwnerIAM{single}, wantErr: "not supported with an IAM service"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{
+				RootUserAccess:    "root",
+				RootUserSecret:    "secret",
+				Ports:             []string{"127.0.0.1:0"},
+				MaxConnections:    1,
+				MaxRequests:       1,
+				MultipartMaxParts: 1,
+				Quiet:             true,
+				ListBucketsScope:  tt.scope,
+				IAMService:        tt.iam,
+			}
+
+			err := RunVersityGW(context.Background(), backend.BackendUnsupported{}, &cfg)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %q, want substring %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRunVersityGWBannerUsesEffectiveBandwidthOptions(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		RootUserAccess:       "root",
+		RootUserSecret:       "secret",
+		Ports:                []string{port},
+		MaxConnections:       1,
+		MaxRequests:          1,
+		MultipartMaxParts:    1,
+		EgressBandwidthLimit: 1 << 20,
+		S3Options:            []s3api.Option{s3api.WithBandwidthLimit(0, 0, 1_250_000_000, 1<<20)},
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalStdout := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = originalStdout }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runDone := make(chan error, 1)
+	go func() { runDone <- RunVersityGW(ctx, backend.BackendUnsupported{}, &cfg) }()
+	var response *http.Response
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		response, err = http.Get("http://" + port + "/")
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		cancel()
+		<-runDone
+		t.Fatalf("gateway did not start: %v", err)
+	}
+	_ = response.Body.Close()
+	cancel()
+	var runErr error
+	select {
+	case runErr = <-runDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("gateway did not stop after cancellation")
+	}
+	_ = w.Close()
+	output, readErr := io.ReadAll(r)
+	_ = r.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if runErr != nil {
+		t.Fatalf("RunVersityGW() = %v", runErr)
+	}
+	if !strings.Contains(string(output), "egress: 1.25 GB/s (10 Gbit/s), burst 1 MiB") {
+		t.Fatalf("banner did not show effective S3 option: %s", output)
+	}
+	if strings.Contains(string(output), "egress: 1 MB/s (8 Mbit/s), burst 64 KiB") {
+		t.Fatalf("banner showed the overridden config value: %s", output)
+	}
+	if cfg.EgressBandwidthLimit != 1<<20 || cfg.EgressBandwidthBurst != 0 {
+		t.Fatalf("RunVersityGW() changed caller bandwidth config: rate=%d burst=%d",
+			cfg.EgressBandwidthLimit, cfg.EgressBandwidthBurst)
 	}
 }

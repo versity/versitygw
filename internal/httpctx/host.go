@@ -29,9 +29,8 @@ import (
 //
 // SigV4 signs this host, so anything deriving the bucket from the host must
 // read it from here too, never from fasthttp's URI().Host(): that one may
-// name another host than the signed one, as it lowercases the host, drops a
-// userinfo prefix, and even takes a host out of an origin-form target like
-// "//host/path#://".
+// name another host than the signed one, as it lowercases the host and drops
+// a userinfo prefix.
 func RequestHost(ctx fiber.Ctx) string {
 	if _, authority, ok := absoluteForm(ctx.Request().Header.RequestURI()); ok && authority != "" {
 		return authority

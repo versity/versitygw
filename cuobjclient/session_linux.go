@@ -18,7 +18,7 @@ package cuobjclient
 
 /*
 #cgo CFLAGS: -I/usr/include -I${SRCDIR}/../cuwrapper
-#cgo LDFLAGS: -L${SRCDIR}/../rdma -l:libcuobjclientwrapper.a -L/usr/lib64 -lcuobjclient -lcudart -lstdc++ -ldl
+#cgo LDFLAGS: ${SRCDIR}/../rdma/libcuobjclientwrapper.a -L/usr/lib64 -lcuobjclient -lcudart -lstdc++ -ldl
 #include <stdlib.h>
 #include "cuobjclient_wrapper.h"
 */

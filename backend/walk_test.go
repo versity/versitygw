@@ -20,6 +20,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -679,11 +681,11 @@ func TestWalkSkipDirsFileNotSkipped(t *testing.T) {
 // directories named in skipdirs. It used to return fs.SkipDir for a regular
 // file with a skipped name too, which skips the rest of the file's directory.
 func TestWalkVersionsSkipDirsFileNotSkipped(t *testing.T) {
-	getFileVersions := func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+	getFileVersions := func(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
 		if d.IsDir() {
 			return nil, backend.ErrSkipObj
 		}
-		return getVersionsTestFunc(path, versionIdMarker, pastVersionIdMarker, availableObjCount, d)
+		return getVersionsTestFunc(path, versionIdMarker, availableObjCount, d)
 	}
 
 	res, err := backend.WalkVersions(context.Background(), skipNameFS, "", "", "", "", 1000,
@@ -765,11 +767,11 @@ func TestWalkSkipDirsRootAndCase(t *testing.T) {
 // TestWalkVersionsSkipDirsRootAndCase checks that WalkVersions applies the
 // same root-only and case-insensitive rules as Walk.
 func TestWalkVersionsSkipDirsRootAndCase(t *testing.T) {
-	getFileVersions := func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+	getFileVersions := func(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
 		if d.IsDir() {
 			return nil, backend.ErrSkipObj
 		}
-		return getVersionsTestFunc(path, versionIdMarker, pastVersionIdMarker, availableObjCount, d)
+		return getVersionsTestFunc(path, versionIdMarker, availableObjCount, d)
 	}
 
 	res, err := backend.WalkVersions(context.Background(), rootSkipFS, "", "", "", "", 1000,
@@ -1341,10 +1343,10 @@ func comparePrefixesOrdered(a, b []types.CommonPrefix) bool {
 // returns a single latest version for each file or directory encountered.
 // Directories are reported with a trailing delimiter in the key to match the
 // behavior of the non-versioned Walk tests where directory objects are listed.
-func getVersionsTestFunc(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+func getVersionsTestFunc(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
 	// If we have no available slots left, signal truncation (should be rare in these tests)
 	if availableObjCount <= 0 {
-		return &backend.ObjVersionFuncResult{Truncated: true, NextVersionIdMarker: ""}, nil
+		return &backend.ObjVersionFuncResult{Truncated: true}, nil
 	}
 
 	key := path
@@ -1354,7 +1356,10 @@ func getVersionsTestFunc(path, versionIdMarker string, pastVersionIdMarker *bool
 	ver := "v1"
 	latest := true
 	ov := s3response.ObjectVersion{Key: &key, VersionId: &ver, IsLatest: &latest}
-	return &backend.ObjVersionFuncResult{ObjectVersions: []s3response.ObjectVersion{ov}}, nil
+	return &backend.ObjVersionFuncResult{
+		ObjectVersions:      []s3response.ObjectVersion{ov},
+		NextVersionIdMarker: ver,
+	}, nil
 }
 
 // TestWalkVersions mirrors TestWalk but exercises WalkVersions and validates
@@ -1494,35 +1499,27 @@ func createMultiVersionFunc(files map[string]int) backend.GetVersionsFunc {
 		versionedFiles[path] = versions
 	}
 
-	return func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
-		if availableObjCount <= 0 {
-			return &backend.ObjVersionFuncResult{Truncated: true}, nil
-		}
-
+	return func(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
 		// Handle directories - just return a single directory version
+		versions, exists := versionedFiles[path]
 		if d.IsDir() {
 			key := path + "/"
 			ver := "v1"
 			latest := true
-			ov := s3response.ObjectVersion{Key: &key, VersionId: &ver, IsLatest: &latest}
-			return &backend.ObjVersionFuncResult{ObjectVersions: []s3response.ObjectVersion{ov}}, nil
-		}
-
-		// Get versions for this file
-		versions, exists := versionedFiles[path]
-		if !exists {
+			versions = []s3response.ObjectVersion{{Key: &key, VersionId: &ver, IsLatest: &latest}}
+		} else if !exists {
 			// No versions for this file, skip it
 			return &backend.ObjVersionFuncResult{}, backend.ErrSkipObj
 		}
 
-		// Handle version ID marker pagination
+		// Handle version ID marker pagination: list the versions after
+		// the marker, none of them if the marker isn't found
 		startIdx := 0
-		if versionIdMarker != "" && !*pastVersionIdMarker {
-			// Find the starting position after the marker
+		if versionIdMarker != "" {
+			startIdx = len(versions)
 			for i, version := range versions {
 				if *version.VersionId == versionIdMarker {
 					startIdx = i + 1
-					*pastVersionIdMarker = true
 					break
 				}
 			}
@@ -1533,11 +1530,9 @@ func createMultiVersionFunc(files map[string]int) backend.GetVersionsFunc {
 
 		result := &backend.ObjVersionFuncResult{
 			ObjectVersions: versions[startIdx:endIdx],
+			Truncated:      endIdx < len(versions),
 		}
-
-		// Check if we need to truncate
-		if endIdx < len(versions) {
-			result.Truncated = true
+		if endIdx > startIdx {
 			result.NextVersionIdMarker = *versions[endIdx-1].VersionId
 		}
 
@@ -1638,6 +1633,199 @@ func TestWalkVersionsTruncated(t *testing.T) {
 	expectedTotal := versionCounts["foo"] + versionCounts["bar"] + versionCounts["baz"]
 	if totalVersions != expectedTotal {
 		t.Errorf("total versions mismatch: expected %d, got %d", expectedTotal, totalVersions)
+	}
+}
+
+// TestWalkVersionsMarkers checks where a page starts from the key and the
+// version id markers, which common prefixes it lists, and that it's
+// truncated only when something follows it.
+func TestWalkVersionsMarkers(t *testing.T) {
+	fsys := fstest.MapFS{
+		"a":   {},
+		"b":   {},
+		"c":   {},
+		"d/x": {},
+		"d/y": {},
+		"e":   {},
+	}
+	// the versions are listed latest first, and "d/" has the version v1
+	getVersionsFunc := createMultiVersionFunc(map[string]int{
+		"a":   3,
+		"b":   1,
+		"c":   2,
+		"d/x": 1,
+		"d/y": 1,
+		"e":   1,
+	})
+
+	tests := []struct {
+		name            string
+		delimiter       string
+		keyMarker       string
+		versionIdMarker string
+		max             int
+		versions        []string
+		commonPrefixes  []string
+		truncated       bool
+		nextMarker      string
+		nextVersionId   string
+	}{
+		{
+			name:       "key marker only",
+			keyMarker:  "a",
+			max:        1,
+			versions:   []string{"b@v1"},
+			truncated:  true,
+			nextMarker: "b", nextVersionId: "v1",
+		},
+		{
+			name:      "last key as key marker",
+			keyMarker: "e",
+			max:       1000,
+		},
+		{
+			name:            "key and version id markers",
+			keyMarker:       "a",
+			versionIdMarker: "v2",
+			max:             2,
+			versions:        []string{"a@v1", "b@v1"},
+			truncated:       true,
+			nextMarker:      "b", nextVersionId: "v1",
+		},
+		{
+			name:            "version id marker of a missing key marker",
+			keyMarker:       "aa",
+			versionIdMarker: "v2",
+			max:             1000,
+			versions:        []string{"b@v1", "c@v2", "c@v1", "d/@v1", "d/x@v1", "d/y@v1", "e@v1"},
+		},
+		{
+			name:            "missing version id marker",
+			keyMarker:       "a",
+			versionIdMarker: "v9",
+			max:             1000,
+			versions:        []string{"b@v1", "c@v2", "c@v1", "d/@v1", "d/x@v1", "d/y@v1", "e@v1"},
+		},
+		{
+			name:      "directory key marker",
+			keyMarker: "d/",
+			max:       1000,
+			versions:  []string{"d/x@v1", "d/y@v1", "e@v1"},
+		},
+		{
+			name: "page ends at the last version",
+			max:  11,
+			versions: []string{"a@v3", "a@v2", "a@v1", "b@v1", "c@v2", "c@v1",
+				"d/@v1", "d/x@v1", "d/y@v1", "e@v1"},
+		},
+		{
+			name:       "page ends at the last version of a key",
+			max:        4,
+			versions:   []string{"a@v3", "a@v2", "a@v1", "b@v1"},
+			truncated:  true,
+			nextMarker: "b", nextVersionId: "v1",
+		},
+		{
+			name: "zero max keys",
+			max:  0,
+		},
+		{
+			name:            "common prefix ends the page",
+			delimiter:       "/",
+			keyMarker:       "c",
+			versionIdMarker: "v1",
+			max:             1,
+			commonPrefixes:  []string{"d/"},
+			truncated:       true,
+			nextMarker:      "d/",
+		},
+		{
+			name:            "common prefix ends the listing",
+			delimiter:       "/",
+			keyMarker:       "c",
+			versionIdMarker: "v1",
+			max:             2,
+			versions:        []string{"e@v1"},
+			commonPrefixes:  []string{"d/"},
+		},
+		{
+			name:           "key marker before a common prefix",
+			delimiter:      "/",
+			keyMarker:      "d",
+			max:            1000,
+			versions:       []string{"e@v1"},
+			commonPrefixes: []string{"d/"},
+		},
+		{
+			name:      "common prefix as key marker",
+			delimiter: "/",
+			keyMarker: "d/",
+			max:       1000,
+			versions:  []string{"e@v1"},
+		},
+		{
+			name:      "key marker under a common prefix",
+			delimiter: "/",
+			keyMarker: "d/x",
+			max:       1000,
+			versions:  []string{"e@v1"},
+		},
+		{
+			name:            "common prefix of a delimiter other than slash ends the page",
+			delimiter:       "x",
+			keyMarker:       "c",
+			versionIdMarker: "v1",
+			max:             2,
+			versions:        []string{"d/@v1"},
+			commonPrefixes:  []string{"d/x"},
+			truncated:       true,
+			nextMarker:      "d/x",
+		},
+		{
+			name:      "common prefix of a delimiter other than slash as key marker",
+			delimiter: "x",
+			keyMarker: "d/x",
+			max:       1000,
+			versions:  []string{"d/y@v1", "e@v1"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := backend.WalkVersions(context.Background(), fsys, "", tc.delimiter,
+				tc.keyMarker, tc.versionIdMarker, tc.max, getVersionsFunc, backend.SkipDirs{})
+			if err != nil {
+				t.Fatalf("walk versions: %v", err)
+			}
+
+			var versions []string
+			for _, v := range res.ObjectVersions {
+				versions = append(versions, *v.Key+"@"+*v.VersionId)
+			}
+			if !slices.Equal(versions, tc.versions) {
+				t.Errorf("expected the versions %v, instead got %v", tc.versions, versions)
+			}
+			var commonPrefixes []string
+			for _, cp := range res.CommonPrefixes {
+				commonPrefixes = append(commonPrefixes, *cp.Prefix)
+			}
+			if !slices.Equal(commonPrefixes, tc.commonPrefixes) {
+				t.Errorf("expected the common prefixes %v, instead got %v",
+					tc.commonPrefixes, commonPrefixes)
+			}
+			if res.Truncated != tc.truncated {
+				t.Errorf("expected the truncation to be %v, instead got %v",
+					tc.truncated, res.Truncated)
+			}
+			if res.NextMarker != tc.nextMarker {
+				t.Errorf("expected the next marker %q, instead got %q",
+					tc.nextMarker, res.NextMarker)
+			}
+			if res.NextVersionIdMarker != tc.nextVersionId {
+				t.Errorf("expected the next version id marker %q, instead got %q",
+					tc.nextVersionId, res.NextVersionIdMarker)
+			}
+		})
 	}
 }
 
@@ -1747,4 +1935,246 @@ func comparePrefixesUnordered(got []types.CommonPrefix, want []string) bool {
 		}
 	}
 	return true
+}
+
+// readDirLogFS records the directories read from a MapFS.
+type readDirLogFS struct {
+	fstest.MapFS
+	dirs []string
+}
+
+func (r *readDirLogFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	r.dirs = append(r.dirs, name)
+	return r.MapFS.ReadDir(name)
+}
+
+// TestWalkVersionsPrefixReadsPrefixDir checks that a listing with a prefix
+// reads the deepest directory the prefix names and the directories with the
+// prefix below it, and not the root or the other ancestors of the prefix,
+// whose cost would grow with the keys outside the prefix (#2690).
+func TestWalkVersionsPrefixReadsPrefixDir(t *testing.T) {
+	mapFS := fstest.MapFS{
+		"some/single/key":          {},
+		"some/single/key2":         {},
+		"some/single/keydir/obj":   {},
+		"some/single/other":        {},
+		"some/single/otherdir/obj": {},
+	}
+	for i := range 100 {
+		mapFS[fmt.Sprintf("obj%03d", i)] = &fstest.MapFile{}
+		mapFS[fmt.Sprintf("dir%03d/obj", i)] = &fstest.MapFile{}
+		mapFS[fmt.Sprintf("some/obj%03d", i)] = &fstest.MapFile{}
+	}
+
+	tests := []struct {
+		name           string
+		prefix         string
+		delimiter      string
+		versions       []string
+		commonPrefixes []string
+		readDirs       []string
+	}{
+		{
+			name:     "key prefix",
+			prefix:   "some/single/key",
+			versions: []string{"some/single/key", "some/single/key2", "some/single/keydir/", "some/single/keydir/obj"},
+			readDirs: []string{"some/single", "some/single/keydir"},
+		},
+		{
+			name:           "key prefix with delimiter",
+			prefix:         "some/single/key",
+			delimiter:      "/",
+			versions:       []string{"some/single/key", "some/single/key2"},
+			commonPrefixes: []string{"some/single/keydir/"},
+			readDirs:       []string{"some/single"},
+		},
+		{
+			name:           "directory prefix with delimiter",
+			prefix:         "some/single/",
+			delimiter:      "/",
+			versions:       []string{"some/single/", "some/single/key", "some/single/key2", "some/single/other"},
+			commonPrefixes: []string{"some/single/keydir/", "some/single/otherdir/"},
+			readDirs:       []string{"some/single"},
+		},
+		{
+			name:     "missing directory",
+			prefix:   "some/missing/key",
+			readDirs: nil,
+		},
+		{
+			name:     "file in the place of a directory",
+			prefix:   "some/single/key/x",
+			readDirs: nil,
+		},
+		{name: "leading slash", prefix: "/some/single/key"},
+		{name: "empty path element", prefix: "some//single/key"},
+		{name: "dot path element", prefix: "./some/single/key"},
+		{name: "dot dot path element", prefix: "some/../some/single/key"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys := &readDirLogFS{MapFS: mapFS}
+			res, err := backend.WalkVersions(context.Background(), fsys, tc.prefix, tc.delimiter,
+				"", "", 1000, getVersionsTestFunc, backend.SkipDirs{})
+			if err != nil {
+				t.Fatalf("walk versions: %v", err)
+			}
+
+			var versions []string
+			for _, v := range res.ObjectVersions {
+				versions = append(versions, *v.Key)
+			}
+			if !slices.Equal(versions, tc.versions) {
+				t.Errorf("expected the versions %v, instead got %v", tc.versions, versions)
+			}
+			var commonPrefixes []string
+			for _, cp := range res.CommonPrefixes {
+				commonPrefixes = append(commonPrefixes, *cp.Prefix)
+			}
+			if !slices.Equal(commonPrefixes, tc.commonPrefixes) {
+				t.Errorf("expected the common prefixes %v, instead got %v",
+					tc.commonPrefixes, commonPrefixes)
+			}
+			if !slices.Equal(fsys.dirs, tc.readDirs) {
+				t.Errorf("expected to read the directories %q, instead read %q",
+					tc.readDirs, fsys.dirs)
+			}
+		})
+	}
+}
+
+// rootWalkFS fails the lookup of every directory but the root, which makes
+// WalkVersions walk from the root for every prefix, as it did before it
+// started the walk at the directory of the prefix.
+type rootWalkFS struct {
+	fstest.MapFS
+}
+
+func (r rootWalkFS) Stat(name string) (fs.FileInfo, error) {
+	if name != "." {
+		return nil, &fs.PathError{Op: "stat", Path: name, Err: syscall.ENAMETOOLONG}
+	}
+	return r.MapFS.Stat(name)
+}
+
+// walkVersionsPage formats a WalkVersions page for comparisons.
+func walkVersionsPage(res backend.WalkVersioningResults) string {
+	var b strings.Builder
+	for _, v := range res.ObjectVersions {
+		fmt.Fprintf(&b, "version %s@%s\n", *v.Key, *v.VersionId)
+	}
+	for _, cp := range res.CommonPrefixes {
+		fmt.Fprintf(&b, "common prefix %s\n", *cp.Prefix)
+	}
+	fmt.Fprintf(&b, "truncated %v, next %q@%q", res.Truncated, res.NextMarker, res.NextVersionIdMarker)
+	return b.String()
+}
+
+// TestWalkVersionsPrefixWalkFromRoot checks that the walk from the directory
+// of the prefix lists the same pages as the walk from the root.
+func TestWalkVersionsPrefixWalkFromRoot(t *testing.T) {
+	mapFS := fstest.MapFS{
+		".sgwtmp/a/b": {},
+		"a-x":         {},
+		"a.b/x":       {},
+		"a/.zfs/snap": {},
+		"a/b-c":       {},
+		"a/b.c/d":     {},
+		"a/b/c.d/e":   {},
+		"a/b/c/d":     {},
+		"a/b/c/e/f":   {},
+		"a/b/c0":      {},
+		"a/b/cd":      {},
+		"a/b/d":       {},
+		"a/bc/d":      {},
+		"a/x/y":       {},
+		"top":         {},
+		"z/y":         {},
+	}
+	versionCounts := map[string]int{}
+	for i, path := range slices.Sorted(maps.Keys(mapFS)) {
+		versionCounts[path] = i%3 + 1
+	}
+	getVersions := createMultiVersionFunc(versionCounts)
+	skipDirs := backend.SkipDirs{Root: []string{".sgwtmp"}, Any: []string{".zfs"}}
+
+	prefixes := []string{
+		"a", "a/", "a/b", "a/b/", "a/b/c", "a/b/c/", "a/b/c/e/", "a/b/c/e/f",
+		"a/b/c/e/f/", "a/x/", "a.b/", "z/", "missing/", "a/missing/x",
+		"top/", "top/x",
+	}
+	markers := []struct{ key, versionId string }{
+		{"", ""}, {"0", ""}, {"a/", ""}, {"a/b", ""}, {"a/b/", ""},
+		{"a/b/c", ""}, {"a/b/c/", ""}, {"a/b/c/d", ""}, {"a/b/c/d", "v2"},
+		{"a/b/c0", "v1"}, {"a/b/cd", ""}, {"zzz", ""},
+	}
+
+	ctx := context.Background()
+	for _, prefix := range prefixes {
+		for _, delimiter := range []string{"", "/", "c"} {
+			for _, max := range []int{1, 2, 3, 1000} {
+				for _, marker := range markers {
+					keyMarker, versionIdMarker := marker.key, marker.versionId
+					for page := 1; ; page++ {
+						name := fmt.Sprintf("prefix %q delimiter %q max %d marker %q@%q page %d",
+							prefix, delimiter, max, marker.key, marker.versionId, page)
+						got, err := backend.WalkVersions(ctx, mapFS, prefix, delimiter,
+							keyMarker, versionIdMarker, max, getVersions, skipDirs)
+						if err != nil {
+							t.Fatalf("%s: walk versions: %v", name, err)
+						}
+						want, err := backend.WalkVersions(ctx, rootWalkFS{mapFS}, prefix, delimiter,
+							keyMarker, versionIdMarker, max, getVersions, skipDirs)
+						if err != nil {
+							t.Fatalf("%s: walk versions from the root: %v", name, err)
+						}
+						if g, w := walkVersionsPage(got), walkVersionsPage(want); g != w {
+							t.Fatalf("%s:\nexpected\n%s\ninstead got\n%s", name, w, g)
+						}
+						if !got.Truncated {
+							break
+						}
+						keyMarker, versionIdMarker = got.NextMarker, got.NextVersionIdMarker
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestWalkVersionsPrefixInSkipDir checks that a prefix naming a skipped
+// directory, or a directory inside one, lists nothing, also when it spells
+// the skipped directory in another case on a case-insensitive file system.
+func TestWalkVersionsPrefixInSkipDir(t *testing.T) {
+	fsys := caseFoldFS{fstest.MapFS{
+		".sgwtmp/multipart/hash/upload/1": {},
+		"d/.zfs/snap":                     {},
+		"obj":                             {},
+	}}
+	skipDirs := backend.SkipDirs{Root: []string{".sgwtmp"}, Any: []string{".zfs"}}
+
+	for _, prefix := range []string{
+		".sgwtmp/",
+		".sgwtmp/multipart/",
+		".sgwtmp/multipart/hash/upload/1",
+		".SGWTMP/multipart/hash/upload/",
+		".SgwTmp/multipart/",
+		"d/.zfs/",
+		"d/.ZFS/snap",
+	} {
+		for _, delimiter := range []string{"", "/"} {
+			res, err := backend.WalkVersions(context.Background(), fsys, prefix, delimiter, "", "", 1000,
+				getVersionsTestFunc, skipDirs)
+			if err != nil {
+				t.Errorf("prefix %q delimiter %q: walk versions: %v", prefix, delimiter, err)
+				continue
+			}
+			if len(res.ObjectVersions) != 0 || len(res.CommonPrefixes) != 0 {
+				t.Errorf("prefix %q delimiter %q: listed versions %v and common prefixes %v",
+					prefix, delimiter, printVersionObjects(res.ObjectVersions),
+					printCommonPrefixes(res.CommonPrefixes))
+			}
+		}
+	}
 }

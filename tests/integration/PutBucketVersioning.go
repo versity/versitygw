@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
+	"net/http"
 )
 
 func PutBucketVersioning_non_existing_bucket(s *S3Conf) error {
@@ -65,5 +66,16 @@ func PutBucketVersioning_success_suspended(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+func PutBucketVersioning_body_size_limit(s *S3Conf) error {
+	testName := "PutBucketVersioning_body_size_limit"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyLimit(s, bucket, requestBodyLimit{
+			method: http.MethodPut,
+			query:  "versioning",
+			limit:  1024,
+		})
 	})
 }

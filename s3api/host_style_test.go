@@ -20,8 +20,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -30,9 +32,12 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/valyala/fasthttp"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 // hostStyleBackend serves any existing bucket, answering GetObject with the
@@ -53,12 +58,136 @@ func (hostStyleBackend) GetObject(_ context.Context, input *s3.GetObjectInput) (
 	}, nil
 }
 
+// uploadBackend serves uploads to any bucket without object lock, recording
+// the body each one reads.
+type uploadBackend struct {
+	hostStyleBackend
+	received *[]byte
+}
+
+func (uploadBackend) GetObjectLockConfiguration(context.Context, string) ([]byte, error) {
+	return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+}
+
+func (uploadBackend) ValidateUploadID(string) error { return nil }
+
+func (b uploadBackend) PutObject(_ context.Context, input s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+	var err error
+	*b.received, err = io.ReadAll(input.Body)
+	return s3response.PutObjectOutput{}, err
+}
+
+func (b uploadBackend) UploadPart(_ context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+	var err error
+	*b.received, err = io.ReadAll(input.Body)
+	return &s3.UploadPartOutput{}, err
+}
+
+// The debug logger must leave a virtual-hosted-style upload's body to the
+// handler, as it does a path-style one's, and log the URL the client sent.
+func TestHostStyleUploadWithDebugLogger(t *testing.T) {
+	const (
+		domain = "s3.example.test"
+		region = "us-east-1"
+		body   = "hello\n"
+	)
+	debuglogger.SetLevel(debuglogger.LevelDebug)
+	defer debuglogger.SetLevel(debuglogger.LevelSilent)
+
+	var received []byte
+	root := testAdminRoot
+	srv, err := New(uploadBackend{received: &received}, root, region,
+		auth.NewIAMServiceSingle(auth.Account{Access: root.Access, Secret: root.Secret}),
+		nil, nil, nil, nil,
+		WithConcurrencyLimiter(10, 10),
+		WithQuiet(),
+		WithHostStyle(domain),
+	)
+	if err != nil {
+		t.Fatalf("new s3 server: %v", err)
+	}
+
+	sum := sha256.Sum256([]byte(body))
+	payloadHash := hex.EncodeToString(sum[:])
+	creds := aws.Credentials{AccessKeyID: root.Access, SecretAccessKey: root.Secret}
+
+	tests := []struct {
+		name   string
+		target string
+	}{
+		{
+			name:   "path-style PutObject",
+			target: "http://" + domain + "/bucketa/key",
+		},
+		{
+			name:   "virtual-hosted-style PutObject",
+			target: "http://bucketa." + domain + "/key",
+		},
+		{
+			name:   "virtual-hosted-style UploadPart",
+			target: "http://bucketa." + domain + "/key?partNumber=1&uploadId=id",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			received = nil
+			req, _ := http.NewRequest(http.MethodPut, tt.target, strings.NewReader(body))
+			req.Header.Set("X-Amz-Content-Sha256", payloadHash)
+			if err := v4.NewSigner().SignHTTP(context.Background(), creds, req, payloadHash, "s3", region, time.Now()); err != nil {
+				t.Fatalf("sign request: %v", err)
+			}
+			var resp *http.Response
+			logged := captureStdout(t, func() {
+				resp, err = srv.app.Test(req)
+			})
+			if err != nil {
+				t.Fatalf("app.Test: %v", err)
+			}
+			defer resp.Body.Close()
+			got, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status %d: %s", resp.StatusCode, got)
+			}
+			if string(received) != body {
+				t.Errorf("handler read body %q, want %q", received, body)
+			}
+			if wantURL := "[URL]: " + tt.target + "\x1b[0m\n"; !strings.Contains(logged, wantURL) {
+				t.Errorf("debug log has no %q line:\n%s", wantURL, logged)
+			}
+		})
+	}
+}
+
+// captureStdout returns what fn writes to os.Stdout, where the debug logger
+// prints.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	defer r.Close()
+	out := make(chan string)
+	go func() {
+		b, _ := io.ReadAll(r)
+		out <- string(b)
+	}()
+	stdout := os.Stdout
+	os.Stdout = w
+	fn()
+	os.Stdout = stdout
+	w.Close()
+	return <-out
+}
+
 // A virtual-hosted-style gateway must route a request to the bucket of the
 // very host it verifies the signature with, the way S3 does, so a signed
 // request can't be pointed at another bucket than the one signed for: not by
 // an absolute-form request-target ("GET http://host/path HTTP/1.1") naming
-// another host than the Host header, nor by an origin-form one that fasthttp
-// would take a host out of ("//host/path#://").
+// another host than the Host header, nor by an origin-form one starting with
+// another host ("//host/path#://"). The requests are served on a connection
+// to the gateway's http server, which rejects some request-targets before
+// any handler runs.
 func TestHostStyleRoutesSignedHost(t *testing.T) {
 	const (
 		domain = "s3.example.test:7070"
@@ -76,7 +205,6 @@ func TestHostStyleRoutesSignedHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new s3 server: %v", err)
 	}
-	handler := srv.app.Handler()
 
 	creds := aws.Credentials{AccessKeyID: root.Access, SecretAccessKey: root.Secret}
 
@@ -153,6 +281,8 @@ func TestHostStyleRoutesSignedHost(t *testing.T) {
 			want:       "SignatureDoesNotMatch",
 		},
 		{
+			// the http server rejects a userinfo in the request-target,
+			// and the bucket name taken out of the host with it isn't valid
 			name:       "path-style presigned, absolute-form with another bucket's host after a userinfo",
 			target:     "http://" + domain + "@bucketb." + domain + "/bucketa/key?" + pathQuery,
 			host:       domain,
@@ -160,11 +290,20 @@ func TestHostStyleRoutesSignedHost(t *testing.T) {
 			want:       "InvalidBucketName",
 		},
 		{
+			name:       "path-style presigned, Host header with a userinfo",
+			target:     "/bucketa/key?" + pathQuery,
+			host:       "user@" + domain,
+			wantStatus: http.StatusBadRequest,
+			want:       "InvalidBucketName",
+		},
+		{
+			// the http server rejects an absolute-form request-target
+			// without a host
 			name:       "path-style presigned, absolute-form with an empty host",
 			target:     "http:///bucketa/key?" + pathQuery,
 			host:       domain,
-			wantStatus: http.StatusOK,
-			want:       "bucketa/key",
+			wantStatus: http.StatusBadRequest,
+			want:       "InvalidURI",
 		},
 		{
 			name:       "path-style presigned, absolute-form of a non-http scheme",
@@ -174,13 +313,13 @@ func TestHostStyleRoutesSignedHost(t *testing.T) {
 			want:       "InvalidURI",
 		},
 		{
-			// fasthttp takes bucketb's host out of this target, but the
-			// request goes to the Host header's, with the path left after it
+			// the whole target is the path, whose first segment, the
+			// bucket, is empty, so no route matches it
 			name:       "path-style presigned, origin-form starting with another bucket's host",
 			target:     "//bucketb." + domain + "/bucketa/key?" + pathQuery + "#://",
 			host:       domain,
-			wantStatus: http.StatusOK,
-			want:       "bucketa/key",
+			wantStatus: http.StatusMethodNotAllowed,
+			want:       "MethodNotAllowed",
 		},
 		{
 			name:       "virtual-hosted-style presigned",
@@ -224,22 +363,16 @@ func TestHostStyleRoutesSignedHost(t *testing.T) {
 			target:     "//bucketb." + domain + "/bucketa/key#://",
 			host:       domain,
 			headers:    signedHeaders,
-			wantStatus: http.StatusOK,
-			want:       "bucketa/key",
+			wantStatus: http.StatusMethodNotAllowed,
+			want:       "MethodNotAllowed",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw := "GET " + tt.target + " HTTP/1.1\r\nHost: " + tt.host + "\r\n" + tt.headers + "\r\n"
-			var fctx fasthttp.RequestCtx
-			if err := fctx.Request.Read(bufio.NewReader(strings.NewReader(raw))); err != nil {
-				t.Fatalf("read request: %v", err)
-			}
-			handler(&fctx)
-
-			body := string(fctx.Response.Body())
-			if status := fctx.Response.StatusCode(); status != tt.wantStatus {
+			raw := "GET " + tt.target + " HTTP/1.1\r\nHost: " + tt.host + "\r\n" + tt.headers + "Connection: close\r\n\r\n"
+			status, body := serveRawRequest(t, srv.app, raw)
+			if status != tt.wantStatus {
 				t.Fatalf("status %d, want %d: %s", status, tt.wantStatus, body)
 			}
 			if tt.wantStatus == http.StatusOK {
@@ -253,4 +386,41 @@ func TestHostStyleRoutesSignedHost(t *testing.T) {
 			}
 		})
 	}
+}
+
+// serveRawRequest serves the raw http request raw on a connection to app's
+// http server, the way a client's connection is served, and returns the
+// response status and body. Unlike a handler called with a request, the
+// server checks the request-target before any handler runs.
+func serveRawRequest(t *testing.T, app *fiber.App, raw string) (int, string) {
+	t.Helper()
+	// build the routes, as starting the app does
+	app.Handler()
+
+	client, conn := net.Pipe()
+	defer client.Close()
+	if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+	served := make(chan struct{})
+	go func() {
+		// the error of a rejected request is in its response
+		_ = app.Server().ServeConn(conn)
+		close(served)
+	}()
+
+	if _, err := io.WriteString(client, raw); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(client), nil)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	<-served
+	return resp.StatusCode, string(body)
 }

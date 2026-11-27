@@ -16,6 +16,7 @@ package auth
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -160,20 +161,82 @@ func (ld *LdapIAMService) buildUserDN(access string) string {
 	return fmt.Sprintf("%v=%v,%v", ld.accessAtr, ldap.EscapeDN(access), ld.queryBase)
 }
 
+// buildSearchFilter matches the account with the given access key, or every
+// account when access is empty. The query base can also hold directory users
+// of the configured object classes that are not S3 accounts, and they all
+// carry the access key attribute when it is a common one such as uid, so
+// only entries that carry both an access key and a secret key are accounts.
 func (ld *LdapIAMService) buildSearchFilter(access string) string {
 	var searchFilter strings.Builder
 	for _, el := range ld.objClasses {
 		searchFilter.WriteString(fmt.Sprintf("(objectClass=%v)", el))
 	}
+	value := "*"
 	if access != "" {
-		searchFilter.WriteString(fmt.Sprintf("(%v=%v)", ld.accessAtr, ldap.EscapeFilter(access)))
+		value = ldap.EscapeFilter(access)
 	}
+	searchFilter.WriteString(fmt.Sprintf("(%v=%v)", ld.accessAtr, value))
+	searchFilter.WriteString(fmt.Sprintf("(%v=*)", ld.secretAtr))
 	return fmt.Sprintf("(&%v)", searchFilter.String())
+}
+
+// entryToAccount converts an account entry of the directory. An entry
+// without an access key or a secret key is not an account and converts to
+// ErrNoSuchUser: a request signed with an empty secret key would otherwise
+// authenticate as it. A user, group or project ID attribute the entry lacks
+// reads as 0, the ID CreateAccount stores for an account created without
+// one; only an entry provisioned directly in the directory can lack it.
+func (ld *LdapIAMService) entryToAccount(entry *ldap.Entry) (Account, error) {
+	access := entry.GetAttributeValue(ld.accessAtr)
+	secret := entry.GetAttributeValue(ld.secretAtr)
+	if access == "" || secret == "" {
+		return Account{}, ErrNoSuchUser
+	}
+
+	parseID := func(name, atr string) (int, error) {
+		val := entry.GetAttributeValue(atr)
+		if val == "" {
+			return 0, nil
+		}
+		id, err := strconv.Atoi(val)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %v value %q (attribute %v) in entry %q: %w",
+				name, val, atr, entry.DN, err)
+		}
+		return id, nil
+	}
+
+	userID, err := parseID("user-id", ld.userIdAtr)
+	if err != nil {
+		return Account{}, err
+	}
+	groupID, err := parseID("group-id", ld.groupIdAtr)
+	if err != nil {
+		return Account{}, err
+	}
+	projectID, err := parseID("project-id", ld.projectIdAtr)
+	if err != nil {
+		return Account{}, err
+	}
+
+	return Account{
+		Access:    access,
+		Secret:    secret,
+		Role:      Role(entry.GetAttributeValue(ld.roleAtr)),
+		UserID:    userID,
+		GroupID:   groupID,
+		ProjectID: projectID,
+	}, nil
 }
 
 func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
 	if access == ld.rootAcc.Access {
 		return ld.rootAcc, nil
+	}
+	// No account has an empty access key, and the search filter for an
+	// empty one matches every account.
+	if access == "" {
+		return Account{}, ErrNoSuchUser
 	}
 	var result *ldap.SearchResult
 	searchRequest := ldap.NewSearchRequest(
@@ -212,31 +275,7 @@ func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
 		return Account{}, ErrNoSuchUser
 	}
 
-	entry := result.Entries[0]
-	groupId, err := strconv.Atoi(entry.GetAttributeValue(ld.groupIdAtr))
-	if err != nil {
-		return Account{}, fmt.Errorf("invalid entry value for group-id %q: %w",
-			entry.GetAttributeValue(ld.groupIdAtr), err)
-	}
-	userId, err := strconv.Atoi(entry.GetAttributeValue(ld.userIdAtr))
-	if err != nil {
-		return Account{}, fmt.Errorf("invalid entry value for user-id %q: %w",
-			entry.GetAttributeValue(ld.userIdAtr), err)
-	}
-	projectID, err := strconv.Atoi(entry.GetAttributeValue(ld.projectIdAtr))
-	if err != nil {
-		return Account{}, fmt.Errorf("invalid entry value for project-id %q: %w",
-			entry.GetAttributeValue(ld.projectIdAtr), err)
-	}
-
-	return Account{
-		Access:    entry.GetAttributeValue(ld.accessAtr),
-		Secret:    entry.GetAttributeValue(ld.secretAtr),
-		Role:      Role(entry.GetAttributeValue(ld.roleAtr)),
-		GroupID:   groupId,
-		UserID:    userId,
-		ProjectID: projectID,
-	}, nil
+	return ld.entryToAccount(result.Entries[0])
 }
 
 // ResolveAccounts returns the subset of accessKeyIDs that do not exist.
@@ -310,30 +349,15 @@ func (ld *LdapIAMService) ListUserAccounts() ([]Account, error) {
 
 	result := []Account{}
 	for _, el := range resp.Entries {
-		groupId, err := strconv.Atoi(el.GetAttributeValue(ld.groupIdAtr))
-		if err != nil {
-			return nil, fmt.Errorf("invalid entry value for group-id %q: %w",
-				el.GetAttributeValue(ld.groupIdAtr), err)
+		acc, err := ld.entryToAccount(el)
+		if errors.Is(err, ErrNoSuchUser) {
+			// not an account
+			continue
 		}
-		userId, err := strconv.Atoi(el.GetAttributeValue(ld.userIdAtr))
 		if err != nil {
-			return nil, fmt.Errorf("invalid entry value for user-id %q: %w",
-				el.GetAttributeValue(ld.userIdAtr), err)
+			return nil, err
 		}
-		projectID, err := strconv.Atoi(el.GetAttributeValue(ld.projectIdAtr))
-		if err != nil {
-			return nil, fmt.Errorf("invalid entry value for project-id %q: %w",
-				el.GetAttributeValue(ld.groupIdAtr), err)
-		}
-
-		result = append(result, Account{
-			Access:    el.GetAttributeValue(ld.accessAtr),
-			Secret:    el.GetAttributeValue(ld.secretAtr),
-			Role:      Role(el.GetAttributeValue(ld.roleAtr)),
-			GroupID:   groupId,
-			ProjectID: projectID,
-			UserID:    userId,
-		})
+		result = append(result, acc)
 	}
 
 	return result, nil

@@ -367,7 +367,9 @@ func TestProcessController(t *testing.T) {
 	type expected struct {
 		status  int
 		headers map[string]string
-		body    []byte
+		// absent are headers the serialized response must not carry
+		absent []string
+		body   []byte
 	}
 	tests := []struct {
 		name     string
@@ -397,6 +399,23 @@ func TestProcessController(t *testing.T) {
 			expected: expected{
 				status: http.StatusBadRequest,
 				body:   s3err.GetAPIError(s3err.ErrInvalidRequest).XMLBody(testRequestID, testHostID),
+			},
+		},
+		{
+			name: "handle not modified",
+			args: args{
+				svc: services,
+				controller: func(ctx fiber.Ctx) (*Response, error) {
+					return &Response{
+						Headers: map[string]*string{"ETag": utils.GetStringPtr(`"etag"`)},
+					}, s3err.GetAPIError(s3err.ErrNotModified)
+				},
+			},
+			expected: expected{
+				status:  http.StatusNotModified,
+				headers: map[string]string{"ETag": `"etag"`},
+				absent:  []string{"Content-Type"},
+				body:    []byte{},
 			},
 		},
 		{
@@ -583,9 +602,14 @@ func TestProcessController(t *testing.T) {
 				}
 			}
 
+			// the serialized headers, as they go on the wire
+			for _, key := range tt.expected.absent {
+				assert.NotContains(t, ctx.Response().Header.String(), key+":")
+			}
+
 			// check the response body
 			if tt.expected.body != nil {
-				assert.Equal(t, tt.expected.body, ctx.Response().Body())
+				assert.Equal(t, string(tt.expected.body), string(ctx.Response().Body()))
 			}
 		})
 	}

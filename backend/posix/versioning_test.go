@@ -193,7 +193,7 @@ func TestLiveObjVersionIdObjectRemoved(t *testing.T) {
 	}
 
 	for _, key := range []string{"gone", "gonedir/gone", "file/child"} {
-		_, err := p.liveObjVersionId(context.Background(), "bucket", key)
+		_, err := p.liveObjVersionId(context.Background(), nil, "bucket", key)
 		assert.ErrorIs(t, err, s3err.GetAPIError(s3err.ErrNoSuchKey), key)
 	}
 }

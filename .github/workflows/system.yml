@@ -30,7 +30,7 @@ jobs:
 
       - name: Download go dependencies
         run: |
-          go mod download
+          ./tests/retry.sh go mod download
 
       - name: Download dependencies
         run: |
@@ -64,6 +64,9 @@ jobs:
           path: download
 
       - name: Restore Go dependencies
+        env:
+          GOPROXY: "off"
+          GOSUMDB: "off"
         run: |
           mkdir -p "$(go env GOPATH)"
           tar -xzf download/go-mod-cache.tar.gz \
@@ -172,6 +175,9 @@ jobs:
           sudo chmod 600 /home/tester/test-files/.env
 
       - name: Build and run
+        env:
+          GOPROXY: "off"
+          GOSUMDB: "off"
         run: |
           set -euo pipefail
           
@@ -185,7 +191,7 @@ jobs:
           
             export PATH="'"$GO_BIN_DIR"':$PATH"
             cd ${{ github.workspace }}
-            go mod download
+            ./tests/retry.sh go mod download
           
             set -a
             source /home/tester/test-files/.env

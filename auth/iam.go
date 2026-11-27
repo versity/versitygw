@@ -218,6 +218,11 @@ type Opts struct {
 	S3Bucket                    string
 	S3Endpoint                  string
 	S3DisableSSlVerfiy          bool
+	AzureAccount                string
+	AzureKey                    string
+	AzureSASToken               string
+	AzureURL                    string
+	AzureContainer              string
 	CacheDisable                bool
 	CacheTTL                    int
 	CachePrune                  int
@@ -285,6 +290,10 @@ func New(o *Opts) (IAMService, error) {
 			o.S3Endpoint, o.S3DisableSSlVerfiy)
 		fmt.Printf("initializing S3 IAM with '%v/%v'\n",
 			o.S3Endpoint, o.S3Bucket)
+	case o.AzureContainer != "":
+		svc, err = NewAzure(o.RootAccount, o.AzureAccount, o.AzureKey, o.AzureURL,
+			o.AzureSASToken, o.AzureContainer)
+		fmt.Printf("initializing Azure IAM with container %q\n", o.AzureContainer)
 	case o.VaultEndpointURL != "":
 		svc, err = NewVaultIAMService(o.RootAccount, o.VaultEndpointURL, o.VaultNamespace, o.VaultSecretStoragePath, o.VaultSecretStorageNamespace,
 			o.VaultAuthMethod, o.VaultAuthNamespace, o.VaultMountPath, o.VaultRootToken, o.VaultRoleId, o.VaultRoleSecret,

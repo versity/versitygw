@@ -52,16 +52,17 @@ func chainHandlers(handlers ...fiber.Handler) fiber.Handler {
 // postObjectTestApp creates a fiber app that chains AuthorizePostObject with
 // the provided follow-up handler on POST /:bucket.
 func postObjectTestApp(root RootUserConfig, region string, next fiber.Handler) *fiber.App {
-	app := fiber.New(fiber.Config{
-		ErrorHandler: func(c fiber.Ctx, err error) error {
-			if s3Err, ok := err.(s3err.S3Error); ok {
-				return c.Status(s3Err.StatusCode()).Send(s3Err.XMLBody("", ""))
-			}
-			return c.Status(500).SendString(err.Error())
-		},
-	})
+	app := fiber.New(fiber.Config{ErrorHandler: postObjectErrorHandler})
 	app.Post("/:bucket", chainHandlers(AuthorizePostObject(backend.New(), root, nil, region), next))
 	return app
+}
+
+// postObjectErrorHandler writes an S3 error with its status and XML body.
+func postObjectErrorHandler(c fiber.Ctx, err error) error {
+	if s3Err, ok := err.(s3err.S3Error); ok {
+		return c.Status(s3Err.StatusCode()).Send(s3Err.XMLBody("", ""))
+	}
+	return c.Status(500).SendString(err.Error())
 }
 
 // buildMultipartBody returns a multipart/form-data body and its boundary.
@@ -216,6 +217,66 @@ func TestAuthorizePostObject_SignedRequest(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.True(t, gotAuthenticated, "signed request must set ContextKeyAuthenticated")
+}
+
+// TestAuthorizePostObject_SignedRequest_AnyRegion verifies that a POST signed
+// for another region than the gateway's is rejected, unless the request is
+// marked to accept any region.
+func TestAuthorizePostObject_SignedRequest_AnyRegion(t *testing.T) {
+	const (
+		gatewayRegion = "us-east-1"
+		clientRegion  = "eu-central-1"
+		accessKey     = "testaccess"
+		secretKey     = "testsecret"
+	)
+
+	tests := []struct {
+		name       string
+		anyRegion  bool
+		wantStatus int
+	}{
+		{name: "strict", wantStatus: s3err.PostAuth.IncorrectRegion("", gatewayRegion, clientRegion).StatusCode()},
+		{name: "any region", anyRegion: true, wantStatus: http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Now().UTC()
+			dateShort := now.Format("20060102")
+
+			policyB64 := encodePOSTPolicy(t, []any{
+				map[string]string{"bucket": "mybucket"},
+			})
+			derivedKey := sigv4auth.DeriveKey(secretKey, dateShort, clientRegion, sigv4auth.ServiceS3)
+			sig, err := utils.SignPostPolicy(policyB64, derivedKey)
+			assert.NoError(t, err)
+
+			app := fiber.New(fiber.Config{ErrorHandler: postObjectErrorHandler})
+			app.Post("/:bucket", chainHandlers(
+				func(c fiber.Ctx) error {
+					if tt.anyRegion {
+						utils.ContextKeyAnyRegion.Set(c, true)
+					}
+					return nil
+				},
+				AuthorizePostObject(backend.New(), RootUserConfig{Access: accessKey, Secret: secretKey}, nil, gatewayRegion),
+				func(c fiber.Ctx) error { return c.SendStatus(http.StatusOK) },
+			))
+
+			body, boundary := buildMultipartBody(t, map[string]string{
+				"key":              "uploads/photo.jpg",
+				"policy":           policyB64,
+				"x-amz-algorithm":  "AWS4-HMAC-SHA256",
+				"x-amz-credential": fmt.Sprintf("%s/%s/%s/s3/aws4_request", accessKey, dateShort, clientRegion),
+				"x-amz-date":       now.Format("20060102T150405Z"),
+				"x-amz-signature":  sig,
+			}, "file-content")
+
+			resp, err := app.Test(makePostRequest(t, body, boundary))
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantStatus, resp.StatusCode)
+		})
+	}
 }
 
 // TestAuthorizePostObject_SignedRequest_WrongSignature verifies that a signed

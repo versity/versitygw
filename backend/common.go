@@ -242,33 +242,47 @@ func ParseCopySourceRange(size int64, acceptRange string) (int64, int64, error) 
 	return startOffset, endOffset - startOffset + 1, nil
 }
 
-// ParseCopySource parses x-amz-copy-source header and returns source bucket,
-// source object, versionId, error respectively
+// ParseCopySource parses the x-amz-copy-source header and returns the source
+// bucket, object key and versionId, in that order. The request validation,
+// the source authorization and the backend all parse the header with it, so
+// the object authorized is the object read.
+//
+// The header is "bucket/key", optionally preceded by a "/" and followed by a
+// "?versionId=" query. It is split at its first "?" before anything is
+// percent-decoded, so an encoded "%3F" is part of the key and never starts
+// the query. The query may only hold a single, non-empty versionId. The
+// bucket and the key are percent-decoded after the split, so "%2F" separates
+// them as "/" does. A header without a key returns an empty key for the
+// caller to reject.
 func ParseCopySource(copySourceHeader string) (string, string, string, error) {
 	if copySourceHeader == "" {
 		return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, copySourceHeader)
 	}
 
-	if copySourceHeader[0] == '/' {
-		copySourceHeader = copySourceHeader[1:]
+	source, query, hasQuery := strings.Cut(strings.TrimPrefix(copySourceHeader, "/"), "?")
+
+	var versionId string
+	if hasQuery {
+		rawVersionId, ok := strings.CutPrefix(query, "versionId=")
+		if !ok || strings.ContainsAny(rawVersionId, "?&") {
+			return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, copySourceHeader)
+		}
+		if rawVersionId == "" {
+			return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEmptyVersionId, "")
+		}
+		var err error
+		versionId, err = url.QueryUnescape(rawVersionId)
+		if err != nil {
+			return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, copySourceHeader)
+		}
 	}
 
-	// URL-decode the entire header before splitting the versionId suffix so the
-	// backend interprets encoded separators the same way as controller
-	// validation. This also preserves encoded bucket/key separators such as
-	// "%2F" from AWS .NET SDK v4 clients.
-	decoded, err := url.QueryUnescape(copySourceHeader)
+	decoded, err := url.QueryUnescape(source)
 	if err != nil {
 		return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, copySourceHeader)
 	}
 
-	decodedSource, versionId, _ := strings.Cut(decoded, "?versionId=")
-
-	srcBucket, srcObject, ok := strings.Cut(decodedSource, "/")
-	if !ok {
-		return "", "", "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, decodedSource)
-	}
-
+	srcBucket, srcObject, _ := strings.Cut(decoded, "/")
 	return srcBucket, srcObject, versionId, nil
 }
 
@@ -708,6 +722,18 @@ type PreConditions struct {
 	IfUnmodeSince *time.Time
 }
 
+// failedPrecondition names the precondition that decided a failed
+// precondition evaluation
+type failedPrecondition int
+
+const (
+	preconditionsHold failedPrecondition = iota
+	failedIfMatch
+	failedIfNoneMatch
+	failedIfModifiedSince
+	failedIfUnmodifiedSince
+)
+
 // EvaluatePreconditions takes the object ETag, the last modified time and
 // evaluates the read preconditions:
 // - if-match,
@@ -717,9 +743,44 @@ type PreConditions struct {
 // if-match and if-none-match are ETag comparisons
 // if-match "*" matches any ETag, and if-none-match "*" matches no ETag
 // if-modified-since and if-unmodified-since are last modifed time comparisons
+// A failed if-match or if-unmodified-since is a 412 PreconditionFailed, and
+// a failed if-none-match or if-modified-since is a 304 NotModified.
 func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreConditions) error {
+	switch evaluatePreconditions(etag, modTime, preconditions) {
+	case failedIfMatch:
+		return s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)
+	case failedIfUnmodifiedSince:
+		return s3err.GetPreconditionFailedErr(s3err.ConditionIfUnmodifiedSince)
+	case failedIfNoneMatch, failedIfModifiedSince:
+		return errNotModified
+	}
+
+	return nil
+}
+
+// EvaluateCopySourcePreconditions evaluates the CopyObject and UploadPartCopy
+// x-amz-copy-source-if-* preconditions against the copy source ETag and last
+// modified time. They are decided the same way as the read preconditions, but
+// S3 never answers a copy with 304 NotModified: every failed precondition is
+// a 412 PreconditionFailed that names the copy-source header.
+func EvaluateCopySourcePreconditions(etag string, modTime time.Time, preconditions PreConditions) error {
+	switch evaluatePreconditions(etag, modTime, preconditions) {
+	case failedIfMatch:
+		return s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfMatch)
+	case failedIfNoneMatch:
+		return s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfNoneMatch)
+	case failedIfModifiedSince:
+		return s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfModifiedSince)
+	case failedIfUnmodifiedSince:
+		return s3err.GetPreconditionFailedErr(s3err.ConditionCopySourceIfUnmodifiedSince)
+	}
+
+	return nil
+}
+
+func evaluatePreconditions(etag string, modTime time.Time, preconditions PreConditions) failedPrecondition {
 	if preconditions.IfMatch == nil && preconditions.IfNoneMatch == nil && preconditions.IfModSince == nil && preconditions.IfUnmodeSince == nil {
-		return nil
+		return preconditionsHold
 	}
 
 	etag = strings.Trim(etag, `"`)
@@ -742,72 +803,47 @@ func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreCond
 	}
 
 	if ifMatch != nil {
-		// if `if-match` doesn't match, return PreconditionFailed
 		if !*ifMatch {
-			return s3err.GetPreconditionFailedErr(s3err.ConditionIfMatch)
+			return failedIfMatch
 		}
 
-		// if-match matches
-		if *ifMatch {
-			if ifNoneMatch != nil {
-				// if `if-none-match` doesn't match return NotModified
-				if !*ifNoneMatch {
-					return errNotModified
-				}
-
-				// if both `if-match` and `if-none-match` match, return no error
-				return nil
+		// with a matching `if-match`, `if-none-match` decides alone
+		// and both dates are ignored
+		if ifNoneMatch != nil {
+			if !*ifNoneMatch {
+				return failedIfNoneMatch
 			}
-
-			// if `if-match` matches but `if-modified-since` is false return NotModified
-			if ifModSince != nil && !*ifModSince {
-				return errNotModified
-			}
-
-			// ignore `if-unmodified-since` as `if-match` is true
-			return nil
+			return preconditionsHold
 		}
+
+		if ifModSince != nil && !*ifModSince {
+			return failedIfModifiedSince
+		}
+
+		// ignore `if-unmodified-since` as `if-match` is true
+		return preconditionsHold
+	}
+
+	// without `if-match`, a false `if-unmodified-since` wins over the
+	// `if-none-match` and `if-modified-since` results
+	if ifUnmodeSince != nil && !*ifUnmodeSince {
+		return failedIfUnmodifiedSince
 	}
 
 	if ifNoneMatch != nil {
-		if *ifNoneMatch {
-			// if `if-none-match` is true, but `if-unmodified-since` is false
-			// return PreconditionFailed
-			if ifUnmodeSince != nil && !*ifUnmodeSince {
-				return s3err.GetPreconditionFailedErr(s3err.ConditionIfUnmodifiedSince)
-			}
-
-			// ignore `if-modified-since` as `if-none-match` is true
-			return nil
-		} else {
-			// if `if-none-match` is false and `if-unmodified-since` is false
-			// return PreconditionFailed
-			if ifUnmodeSince != nil && !*ifUnmodeSince {
-				return s3err.GetPreconditionFailedErr(s3err.ConditionIfUnmodifiedSince)
-			}
-
-			// in all other cases when `if-none-match` is false return NotModified
-			return errNotModified
+		if !*ifNoneMatch {
+			return failedIfNoneMatch
 		}
+
+		// ignore `if-modified-since` as `if-none-match` is true
+		return preconditionsHold
 	}
 
 	if ifModSince != nil && !*ifModSince {
-		// if both `if-modified-since` and `if-unmodified-since` are false
-		// return PreconditionFailed
-		if ifUnmodeSince != nil && !*ifUnmodeSince {
-			return s3err.GetPreconditionFailedErr(s3err.ConditionIfUnmodifiedSince)
-		}
-
-		// if only `if-modified-since` is false, return NotModified
-		return errNotModified
+		return failedIfModifiedSince
 	}
 
-	// if `if-unmodified-since` is false return PreconditionFailed
-	if ifUnmodeSince != nil && !*ifUnmodeSince {
-		return s3err.GetPreconditionFailedErr(s3err.ConditionIfUnmodifiedSince)
-	}
-
-	return nil
+	return preconditionsHold
 }
 
 // EvaluateObjectPutPreconditions evaluates if-match and if-none-match preconditions

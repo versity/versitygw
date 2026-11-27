@@ -61,6 +61,14 @@ type MetadataStorer interface {
 	ReplaceObject(bucket, object string, keep []string) error
 }
 
+// TmpFileTester is implemented by metadata storers that keep metadata on the
+// object files themselves. TestFile checks that f, a new file that is not
+// linked into the namespace yet (an O_TMPFILE), can hold that metadata, and
+// returns the error of the filesystem if it can't.
+type TmpFileTester interface {
+	TestFile(f *os.File) error
+}
+
 // RootDirSetter is implemented by metadata storers that keep metadata on the
 // bucket and object files themselves and therefore need to know where those
 // files live. A backend that does not change the process working directory

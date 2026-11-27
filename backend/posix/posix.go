@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -91,9 +92,23 @@ type Posix struct {
 	// there are different filesystems mounted below the bucket level.
 	forceNoTmpFile bool
 
+	// inheritDefaultACL makes the temporary file of a new object in the
+	// directory the object is published in, so that the directory's default
+	// ACL applies to it, see PosixOpts.InheritDefaultACL
+	inheritDefaultACL bool
+
 	// fsync flushes new objects to stable storage before they are
 	// acknowledged
 	fsync bool
+
+	// fallocUnsupported holds bucket paths whose filesystem rejected
+	// fallocate; per path since buckets can be on different filesystems.
+	fallocUnsupported sync.Map
+
+	// otmpProbe holds, per bucket path, whether an O_TMPFILE can be used for
+	// uploads there: it takes xattrs and can be linked (false: use a named
+	// temp file). Removed when the bucket is deleted.
+	otmpProbe sync.Map
 
 	// forceNoCopyFileRange is a flag to disable the use of io.Copy to
 	// reassemble multipart upload parts, which uses copy_file_range on
@@ -265,6 +280,32 @@ type PosixOpts struct {
 	// ForceNoTmpFile disables the use of O_TMPFILE even if the filesystem
 	// supports it
 	ForceNoTmpFile bool
+	// InheritDefaultACL makes the O_TMPFILE of a new object in the directory
+	// the object is published in instead of the bucket's metadata directory,
+	// so that the directory's default ACL applies to the object the same way
+	// it does to a file created there over NFS or SMB. When the directory
+	// does not exist yet, the file is made in its closest existing parent,
+	// whose default ACL the directory inherits when it is made. The
+	// directory is chosen when the upload starts: one made by someone else
+	// while the object is uploaded doesn't give the object its ACL.
+	//
+	// When the directory has a default ACL, the owner permissions of the
+	// object are still set to NewFilePerm, but its group (or mask) and other
+	// permissions are those the ACL gives it, which the kernel limits to the
+	// NewFilePerm it is created with. With the default 0644 the mask is at
+	// most r--, so the group and named entries of the ACL don't get write
+	// permission unless NewFilePerm has it, as 0664 or 0666 does. The object
+	// also gets the directory's group when the directory is setgid, unless
+	// ChownGID sets it. A directory whose default ACL differs from its
+	// parent's is not removed when its last object is deleted. Like any
+	// empty directory, it is then still listed as a common prefix, and a PUT
+	// of an object with its name fails.
+	//
+	// An object that replaces an existing file is still a new inode: the ACL
+	// and the extended attributes set on the replaced file are not kept. It
+	// has no effect when O_TMPFILE is disabled or not supported, or outside
+	// Linux.
+	InheritDefaultACL bool
 	// ForceNoCopyFileRange disables the use of io.Copy for multipart uploads parts
 	ForceNoCopyFileRange bool
 	// Fsync flushes each new object's data, metadata and directory entries
@@ -453,6 +494,14 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 			euid, egid)
 	}
 
+	// Without O_TMPFILE the temporary file of a new object is made in the
+	// bucket's metadata directory, where no default ACL applies to it.
+	inheritDefaultACL := opts.InheritDefaultACL
+	if inheritDefaultACL && (opts.ForceNoTmpFile || runtime.GOOS != "linux") {
+		fmt.Println("Warning: --inherit-default-acl has no effect with --disableotmp or outside Linux")
+		inheritDefaultACL = false
+	}
+
 	newDirPerm := defaultNewDirPerm
 	if opts.newDirPermSet {
 		newDirPerm = opts.NewDirPerm.Perm()
@@ -476,6 +525,7 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		newDirPerm:           newDirPerm,
 		newFilePerm:          newFilePerm,
 		forceNoTmpFile:       opts.ForceNoTmpFile,
+		inheritDefaultACL:    inheritDefaultACL,
 		fsync:                opts.Fsync,
 		forceNoCopyFileRange: opts.ForceNoCopyFileRange,
 		objectLockMode:       objectLockMode,
@@ -795,52 +845,39 @@ func (p *Posix) ListBuckets(ctx context.Context, input s3response.ListBucketsInp
 
 	var buckets []s3response.ListAllMyBucketsEntry
 	for _, fi := range fis {
-		if !strings.HasPrefix(fi.Name(), input.Prefix) {
+		name := fi.Name()
+		if !strings.HasPrefix(name, input.Prefix) {
 			continue
 		}
 
-		if !utils.IsValidBucketName(fi.Name()) || p.isExcludedName(fi.Name()) {
+		if !utils.IsValidBucketName(name) || p.isExcludedName(name) {
 			continue
 		}
 
+		if name <= input.ContinuationToken {
+			continue
+		}
+
+		listed, err := p.isBucketListed(ctx, name, input)
+		if err != nil {
+			return s3response.ListAllMyBucketsResult{}, err
+		}
+		if !listed {
+			continue
+		}
+
+		// The page is full and another bucket follows it, so the
+		// listing continues after the page's last bucket. A page that
+		// ends with the last listed bucket carries no token, as in S3.
 		if len(buckets) == int(input.MaxBuckets) {
 			cToken = buckets[len(buckets)-1].Name
 			break
 		}
 
-		if fi.Name() <= input.ContinuationToken {
-			continue
-		}
-
-		// return all the buckets for admin users
-		if input.IsAdmin {
-			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name:         fi.Name(),
-				CreationDate: fi.ModTime(),
-			})
-			continue
-		}
-
-		aclJSON, err := p.meta.RetrieveAttribute(nil, fi.Name(), "", aclkey)
-		if errors.Is(err, meta.ErrNoSuchKey) {
-			// skip buckets without acl tag
-			continue
-		}
-		if err != nil {
-			return s3response.ListAllMyBucketsResult{}, fmt.Errorf("get acl tag: %w", err)
-		}
-
-		acl, err := auth.ParseACL(aclJSON)
-		if err != nil {
-			return s3response.ListAllMyBucketsResult{}, err
-		}
-
-		if acl.Owner == input.Owner {
-			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name:         fi.Name(),
-				CreationDate: fi.ModTime(),
-			})
-		}
+		buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+			Name:         name,
+			CreationDate: fi.ModTime(),
+		})
 	}
 
 	return s3response.ListAllMyBucketsResult{
@@ -853,6 +890,40 @@ func (p *Posix) ListBuckets(ctx context.Context, input s3response.ListBucketsInp
 		Prefix:            input.Prefix,
 		ContinuationToken: cToken,
 	}, nil
+}
+
+// isBucketListed reports whether ListBuckets lists bucket for input: every
+// bucket for an admin, and otherwise each one owned by input.Owner or
+// accepted by input.IsVisible. A bucket without an ACL is never listed to a
+// non-admin.
+func (p *Posix) isBucketListed(ctx context.Context, bucket string, input s3response.ListBucketsInput) (bool, error) {
+	if input.IsAdmin {
+		return true, nil
+	}
+
+	aclJSON, err := p.meta.RetrieveAttribute(nil, bucket, "", aclkey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("get acl tag: %w", err)
+	}
+
+	acl, err := auth.ParseACL(aclJSON)
+	if err != nil {
+		return false, err
+	}
+	if acl.Owner == input.Owner {
+		return true, nil
+	}
+	if input.IsVisible == nil {
+		return false, nil
+	}
+
+	// The listing already holds an action slot, so a backend call made on
+	// its behalf must not wait for another: enough concurrent listings
+	// would otherwise take every slot and wait on each other.
+	return input.IsVisible(withCtxNoSlot(ctx), bucket, aclJSON)
 }
 
 // IsBucketValid reports whether bucket may be used as a bucket name by this
@@ -1157,8 +1228,10 @@ func (p *Posix) DeleteBucket(ctx context.Context, bucket string) (err error) {
 	if err = p.meta.DeleteAttributes(bucket, ""); err != nil {
 		debuglogger.Logf("failed to delete bucket sidecar attributes (%q): %v", bucket, err)
 	}
+	p.otmpProbe.Delete(p.BucketPath(bucket))
 	// Remove the bucket from versioning directory
 	if p.versioningEnabled() {
+		p.otmpProbe.Delete(filepath.Join(p.versioningDir, bucket))
 		err = os.RemoveAll(filepath.Join(p.versioningDir, bucket))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("remove bucket version: %w", err)
@@ -1375,11 +1448,13 @@ func (p *Posix) isBucketVersioningSuspended(s types.BucketVersioningStatus) bool
 }
 
 // liveObjVersionId returns the version id to report for the current version
-// of bucket/object. An object with no versionId attribute is the null
-// version, but only a bucket with versioning configured has versions at all:
-// in a bucket that was never versioned the object has no version id.
-func (p *Posix) liveObjVersionId(ctx context.Context, bucket, object string) (string, error) {
-	vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
+// of bucket/object, read from f when the caller has the object open so the
+// id belongs to the same inode as the body. An object with no versionId
+// attribute is the null version, but only a bucket with versioning
+// configured has versions at all: in a bucket that was never versioned the
+// object has no version id.
+func (p *Posix) liveObjVersionId(ctx context.Context, f *os.File, bucket, object string) (string, error) {
+	vId, err := p.meta.RetrieveAttribute(f, bucket, object, versionIdKey)
 	if err == nil {
 		return string(vId), nil
 	}
@@ -1616,7 +1691,7 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 	versioningKey := filepath.Join(genObjVersionKey(key), versionId)
 	versionTmpPath := filepath.Join(versionBucketPath, MetaTmpDir)
 	f, err := p.openTmpFile(versionTmpPath, versionBucketPath, versioningKey,
-		size, acc, doFalloc, p.forceNoTmpFile, odirectNotAllowed)
+		size, acc, doFalloc, odirectNotAllowed)
 	if err != nil {
 		return versionPath, err
 	}
@@ -1741,8 +1816,8 @@ func (p *Posix) ListObjectVersions(ctx context.Context, input *s3.ListObjectVers
 		KeyMarker:           &keyMarker,
 		MaxKeys:             input.MaxKeys,
 		Name:                input.Bucket,
-		NextKeyMarker:       &results.NextMarker,
-		NextVersionIdMarker: &results.NextVersionIdMarker,
+		NextKeyMarker:       backend.GetPtrFromString(results.NextMarker),
+		NextVersionIdMarker: backend.GetPtrFromString(results.NextVersionIdMarker),
 		Prefix:              &prefix,
 		VersionIdMarker:     &versionIdMarker,
 		Versions:            results.ObjectVersions,
@@ -1805,6 +1880,39 @@ func (p *Posix) isObjDeleteMarker(bucket, object string) (bool, error) {
 	return true, nil
 }
 
+// currentDeleteMarkerVersionId returns the version id of the delete marker
+// that the caller found to be the current version of object. A PUT can
+// replace the marker after that check, and a version id read by path would
+// then be the new object's: a response naming it as the delete marker
+// could make a client delete the live object. So the marker is checked again
+// and its version id read on one open file. A marker removed or replaced in
+// between gives NoSuchKey. A directory object has no open file, so its
+// attributes are read by path.
+func (p *Posix) currentDeleteMarkerVersionId(ctx context.Context, bucket, object string) (string, error) {
+	var f *os.File
+	if !strings.HasSuffix(object, "/") {
+		var err error
+		f, err = openForRead(p.ObjectPath(bucket, object), false)
+		if IsEntryGone(err) {
+			return "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if err != nil {
+			return "", fmt.Errorf("open delete marker: %w", err)
+		}
+		defer f.Close()
+	}
+
+	_, err := p.meta.RetrieveAttribute(f, bucket, object, deleteMarkerKey)
+	if errors.Is(err, meta.ErrNoSuchKey) || IsEntryGone(err) {
+		return "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return "", fmt.Errorf("get object delete-marker: %w", err)
+	}
+
+	return p.liveObjVersionId(ctx, f, bucket, object)
+}
+
 // checkCopySourceDeleteMarker rejects a copy whose source resolves to a
 // delete marker: the key has no current version when the marker is the
 // latest, and a marker named by version id holds no data to copy.
@@ -1826,16 +1934,20 @@ func (p *Posix) checkCopySourceDeleteMarker(bucket, object, versionId string) er
 // Converts the file to object version. Finds all the object versions,
 // delete markers from the versioning directory and returns
 func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
-	return func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+	return func(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
 		var objects []s3response.ObjectVersion
 		var delMarkers []s3response.DeleteMarkerEntry
-		// if the number of available objects is 0, return truncated response
-		if availableObjCount <= 0 {
+		var lastVersionId string
+		pastVersionIdMarker := versionIdMarker == ""
+		// result returns the listed versions. The listing is truncated
+		// when a version is left out because the listing is full.
+		result := func(truncated bool) *backend.ObjVersionFuncResult {
 			return &backend.ObjVersionFuncResult{
-				ObjectVersions: objects,
-				DelMarkers:     delMarkers,
-				Truncated:      true,
-			}, nil
+				ObjectVersions:      objects,
+				DelMarkers:          delMarkers,
+				NextVersionIdMarker: lastVersionId,
+				Truncated:           truncated,
+			}
 		}
 		// a directory is listed under the key with the trailing slash
 		key := path
@@ -1869,9 +1981,13 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 		}
 		// the version id marker is the version listed last, so the
 		// listing continues with the version following it
-		if !*pastVersionIdMarker {
-			*pastVersionIdMarker = versionId == versionIdMarker
+		if !pastVersionIdMarker {
+			pastVersionIdMarker = versionId == versionIdMarker
 		} else {
+			if availableObjCount == 0 {
+				return result(true), nil
+			}
+
 			fi, err := d.Info()
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil, backend.ErrSkipObj
@@ -1919,41 +2035,25 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 			}
 
 			availableObjCount--
-			if availableObjCount == 0 {
-				return &backend.ObjVersionFuncResult{
-					ObjectVersions:      objects,
-					DelMarkers:          delMarkers,
-					Truncated:           true,
-					NextVersionIdMarker: versionId,
-				}, nil
-			}
+			lastVersionId = versionId
 		}
 
 		if !p.versioningEnabled() {
-			return &backend.ObjVersionFuncResult{
-				ObjectVersions: objects,
-				DelMarkers:     delMarkers,
-			}, nil
+			return result(false), nil
 		}
 
 		// List all the versions of the object in the versioning directory
 		versionPath := p.genObjVersionPath(bucket, p.encodeKey(key))
 		dirEnts, err := os.ReadDir(versionPath)
 		if errors.Is(err, fs.ErrNotExist) {
-			return &backend.ObjVersionFuncResult{
-				ObjectVersions: objects,
-				DelMarkers:     delMarkers,
-			}, nil
+			return result(false), nil
 		}
 		if err != nil {
 			return nil, fmt.Errorf("read version dir: %w", err)
 		}
 
 		if len(dirEnts) == 0 {
-			return &backend.ObjVersionFuncResult{
-				ObjectVersions: objects,
-				DelMarkers:     delMarkers,
-			}, nil
+			return result(false), nil
 		}
 
 		// First find the null versionId object(if exists)
@@ -2024,12 +2124,15 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 		// addNullVersion lists the null version at its place in the
 		// version history, or continues the listing after it when it's
 		// the version id marker. It returns the truncated result when
-		// the null version fills up the listing.
+		// the listing is full before the null version.
 		addNullVersion := func() *backend.ObjVersionFuncResult {
 			isNullVersionIdObjAdded = true
-			if !*pastVersionIdMarker {
-				*pastVersionIdMarker = versionIdMarker == nullVersionId
+			if !pastVersionIdMarker {
+				pastVersionIdMarker = versionIdMarker == nullVersionId
 				return nil
+			}
+			if availableObjCount == 0 {
+				return result(true)
 			}
 
 			if nullVersionIdObj != nil {
@@ -2039,14 +2142,8 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				delMarkers = append(delMarkers, *nullObjDelMarker)
 			}
 
-			if availableObjCount--; availableObjCount == 0 {
-				return &backend.ObjVersionFuncResult{
-					ObjectVersions:      objects,
-					DelMarkers:          delMarkers,
-					Truncated:           true,
-					NextVersionIdMarker: nullVersionId,
-				}
-			}
+			availableObjCount--
+			lastVersionId = nullVersionId
 			return nil
 		}
 
@@ -2077,11 +2174,12 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 			versionId := f.Name()
 			size := f.Size()
 
-			if !*pastVersionIdMarker {
-				if versionId == versionIdMarker {
-					*pastVersionIdMarker = true
-				}
+			if !pastVersionIdMarker {
+				pastVersionIdMarker = versionId == versionIdMarker
 				continue
+			}
+			if availableObjCount == 0 {
+				return result(true), nil
 			}
 
 			etagBytes, err := p.meta.RetrieveAttribute(nil, versionPath, versionId, etagkey)
@@ -2126,16 +2224,8 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				})
 			}
 
-			// if the available object count reaches to 0, return truncated response with nextVersionIdMarker
 			availableObjCount--
-			if availableObjCount == 0 {
-				return &backend.ObjVersionFuncResult{
-					ObjectVersions:      objects,
-					DelMarkers:          delMarkers,
-					Truncated:           true,
-					NextVersionIdMarker: versionId,
-				}, nil
-			}
+			lastVersionId = versionId
 		}
 
 		// If null versionId object is found but not yet pushed,
@@ -2146,10 +2236,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 			}
 		}
 
-		return &backend.ObjVersionFuncResult{
-			ObjectVersions: objects,
-			DelMarkers:     delMarkers,
-		}, nil
+		return result(false), nil
 	}
 }
 
@@ -2787,7 +2874,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			return res, "", s3err.GetInvalidArgumentErr(s3err.InvalidArgCompleteMpPartNumber, fmt.Sprint(*part.PartNumber))
 		}
 		if *part.PartNumber <= partNumber {
-			return res, "", s3err.GetAPIError(s3err.ErrInvalidPartOrder)
+			return res, "", s3err.GetInvalidPartOrderErr(uploadID)
 		}
 
 		partNumber = *part.PartNumber
@@ -2949,8 +3036,8 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		finalEtag = fmt.Sprintf("\"%s-%s\"", strings.ToUpper(string(checksums.Algorithm)), value)
 	}
 
-	f, err := p.openTmpFile(p.ObjectPath(bucket, MetaTmpDir), bucket, object,
-		totalsize, acct, skipFalloc, p.forceNoTmpFile, odirectNotAllowed)
+	f, err := p.openObjectTmpFile(bucket, object,
+		totalsize, acct, skipFalloc, odirectNotAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return res, "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -3972,7 +4059,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	partPath := filepath.Join(mpPath, fmt.Sprintf("%v", *part))
 
 	f, err := p.openTmpFile(p.ObjectPath(bucket, objdir),
-		bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile, odirectAllowed)
+		bucket, partPath, length, acct, doFalloc, odirectAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(r)
@@ -4422,7 +4509,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		srcEtag = p.defaultEtag
 	}
 
-	err = backend.EvaluatePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
+	err = backend.EvaluateCopySourcePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
 		IfMatch:       upi.CopySourceIfMatch,
 		IfNoneMatch:   upi.CopySourceIfNoneMatch,
 		IfModSince:    upi.CopySourceIfModifiedSince,
@@ -4433,7 +4520,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}
 
 	f, err := p.openTmpFile(p.ObjectPath(*upi.Bucket, objdir),
-		*upi.Bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile, odirectNotAllowed)
+		*upi.Bucket, partPath, length, acct, doFalloc, odirectNotAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -5032,8 +5119,8 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, fmt.Errorf("stat object: %w", err)
 	}
 
-	f, err := p.openTmpFile(p.ObjectPath(*po.Bucket, MetaTmpDir),
-		*po.Bucket, object, contentLength, acct, doFalloc, p.forceNoTmpFile, odirectAllowed)
+	f, err := p.openObjectTmpFile(*po.Bucket, object, contentLength,
+		acct, doFalloc, odirectAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			drainBody(po.Body)
@@ -5598,9 +5685,8 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					acct = auth.Account{}
 				}
 
-				f, err := p.openTmpFile(p.ObjectPath(bucket, MetaTmpDir),
-					bucket, object, srcObjVersion.Size(), acct, doFalloc,
-					p.forceNoTmpFile, odirectNotAllowed)
+				f, err := p.openObjectTmpFile(bucket, object,
+					srcObjVersion.Size(), acct, doFalloc, odirectNotAllowed)
 				if err != nil {
 					return nil, fmt.Errorf("open tmp file: %w", err)
 				}
@@ -5733,8 +5819,10 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	}
 
 	err = os.Remove(objpath)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
+		// another delete removed the object after the stat.
+		// AWS returns success if the object does not exist
+		return &s3.DeleteObjectOutput{}, nil
 	}
 	if isErrDirNotEmpty(err) {
 		// If the directory object has been uploaded explicitly
@@ -5969,6 +6057,20 @@ func (p *Posix) removeParents(bucket, object string) {
 			break
 		}
 
+		if p.inheritDefaultACL {
+			// a directory with a default ACL other than its parent's
+			// was given that ACL by an administrator for the files in
+			// it: keep it for the next object, which would otherwise
+			// be made in a new directory with the parent's ACL. A
+			// directory with its parent's ACL, which mkdir copies to
+			// every new directory, is removed. Keep it too when an ACL
+			// can't be read.
+			keep, err := ownDefaultACL(p.ObjectPath(bucket, parent))
+			if keep || err != nil {
+				break
+			}
+		}
+
 		// The parent may have been replaced by an object since its
 		// attribute was checked: remove it only if it is a directory.
 		err = removeDir(p.ObjectPath(bucket, parent))
@@ -6032,7 +6134,46 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 	}, nil
 }
 
+// notModifiedCounts returns what a 304 repeats from the 200 but GetObject and
+// HeadObject have not read when they evaluate the preconditions: the tag
+// count, and with partNumber the parts count of a multipart object.
+func (p *Posix) notModifiedCounts(f *os.File, bucket, object, versionId string, partNumber *int32) (tagCount, partsCount *int32, err error) {
+	tags, err := p.getAttrTags(bucket, object, versionId)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(tags) != 0 {
+		tc := int32(len(tags))
+		tagCount = &tc
+	}
+	if partNumber == nil {
+		return tagCount, nil, nil
+	}
+
+	mpMetaBytes, err := p.meta.RetrieveAttribute(f, bucket, object, mpMetaKey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return tagCount, nil, nil
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("retrieve mp metadata: %w", err)
+	}
+	mpMeta, err := backend.UnmarshalMpUploadMetadata(mpMetaBytes, false)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse object multipart metadata: %w", err)
+	}
+	pc := int32(len(mpMeta.Parts))
+	return tagCount, &pc, nil
+}
+
 func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	return p.GetObjectWithPreReadFunc(ctx, input, nil)
+}
+
+// GetObjectWithPreReadFunc is GetObject with a hook that can reject the
+// read. preRead gets the opened object file after the preconditions, the
+// range and the part number pass, so their errors come first. A nil
+// preRead is skipped. Directory objects have no data and skip it too.
+func (p *Posix) GetObjectWithPreReadFunc(ctx context.Context, input *s3.GetObjectInput, preRead func(f *os.File) error) (*s3.GetObjectOutput, error) {
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5) {
 		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
@@ -6069,6 +6210,8 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		return nil, err
 	}
 
+	requestedVersionId := versionId
+	origBucket := bucket
 	object := p.encodeKey(*input.Key)
 	err = p.validateObjectName(bucket, object)
 	if err != nil {
@@ -6135,40 +6278,177 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 			return nil, err
 		}
 
-		// if the specified object version is a delete marker, return MethodNotAllowed
+		// if the current version, or the requested version, is a delete marker,
+		// return NoSuchKey (no versionId) or MethodNotAllowed (versionId)
 		if isDelMarker {
 			if versionId != "" {
-				err = s3err.GetAPIError(s3err.ErrMethodNotAllowed)
-			} else {
-				err = s3err.GetAPIError(s3err.ErrNoSuchKey)
+				return &s3.GetObjectOutput{
+					DeleteMarker: getBoolPtr(true),
+					VersionId:    &versionId,
+					LastModified: backend.GetTimePtr(fid.ModTime()),
+				}, s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete})
+			}
+
+			// S3 names the delete marker by its version id, without a
+			// Last-Modified, when it is the current version
+			dmVersionId, err := p.currentDeleteMarkerVersionId(ctx, bucket, object)
+			if err != nil {
+				return nil, err
 			}
 			return &s3.GetObjectOutput{
 				DeleteMarker: getBoolPtr(true),
-				LastModified: backend.GetTimePtr(fid.ModTime()),
-			}, err
+				VersionId:    &dmVersionId,
+			}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 	}
 
-	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+	// Open before reading attributes so the ETag, preconditions and body come
+	// from one inode. Directory objects have no data file and stay path-based.
+	var f *os.File
+	fi := fid
+	bodyOwned := false
+	defer func() {
+		if f != nil && !bodyOwned {
+			f.Close()
+		}
+	}()
+	// goneErr is what a read answers when the object was removed after the
+	// stat above. It names a version only when the request named one, not
+	// when the version id was looked up for the live object.
+	goneErr := func() error {
+		if requestedVersionId != "" {
+			return s3err.GetNoSuchVersionErr(*input.Key, requestedVersionId)
+		}
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	reopened := false
+	if !fid.IsDir() {
+		// openForRead opens with FILE_SHARE_DELETE on Windows so that a concurrent
+		// DeleteObject can call os.Remove on this file while the GET response body
+		// is still being streamed. On POSIX, os.Open is sufficient.
+		f, err = openForRead(objPath, p.enableODirect)
+		if IsEntryGone(err) {
+			// the object was removed after the stat above, or its directory
+			// was, which a shared filesystem can report as ENOTDIR or ESTALE.
+			return nil, goneErr()
+		}
+		if err != nil {
+			return nil, fmt.Errorf("open object: %w", err)
+		}
+
+		if requestedVersionId != "" && bucket == origBucket {
+			// the name resolved to the live object from the versionId it had
+			// when it was read by path; a PUT can have linked a new inode
+			// since, so check the id of the inode just opened
+			vId, err := p.meta.RetrieveAttribute(f, bucket, object, versionIdKey)
+			if errors.Is(err, meta.ErrNoSuchKey) {
+				vId, err = []byte(nullVersionId), nil
+			}
+			if err != nil {
+				return nil, fmt.Errorf("get obj versionId: %w", err)
+			}
+			if string(vId) != requestedVersionId {
+				// the requested version was moved to the versioning
+				// directory, read it from there
+				f.Close()
+				f = nil
+				reopened = true
+				bucket = filepath.Join(p.versioningDir, bucket)
+				object = filepath.Join(genObjVersionKey(object), requestedVersionId)
+				objPath = p.ObjectPath(bucket, object)
+				f, err = openForRead(objPath, p.enableODirect)
+				if IsEntryGone(err) {
+					return nil, goneErr()
+				}
+				if err != nil {
+					return nil, fmt.Errorf("open object: %w", err)
+				}
+			}
+		}
+
+		fi, err = f.Stat()
+		if err != nil {
+			return nil, fmt.Errorf("stat object: %w", err)
+		}
+
+		if reopened {
+			// the version was moved after the lookup, so the delete-marker
+			// check made then no longer covers the file just opened
+			_, err := p.meta.RetrieveAttribute(f, bucket, object, deleteMarkerKey)
+			if err == nil {
+				return &s3.GetObjectOutput{
+					DeleteMarker: getBoolPtr(true),
+					VersionId:    &requestedVersionId,
+					LastModified: backend.GetTimePtr(fi.ModTime()),
+				}, s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete})
+			}
+			if IsEntryGone(err) {
+				return nil, goneErr()
+			}
+			if !errors.Is(err, meta.ErrNoSuchKey) {
+				return nil, fmt.Errorf("get object delete-marker: %w", err)
+			}
+		}
+	}
+
+	b, err := p.meta.RetrieveAttribute(f, bucket, object, etagkey)
+	if IsEntryGone(err) {
+		// a directory object has no open file, so its attribute is read by
+		// path and the delete can come between the stat and this read
+		return nil, goneErr()
+	}
+	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+		return nil, fmt.Errorf("get object etag: %w", err)
+	}
 	etag := string(b)
-	if err != nil || etag == "" {
+	if etag == "" {
 		etag = p.defaultEtag
 	}
 
 	// evaluate preconditions
-	err = backend.EvaluatePreconditions(etag, fid.ModTime(), backend.PreConditions{
+	err = backend.EvaluatePreconditions(etag, fi.ModTime(), backend.PreConditions{
 		IfMatch:       input.IfMatch,
 		IfNoneMatch:   input.IfNoneMatch,
 		IfModSince:    input.IfModifiedSince,
 		IfUnmodeSince: input.IfUnmodifiedSince,
 	})
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+		// the 304 carries the object's metadata from the 200, but no content
+		if p.versioningEnabled() && versionId == "" {
+			versionId, err = p.liveObjVersionId(ctx, f, bucket, object)
+			if err != nil {
+				return nil, err
+			}
+		}
+		tagCount, partsCount, err := p.notModifiedCounts(f, bucket, object, requestedVersionId, input.PartNumber)
+		if err != nil {
+			return nil, err
+		}
+		objMeta := p.loadObjectMetaProperties(f, bucket, object, &fi)
+		legalHold, lockMode, retainUntil := p.objectLockAttrs(f, bucket, object)
+		return &s3.GetObjectOutput{
+			ObjectLockLegalHoldStatus: legalHold,
+			ObjectLockMode:            lockMode,
+			ObjectLockRetainUntilDate: retainUntil,
+			CacheControl:              objMeta.CacheControl,
+			ExpiresString:             objMeta.Expires,
+			WebsiteRedirectLocation:   objMeta.WebsiteRedirectLocation,
+			ETag:                      &etag,
+			LastModified:              backend.GetTimePtr(fi.ModTime()),
+			Metadata:                  objMeta.Metadata,
+			TagCount:                  tagCount,
+			StorageClass:              types.StorageClassStandard,
+			VersionId:                 &versionId,
+			PartsCount:                partsCount,
+		}, s3err.GetAPIError(s3err.ErrNotModified)
+	}
 	if err != nil {
 		return nil, err
 	}
 
 	// If versioning is configured get the object versionId
 	if p.versioningEnabled() && versionId == "" {
-		versionId, err = p.liveObjVersionId(ctx, bucket, object)
+		versionId, err = p.liveObjVersionId(ctx, f, bucket, object)
 		if err != nil {
 			return nil, err
 		}
@@ -6183,7 +6463,7 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		objMeta := p.loadObjectMetaProperties(nil, bucket, object, &fid)
 
 		var tagCount *int32
-		tags, err := p.getAttrTags(bucket, object, versionId)
+		tags, err := p.getAttrTags(bucket, object, requestedVersionId)
 		if err != nil {
 			return nil, err
 		}
@@ -6237,31 +6517,6 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		}, nil
 	}
 
-	// openForRead opens with FILE_SHARE_DELETE on Windows so that a concurrent
-	// DeleteObject can call os.Remove on this file while the GET response body
-	// is still being streamed. On POSIX, os.Open is sufficient.
-	f, err := openForRead(objPath, p.enableODirect)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("open object: %w", err)
-	}
-
-	fi, err := f.Stat()
-	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
-		if versionId != "" {
-			return nil, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, versionId)
-		}
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-	}
-	if isErrNameTooLong(err) {
-		return nil, s3err.GetKeyTooLongErr(int64(len(*input.Key)), 1024)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("stat object: %w", err)
-	}
-
 	objSize := fi.Size()
 	if fi.IsDir() {
 		objSize = 0
@@ -6276,7 +6531,7 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	// object with no Content-Range; any other partNumber is out of range.
 	// Both range read and partNumber can't be used together.
 	if input.PartNumber != nil {
-		mpMetaBytes, metaErr := p.meta.RetrieveAttribute(nil, bucket, object, mpMetaKey)
+		mpMetaBytes, metaErr := p.meta.RetrieveAttribute(f, bucket, object, mpMetaKey)
 		if metaErr == nil {
 			mpMeta, err := backend.UnmarshalMpUploadMetadata(mpMetaBytes, false)
 			if err != nil {
@@ -6322,10 +6577,17 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		}
 	}
 
+	if preRead != nil {
+		err = preRead(f)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	objMeta := p.loadObjectMetaProperties(f, bucket, object, &fi)
 
 	var tagCount *int32
-	tags, err := p.getAttrTags(bucket, object, versionId)
+	tags, err := p.getAttrTags(bucket, object, requestedVersionId)
 	if err != nil {
 		return nil, err
 	}
@@ -6350,6 +6612,8 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	if err != nil {
 		return nil, fmt.Errorf("build get object body: %w", err)
 	}
+	// The body owns the file and closes it when the response is consumed.
+	bodyOwned = true
 
 	return &s3.GetObjectOutput{
 		ObjectLockLegalHoldStatus: legalHold,
@@ -6497,10 +6761,10 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 					DeleteMarker: getBoolPtr(true),
 					VersionId:    &versionId,
 					LastModified: backend.GetTimePtr(fi.ModTime()),
-				}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+				}, s3err.GetMethodNotAllowedErr(http.MethodHead, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete})
 			}
 
-			dmVersionId, err := p.liveObjVersionId(ctx, bucket, object)
+			dmVersionId, err := p.currentDeleteMarkerVersionId(ctx, bucket, object)
 			if err != nil {
 				return nil, err
 			}
@@ -6512,7 +6776,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	if p.versioningEnabled() && versionId == "" {
-		versionId, err = p.liveObjVersionId(ctx, bucket, object)
+		versionId, err = p.liveObjVersionId(ctx, nil, bucket, object)
 		if err != nil {
 			return nil, err
 		}
@@ -6533,6 +6797,29 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		IfModSince:    input.IfModifiedSince,
 		IfUnmodeSince: input.IfUnmodifiedSince,
 	})
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+		// the 304 carries the object's metadata from the 200
+		tagCount, partsCount, err := p.notModifiedCounts(nil, bucket, object, versionId, input.PartNumber)
+		if err != nil {
+			return nil, err
+		}
+		legalHold, lockMode, retainUntil := p.objectLockAttrs(nil, bucket, object)
+		return &s3.HeadObjectOutput{
+			ObjectLockLegalHoldStatus: legalHold,
+			ObjectLockMode:            lockMode,
+			ObjectLockRetainUntilDate: retainUntil,
+			CacheControl:              objMeta.CacheControl,
+			ExpiresString:             objMeta.Expires,
+			WebsiteRedirectLocation:   objMeta.WebsiteRedirectLocation,
+			ETag:                      &etag,
+			LastModified:              backend.GetTimePtr(fi.ModTime()),
+			Metadata:                  objMeta.Metadata,
+			TagCount:                  tagCount,
+			StorageClass:              types.StorageClassStandard,
+			VersionId:                 &versionId,
+			PartsCount:                partsCount,
+		}, s3err.GetAPIError(s3err.ErrNotModified)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -6596,26 +6883,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		}
 	}
 
-	var objectLockLegalHoldStatus types.ObjectLockLegalHoldStatus
-	status, err := p.GetObjectLegalHold(withCtxNoSlot(ctx), bucket, *input.Key, versionId)
-	if err == nil {
-		if *status {
-			objectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOn
-		} else {
-			objectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOff
-		}
-	}
-
-	var objectLockMode types.ObjectLockMode
-	var objectLockRetainUntilDate *time.Time
-	retention, err := p.GetObjectRetention(withCtxNoSlot(ctx), bucket, *input.Key, versionId)
-	if err == nil {
-		var config types.ObjectLockRetention
-		if err := json.Unmarshal(retention, &config); err == nil {
-			objectLockMode = types.ObjectLockMode(config.Mode)
-			objectLockRetainUntilDate = config.RetainUntilDate
-		}
-	}
+	objectLockLegalHoldStatus, objectLockMode, objectLockRetainUntilDate := p.objectLockAttrs(nil, bucket, object)
 
 	var checksums s3response.Checksum
 	// Return checksums only when the full object is requested
@@ -6744,7 +7012,15 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 	}, nil
 }
 
-func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (_ s3response.CopyObjectOutput, err error) {
+func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
+	return p.CopyObjectWithPreReadFunc(ctx, input, nil)
+}
+
+// CopyObjectWithPreReadFunc is CopyObject with a hook that can reject the
+// copy. preRead gets the opened source object file after the copy source
+// preconditions pass, before any of its data is read. A nil preRead is
+// skipped. Directory objects have no data and skip it too.
+func (p *Posix) CopyObjectWithPreReadFunc(ctx context.Context, input s3response.CopyObjectInput, preRead func(f *os.File) error) (_ s3response.CopyObjectOutput, err error) {
 	defer backend.MapPermissionErr(&err)
 
 	if backend.HasSSEC(input.SSECustomerAlgorithm, input.SSECustomerKey, input.SSECustomerKeyMD5,
@@ -6905,7 +7181,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		srcEtag = p.defaultEtag
 	}
 
-	err = backend.EvaluatePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
+	err = backend.EvaluateCopySourcePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
 		IfMatch:       input.CopySourceIfMatch,
 		IfNoneMatch:   input.CopySourceIfNoneMatch,
 		IfModSince:    input.CopySourceIfModifiedSince,
@@ -6929,6 +7205,10 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	var xxhash128 *string
 	var chType types.ChecksumType
 
+	// The algorithm is accepted in any case, and stored and returned the
+	// way S3 names it.
+	input.ChecksumAlgorithm = types.ChecksumAlgorithm(strings.ToUpper(string(input.ChecksumAlgorithm)))
+
 	dstObjdPath := joinPathWithTrailer(p.BucketPath(dstBucket), dstObject)
 	// A copy of an object onto itself is rejected unless it replaces the
 	// object metadata. Naming a source version makes it a regular copy.
@@ -6938,18 +7218,63 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 	}
 
+	// A self copy that changes nothing is rejected above whatever the
+	// state of the source, as S3 does, so preRead runs only after it.
+	if preRead != nil && !fi.IsDir() {
+		err = preRead(f)
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
+	}
+
 	// In a versioned bucket a self copy creates a new version like any other
 	// write, so only unversioned buckets are rewritten in place.
 	versioned := p.versioningEnabled() && vStatus != ""
 	if selfCopy && !versioned {
+		// A checksum in a new algorithm is computed from the source
+		// file opened above before the publish lock is taken, as
+		// PutObject stages its data before it, so that reading the
+		// object doesn't hold up writes to other keys. It is used under
+		// the lock only if the object is still the file that was read.
+		var readSum string
+		var readInfo fs.FileInfo
+		if input.ChecksumAlgorithm != "" {
+			stored, err := p.retrieveChecksums(nil, dstBucket, dstObject)
+			if err != nil || stored.Algorithm != input.ChecksumAlgorithm {
+				readSum, err = hashObjectFile(f, fi, input.ChecksumAlgorithm)
+				if err != nil {
+					return s3response.CopyObjectOutput{}, err
+				}
+				readInfo = fi
+			}
+		}
+
 		// The object is rewritten in place rather than through PutObject,
 		// so the authoritative precondition check is made here, under the
 		// publish lock that competing writers to the key take.
-		unlock, err := p.lockObjectPublish(ctx, dstBucket, dstObject)
-		if err != nil {
-			return s3response.CopyObjectOutput{}, err
+		unlock, lockErr := p.lockObjectPublish(ctx, dstBucket, dstObject)
+		if lockErr != nil {
+			return s3response.CopyObjectOutput{}, lockErr
 		}
 		defer unlock()
+
+		// A delete doesn't take the publish lock, so the object can be
+		// removed at any step of the rewrite. A step that fails because
+		// of it gets an error of the filesystem or metadata store, so a
+		// failure with the object gone is reported as NoSuchKey.
+		defer func() {
+			var apiErr s3err.APIError
+			if err == nil || errors.As(err, &apiErr) {
+				return
+			}
+			_, serr := os.Stat(dstObjdPath)
+			if !errors.Is(serr, fs.ErrNotExist) && !isErrNotDir(serr) {
+				return
+			}
+			debuglogger.Logf("self copy of deleted object %v/%v: %v",
+				dstBucket, dstObject, err)
+			err = s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}()
 
 		err = p.checkPutPreconditions(dstBucket, dstObject, input.IfMatch, input.IfNoneMatch)
 		if err != nil {
@@ -6978,21 +7303,29 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 					return s3response.CopyObjectOutput{}, fmt.Errorf("open obj file: %w", err)
 				}
 				defer f.Close()
-
-				hashReader, err := utils.NewHashReader(f, "", utils.HashType(strings.ToLower(string(input.ChecksumAlgorithm))))
+				fi, err := f.Stat()
 				if err != nil {
-					return s3response.CopyObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
+					return s3response.CopyObjectOutput{}, fmt.Errorf("stat obj file: %w", err)
 				}
 
-				_, err = hashReader.Read(nil)
-				if err != nil {
-					return s3response.CopyObjectOutput{}, fmt.Errorf("read err: %w", err)
+				sum := readSum
+				if readInfo == nil || !sameObjectData(readInfo, fi) {
+					// the object was replaced or changed after it
+					// was read, so the checksum read is not its own
+					sum, err = hashObjectFile(f, fi, input.ChecksumAlgorithm)
+					if err != nil {
+						return s3response.CopyObjectOutput{}, err
+					}
 				}
 
-				checksums = s3response.Checksum{}
+				// The new checksum replaces the stored one, so it is
+				// a FULL_OBJECT checksum of the given algorithm
+				checksums = s3response.Checksum{
+					Algorithm: input.ChecksumAlgorithm,
+					Type:      types.ChecksumTypeFullObject,
+				}
 
-				sum := hashReader.Sum()
-				switch hashReader.Type() {
+				switch utils.HashType(strings.ToLower(string(input.ChecksumAlgorithm))) {
 				case utils.HashTypeCRC32:
 					checksums.CRC32 = &sum
 					crc32 = &sum
@@ -7025,9 +7358,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 					xxhash128 = &sum
 				}
 
-				// If a new checksum is calculated, the checksum type
-				// should be FULL_OBJECT
-				chType = types.ChecksumTypeFullObject
+				chType = checksums.Type
 
 				err = p.storeChecksums(f, dstBucket, dstObject, checksums)
 				if err != nil {
@@ -7972,7 +8303,7 @@ func (p *Posix) DeleteBucketWebsite(ctx context.Context, bucket string) error {
 }
 
 // objectLockAttrs returns the legal hold and retention stored on the object
-// at bucket/object, as its GetObject response reports them. One that can't
+// at bucket/object, as GetObject and HeadObject report them. One that can't
 // be read is left out.
 func (p *Posix) objectLockAttrs(f *os.File, bucket, object string) (types.ObjectLockLegalHoldStatus, types.ObjectLockMode, *time.Time) {
 	var legalHold types.ObjectLockLegalHoldStatus
@@ -8474,6 +8805,35 @@ func (p *Posix) retrieveChecksums(f *os.File, bucket, object string) (checksums 
 
 	err = json.Unmarshal(checksumsAtr, &checksums)
 	return checksums, err
+}
+
+// hashObjectFile returns the checksum in algorithm algo of the content of
+// the open object file f, whose file info is fi. A directory object has no
+// content, so its checksum is the one of empty data.
+func hashObjectFile(f *os.File, fi fs.FileInfo, algo types.ChecksumAlgorithm) (string, error) {
+	var rdr io.Reader = f
+	if fi.IsDir() {
+		rdr = strings.NewReader("")
+	}
+	hashReader, err := utils.NewHashReader(rdr, "", utils.HashType(strings.ToLower(string(algo))))
+	if err != nil {
+		return "", fmt.Errorf("initialize hash reader: %w", err)
+	}
+	_, err = io.Copy(io.Discard, hashReader)
+	if err != nil {
+		return "", fmt.Errorf("read obj file: %w", err)
+	}
+	return hashReader.Sum(), nil
+}
+
+// sameObjectData reports whether the object file, or directory, with the
+// file info fi has the content of the one that had the file info read: it
+// is the same inode, and a file has the same size and modification time.
+func sameObjectData(read, fi fs.FileInfo) bool {
+	if !os.SameFile(read, fi) {
+		return false
+	}
+	return fi.IsDir() || (fi.Size() == read.Size() && fi.ModTime().Equal(read.ModTime()))
 }
 
 func getString(str *string) string {

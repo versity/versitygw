@@ -15,28 +15,36 @@
 # under the License.
 
 list_parts() {
-  if [[ $# -ne 3 ]]; then
-    log 2 "'list-parts' command requires bucket, key, upload ID"
+  if ! check_param_count_v2 "bucket, key, upload ID" 3 $#; then
     return 1
   fi
-  if ! list_parts_with_user "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$2" "$3"; then
-    log 2 "error listing parts with user"
+  local bucket="$1" key="$2" upload_id="$3"
+  local response listed_parts
+
+  if ! response=$(list_parts_with_user "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$bucket" "$key" "$upload_id" 2>&1); then
+    log 2 "error listing parts with user: $response"
     return 1
   fi
+  listed_parts="$response"
+  printf '%s\n' "$listed_parts"
   return 0
 }
 
 list_parts_with_user() {
-  if [ $# -ne 5 ]; then
-    log 2 "'list_parts_with_user' requires username, password, bucket, key, upload ID"
+  if ! check_param_count_v2 "username, password, bucket, key, upload ID" 5 $#; then
     return 1
   fi
-  if ! listed_parts=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" send_command aws --no-verify-ssl s3api list-parts --bucket "$3" --key "$4" --upload-id "$5" 2>&1); then
-    log 2 "Error listing multipart upload parts: $listed_parts"
+  local username="$1" password="$2" bucket="$3" key="$4" upload_id="$5"
+  local response listed_parts
+
+  if ! response=$(AWS_ACCESS_KEY_ID="$username" AWS_SECRET_ACCESS_KEY="$password" send_command aws --no-verify-ssl \
+      s3api list-parts --bucket "$bucket" --key "$key" --upload-id "$upload_id" 2>&1); then
+    log 2 "Error listing multipart upload parts: $response"
     return 1
   fi
-  listed_parts="$(echo -n "$listed_parts" | grep -v "InsecureRequestWarning")"
+  listed_parts="$(echo -n "$response" | grep -v "InsecureRequestWarning")"
   log 5 "listed parts: $listed_parts"
+  printf '%s\n' "$listed_parts"
   return 0
 }
 

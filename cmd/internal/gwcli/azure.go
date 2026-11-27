@@ -22,7 +22,7 @@ import (
 )
 
 var (
-	azAccount, azKey, azServiceURL, azSASToken, azCopySASVersion string
+	azAccount, azKey, azServiceURL, azSASToken, azCopySASVersion, azMetaContainer string
 )
 
 // AzureCommand returns the "azure" subcommand, common to all versitygw
@@ -68,12 +68,18 @@ func AzureCommand() *cli.Command {
 				EnvVars:     []string{"AZ_COPY_SAS_VERSION"},
 				Destination: &azCopySASVersion,
 			},
+			&cli.StringFlag{
+				Name:        "meta-container",
+				Usage:       "azure container to store bucket acl, policy, cors, website and tagging in, instead of the bucket container metadata that azure limits to 8KB; created if missing, and must not be an existing bucket",
+				EnvVars:     []string{"AZ_META_CONTAINER"},
+				Destination: &azMetaContainer,
+			},
 		},
 	}
 }
 
 func runAzure(ctx *cli.Context) error {
-	be, err := azure.New(azAccount, azKey, azServiceURL, azSASToken, CopyObjectThreshold, azCopySASVersion)
+	be, err := azure.New(ctx.Context, azAccount, azKey, azServiceURL, azSASToken, CopyObjectThreshold, azCopySASVersion, azMetaContainer)
 	if err != nil {
 		return fmt.Errorf("init azure: %w", err)
 	}

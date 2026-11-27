@@ -122,6 +122,15 @@ type VaultStore struct {
 	// indexDenied is set once Vault refuses the access key index path (see
 	// indexCall); lookups then scan, as they did before the index.
 	indexDenied atomic.Bool
+
+	// sessionIndexDenied is indexDenied's counterpart for the session index
+	// (see sessionIndexCall); session counts then read every session, as
+	// they did before the index.
+	sessionIndexDenied atomic.Bool
+	// sessionIndexReconciled is set once this process has indexed every
+	// session that was stored without a marker (see maintainSessionIndex);
+	// only then can the index be trusted to count a role's sessions.
+	sessionIndexReconciled atomic.Bool
 }
 
 var _ Storer = (*VaultStore)(nil)
@@ -240,6 +249,9 @@ func NewVault(cfg VaultConfig) (Storer, error) {
 	// Index the access keys of users created before the access key index
 	// existed
 	go store.backfillAccessKeyIndexInBackground()
+	// Likewise the sessions stored before the session index existed, then
+	// keep the index swept of expired sessions for the life of the process.
+	go store.maintainSessionIndex(context.Background(), sessionIndexRetryInterval, sessionIndexSweepInterval)
 
 	return store, nil
 }
@@ -1871,16 +1883,36 @@ func (s *VaultStore) sessionsPath() string {
 }
 
 func (s *VaultStore) CreateSession(ctx context.Context, session types.Session) (*types.Session, error) {
+	sessionMap, err := sessionToVaultMap(session)
+	if err != nil {
+		return nil, fmt.Errorf("serialize session: %w", err)
+	}
+
 	// Bound how many concurrently-active sessions a single role can
 	// accumulate — without this, one valid federated token replayed against
 	// AssumeRoleWithWebIdentity indefinitely grows the number of KV paths
 	// and metadata records this backend has to carry for that role.
-	count, err := s.activeSessionCountForRole(ctx, session.RoleArn)
+	//
+	// The bound is approximate: nothing serializes the count with the write
+	// below, so mints for the same role that run at the same time, in this
+	// process or in others sharing the Vault, can each see room for one more
+	// and together go past it by up to their number. That is enough for
+	// what it is for, keeping a role's sessions from growing without bound.
+	count, err := s.activeSessionCountForRole(ctx, session.RoleArn, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
 	if count >= MaxActiveSessionsPerRole {
 		return nil, iamerr.GetAPIError(iamerr.ErrThrottling)
+	}
+
+	// Indexed before the session is stored, never after: the count above
+	// trusts the index, so a stored session without a marker would go
+	// uncounted, whereas a marker without a session only holds one of the
+	// role's slots until its expiry. A denied index is not used to count, so
+	// it is no reason to refuse the session.
+	if err := s.writeSessionMarker(ctx, session); err != nil && !errors.Is(err, errSessionIndexDenied) {
+		return nil, err
 	}
 
 	path := s.sessionsPath() + "/" + session.AccessKeyId
@@ -1905,68 +1937,20 @@ func (s *VaultStore) CreateSession(ctx context.Context, session types.Session) (
 		debuglogger.Logf("failed to set Vault session TTL metadata for access key %q: %v", session.AccessKeyId, err)
 	}
 
-	sessionMap, err := sessionToVaultMap(session)
-	if err != nil {
-		return nil, fmt.Errorf("serialize session: %w", err)
-	}
 	req := schema.KvV2WriteRequest{
 		Data:    map[string]any{session.AccessKeyId: sessionMap},
 		Options: map[string]any{"cas": 0},
 	}
 
-	_, err = s.client.Secrets.KvV2Write(context.Background(), path, req, s.kvReqOpts...)
-	if err != nil {
-		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
-			return nil, reauthErr
-		}
-		_, err = s.client.Secrets.KvV2Write(context.Background(), path, req, s.kvReqOpts...)
-		if err != nil {
-			return nil, err
-		}
+	if err := s.withReAuth(func() error {
+		_, err := s.client.Secrets.KvV2Write(context.Background(), path, req, s.kvReqOpts...)
+		return err
+	}); err != nil {
+		return s.settleFailedSessionWrite(ctx, session, err)
 	}
 
 	cloned := session
 	return &cloned, nil
-}
-
-// activeSessionCountForRole counts this backend's currently-active sessions
-// belonging to roleArn, so CreateSession can enforce
-// MaxActiveSessionsPerRole. GetSession is reused to read each candidate
-// entry: it already purges an expired-but-not-yet-Vault-reaped session on
-// read, so an expired session is neither counted nor left to inflate a
-// future count.
-func (s *VaultStore) activeSessionCountForRole(ctx context.Context, roleArn string) (int, error) {
-	resp, err := s.client.Secrets.KvV2List(context.Background(), s.sessionsPath(), s.kvReqOpts...)
-	if err != nil {
-		if vault.IsErrorStatus(err, http.StatusNotFound) {
-			return 0, nil
-		}
-		if reauthErr := s.reAuthIfNeeded(err); reauthErr != nil {
-			return 0, reauthErr
-		}
-		resp, err = s.client.Secrets.KvV2List(context.Background(), s.sessionsPath(), s.kvReqOpts...)
-		if err != nil {
-			if vault.IsErrorStatus(err, http.StatusNotFound) {
-				return 0, nil
-			}
-			return 0, err
-		}
-	}
-
-	count := 0
-	for _, key := range resp.Data.Keys {
-		session, err := s.GetSession(ctx, key)
-		if err != nil {
-			if errors.Is(err, iamutil.ErrSessionNotFound) {
-				continue
-			}
-			return 0, err
-		}
-		if session.RoleArn == roleArn {
-			count++
-		}
-	}
-	return count, nil
 }
 
 // setSessionTTL sets path's KV v2 delete_version_after metadata to the

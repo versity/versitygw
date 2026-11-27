@@ -19,7 +19,7 @@ jobs:
 
     - name: Get Dependencies
       run: |
-        go mod download
+        ./tests/retry.sh go mod download
 
     - name: Build and Run
       run: |

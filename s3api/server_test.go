@@ -15,10 +15,13 @@
 package s3api
 
 import (
+	"bytes"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"strings"
 	"sync"
 	"testing"
@@ -27,11 +30,17 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/internal/bwlimit"
 	"github.com/versity/versitygw/internal/netutil"
+	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/middlewares"
 )
 
 func newTestS3ApiServer(opts ...Option) (*S3ApiServer, error) {
+	return newTestS3ApiServerWithMetrics(nil, opts...)
+}
+
+func newTestS3ApiServerWithMetrics(mm metrics.Manager, opts ...Option) (*S3ApiServer, error) {
 	allOpts := append([]Option{WithConcurrencyLimiter(10, 10)}, opts...)
 
 	return New(
@@ -42,7 +51,7 @@ func newTestS3ApiServer(opts ...Option) (*S3ApiServer, error) {
 		nil,
 		nil,
 		nil,
-		nil,
+		mm,
 		allOpts...,
 	)
 }
@@ -80,6 +89,37 @@ func TestS3ApiServer_Serve(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := tt.sa.ServeMultiPort([]string{tt.port}); (err != nil) != tt.wantErr {
 				t.Errorf("S3ApiServer.Serve() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestWithBandwidthLimitValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		opt     Option
+		wantErr string
+	}{
+		{"unlimited", WithBandwidthLimit(0, 0, 0, 0), ""},
+		{"minimum rate", WithBandwidthLimit(bwlimit.MinRate, 0, bwlimit.MinRate, 0), ""},
+		{"maximum rate", WithBandwidthLimit(bwlimit.MaxRate, 0, bwlimit.MaxRate, 0), ""},
+		{"negative rate", WithBandwidthLimit(0, 0, -1, 0), "egress bandwidth rate must not be negative"},
+		{"rate below minimum", WithBandwidthLimit(bwlimit.MinRate-1, 0, 0, 0), "ingress bandwidth rate must be at least"},
+		{"rate above maximum", WithBandwidthLimit(0, 0, bwlimit.MaxRate+1, 0), "egress bandwidth rate must not exceed"},
+		{"burst without rate", WithBandwidthLimit(0, 1<<20, 0, 0), "ingress bandwidth burst requires a non-zero rate"},
+		{"burst below minimum", WithBandwidthLimit(0, 0, 1<<20, 1024), "egress bandwidth burst must be at least"},
+		{"burst above maximum", WithBandwidthLimit(0, 0, 1<<30, 1<<31), "egress bandwidth burst must not exceed"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := newTestS3ApiServer(tt.opt)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("New() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("New() error = %v, want substring %q", err, tt.wantErr)
 			}
 		})
 	}
@@ -347,5 +387,112 @@ func TestRequestAddressIgnoresProxyHeaders(t *testing.T) {
 	}
 	if got := string(body); got != "192.0.2.1" {
 		t.Fatalf("ctx.IP() = %q, want the socket peer address %q", got, "192.0.2.1")
+	}
+}
+
+// POST Object reads its multipart body as a stream, so fasthttp must not
+// parse the form first.
+func TestMultipartBodyIsStreamed(t *testing.T) {
+	server, err := newTestS3ApiServer(
+		WithQuiet(),
+		WithRoute(http.MethodPost, "/form", func(ctx fiber.Ctx) error {
+			stream := ctx.Request().BodyStream()
+			if stream == nil {
+				return ctx.Status(http.StatusInternalServerError).SendString("no body stream")
+			}
+			body, err := io.ReadAll(stream)
+			if err != nil {
+				return err
+			}
+			return ctx.Send(body)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	var sent bytes.Buffer
+	w := multipart.NewWriter(&sent)
+	if err := w.WriteField("key", "my-object"); err != nil {
+		t.Fatalf("write field: %v", err)
+	}
+	fw, err := w.CreatePart(textproto.MIMEHeader{"Content-Disposition": {`form-data; name="file"`}})
+	if err != nil {
+		t.Fatalf("create file part: %v", err)
+	}
+	if _, err := fw.Write([]byte("some dummy data")); err != nil {
+		t.Fatalf("write file part: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/form", bytes.NewReader(sent.Bytes()))
+	req.Header.Set("Content-Type", w.FormDataContentType())
+
+	resp, err := server.app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !bytes.Equal(got, sent.Bytes()) {
+		t.Fatalf("handler read %q, want the body as sent, %q", got, sent.Bytes())
+	}
+}
+
+// S3 takes the bucket name out of a host with a userinfo like out of a
+// virtual-hosted-style host, before its domain, or else takes the whole host.
+func TestUserinfoHostBucket(t *testing.T) {
+	tests := []struct {
+		name, host, domain, want string
+	}{
+		{
+			name:   "another bucket's host after the domain",
+			host:   "s3.example.test:7070@bucketb.s3.example.test:7070",
+			domain: "s3.example.test",
+			want:   "s3.example.test:7070@bucketb",
+		},
+		{
+			name:   "Host header's host as the domain",
+			host:   "127.0.0.1:7070@bucketb.127.0.0.1:7070",
+			domain: "127.0.0.1:7070",
+			want:   "127.0.0.1:7070@bucketb",
+		},
+		{
+			name:   "empty userinfo",
+			host:   "@bucketb.s3.example.test",
+			domain: "s3.example.test",
+			want:   "@bucketb",
+		},
+		{
+			name:   "domain in another case",
+			host:   "user@bucketb.s3.example.test",
+			domain: "S3.Example.Test",
+			want:   "user@bucketb",
+		},
+		{
+			name:   "host not under the domain",
+			host:   "user@s3.example.test",
+			domain: "s3.example.test",
+			want:   "user@s3.example.test",
+		},
+		{
+			name:   "no domain",
+			host:   "user@bucketb.s3.example.test",
+			domain: "",
+			want:   "user@bucketb.s3.example.test",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := userinfoHostBucket(tt.host, tt.domain); got != tt.want {
+				t.Fatalf("userinfoHostBucket(%q, %q) = %q, want %q", tt.host, tt.domain, got, tt.want)
+			}
+		})
 	}
 }

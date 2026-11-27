@@ -118,7 +118,7 @@ multipart_upload_from_bucket_range() {
     quoted_etag="$response"
     # UploadPartCopy etag is returned double quoted, so not necessary to quote it here
     parts+="{\"ETag\": $quoted_etag, \"PartNumber\": $i}"
-    if [[ $i -ne $4 ]]; then
+    if [[ $i -ne $part_count ]]; then
       parts+=","
     fi
   done
@@ -155,13 +155,16 @@ multipart_upload() {
     return 1
   fi
   local bucket="$1" key="$2" file="$3" part_count="$4"
+  local response
+  local -a upload_id_and_part_list
 
-  if ! multipart_upload_before_completion "$bucket" "$key" "$file" "$part_count"; then
-    log 2 "error performing pre-completion multipart upload"
+  if ! response=$(multipart_upload_before_completion "$bucket" "$key" "$file" "$part_count" 2>&1); then
+    log 2 "error performing pre-completion multipart upload: $response"
     return 1
   fi
+  mapfile -t upload_id_and_part_list <<< "$response"
 
-  if ! complete_multipart_upload "$bucket" "$key" "$upload_id" "$parts"; then
+  if ! complete_multipart_upload "$bucket" "$key" "${upload_id_and_part_list[0]}" "${upload_id_and_part_list[1]}"; then
     log 2 "Error completing upload"
     return 1
   fi
@@ -186,14 +189,17 @@ multipart_upload_with_params() {
   local retain_until_date="$9"
   local tagging="${10}"
 
-  if ! multipart_upload_before_completion_with_params "$bucket" "$key" "$file" "$part_count" "$content_type" \
-      "$metadata" "$hold_status" "$lock_mode" "$retain_until_date" "$tagging"; then
-    log 2 "error performing pre-completion multipart upload"
+  local response upload_id_and_part_list
+
+  if ! response=$(multipart_upload_before_completion_with_params "$bucket" "$key" "$file" "$part_count" "$content_type" \
+      "$metadata" "$hold_status" "$lock_mode" "$retain_until_date" "$tagging" 2>&1); then
+    log 2 "error performing pre-completion multipart upload: $response"
     return 1
   fi
-  log 5 "Upload parts:  $parts"
+  log 5 "response: $response"
+  mapfile -t upload_id_and_part_list <<< "$response"
 
-  if ! complete_multipart_upload "$bucket" "$key" "$upload_id" "$parts"; then
+  if ! complete_multipart_upload "$bucket" "$key" "${upload_id_and_part_list[0]}" "${upload_id_and_part_list[1]}"; then
     log 2 "Error completing upload"
     return 1
   fi

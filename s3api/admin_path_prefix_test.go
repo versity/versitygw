@@ -127,12 +127,21 @@ func newTestS3AdminApp(t *testing.T, prefix string) *fiber.App {
 // requires and the other admin routes ignore.
 func signedAdminRequest(t *testing.T, path, region, body string) *http.Request {
 	t.Helper()
+	return signedRequest(t, http.MethodPatch, path, region, body, http.Header{"X-Vgw-Owner": {testAdminRoot.Access}})
+}
+
+// signedRequest returns a request signed with the root credentials for
+// region, carrying header along with the signing headers.
+func signedRequest(t *testing.T, method, target, region, body string, header http.Header) *http.Request {
+	t.Helper()
 	sum := sha256.Sum256([]byte(body))
 	payloadHash := hex.EncodeToString(sum[:])
 
-	req := httptest.NewRequest(http.MethodPatch, "http://localhost"+path, strings.NewReader(body))
+	req := httptest.NewRequest(method, "http://localhost"+target, strings.NewReader(body))
+	for name, values := range header {
+		req.Header[name] = values
+	}
 	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
-	req.Header.Set("X-Vgw-Owner", testAdminRoot.Access)
 	creds := aws.Credentials{AccessKeyID: testAdminRoot.Access, SecretAccessKey: testAdminRoot.Secret}
 	if err := v4.NewSigner().SignHTTP(context.Background(), creds, req, payloadHash, "s3", region, time.Now()); err != nil {
 		t.Fatalf("sign request: %v", err)

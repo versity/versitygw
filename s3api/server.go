@@ -21,15 +21,18 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
+	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/internal/bwlimit"
 	"github.com/versity/versitygw/internal/httpctx"
 	"github.com/versity/versitygw/internal/netutil"
 	"github.com/versity/versitygw/metrics"
@@ -43,8 +46,9 @@ import (
 )
 
 const (
-	shutDownDuration     = time.Second * 10
-	requestHeaderMaxSize = 8 * 1024
+	shutDownDuration         = time.Second * 10
+	requestHeaderMaxSize     = 8 * 1024
+	bandwidthMetricsInterval = 10 * time.Second
 )
 
 type S3ApiServer struct {
@@ -57,6 +61,12 @@ type S3ApiServer struct {
 	health           string
 	maxConnections   int
 	maxRequests      int
+	ingressLimiter   *bwlimit.Limiter
+	egressLimiter    *bwlimit.Limiter
+	ingressRate      int64
+	egressRate       int64
+	bandwidthErr     error
+	allowAnyRegion   bool
 	webuiMountPrefix string
 	webuiSrvCfg      *webui.ServerConfig
 	clientIPHeader   string
@@ -67,6 +77,10 @@ type S3ApiServer struct {
 	onListen         func()
 	onListenAddrs    func(addrs []net.Addr)
 	listener         atomic.Pointer[netutil.MultiListener]
+	reporterMu       sync.Mutex
+	reporterStop     chan struct{}
+	reporterDone     chan struct{}
+	reporterStopped  bool
 }
 
 type routeMount struct {
@@ -108,6 +122,13 @@ func New(
 	for _, opt := range opts {
 		opt(server)
 	}
+	if server.bandwidthErr != nil {
+		return nil, server.bandwidthErr
+	}
+
+	if err := auth.ValidateListBucketsScope(iam, server.Router.listBucketsScope); err != nil {
+		return nil, err
+	}
 
 	// validate the header once here, so the request path can compare it
 	// directly instead of re-normalizing on every request
@@ -124,12 +145,17 @@ func New(
 		ServerHeader:      "VERSITYGW",
 		StreamRequestBody: true,
 		DisableKeepalive:  !server.keepAlive,
-		ErrorHandler:      globalErrorHandler,
+		ErrorHandler:      errorHandler(server.Router.virtualDomain),
 		Concurrency:       server.maxConnections,
 		// Sets buffer limit to read/parse incoming requests
 		// if the limit is reached, fiber/fasthttp will throw an error
 		// in the global error handler
 		ReadBufferSize: requestHeaderMaxSize,
+		// POST Object reads its multipart body as a stream, part by part in the
+		// order sent. fasthttp's pre-parse would hand it a rebuilt body instead,
+		// with the fields in random order and a file part without a filename
+		// among them.
+		DisablePreParseMultipartForm: true,
 	})
 
 	server.app = app
@@ -204,11 +230,17 @@ func New(
 	}
 
 	// initilaze the default value setter middleware
-	app.Use("*", middlewares.SetDefaultValues(root, region))
+	app.Use("*", middlewares.SetDefaultValues(root, region, server.allowAnyRegion))
 
 	// initialize the 'DecodeURL' middleware which
 	// path unescapes the url
 	app.Use("*", controllers.WrapMiddleware(middlewares.DecodeURL, l, mm))
+
+	// initialize the host-style parser before the debug logger: the logger
+	// recognizes uploads, whose body it must not read, by the path-style path
+	if server.Router.virtualDomain != "" {
+		app.Use("*", middlewares.HostStyleParser(server.Router.virtualDomain))
+	}
 
 	// initialize the debug logger in debug mode
 	if debuglogger.IsDebugEnabled() {
@@ -305,6 +337,13 @@ func WithDisableSSECTLS() Option {
 	return func(s *S3ApiServer) { s.Router.disableSSECTLS = true }
 }
 
+// WithAllowAnyRegion accepts requests signed for any region, not just the
+// gateway region, and CreateBucket requests with any location constraint.
+// The gateway still reports its own region to clients.
+func WithAllowAnyRegion() Option {
+	return func(s *S3ApiServer) { s.allowAnyRegion = true }
+}
+
 // WithHostStyle enabled host-style bucket addressing on the server
 func WithHostStyle(virtualDomain string) Option {
 	return func(s *S3ApiServer) {
@@ -385,6 +424,57 @@ func WithConcurrencyLimiter(maxConnections, maxRequests int) Option {
 	}
 }
 
+// WithBandwidthLimit caps the aggregate bytes per second this gateway
+// instance reads (ingress) and writes (egress) to all client connections.
+// Rates are measured on the raw connection, including TLS records. Ingress
+// shaping delays bytes returned to the server; the OS receive buffer may
+// temporarily accept more bytes before TCP backpressure takes effect; OS send
+// buffering can also shift egress timing. Traffic over the limit is delayed,
+// not rejected. A zero rate leaves that direction unlimited. A zero burst
+// selects a default of 10ms of traffic, between 64KiB and 1MiB. Nonzero
+// rates must be between 64KiB/s and 1TiB/s, and configured bursts between
+// 32KiB and 2GiB-1.
+// The limit is shared by all clients, including unauthenticated ones, so it
+// is a capacity cap, not a fairness or abuse control. Limits are lifted
+// during graceful shutdown so in-flight transfers drain and connections close
+// promptly; serving again restores them.
+func WithBandwidthLimit(ingressRate, ingressBurst, egressRate, egressBurst int64) Option {
+	return func(s *S3ApiServer) {
+		for _, cfg := range []struct {
+			direction string
+			rate      int64
+			burst     int64
+		}{
+			{"ingress", ingressRate, ingressBurst},
+			{"egress", egressRate, egressBurst},
+		} {
+			if err := bwlimit.ValidateConfig(cfg.direction, cfg.rate, cfg.burst); err != nil {
+				s.bandwidthErr = err
+				return
+			}
+		}
+		s.ingressLimiter = bwlimit.NewLimiter(ingressRate, ingressBurst)
+		s.egressLimiter = bwlimit.NewLimiter(egressRate, egressBurst)
+		s.ingressRate = ingressRate
+		s.egressRate = egressRate
+	}
+}
+
+// BandwidthLimits returns effective ingress and egress rates and burst sizes.
+// A zero rate means that direction is unlimited; the burst is the effective
+// size selected for the limiter, or zero when that direction is unlimited.
+func (sa *S3ApiServer) BandwidthLimits() (ingressRate, ingressBurst, egressRate, egressBurst int64) {
+	ingressRate = sa.ingressRate
+	egressRate = sa.egressRate
+	if sa.ingressLimiter != nil {
+		ingressBurst = int64(sa.ingressLimiter.BurstSize())
+	}
+	if sa.egressLimiter != nil {
+		egressBurst = int64(sa.egressLimiter.BurstSize())
+	}
+	return ingressRate, ingressBurst, egressRate, egressBurst
+}
+
 // WithSocketPerm sets the file-mode permissions applied to file-backed UNIX
 // domain sockets after binding. It has no effect on TCP/IP or abstract
 // namespace sockets.
@@ -396,6 +486,14 @@ func WithSocketPerm(perm os.FileMode) Option {
 // bucket/object ACL headers
 func WithDisableACL() Option {
 	return func(s *S3ApiServer) { s.Router.disableACL = true }
+}
+
+// WithListBucketsScope sets which buckets ListBuckets returns to an account
+// that is neither root nor an admin. New rejects any scope but
+// auth.ListBucketsScopeOwned with an IAM service that evaluates identity
+// policies or fixes bucket ownership.
+func WithListBucketsScope(scope auth.ListBucketsScope) Option {
+	return func(s *S3ApiServer) { s.Router.listBucketsScope = scope }
 }
 
 // WithOnListen registers a callback that is invoked once the server is bound
@@ -424,6 +522,19 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 		return fmt.Errorf("no ports specified")
 	}
 
+	lnOpts := netutil.ListenerOptions{SocketPerm: sa.socketPerm}
+	if sa.ingressLimiter != nil || sa.egressLimiter != nil {
+		// A previous ShutDown lifted the limits and stopped the reporter.
+		sa.ingressLimiter.SetUnlimited(false)
+		sa.egressLimiter.SetUnlimited(false)
+		sa.reporterMu.Lock()
+		sa.reporterStopped = false
+		sa.reporterMu.Unlock()
+		lnOpts.WrapListener = func(ln net.Listener) net.Listener {
+			return bwlimit.NewListener(ln, sa.ingressLimiter, sa.egressLimiter)
+		}
+	}
+
 	// Multiple ports - create listeners for each
 	var listeners []net.Listener
 
@@ -432,9 +543,9 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 		var err error
 
 		if sa.CertStorage != nil {
-			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, sa.CertStorage.GetCertificate, netutil.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, sa.CertStorage.GetCertificate, lnOpts)
 		} else {
-			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, portSpec, netutil.ListenerOptions{SocketPerm: sa.socketPerm})
+			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, portSpec, lnOpts)
 		}
 		if err != nil {
 			return fmt.Errorf("failed to bind s3 listener %s: %w", portSpec, err)
@@ -450,6 +561,7 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 	// Combine all listeners
 	finalListener := netutil.NewMultiListener(listeners...)
 	sa.listener.Store(finalListener)
+	sa.startBandwidthReporter()
 
 	if sa.onListen != nil || sa.onListenAddrs != nil {
 		fn, fnAddrs := sa.onListen, sa.onListenAddrs
@@ -469,8 +581,70 @@ func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
 	})
 }
 
+func (sa *S3ApiServer) startBandwidthReporter() {
+	reporter, ok := sa.Router.mm.(metrics.BandwidthWaitReporter)
+	if !ok || (sa.ingressLimiter == nil && sa.egressLimiter == nil) {
+		return
+	}
+	sa.reporterMu.Lock()
+	defer sa.reporterMu.Unlock()
+	if sa.reporterStopped || sa.reporterStop != nil {
+		return
+	}
+	sa.reporterStop = make(chan struct{})
+	sa.reporterDone = make(chan struct{})
+	go func(stop <-chan struct{}, done chan<- struct{}) {
+		defer close(done)
+		reportBandwidthWait(reporter, sa.ingressLimiter, sa.egressLimiter, stop)
+	}(sa.reporterStop, sa.reporterDone)
+}
+
+// stopBandwidthReporter flushes the final bandwidth wait and stops reporting.
+func (sa *S3ApiServer) stopBandwidthReporter() {
+	sa.reporterMu.Lock()
+	stop, done := sa.reporterStop, sa.reporterDone
+	sa.reporterStop, sa.reporterDone = nil, nil
+	sa.reporterStopped = true
+	sa.reporterMu.Unlock()
+	if stop == nil {
+		return
+	}
+	close(stop)
+	<-done
+}
+
+// reportBandwidthWait publishes how long connections were delayed by the
+// bandwidth limiters each interval, and once more when stop is closed.
+func reportBandwidthWait(mm metrics.BandwidthWaitReporter, ingress, egress *bwlimit.Limiter, stop <-chan struct{}) {
+	flush := func() {
+		if in := ingress.DrainWaitTime(); in > 0 {
+			mm.SendBandwidthWait("ingress", in)
+		}
+		if out := egress.DrainWaitTime(); out > 0 {
+			mm.SendBandwidthWait("egress", out)
+		}
+	}
+
+	t := time.NewTicker(bandwidthMetricsInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			flush()
+		case <-stop:
+			flush()
+			return
+		}
+	}
+}
+
 // ShutDown gracefully shuts down the server with a context timeout
 func (sa *S3ApiServer) ShutDown() error {
+	// Lift the limits so in-flight transfers drain and connections, including
+	// TLS close_notify writes, close within the shutdown timeout.
+	sa.ingressLimiter.SetUnlimited(true)
+	sa.egressLimiter.SetUnlimited(true)
+
 	// fasthttp's Shutdown closes only the listeners its Serve has already
 	// registered, and the listen hooks fire before fiber calls Serve. Closing
 	// the listener here makes a ShutDown in that window stop the server too:
@@ -478,7 +652,9 @@ func (sa *S3ApiServer) ShutDown() error {
 	if ln := sa.listener.Load(); ln != nil {
 		ln.Close()
 	}
-	return sa.app.ShutdownWithTimeout(shutDownDuration)
+	err := sa.app.ShutdownWithTimeout(shutDownDuration)
+	sa.stopBandwidthReporter()
+	return err
 }
 
 // stackTraceHandler stores the system panics
@@ -487,9 +663,17 @@ func stackTraceHandler(ctx fiber.Ctx, e any) {
 	utils.ContextKeyStack.Set(ctx, e)
 }
 
+// errorHandler returns the error handler of a server whose virtual-hosted-style
+// requests are under virtualDomain, if any.
+func errorHandler(virtualDomain string) fiber.ErrorHandler {
+	return func(ctx fiber.Ctx, er error) error {
+		return globalErrorHandler(ctx, er, virtualDomain)
+	}
+}
+
 // globalErrorHandler catches the errors before reaching to
 // the handlers and any system panics
-func globalErrorHandler(ctx fiber.Ctx, er error) error {
+func globalErrorHandler(ctx fiber.Ctx, er error, virtualDomain string) error {
 	requestID, hostID := utils.EnsureRequestIDs(ctx)
 
 	// set content type to application/xml
@@ -521,6 +705,27 @@ func globalErrorHandler(ctx fiber.Ctx, er error) error {
 				err := s3err.GetAPIError(s3err.ErrCannotParseHTTPRequest)
 				return ctx.Status(err.StatusCode()).Send(err.XMLBody(requestID, hostID))
 			}
+			if strings.Contains(fiberErr.Message, fasthttp.ErrorInvalidURI.Error()) {
+				// fasthttp rejects a request-target it can't take a host
+				// and a path out of before any handler runs, like an
+				// absolute-form one with a userinfo or an empty host, and
+				// a host with a userinfo in the Host header too. S3 takes
+				// a userinfo as part of the host, and a bucket name out of
+				// it that isn't valid.
+				if host := strings.ToLower(httpctx.RequestHost(ctx)); strings.Contains(host, "@") {
+					// the userinfo may hold a password: leave the host out
+					debuglogger.Logf("the request host has a userinfo")
+					domain := virtualDomain
+					if domain == "" {
+						domain = string(ctx.Request().Header.Host())
+					}
+					err := s3err.GetBucketErr(s3err.ErrInvalidBucketName, userinfoHostBucket(host, domain))
+					return ctx.Status(err.StatusCode()).Send(err.XMLBody(requestID, hostID))
+				}
+				debuglogger.Logf("failed to parse the request url: %v", fiberErr.Message)
+				err := s3err.GetAPIError(s3err.ErrInvalidURI)
+				return ctx.Status(err.StatusCode()).Send(err.XMLBody(requestID, hostID))
+			}
 		}
 
 		// additionally log the internal error
@@ -530,4 +735,19 @@ func globalErrorHandler(ctx fiber.Ctx, er error) error {
 	ctx.Status(http.StatusInternalServerError)
 
 	return ctx.Send(s3err.GetAPIError(s3err.ErrInternalError).XMLBody(requestID, hostID))
+}
+
+// userinfoHostBucket returns the bucket name S3 takes out of host, a request
+// host with a userinfo: the part before ".<domain>", as HostStyleParser takes
+// a virtual-hosted-style one's, or else the whole host. domain is the virtual
+// domain, or the Host header's host on a path-style gateway, naming the
+// gateway like S3's own domain does S3.
+func userinfoHostBucket(host, domain string) string {
+	if domain == "" {
+		return host
+	}
+	if bucket, _, found := strings.Cut(host, "."+strings.ToLower(domain)); found && bucket != "" {
+		return bucket
+	}
+	return host
 }

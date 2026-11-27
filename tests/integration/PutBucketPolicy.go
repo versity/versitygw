@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -905,5 +906,63 @@ func PutBucketPolicy_condition_invalid_ip(s *S3Conf) error {
 			}
 		}
 		return nil
+	})
+}
+
+// S3 sizes a policy by its normalized JSON, which leaves out the whitespace
+// between its tokens, and takes up to 20480 bytes of it.
+func PutBucketPolicy_normalized_size_limit(s *S3Conf) error {
+	testName := "PutBucketPolicy_normalized_size_limit"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// policyOfSize returns a compact policy of exactly size bytes
+		policyOfSize := func(size int, action string) string {
+			head := `{"Statement":[{"Sid":"`
+			tail := fmt.Sprintf(`","Effect":"Allow","Principal":"*","Action":"%v","Resource":"arn:aws:s3:::%v/*"}]}`, action, bucket)
+			return head + strings.Repeat("a", size-len(head)-len(tail)) + tail
+		}
+		// Not every backend can store a policy this large, so the documents
+		// within the limit name an unknown action: refused for it, they show
+		// that the size check passed them without being stored.
+		atLimit := policyOfSize(20480, "s3:NotAnAction")
+		invalidAction := getMalformedPolicyError("Policy has invalid action")
+
+		for _, test := range []struct {
+			doc string
+			err s3err.S3Error
+		}{
+			{doc: atLimit, err: invalidAction},
+			{doc: "{" + strings.Repeat(" \n\t", 10000) + atLimit[1:], err: invalidAction},
+			{doc: atLimit + strings.Repeat(" ", 30000), err: invalidAction},
+			{
+				doc: policyOfSize(20481, "s3:GetObject"),
+				err: getMalformedPolicyError("Normalized policy document exceeds the maximum allowed size of 20480 bytes"),
+			},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &test.doc,
+			})
+			cancel()
+			if err := checkApiErr(err, test.err); err != nil {
+				return fmt.Errorf("a %v byte policy: %w", len(test.doc), err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// S3 sizes a policy by its normalized JSON, but refuses a body past 204800
+// bytes as a too large policy whatever its layout.
+func PutBucketPolicy_body_size_limit(s *S3Conf) error {
+	testName := "PutBucketPolicy_body_size_limit"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyLimit(s, bucket, requestBodyLimit{
+			method: http.MethodPut,
+			query:  "policy",
+			limit:  204800,
+			err:    getMalformedPolicyError("Normalized policy document exceeds the maximum allowed size of 20480 bytes"),
+		})
 	})
 }

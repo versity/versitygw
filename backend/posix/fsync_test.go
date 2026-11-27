@@ -35,7 +35,7 @@ func recordSyncs(t *testing.T) (files *int, dirs *[]string) {
 	t.Cleanup(func() { syncFile, syncDir = origFile, origDir })
 	files, dirs = new(int), new([]string)
 	syncFile = func(f *os.File) error { *files++; return origFile(f) }
-	syncDir = func(dir string) error { *dirs = append(*dirs, dir); return origDir(dir) }
+	syncDir = func(dir string, d *os.File) error { *dirs = append(*dirs, dir); return origDir(dir, d) }
 	return files, dirs
 }
 

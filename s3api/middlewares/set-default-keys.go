@@ -22,10 +22,14 @@ import (
 	"github.com/versity/versitygw/s3api/utils"
 )
 
-func SetDefaultValues(root RootUserConfig, region string) fiber.Handler {
+// SetDefaultValues sets the request locals every handler relies on.
+func SetDefaultValues(root RootUserConfig, region string, allowAnyRegion bool) fiber.Handler {
 	return func(ctx fiber.Ctx) error {
 		// These are necessary for the server access logs
 		utils.ContextKeyRegion.Set(ctx, region)
+		if allowAnyRegion {
+			utils.ContextKeyAnyRegion.Set(ctx, true)
+		}
 		utils.ContextKeyStartTime.Set(ctx, time.Now())
 		utils.ContextKeyRootAccessKey.Set(ctx, root.Access)
 		// Set the account and isRoot to some defulat values, to avoid panics

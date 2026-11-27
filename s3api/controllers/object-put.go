@@ -397,7 +397,7 @@ func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 func (c S3ApiController) UploadPartCopy(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
-	copySource := strings.TrimPrefix(ctx.Get("X-Amz-Copy-Source"), "/")
+	copySource := ctx.Get("X-Amz-Copy-Source")
 	copySrcRange := ctx.Get("X-Amz-Copy-Source-Range")
 	expectedSrcBucketOwnerUPC := ctx.Get("X-Amz-Source-Expected-Bucket-Owner")
 	partNumber := int32(fiber.Query(ctx, "partNumber", -1))
@@ -462,15 +462,6 @@ func (c S3ApiController) UploadPartCopy(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
-	}
-
-	if len(ctx.Request().Body()) != 0 {
-		debuglogger.Logf("expected empty request body")
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.GetAPIError(s3err.ErrNonEmptyRequestBody)
 	}
 
 	if partNumber < minPartNumber || partNumber > int32(c.effectiveMpMaxParts()) {
@@ -574,7 +565,7 @@ func (c S3ApiController) PutObjectAcl(ctx fiber.Ctx) (*Response, error) {
 func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
-	copySource := strings.TrimPrefix(ctx.Get("X-Amz-Copy-Source"), "/")
+	copySource := ctx.Get("X-Amz-Copy-Source")
 	expectedSrcBucketOwner := ctx.Get("X-Amz-Source-Expected-Bucket-Owner")
 	metaDirective := types.MetadataDirective(ctx.Get("X-Amz-Metadata-Directive", string(types.MetadataDirectiveCopy)))
 	taggingDirective := types.TaggingDirective(ctx.Get("X-Amz-Tagging-Directive", string(types.TaggingDirectiveCopy)))
@@ -639,15 +630,6 @@ func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
-	}
-
-	if len(ctx.Request().Body()) != 0 {
-		debuglogger.Logf("expected empty request body")
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.GetAPIError(s3err.ErrNonEmptyRequestBody)
 	}
 
 	metadata, err := utils.GetUserMetaData(&ctx.Request().Header)

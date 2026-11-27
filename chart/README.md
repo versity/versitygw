@@ -70,7 +70,7 @@ The `gateway.backend.type` value selects the storage backend. Use `gateway.backe
 | [posix](https://github.com/versity/versitygw/wiki/POSIX-Backend) | POSIX-compatible local or network filesystem (default) | `/mnt/data` |
 | [scoutfs](https://github.com/versity/versitygw/wiki/ScoutFS-Backend) | [ScoutFS](https://scoutfs.org/) high-performance filesystem | `/mnt/scoutfs` |
 | [s3](https://github.com/versity/versitygw/wiki/S3-Backend) | Proxy to an existing S3-compatible object store | `--access KEY --secret SECRET --endpoint https://s3.example.com` |
-| [azure](https://github.com/versity/versitygw/wiki/AzureBlob-Backend) | Azure Blob Storage | `--account myaccount --key mykey` |
+| [azure](https://github.com/versity/versitygw/wiki/AzureBlob-Backend) | Azure Blob Storage | `--account myaccount --access-key mykey` |
 | [plugin](https://github.com/versity/versitygw/wiki/Plugin-Backend) | Custom backend via shared library plugin | `/path/to/plugin.so` |
 
 Example for POSIX with sidecar metadata:
@@ -102,6 +102,26 @@ gateway:
     args: "--exclude-dirs .zfs /mnt/data"
 ```
 
+### Azure meta container
+
+The azure backend stores each bucket's ACL, policy, CORS, website and tagging configuration in the bucket's container metadata, which Azure limits to 8KB in total. A large bucket policy, for example one with many prefix-scoped statements, then fails with `MetadataTooLarge`. Set `gateway.backend.metaContainer` to store these settings as blobs in a dedicated container instead:
+
+```yaml
+gateway:
+  backend:
+    type: azure
+    args: "--account myaccount --access-key mykey"
+    metaContainer: vgw-meta
+```
+
+- The gateway creates the container at startup if it does not exist. The Azure credentials need to read, write and delete blobs in it, and to create it unless you create it beforehand. The container is hidden from bucket listings and cannot be accessed through the gateway.
+- Choose a name that is not an existing bucket. The bucket's owner could have stored objects named like the settings of other buckets, so the gateway refuses to start with a bucket as its meta container.
+- Existing buckets keep working: a setting is read from the container metadata until it is next written, and then moves to the meta container.
+- Keep the value on every upgrade. Clearing or renaming it hides the settings already stored there, so buckets lose their owners and policies until it is restored. `helm upgrade` without `--reuse-values` or your values file resets it.
+- During a `RollingUpdate`, old and new pods serve requests side by side, even with one replica. A setting written through a new pod moves out of the container metadata, so old pods stop seeing it, and a write through an old pod after that is ignored by the new ones. Use `strategy.type=Recreate` for the upgrade that turns the meta container on, or make no bucket setting changes until the rollout completes.
+- All state stays in Azure, so the deployment remains stateless and can run several replicas.
+- It needs a versitygw image newer than v1.10.0. Older images ignore it and keep using the container metadata.
+
 ## Optional Features
 
 | Feature | Key values |
@@ -111,11 +131,13 @@ gateway:
 | **Ingress** | `ingress.enabled=true`, `ingress.className`, `ingress.hosts`, `ingress.tls` |
 | **HTTPRoute** | `httpRoute.enabled=true` — Gateway API successor to Ingress for S3 API; also `admin.httpRoute.enabled=true` and `webui.httpRoute.enabled=true` to expose the admin API and/or WebUI |
 | **Admin API** | `admin.enabled=true` — exposes a separate management API on `admin.port` (default `7071`); `admin.pathPrefix` (e.g. `/admin`) serves it under a path prefix, on the S3 port when `admin.enabled=false` — see [Serving Under One Hostname](#serving-under-one-hostname) |
-| **WebUI** | `webui.enabled=true` — browser-based management UI on `webui.port` (default `8080`); set `webui.apiGateways` and `webui.adminGateways` to your externally reachable endpoints, and `webui.iamGateways` when `iam.type=standalone` so the login page offers the IAM service (the WebUI then ignores the admin API entirely — the IAM service manages users, and buckets are managed over the S3 API). `webui.pathPrefix` serves it under a path on `webui.port`; `webui.s3Prefix` also serves it on the S3 port |
+| **WebUI** | `webui.enabled=true` — browser-based management UI on `webui.port` (default `8080`); set `webui.apiGateways` and `webui.adminGateways` to your externally reachable endpoints, and `webui.iamGateways` when `iam.type=standalone` so the login page offers the IAM service (the WebUI then ignores the admin API entirely — the IAM service manages users, and buckets are managed over the S3 API). `webui.pathPrefix` serves it under a path on `webui.port`; `webui.s3Prefix` also serves it on the S3 port. `webui.oidc.*` adds single sign-on — see [WebUI Single Sign-On](#webui-single-sign-on) |
 | **Website Hosting** | `website.enabled=true` — static website hosting endpoint on `website.port` (default `8090`); optionally set `website.domain` for virtual-host routing (e.g. `example.com`), or omit it for catch-all mode where the full hostname is the bucket name |
-| **IAM** | `iam.enabled=true` — identity and access management. `iam.type=internal` (default) stores accounts in a flat file under `iam.dir`, alongside backend data or on its own PVC with `iam.persistence.enabled=true`; `iam.type=standalone` delegates to a separate standalone IAM API service — see [Standalone IAM Service](#standalone-iam-service) below |
+| **IAM** | `iam.enabled=true` — identity and access management. `iam.type=internal` (default) stores accounts in a flat file under `iam.dir`, alongside backend data or on its own PVC with `iam.persistence.enabled=true`; `iam.type=standalone` delegates to a separate standalone IAM API service — see [Standalone IAM Service](#standalone-iam-service) below; `iam.type=azure` stores accounts in a `users.json` blob of an existing Azure Blob Storage container (`iam.azure.container`), shared by every replica, with credentials from `iam.azure.credentials.existingSecret` or the Azure default credential chain (e.g. AKS workload identity). Other IAM backends (S3, LDAP, Vault, FreeIPA) can be configured through `extraEnv` |
 | **Persistence** | `persistence.enabled=true` — provisions a PVC for backend data and IAM storage (unless `iam.persistence.enabled=true`); defaults to `10Gi`, or uses a hostPath volume specified by `persistence.hostPath` |
 | **NetworkPolicy** | `networkPolicy.enabled=true` — restricts ingress to selected pods/namespaces; allows all egress |
+| **Any signing region** | `gateway.allowAnyRegion=true` — accept requests signed for any region, not only `gateway.region`, and CreateBucket requests with any location constraint; `gateway.region` is still the region returned to clients |
+| **Shared bucket listing** | `gateway.listBucketsScope` — `owned` (default) lists only a user's own buckets, as in AWS; `accessible` also lists buckets shared with the user through an ACL or bucket policy (public grants don't count); `all` lists every bucket. Root and admin users always list every bucket. Applies to IAM backends without identity policies; must be `owned` with `iam.type=standalone` |
 | **Debug logging** | `gateway.logLevel` — `silent` (default), `debug` (request/response logging, secrets masked), or `unsafe` (unmasked, local troubleshooting only) |
 | **Pod extension hooks** | `initContainers`, `extraContainers`, `extraVolumes`, `extraVolumeMounts`, `command`, and `shareProcessNamespace` (and the same under `iamServer`) — add sidecars such as a certificate rotator (e.g. spiffe-helper) that signals the gateway with SIGHUP, or an OIDC discovery provider next to the IAM server |
 | **Scheduling** | `nodeSelector`, `affinity`, `tolerations`, and `topologySpreadConstraints` — control pod placement and spread replicas across nodes/zones for high availability |
@@ -179,6 +201,35 @@ Key points:
 - **WebUI access**: to manage IAM users from the WebUI, set `webui.iamGateways` to the URL a browser can reach `iamServer` on, and `iamServer.corsAllowOrigin` to the WebUI's own origin. Every WebUI call to the IAM API is cross-origin, so without `corsAllowOrigin` the browser blocks it and the WebUI's IAM navigation silently never appears.
 - **Secret rotation**: both processes re-read their TLS certificates and CA bundles, the private mTLS material on both sides included, on SIGHUP, so a certificate rotator sidecar sharing the process namespace (`shareProcessNamespace`) can rotate them in place. Environment-based credentials are read only at startup: after a referenced Secret rotates, restart both Deployments or configure a Secret-reloader controller through `deploymentAnnotations` and `iamServer.deploymentAnnotations`.
 
+## WebUI Single Sign-On
+
+`webui.oidc` adds a "Sign in with SSO" button to the WebUI login page. The browser signs in at an OpenID Connect provider (Keycloak, authentik, Okta, Entra ID, ...) with the authorization code flow and PKCE, then exchanges the ID token for temporary credentials with `AssumeRoleWithWebIdentity` on the standalone IAM service. The access-key form stays available.
+
+```yaml
+iam:
+  enabled: true
+  type: standalone
+iamServer:
+  enabled: true
+  corsAllowOrigin: https://s3.example.com      # the WebUI's origin
+webui:
+  s3Prefix: /ui
+  apiGateways:
+    - https://s3.example.com
+  iamGateways:
+    - https://iam.example.com
+  oidc:
+    issuer: https://auth.example.com/realms/main
+    clientId: versitygw-webui
+    roleArn: arn:aws:iam::000000000000:role/webui-users
+```
+
+- **At the provider**: register a public client (no client secret) with the authorization code flow and PKCE S256. Its redirect URI is the login page URL, here `https://s3.example.com/ui/`, unless `webui.oidc.redirectUri` overrides it; register the same URL as a post-logout redirect URI. Allow the WebUI origin for CORS (Keycloak "Web origins"), since the browser calls the token endpoint directly.
+- **On the IAM service**: register the provider with `CreateOpenIDConnectProvider`, using the same issuer URL and the client ID in its client ID list, and create the role with a trust policy that federates that provider (typically conditioned on `<issuer>:aud` and claims such as `groups`).
+- **Roles**: role permission policies do not see token claims, so per-group permissions need one role per group. Set `webui.oidc.roleClaim` to a claim the provider fills with the user's role ARNs; with several, the user picks one at sign-in. `webui.oidc.roleArn` is the role used otherwise.
+- **Session renewal**: with a refresh token the WebUI renews credentials in the background; without one it warns before the session ends and sends the user back through the provider. Some providers only issue refresh tokens when `webui.oidc.scopes` includes `offline_access`.
+- **Bucket CORS**: SSO requests carry `X-Amz-Security-Token`. A bucket with its own CORS configuration must list it in `AllowedHeaders` (or allow `*`).
+
 ## Scaling and Persistence
 
 By default, this chart enables persistence via a `PersistentVolumeClaim` (PVC) to ensure data consistency and prevent data loss. 
@@ -194,7 +245,7 @@ When scaling `versitygw` horizontally by setting `replicaCount` greater than 1, 
 - **POSIX**: This backend stores state on the filesystem.
     - Using **ReadWriteOnce (RWO)**: All replicas must be scheduled on the **same Kubernetes node** to share the same volume. This is useful for process-level concurrency (e.g., when using high-performance local block storage) but limits high availability across nodes.
     - Using **ReadWriteMany (RWX)**: Replicas can be distributed across **multiple nodes** in the cluster. This is the recommended approach for true horizontal scaling and high availability. When using RWX, it is also recommended to use pod anti-affinity (via `affinity` in `values.yaml`) or topology spread constraints (via `topologySpreadConstraints` in `values.yaml`) to ensure pods are distributed across nodes/zones.
-- **IAM**: `iam.type=internal` is limited to a single gateway replica because its file store does not coordinate concurrent writers. Use standalone IAM with Vault storage, LDAP, Vault-direct, or another external IAM backend before scaling the gateway above one replica.
+- **IAM**: `iam.type=internal` is limited to a single gateway replica because its file store does not coordinate concurrent writers. Use standalone IAM with Vault storage, LDAP, Vault-direct, Azure Blob Storage, or another external IAM backend before scaling the gateway above one replica. Each replica caches accounts for `iam.cacheTtl` seconds, so a deleted account or a changed secret can keep working on the other replicas for up to that long.
 - **Stateless Backends (S3, Azure)**: If you are using a stateless storage backend (e.g. proxying to another S3 store) **and** you are either not using IAM or using an external IAM provider (e.g. LDAP, Vault), persistence can be safely disabled by setting `persistence.enabled=false`. With `iam.type=internal`, set `iam.persistence.enabled=true` to keep the IAM data on its own smaller PVC.
 
 ### Deployment Strategy

@@ -302,14 +302,6 @@ func (c S3ApiController) PutBucketWebsite(ctx fiber.Ctx) (*Response, error) {
 	}
 
 	body := ctx.BodyRaw()
-	if len(body) > maxWebsiteConfigurationBytes {
-		debuglogger.Logf("the request size exceeded the 128KB limit: %d", len(body))
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.GetMaxMessageLengthExceeded(maxWebsiteConfigurationBytes)
-	}
 
 	var websiteConfig s3response.WebsiteConfiguration
 	err = xml.Unmarshal(body, &websiteConfig)
@@ -665,12 +657,16 @@ func (c S3ApiController) CreateBucket(ctx fiber.Ctx) (*Response, error) {
 		region = defaultRegion
 	}
 
-	if err := utils.ValidateLocationConstraint(body.LocationConstraint, region); err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: bucketOwner.Access,
-			},
-		}, err
+	// clients name the region they are configured for as the constraint,
+	// so when any signing region is accepted, any constraint is too
+	if !utils.ContextKeyAnyRegion.IsSet(ctx) {
+		if err := utils.ValidateLocationConstraint(body.LocationConstraint, region); err != nil {
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: bucketOwner.Access,
+				},
+			}, err
+		}
 	}
 
 	defACL := auth.ACL{

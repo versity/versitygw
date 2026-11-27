@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 	"github.com/aws/smithy-go"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/internal/novaluesclient"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -65,11 +67,15 @@ type S3Proxy struct {
 
 var _ backend.Backend = &S3Proxy{}
 
+// NewWithClient uses a copy of client whose HTTP client does not see the
+// values of the backend call's context; see package novaluesclient.
 func NewWithClient(ctx context.Context, client *s3.Client, metaBucket string) (*S3Proxy, error) {
 	s := &S3Proxy{
 		metaBucket: metaBucket,
 	}
-	s.client = client
+	s.client = s3.New(client.Options(), func(o *s3.Options) {
+		o.HTTPClient = novaluesclient.Wrap(o.HTTPClient)
+	})
 	return s, s.validate(ctx)
 }
 
@@ -108,6 +114,12 @@ func (s *S3Proxy) StoresDotSegmentKeys() bool {
 	return true
 }
 
+// ListBuckets lists the upstream buckets, filtering each upstream page to
+// the ones the caller may list. MaxBuckets and the continuation token pass
+// to the upstream listing unchanged, so a filtered page can come back short
+// with the upstream token, which is still a valid page. Without a meta
+// bucket no ACLs are stored, so every bucket is listed to every caller and
+// input.IsVisible is never called.
 func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 	output, err := s.client.ListBuckets(ctx, &s3.ListBucketsInput{
 		ContinuationToken: &input.ContinuationToken,
@@ -141,7 +153,14 @@ func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsI
 			return s3response.ListAllMyBucketsResult{}, err
 		}
 
-		if acl.Owner == input.Owner {
+		listed := acl.Owner == input.Owner
+		if !listed && input.IsVisible != nil {
+			listed, err = input.IsVisible(ctx, *b.Name, data)
+			if err != nil {
+				return s3response.ListAllMyBucketsResult{}, err
+			}
+		}
+		if listed {
 			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
 				Name:         *b.Name,
 				CreationDate: *b.CreationDate,
@@ -581,7 +600,18 @@ func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 		}
 	}
 
-	return res, versionid, handleError(err)
+	err = handleError(err)
+	var apiErr s3err.APIError
+	if errors.As(err, &apiErr) && apiErr.Code == s3err.GetAPIError(s3err.ErrInvalidPartOrder).Code {
+		// the sdk drops the UploadId element of the upstream error, and it
+		// is the one the request was sent with
+		return res, versionid, s3err.InvalidPartOrderError{
+			APIError: apiErr,
+			UploadId: aws.ToString(input.UploadId),
+		}
+	}
+
+	return res, versionid, err
 }
 
 func (s *S3Proxy) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
@@ -1173,6 +1203,13 @@ func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 	}
 
 	out, err := s.client.HeadObject(ctx, input)
+	if dm, ok := getUpstreamDeleteMarker(err, http.MethodHead); ok {
+		return &s3.HeadObjectOutput{
+			DeleteMarker: aws.Bool(true),
+			VersionId:    dm.versionId,
+			LastModified: dm.lastModified,
+		}, dm.err
+	}
 	return out, handleError(err)
 }
 
@@ -1233,6 +1270,13 @@ func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 	}
 
 	output, err := s.client.GetObject(ctx, input)
+	if dm, ok := getUpstreamDeleteMarker(err, http.MethodGet); ok {
+		return &s3.GetObjectOutput{
+			DeleteMarker: aws.Bool(true),
+			VersionId:    dm.versionId,
+			LastModified: dm.lastModified,
+		}, dm.err
+	}
 	if err != nil {
 		return nil, handleError(err)
 	}
@@ -1948,6 +1992,43 @@ func handleError(err error) error {
 		return apiErr
 	}
 	return err
+}
+
+// upstreamDeleteMarker is the delete marker that S3 reports in the headers
+// of a GET or HEAD error: a 404 when the current version of the key is a
+// delete marker, a 405 when the request names a delete marker version.
+type upstreamDeleteMarker struct {
+	versionId    *string
+	lastModified *time.Time
+	err          error
+}
+
+// getUpstreamDeleteMarker returns the delete marker reported with err, and
+// false when err doesn't report one. The SDK returns no output with the
+// error, so the marker is read from the response headers.
+func getUpstreamDeleteMarker(err error, method string) (upstreamDeleteMarker, bool) {
+	var re *awshttp.ResponseError
+	if !errors.As(err, &re) || re.Response == nil || re.Response.Response == nil {
+		return upstreamDeleteMarker{}, false
+	}
+	header := re.Response.Header
+	if header.Get("x-amz-delete-marker") != "true" {
+		return upstreamDeleteMarker{}, false
+	}
+
+	dm := upstreamDeleteMarker{err: handleError(err)}
+	if vId := header.Get("x-amz-version-id"); vId != "" {
+		dm.versionId = &vId
+	}
+	if lm, err := http.ParseTime(header.Get("Last-Modified")); err == nil {
+		dm.lastModified = &lm
+	}
+	if re.Response.StatusCode == http.StatusMethodNotAllowed {
+		// keep the resource type and the Allow header of the delete marker
+		dm.err = s3err.GetMethodNotAllowedErr(method, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete})
+	}
+
+	return dm, true
 }
 
 func convertObjects(objs []types.Object) []s3response.Object {

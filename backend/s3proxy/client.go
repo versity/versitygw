@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"github.com/versity/versitygw/internal/novaluesclient"
 )
 
 func (s *S3Proxy) getClientWithCtx(ctx context.Context) (*s3.Client, error) {
@@ -65,7 +66,11 @@ func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Con
 
 	opts := []func(*config.LoadOptions) error{
 		config.WithRegion(s.awsRegion),
-		config.WithHTTPClient(client),
+		// Keeps net/http from reading values of the backend call's context,
+		// the *fasthttp.RequestCtx, after the call has returned. Wrapped here
+		// rather than on the S3 client only, so the requests of the
+		// credential providers are covered too. See package novaluesclient.
+		config.WithHTTPClient(novaluesclient.Wrap(client)),
 	}
 
 	if access != "" {

@@ -15,11 +15,11 @@
 # under the License.
 
 source ./tests/commands/delete_bucket_policy.sh
+source ./tests/drivers/abort_multipart_upload/abort_multipart_upload_rest.sh
 source ./tests/drivers/delete_object/delete_object_rest.sh
 source ./tests/drivers/get_object_lock_config/get_object_lock_config_rest.sh
 source ./tests/drivers/put_bucket_acl/put_bucket_acl_rest.sh
 source ./tests/drivers/file.sh
-source ./tests/util/util_multipart_abort.sh
 source ./tests/util/util_policy.sh
 source ./tests/util/util_retention.sh
 source ./tests/util/util_users.sh

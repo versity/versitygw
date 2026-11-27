@@ -315,7 +315,7 @@ func PublicBucket_default_private_bucket(s *S3Conf) error {
 					})
 					return err
 				},
-				ExpectedErr: s3err.GetAPIError(s3err.ErrAccessDenied),
+				ExpectedErr: s3err.GetAPIError(s3err.ErrAnonymousGetObjectAttributes),
 			},
 			{
 				Action: "CopyObject",
@@ -879,7 +879,7 @@ func PublicBucket_public_bucket_policy(s *S3Conf) error {
 					})
 					return err
 				},
-				ExpectedErr: s3err.GetAPIError(s3err.ErrAccessDenied),
+				ExpectedErr: s3err.GetAPIError(s3err.ErrAnonymousGetObjectAttributes),
 			},
 			{
 				Action: "CopyObject",
@@ -1493,7 +1493,7 @@ func PublicBucket_public_object_policy(s *S3Conf) error {
 					})
 					return err
 				},
-				ExpectedErr: nil,
+				ExpectedErr: s3err.GetAPIError(s3err.ErrAnonymousGetObjectAttributes),
 			},
 			{
 				Action: "CopyObject",
@@ -2134,7 +2134,7 @@ func PublicBucket_public_acl(s *S3Conf) error {
 					})
 					return err
 				},
-				ExpectedErr: s3err.GetAPIError(s3err.ErrAccessDenied),
+				ExpectedErr: s3err.GetAPIError(s3err.ErrAnonymousGetObjectAttributes),
 			},
 			{
 				Action: "CopyObject",
@@ -3235,6 +3235,71 @@ func PublicBucket_post_object_lock(s *S3Conf) error {
 
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: key, removeLegalHold: true}})
 	}, withLock())
+}
+
+// PublicBucket_get_object_attributes covers an anonymous GetObjectAttributes,
+// which AWS refuses even when the bucket policy publicly grants every action
+// it could be authorized as, with or without versionId, while an anonymous
+// GetObject on the same policy succeeds.
+func PublicBucket_get_object_attributes(s *S3Conf) error {
+	testName := "PublicBucket_get_object_attributes"
+	opts := []setupOpt{withAnonymousClient()}
+	if s.versioningEnabled {
+		opts = append(opts, withVersioning(types.BucketVersioningStatusEnabled))
+	}
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "my-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    []string{"s3:GetObjectAttributes", "s3:GetObject", "s3:GetObjectVersionAttributes", "s3:GetObjectVersion"},
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &key})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("GetObject: expected success, instead got %w", err)
+		}
+
+		versionIds := []*string{nil}
+		if out.VersionId != nil {
+			versionIds = append(versionIds, out.VersionId)
+		}
+		for _, versionId := range versionIds {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+				Bucket:           &bucket,
+				Key:              &key,
+				VersionId:        versionId,
+				ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesEtag},
+			})
+			cancel()
+
+			name := "GetObjectAttributes"
+			if versionId != nil {
+				name += " with versionId"
+			}
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAnonymousGetObjectAttributes)); err != nil {
+				return fmt.Errorf("%s: %w", name, err)
+			}
+		}
+
+		return nil
+	}, opts...)
 }
 
 // PublicBucket_object_version_actions covers anonymous requests naming an

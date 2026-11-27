@@ -194,7 +194,7 @@ func (h *Handler) prepareCore(ctx fiber.Ctx) error {
 	isPut := op == "PUT"
 	target := ctx.Get(hdrTarget)
 	bucket, key, ok := splitTarget(target)
-	if !ok {
+	if !ok || !validTarget(bucket, key, h.be) {
 		return publishHeaderErr(invalidHeader(hdrTarget, target), isPut)
 	}
 	size, err := parseUint(ctx.Get(hdrSize), 10, 64)
@@ -750,6 +750,14 @@ func splitTarget(target string) (bucket, key string, ok bool) {
 		return "", "", false
 	}
 	return bucket, key, true
+}
+
+// validTarget reports whether the bucket and key of a target pass the
+// name checks BucketObjectNameValidator applies to the request URI.
+// The RC routes take them from the x-amz-rdma-target header, which that
+// middleware doesn't read, so PREPARE checks them here instead.
+func validTarget(bucket, key string, be backend.Backend) bool {
+	return utils.IsValidBucketName(bucket) && utils.IsObjectNameValid(key, be)
 }
 
 // parseUint parses a decimal or bare-hex (wire) unsigned value.

@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# bats runs @test bodies only after the whole file has loaded, so functions may be defined below their callers
+# shellcheck disable=SC2218
 
 # Copyright 2026 Versity Software
 # This file is licensed under the Apache License, Version 2.0

@@ -25,6 +25,7 @@ func DebugLogger() fiber.Handler {
 	return func(ctx fiber.Ctx) error {
 		debuglogger.LogFiberRequestDetails(ctx)
 		err := ctx.Next()
+		debuglogger.LogFiberRequestBody(ctx)
 		debuglogger.LogFiberResponseDetails(ctx)
 		return err
 	}

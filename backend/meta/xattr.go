@@ -42,6 +42,7 @@ type XattrMeta struct {
 }
 
 var _ RootDirSetter = XattrMeta{}
+var _ TmpFileTester = XattrMeta{}
 
 // WithRootDir returns a copy of x that resolves bucket names against rootdir.
 func (x XattrMeta) WithRootDir(rootdir string) MetadataStorer {
@@ -194,4 +195,11 @@ func (x XattrMeta) Test(path string) error {
 	}
 
 	return nil
+}
+
+// TestFile checks that an attribute can be set on f, which is discarded
+// afterwards: the probe attribute is not removed. The value is not empty,
+// like the ones set on objects.
+func (x XattrMeta) TestFile(f *os.File) error {
+	return xattr.FSet(f, xattrPrefix+"probe", []byte("1"))
 }

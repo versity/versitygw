@@ -49,6 +49,7 @@ var (
 	ports                                  []string
 	admPorts                               []string
 	region                                 string
+	allowAnyRegion                         bool
 	maxConnections, maxRequests            int
 	adminMaxConnections, adminMaxRequests  int
 	corsAllowOrigin                        string
@@ -89,6 +90,9 @@ var (
 	s3IamRegion, s3IamBucket               string
 	s3IamEndpoint                          string
 	s3IamSslNoVerify                       bool
+	azIamAccount, azIamKey                 string
+	azIamSASToken, azIamURL                string
+	azIamContainer                         string
 	iamCacheDisable                        bool
 	iamCacheTTL                            int
 	iamCachePrune                          int
@@ -111,6 +115,7 @@ var (
 	websiteCertFile, websiteKeyFile        string
 	websiteNoTLS                           bool
 	disableACLs                            bool
+	listBucketsScope                       string
 	mpMaxParts                             int
 	socketPerm                             string
 	rdmaIP                                 string
@@ -396,6 +401,12 @@ func initFlags() []cli.Flag {
 			Destination: &region,
 			Aliases:     []string{"r"},
 		},
+		&cli.BoolFlag{
+			Name:        "allow-any-region",
+			Usage:       "accept requests signed for any region, not only the gateway region",
+			EnvVars:     []string{"VGW_ALLOW_ANY_REGION"},
+			Destination: &allowAnyRegion,
+		},
 		&cli.IntFlag{
 			Name:        "max-connections",
 			Usage:       "maximum number of concurrent connections s3 api server may serve",
@@ -509,6 +520,16 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_DISABLE_ACL"},
 			Destination: &disableACLs,
 			Aliases:     []string{"noacl"},
+		},
+		&cli.StringFlag{
+			Name: "list-buckets-scope",
+			Usage: "which buckets ListBuckets returns to non-admin users of an IAM backend without identity policies (internal, LDAP, Vault, IPA, S3): " +
+				"owned (their own buckets, as in AWS), " +
+				"accessible (also buckets whose ACL or bucket policy grants them s3:ListBucket on at least part of the bucket, ignoring public grants; reads the policy of each bucket they don't own on every listing), " +
+				"or all (every bucket). Only owned is allowed with the standalone IAM service",
+			EnvVars:     []string{"VGW_LIST_BUCKETS_SCOPE"},
+			Value:       string(auth.ListBucketsScopeOwned),
+			Destination: &listBucketsScope,
 		},
 		&cli.StringFlag{
 			Name:        "access-log",
@@ -790,6 +811,36 @@ func initFlags() []cli.Flag {
 			Usage:       "s3 IAM disable ssl verification",
 			EnvVars:     []string{"VGW_S3_IAM_NO_VERIFY"},
 			Destination: &s3IamSslNoVerify,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-account",
+			Usage:       "azure IAM storage account name",
+			EnvVars:     []string{"VGW_IAM_AZURE_ACCOUNT_NAME"},
+			Destination: &azIamAccount,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-access-key",
+			Usage:       "azure IAM storage account key",
+			EnvVars:     []string{"VGW_IAM_AZURE_ACCESS_KEY"},
+			Destination: &azIamKey,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-sas-token",
+			Usage:       "azure IAM SAS token",
+			EnvVars:     []string{"VGW_IAM_AZURE_SAS_TOKEN"},
+			Destination: &azIamSASToken,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-url",
+			Usage:       "azure IAM blob service URL, defaults to https://<account>.blob.core.windows.net/ (set it for Azurite or custom endpoints)",
+			EnvVars:     []string{"VGW_IAM_AZURE_ENDPOINT"},
+			Destination: &azIamURL,
+		},
+		&cli.StringFlag{
+			Name:        "iam-azure-container",
+			Usage:       "azure IAM container, enables the azure blob IAM service",
+			EnvVars:     []string{"VGW_IAM_AZURE_CONTAINER"},
+			Destination: &azIamContainer,
 		},
 		&cli.BoolFlag{
 			Name:        "iam-cache-disable",
@@ -1161,6 +1212,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		RootUserAccess:              gwcli.RootUserAccess,
 		RootUserSecret:              gwcli.RootUserSecret,
 		Region:                      region,
+		AllowAnyRegion:              allowAnyRegion,
 		Ports:                       ports,
 		AdminPorts:                  admPorts,
 		MaxConnections:              maxConnections,
@@ -1180,6 +1232,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		Readonly:                    readonly,
 		KeepAlive:                   keepAlive,
 		DisableACLs:                 disableACLs,
+		ListBucketsScope:            listBucketsScope,
 		DisableStrictBucketNames:    gwcli.DisableStrictBucketNames,
 		VirtualDomain:               virtualDomain,
 		HealthPath:                  healthPath,
@@ -1216,6 +1269,11 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		S3IAMBucket:                 s3IamBucket,
 		S3IAMEndpoint:               s3IamEndpoint,
 		S3IAMDisableSSLVerify:       s3IamSslNoVerify,
+		AzureIAMAccount:             azIamAccount,
+		AzureIAMKey:                 azIamKey,
+		AzureIAMSASToken:            azIamSASToken,
+		AzureIAMURL:                 azIamURL,
+		AzureIAMContainer:           azIamContainer,
 		IAMCacheDisable:             iamCacheDisable,
 		IAMCacheTTL:                 iamCacheTTL,
 		IAMCachePrune:               iamCachePrune,
@@ -1325,7 +1383,12 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			// middleware sets the request locals; the access
 			// logger and event schema read the region from
 			// there, so set it for every verified request.
+			// The signature check reads the any-region
+			// switch from the locals too.
 			utils.ContextKeyRegion.Set(ctx, region)
+			if allowAnyRegion {
+				utils.ContextKeyAnyRegion.Set(ctx, true)
+			}
 			// Verification runs outside the admission barrier:
 			// signature checks can block on IAM lookups that
 			// carry no cancellation, and holding the barrier

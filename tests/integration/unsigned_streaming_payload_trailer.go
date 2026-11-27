@@ -6,10 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -210,6 +207,48 @@ func UnsignedStreamingPayloadTrailer_incomplete_body(s *S3Conf) error {
 			}
 
 			_, apiErr, err := testUnsignedStreamingPayloadTrailerObjectPut(s, bucket, object, body, reqHeaders)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			if err := compareS3ApiError(s3err.GetAPIError(s3err.ErrIncompleteBody), apiErr); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// UnsignedStreamingPayloadTrailer_trailer_line_too_long checks that a trailer
+// line too long to be a checksum header is rejected rather than collected:
+// the gateway once buffered the trailer up to its first '\r', however far
+// away, so a body that never sent one grew its memory without bound. The
+// lines here are longer than both the gateway's limit and AWS's (8 KiB), so
+// each request fails the same way on either, whatever the line holds.
+func UnsignedStreamingPayloadTrailer_trailer_line_too_long(s *S3Conf) error {
+	testName := "UnsignedStreamingPayloadTrailer_trailer_line_too_long"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-object"
+		const prefix = "A\r\ndummy data\r\n0\r\n"
+		const trailer = "x-amz-checksum-crc64nvme:dPVWc2vU1+Q="
+		long := 16 * 1024
+		for i, body := range []string{
+			// a valid trailer, padded past the limit
+			prefix + strings.Repeat(" ", long) + trailer + "\r\n\r\n",
+			// an oversized checksum value
+			prefix + "x-amz-checksum-crc64nvme:" + strings.Repeat("A", long) + "\r\n\r\n",
+			// an oversized line with no header in it
+			prefix + strings.Repeat("A", long) + "\r\n\r\n",
+			// a line that never ends
+			prefix + strings.Repeat("A", long),
+		} {
+			reqHeaders := map[string]string{
+				"x-amz-decoded-content-length": "10",
+				"x-amz-trailer":                "x-amz-checksum-crc64nvme",
+			}
+
+			_, apiErr, err := testUnsignedStreamingPayloadTrailerObjectPut(s, bucket, object, []byte(body), reqHeaders)
 			if err != nil {
 				return fmt.Errorf("test %v failed: %w", i+1, err)
 			}
@@ -664,22 +703,6 @@ func UnsignedStreamingPayloadTrailer_not_allowed(s *S3Conf) error {
 	})
 }
 
-// abortedChunkReader serves the first n bytes of a chunk-framed payload and
-// then fails, so the transport tears the connection down mid-body.
-type abortedChunkReader struct {
-	data []byte
-	pos  int
-}
-
-func (r *abortedChunkReader) Read(p []byte) (int, error) {
-	if r.pos >= len(r.data) {
-		return 0, fmt.Errorf("connection aborted by test")
-	}
-	n := copy(p, r.data[r.pos:])
-	r.pos += n
-	return n, nil
-}
-
 // UnsignedStreamingPayloadTrailer_aborted_connection checks that an aws-chunked
 // upload whose connection dies in the middle of a chunk leaves no object.
 //
@@ -712,41 +735,20 @@ func UnsignedStreamingPayloadTrailer_aborted_connection(s *S3Conf) error {
 		// data has not finished arriving.
 		cut := len(full) / 4
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPut,
-			fmt.Sprintf("%s/%s/%s", s.endpoint, bucket, object),
-			&abortedChunkReader{data: full[:cut]})
-		if err != nil {
-			cancel()
-			return fmt.Errorf("failed to create a request: %w", err)
-		}
 		// Announce the whole framed payload, send a quarter of it.
-		req.ContentLength = int64(len(full))
-		req.Header.Set("x-amz-content-sha256", "STREAMING-UNSIGNED-PAYLOAD-TRAILER")
-		req.Header.Set("x-amz-trailer", "x-amz-checksum-crc64nvme")
-		req.Header.Set("x-amz-decoded-content-length", fmt.Sprintf("%v", decoded))
-
-		signer := v4.NewSigner()
-		if err := signer.SignHTTP(req.Context(),
-			aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret},
-			req, "STREAMING-UNSIGNED-PAYLOAD-TRAILER", "s3", s.awsRegion, time.Now()); err != nil {
-			cancel()
-			return fmt.Errorf("failed to sign the request: %w", err)
+		status, err := putObjectAborted(s, bucket, object, len(full), full[:cut],
+			"STREAMING-UNSIGNED-PAYLOAD-TRAILER", map[string]string{
+				"x-amz-trailer":                "x-amz-checksum-crc64nvme",
+				"x-amz-decoded-content-length": fmt.Sprintf("%v", decoded),
+			})
+		if err != nil {
+			return err
+		}
+		if status < 300 {
+			return fmt.Errorf("expected the aborted upload to fail, got %v", status)
 		}
 
-		// The request is expected to fail: either the gateway answers with an
-		// error or the connection is gone. Both are fine - what matters is the
-		// object below.
-		resp, doErr := s.httpClient.Do(req)
-		cancel()
-		if doErr == nil && resp != nil {
-			resp.Body.Close()
-			if resp.StatusCode < 300 {
-				return fmt.Errorf("expected the aborted upload to fail, got %v", resp.StatusCode)
-			}
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
 			Bucket: &bucket,
 			Key:    &object,

@@ -3,7 +3,8 @@ FROM golang:latest
 WORKDIR /app
 
 COPY go.mod ./
-RUN go mod download
+RUN --mount=type=bind,source=tests/retry.sh,target=/usr/local/bin/retry \
+    retry go mod download
 
 COPY ./ ./
 COPY ./tests/certs/* /etc/pki/tls/certs/
@@ -14,5 +15,6 @@ ARG SETUP_DIR=/tmp/vgw
 RUN mkdir -p $IAM_DIR
 RUN mkdir -p $SETUP_DIR
 
-RUN go get github.com/githubnemo/CompileDaemon
+RUN --mount=type=bind,source=tests/retry.sh,target=/usr/local/bin/retry \
+    retry go get github.com/githubnemo/CompileDaemon
 RUN go install github.com/githubnemo/CompileDaemon

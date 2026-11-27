@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -82,6 +83,77 @@ func ListObjectVersions_VD_success(s *S3Conf) error {
 			return fmt.Errorf("expected object versions output to be %v, instead got %v",
 				versions, res.Versions)
 		}
+		return nil
+	})
+}
+
+func ListObjectVersions_VD_key_marker(s *S3Conf) error {
+	testName := "ListObjectVersions_VD_key_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		versions := []types.ObjectVersion{}
+		for _, key := range []string{"bar", "foo"} {
+			out, err := putObjectWithData(10, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+			versions = append(versions, types.ObjectVersion{
+				ETag:         out.res.ETag,
+				IsLatest:     getBoolPtr(true),
+				Key:          getPtr(key),
+				Size:         getPtr(int64(10)),
+				VersionId:    getPtr(nullVersionId),
+				StorageClass: types.ObjectVersionStorageClassStandard,
+			})
+		}
+
+		for i, test := range []struct {
+			keyMarker *string
+			maxKeys   int32
+			versions  []types.ObjectVersion
+		}{
+			// the page ends at the last version
+			{
+				maxKeys:  2,
+				versions: versions,
+			},
+			// the versions of the key marker are listed on the earlier pages
+			{
+				keyMarker: getPtr("bar"),
+				maxKeys:   1,
+				versions:  versions[1:],
+			},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+				Bucket:    &bucket,
+				KeyMarker: test.keyMarker,
+				MaxKeys:   &test.maxKeys,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("test case %d failed: %w", i, err)
+			}
+
+			if !compareVersions(test.versions, out.Versions) {
+				return fmt.Errorf("test case %d failed: expected the versions to be %v, instead got %v",
+					i, sprintVersions(test.versions), sprintVersions(out.Versions))
+			}
+			if out.IsTruncated == nil || *out.IsTruncated {
+				return fmt.Errorf("test case %d failed: expected the output not to be truncated", i)
+			}
+			if out.NextKeyMarker != nil {
+				return fmt.Errorf("test case %d failed: expected nil NextKeyMarker, instead got %v",
+					i, *out.NextKeyMarker)
+			}
+			if out.NextVersionIdMarker != nil {
+				return fmt.Errorf("test case %d failed: expected nil NextVersionIdMarker, instead got %v",
+					i, *out.NextVersionIdMarker)
+			}
+		}
+
 		return nil
 	})
 }
@@ -729,6 +801,292 @@ func ListObjectVersions_paginate_null_version(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func ListObjectVersions_key_marker(s *S3Conf) error {
+	testName := "ListObjectVersions_key_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		barVersions, err := createObjVersions(s3client, bucket, "bar", 2)
+		if err != nil {
+			return err
+		}
+		bazVersions, err := createObjVersions(s3client, bucket, "baz", 1)
+		if err != nil {
+			return err
+		}
+		dirVersions, err := createObjVersions(s3client, bucket, "foo/", 2)
+		if err != nil {
+			return err
+		}
+		inDirVersions, err := createObjVersions(s3client, bucket, "foo/obj", 1)
+		if err != nil {
+			return err
+		}
+		quxVersions, err := createObjVersions(s3client, bucket, "qux", 1)
+		if err != nil {
+			return err
+		}
+
+		afterDir := append(slices.Clone(inDirVersions), quxVersions...)
+		afterBaz := append(slices.Clone(dirVersions), afterDir...)
+
+		for i, test := range []struct {
+			keyMarker       string
+			versionIdMarker *string
+			delimiter       *string
+			maxKeys         *int32
+			versions        []types.ObjectVersion
+			prefixes        []string
+			truncated       bool
+			nextKeyMarker   *string
+			nextVersionId   *string
+		}{
+			// the versions of the key marker are listed on the earlier pages
+			{
+				keyMarker:     "bar",
+				maxKeys:       getPtr(int32(1)),
+				versions:      bazVersions,
+				truncated:     true,
+				nextKeyMarker: bazVersions[0].Key,
+				nextVersionId: bazVersions[0].VersionId,
+			},
+			{
+				keyMarker: "qux",
+			},
+			// the objects under the directory object key marker are listed
+			{
+				keyMarker: "foo/",
+				versions:  afterDir,
+			},
+			{
+				keyMarker:       "bar",
+				versionIdMarker: barVersions[0].VersionId,
+				versions:        append(append(slices.Clone(barVersions[1:]), bazVersions...), afterBaz...),
+			},
+			// the version id marker applies to the key marker only
+			{
+				keyMarker:       "bas",
+				versionIdMarker: barVersions[1].VersionId,
+				versions:        append(slices.Clone(bazVersions), afterBaz...),
+			},
+			// the keys under the common prefix of the key marker are
+			// listed on the earlier pages
+			{
+				keyMarker: "foo/",
+				delimiter: getPtr("/"),
+				versions:  quxVersions,
+			},
+			{
+				keyMarker: "foo/obj",
+				delimiter: getPtr("/"),
+				versions:  quxVersions,
+			},
+			{
+				keyMarker: "foo",
+				delimiter: getPtr("/"),
+				versions:  quxVersions,
+				prefixes:  []string{"foo/"},
+			},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+				Bucket:          &bucket,
+				KeyMarker:       &test.keyMarker,
+				VersionIdMarker: test.versionIdMarker,
+				Delimiter:       test.delimiter,
+				MaxKeys:         test.maxKeys,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("test case %d failed: %w", i, err)
+			}
+
+			if !compareVersions(test.versions, out.Versions) {
+				return fmt.Errorf("test case %d failed: expected the versions to be %v, instead got %v",
+					i, sprintVersions(test.versions), sprintVersions(out.Versions))
+			}
+			if !comparePrefixes(test.prefixes, out.CommonPrefixes) {
+				return fmt.Errorf("test case %d failed: expected the common prefixes to be %v, instead got %v",
+					i, test.prefixes, sprintPrefixes(out.CommonPrefixes))
+			}
+			if getString(out.KeyMarker) != test.keyMarker {
+				return fmt.Errorf("test case %d failed: expected the KeyMarker to be %v, instead got %v",
+					i, test.keyMarker, getString(out.KeyMarker))
+			}
+			isTruncated := out.IsTruncated != nil && *out.IsTruncated
+			if isTruncated != test.truncated {
+				return fmt.Errorf("test case %d failed: expected the output truncation to be %v, instead got %v",
+					i, test.truncated, isTruncated)
+			}
+			if getString(out.NextKeyMarker) != getString(test.nextKeyMarker) {
+				return fmt.Errorf("test case %d failed: expected the NextKeyMarker to be %v, instead got %v",
+					i, getString(test.nextKeyMarker), getString(out.NextKeyMarker))
+			}
+			if getString(out.NextVersionIdMarker) != getString(test.nextVersionId) {
+				return fmt.Errorf("test case %d failed: expected the NextVersionIdMarker to be %v, instead got %v",
+					i, getString(test.nextVersionId), getString(out.NextVersionIdMarker))
+			}
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func ListObjectVersions_paginate(s *S3Conf) error {
+	testName := "ListObjectVersions_paginate"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		barVersions, err := createObjVersions(s3client, bucket, "bar", 2)
+		if err != nil {
+			return err
+		}
+		bazVersions, err := createObjVersions(s3client, bucket, "baz", 1)
+		if err != nil {
+			return err
+		}
+		bazDelMarker, err := createDeleteMarker(s3client, bucket, "baz")
+		if err != nil {
+			return err
+		}
+		bazVersions[0].IsLatest = getBoolPtr(false)
+		dirVersions, err := createObjVersions(s3client, bucket, "foo/", 1)
+		if err != nil {
+			return err
+		}
+		inDirVersions, err := createObjVersions(s3client, bucket, "foo/obj", 2)
+		if err != nil {
+			return err
+		}
+		quxVersions, err := createObjVersions(s3client, bucket, "qux", 1)
+		if err != nil {
+			return err
+		}
+
+		// an entry of the listing is a version, a delete marker or a
+		// common prefix
+		type entry struct {
+			version   *types.ObjectVersion
+			delMarker *types.DeleteMarkerEntry
+			prefix    string
+		}
+		versionEntries := func(versions []types.ObjectVersion) []entry {
+			entries := []entry{}
+			for i := range versions {
+				entries = append(entries, entry{version: &versions[i]})
+			}
+			return entries
+		}
+
+		beforeDir := versionEntries(barVersions)
+		beforeDir = append(beforeDir, entry{delMarker: &types.DeleteMarkerEntry{
+			Key:       getPtr("baz"),
+			VersionId: &bazDelMarker,
+			IsLatest:  getBoolPtr(true),
+		}})
+		beforeDir = append(beforeDir, versionEntries(bazVersions)...)
+
+		withoutDelimiter := slices.Clone(beforeDir)
+		withoutDelimiter = append(withoutDelimiter, versionEntries(dirVersions)...)
+		withoutDelimiter = append(withoutDelimiter, versionEntries(inDirVersions)...)
+		withoutDelimiter = append(withoutDelimiter, versionEntries(quxVersions)...)
+
+		// "foo/" and "foo/obj" are rolled up into a common prefix
+		withDelimiter := slices.Clone(beforeDir)
+		withDelimiter = append(withDelimiter, entry{prefix: "foo/"})
+		withDelimiter = append(withDelimiter, versionEntries(quxVersions)...)
+
+		// each page ends at the version, the delete marker or the common
+		// prefix it's full at, and the listing isn't truncated after the
+		// last one
+		for _, test := range []struct {
+			delimiter *string
+			entries   []entry
+		}{
+			{entries: withoutDelimiter},
+			{delimiter: getPtr("/"), entries: withDelimiter},
+		} {
+			for maxKeys := int32(1); maxKeys <= int32(len(test.entries))+1; maxKeys++ {
+				var keyMarker, versionIdMarker *string
+				for start := 0; ; start += int(maxKeys) {
+					end := min(start+int(maxKeys), len(test.entries))
+					truncated := end < len(test.entries)
+
+					ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+					out, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+						Bucket:          &bucket,
+						Delimiter:       test.delimiter,
+						MaxKeys:         &maxKeys,
+						KeyMarker:       keyMarker,
+						VersionIdMarker: versionIdMarker,
+					})
+					cancel()
+					if err != nil {
+						return fmt.Errorf("delimiter %q, max-keys %v, page at %v: %w",
+							getString(test.delimiter), maxKeys, start, err)
+					}
+
+					versions := []types.ObjectVersion{}
+					delMarkers := []types.DeleteMarkerEntry{}
+					prefixes := []string{}
+					for _, e := range test.entries[start:end] {
+						switch {
+						case e.version != nil:
+							versions = append(versions, *e.version)
+						case e.delMarker != nil:
+							delMarkers = append(delMarkers, *e.delMarker)
+						default:
+							prefixes = append(prefixes, e.prefix)
+						}
+					}
+
+					var nextKeyMarker, nextVersionId string
+					if truncated {
+						switch last := test.entries[end-1]; {
+						case last.version != nil:
+							nextKeyMarker, nextVersionId = *last.version.Key, *last.version.VersionId
+						case last.delMarker != nil:
+							nextKeyMarker, nextVersionId = *last.delMarker.Key, *last.delMarker.VersionId
+						default:
+							nextKeyMarker = last.prefix
+						}
+					}
+
+					if !compareVersions(versions, out.Versions) {
+						return fmt.Errorf("delimiter %q, max-keys %v, page at %v: expected the versions to be %v, instead got %v",
+							getString(test.delimiter), maxKeys, start, sprintVersions(versions), sprintVersions(out.Versions))
+					}
+					if !compareDelMarkers(delMarkers, out.DeleteMarkers) {
+						return fmt.Errorf("delimiter %q, max-keys %v, page at %v: expected the delete markers to be %v, instead got %v",
+							getString(test.delimiter), maxKeys, start, delMarkers, out.DeleteMarkers)
+					}
+					if !comparePrefixes(prefixes, out.CommonPrefixes) {
+						return fmt.Errorf("delimiter %q, max-keys %v, page at %v: expected the common prefixes to be %v, instead got %v",
+							getString(test.delimiter), maxKeys, start, prefixes, sprintPrefixes(out.CommonPrefixes))
+					}
+					isTruncated := out.IsTruncated != nil && *out.IsTruncated
+					if isTruncated != truncated {
+						return fmt.Errorf("delimiter %q, max-keys %v, page at %v: expected the output truncation to be %v, instead got %v",
+							getString(test.delimiter), maxKeys, start, truncated, isTruncated)
+					}
+					// the empty markers are omitted
+					if (out.NextKeyMarker == nil) != (nextKeyMarker == "") || getString(out.NextKeyMarker) != nextKeyMarker {
+						return fmt.Errorf("delimiter %q, max-keys %v, page at %v: expected the NextKeyMarker to be %q, instead got %v",
+							getString(test.delimiter), maxKeys, start, nextKeyMarker, out.NextKeyMarker)
+					}
+					if (out.NextVersionIdMarker == nil) != (nextVersionId == "") || getString(out.NextVersionIdMarker) != nextVersionId {
+						return fmt.Errorf("delimiter %q, max-keys %v, page at %v: expected the NextVersionIdMarker to be %q, instead got %v",
+							getString(test.delimiter), maxKeys, start, nextVersionId, out.NextVersionIdMarker)
+					}
+
+					if !truncated {
+						break
+					}
+					keyMarker, versionIdMarker = out.NextKeyMarker, out.NextVersionIdMarker
+				}
+			}
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func ListObjectVersions_checksum(s *S3Conf) error {
 	testName := "ListObjectVersions_checksum"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -767,5 +1125,96 @@ func ListObjectVersions_checksum(s *S3Conf) error {
 		}
 
 		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// ListObjectVersions_url_encoding lists versions, delete markers and common
+// prefixes whose names need escaping with encoding-type=url: S3 returns
+// EncodingType and encodes the key names, Prefix and markers as a query
+// component, with "/" left as is. Any other encoding type is rejected.
+func ListObjectVersions_url_encoding(s *S3Conf) error {
+	testName := "ListObjectVersions_url_encoding"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"a+ b.txt", "a+ c.txt", "dir a/obj", "del me+"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("del me+"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket:       &bucket,
+			Delimiter:    getPtr("/"),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.EncodingType != types.EncodingTypeUrl {
+			return fmt.Errorf("expected the encoding type to be %q, instead got %q",
+				types.EncodingTypeUrl, out.EncodingType)
+		}
+		versionKeys := []string{}
+		for _, v := range out.Versions {
+			versionKeys = append(versionKeys, getString(v.Key))
+		}
+		expVersionKeys := []string{"a%2B+b.txt", "a%2B+c.txt", "del+me%2B"}
+		if !slices.Equal(versionKeys, expVersionKeys) {
+			return fmt.Errorf("expected the version keys %v, instead got %v", expVersionKeys, versionKeys)
+		}
+		if len(out.DeleteMarkers) != 1 || getString(out.DeleteMarkers[0].Key) != "del+me%2B" {
+			return fmt.Errorf("expected the delete marker key %q, instead got %v",
+				"del+me%2B", out.DeleteMarkers)
+		}
+		if len(out.CommonPrefixes) != 1 || getString(out.CommonPrefixes[0].Prefix) != "dir+a/" {
+			return fmt.Errorf("expected the common prefix %q, instead got %v", "dir+a/", out.CommonPrefixes)
+		}
+
+		// Prefix, KeyMarker and NextKeyMarker are encoded too
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket:       &bucket,
+			Prefix:       getPtr("a+ "),
+			KeyMarker:    getPtr("a+ a"),
+			MaxKeys:      getPtr(int32(1)),
+			EncodingType: types.EncodingTypeUrl,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(out.Prefix) != "a%2B+" {
+			return fmt.Errorf("expected the prefix %q, instead got %q", "a%2B+", getString(out.Prefix))
+		}
+		if getString(out.KeyMarker) != "a%2B+a" {
+			return fmt.Errorf("expected the key marker %q, instead got %q", "a%2B+a", getString(out.KeyMarker))
+		}
+		if getString(out.NextKeyMarker) != "a%2B+b.txt" {
+			return fmt.Errorf("expected the next key marker %q, instead got %q",
+				"a%2B+b.txt", getString(out.NextKeyMarker))
+		}
+		if len(out.Versions) != 1 || getString(out.Versions[0].Key) != "a%2B+b.txt" {
+			return fmt.Errorf("expected the version key %q, instead got %v", "a%2B+b.txt", out.Versions)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket:       &bucket,
+			EncodingType: "gibberish",
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgEncodingType, "gibberish"))
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }

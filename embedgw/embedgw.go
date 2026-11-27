@@ -60,6 +60,10 @@ type Config struct {
 	// Region is the AWS region name reported to S3 clients (e.g. "us-east-1").
 	// Defaults to "us-east-1" when empty.
 	Region string
+	// AllowAnyRegion accepts requests signed for any region, not just Region,
+	// and CreateBucket requests with any location constraint. Region is still
+	// the region reported to clients.
+	AllowAnyRegion bool
 
 	// Ports is the list of S3 API listening addresses. Each entry can be
 	// "host:port" to bind a specific interface, or ":port" to bind all
@@ -93,6 +97,26 @@ type Config struct {
 	// MaxRequests is the maximum number of concurrent in-flight S3 requests.
 	// Should not exceed MaxConnections; if it does, a warning is logged.
 	MaxRequests int
+
+	// IngressBandwidthLimit caps the aggregate bytes per second the S3 API
+	// server reads from all client connections on this gateway instance.
+	// Excess traffic is delayed, not rejected; OS receive buffers may accept
+	// bytes before backpressure. 0 means unlimited; nonzero values must be
+	// between 64KiB/s and 1TiB/s.
+	IngressBandwidthLimit int64
+	// IngressBandwidthBurst is the maximum bytes transferred back-to-back
+	// after an idle period. 0 selects a default of 10ms of traffic, between
+	// 64KiB and 1MiB. If set, it must be 32KiB to 2GiB-1.
+	IngressBandwidthBurst int64
+	// EgressBandwidthLimit caps the aggregate bytes per second the S3 API
+	// server writes to all client connections on this gateway instance.
+	// Excess traffic is delayed, not rejected. 0 means unlimited; nonzero
+	// values must be between 64KiB/s and 1TiB/s.
+	EgressBandwidthLimit int64
+	// EgressBandwidthBurst is the maximum bytes transferred back-to-back
+	// after an idle period. 0 selects a default of 10ms of traffic, between
+	// 64KiB and 1MiB. If set, it must be 32KiB to 2GiB-1.
+	EgressBandwidthBurst int64
 
 	// AdminMaxConnections is the maximum concurrent TCP connections for the
 	// separate admin server. Only used when AdminPorts is non-empty.
@@ -147,6 +171,22 @@ type Config struct {
 	// bucket ACLs. PutBucketAcl returns AccessControlListNotSupported.
 	// Prefer bucket policies over ACLs when this is enabled.
 	DisableACLs bool
+	// ListBucketsScope is which buckets ListBuckets returns to an account
+	// that is neither root nor an admin, under an IAM backend without
+	// identity policies (internal, LDAP, Vault, IPA, S3):
+	//
+	//   "owned"      -- the buckets it owns, as in AWS (the default, also when empty)
+	//   "accessible" -- also each bucket whose ACL or bucket policy grants it
+	//                   s3:ListBucket, on at least part of the bucket
+	//   "all"        -- every bucket, as admins see them
+	//
+	// Grants to everyone, a bucket policy Principal of "*" or an ACL grant to
+	// the AllUsers group, never make a bucket visible under "accessible". It
+	// reads the bucket policy of each bucket the caller doesn't own on every
+	// ListBuckets call, which the other scopes don't. The standalone IAM
+	// service lists buckets as S3 does, so RunVersityGW fails with any scope
+	// but "owned" for it.
+	ListBucketsScope string
 	// DisableSSECTLS disables the HTTPS requirement for SSE-C requests.
 	DisableSSECTLS bool
 	// DisableStrictBucketNames allows legacy or non-DNS-compliant bucket
@@ -185,6 +225,7 @@ type Config struct {
 	//   IAMDir                -- local directory
 	//   LDAPServerURL         -- LDAP
 	//   S3IAMEndpoint         -- S3-backed
+	//   AzureIAMContainer     -- Azure Blob Storage-backed
 	//   VaultEndpointURL      -- HashiCorp Vault
 	//   IpaHost               -- FreeIPA
 	//
@@ -288,6 +329,24 @@ type Config struct {
 	// S3-backed IAM connection. Use only in development or trusted internal
 	// environments.
 	S3IAMDisableSSLVerify bool
+
+	// Azure Blob Storage-backed IAM backend. Activated when
+	// AzureIAMContainer is non-empty. Credentials follow the same rules as
+	// the azure backend: a SAS token, else an account name and key, else
+	// DefaultAzureCredential (environment, workload or managed identity).
+
+	// AzureIAMAccount is the storage account name.
+	AzureIAMAccount string
+	// AzureIAMKey is the storage account key.
+	AzureIAMKey string
+	// AzureIAMSASToken is a SAS token granting access to the container.
+	AzureIAMSASToken string
+	// AzureIAMURL is the blob service URL. Defaults to
+	// https://<account>.blob.core.windows.net/ when empty.
+	AzureIAMURL string
+	// AzureIAMContainer is the container that stores IAM account data.
+	// It must already exist.
+	AzureIAMContainer string
 
 	// FreeIPA IAM backend. Activated when IpaHost is non-empty.
 
@@ -525,6 +584,10 @@ type Config struct {
 	// segment is masked. Leave empty to disable WebUI hosting on the S3
 	// endpoint.
 	WebuiS3Prefix string
+	// WebuiOIDC adds "Sign in with SSO" to the login page of either WebUI
+	// mode when its Issuer is set. It requires WebuiIAMGateways, since the
+	// provider's token is exchanged at the standalone IAM service.
+	WebuiOIDC webui.OIDCConfig
 
 	// Static website hosting endpoint
 	//
@@ -629,6 +692,11 @@ func (c *Config) IamOpts() *auth.Opts {
 		S3Bucket:                    c.S3IAMBucket,
 		S3Endpoint:                  c.S3IAMEndpoint,
 		S3DisableSSlVerfiy:          c.S3IAMDisableSSLVerify,
+		AzureAccount:                c.AzureIAMAccount,
+		AzureKey:                    c.AzureIAMKey,
+		AzureSASToken:               c.AzureIAMSASToken,
+		AzureURL:                    c.AzureIAMURL,
+		AzureContainer:              c.AzureIAMContainer,
 		CacheDisable:                c.IAMCacheDisable,
 		CacheTTL:                    c.IAMCacheTTL,
 		CachePrune:                  c.IAMCachePrune,
@@ -688,6 +756,10 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	}
 	if cfg.MultipartMaxParts < 1 {
 		return fmt.Errorf("mp-max-parts must be positive")
+	}
+	listBucketsScope, err := auth.ParseListBucketsScope(cfg.ListBucketsScope)
+	if err != nil {
+		return err
 	}
 
 	clientIPHeader, err := utils.NormalizeClientIPHeader(cfg.ClientIPHeader)
@@ -777,6 +849,13 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			return err
 		}
 	}
+	// Checked here as well as by the WebUI itself, so a bad setting fails
+	// before the IAM and backend setup below rather than after it.
+	if len(cfg.WebuiPorts) > 0 || cfg.WebuiS3Prefix != "" {
+		if err := cfg.WebuiOIDC.Validate(validatedWebuiIAMGateways); err != nil {
+			return err
+		}
+	}
 
 	utils.SetBucketNameValidationStrict(!cfg.DisableStrictBucketNames)
 
@@ -792,6 +871,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	opts := []s3api.Option{
 		s3api.WithConcurrencyLimiter(cfg.MaxConnections, cfg.MaxRequests),
 		s3api.WithMpMaxParts(cfg.MultipartMaxParts),
+		s3api.WithBandwidthLimit(
+			cfg.IngressBandwidthLimit, cfg.IngressBandwidthBurst,
+			cfg.EgressBandwidthLimit, cfg.EgressBandwidthBurst),
 	}
 	if cfg.SocketPerm != "" {
 		opts = append(opts, s3api.WithSocketPerm(parsedSocketPerm))
@@ -828,6 +910,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	if cfg.Readonly {
 		opts = append(opts, s3api.WithReadOnly())
 	}
+	if cfg.AllowAnyRegion {
+		opts = append(opts, s3api.WithAllowAnyRegion())
+	}
 	if cfg.VirtualDomain != "" {
 		opts = append(opts, s3api.WithHostStyle(cfg.VirtualDomain))
 	}
@@ -837,6 +922,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	if cfg.DisableACLs {
 		opts = append(opts, s3api.WithDisableACL())
 	}
+	opts = append(opts, s3api.WithListBucketsScope(listBucketsScope))
 	if cfg.DisableSSECTLS {
 		opts = append(opts, s3api.WithDisableSSECTLS())
 	}
@@ -858,6 +944,14 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		if err != nil {
 			return fmt.Errorf("setup iam: %w", err)
 		}
+	}
+	// Checked against the IAM service itself, since a caller may supply one
+	// prebuilt.
+	if err := auth.ValidateListBucketsScope(iam, listBucketsScope); err != nil {
+		if cfg.IAMService == nil {
+			iam.Shutdown()
+		}
+		return err
 	}
 
 	loggers, err := s3log.InitLogger(&s3log.LogConfig{
@@ -947,6 +1041,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			AdminGateways: s3WebAdminGateways,
 			IAMGateways:   validatedWebuiIAMGateways,
 			Region:        cfg.Region,
+			OIDC:          cfg.WebuiOIDC,
 		}))
 	}
 
@@ -1013,6 +1108,9 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 		}
 		if cfg.AdminPathPrefix != "" {
 			admOpts = append(admOpts, s3api.WithAdminPathPrefix(cfg.AdminPathPrefix))
+		}
+		if cfg.AllowAnyRegion {
+			admOpts = append(admOpts, s3api.WithAdminAllowAnyRegion())
 		}
 		if clientIPHeader != "" {
 			admOpts = append(admOpts, s3api.WithAdminClientIPHeader(clientIPHeader))
@@ -1123,6 +1221,7 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 			AdminGateways: adminGateways,
 			IAMGateways:   validatedWebuiIAMGateways,
 			Region:        cfg.Region,
+			OIDC:          cfg.WebuiOIDC,
 		}, webOpts...)
 		if err != nil {
 			return fmt.Errorf("init webui: %w", err)
@@ -1188,7 +1287,10 @@ func RunVersityGW(ctx context.Context, be backend.Backend, cfg *Config) error {
 	}
 
 	if !cfg.Quiet {
-		cfg.printBanner()
+		bannerCfg := *cfg
+		bannerCfg.IngressBandwidthLimit, bannerCfg.IngressBandwidthBurst,
+			bannerCfg.EgressBandwidthLimit, bannerCfg.EgressBandwidthBurst = srv.BandwidthLimits()
+		bannerCfg.printBanner()
 	}
 
 	servers := 1
@@ -1491,6 +1593,13 @@ func (cfg Config) printBanner() {
 		lines = append(lines, leftText("  "+u))
 	}
 
+	if cfg.IngressBandwidthLimit > 0 || cfg.EgressBandwidthLimit > 0 {
+		lines = append(lines, centerText(""), leftText("Bandwidth limits per gateway instance:"))
+		lines = append(lines,
+			leftText("  ingress: "+formatBandwidth(cfg.IngressBandwidthLimit, cfg.IngressBandwidthBurst)),
+			leftText("  egress: "+formatBandwidth(cfg.EgressBandwidthLimit, cfg.EgressBandwidthBurst)))
+	}
+
 	if len(cfg.AdminPorts) > 0 {
 		lines = append(lines, centerText(""), leftText("Admin service listening on:"))
 		for _, addrPort := range allAdmInterfaces {
@@ -1657,6 +1766,26 @@ func (cfg Config) printBanner() {
 		fmt.Printf("│%-*s│\n", columnWidth-2, line)
 	}
 	fmt.Println("└" + strings.Repeat("─", columnWidth-2) + "┘")
+}
+
+func formatBandwidth(rate, burst int64) string {
+	if rate == 0 {
+		return "unlimited"
+	}
+	byteRate := formatBandwidthQuantity(float64(rate), []string{"B/s", "KB/s", "MB/s", "GB/s", "TB/s"}, 1000)
+	bitRate := formatBandwidthQuantity(float64(rate)*8, []string{"bit/s", "Kbit/s", "Mbit/s", "Gbit/s", "Tbit/s"}, 1000)
+	burstSize := formatBandwidthQuantity(float64(burst), []string{"B", "KiB", "MiB", "GiB"}, 1024)
+	return fmt.Sprintf("%s (%s), burst %s", byteRate, bitRate, burstSize)
+}
+
+func formatBandwidthQuantity(value float64, units []string, base float64) string {
+	unit := 0
+	for value >= base && unit < len(units)-1 {
+		value /= base
+		unit++
+	}
+	number := strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", value), "0"), ".")
+	return fmt.Sprintf("%s %s", number, units[unit])
 }
 
 func centerText(text string) string {

@@ -15,8 +15,6 @@
 package middlewares
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"strings"
 
@@ -36,7 +34,6 @@ var objectVersionActions = map[auth.Action]auth.Action{
 	auth.GetObjectTaggingAction:    auth.GetObjectVersionTaggingAction,
 	auth.PutObjectTaggingAction:    auth.PutObjectVersionTaggingAction,
 	auth.DeleteObjectTaggingAction: auth.DeleteObjectVersionTaggingAction,
-	auth.GetObjectAttributesAction: auth.GetObjectVersionAttributesAction,
 }
 
 // AuthorizePublicBucketAccess checks if the bucket grants public
@@ -51,6 +48,10 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 		switch s3action {
 		case metrics.ActionListAllMyBuckets:
 			return s3err.GetAPIError(s3err.ErrAccessDenied)
+		case metrics.ActionGetObjectAttributes:
+			// AWS never serves an anonymous GetObjectAttributes, whatever
+			// the bucket policy grants.
+			return s3err.GetAPIError(s3err.ErrAnonymousGetObjectAttributes)
 		case metrics.ActionGetBucketOwnershipControls:
 			return s3err.GetAPIError(s3err.ErrAnonymousGetBucketOwnership)
 		case metrics.ActionPutBucketOwnershipControls, metrics.ActionDeleteBucketOwnershipControls:
@@ -174,15 +175,16 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 			}
 		}
 
+		// the body is read, if the action takes one, with ReadRequestBody
+		// down the chain: stack the payload hash check for it to be verified
+		// as it is read
 		if payloadHash != "" {
-			// Calculate the hash of the request payload
-			hashedPayload := sha256.Sum256(ctx.BodyRaw())
-			hexPayload := hex.EncodeToString(hashedPayload[:])
-
-			// Compare the calculated hash with the hash provided
-			if payloadHash != hexPayload {
-				return s3err.GetContentSHA256MismatchErr(payloadHash, hexPayload)
-			}
+			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
+				var cr io.Reader
+				cr, err = utils.NewHashReader(r, payloadHash, utils.HashTypeSha256Hex)
+				return cr
+			})
+			return err
 		}
 
 		return nil

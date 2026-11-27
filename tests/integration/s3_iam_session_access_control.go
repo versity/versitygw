@@ -25,6 +25,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -33,8 +34,8 @@ import (
 // bucket policy in play.
 func S3IAMSession_role_policy_allows(s *S3Conf) error {
 	testName := "S3IAMSession_role_policy_allows"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(accessStatement{
 				Effect: "Allow", Action: "s3:*",
 				Resource: []string{bucketArn(bucket), objectsArn(bucket)},
@@ -72,8 +73,8 @@ func S3IAMSession_role_policy_allows(s *S3Conf) error {
 // assumed-role session ARN rather than the temporary access key.
 func S3IAMSession_role_without_policy_denied(s *S3Conf) error {
 	testName := "S3IAMSession_role_without_policy_denied"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
-		session, cleanup, err := newGitHubSession(root, s, nil, "")
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		session, cleanup, err := newRoleSession(root, s, nil, "")
 		if err != nil {
 			return err
 		}
@@ -91,8 +92,8 @@ func S3IAMSession_role_without_policy_denied(s *S3Conf) error {
 // user.
 func S3IAMSession_role_policy_explicit_deny_wins(s *S3Conf) error {
 	testName := "S3IAMSession_role_policy_explicit_deny_wins"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(
 				accessStatement{Effect: "Allow", Action: "s3:*", Resource: objectsArn(bucket)},
 				accessStatement{Effect: "Deny", Action: actS3GetObject, Resource: objectsArn(bucket)},
@@ -120,8 +121,8 @@ func S3IAMSession_role_policy_explicit_deny_wins(s *S3Conf) error {
 // pattern scopes what the session may touch.
 func S3IAMSession_role_policy_resource_scoped(s *S3Conf) error {
 	testName := "S3IAMSession_role_policy_resource_scoped"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(accessStatement{
 				Effect: "Allow", Action: "s3:*", Resource: objectArn(bucket, "allowed/*"),
 			}),
@@ -149,7 +150,7 @@ func S3IAMSession_role_policy_resource_scoped(s *S3Conf) error {
 // pass one.
 func S3IAMSession_session_policy_narrows_role(s *S3Conf) error {
 	testName := "S3IAMSession_session_policy_narrows_role"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
@@ -157,7 +158,7 @@ func S3IAMSession_session_policy_narrows_role(s *S3Conf) error {
 			return err
 		}
 
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(accessStatement{
 				Effect: "Allow", Action: "s3:*",
 				Resource: []string{bucketArn(bucket), objectsArn(bucket)},
@@ -188,7 +189,7 @@ func S3IAMSession_session_policy_narrows_role(s *S3Conf) error {
 // anything.
 func S3IAMSession_session_policy_cannot_widen_role(s *S3Conf) error {
 	testName := "S3IAMSession_session_policy_cannot_widen_role"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
@@ -196,7 +197,7 @@ func S3IAMSession_session_policy_cannot_widen_role(s *S3Conf) error {
 			return err
 		}
 
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(accessStatement{
 				Effect: "Allow", Action: actS3GetObject, Resource: objectsArn(bucket),
 			}),
@@ -225,7 +226,7 @@ func S3IAMSession_session_policy_cannot_widen_role(s *S3Conf) error {
 // explicit Deny in the session policy beats the role's Allow.
 func S3IAMSession_session_policy_explicit_deny_overrides_role(s *S3Conf) error {
 	testName := "S3IAMSession_session_policy_explicit_deny_overrides_role"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
@@ -233,7 +234,7 @@ func S3IAMSession_session_policy_explicit_deny_overrides_role(s *S3Conf) error {
 			return err
 		}
 
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(accessStatement{
 				Effect: "Allow", Action: "s3:*",
 				Resource: []string{bucketArn(bucket), objectsArn(bucket)},
@@ -259,7 +260,7 @@ func S3IAMSession_session_policy_explicit_deny_overrides_role(s *S3Conf) error {
 // permissive session policy.
 func S3IAMSession_role_policy_deny_overrides_session_allow(s *S3Conf) error {
 	testName := "S3IAMSession_role_policy_deny_overrides_session_allow"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
@@ -267,7 +268,7 @@ func S3IAMSession_role_policy_deny_overrides_session_allow(s *S3Conf) error {
 			return err
 		}
 
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(
 				accessStatement{Effect: "Allow", Action: "s3:*", Resource: objectsArn(bucket)},
 				accessStatement{Effect: "Deny", Action: actS3GetObject, Resource: objectsArn(bucket)},
@@ -290,8 +291,8 @@ func S3IAMSession_role_policy_deny_overrides_session_allow(s *S3Conf) error {
 // bucket policy in play, there is nothing for it to narrow.
 func S3IAMSession_session_policy_without_role_policy_denied(s *S3Conf) error {
 	testName := "S3IAMSession_session_policy_without_role_policy_denied"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
-		session, cleanup, err := newGitHubSession(root, s, nil,
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		session, cleanup, err := newRoleSession(root, s, nil,
 			policyDoc(accessStatement{Effect: "Allow", Action: "s3:*", Resource: "*"}))
 		if err != nil {
 			return err
@@ -302,6 +303,123 @@ func S3IAMSession_session_policy_without_role_policy_denied(s *S3Conf) error {
 		_, err = session.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
 		return checkApiErr(err, wantImplicitDeny(session.arn, actS3GetObject, objectArn(bucket, "obj")))
+	})
+}
+
+// S3IAMSession_session_policy_scopes_to_prefix verifies a session policy can
+// confine a session to one prefix of a bucket its role has full access to:
+// the way a catalog vends credentials for one table. The session policy has
+// the shape such catalogs generate, with s3:ListBucket conditioned on
+// s3:prefix.
+func S3IAMSession_session_policy_scopes_to_prefix(s *S3Conf) error {
+	testName := "S3IAMSession_session_policy_scopes_to_prefix"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		const (
+			table   = "warehouse/sales/orders"
+			sibling = "warehouse/sales/customers"
+		)
+		for _, key := range []string{table + "/data/a", sibling + "/data/b", "elsewhere/c"} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: aws.String(key)})
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+
+		tableObjects := bucketArn(bucket) + "/" + table + "/*"
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: "s3:*",
+				Resource: []string{bucketArn(bucket), objectsArn(bucket)},
+			}),
+		}, policyDoc(
+			accessStatement{Effect: "Allow", Action: []string{actS3PutObject, actS3DeleteObject}, Resource: tableObjects},
+			accessStatement{Effect: "Allow", Action: actS3ListBucket, Resource: bucketArn(bucket), Condition: cond("StringLike", "s3:prefix", table+"/*")},
+			accessStatement{Effect: "Allow", Action: "s3:GetBucketLocation", Resource: bucketArn(bucket)},
+			accessStatement{Effect: "Allow", Action: []string{actS3GetObject, "s3:GetObjectVersion"}, Resource: tableObjects},
+		))
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		allowed := []struct {
+			name string
+			call func(ctx context.Context) error
+		}{
+			{"writing into the table", func(ctx context.Context) error {
+				_, err := session.client.PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: aws.String(table + "/data/new")})
+				return err
+			}},
+			{"reading from the table", func(ctx context.Context) error {
+				_, err := session.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: aws.String(table + "/data/a")})
+				return err
+			}},
+			{"listing the table", func(ctx context.Context) error {
+				_, err := session.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket, Prefix: aws.String(table + "/")})
+				return err
+			}},
+			{"getting the bucket location", func(ctx context.Context) error {
+				_, err := session.client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{Bucket: &bucket})
+				return err
+			}},
+			{"deleting from the table", func(ctx context.Context) error {
+				_, err := session.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: aws.String(table + "/data/new")})
+				return err
+			}},
+		}
+		for _, tc := range allowed {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			err := tc.call(ctx)
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%s: expected the request to be allowed: %w", tc.name, err)
+			}
+		}
+
+		// The role allows every one of these. Only the session policy
+		// refuses them.
+		denied := []struct {
+			name     string
+			call     func(ctx context.Context) error
+			action   string
+			resource string
+		}{
+			{"writing into the sibling table", func(ctx context.Context) error {
+				_, err := session.client.PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: aws.String(sibling + "/data/new")})
+				return err
+			}, actS3PutObject, objectArn(bucket, sibling+"/data/new")},
+			{"reading from the sibling table", func(ctx context.Context) error {
+				_, err := session.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: aws.String(sibling + "/data/b")})
+				return err
+			}, actS3GetObject, objectArn(bucket, sibling+"/data/b")},
+			{"deleting from the sibling table", func(ctx context.Context) error {
+				_, err := session.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: aws.String(sibling + "/data/b")})
+				return err
+			}, actS3DeleteObject, objectArn(bucket, sibling+"/data/b")},
+			{"listing the sibling table", func(ctx context.Context) error {
+				_, err := session.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket, Prefix: aws.String(sibling + "/")})
+				return err
+			}, actS3ListBucket, bucketArn(bucket)},
+			{"listing the whole bucket", func(ctx context.Context) error {
+				_, err := session.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
+				return err
+			}, actS3ListBucket, bucketArn(bucket)},
+			{"writing outside the warehouse", func(ctx context.Context) error {
+				_, err := session.client.PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: aws.String("elsewhere/new")})
+				return err
+			}, actS3PutObject, objectArn(bucket, "elsewhere/new")},
+		}
+		for _, tc := range denied {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			err := tc.call(ctx)
+			cancel()
+			if err := checkApiErr(err, wantImplicitDeny(session.arn, tc.action, tc.resource)); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
 	})
 }
 
@@ -316,7 +434,7 @@ func S3IAMSession_session_policy_without_role_policy_denied(s *S3Conf) error {
 // S3IAMSession_bucket_policy_names_one_session.
 func S3IAMSession_bucket_policy_allows_without_role_policy(s *S3Conf) error {
 	testName := "S3IAMSession_bucket_policy_allows_without_role_policy"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
@@ -324,7 +442,7 @@ func S3IAMSession_bucket_policy_allows_without_role_policy(s *S3Conf) error {
 			return err
 		}
 
-		session, cleanup, err := newGitHubSession(root, s, nil, "")
+		session, cleanup, err := newRoleSession(root, s, nil, "")
 		if err != nil {
 			return err
 		}
@@ -361,14 +479,14 @@ func S3IAMSession_bucket_policy_allows_without_role_policy(s *S3Conf) error {
 // is denied.
 func S3IAMSession_session_policy_filters_bucket_policy_grant(s *S3Conf) error {
 	testName := "S3IAMSession_session_policy_filters_bucket_policy_grant"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
 		if err != nil {
 			return err
 		}
-		session, cleanup, err := newGitHubSession(root, s, nil,
+		session, cleanup, err := newRoleSession(root, s, nil,
 			policyDoc(accessStatement{Effect: "Allow", Action: actS3GetObject, Resource: objectsArn(bucket)}))
 		if err != nil {
 			return err
@@ -401,14 +519,14 @@ func S3IAMSession_session_policy_filters_bucket_policy_grant(s *S3Conf) error {
 // resource-based-policy message.
 func S3IAMSession_bucket_policy_deny_overrides_role_allow(s *S3Conf) error {
 	testName := "S3IAMSession_bucket_policy_deny_overrides_role_allow"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
 		if err != nil {
 			return err
 		}
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(accessStatement{Effect: "Allow", Action: "s3:*", Resource: objectsArn(bucket)}),
 		}, "")
 		if err != nil {
@@ -436,8 +554,8 @@ func S3IAMSession_bucket_policy_deny_overrides_role_allow(s *S3Conf) error {
 // returns for it.
 func S3IAMSession_missing_and_wrong_security_token(s *S3Conf) error {
 	testName := "S3IAMSession_missing_and_wrong_security_token"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(accessStatement{Effect: "Allow", Action: "s3:*", Resource: objectsArn(bucket)}),
 		}, "")
 		if err != nil {
@@ -472,7 +590,7 @@ func S3IAMSession_missing_and_wrong_security_token(s *S3Conf) error {
 // the query string, where it is part of the signed canonical request.
 func S3IAMSession_presigned_url_with_session_credentials(s *S3Conf) error {
 	testName := "S3IAMSession_presigned_url_with_session_credentials"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
@@ -480,7 +598,7 @@ func S3IAMSession_presigned_url_with_session_credentials(s *S3Conf) error {
 			return err
 		}
 
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(accessStatement{Effect: "Allow", Action: actS3GetObject, Resource: objectsArn(bucket)}),
 		}, "")
 		if err != nil {
@@ -523,7 +641,7 @@ func S3IAMSession_presigned_url_with_session_credentials(s *S3Conf) error {
 // permission the role gave it.
 func S3IAMSession_deleted_role_denies(s *S3Conf) error {
 	testName := "S3IAMSession_deleted_role_denies"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
@@ -531,7 +649,7 @@ func S3IAMSession_deleted_role_denies(s *S3Conf) error {
 			return err
 		}
 
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(accessStatement{Effect: "Allow", Action: "s3:*", Resource: objectsArn(bucket)}),
 		}, "")
 		if err != nil {
@@ -561,18 +679,11 @@ func S3IAMSession_deleted_role_denies(s *S3Conf) error {
 // grantable to a session by its role policy, and denied without it.
 func S3IAMSession_create_bucket_via_role_policy(s *S3Conf) error {
 	testName := "S3IAMSession_create_bucket_via_role_policy"
-	// The skip is checked before actionHandlerNoSetup rather than inside it,
-	// so a skipped run doesn't also report itself as a pass.
-	if _, ok := gitHubOIDCToken(); !ok {
-		skipF("%v: %v", testName, gitHubOIDCSkipReason)
-		return nil
-	}
-
 	return actionHandlerNoSetup(s, testName, func(_ *s3.Client, _ string) error {
 		root := s.GetIAMClient()
 		allowed, denied := getBucketName(), getBucketName()
 
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(accessStatement{
 				Effect: "Allow", Action: actS3CreateBucket, Resource: bucketArn(allowed),
 			}),
@@ -602,7 +713,7 @@ func S3IAMSession_create_bucket_via_role_policy(s *S3Conf) error {
 // policy withholding it takes it away again.
 func S3IAMSession_governance_bypass_via_role_policy(s *S3Conf) error {
 	testName := "S3IAMSession_governance_bypass_via_role_policy"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		grantAll := map[string]string{
 			"p": policyDoc(accessStatement{
 				Effect: "Allow", Action: []string{actS3DeleteObject, actS3BypassGovernance},
@@ -611,7 +722,7 @@ func S3IAMSession_governance_bypass_via_role_policy(s *S3Conf) error {
 		}
 
 		// Role grants the bypass, session policy withholds it: denied.
-		withheld, cleanupWithheld, err := newGitHubSession(root, s, grantAll,
+		withheld, cleanupWithheld, err := newRoleSession(root, s, grantAll,
 			policyDoc(accessStatement{Effect: "Allow", Action: actS3DeleteObject, Resource: objectsArn(bucket)}))
 		if err != nil {
 			return err
@@ -626,7 +737,7 @@ func S3IAMSession_governance_bypass_via_role_policy(s *S3Conf) error {
 		}
 
 		// Role grants it and no session policy narrows it: allowed.
-		granted, cleanupGranted, err := newGitHubSession(root, s, grantAll, "")
+		granted, cleanupGranted, err := newRoleSession(root, s, grantAll, "")
 		if err != nil {
 			return err
 		}
@@ -646,7 +757,7 @@ func S3IAMSession_governance_bypass_via_role_policy(s *S3Conf) error {
 // authorization of a batch delete applies to a session's role policy too.
 func S3IAMSession_delete_objects_authorizes_each_key(s *S3Conf) error {
 	testName := "S3IAMSession_delete_objects_authorizes_each_key"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		for _, key := range []string{"allowed/one", "denied/two"} {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr(key)})
@@ -656,7 +767,7 @@ func S3IAMSession_delete_objects_authorizes_each_key(s *S3Conf) error {
 			}
 		}
 
-		session, cleanup, err := newGitHubSession(root, s, map[string]string{
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
 			"p": policyDoc(accessStatement{
 				Effect: "Allow", Action: actS3DeleteObject, Resource: objectArn(bucket, "allowed/*"),
 			}),
@@ -693,7 +804,7 @@ func S3IAMSession_delete_objects_authorizes_each_key(s *S3Conf) error {
 // different thing from aws:PrincipalArn and deliberately so.
 func S3IAMSession_condition_identity_keys(s *S3Conf) error {
 	testName := "S3IAMSession_condition_identity_keys"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
@@ -739,7 +850,7 @@ func S3IAMSession_condition_identity_keys(s *S3Conf) error {
 
 		for _, tc := range cases {
 			if err := func() error {
-				session, cleanup, err := newGitHubSession(root, s, nil, "")
+				session, cleanup, err := newRoleSession(root, s, nil, "")
 				if err != nil {
 					return err
 				}
@@ -779,8 +890,8 @@ func S3IAMSession_condition_identity_keys(s *S3Conf) error {
 // reports is the one an S3 denial names.
 func S3IAMSession_get_caller_identity_matches_s3_principal(s *S3Conf) error {
 	testName := "S3IAMSession_get_caller_identity_matches_s3_principal"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
-		session, cleanup, err := newGitHubSession(root, s, nil, "")
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		session, cleanup, err := newRoleSession(root, s, nil, "")
 		if err != nil {
 			return err
 		}
@@ -798,6 +909,368 @@ func S3IAMSession_get_caller_identity_matches_s3_principal(s *S3Conf) error {
 		_, err = session.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
 		return checkApiErr(err, wantImplicitDeny(session.arn, actS3GetObject, objectArn(bucket, "obj")))
+	})
+}
+
+// S3IAMSession_GetRole_role_last_used_recorded exercises role last-used
+// tracking end-to-end: a role is assumed, then used — a request
+// authenticated with the session credentials the assume issued — and that
+// use is what GetRole reports as RoleLastUsed.
+//
+// It makes no S3 request, but runs with this group rather than with the IAM
+// API tests: those also run against a Vault-backed service, which records a
+// role's use in the background, so the GetRole that follows the use could
+// read the role before the record lands.
+func S3IAMSession_GetRole_role_last_used_recorded(s *S3Conf) error {
+	testName := "S3IAMSession_GetRole_role_last_used_recorded"
+	return iamActionHandler(s, testName, func(client *iam.Client) error {
+		user, cleanup, err := newS3IAMUser(client, s, nil)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		roleName, roleArn, cleanupRole, err := newAssumableRole(client, trustAllowingAWS(user.arn))
+		if err != nil {
+			return err
+		}
+		defer cleanupRole()
+
+		assumeOut, err := assumeRoleAs(user, &sts.AssumeRoleInput{RoleArn: aws.String(roleArn), RoleSessionName: aws.String("role-last-used")})
+		if err != nil {
+			return fmt.Errorf("AssumeRole: %w", err)
+		}
+		if assumeOut.Credentials == nil {
+			return fmt.Errorf("expected Credentials in AssumeRole response")
+		}
+
+		// Assuming a role is not itself a use of it: the role stays
+		// never-used until a request actually authenticates as the session.
+		out, err := getIAMRole(client, roleName)
+		if err != nil {
+			return err
+		}
+		if out.Role == nil {
+			return fmt.Errorf("expected GetRole to return a role")
+		}
+		if err := checkRoleNeverUsed(out.Role.RoleLastUsed); err != nil {
+			return fmt.Errorf("after AssumeRole, before any use: %w", err)
+		}
+
+		before := time.Now().UTC().Add(-time.Second)
+		if _, err := getCallerIdentityWithSessionCreds(*s,
+			aws.ToString(assumeOut.Credentials.AccessKeyId),
+			aws.ToString(assumeOut.Credentials.SecretAccessKey),
+			aws.ToString(assumeOut.Credentials.SessionToken)); err != nil {
+			return fmt.Errorf("GetCallerIdentity with assumed-role session credentials: %w", err)
+		}
+
+		out, err = getIAMRole(client, roleName)
+		if err != nil {
+			return err
+		}
+		if out.Role == nil || out.Role.RoleLastUsed == nil {
+			return fmt.Errorf("expected GetRole to return a role with a RoleLastUsed element")
+		}
+		lastUsed := out.Role.RoleLastUsed
+		if lastUsed.LastUsedDate == nil {
+			return fmt.Errorf("expected a role last used date after a session-authenticated request")
+		}
+		if lastUsed.LastUsedDate.Before(before) {
+			return fmt.Errorf("expected role last used date to be at or after %v, instead got %v", before, *lastUsed.LastUsedDate)
+		}
+		if aws.ToString(lastUsed.Region) != iamAuthRegion {
+			return fmt.Errorf("expected role last used region to be %q, instead got %q", iamAuthRegion, aws.ToString(lastUsed.Region))
+		}
+
+		// ListRoles omits RoleLastUsed from every entry — the list/get
+		// asymmetry other tests only ever see on never-used roles, where a
+		// leaked element would be empty anyway.
+		list, err := listIAMRoles(client, &iam.ListRolesInput{MaxItems: aws.Int32(1000)})
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, role := range list.Roles {
+			if aws.ToString(role.RoleName) != roleName {
+				continue
+			}
+			found = true
+			if role.RoleLastUsed != nil {
+				return fmt.Errorf("expected ListRoles RoleLastUsed to be nil for a used role, instead got %#v", role.RoleLastUsed)
+			}
+		}
+		if !found {
+			return fmt.Errorf("expected ListRoles to return the used role %q", roleName)
+		}
+
+		return nil
+	})
+}
+
+// S3IAMSession_role_last_used_records_s3 is the same for an assumed-role
+// session: the role's RoleLastUsed reports the S3 request its temporary
+// credentials made, which — unlike an access key — is the only place that
+// use is visible at all.
+func S3IAMSession_role_last_used_records_s3(s *S3Conf) error {
+	testName := "S3IAMSession_role_last_used_records_s3"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		session, cleanup, err := newRoleSession(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3ListBucket, Resource: []string{bucketArn(bucket)},
+			}),
+		}, "")
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		// The role was just assumed, and assuming is not using: nothing is
+		// recorded until a request authenticates as the session.
+		before, err := getIAMRole(root, session.name)
+		if err != nil {
+			return err
+		}
+		if before.Role == nil {
+			return fmt.Errorf("expected GetRole to return a role")
+		}
+		if err := checkRoleNeverUsed(before.Role.RoleLastUsed); err != nil {
+			return fmt.Errorf("after AssumeRole, before any s3 request: %w", err)
+		}
+
+		start := time.Now().UTC().Add(-time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = session.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected ListObjects to be allowed by the role policy: %w", err)
+		}
+
+		after, err := getIAMRole(root, session.name)
+		if err != nil {
+			return err
+		}
+		if after.Role == nil || after.Role.RoleLastUsed == nil {
+			return fmt.Errorf("expected GetRole to return a role with a RoleLastUsed element")
+		}
+		lastUsed := after.Role.RoleLastUsed
+		if lastUsed.LastUsedDate == nil {
+			return fmt.Errorf("expected the s3 request to record a role last used date")
+		}
+		if lastUsed.LastUsedDate.Before(start) {
+			return fmt.Errorf("expected role last used date to be at or after %v, instead got %v", start, *lastUsed.LastUsedDate)
+		}
+		if aws.ToString(lastUsed.Region) != s.awsRegion {
+			return fmt.Errorf("expected role last used region to be %q, instead got %q", s.awsRegion, aws.ToString(lastUsed.Region))
+		}
+
+		return nil
+	})
+}
+
+// S3IAMSession_bucket_policy_role_arn_covers_every_session verifies a
+// Principal naming a role covers sessions of it that did not exist when the
+// policy was written. That is the only way to express "any session of this
+// role": no wildcard is allowed inside a principal ARN.
+func S3IAMSession_bucket_policy_role_arn_covers_every_session(s *S3Conf) error {
+	testName := "S3IAMSession_bucket_policy_role_arn_covers_every_session"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		session, cleanup, err := newRoleSession(root, s, nil, "")
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect: "Allow", Principal: roleArnFor(session.name), Action: actS3GetObject, Resource: objectsArn(bucket),
+		}); err != nil {
+			return err
+		}
+
+		// A session minted after the policy was written is covered by it
+		// just as the first one is.
+		later, err := anotherSessionOfRole(s, session)
+		if err != nil {
+			return err
+		}
+
+		for _, p := range []*s3IAMPrincipal{session, later} {
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = p.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("expected GetObject to be allowed for %v: %w", p.arn, err)
+			}
+		}
+		return nil
+	})
+}
+
+// S3IAMSession_bucket_policy_names_one_session verifies the other half:
+// a Principal naming one assumed-role session covers that session and no
+// other session of the same role.
+func S3IAMSession_bucket_policy_names_one_session(s *S3Conf) error {
+	testName := "S3IAMSession_bucket_policy_names_one_session"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		named, cleanup, err := newRoleSession(root, s, nil, "")
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		other, err := anotherSessionOfRole(s, named)
+		if err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect: "Allow", Principal: named.arn, Action: actS3GetObject, Resource: objectsArn(bucket),
+		}); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = named.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected GetObject to be allowed for the named session: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = other.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
+		cancel()
+		return checkApiErr(err, wantImplicitDeny(other.arn, actS3GetObject, objectArn(bucket, "obj")))
+	})
+}
+
+// S3IAMSession_bucket_policy_account_delegates verifies the account-level
+// principal forms delegate rather than grant for a session too: naming the
+// account allows nothing without a role policy, and denies everything under
+// a Deny.
+func S3IAMSession_bucket_policy_account_delegates(s *S3Conf) error {
+	testName := "S3IAMSession_bucket_policy_account_delegates"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		session, cleanup, err := newRoleSession(root, s, nil, "")
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect: "Allow", Principal: accountArn(), Action: actS3GetObject, Resource: objectsArn(bucket),
+		}); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = session.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
+		cancel()
+		if err := checkApiErr(err, wantImplicitDeny(session.arn, actS3GetObject, objectArn(bucket, "obj"))); err != nil {
+			return fmt.Errorf("allow naming the account: %w", err)
+		}
+
+		// The role policy the account principal delegates to is what
+		// actually grants. It has to be removed again before teardown:
+		// DeleteRole refuses a role that still carries an inline policy.
+		if _, err := putIAMRolePolicy(root, &iam.PutRolePolicyInput{
+			RoleName:   aws.String(session.name),
+			PolicyName: aws.String("p"),
+			PolicyDocument: aws.String(policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3GetObject, Resource: objectsArn(bucket),
+			})),
+		}); err != nil {
+			return err
+		}
+		defer deleteIAMRolePolicy(root, session.name, "p")
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = session.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("expected the role policy to grant what the account principal delegated: %w", err)
+		}
+
+		// A Deny naming the account is not a delegation.
+		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+			Effect: "Deny", Principal: accountArn(), Action: actS3GetObject, Resource: objectsArn(bucket),
+		}); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = session.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
+		cancel()
+		return checkApiErr(err, wantExplicitResourceDeny(session.arn, actS3GetObject, objectArn(bucket, "obj")))
+	})
+}
+
+// S3IAMSession_bucket_policy_session_principal_forms covers what
+// PutBucketPolicy makes of the session-shaped principal forms: an
+// assumed-role ARN resolves as long as its role does, whatever session name
+// it carries, and the forms that name no role do not resolve at all.
+func S3IAMSession_bucket_policy_session_principal_forms(s *S3Conf) error {
+	testName := "S3IAMSession_bucket_policy_session_principal_forms"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		session, cleanup, err := newRoleSession(root, s, nil, "")
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		accepted := []struct {
+			name      string
+			principal string
+		}{
+			{"the live session's arn", session.arn},
+			{"a session name never assumed", assumedRoleArnFor(session.name, "never-assumed")},
+		}
+		for _, tc := range accepted {
+			if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+				Effect: "Allow", Principal: tc.principal, Action: actS3GetObject, Resource: objectsArn(bucket),
+			}); err != nil {
+				return fmt.Errorf("%s: expected the policy to be accepted: %w", tc.name, err)
+			}
+		}
+
+		rejected := []struct {
+			name      string
+			principal string
+		}{
+			{"session access key id", session.conf.awsID},
+			{"wildcard session name", assumedRoleArnFor(session.name, "*")},
+			{"assumed-role arn of a non existing role", assumedRoleArnFor("no-such-role", "sess")},
+			{"assumed-role arn with the iam service", "arn:aws:iam::" + testAccountID + ":assumed-role/" + session.name + "/sess"},
+			{"role arn with the sts service", "arn:aws:sts::" + testAccountID + ":role/" + session.name},
+		}
+		for _, tc := range rejected {
+			err := putBucketPolicyDoc(s, bucket, bucketStatement{
+				Effect: "Allow", Principal: tc.principal, Action: actS3GetObject, Resource: objectsArn(bucket),
+			})
+			if err := checkApiErr(err, wantInvalidPrincipal()); err != nil {
+				return fmt.Errorf("%s: %w", tc.name, err)
+			}
+		}
+		return nil
 	})
 }
 
@@ -876,372 +1349,58 @@ func S3IAMSession_AssumeRoleWithWebIdentity_github_oidc_live(s *S3Conf) error {
 	})
 }
 
-// S3IAMSession_GetRole_role_last_used_recorded exercises role last-used tracking
-// end-to-end: a role assumed with a real GitHub Actions OIDC token, then
-// used — a request authenticated with the session credentials that assume
-// issued — records that use as GetRole's RoleLastUsed.
+// S3IAMSession_web_identity_session_on_s3 verifies a session minted by
+// AssumeRoleWithWebIdentity is, on the S3 data plane, a session like any
+// other: its role's policy grants, its session policy narrows, and S3 names
+// it by the same ARN STS does.
 //
-// Like every other session test, it needs a genuine ID token, so it runs
-// only inside the workflow that can mint one and skips itself everywhere
-// else.
-func S3IAMSession_GetRole_role_last_used_recorded(s *S3Conf) error {
-	testName := "S3IAMSession_GetRole_role_last_used_recorded"
-	token, ok := gitHubOIDCToken()
-	if !ok {
-		skipF("%v: %v", testName, gitHubOIDCSkipReason)
-		return nil
-	}
-
-	return iamActionHandler(s, testName, func(client *iam.Client) error {
-		repo := os.Getenv("GITHUB_REPOSITORY")
-		if repo == "" {
-			return fmt.Errorf("GITHUB_REPOSITORY is not set, but the OIDC token request variables are - unexpected environment")
-		}
-
-		roleName, roleArn, cleanup, err := createGitHubOIDCTrust(client, repo)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-
-		assumeOut, err := assumeRoleWithWebIdentity(s, roleArn, "role-last-used", token, 0)
-		if err != nil {
-			// The error is not wrapped with the request or response, either
-			// of which could carry the ID token - see the same reasoning in
-			// IAMAssumeRoleWithWebIdentity_github_oidc_live.
-			return fmt.Errorf("AssumeRoleWithWebIdentity: %w", err)
-		}
-		if assumeOut.Credentials == nil {
-			return fmt.Errorf("expected Credentials in AssumeRoleWithWebIdentity response")
-		}
-
-		// Assuming a role is not itself a use of it: the role stays
-		// never-used until a request actually authenticates as the session.
-		out, err := getIAMRole(client, roleName)
-		if err != nil {
-			return err
-		}
-		if out.Role == nil {
-			return fmt.Errorf("expected GetRole to return a role")
-		}
-		if err := checkRoleNeverUsed(out.Role.RoleLastUsed); err != nil {
-			return fmt.Errorf("after AssumeRoleWithWebIdentity, before any use: %w", err)
-		}
-
-		before := time.Now().UTC().Add(-time.Second)
-		if _, err := getCallerIdentityWithSessionCreds(*s,
-			aws.ToString(assumeOut.Credentials.AccessKeyId),
-			aws.ToString(assumeOut.Credentials.SecretAccessKey),
-			aws.ToString(assumeOut.Credentials.SessionToken)); err != nil {
-			return fmt.Errorf("GetCallerIdentity with assumed-role session credentials: %w", err)
-		}
-
-		out, err = getIAMRole(client, roleName)
-		if err != nil {
-			return err
-		}
-		if out.Role == nil || out.Role.RoleLastUsed == nil {
-			return fmt.Errorf("expected GetRole to return a role with a RoleLastUsed element")
-		}
-		lastUsed := out.Role.RoleLastUsed
-		if lastUsed.LastUsedDate == nil {
-			return fmt.Errorf("expected a role last used date after a session-authenticated request")
-		}
-		if lastUsed.LastUsedDate.Before(before) {
-			return fmt.Errorf("expected role last used date to be at or after %v, instead got %v", before, *lastUsed.LastUsedDate)
-		}
-		if aws.ToString(lastUsed.Region) != iamAuthRegion {
-			return fmt.Errorf("expected role last used region to be %q, instead got %q", iamAuthRegion, aws.ToString(lastUsed.Region))
-		}
-
-		// ListRoles omits RoleLastUsed from every entry — the list/get
-		// asymmetry other tests only ever see on never-used roles, where a
-		// leaked element would be empty anyway.
-		list, err := listIAMRoles(client, &iam.ListRolesInput{MaxItems: aws.Int32(1000)})
-		if err != nil {
-			return err
-		}
-		found := false
-		for _, role := range list.Roles {
-			if aws.ToString(role.RoleName) != roleName {
-				continue
-			}
-			found = true
-			if role.RoleLastUsed != nil {
-				return fmt.Errorf("expected ListRoles RoleLastUsed to be nil for a used role, instead got %#v", role.RoleLastUsed)
-			}
-		}
-		if !found {
-			return fmt.Errorf("expected ListRoles to return the used role %q", roleName)
-		}
-
-		return nil
-	})
-}
-
-// S3IAMSession_role_last_used_records_s3 is the same for an assumed-role
-// session: the role's RoleLastUsed reports the S3 request its temporary
-// credentials made, which — unlike an access key — is the only place that
-// use is visible at all.
-func S3IAMSession_role_last_used_records_s3(s *S3Conf) error {
-	testName := "S3IAMSession_role_last_used_records_s3"
+// Every other session test mints its session with AssumeRole, which needs no
+// identity provider. This one and the test above are what is left that needs
+// a genuine ID token, so they run only inside the workflow that can mint one
+// and skip themselves everywhere else.
+func S3IAMSession_web_identity_session_on_s3(s *S3Conf) error {
+	testName := "S3IAMSession_web_identity_session_on_s3"
 	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
 		session, cleanup, err := newGitHubSession(root, s, map[string]string{
 			"p": policyDoc(accessStatement{
-				Effect: "Allow", Action: actS3ListBucket, Resource: []string{bucketArn(bucket)},
+				Effect: "Allow", Action: "s3:*",
+				Resource: []string{bucketArn(bucket), objectsArn(bucket)},
 			}),
-		}, "")
+		}, policyDoc(accessStatement{
+			Effect: "Allow", Action: actS3GetObject, Resource: objectsArn(bucket),
+		}))
 		if err != nil {
 			return err
 		}
 		defer cleanup()
-
-		// The role was just assumed, and assuming is not using: nothing is
-		// recorded until a request authenticates as the session.
-		before, err := getIAMRole(root, session.name)
-		if err != nil {
-			return err
-		}
-		if before.Role == nil {
-			return fmt.Errorf("expected GetRole to return a role")
-		}
-		if err := checkRoleNeverUsed(before.Role.RoleLastUsed); err != nil {
-			return fmt.Errorf("after AssumeRoleWithWebIdentity, before any s3 request: %w", err)
-		}
-
-		start := time.Now().UTC().Add(-time.Second)
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err = session.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
-		cancel()
-		if err != nil {
-			return fmt.Errorf("expected ListObjects to be allowed by the role policy: %w", err)
-		}
-
-		after, err := getIAMRole(root, session.name)
-		if err != nil {
-			return err
-		}
-		if after.Role == nil || after.Role.RoleLastUsed == nil {
-			return fmt.Errorf("expected GetRole to return a role with a RoleLastUsed element")
-		}
-		lastUsed := after.Role.RoleLastUsed
-		if lastUsed.LastUsedDate == nil {
-			return fmt.Errorf("expected the s3 request to record a role last used date")
-		}
-		if lastUsed.LastUsedDate.Before(start) {
-			return fmt.Errorf("expected role last used date to be at or after %v, instead got %v", start, *lastUsed.LastUsedDate)
-		}
-		if aws.ToString(lastUsed.Region) != s.awsRegion {
-			return fmt.Errorf("expected role last used region to be %q, instead got %q", s.awsRegion, aws.ToString(lastUsed.Region))
-		}
-
-		return nil
-	})
-}
-
-// S3IAMSession_bucket_policy_role_arn_covers_every_session verifies a
-// Principal naming a role covers sessions of it that did not exist when the
-// policy was written. That is the only way to express "any session of this
-// role": no wildcard is allowed inside a principal ARN.
-func S3IAMSession_bucket_policy_role_arn_covers_every_session(s *S3Conf) error {
-	testName := "S3IAMSession_bucket_policy_role_arn_covers_every_session"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		session, cleanup, err := newGitHubSession(root, s, nil, "")
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-
-		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
-			Effect: "Allow", Principal: roleArnFor(session.name), Action: actS3GetObject, Resource: objectsArn(bucket),
-		}); err != nil {
-			return err
-		}
-
-		// A session minted after the policy was written is covered by it
-		// just as the first one is.
-		later, err := anotherSessionOfRole(s, session.name)
-		if err != nil {
-			return err
-		}
-
-		for _, p := range []*s3IAMPrincipal{session, later} {
-			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-			_, err = p.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
-			cancel()
-			if err != nil {
-				return fmt.Errorf("expected GetObject to be allowed for %v: %w", p.arn, err)
-			}
-		}
-		return nil
-	})
-}
-
-// S3IAMSession_bucket_policy_names_one_session verifies the other half:
-// a Principal naming one assumed-role session covers that session and no
-// other session of the same role.
-func S3IAMSession_bucket_policy_names_one_session(s *S3Conf) error {
-	testName := "S3IAMSession_bucket_policy_names_one_session"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		named, cleanup, err := newGitHubSession(root, s, nil, "")
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-
-		other, err := anotherSessionOfRole(s, named.name)
-		if err != nil {
-			return err
-		}
-
-		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
-			Effect: "Allow", Principal: named.arn, Action: actS3GetObject, Resource: objectsArn(bucket),
-		}); err != nil {
-			return err
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = named.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
-		cancel()
-		if err != nil {
-			return fmt.Errorf("expected GetObject to be allowed for the named session: %w", err)
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = other.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
-		cancel()
-		return checkApiErr(err, wantImplicitDeny(other.arn, actS3GetObject, objectArn(bucket, "obj")))
-	})
-}
-
-// S3IAMSession_bucket_policy_account_delegates verifies the account-level
-// principal forms delegate rather than grant for a session too: naming the
-// account allows nothing without a role policy, and denies everything under
-// a Deny.
-func S3IAMSession_bucket_policy_account_delegates(s *S3Conf) error {
-	testName := "S3IAMSession_bucket_policy_account_delegates"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("obj")})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		session, cleanup, err := newGitHubSession(root, s, nil, "")
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-
-		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
-			Effect: "Allow", Principal: accountArn(), Action: actS3GetObject, Resource: objectsArn(bucket),
-		}); err != nil {
-			return err
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = session.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
-		cancel()
-		if err := checkApiErr(err, wantImplicitDeny(session.arn, actS3GetObject, objectArn(bucket, "obj"))); err != nil {
-			return fmt.Errorf("allow naming the account: %w", err)
-		}
-
-		// The role policy the account principal delegates to is what
-		// actually grants. It has to be removed again before teardown:
 		// DeleteRole refuses a role that still carries an inline policy.
-		if _, err := putIAMRolePolicy(root, &iam.PutRolePolicyInput{
-			RoleName:   aws.String(session.name),
-			PolicyName: aws.String("p"),
-			PolicyDocument: aws.String(policyDoc(accessStatement{
-				Effect: "Allow", Action: actS3GetObject, Resource: objectsArn(bucket),
-			})),
-		}); err != nil {
-			return err
-		}
 		defer deleteIAMRolePolicy(root, session.name, "p")
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = session.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
-		cancel()
+		callerOut, err := getCallerIdentityWithSessionCreds(*s, session.conf.awsID, session.conf.awsSecret, session.sessionToken)
 		if err != nil {
-			return fmt.Errorf("expected the role policy to grant what the account principal delegated: %w", err)
+			return fmt.Errorf("GetCallerIdentity: %w", err)
 		}
-
-		// A Deny naming the account is not a delegation.
-		if err := putBucketPolicyDoc(s, bucket, bucketStatement{
-			Effect: "Deny", Principal: accountArn(), Action: actS3GetObject, Resource: objectsArn(bucket),
-		}); err != nil {
-			return err
+		if aws.ToString(callerOut.Arn) != session.arn {
+			return fmt.Errorf("GetCallerIdentity reported Arn %q, want %q", aws.ToString(callerOut.Arn), session.arn)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = session.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: getPtr("obj")})
 		cancel()
-		return checkApiErr(err, wantExplicitResourceDeny(session.arn, actS3GetObject, objectArn(bucket, "obj")))
-	})
-}
-
-// S3IAMSession_bucket_policy_session_principal_forms covers what
-// PutBucketPolicy makes of the session-shaped principal forms: an
-// assumed-role ARN resolves as long as its role does, whatever session name
-// it carries, and the forms that name no role do not resolve at all.
-func S3IAMSession_bucket_policy_session_principal_forms(s *S3Conf) error {
-	testName := "S3IAMSession_bucket_policy_session_principal_forms"
-	return s3IAMSessionActionHandler(s, testName, func(root *iam.Client, bucket string) error {
-		session, cleanup, err := newGitHubSession(root, s, nil, "")
 		if err != nil {
-			return err
-		}
-		defer cleanup()
-
-		accepted := []struct {
-			name      string
-			principal string
-		}{
-			{"the live session's arn", session.arn},
-			{"a session name never assumed", assumedRoleArnFor(session.name, "never-assumed")},
-		}
-		for _, tc := range accepted {
-			if err := putBucketPolicyDoc(s, bucket, bucketStatement{
-				Effect: "Allow", Principal: tc.principal, Action: actS3GetObject, Resource: objectsArn(bucket),
-			}); err != nil {
-				return fmt.Errorf("%s: expected the policy to be accepted: %w", tc.name, err)
-			}
+			return fmt.Errorf("expected GetObject to be allowed by both the role and the session policy: %w", err)
 		}
 
-		rejected := []struct {
-			name      string
-			principal string
-		}{
-			{"session access key id", session.conf.awsID},
-			{"wildcard session name", assumedRoleArnFor(session.name, "*")},
-			{"assumed-role arn of a non existing role", assumedRoleArnFor("no-such-role", "sess")},
-			{"assumed-role arn with the iam service", "arn:aws:iam::" + testAccountID + ":assumed-role/" + session.name + "/sess"},
-			{"role arn with the sts service", "arn:aws:sts::" + testAccountID + ":role/" + session.name},
-		}
-		for _, tc := range rejected {
-			err := putBucketPolicyDoc(s, bucket, bucketStatement{
-				Effect: "Allow", Principal: tc.principal, Action: actS3GetObject, Resource: objectsArn(bucket),
-			})
-			if err := checkApiErr(err, wantInvalidPrincipal()); err != nil {
-				return fmt.Errorf("%s: %w", tc.name, err)
-			}
-		}
-		return nil
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = session.client.PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("other")})
+		cancel()
+		return checkApiErr(err, wantImplicitDeny(session.arn, actS3PutObject, objectArn(bucket, "other")))
 	})
 }

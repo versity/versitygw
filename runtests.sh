@@ -67,7 +67,7 @@ if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow --paral
 	exit 1
 fi
 # posix tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 posix; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 posix $SIDECAR_TEST_FLAG; then
 	echo "posix tests failed"
 	kill $GW_PID
 	exit 1
@@ -107,7 +107,7 @@ if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071
 	exit 1
 fi
 # posix tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 posix; then
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 posix $SIDECAR_TEST_FLAG; then
 	echo "posix tests failed"
 	kill $GW_HTTPS_PID
 	exit 1
@@ -144,7 +144,7 @@ if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 full-flow -vs --p
 	exit 1
 fi
 # posix tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 posix -vs; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 posix -vs $SIDECAR_TEST_FLAG; then
 	echo "versiongin-enabled posix tests failed"
 	kill $GW_VS_PID
 	exit 1
@@ -176,7 +176,7 @@ if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073
 	exit 1
 fi
 # posix tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073 posix -vs; then
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073 posix -vs $SIDECAR_TEST_FLAG; then
 	echo "versiongin-enabled posix tests failed"
 	kill $GW_VS_HTTPS_PID
 	exit 1
@@ -233,6 +233,46 @@ fi
 
 # kill off server
 kill $GW_NO_ACL_PID
+
+ECHO "Running list-buckets-scope accessible integration tests"
+# port: 7076
+GOCOVERDIR=/tmp/covdata ./versitygw -p :7076 -a user -s pass --list-buckets-scope accessible --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
+GW_LB_ACCESSIBLE_PID=$!
+
+sleep 1
+
+if ! kill -0 $GW_LB_ACCESSIBLE_PID; then
+	echo "list-buckets-scope accessible server no longer running"
+	exit 1
+fi
+
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7076 list-buckets-accessible; then
+	echo "list-buckets-scope accessible integration tests failed"
+	kill $GW_LB_ACCESSIBLE_PID
+	exit 1
+fi
+
+kill $GW_LB_ACCESSIBLE_PID
+
+ECHO "Running list-buckets-scope all integration tests"
+# port: 7077
+GOCOVERDIR=/tmp/covdata ./versitygw -p :7077 -a user -s pass --list-buckets-scope all --iam-dir /tmp/gw posix $SIDECAR_FLAG /tmp/gw &
+GW_LB_ALL_PID=$!
+
+sleep 1
+
+if ! kill -0 $GW_LB_ALL_PID; then
+	echo "list-buckets-scope all server no longer running"
+	exit 1
+fi
+
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7077 list-buckets-all; then
+	echo "list-buckets-scope all integration tests failed"
+	kill $GW_LB_ALL_PID
+	exit 1
+fi
+
+kill $GW_LB_ALL_PID
 
 ECHO "Running the s3 + standalone IAM access control tests"
 # This stage is the only one that runs two versitygw processes at once: a

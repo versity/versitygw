@@ -97,6 +97,7 @@ const (
 	ErrAnonymousCopyObject
 	ErrAnonymousPutBucketOwnership
 	ErrAnonymousGetBucketOwnership
+	ErrAnonymousGetObjectAttributes
 	ErrAnonymousResponseHeaders
 	ErrMethodNotAllowed
 	ErrBucketNotEmpty
@@ -124,6 +125,7 @@ const (
 	ErrObjectTaggingLimited
 	ErrCannotParseHTTPRequest
 	ErrMalformedPOSTRequest
+	ErrMaxPostPreDataLengthExceeded
 	ErrEntityTooSmall
 	ErrEntityTooLarge
 	ErrMalformedXML
@@ -187,11 +189,13 @@ const (
 	ErrCORSForbidden
 	ErrMissingCORSOrigin
 	ErrCORSIsNotEnabled
+	ErrCORSRulesLimited
 	ErrNoSuchWebsiteConfiguration
 	ErrInvalidWebsiteRedirectProtocol
 	ErrInvalidRedirectLocation
 	ErrBothReplaceKeyAndPrefix
 	ErrMaxMessageLengthExceeded
+	ErrRequestBodyTooLarge
 	ErrNotModified
 	ErrInvalidLocationConstraint
 	ErrMalformedTrailer
@@ -253,6 +257,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrAnonymousGetBucketOwnership: {
 		Code:           "AccessDenied",
 		Description:    "s3:GetBucketOwnershipControls does not support Anonymous requests!",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrAnonymousGetObjectAttributes: {
+		Code:           "AccessDenied",
+		Description:    "Request has no authentication!",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrAnonymousResponseHeaders: {
@@ -393,6 +402,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrMalformedPOSTRequest: {
 		Code:           "MalformedPOSTRequest",
 		Description:    "The body of your POST request is not well-formed multipart/form-data.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMaxPostPreDataLengthExceeded: {
+		Code:           "MaxPostPreDataLengthExceeded",
+		Description:    "Your POST request fields preceeding the upload file was too large.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrEntityTooSmall: {
@@ -618,7 +632,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrSuspendedVersioningNotAllowed: {
 		Code:           "InvalidBucketState",
 		Description:    "An Object Lock configuration is present on this bucket, so the versioning state cannot be changed.",
-		HTTPStatusCode: http.StatusBadRequest,
+		HTTPStatusCode: http.StatusConflict,
 	},
 	ErrMissingRequestBody: {
 		Code:           "MissingRequestBodyError",
@@ -700,6 +714,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "CORSResponse: CORS is not enabled for this bucket.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
+	ErrCORSRulesLimited: {
+		Code:           "InvalidRequest",
+		Description:    "The number of CORS rules should not exceed allowed limit of 100 rules.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
 	ErrNoSuchWebsiteConfiguration: {
 		Code:           "NoSuchWebsiteConfiguration",
 		Description:    "The specified bucket does not have a website configuration",
@@ -723,6 +742,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrMaxMessageLengthExceeded: {
 		Code:           "MaxMessageLengthExceeded",
 		Description:    "Your request was too big.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrRequestBodyTooLarge: {
+		Code:           "RequestBodyTooLarge",
+		Description:    "The request body was too large.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNotModified: {
@@ -1022,6 +1046,22 @@ func GetMultipleWildcardCORSOriginErr(origin string) APIError {
 	}
 }
 
+func GetMultipleWildcardCORSHeaderErr(header string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf(`AllowedHeader "%s" can not have more than one wildcard.`, header),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetWildcardCORSExposeHeaderErr(header string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf(`ExposeHeader "%s" contains wildcard. We currently do not support wildcard for ExposeHeader.`, header),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
 func GetUnsopportedCORSMethodErr(method string) APIError {
 	return APIError{
 		Code:           "InvalidRequest",
@@ -1115,6 +1155,7 @@ const (
 	ResourceTypeBucketPolicy ResourceType = "BUCKETPOLICY"
 	ResourceTypeUpload       ResourceType = "UPLOAD"
 	ResourceTypeTorrent      ResourceType = "TORRENT"
+	ResourceTypeDeleteMarker ResourceType = "DeleteMarker"
 )
 
 func ObjectDeleteError(key, versionId *string, err error) types.Error {
