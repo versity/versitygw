@@ -877,6 +877,40 @@ func PutBucketPolicy_condition_conditional_write_keys(s *S3Conf) error {
 	})
 }
 
+func PutBucketPolicy_condition_signature_keys(s *S3Conf) error {
+	testName := "PutBucketPolicy_condition_signature_keys"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, tc := range []struct {
+			action    string
+			condition string
+		}{
+			// like the aws:* keys, they apply to bucket and object actions alike
+			{`["s3:GetObject","s3:PutObject","s3:ListBucket","s3:GetBucketTagging"]`, `{"StringNotEquals":{"s3:authType":"REST-HEADER"}}`},
+			{`["s3:GetObject","s3:PutObject","s3:ListBucket","s3:GetBucketTagging"]`, `{"NumericGreaterThan":{"s3:signatureAge":"600000"}}`},
+			// key names are case-insensitive
+			{`"s3:GetObject"`, `{"StringEquals":{"S3:AUTHTYPE":"POST"}}`},
+			{`"s3:GetObject"`, `{"NumericGreaterThan":{"s3:SignatureAge":"600000"}}`},
+			// values are only interpreted when evaluated
+			{`"s3:GetObject"`, `{"StringEquals":{"s3:authType":"not-an-auth-type"}}`},
+			{`"s3:GetObject"`, `{"NumericGreaterThan":{"s3:signatureAge":"not-a-number"}}`},
+		} {
+			doc := fmt.Sprintf(`{"Statement":[{"Effect":"Deny","Principal":"*","Action":%s,
+				"Resource":["arn:aws:s3:::%s","arn:aws:s3:::%s/*"],"Condition":%s}]}`, tc.action, bucket, bucket, tc.condition)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &doc,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("action %s with condition %s: %w", tc.action, tc.condition, err)
+			}
+		}
+		return nil
+	})
+}
+
 func PutBucketPolicy_condition_invalid_ip(s *S3Conf) error {
 	testName := "PutBucketPolicy_condition_invalid_ip"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

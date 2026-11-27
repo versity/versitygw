@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -2522,6 +2523,309 @@ func AccessControl_bucket_policy_condition_if_match_versioned_delete(s *S3Conf) 
 		cancel()
 		if err != nil {
 			return fmt.Errorf("an unversioned delete carrying If-Match must be allowed: %w", err)
+		}
+		return nil
+	})
+}
+
+// AccessControl_bucket_policy_condition_s3_authType_deny covers a Deny on
+// every request a user doesn't sign in its Authorization header, the policy
+// that refuses presigned URLs and browser POST uploads while normal signed
+// requests keep working: s3:authType is REST-HEADER for a header-signed
+// request, so the Deny skips it, and REST-QUERY-STRING or POST for the
+// other two, which it refuses.
+func AccessControl_bucket_policy_condition_s3_authType_deny(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_s3_authType_deny"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		obj := "my-obj"
+		if _, err := putObjects(s3client, []string{obj}, bucket); err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket,
+			bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    []string{"s3:GetObject", "s3:PutObject"},
+				Resource:  objectsArn(bucket),
+			},
+			bucketStatement{
+				Effect:    "Deny",
+				Principal: testuser.access,
+				Action:    "s3:*",
+				Resource:  []string{bucketArn(bucket), objectsArn(bucket)},
+				Condition: json.RawMessage(`{"StringNotEquals":{"s3:authType":"REST-HEADER"}}`),
+			},
+		); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := userClient.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &obj})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("header-signed GetObject: expected success, got %w", err)
+		}
+		out.Body.Close()
+
+		if _, err := putObjects(userClient, []string{"header-obj"}, bucket); err != nil {
+			return fmt.Errorf("header-signed PutObject: expected success, got %w", err)
+		}
+
+		req, err := createPresignedReq(http.MethodGet, s.endpoint, fmt.Sprintf("%s/%s", bucket, obj),
+			testuser.access, testuser.secret, s.awsRegion, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, wantExplicitResourceDeny(testuser.access, "s3:GetObject", objectArn(bucket, obj))); err != nil {
+			return fmt.Errorf("presigned GetObject: %w", err)
+		}
+
+		resp, err = sendPostObject(PostRequestConfig{
+			bucket:      bucket,
+			key:         "post-obj",
+			access:      testuser.access,
+			secret:      testuser.secret,
+			s3Conf:      s,
+			fileContent: []byte("data"),
+		})
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, wantExplicitResourceDeny(testuser.access, "s3:PutObject", objectArn(bucket, "post-obj"))); err != nil {
+			return fmt.Errorf("POST upload: %w", err)
+		}
+		return nil
+	})
+}
+
+// AccessControl_bucket_policy_condition_s3_authType_values covers the
+// value s3:authType takes for each way of signing a request, each Allow
+// granting only the requests signed that one way: REST-QUERY-STRING for a
+// presigned URL, POST for a browser POST upload and REST-HEADER for a
+// request signed in its Authorization header. The values are
+// case-sensitive, so "rest-header" names none of them.
+func AccessControl_bucket_policy_condition_s3_authType_values(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_s3_authType_values"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		obj, data := "my-obj", "data"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Body:   strings.NewReader(data),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket,
+			bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:GetObject",
+				Resource:  objectsArn(bucket),
+				Condition: json.RawMessage(`{"StringEquals":{"s3:authType":"REST-QUERY-STRING"}}`),
+			},
+			bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:PutObject",
+				Resource:  objectsArn(bucket),
+				Condition: json.RawMessage(`{"StringEquals":{"s3:authType":"POST"}}`),
+			},
+			bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:ListBucket",
+				Resource:  bucketArn(bucket),
+				Condition: json.RawMessage(`{"StringEquals":{"s3:authType":"REST-HEADER"}}`),
+			},
+			bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    "s3:GetBucketTagging",
+				Resource:  bucketArn(bucket),
+				Condition: json.RawMessage(`{"StringEquals":{"s3:authType":"rest-header"}}`),
+			},
+		); err != nil {
+			return err
+		}
+
+		req, err := createPresignedReq(http.MethodGet, s.endpoint, fmt.Sprintf("%s/%s", bucket, obj),
+			testuser.access, testuser.secret, s.awsRegion, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		if err := checkObjectResponse(resp, data); err != nil {
+			return fmt.Errorf("presigned GetObject: %w", err)
+		}
+
+		resp, err = sendPostObject(PostRequestConfig{
+			bucket:      bucket,
+			key:         "post-obj",
+			access:      testuser.access,
+			secret:      testuser.secret,
+			s3Conf:      s,
+			fileContent: []byte(data),
+		})
+		if err != nil {
+			return err
+		}
+		if err := checkPostObjectSuccess(resp); err != nil {
+			return fmt.Errorf("POST upload: %w", err)
+		}
+
+		userClient := s.getUserClient(testuser)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("header-signed ListObjectsV2: expected success, got %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &obj})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("header-signed GetObject: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("header-obj")})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("header-signed PutObject: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{Bucket: &bucket})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return fmt.Errorf("header-signed GetBucketTagging under a lowercase value: %w", err)
+		}
+		return nil
+	})
+}
+
+// AccessControl_bucket_policy_condition_s3_signatureAge covers a Deny on
+// signatures older than a minute, the limit on how long a presigned URL or
+// a POST form stays usable. s3:signatureAge is the time since the
+// signature's X-Amz-Date in milliseconds, so the same presigned GET and
+// POST upload are allowed when just signed and refused when signed two
+// minutes earlier. One dated ahead of the clock has a negative age, which
+// the Deny allows too. A request signed in its Authorization header has no
+// signature age at all, so the Deny never applies to it.
+func AccessControl_bucket_policy_condition_s3_signatureAge(s *S3Conf) error {
+	testName := "AccessControl_bucket_policy_condition_s3_signatureAge"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		obj, data := "my-obj", "data"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Body:   strings.NewReader(data),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if err := putBucketPolicyDoc(s, bucket,
+			bucketStatement{
+				Effect:    "Allow",
+				Principal: testuser.access,
+				Action:    []string{"s3:GetObject", "s3:PutObject"},
+				Resource:  objectsArn(bucket),
+			},
+			bucketStatement{
+				Effect:    "Deny",
+				Principal: testuser.access,
+				Action:    []string{"s3:GetObject", "s3:PutObject"},
+				Resource:  objectsArn(bucket),
+				Condition: json.RawMessage(`{"NumericGreaterThan":{"s3:signatureAge":"60000"}}`),
+			},
+		); err != nil {
+			return err
+		}
+
+		if _, err := putObjects(s.getUserClient(testuser), []string{"header-obj"}, bucket); err != nil {
+			return fmt.Errorf("header-signed PutObject: expected success, got %w", err)
+		}
+
+		for _, tc := range []struct {
+			name   string
+			signed time.Time
+			denied bool
+		}{
+			{"just signed", time.Now(), false},
+			// a signature dated ahead of the clock has a negative age
+			{"signed 5 minutes ahead", time.Now().Add(5 * time.Minute), false},
+			{"signed 2 minutes ago", time.Now().Add(-2 * time.Minute), true},
+		} {
+			req, err := createPresignedReq(http.MethodGet, s.endpoint, fmt.Sprintf("%s/%s", bucket, obj),
+				testuser.access, testuser.secret, s.awsRegion, tc.signed, nil)
+			if err != nil {
+				return err
+			}
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+			if tc.denied {
+				err = checkHTTPResponseApiErr(resp, wantExplicitResourceDeny(testuser.access, "s3:GetObject", objectArn(bucket, obj)))
+			} else {
+				err = checkObjectResponse(resp, data)
+			}
+			if err != nil {
+				return fmt.Errorf("presigned GetObject %s: %w", tc.name, err)
+			}
+
+			resp, err = sendPostObject(PostRequestConfig{
+				bucket:      bucket,
+				key:         "post-obj",
+				access:      testuser.access,
+				secret:      testuser.secret,
+				date:        tc.signed.UTC(),
+				s3Conf:      s,
+				fileContent: []byte(data),
+			})
+			if err != nil {
+				return err
+			}
+			if tc.denied {
+				err = checkHTTPResponseApiErr(resp, wantExplicitResourceDeny(testuser.access, "s3:PutObject", objectArn(bucket, "post-obj")))
+			} else {
+				err = checkPostObjectSuccess(resp)
+			}
+			if err != nil {
+				return fmt.Errorf("POST upload %s: %w", tc.name, err)
+			}
 		}
 		return nil
 	})

@@ -702,6 +702,45 @@ func PresignedAuth_expired_request(s *S3Conf) error {
 	})
 }
 
+// PresignedAuth_not_yet_valid_request covers a presigned URL dated ahead of
+// the server's clock. S3 accepts one dated up to 15 minutes ahead, the skew
+// it allows any signed request, and refuses one dated later as not yet
+// valid, reporting the URL's X-Amz-Date in Unix milliseconds.
+func PresignedAuth_not_yet_valid_request(s *S3Conf) error {
+	testName := "PresignedAuth_not_yet_valid_request"
+	return presignedAuthHandler(s, testName, func(_ *s3.PresignClient, bucket string) error {
+		listObjects := func(signed time.Time) (*http.Response, error) {
+			req, err := createPresignedReq(http.MethodGet, s.endpoint, bucket,
+				s.awsID, s.awsSecret, s.awsRegion, signed, nil)
+			if err != nil {
+				return nil, err
+			}
+			return s.httpClient.Do(req)
+		}
+
+		resp, err := listObjects(time.Now().Add(10 * time.Minute))
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("URL signed 10 minutes ahead: expected the response status code to be %v, instead got %v",
+				http.StatusOK, resp.StatusCode)
+		}
+
+		signed := time.Now().Add(time.Hour).Truncate(time.Second)
+		resp, err = listObjects(signed)
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, s3err.GetNotYetValidPresignedURLError(signed.UnixMilli(), "", "")); err != nil {
+			return fmt.Errorf("URL signed an hour ahead: %w", err)
+		}
+
+		return nil
+	})
+}
+
 func PresignedAuth_incorrect_secret_key(s *S3Conf) error {
 	testName := "PresignedAuth_incorrect_secret_key"
 	return presignedAuthHandler(s, testName, func(_ *s3.PresignClient, bucket string) error {

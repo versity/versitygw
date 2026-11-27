@@ -73,6 +73,22 @@ func Test_validateExpiration(t *testing.T) {
 			err: s3err.GetAPIError(s3err.ErrExpiredPresignRequest),
 		},
 		{
+			name: "signed in the future within the clock skew",
+			args: args{
+				str:  "300",
+				date: time.Now().Add(14 * time.Minute),
+			},
+			err: nil,
+		},
+		{
+			name: "signed more than 15 minutes in the future",
+			args: args{
+				str:  "300",
+				date: time.Now().Add(16 * time.Minute),
+			},
+			err: s3err.GetAPIError(s3err.ErrPresignRequestNotYetValid),
+		},
+		{
 			name: "valid expiration",
 			args: args{
 				str:  "300",
@@ -97,6 +113,21 @@ func Test_validateExpiration(t *testing.T) {
 				t.Errorf("Expected error: %v, got: %v", tt.err, err)
 			}
 		})
+	}
+}
+
+// Test_validateExpirationNotYetValidFields covers what S3 reports about a
+// presigned URL dated too far ahead: its X-Amz-Date in Unix milliseconds
+// and the time it would expire.
+func Test_validateExpirationNotYetValidFields(t *testing.T) {
+	date := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	err := validateExpiration("3600", date)
+
+	var notYetValid s3err.NotYetValidPresignedURLError
+	if assert.ErrorAs(t, err, &notYetValid) {
+		assert.Equal(t, date.UnixMilli(), notYetValid.XAmzDate)
+		assert.Equal(t, date.Add(time.Hour).Format(time.RFC3339), notYetValid.Expires)
+		assert.NotEmpty(t, notYetValid.ServerTime)
 	}
 }
 

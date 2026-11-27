@@ -20,7 +20,30 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/internal/httpctx"
 )
+
+// AuthType is how a request was authenticated, named as S3 names it in the
+// s3:authType condition key.
+type AuthType string
+
+const (
+	// AuthTypeHeader is a request signed in its Authorization header.
+	AuthTypeHeader AuthType = "REST-HEADER"
+	// AuthTypeQueryString is a presigned URL, signed in its query string.
+	AuthTypeQueryString AuthType = "REST-QUERY-STRING"
+	// AuthTypePost is a browser-based POST upload, signed in its form.
+	AuthTypePost AuthType = "POST"
+)
+
+// Signature describes the signature a request authenticated with. The
+// middleware that verifies it records it in the request's locals, so an
+// anonymous request has none.
+type Signature struct {
+	AuthType AuthType
+	// SigningTime is the X-Amz-Date the signature was computed for.
+	SigningTime time.Time
+}
 
 // requestConditionContext builds the IAM policy-condition keys describing
 // this request — aws:SourceIp, aws:SecureTransport, aws:CurrentTime and
@@ -57,15 +80,16 @@ func requestConditionContext(ctx fiber.Ctx, actions []Action) map[string][]strin
 
 // ListBucketsConditionContext builds the condition keys a ListBuckets
 // request supplies to the checks deciding which buckets it lists: only the
-// aws:* keys describing the request itself. None of the s3:* keys apply. In
-// particular ListBuckets' own ?prefix= names a bucket-name prefix, not the
-// object prefix s3:prefix means.
+// keys describing the request itself. None of the keys describing an object
+// listing or write apply. In particular ListBuckets' own ?prefix= names a
+// bucket-name prefix, not the object prefix s3:prefix means.
 func ListBucketsConditionContext(ctx fiber.Ctx) map[string][]string {
 	return globalConditionContext(ctx)
 }
 
-// globalConditionContext builds the aws:* keys describing the request
-// itself, the part of requestConditionContext that every request has.
+// globalConditionContext builds the keys describing the request itself:
+// the aws:* keys and how the request was signed. It is the part of
+// requestConditionContext that every request has.
 func globalConditionContext(ctx fiber.Ctx) map[string][]string {
 	now := time.Now().UTC()
 	condCtx := map[string][]string{
@@ -86,8 +110,29 @@ func globalConditionContext(ctx fiber.Ctx) map[string][]string {
 	if ref := ctx.Get("Referer"); ref != "" {
 		condCtx["aws:Referer"] = []string{ref}
 	}
+	addSignatureKeys(ctx, now, condCtx)
 
 	return condCtx
+}
+
+// addSignatureKeys populates s3:authType and s3:signatureAge from the
+// signature the request authenticated with. An anonymous request has
+// neither.
+//
+// s3:signatureAge is the time from the signature's X-Amz-Date to now in
+// whole milliseconds, negative for a signature dated in the future. S3
+// supplies it only for presigned URLs and POST uploads, never for a request
+// signed in its Authorization header, however old that signature is.
+func addSignatureKeys(ctx fiber.Ctx, now time.Time, condCtx map[string][]string) {
+	sig, ok := httpctx.ContextKeySignature.Get(ctx).(Signature)
+	if !ok {
+		return
+	}
+	condCtx["s3:authType"] = []string{string(sig.AuthType)}
+	if sig.AuthType != AuthTypeHeader {
+		age := now.Sub(sig.SigningTime).Milliseconds()
+		condCtx["s3:signatureAge"] = []string{strconv.FormatInt(age, 10)}
+	}
 }
 
 // addConditionalWriteKeys populates s3:if-match and s3:if-none-match from

@@ -204,6 +204,7 @@ func AuthorizePostObject(be backend.Backend, root RootUserConfig, iam auth.IAMSe
 			// AuthorizePublicBucketAccess (running after this middleware)
 			// skips its anonymous-access check.
 			utils.ContextKeyAuthenticated.Set(ctx, true)
+			utils.ContextKeySignature.Set(ctx, auth.Signature{AuthType: auth.AuthTypePost, SigningTime: tdate})
 		}
 		// else: anonymous POST Object — no credentials in form fields.
 		// AuthorizePublicBucketAccess will verify public bucket access next.

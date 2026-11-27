@@ -17,10 +17,12 @@ package auth
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v3"
 	"github.com/valyala/fasthttp"
+	"github.com/versity/versitygw/internal/httpctx"
 )
 
 func TestBucketVisibleTo(t *testing.T) {
@@ -329,6 +331,7 @@ func TestListBucketsConditionContext_OmitsListObjectsKeys(t *testing.T) {
 	fctx.Request.Header.Set("X-Amz-Acl", "private")
 	ctx := app.AcquireCtx(fctx)
 	defer app.ReleaseCtx(ctx)
+	httpctx.ContextKeySignature.Set(ctx, Signature{AuthType: AuthTypeHeader, SigningTime: time.Now()})
 
 	condCtx := ListBucketsConditionContext(ctx)
 	for _, key := range []string{"s3:prefix", "s3:delimiter", "s3:max-keys", "s3:x-amz-acl", "s3:VersionId"} {
@@ -336,7 +339,7 @@ func TestListBucketsConditionContext_OmitsListObjectsKeys(t *testing.T) {
 			t.Errorf("ListBucketsConditionContext() has %s = %v, want it absent", key, condCtx[key])
 		}
 	}
-	for _, key := range []string{"aws:CurrentTime", "aws:EpochTime", "aws:SecureTransport", "aws:UserAgent"} {
+	for _, key := range []string{"aws:CurrentTime", "aws:EpochTime", "aws:SecureTransport", "aws:UserAgent", "s3:authType"} {
 		if _, ok := condCtx[key]; !ok {
 			t.Errorf("ListBucketsConditionContext() lacks %s", key)
 		}

@@ -20,6 +20,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -2578,6 +2579,66 @@ func PublicBucket_post_object_policy_deny_overrides_public_acl(s *S3Conf) error 
 		}
 		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrAccessDenied))
 	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
+// PublicBucket_bucket_policy_condition_signature_keys covers s3:authType
+// and s3:signatureAge on anonymous requests, which carry neither key since
+// nobody signed them. A public grant requiring both keys to be absent allows
+// an anonymous GET and POST upload, and one requiring either to be present
+// denies them.
+func PublicBucket_bucket_policy_condition_signature_keys(s *S3Conf) error {
+	testName := "PublicBucket_bucket_policy_condition_signature_keys"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		if _, err := putObjects(s.GetClient(), []string{obj}, bucket); err != nil {
+			return err
+		}
+
+		for _, tc := range []struct {
+			condition string
+			allowed   bool
+		}{
+			{`{"Null":{"s3:authType":"true","s3:signatureAge":"true"}}`, true},
+			{`{"Null":{"s3:authType":"false"}}`, false},
+			{`{"Null":{"s3:signatureAge":"false"}}`, false},
+		} {
+			if err := putBucketPolicyDoc(s, bucket, bucketStatement{
+				Effect:    "Allow",
+				Principal: "*",
+				Action:    []string{"s3:GetObject", "s3:PutObject"},
+				Resource:  objectsArn(bucket),
+				Condition: json.RawMessage(tc.condition),
+			}); err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &obj})
+			cancel()
+			if tc.allowed {
+				if err != nil {
+					return fmt.Errorf("condition %s: anonymous GetObject: expected success, got %w", tc.condition, err)
+				}
+				out.Body.Close()
+			} else if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+				return fmt.Errorf("condition %s: anonymous GetObject: %w", tc.condition, err)
+			}
+
+			resp, err := sendAnonymousPostObject(s, bucket, "post-obj", []byte("data"))
+			if err != nil {
+				return err
+			}
+			if tc.allowed {
+				err = checkPostObjectSuccess(resp)
+			} else {
+				err = checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrAccessDenied))
+			}
+			if err != nil {
+				return fmt.Errorf("condition %s: anonymous POST upload: %w", tc.condition, err)
+			}
+		}
+		return nil
+	}, withAnonymousClient())
 }
 
 func PublicBucket_signed_streaming_payload(s *S3Conf) error {
