@@ -202,6 +202,25 @@ func TestValidateBucketPolicyCondition(t *testing.T) {
 			wantErr: policyErrInvalidConditionKey,
 		},
 		{
+			// Like the aws:* keys, they apply to bucket and object actions
+			// alike, so any explicit action list accepts them.
+			name:    "signature keys accepted with an explicit multi-action list",
+			raw:     `{"StringNotEquals":{"s3:authType":"REST-HEADER"},"NumericLessThan":{"s3:signatureAge":"600000"}}`,
+			actions: actionSet(GetObjectAction, PutObjectAction, ListBucketAction, PutBucketPolicyAction, BypassGovernanceRetentionAction),
+		},
+		{
+			name:    "signature keys recognized case-insensitively",
+			raw:     `{"StringEquals":{"S3:AUTHTYPE":"POST"},"NumericLessThan":{"s3:SignatureAge":"600000"}}`,
+			actions: actionSet(PutObjectAction),
+		},
+		{
+			// Condition values are only interpreted when evaluated, so
+			// neither key's value is checked here.
+			name:    "signature key values are not validated",
+			raw:     `{"StringEquals":{"s3:authType":"not-an-auth-type"},"NumericLessThan":{"s3:signatureAge":"not-a-number"}}`,
+			actions: actionSet(GetObjectAction),
+		},
+		{
 			name:    "aws:SourceIp with a valid CIDR",
 			raw:     `{"IpAddress":{"aws:SourceIp":"10.0.0.0/8"}}`,
 			actions: actionSet(GetObjectAction),

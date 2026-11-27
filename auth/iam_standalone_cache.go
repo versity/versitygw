@@ -208,8 +208,9 @@ func (c *policyCache) evaluate(access, sessionToken string, actions []Action, re
 			return nil, err
 		}
 
-		// A decision that depends on the clock would never be looked up
-		// again, so storing it would only evict one that might.
+		// A decision that depends on the clock, or on a signature's age
+		// measured by it, would never be looked up again, so storing it
+		// would only evict one that might.
 		if eval.cacheable && !slices.ContainsFunc(eval.conditionKeys, isClockConditionKey) {
 			now := c.now()
 			expires := now.Add(c.ttl)
@@ -259,9 +260,11 @@ func identityCacheKey(access, sessionToken string) cacheKey {
 }
 
 // isClockConditionKey reports whether key is one of the condition keys that
-// carry the time of the request.
+// carry the time of the request, or the age of its signature in
+// milliseconds.
 func isClockConditionKey(key string) bool {
-	return strings.EqualFold(key, "aws:CurrentTime") || strings.EqualFold(key, "aws:EpochTime")
+	return strings.EqualFold(key, "aws:CurrentTime") || strings.EqualFold(key, "aws:EpochTime") ||
+		strings.EqualFold(key, "s3:signatureAge")
 }
 
 // clone returns a copy of e that shares no decision matrix with it.

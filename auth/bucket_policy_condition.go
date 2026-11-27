@@ -118,6 +118,11 @@ var bucketPolicyConditionKeys = map[string]conditionKeyRule{
 	"aws:userid":             {appliesTo: anyAction},
 	"aws:multifactorauthage": {appliesTo: anyAction},
 
+	// Keys describing how the request was signed. AWS accepts these with
+	// any action as well.
+	"s3:authtype":     {appliesTo: anyAction},
+	"s3:signatureage": {appliesTo: anyAction},
+
 	// S3-specific keys: only valid with a specific action subset.
 	"s3:prefix":    {appliesTo: isListAction},
 	"s3:delimiter": {appliesTo: isListAction},

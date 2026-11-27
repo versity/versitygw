@@ -455,18 +455,30 @@ func TestStandalonePolicyCacheConditionKeysChange(t *testing.T) {
 }
 
 // TestStandalonePolicyCacheSkipsClockConditions covers a policy that reads
-// the time: no two requests share a decision, so none is stored.
+// the time or a signature's age: no two requests share a decision, so none
+// is stored.
 func TestStandalonePolicyCacheSkipsClockConditions(t *testing.T) {
-	store, sock := standaloneTestServer(t)
-	createStandaloneTestUser(t, store, "alice", "AKIAALICE", "alicesecret",
-		`{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":{"DateLessThan":{"aws:CurrentTime":"2100-01-01T00:00:00Z"}}}}`)
-	client, calls, clock := newCachingStandaloneTestClient(t, sock, 0, time.Minute)
+	for _, tt := range []struct {
+		name      string
+		condition string
+	}{
+		{"current time", `{"DateLessThan":{"aws:CurrentTime":"2100-01-01T00:00:00Z"}}`},
+		{"signature age", `{"NumericLessThan":{"s3:SignatureAge":"60000"}}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			store, sock := standaloneTestServer(t)
+			createStandaloneTestUser(t, store, "alice", "AKIAALICE", "alicesecret",
+				`{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"s3:GetObject","Resource":"*","Condition":`+tt.condition+`}}`)
+			client, calls, clock := newCachingStandaloneTestClient(t, sock, 0, time.Minute)
 
-	condCtx := cacheTestConditionContext(clock.now())
-	for range 3 {
-		expectDecision(t, client, "AKIAALICE", "", "s3:GetObject", "arn:aws:s3:::b/k", condCtx, policyDecisionAllow)
+			condCtx := cacheTestConditionContext(clock.now())
+			condCtx["s3:signatureAge"] = []string{"1000"}
+			for range 3 {
+				expectDecision(t, client, "AKIAALICE", "", "s3:GetObject", "arn:aws:s3:::b/k", condCtx, policyDecisionAllow)
+			}
+			calls.expect(t, private.EvaluatePath, 3)
+		})
 	}
-	calls.expect(t, private.EvaluatePath, 3)
 }
 
 // TestStandalonePolicyCacheExpires covers the cost of the cache: a policy

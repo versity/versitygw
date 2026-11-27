@@ -28,6 +28,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/internal/sigv4auth"
 	"github.com/versity/versitygw/s3api/utils"
@@ -116,12 +117,13 @@ func makePostRequest(t *testing.T, body []byte, boundary string) *http.Request {
 }
 
 // TestAuthorizePostObject_AnonymousRequest verifies that a POST with no auth
-// fields succeeds: PostObjectResult is populated and ContextKeyAuthenticated
-// is NOT set.
+// fields succeeds: PostObjectResult is populated and neither
+// ContextKeyAuthenticated nor ContextKeySignature is set.
 func TestAuthorizePostObject_AnonymousRequest(t *testing.T) {
 	var (
 		gotResult        PostObjectResult
 		gotAuthenticated bool
+		gotSignature     bool
 	)
 
 	app := postObjectTestApp(
@@ -130,6 +132,7 @@ func TestAuthorizePostObject_AnonymousRequest(t *testing.T) {
 		func(c fiber.Ctx) error {
 			gotResult = utils.ContextKeyObjectPostResult.Get(c).(PostObjectResult)
 			gotAuthenticated = utils.ContextKeyAuthenticated.IsSet(c)
+			gotSignature = utils.ContextKeySignature.IsSet(c)
 			return c.SendStatus(http.StatusOK)
 		},
 	)
@@ -143,6 +146,7 @@ func TestAuthorizePostObject_AnonymousRequest(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "uploads/photo.jpg", gotResult.Fields["key"])
 	assert.False(t, gotAuthenticated, "anonymous request must not set ContextKeyAuthenticated")
+	assert.False(t, gotSignature, "anonymous request must not set ContextKeySignature")
 }
 
 // TestAuthorizePostObject_AnonymousRequest_SetsPostObjectResult verifies that
@@ -172,7 +176,7 @@ func TestAuthorizePostObject_AnonymousRequest_SetsPostObjectResult(t *testing.T)
 }
 
 // TestAuthorizePostObject_SignedRequest verifies that a correctly signed POST
-// succeeds and sets ContextKeyAuthenticated.
+// succeeds, sets ContextKeyAuthenticated and records its signature.
 func TestAuthorizePostObject_SignedRequest(t *testing.T) {
 	const (
 		region    = "us-east-1"
@@ -193,13 +197,17 @@ func TestAuthorizePostObject_SignedRequest(t *testing.T) {
 	sig, err := utils.SignPostPolicy(policyB64, derivedKey)
 	assert.NoError(t, err)
 
-	var gotAuthenticated bool
+	var (
+		gotAuthenticated bool
+		gotSignature     auth.Signature
+	)
 
 	app := postObjectTestApp(
 		RootUserConfig{Access: accessKey, Secret: secretKey},
 		region,
 		func(c fiber.Ctx) error {
 			gotAuthenticated = utils.ContextKeyAuthenticated.IsSet(c)
+			gotSignature, _ = utils.ContextKeySignature.Get(c).(auth.Signature)
 			return c.SendStatus(http.StatusOK)
 		},
 	)
@@ -217,6 +225,8 @@ func TestAuthorizePostObject_SignedRequest(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.True(t, gotAuthenticated, "signed request must set ContextKeyAuthenticated")
+	assert.Equal(t, auth.AuthTypePost, gotSignature.AuthType)
+	assert.Equal(t, now.Truncate(time.Second), gotSignature.SigningTime)
 }
 
 // TestAuthorizePostObject_SignedRequest_AnyRegion verifies that a POST signed

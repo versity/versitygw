@@ -131,6 +131,7 @@ const (
 	ErrMalformedXML
 	ErrMalformedCredentialDate
 	ErrExpiredPresignRequest
+	ErrPresignRequestNotYetValid
 	ErrSignatureDoesNotMatch
 	ErrContentSHA256Mismatch
 	ErrInvalidSHA256PayloadUsage
@@ -421,7 +422,12 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrExpiredPresignRequest: {
 		Code:           "AccessDenied",
-		Description:    "Request has expired.",
+		Description:    "Request has expired",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrPresignRequestNotYetValid: {
+		Code:           "AccessDenied",
+		Description:    "Request is not yet valid",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrInvalidAccessKeyID: {

@@ -29,6 +29,7 @@ const (
 	ContextKeyRootAccessKey    = httpctx.ContextKeyRootAccessKey
 	ContextKeyAccount          = httpctx.ContextKeyAccount
 	ContextKeyAuthenticated    = httpctx.ContextKeyAuthenticated
+	ContextKeySignature        = httpctx.ContextKeySignature
 	ContextKeyPublicBucket     = httpctx.ContextKeyPublicBucket
 	ContextKeyParsedAcl        = httpctx.ContextKeyParsedAcl
 	ContextKeySkipResBodyLog   = httpctx.ContextKeySkipResBodyLog

@@ -141,6 +141,8 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 			return err
 		}
 
+		utils.ContextKeySignature.Set(ctx, auth.Signature{AuthType: auth.AuthTypeHeader, SigningTime: tdate})
+
 		if streamBody {
 			// store the request body stream reader in context locals
 			wrapBodyReader(ctx, func(r io.Reader) io.Reader {

@@ -15,11 +15,14 @@
 package auth
 
 import (
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
+	"github.com/versity/versitygw/internal/httpctx"
 )
 
 func TestRequestConditionContextConditionalWriteKeys(t *testing.T) {
@@ -309,6 +312,85 @@ func TestRequestConditionContextConditionalWriteKeys(t *testing.T) {
 					continue
 				}
 				assert.NotContains(t, condCtx, key)
+			}
+		})
+	}
+}
+
+func TestRequestConditionContextSignatureKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		// sig is the signature recorded for the request, nil for an
+		// anonymous one.
+		sig          *Signature
+		wantAuthType string
+		// wantAge is the expected s3:signatureAge in milliseconds, and
+		// absent when wantNoAge is set. The request is evaluated right
+		// after it is built, so the actual age may run slightly past it.
+		wantAge   int64
+		wantNoAge bool
+	}{
+		{
+			name:      "an anonymous request has neither key",
+			wantNoAge: true,
+		},
+		{
+			// S3 never supplies a signature age for a header-signed
+			// request, however old its X-Amz-Date is.
+			name:         "a header-signed request has no signature age",
+			sig:          &Signature{AuthType: AuthTypeHeader, SigningTime: time.Now().Add(-5 * time.Minute)},
+			wantAuthType: "REST-HEADER",
+			wantNoAge:    true,
+		},
+		{
+			name:         "a presigned URL is aged from its signing time",
+			sig:          &Signature{AuthType: AuthTypeQueryString, SigningTime: time.Now().Add(-90 * time.Second)},
+			wantAuthType: "REST-QUERY-STRING",
+			wantAge:      90000,
+		},
+		{
+			name:         "a POST upload is aged from its signing time",
+			sig:          &Signature{AuthType: AuthTypePost, SigningTime: time.Now().Add(-10 * time.Second)},
+			wantAuthType: "POST",
+			wantAge:      10000,
+		},
+		{
+			name:         "a signature dated in the future has a negative age",
+			sig:          &Signature{AuthType: AuthTypeQueryString, SigningTime: time.Now().Add(time.Minute)},
+			wantAuthType: "REST-QUERY-STRING",
+			wantAge:      -60000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := fiber.New()
+			fctx := &fasthttp.RequestCtx{}
+			fctx.Request.Header.SetMethod(fiber.MethodGet)
+			fctx.Request.SetRequestURI("/bucket/object")
+			ctx := app.AcquireCtx(fctx)
+			defer app.ReleaseCtx(ctx)
+			if tt.sig != nil {
+				httpctx.ContextKeySignature.Set(ctx, *tt.sig)
+			}
+
+			condCtx := requestConditionContext(ctx, []Action{GetObjectAction})
+
+			if tt.wantAuthType == "" {
+				assert.NotContains(t, condCtx, "s3:authType")
+			} else {
+				assert.Equal(t, []string{tt.wantAuthType}, condCtx["s3:authType"])
+			}
+
+			if tt.wantNoAge {
+				assert.NotContains(t, condCtx, "s3:signatureAge")
+				return
+			}
+			if assert.Len(t, condCtx["s3:signatureAge"], 1) {
+				age, err := strconv.ParseInt(condCtx["s3:signatureAge"][0], 10, 64)
+				assert.NoError(t, err, "the age is a whole number of milliseconds")
+				assert.GreaterOrEqual(t, age, tt.wantAge)
+				assert.Less(t, age, tt.wantAge+5000)
 			}
 		})
 	}

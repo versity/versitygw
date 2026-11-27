@@ -35,6 +35,10 @@ const (
 	QuerySecurityToken = "X-Amz-Security-Token"
 
 	maxQueryExpirationSeconds = 604800
+	// maxQueryFutureSkew is how far ahead of the server's clock a
+	// presigned URL's X-Amz-Date may be. S3 refuses one dated any later as
+	// not yet valid.
+	maxQueryFutureSkew = 15 * time.Minute
 )
 
 type QueryErrorKind string
@@ -50,17 +54,19 @@ const (
 	ErrQueryExpiresNegative       QueryErrorKind = "query_expires_negative"
 	ErrQueryExpiresTooLarge       QueryErrorKind = "query_expires_too_large"
 	ErrQueryExpired               QueryErrorKind = "query_expired"
+	ErrQueryNotYetValid           QueryErrorKind = "query_not_yet_valid"
 	ErrQuerySecurityToken         QueryErrorKind = "query_security_token"
 )
 
 type QueryError struct {
-	Kind       QueryErrorKind
-	Value      string
-	Expected   string
-	Actual     string
-	Expires    int
-	ExpiresAt  time.Time
-	ServerTime time.Time
+	Kind        QueryErrorKind
+	Value       string
+	Expected    string
+	Actual      string
+	Expires     int
+	SigningTime time.Time
+	ExpiresAt   time.Time
+	ServerTime  time.Time
 }
 
 func (e *QueryError) Error() string {
@@ -74,6 +80,8 @@ func (e *QueryError) Error() string {
 		return fmt.Sprintf("sigv4 query %s: expected %q, got %q", e.Kind, e.Expected, e.Actual)
 	case ErrQueryExpired:
 		return fmt.Sprintf("sigv4 query %s: expired at %s", e.Kind, e.ExpiresAt.Format(time.RFC3339))
+	case ErrQueryNotYetValid:
+		return fmt.Sprintf("sigv4 query %s: signed for %s", e.Kind, e.SigningTime.Format(time.RFC3339))
 	case ErrQueryUnsupportedAlgorithm, ErrQueryUnsupportedECDSA, ErrQueryExpiresNumber:
 		return fmt.Sprintf("sigv4 query %s: %q", e.Kind, e.Value)
 	default:
@@ -215,6 +223,10 @@ type QueryExpiration struct {
 	ServerTime time.Time
 }
 
+// ValidateQueryExpiration validates a presigned URL's X-Amz-Expires and
+// checks that now falls in the window the URL is valid for: from up to
+// maxQueryFutureSkew before its X-Amz-Date to the given number of seconds
+// after it.
 func ValidateQueryExpiration(str string, date, now time.Time) (QueryExpiration, error) {
 	if str == "" {
 		return QueryExpiration{}, missingQueryParameterError(QueryExpires)
@@ -247,6 +259,18 @@ func ValidateQueryExpiration(str string, date, now time.Time) (QueryExpiration, 
 			Expires:    exp,
 			ExpiresAt:  expiresAt,
 			ServerTime: now,
+		}
+	}
+
+	// Without this bound a URL dated in the future would stay usable for
+	// longer than X-Amz-Expires allows, with an s3:signatureAge of any
+	// negative size.
+	if date.Sub(now) > maxQueryFutureSkew {
+		return expiration, &QueryError{
+			Kind:        ErrQueryNotYetValid,
+			SigningTime: date,
+			ExpiresAt:   expiresAt,
+			ServerTime:  now,
 		}
 	}
 

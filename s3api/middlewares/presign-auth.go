@@ -52,7 +52,7 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 			scopeRegion = ""
 		}
 
-		authData, err := utils.ParsePresignedURIParts(ctx, scopeRegion)
+		authData, signingTime, err := utils.ParsePresignedURIParts(ctx, scopeRegion)
 		if err != nil {
 			return err
 		}
@@ -87,6 +87,8 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 		if err != nil {
 			return err
 		}
+
+		utils.ContextKeySignature.Set(ctx, auth.Signature{AuthType: auth.AuthTypeQueryString, SigningTime: signingTime})
 
 		if streamBody {
 			wrapBodyReader(ctx, func(r io.Reader) io.Reader {

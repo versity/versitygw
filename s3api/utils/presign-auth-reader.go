@@ -63,17 +63,19 @@ func CheckPresignedSignature(ctx fiber.Ctx, auth AuthData, derivedKey []byte) er
 // &X-Amz-Expires=86400
 // &X-Amz-SignedHeaders=host
 // &X-Amz-Signature=1e68ad45c1db540284a4a1eca3884c293ba1a0ff63ab9db9a15b5b29dfa02cd8
-func ParsePresignedURIParts(ctx fiber.Ctx, region string) (AuthData, error) {
-	auth, _, err := sigv4auth.ParseQueryAuthorization(ctx, sigv4auth.QueryAuthOptions{
+//
+// It returns them along with the X-Amz-Date the URL was signed for.
+func ParsePresignedURIParts(ctx fiber.Ctx, region string) (AuthData, time.Time, error) {
+	auth, details, err := sigv4auth.ParseQueryAuthorization(ctx, sigv4auth.QueryAuthOptions{
 		Service:           service,
 		Region:            region,
 		RequireExpiration: true,
 	})
 	if err != nil {
-		return AuthData{}, mapQueryAuthError(err)
+		return AuthData{}, time.Time{}, mapQueryAuthError(err)
 	}
 
-	return auth, nil
+	return auth, details.SigningTime, nil
 }
 
 func validateExpiration(str string, date time.Time) error {
@@ -129,6 +131,12 @@ func mapQueryAuthError(err error) error {
 		case sigv4auth.ErrQueryExpired:
 			return s3err.GetExpiredPresignedURLError(
 				queryErr.Expires,
+				queryErr.ExpiresAt.Format(time.RFC3339),
+				queryErr.ServerTime.Format(time.RFC3339),
+			)
+		case sigv4auth.ErrQueryNotYetValid:
+			return s3err.GetNotYetValidPresignedURLError(
+				queryErr.SigningTime.UnixMilli(),
 				queryErr.ExpiresAt.Format(time.RFC3339),
 				queryErr.ServerTime.Format(time.RFC3339),
 			)

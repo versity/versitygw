@@ -3216,6 +3216,74 @@ func S3IAMAccessControl_condition_conditional_write_keys_cover_copies(s *S3Conf)
 	})
 }
 
+// S3IAMAccessControl_condition_signature_keys verifies s3:authType and
+// s3:signatureAge reach identity-policy evaluation. An Allow limited to
+// presigned URLs signed within the last minute grants a freshly presigned
+// GetObject. It denies the same URL signed two minutes earlier, though the
+// two requests differ only in their signature age, and a header-signed
+// GetObject, whose auth type is REST-HEADER and which has no signature age.
+func S3IAMAccessControl_condition_signature_keys(s *S3Conf) error {
+	testName := "S3IAMAccessControl_condition_signature_keys"
+	return s3IAMActionHandler(s, testName, func(root *iam.Client, bucket string) error {
+		obj, data := "obj", "data"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s.GetClient().PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Body:   strings.NewReader(data),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		user, cleanup, err := newS3IAMUser(root, s, map[string]string{
+			"p": policyDoc(accessStatement{
+				Effect: "Allow", Action: actS3GetObject, Resource: objectArn(bucket, obj),
+				Condition: json.RawMessage(`{"StringEquals":{"s3:authType":"REST-QUERY-STRING"},"NumericLessThan":{"s3:signatureAge":"60000"}}`),
+			}),
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		presignedGet := func(signed time.Time) (*http.Response, error) {
+			req, err := createPresignedReq(http.MethodGet, s.endpoint, fmt.Sprintf("%s/%s", bucket, obj),
+				user.conf.awsID, user.conf.awsSecret, s.awsRegion, signed, nil)
+			if err != nil {
+				return nil, err
+			}
+			return s.httpClient.Do(req)
+		}
+		denied := wantImplicitDeny(user.arn, actS3GetObject, objectArn(bucket, obj))
+
+		resp, err := presignedGet(time.Now())
+		if err != nil {
+			return err
+		}
+		if err := checkObjectResponse(resp, data); err != nil {
+			return fmt.Errorf("freshly presigned GetObject: %w", err)
+		}
+
+		resp, err = presignedGet(time.Now().Add(-2 * time.Minute))
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, denied); err != nil {
+			return fmt.Errorf("GetObject presigned two minutes ago: %w", err)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &obj})
+		cancel()
+		if err := checkApiErr(err, denied); err != nil {
+			return fmt.Errorf("header-signed GetObject: %w", err)
+		}
+		return nil
+	})
+}
+
 // S3IAMAccessControl_condition_if_match_ignores_delete_objects covers the
 // batch delete. DeleteObjects carries one request-level header for the
 // whole batch and the gateway never applies it to any key, so letting it

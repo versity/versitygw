@@ -615,6 +615,7 @@ type APIErrorResponse struct {
 	MaxMessageLengthBytes       int64                      `xml:"MaxMessageLengthBytes,omitempty"`
 	ServerTime                  string                     `xml:"ServerTime,omitempty"`
 	XAmzExpires                 int                        `xml:"X-Amz-Expires,omitempty"`
+	XAmzDate                    int64                      `xml:"X-Amz-Date,omitempty"`
 	Expires                     string                     `xml:"Expires,omitempty"`
 	AWSAccessKeyId              string                     `xml:"AWSAccessKeyId,omitempty"`
 	Chunk                       int                        `xml:"Chunk,omitempty"`
@@ -1019,6 +1020,12 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 			checkErrFieldEmptiness("ServerTime", received.ServerTime, true),
 			compareErrField("X-Amz-Expires", err.XAmzExpires, received.XAmzExpires),
 			checkErrFieldEmptiness("Expires", received.Expires, true),
+		)
+	case s3err.NotYetValidPresignedURLError:
+		return compareS3ApiErrFields(
+			compareErrField("X-Amz-Date", err.XAmzDate, received.XAmzDate),
+			checkErrFieldEmptiness("Expires", received.Expires, true),
+			checkErrFieldEmptiness("ServerTime", received.ServerTime, true),
 		)
 	case s3err.InvalidAccessKeyIdError:
 		return compareErrField("AWSAccessKeyId", err.AWSAccessKeyId, received.AWSAccessKeyId)

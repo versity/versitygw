@@ -69,6 +69,7 @@ func TestPresignedAuthentication(ts *TestState) {
 	ts.Run(PresignedAuth_negative_expiration_query_param)
 	ts.Run(PresignedAuth_exceeding_expiration_query_param)
 	ts.Run(PresignedAuth_expired_request)
+	ts.Run(PresignedAuth_not_yet_valid_request)
 	ts.Run(PresignedAuth_incorrect_secret_key)
 	ts.Run(PresignedAuth_sigv2_not_supported)
 	ts.Run(PresignedAuth_PutObject_success)
@@ -745,6 +746,7 @@ func TestPutBucketPolicy(ts *TestState) {
 	ts.Run(PutBucketPolicy_condition_invalid_key)
 	ts.Run(PutBucketPolicy_condition_action_mismatch)
 	ts.Run(PutBucketPolicy_condition_conditional_write_keys)
+	ts.Run(PutBucketPolicy_condition_signature_keys)
 	ts.Run(PutBucketPolicy_condition_invalid_ip)
 	ts.Run(PutBucketPolicy_normalized_size_limit)
 	ts.Run(PutBucketPolicy_body_size_limit)
@@ -2012,6 +2014,7 @@ func TestS3IAMAccessControl(ts *TestState) {
 	ts.Run(S3IAMAccessControl_condition_conditional_write_keys_cover_copies)
 	ts.Run(S3IAMAccessControl_condition_if_match_bucket_level_write)
 	ts.Run(S3IAMAccessControl_condition_if_match_ignores_delete_objects)
+	ts.Run(S3IAMAccessControl_condition_signature_keys)
 	ts.Run(S3IAMAccessControl_inactive_and_deleted_credentials)
 	ts.Run(S3IAMAccessControl_access_key_last_used_records_s3)
 	ts.Run(S3IAMPrincipal_accepted_forms)
@@ -2163,6 +2166,9 @@ func TestAccessControl(ts *TestState) {
 	ts.Run(AccessControl_bucket_policy_condition_if_match_value)
 	ts.Run(AccessControl_bucket_policy_condition_if_match_delete_object)
 	ts.Run(AccessControl_bucket_policy_condition_if_match_versioned_delete)
+	ts.Run(AccessControl_bucket_policy_condition_s3_authType_deny)
+	ts.Run(AccessControl_bucket_policy_condition_s3_authType_values)
+	ts.Run(AccessControl_bucket_policy_condition_s3_signatureAge)
 	ts.Run(AccessControl_owner_deny_only_policy_keeps_access)
 	ts.Run(AccessControl_owner_policy_lockout_protection)
 	ts.Run(AccessControl_acl_grant_with_bucket_policy)
@@ -2184,6 +2190,7 @@ func TestPublicBuckets(ts *TestState) {
 	ts.Run(PublicBucket_policy_deny_overrides_public_acl)
 	ts.Run(PublicBucket_post_object_policy)
 	ts.Run(PublicBucket_post_object_policy_deny_overrides_public_acl)
+	ts.Run(PublicBucket_bucket_policy_condition_signature_keys)
 	ts.Run(PublicBucket_signed_streaming_payload)
 	ts.Run(PublicBucket_incorrect_sha256_hash)
 	ts.Run(PublicBucket_put_object_tagging)
@@ -2628,6 +2635,7 @@ func GetIntTests() IntTests {
 		"S3IAMAccessControl_condition_conditional_write_keys_cover_copies":                 S3IAMAccessControl_condition_conditional_write_keys_cover_copies,
 		"S3IAMAccessControl_condition_if_match_bucket_level_write":                         S3IAMAccessControl_condition_if_match_bucket_level_write,
 		"S3IAMAccessControl_condition_if_match_ignores_delete_objects":                     S3IAMAccessControl_condition_if_match_ignores_delete_objects,
+		"S3IAMAccessControl_condition_signature_keys":                                      S3IAMAccessControl_condition_signature_keys,
 		"S3IAMAccessControl_inactive_and_deleted_credentials":                              S3IAMAccessControl_inactive_and_deleted_credentials,
 		"S3IAMSession_bucket_policy_role_arn_covers_every_session":                         S3IAMSession_bucket_policy_role_arn_covers_every_session,
 		"S3IAMSession_bucket_policy_names_one_session":                                     S3IAMSession_bucket_policy_names_one_session,
@@ -3210,6 +3218,7 @@ func GetIntTests() IntTests {
 		"PresignedAuth_negative_expiration_query_param":                                    PresignedAuth_negative_expiration_query_param,
 		"PresignedAuth_exceeding_expiration_query_param":                                   PresignedAuth_exceeding_expiration_query_param,
 		"PresignedAuth_expired_request":                                                    PresignedAuth_expired_request,
+		"PresignedAuth_not_yet_valid_request":                                              PresignedAuth_not_yet_valid_request,
 		"PresignedAuth_incorrect_secret_key":                                               PresignedAuth_incorrect_secret_key,
 		"PresignedAuth_sigv2_not_supported":                                                PresignedAuth_sigv2_not_supported,
 		"PresignedAuth_PutObject_success":                                                  PresignedAuth_PutObject_success,
@@ -3739,6 +3748,7 @@ func GetIntTests() IntTests {
 		"PutBucketPolicy_condition_invalid_key":                                            PutBucketPolicy_condition_invalid_key,
 		"PutBucketPolicy_condition_action_mismatch":                                        PutBucketPolicy_condition_action_mismatch,
 		"PutBucketPolicy_condition_conditional_write_keys":                                 PutBucketPolicy_condition_conditional_write_keys,
+		"PutBucketPolicy_condition_signature_keys":                                         PutBucketPolicy_condition_signature_keys,
 		"PutBucketPolicy_condition_invalid_ip":                                             PutBucketPolicy_condition_invalid_ip,
 		"GetBucketPolicy_non_existing_bucket":                                              GetBucketPolicy_non_existing_bucket,
 		"GetBucketPolicy_not_set":                                                          GetBucketPolicy_not_set,
@@ -4034,6 +4044,9 @@ func GetIntTests() IntTests {
 		"AccessControl_bucket_policy_condition_if_match_value":                             AccessControl_bucket_policy_condition_if_match_value,
 		"AccessControl_bucket_policy_condition_if_match_delete_object":                     AccessControl_bucket_policy_condition_if_match_delete_object,
 		"AccessControl_bucket_policy_condition_if_match_versioned_delete":                  AccessControl_bucket_policy_condition_if_match_versioned_delete,
+		"AccessControl_bucket_policy_condition_s3_authType_deny":                           AccessControl_bucket_policy_condition_s3_authType_deny,
+		"AccessControl_bucket_policy_condition_s3_authType_values":                         AccessControl_bucket_policy_condition_s3_authType_values,
+		"AccessControl_bucket_policy_condition_s3_signatureAge":                            AccessControl_bucket_policy_condition_s3_signatureAge,
 		"AccessControl_owner_deny_only_policy_keeps_access":                                AccessControl_owner_deny_only_policy_keeps_access,
 		"AccessControl_owner_policy_lockout_protection":                                    AccessControl_owner_policy_lockout_protection,
 		"AccessControl_acl_grant_with_bucket_policy":                                       AccessControl_acl_grant_with_bucket_policy,
@@ -4045,6 +4058,7 @@ func GetIntTests() IntTests {
 		"PublicBucket_policy_deny_overrides_public_acl":                                    PublicBucket_policy_deny_overrides_public_acl,
 		"PublicBucket_post_object_policy":                                                  PublicBucket_post_object_policy,
 		"PublicBucket_post_object_policy_deny_overrides_public_acl":                        PublicBucket_post_object_policy_deny_overrides_public_acl,
+		"PublicBucket_bucket_policy_condition_signature_keys":                              PublicBucket_bucket_policy_condition_signature_keys,
 		"PublicBucket_signed_streaming_payload":                                            PublicBucket_signed_streaming_payload,
 		"PublicBucket_incorrect_sha256_hash":                                               PublicBucket_incorrect_sha256_hash,
 		"PublicBucket_put_object_tagging":                                                  PublicBucket_put_object_tagging,

@@ -29,6 +29,7 @@ const (
 	ContextKeyRootAccessKey    ContextKey = "root-access-key"
 	ContextKeyAccount          ContextKey = "account"
 	ContextKeyAuthenticated    ContextKey = "authenticated"
+	ContextKeySignature        ContextKey = "signature"
 	ContextKeyPublicBucket     ContextKey = "public-bucket"
 	ContextKeyParsedAcl        ContextKey = "parsed-acl"
 	ContextKeySkipResBodyLog   ContextKey = "skip-res-body-log"

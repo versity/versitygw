@@ -41,7 +41,7 @@ func TestCheckPresignedSignatureRejectsUnsignedAmzHeader(t *testing.T) {
 	ctx := fiberCtxFromURL(t, http.MethodPut, signedURL, http.Header{
 		"X-Amz-Copy-Source": []string{"source/key"},
 	})
-	authData, err := ParsePresignedURIParts(ctx, signedHeadersTestRegion)
+	authData, _, err := ParsePresignedURIParts(ctx, signedHeadersTestRegion)
 	require.NoError(t, err)
 
 	err = CheckPresignedSignature(ctx, authData, derivedKeyFor(authData))
@@ -54,7 +54,7 @@ func TestCheckPresignedSignatureAllowsSignedAmzHeader(t *testing.T) {
 	}
 	signedURL := buildPresignedURL(t, headers)
 	ctx := fiberCtxFromURL(t, http.MethodPut, signedURL, headers)
-	authData, err := ParsePresignedURIParts(ctx, signedHeadersTestRegion)
+	authData, _, err := ParsePresignedURIParts(ctx, signedHeadersTestRegion)
 	require.NoError(t, err)
 
 	err = CheckPresignedSignature(ctx, authData, derivedKeyFor(authData))
@@ -67,7 +67,7 @@ func TestCheckPresignedSignatureAllowsUnsignedNonAmzHeader(t *testing.T) {
 		"Content-Type":    []string{"text/plain"},
 		"X-Custom-Header": []string{"value"},
 	})
-	authData, err := ParsePresignedURIParts(ctx, signedHeadersTestRegion)
+	authData, _, err := ParsePresignedURIParts(ctx, signedHeadersTestRegion)
 	require.NoError(t, err)
 
 	err = CheckPresignedSignature(ctx, authData, derivedKeyFor(authData))
@@ -107,7 +107,7 @@ func TestCheckPresignedSignatureRejectsUnsignedAmzHeaderPattern(t *testing.T) {
 	ctx := fiberCtxFromURL(t, http.MethodPut, signedURL, http.Header{
 		"X-Amz-Some-Other-Header": []string{"value"},
 	})
-	authData, err := ParsePresignedURIParts(ctx, signedHeadersTestRegion)
+	authData, _, err := ParsePresignedURIParts(ctx, signedHeadersTestRegion)
 	require.NoError(t, err)
 
 	err = CheckPresignedSignature(ctx, authData, derivedKeyFor(authData))
