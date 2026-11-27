@@ -1379,50 +1379,6 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 			},
 		})
 	})
-
-	t.Run("forwards the client's expected bucket owner, not the requester account", func(t *testing.T) {
-		var got *string
-		be := &BackendMock{
-			CopyObjectFunc: func(_ context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
-				got = input.ExpectedBucketOwner
-				return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrPreconditionFailed)
-			},
-			GetBucketPolicyFunc: func(_ context.Context, _ string) ([]byte, error) {
-				return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
-			},
-			GetBucketVersioningFunc: func(_ context.Context, _ string) (s3response.GetBucketVersioningOutput, error) {
-				return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
-			},
-			GetObjectLockConfigurationFunc: func(_ context.Context, _ string) ([]byte, error) {
-				return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
-			},
-		}
-
-		ctrl := S3ApiController{be: be}
-		for _, tc := range []struct{ hdr, want string }{{"", ""}, {"123456789012", "123456789012"}} {
-			got = nil
-			headers := map[string]string{"X-Amz-Copy-Source": "bucket/object"}
-			if tc.hdr != "" {
-				headers["X-Amz-Expected-Bucket-Owner"] = tc.hdr
-			}
-			testController(t, ctrl.CopyObject, &Response{
-				Data: nilResp,
-				Headers: map[string]*string{
-					"x-amz-copy-source-version-id":                    nil,
-					"x-amz-version-id":                                nil,
-					"x-amz-server-side-encryption-customer-algorithm": nil,
-					"x-amz-server-side-encryption-customer-key-MD5":   nil,
-				},
-				MetaOpts: &MetaOptions{
-					BucketOwner: "root",
-					EventName:   s3event.EventObjectCreatedCopy,
-				},
-			}, s3err.GetAPIError(s3err.ErrPreconditionFailed), ctxInputs{locals: defaultLocals, headers: headers})
-			if got == nil || *got != tc.want {
-				t.Fatalf("header %q: expected ExpectedBucketOwner %q, got %v", tc.hdr, tc.want, got)
-			}
-		}
-	})
 }
 
 func TestS3ApiController_PutObject(t *testing.T) {

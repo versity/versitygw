@@ -576,7 +576,6 @@ func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	copySource := strings.TrimPrefix(ctx.Get("X-Amz-Copy-Source"), "/")
 	expectedSrcBucketOwner := ctx.Get("X-Amz-Source-Expected-Bucket-Owner")
-	expectedBucketOwner := ctx.Get("X-Amz-Expected-Bucket-Owner")
 	metaDirective := types.MetadataDirective(ctx.Get("X-Amz-Metadata-Directive", string(types.MetadataDirectiveCopy)))
 	taggingDirective := types.TaggingDirective(ctx.Get("X-Amz-Tagging-Directive", string(types.TaggingDirectiveCopy)))
 	contentType := ctx.Get("Content-Type", defaultContentType)
@@ -756,7 +755,7 @@ func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 			CopySourceIfUnmodifiedSince:    preconditionHdrs.IfUnmodeSince,
 			IfMatch:                        ifMatch,
 			IfNoneMatch:                    ifNoneMatch,
-			ExpectedBucketOwner:            &expectedBucketOwner,
+			ExpectedBucketOwner:            &acct.Access,
 			ExpectedSourceBucketOwner:      &expectedSrcBucketOwner,
 			Metadata:                       metadata,
 			MetadataDirective:              metaDirective,

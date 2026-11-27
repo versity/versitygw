@@ -50,6 +50,50 @@ func CopyObject_non_existing_dst_bucket(s *S3Conf) error {
 	})
 }
 
+func CopyObject_incorrect_expected_bucket_owner(s *S3Conf) error {
+	testName := "CopyObject_incorrect_expected_bucket_owner"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj := "my-obj"
+		_, err := putObjects(s3client, []string{srcObj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:              &bucket,
+			Key:                 getPtr("obj-copy"),
+			CopySource:          getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+			ExpectedBucketOwner: getPtr(s.awsID + "something"),
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}
+
+func CopyObject_expected_bucket_owner(s *S3Conf) error {
+	testName := "CopyObject_expected_bucket_owner"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj := "my-obj"
+		_, err := putObjects(s3client, []string{srcObj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:              &bucket,
+			Key:                 getPtr("obj-copy"),
+			CopySource:          getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+			ExpectedBucketOwner: &s.awsID,
+		})
+		cancel()
+
+		return err
+	})
+}
+
 func CopyObject_not_owned_source_bucket(s *S3Conf) error {
 	testName := "CopyObject_not_owned_source_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

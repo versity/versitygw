@@ -833,6 +833,34 @@ func (s *S3Proxy) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s
 	return output, handleError(err)
 }
 
+// checkSourceBucketOwner verifies x-amz-source-expected-bucket-owner against the
+// gateway ACL of the copy source bucket. The value names a gateway account, which
+// means nothing to the upstream service, so callers must not forward it.
+func (s *S3Proxy) checkSourceBucketOwner(ctx context.Context, copySource, expected *string) error {
+	if expected == nil || *expected == "" {
+		return nil
+	}
+
+	srcBucket, _, _, err := backend.ParseCopySource(backend.GetStringFromPtr(copySource))
+	if err != nil {
+		return err
+	}
+
+	data, err := s.getMetaBucketObjData(ctx, srcBucket, metaPrefixAcl, false)
+	if err != nil {
+		return handleError(err)
+	}
+	acl, err := auth.ParseACL(data)
+	if err != nil {
+		return err
+	}
+	if acl.Owner != *expected {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
+	return nil
+}
+
 func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
 	if *input.Bucket == s.metaBucket {
 		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
@@ -864,9 +892,10 @@ func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyIn
 	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
 		input.ExpectedBucketOwner = nil
 	}
-	if input.ExpectedSourceBucketOwner != nil && *input.ExpectedSourceBucketOwner == "" {
-		input.ExpectedSourceBucketOwner = nil
+	if err := s.checkSourceBucketOwner(ctx, input.CopySource, input.ExpectedSourceBucketOwner); err != nil {
+		return s3response.CopyPartResult{}, err
 	}
+	input.ExpectedSourceBucketOwner = nil
 	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
 		input.SSECustomerAlgorithm = nil
 	}
@@ -1314,12 +1343,6 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInp
 	if input.CopySourceSSECustomerKeyMD5 != nil && *input.CopySourceSSECustomerKeyMD5 == "" {
 		input.CopySourceSSECustomerKeyMD5 = nil
 	}
-	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
-		input.ExpectedBucketOwner = nil
-	}
-	if input.ExpectedSourceBucketOwner != nil && *input.ExpectedSourceBucketOwner == "" {
-		input.ExpectedSourceBucketOwner = nil
-	}
 	if input.Expires != nil && *input.Expires == "" {
 		input.Expires = nil
 	}
@@ -1366,6 +1389,10 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInp
 		input.WebsiteRedirectLocation = nil
 	}
 
+	if err := s.checkSourceBucketOwner(ctx, input.CopySource, input.ExpectedSourceBucketOwner); err != nil {
+		return s3response.CopyObjectOutput{}, err
+	}
+
 	var expires *time.Time
 	if input.Expires != nil {
 		exp, err := time.Parse(time.RFC1123, *input.Expires)
@@ -1390,8 +1417,6 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInp
 			CopySourceSSECustomerAlgorithm: input.CopySourceSSECustomerAlgorithm,
 			CopySourceSSECustomerKey:       input.CopySourceSSECustomerKey,
 			CopySourceSSECustomerKeyMD5:    input.CopySourceSSECustomerKeyMD5,
-			ExpectedBucketOwner:            input.ExpectedBucketOwner,
-			ExpectedSourceBucketOwner:      input.ExpectedSourceBucketOwner,
 			Expires:                        expires,
 			GrantFullControl:               input.GrantFullControl,
 			GrantRead:                      input.GrantRead,
