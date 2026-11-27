@@ -610,28 +610,28 @@ func CheckDirsNotNested(root, dir string) error {
 		return fmt.Errorf("resolve %q: %w", absDir, err)
 	}
 
-	if isDirBelowRoot(realRoot, realDir) || isDirBelowRoot(realDir, realRoot) {
+	if isWithin(realDir, realRoot) || isWithin(realRoot, realDir) {
 		return fmt.Errorf("%v %w %v", dir, ErrDirsNested, root)
 	}
 	return nil
 }
 
-func isDirBelowRoot(root, dir string) bool {
-	// Ensure the paths ends with a separator
-	if !strings.HasSuffix(root, string(filepath.Separator)) {
-		root += string(filepath.Separator)
+// isWithin reports whether child is parent or below it. Directories are compared
+// by file identity rather than by name, so that a different spelling of the same
+// directory (case-insensitive filesystem, bind mount) is still detected.
+func isWithin(child, parent string) bool {
+	pfi, err := os.Stat(parent)
+	if err != nil {
+		return false
 	}
-
-	if !strings.HasSuffix(dir, string(filepath.Separator)) {
-		dir += string(filepath.Separator)
+	for d := child; ; d = filepath.Dir(d) {
+		if fi, err := os.Stat(d); err == nil && os.SameFile(fi, pfi) {
+			return true
+		}
+		if filepath.Dir(d) == d {
+			return false
+		}
 	}
-
-	// Ensure the root directory doesn't contain the directory
-	if strings.HasPrefix(dir, root) {
-		return true
-	}
-
-	return false
 }
 
 func (p *Posix) Shutdown() {

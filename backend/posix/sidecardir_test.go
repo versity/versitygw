@@ -120,6 +120,25 @@ func TestAuxDirNestingSymlinks(t *testing.T) {
 	})
 }
 
+// TestAuxDirNestingCaseInsensitive checks that spelling a path with a different
+// case does not hide the nesting on a case-insensitive filesystem.
+func TestAuxDirNestingCaseInsensitive(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "outer", "gwroot")
+	inner := filepath.Join(root, "inner")
+	mustMkdirAll(t, inner)
+	upperRoot := filepath.Join(base, "outer", "GWROOT")
+	if _, err := os.Stat(upperRoot); err != nil {
+		t.Skipf("case-sensitive filesystem: %v", err)
+	}
+
+	runDirNestingCases(t, []dirNestingCase{
+		{"subdirectory of root", root, filepath.Join(upperRoot, "inner"), true},
+		{"same as root", root, upperRoot, true},
+		{"parent of root", root, filepath.Join(base, "OUTER"), true},
+	})
+}
+
 // TestSideCarDirRelativeRoot checks the default (non-AbsolutePaths) mode with
 // root "." and a sidecar next to it.
 func TestSideCarDirRelativeRoot(t *testing.T) {
