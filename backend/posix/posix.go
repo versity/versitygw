@@ -590,8 +590,8 @@ func validateSubDir(root, dir string) (string, error) {
 var ErrDirsNested = errors.New("must not be the same as, inside, or contain the root directory")
 
 // CheckDirsNotNested returns an error wrapping ErrDirsNested if root and dir
-// are equal or one contains the other. Symlinks are resolved first so a
-// symlinked path segment cannot hide the nesting, so both must exist.
+// are equal or one contains the other. Both must exist, because symlinks are
+// resolved first so that a symlinked path segment cannot hide the nesting.
 func CheckDirsNotNested(root, dir string) error {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
@@ -603,7 +603,7 @@ func CheckDirsNotNested(root, dir string) error {
 	}
 	realRoot, err := filepath.EvalSymlinks(absRoot)
 	if err != nil {
-		return fmt.Errorf("resolve %q: %w", absRoot, err)
+		return fmt.Errorf("resolve root directory %q: %w", absRoot, err)
 	}
 	realDir, err := filepath.EvalSymlinks(absDir)
 	if err != nil {
