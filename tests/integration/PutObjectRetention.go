@@ -638,3 +638,15 @@ func PutObjectRetention_success(s *S3Conf) error {
 func PutObjectRetention_empty_version_id(s *S3Conf) error {
 	return testEmptyVersionId(s, "PutObjectRetention_empty_version_id", http.MethodPut, "retention", []byte("<Retention><Mode>GOVERNANCE</Mode><RetainUntilDate>2222-01-01T00:00:00Z</RetainUntilDate></Retention>"))
 }
+
+func PutObjectRetention_body_size_limit(s *S3Conf) error {
+	testName := "PutObjectRetention_body_size_limit"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyLimit(s, bucket, requestBodyLimit{
+			method: http.MethodPut,
+			object: true,
+			query:  "retention",
+			limit:  1048576,
+		})
+	})
+}

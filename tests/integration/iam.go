@@ -19,6 +19,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -177,6 +179,77 @@ func IAM_ListBuckets(s *S3Conf) error {
 	testName := "IAM_ListBuckets"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		return listBuckets(s)
+	})
+}
+
+// IAM_ListUsers checks that list-users returns a created account with its
+// role and IDs, and no account without an access key.
+func IAM_ListUsers(s *S3Conf) error {
+	testName := "IAM_ListUsers"
+	return actionHandlerNoSetup(s, testName, func(_ *s3.Client, _ string) (err error) {
+		usr := getUser("userplus")
+		out, err := execCommand(s.getAdminCommand("-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint,
+			"create-user", "-a", usr.access, "-s", usr.secret, "-r", usr.role,
+			"--user-id", "1001", "--group-id", "2001", "--project-id", "3001")...)
+		if err != nil {
+			return fmt.Errorf("create user: %w: %s", err, out)
+		}
+		if strings.Contains(string(out), adminErrorPrefix) {
+			return fmt.Errorf("failed to create user account: %s", out)
+		}
+		defer func() {
+			out, delErr := execCommand(s.getAdminCommand("-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "delete-user", "-a", usr.access)...)
+			if delErr == nil && strings.Contains(string(out), adminErrorPrefix) {
+				delErr = errors.New(string(out))
+			}
+			if delErr != nil {
+				err = errors.Join(err, fmt.Errorf("delete user: %w", delErr))
+			}
+		}()
+
+		req, err := createSignedReq(http.MethodPatch, s.endpoint, "list-users", s.awsID, s.awsSecret,
+			"s3", s.awsRegion, "", nil, time.Now(), nil)
+		if err != nil {
+			return err
+		}
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected the response status code to be %v, instead got %v: %s",
+				http.StatusOK, resp.StatusCode, body)
+		}
+
+		var result auth.ListUserAccountsResult
+		if err := xml.Unmarshal(body, &result); err != nil {
+			return fmt.Errorf("parse list-users response: %w", err)
+		}
+
+		var found bool
+		for _, acc := range result.Accounts {
+			if acc.Access == "" {
+				return fmt.Errorf("list-users returned an account without an access key: %v", acc)
+			}
+			if acc.Access != usr.access {
+				continue
+			}
+			found = true
+			if acc.Role != auth.RoleUserPlus || acc.UserID != 1001 || acc.GroupID != 2001 || acc.ProjectID != 3001 {
+				return fmt.Errorf("expected user %v to have role %v and user/group/project IDs 1001/2001/3001, instead got %v/%v/%v/%v",
+					usr.access, auth.RoleUserPlus, acc.Role, acc.UserID, acc.GroupID, acc.ProjectID)
+			}
+		}
+		if !found {
+			return fmt.Errorf("expected list-users to return user %v", usr.access)
+		}
+
+		return nil
 	})
 }
 

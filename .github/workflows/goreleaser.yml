@@ -17,12 +17,17 @@ jobs:
           fetch-depth: 0
 
       - name: Fetch tags
-        run: git fetch --force --tags
+        run: ./tests/retry.sh git fetch --force --tags
 
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
           go-version: stable
+
+      # goreleaser's go mod tidy hook finds the modules in the cache then;
+      # the release itself publishes, so it isn't retried
+      - name: Get dependencies
+        run: ./tests/retry.sh go mod download
 
       - name: Run Releaser
         uses: goreleaser/goreleaser-action@v7

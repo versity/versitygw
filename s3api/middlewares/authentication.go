@@ -15,8 +15,6 @@
 package middlewares
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"io"
 	"strconv"
@@ -188,15 +186,16 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 			return nil
 		}
 
+		// any other action reads its body, if it takes one, with
+		// ReadRequestBody down the chain and never here: stack the payload
+		// hash check for the body to be verified as it is read
 		if !utils.IsSpecialPayload(hashPayload) {
-			// Calculate the hash of the request payload
-			hashedPayload := sha256.Sum256(ctx.BodyRaw())
-			hexPayload := hex.EncodeToString(hashedPayload[:])
-
-			// Compare the calculated hash with the hash provided
-			if hashPayload != hexPayload {
-				return s3err.GetContentSHA256MismatchErr(hashPayload, hexPayload)
-			}
+			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
+				var cr io.Reader
+				cr, err = utils.NewHashReader(r, hashPayload, utils.HashTypeSha256Hex)
+				return cr
+			})
+			return err
 		}
 
 		return nil

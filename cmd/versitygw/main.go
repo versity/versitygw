@@ -28,7 +28,9 @@ import (
 	"github.com/versity/versitygw/cmd/internal/gwcli"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/embedgw"
+	"github.com/versity/versitygw/internal/bwlimit"
 	"github.com/versity/versitygw/internal/netutil"
+	"github.com/versity/versitygw/webui"
 )
 
 var (
@@ -38,6 +40,8 @@ var (
 	allowAnyRegion                                bool
 	maxConnections, maxRequests                   int
 	adminMaxConnections, adminMaxRequests         int
+	ingressBWLimit, ingressBWBurst                string
+	egressBWLimit, egressBWBurst                  string
 	corsAllowOrigin                               string
 	admCertFile, admKeyFile                       string
 	adminPathPrefix                               string
@@ -108,6 +112,12 @@ var (
 	webuiIAMGateways                              []string
 	webuiPathPrefix                               string
 	webuiS3Prefix                                 string
+	webuiOIDCIssuer, webuiOIDCClientID            string
+	webuiOIDCRoleArn, webuiOIDCRoleClaim          string
+	webuiOIDCScopes, webuiOIDCLabel               string
+	webuiOIDCSessionDuration                      int
+	webuiOIDCRedirectURI                          string
+	webuiOIDCAllowHTTP                            bool
 	websitePorts                                  []string
 	websiteDomain                                 string
 	websiteCertFile, websiteKeyFile               string
@@ -285,6 +295,62 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_WEBUI_S3_PREFIX"},
 			Destination: &webuiS3Prefix,
 		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-issuer",
+			Usage:       "turn on WebUI single sign-on with this OpenID Connect provider issuer URL (e.g. 'https://auth.example.com/realms/main'); it must match the issuer in the provider's discovery document and the OIDC provider registered on the standalone IAM service exactly. The browser exchanges the provider's ID token for temporary credentials with AssumeRoleWithWebIdentity, so this requires --webui-iam-gateways. Nothing in the --webui-oidc-* settings is secret: all of it is sent to the browser",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_ISSUER"},
+			Destination: &webuiOIDCIssuer,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-client-id",
+			Usage:       "client ID of the public client (no client secret, PKCE) registered at the provider for the WebUI; required with --webui-oidc-issuer, and must be in the IAM OIDC provider's client ID list",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_CLIENT_ID"},
+			Destination: &webuiOIDCClientID,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-role-arn",
+			Usage:       "role assumed by WebUI single sign-on sessions (e.g. 'arn:aws:iam::000000000000:role/webui-users'); used when --webui-oidc-role-claim is unset or the token names no role. At least one of the two is required with --webui-oidc-issuer",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_ROLE_ARN"},
+			Destination: &webuiOIDCRoleArn,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-role-claim",
+			Usage:       "name of an ID token claim holding one or more role ARNs for WebUI single sign-on; with several, the user picks one at sign-in",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_ROLE_CLAIM"},
+			Destination: &webuiOIDCRoleClaim,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-scopes",
+			Usage:       "space-separated scopes requested at the provider for WebUI single sign-on; must include openid. Some providers only issue the refresh token that renews a session in the background when offline_access is requested",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_SCOPES"},
+			Value:       webui.DefaultOIDCScopes,
+			Destination: &webuiOIDCScopes,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-label",
+			Usage:       "text of the WebUI single sign-on button",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_LABEL"},
+			Value:       webui.DefaultOIDCLabel,
+			Destination: &webuiOIDCLabel,
+		},
+		&cli.IntFlag{
+			Name:        "webui-oidc-session-duration",
+			Usage:       "lifetime of WebUI single sign-on credentials in seconds, sent as AssumeRoleWithWebIdentity DurationSeconds (900-43200, and at most the role's MaxSessionDuration); 0 uses the IAM service default of 3600",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_SESSION_DURATION"},
+			Destination: &webuiOIDCSessionDuration,
+		},
+		&cli.StringFlag{
+			Name:        "webui-oidc-redirect-uri",
+			Usage:       "redirect URI registered at the provider for WebUI single sign-on; by default the browser uses the login page's own URL (origin plus --webui-path-prefix or --webui-s3-prefix, with a trailing '/'). It must be on the same origin users open the WebUI from",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_REDIRECT_URI"},
+			Destination: &webuiOIDCRedirectURI,
+		},
+		&cli.BoolFlag{
+			Name:        "webui-oidc-allow-http",
+			Usage:       "allow a plain http --webui-oidc-issuer, for test providers only; the IAM service needs --oidc-allow-insecure-transport to accept the same issuer",
+			EnvVars:     []string{"VGW_WEBUI_OIDC_ALLOW_HTTP"},
+			Destination: &webuiOIDCAllowHTTP,
+		},
 		&cli.StringSliceFlag{
 			Name:    "website",
 			Usage:   "enable static website hosting endpoint on the specified listen address (e.g. ':8080'; same forms as --port; can be specified multiple times; requires --website-domain)",
@@ -357,6 +423,30 @@ func initFlags() []cli.Flag {
 			Value:       100000,
 			Destination: &maxRequests,
 			Aliases:     []string{"mr"},
+		},
+		&cli.StringFlag{
+			Name:        "ingress-bandwidth-limit",
+			Usage:       "maximum aggregate rate for this gateway instance to read from clients, e.g. 500MiB, 1GB, 10Gbit (non-zero range 64KiB/s to 1TiB/s; units required; B is bytes, bit is bits; lowercase b is ambiguous); excess traffic is delayed, not rejected; 0 for unlimited",
+			EnvVars:     []string{"VGW_INGRESS_BANDWIDTH_LIMIT"},
+			Destination: &ingressBWLimit,
+		},
+		&cli.StringFlag{
+			Name:        "ingress-bandwidth-burst",
+			Usage:       "maximum bytes transferred back-to-back after an idle period, e.g. 1MiB; range 32KiB to 2GiB-1; defaults to 10ms of traffic, between 64KiB and 1MiB",
+			EnvVars:     []string{"VGW_INGRESS_BANDWIDTH_BURST"},
+			Destination: &ingressBWBurst,
+		},
+		&cli.StringFlag{
+			Name:        "egress-bandwidth-limit",
+			Usage:       "maximum aggregate rate for this gateway instance to write to clients, e.g. 500MiB, 1GB, 10Gbit (non-zero range 64KiB/s to 1TiB/s; units required; B is bytes, bit is bits; lowercase b is ambiguous); excess traffic is delayed, not rejected; 0 for unlimited",
+			EnvVars:     []string{"VGW_EGRESS_BANDWIDTH_LIMIT"},
+			Destination: &egressBWLimit,
+		},
+		&cli.StringFlag{
+			Name:        "egress-bandwidth-burst",
+			Usage:       "maximum bytes transferred back-to-back after an idle period, e.g. 1MiB; range 32KiB to 2GiB-1; defaults to 10ms of traffic, between 64KiB and 1MiB",
+			EnvVars:     []string{"VGW_EGRESS_BANDWIDTH_BURST"},
+			Destination: &egressBWBurst,
 		},
 		&cli.StringFlag{
 			Name:        "cors-allow-origin",
@@ -1020,6 +1110,27 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		return err
 	}
 
+	var bw [4]int64
+	for i, f := range []struct {
+		name string
+		val  string
+		rate bool
+	}{
+		{"ingress-bandwidth-limit", ingressBWLimit, true},
+		{"ingress-bandwidth-burst", ingressBWBurst, false},
+		{"egress-bandwidth-limit", egressBWLimit, true},
+		{"egress-bandwidth-burst", egressBWBurst, false},
+	} {
+		if f.rate {
+			bw[i], err = bwlimit.ParseRate(f.val)
+		} else {
+			bw[i], err = bwlimit.ParseBytes(f.val)
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %w", f.name, err)
+		}
+	}
+
 	return embedgw.RunVersityGW(ctx, be, &embedgw.Config{
 		RootUserAccess:              gwcli.RootUserAccess,
 		RootUserSecret:              gwcli.RootUserSecret,
@@ -1029,6 +1140,10 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		AdminPorts:                  admPorts,
 		MaxConnections:              maxConnections,
 		MaxRequests:                 maxRequests,
+		IngressBandwidthLimit:       bw[0],
+		IngressBandwidthBurst:       bw[1],
+		EgressBandwidthLimit:        bw[2],
+		EgressBandwidthBurst:        bw[3],
 		AdminMaxConnections:         adminMaxConnections,
 		AdminMaxRequests:            adminMaxRequests,
 		MultipartMaxParts:           mpMaxParts,
@@ -1132,6 +1247,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		WebuiIAMGateways:            webuiIAMGateways,
 		WebuiPathPrefix:             webuiPathPrefix,
 		WebuiS3Prefix:               webuiS3Prefix,
+		WebuiOIDC:                   webuiOIDCConfig(),
 		WebsitePorts:                websitePorts,
 		WebsiteDomain:               websiteDomain,
 		WebsiteCertFile:             websiteCertFile,
@@ -1142,4 +1258,20 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		Build:                       Build,
 		BuildTime:                   BuildTime,
 	})
+}
+
+// webuiOIDCConfig collects the --webui-oidc-* flags, shared by the WebUI the
+// gateway hosts and the one the iam command hosts.
+func webuiOIDCConfig() webui.OIDCConfig {
+	return webui.OIDCConfig{
+		Issuer:          webuiOIDCIssuer,
+		ClientID:        webuiOIDCClientID,
+		RoleArn:         webuiOIDCRoleArn,
+		RoleClaim:       webuiOIDCRoleClaim,
+		Scopes:          webuiOIDCScopes,
+		Label:           webuiOIDCLabel,
+		SessionDuration: webuiOIDCSessionDuration,
+		RedirectURI:     webuiOIDCRedirectURI,
+		AllowHTTP:       webuiOIDCAllowHTTP,
+	}
 }

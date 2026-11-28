@@ -357,16 +357,29 @@ func (s *ScoutFS) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 	// it is restored. S3 checks this last, after the preconditions, the
 	// range and the part number, so a matching If-None-Match still gets
 	// 304 Not Modified. The opened file is the requested version.
-	return s.Posix.GetObjectWithPreReadFunc(ctx, input, func(f *os.File) error {
-		st, err := scoutfs.FStatMore(f)
-		if err != nil {
-			return fmt.Errorf("stat more: %w", err)
-		}
-		if st.Offline_blocks != 0 {
-			return s3err.GetAPIError(s3err.ErrInvalidObjectState)
-		}
-		return nil
-	})
+	return s.Posix.GetObjectWithPreReadFunc(ctx, input, rejectOffline)
+}
+
+// CopyObject in glacier mode rejects a source object with offline extents,
+// as GetObject does, since reading it would wait for it to be staged.
+func (s *ScoutFS) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
+	if !s.glaciermode {
+		return s.Posix.CopyObject(ctx, input)
+	}
+	return s.Posix.CopyObjectWithPreReadFunc(ctx, input, rejectOffline)
+}
+
+// rejectOffline returns InvalidObjectState for an object file with offline
+// extents: it is archived and can't be read until it is restored.
+func rejectOffline(f *os.File) error {
+	st, err := scoutfs.FStatMore(f)
+	if err != nil {
+		return fmt.Errorf("stat more: %w", err)
+	}
+	if st.Offline_blocks != 0 {
+		return s3err.GetAPIError(s3err.ErrInvalidObjectState)
+	}
+	return nil
 }
 
 func (s *ScoutFS) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {

@@ -783,6 +783,84 @@ func TestS3ApiController_GetObjectAttributes(t *testing.T) {
 	}
 }
 
+// TestS3ApiController_GetObjectAttributes_policy checks that a bucket policy
+// has to grant s3:GetObject along with s3:GetObjectAttributes, and
+// s3:GetObjectVersion along with s3:GetObjectVersionAttributes for a request
+// naming a version, as AWS requires.
+func TestS3ApiController_GetObjectAttributes_policy(t *testing.T) {
+	versionId := ulid.Make().String()
+	etag := "ETag"
+	tests := []struct {
+		name      string
+		actions   string
+		versionId string
+		allowed   bool
+	}{
+		{name: "s3:GetObjectAttributes alone", actions: `"s3:GetObjectAttributes"`},
+		{name: "s3:GetObjectAttributes and s3:GetObject", actions: `["s3:GetObjectAttributes","s3:GetObject"]`, allowed: true},
+		{name: "s3:GetObjectVersionAttributes alone", actions: `"s3:GetObjectVersionAttributes"`, versionId: versionId},
+		{name: "s3:GetObjectVersionAttributes and s3:GetObject", actions: `["s3:GetObjectVersionAttributes","s3:GetObject"]`, versionId: versionId},
+		{name: "s3:GetObjectVersionAttributes and s3:GetObjectVersion", actions: `["s3:GetObjectVersionAttributes","s3:GetObjectVersion"]`, versionId: versionId, allowed: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := fmt.Sprintf(`{"Statement":[{"Effect":"Allow","Principal":{"AWS":"user"},"Action":%s,"Resource":"arn:aws:s3:::bucket/object"}]}`, tt.actions)
+			be := &BackendMock{
+				GetObjectAttributesFunc: func(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
+					return s3response.GetObjectAttributesResponse{ETag: &etag}, nil
+				},
+				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+					return []byte(policy), nil
+				},
+				NormalizeObjectKeyFunc: func(bucket, object string) string {
+					return object
+				},
+			}
+
+			ctrl := S3ApiController{
+				be: be,
+			}
+
+			var queries map[string]string
+			if tt.versionId != "" {
+				queries = map[string]string{
+					"versionId": tt.versionId,
+				}
+			}
+
+			response := &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: "root",
+				},
+			}
+			var wantErr error = s3err.GetAPIError(s3err.ErrAccessDenied)
+			if tt.allowed {
+				response.Headers = map[string]*string{
+					"x-amz-version-id": nil,
+					"Last-Modified":    nil,
+				}
+				response.Data = s3response.GetObjectAttributesResponse{
+					ETag: &etag,
+				}
+				wantErr = nil
+			}
+
+			testController(
+				t,
+				ctrl.GetObjectAttributes,
+				response,
+				wantErr,
+				ctxInputs{
+					locals: accessDeniedLocals,
+					headers: map[string]string{
+						"X-Amz-Object-Attributes": "ETag",
+					},
+					queries: queries,
+				})
+		})
+	}
+}
+
 func TestS3ApiController_GetObject(t *testing.T) {
 	tm := time.Now()
 	cLength := int64(11)
@@ -924,9 +1002,10 @@ func TestS3ApiController_GetObject(t *testing.T) {
 			name: "backend returns error",
 			input: testInput{
 				locals: defaultLocals,
-				beErr:  s3err.GetAPIError(s3err.ErrInvalidAccessKeyID),
+				beErr:  s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete}),
 				beRes: &s3.GetObjectOutput{
 					DeleteMarker: &delMarker,
+					VersionId:    utils.GetStringPtr("versionId"),
 					LastModified: &tm,
 				},
 			},
@@ -934,13 +1013,38 @@ func TestS3ApiController_GetObject(t *testing.T) {
 				response: &Response{
 					Headers: map[string]*string{
 						"x-amz-delete-marker": utils.GetStringPtr("true"),
+						"x-amz-version-id":    utils.GetStringPtr("versionId"),
 						"Last-Modified":       utils.GetStringPtr(tm.UTC().Format(timefmt)),
 					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidAccessKeyID),
+				err: s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete}),
+			},
+		},
+		{
+			name: "backend returns error without last modified",
+			input: testInput{
+				locals: defaultLocals,
+				beErr:  s3err.GetAPIError(s3err.ErrNoSuchKey),
+				beRes: &s3.GetObjectOutput{
+					DeleteMarker: &delMarker,
+					VersionId:    utils.GetStringPtr("versionId"),
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Headers: map[string]*string{
+						"x-amz-delete-marker": utils.GetStringPtr("true"),
+						"x-amz-version-id":    utils.GetStringPtr("versionId"),
+						"Last-Modified":       nil,
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrNoSuchKey),
 			},
 		},
 		{

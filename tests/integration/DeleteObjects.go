@@ -791,3 +791,14 @@ func DeleteObjects_invalid_object_keys(s *S3Conf) error {
 		return nil
 	})
 }
+
+func DeleteObjects_body_size_limit(s *S3Conf) error {
+	testName := "DeleteObjects_body_size_limit"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyLimit(s, bucket, requestBodyLimit{
+			method: http.MethodPost,
+			query:  "delete",
+			limit:  2048000,
+		})
+	})
+}

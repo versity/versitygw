@@ -29,6 +29,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend/meta"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -136,6 +137,167 @@ func TestFsyncFailureFailsThePut(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, bucket, "object")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("object was published after a failed fsync: %v", err)
+	}
+}
+
+// TestFsyncConcurrentDelete checks that removing the object and its empty
+// parents after publication does not turn a successful PUT into an error
+// when the directory handles are flushed.
+func TestFsyncConcurrentDelete(t *testing.T) {
+	for _, noTmp := range []bool{false, true} {
+		name := "otmpfile"
+		if noTmp {
+			name = "rename"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			p, err := New(root, meta.XattrMeta{}, PosixOpts{AbsolutePaths: true, ForceNoTmpFile: noTmp, Fsync: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			createTestBucket(t, p, "bucket")
+			orig := syncDir
+			t.Cleanup(func() { syncDir = orig })
+			var synced []string
+			syncDir = func(dir string, d *os.File) error {
+				synced = append(synced, dir)
+				if len(synced) == 1 {
+					// DeleteObject removes the object and its empty
+					// parents through the real removeParents path.
+					bucket, key := "bucket", "a/b/object"
+					_, err := p.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: &bucket, Key: &key})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := os.Stat(filepath.Join(root, "bucket", "a")); !errors.Is(err, os.ErrNotExist) {
+						t.Fatalf("DeleteObject left bucket/a behind: %v", err)
+					}
+				}
+				return orig(dir, d)
+			}
+			if err := putTestObject(t, p, "bucket", "a/b/object", "hello"); err != nil {
+				t.Fatal(err)
+			}
+			want := []string{
+				filepath.Join(root, "bucket", "a", "b"),
+				filepath.Join(root, "bucket", "a"),
+				filepath.Join(root, "bucket"),
+			}
+			if !slices.Equal(synced, want) {
+				t.Fatalf("synced %v, want %v", synced, want)
+			}
+		})
+	}
+}
+
+// TestFsyncUnreadableAncestor checks that a directory that cannot be opened
+// for flushing fails the PUT with AccessDenied before the object is published.
+func TestFsyncUnreadableAncestor(t *testing.T) {
+	for _, noTmp := range []bool{false, true} {
+		name := "otmpfile"
+		if noTmp {
+			name = "rename"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			p, err := New(root, meta.XattrMeta{}, PosixOpts{AbsolutePaths: true, ForceNoTmpFile: noTmp, Fsync: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			createTestBucket(t, p, "bucket")
+			parent := filepath.Join(root, "bucket/a")
+			if err := os.MkdirAll(filepath.Join(parent, "b"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(parent, 0300); err != nil {
+				t.Fatal(err)
+			}
+			defer os.Chmod(parent, 0755)
+			if d, err := os.Open(parent); err == nil {
+				d.Close()
+				t.Skip("user can read directories without read permission")
+			} else if !errors.Is(err, os.ErrPermission) {
+				t.Fatal(err)
+			}
+			err = putTestObject(t, p, "bucket", "a/b/object", "hello")
+			if !errors.Is(err, s3err.GetAPIError(s3err.ErrAccessDenied)) {
+				t.Fatalf("put = %v, want AccessDenied", err)
+			}
+			if _, err := os.Stat(filepath.Join(parent, "b/object")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("object published: %v", err)
+			}
+		})
+	}
+}
+
+// TestFsyncNamespaceFailureClosesHandles checks that every directory handle
+// is closed when flushing the namespace fails.
+func TestFsyncNamespaceFailureClosesHandles(t *testing.T) {
+	bucket := t.TempDir()
+	dir := filepath.Join(bucket, "a", "b")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	tmp := &tmpfile{bucket: bucket, fsync: true}
+	dirs, err := tmp.openDirForSync(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dirs) == 0 {
+		t.Skip("directory fsync is disabled on this platform")
+	}
+	orig := syncDir
+	t.Cleanup(func() { syncDir = orig })
+	want := errors.New("directory sync failed")
+	syncDir = func(string, *os.File) error { return want }
+	if err := tmp.syncNamespace(dirs); !errors.Is(err, want) {
+		t.Fatalf("sync error = %v, want %v", err, want)
+	}
+	for _, d := range dirs {
+		if _, err := d.Stat(); !errors.Is(err, os.ErrClosed) {
+			t.Errorf("handle %q not closed: %v", d.Name(), err)
+		}
+	}
+}
+
+// TestFsyncMoveIntoUsesHandle checks that publishing renames relative to the
+// retained parent handle: if the directory chain is removed and recreated
+// after the handles were opened, the rename fails instead of placing the
+// object in the new directories while the removed ones get synced.
+func TestFsyncMoveIntoUsesHandle(t *testing.T) {
+	bucket := t.TempDir()
+	dir := filepath.Join(bucket, "a", "b")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	tmp := &tmpfile{bucket: bucket, fsync: true}
+	dirs, err := tmp.openDirForSync(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dirs.Close()
+	if len(dirs) == 0 {
+		t.Skip("directory fsync is disabled on this platform")
+	}
+	if !renameInDirSupported {
+		t.Skip("rename relative to a directory handle is unsupported here")
+	}
+	src := filepath.Join(bucket, "temp")
+	if err := os.WriteFile(src, []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(bucket, "a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	obj := filepath.Join(dir, "object")
+	if err := moveInto(src, obj, 0644, dirs, true); err == nil {
+		t.Fatal("move into a removed directory succeeded")
+	}
+	if _, err := os.Stat(obj); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("object landed in the recreated directory: %v", err)
 	}
 }
 

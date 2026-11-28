@@ -82,6 +82,19 @@ func (s SkipDirs) skips(name string, atRoot bool) bool {
 	return slices.ContainsFunc(s.Any, match) || (atRoot && slices.ContainsFunc(s.Root, match))
 }
 
+// skipsPath reports whether dir, a directory path relative to the top of the
+// walked file system, is a skipped directory or inside one.
+func (s SkipDirs) skipsPath(dir string) bool {
+	atRoot := true
+	for name := range strings.SplitSeq(dir, pathSeparator) {
+		if s.skips(name, atRoot) {
+			return true
+		}
+		atRoot = false
+	}
+	return false
+}
+
 var ErrSkipObj = errors.New("skip this object")
 
 // map to store object common prefixes
@@ -178,6 +191,13 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		return WalkVersioningResults{}, nil
 	}
 
+	// The walk starts at the deepest directory the prefix names instead of
+	// at the root, so that its cost doesn't grow with the keys outside it.
+	root, rootEntry, ok := prefixWalkRoot(fileSystem, prefix, skipDirs)
+	if !ok {
+		return WalkVersioningResults{}, nil
+	}
+
 	cpmap := cpMap{}
 	var objects []s3response.ObjectVersion
 	var delMarkers []s3response.DeleteMarkerEntry
@@ -241,7 +261,7 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		return nil
 	}
 
-	err := walkDirRoot(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
+	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -306,9 +326,10 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 			// At this point we know strings.HasPrefix(prefix, key) holds
 			// (i.e. path is an ancestor of the prefix directory). Skip it
 			// unless it is the exact prefix directory.
-			// Note: WalkVersions always walks from "." (unlike Walk, which
-			// narrows the root) because versioning marker semantics require
-			// visiting all entries in order, so this guard is needed instead.
+			// Note: the walk starts at the deepest directory the prefix
+			// names, which is still an ancestor of the prefix unless the
+			// prefix ends with a slash, and it starts at "." when that
+			// directory can't be looked up, so this guard is still needed.
 			if prefix != "" && strings.HasPrefix(prefix, key) && key != prefix {
 				return nil
 			}
@@ -358,7 +379,14 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		// These are abstractly a "directory", so need to include the
 		// delimiter at the end.
 		return addCommonPrefix(prefix + before + delimiter)
-	})
+	}
+
+	var err error
+	if rootEntry == nil {
+		err = walkDirRoot(fileSystem, pathDot, walkFn)
+	} else {
+		err = walkDirEntry(fileSystem, root, rootEntry, walkFn)
+	}
 	if err != nil {
 		return WalkVersioningResults{}, err
 	}
@@ -374,6 +402,40 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		result.NextVersionIdMarker = lastVersionId
 	}
 	return result, nil
+}
+
+// prefixWalkRoot returns the directory that a walk of the keys with prefix
+// starts at, and the directory entry of that directory. The keys with the
+// prefix are all in the deepest directory the prefix names, or are that
+// directory when the prefix ends with a slash. A walk of the directory visits
+// them in the order a walk of the whole file system does, and the
+// directories outside it hold no key with the prefix. The directory entry is
+// nil when the walk starts at the root. ok is false when no key has the
+// prefix, as the directory is skipped or isn't there.
+func prefixWalkRoot(fsys fs.FS, prefix string, skipDirs SkipDirs) (root string, d fs.DirEntry, ok bool) {
+	i := strings.LastIndex(prefix, pathSeparator)
+	if i < 0 {
+		return pathDot, nil, true
+	}
+	dir := prefix[:i]
+	// The walked keys are made of directory entry names, so none of them is
+	// in a directory with an empty, "." or ".." path element.
+	if dir == pathDot || !fs.ValidPath(dir) || skipDirs.skipsPath(dir) {
+		return "", nil, false
+	}
+
+	info, err := fs.Stat(fsys, dir)
+	switch {
+	case err == nil && info.IsDir():
+		return dir, fs.FileInfoToDirEntry(info), true
+	case err == nil, isDirGone(err):
+		// A file or nothing is where the directory would be.
+		return "", nil, false
+	default:
+		// The walk from the root lists the keys as before when the
+		// directory can't be looked up, e.g. when a name is too long.
+		return pathDot, nil, true
+	}
 }
 
 func readDir(path string, walkstate *walkState) {
@@ -595,19 +657,6 @@ func shouldSkip(path string, entry fs.DirEntry, walkstate *walkState) bool {
 	return entry.IsDir() && walkstate.skipDirs.skips(entry.Name(), path == pathDot)
 }
 
-// inSkipDir reports whether dir, a directory named by the listing prefix, is
-// a skipped directory or inside one.
-func inSkipDir(dir string, walkstate *walkState) bool {
-	i := 0
-	for name := range strings.SplitSeq(dir, pathSeparator) {
-		if walkstate.skipDirs.skips(name, i == 0) {
-			return true
-		}
-		i++
-	}
-	return false
-}
-
 func addContentEntry(objectName string, dirEntry fs.DirEntry, walkstate *walkState) bool {
 	obj, err := walkstate.getObj(objectName, dirEntry)
 	if err == ErrSkipObj {
@@ -669,7 +718,7 @@ func quickWalk(walkstate *walkState) error {
 	if useRootEntries {
 		// keep fast-path semantics but still honor skipDirs for the prefixed
 		// root and every directory above it
-		if !inSkipDir(rootDir, walkstate) {
+		if !walkstate.skipDirs.skipsPath(rootDir) {
 			// Mirror processDir: offer the root directory itself to getObj whenever
 			// its key sorts after the marker, using checkAndMaybeAddCommonPrefix to
 			// handle the delimiter case. This replaces the previous guards that

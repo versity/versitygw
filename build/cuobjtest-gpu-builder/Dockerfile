@@ -7,14 +7,17 @@ ARG CUDA_TAG
 ARG CUOBJCLIENT_PKG_SUFFIX=
 
 # Install build prerequisites and cuObject client development packages.
-RUN set -eux; \
+# NVIDIA's CDN can serve repository metadata naming files that it doesn't
+# serve yet, for minutes at a time, so its retries wait longer.
+RUN --mount=type=bind,source=tests/retry.sh,target=/usr/local/bin/retry \
+    set -eux; \
     cuda_version="${CUDA_TAG%%-*}"; \
     cuda_suffix="$(printf '%s' "$cuda_version" | awk -F. '{print $1"-"$2}')"; \
     pkg_suffix="${CUOBJCLIENT_PKG_SUFFIX:-$cuda_suffix}"; \
-    dnf -y install 'dnf-command(config-manager)'; \
-    dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo; \
-    dnf -y makecache; \
-    dnf -y install \
+    retry -d 30 dnf -y install 'dnf-command(config-manager)'; \
+    retry dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo; \
+    retry -d 30 dnf -y makecache; \
+    retry -d 30 dnf -y install \
       libcuobjclient-${pkg_suffix} \
       libcuobjclient-devel-${pkg_suffix} \
       rdma-core-devel \
@@ -37,4 +40,4 @@ ENV CUOBJ_CUDA_INC_DIR=/usr/local/cuda/include
 ENV CUOBJCLIENT_CGO_LDFLAGS="-L/usr/local/cuda/targets/x86_64-linux/lib -Wl,-rpath,/usr/local/cuda/targets/x86_64-linux/lib -Wl,-rpath-link,/usr/local/cuda/targets/x86_64-linux/lib"
 
 # Default command builds GPU-mode cuobjtest in a mounted workspace checkout.
-CMD ["bash", "-lc", "make cuobjtest-gpu CUOBJ_LIB_DIR=$CUOBJ_LIB_DIR CUOBJ_CLIENT_INC_DIR=$CUOBJ_CLIENT_INC_DIR CUOBJ_CUDA_INC_DIR=$CUOBJ_CUDA_INC_DIR CUOBJCLIENT_CGO_LDFLAGS=\"$CUOBJCLIENT_CGO_LDFLAGS\""]
+CMD ["bash", "-lc", "tests/retry.sh go mod download && make cuobjtest-gpu CUOBJ_LIB_DIR=$CUOBJ_LIB_DIR CUOBJ_CLIENT_INC_DIR=$CUOBJ_CLIENT_INC_DIR CUOBJ_CUDA_INC_DIR=$CUOBJ_CUDA_INC_DIR CUOBJCLIENT_CGO_LDFLAGS=\"$CUOBJCLIENT_CGO_LDFLAGS\""]

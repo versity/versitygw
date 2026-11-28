@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/s3err"
@@ -52,6 +53,12 @@ type Manager interface {
 	// captured bucket explicitly instead.
 	SendWithBucket(ctx fiber.Ctx, err error, action string, count int64, status int, bucket string)
 	Close()
+}
+
+// BandwidthWaitReporter optionally reports time connections spent delayed by
+// the S3 bandwidth limit in direction ("ingress" or "egress").
+type BandwidthWaitReporter interface {
+	SendBandwidthWait(direction string, wait time.Duration)
 }
 
 // manager is a manager of metrics plugins
@@ -224,6 +231,10 @@ func (m *manager) send(ctx fiber.Ctx, err error, action string, count int64, sta
 	case ActionDeleteObjects:
 		m.add("object_removed_count", count, reqTags...)
 	}
+}
+
+func (m *manager) SendBandwidthWait(direction string, wait time.Duration) {
+	m.add("bandwidth_wait_us", wait.Microseconds(), Tag{Key: "direction", Value: direction})
 }
 
 // increment increments the key by one

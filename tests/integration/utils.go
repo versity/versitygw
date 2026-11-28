@@ -39,9 +39,11 @@ import (
 	"math/big"
 	"math/bits"
 	rnd "math/rand"
+	"mime"
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os/exec"
 	"slices"
@@ -609,6 +611,8 @@ type APIErrorResponse struct {
 	ProposedSize                int64                      `xml:"ProposedSize,omitempty"`
 	MaxSizeAllowed              int64                      `xml:"MaxSizeAllowed,omitempty"`
 	MinSizeAllowed              int64                      `xml:"MinSizeAllowed,omitempty"`
+	MaxPostPreDataLengthBytes   int64                      `xml:"MaxPostPreDataLengthBytes,omitempty"`
+	MaxMessageLengthBytes       int64                      `xml:"MaxMessageLengthBytes,omitempty"`
 	ServerTime                  string                     `xml:"ServerTime,omitempty"`
 	XAmzExpires                 int                        `xml:"X-Amz-Expires,omitempty"`
 	Expires                     string                     `xml:"Expires,omitempty"`
@@ -1063,6 +1067,10 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 			compareErrField("Size", err.Size, received.Size),
 			compareErrField("MaxSizeAllowed", err.MaxSizeAllowed, received.MaxSizeAllowed),
 		)
+	case s3err.MaxPostPreDataLengthExceededError:
+		return compareErrField("MaxPostPreDataLengthBytes", err.MaxPostPreDataLengthBytes, received.MaxPostPreDataLengthBytes)
+	case s3err.MaxMessageLengthExceeded:
+		return compareErrField("MaxMessageLengthBytes", err.MaxMessageLengthBytes, received.MaxMessageLengthBytes)
 	case s3err.MetadataTooLargeError:
 		return compareS3ApiErrFields(
 			compareErrField("Size", int64(err.Size), received.Size),
@@ -1082,6 +1090,8 @@ func compareS3ApiErr(expected s3err.S3Error, received *APIErrorResponse) error {
 	case s3err.HeadersNotSignedError:
 		return compareErrField("HeadersNotSigned", err.HeadersNotSigned, received.HeadersNotSigned)
 	case s3err.NoSuchUploadError:
+		return compareErrField("UploadId", err.UploadId, received.UploadId)
+	case s3err.InvalidPartOrderError:
 		return compareErrField("UploadId", err.UploadId, received.UploadId)
 	case s3err.NoSuchVersionError:
 		return compareS3ApiErrFields(
@@ -1195,6 +1205,55 @@ func checkNotModifiedValidators(err error, etag string, lastModified time.Time) 
 	if ct := respErr.Response.Header.Get("Content-Type"); ct != "" {
 		return fmt.Errorf("expected no Content-Type header, instead got %q", ct)
 	}
+	return nil
+}
+
+// checkDeleteMarkerResponse checks that err is the GET or HEAD error S3
+// sends for a delete marker. A request without a versionId for a key whose
+// current version is a delete marker gets a 404 with x-amz-delete-marker and
+// the marker's x-amz-version-id, but no Last-Modified. A request whose
+// versionId names a delete marker (isVersion) gets a 405 that also carries
+// the marker's Last-Modified and "Allow: DELETE".
+func checkDeleteMarkerResponse(err error, versionId string, isVersion bool) error {
+	var respErr *awshttp.ResponseError
+	if !errors.As(err, &respErr) {
+		return fmt.Errorf("expected an HTTP response error, instead got %w", err)
+	}
+
+	wantStatus := http.StatusNotFound
+	if isVersion {
+		wantStatus = http.StatusMethodNotAllowed
+	}
+	if status := respErr.HTTPStatusCode(); status != wantStatus {
+		return fmt.Errorf("expected the response status code to be %v, instead got %v", wantStatus, status)
+	}
+
+	header := respErr.Response.Header
+	if dm := header.Get("x-amz-delete-marker"); dm != "true" {
+		return fmt.Errorf("expected the x-amz-delete-marker header to be true, instead got %q", dm)
+	}
+	if vId := header.Get("x-amz-version-id"); vId != versionId {
+		return fmt.Errorf("expected the x-amz-version-id header to be %q, instead got %q", versionId, vId)
+	}
+
+	lastModified, allow := header.Get("Last-Modified"), header.Get("Allow")
+	if !isVersion {
+		if lastModified != "" {
+			return fmt.Errorf("expected no Last-Modified header, instead got %q", lastModified)
+		}
+		if allow != "" {
+			return fmt.Errorf("expected no Allow header, instead got %q", allow)
+		}
+		return nil
+	}
+
+	if _, err := http.ParseTime(lastModified); err != nil {
+		return fmt.Errorf("expected a Last-Modified header, instead got %q", lastModified)
+	}
+	if allow != http.MethodDelete {
+		return fmt.Errorf("expected the Allow header to be %q, instead got %q", http.MethodDelete, allow)
+	}
+
 	return nil
 }
 
@@ -1431,7 +1490,8 @@ type trustPolicyGrammarCase struct {
 
 // trustPolicyGrammarCases covers the role trust-policy grammar
 var trustPolicyGrammarCases = []trustPolicyGrammarCase{
-	{"valid AWS principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::123456789012:root"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"valid AWS principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::000000000000:root"},"Action":"sts:AssumeRole"}]}`, nil},
+	{"every action a trust policy may name", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","sts:AssumeRoleWithSAML","sts:AssumeRoleWithWebIdentity","sts:TagSession","sts:SetSourceIdentity","sts:SetContext"]}]}`, nil},
 	{"valid without version", `{"Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, nil},
 	{"valid Service principal", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"s3.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, nil},
 	{"valid multiple principal type keys together", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*","Service":"sts.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, nil},
@@ -1468,6 +1528,11 @@ var trustPolicyGrammarCases = []trustPolicyGrammarCase{
 	{"non-sts vendor action rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"s3:GetObject"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
 	{"non-sts notaction rejected even on deny", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Principal":{"AWS":"*"},"NotAction":"s3:GetObject"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
 	{"one non-sts action in an otherwise-valid array rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","s3:GetObject"]}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"sts wildcard action rejected (looks valid, trust actions are a fixed list)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"sts partial wildcard action rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"sts action in another case rejected (trust actions match case-sensitively)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:assumerole"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"sts action that assumes nothing rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:GetCallerIdentity"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
+	{"disallowed sts notaction rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Principal":{"AWS":"*"},"NotAction":"sts:*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy may only specify STS AssumeRole actions.")},
 
 	{"resource forbidden", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","Resource":"*"}]}`, iamerr.MalformedPolicyDocument("Has prohibited field Resource")},
 	{"notresource forbidden", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","NotResource":"*"}]}`, iamerr.MalformedPolicyDocument("AssumeRole policy must not contain resources.")},
@@ -1475,6 +1540,96 @@ var trustPolicyGrammarCases = []trustPolicyGrammarCase{
 	{"duplicate sid across statements", `{"Version":"2012-10-17","Statement":[{"Sid":"Dup","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"},{"Sid":"Dup","Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("The Statement Ids in the policy are not unique")},
 
 	{"cognito federated without condition (looks valid, Cognito needs a Condition)", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"cognito-identity.amazonaws.com"},"Action":"sts:AssumeRole"}]}`, iamerr.MalformedPolicyDocument("A condition block must be present for the Cognito provider")},
+}
+
+// runTrustPolicyAWSPrincipalCases runs check over the values a trust policy's
+// Principal.AWS may and may not take. Only a value that resolves to
+// something is accepted: every principal, the account, or an IAM user, role
+// or role session that exists. A user and a role in a path of its own are
+// created for the cases to name, and removed afterwards.
+func runTrustPolicyAWSPrincipalCases(client *iam.Client, check func(doc string, wantErr iamerr.APIError) error) (err error) {
+	userName := newIAMUserName()
+	userOut, err := createIAMUser(client, &iam.CreateUserInput{UserName: aws.String(userName)})
+	if err != nil {
+		return fmt.Errorf("create user: %w", err)
+	}
+	defer func() {
+		if deleteErr := deleteIAMUser(client, userName); deleteErr != nil {
+			err = errors.Join(err, fmt.Errorf("cleanup: %w", deleteErr))
+		}
+	}()
+	userArn := aws.ToString(userOut.User.Arn)
+
+	roleName := newIAMRoleName()
+	roleOut, err := createIAMRole(client, &iam.CreateRoleInput{
+		RoleName:                 aws.String(roleName),
+		Path:                     aws.String("/team/"),
+		AssumeRolePolicyDocument: aws.String(validTrustPolicyDocument),
+	})
+	if err != nil {
+		return fmt.Errorf("create role: %w", err)
+	}
+	defer func() {
+		if deleteErr := deleteIAMRole(client, roleName); deleteErr != nil {
+			err = errors.Join(err, fmt.Errorf("cleanup: %w", deleteErr))
+		}
+	}()
+	roleArn := aws.ToString(roleOut.Role.Arn)
+
+	accepted := []struct {
+		name      string
+		principal any
+	}{
+		{"every principal", "*"},
+		{"account root arn", accountArn()},
+		{"bare account id", testAccountID},
+		{"existing user", userArn},
+		{"existing role with its path", roleArn},
+		{"session of an existing role", assumedRoleArnFor(roleName, "any-session")},
+		{"several that all resolve", []string{accountArn(), userArn, roleArn}},
+	}
+	for _, tc := range accepted {
+		if err := check(trustAllowingAWS(tc.principal), nil); err != nil {
+			return fmt.Errorf("%s: %w", tc.name, err)
+		}
+	}
+
+	rejected := []struct {
+		name      string
+		principal string
+	}{
+		{"user that does not exist", userArnFor("does-not-exist")},
+		{"role that does not exist", roleArnFor("does-not-exist")},
+		{"role without its path (looks valid, a role's arn carries its path)", roleArnFor(roleName)},
+		{"session of a role that does not exist", assumedRoleArnFor("does-not-exist", "any-session")},
+		{"session name with a wildcard", assumedRoleArnFor(roleName, "*")},
+		{"wildcard inside an arn", userArnFor("*")},
+		{"another account's root", "arn:aws:iam::123456789012:root"},
+		{"another account's id", "123456789012"},
+		{"group arn", "arn:aws:iam::" + testAccountID + ":group/admins"},
+		{"not an arn", "foo"},
+		{"empty", ""},
+	}
+	for _, tc := range rejected {
+		if err := check(trustAllowingAWS(tc.principal), iamerr.InvalidPrincipalInPolicy("AWS", tc.principal)); err != nil {
+			return fmt.Errorf("%s: %w", tc.name, err)
+		}
+	}
+
+	// One unresolvable principal among resolvable ones, and one in a Deny
+	// statement, are rejected just the same.
+	missing := userArnFor("does-not-exist")
+	if err := check(trustAllowingAWS([]string{userArn, missing}), iamerr.InvalidPrincipalInPolicy("AWS", missing)); err != nil {
+		return fmt.Errorf("one of several that does not resolve: %w", err)
+	}
+	denyMissing := trustDoc(
+		trustStatement{Effect: "Allow", Principal: map[string]any{"AWS": "*"}, Action: actSTSAssumeRole},
+		trustStatement{Effect: "Deny", Principal: map[string]any{"AWS": missing}, Action: actSTSAssumeRole},
+	)
+	if err := check(denyMissing, iamerr.InvalidPrincipalInPolicy("AWS", missing)); err != nil {
+		return fmt.Errorf("unresolvable principal in a deny statement: %w", err)
+	}
+	return nil
 }
 
 func putObjects(client *s3.Client, objs []string, bucket string) ([]types.Object, error) {
@@ -1543,6 +1698,43 @@ func withRequestHeader(key, value string) func(*s3.Options) {
 					}),
 				"Signing",
 				middleware.Before,
+			)
+		})
+	}
+}
+
+// withRawResponse keeps a copy of the http response an SDK request gets back,
+// for checking the error fields the SDK's error types don't expose. The
+// request still goes through the client, so it is sent to the configured
+// endpoint in the configured addressing style.
+func withRawResponse(dst **http.Response) func(*s3.Options) {
+	return func(o *s3.Options) {
+		o.APIOptions = append(o.APIOptions, func(stack *middleware.Stack) error {
+			// added after the operation's own middlewares, it runs right above
+			// the transport and reads the body before the SDK's deserializers
+			// consume it
+			return stack.Deserialize.Add(
+				middleware.DeserializeMiddlewareFunc("CaptureRawResponse",
+					func(ctx context.Context, in middleware.DeserializeInput, next middleware.DeserializeHandler) (
+						out middleware.DeserializeOutput, md middleware.Metadata, err error,
+					) {
+						out, md, err = next.HandleDeserialize(ctx, in)
+						resp, ok := out.RawResponse.(*smithyhttp.Response)
+						if !ok {
+							return out, md, err
+						}
+						body, readErr := io.ReadAll(resp.Body)
+						resp.Body.Close()
+						if readErr != nil {
+							return out, md, errors.Join(err, readErr)
+						}
+						resp.Body = io.NopCloser(bytes.NewReader(body))
+						raw := *resp.Response
+						raw.Body = io.NopCloser(bytes.NewReader(body))
+						*dst = &raw
+						return out, md, err
+					}),
+				middleware.After,
 			)
 		})
 	}
@@ -4527,11 +4719,22 @@ func getSigningKey(secret, yearMonthDay, region string) []byte {
 }
 
 // buildPostObjectBody builds a multipart/form-data body for a POST object request.
-// Fields are written first (in the order provided)
+// Fields are written first, except those named in fieldsAfterFile, which
+// follow the file part in that order. A nil fileHeader sends the file as
+// upload.bin.
 // Returns (body bytes, boundary string, error).
-func buildPostObjectBody(fields, extraFields map[string]string, fileContent []byte) ([]byte, string, error) {
+func buildPostObjectBody(fields, extraFields map[string]string, fileContent []byte, fileHeader textproto.MIMEHeader, fieldsAfterFile []string) ([]byte, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
+
+	afterFile := map[string]string{}
+	writeField := func(key, value string) error {
+		if slices.Contains(fieldsAfterFile, key) {
+			afterFile[key] = value
+			return nil
+		}
+		return w.WriteField(key, value)
+	}
 
 	for key, value := range fields {
 		v, ok := extraFields[key]
@@ -4542,23 +4745,37 @@ func buildPostObjectBody(fields, extraFields map[string]string, fileContent []by
 			}
 			value = v
 		}
-		if err := w.WriteField(key, value); err != nil {
+		if err := writeField(key, value); err != nil {
 			return nil, "", err
 		}
 	}
 
 	for key, value := range extraFields {
-		if err := w.WriteField(key, value); err != nil {
+		if err := writeField(key, value); err != nil {
 			return nil, "", err
 		}
 	}
 
-	fw, err := w.CreateFormFile("file", "upload.bin")
+	var fw io.Writer
+	var err error
+	if fileHeader == nil {
+		fw, err = w.CreateFormFile("file", "upload.bin")
+	} else {
+		fw, err = w.CreatePart(fileHeader)
+	}
 	if err != nil {
 		return nil, "", err
 	}
 	if _, err = fw.Write(fileContent); err != nil {
 		return nil, "", err
+	}
+
+	for _, key := range fieldsAfterFile {
+		if value, ok := afterFile[key]; ok {
+			if err := w.WriteField(key, value); err != nil {
+				return nil, "", err
+			}
+		}
 	}
 
 	if err := w.Close(); err != nil {
@@ -4633,6 +4850,8 @@ type PostRequestConfig struct {
 	secret               string
 	region               string
 	extraFields          map[string]string
+	fieldsAfterFile      []string
+	fileHeader           textproto.MIMEHeader
 	fileContent          []byte
 	rawPolicy            *string
 	date                 time.Time
@@ -4716,7 +4935,7 @@ func newPostObjectRequest(input PostRequestConfig) (*http.Request, map[string]st
 	fields["policy"] = policy
 	fields["x-amz-signature"] = signPostPolicy(policy, input.date.Format("20060102"), input.region, input.secret)
 
-	body, boundary, err := buildPostObjectBody(fields, input.extraFields, input.fileContent)
+	body, boundary, err := buildPostObjectBody(fields, input.extraFields, input.fileContent, input.fileHeader, input.fieldsAfterFile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -4741,6 +4960,65 @@ func newPostObjectRequest(input PostRequestConfig) (*http.Request, map[string]st
 	req.ContentLength = int64(len(body))
 
 	return req, fields, nil
+}
+
+// newPostObjectRequestClosing returns the request for input with a body that
+// ends with closing(boundary), in place of the final boundary and its CRLF. It
+// also returns the body in two parts, to send with a pause between them. The
+// first part ends within the bytes that the gateway reads ahead of the file: as
+// many bytes after the start of the content of the file as the boundary has.
+// The second holds the rest of the form.
+func newPostObjectRequestClosing(input PostRequestConfig, closing func(boundary string) string) (*http.Request, [2][]byte, error) {
+	var parts [2][]byte
+
+	req, _, err := newPostObjectRequest(input)
+	if err != nil {
+		return nil, parts, err
+	}
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, parts, err
+	}
+
+	_, params, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
+	if err != nil {
+		return nil, parts, err
+	}
+	boundary := params["boundary"]
+
+	body, ok := bytes.CutSuffix(body, []byte("\r\n--"+boundary+"--\r\n"))
+	if !ok {
+		return nil, parts, fmt.Errorf("the form does not end with its final boundary")
+	}
+	split := len(body) - len(input.fileContent) + len("\r\n--"+boundary)
+	body = append(body, closing(boundary)...)
+
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+
+	return req, [2][]byte{body[:split], body[split:]}, nil
+}
+
+// sendInParts sends req with its body in two writes and a pause between them,
+// as a client does that is slow to send the end of the form. The gateway reads
+// the first 8 KiB of a body before it handles the request, so the first part
+// must be longer than that for the gateway to handle the request before it has
+// the second.
+func sendInParts(s *S3Conf, req *http.Request, parts [2][]byte) (*http.Response, error) {
+	pr, pw := io.Pipe()
+	req.Body = pr
+
+	go func() {
+		_, err := pw.Write(parts[0])
+		if err == nil {
+			time.Sleep(time.Second)
+			_, err = pw.Write(parts[1])
+		}
+		pw.CloseWithError(err)
+	}()
+
+	return s.httpClient.Do(req)
 }
 
 func getEtagBytes(etag string) ([]byte, error) {
@@ -5074,4 +5352,200 @@ func putGetDeleteRace(s3client *s3.Client, bucket string, keyFn func(worker, ite
 		}
 		return nil
 	})
+}
+
+// requestBodyLimit is the limit S3 sets the body of an action that takes it
+// whole, with the request that reaches the action.
+type requestBodyLimit struct {
+	method string
+	// object addresses the request to an object rather than the bucket
+	object bool
+	query  string
+	// headers route the request to the action
+	headers map[string]string
+	// limit is the largest body accepted, in bytes
+	limit int
+	// err is the error a larger body is refused with, MaxMessageLengthExceeded
+	// when nil
+	err s3err.S3Error
+}
+
+func (l requestBodyLimit) path(bucket string) string {
+	path := bucket
+	if l.object {
+		path += "/my-obj"
+	}
+	if l.query != "" {
+		path += "?" + l.query
+	}
+
+	return path
+}
+
+func (l requestBodyLimit) tooLarge() s3err.S3Error {
+	if l.err != nil {
+		return l.err
+	}
+
+	return s3err.GetMaxMessageLengthExceeded(int64(l.limit))
+}
+
+// checkRequestBodyLimit checks that the action takes a body of exactly its
+// limit, and refuses one byte more. The size check comes before anything the
+// action does with the body, so neither the object nor the upload the requests
+// name has to exist.
+func checkRequestBodyLimit(s *S3Conf, bucket string, l requestBodyLimit) error {
+	// a blank document of the limit passes the size check, to be refused by
+	// the action for what it is
+	resp, err := sendBodyLimitRequest(s, l, bucket, bytes.Repeat([]byte(" "), l.limit), false)
+	if err != nil {
+		return err
+	}
+	if err := checkNotHTTPResponseApiErr(resp, l.tooLarge()); err != nil {
+		return fmt.Errorf("a body of the limit: %w", err)
+	}
+
+	return checkRequestBodyRefused(s, bucket, l)
+}
+
+// checkRequestBodyRefused checks that the action refuses a body one byte past
+// its limit, sent with a Content-Length, chunked, and as the head of a body
+// its Content-Length declares far larger.
+func checkRequestBodyRefused(s *S3Conf, bucket string, l requestBodyLimit) error {
+	body := bytes.Repeat([]byte(" "), l.limit+1)
+	for _, chunked := range []bool{false, true} {
+		resp, err := sendBodyLimitRequest(s, l, bucket, body, chunked)
+		if err != nil {
+			return err
+		}
+		if err := checkHTTPResponseApiErr(resp, l.tooLarge()); err != nil {
+			return fmt.Errorf("a body past the limit (chunked: %v): %w", chunked, err)
+		}
+	}
+
+	req, err := createSignedReq(l.method, s.endpoint, l.path(bucket), s.awsID, s.awsSecret,
+		"s3", s.awsRegion, "UNSIGNED-PAYLOAD", nil, time.Now(), l.headers)
+	if err != nil {
+		return err
+	}
+	// the gateway reads up to 8 KiB of a body ahead of the handlers, whatever
+	// its limit, and waits for it
+	resp, err := sendPartialBody(s, req, 1<<30, bytes.Repeat([]byte(" "), max(l.limit+1, 8<<10)))
+	if err != nil {
+		return err
+	}
+	if err := checkHTTPResponseApiErr(resp, l.tooLarge()); err != nil {
+		return fmt.Errorf("a body declared past the limit: %w", err)
+	}
+
+	return nil
+}
+
+// sendBodyLimitRequest sends the action a signed request carrying body. A
+// chunked body is sent with UNSIGNED-PAYLOAD, as a client that does not know
+// the length of its body up front does not know its hash either.
+func sendBodyLimitRequest(s *S3Conf, l requestBodyLimit, bucket string, body []byte, chunked bool) (*http.Response, error) {
+	payloadHash := ""
+	signedBody := body
+	if chunked {
+		payloadHash = "UNSIGNED-PAYLOAD"
+		signedBody = nil
+	}
+	req, err := createSignedReq(l.method, s.endpoint, l.path(bucket), s.awsID, s.awsSecret,
+		"s3", s.awsRegion, payloadHash, signedBody, time.Now(), l.headers)
+	if err != nil {
+		return nil, err
+	}
+	if chunked {
+		// an unknown length makes net/http frame the body as chunked
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		req.ContentLength = -1
+		req.GetBody = nil
+	}
+
+	return s.httpClient.Do(req)
+}
+
+// sendPartialBody sends req declaring a body of declared bytes, but carries
+// only body, then shuts down the write side of the connection and reads the
+// response.
+func sendPartialBody(s *S3Conf, req *http.Request, declared int64, body []byte) (*http.Response, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+
+	addr := req.URL.Host
+	if req.URL.Port() == "" {
+		port := "80"
+		if req.URL.Scheme == "https" {
+			port = "443"
+		}
+		addr = net.JoinHostPort(req.URL.Hostname(), port)
+	}
+
+	var conn net.Conn
+	var err error
+	if req.URL.Scheme == "https" {
+		dialer := &tls.Dialer{Config: &tls.Config{InsecureSkipVerify: s.tlsStatus}}
+		conn, err = dialer.DialContext(ctx, "tcp", addr)
+	} else {
+		conn, err = (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("connect to %v: %w", addr, err)
+	}
+	defer conn.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		conn.SetDeadline(deadline)
+	}
+
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = declared
+	// Request.Write sends the headers and the body, then fails because the
+	// body is shorter than ContentLength. That failure is the point, so only
+	// a failed flush counts.
+	bw := bufio.NewWriter(conn)
+	_ = req.Write(bw)
+	if err := bw.Flush(); err != nil {
+		return nil, fmt.Errorf("send the request: %w", err)
+	}
+
+	// Both *net.TCPConn and *tls.Conn can shut down just their write side.
+	if err := conn.(interface{ CloseWrite() error }).CloseWrite(); err != nil {
+		return nil, fmt.Errorf("close the write side: %w", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
+	if err != nil {
+		return nil, fmt.Errorf("read the response: %w", err)
+	}
+	// the body is read off the connection before it's closed
+	respBody, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read the response body: %w", err)
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+
+	return resp, nil
+}
+
+// checkNotHTTPResponseApiErr fails if resp is the error unexpected.
+func checkNotHTTPResponseApiErr(resp *http.Response, unexpected s3err.S3Error) error {
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return err
+	}
+
+	var errResp APIErrorResponse
+	if xml.Unmarshal(body, &errResp) != nil {
+		// not an error response at all
+		return nil
+	}
+	apiErr := unexpected.BaseError()
+	if errResp.Code == apiErr.Code && errResp.Message == apiErr.Description {
+		return fmt.Errorf("unexpected %v error: %s", apiErr.Code, body)
+	}
+
+	return nil
 }

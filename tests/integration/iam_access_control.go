@@ -20,18 +20,19 @@ package integration
 // not test policy-document validation, malformed input, or other API
 // surface already covered by iam_put_user_policy.go/iam_create_role.go/etc.
 //
-// Session/session-policy scope: AssumeRoleWithWebIdentity is the only action
-// that mints a session in this codebase, and a real successful call requires
-// the server to fetch a real JWKS from the token's issuer and verify a real
-// cryptographic signature. The SSRF guard in iamutil's OIDC fetch path
+// Trust-policy scope: the trust-policy tests here are the ones for web
+// identity federation, where a real successful call requires the server to
+// fetch a real JWKS from the token's issuer and verify a real cryptographic
+// signature. The SSRF guard in iamutil's OIDC fetch path
 // (isDisallowedFetchTarget) rejects loopback, private (RFC1918), and
 // link-local addresses as fetch targets unless the gateway under test was
 // started with --oidc-allow-private-endpoints, which this suite's gateway
 // never is — so no JWKS server this test process stands up on the same
 // machine can ever be reachable, and a real successful
-// AssumeRoleWithWebIdentity is unreachable from this suite by design. Every test below that needs to observe a trust-policy
-// "Allowed" decision instead uses the same technique the rest of this
-// package's AssumeRoleWithWebIdentity tests already use (see
+// AssumeRoleWithWebIdentity is unreachable from this suite by design. Every
+// test below that needs to observe a trust-policy "Allowed" decision instead
+// uses the same technique the rest of this package's
+// AssumeRoleWithWebIdentity tests already use (see
 // IAMAssumeRoleWithWebIdentity_oaud_condition_matches in
 // iam_assume_role_with_web_identity.go): point the provider at a loopback
 // URL and observe that evaluation reaches the network-dependent signature
@@ -39,10 +40,12 @@ package integration
 // rejected earlier by trust evaluation itself (AccessDenied or the
 // claims-stage InvalidIdentityToken). Reaching that step is only possible
 // once Principal, Condition, and audience matching have all already
-// succeeded, so it's a reliable, deterministic proxy for "Allowed" — but it
-// means this suite cannot exercise anything that requires an actual minted
-// session (session-policy intersection, a live session calling further IAM
-// actions).
+// succeeded, so it's a reliable, deterministic proxy for "Allowed".
+//
+// AssumeRole needs no identity provider, so its trust-policy decisions, and
+// everything that takes an actual minted session (session-policy
+// intersection, a live session calling further actions), are tested for real
+// in iam_assume_role.go.
 
 import (
 	"context"
@@ -1690,18 +1693,16 @@ func IAMAccessControl_ConditionMultipleOperatorBlocksANDedTrust(s *S3Conf) error
 // Principal-related authorization decisions are tested exclusively through
 // role trust policies: an identity-based inline policy can never carry a
 // Principal at all (PutUserPolicy/PutRolePolicy reject one outright), so
-// there is nothing to test on that side. Within trust policies, only
-// Principal.Federated is ever consulted at runtime — this gateway
-// implements just sts:AssumeRoleWithWebIdentity, never a plain sts:AssumeRole
-// or AssumeRoleWithSAML, so an "AWS" (IAM user/role/root/account) or
-// "Service" principal, while accepted by write-time validation, has no
-// runtime authorization meaning at all. IAMAccessControl_
-// TrustPolicyNonFederatedPrincipalsIgnored demonstrates this divergence from
-// real AWS directly. NotPrincipal is likewise grammar-recognized but
-// unconditionally rejected at write time on both identity and trust
-// policies (Allow and Deny alike), so no valid stored policy can ever carry
-// one — there is no authorization decision to test, only a validation
-// rejection, which is out of this suite's scope by design.
+// there is nothing to test on that side. Within trust policies,
+// AssumeRoleWithWebIdentity consults only Principal.Federated: an "AWS"
+// (IAM user/role/root/account) principal names who may call AssumeRole, which
+// iam_assume_role.go covers, and means nothing to a web identity token, as
+// IAMAccessControl_TrustPolicyNonFederatedPrincipalsIgnored demonstrates.
+// NotPrincipal is grammar-recognized but unconditionally rejected at write
+// time on both identity and trust policies (Allow and Deny alike), so no
+// valid stored policy can ever carry one — there is no authorization
+// decision to test, only a validation rejection, which is out of this
+// suite's scope by design.
 
 // IAMAccessControl_TrustPolicyFederatedExactMatchAllowed verifies a trust
 // policy naming the exact registered OIDC provider ARN as its Federated
@@ -1780,16 +1781,13 @@ func IAMAccessControl_TrustPolicyFederatedArrayMatchesAny(s *S3Conf) error {
 	})
 }
 
-// IAMAccessControl_TrustPolicyNonFederatedPrincipalsIgnored documents a
-// meaningful divergence from real AWS IAM: this gateway's only
-// AssumeRole-family action is AssumeRoleWithWebIdentity, so
-// EvaluateWebIdentityTrust only ever inspects a statement's
-// Principal.Federated value — an "AWS" principal (even a wildcard "*", or a
-// literal account root ARN, both of which would grant real AWS's plain
-// sts:AssumeRole) or a "Service" principal is accepted by write-time
-// validation but has no runtime effect: a role trusting *only* one of these
-// can never actually be assumed by anyone, denied exactly as if the trust
-// policy had no usable principal at all.
+// IAMAccessControl_TrustPolicyNonFederatedPrincipalsIgnored verifies
+// AssumeRoleWithWebIdentity only ever inspects a statement's
+// Principal.Federated value. An "AWS" principal (even a wildcard "*", or the
+// account root ARN) names IAM callers, and a "Service" principal names a
+// service: a role trusting only one of these cannot be assumed with a web
+// identity token, whatever action the statement lists, and is denied exactly
+// as if the trust policy had no usable principal at all.
 func IAMAccessControl_TrustPolicyNonFederatedPrincipalsIgnored(s *S3Conf) error {
 	testName := "IAMAccessControl_TrustPolicyNonFederatedPrincipalsIgnored"
 	return iamActionHandler(s, testName, func(root *iam.Client) error {
@@ -2362,19 +2360,18 @@ func IAMAccessControl_CrossIdentity_UnrelatedRoleCannotBeAssumedViaWrongIssuer(s
 }
 
 // IAMAccessControl_CrossIdentity_AssumeRoleWithWebIdentityHasNoCallerIdentityCheck
-// documents a meaningful divergence from real AWS's plain sts:AssumeRole:
-// this gateway's only assume-role action is unauthenticated (see
-// stsOpenRoute in iamapi/router.go — VerifyIAMAuth never runs for it), so
-// there is no calling IAM identity and thus no identity-based-policy check
-// on the assumption call itself, only the target role's trust policy. This
-// is demonstrated by showing an identical trust/token pair produces an
-// identical result (the same network-dependent failure this suite uses
-// throughout as its proxy for reaching a genuine Allowed decision — see the
-// file doc comment) whether the request is signed with the real root
-// credential or with a completely arbitrary, nonexistent access key: if
-// caller identity mattered here, at least one of these would fail
-// differently (e.g. an unknown-access-key error) instead of both reaching
-// the identical outcome.
+// verifies what sets AssumeRoleWithWebIdentity apart from AssumeRole: it is
+// unauthenticated (see stsOpenRoute in iamapi/router.go — VerifyIAMAuth
+// never runs for it), so there is no calling IAM identity and thus no
+// identity-based-policy check on the assumption call itself, only the target
+// role's trust policy. This is demonstrated by showing an identical
+// trust/token pair produces an identical result (the same network-dependent
+// failure this suite uses throughout as its proxy for reaching a genuine
+// Allowed decision — see the file doc comment) whether the request is signed
+// with the real root credential or with a completely arbitrary, nonexistent
+// access key: if caller identity mattered here, at least one of these would
+// fail differently (e.g. an unknown-access-key error) instead of both
+// reaching the identical outcome.
 func IAMAccessControl_CrossIdentity_AssumeRoleWithWebIdentityHasNoCallerIdentityCheck(s *S3Conf) error {
 	testName := "IAMAccessControl_CrossIdentity_AssumeRoleWithWebIdentityHasNoCallerIdentityCheck"
 	return iamActionHandler(s, testName, func(root *iam.Client) error {

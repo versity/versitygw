@@ -15,6 +15,7 @@
 package policy
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -64,6 +65,14 @@ func TestParseTrust(t *testing.T) {
 		{"bare wildcard action rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"*"}]}`, errTrustNonSTSAction},
 		{"non-sts vendor action rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"s3:GetObject"}]}`, errTrustNonSTSAction},
 		{"non-sts notaction rejected even on deny", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Principal":{"AWS":"*"},"NotAction":"s3:GetObject"}]}`, errTrustNonSTSAction},
+		{"every action a trust policy may name", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","sts:AssumeRoleWithSAML","sts:AssumeRoleWithWebIdentity","sts:TagSession","sts:SetSourceIdentity","sts:SetContext"]}]}`, nil},
+		{"sts wildcard action rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:*"}]}`, errTrustNonSTSAction},
+		{"sts partial wildcard action rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole*"}]}`, errTrustNonSTSAction},
+		{"sts action in another case rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:assumerole"}]}`, errTrustNonSTSAction},
+		{"sts vendor in another case rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"STS:AssumeRole"}]}`, errTrustNonSTSAction},
+		{"sts action that assumes nothing rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:GetCallerIdentity"}]}`, errTrustNonSTSAction},
+		{"one disallowed sts action in an array rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","sts:GetSessionToken"]}]}`, errTrustNonSTSAction},
+		{"disallowed sts notaction rejected", `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Principal":{"AWS":"*"},"NotAction":"sts:*"}]}`, errTrustNonSTSAction},
 
 		{"resource forbidden", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","Resource":"*"}]}`, errTrustResourceForbidden},
 		{"notresource forbidden", `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole","NotResource":"*"}]}`, errTrustNotResourceForbidden},
@@ -148,5 +157,24 @@ func TestParseTrust(t *testing.T) {
 				t.Fatalf("ParseTrust() = %v, want %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// A document stored before trust actions were restricted to a fixed list
+// must keep evaluating: ValidateTrust, the check a stored document has to
+// pass, still accepts any sts-prefixed action that ParseTrust now refuses.
+func TestValidateTrustAcceptsStoredWildcardAction(t *testing.T) {
+	const stored = `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:*"}]}`
+
+	if err := ParseTrust(stored); !errors.Is(err, errTrustNonSTSAction) {
+		t.Fatalf("ParseTrust = %v, want %v", err, errTrustNonSTSAction)
+	}
+
+	var doc Document
+	if err := json.Unmarshal([]byte(stored), &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if err := doc.ValidateTrust(); err != nil {
+		t.Fatalf("ValidateTrust = %v, want nil", err)
 	}
 }

@@ -20,9 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"slices"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -48,17 +46,19 @@ func VerifyObjectCopyAccess(ctx fiber.Ctx, be backend.Backend, copySource string
 		return nil
 	}
 
-	// Verify source bucket access.
-	// URL-decode the copy source before splitting so that clients which send
-	// the bucket/key separator as "%2F" are handled correctly.
-	// Callers are expected to have already stripped any leading '/'.
-	decodedSrc, err := url.QueryUnescape(copySource)
+	// Verify source bucket access. The copy source is parsed the way the
+	// backend parses it, so the object authorized is the object the backend
+	// reads: a "?versionId=" query is not part of the key.
+	srcBucket, srcObject, srcVersionId, err := backend.ParseCopySource(copySource)
 	if err != nil {
-		return s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEncoding, copySource)
+		return err
 	}
-	srcBucket, srcObject, found := strings.Cut(decodedSrc, "/")
-	if !found {
-		return s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceBucket, copySource)
+
+	// A copy of a specific version, the current one and "null" included,
+	// reads it as s3:GetObjectVersion, which s3:GetObject doesn't grant.
+	srcAction := GetObjectAction
+	if srcVersionId != "" {
+		srcAction = GetObjectVersionAction
 	}
 
 	// Get source bucket ACL
@@ -79,7 +79,7 @@ func VerifyObjectCopyAccess(ctx fiber.Ctx, be backend.Backend, copySource string
 		Acc:           opts.Acc,
 		Bucket:        srcBucket,
 		Object:        srcObject,
-		Actions:       []Action{GetObjectAction},
+		Actions:       []Action{srcAction},
 		Iam:           opts.Iam,
 		DisableACL:    opts.DisableACL,
 	}); err != nil {

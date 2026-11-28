@@ -220,6 +220,48 @@ func UnsignedStreamingPayloadTrailer_incomplete_body(s *S3Conf) error {
 	})
 }
 
+// UnsignedStreamingPayloadTrailer_trailer_line_too_long checks that a trailer
+// line too long to be a checksum header is rejected rather than collected:
+// the gateway once buffered the trailer up to its first '\r', however far
+// away, so a body that never sent one grew its memory without bound. The
+// lines here are longer than both the gateway's limit and AWS's (8 KiB), so
+// each request fails the same way on either, whatever the line holds.
+func UnsignedStreamingPayloadTrailer_trailer_line_too_long(s *S3Conf) error {
+	testName := "UnsignedStreamingPayloadTrailer_trailer_line_too_long"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-object"
+		const prefix = "A\r\ndummy data\r\n0\r\n"
+		const trailer = "x-amz-checksum-crc64nvme:dPVWc2vU1+Q="
+		long := 16 * 1024
+		for i, body := range []string{
+			// a valid trailer, padded past the limit
+			prefix + strings.Repeat(" ", long) + trailer + "\r\n\r\n",
+			// an oversized checksum value
+			prefix + "x-amz-checksum-crc64nvme:" + strings.Repeat("A", long) + "\r\n\r\n",
+			// an oversized line with no header in it
+			prefix + strings.Repeat("A", long) + "\r\n\r\n",
+			// a line that never ends
+			prefix + strings.Repeat("A", long),
+		} {
+			reqHeaders := map[string]string{
+				"x-amz-decoded-content-length": "10",
+				"x-amz-trailer":                "x-amz-checksum-crc64nvme",
+			}
+
+			_, apiErr, err := testUnsignedStreamingPayloadTrailerObjectPut(s, bucket, object, []byte(body), reqHeaders)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			if err := compareS3ApiError(s3err.GetAPIError(s3err.ErrIncompleteBody), apiErr); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func UnsignedStreamingPayloadTrailer_invalid_chunk_size(s *S3Conf) error {
 	testName := "UnsignedStreamingPayloadTrailer_invalid_chunk_size"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

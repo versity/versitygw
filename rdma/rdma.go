@@ -21,7 +21,7 @@ package rdma
 #cgo CFLAGS: -I${SRCDIR}/../include -I${SRCDIR}/../cuwrapper
 // Links against cuObjServer 2.x: the resulting binary records a
 // libcuobjserver.so.2 NEEDED entry and will not run against a 1.x install.
-#cgo LDFLAGS: -L${SRCDIR} -l:libcuobjwrapper.a -L/usr/lib64 -lcuobjserver -lstdc++
+#cgo LDFLAGS: ${SRCDIR}/libcuobjwrapper.a -L/usr/lib64 -lcuobjserver -lstdc++
 #include "cuobjserver_wrapper.h"
 #include <stdlib.h>
 */

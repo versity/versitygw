@@ -52,8 +52,15 @@ type fakeVault struct {
 	// fail, when set, may answer a request with an error status instead of
 	// serving it; it returns 0 to let the request through.
 	fail func(method, path string) int
+	// failAfterCommit, when set, may answer a write it has already committed
+	// with an error status, as a Vault whose reply is lost after the write
+	// lands would; it returns 0 to reply as usual.
+	failAfterCommit func(method, path string) int
 }
 
+// fakeSecret is one KV v2 path. Version 0 is a path that has metadata, as
+// written by a metadata write, but no data version yet: like Vault, it is
+// listed but reads as not found.
 type fakeSecret struct {
 	version int
 	data    map[string]any
@@ -123,7 +130,7 @@ func (fv *fakeVault) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case kind == "data" && method == http.MethodGet:
 		sec, ok := fv.secrets[name]
-		if !ok {
+		if !ok || sec.version == 0 {
 			notFound()
 			return
 		}
@@ -156,13 +163,30 @@ func (fv *fakeVault) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fv.secrets[name] = &fakeSecret{version: cur + 1, data: req.Data}
+		if fv.failAfterCommit != nil {
+			if status := fv.failAfterCommit(method, name); status != 0 {
+				fv.reply(w, status, map[string]any{"errors": []string{"injected failure after commit"}})
+				return
+			}
+		}
 		fv.reply(w, http.StatusOK, map[string]any{"data": map[string]any{"version": cur + 1}})
 
 	case kind == "metadata" && method == "LIST":
 		prefix := strings.TrimSuffix(name, "/") + "/"
 		var keys []string
+		seen := map[string]bool{}
 		for p := range fv.secrets {
-			if after, ok := strings.CutPrefix(p, prefix); ok && !strings.Contains(after, "/") {
+			after, ok := strings.CutPrefix(p, prefix)
+			if !ok {
+				continue
+			}
+			// Like Vault, list a secret further down as the directory
+			// holding it, with a trailing "/".
+			if dir, _, deeper := strings.Cut(after, "/"); deeper {
+				after = dir + "/"
+			}
+			if !seen[after] {
+				seen[after] = true
 				keys = append(keys, after)
 			}
 		}
@@ -178,11 +202,22 @@ func (fv *fakeVault) serve(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 
 	case kind == "metadata" && method == http.MethodPost:
+		if _, ok := fv.secrets[name]; !ok {
+			fv.secrets[name] = &fakeSecret{}
+		}
 		w.WriteHeader(http.StatusNoContent)
 
 	default:
 		fv.reply(w, http.StatusMethodNotAllowed, nil)
 	}
+}
+
+// setFail sets fail, for a test that changes it while the store has requests
+// in flight in the background.
+func (fv *fakeVault) setFail(fail func(method, path string) int) {
+	fv.mu.Lock()
+	defer fv.mu.Unlock()
+	fv.fail = fail
 }
 
 // resetLog forgets the requests seen so far, so a test can measure just the

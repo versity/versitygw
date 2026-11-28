@@ -75,19 +75,26 @@ func (rr *MockChecksumReader) Checksum() string {
 var _ ChecksumReader = &MockChecksumReader{}
 
 func wrapBodyReader(ctx fiber.Ctx, wr func(io.Reader) io.Reader) {
-	rdr, ok := utils.ContextKeyBodyReader.Get(ctx).(io.Reader)
-	if !ok {
-		rdr = requestBodyStream(ctx)
-		// Override the body reader with an empty reader to prevent panics
-		// in case of unexpected or malformed HTTP requests.
-		if rdr == nil {
-			rdr = bytes.NewBuffer([]byte{})
-		}
-	}
-
+	rdr := requestBodyReader(ctx)
 	r := wr(rdr)
 	// Ensure checksum behavior is stacked if the original body reader had it.
 	r = NewChecksumReader(rdr, r)
 
 	utils.ContextKeyBodyReader.Set(ctx, r)
+}
+
+// requestBodyReader returns the reader the request body is read through: the
+// one the middlewares stacked their checks on, or the bare body if they
+// stacked none.
+func requestBodyReader(ctx fiber.Ctx) io.Reader {
+	if rdr, ok := utils.ContextKeyBodyReader.Get(ctx).(io.Reader); ok {
+		return rdr
+	}
+	if rdr := requestBodyStream(ctx); rdr != nil {
+		return rdr
+	}
+
+	// a body that is not streamed was read whole before the handlers ran,
+	// and an absent one reads as empty
+	return bytes.NewReader(ctx.Request().Body())
 }

@@ -172,7 +172,7 @@ func EvaluateWebIdentityTrust(document string, lookup ProviderLookup, wctx WebId
 			continue
 		}
 
-		for _, federatedArn := range federatedPrincipals(stmt.Principal) {
+		for _, federatedArn := range principalValues(stmt.Principal, "Federated") {
 			url, ok := lookup(federatedArn)
 			if !ok {
 				continue
@@ -220,12 +220,13 @@ func EvaluateWebIdentityTrust(document string, lookup ProviderLookup, wctx WebId
 	}
 }
 
-// federatedPrincipals extracts a statement's Principal.Federated value(s),
-// tolerating both a bare string and an array (empty/absent on any parse
-// failure, since a statement whose Principal doesn't parse simply matches
-// nothing here — CreateRole/UpdateAssumeRolePolicy already reject any
-// trust policy that wouldn't parse this way).
-func federatedPrincipals(raw json.RawMessage) []string {
+// principalValues extracts the value(s) a statement's Principal names under
+// key ("AWS", "Service" or "Federated"), tolerating both a bare string and
+// an array (empty/absent on any parse failure, since a statement whose
+// Principal doesn't parse simply matches nothing here —
+// CreateRole/UpdateAssumeRolePolicy already reject any trust policy that
+// wouldn't parse this way).
+func principalValues(raw json.RawMessage, key string) []string {
 	if len(raw) == 0 {
 		return nil
 	}
@@ -233,7 +234,7 @@ func federatedPrincipals(raw json.RawMessage) []string {
 	if err := json.Unmarshal(raw, &principal); err != nil {
 		return nil
 	}
-	return principal["Federated"]
+	return principal[key]
 }
 
 // statementCoversAction reports whether stmt's Action/NotAction authorizes

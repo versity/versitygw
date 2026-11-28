@@ -772,8 +772,10 @@ func Versioning_CopyObject_invalid_versionId(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
-func Versioning_CopyObject_encoded_versionid_separator_invalid_versionId(s *S3Conf) error {
-	testName := "Versioning_CopyObject_encoded_versionid_separator_invalid_versionId"
+// An encoded "?versionId=" separator is part of the source key, so the
+// ".." segments after it are too, and the key is rejected.
+func Versioning_CopyObject_encoded_versionid_separator_stays_in_key(s *S3Conf) error {
+	testName := "Versioning_CopyObject_encoded_versionid_separator_stays_in_key"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		dstObj, srcObj := "dst-obj", "src-obj"
 
@@ -793,7 +795,7 @@ func Versioning_CopyObject_encoded_versionid_separator_invalid_versionId(s *S3Co
 			CopySource: getPtr(fmt.Sprintf("%v/%v%%3FversionId%%3D..%%2f..%%2fsecret.txt", bucket, srcObj)),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "../../secret.txt"))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, srcObj+"?versionId=../../secret.txt"))
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
@@ -1895,6 +1897,9 @@ func Versioning_HeadObject_delete_marker(s *S3Conf) error {
 			if err := checkSdkApiErr(err, "MethodNotAllowed"); err != nil {
 				return err
 			}
+			if err := checkDeleteMarkerResponse(err, *out.VersionId, true); err != nil {
+				return err
+			}
 
 			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 			_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
@@ -1907,18 +1912,7 @@ func Versioning_HeadObject_delete_marker(s *S3Conf) error {
 			}
 
 			// the current version of the key is a delete marker
-			var respErr *awshttp.ResponseError
-			if !errors.As(err, &respErr) {
-				return fmt.Errorf("expected an HTTP response error, instead got %w", err)
-			}
-			if dm := respErr.Response.Header.Get("x-amz-delete-marker"); dm != "true" {
-				return fmt.Errorf("expected the x-amz-delete-marker header to be true, instead got %q", dm)
-			}
-			if vId := respErr.Response.Header.Get("x-amz-version-id"); vId != getString(out.VersionId) {
-				return fmt.Errorf("expected the x-amz-version-id header to be %q, instead got %q", getString(out.VersionId), vId)
-			}
-
-			return nil
+			return checkDeleteMarkerResponse(err, *out.VersionId, false)
 		})
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
@@ -2079,13 +2073,16 @@ func Versioning_GetObject_delete_marker_without_versionId(s *S3Conf) error {
 
 		return forEachKey(keys, func(obj string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-			_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
 				Bucket: &bucket,
 				Key:    &obj,
 			})
 			cancel()
 			if err != nil {
 				return err
+			}
+			if getString(out.VersionId) == "" {
+				return fmt.Errorf("expected non empty versionId")
 			}
 
 			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -2094,11 +2091,15 @@ func Versioning_GetObject_delete_marker_without_versionId(s *S3Conf) error {
 				Key:    &obj,
 			})
 			cancel()
+			if err == nil {
+				return fmt.Errorf("expected NoSuchKey, instead got nil")
+			}
 			if err := checkSdkApiErr(err, "NoSuchKey"); err != nil {
 				return err
 			}
 
-			return nil
+			// the current version of the key is a delete marker
+			return checkDeleteMarkerResponse(err, *out.VersionId, false)
 		})
 	})
 }
@@ -2139,6 +2140,196 @@ func Versioning_GetObject_delete_marker(s *S3Conf) error {
 			cancel()
 			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
 				return err
+			}
+			if err := checkDeleteMarkerResponse(err, *out.VersionId, true); err != nil {
+				return err
+			}
+
+			// the error names the method and the delete marker resource type
+			req, err := createSignedReq(http.MethodGet, s.endpoint,
+				fmt.Sprintf("%s/%s?versionId=%s", bucket, obj, url.QueryEscape(*out.VersionId)),
+				s.awsID, s.awsSecret, "s3", s.awsRegion, "", nil, time.Now(), nil)
+			if err != nil {
+				return err
+			}
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+
+			return checkHTTPResponseApiErr(resp, s3err.GetMethodNotAllowedErr(http.MethodGet, s3err.ResourceTypeDeleteMarker, []string{http.MethodDelete}))
+		})
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// S3 answers a GET or HEAD of a delete marker before it evaluates the
+// preconditions, the range, the part number or the checksum mode, so they
+// don't change the response: a 404 when the marker is the current version,
+// a 405 when the versionId names it, both with the delete marker headers.
+func Versioning_GetHeadObject_delete_marker_request_options(s *S3Conf) error {
+	testName := "Versioning_GetHeadObject_delete_marker_request_options"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(obj string) error {
+			put, err := putObjectWithData(objDataLen(obj, 100), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			del, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			dmVersionId := getString(del.VersionId)
+			if dmVersionId == "" {
+				return fmt.Errorf("expected non empty versionId")
+			}
+
+			etag := getString(put.res.ETag)
+			past, future := time.Now().AddDate(-10, 0, 0), time.Now().AddDate(10, 0, 0)
+			options := []struct {
+				name         string
+				ifMatch      *string
+				ifNoneMatch  *string
+				ifModSince   *time.Time
+				ifUnmodSince *time.Time
+				objRange     *string
+				partNumber   *int32
+				checksumMode types.ChecksumMode
+			}{
+				{name: "no options"},
+				{name: "matching If-Match", ifMatch: &etag},
+				{name: "failing If-Match", ifMatch: getPtr(`"mismatch"`)},
+				{name: "matching If-None-Match", ifNoneMatch: &etag},
+				{name: "If-None-Match *", ifNoneMatch: getPtr("*")},
+				{name: "failing If-Modified-Since", ifModSince: &future},
+				{name: "failing If-Unmodified-Since", ifUnmodSince: &past},
+				{name: "range", objRange: getPtr("bytes=0-0")},
+				{name: "unsatisfiable range", objRange: getPtr("bytes=1000-2000")},
+				{name: "partNumber", partNumber: getPtr(int32(1))},
+				{name: "out of range partNumber", partNumber: getPtr(int32(5))},
+				{name: "checksum mode", checksumMode: types.ChecksumModeEnabled},
+			}
+
+			for _, opt := range options {
+				for _, versionId := range []*string{nil, &dmVersionId} {
+					isVersion := versionId != nil
+					ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:            &bucket,
+						Key:               &obj,
+						VersionId:         versionId,
+						IfMatch:           opt.ifMatch,
+						IfNoneMatch:       opt.ifNoneMatch,
+						IfModifiedSince:   opt.ifModSince,
+						IfUnmodifiedSince: opt.ifUnmodSince,
+						Range:             opt.objRange,
+						PartNumber:        opt.partNumber,
+						ChecksumMode:      opt.checksumMode,
+					})
+					cancel()
+					code := "NoSuchKey"
+					if isVersion {
+						code = "MethodNotAllowed"
+					}
+					if err == nil {
+						return fmt.Errorf("GetObject with %s (versionId %v): expected %s, instead got nil",
+							opt.name, isVersion, code)
+					}
+					if err := checkSdkApiErr(err, code); err != nil {
+						return fmt.Errorf("GetObject with %s (versionId %v): %w", opt.name, isVersion, err)
+					}
+					if err := checkDeleteMarkerResponse(err, dmVersionId, isVersion); err != nil {
+						return fmt.Errorf("GetObject with %s (versionId %v): %w", opt.name, isVersion, err)
+					}
+
+					ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+					_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+						Bucket:            &bucket,
+						Key:               &obj,
+						VersionId:         versionId,
+						IfMatch:           opt.ifMatch,
+						IfNoneMatch:       opt.ifNoneMatch,
+						IfModifiedSince:   opt.ifModSince,
+						IfUnmodifiedSince: opt.ifUnmodSince,
+						Range:             opt.objRange,
+						PartNumber:        opt.partNumber,
+						ChecksumMode:      opt.checksumMode,
+					})
+					cancel()
+					if err := checkDeleteMarkerResponse(err, dmVersionId, isVersion); err != nil {
+						return fmt.Errorf("HeadObject with %s (versionId %v): %w", opt.name, isVersion, err)
+					}
+				}
+			}
+
+			return nil
+		})
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// A delete in a bucket with suspended versioning makes a delete marker with
+// the "null" version id, and GET and HEAD name it so.
+func Versioning_GetHeadObject_null_delete_marker(s *S3Conf) error {
+	testName := "Versioning_GetHeadObject_null_delete_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
+		if err != nil {
+			return err
+		}
+
+		return forEachKey([]string{"my-obj", "my-dir/"}, func(obj string) error {
+			_, err := putObjectWithData(objDataLen(obj, 100), &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			for _, versionId := range []*string{nil, getPtr(nullVersionId)} {
+				isVersion := versionId != nil
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+					Bucket:    &bucket,
+					Key:       &obj,
+					VersionId: versionId,
+				})
+				cancel()
+				if err == nil {
+					return fmt.Errorf("GetObject (versionId %v): expected an error, instead got nil", isVersion)
+				}
+				if err := checkDeleteMarkerResponse(err, nullVersionId, isVersion); err != nil {
+					return fmt.Errorf("GetObject (versionId %v): %w", isVersion, err)
+				}
+
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+					Bucket:    &bucket,
+					Key:       &obj,
+					VersionId: versionId,
+				})
+				cancel()
+				if err := checkDeleteMarkerResponse(err, nullVersionId, isVersion); err != nil {
+					return fmt.Errorf("HeadObject (versionId %v): %w", isVersion, err)
+				}
 			}
 
 			return nil
@@ -5237,8 +5428,10 @@ func Versioning_UploadPartCopy_invalid_versionId(s *S3Conf) error {
 	})
 }
 
-func Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId(s *S3Conf) error {
-	testName := "Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId"
+// An encoded "?versionId=" separator is part of the source key, so the
+// ".." segments after it are too, and the key is rejected.
+func Versioning_UploadPartCopy_encoded_versionid_separator_stays_in_key(s *S3Conf) error {
+	testName := "Versioning_UploadPartCopy_encoded_versionid_separator_stays_in_key"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		dstObj, srcObj := "dst-obj", "src-obj"
 		_, err := putObjectWithData(10, &s3.PutObjectInput{
@@ -5263,7 +5456,7 @@ func Versioning_UploadPartCopy_encoded_versionid_separator_invalid_versionId(s *
 			CopySource: getPtr(fmt.Sprintf("%v/%v%%3FversionId%%3D..%%2f..%%2fsecret.txt", bucket, srcObj)),
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgVersionId, "../../secret.txt"))
+		return checkApiErr(err, s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, srcObj+"?versionId=../../secret.txt"))
 	})
 }
 
@@ -7568,10 +7761,23 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 					return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
 				}
 
-				return nil
+				return err
 			}
 
+			// s3:GetObjectAttributes alone, without s3:GetObject
 			policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectAttributes"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			// deny without versionId
+			err = getObjectAttr(nil, true)
+			if err != nil {
+				return err
+			}
+
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectAttributes", "s3:GetObject"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
 			err = putBucketPolicy(s3client, bucket, policy)
 			if err != nil {
 				return err
@@ -7589,7 +7795,33 @@ func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
 				return err
 			}
 
+			// s3:GetObjectVersionAttributes alone, without s3:GetObjectVersion
 			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectVersionAttributes"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			// deny with versionId
+			err = getObjectAttr(res.res.VersionId, true)
+			if err != nil {
+				return err
+			}
+
+			// s3:GetObject doesn't cover a request naming a version
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectVersionAttributes", "s3:GetObject"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			err = putBucketPolicy(s3client, bucket, policy)
+			if err != nil {
+				return err
+			}
+
+			// deny with versionId
+			err = getObjectAttr(res.res.VersionId, true)
+			if err != nil {
+				return err
+			}
+
+			policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectVersionAttributes", "s3:GetObjectVersion"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
 			err = putBucketPolicy(s3client, bucket, policy)
 			if err != nil {
 				return err

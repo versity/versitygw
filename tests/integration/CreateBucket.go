@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -659,5 +660,15 @@ func CreateBucket_success(s *S3Conf) error {
 		}
 
 		return teardown(s, bucket)
+	})
+}
+
+func CreateBucket_body_size_limit(s *S3Conf) error {
+	testName := "CreateBucket_body_size_limit"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyLimit(s, bucket, requestBodyLimit{
+			method: http.MethodPut,
+			limit:  35240,
+		})
 	})
 }

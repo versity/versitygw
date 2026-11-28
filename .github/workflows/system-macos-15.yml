@@ -119,7 +119,7 @@ jobs:
           
             export PATH="'"$GO_BIN_DIR"':$PATH"
             cd ${{ github.workspace }}
-            go mod download
+            ./tests/retry.sh go mod download
           
             cat /Users/tester/test-files/.env
           

@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -243,6 +244,57 @@ func UploadPartCopy_invalid_part_number(s *S3Conf) error {
 	})
 }
 
+// An encoded "?versionId=" in the copy source is part of the source key: the
+// part is copied from the object whose key ends with it, not from the object
+// named by the key before it.
+func UploadPartCopy_copy_source_encoded_version_id_separator(s *S3Conf) error {
+	testName := "UploadPartCopy_copy_source_encoded_version_id_separator"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, dstObj := "my-obj", "dst-obj"
+		literalObj := obj + "?versionId="
+
+		_, err := putObjectWithData(100, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		r, err := putObjectWithData(200, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &literalObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		mp, err := createMp(s3client, bucket, dstObj)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			UploadId:   mp.UploadId,
+			PartNumber: getPtr(int32(1)),
+			CopySource: getPtr(fmt.Sprintf("%s/%s%%3FversionId%%3D", bucket, obj)),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(out.CopyPartResult.ETag) != getString(r.res.ETag) {
+			return fmt.Errorf("expected the part ETag to be %q, the ETag of %q, instead got %q",
+				getString(r.res.ETag), literalObj, getString(out.CopyPartResult.ETag))
+		}
+
+		return nil
+	})
+}
+
 func UploadPartCopy_invalid_copy_source(s *S3Conf) error {
 	testName := "UploadPartCopy_invalid_copy_source"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -319,6 +371,32 @@ func UploadPartCopy_invalid_copy_source(s *S3Conf) error {
 				// object is missing
 				copySource:  "bucket/",
 				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, ""),
+			},
+			// invalid query
+			{
+				// empty versionId
+				copySource:  "bucket/obj?versionId=",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEmptyVersionId, ""),
+			},
+			{
+				// versionId without a value
+				copySource:  "bucket/obj?versionId",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/obj?versionId"),
+			},
+			{
+				// a query parameter other than versionId
+				copySource:  "bucket/obj?foo=bar",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/obj?foo=bar"),
+			},
+			{
+				// versionId with another query parameter
+				copySource:  "bucket/obj?versionId=id&foo=bar",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/obj?versionId=id&foo=bar"),
+			},
+			{
+				// an unencoded '?' in the key starts the query
+				copySource:  "bucket/my?obj",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/my?obj"),
 			},
 		} {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -990,5 +1068,19 @@ func UploadPartCopy_incorrect_source_bucket_expected_owner(s *S3Conf) error {
 		})
 		cancel()
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}
+
+// The action takes no body, and refuses any.
+func UploadPartCopy_non_empty_body(s *S3Conf) error {
+	testName := "UploadPartCopy_non_empty_body"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyRefused(s, bucket, requestBodyLimit{
+			method:  http.MethodPut,
+			object:  true,
+			query:   "partNumber=1&uploadId=my-upload",
+			headers: map[string]string{"X-Amz-Copy-Source": bucket + "/source-obj"},
+			err:     s3err.GetAPIError(s3err.ErrNonEmptyRequestBody),
+		})
 	})
 }

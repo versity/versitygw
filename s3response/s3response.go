@@ -590,7 +590,7 @@ type ListVersionsResult struct {
 	CommonPrefixes      []types.CommonPrefix
 	DeleteMarkers       []DeleteMarkerEntry `xml:"DeleteMarker"`
 	Delimiter           *string
-	EncodingType        types.EncodingType
+	EncodingType        types.EncodingType `xml:",omitempty"`
 	IsTruncated         *bool
 	KeyMarker           *string
 	MaxKeys             *int32

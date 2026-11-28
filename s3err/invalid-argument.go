@@ -35,6 +35,8 @@ const (
 	InvalidArgCopySourceBucket
 	InvalidArgCopySourceObject
 	InvalidArgCopySourceEncoding
+	InvalidArgCopySourceURI
+	InvalidArgCopySourceEmptyVersionId
 	InvalidArgURLEncodedTagging
 	InvalidArgAuthHeader
 	InvalidArgAuthorizationType
@@ -128,6 +130,14 @@ var invalidArgErrResponses = map[InvalidArgErrorCode]InvalidArgumentError{
 	},
 	InvalidArgCopySourceEncoding: {
 		Description:  "Invalid copy source encoding",
+		ArgumentName: "x-amz-copy-source",
+	},
+	InvalidArgCopySourceURI: {
+		Description:  "Invalid copy source URI.",
+		ArgumentName: "x-amz-copy-source",
+	},
+	InvalidArgCopySourceEmptyVersionId: {
+		Description:  "Version id cannot be the empty string",
 		ArgumentName: "x-amz-copy-source",
 	},
 	InvalidArgURLEncodedTagging: {

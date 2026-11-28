@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -586,6 +587,32 @@ func CopyObject_invalid_copy_source(s *S3Conf) error {
 				copySource:  "bucket/",
 				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceObject, ""),
 			},
+			// invalid query
+			{
+				// empty versionId
+				copySource:  "bucket/obj?versionId=",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEmptyVersionId, ""),
+			},
+			{
+				// versionId without a value
+				copySource:  "bucket/obj?versionId",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/obj?versionId"),
+			},
+			{
+				// a query parameter other than versionId
+				copySource:  "bucket/obj?foo=bar",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/obj?foo=bar"),
+			},
+			{
+				// versionId with another query parameter
+				copySource:  "bucket/obj?versionId=id&foo=bar",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/obj?versionId=id&foo=bar"),
+			},
+			{
+				// an unencoded '?' in the key starts the query
+				copySource:  "bucket/my?obj",
+				expectedErr: s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "bucket/my?obj"),
+			},
 		} {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
@@ -597,6 +624,64 @@ func CopyObject_invalid_copy_source(s *S3Conf) error {
 			if err := checkApiErr(err, test.expectedErr); err != nil {
 				return err
 			}
+		}
+
+		return nil
+	})
+}
+
+// An encoded "?versionId=" in the copy source is part of the source key: the
+// copy reads the object whose key ends with it, not the object named by the
+// key before it.
+func CopyObject_copy_source_encoded_version_id_separator(s *S3Conf) error {
+	testName := "CopyObject_copy_source_encoded_version_id_separator"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, dstObj := "my-obj", "dst-obj"
+		literalObj := obj + "?versionId="
+
+		_, err := putObjectWithData(100, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		r, err := putObjectWithData(200, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &literalObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			CopySource: getPtr(fmt.Sprintf("%s/%s%%3FversionId%%3D", bucket, obj)),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		defer out.Body.Close()
+
+		body, err := io.ReadAll(out.Body)
+		if err != nil {
+			return err
+		}
+		if sha256.Sum256(body) != r.csum {
+			return fmt.Errorf("expected the copy of %q, instead got another object's data", literalObj)
 		}
 
 		return nil
@@ -1643,7 +1728,7 @@ func CopyObject_to_itself_by_replacing_the_checksum(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		_, err := putObjectWithData(400, &s3.PutObjectInput{
+		put, err := putObjectWithData(400, &s3.PutObjectInput{
 			Bucket:            &bucket,
 			Key:               &obj,
 			ChecksumAlgorithm: types.ChecksumAlgorithmSha256,
@@ -1651,6 +1736,13 @@ func CopyObject_to_itself_by_replacing_the_checksum(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
+
+		hasher, err := NewHasher(types.ChecksumAlgorithmCrc32)
+		if err != nil {
+			return err
+		}
+		hasher.Write(put.data)
+		crc := base64.StdEncoding.EncodeToString(hasher.Sum(nil))
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
@@ -1665,8 +1757,13 @@ func CopyObject_to_itself_by_replacing_the_checksum(s *S3Conf) error {
 			return err
 		}
 
-		if out.CopyObjectResult.ChecksumCRC32 == nil {
-			return fmt.Errorf("expected non empty crc32 checksum")
+		if getString(out.CopyObjectResult.ChecksumCRC32) != crc {
+			return fmt.Errorf("expected the crc32 checksum to be %v, instead got %v",
+				crc, getString(out.CopyObjectResult.ChecksumCRC32))
+		}
+		if out.CopyObjectResult.ChecksumType != types.ChecksumTypeFullObject {
+			return fmt.Errorf("expected the checksum type to be %v, instead got %v",
+				types.ChecksumTypeFullObject, out.CopyObjectResult.ChecksumType)
 		}
 		for _, algo := range types.ChecksumAlgorithmCrc32.Values() {
 			if algo == types.ChecksumAlgorithmCrc32 {
@@ -1688,8 +1785,13 @@ func CopyObject_to_itself_by_replacing_the_checksum(s *S3Conf) error {
 			return err
 		}
 
-		if res.ChecksumCRC32 == nil {
-			return fmt.Errorf("expected non empty crc32 checksum")
+		if getString(res.ChecksumCRC32) != crc {
+			return fmt.Errorf("expected the crc32 checksum to be %v, instead got %v",
+				crc, getString(res.ChecksumCRC32))
+		}
+		if res.ChecksumType != types.ChecksumTypeFullObject {
+			return fmt.Errorf("expected the checksum type to be %v, instead got %v",
+				types.ChecksumTypeFullObject, res.ChecksumType)
 		}
 		for _, algo := range types.ChecksumAlgorithmCrc32.Values() {
 			if algo == types.ChecksumAlgorithmCrc32 {
@@ -2029,5 +2131,18 @@ func CopyObject_incorrect_source_bucket_expected_owner(s *S3Conf) error {
 		})
 		cancel()
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}
+
+// The action takes no body, and refuses any.
+func CopyObject_non_empty_body(s *S3Conf) error {
+	testName := "CopyObject_non_empty_body"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		return checkRequestBodyRefused(s, bucket, requestBodyLimit{
+			method:  http.MethodPut,
+			object:  true,
+			headers: map[string]string{"X-Amz-Copy-Source": bucket + "/source-obj"},
+			err:     s3err.GetAPIError(s3err.ErrNonEmptyRequestBody),
+		})
 	})
 }

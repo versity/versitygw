@@ -249,6 +249,16 @@ func resolveHostnameAddrs(address string) ([]string, error) {
 
 type ListenerOptions struct {
 	SocketPerm os.FileMode
+	// WrapListener, when set, wraps each bound socket listener before any TLS
+	// layer is added, so the wrapper sees raw TCP bytes including TLS records.
+	WrapListener func(net.Listener) net.Listener
+}
+
+func (o ListenerOptions) wrap(ln net.Listener) net.Listener {
+	if o.WrapListener == nil {
+		return ln
+	}
+	return o.WrapListener(ln)
 }
 
 func NewMultiAddrListener(network, address string, opts ListenerOptions) (net.Listener, error) {
@@ -268,7 +278,7 @@ func NewMultiAddrListener(network, address string, opts ListenerOptions) (net.Li
 				return nil, fmt.Errorf("failed to set permissions on socket %s: %w", address, err)
 			}
 		}
-		return NewMultiListener(ln), nil
+		return NewMultiListener(opts.wrap(ln)), nil
 	}
 
 	addrs, err := resolveHostnameAddrs(address)
@@ -285,7 +295,7 @@ func NewMultiAddrListener(network, address string, opts ListenerOptions) (net.Li
 			}
 			return nil, fmt.Errorf("failed to bind listener %s: %w", addr, err)
 		}
-		listeners = append(listeners, ln)
+		listeners = append(listeners, opts.wrap(ln))
 	}
 
 	return NewMultiListener(listeners...), nil
@@ -355,7 +365,7 @@ func NewMultiAddrTLSListenerWithOptions(network, address string, tlsOpts TLSOpti
 				return nil, fmt.Errorf("failed to set permissions on socket %s: %w", address, err)
 			}
 		}
-		return NewMultiListener(newTLSListener(ln, config)), nil
+		return NewMultiListener(newTLSListener(opts.wrap(ln), config)), nil
 	}
 
 	addrs, err := resolveHostnameAddrs(address)
@@ -372,7 +382,7 @@ func NewMultiAddrTLSListenerWithOptions(network, address string, tlsOpts TLSOpti
 			}
 			return nil, fmt.Errorf("failed to bind TLS listener %s: %w", addr, err)
 		}
-		listeners = append(listeners, newTLSListener(ln, config))
+		listeners = append(listeners, newTLSListener(opts.wrap(ln), config))
 	}
 
 	return NewMultiListener(listeners...), nil

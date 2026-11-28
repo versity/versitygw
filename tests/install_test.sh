@@ -229,7 +229,7 @@ install_mac_libraries() {
       continue
     fi
     echo "Installing $package..."
-    if ! brew install "$package"; then
+    if ! retry brew install "$package"; then
       echo "error: failed to install $package" >&2
       return 1
     fi
@@ -311,13 +311,13 @@ install_apt_libraries() {
   fi
   if [ -z "$DOWNLOAD_ONLY_FOLDER" ]; then
     if [ -z "$INSTALL_ONLY_FOLDER" ]; then
-      run_apt_update_and_install "${libraries[@]}" || return 1
+      retry run_apt_update_and_install "${libraries[@]}" || return 1
     else
       local install_result=0
       run_as_root env DEBIAN_FRONTEND=noninteractive apt install -y "$(realpath -m "$INSTALL_ONLY_FOLDER")"/apt/*.deb || install_result=$?
       # if install from packages fails, fall back
       if [ "$install_result" -ne 0 ]; then
-        run_apt_update_and_install "${libraries[@]}" || return 1
+        retry run_apt_update_and_install "${libraries[@]}" || return 1
       fi
     fi
   else
@@ -352,7 +352,7 @@ install_dnf_libraries() {
   else
     libraries+=(golang)
   fi
-  run_as_root dnf install -y "${libraries[@]}"
+  retry run_as_root dnf install -y "${libraries[@]}"
 }
 
 install_yum_libraries() {
@@ -378,7 +378,7 @@ install_yum_libraries() {
   else
     libraries+=(golang)
   fi
-  run_as_root yum install -y "${libraries[@]}"
+  retry run_as_root yum install -y "${libraries[@]}"
 }
 
 install_apk_libraries() {
@@ -405,7 +405,7 @@ install_apk_libraries() {
   else
     libraries+=(go)
   fi
-  run_as_root apk add --no-cache "${libraries[@]}"
+  retry run_as_root apk add --no-cache "${libraries[@]}"
 }
 
 check_required_commands() {
@@ -456,7 +456,7 @@ upgrade_bash_on_mac() {
   fi
 
   echo "Upgrading bash with Homebrew..."
-  if ! brew install bash; then
+  if ! retry brew install bash; then
     echo "error: failed to install bash with Homebrew" >&2
     return 1
   fi
@@ -508,18 +508,17 @@ install_aws_cli() {
 }
 
 download_and_install_aws_cli() {
-  local response package_location
+  local package_location
 
   if command -v aws >/dev/null 2>&1; then
     printf "AWS CLI already installed: %s\n" "$(aws --version 2>&1)"
     return 0
   fi
   if [ -z "$INSTALL_ONLY_FOLDER" ]; then
-    if ! response=$(download_aws "$DOWNLOAD_ONLY_FOLDER" 2>&1); then
-      echo "error downloading aws package: $response" >&2
+    if ! package_location=$(download_aws "$DOWNLOAD_ONLY_FOLDER"); then
+      echo "error downloading aws package" >&2
       return 1
     fi
-    package_location="$response"
   else
     package_location="$INSTALL_ONLY_FOLDER/aws/$AWS_ARCHIVE_NAME"
   fi
@@ -539,18 +538,17 @@ download_and_install_mc() {
     return 1
   fi
   local os="$1"
-  local response package_location
+  local package_location
 
   if command -v mc >/dev/null 2>&1; then
     printf "MinIO mc already installed: %s\n" "$(mc --version 2>&1 | head -n 1)"
     return 0
   fi
   if [ -z "$INSTALL_ONLY_FOLDER" ]; then
-    if ! response=$(download_mc "$os" "$DOWNLOAD_ONLY_FOLDER" 2>&1); then
-      echo "error downloading mc package: $response" >&2
+    if ! package_location=$(download_mc "$os" "$DOWNLOAD_ONLY_FOLDER"); then
+      echo "error downloading mc package" >&2
       return 1
     fi
-    package_location="$response"
   else
     package_location="$INSTALL_ONLY_FOLDER/mc/mc"
   fi
@@ -650,8 +648,8 @@ if [ -z "$DOWNLOAD_ONLY_FOLDER" ]; then
       exit 1
     fi
   else
-    if ! response=$(go mod download 2>&1); then
-      printf "error installing go dependencies: %s\n" "$response"
+    if ! retry go mod download; then
+      echo "error installing go dependencies" >&2
       exit 1
     fi
   fi

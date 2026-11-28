@@ -370,11 +370,6 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	action := auth.GetObjectAttributesAction
-	if versionId != "" {
-		action = auth.GetObjectVersionAttributesAction
-	}
-
 	err := c.verifyAccess(ctx, auth.AccessOptions{
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionRead,
@@ -382,7 +377,7 @@ func (c S3ApiController) GetObjectAttributes(ctx fiber.Ctx) (*Response, error) {
 		Acc:             acct,
 		Bucket:          bucket,
 		Object:          key,
-		Actions:         []auth.Action{action},
+		Actions:         auth.ObjectAttributesActions(versionId),
 		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
@@ -626,6 +621,7 @@ func (c S3ApiController) GetObject(ctx fiber.Ctx) (*Response, error) {
 		case res != nil && res.DeleteMarker != nil && *res.DeleteMarker:
 			headers = map[string]*string{
 				"x-amz-delete-marker": utils.GetStringPtr("true"),
+				"x-amz-version-id":    res.VersionId,
 				"Last-Modified":       utils.FormatDatePtrToString(res.LastModified, timefmt),
 			}
 		}

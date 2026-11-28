@@ -346,6 +346,17 @@ func IAMCreateRole_trust_policy_document_grammar(s *S3Conf) error {
 	})
 }
 
+// IAMCreateRole_trust_policy_aws_principals verifies a trust policy's AWS
+// principals must each resolve to something for the role to be created.
+func IAMCreateRole_trust_policy_aws_principals(s *S3Conf) error {
+	testName := "IAMCreateRole_trust_policy_aws_principals"
+	return iamActionHandler(s, testName, func(client *iam.Client) error {
+		return runTrustPolicyAWSPrincipalCases(client, func(doc string, wantErr iamerr.APIError) error {
+			return checkCreateRoleTrustPolicyCase(client, doc, wantErr)
+		})
+	})
+}
+
 // checkCreateRoleTrustPolicyCase verifies doc is accepted/rejected as
 // expected when used as a fresh role's AssumeRolePolicyDocument.
 func checkCreateRoleTrustPolicyCase(client *iam.Client, doc string, wantErr iamerr.APIError) error {

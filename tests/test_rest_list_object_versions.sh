@@ -70,17 +70,11 @@ source ./tests/util/util_time.sh
 }
 
 @test "ListObjectVersions - invalid encoding" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2169"
-  fi
   run objects_versions_invalid_encoding "versions"
   assert_success
 }
 
 @test "ListObjectVersions - encoding success" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/2169"
-  fi
   run objects_versions_encoding_success "versions" "ListVersionsResult" "Version"
   assert_success
 }

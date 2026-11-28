@@ -518,6 +518,236 @@ func AccessControl_UploadPartCopy_malformed_upload_id_without_source_access(s *S
 	})
 }
 
+// A "?versionId=" query in a copy source names a version of the key before
+// it, and is authorized as that key's s3:GetObjectVersion: a key the bucket
+// policy denies can't be copied by appending an empty, "null" or any other
+// versionId to it, and a grant of s3:GetObject doesn't cover a copy of a
+// version.
+func AccessControl_copy_source_version_id_explicit_deny(s *S3Conf) error {
+	testName := "AccessControl_copy_source_version_id_explicit_deny"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcBucket := getBucketName()
+		if err := setup(s, srcBucket); err != nil {
+			return err
+		}
+		secretObj, publicObj := "secret.txt", "public.txt"
+		if _, err := putObjects(s3client, []string{secretObj, publicObj}, srcBucket); err != nil {
+			return err
+		}
+
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		if err := changeBucketsOwner(s, []string{bucket}, testuser.access); err != nil {
+			return err
+		}
+
+		policy := fmt.Sprintf(`{
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Principal": "%s",
+					"Action": "s3:GetObject",
+					"Resource": "arn:aws:s3:::%s/*"
+				},
+				{
+					"Effect": "Deny",
+					"Principal": "%s",
+					"Action": ["s3:GetObject", "s3:GetObjectVersion"],
+					"Resource": "arn:aws:s3:::%s/%s"
+				}
+			]
+		}`, testuser.access, srcBucket, testuser.access, srcBucket, secretObj)
+		if err := putBucketPolicy(s3client, srcBucket, policy); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		dstObj := "dst-obj"
+		mp, err := createMp(userClient, bucket, dstObj)
+		if err != nil {
+			return err
+		}
+
+		secretArn := fmt.Sprintf("arn:aws:s3:::%s/%s", srcBucket, secretObj)
+		for _, test := range []struct {
+			copySource  string
+			expectedErr s3err.S3Error
+		}{
+			{secretObj, s3err.GetExplicitDenyAccessErr(testuser.access, "s3:GetObject", secretArn, "a resource-based policy")},
+			{secretObj + "?versionId=", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEmptyVersionId, "")},
+			{secretObj + "?versionId=null", s3err.GetExplicitDenyAccessErr(testuser.access, "s3:GetObjectVersion", secretArn, "a resource-based policy")},
+			{secretObj + "?versionId=01BX5ZZKBKACTAV9WEVGEMMVRZ", s3err.GetExplicitDenyAccessErr(testuser.access, "s3:GetObjectVersion", secretArn, "a resource-based policy")},
+			{publicObj + "?versionId=null", s3err.GetAPIError(s3err.ErrAccessDenied)},
+			{publicObj, nil},
+		} {
+			copySource := fmt.Sprintf("%s/%s", srcBucket, test.copySource)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:     &bucket,
+				Key:        &dstObj,
+				CopySource: &copySource,
+			})
+			cancel()
+			if test.expectedErr == nil && err != nil {
+				return fmt.Errorf("CopyObject from %q: %w", copySource, err)
+			}
+			if test.expectedErr != nil {
+				if err := checkApiErr(err, test.expectedErr); err != nil {
+					return fmt.Errorf("CopyObject from %q: %w", copySource, err)
+				}
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = userClient.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:     &bucket,
+				Key:        &dstObj,
+				UploadId:   mp.UploadId,
+				PartNumber: getPtr(int32(1)),
+				CopySource: &copySource,
+			})
+			cancel()
+			if test.expectedErr == nil && err != nil {
+				return fmt.Errorf("UploadPartCopy from %q: %w", copySource, err)
+			}
+			if test.expectedErr != nil {
+				if err := checkApiErr(err, test.expectedErr); err != nil {
+					return fmt.Errorf("UploadPartCopy from %q: %w", copySource, err)
+				}
+			}
+		}
+
+		return teardown(s, srcBucket)
+	})
+}
+
+// A copy of a specific source version is authorized as s3:GetObjectVersion
+// alone: s3:GetObject doesn't grant it, and s3:GetObjectVersion doesn't
+// grant a copy of the current object.
+func AccessControl_copy_source_version_needs_get_object_version(s *S3Conf) error {
+	testName := "AccessControl_copy_source_version_needs_get_object_version"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dstBucket := getBucketName()
+		if err := setup(s, dstBucket); err != nil {
+			return err
+		}
+
+		obj, dstObj := "doc.txt", "dst-obj"
+		v1, err := putObjectWithData(100, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		_, err = putObjectWithData(200, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+		if err := changeBucketsOwner(s, []string{dstBucket}, testuser.access); err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+		mp, err := createMp(userClient, dstBucket, dstObj)
+		if err != nil {
+			return err
+		}
+
+		currentSource := fmt.Sprintf("%s/%s", bucket, obj)
+		versionSource := fmt.Sprintf("%s/%s?versionId=%s", bucket, obj, getString(v1.res.VersionId))
+
+		for _, test := range []struct {
+			action  string
+			denied  string
+			allowed string
+		}{
+			{"s3:GetObject", versionSource, currentSource},
+			{"s3:GetObjectVersion", currentSource, versionSource},
+		} {
+			policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access),
+				fmt.Sprintf(`"%s"`, test.action), fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+			if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+				return err
+			}
+
+			for _, tc := range []struct {
+				copySource  string
+				expectedErr s3err.S3Error
+			}{
+				{test.denied, s3err.GetAPIError(s3err.ErrAccessDenied)},
+				{test.allowed, nil},
+			} {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := userClient.CopyObject(ctx, &s3.CopyObjectInput{
+					Bucket:     &dstBucket,
+					Key:        &dstObj,
+					CopySource: &tc.copySource,
+				})
+				cancel()
+				if tc.expectedErr == nil && err != nil {
+					return fmt.Errorf("%s: CopyObject from %q: %w", test.action, tc.copySource, err)
+				}
+				if tc.expectedErr != nil {
+					if err := checkApiErr(err, tc.expectedErr); err != nil {
+						return fmt.Errorf("%s: CopyObject from %q: %w", test.action, tc.copySource, err)
+					}
+				}
+
+				ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+				_, err = userClient.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+					Bucket:     &dstBucket,
+					Key:        &dstObj,
+					UploadId:   mp.UploadId,
+					PartNumber: getPtr(int32(1)),
+					CopySource: &tc.copySource,
+				})
+				cancel()
+				if tc.expectedErr == nil && err != nil {
+					return fmt.Errorf("%s: UploadPartCopy from %q: %w", test.action, tc.copySource, err)
+				}
+				if tc.expectedErr != nil {
+					if err := checkApiErr(err, tc.expectedErr); err != nil {
+						return fmt.Errorf("%s: UploadPartCopy from %q: %w", test.action, tc.copySource, err)
+					}
+				}
+			}
+		}
+
+		// The last copy allowed is the one of the noncurrent version.
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &dstBucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		defer out.Body.Close()
+
+		body, err := io.ReadAll(out.Body)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(body, v1.data) {
+			return fmt.Errorf("expected the copy of version %s, instead got other data", getString(v1.res.VersionId))
+		}
+
+		return teardown(s, dstBucket)
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func AccessControl_multipart_malformed_upload_id_without_access(s *S3Conf) error {
 	testName := "AccessControl_multipart_malformed_upload_id_without_access"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1273,6 +1503,67 @@ func AccessControl_CopyObject_with_retention_policy(s *S3Conf) error {
 
 		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: dstObj}})
 	}, withLock())
+}
+
+func AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
+	testName := "AccessControl_GetObjectAttributes_policy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		testuser := getUser("user")
+		if err := createUsers(s, []user{testuser}); err != nil {
+			return err
+		}
+
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		objectResource := fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket)
+		userClient := s.getUserClient(testuser)
+
+		getObjectAttributes := func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+				Bucket:           &bucket,
+				Key:              &obj,
+				ObjectAttributes: []types.ObjectAttributes{types.ObjectAttributesEtag},
+			})
+			cancel()
+			return err
+		}
+
+		// Error path: user has s3:GetObjectAttributes but not s3:GetObject
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectAttributes"`, objectResource)
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		if err := checkApiErr(getObjectAttributes(), s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		// Error path: user has s3:GetObject but not s3:GetObjectAttributes
+		policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObject"`, objectResource)
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		if err := checkApiErr(getObjectAttributes(), s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		// Happy path: user has s3:GetObjectAttributes and s3:GetObject
+		policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:GetObjectAttributes","s3:GetObject"]`, objectResource)
+		if err := putBucketPolicy(s3client, bucket, policy); err != nil {
+			return err
+		}
+
+		return getObjectAttributes()
+	})
 }
 
 // AccessControl_bucket_policy_condition_ip_allow covers a bucket-policy

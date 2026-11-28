@@ -17,12 +17,12 @@ package debuglogger
 import (
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 	"sync/atomic"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/versity/versitygw/internal/httpctx"
 )
 
 type Color string
@@ -62,11 +62,18 @@ func printError(prefix prefix, er error) {
 	fmt.Fprintf(os.Stderr, string(red)+string(prefix)+"%v"+reset+"\n", er)
 }
 
-// Logs http request details: headers, body, params, query args
+// Logs http request details: url, headers, query args. The body is logged by
+// LogFiberRequestBody, once the handlers are done with it.
 func LogFiberRequestDetails(ctx fiber.Ctx) {
 	// Log the full request url, with sensitive query parameter values
-	// redacted (ctx.OriginalURL() would print them in the clear).
-	fullURL := ctx.Scheme() + "://" + ctx.Host() + ctx.Path()
+	// redacted (ctx.OriginalURL() would print them in the clear). For a
+	// virtual-hosted-style request, log the path the client sent, not the
+	// bucket-prefixed one the host-style parser routes by.
+	path := ctx.Path()
+	if orig, ok := httpctx.ContextKeyOriginalURIPath.Get(ctx).(string); ok {
+		path = orig
+	}
+	fullURL := ctx.Scheme() + "://" + ctx.Host() + path
 	if qs := debugRedactedQueryString(ctx.Request().URI().QueryArgs()); qs != "" {
 		fullURL += "?" + qs
 	}
@@ -78,33 +85,42 @@ func LogFiberRequestDetails(ctx fiber.Ctx) {
 			printWrappedLine(yellow, string(key), debugRedact(string(key), string(value)))
 		}
 	})
-	// skip request body log for PutObject and UploadPart
-	skipBodyLog := isLargeDataAction(ctx)
-	if !skipBodyLog {
-		if postArgs := ctx.Request().PostArgs(); postArgs.Len() != 0 {
-			// form-encoded body (e.g. AWS Query protocol requests like
-			// IAM/STS): log key=value pairs so sensitive fields (e.g.
-			// WebIdentityToken) can be redacted individually, instead of
-			// printing the raw, still-encoded body bytes.
-			printBoxTitleLine(blue, "REQUEST BODY", boxWidth, false)
-			for key, value := range postArgs.All() {
-				fmt.Printf("%s%s=%s%s\n", blue, key, debugRedact(string(key), string(value)), reset)
-			}
-			printHorizontalBorder(blue, boxWidth, false)
-		} else {
-			body := ctx.Request().Body()
-			if len(body) != 0 {
-				printBoxTitleLine(blue, "REQUEST BODY", boxWidth, false)
-				fmt.Printf("%s%s%s\n", blue, formatBodyForLog(body), reset)
-				printHorizontalBorder(blue, boxWidth, false)
-			}
-		}
-	}
 
 	if ctx.Request().URI().QueryArgs().Len() != 0 {
 		for key, value := range ctx.Request().URI().QueryArgs().All() {
 			log.Printf("%s: %s", key, debugRedact(string(key), string(value)))
 		}
+	}
+}
+
+// LogFiberRequestBody logs the request body, if the handlers read it whole.
+// It is called once they are done: reading the body any earlier would read it
+// before the request is authenticated, at whatever size the client sends. A
+// body they streamed instead, the data of an upload or a POST Object form, is
+// still a stream, and is not logged.
+func LogFiberRequestBody(ctx fiber.Ctx) {
+	if ctx.Request().IsBodyStream() {
+		return
+	}
+
+	if postArgs := ctx.Request().PostArgs(); postArgs.Len() != 0 {
+		// form-encoded body (e.g. AWS Query protocol requests like
+		// IAM/STS): log key=value pairs so sensitive fields (e.g.
+		// WebIdentityToken) can be redacted individually, instead of
+		// printing the raw, still-encoded body bytes.
+		printBoxTitleLine(blue, "REQUEST BODY", boxWidth, false)
+		for key, value := range postArgs.All() {
+			fmt.Printf("%s%s=%s%s\n", blue, key, debugRedact(string(key), string(value)), reset)
+		}
+		printHorizontalBorder(blue, boxWidth, false)
+		return
+	}
+
+	body := ctx.Request().Body()
+	if len(body) != 0 {
+		printBoxTitleLine(blue, "REQUEST BODY", boxWidth, false)
+		fmt.Printf("%s%s%s\n", blue, formatBodyForLog(body), reset)
+		printHorizontalBorder(blue, boxWidth, false)
 	}
 }
 
@@ -359,26 +375,4 @@ func wrapText(text string, width int) []string {
 		lines = append(lines, text)
 	}
 	return lines
-}
-
-// TODO: remove this and use utils.IsBidDataAction after refactoring
-// and creating 'internal' package
-func isLargeDataAction(ctx fiber.Ctx) bool {
-	pathParts := strings.Split(ctx.Path(), "/")
-
-	// PutObject and UploadPart
-	if ctx.Method() == http.MethodPut && len(pathParts) >= 3 {
-		if !ctx.Request().URI().QueryArgs().Has("tagging") && ctx.Get("X-Amz-Copy-Source") == "" && !ctx.Request().URI().QueryArgs().Has("acl") {
-			return true
-		}
-	}
-
-	isBucketAction := (len(pathParts) == 3 && pathParts[2] == "") || (len(pathParts) == 2 && pathParts[1] != "")
-
-	// POST object action
-	if isBucketAction && ctx.Method() == http.MethodPost {
-		return true
-	}
-
-	return false
 }

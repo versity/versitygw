@@ -666,6 +666,141 @@ func TestVerifyObjectCopyAccess_SourceBucketWithoutACL(t *testing.T) {
 	assert.True(t, errors.Is(err, s3err.GetAPIError(s3err.ErrAccessDenied)), "unexpected error: %v", err)
 }
 
+// copySourceOwnerOpts are the options of a copy into "dst-bucket", which
+// testuser owns. The bucket policies the copy-source tests serve name only
+// "src-bucket", so the destination is always allowed by ownership and only
+// the source decides.
+func copySourceOwnerOpts() AccessOptions {
+	return AccessOptions{
+		Acl:           ACL{Owner: "testuser"},
+		AclPermission: PermissionWrite,
+		Acc:           Account{Access: "testuser", Role: RoleUser},
+		Bucket:        "dst-bucket",
+		Object:        "dst-key",
+		Actions:       []Action{PutObjectAction},
+	}
+}
+
+// TestVerifyObjectCopyAccess_SourceVersionIdNotPartOfKey checks that a
+// "?versionId=" query is authorized as a version of the key it follows, not
+// as part of the key: an explicit Deny on the key can't be bypassed by
+// appending one. An encoded "%3F" is part of the key, which names another
+// object the Deny doesn't cover.
+func TestVerifyObjectCopyAccess_SourceVersionIdNotPartOfKey(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		policy: []byte(`{
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Principal": "testuser",
+					"Action": "s3:GetObject",
+					"Resource": "arn:aws:s3:::src-bucket/*"
+				},
+				{
+					"Effect": "Deny",
+					"Principal": "testuser",
+					"Action": ["s3:GetObject", "s3:GetObjectVersion"],
+					"Resource": "arn:aws:s3:::src-bucket/secret.txt"
+				}
+			]
+		}`),
+		acl: ACL{Owner: "owner"},
+	}
+
+	denied := func(action Action) error {
+		return s3err.GetExplicitDenyAccessErr("testuser", string(action), "arn:aws:s3:::src-bucket/secret.txt", "a resource-based policy")
+	}
+
+	tests := []struct {
+		name       string
+		copySource string
+		wantErr    error
+	}{
+		{"denied key", "src-bucket/secret.txt", denied(GetObjectAction)},
+		{"denied key with leading slash", "/src-bucket/secret.txt", denied(GetObjectAction)},
+		{"denied key with empty versionId", "src-bucket/secret.txt?versionId=", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceEmptyVersionId, "")},
+		{"denied key with versionId", "src-bucket/secret.txt?versionId=01BX5ZZKBKACTAV9WEVGEMMVRZ", denied(GetObjectVersionAction)},
+		{"denied key with null versionId", "src-bucket/secret.txt?versionId=null", denied(GetObjectVersionAction)},
+		{"denied key with unknown query", "src-bucket/secret.txt?foo=bar", s3err.GetInvalidArgumentErr(s3err.InvalidArgCopySourceURI, "src-bucket/secret.txt?foo=bar")},
+		{"key holding an encoded versionId separator", "src-bucket/secret.txt%3FversionId%3D", nil},
+		{"allowed key", "src-bucket/public.txt", nil},
+		{"allowed key with versionId", "src-bucket/public.txt?versionId=01BX5ZZKBKACTAV9WEVGEMMVRZ", s3err.GetAPIError(s3err.ErrAccessDenied)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := VerifyObjectCopyAccess(testFiberCtx(t), be, tt.copySource, copySourceOwnerOpts())
+			assert.Equal(t, tt.wantErr, err)
+		})
+	}
+}
+
+// TestVerifyObjectCopyAccess_SourceVersionNeedsGetObjectVersion checks that
+// a copy naming a source version is authorized as s3:GetObjectVersion
+// alone, and a copy of the current object as s3:GetObject alone.
+func TestVerifyObjectCopyAccess_SourceVersionNeedsGetObjectVersion(t *testing.T) {
+	be := &publicBucketPolicyBackend{
+		policy: []byte(`{
+			"Statement": [{
+				"Effect": "Allow",
+				"Principal": "testuser",
+				"Action": "s3:GetObjectVersion",
+				"Resource": "arn:aws:s3:::src-bucket/*"
+			}]
+		}`),
+		acl: ACL{Owner: "owner"},
+	}
+
+	tests := []struct {
+		name       string
+		copySource string
+		wantErr    error
+	}{
+		{"current object", "src-bucket/doc.txt", s3err.GetAPIError(s3err.ErrAccessDenied)},
+		{"object version", "src-bucket/doc.txt?versionId=01BX5ZZKBKACTAV9WEVGEMMVRZ", nil},
+		{"null version", "src-bucket/doc.txt?versionId=null", nil},
+		{"percent-encoded bucket/key separator", "src-bucket%2Fdoc.txt?versionId=01BX5ZZKBKACTAV9WEVGEMMVRZ", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := VerifyObjectCopyAccess(testFiberCtx(t), be, tt.copySource, copySourceOwnerOpts())
+			assert.Equal(t, tt.wantErr, err)
+		})
+	}
+}
+
+// TestVerifyObjectCopyAccess_IdentityPolicySourceVersion checks that the
+// identity policy is asked about the source key without its versionId
+// query, as s3:GetObjectVersion.
+func TestVerifyObjectCopyAccess_IdentityPolicySourceVersion(t *testing.T) {
+	tests := []struct {
+		name       string
+		copySource string
+		wantAction Action
+	}{
+		{"current object", "src-bucket/doc.txt", GetObjectAction},
+		{"object version", "src-bucket/doc.txt?versionId=01BX5ZZKBKACTAV9WEVGEMMVRZ", GetObjectVersionAction},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pe := newMockPolicyEvaluator(policyDecisionAllow)
+			opts := copySourceOwnerOpts()
+			opts.Iam = pe
+
+			err := VerifyObjectCopyAccess(testFiberCtx(t), noBucketPolicyBackend{srcAcl: ACL{Owner: "owner"}}, tt.copySource, opts)
+			assert.NoError(t, err)
+
+			// The destination is evaluated first, then the source.
+			if assert.Len(t, pe.calls, 2) {
+				assert.Equal(t, []string{"arn:aws:s3:::src-bucket/doc.txt"}, pe.calls[1].resources)
+				assert.Equal(t, []Action{tt.wantAction}, pe.calls[1].actions)
+			}
+		})
+	}
+}
+
 // TestVerifyCreateBucketAccess_RootAndAdminBypass confirms root and admin
 // accounts may always create a bucket, with no iam backend consulted at
 // all — CreateBucket has no existing bucket to check a policy or ACL

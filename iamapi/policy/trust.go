@@ -106,6 +106,19 @@ var validServicePrincipals = map[string]bool{
 	"iam.amazonaws.com": true,
 }
 
+// trustActions are the only actions a trust policy statement may name when
+// it is written. IAM matches them exactly: a wildcard ("sts:*",
+// "sts:AssumeRole*"), another case ("sts:assumerole") or any other sts
+// action ("sts:GetCallerIdentity") is rejected.
+var trustActions = map[string]bool{
+	"sts:AssumeRole":                true,
+	"sts:AssumeRoleWithSAML":        true,
+	"sts:AssumeRoleWithWebIdentity": true,
+	"sts:TagSession":                true,
+	"sts:SetSourceIdentity":         true,
+	"sts:SetContext":                true,
+}
+
 // MaxTrustPolicyBytes is IAM's ACLSizePerRole quota: a role has exactly one
 // trust policy, so unlike inline identity policies (which sum across all of
 // a user's/role's named policies) this is a plain length check against the
@@ -133,22 +146,31 @@ var (
 
 // ParseTrust parses raw as an IAM role trust-policy document (the value of
 // AssumeRolePolicyDocument / UpdateAssumeRolePolicy's PolicyDocument) and
-// checks it against trust-policy grammar: Principal is required (the
-// opposite of an identity policy), Action/NotAction values must carry the
-// "sts:" prefix, and Resource/NotResource are forbidden.
+// checks it against the grammar a trust policy must satisfy to be written:
+// Principal is required (the opposite of an identity policy), Action/NotAction
+// values must be one of trustActions, and Resource/NotResource are forbidden.
 func ParseTrust(raw string) error {
 	var doc Document
 	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
 		return errTrustInvalidJSON
 	}
-	return doc.ValidateTrust()
+	return doc.validateTrust(true)
 }
 
 // ValidateTrust checks d against IAM's trust-policy document grammar: a
 // valid Version if present, a non-empty Statement (single object or
 // array), document-wide unique Sids, and per statement, the rules enforced
 // by Statement.ValidateTrust.
+//
+// This is the check a stored document must pass to be evaluated. It accepts
+// any "sts:"-prefixed action, where ParseTrust accepts only trustActions, so
+// that a role stored before the stricter write-time rule existed keeps
+// working.
 func (d Document) ValidateTrust() error {
+	return d.validateTrust(false)
+}
+
+func (d Document) validateTrust(strictActions bool) error {
 	if d.Version != "" && d.Version != Version2008 && d.Version != Version2012 {
 		return errTrustInvalidVersion
 	}
@@ -158,7 +180,7 @@ func (d Document) ValidateTrust() error {
 
 	seenSids := make(map[string]struct{}, len(d.Statement))
 	for _, stmt := range d.Statement {
-		if err := stmt.ValidateTrust(); err != nil {
+		if err := stmt.validateTrust(strictActions); err != nil {
 			return err
 		}
 		if stmt.Sid != "" {
@@ -180,6 +202,12 @@ func (d Document) ValidateTrust() error {
 // *keys* and operand *values* are deliberately not validated here, matching
 // AWS behavior).
 func (s Statement) ValidateTrust() error {
+	return s.validateTrust(false)
+}
+
+// validateTrust is ValidateTrust, additionally requiring every action to be
+// one of trustActions when strictActions is set.
+func (s Statement) validateTrust(strictActions bool) error {
 	switch s.Effect {
 	case "Allow", "Deny":
 	case "":
@@ -214,14 +242,11 @@ func (s Statement) ValidateTrust() error {
 	if len(s.Action) == 0 && len(s.NotAction) == 0 {
 		return errTrustMissingAction
 	}
-	for _, action := range s.Action {
-		if !strings.HasPrefix(action, "sts:") {
-			return errTrustNonSTSAction
-		}
-	}
-	for _, action := range s.NotAction {
-		if !strings.HasPrefix(action, "sts:") {
-			return errTrustNonSTSAction
+	for _, actions := range [][]string{s.Action, s.NotAction} {
+		for _, action := range actions {
+			if !strings.HasPrefix(action, "sts:") || (strictActions && !trustActions[action]) {
+				return errTrustNonSTSAction
+			}
 		}
 	}
 
@@ -238,12 +263,11 @@ func (s Statement) ValidateTrust() error {
 // validateTrustPrincipal checks s.Principal against trust-policy grammar:
 // required, a JSON object (not a bare string or array), non-empty, with
 // only AWS/Service/Federated keys, plus the Cognito-specific Condition
-// requirement. Real AWS additionally validates that AWS/Service values
-// resolve to real accounts/services against its live catalog; the gateway
-// has no such catalog for AWS account/ARN values and validates those shape
-// only. Service values are the exception — they're checked against
-// validServicePrincipals, since the gateway only exposes S3, STS, and IAM
-// APIs and so only those services could ever assume a role here.
+// requirement. Service values are checked against validServicePrincipals,
+// since the gateway only exposes S3, STS, and IAM APIs and so only those
+// services could ever assume a role here. AWS values are not checked here:
+// whether one names an identity that exists takes a store lookup, which
+// CreateRole and UpdateAssumeRolePolicy do themselves.
 func (s Statement) validateTrustPrincipal() error {
 	raw := s.Principal
 	if len(raw) == 0 {
