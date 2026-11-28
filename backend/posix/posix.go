@@ -2728,7 +2728,9 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", err
 	}
 	err = os.Rename(uploadIDDir, uploadIDInProgress)
-	unlockClaim()
+	if err != nil {
+		unlockClaim()
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		// Another call already claimed this slot and is still assembling the object.
 		if _, statErr := os.Stat(uploadIDInProgress); statErr == nil {
@@ -2817,9 +2819,13 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	newMetaObj := filepath.Join(metaObjDir, activeUploadName)
 	if err := p.meta.RenameObject(bucket, oldMetaObj, newMetaObj); err != nil {
 		// Roll back the data directory rename so a future retry can succeed.
-		os.Rename(uploadIDInProgress, uploadIDDir)
+		if rbErr := os.Rename(uploadIDInProgress, uploadIDDir); rbErr != nil {
+			debuglogger.Logf("rollback rename multipart upload dir (%q -> %q): %v", uploadIDInProgress, uploadIDDir, rbErr)
+		}
+		unlockClaim()
 		return res, "", fmt.Errorf("rename metadata for in-progress: %w", err)
 	}
+	unlockClaim()
 
 	// Best-effort rename back on failure so a future retry can still
 	// complete, unless a non-idempotent copy has consumed the parts: the
@@ -2832,10 +2838,23 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		}
 		if abortOnErr {
 			_ = p.removeUpload(bucket, key, activeUploadName)
+			p.removeUploadMetaRetry(bucket, filepath.Join(objdir, uploadID))
 			return
 		}
-		p.meta.RenameObject(bucket, newMetaObj, oldMetaObj)
-		os.Rename(uploadIDInProgress, uploadIDDir)
+		unlockRollback, lockErr := p.lockObjectPublish(context.Background(), bucket, object)
+		if lockErr != nil {
+			debuglogger.Logf("rollback lock object publish (%q/%q): %v", bucket, object, lockErr)
+		}
+		p.removeUploadMetaRetry(bucket, oldMetaObj)
+		if rbErr := p.meta.RenameObject(bucket, newMetaObj, oldMetaObj); rbErr != nil {
+			debuglogger.Logf("rollback rename multipart metadata (%q -> %q): %v", newMetaObj, oldMetaObj, rbErr)
+		}
+		if rbErr := os.Rename(uploadIDInProgress, uploadIDDir); rbErr != nil {
+			debuglogger.Logf("rollback rename multipart upload dir (%q -> %q): %v", uploadIDInProgress, uploadIDDir, rbErr)
+		}
+		if lockErr == nil {
+			unlockRollback()
+		}
 	}()
 
 	// Fast-fail precondition and directory checks before the parts are
@@ -3132,7 +3151,14 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	if err != nil {
 		return res, "", err
 	}
-	defer unlock()
+	unlocked := false
+	unlockPublish := func() {
+		if !unlocked {
+			unlocked = true
+			unlock()
+		}
+	}
+	defer unlockPublish()
 
 	// authoritative precondition check under the publish lock
 	err = p.checkPutPreconditions(bucket, object, input.IfMatch, input.IfNoneMatch)
@@ -3275,9 +3301,11 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	if err != nil {
 		return res, "", publishErr(objname, err)
 	}
+	unlockPublish()
 
 	// cleanup tmp dirs
 	_ = p.removeUpload(bucket, key, activeUploadName)
+	p.removeUploadMetaRetry(bucket, filepath.Join(objdir, uploadID))
 
 	return s3response.CompleteMultipartUploadResult{
 		Bucket:            &bucket,
@@ -3668,20 +3696,105 @@ func (p *Posix) AbortMultipartUpload(ctx context.Context, mpu *s3.AbortMultipart
 	}
 
 	sum := sha256.Sum256([]byte(object))
-	objdir := filepath.Join(p.BucketPath(bucket), MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
+	objdirRel := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
+	upiddir := filepath.Join(objdirRel, uploadID)
+	upiddirPath := p.ObjectPath(bucket, upiddir)
 
-	f, err := os.Stat(filepath.Join(objdir, uploadID))
+	unlock, err := p.lockObjectPublish(ctx, bucket, p.encodeKey(object))
 	if err != nil {
+		return err
+	}
+
+	f, err := os.Stat(upiddirPath)
+	if err != nil {
+		unlock()
 		return s3err.GetNoSuchUploadErr(uploadID)
 	}
 
 	if mpu.IfMatchInitiatedTime != nil {
 		if mpu.IfMatchInitiatedTime.Unix() != f.ModTime().Unix() {
+			unlock()
 			return s3err.GetPreconditionFailedErr(s3err.ConditionIfMatchInitiatedTime)
 		}
 	}
 
-	return p.removeUpload(bucket, object, uploadID)
+	abortID := uuid.New().String()
+	targetPath := filepath.Join(p.ObjectPath(bucket, MetaTmpDir), fmt.Sprintf(".abort-%s", abortID))
+	if err := os.Rename(upiddirPath, targetPath); err != nil {
+		unlock()
+		if isParentDirGone(err) {
+			return s3err.GetNoSuchUploadErr(uploadID)
+		}
+		return fmt.Errorf("retire multipart upload container: %w", err)
+	}
+
+	metaTarget := filepath.Join(MetaTmpDir, ".abort-meta-"+abortID)
+	if err := p.meta.RenameObject(bucket, upiddir, metaTarget); err != nil {
+		restoreErr := p.restoreRetiredUploadLocked(bucket, object, objdirRel, upiddir, upiddirPath, targetPath, "")
+		unlock()
+		if restoreErr != nil {
+			debuglogger.Logf("rollback retired multipart upload (%q/%q): %v", bucket, upiddir, restoreErr)
+			return fmt.Errorf("rename multipart upload metadata: %w (rollback failed: %v)", err, restoreErr)
+		}
+		return fmt.Errorf("rename multipart upload metadata: %w", err)
+	}
+	unlock()
+
+	if err := removeDirRetry(targetPath); err != nil {
+		if restoreErr := p.restoreRetiredUpload(bucket, object, objdirRel, upiddir, upiddirPath, targetPath, metaTarget); restoreErr != nil {
+			debuglogger.Logf("rollback retired multipart upload (%q/%q): %v", bucket, upiddir, restoreErr)
+			return fmt.Errorf("remove multipart upload container: %w (rollback failed: %v)", err, restoreErr)
+		}
+		return fmt.Errorf("remove multipart upload container: %w", err)
+	}
+	p.removeUploadMetaRetry(bucket, metaTarget)
+	p.cleanupEmptyMultipartObjDir(bucket, object, objdirRel)
+	return nil
+}
+
+func (p *Posix) restoreRetiredUpload(bucket, key, objdir, upiddir, upiddirPath, targetPath, metaTarget string) error {
+	unlockRestore, lockErr := p.lockObjectPublish(context.Background(), bucket, p.encodeKey(key))
+	if lockErr != nil {
+		debuglogger.Logf("rollback lock object publish (%q/%q): %v", bucket, key, lockErr)
+	} else {
+		defer unlockRestore()
+	}
+
+	return p.restoreRetiredUploadLocked(bucket, key, objdir, upiddir, upiddirPath, targetPath, metaTarget)
+}
+
+func (p *Posix) restoreRetiredUploadLocked(bucket, key, objdir, upiddir, upiddirPath, targetPath, metaTarget string) error {
+	backoffMs := initialBackoffMs
+	for attempt := 0; ; attempt++ {
+		renameErr := os.Rename(targetPath, upiddirPath)
+		if renameErr == nil {
+			break
+		}
+		if !isParentDirGone(renameErr) || attempt == maxDirRecreateRetries {
+			return fmt.Errorf("restore multipart upload container: %w", renameErr)
+		}
+		if _, statErr := os.Stat(targetPath); errors.Is(statErr, fs.ErrNotExist) {
+			return fmt.Errorf("restore multipart upload container: %w", renameErr)
+		}
+		if attempt > 0 {
+			sleepWithJitter(backoffMs)
+			backoffMs = min(backoffMs*2, maxBackoffMs)
+		}
+		if mkErr := backend.MkdirAll(filepath.Dir(upiddirPath), 0, 0, false, p.newDirPerm); mkErr != nil && !isParentDirGone(mkErr) && !isDirDeletePending(mkErr) {
+			return fmt.Errorf("recreate multipart parent dir: %w", mkErr)
+		}
+	}
+
+	var restoreErrs []error
+	if err := p.meta.StoreAttribute(nil, bucket, objdir, onameAttr, []byte(key)); err != nil {
+		restoreErrs = append(restoreErrs, fmt.Errorf("restore multipart object name attr: %w", err))
+	}
+	if metaTarget != "" {
+		if err := p.meta.RenameObject(bucket, metaTarget, upiddir); err != nil {
+			restoreErrs = append(restoreErrs, fmt.Errorf("restore multipart upload metadata: %w", err))
+		}
+	}
+	return errors.Join(restoreErrs...)
 }
 
 // removeUpload removes the directory of the upload uploadName of key with its
@@ -3691,22 +3804,35 @@ func (p *Posix) AbortMultipartUpload(ctx context.Context, mpu *s3.AbortMultipart
 func (p *Posix) removeUpload(bucket, key, uploadName string) error {
 	objdir := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sha256.Sum256([]byte(key))))
 	upiddir := filepath.Join(objdir, uploadName)
+	upiddirPath := p.ObjectPath(bucket, upiddir)
 
-	err := os.RemoveAll(p.ObjectPath(bucket, upiddir))
-	if err != nil {
+	if err := removeDirRetry(upiddirPath); err != nil {
 		return fmt.Errorf("remove multipart upload container: %w", err)
 	}
-	err = p.meta.RemoveObject(bucket, upiddir)
-	if err != nil {
-		debuglogger.Logf("failed to remove multipart upload metadata (%q/%q): %v", bucket, upiddir, err)
-	}
+	p.removeUploadMetaRetry(bucket, upiddir)
+	p.cleanupEmptyMultipartObjDir(bucket, key, objdir)
+	return nil
+}
 
+func removeDirRetry(path string) error {
+	var err error
+	backoffMs := initialBackoffMs
+	for attempt := 0; ; attempt++ {
+		err = os.RemoveAll(path)
+		if err == nil || !isErrDirNotEmpty(err) || attempt == maxDirRecreateRetries {
+			return err
+		}
+		sleepWithJitter(backoffMs)
+		backoffMs = min(backoffMs*2, maxBackoffMs)
+	}
+}
+
+func (p *Posix) cleanupEmptyMultipartObjDir(bucket, key, objdir string) {
 	// Remove fails while other uploads of key remain
 	if os.Remove(p.ObjectPath(bucket, objdir)) != nil {
-		return nil
+		return
 	}
-	err = p.meta.DeleteAttributes(bucket, objdir)
-	if err != nil {
+	if err := p.meta.DeleteAttributes(bucket, objdir); err != nil {
 		debuglogger.Logf("failed to remove multipart object name metadata (%q/%q): %v", bucket, objdir, err)
 	}
 	// A new upload of key can make the directory again and store the name
@@ -3714,7 +3840,22 @@ func (p *Posix) removeUpload(bucket, key, uploadName string) error {
 	if _, err := os.Stat(p.ObjectPath(bucket, objdir)); err == nil {
 		_ = p.meta.StoreAttribute(nil, bucket, objdir, onameAttr, []byte(key))
 	}
-	return nil
+}
+
+func (p *Posix) removeUploadMetaRetry(bucket, upiddir string) {
+	var err error
+	backoffMs := initialBackoffMs
+	for attempt := 0; ; attempt++ {
+		err = p.meta.RemoveObject(bucket, upiddir)
+		if err == nil || !isErrDirNotEmpty(err) || attempt == maxDirRecreateRetries {
+			break
+		}
+		sleepWithJitter(backoffMs)
+		backoffMs = min(backoffMs*2, maxBackoffMs)
+	}
+	if err != nil {
+		debuglogger.Logf("failed to remove multipart upload metadata (%q/%q): %v", bucket, upiddir, err)
+	}
 }
 
 func (p *Posix) ListMultipartUploads(ctx context.Context, mpu *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
@@ -4063,7 +4204,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	mpPath := filepath.Join(objdir, uploadID)
 
 	_, err = os.Stat(p.ObjectPath(bucket, mpPath))
-	if errors.Is(err, fs.ErrNotExist) {
+	if isParentDirGone(err) {
 		return nil, s3err.GetNoSuchUploadErr(uploadID)
 	}
 	if err != nil {
@@ -4078,13 +4219,19 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 			return nil, s3err.GetAPIError(s3err.ErrObjectLockPartChecksumRequired)
 		}
 		if !errors.Is(err, meta.ErrNoSuchKey) {
+			if isParentDirGone(err) {
+				return nil, s3err.GetNoSuchUploadErr(uploadID)
+			}
+			if _, statErr := os.Stat(p.ObjectPath(bucket, mpPath)); isParentDirGone(statErr) {
+				return nil, s3err.GetNoSuchUploadErr(uploadID)
+			}
 			return nil, fmt.Errorf("get mp object lock: %w", err)
 		}
 	}
 
 	partPath := filepath.Join(mpPath, fmt.Sprintf("%v", *part))
 
-	f, err := p.openTmpFile(p.ObjectPath(bucket, objdir),
+	f, err := p.openTmpFile(p.ObjectPath(bucket, MetaTmpDir),
 		bucket, partPath, length, acct, doFalloc, odirectAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
@@ -4097,6 +4244,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 		}
 		return nil, fmt.Errorf("open temp file: %w", err)
 	}
+	f.setNoRecreateDir()
 	defer f.cleanup()
 
 	// When dataIntegrityEtag is enabled, MD5 is never used for the part ETag,
@@ -4147,6 +4295,12 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 
 	checksums, err := p.retrieveChecksums(nil, bucket, mpPath)
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+		if isParentDirGone(err) {
+			return nil, s3err.GetNoSuchUploadErr(uploadID)
+		}
+		if _, statErr := os.Stat(p.ObjectPath(bucket, mpPath)); isParentDirGone(statErr) {
+			return nil, s3err.GetNoSuchUploadErr(uploadID)
+		}
 		return nil, fmt.Errorf("retrieve mp checksum: %w", err)
 	}
 
@@ -4269,9 +4423,25 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	} else {
 		etag = backend.GenerateEtag(md5hash)
 	}
+
+	err = postprocess(f.File())
+	if err != nil {
+		return nil, fmt.Errorf("upload part post process failed: %w", err)
+	}
+
+	unlock, err := p.lockObjectPublish(ctx, bucket, p.encodeKey(object))
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
+	if _, err := os.Stat(p.ObjectPath(bucket, mpPath)); isParentDirGone(err) {
+		return nil, s3err.GetNoSuchUploadErr(uploadID)
+	}
+
 	err = p.meta.StoreAttribute(f.File(), bucket, partPath, etagkey, []byte(etag))
 	if err != nil {
-		return nil, fmt.Errorf("set etag attr: %w", err)
+		return nil, p.uploadPartMetaErr(bucket, objdir, mpPath, partPath, uploadID, "set etag attr", err)
 	}
 
 	res := &s3.UploadPartOutput{
@@ -4301,7 +4471,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 
 		err := p.storeChecksums(f.File(), bucket, partPath, checksum)
 		if err != nil {
-			return nil, fmt.Errorf("store checksum: %w", err)
+			return nil, p.uploadPartMetaErr(bucket, objdir, mpPath, partPath, uploadID, "store checksum", err)
 		}
 	} else {
 		var internalCrc64NvmeSum string
@@ -4317,7 +4487,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 
 		err := p.meta.StoreAttribute(f.File(), bucket, partPath, partCrc64nvme, []byte(internalCrc64NvmeSum))
 		if err != nil {
-			return nil, fmt.Errorf("store part internal crc64nvme: %w", err)
+			return nil, p.uploadPartMetaErr(bucket, objdir, mpPath, partPath, uploadID, "store part internal crc64nvme", err)
 		}
 
 		if exposeChecksum {
@@ -4353,17 +4523,47 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 		}
 	}
 
-	err = postprocess(f.File())
-	if err != nil {
-		return nil, fmt.Errorf("upload part post process failed: %w", err)
-	}
-
 	err = f.link()
 	if err != nil {
-		return nil, fmt.Errorf("link object in namespace: %w", err)
+		if isParentDirGone(err) {
+			p.cleanupAbortedPartMeta(bucket, objdir, mpPath, partPath, uploadID)
+			return nil, s3err.GetNoSuchUploadErr(uploadID)
+		}
+		return nil, p.uploadPartMetaErr(bucket, objdir, mpPath, partPath, uploadID, "link object in namespace", err)
 	}
 
 	return res, nil
+}
+
+func (p *Posix) uploadMissingAndUnclaimed(bucket, objdir, mpPath, uploadID string) bool {
+	if _, err := os.Stat(p.ObjectPath(bucket, mpPath)); !isParentDirGone(err) {
+		return false
+	}
+	entries, err := os.ReadDir(p.ObjectPath(bucket, objdir))
+	if err != nil {
+		return isParentDirGone(err)
+	}
+	prefix := uploadID + "."
+	for _, e := range entries {
+		if e.Name() == uploadID || (strings.HasPrefix(e.Name(), prefix) && strings.HasSuffix(e.Name(), inProgressSuffix)) {
+			return false
+		}
+	}
+	return true
+}
+
+func (p *Posix) cleanupAbortedPartMeta(bucket, objdir, mpPath, partPath, uploadID string) {
+	if p.uploadMissingAndUnclaimed(bucket, objdir, mpPath, uploadID) {
+		_ = p.meta.DeleteAttributes(bucket, partPath)
+	}
+}
+
+func (p *Posix) uploadPartMetaErr(bucket, objdir, mpPath, partPath, uploadID, msg string, err error) error {
+	if _, statErr := os.Stat(p.ObjectPath(bucket, mpPath)); isParentDirGone(statErr) {
+		p.cleanupAbortedPartMeta(bucket, objdir, mpPath, partPath, uploadID)
+		return s3err.GetNoSuchUploadErr(uploadID)
+	}
+	return fmt.Errorf("%s: %w", msg, err)
 }
 
 func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput) (_ s3response.CopyPartResult, err error) {
@@ -4404,9 +4604,10 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 
 	sum := sha256.Sum256([]byte(*upi.Key))
 	objdir := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
+	mpPath := filepath.Join(objdir, *upi.UploadId)
 
-	_, err = os.Stat(filepath.Join(p.BucketPath(*upi.Bucket), objdir, *upi.UploadId))
-	if errors.Is(err, fs.ErrNotExist) {
+	_, err = os.Stat(p.ObjectPath(*upi.Bucket, mpPath))
+	if isParentDirGone(err) {
 		return s3response.CopyPartResult{}, s3err.GetNoSuchUploadErr(*upi.UploadId)
 	}
 	if isErrNameTooLong(err) {
@@ -4416,7 +4617,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, fmt.Errorf("stat uploadid: %w", err)
 	}
 
-	partPath := filepath.Join(objdir, *upi.UploadId, fmt.Sprintf("%v", *upi.PartNumber))
+	partPath := filepath.Join(mpPath, fmt.Sprintf("%v", *upi.PartNumber))
 
 	srcBucket, srcKey, srcVersionId, err := backend.ParseCopySource(*upi.CopySource)
 	if err != nil {
@@ -4545,7 +4746,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, err
 	}
 
-	f, err := p.openTmpFile(p.ObjectPath(*upi.Bucket, objdir),
+	f, err := p.openTmpFile(p.ObjectPath(*upi.Bucket, MetaTmpDir),
 		*upi.Bucket, partPath, length, acct, doFalloc, odirectNotAllowed)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
@@ -4556,6 +4757,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		}
 		return s3response.CopyPartResult{}, fmt.Errorf("open temp file: %w", err)
 	}
+	f.setNoRecreateDir()
 	defer f.cleanup()
 
 	rdr := io.NewSectionReader(srcf, startOffset, length)
@@ -4566,8 +4768,14 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		tr = io.TeeReader(rdr, md5hash)
 	}
 
-	mpChecksums, err := p.retrieveChecksums(nil, *upi.Bucket, filepath.Join(objdir, *upi.UploadId))
+	mpChecksums, err := p.retrieveChecksums(nil, *upi.Bucket, mpPath)
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+		if isParentDirGone(err) {
+			return s3response.CopyPartResult{}, s3err.GetNoSuchUploadErr(*upi.UploadId)
+		}
+		if _, statErr := os.Stat(p.ObjectPath(*upi.Bucket, mpPath)); isParentDirGone(statErr) {
+			return s3response.CopyPartResult{}, s3err.GetNoSuchUploadErr(*upi.UploadId)
+		}
 		return s3response.CopyPartResult{}, fmt.Errorf("retrieve mp checksums: %w", err)
 	}
 
@@ -4618,6 +4826,16 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, fmt.Errorf("copy part data: %w", err)
 	}
 
+	unlock, err := p.lockObjectPublish(ctx, *upi.Bucket, p.encodeKey(*upi.Key))
+	if err != nil {
+		return s3response.CopyPartResult{}, err
+	}
+	defer unlock()
+
+	if _, err := os.Stat(p.ObjectPath(*upi.Bucket, mpPath)); isParentDirGone(err) {
+		return s3response.CopyPartResult{}, s3err.GetNoSuchUploadErr(*upi.UploadId)
+	}
+
 	if checksums.Algorithm != "" {
 		if mpChecksums.Algorithm == "" {
 			checksums = s3response.Checksum{}
@@ -4625,7 +4843,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 			if hashRdr == nil {
 				err := p.storeChecksums(f.File(), *upi.Bucket, partPath, checksums)
 				if err != nil {
-					return s3response.CopyPartResult{}, fmt.Errorf("store part checksum: %w", err)
+					return s3response.CopyPartResult{}, p.uploadPartMetaErr(*upi.Bucket, objdir, mpPath, partPath, *upi.UploadId, "store part checksum", err)
 				}
 			}
 		}
@@ -4642,7 +4860,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 
 		err := p.storeChecksums(f.File(), *upi.Bucket, partPath, checksums)
 		if err != nil {
-			return s3response.CopyPartResult{}, fmt.Errorf("store part checksum: %w", err)
+			return s3response.CopyPartResult{}, p.uploadPartMetaErr(*upi.Bucket, objdir, mpPath, partPath, *upi.UploadId, "store part checksum", err)
 		}
 	}
 
@@ -4651,7 +4869,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		internalCrc64NvmeSum := crc64nvmeRdr.Sum()
 		err := p.meta.StoreAttribute(f.File(), *upi.Bucket, partPath, partCrc64nvme, []byte(internalCrc64NvmeSum))
 		if err != nil {
-			return s3response.CopyPartResult{}, fmt.Errorf("store part internal crc64nvme: %w", err)
+			return s3response.CopyPartResult{}, p.uploadPartMetaErr(*upi.Bucket, objdir, mpPath, partPath, *upi.UploadId, "store part internal crc64nvme", err)
 		}
 	}
 
@@ -4663,16 +4881,24 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}
 	err = p.meta.StoreAttribute(f.File(), *upi.Bucket, partPath, etagkey, []byte(etag))
 	if err != nil {
-		return s3response.CopyPartResult{}, fmt.Errorf("set etag attr: %w", err)
+		return s3response.CopyPartResult{}, p.uploadPartMetaErr(*upi.Bucket, objdir, mpPath, partPath, *upi.UploadId, "set etag attr", err)
 	}
 
 	err = f.link()
 	if err != nil {
-		return s3response.CopyPartResult{}, fmt.Errorf("link object in namespace: %w", err)
+		if isParentDirGone(err) {
+			p.cleanupAbortedPartMeta(*upi.Bucket, objdir, mpPath, partPath, *upi.UploadId)
+			return s3response.CopyPartResult{}, s3err.GetNoSuchUploadErr(*upi.UploadId)
+		}
+		return s3response.CopyPartResult{}, p.uploadPartMetaErr(*upi.Bucket, objdir, mpPath, partPath, *upi.UploadId, "link object in namespace", err)
 	}
 
 	fi, err = os.Stat(p.ObjectPath(*upi.Bucket, partPath))
 	if err != nil {
+		if isParentDirGone(err) {
+			p.cleanupAbortedPartMeta(*upi.Bucket, objdir, mpPath, partPath, *upi.UploadId)
+			return s3response.CopyPartResult{}, s3err.GetNoSuchUploadErr(*upi.UploadId)
+		}
 		return s3response.CopyPartResult{}, fmt.Errorf("stat part path: %w", err)
 	}
 

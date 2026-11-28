@@ -40,16 +40,17 @@ type tmpfile struct {
 	bucket  string
 	objname string
 	// Retained for compatibility with shared tmpfile methods in otmpfile_common.
-	isOTmp      bool
-	procFDName  string
-	useODirect  bool
-	size        int64
-	newDirPerm  fs.FileMode
-	newFilePerm fs.FileMode
-	fsync       bool
-	uid         int
-	gid         int
-	doChown     bool
+	isOTmp        bool
+	procFDName    string
+	useODirect    bool
+	size          int64
+	newDirPerm    fs.FileMode
+	newFilePerm   fs.FileMode
+	fsync         bool
+	uid           int
+	gid           int
+	doChown       bool
+	noRecreateDir bool
 	// modTime is the modification time the file is published with,
 	// the time it was last written if zero
 	modTime time.Time
