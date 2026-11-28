@@ -145,7 +145,7 @@ func (tmp *tmpfile) link() error {
 		if err != nil {
 			return fmt.Errorf("open parent dir: %w", err)
 		}
-		err = moveInto(tempname, objPath, tmp.newFilePerm, d)
+		err = moveInto(tempname, objPath, tmp.newFilePerm, d, tmp.fsync)
 		if err != nil {
 			if d != nil {
 				d.Close()

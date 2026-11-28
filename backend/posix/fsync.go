@@ -98,12 +98,73 @@ func (tmp *tmpfile) syncNamespace(dirs syncDirs) error {
 // the handles were opened; a removed parent fails with ENOENT. It falls back
 // to renaming by path when there are no handles or the rename crosses
 // filesystems.
-func moveInto(tempname, objPath string, perm os.FileMode, dirs syncDirs) error {
+func moveInto(tempname, objPath string, perm os.FileMode, dirs syncDirs, fsync bool) error {
 	if renameInDirSupported && len(dirs) > 0 {
 		err := renameInDir(tempname, int(dirs[0].Fd()), objPath)
 		if err == nil || !errors.Is(err, syscall.EXDEV) {
 			return err
 		}
 	}
-	return backend.MoveFile(tempname, objPath, perm)
+	return backend.MoveFile(tempname, objPath, perm, fsync)
+}
+
+// syncObjectMeta flushes the attributes written to an object that is already
+// in place, which no data sync before a publish covers: those of a directory
+// object and those of an object rewritten in place. With sidecar metadata the
+// attributes live in other files, which this does not flush, and the data and
+// its sidecar are not updated atomically, so a crash can leave them out of step.
+func (p *Posix) syncObjectMeta(bucket, object string) error {
+	if !p.fsync {
+		return nil
+	}
+	path := p.ObjectPath(bucket, object)
+	fi, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat object for fsync: %w", err)
+	}
+	if fi.IsDir() {
+		// The directory may have been created for this request, along with
+		// its parents, so flush each up to and including the bucket.
+		stop := filepath.Clean(p.BucketPath(bucket))
+		dir := filepath.Clean(path)
+		for {
+			if err := syncDirPath(dir); err != nil {
+				return fmt.Errorf("fsync object metadata: %w", err)
+			}
+			parent := filepath.Dir(dir)
+			if dir == stop || parent == dir {
+				return nil
+			}
+			dir = parent
+		}
+	}
+	// FlushFileBuffers needs a handle that can write, which os.Open on
+	// Windows is not.
+	flags := os.O_RDONLY
+	if runtime.GOOS == "windows" {
+		flags = os.O_RDWR
+	}
+	f, err := os.OpenFile(path, flags, 0)
+	if err != nil {
+		return fmt.Errorf("open object for fsync: %w", err)
+	}
+	defer f.Close()
+	if err := syncFile(f); err != nil {
+		return fmt.Errorf("fsync object metadata: %w", err)
+	}
+	return nil
+}
+
+// syncDirPath opens the directory dir and flushes it. Windows cannot fsync a
+// directory handle, so nothing is synced there.
+func syncDirPath(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return syncDir(dir, d)
 }

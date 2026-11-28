@@ -590,7 +590,7 @@ func (tmp *tmpfile) fallbackLink() error {
 		}
 		// rename only works for files within the same filesystem,
 		// MoveFile falls back to copy otherwise
-		err = moveInto(tempname, objPath, tmp.newFilePerm, d)
+		err = moveInto(tempname, objPath, tmp.newFilePerm, d, tmp.fsync)
 		if err != nil {
 			if d != nil {
 				d.Close()
