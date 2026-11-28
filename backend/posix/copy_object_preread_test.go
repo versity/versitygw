@@ -17,6 +17,7 @@ package posix
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -138,5 +139,67 @@ func TestCopyObjectPreRead(t *testing.T) {
 	}, nil)
 	if err != nil {
 		t.Fatalf("copy object with nil preRead: %v", err)
+	}
+}
+
+// TestCopyObjectAttributesFromOpenedSource checks that a copy with the COPY
+// metadata and tagging directives gives the destination the metadata and
+// tags of the source it opened, with that source's body, when a PUT
+// replaces the source after the open.
+func TestCopyObjectAttributesFromOpenedSource(t *testing.T) {
+	p := newTestPosix(t, metaModes(t)["xattr"])
+	p.copyObjectThreshold = 4 << 20
+	bucket, src, dst := "testbucket", "src", "dst"
+	createTestBucket(t, p, bucket)
+	ctx := context.Background()
+
+	put := func(body, contentType, tagging string) {
+		t.Helper()
+		_, err := p.PutObject(ctx, s3response.PutObjectInput{
+			Bucket:        &bucket,
+			Key:           &src,
+			Body:          strings.NewReader(body),
+			ContentLength: aws.Int64(int64(len(body))),
+			ContentType:   &contentType,
+			Tagging:       &tagging,
+		})
+		if err != nil {
+			t.Fatalf("put %q: %v", body, err)
+		}
+	}
+	put("first", "text/first", "a=1&b=2")
+
+	_, err := p.CopyObjectWithPreReadFunc(ctx, s3response.CopyObjectInput{
+		Bucket:              &bucket,
+		Key:                 &dst,
+		CopySource:          aws.String(bucket + "/" + src),
+		ExpectedBucketOwner: aws.String(""),
+		MetadataDirective:   types.MetadataDirectiveCopy,
+		TaggingDirective:    types.TaggingDirectiveCopy,
+	}, func(*os.File) error {
+		put("second", "text/second", "c=3")
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("copy object: %v", err)
+	}
+
+	out, err := p.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &dst})
+	if err != nil {
+		t.Fatalf("get copy: %v", err)
+	}
+	defer out.Body.Close()
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		t.Fatalf("read copy: %v", err)
+	}
+	if string(data) != "first" {
+		t.Fatalf("copy body = %q, want the opened source's %q", data, "first")
+	}
+	if got := aws.ToString(out.ContentType); got != "text/first" {
+		t.Errorf("copy content type = %q, want the opened source's %q", got, "text/first")
+	}
+	if got := aws.ToInt32(out.TagCount); got != 2 {
+		t.Errorf("copy tag count = %d, want the opened source's 2", got)
 	}
 }
