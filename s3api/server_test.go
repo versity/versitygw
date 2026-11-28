@@ -24,6 +24,7 @@ import (
 	"net/textproto"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -191,6 +192,65 @@ func TestShutDownFromListenHook(t *testing.T) {
 	if err := <-shutDown; err != nil {
 		t.Fatalf("ShutDown() error = %v", err)
 	}
+}
+
+// TestWithWrapListener checks that the server accepts its connections
+// through the wrapper.
+func TestWithWrapListener(t *testing.T) {
+	var accepted atomic.Int32
+	addrs := make(chan []net.Addr, 1)
+	sa, err := newTestS3ApiServer(
+		WithHealth("/health"),
+		WithWrapListener(func(ln net.Listener) net.Listener {
+			return countListener{ln, &accepted}
+		}),
+		WithOnListenAddrs(func(a []net.Addr) { addrs <- a }),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	served := make(chan error, 1)
+	go func() { served <- sa.ServeMultiPort([]string{"127.0.0.1:0"}) }()
+
+	var addr net.Addr
+	select {
+	case a := <-addrs:
+		addr = a[0]
+	case err := <-served:
+		t.Fatalf("ServeMultiPort() returned before the listen hook fired: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("listen hook did not fire")
+	}
+	resp, err := http.Get("http://" + addr.String() + "/health")
+	if err != nil {
+		t.Fatalf("GET /health: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || accepted.Load() == 0 {
+		t.Fatalf("GET /health status = %d, wrapper accepted %d connections", resp.StatusCode, accepted.Load())
+	}
+
+	if err := sa.ShutDown(); err != nil {
+		t.Fatalf("ShutDown() error = %v", err)
+	}
+	select {
+	case <-served:
+	case <-time.After(shutDownDuration + time.Second):
+		t.Fatal("ServeMultiPort() did not return after ShutDown()")
+	}
+}
+
+type countListener struct {
+	net.Listener
+	n *atomic.Int32
+}
+
+func (l countListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err == nil {
+		l.n.Add(1)
+	}
+	return c, err
 }
 
 func TestWithRouteRegistersBeforeMiddleware(t *testing.T) {

@@ -61,6 +61,7 @@ type IAMApiServer struct {
 	maxConnections int
 	maxRequests    int
 	socketPerm     os.FileMode
+	wrapListener   func(net.Listener) net.Listener
 	onListen       func()
 	// oidc holds the OIDC provider settings threaded into the router,
 	// controller, and policy middleware; see OIDCConfig.
@@ -279,6 +280,12 @@ func WithSocketPerm(perm os.FileMode) Option {
 	return func(s *IAMApiServer) { s.socketPerm = perm }
 }
 
+// WithWrapListener wraps each listener ServeMultiPort binds, below any TLS
+// layer, as s3api.WithWrapListener does for the S3 ports.
+func WithWrapListener(wrap func(net.Listener) net.Listener) Option {
+	return func(s *IAMApiServer) { s.wrapListener = wrap }
+}
+
 // WithClientIPHeader records the client address from the named proxy header in
 // the request log. The accepted values are clientip.ClientIPHeaderForwardedFor
 // and clientip.ClientIPHeaderRealIP; an empty value (the default) keeps the
@@ -364,9 +371,9 @@ func (s *IAMApiServer) ServeMultiPort(ports []string) error {
 		var err error
 
 		if s.CertStorage != nil {
-			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, s.CertStorage.GetCertificate, netutil.ListenerOptions{SocketPerm: s.socketPerm})
+			ln, err = netutil.NewMultiAddrTLSListener(fiber.NetworkTCP, portSpec, s.CertStorage.GetCertificate, netutil.ListenerOptions{SocketPerm: s.socketPerm, WrapListener: s.wrapListener})
 		} else {
-			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, portSpec, netutil.ListenerOptions{SocketPerm: s.socketPerm})
+			ln, err = netutil.NewMultiAddrListener(fiber.NetworkTCP, portSpec, netutil.ListenerOptions{SocketPerm: s.socketPerm, WrapListener: s.wrapListener})
 		}
 		if err != nil {
 			closeListeners(listeners)

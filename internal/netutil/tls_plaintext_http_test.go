@@ -170,3 +170,64 @@ func TestMultiAddrTLSListenerStillServesTLS(t *testing.T) {
 		t.Errorf("echo = %q, want %q", buf, "ping")
 	}
 }
+
+// TestWrapListenerIsBelowTLS checks that WrapListener wraps the socket under
+// the TLS layer: the first byte its connection reads is the handshake record
+// type, 0x16.
+func TestWrapListenerIsBelowTLS(t *testing.T) {
+	first := make(chan byte, 1)
+	cert := issueTestCert(t, generateTestCA(t), "localhost")
+	ln, err := NewMultiAddrTLSListener("tcp", "127.0.0.1:0", func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+		return &cert, nil
+	}, ListenerOptions{WrapListener: func(ln net.Listener) net.Listener {
+		return firstByteListener{Listener: ln, first: first}
+	}})
+	if err != nil {
+		t.Fatalf("NewMultiAddrTLSListener() error = %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go serveTestTLS(ln)
+
+	conn, err := tls.Dial("tcp", ln.Addr().String(), &tls.Config{InsecureSkipVerify: true}) //nolint:gosec // test certificate
+	if err != nil {
+		t.Fatalf("TLS dial: %v", err)
+	}
+	conn.Close()
+
+	select {
+	case b := <-first:
+		if b != 0x16 {
+			t.Fatalf("wrapper read %#x first, want 0x16 (TLS handshake record)", b)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("wrapper read nothing")
+	}
+}
+
+type firstByteListener struct {
+	net.Listener
+	first chan<- byte
+}
+
+func (l firstByteListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &firstByteConn{Conn: c, first: l.first}, nil
+}
+
+type firstByteConn struct {
+	net.Conn
+	first chan<- byte
+	read  bool
+}
+
+func (c *firstByteConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if n > 0 && !c.read {
+		c.read = true
+		c.first <- p[0]
+	}
+	return n, err
+}
