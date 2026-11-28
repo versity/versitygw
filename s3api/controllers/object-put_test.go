@@ -24,6 +24,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/gofiber/fiber/v3"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/versity/versitygw/auth"
@@ -1773,5 +1774,55 @@ func TestS3ApiController_PutObject(t *testing.T) {
 					body:    tt.input.body,
 				})
 		})
+	}
+}
+
+func TestS3ApiController_PutObjectForwardsContentMD5(t *testing.T) {
+	// The v3 adapter verifies Content-MD5 over the RDMA-staged
+	// bytes, but only if the controller forwards the header into
+	// the backend input; the ordinary middleware path validates it
+	// through a body reader the v3 path replaces.
+	var got *string
+	be := &BackendMock{
+		PutObjectFunc: func(_ context.Context, input s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+			got = input.ContentMD5
+			return s3response.PutObjectOutput{ETag: "etag"}, nil
+		},
+		GetBucketPolicyFunc: func(_ context.Context, _ string) ([]byte, error) {
+			return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+		},
+		GetObjectLockConfigurationFunc: func(_ context.Context, _ string) ([]byte, error) {
+			return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+		},
+		GetBucketVersioningFunc: func(_ context.Context, _ string) (s3response.GetBucketVersioningOutput, error) {
+			return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+		},
+	}
+
+	ctrl := S3ApiController{be: be}
+	app := fiber.New()
+	app.Post("/:bucket/*", func(ctx fiber.Ctx) error {
+		for key, local := range defaultLocals {
+			key.Set(ctx, local)
+		}
+		_, _ = ctrl.PutObject(ctx)
+		return nil
+	})
+
+	body := []byte("hello world")
+	req := buildRequest("bucket", "object", body, map[string]string{
+		"Content-MD5": "XrY7u+Ae7tCTyyK7j1rNww==",
+	}, nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	if got == nil {
+		t.Fatal("Content-MD5 header was not forwarded to the backend input")
+	}
+	if *got != "XrY7u+Ae7tCTyyK7j1rNww==" {
+		t.Fatalf("forwarded Content-MD5 = %q", *got)
 	}
 }

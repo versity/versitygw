@@ -94,6 +94,26 @@ type middlewareMount struct {
 	handler fiber.Handler
 }
 
+// MiddlewareMounts returns the custom middleware mounts accumulated
+// from options, in registration order. It exists so embedders and
+// tests can observe exactly what the server will mount.
+func (s *S3ApiServer) MiddlewareMounts() []struct {
+	Prefix  string
+	Handler fiber.Handler
+} {
+	out := make([]struct {
+		Prefix  string
+		Handler fiber.Handler
+	}, 0, len(s.middlewares))
+	for _, m := range s.middlewares {
+		out = append(out, struct {
+			Prefix  string
+			Handler fiber.Handler
+		}{m.prefix, m.handler})
+	}
+	return out
+}
+
 func New(
 	be backend.Backend,
 	root middlewares.RootUserConfig,
