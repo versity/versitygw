@@ -411,10 +411,6 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 		return nil, fmt.Errorf("get absolute path of %v: %w", rootdir, err)
 	}
 
-	if opts.SideCarDir != "" && strings.HasPrefix(opts.SideCarDir, rootdir) {
-		return nil, fmt.Errorf("sidecar directory cannot be inside the gateway root directory")
-	}
-
 	// A storer that keeps metadata on the object files (xattr) resolves
 	// bucket names the same way this backend does: relative to the working
 	// directory by default, under the absolute root with AbsolutePaths.
@@ -438,20 +434,20 @@ func New(rootdir string, ms meta.MetadataStorer, opts PosixOpts) (*Posix, error)
 	}
 
 	var versioningdirAbs string
-	// Ensure the versioning directory isn't within the root directory
+	// Ensure the versioning directory is neither the root directory, inside it, nor contains it
 	if opts.VersioningDir != "" {
 		versioningdirAbs, err = validateSubDir(rootdirAbs, opts.VersioningDir)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("invalid versioning directory: %w", err)
 		}
 	}
 
 	var sidecardirAbs string
-	// Ensure the sidecar directory isn't within the root directory
+	// Ensure the sidecar directory is neither the root directory, inside it, nor contains it
 	if opts.SideCarDir != "" {
 		sidecardirAbs, err = validateSubDir(rootdirAbs, opts.SideCarDir)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("invalid sidecar directory: %w", err)
 		}
 	}
 
@@ -623,11 +619,6 @@ func validateSubDir(root, dir string) (string, error) {
 			dir, err)
 	}
 
-	if isDirBelowRoot(root, absDir) {
-		return "", fmt.Errorf("the root directory %v contains the directory %v",
-			root, dir)
-	}
-
 	vDir, err := os.Stat(absDir)
 	if err != nil {
 		return "", fmt.Errorf("stat %q: %w", absDir, err)
@@ -637,25 +628,60 @@ func validateSubDir(root, dir string) (string, error) {
 		return "", fmt.Errorf("path %q is not a directory", absDir)
 	}
 
+	if err := CheckDirsNotNested(root, absDir); err != nil {
+		return "", err
+	}
+
 	return absDir, nil
 }
 
-func isDirBelowRoot(root, dir string) bool {
-	// Ensure the paths ends with a separator
-	if !strings.HasSuffix(root, string(filepath.Separator)) {
-		root += string(filepath.Separator)
+// ErrDirsNested is returned when the gateway root directory and an auxiliary
+// directory (sidecar or versioning) are the same, or one is inside the other.
+var ErrDirsNested = errors.New("must not be the same as, inside, or contain the root directory")
+
+// CheckDirsNotNested returns an error wrapping ErrDirsNested if root and dir
+// are equal or one contains the other. Both must exist, because symlinks are
+// resolved first so that a symlinked path segment cannot hide the nesting.
+func CheckDirsNotNested(root, dir string) error {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("get absolute path of %v: %w", root, err)
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("get absolute path of %v: %w", dir, err)
+	}
+	realRoot, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		return fmt.Errorf("resolve root directory %q: %w", absRoot, err)
+	}
+	realDir, err := filepath.EvalSymlinks(absDir)
+	if err != nil {
+		return fmt.Errorf("resolve %q: %w", absDir, err)
 	}
 
-	if !strings.HasSuffix(dir, string(filepath.Separator)) {
-		dir += string(filepath.Separator)
+	if isWithin(realDir, realRoot) || isWithin(realRoot, realDir) {
+		return fmt.Errorf("%v %w %v", dir, ErrDirsNested, root)
 	}
+	return nil
+}
 
-	// Ensure the root directory doesn't contain the directory
-	if strings.HasPrefix(dir, root) {
-		return true
+// isWithin reports whether child is parent or below it. Directories are compared
+// by file identity rather than by name, so that a different spelling of the same
+// directory (case-insensitive filesystem, bind mount) is still detected.
+func isWithin(child, parent string) bool {
+	pfi, err := os.Stat(parent)
+	if err != nil {
+		return false
 	}
-
-	return false
+	for d := child; ; d = filepath.Dir(d) {
+		if fi, err := os.Stat(d); err == nil && os.SameFile(fi, pfi) {
+			return true
+		}
+		if filepath.Dir(d) == d {
+			return false
+		}
+	}
 }
 
 func (p *Posix) Shutdown() {
