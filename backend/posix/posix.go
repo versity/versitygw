@@ -2045,7 +2045,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 		// List all the versions of the object in the versioning directory
 		versionPath := p.genObjVersionPath(bucket, p.encodeKey(key))
 		dirEnts, err := os.ReadDir(versionPath)
-		if errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 			return result(false), nil
 		}
 		if err != nil {
@@ -5651,7 +5651,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				}
 
 				ents, err := os.ReadDir(versionPath)
-				if errors.Is(err, fs.ErrNotExist) {
+				if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 					if err := p.meta.DeleteAttributes(bucket, object); err != nil &&
 						!errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
 						return nil, fmt.Errorf("delete object attributes: %w", err)
@@ -5870,7 +5870,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 // creation order.
 func newestObjVersionId(versionPath string) (string, error) {
 	ents, err := os.ReadDir(versionPath)
-	if errors.Is(err, fs.ErrNotExist) {
+	if errors.Is(err, fs.ErrNotExist) || isErrNotDir(err) {
 		return "", nil
 	}
 	if err != nil {
@@ -5969,7 +5969,7 @@ func (p *Posix) deleteDirObjectLatestVersion(bucket, key string) error {
 	versionPath := p.genObjVersionPath(bucket, key)
 
 	ents, err := os.ReadDir(versionPath)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) && !isErrNotDir(err) {
 		return fmt.Errorf("read version dir: %w", err)
 	}
 
