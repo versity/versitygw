@@ -19,7 +19,9 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/versity/versitygw/backend"
@@ -130,9 +132,15 @@ func (p *Posix) verifyObjectLockMode() error {
 	return nil
 }
 
-// objLockShard returns the shard index for an object key.
+// normalizeObjLockKey cleans an object key so POSIX path aliases such as
+// leading, trailing, or repeated slashes and dot segments share one lock shard.
+func normalizeObjLockKey(object string) string {
+	return strings.TrimPrefix(path.Clean("/"+object), "/")
+}
+
+// objLockShard returns the shard index for a normalized object key.
 func objLockShard(object string) uint8 {
-	sum := sha256.Sum256([]byte(object))
+	sum := sha256.Sum256([]byte(normalizeObjLockKey(object)))
 	return sum[0]
 }
 

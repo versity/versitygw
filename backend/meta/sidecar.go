@@ -21,7 +21,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
@@ -49,9 +51,20 @@ func NewSideCar(dir string) (SideCar, error) {
 	return SideCar{dir: dir}, nil
 }
 
-// maxMetaDirRetries bounds how many times StoreAttribute makes the metadata
-// directory of an object again after a concurrent delete removed it
-const maxMetaDirRetries = 10
+const (
+	// maxMetaDirRetries bounds how many times StoreAttribute retries after a
+	// concurrent delete removes the metadata directory or one of its parents.
+	maxMetaDirRetries = 16
+	metaDirRetryWait  = 100 * time.Microsecond
+	metaDirMaxWait    = 128 * metaDirRetryWait
+)
+
+func waitMetaDirRetry(attempt int) {
+	if attempt == 0 {
+		return
+	}
+	time.Sleep(min(metaDirRetryWait<<(attempt-1), metaDirMaxWait))
+}
 
 // RetrieveAttribute retrieves the value of a specific attribute for an object or a bucket.
 func (s SideCar) RetrieveAttribute(_ *os.File, bucket, object, attribute string) ([]byte, error) {
@@ -80,54 +93,79 @@ func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, va
 	if object == "" {
 		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
 	}
-	// The metadata directories of objects are removed with the last
-	// attribute under them by deletes of other objects, so metadir can be
-	// removed again before the temp file is made in it.
-	var tempfile *os.File
-	for retries := maxMetaDirRetries; ; retries-- {
+	attr := filepath.Join(metadir, attribute)
+
+	// Metadata directories and their parents can be removed by concurrent
+	// deletes while StoreAttribute is creating or renaming the temp file.
+	for attempt := 0; ; attempt++ {
 		err := backend.MkdirAll(metadir, 0, 0, false, 0777)
 		if err != nil {
+			if isRetryableMetaDirErr(err, metadir, nil) && attempt < maxMetaDirRetries {
+				waitMetaDirRetry(attempt)
+				continue
+			}
 			if errors.Is(err, syscall.ENOSPC) {
 				return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 			}
 			return fmt.Errorf("failed to create metadata directory: %w", err)
 		}
-		tempfile, err = os.CreateTemp(metadir, attribute)
-		if errors.Is(err, os.ErrNotExist) && retries > 0 {
-			continue
-		}
+
+		dirInfo, err := os.Lstat(metadir)
 		if err != nil {
+			if isRetryableMetaDirErr(err, metadir, nil) && attempt < maxMetaDirRetries {
+				waitMetaDirRetry(attempt)
+				continue
+			}
+			return fmt.Errorf("failed to stat metadata directory: %w", err)
+		}
+
+		tempfile, err := os.CreateTemp(metadir, attribute)
+		if err != nil {
+			if isRetryableMetaDirErr(err, metadir, dirInfo) && attempt < maxMetaDirRetries {
+				waitMetaDirRetry(attempt)
+				continue
+			}
 			if errors.Is(err, syscall.ENOSPC) {
 				return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 			}
 			return fmt.Errorf("failed to create temporary file: %w", err)
 		}
-		break
-	}
+		tmpName := tempfile.Name()
 
-	attr := filepath.Join(metadir, attribute)
-	defer os.Remove(tempfile.Name())
-
-	_, err := tempfile.Write(value)
-	if err != nil {
-		tempfile.Close()
-		if errors.Is(err, syscall.ENOSPC) {
-			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+		_, err = tempfile.Write(value)
+		if err != nil {
+			_ = tempfile.Close()
+			_ = os.Remove(tmpName)
+			if errors.Is(err, syscall.ENOSPC) {
+				return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+			}
+			return fmt.Errorf("failed to write attribute: %w", err)
 		}
-		return fmt.Errorf("failed to write attribute: %w", err)
-	}
 
-	// Close explicitly before rename to prevent error on Windows:
-	// The process cannot access the file because it is being used by another process.
-	if err = tempfile.Close(); err != nil {
-		return fmt.Errorf("failed to close temporary file: %w", err)
-	}
+		// Close explicitly before rename to prevent error on Windows:
+		// The process cannot access the file because it is being used by another process.
+		if err = tempfile.Close(); err != nil {
+			_ = os.Remove(tmpName)
+			if errors.Is(err, syscall.ENOSPC) {
+				return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+			}
+			return fmt.Errorf("failed to close temporary file: %w", err)
+		}
 
-	err = os.Rename(tempfile.Name(), attr)
-	if err != nil {
-		return fmt.Errorf("failed to rename temporary file: %w", err)
+		err = os.Rename(tmpName, attr)
+		if err != nil {
+			_ = os.Remove(tmpName)
+			if isRetryableMetaDirErr(err, metadir, dirInfo) && attempt < maxMetaDirRetries {
+				waitMetaDirRetry(attempt)
+				continue
+			}
+			if errors.Is(err, syscall.ENOSPC) {
+				return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
+			}
+			return fmt.Errorf("failed to rename temporary file: %w", err)
+		}
+		return nil
 	}
-	return nil
 }
 
 // DeleteAttribute removes the value of a specific attribute for an object or a bucket.
@@ -193,8 +231,7 @@ func (s SideCar) DeleteAttributes(bucket, object string) error {
 	}
 
 	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
-	err := os.RemoveAll(metadir)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := removeSidecarSubtree(s.dir, filepath.Join(bucket, object, sidecarmeta)); err != nil {
 		return fmt.Errorf("failed to remove attributes: %w", err)
 	}
 	s.cleanupEmptyDirs(metadir, bucket, object)
@@ -209,7 +246,7 @@ func (s SideCar) RenameObject(bucket, oldObject, newObject string) error {
 	oldPath := filepath.Join(s.dir, bucket, trimVolume(oldObject))
 	newPath := filepath.Join(s.dir, bucket, trimVolume(newObject))
 
-	if err := os.MkdirAll(filepath.Dir(newPath), 0777); err != nil {
+	if err := backend.MkdirAll(filepath.Dir(newPath), 0, 0, false, 0777); err != nil {
 		if errors.Is(err, syscall.ENOSPC) {
 			return s3err.GetAPIError(s3err.ErrNoSpaceLeftOnDevice)
 		}
@@ -230,12 +267,26 @@ func (s SideCar) RemoveObject(bucket, object string) error {
 	bucket, object = trimVolume(bucket), trimVolume(object)
 	objdir := filepath.Join(s.dir, bucket, object)
 
-	err := os.RemoveAll(objdir)
-	if err != nil {
+	if err := removeSidecarSubtree(s.dir, filepath.Join(bucket, object)); err != nil {
 		return fmt.Errorf("failed to remove object metadata: %w", err)
 	}
 	s.cleanupEmptyDirs(objdir, bucket, object)
 	return nil
+}
+
+func splitSidecarRelPath(relPath string) ([]string, error) {
+	rawParts := strings.Split(filepath.ToSlash(filepath.Clean(relPath)), "/")
+	parts := make([]string, 0, len(rawParts))
+	for _, seg := range rawParts {
+		if seg == "" || seg == "." {
+			continue
+		}
+		if seg == ".." {
+			return nil, fmt.Errorf("invalid relative sidecar path: %q", relPath)
+		}
+		parts = append(parts, seg)
+	}
+	return parts, nil
 }
 
 // ReplaceObject removes the attributes of the object other than the ones in
