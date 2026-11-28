@@ -428,6 +428,8 @@ func TestDeleteObjects(ts *TestState) {
 func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_non_existing_dst_bucket)
 	ts.Run(CopyObject_not_owned_source_bucket)
+	ts.Run(CopyObject_incorrect_expected_bucket_owner)
+	ts.Run(CopyObject_expected_bucket_owner)
 	ts.Run(CopyObject_copy_to_itself)
 	ts.Run(CopyObject_copy_to_itself_invalid_directive)
 	ts.Run(CopyObject_should_replace_tagging)
@@ -3488,6 +3490,8 @@ func GetIntTests() IntTests {
 		"DeleteObjects_iam_all_locked":                                                     DeleteObjects_iam_all_locked,
 		"CopyObject_non_existing_dst_bucket":                                               CopyObject_non_existing_dst_bucket,
 		"CopyObject_not_owned_source_bucket":                                               CopyObject_not_owned_source_bucket,
+		"CopyObject_incorrect_expected_bucket_owner":                                       CopyObject_incorrect_expected_bucket_owner,
+		"CopyObject_expected_bucket_owner":                                                 CopyObject_expected_bucket_owner,
 		"CopyObject_copy_to_itself":                                                        CopyObject_copy_to_itself,
 		"CopyObject_copy_to_itself_invalid_directive":                                      CopyObject_copy_to_itself_invalid_directive,
 		"CopyObject_should_replace_tagging":                                                CopyObject_should_replace_tagging,

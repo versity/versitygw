@@ -29,7 +29,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/stretchr/testify/assert"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 // captureHTTPClient records the request the aws sdk sends and answers
@@ -43,10 +45,12 @@ type captureHTTPClient struct {
 	query         url.Values
 	body          []byte
 	contentLength int64
+	header        http.Header
 }
 
 func (c *captureHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	c.query = req.URL.Query()
+	c.header = req.Header.Clone()
 	c.contentLength = req.ContentLength
 	if req.Body != nil {
 		b, err := io.ReadAll(req.Body)
@@ -590,6 +594,102 @@ func TestHeadGetObjectDeleteMarker(t *testing.T) {
 				case tt.wantLastModified != nil && (res.lastModified == nil || !res.lastModified.Equal(*tt.wantLastModified)):
 					t.Errorf("expected last modified %v, got %v", *tt.wantLastModified, res.lastModified)
 				}
+			})
+		}
+	}
+}
+
+// The expected bucket owner headers name gateway accounts, so they are never
+// forwarded to the upstream service.
+func TestCopyObjectDoesNotForwardExpectedBucketOwner(t *testing.T) {
+	for _, owner := range []string{"", "user"} {
+		t.Run("owner="+owner, func(t *testing.T) {
+			p, capture := newCaptureProxy(t)
+			capture.respBody = `<CopyObjectResult><ETag>"etag"</ETag></CopyObjectResult>`
+
+			_, err := p.CopyObject(context.Background(), s3response.CopyObjectInput{
+				Bucket:              aws.String("dst-bucket"),
+				Key:                 aws.String("dst-key"),
+				CopySource:          aws.String("src-bucket/src-key"),
+				ExpectedBucketOwner: aws.String(owner),
+			})
+			assert.NoError(t, err)
+			assert.Empty(t, capture.header.Values("X-Amz-Expected-Bucket-Owner"))
+		})
+	}
+}
+
+// metaACLClient serves aclJSON as the meta bucket ACL object, answers copy
+// requests with success and records their headers.
+type metaACLClient struct {
+	aclJSON    string
+	copyHeader http.Header
+}
+
+func (c *metaACLClient) Do(req *http.Request) (*http.Response, error) {
+	body := ""
+	switch {
+	case req.Header.Get("X-Amz-Copy-Source") != "":
+		c.copyHeader = req.Header.Clone()
+		body = `<CopyResult><ETag>"etag"</ETag><LastModified>2026-01-01T00:00:00Z</LastModified></CopyResult>`
+	case req.Method == http.MethodGet:
+		body = c.aclJSON
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
+	}, nil
+}
+
+func TestCopyChecksSourceExpectedBucketOwner(t *testing.T) {
+	copies := map[string]func(p *S3Proxy, owner string) error{
+		"CopyObject": func(p *S3Proxy, owner string) error {
+			_, err := p.CopyObject(context.Background(), s3response.CopyObjectInput{
+				Bucket:                    aws.String("dst-bucket"),
+				Key:                       aws.String("dst-key"),
+				CopySource:                aws.String("src-bucket/src-key"),
+				ExpectedSourceBucketOwner: aws.String(owner),
+			})
+			return err
+		},
+		"UploadPartCopy": func(p *S3Proxy, owner string) error {
+			_, err := p.UploadPartCopy(context.Background(), &s3.UploadPartCopyInput{
+				Bucket:                    aws.String("dst-bucket"),
+				Key:                       aws.String("dst-key"),
+				UploadId:                  aws.String("upload-id"),
+				PartNumber:                aws.Int32(1),
+				CopySource:                aws.String("src-bucket/src-key"),
+				ExpectedSourceBucketOwner: aws.String(owner),
+			})
+			return err
+		},
+	}
+
+	for name, copyFn := range copies {
+		for _, owner := range []string{"user", "someone-else"} {
+			t.Run(name+"/"+owner, func(t *testing.T) {
+				upstream := &metaACLClient{aclJSON: `{"Owner":"user"}`}
+				client := s3.New(s3.Options{
+					Region:       "us-east-1",
+					BaseEndpoint: aws.String("http://backend.test"),
+					UsePathStyle: true,
+					Credentials:  credentials.NewStaticCredentialsProvider("access", "secret", ""),
+					HTTPClient:   upstream,
+				})
+				p, err := NewWithClient(context.Background(), client, "meta-bucket")
+				assert.NoError(t, err)
+
+				err = copyFn(p, owner)
+				if owner != "user" {
+					assert.ErrorIs(t, err, s3err.GetAPIError(s3err.ErrAccessDenied))
+					assert.Nil(t, upstream.copyHeader)
+					return
+				}
+				assert.NoError(t, err)
+				assert.NotNil(t, upstream.copyHeader)
+				assert.Empty(t, upstream.copyHeader.Values("X-Amz-Source-Expected-Bucket-Owner"))
 			})
 		}
 	}
